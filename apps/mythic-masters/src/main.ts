@@ -1705,7 +1705,7 @@ requestAnimationFrame(frame);
 
 const view = (f: Fighter) => ({
   id: f.c.id, hp: Math.round(f.hp), launch: Math.round(f.launch), stamina: +f.stamina.toFixed(2), energy: Math.round(f.energy),
-  state: f.state, swing: swingPhase(f), flying: f.flying, onGround: f.onGround, invuln: f.invuln, clipped: f.clipped > 0, pos: { x: +f.pos.x.toFixed(2), y: +f.pos.y.toFixed(2), z: +f.pos.z.toFixed(2) },
+  state: f.state, swing: swingPhase(f), dive: !!f.act?.dive, flying: f.flying, onGround: f.onGround, invuln: f.invuln, clipped: f.clipped > 0, pos: { x: +f.pos.x.toFixed(2), y: +f.pos.y.toFixed(2), z: +f.pos.z.toFixed(2) },
 });
 const fightState = () => m && { engine: live?.engine, tick: m.tick, over: m.over, winner: m.winner, fighters: m.f.map(view), shapes: m.areas.map((a) => ({ by: a.owner, shape: a.d.shape, move: a.move.name, head: head(a) })), warnings: ([0, 1] as const).map((i) => warning(m!, i)?.d.shape ?? null), ringRadius: ARENA.radius };
 const tripState = () => trip && { ...trip, out: [...trip.out], region: trip.region.n };
@@ -1734,6 +1734,13 @@ Object.assign(window, {
       if (!m) return null;
       const f = m.f[side], a = Math.atan2(f.pos.z, f.pos.x) || Math.PI, r = ARENA.radius + f.b.radius * 0.6;
       Object.assign(f, { pos: { x: Math.cos(a) * r, y: -0.6, z: Math.sin(a) * r }, vel: { x: 0, y: 0.5, z: 0 }, onGround: false, state: "free", act: null, drop: 0, fresh: true });
+      return view(f);
+    },
+    /** Puts flyer `side` in the air 4 m up and 3 m off the other, facing it: where a bot dives on what's below (bot.ts). */
+    perch: (side: 0 | 1 = 0) => {
+      if (!m || m.f[side].b.air !== "flight") return null;
+      const f = m.f[side], o = m.f[side ? 0 : 1], a = Math.atan2(-o.pos.z, -o.pos.x) || Math.PI;
+      Object.assign(f, { pos: { x: o.pos.x + Math.cos(a) * 3, y: 4, z: o.pos.z + Math.sin(a) * 3 }, vel: { x: 0, y: 0, z: 0 }, yaw: a + Math.PI, flying: true, onGround: false, state: "free", act: null, clipped: 0, exhausted: false, stamina: f.b.stamina });
       return view(f);
     },
     /** Where fighter `side`'s puppet has its feet and hips right now, in the world (null before its model loads). */

@@ -8,6 +8,8 @@
 //              swing locking near the other (its dodge and the punish after, #3511 round 3)
 //   --fly      only the winged bipeds held in flight in the gallery, from the side, flying forward at speed: two
 //              frames 0.45 s apart each (a bot fight rarely catches a flyer in the air)
+//   --dive     flyers' dives (#3840): the Jersey Devil and the Red Dragon, two bursts each set up with `perch` (4 m up and
+//              3 m off the other, since a bot dives about once a fight) and cued on the dive, frames 0.1 s apart down to the blow
 //   --hit      the heavies struck in the gallery, side on: one hard blow, frames at rest then 0.05, 0.12, 0.2 and 0.35 s
 //              after it, the same blow every run (a bot fight's hits land at random, on random bodies, at random angles)
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -17,7 +19,7 @@ import { PAGE } from "../src/gallery.ts";
 import { launchChrome, load, openTab, startVite, type Tab } from "../../../scripts/chrome.ts";
 
 /** scene name, the pair, what starts a burst, how many bursts */
-type Cue = "strike" | "fly" | "stun" | "locked";
+type Cue = "strike" | "fly" | "stun" | "locked" | "dive";
 const ART: [string, string, string, Cue, number][] = [
   ["wings", "jersey-devil", "wampus-cat", "fly", 2],
   ["contact", "rougarou", "black-shuck", "strike", 2],
@@ -31,11 +33,12 @@ const COMBAT: [string, string, string][] = [
   ["skirmisher", "wampus-cat", "black-shuck"],
   ["flyer", "jersey-devil", "rougarou"],
 ];
-const combat = process.argv.includes("--combat"), fly = process.argv.includes("--fly"), hit = process.argv.includes("--hit");
-const FIGHTS: [string, string, string, Cue[]][] = fly || hit ? [] : combat
+const DIVES: [string, string, string, Cue[]][] = [["dive-devil", "jersey-devil", "wampus-cat", ["dive", "dive"]], ["dive-dragon", "red-dragon", "champ", ["dive", "dive"]]];
+const combat = process.argv.includes("--combat"), fly = process.argv.includes("--fly"), hit = process.argv.includes("--hit"), dive = process.argv.includes("--dive");
+const FIGHTS: [string, string, string, Cue[]][] = fly || hit ? [] : dive ? DIVES : combat
   ? COMBAT.map(([s, a, b]) => [s, a, b, ["strike", "locked", "stun"]])
   : ART.map(([s, a, b, k, n]) => [s, a, b, Array<Cue>(n).fill(k)]);
-const CLOSE = hit ? ["sasquatch", "hodag", "yeti", "rougarou"] : fly ? ["jersey-devil", "mothman", "sasabonsam"] : combat ? [] : ["black-shuck", "rougarou", "jersey-devil"];
+const CLOSE = hit ? ["sasquatch", "hodag", "yeti", "rougarou"] : fly ? ["jersey-devil", "mothman", "sasabonsam"] : combat || dive ? [] : ["black-shuck", "rougarou", "jersey-devil"];
 const GAP = combat ? 200 : 300, HIT_GAP = 100;
 
 const [dir, prefix = "now"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
@@ -47,14 +50,15 @@ const shoot = async (tab: Tab, name: string) => {
   const shot = await tab.call("Page.captureScreenshot", { format: "jpeg", quality: 82 });
   writeFileSync(join(out, `${prefix}-${name}.jpg`), Buffer.from(shot.data, "base64"));
 };
-/** Waits (up to 15 s) for either fighter to start a strike near the other, lock a heavy swing near a free other (not stunned,
+/** Waits (up to 15 s) for fighter 0 to start a dive (perched first), or for either fighter to start a strike near the other, lock a heavy swing near a free other (not stunned,
  * not swinging itself, so it can still get out: the dodge the shots are for), or land a hit, or for fighter 0 to be off the
  * ground and flying. */
-const cue = (kind: Cue) => `new Promise((ok) => { const end = performance.now() + 15000; const tick = () => {
+const cue = (kind: Cue) => `new Promise((ok) => { ${kind === "dive" ? "mythicMasters.perch(0);" : ""} const end = performance.now() + 15000; const tick = () => {
   const s = mythicMasters.state(); const [a, b] = s?.fighters ?? [];
   const near = a && b && Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z) < 3.2; // inside melee reach
   const hit = ${JSON.stringify(kind)} === "stun" ? a?.state === "stun" || b?.state === "stun"
     : ${JSON.stringify(kind)} === "locked" ? ((a?.swing === "locked" && b?.state === "free") || (b?.swing === "locked" && a?.state === "free")) && near
+    : ${JSON.stringify(kind)} === "dive" ? !!a?.dive
     : ${JSON.stringify(kind)} === "strike" ? (a?.state === "attack" || b?.state === "attack") && near : a?.flying && !a.onGround;
   if (hit || performance.now() > end) ok(!!hit); else requestAnimationFrame(tick); }; tick(); })`;
 
@@ -74,7 +78,7 @@ try {
         let shots = 0;
         for (let i = 0; i < (kind === "locked" ? 6 : 4); i++) {
           if (i > 0 && await tab.eval<boolean>(`!!mythicMasters.state()?.over`)) break;
-          await shoot(tab, `${name}-b${i}`); shots++; await Bun.sleep(kind === "stun" && !combat ? HIT_GAP : GAP);
+          await shoot(tab, `${name}-b${i}`); shots++; await Bun.sleep((kind === "stun" && !combat) || kind === "dive" ? HIT_GAP : GAP);
         }
         console.log(`${name}: ${ok ? "cued" : "timed out, shot anyway"}${shots < (kind === "locked" ? 6 : 4) ? `, cut to ${shots} at the fight's end` : ""}`);
         await Bun.sleep(2500);

@@ -99,18 +99,23 @@ describe("nothing hides in the air", () => {
     expect(it.flying).toBe(false);
   });
 
-  test("a flyer's dive lands on the fighter below and bounces back up; guarded, it does a fifth", () => {
+  test("a flyer's dive comes down to the chest of the fighter below before it lands (#3840), and bounces back up; guarded, it does a fifth", () => {
     const dive = (guard: boolean) => {
       const m = newMatch(flyer, tank);
       const [me, it] = m.f;
       Object.assign(me, { flying: true, onGround: false, pos: { x: it.pos.x - 3, y: 4, z: 0 }, yaw: 0 });
       step(m, [hold({ heavy: true, down: true }), hold({ guard })]);
-      let damage = 0;
-      for (let t = 0; t < 40 && !damage; t++) { step(m, [IDLE, hold({ guard })]); for (const e of m.events) if (e.kind === "hit" && e.by === 0) damage = e.damage; }
-      return { damage, rising: me.vel.y > 0 && !me.onGround };
+      let damage = 0, up = Infinity;
+      for (let t = 0; t < 40 && !damage; t++) {
+        const y = me.pos.y;
+        step(m, [IDLE, hold({ guard })]);
+        for (const e of m.events) if (e.kind === "hit" && e.by === 0) { damage = e.damage; up = (y - it.pos.y) / it.b.height; }
+      }
+      return { damage, up, rising: me.vel.y > 0 && !me.onGround };
     };
     const open = dive(false), guarded = dive(true);
     expect(open.damage).toBeGreaterThan(10);
+    expect(open.up).toBeLessThan(0.65); // its feet at the chest, not a body-length overhead
     expect(open.rising).toBe(true);
     expect(guarded.damage).toBeCloseTo(open.damage * 0.2, 1);
   });
