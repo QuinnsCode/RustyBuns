@@ -6,7 +6,8 @@
 // and tells the owner which directories are biggest. Below a floor of free space on the volume every worker pauses,
 // since no one worker can fix that. Both resume by themselves once the owner clears space or raises the cap.
 //   AGENT_OFFICE_SANDBOX_CAP_GB   per worker, default 8 (0 turns the cap off)
-//   AGENT_OFFICE_DISK_FLOOR_GB    free on the volume, default 15 (0 turns the floor off)
+//   AGENT_OFFICE_DISK_FLOOR_GB    free on the volume, default 5 (0 turns the floor off). It was 15 until the owner
+//                                 found a 460 GB Mac sitting at 14 GB free with every Claude stopped and no way to type.
 //   AGENT_OFFICE_STORAGE_SCAN_S   seconds between looks, default 120
 import { existsSync, readFileSync, statfsSync, writeFileSync } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
@@ -18,6 +19,10 @@ const GB = 1024 ** 3;
 export const NODE_MODULES_MS = 15 * 60_000;
 /** A paused worker resumes once it's this far under the cap, so one that hovers at the line isn't stopped and started every look. */
 export const RESUME_AT = 0.95;
+/** Workers paused for the volume resume once there is this much more than the floor free, so they are not stopped and started every look. */
+export const VOLUME_ROOM = 2 * 1024 ** 3;
+/** While the volume keeps every worker paused, the toast comes back this often: a stopped terminal takes keys and does nothing, so one missed toast hid it. */
+export const VOLUME_NAG_MS = 10 * 60_000;
 
 export interface Settings {
   capBytes: number;
@@ -35,7 +40,7 @@ export function settings(vars: Vars = process.env): Settings {
   };
   return {
     capBytes: gb("AGENT_OFFICE_SANDBOX_CAP_GB", 8) * GB,
-    floorBytes: gb("AGENT_OFFICE_DISK_FLOOR_GB", 15) * GB,
+    floorBytes: gb("AGENT_OFFICE_DISK_FLOOR_GB", 5) * GB,
     everyMs: Math.max(10, gb("AGENT_OFFICE_STORAGE_SCAN_S", 120)) * 1000,
   };
 }
@@ -122,8 +127,9 @@ export class StorageGuard {
   readonly paused = new Map<string, Why>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private looking = false;
+  private naggedAt = -Infinity;
 
-  constructor(private d: Deps) {
+  constructor(private d: Deps, private now = Date.now) {
     for (const id of d.load()) this.paused.set(id, "cap");
   }
 
@@ -144,9 +150,13 @@ export class StorageGuard {
     const { capBytes, floorBytes } = this.d.settings();
     const seats = this.d.seats();
     const free = this.d.free();
-    const volumeLow = floorBytes > 0 && free < floorBytes;
-    if (volumeLow && ![...this.paused.values()].includes("volume"))
-      this.d.alert(`💾 Only ${gb(free)} free on the disk (floor ${gb(floorBytes)}): every worker is paused until space is cleared`);
+    const volumeHeld = [...this.paused.values()].includes("volume");
+    const volumeLow = floorBytes > 0 && free < floorBytes + (volumeHeld ? VOLUME_ROOM : 0);
+    if (!volumeLow) this.naggedAt = -Infinity;
+    else if (this.now() - this.naggedAt >= VOLUME_NAG_MS) {
+      this.naggedAt = this.now();
+      this.d.alert(`💾 Only ${gb(free)} free on the disk (floor ${gb(floorBytes)}): every worker is paused (typing into one does nothing) until ${gb(floorBytes + VOLUME_ROOM)} is free. Clear space or lower AGENT_OFFICE_DISK_FLOOR_GB`);
+    }
     for (const id of [...this.paused.keys()]) if (!seats.some((s) => s.id === id)) this.paused.delete(id);
     for (const seat of seats) {
       const had = this.paused.get(seat.id);
