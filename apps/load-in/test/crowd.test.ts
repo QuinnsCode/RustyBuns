@@ -2,11 +2,17 @@
 // sub on stage pass at soundcheck. The doors open and ninety people pack in: the back hears the tops through every row
 // of heads, goes quiet and dull, the score with the room full drops under the pass and the back drifts forward. Raise
 // the stands so the tops fire over the heads, push the fader 2 dB, and the back comes back and dances. The same calls
-// `window.loadIn` makes (doors() lets the crowd in through the bar view's `letIn`).
+// `window.loadIn` makes (doors() lets the crowd in through the bar view's `letIn`). Then the room's reverb as you hear
+// it, the crowd moving on its mood, and the tour's following filling the next room.
 import { expect, test } from "bun:test";
 import { newWorld, pickUp, putDown, type World, walkTo } from "../src/sim.ts";
 import { CROWD, DIVE_BAR, PASS, aim, crowdState, master, raise, scores, settle } from "../src/venues/dive-bar.ts";
-import { expectTonight, letIn } from "../src/crowd/crowd.ts";
+import { ARRIVE, MOVE_EVERY, crowdOf, expectTonight, letIn, move, ringing } from "../src/crowd/crowd.ts";
+import { fillFromTour, spotOf } from "../src/crowd/spots.ts";
+import { impulse, wetOf } from "../src/audio/reverb.ts";
+import { newTour, record } from "../src/tour.ts";
+import { BIGGER_BAR } from "../src/venues/bigger-bar.ts";
+import { PACKED } from "@rustybuns/gear";
 import { hear, switchedOnIsFed } from "../src/audio/hear.ts";
 
 const DEG = Math.PI / 180;
@@ -22,7 +28,8 @@ function carry(w: World, key: string, x: number, z: number) {
   settle(w);
 }
 
-test("tops at 1.2 m pass soundcheck, lose the back once the room is full, and win it back raised over the heads", () => {
+/** The dive bar rigged the easy way: tops on their stands at the lowest, 1.2 m, aimed at the room, the sub on stage. */
+function lowTops() {
   const w = newWorld(DIVE_BAR), at = (key: string) => w.items.find((i) => i.key === key)!;
   carry(w, "stand-l", -1.7, 2.0);
   carry(w, "stand-r", 1.7, 2.0);
@@ -33,6 +40,11 @@ test("tops at 1.2 m pass soundcheck, lose the back once the room is full, and wi
   expect(aim(w, "top-l", { turn: 30 * DEG - at("top-l").rot })).toEqual({ ok: true });
   walkTo(w, 1.0, 2.4);
   expect(aim(w, "top-r", { turn: -at("top-r").rot })).toEqual({ ok: true });
+  return w;
+}
+
+test("tops at 1.2 m pass soundcheck, lose the back once the room is full, and win it back raised over the heads", () => {
+  const w = lowTops();
 
   // Soundcheck, the room empty: it passes, and the score expected with the room full is already short.
   const check = scores(w);
@@ -82,4 +94,73 @@ test("tops at 1.2 m pass soundcheck, lose the back once the room is full, and wi
   const fixed = crowdState(w);
   expect(scores(w).full.pass).toBe(true);
   expect(fixed.regions.map((r) => r.doing)).toEqual(["dancing", "dancing", "dancing"]);
+});
+
+/** Root-mean-square of a stretch of samples. */
+const rms = (a: Float32Array, from: number, n: number) => Math.sqrt(a.subarray(from, from + n).reduce((p, v) => p + v * v, 0) / n);
+
+test("the empty bar rings for a second, tightens as the crowd walks in, and the park outside doesn't ring at all", () => {
+  const w = lowTops();
+  const empty = ringing(w, CROWD);
+  expect(empty.rt60!).toBeGreaterThan(0.9);
+  // The impulse the page convolves dies 60 dB over the room's reverb time.
+  const rate = 8000, [l] = impulse(empty.rt60!, empty.rt60Low!, rate), win = rate / 50;
+  const drop = 20 * Math.log10(rms(l, Math.round(empty.rt60! * rate) - win, win) / rms(l, 0, win));
+  expect(drop).toBeLessThan(-50);
+  expect(drop).toBeGreaterThan(-70);
+
+  // Doors: half way in, the room has tightened some; everyone in, under half the empty ring, and less of it in the mix.
+  letIn(w, CROWD);
+  w.t += ARRIVE / 2;
+  const half = ringing(w, CROWD);
+  w.t += ARRIVE;
+  const full = ringing(w, CROWD);
+  expect(half.rt60!).toBeLessThan(empty.rt60!);
+  expect(full.rt60!).toBeLessThan(half.rt60!);
+  expect(full.rt60!).toBeLessThan(empty.rt60! / 2);
+  expect(wetOf(full.rt60!)).toBeLessThan(wetOf(empty.rt60!));
+
+  // Out of doors there is no room: the people only stand in the sound.
+  expect(ringing(newWorld(DIVE_BAR), spotOf("park")!).rt60).toBeNull();
+});
+
+test("the back drifts forward to the stage, nobody packs past 4 a square metre, and a silent room walks out", () => {
+  const w = lowTops();
+  letIn(w, CROWD);
+  const before = crowdState(w), back = (s: ReturnType<typeof crowdState>) => s.regions.find((r) => r.name === "back")!.people;
+  expect(before.regions.find((r) => r.name === "back")!.doing).toBe("drifting forward");
+  // Nobody moves while they are still coming in.
+  expect(move(w, before.regions)!.moves).toBe(0);
+
+  // Every few seconds after that the back moves up; the room keeps its headcount.
+  for (let k = 0; k < 4; k++) {
+    w.t += ARRIVE + MOVE_EVERY;
+    move(w, crowdState(w).regions);
+  }
+  const after = crowdState(w);
+  expect(crowdOf(w)!.moves).toBe(4);
+  expect(back(after)).toBeLessThan(back(before));
+  expect(after.regions[0]!.people + after.regions[1]!.people).toBeGreaterThan(before.regions[0]!.people + before.regions[1]!.people);
+  expect(Math.abs(after.count - before.count)).toBeLessThanOrEqual(1);
+  expect(Math.max(...crowdOf(w)!.field.density)).toBeLessThanOrEqual(PACKED + 1e-3);
+
+  // The fader down to nothing: they hear nothing, and the room empties out of the door.
+  master(w, -30);
+  for (let k = 0; k < 3; k++) {
+    w.t += MOVE_EVERY;
+    move(w, crowdState(w).regions);
+  }
+  expect(crowdState(w).count).toBeLessThan(after.count / 2);
+});
+
+test("a good night grows the crowd that fills the next room; a poor one shrinks it", () => {
+  let t = newTour();
+  const tonight = (tour: typeof t) => { const w = newWorld(BIGGER_BAR); fillFromTour(w, tour); return letIn(w, spotOf("bigger-bar")!).people; };
+  const first = tonight(t);
+  t = record(t, DIVE_BAR, { score: 95, pay: 100, pass: true }).tour;
+  const grown = tonight(t);
+  expect(grown).toBeGreaterThan(first);
+  expect(grown).toBeLessThanOrEqual(spotOf("bigger-bar")!.capacity);
+  t = record(t, BIGGER_BAR, { score: 30, pay: 100, pass: false }).tour;
+  expect(tonight(t)).toBeLessThan(grown);
 });

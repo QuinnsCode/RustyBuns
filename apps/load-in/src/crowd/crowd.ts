@@ -2,7 +2,7 @@
 // (a density field from @rustybuns/gear's crowd.ts), what they do to the sound, how they slow you down, and how they take
 // it. A venue says where its crowd stands with a `CrowdSpot`; `letIn` fills it. Plain numbers, no DOM: crowd-view.ts draws them.
 import { clamp } from "@rustybuns/util";
-import { type CrowdField, type Room, crowdNoise, densityAt, fillFloor, headcount, reverbTime } from "@rustybuns/gear";
+import { type CrowdField, type Room, PACKED, crowdNoise, densityAt, fillFloor, headcount, reverbTime } from "@rustybuns/gear";
 import type { World } from "../sim.ts";
 
 type Rect = { x0: number; x1: number; z0: number; z1: number };
@@ -13,14 +13,18 @@ export type CrowdSpot = {
   floor: Rect & { nx: number; nz: number };
   /** The stage edge they pack against. */
   stageZ: number;
+  /** People a square metre at the stage, where it is packed (PACKED unless the crowd stands looser, an afternoon on the grass). */
+  peak?: number;
   /** How many the room holds, when the tour hasn't said how many follow you. */
   capacity: number;
-  room: Room;
+  /** The room's box and surfaces; null out of doors, where nothing rings and people only stand in the sound. */
+  room: Room | null;
   /** The parts of the crowd that react on their own, front to back. */
   regions: readonly { name: string; zone: Rect }[];
 };
 
-export type Crowd = { spot: CrowdSpot; people: number; field: CrowdField; since: number };
+/** The crowd in the room: `moved` is when it last moved on its mood (or when everyone is in), `moves` how many times it has. */
+export type Crowd = { spot: CrowdSpot; people: number; field: CrowdField; since: number; moved: number; moves: number };
 
 const crowds = new WeakMap<World, Crowd>(), tonights = new WeakMap<World, number>();
 
@@ -34,15 +38,20 @@ export const crowdOf = (w: World): Crowd | null => crowds.get(w) ?? null;
 
 /** The crowd a spot holds: `people` (the room's capacity unless given), packed from the stage back. */
 export function expected(spot: CrowdSpot, people = spot.capacity): CrowdField {
-  return fillFloor(spot.floor, people, spot.stageZ);
+  return fillFloor(spot.floor, people, spot.stageZ, spot.peak);
 }
 
 /** Doors open: `people` (tonight's crowd unless given) walk in and take the floor; you walk slower through them. */
 export function letIn(w: World, spot: CrowdSpot, people = comingTonight(w, spot)): Crowd {
-  const field = expected(spot, people), c = { spot, people: Math.round(headcount(field)), field, since: w.t };
-  crowds.set(w, c);
+  return stand(w, { spot, people: 0, field: expected(spot, people), since: w.t, moved: w.t + ARRIVE, moves: 0 });
+}
+
+/** Put a crowd on the floor: its headcount from its field, and your pace through it. */
+function stand(w: World, c: Crowd): Crowd {
+  const field = c.field, next = { ...c, people: Math.round(headcount(field)) };
+  crowds.set(w, next);
   w.underfoot = (x, z) => walkShare(densityAt(field, x, z));
-  return c;
+  return next;
 }
 
 /** The room empties (a reload, a new night). */
@@ -66,10 +75,16 @@ export const ARRIVE = 12;
 /** How much of the crowd has walked in by now, 0 to 1. */
 export const arrived = (w: World, c: Crowd) => clamp((w.t - c.since) / ARRIVE, 0, 1);
 
-/** The room's reverb time and the crowd's own noise, with `people` in. */
+/** The room's reverb time (mids and bass, s; null out of doors) and the crowd's own noise, with `people` in. */
 export function roomWith(spot: CrowdSpot, people: number) {
-  const r1 = (v: number) => Math.round(v * 100) / 100;
-  return { people, rt60: r1(reverbTime(spot.room, people)), rt60Low: r1(reverbTime(spot.room, people, 125)), noise: Math.round(crowdNoise(people)) };
+  const r1 = (v: number) => Math.round(v * 100) / 100, room = spot.room;
+  return { people, rt60: room && r1(reverbTime(room, people)), rt60Low: room && r1(reverbTime(room, people, 125)), noise: Math.round(crowdNoise(people)) };
+}
+
+/** The room as it rings now: empty before the doors, then tightening as people walk in. */
+export function ringing(w: World, spot: CrowdSpot) {
+  const c = crowdOf(w);
+  return roomWith(spot, c && c.spot === spot ? Math.round(c.people * arrived(w, c)) : 0);
 }
 
 /** Too loud at the front from here up, dB SPL: people step back from the stack past about 103 dB (long-show exposure). */
@@ -102,4 +117,53 @@ export function regions(c: Crowd, levels: (zone: Rect) => { soundcheck: number |
     const db = levels(zone);
     return { name, people: Math.round(n), density: Math.round((n / Math.max(1, cells * cell)) * 10) / 10, ...db, ...moodOf(db.full, target, window) };
   });
+}
+
+/** Seconds between the crowd's moves once everyone is in. */
+export const MOVE_EVERY = 4;
+/** The share of a region that moves on each step: forward when too quiet, back when too loud, out of the door when leaving. */
+export const MOVE_SHARE = 0.25;
+
+/** The cells of each region, front to back: a cell goes with the region it sits in, or the nearest (the strip by the door moves with the back). */
+function regionCells(c: Crowd): number[][] {
+  const f = c.field, out = c.spot.regions.map((): number[] => []);
+  const gap = (v: number, a: number, b: number) => Math.max(0, a - v, v - b);
+  for (let iz = 0; iz < f.nz; iz++) for (let ix = 0; ix < f.nx; ix++) {
+    const x = f.x0 + ((ix + 0.5) * (f.x1 - f.x0)) / f.nx, z = f.z0 + ((iz + 0.5) * (f.z1 - f.z0)) / f.nz;
+    let best = 0, near = Infinity;
+    c.spot.regions.forEach(({ zone }, r) => { const d = Math.hypot(gap(x, zone.x0, zone.x1), gap(z, zone.z0, zone.z1)); if (d < near) { near = d; best = r; } });
+    out[best]?.push(iz * f.nx + ix);
+  }
+  return out;
+}
+
+/**
+ * The crowd moves on its mood, every MOVE_EVERY seconds once everyone is in: a region drifting forward sends a share of
+ * its people one region nearer the stage, a thinning one sends them one back (out of the door from the back), a leaving
+ * one sends them home. Nobody packs past the spot's peak (PACKED) a square metre: who can't fit stays where they were. `moods` are
+ * `regions()`, front to back. Returns the crowd as it stands now (a new one when it moved).
+ */
+export function move(w: World, moods: readonly Pick<Mood, "doing">[]): Crowd | null {
+  const c = crowdOf(w);
+  if (!c || w.t < c.moved + MOVE_EVERY) return c;
+  const f = c.field, d = Float32Array.from(f.density), cell = ((f.x1 - f.x0) / f.nx) * ((f.z1 - f.z0) / f.nz), cells = regionCells(c);
+  const count = (ks: number[]) => ks.reduce((n, k) => n + d[k]! * cell, 0);
+  /** Take `n` people out of a region, evenly over its cells. */
+  const take = (ks: number[], n: number) => { const have = count(ks); if (have > 0) for (const k of ks) d[k] = d[k]! * (1 - Math.min(1, n / have)); };
+  /** Stand up to `n` people in a region where there is room, in proportion to the room in each cell; how many fit. */
+  const add = (ks: number[], n: number) => {
+    const room = ks.map((k) => Math.max(0, (c.spot.peak ?? PACKED) - d[k]!) * cell), free = room.reduce((a, b) => a + b, 0), fit = Math.min(n, free);
+    if (fit > 0) ks.forEach((k, j) => { d[k] = d[k]! + (fit * room[j]!) / free / cell; });
+    return fit;
+  };
+  moods.forEach(({ doing }, r) => {
+    const from = cells[r];
+    if (!from || doing === "dancing") return;
+    const to = doing === "drifting forward" ? cells[r - 1] : doing === "thinning" ? cells[r + 1] : undefined;
+    if (doing === "drifting forward" && !to) return; // already at the stage
+    const n = count(from) * MOVE_SHARE;
+    take(from, n);
+    if (to) add(from, n - add(to, n)); // who doesn't fit stays
+  });
+  return stand(w, { ...c, field: { ...f, density: d }, moved: w.t, moves: c.moves + 1 });
 }
