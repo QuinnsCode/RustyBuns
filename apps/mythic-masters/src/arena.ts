@@ -8,6 +8,7 @@ import { ARENA } from "./sim.ts";
 import { buildCrowd, type Crowd, type Seat } from "./crowd.ts";
 import type { Biome } from "./regions.ts";
 import type { Kind, Plant } from "./world/flora.ts";
+import { SETS, type Horizon } from "./arena-sets.ts";
 
 /** What a floor is: mown turf, sand with ripples and pebbles, sand under a litter of pine needles, or cracked
  * basalt whose seams glow; plain grain for the rest. */
@@ -119,6 +120,8 @@ export interface Skin {
   under?: number;
   /** A region's biome: what grows round its ring (the open world's plants, src/world/flora.ts). */
   biome?: Biome;
+  /** A built region's id: its set piece, horizon and light (src/arena-sets.ts). */
+  region?: string;
 }
 /** A light colour grade per skin, drawn from its own palette: a tint (the sky's, or the lava's glow under a dark sky)
  * pulled to a gentle lean, its brightest channel held at 1 so it never darkens, and a touch of saturation. */
@@ -138,7 +141,8 @@ export const SKINS: Record<string, Skin> = {
 export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   const g = new THREE.Group();
   scene.background = new THREE.Color(skin.sky);
-  scene.fog = new THREE.Fog(new THREE.Color(skin.fog).lerp(new THREE.Color(skin.sky), 0.25), 30, 90);
+  const piece = skin.region ? SETS[skin.region] : undefined, mood = piece?.mood;
+  scene.fog = new THREE.Fog(new THREE.Color(skin.fog).lerp(new THREE.Color(skin.sky), 0.25), mood?.fog[0] ?? 30, mood?.fog[1] ?? 90);
   const R = ARENA.radius;
   const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra });
 
@@ -173,7 +177,8 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   }
   if (skin.props === "clouds") ring(14, R + 12, (i) => { const m = new THREE.Mesh(new THREE.SphereGeometry(3 + (i % 3), 12, 8), mat(skin.prop, { transparent: true, opacity: 0.8 })); m.position.y = -6 + (i % 4); m.scale.y = 0.45; return m; });
 
-  g.add(skyDome(skin), hills(skin));
+  g.add(skyDome(skin, mood?.haze ?? 0), hills(skin, piece?.horizon ?? "hills"));
+  if (piece) { const tick = piece.build(g, R); if (tick) ticks.set(g, tick); }
   // the lake's bank: a strip of wet sand where the turf meets the water, so the shore isn't a cut
   const chord = 2 * Math.sin(a) * R;
   const bank = new THREE.Mesh(new THREE.PlaneGeometry(1.1, chord - 0.4), mat(new THREE.Color(skin.ground).lerp(new THREE.Color(0xd8c8a0), 0.6).getHex(), { roughness: 0.75, map: (() => { const t = mottle(33, "sand"); t.repeat.set(1, 6); return t; })() }));
@@ -182,8 +187,8 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   foam.rotation.x = -Math.PI / 2; foam.position.set(ARENA.lake.x + 0.3, 0.035, 0); g.add(foam);
 
   // a warm key from the sun's side of the sky, against the cool sky fill and the cool rim behind
-  const sun = new THREE.DirectionalLight(0xfff0d8, 2.5);
-  sun.position.copy(SUN); sun.castShadow = true;
+  const sun = new THREE.DirectionalLight(mood?.sunColour ?? 0xfff0d8, mood?.sunPower ?? 2.5);
+  sun.position.copy(mood ? new THREE.Vector3(...mood.sun) : SUN); sun.castShadow = true;
   sun.shadow.camera.left = sun.shadow.camera.bottom = -22; sun.shadow.camera.right = sun.shadow.camera.top = 22;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03; sun.shadow.radius = 3;
@@ -191,7 +196,7 @@ export function buildArena(scene: THREE.Scene, skin: Skin): THREE.Group {
   const back = new THREE.DirectionalLight(0xcfe0ff, 1.6);
   back.name = "rim"; // main.ts keeps it opposite the camera, so it always edges the side you see
   back.position.set(14, 9, -16);
-  g.add(sun, back, new THREE.HemisphereLight(skin.sky, skin.ground, 0.8));
+  g.add(sun, back, new THREE.HemisphereLight(skin.sky, skin.ground, mood?.fill ?? 0.8));
   if (skin.under === undefined) {
     // light thrown back up from the floor: every belly and jaw picks up the arena's ground colour
     const bounce = new THREE.DirectionalLight(new THREE.Color(skin.ground).lerp(new THREE.Color(0xffffff), 0.15), 0.7);
@@ -218,9 +223,9 @@ function dressing(skin: Skin, R: number): THREE.Group {
     }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.35; ground.receiveShadow = true; g.add(ground);
   }
-  void import("./world/flora.ts").then(async ({ scenery, FLORA, TALL }) => {
-    const set = await scenery();
-    if (!set.size) return;
+  void import("./world/flora.ts").then(async ({ scenery, grown, grownMaterial, FLORA, TALL }) => {
+    const [plain, more] = await Promise.all([scenery(), grown()]);
+    if (!plain.size && !more.size) return;
     const spec: Plant[] = floating ? [["rock", 0.75, 6, 13], ["snag", 0.25, 5, 9]]
       : skin.biome ? FLORA[skin.biome].kinds : skin.props === "rocks" ? [["rock", 0.7, 1, 4], ["sage", 0.3, 0.4, 1]] : FLORA["pine-barrens"].kinds;
     const total = spec.reduce((a, k) => a + k[1], 0), rnd = mulberry32(17), o = new THREE.Object3D();
@@ -241,10 +246,11 @@ function dressing(skin: Skin, R: number): THREE.Group {
       placed.set(kind, [...(placed.get(kind) ?? []), o.matrix.clone()]);
     }
     for (const [kind, ms] of placed) {
-      const geo = set.get(kind);
+      const near = more.get(kind)?.near, geo = near ?? plain.get(kind);
       if (!geo) continue;
       const soft = kind !== "rock";
-      const mesh = new THREE.InstancedMesh(soft ? softened(geo) : geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: !soft, color: kind === "rock" || floating ? rockTint : 0xffffff }), ms.length);
+      // a grown plant keeps its own normals (leaves facing out of the crown); the scenery set's are softened here
+      const mesh = new THREE.InstancedMesh(near ? geo : soft ? softened(geo) : geo, near ? grownMaterial() : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: !soft, color: kind === "rock" || floating ? rockTint : 0xffffff }), ms.length);
       ms.forEach((m, i) => mesh.setMatrixAt(i, m));
       mesh.castShadow = !floating; mesh.receiveShadow = true;
       g.add(mesh);
@@ -300,8 +306,8 @@ const SUN = new THREE.Vector3(-12, 24, 10);
 /** A sky that fades from a deeper blue overhead to the fog's colour at the horizon, with soft clouds drifting
  * across it and a glow round the sun, so the ring sits in air, not on a flat card. A dark sky (the volcano's)
  * gets smoke lit from below by `under` instead of white clouds. */
-function skyDome(skin: Skin): THREE.Mesh {
-  const top = deepen(new THREE.Color(skin.sky)), horizon = new THREE.Color(skin.fog);
+function skyDome(skin: Skin, haze = 0): THREE.Mesh {
+  const horizon = new THREE.Color(skin.fog), top = deepen(new THREE.Color(skin.sky)).lerp(horizon, haze * 0.6);
   const dark = new THREE.Color(skin.sky).getHSL({ h: 0, s: 0, l: 0 }).l < 0.25;
   const cloud = dark ? new THREE.Color(skin.under ?? skin.fog).multiplyScalar(0.35) : new THREE.Color(0xffffff).lerp(horizon, 0.25);
   const m = new THREE.ShaderMaterial({
@@ -334,20 +340,25 @@ void main() {
   return dome;
 }
 
-/** Low hills all the way round, far enough out that the fog hazes them: a horizon instead of the sky meeting the floor. */
-function hills(skin: Skin): THREE.Mesh {
-  const N = 160, r = 58, pos: number[] = [], idx: number[] = [], rnd = mulberry32(11);
-  const peaks = Array.from({ length: 9 }, () => [rnd() * Math.PI * 2, 4 + rnd() * 10, 0.2 + rnd() * 0.5] as const);
+/** The horizon all the way round, far enough out that the fog hazes it, in the region's shape: rolling hills, sharp
+ * ridges one behind another, low ground under mesas, a flat line (a lake, a prairie), or a ragged wall of trees. */
+function hills(skin: Skin, horizon: Horizon = "hills"): THREE.Mesh {
+  const N = horizon === "treeline" ? 480 : 160, r = 58, pos: number[] = [], idx: number[] = [], rnd = mulberry32(11);
+  const shape = { hills: [9, 4, 10, 0.2, 0.5], ridges: [18, 6, 12, 0.08, 0.2], mesas: [5, 1, 3, 0.3, 0.6], flat: [3, 0.3, 1, 0.4, 0.8], treeline: [7, 2, 5, 0.3, 0.6] }[horizon];
+  const peaks = Array.from({ length: shape[0]! }, () => [rnd() * Math.PI * 2, shape[1]! + rnd() * shape[2]!, shape[3]! + rnd() * shape[4]!] as const);
   for (let i = 0; i <= N; i++) {
     const t = (i / N) * Math.PI * 2;
-    let y = 3;
-    for (const [at, hgt, w] of peaks) { const d = Math.atan2(Math.sin(t - at), Math.cos(t - at)) / w; y += hgt * Math.exp(-d * d); }
+    let y = horizon === "flat" ? 0.5 : horizon === "mesas" ? 1.5 : horizon === "treeline" ? 9 : 3;
+    // ridges are pointed (a tent of |d|), hills round (a bell of d²)
+    for (const [at, hgt, w] of peaks) { const d = Math.atan2(Math.sin(t - at), Math.cos(t - at)) / w; y += hgt * (horizon === "ridges" ? Math.exp(-Math.abs(d) * 1.6) : Math.exp(-d * d)); }
+    // a treeline's tops: spires and crowns at random heights, every few metres
+    if (horizon === "treeline") y += 2.5 * Math.abs(Math.sin(i * 1.7)) * (0.5 + 0.5 * Math.sin(i * 0.37)) + (i % 3 === 0 ? 1.8 : 0);
     pos.push(Math.cos(t) * r, -8, Math.sin(t) * r, Math.cos(t) * r, y, Math.sin(t) * r);
     if (i < N) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
-  const color = new THREE.Color(skin.prop).lerp(new THREE.Color(skin.ground), 0.3);
+  const color = horizon === "treeline" ? new THREE.Color(skin.prop).multiplyScalar(0.8) : new THREE.Color(skin.prop).lerp(new THREE.Color(skin.ground), 0.3);
   return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 1, side: THREE.DoubleSide }));
 }
 
@@ -380,6 +391,11 @@ function stands(R: number, prop: number): THREE.Group {
   crowds.set(g, crowd);
   return g;
 }
+
+/** What moves in a regional arena each frame (fireflies, fog), keyed by its group. */
+const ticks = new WeakMap<THREE.Group, (t: number) => void>();
+/** Moves a regional arena's fireflies and fog; `t` in seconds. */
+export const tickArena = (arena: THREE.Group | null, t: number) => { if (arena) ticks.get(arena)?.(t); };
 
 /** The stadium's crowd, if this arena has one. */
 const crowds = new WeakMap<THREE.Group, Crowd>();

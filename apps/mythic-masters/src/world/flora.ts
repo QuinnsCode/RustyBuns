@@ -63,13 +63,13 @@ const TURF_GRID = 1.15;     // metres between grass tufts
 export type Plant = [kind: Kind, share: number, min: number, max: number];
 const B = (density: number, ...kinds: Plant[]) => ({ density, kinds });
 export const FLORA: Record<Biome, { density: number; kinds: Plant[] }> = {
-  "pine-barrens": B(0.6, ["pitch-pine", 0.36, 8, 15], ["white-cedar", 0.1, 9, 16], ["oak", 0.04, 5, 9], ["blueberry", 0.18, 1, 2], ["fern", 0.08, 0.6, 1.1], ["pitcher-plant", 0.04, 0.3, 0.6], ["snag", 0.04, 4, 8], ["flower", 0.04, 0.3, 0.6], ["mushroom", 0.03, 0.12, 0.3], ["log", 0.04, 2.5, 5], ["reed", 0.02, 1.2, 2]),
-  forest: B(0.7, ["hemlock", 0.2, 12, 22], ["sugar-maple", 0.2, 12, 20], ["paper-birch", 0.12, 9, 16], ["rhododendron", 0.14, 2, 4], ["oak", 0.05, 8, 15], ["fern", 0.12, 0.6, 1.2], ["stump", 0.02, 0.4, 0.8], ["rock", 0.05, 0.5, 1.6], ["mushroom", 0.05, 0.12, 0.35], ["log", 0.05, 3, 6]),
-  rainforest: B(0.85, ["red-cedar", 0.26, 22, 40], ["bigleaf-maple", 0.14, 14, 22], ["sword-fern", 0.3, 0.8, 1.4], ["skunk-cabbage", 0.05, 0.5, 1], ["fern", 0.04, 0.9, 2], ["stump", 0.03, 0.5, 1], ["rock", 0.03, 0.6, 1.8], ["mushroom", 0.06, 0.15, 0.4], ["log", 0.06, 4, 9]),
+  "pine-barrens": B(0.6, ["pitch-pine", 0.36, 8, 15], ["white-cedar", 0.1, 9, 16], ["blueberry", 0.18, 1, 2], ["sword-fern", 0.08, 0.6, 1.1], ["pitcher-plant", 0.04, 0.3, 0.6], ["snag", 0.04, 4, 8], ["flower", 0.04, 0.3, 0.6], ["mushroom", 0.03, 0.12, 0.3], ["log", 0.04, 2.5, 5], ["reed", 0.02, 1.2, 2]),
+  forest: B(0.7, ["hemlock", 0.2, 12, 22], ["sugar-maple", 0.2, 12, 20], ["paper-birch", 0.12, 9, 16], ["rhododendron", 0.14, 2, 4], ["oak", 0.05, 8, 15], ["sword-fern", 0.12, 0.6, 1.2], ["stump", 0.02, 0.4, 0.8], ["rock", 0.05, 0.5, 1.6], ["mushroom", 0.05, 0.12, 0.35], ["log", 0.05, 3, 6]),
+  rainforest: B(0.85, ["red-cedar", 0.26, 22, 40], ["bigleaf-maple", 0.14, 14, 22], ["sword-fern", 0.3, 0.8, 1.4], ["skunk-cabbage", 0.05, 0.5, 1], ["sword-fern", 0.04, 0.9, 2], ["stump", 0.03, 0.5, 1], ["rock", 0.03, 0.6, 1.8], ["mushroom", 0.06, 0.15, 0.4], ["log", 0.06, 4, 9]),
   lake: B(0.5, ["white-pine", 0.22, 14, 26], ["tamarack", 0.12, 9, 15], ["red-osier", 0.16, 1.5, 2.6], ["cattail", 0.12, 1.6, 2.6], ["paper-birch", 0.08, 9, 15], ["flower", 0.12, 0.3, 0.6], ["rock", 0.1, 0.5, 1.6], ["reed", 0.06, 1.4, 2.4]),
   desert: B(0.22, ["prickly-pear", 0.18, 0.8, 1.6], ["barrel-cactus", 0.08, 0.6, 1.3], ["ocotillo", 0.07, 3, 5.5], ["agave", 0.14, 0.6, 1.2], ["saguaro", 0.06, 4, 9], ["joshua", 0.06, 3, 6], ["sage", 0.2, 0.5, 1.1], ["rock", 0.15, 0.4, 2.2], ["snag", 0.02, 2, 4], ["boulder", 0.03, 2.5, 6]),
-  swamp: B(0.65, ["bald-cypress", 0.22, 14, 24], ["live-oak", 0.07, 9, 14], ["palmetto", 0.22, 1, 2], ["cypress-knees", 0.06, 0.4, 0.9], ["snag", 0.08, 5, 10], ["fern", 0.1, 0.8, 1.6], ["flower", 0.04, 0.3, 0.6], ["reed", 0.12, 1.6, 2.6], ["mushroom", 0.02, 0.15, 0.4], ["log", 0.04, 3, 6]),
-  plains: B(0.3, ["eastern-redcedar", 0.1, 5, 11], ["sumac", 0.1, 2, 4], ["coneflower", 0.2, 0.6, 1.1], ["bluestem", 0.22, 1.1, 2], ["flower", 0.12, 0.3, 0.6], ["sage", 0.1, 0.4, 0.9], ["oak", 0.04, 7, 12], ["rock", 0.06, 0.4, 1.2]),
+  swamp: B(0.65, ["bald-cypress", 0.22, 14, 24], ["live-oak", 0.07, 9, 14], ["palmetto", 0.22, 1, 2], ["cypress-knees", 0.06, 0.4, 0.9], ["snag", 0.08, 5, 10], ["sword-fern", 0.1, 0.8, 1.6], ["flower", 0.04, 0.3, 0.6], ["reed", 0.12, 1.6, 2.6], ["mushroom", 0.02, 0.15, 0.4], ["log", 0.04, 3, 6]),
+  plains: B(0.3, ["eastern-redcedar", 0.1, 5, 11], ["sumac", 0.1, 2, 4], ["coneflower", 0.2, 0.6, 1.1], ["bluestem", 0.22, 1.1, 2], ["flower", 0.12, 0.3, 0.6], ["sage", 0.1, 0.4, 0.9], ["sugar-maple", 0.04, 8, 14], ["rock", 0.06, 0.4, 1.2]),
   highlands: B(0.4, ["rock", 0.32, 0.5, 2.5], ["sage", 0.25, 0.4, 0.9], ["pine", 0.15, 6, 12], ["flower", 0.14, 0.3, 0.5], ["snag", 0.09, 3, 6], ["boulder", 0.05, 2.5, 7]),
   jungle: B(0.85, ["palm", 0.33, 7, 14], ["fern", 0.28, 1, 2.2], ["bush", 0.18, 1, 2], ["sequoia", 0.1, 18, 30], ["flower", 0.05, 0.3, 0.7], ["mushroom", 0.03, 0.15, 0.4], ["log", 0.03, 3, 7]),
   island: B(0.45, ["palm", 0.38, 6, 12], ["bush", 0.18, 0.8, 1.5], ["flower", 0.18, 0.3, 0.6], ["rock", 0.16, 0.5, 1.8], ["reed", 0.1, 1.2, 2]),
@@ -180,6 +180,15 @@ export function grown(): Promise<Map<Kind, { near: THREE.BufferGeometry; far: TH
     }));
     return out;
   })();
+}
+
+/** A plain material for a grown plant standing still (the arenas): its baked colours, both sides of every leaf, and
+ * the leaf normals kept facing out of the crown on the back face too. */
+export function grownMaterial(): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
+  m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace("#include <normal_fragment_begin>", "#include <normal_fragment_begin>\n  normal *= faceDirection;"); };
+  m.customProgramCacheKey = () => "grown-still";
+  return m;
 }
 
 // --- the plants made here: triangles with vertex colours, 1 m tall on their foot like the set's ------------------------
