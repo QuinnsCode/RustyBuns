@@ -1,7 +1,7 @@
 // The apps CI knows about: how each one tests, and how it builds desktop binaries.
 // apps.yml and desktop-drop.yml both read this, so adding an app is one entry here.
 //
-//   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched (all of them if packages/ moved),
+//   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched, and those using a package whose code it changed (all of them if the lockfile moved),
 //                                              whether .claude/ moved (the guard hook tests)
 //   bun scripts/ci-apps.ts smoke               every app's desktop smoke, one job per Mac and Linux target,
 //                                              plus a job per bootOn target: desktop-hourly.yml, not PRs
@@ -26,6 +26,7 @@ type App = {
 
 import { shard } from "../apps/codesplitter/scripts/ester.ts";
 import { check, num, rec } from "../packages/util/src/guard.ts";
+import { changedPackages, dependents, gitUsers } from "./ci-dependents.ts";
 
 export const APPS: Record<string, App> = {
   "agent-demo":        { test: "bun test test", drop: false },
@@ -169,11 +170,14 @@ if (cmd === "drop") {
 } else if (cmd === "test") {
   if (!arg) throw new Error("test needs a base ref");
   const changed = await changedFiles(arg);
-  // A change to the shared code, the lockfile or the root package.json's dependencies can break any app.
+  // The lockfile, apps.yml or the root package.json's dependencies can break any app; a package, only the apps that use it
+  // (scripts/ci-dependents.ts): 6 in 40 PRs ran all 64 apps for a package that 1 to 9 of them use, 75% of CI's time.
   const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
-  const shared = rows === "all" || changed.some((f) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f))
+  const shared = rows === "all" || changed.some((f) => /^(bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f))
     || (changed.includes("package.json") && await rootDepsChanged(arg));
-  const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...(rows === "all" ? [] : rows)]);
+  const pkgs = changedPackages(changed);
+  const users = shared || !pkgs.size ? new Set<string>() : await dependents(pkgs, (n) => gitUsers(n));
+  const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...users, ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n) || !!APPS[n]!.with?.some((w) => touched.has(w))));
   const include = (await Promise.all(names.map(async (app) => {
     const a = APPS[app]!, row = { app, boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app) };
@@ -183,14 +187,14 @@ if (cmd === "drop") {
   }))).flat();
   out("apps", { include });
   out("any", names.length > 0);
-  out("packages", changed.some((f) => f.startsWith("packages/")));
+  out("packages", pkgs.size > 0 || shared);
   // The shared skin test (packages/util/test/skin.test.ts) reads three games' skins and stylesheets (its skin-server.ts
   // GAMES), so a game PR that changes one runs it too: #4210 turned it red on main from an app-only PR.
   out("skins", changed.some((f) => /^apps\/(two-fronts|mythic-masters|skate-tech-park)\/src\/(eqosys|account)\.ts$|^apps\/(two-fronts|skate-tech-park)\/src\/styles\.css$|^apps\/mythic-masters\/src\/tome\.css$/.test(f)));
   // bun test skips dot directories, so the agent guard hook's tests (.claude/hooks) get their own job.
-  out("hooks", shared || changed.some((f) => f.startsWith(".claude/")));
+  out("hooks", shared || pkgs.size > 0 || changed.some((f) => f.startsWith(".claude/")));
   // The root scripts' own tests (preflight, pr, docs, ...): no app row covers them.
-  out("scripts", shared || changed.some((f) => f.startsWith("scripts/")));
+  out("scripts", shared || pkgs.size > 0 || changed.some((f) => f.startsWith("scripts/")));
 } else if (cmd === "smoke") {
   const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke)
     .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })))
