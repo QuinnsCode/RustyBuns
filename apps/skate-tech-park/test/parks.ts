@@ -18,6 +18,9 @@ export const level = (id: string, real = false) => build(LEVELS.find((e) => e.id
 /** Every park (not the plaza), built, in the picker's order. */
 export const allParks = () => Promise.all(LEVELS.filter((e) => e.id !== "plaza").map((e) => build(e) as Promise<ParkLevel>));
 
+/** Every `of`th item from the `part`th: a per-park suite split over `of` files, so CI's shards and bun's workers can balance it. */
+export const slice = <T>(list: readonly T[], part: number, of: number): T[] => list.filter((_, i) => i % of === part);
+
 /**
  * The parks the slow per-park journeys (a twenty second tour, every trick) ride: the eight drawn by hand and every fourth
  * surveyed one, so CI stays inside its ten minutes with seventy levels. `ALL_PARKS=1 bun test` rides them all, and
