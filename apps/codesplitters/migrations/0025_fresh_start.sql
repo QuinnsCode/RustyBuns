@@ -19,6 +19,7 @@ CREATE TABLE fresh_starts (
   tree TEXT NOT NULL,             -- and that commit's tree, which the new root commit reuses
   queue TEXT,                     -- walking: trees still to read (JSON)
   stage TEXT,                     -- copying: the last staging commit pushed
+  seq INTEGER NOT NULL DEFAULT 0, -- walking: the next number to hand an object; copying: the last copied object's
   done INTEGER NOT NULL DEFAULT 0,
   total INTEGER NOT NULL DEFAULT 0,
   bytes INTEGER NOT NULL DEFAULT 0,   -- the files' bytes, uncompressed
@@ -27,9 +28,10 @@ CREATE TABLE fresh_starts (
   started_at INTEGER NOT NULL, finished_at INTEGER,
   PRIMARY KEY (owner, repo)
 );
--- Every object the fresh start copies, in an order where each tree comes after what's in it.
+-- Every object the fresh start copies, once each. By seq, each tree comes after what's in it.
 CREATE TABLE fresh_objects (
-  owner TEXT NOT NULL, repo TEXT NOT NULL, seq INTEGER NOT NULL,
-  hash TEXT NOT NULL, type TEXT NOT NULL,
-  PRIMARY KEY (owner, repo, seq)
+  owner TEXT NOT NULL, repo TEXT NOT NULL, hash TEXT NOT NULL,
+  type TEXT NOT NULL, seq INTEGER NOT NULL,
+  PRIMARY KEY (owner, repo, hash)
 );
+CREATE INDEX fresh_objects_seq ON fresh_objects (owner, repo, seq);
