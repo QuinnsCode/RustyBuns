@@ -1,6 +1,6 @@
 // Load In's gear, grown in code: speakers, a sub, a wedge, stands, guitar amps, a rolling amp rack, cases, a cable
-// ramp, a generator, a distro box, a mixer, a mic stand and a guitar. Generic boxes named for what they are, at
-// the real sizes of #4849's table (width x height x depth = x, y, z, in metres), feet on the floor at y = 0,
+// ramp, a generator, a distro box, a mixer, a mic stand and a guitar, and the band's: a DI box, the snake's stage box
+// and a drum kit. Generic boxes named for what they are, at the real sizes of #4849's table (width x height x depth = x, y, z, in metres), feet on the floor at y = 0,
 // centred on x and z, the front facing +z. Each app brings its own materials (`GearLook`, one per slot).
 //
 // Every model marks where things attach, as empty Object3Ds the app finds by name:
@@ -36,6 +36,9 @@ export const GEAR_SIZES = {
   "stand-tripod": [0.9, 1.2, 0.9],
   "mic-stand": [0.6, 1.6, 0.6],
   guitar: [0.33, 1.0, 0.05],
+  "di-box": [0.1, 0.05, 0.14],
+  "stage-box-8": [0.45, 0.4, 0.35],
+  "drum-kit": [1.5, 1.1, 1.2],
 } as const satisfies Record<string, THREE.Vector3Tuple>;
 
 export const GEAR_IDS = Object.keys(GEAR_SIZES) as GearId[];
@@ -336,6 +339,8 @@ function micStand(): Build {
   b.pieces.push(rod("metal", back, tip, 0.008, 6), disc("metal", 0.018, 0.04, "x", back, 6));
   b.pieces.push(rod("knob", tip, [tip[0] - 0.012, tip[1] + 0.012, 0], 0.012, 6));
   mark(b, "mic", [tip[0] - 0.012, tip[1] + 0.014, 0], [-0.7, 0.7, 0]);
+  // the mic's own XLR, where its cable hangs from
+  mark(b, "jack:xlr-out", [tip[0] - 0.012, tip[1] + 0.014, 0], [-0.3, 1, 0]);
   mark(b, "grab", [0, mast * 0.7, 0], [1, 0, 0]);
   return b;
 }
@@ -351,6 +356,48 @@ function guitar(): Build {
   for (const [x, y] of [[0.09, 0.12], [0.12, 0.18]]) b.pieces.push(disc("knob", 0.011, 0.012, "z", [x, y, d * 0.4 + 0.005], 6));
   jacks(b, ["line-out"], "front", [0.11, 0.07, mid * 0.8], [0, 0, 0], 0.009);
   mark(b, "grab", [0, 0.68, 0.02], [0, 0, 1]);
+  return b;
+}
+
+/** A DI box: a little steel brick, the bass's lead in the front, the XLR out the back, the ground-lift switch on top. */
+function diBox(): Build {
+  const [w, h, d] = GEAR_SIZES["di-box"], b: Build = { pieces: [], marks: [] };
+  b.pieces.push(box("metal", [w, h - 0.006, d], [0, 0.003 + (h - 0.006) / 2, 0], { bevel: 0.006 }));
+  for (const x of [-1, 1]) for (const z of [-1, 1]) b.pieces.push(disc("rubber", 0.008, 0.006, "y", [x * (w / 2 - 0.015), 0.003, z * (d / 2 - 0.02)], 6));
+  b.pieces.push(box("knob", [0.012, 0.008, 0.02], [w * 0.2, h + 0.002, -d * 0.2]));
+  jacks(b, ["inst-in"], "front", [0, h * 0.5, d / 2], [0, 0, 0], 0.008);
+  jacks(b, ["xlr-out"], "back", [0, h * 0.5, -d / 2], [0, 0, 0], 0.01);
+  mark(b, "grab", [0, h, 0]);
+  return b;
+}
+
+/** The snake: a cable reel between two steel flanges, the stage box with its eight inputs on the front. */
+function stageBox(): Build {
+  const [w, h, d] = GEAR_SIZES["stage-box-8"], b: Build = { pieces: [], marks: [] }, r = 0.16, cy = h - r - 0.02, cz = -0.01;
+  b.pieces.push(disc("rubber", 0.11, w - 0.04, "x", [0, cy, cz], 10));
+  for (const x of [-1, 1]) {
+    b.pieces.push(disc("metal", r, 0.01, "x", [x * (w / 2 - 0.01), cy, cz], 12));
+    b.pieces.push(rod("metal", [x * (w / 2 - 0.01), 0.006, cz - 0.12], [x * (w / 2 - 0.01), 0.006, cz + 0.12], 0.006, 4));
+  }
+  b.pieces.push(rod("metal", [-w / 2 + 0.02, h - 0.01, cz], [w / 2 - 0.02, h - 0.01, cz], 0.01, 6));
+  b.pieces.push(box("metal", [0.3, 0.12, 0.05], [0, 0.11, d / 2 - 0.025], { bevel: 0.004 }));
+  jacks(b, numbered("xlr-in", 4), "front", [-0.105, 0.14, d / 2], [0.07, 0, 0], 0.011);
+  jacks(b, numbered("xlr-in", 8).slice(4), "front", [-0.105, 0.08, d / 2], [0.07, 0, 0], 0.011);
+  mark(b, "grab", [0, h, cz]);
+  return b;
+}
+
+/** A drum kit as the band sets it up: kick, snare, a rack tom, a floor tom, hi-hats, a ride and the throne. */
+function drumKit(): Build {
+  const b: Build = { pieces: [], marks: [] };
+  b.pieces.push(disc("body", 0.28, 0.4, "z", [0, 0.28, 0.35], 14), disc("grille", 0.27, 0.01, "z", [0, 0.28, 0.555], 14));
+  b.pieces.push(disc("body", 0.18, 0.14, "y", [0.35, 0.62, 0.3], 12), rod("metal", [0.35, 0, 0.3], [0.35, 0.55, 0.3], 0.008, 4));
+  b.pieces.push(disc("body", 0.15, 0.2, "y", [0.05, 0.75, 0.25], 12));
+  b.pieces.push(disc("body", 0.2, 0.4, "y", [0.5, 0.3, -0.15], 12));
+  b.pieces.push(rod("metal", [-0.57, 0, 0.25], [-0.57, 0.95, 0.25], 0.008, 4), disc("chrome", 0.18, 0.01, "y", [-0.57, 0.95, 0.25], 14));
+  b.pieces.push(rod("metal", [0.55, 0, -0.1], [0.55, 1.09, -0.1], 0.008, 4), disc("chrome", 0.2, 0.01, "y", [0.55, 1.095, -0.1], 14));
+  b.pieces.push(disc("paint", 0.18, 0.08, "y", [0, 0.5, -0.47], 10), rod("metal", [0, 0, -0.47], [0, 0.46, -0.47], 0.012, 4));
+  mark(b, "grab", [0, 0.56, 0.35]);
   return b;
 }
 
@@ -370,6 +417,9 @@ const BUILDERS: Record<GearId, (height: number) => Build> = {
   "stand-tripod": stand,
   "mic-stand": micStand,
   guitar,
+  "di-box": diBox,
+  "stage-box-8": stageBox,
+  "drum-kit": drumKit,
 };
 
 type Built = { slots: [GearSlot, THREE.BufferGeometry][]; marks: Mark[] };

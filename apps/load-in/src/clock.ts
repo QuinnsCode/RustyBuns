@@ -8,6 +8,8 @@ export const VENUES: Record<string, { window: number; fee: number }> = {
   garage: { window: 180, fee: 0 },
   "dive-bar": { window: 300, fee: 150 },
   "bigger-bar": { window: 480, fee: 300 },
+  // The same bar once the speakers are up: the band's inputs, the snake and line check before doors.
+  "line-check": { window: 420, fee: 300 },
   // The park: a long push from the truck and long runs, so a longer window.
   park: { window: 720, fee: 400 },
 };

@@ -144,8 +144,13 @@ const list: Gear[] = [
   { id: "cable-ramp-2ch", what: "two-channel cable ramp, links end to end", size: box(0.9, 0.08, 0.5), kg: 13, jacks: {} },
   { id: "road-case-m", what: "road case on wheels", size: box(0.6, 0.5, 0.5), kg: 14, jacks: {} },
   { id: "stand-tripod", what: "speaker stand, 1.2 to 2.0 m", size: box(0.9, 1.2, 0.9), kg: 4, jacks: {} },
-  { id: "mic-stand", what: "boom mic stand", size: box(0.6, 1.6, 0.6), kg: 3, jacks: {} },
+  { id: "mic-stand", what: "boom mic stand with its mic", size: box(0.6, 1.6, 0.6), kg: 3, jacks: { "xlr-out": 1 } },
   { id: "guitar", what: "electric guitar", size: box(0.33, 1.0, 0.05), kg: 3.5, jacks: { "line-out": 1 } },
+  // The band's inputs: a DI box turns a bass's instrument lead into a mic-level XLR (with a ground lift for hum), and
+  // the stage box is the stage end of the snake, a 30 m multicore on a reel whose other end is already in the desk.
+  { id: "di-box", what: "DI box", size: box(0.1, 0.05, 0.14), kg: 0.7, jacks: { "inst-in": 1, "xlr-out": 1 } },
+  { id: "stage-box-8", what: "8-channel stage box on its snake reel", size: box(0.45, 0.4, 0.35), kg: 16, jacks: { "xlr-in": 8 } },
+  { id: "drum-kit", what: "the band's drum kit, set up", size: box(1.5, 1.1, 1.2), kg: 35, jacks: {} },
   // Not road gear: the venue's own back-bar cooler, a load on a wall circuit that is always on.
   { id: "bar-cooler", what: "back-bar drinks cooler", size: box(0.9, 0.9, 0.6), kg: 70, jacks: { "power-in": 1 }, draw: { idle: 450, loud: 450 } },
 ];

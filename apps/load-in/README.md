@@ -22,6 +22,8 @@ The dive bar (`?level=dive-bar`): set the tops on their stands, then, looking at
 The bigger bar (`?level=bigger-bar`): passive 15" tops and two subs run off the amp rack over speaker cable, two powered wedges, and wall outlets on four numbered circuits (two 20 A on the stage, 15 A at the bar and the side). The cables decide what plays. The bar's cooler is always on circuit 3, so the rack on that circuit trips it at show level. Walk to the panel on the right wall and press B to reset it, then move the plug. The card shows each circuit and how many speakers are fed.
 
 The park (`?level=park`): a Saturday event with a pop-up tent and no wall power. F on the generator (90 kg, too heavy to lift) takes its handle and you push it in from the truck at a heavy pace; run the 25 m power cable to the distro in the tent and the short ones to the tops and the mixer, all inside the generator's 6.3 kW (past it, it trips and the park goes quiet). Cables across the lakeside path or the dog walk need a ramp, and the houses across the road have a noise limit of 82 dB at their property line: aim, tilt and the fader trade the crowd's 95 dB against the neighbours. On Cozy the generator rolls light and never trips, and ramps snap over the runs. Same keys as the dive bar; Enter is show time.
+Line check (`?level=line-check`, `&show=clean` for a night with nothing broken): the bigger bar once the speakers are up, with a three-piece set up on stage and the input list on the card. Carry the stage box from the desk to the stage (the snake's multicore pays out behind it), then run an XLR from each mic and the bass's DI into its channel on the stage box, and the bass's lead into the DI. At the desk, L runs line check: each input played alone, and the card says where it landed. Silence on a channel that traces right is a dead cable; a crackle is a worn one (swap both for a spare from the case); hum on the bass is a ground loop (G on the DI lifts it); a channel that comes up elsewhere was patched into the wrong hole. T on an input traces its cable by hand.
+
 A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B crouch); the cog rebinds it.
 
 ## What's in it
@@ -31,6 +33,8 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `src/sim.ts` | the load-in: you, the level, carrying and setting down; plain data and one `step`, no DOM |
 | `src/venues/bigger-bar.ts` | the bigger bar: its outlets and their circuits, the cooler's house plug, the breaker panel, and `judge`, which runs the cables through `compile()` and trips what is over |
 | `src/venues/bigger-bar-view.ts` | the stage, the counter, the panel with a lamp per circuit, the circuit card, B to reset; what plays comes from the judge |
+| `src/band/line-check.ts` | the band's inputs: the input list, the snake (`snakeRun`), each input played alone (`play`), `lineCheck`, `trace` and the DI's `lift`, against a night's faults (`newShow`) |
+| `src/band/line-check-view.ts` | the stage, the multicore, the input-list card, L / T / G |
 | `src/assists.ts` | the cozy-to-sim dial: each assist is a named rule (`assist("autoCoil")`), one row per stop in `RULES` |
 | `src/clock.ts` | the clock to doors: each venue's window and fee, the dial's stretch and grace, and what being late costs |
 | `src/dial-view.ts` | the dial in the menu, the clock in the HUD, and the jack glow |
@@ -49,6 +53,7 @@ A gamepad works too (left stick walk, right stick look, A grab, LB / RB turn, B 
 | `test/dive-bar.test.ts` | both tops set on their stands: pointed at the wall they score low, aimed at the crowd they pass |
 | `test/park.test.ts` | the generator pushed in, the tent powered from it, the path ramped, the houses under the limit; then four amp racks trip it |
 | `test/hearing.test.ts` | the head switched on: the cab 6 dB down at double the distance, duller behind, silent when switched off |
+| `test/line-check.test.ts` | the snake out and five inputs in: a clean night comes up clean; a dead cable and a humming DI are found, traced, swapped and lifted |
 | `test/cables.test.ts` | power from the outlet across the way in to the speaker, the hazard, the ramp over it, a cable's length stopping you |
 
 Sizes, weights and jacks come from `@rustybuns/gear`; the models (and where their jacks sit) from `@rustybuns/models/gear`.
@@ -67,5 +72,5 @@ Signed in, **Make a party** gives a code to hand out; friends type it in **Join*
 
 `window.loadIn.state()` returns you (place, facing, speed), what you hold, what F would pick up, and every piece of gear
 (where it sits, its weight), the cables (ends, slack), the hazards and the patch (`fed`, `problems`), and `sound`: each speaker's level at your head, the high and low band totals. `power(key)` switches gear on, `speakers(up)` brings the sound up. `start()`, `walkTo(x, z)`, `pickUp(key)`, `putDown()`, `turn(dir)` and `look(yaw, pitch)`
-play it without pointer lock, and `takeCable`, `plug`, `unplug`, `grabEnd`, `dropEnd`, `coil` and `wait` run the cables. In the Rusty Buns repo, `bun run probe load-in` reads it from headless Chrome.
+play it without pointer lock, and `takeCable`, `plug`, `unplug`, `grabEnd`, `dropEnd`, `coil` and `wait` run the cables. In line check, `state().lineCheck` is the snake and the last check's rows; `lineCheck()` (at the desk), `trace(input)`, `lift(di)` and `show(seed | "clean")` play it. In the Rusty Buns repo, `bun run probe load-in` reads it from headless Chrome.
 When the game grows, grow `state()` with it, and its row in `HANDLES` (`scripts/probe.ts`).

@@ -17,6 +17,8 @@ import { BIGGER_BAR } from "./venues/bigger-bar.ts";
 import { type BiggerBarView, biggerBarView } from "./venues/bigger-bar-view.ts";
 import { PARK, parkState, push } from "./venues/park.ts";
 import { type ParkView, parkView } from "./venues/park-view.ts";
+import { LINE_CHECK } from "./band/line-check.ts";
+import { type LineCheckView, lineCheckView } from "./band/line-check-view.ts";
 import { hasSwitch, hear, type Switches } from "./audio/hear.ts";
 import { soundSystem } from "./audio/play.ts";
 import { currentDial, setDial } from "./assists.ts";
@@ -28,7 +30,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const canvas = $<HTMLCanvasElement>("stage");
 const KEY = "load-in.controls";
 
-const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK };
+const LEVELS: Record<string, Level> = { garage: GARAGE, "dive-bar": DIVE_BAR, "bigger-bar": BIGGER_BAR, park: PARK, "line-check": LINE_CHECK };
 const levelFrom = (name: string | null) => LEVELS[name ?? ""] ?? GARAGE;
 let world: World = newWorld(levelFrom(new URLSearchParams(location.search).get("level")));
 let cables = cable.newCables(world);
@@ -91,6 +93,10 @@ const highlight = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGe
 scene.add(highlight);
 let bar: BarView | ParkView | null = null;
 let big: BiggerBarView | null = null;
+let band: LineCheckView | null = null;
+/** Tonight's faults in line check: ?show=clean, ?show=<seed>, or a random night; kept across reset(). */
+const showQ = new URLSearchParams(location.search).get("show");
+let night: number | "clean" = showQ === "clean" ? "clean" : Number(showQ) || Math.floor(Math.random() * 1e9);
 /** A piece's model (a stand at `height`), or a plain box at its catalog size if @rustybuns/models has none. */
 function modelOf(id: string, height?: number): THREE.Object3D {
   if (cable.hasModel(id)) return model(id, { look, height });
@@ -110,6 +116,8 @@ function buildItems() {
   bar = world.level === DIVE_BAR ? barView(scene, $("hud"), () => world) : world.level === PARK ? parkView(scene, $("hud"), () => world, () => cables) : null;
   big?.dispose();
   big = world.level === BIGGER_BAR ? biggerBarView(scene, $("hud"), () => world, () => cables) : null;
+  band?.dispose();
+  band = world.level === LINE_CHECK ? lineCheckView(scene, $("hud"), () => world, () => cables, night) : null;
 }
 buildItems();
 const ropes = cableView(scene);
@@ -154,7 +162,7 @@ function draw() {
   glow.update(cable.glowing(world, cables), world.t);
   clock?.update(world.level.name, world.t);
   const g = held ? gear(held.gear) : null;
-  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? hint(at, jack));
+  $("hint").textContent = phase !== "play" ? "" : performance.now() < flash.until ? flash.text : (big?.hint() ?? (!end && !jack ? band?.hint() : null) ?? hint(at, jack));
   $("carry").textContent = phase !== "play" ? "" : g ? `${g.what}, ${g.kg} kg, ${you.speed.toFixed(1)} m/s`
     : end ? `${end.run.lengthM} m ${end.run.kind} cable, ${you.speed.toFixed(1)} m/s` : `Hands free, ${you.speed.toFixed(1)} m/s`;
   renderer.render(scene, camera);
@@ -188,6 +196,8 @@ document.addEventListener("keydown", (e) => {
   if (phase !== "play" || e.repeat) return;
   if (!world.held && !cable.inHand(cables) && bar?.key(e.code)) return;
   if (big?.key(e.code)) return;
+  const said = cable.inHand(cables) ? null : band?.key(e.code);
+  if (said) { flash = { text: said, until: performance.now() + 3500 }; return; }
   if (e.code === "KeyF") grab();
   if (e.code === "KeyQ") turnHeld(world, -1);
   if (e.code === "KeyE") turnHeld(world, 1);
@@ -256,6 +266,7 @@ function frame(now: number) {
     cable.stepCables(world, cables, dt);
   }
   big?.tick();
+  band?.tick();
   draw();
   sound.update(heard());
   requestAnimationFrame(frame);
@@ -291,7 +302,7 @@ async function boot() {
   $("party").hidden = !canSignIn();
   mountControls({
     key: KEY, pad, parent: $("controls-host"), title: "Controls", skin: "house",
-    keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["F / click", "Pick up, put down, plug in, unplug"], ["Q / E", "Turn what you hold"], ["C", "Crouch"], ["Esc", "Let go of the mouse"]],
+    keys: [["WASD / left stick", "Walk"], ["Mouse / right stick", "Look"], ["F / click", "Pick up, put down, plug in, unplug"], ["Q / E", "Turn what you hold"], ["L / T / G", "Line check: run it at the desk, trace a cable, lift a DI"], ["C", "Crouch"], ["Esc", "Let go of the mouse"]],
     onChange: (s) => { ctl = s; },
     onToggle: (open) => { if (open) document.exitPointerLock?.(); },
   });
@@ -305,7 +316,7 @@ async function boot() {
 declare global { interface Window { loadIn: typeof harness } }
 /** The harness (scripts/probe.ts HANDLES): the level as data, and the moves a test or an agent makes without pointer lock. */
 const harness = {
-  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
+  state: () => ({ phase, dial: currentDial(), doors: doors(world.level.name, world.t), ...snapshot(world), ...cable.cableState(world, cables), sound: { up: sound.up, on: [...switchedOn], ...heard() }, ...(big ? { biggerBar: big.state() } : {}), ...(band ? { lineCheck: band.state() } : {}), ...(bar ? { bar: { ...(world.level === PARK ? parkState(world, cables) : barState(world)), heat: bar.heatOn } } : {}), signedIn: !!login(), party: crew.code ? { code: crew.code, members: crew.members.length, room: crew.room || null, seat: crew.seat >= 0 ? crew.seat : null } : null }),
   /** Turn the cozy-to-sim dial: "cozy", "crew" or "sim". */
   dial: (d: string) => setDial(d),
   /** Into the level, without asking for the mouse. */
@@ -352,6 +363,14 @@ const harness = {
   /** The level as it began. */
   /** In the bigger bar, at the panel: reset a tripped breaker (or all of them). */
   resetBreaker: (circuit?: string) => big?.reset(circuit) ?? { ok: false, why: "no breaker panel here" },
+  /** Line check, at the desk: each input played alone, where it lands and how it sounds. */
+  lineCheck: () => band?.check() ?? { ok: false, why: "no band here" },
+  /** Line check: follow an input's cable by hand, from the input. */
+  trace: (input: string) => band?.trace(input) ?? { ok: false, why: "no band here" },
+  /** Line check: flip a DI's ground lift, in reach of it. */
+  lift: (key: string) => band?.lift(key) ?? { ok: false, why: "no band here" },
+  /** Line check: a new night's faults, a seed or "clean" (reset() keeps it). */
+  show: (seed: number | "clean") => { night = seed; band?.night(seed); },
   reset: () => { switchedOn.clear(); load(world.level); },
 };
 window.loadIn = harness;
