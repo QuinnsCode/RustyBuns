@@ -1,8 +1,8 @@
 # Agent Office in a box. Build from the repo root (the build needs the workspace):
 #   docker build -f apps/agent-office/sandbox/Dockerfile -t agent-office-box .
 # or let `bun run office:box up` do it, with the permission set from sandbox/box.json (SANDBOX.md).
-# pinned: bun 1.4.4 panics in `compile` (index out of bounds) while 1.4.3 builds the same tree
-FROM oven/bun:1.4.3 AS build
+# pinned by digest: bun 1.4.4 panics in `compile` (index out of bounds, #2506) while 1.4.3 builds the same tree
+FROM oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598 AS build
 WORKDIR /repo
 COPY . .
 RUN bun install --frozen-lockfile && cd apps/agent-office && bun scripts/rustybunsify.ts compile \
