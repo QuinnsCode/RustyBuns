@@ -1,0 +1,1211 @@
+[
+ {
+  "at": 11,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/claims?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-ada-1",
+   "task": "swap the shared secret for a bearer token check",
+   "lines": [
+    "L11",
+    "L12",
+    "L13"
+   ]
+  },
+  "status": 201
+ },
+ {
+  "at": 738,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/claims?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-bo-1",
+   "task": "give the rate limit a time window",
+   "lines": [
+    "L16",
+    "L17",
+    "L18",
+    "L19",
+    "L20"
+   ]
+  },
+  "status": 201
+ },
+ {
+  "at": 749,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L11",
+     "base": 11,
+     "text": "function checkToken(req: Request) { // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 1423,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/claims?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-cy-1",
+   "task": "structured logs",
+   "lines": [
+    "L23",
+    "L24",
+    "L25"
+   ]
+  },
+  "status": 201
+ },
+ {
+  "at": 1981,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L16",
+     "base": 16,
+     "text": "const hits = new Map<string, number>(); // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 1996,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L12",
+     "base": 12,
+     "text": "  return req.headers.get(\"authorization\") === \"secret\"; // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 2522,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L23",
+     "base": 23,
+     "text": "function log(msg: string) { // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 2940,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L13",
+     "base": 13,
+     "text": "} // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 3320,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L17",
+     "base": 17,
+     "text": "function limited(ip: string) { // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 3643,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-1",
+   "ops": [
+    {
+     "kind": "insert",
+     "after": "L13",
+     "text": "// ada: tokens rotate daily (r1)"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 3882,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L24",
+     "base": 24,
+     "text": "  console.log(msg); // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 4252,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L17",
+     "base": 41,
+     "text": "function limited(ip: string) { // r1 // ada was here"
+    }
+   ]
+  },
+  "status": 409
+ },
+ {
+  "at": 4479,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L18",
+     "base": 18,
+     "text": "  hits.set(ip, (hits.get(ip) ?? 0) + 1); // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 5046,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/release?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-ada-1"
+  },
+  "status": 200
+ },
+ {
+  "at": 5241,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L19",
+     "base": 19,
+     "text": "  return hits.get(ip)! > 100; // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 5285,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L25",
+     "base": 25,
+     "text": "} // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 5988,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-1",
+   "ops": [
+    {
+     "kind": "insert",
+     "after": "L25",
+     "text": "// cy: logs are JSON now (r1)"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 6459,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-1",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L20",
+     "base": 20,
+     "text": "} // r1"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 7162,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-1",
+   "ops": [
+    {
+     "kind": "insert",
+     "after": "L20",
+     "text": "// bo: window is per minute (r1)"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 7390,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/release?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-cy-1"
+  },
+  "status": 200
+ },
+ {
+  "at": 8567,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/release?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-bo-1"
+  },
+  "status": 200
+ },
+ {
+  "at": 8599,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/claims?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-ada-2",
+   "task": "swap the shared secret for a bearer token check",
+   "lines": [
+    "L11",
+    "L12",
+    "L13",
+    "L36"
+   ]
+  },
+  "status": 201
+ },
+ {
+  "at": 9293,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/claims?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-bo-2",
+   "task": "give the rate limit a time window",
+   "lines": [
+    "L16",
+    "L17",
+    "L18",
+    "L19",
+    "L20",
+    "L38"
+   ]
+  },
+  "status": 201
+ },
+ {
+  "at": 9549,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L11",
+     "base": 36,
+     "text": "function checkToken(req: Request) { // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 9999,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/claims?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-cy-2",
+   "task": "structured logs",
+   "lines": [
+    "L23",
+    "L24",
+    "L25",
+    "L37"
+   ]
+  },
+  "status": 201
+ },
+ {
+  "at": 10496,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L16",
+     "base": 37,
+     "text": "const hits = new Map<string, number>(); // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 10895,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L12",
+     "base": 38,
+     "text": "  return req.headers.get(\"authorization\") === \"secret\"; // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 11226,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L23",
+     "base": 39,
+     "text": "function log(msg: string) { // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 11455,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L17",
+     "base": 41,
+     "text": "function limited(ip: string) { // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 11725,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L13",
+     "base": 40,
+     "text": "} // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 12003,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L24",
+     "base": 43,
+     "text": "  console.log(msg); // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 12387,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L18",
+     "base": 44,
+     "text": "  hits.set(ip, (hits.get(ip) ?? 0) + 1); // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 12811,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L17",
+     "base": 54,
+     "text": "function limited(ip: string) { // r2 // ada was here"
+    }
+   ]
+  },
+  "status": 409
+ },
+ {
+  "at": 12871,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L36",
+     "base": 42,
+     "text": "// ada: tokens rotate daily (r1) // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 13263,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L25",
+     "base": 46,
+     "text": "} // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 13573,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-2",
+   "ops": [
+    {
+     "kind": "insert",
+     "after": "L36",
+     "text": "// ada: tokens rotate daily (r2)"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 13709,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L19",
+     "base": 45,
+     "text": "  return hits.get(ip)! > 100; // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 14156,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L37",
+     "base": 47,
+     "text": "// cy: logs are JSON now (r1) // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 14859,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-2",
+   "ops": [
+    {
+     "kind": "insert",
+     "after": "L37",
+     "text": "// cy: logs are JSON now (r2)"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 14974,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/release?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-ada-2"
+  },
+  "status": 200
+ },
+ {
+  "at": 15141,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L20",
+     "base": 48,
+     "text": "} // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 16047,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-2",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L38",
+     "base": 49,
+     "text": "// bo: window is per minute (r1) // r2"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 16260,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/release?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-cy-2"
+  },
+  "status": 200
+ },
+ {
+  "at": 16751,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-2",
+   "ops": [
+    {
+     "kind": "insert",
+     "after": "L38",
+     "text": "// bo: window is per minute (r2)"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 18153,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/release?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-bo-2"
+  },
+  "status": 200
+ },
+ {
+  "at": 18167,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/claims?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-ada-3",
+   "task": "swap the shared secret for a bearer token check",
+   "lines": [
+    "L11",
+    "L12",
+    "L13",
+    "L36",
+    "L39"
+   ]
+  },
+  "status": 201
+ },
+ {
+  "at": 18881,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/claims?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-bo-3",
+   "task": "give the rate limit a time window",
+   "lines": [
+    "L16",
+    "L17",
+    "L18",
+    "L19",
+    "L20",
+    "L38",
+    "L41"
+   ]
+  },
+  "status": 201
+ },
+ {
+  "at": 19238,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L11",
+     "base": 50,
+     "text": "function checkToken(req: Request) { // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 19576,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/claims?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-cy-3",
+   "task": "structured logs",
+   "lines": [
+    "L23",
+    "L24",
+    "L25",
+    "L37",
+    "L40"
+   ]
+  },
+  "status": 201
+ },
+ {
+  "at": 20061,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L16",
+     "base": 51,
+     "text": "const hits = new Map<string, number>(); // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 20425,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L12",
+     "base": 52,
+     "text": "  return req.headers.get(\"authorization\") === \"secret\"; // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 20439,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L23",
+     "base": 53,
+     "text": "function log(msg: string) { // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 20845,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L17",
+     "base": 54,
+     "text": "function limited(ip: string) { // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 21546,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L24",
+     "base": 56,
+     "text": "  console.log(msg); // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 21841,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L13",
+     "base": 55,
+     "text": "} // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 22017,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L18",
+     "base": 57,
+     "text": "  hits.set(ip, (hits.get(ip) ?? 0) + 1); // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 22293,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L25",
+     "base": 59,
+     "text": "} // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 22390,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L17",
+     "base": 71,
+     "text": "function limited(ip: string) { // r3 // ada was here"
+    }
+   ]
+  },
+  "status": 409
+ },
+ {
+  "at": 22770,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L36",
+     "base": 58,
+     "text": "// ada: tokens rotate daily (r1) // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 22778,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L19",
+     "base": 61,
+     "text": "  return hits.get(ip)! > 100; // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 23678,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L37",
+     "base": 62,
+     "text": "// cy: logs are JSON now (r1) // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 24095,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L20",
+     "base": 64,
+     "text": "} // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 24103,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L39",
+     "base": 60,
+     "text": "// ada: tokens rotate daily (r2) // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 24664,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L40",
+     "base": 63,
+     "text": "// cy: logs are JSON now (r2) // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 24821,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-ada-3",
+   "ops": [
+    {
+     "kind": "insert",
+     "after": "L39",
+     "text": "// ada: tokens rotate daily (r3)"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 25248,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L38",
+     "base": 65,
+     "text": "// bo: window is per minute (r1) // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 25365,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-cy-3",
+   "ops": [
+    {
+     "kind": "insert",
+     "after": "L40",
+     "text": "// cy: logs are JSON now (r3)"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 26223,
+  "user": "agent-ada",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/release?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-ada-3"
+  },
+  "status": 200
+ },
+ {
+  "at": 26470,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-3",
+   "ops": [
+    {
+     "kind": "set",
+     "line": "L41",
+     "base": 66,
+     "text": "// bo: window is per minute (r2) // r3"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 26769,
+  "user": "agent-cy",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/release?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-cy-3"
+  },
+  "status": 200
+ },
+ {
+  "at": 27174,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/ops?path=src%2Fserver.ts",
+  "body": {
+   "claim": "run-bo-3",
+   "ops": [
+    {
+     "kind": "insert",
+     "after": "L41",
+     "text": "// bo: window is per minute (r3)"
+    }
+   ]
+  },
+  "status": 200
+ },
+ {
+  "at": 28577,
+  "user": "agent-bo",
+  "method": "POST",
+  "path": "/repos/ryan/office/do/release?path=src%2Fserver.ts",
+  "body": {
+   "id": "run-bo-3"
+  },
+  "status": 200
+ }
+]
