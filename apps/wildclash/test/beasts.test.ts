@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { rigFromWire } from "@rustybuns/rig";
 import { int, obj, opt } from "@rustybuns/util/guard";
 import { loadGlb } from "@rustybuns/rig/model";
-import { BeastRig, headAndTail, Puppet, type Beast } from "../src/beasts.ts";
+import { BeastRig, headAndTail, Puppet, wingsOf, type Beast } from "../src/beasts.ts";
 import { body, ROSTER } from "../src/roster.ts";
 import { frames, IDLE, newMatch, type Fighter } from "../src/sim.ts";
 
@@ -32,6 +32,21 @@ describe("every beast sheet is built and rigged", () => {
   });
   test("every sheet is a fighter in the roster, and every fighter wears its own sheet", () => {
     expect(ROSTER.map((c) => c.id).sort()).toEqual([...ids].sort());
+  });
+});
+
+describe("wings are the tips high up and out to the side", () => {
+  // a 2 m tall, 2 m wide beast: joint 0 its root, then tips at (x, y, z)
+  const rig = (tips: readonly (readonly [number, number, number])[]) => ({ rig: { joints: new Float32Array([0, 1, 0, ...tips.flat()]) }, tips: tips.map((_, i) => i + 1) });
+  test.each([
+    ["a wide pair counts with or without the sheet's count", [[-0.3, 1.5, 0.8], [-0.3, 1.5, -0.8]], [1, 2], [1, 2]],
+    ["a pair folded upright over the back only with the sheet's count", [[-0.3, 1.9, 0.3], [-0.3, 1.9, -0.3]], [], [1, 2]],
+    ["a lone horn on the centreline never", [[0.5, 1.9, 0.05], [-0.3, 1.9, 0.3], [-0.3, 1.9, -0.3]], [], [2, 3]],
+    ["the count prefers the wide pair over a folded one", [[-0.3, 1.9, 0.3], [-0.3, 1.9, -0.3], [0, 1.2, 0.9], [0, 1.2, -0.9]], [3, 4], [3, 4]],
+  ] as const)("%s", (_what, tips, loose, counted) => {
+    const r = rig(tips);
+    expect(wingsOf(r.rig, r.tips, 2, 2)).toEqual([...loose]);
+    expect(wingsOf(r.rig, r.tips, 2, 2, 2)).toEqual([...counted]);
   });
 });
 

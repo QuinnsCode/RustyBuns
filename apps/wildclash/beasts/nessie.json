@@ -64,5 +64,6 @@
     {"kind": "membrane", "points": ["l_bknee", "l_bfoot", [-1.2, 0.12, 0.68], [-1.12, 0.42, 0.6]], "thick": 0.05, "mirror": true, "material": "fin"},
     {"kind": "eye", "at": "head", "off": [0.1, 0.06, 0.11], "r": 0.04, "mirror": true, "material": "eye"},
     {"kind": "spikes", "along": ["neck3", "neck2", "neck1"], "n": 6, "len": 0.12, "base": 0.06, "lean": -0.8, "sink": 0.8, "material": "fin"}
-  ]
+  ],
+  "blend": 0.03
 }

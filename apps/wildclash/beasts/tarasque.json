@@ -59,7 +59,7 @@
     {"at": "belly", "r": [1.0, 0.62, 0.78], "off": [0, 0.25, 0], "material": "shell"}
   ],
   "parts": [
-    {"kind": "spikes", "along": ["chest", "belly", "hip"], "n": 6, "len": 0.34, "base": 0.11, "sink": 1.7, "lean": 0, "material": "spike"},
+    {"kind": "spikes", "along": ["chest", "belly", "hip"], "n": 6, "len": 0.34, "base": 0.11, "lean": 0, "material": "spike"},
     {"kind": "horn", "at": "belly", "off": [0.45, 0.55, 0.45], "dir": [0.3, 0.8, 0.6], "len": 0.3, "base": 0.1, "mirror": true, "material": "spike"},
     {"kind": "horn", "at": "belly", "off": [-0.45, 0.55, 0.45], "dir": [-0.3, 0.8, 0.6], "len": 0.3, "base": 0.1, "mirror": true, "material": "spike"},
     {"kind": "horn", "at": "belly", "off": [0.0, 0.35, 0.7], "dir": [0, 0.5, 1], "len": 0.3, "base": 0.1, "mirror": true, "material": "spike"},

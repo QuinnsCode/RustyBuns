@@ -18,11 +18,13 @@
 #   spikes  rows, spread     `rows` per point fanned `spread` degrees around the chain; `sweep` toward its
 #           sweep, tilt      end, `tilt` out to the side (side rows on a shell, a crest off the centreline)
 #   tuft    along, n, len, base, and rows, spread, sweep (1.5), curve (30), flat (0.3), sink (0.8),
-#           material (the body's): flat, curling fur along a chain, swept toward its last node
+#           material (the body's): flat, curling fur along a chain, swept toward its last node. A tuft or
+#           spike roots `sink` of the way out to the skin, a blob's where one covers the chain
 #   membrane camber, puff    the middle lifted `camber` metres (up, or outward for a fin) and thickened to
 #                            `puff`, tapering to `thick` at the rim: a cupped wing, a flipper
-#           feathers         {from, to, n, len, base, curve, flat, material}: a row of flat feathers out
-#                            past the rim between two outline points; scallop_depth < 0 points outward
+#           feathers         {from, to, n, len, base, curve, flat, tip, material}: a row of flat feathers out
+#                            past the rim between two outline points, each a vane rounding off to a blunt
+#                            tip `tip` (0.4) of its width; scallop_depth < 0 points outward
 #   palette a 6th value is glow strength: the GLB keeps the colour as emissive, strength apart
 import json
 import math
@@ -154,6 +156,8 @@ def skinned(sheet, nodes, links):
         r = nodes[n][3]
         o.data.skin_vertices[0].data[i].radius = (r, r)
     o.data.skin_vertices[0].data[names.index(sheet["root"])].use_root = True
+    apply_all(o)
+    close_holes(o)
     o.modifiers.new("subsurf", "SUBSURF").levels = sheet.get("subsurf", 2)
     # the skin modifier leaves a boxy hull where limbs meet; a light pass on the dense mesh rounds it off
     # without shrinking the limbs (a heavy one eats them: the rigger then loses the feet)
@@ -163,6 +167,24 @@ def skinned(sheet, nodes, links):
     apply_all(o)
     bpy.ops.object.shade_smooth()
     return o
+
+
+def close_holes(o):
+    """The skin modifier leaves holes where a fat node meets several links (the hull at a hip with a tail
+    and two legs on it). Subsurf rounds a hole into a dent, and a voxel remesh (`blend`) floods through it:
+    everything past the hole (the tail, the back legs) comes out as outside and vanishes. A face over each
+    hole, wound to agree with the face next to it, closes the skin before either runs."""
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    for f in bmesh.ops.holes_fill(bm, edges=bm.edges, sides=0)["faces"]:
+        for l in f.loops:
+            other = [x for x in l.edge.link_faces if x is not f]
+            if other:
+                if any(m.vert is l.vert for m in other[0].loops if m.edge is l.edge):
+                    f.normal_flip()
+                break
+    bm.to_mesh(o.data)
+    bm.free()
 
 
 def paint(o, sheet, nodes, links):
@@ -342,17 +364,19 @@ def arc(at, d, b, length, angle, t):
     return p, d * math.cos(th) + b * math.sin(th), -d * math.sin(th) + b * math.cos(th)
 
 
-def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1.0, segments=6, rings=6):
+def tube(name, at, direction, length, base, tip, mat, curve=0, bend=None, flat=1.0, segments=6, rings=6, profile=None):
     """A cone that curves and tapers: from radius `base` at `at` to `tip` at the far end (0 a point, more
     than base a club), bending `curve` degrees toward `bend` along the way, its section squashed to `flat`
-    of its width in the bend direction (a tuft or a feather lies flat on what it bends toward)."""
+    of its width in the bend direction (a tuft or a feather lies flat on what it bends toward). `profile`
+    is instead a list of (how far along, radius in `base`) pairs, a ring at each: a feather's vane."""
     d, b = bend_frame(direction, bend)
     angle = math.radians(curve)
     verts, faces = [], []
+    if profile:
+        rings, tip = len(profile) - 1, profile[-1][1] * base
     for k in range(rings + 1):
-        t = k / rings
+        t, r = (profile[k][0], profile[k][1] * base) if profile else (k / rings, base + (tip - base) * k / rings)
         p, tan, nrm = arc(at, d, b, length, angle, t)
-        r = base + (tip - base) * t
         if k == rings and tip <= 0:
             verts.append(tuple(p))
             break
@@ -428,6 +452,9 @@ def shell(name, points, rim, p, side, mat):
     n = membrane_normal(points, side)
     camber = p.get("camber", 0)
     lift = lambda u: n * (camber * (1 - u * u))
+    # a feather is a vane, not a spike: narrow at the quill, widest two thirds out, rounding off to a
+    # blunt tip `tip` of its width (0: the old point)
+    vane = [(0, 0.55), (0.35, 0.9), (0.65, 1.0), (0.88, 0.78), (1, p.get("feathers", {}).get("tip", 0.4))]
     us = (1.0, 2 / 3, 1 / 3)
     verts, faces, weight = [], [], []
     m = len(points)
@@ -472,7 +499,7 @@ def shell(name, points, rim, p, side, mat):
             root = at - q * (ln / 3)
             u = max(0.0, min(1.0, (root - c).length / max((at - c).length, 1e-6)))
             out.append(tube(f"{name}_f{j}", root + lift(u), q, ln, fs["base"], 0, fs.get("material", mat),
-                            curve=fs.get("curve", 10), bend=-n * (1 if camber >= 0 else -1), flat=fs.get("flat", 0.25), segments=5, rings=3))
+                            curve=fs.get("curve", 10), bend=-n * (1 if camber >= 0 else -1), flat=fs.get("flat", 0.25), segments=5, profile=vane))
     return out
 
 
@@ -494,11 +521,29 @@ def along(nodes, chain, n):
     return out
 
 
-def fan(nodes, p, side, sink, sweep):
+def surface(nodes, blobs, at, r, up):
+    """How far the flesh reaches from `at` along `up`: the chain's radius there, or further where a blob
+    (an ellipsoid at a node, maybe tilted) lies over the chain, so a tuft or spike roots in the skin it
+    shows through rather than deep inside a belly."""
+    out = r
+    for b in blobs:
+        c = Vector(nodes[b["at"]][:3]) + Vector(b.get("off", (0, 0, 0)))
+        m = Euler([math.radians(a) for a in b.get("rot", (0, 0, 0))]).to_matrix()
+        p, d = m.transposed() @ (at - c), m.transposed() @ up
+        p, d = Vector(x / y for x, y in zip(p, b["r"])), Vector(x / y for x, y in zip(d, b["r"]))
+        # the far crossing of the unit sphere by the ray p + s d
+        half, k = p.dot(d) / d.length_squared, (p.length_squared - 1) / d.length_squared
+        if half * half - k >= 0:
+            out = max(out, -half + math.sqrt(half * half - k))
+    return out
+
+
+def fan(nodes, blobs, p, side, sink, sweep):
     """Where each of a row of spikes or tufts along a chain grows: `n` along it, `rows` of them fanned
     `spread` degrees either side of the chain's top (a mane, a ruff, a moss mat, side rows on a shell),
     each swept `sweep` toward the chain's last node and tilted `tilt` out to the side. The top is the side
-    facing up, or the back (-x) where the chain stands upright. Yields (j, k, root, up, direction)."""
+    facing up, or the back (-x) where the chain stands upright. Each roots `sink` of the way out to the
+    flesh's surface (a blob's where one covers the chain). Yields (j, k, root, up, direction)."""
     chain = [mirrored(c) if side < 0 else c for c in p["along"]]
     rows, spread = p.get("rows", 1), math.radians(p.get("spread", 0))
     for j, (at, r, fwd) in enumerate(along(nodes, chain, p["n"])):
@@ -510,7 +555,7 @@ def fan(nodes, p, side, sink, sweep):
             a = spread * (2 * k / (rows - 1) - 1) if rows > 1 else 0
             up = Matrix.Rotation(a, 3, fwd) @ top
             d = up + fwd * p.get("sweep", sweep) + Vector((0, 0, p.get("tilt", 0) * side))
-            yield j, k, at + up * (r * p.get("sink", sink)), up, d
+            yield j, k, at + up * (surface(nodes, blobs, at, r, up) * p.get("sink", sink)), up, d
 
 
 def resolve(nodes, p):
@@ -518,7 +563,7 @@ def resolve(nodes, p):
 
 
 def parts(sheet, nodes):
-    out = []
+    out, blobs = [], sheet.get("blobs", [])
     for i, p in enumerate(sheet.get("parts", [])):
         for side in ([1, -1] if p.get("mirror") else [1]):
             s = lambda v: (v[0], v[1], v[2] * side)
@@ -527,12 +572,12 @@ def parts(sheet, nodes):
             name = f"{p['kind']}{i}{'r' if side < 0 else ''}"
             if p["kind"] == "spikes" and not any(k in p for k in ("rows", "spread", "tilt")):
                 for j, (at, r, fwd) in enumerate(along(nodes, p["along"], p["n"])):
-                    top = at + Vector((0, r * p.get("sink", 0.85), 0))
+                    top = at + Vector((0, surface(nodes, blobs, at, r, Vector((0, 1, 0))) * p.get("sink", 0.85), 0))
                     d = Vector((p.get("lean", -0.3), 1, 0))
                     out.append(cone(f"{name}_{j}", top, d, p["len"], p["base"], p["material"]))
             elif p["kind"] == "spikes":
                 # side rows of shell spikes, a crest leaning off the centreline
-                for j, k, root, up, d in fan(nodes, p, side, 0.85, 0.3):
+                for j, k, root, up, d in fan(nodes, blobs, p, side, 0.85, 0.3):
                     out.append(cone(f"{name}_{j}_{k}", root, d, p["len"], p["base"], p["material"]))
             elif p["kind"] == "horn":
                 at = Vector(node(p["at"])) + Vector(s(p.get("off", (0, 0, 0))))
@@ -565,7 +610,7 @@ def parts(sheet, nodes):
             elif p["kind"] == "tuft":
                 # fur: soft cones along a chain, flattened, swept back and curling onto the body; with
                 # `spread` a fan of `rows` around the chain (a mane, a ruff) instead of one ridge
-                for j, k, root, up, d in fan(nodes, p, side, 0.8, 1.5):
+                for j, k, root, up, d in fan(nodes, blobs, p, side, 0.8, 1.5):
                     ln = p["len"] * (1 - 0.15 * ((j + k) % 3) / 2)  # ragged, the same every build
                     out.append(tube(f"{name}_{j}_{k}", root, d, ln, p["base"], 0,
                                     p.get("material", sheet.get("material", "hide")), curve=p.get("curve", 30),
