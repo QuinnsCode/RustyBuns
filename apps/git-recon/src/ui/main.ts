@@ -198,6 +198,7 @@ function start(def: LevelDef) {
   const game = Game.fromRepo(def.ground(), repo, def.seed, mission, me.role);
   const world = buildWorld(game.map, { head: me.head, build: me.build }, repo.text);
   current = { def, repo, game, world, started: performance.now() };
+  (window as any).__game = game; // demo only, not committed
   look.yaw = game.map.spawn.yaw, look.pitch = -0.05, prone = false, shake = 0, cam.ready = false;
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = false;
   $("level-name").textContent = def.name;
