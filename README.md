@@ -85,6 +85,20 @@ Same engine. Same ports. Same WebSocket. The deploy target is a config choice, n
 
 ---
 
+## 🔗 How the pieces talk
+
+Three buses, picked by where the two sides live.
+
+| Between | Bus | Notes |
+|---|---|---|
+| 🧵 Threads in one process | `SharedArrayBuffer` + `Atomics` | Works in the browser tab (workers + WASM) and in Bun (workers + Rust via `bun:ffi` pointers). Zero copy. |
+| 🌐 Browser and server | WebSocket | The browser's only door. Binary frames, same protocol whether the server is local or remote. |
+| 📦 Server and server | TCP, UDP, Unix socket | Bun to Bun, Bun to a Rust sidecar, box to box. No browser in the way, so no WebSocket needed. |
+
+The engine doesn't care which one carried the bytes. A socket is anything with `send` and `close`, so a browser over WebSocket and a headless bot over TCP sit in the same list.
+
+---
+
 ## 🎁 What you can buy
 
 Three SKUs. Each is a fixed-scope deliverable with a named artifact at the end.
