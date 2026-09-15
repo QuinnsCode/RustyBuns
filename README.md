@@ -47,16 +47,3 @@ Reference modules you've pre-built and can drop in: local LLM/whisper inference,
 Cross-platform cdylib build matrix + memory-ownership contract documented
 
 What they get: the same app, 10–50× faster on the one thing that was slow, and a doc explaining who owns every pointer.
-
-Packaging
-Starter — SKU 1 only. Fixed price, ~3 weeks.
-Product — SKU 1 + 2. Most customers land here. This is the "local-first with a cloud twin" story.
-Performance — all three. Games, AI tools, research apps.
-Retainer — Bun/Rust version tracking (1.x moves fast), signing cert renewals, dependency audits via bun audit fix, on-call for the eject path.
-The three sentences you say in the meeting
-You keep your web app and your web team; nothing is rewritten.
-One codebase becomes a desktop binary, a Docker container, and an edge deployment — same server, three targets.
-When something's slow, we drop that one function into Rust; nothing else changes.
-What not to promise
-
-Console targets, pixel-identical rendering across browsers, native menus/tray, mobile. Say it up front — it's why the price is a fraction of a native rebuild.
