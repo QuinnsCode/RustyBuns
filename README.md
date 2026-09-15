@@ -2,13 +2,13 @@
 
 **Your web app, shipped as a native binary, with a server you can move anywhere.**
 
-Write TypeScript. Opt into Rust when something is slow. Reuse the React you already have. Put the server wherever you want it.
+Write TypeScript. Opt into Rust when you want to. Reuse React code you already have. Put the server wherever you want it.
 
-*(Or Patina Dog, if the bakery lawyers show up. 🐕)*
+*(Or Patina Dog, if the bakery or crustacean lawyers show up. 🐕)*
 
 ---
 
-## 🧭 The idea in one breath
+## 🧭 The idea
 
 Bun beside the browser. Rust behind either one when you opt in. React reused as is. A server that runs next to you, in a container, or on the edge, and the client can't tell the difference.
 
@@ -44,22 +44,22 @@ Electron is the safe pick. I still didn't use it.
 
 ---
 
-## 💭 What I actually wanted
+## 💭 Why can't I just have what I want?
 
-I just want to write TypeScript.
+I just want to write TypeScript for the most part. It is the best interop, dev velocity atm because I can write front and back end code.
 
-And when something is slow, I want to write fast code for that one part and not change anything else.
+When something is slow, I want to write to be able to write more systems level code for that ONE part and not change anything else.
 
-That's it. That's the whole requirement. Here's how the pieces line up to give me that.
+That's it. That's the whole requirement. Here's how the pieces line up to give me that:
 
 ### 🍞 Bun
-It's the runtime, but it's also everything around the runtime that used to be twelve packages. SQLite, SQL, WebSockets, static serving, image processing, cron, a test runner, a bundler, and compile to a single binary. And it's written in Rust now with a native FFI, so calling into a Rust library is cheap. So why shouldn't I?
+It's the runtime, but it's also everything around the runtime that used to be like a dozen packages. SQLite, SQL, WebSockets, static serving, image processing, cron, a test runner, a bundler, and compile to a single binary. And it's written in Rust now with a native FFI, so calling into a Rust library is cheap. So why shouldn't I?
 
 ### 🌐 The browser
 I already have an offline internet browser on every machine I'd ship to. If I open a tab pointed at my local Bun server, every React component I already wrote just works. No rewrite, no webview, no wrapper.
 
 ### 🧵 Web workers
-If I have the browser, I have workers. That's where compute goes to get off the main thread. Rust compiled to WASM runs there too.
+If I have the browser, I have workers. That's where compute goes to get off the main thread for frontend. Rust compiled to WASM can run there as well.
 
 ### 🦀 Rust, when I choose
 In the browser as WASM in a worker. On the server as a native library behind `bun:ffi`. Same crate, two targets, and only for the functions that need it.
@@ -69,7 +69,7 @@ The server is a plain Bun process. Run it next to the browser for single player.
 
 So why not unite all of it?
 
-*🎙️ rusty buns, whispered, tapping gently on the microphone*
+*🎙️ rusty buns, whispered, tapping gently on the microphone in asmr voice*
 
 ---
 
