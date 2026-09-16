@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "druids-curse",
+  "main": "src/worker.tsx",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // RWSDK serves the client build from here
+  "assets": { "binding": "ASSETS", "directory": "dist/client" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "druids-curse-db", "database_id": "xxx", "migrations_dir": "migrations" },
+  ],
+  "kv_namespaces": [{ "binding": "PRESENCE_KV", "id": "yyy" }],
+  "durable_objects": { "bindings": [{ "name": "WORLD_DURABLE_OBJECT", "class_name": "WorldDurableObject" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WorldDurableObject"] }],
+  "vars": { "DEBUG_DIRECTOR_USERS": "" },
+}

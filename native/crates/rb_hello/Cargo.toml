@@ -1,0 +1,15 @@
+[package]
+name = "rb_hello"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+# cdylib -> bun:ffi on the server. Add "wasm" feature + wasm-bindgen for the tab.
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+wasm = ["wasm-bindgen"]
+
+[dependencies]
+wasm-bindgen = { version = "0.2", optional = true }

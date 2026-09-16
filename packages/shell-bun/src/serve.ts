@@ -1,0 +1,151 @@
+// The Bun shell. One Bun.serve() that:
+//   1. gates every request on the per-launch token (cookie or ?token=)
+//   2. serves the embedded client build (assets first, like CF's asset layer)
+//   3. mounts a Workers-shaped fetch(request, env, ctx) for everything else
+//   4. routes WebSocket upgrades on registered paths to the app's handlers
+// The app never learns it is not on Cloudflare.
+
+import type { Server, ServerWebSocket } from "bun";
+import type { CommsPort, ExecutionContext, FetchHandler, Reporter, Socket, SocketHandlers } from "@rustybuns/ports";
+import { join, normalize } from "node:path";
+
+export interface ServeOptions<Env> {
+  /** Directory of built client assets (Vite dist). Served before fetch(). */
+  assets?: string;
+  /** Paths that must reach the Worker before asset matching (CF runWorkerFirst). */
+  runWorkerFirst?: string[];
+  /** Per-launch token. Undefined = no gate (headless/container mode with its own auth). */
+  token?: string;
+  /** Extra headers on every response. COOP/COEP are on by default for SAB. */
+  headers?: Record<string, string>;
+  port?: number;
+  hostname?: string;
+  reporter?: Reporter;
+}
+
+const ISOLATION = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+  "Cross-Origin-Resource-Policy": "same-origin",
+};
+
+interface WsData { path: string; attachment: unknown; wrapped: Socket }
+
+export interface BunShell<Env> {
+  server: Server<WsData>;
+  url: string;
+  comms: CommsPort;
+  mount(handler: FetchHandler<Env>, env: Env): void;
+  stop(): Promise<void>;
+}
+
+export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
+  const headers = { ...ISOLATION, ...(opts.headers ?? {}) };
+  const wsRoutes = new Map<string, SocketHandlers>();
+  const live: Socket[] = [];
+  let handler: FetchHandler<Env> | null = null;
+  let env: Env | null = null;
+  const rep = opts.reporter;
+
+  const withHeaders = (res: Response) => {
+    const h = new Headers(res.headers);
+    for (const [k, v] of Object.entries(headers)) if (!h.has(k)) h.set(k, v);
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+  };
+
+  const gate = (req: Request, url: URL): Response | null => {
+    if (!opts.token) return null;
+    const cookie = req.headers.get("cookie") ?? "";
+    if (cookie.includes(`rb_token=${opts.token}`)) return null;
+    const q = url.searchParams.get("token");
+    if (q === opts.token) {
+      url.searchParams.delete("token");
+      return new Response(null, {
+        status: 302,
+        headers: { Location: url.pathname + url.search, "Set-Cookie": `rb_token=${opts.token}; Path=/; HttpOnly; SameSite=Strict` },
+      });
+    }
+    return new Response("forbidden", { status: 403 });
+  };
+
+  const asset = async (url: URL): Promise<Response | null> => {
+    if (!opts.assets) return null;
+    const root = normalize(opts.assets);
+    let p = normalize(join(root, decodeURIComponent(url.pathname)));
+    if (!p.startsWith(root)) return null;
+    let f = Bun.file(p);
+    if (!(await f.exists()) || (await f.stat()).isDirectory()) {
+      const idx = Bun.file(join(p, "index.html"));
+      if (await idx.exists()) f = idx; else return null;
+    }
+    return new Response(f);
+  };
+
+  const wrap = (ws: ServerWebSocket<WsData>): Socket => ({
+    send: (d) => { ws.send(d as any); },
+    close: (code, reason) => ws.close(code, reason),
+    serializeAttachment: (v) => { ws.data.attachment = v; },
+    deserializeAttachment: () => ws.data.attachment,
+  });
+
+  const server = Bun.serve<WsData>({
+    port: opts.port ?? 0,
+    hostname: opts.hostname ?? "127.0.0.1",
+    async fetch(req, srv) {
+      const url = new URL(req.url);
+      const denied = gate(req, url);
+      if (denied) return denied;
+
+      if (req.headers.get("upgrade")?.toLowerCase() === "websocket" && wsRoutes.has(url.pathname)) {
+        const ok = srv.upgrade(req, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket } });
+        return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
+      }
+
+      const workerFirst = (opts.runWorkerFirst ?? []).some((pat) =>
+        pat.endsWith("*") ? url.pathname.startsWith(pat.slice(0, -1)) : url.pathname === pat);
+      if (!workerFirst) {
+        const a = await asset(url);
+        if (a) return withHeaders(a);
+      }
+      if (handler && env) {
+        const pending: Promise<unknown>[] = [];
+        const ctx: ExecutionContext = { waitUntil: (p) => { pending.push(p); }, passThroughOnException() {} };
+        try {
+          const res = await handler.fetch(req, env, ctx);
+          void Promise.allSettled(pending);
+          return withHeaders(res);
+        } catch (err) {
+          rep?.escaped("fetch", err, { path: url.pathname });
+          return new Response("internal error", { status: 500 });
+        }
+      }
+      return new Response("not found", { status: 404 });
+    },
+    websocket: {
+      open(ws) {
+        const w = wrap(ws); ws.data.wrapped = w; live.push(w);
+        wsRoutes.get(ws.data.path)?.open?.(w);
+      },
+      message(ws, m) {
+        const data = typeof m === "string" ? m : (m as Buffer).buffer.slice((m as Buffer).byteOffset, (m as Buffer).byteOffset + (m as Buffer).byteLength) as ArrayBuffer;
+        wsRoutes.get(ws.data.path)?.message(ws.data.wrapped, data);
+      },
+      close(ws, code, reason) {
+        const i = live.indexOf(ws.data.wrapped); if (i >= 0) live.splice(i, 1);
+        wsRoutes.get(ws.data.path)?.close(ws.data.wrapped, code, reason);
+      },
+    },
+  });
+
+  const url = `http://${server.hostname}:${server.port}`;
+  return {
+    server, url,
+    comms: {
+      websocket: (path, handlers) => { wsRoutes.set(path, handlers); },
+      sockets: () => [...live],
+      broadcast: (d) => { for (const s of live) { try { s.send(d); } catch {} } },
+    },
+    mount(h, e) { handler = h; env = e; },
+    async stop() { await server.stop(true); },
+  };
+}

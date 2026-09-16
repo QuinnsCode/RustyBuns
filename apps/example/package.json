@@ -1,0 +1,3 @@
+{ "name": "example", "private": true, "type": "module",
+  "scripts": { "build": "bun run build.ts", "desktop": "bun ../../packages/cli/src/index.ts build desktop" },
+  "dependencies": { "@rustybuns/cli": "workspace:*", "@rustybuns/shell-bun": "workspace:*" } }

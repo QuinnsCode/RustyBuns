@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "types": ["bun-types"],
+    "paths": {
+      "@rustybuns/ports": ["./packages/ports/src/index.ts"],
+      "@rustybuns/shell-bun": ["./packages/shell-bun/src/index.ts"],
+      "@rustybuns/native": ["./packages/native/src/index.ts"]
+    }
+  },
+  "include": ["packages/**/*.ts", "apps/**/*.ts"]
+}
