@@ -7,11 +7,13 @@ export { openBrowser, findChromium, mintToken, type LaunchOptions } from "./laun
 export { d1, D1Database } from "./bindings/d1.ts";
 export { kv, KVNamespace } from "./bindings/kv.ts";
 export { storage } from "./bindings/storage.ts";
+export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
 import type { MemoryPort, Reporter } from "@rustybuns/ports";
 import { d1 } from "./bindings/d1.ts";
 import { kv } from "./bindings/kv.ts";
 import { storage } from "./bindings/storage.ts";
+import { durableObject, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
 export const caps: MemoryPort["caps"] = { sab: true, ffi: true, fs: true, gpu: false };
 
@@ -32,5 +34,7 @@ export function localBindings(dataDir: string) {
     d1: (name: string) => d1(`${dataDir}/${name}.sqlite`),
     kv: (name: string) => kv(`${dataDir}/kv.sqlite`, name),
     storage: (name: string, onAlarm?: () => void) => storage(`${dataDir}/do_${name}.sqlite`, onAlarm),
+    durableObject: <Env>(Ctor: DurableObjectCtor<Env>, env: Env, binding: string) =>
+      durableObject(Ctor, env, { storage: (id) => storage(`${dataDir}/do_${binding}_${id}.sqlite`) }),
   };
 }

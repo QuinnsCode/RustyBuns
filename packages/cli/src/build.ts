@@ -11,6 +11,7 @@ import type { RustyBunsConfig } from "./config.ts";
 export function desktopEntry(c: RustyBunsConfig): string {
   const dataDir = c.targets.desktop?.dataDir ?? `~/.${c.name}`;
   const bind: string[] = [];
+  const dos: { name: string; className: string }[] = [];
   for (const [name, b] of Object.entries(c.bindings)) {
     switch (b.type) {
       case "d1": bind.push(`  ${name}: local.d1(${JSON.stringify(b.databaseName)}),`); break;
@@ -18,13 +19,16 @@ export function desktopEntry(c: RustyBunsConfig): string {
       case "var": bind.push(`  ${name}: ${JSON.stringify(b.value)},`); break;
       case "secret": bind.push(`  ${name}: process.env[${JSON.stringify(name)}] ?? "",`); break;
       case "r2": bind.push(`  // ${name}: R2 -> directory adapter (slice 2)`); break;
-      case "durable_object": bind.push(`  // ${name}: DO -> in-process engine (slice 2)`); break;
+      case "durable_object":
+        if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);
+        else dos.push({ name, className: b.className });
+        break;
     }
   }
   return `// GENERATED desktop entry. The RWSDK worker runs here, on the user's machine,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 import { serve, openBrowser, mintToken, localBindings, stdoutReporter } from "@rustybuns/shell-bun";
-import worker from ${JSON.stringify("../" + (c.worker.builtMain ?? c.worker.main))};
+import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + (c.worker.builtMain ?? c.worker.main))};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -40,9 +44,12 @@ const dataDir = ${JSON.stringify(dataDir)}.replace(/^~/, homedir());
 mkdirSync(dataDir, { recursive: true });
 const local = localBindings(dataDir);
 
-const env = {
+const env: Record<string, unknown> = {
 ${bind.join("\n")}
 };
+// Durable Objects run in-process. Bound after env exists because a DO's
+// constructor receives this same env (a DO can use DB, KV, other DOs).
+${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
 
 const token = mintToken();
 const shell = serve<typeof env>({

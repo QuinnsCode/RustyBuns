@@ -8,6 +8,7 @@
 import type { Server, ServerWebSocket } from "bun";
 import type { CommsPort, ExecutionContext, FetchHandler, Reporter, Socket, SocketHandlers } from "@rustybuns/ports";
 import { join, normalize } from "node:path";
+import { installCloudflareGlobals, type LocalWebSocket } from "./bindings/durable-object.ts";
 
 export interface ServeOptions<Env> {
   /** Directory of built client assets (Vite dist). Served before fetch(). */
@@ -29,7 +30,7 @@ const ISOLATION = {
   "Cross-Origin-Resource-Policy": "same-origin",
 };
 
-interface WsData { path: string; attachment: unknown; wrapped: Socket }
+interface WsData { path: string; attachment: unknown; wrapped: Socket; bridge?: LocalWebSocket }
 
 export interface BunShell<Env> {
   server: Server<WsData>;
@@ -40,6 +41,7 @@ export interface BunShell<Env> {
 }
 
 export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
+  installCloudflareGlobals();
   const headers = { ...ISOLATION, ...(opts.headers ?? {}) };
   const wsRoutes = new Map<string, SocketHandlers>();
   const live: Socket[] = [];
@@ -113,6 +115,14 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
         try {
           const res = await handler.fetch(req, env, ctx);
           void Promise.allSettled(pending);
+          // A DO answered an upgrade with 101 + a local client end: bridge it
+          // to the real socket. This is what makes WorldDurableObject-style
+          // code run in-process untouched.
+          const client = (res as any).webSocket as LocalWebSocket | undefined;
+          if (res.status === 101 && client) {
+            const ok = srv.upgrade(req, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket, bridge: client } });
+            return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
+          }
           return withHeaders(res);
         } catch (err) {
           rep?.escaped("fetch", err, { path: url.pathname });
@@ -124,14 +134,24 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     websocket: {
       open(ws) {
         const w = wrap(ws); ws.data.wrapped = w; live.push(w);
+        const b = ws.data.bridge;
+        if (b) {
+          b.toBrowser = (d) => { ws.send(d as any); };
+          b.closeBrowser = (code, reason) => ws.close(code, reason);
+          for (const d of b.queue.splice(0)) ws.send(d as any);
+          if (b.readyState === 3) ws.close(1000, "closed before attach");
+          return;
+        }
         wsRoutes.get(ws.data.path)?.open?.(w);
       },
       message(ws, m) {
         const data = typeof m === "string" ? m : (m as Buffer).buffer.slice((m as Buffer).byteOffset, (m as Buffer).byteOffset + (m as Buffer).byteLength) as ArrayBuffer;
+        if (ws.data.bridge) { ws.data.bridge.onMessage?.(data); return; }
         wsRoutes.get(ws.data.path)?.message(ws.data.wrapped, data);
       },
       close(ws, code, reason) {
         const i = live.indexOf(ws.data.wrapped); if (i >= 0) live.splice(i, 1);
+        if (ws.data.bridge) { ws.data.bridge.readyState = 3; ws.data.bridge.onClose?.(code, reason); return; }
         wsRoutes.get(ws.data.path)?.close(ws.data.wrapped, code, reason);
       },
     },
