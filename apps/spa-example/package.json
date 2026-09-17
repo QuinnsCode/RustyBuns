@@ -1,2 +1,4 @@
 { "name": "spa-example", "private": true, "type": "module", "version": "0.3.1",
-  "dependencies": { "@rustybuns/cli": "workspace:*", "@rustybuns/shell-bun": "workspace:*" } }
+  "scripts": { "build": "vite build" },
+  "dependencies": { "@rustybuns/cli": "workspace:*", "@rustybuns/shell-bun": "workspace:*", "react": "19.2.8", "react-dom": "19.2.8" },
+  "devDependencies": { "vite": "^6.2.6" } }

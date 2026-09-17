@@ -1,4 +1,4 @@
-# Status (slice 3b)
+# Status (slice 4)
 
 Your RWSDK app, unchanged. Alchemy for the cloud. A Bun binary for the desktop.
 
@@ -38,6 +38,11 @@ apps/example         RWSDK-shaped wrangler.jsonc and a stand-in worker/client bu
 | DO storage codec `json` / `v8` (TypedArray-safe) | working, tested |
 | `waitUntil` rejections logged | done |
 | `RB_VERSION` define (`<pkg version>+<sha>`) | working |
+| Inference from package.json + vite.config + wrangler (framework, pm, aliases, desktop config) | working, tested |
+| Boundary analysis: client / action / server / leak, per-specifier stubs, action proxies | working, tested |
+| `add desktop`: scaffolds packages/desktop + vite.desktop.config.ts + intro page | working |
+| Host runs `"use server"` actions for real (`/__rb/action`) with `cloudflare:workers` + `rwsdk/worker` shims | working, proven in the binary against sqlite |
+| `/__rb/info` runtime page | working |
 | Alchemy generation | generated against 2.0.0-beta.77 docs; not yet run against a real account |
 | Durable Object binding in async Workers | generated with a comment; API shape unverified |
 | Hetzner target | generated as a draft; Bun-vs-Node on `Hetzner.Service` unverified |

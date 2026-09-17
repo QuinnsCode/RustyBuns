@@ -6,6 +6,8 @@
 
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
 import type { DesktopOs, RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 
@@ -58,6 +60,14 @@ ${vars.map(([n, v]) => `  ${n}: ${JSON.stringify(v)},`).join("\n")}
 // d1_migrations. Embedded via --asset so the binary carries its own schema.
 ${d1s.filter(([, , m]) => m).map(([n, , m]) => `for (const f of await applyD1Migrations(env.${n} as any, existsSync(join(import.meta.dir, ${JSON.stringify(basename(m!))})) ? join(import.meta.dir, ${JSON.stringify(basename(m!))}) : join(import.meta.dir, ${JSON.stringify("../" + m)}))) console.log("[migrate] " + f);`).join("\n")}
 const WORLD = local.durableObject(World as any, env, "WORLD", { codec: ${JSON.stringify((c.targets.desktop as any)?.storageCodec ?? "json")} });
+const identity: Record<string, string> = {
+${Object.entries(identity).map(([k, v]) => `  ${JSON.stringify(k)}: \`${v}\`,`).join("\n")}
+};
+// Actions and db modules imported through the cloudflare:workers / rwsdk/worker
+// shims read these. Set before the action table is touched.
+globalThis.__RB_ENV = env;
+globalThis.__RB_IDENTITY = identity;
+const { actions } = await import("./actions.ts");
 
 const token = mintToken();
 const shell = serve<Record<string, unknown>>({ assets: clientDir, token, reporter: stdoutReporter });
@@ -69,8 +79,21 @@ shell.mount({
     const url = new URL(req.url);
     if (url.pathname === ${JSON.stringify(worldPath)}) {
       const h = new Headers(req.headers);
-${Object.entries(identity).map(([k, v]) => `      h.set(${JSON.stringify(k)}, \`${v}\`);`).join("\n")}
+      for (const [k, v] of Object.entries(identity)) h.set(k, v);
       return WORLD.get(WORLD.idFromName("local")).fetch(new Request(req.url, { headers: h }));
+    }
+    if (url.pathname === "/__rb/info") {
+      return Response.json({ app: ${JSON.stringify(c.name)}, version: typeof RB_VERSION === "string" ? RB_VERSION : "dev", bun: Bun.version,
+        platform: \`\${process.platform}-\${process.arch}\`, dataDir, user: identity["X-User-Id"], actions: Object.keys(actions).length,
+        bindings: Object.keys(env), caps: { sab: true, ffi: true, fs: true } });
+    }
+    if (url.pathname === "/__rb/action" && req.method === "POST") {
+      // "use server" runs here, for real, against sqlite. Same code as the edge.
+      const { module, fn, args } = await req.json() as { module: string; fn: string; args: unknown[] };
+      const f = actions[module]?.[fn];
+      if (!f) return new Response(\`no action \${module}#\${fn}\`, { status: 404 });
+      try { return Response.json((await f(...args)) ?? null); }
+      catch (err) { stdoutReporter.escaped("action", err, { module, fn }); return new Response(String((err as Error).message ?? err), { status: 500 }); }
     }
     return new Response("not found", { status: 404 });
   },
@@ -138,8 +161,18 @@ await openBrowser({ url: shell.url, token, window: ${JSON.stringify(c.targets.de
 `;
 }
 
+import { infer } from "./glue/infer.ts";
+import { analyze } from "./glue/boundary.ts";
+import { generateBoundaryFiles } from "./glue/desktop-scaffold.ts";
+
 export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; outfile?: string; noCompile?: boolean } = {}) {
   const d = c.targets.desktop ?? {};
+  {
+    // Boundary glue is regenerated on every build: stubs, action proxies, host table.
+    const inf = infer();
+    const { modules } = analyze({ srcDir: inf.srcDir, aliases: { "@": inf.vite.aliases["@"] ?? inf.srcDir } });
+    await generateBoundaryFiles(process.cwd(), inf, modules);
+  }
   const mode = d.mode ?? "spa";
   const build = mode === "spa" ? d.clientBuild : c.worker.build;
   if (build) await $`sh -c ${build}`;
@@ -168,12 +201,34 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   }
 
   const outs: string[] = [];
+  const migrationDirs = Object.values(c.bindings).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
+  const defineMap: Record<string, string> = {};
+  for (let i = 0; i < defines.length; i += 2) { const [k, v] = defines[i + 1]!.split(/=(.*)/s); defineMap[k!] = v!; }
+  const shimPath = Bun.resolveSync("@rustybuns/shell-bun/shims", process.cwd());
+  const inf = infer();
+  const atAlias = join(process.cwd(), inf.vite.aliases["@"] ?? inf.srcDir);
   for (const t of targets) {
     const out = opts.outfile ?? `dist/${c.name}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
-    const migrationDirs = Object.values(c.bindings).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
-    const args = ["build", "--compile", ".rustybuns/desktop.ts", "--outfile", out, "--target", `bun-${t}`,
-      ...defines, ...(assets ? ["--asset", assets] : []), ...migrationDirs.flatMap((m) => ["--asset", m])];
-    await $`bun ${args}`;
+    const r = await Bun.build({
+      entrypoints: [".rustybuns/desktop.ts"],
+      outdir: dirname(out),          // Bun.build places compile.outfile under outdir
+      compile: { target: `bun-${t}`, outfile: basename(out), ...(assets || migrationDirs.length ? { assets: [assets, ...migrationDirs].filter(Boolean) } : {}) },
+      define: defineMap,
+      plugins: [{
+        name: "rustybuns-shims",
+        setup(b) {
+          // Host side: the worker-runtime modules become the local runtime.
+          b.onResolve({ filter: /^(cloudflare:workers|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
+          // The app's "@/x" alias, resolved the way its vite config does.
+          b.onResolve({ filter: /^@\// }, (args) => {
+            const base = join(atAlias, args.path.slice(2));
+            for (const c of [base, base + ".ts", base + ".tsx", base + ".js", join(base, "index.ts")]) if (existsSync(c)) return { path: c };
+            return undefined;
+          });
+        },
+      }],
+    } as any);
+    if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
     outs.push(out);
   }
   return outs.join("\n");

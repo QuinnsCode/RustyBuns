@@ -2,7 +2,7 @@
 
 **Your web app, shipped as a native binary, with a server you can move anywhere.**
 
-> Status: alpha, slice 2. Desktop path verified on Linux; Alchemy generation not yet run against a live account. Details in [STATUS.md](STATUS.md).
+> Status: alpha, slice 4. Desktop path verified on Linux; Alchemy generation not yet run against a live account. Details in [STATUS.md](STATUS.md).
 
 Write TypeScript. Opt into Rust when something is slow. Reuse the React you already have. Put the server wherever you want it.
 
@@ -158,6 +158,14 @@ No console targets. No pixel-identical rendering across browsers. No native menu
 3. When something's slow, we drop that one function into Rust. Nothing else changes.
 
 ---
+
+## 🧠 How the desktop build treats RSC
+
+Locally there is no cloud to keep work away from, so the server/client split
+collapses: `"use server"` actions run for real on the Bun host, server
+components render client-side, request context is the one local user. Your
+`src/` is never edited; the boundary analysis generates stubs and proxies at
+build time. See [ROADMAP.md](ROADMAP.md) for the target matrix.
 
 ## 🛠️ Run it
 
