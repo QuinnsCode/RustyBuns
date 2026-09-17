@@ -43,6 +43,12 @@ export interface DesktopTarget {
 
 export interface RustyBunsConfig {
   name: string;
+  /**
+   * Where the app's source lives and how it's aliased. Inferred from tsconfig
+   * paths / vite aliases when omitted; set it when your layout is unusual:
+   *   source: { dir: "app", aliases: { "~": "app", "#lib": "lib" } }
+   */
+  source?: { dir?: string; aliases?: Record<string, string>; ignore?: string[] };
   worker: {
     /** Entry as wrangler sees it (RWSDK: src/worker.tsx). */
     main: string;

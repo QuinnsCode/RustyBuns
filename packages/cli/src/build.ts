@@ -161,17 +161,17 @@ await openBrowser({ url: shell.url, token, window: ${JSON.stringify(c.targets.de
 `;
 }
 
-import { infer } from "./glue/infer.ts";
+import { sourceLayout } from "./glue/source.ts";
 import { analyze } from "./glue/boundary.ts";
 import { generateBoundaryFiles } from "./glue/desktop-scaffold.ts";
 
 export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; outfile?: string; noCompile?: boolean } = {}) {
   const d = c.targets.desktop ?? {};
+  const src = sourceLayout(process.cwd(), c);
   {
     // Boundary glue is regenerated on every build: stubs, action proxies, host table.
-    const inf = infer();
-    const { modules } = analyze({ srcDir: inf.srcDir, aliases: { "@": inf.vite.aliases["@"] ?? inf.srcDir } });
-    await generateBoundaryFiles(process.cwd(), inf, modules);
+    const { modules } = analyze({ srcDir: src.dir, aliases: src.aliases, ignore: src.ignore });
+    await generateBoundaryFiles(process.cwd(), src.inf, modules);
   }
   const mode = d.mode ?? "spa";
   const build = mode === "spa" ? d.clientBuild : c.worker.build;
@@ -205,8 +205,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   const defineMap: Record<string, string> = {};
   for (let i = 0; i < defines.length; i += 2) { const [k, v] = defines[i + 1]!.split(/=(.*)/s); defineMap[k!] = v!; }
   const shimPath = Bun.resolveSync("@rustybuns/shell-bun/shims", process.cwd());
-  const inf = infer();
-  const atAlias = join(process.cwd(), inf.vite.aliases["@"] ?? inf.srcDir);
+  const aliasEntries = Object.entries(src.aliases).sort((a, b) => b[0].length - a[0].length);
   for (const t of targets) {
     const out = opts.outfile ?? `dist/${c.name}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
     const r = await Bun.build({
@@ -219,10 +218,13 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
         setup(b) {
           // Host side: the worker-runtime modules become the local runtime.
           b.onResolve({ filter: /^(cloudflare:workers|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
-          // The app's "@/x" alias, resolved the way its vite config does.
-          b.onResolve({ filter: /^@\// }, (args) => {
-            const base = join(atAlias, args.path.slice(2));
-            for (const c of [base, base + ".ts", base + ".tsx", base + ".js", join(base, "index.ts")]) if (existsSync(c)) return { path: c };
+          // The app's aliases ("@/x", "~/x", "#lib/x"), resolved the way tsconfig/vite do.
+          b.onResolve({ filter: /^[@~#]/ }, (args) => {
+            for (const [alias, dir] of aliasEntries) {
+              if (args.path !== alias && !args.path.startsWith(alias + "/")) continue;
+              const base = join(process.cwd(), dir, args.path.slice(alias.length + 1));
+              for (const c of [base, base + ".ts", base + ".tsx", base + ".js", base + ".jsx", join(base, "index.ts"), join(base, "index.tsx")]) if (existsSync(c)) return { path: c };
+            }
             return undefined;
           });
         },

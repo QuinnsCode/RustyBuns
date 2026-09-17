@@ -9,6 +9,7 @@ import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
 import type { RustyBunsConfig } from "./config.ts";
 import { infer } from "./glue/infer.ts";
+import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
 
@@ -35,17 +36,18 @@ async function writeIfChanged(path: string, content: string, opts: { adopt?: boo
 }
 
 async function boundary(root = process.cwd()) {
-  const inf = infer(root);
-  const { modules } = analyze({ root, srcDir: inf.srcDir, aliases: { "@": inf.vite.aliases["@"] ?? inf.srcDir } });
-  const files = await generateBoundaryFiles(root, inf, modules);
-  return { inf, modules, files };
+  const cfg = (await Bun.file("rustybuns.config.ts").exists()) ? await loadConfig() : undefined;
+  const src = sourceLayout(root, cfg);
+  const { modules } = analyze({ root, srcDir: src.dir, aliases: src.aliases, ignore: src.ignore });
+  const files = await generateBoundaryFiles(root, src.inf, modules);
+  return { inf: src.inf, src, modules, files };
 }
 
 async function addDesktop(flags: string[]) {
   const root = process.cwd();
-  const { inf, modules } = await boundary(root);
+  const { inf, src, modules } = await boundary(root);
   const e = flags.indexOf("--entry");
-  const out = await scaffoldDesktopPackage(root, inf, { entryComponent: e >= 0 ? flags[e + 1] : undefined });
+  const out = await scaffoldDesktopPackage(root, inf, { entryComponent: e >= 0 ? flags[e + 1] : undefined, aliases: src.aliases });
   console.log(report(modules));
   for (const w of out.written) console.log("wrote   " + w.replace(root + "/", ""));
   for (const s of out.skipped) console.log("kept    " + s.replace(root + "/", ""));
@@ -55,6 +57,8 @@ async function addDesktop(flags: string[]) {
 async function init() {
   const inf = infer();
   console.log(`detected: ${inf.framework} app "${inf.name}" (${inf.pm}${inf.hasReact ? ", react" : ""}${inf.hasThree ? ", three" : ""}${inf.hasPrisma ? ", prisma" : ""}${inf.hasBetterAuth ? ", better-auth" : ""})`);
+  console.log(`source:   ${inf.srcDir}/ (${inf.srcDirSource}${Object.keys(inf.aliases).length ? `, aliases ${Object.entries(inf.aliases).map(([a, d]) => `${a}->${d}`).join(" ")}` : ""})`);
+  if (inf.srcDirSource === "guess") console.log(`          not sure about that; set source: { dir, aliases } in rustybuns.config.ts if it's wrong`);
   const src = (await Bun.file("wrangler.jsonc").exists()) ? "wrangler.jsonc"
     : (await Bun.file("wrangler.json").exists()) ? "wrangler.json"
     : (await Bun.file("wrangler.toml").exists()) ? "wrangler.toml" : null;
@@ -67,6 +71,8 @@ async function init() {
   if (inf.scripts["desktop:client"]) d.clientBuild = inf.runCmd("desktop:client") + (inf.scripts["desktop:sync"] ? ` && ${inf.runCmd("desktop:sync")}` : "");
   const host = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   d.targets = [host as any];
+  cfg.source = { dir: inf.srcDir, aliases: inf.aliases };
+  cfg.source = { dir: inf.srcDir, aliases: inf.aliases };
   const body = `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`;
   await Bun.write("rustybuns.config.ts", body);
   console.log(`wrote rustybuns.config.ts from ${src}`);

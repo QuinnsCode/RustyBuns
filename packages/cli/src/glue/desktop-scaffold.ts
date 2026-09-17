@@ -93,10 +93,10 @@ export function rustybuns(): Plugin {
 }
 
 /** Written once: the developer owns these afterwards. */
-export async function scaffoldDesktopPackage(root: string, inf: Inferred, opts: { dir?: string; entryComponent?: string } = {}): Promise<ScaffoldOut> {
+export async function scaffoldDesktopPackage(root: string, inf: Inferred, opts: { dir?: string; entryComponent?: string; aliases?: Record<string, string> } = {}): Promise<ScaffoldOut> {
   const out: ScaffoldOut = { written: [], skipped: [] };
   const dir = join(root, opts.dir ?? "packages/desktop");
-  const srcAlias = inf.vite.aliases["@"] ?? inf.srcDir;
+  const appAliases = opts.aliases ?? { "@": inf.srcDir, ...inf.aliases };
   const hasApp = !!opts.entryComponent;
 
   await writeOnce(join(dir, "package.json"), JSON.stringify({
@@ -179,7 +179,10 @@ export default defineConfig({
   root: resolve(__dirname, ${JSON.stringify(opts.dir ?? "packages/desktop")}),
   publicDir: resolve(__dirname, "public"),
   resolve: {
-    alias: { "@": resolve(__dirname, ${JSON.stringify(srcAlias)}), ...reactAlias },
+    alias: {
+${Object.entries(appAliases).map(([a, d]) => `      ${JSON.stringify(a)}: resolve(__dirname, ${JSON.stringify(d)}),`).join("\n")}
+      ...reactAlias,
+    },
     dedupe: ["react", "react-dom"${inf.hasThree ? ', "three"' : ""}],
   },
   esbuild: { jsx: "automatic" },

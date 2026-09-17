@@ -30,8 +30,30 @@ export interface Inferred {
     desktopConfigPath: string | null;
   };
   wranglerPath: string | null;
+  /** Where app source lives. From tsconfig paths, then the vite "@" alias, then common names. */
   srcDir: string;
+  /** Import aliases, e.g. { "@": "src", "~": "app" }. tsconfig paths first, vite second. */
+  aliases: Record<string, string>;
+  srcDirSource: "tsconfig" | "vite" | "guess";
   workerEntry: string | null;
+}
+
+/** tsconfig paths -> { alias: dir }. "@/*": ["./src/*"] becomes { "@": "src" }. */
+export function inferTsconfigAliases(root: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const cfg = ["tsconfig.json", "jsconfig.json"].map((c) => join(root, c)).find(existsSync);
+  if (!cfg) return out;
+  const txt = readFileSync(cfg, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1");
+  let j: any; try { j = JSON.parse(txt); } catch { return out; }
+  const baseUrl: string = j.compilerOptions?.baseUrl ?? ".";
+  for (const [k, v] of Object.entries<any>(j.compilerOptions?.paths ?? {})) {
+    const target = Array.isArray(v) ? v[0] : v;
+    if (typeof target !== "string") continue;
+    const alias = k.replace(/\/\*$/, "");
+    const dir = join(baseUrl, target.replace(/^\.\//, "").replace(/\/\*$/, "")).replace(/^\.\//, "");
+    if (alias && !alias.includes("*")) out[alias] = dir;
+  }
+  return out;
 }
 
 function readJson(p: string): any | null {
@@ -79,8 +101,13 @@ export function infer(root = process.cwd()): Inferred {
     : deps["vite"] ? "vite" : "unknown";
   const pm = detectPm(root);
   const wranglerPath = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].map((c) => join(root, c)).find(existsSync) ?? null;
-  const srcDir = existsSync(join(root, "src")) ? "src" : ".";
-  const workerEntry = ["src/worker.tsx", "src/worker.ts", "src/index.ts"].find((c) => existsSync(join(root, c))) ?? null;
+  const tsAliases = inferTsconfigAliases(root);
+  const aliases = { ...vite.aliases, ...tsAliases };   // tsconfig wins: it is what the framework and editor use
+  let srcDir: string, srcDirSource: Inferred["srcDirSource"];
+  const primary = aliases["@"] ?? aliases["~"];
+  if (primary) { srcDir = primary; srcDirSource = tsAliases["@"] || tsAliases["~"] ? "tsconfig" : "vite"; }
+  else { srcDir = ["src", "app", "lib", "client", "web"].find((d) => existsSync(join(root, d))) ?? "."; srcDirSource = "guess"; }
+  const workerEntry = [`${srcDir}/worker.tsx`, `${srcDir}/worker.ts`, `${srcDir}/index.ts`, "worker.ts"].find((c) => existsSync(join(root, c))) ?? null;
   return {
     name: pkg.name ?? "app",
     version: pkg.version ?? "0.0.0",
@@ -91,6 +118,6 @@ export function infer(root = process.cwd()): Inferred {
     hasPrisma: !!deps["@prisma/client"] || !!deps["prisma"],
     hasBetterAuth: !!deps["better-auth"],
     scripts: pkg.scripts ?? {},
-    vite, wranglerPath, srcDir, workerEntry,
+    vite, wranglerPath, srcDir, aliases, srcDirSource, workerEntry,
   };
 }

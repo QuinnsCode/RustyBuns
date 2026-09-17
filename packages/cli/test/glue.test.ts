@@ -40,3 +40,25 @@ test("wrangler round trip keeps every binding and generates both files", async (
   expect(g.durable_objects.bindings.length).toBe(3);
   expect(g.r2_buckets[0].bucket_name).toBe("druids-curse-assets");
 });
+
+test("layout: app/ with ~ and #lib from tsconfig paths, no src/", () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs");
+  const { tmpdir } = require("node:os");
+  const r = mkdtempSync(tmpdir() + "/oddapp-");
+  mkdirSync(r + "/app/lib", { recursive: true });
+  writeFileSync(r + "/package.json", JSON.stringify({ name: "odd", dependencies: { vite: "6", react: "19" } }));
+  writeFileSync(r + "/tsconfig.json", `{ "compilerOptions": { "baseUrl": ".", "paths": { "~/*": ["./app/*"], "#lib/*": ["./app/lib/*"] } } }`);
+  writeFileSync(r + "/app/act.ts", `"use server";\nimport { thing } from "#lib/db";\nexport async function act() { return thing(); }\n`);
+  writeFileSync(r + "/app/lib/db.ts", `import { env } from "cloudflare:workers";\nexport const thing = () => env.X;\n`);
+  writeFileSync(r + "/app/C.tsx", `"use client";\nimport { act } from "~/act";\nexport const C = () => null;\n`);
+  const i = infer(r);
+  expect(i.srcDir).toBe("app");
+  expect(i.srcDirSource).toBe("tsconfig");
+  expect(i.aliases).toEqual({ "~": "app", "#lib": "app/lib" });
+  const { modules } = analyze({ root: r, srcDir: i.srcDir, aliases: i.aliases });
+  const t = Object.fromEntries(modules.map((m) => [m.file, m.tier]));
+  expect(t["app/act.ts"]).toBe("action");
+  expect(t["app/lib/db.ts"]).toBe("server");
+  expect(t["app/C.tsx"]).toBe("client");
+  expect(plan(modules).stubNames["#lib/db"]).toEqual(["thing"]);
+});
