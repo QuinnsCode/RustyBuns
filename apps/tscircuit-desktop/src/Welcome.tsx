@@ -63,6 +63,9 @@ export function Welcome({ status, onOpened }: { status: Status; onOpened: () => 
           </div>
         </section>
       )}
+      <footer className="muted">
+        <a href="/THIRD_PARTY_LICENSES.txt" target="_blank" rel="noreferrer">Open-source licenses</a>
+      </footer>
     </main>
   );
 }

@@ -178,7 +178,7 @@ import { basename, join } from "node:path";
 function assetDir(rel: string): string | undefined {
   if (!rel) return undefined;
   const embedded = join(import.meta.dir, basename(rel));
-  return existsSync(embedded) ? embedded : join(import.meta.dir, rel);
+  return existsSync(embedded) ? embedded : join(process.cwd(), rel);
 }
 
 const dataDir = ${JSON.stringify(dataDir)}.replace(/^~/, homedir());
@@ -191,10 +191,12 @@ ${bind.join("\n")}
 // Durable Objects run in-process. Bound after env exists because a DO's
 // constructor receives this same env (a DO can use DB, KV, other DOs).
 ${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
+// Lets import { env } from "cloudflare:workers" see the local bindings.
+globalThis.__RB_ENV = env;
 
 const token = mintToken();
 const shell = serve<typeof env>({
-  assets: assetDir(${JSON.stringify(c.worker!.assets ? "../" + c.worker!.assets : "")}),
+  assets: assetDir(${JSON.stringify(c.worker!.assets ?? "")}),
   runWorkerFirst: ${JSON.stringify(c.worker!.runWorkerFirst ?? [])},
   token,
   reporter: stdoutReporter,

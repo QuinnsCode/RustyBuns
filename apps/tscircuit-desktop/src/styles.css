@@ -53,6 +53,7 @@ code { font: .9em ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 /* welcome */
 .welcome { max-width: 46rem; margin: 0 auto; padding: 4rem 1.5rem; display: grid; gap: 2.5rem; }
 .welcome-hero p { max-width: 38rem; color: var(--silk-dim); font-size: 1.05rem; margin-bottom: 1.2rem; }
+.welcome footer a { color: var(--silk-dim); }
 .browser .path { margin-bottom: .5rem; }
 .browser .dirs { max-height: 16rem; overflow: auto; border-left: 2px solid var(--mask-3); padding-left: .8rem; margin-bottom: 1rem; }
 .fatal, .loading { padding: 3rem; color: var(--silk-dim); }

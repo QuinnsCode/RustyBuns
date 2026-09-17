@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "NODE_OPTIONS=--max-old-space-size=8192 vite build",
     "native": "bun native/build.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "licenses": "bun scripts/licenses.ts",
+    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.6",
@@ -30,7 +33,7 @@
     "@tscircuit/internal-dynamic-import": "^0.0.15",
     "@tscircuit/pcb-viewer": "1.11.398",
     "@tscircuit/props": "^0.0.660",
-    "@tscircuit/runframe": "latest",
+    "@tscircuit/runframe": "0.0.2746",
     "@tscircuit/schematic-viewer": "^2.0.95",
     "circuit-json": "^0.0.492",
     "circuit-json-to-bom-csv": "^0.0.17",
@@ -54,7 +57,7 @@
     "react-hot-toast": "^2.5.2",
     "react-query": "^3.39.3",
     "tailwind-merge": "^2.6.0",
-    "tscircuit": "latest",
+    "tscircuit": "0.0.2565",
     "zod": "^3.25.67",
     "zustand": "^5.0.15"
   },
