@@ -4,7 +4,7 @@
 
 A dev dependency. Your `src/` is never edited. Bun runs a local server beside the user's own browser; sqlite stands in for D1, KV, Durable Object storage, and R2.
 
-> Status: `0.1.0`, alpha. Desktop verified on macOS and Linux. Cloud deploys are generated but not yet verified against a live account.
+> Status: `0.1.2`, alpha. Desktop verified on macOS and Linux. Cloud deploys are generated but not yet verified against a live account.
 
 ## Quick start
 

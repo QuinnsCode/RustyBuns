@@ -40,16 +40,25 @@ pnpm exec rustybuns build desktop
 Output: `dist/<name>-<os>-<arch>`. `targets` in the config picks the OS list;
 `"all"` cross-compiles from one machine when there is no Rust in the build.
 
-## Deploy
+## Deploy (cloudflare examle for now)
 
 ```
-pnpm exec rustybuns add deploy   # installs the pinned alchemy + effect set; Effect is rc, carets drift
-pnpm exec rustybuns plan         # shows what would be created; creates nothing
-pnpm exec rustybuns deploy       # refuses unless plan ran for this exact config (--yes to skip)
+pnpm exec rustybuns add deploy
+pnpm exec alchemy profile edit --profile default --add Cloudflare
+pnpm exec rustybuns plan
+pnpm exec rustybuns deploy
 pnpm exec rustybuns destroy
 ```
 
+`add deploy` installs the pinned alchemy + effect set (Effect is rc; carets drift).
+The profile step runs once per machine: choose OAuth, All Scopes, then your account.
+It is saved in `~/.alchemy/`. For CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` instead.
+`plan` shows what would be created and creates nothing. `deploy` refuses unless `plan`
+ran for this exact config (`--yes` to skip). `destroy` removes everything the stack created.
+
 Use a different `name` in the config than your live app the first time.
-On pnpm 10, packages published in the last 24h are held back; if `add deploy` complains, add
-`minimumReleaseAgeExclude: ["alchemy", "effect", "@effect/*"]` to `pnpm-workspace.yaml`.
+
+On pnpm 10, packages published in the last 24h are held back. If `add deploy` complains,
+add `minimumReleaseAgeExclude: ["alchemy", "effect", "@effect/*"]` to `pnpm-workspace.yaml`.
+
 Add `box: { provider: "hetzner" }` under `targets` for a VM column.
