@@ -168,10 +168,10 @@ export function plan(modules: ModuleInfo[]) {
   };
 }
 
-export function report(modules: ModuleInfo[]): string {
+export function report(modules: ModuleInfo[], excluded: Set<string> = new Set()): string {
   const p = plan(modules);
   const lines = [`boundary: ${p.counts.client} client, ${p.counts.action} action, ${p.counts.server} server, ${p.counts.leak} leak`];
-  for (const m of p.actions) lines.push(`  action  ${m.file}  [${m.exports.join(", ")}]  -> proxied to host`);
+  for (const m of p.actions) lines.push(`  action  ${m.file}  [${m.exports.join(", ")}]  -> ${excluded.has(m.file) ? "excluded on desktop" : "proxied to host"}`);
   for (const m of p.servers) lines.push(`  server  ${m.file}  (${m.serverOnly.join(", ")})  -> clientize + alias`);
   for (const m of p.leaks) lines.push(`  leak    ${m.file}  via ${m.leaksVia}  -> alias fixes it`);
   if (p.stubSpecifiers.length) lines.push(`  stubs   ${p.stubSpecifiers.join(", ")}`);

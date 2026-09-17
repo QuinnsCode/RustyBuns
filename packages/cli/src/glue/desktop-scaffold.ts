@@ -18,9 +18,33 @@ async function writeOnce(path: string, text: string, out: ScaffoldOut, force = f
 }
 
 /** Regenerated every build: stubs, action proxies, host action table, aliases. */
-export async function generateBoundaryFiles(root: string, inf: Inferred, modules: ModuleInfo[]): Promise<ScaffoldOut> {
+/** Minimal glob: ** = any path, * = within a segment. Enough for module paths. */
+export function globToRegExp(g: string): RegExp {
+  const re = g
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*\//g, "\u0000")      // **/  -> any dirs (or none)
+    .replace(/\*\*/g, "\u0001")         // **   -> anything
+    .replace(/\*/g, "[^/]*")            // *    -> within a segment
+    .replace(/\u0000/g, "(?:.*/)?")
+    .replace(/\u0001/g, ".*");
+  return new RegExp(`^${re}$`);
+}
+
+export function selectActions(actions: ModuleInfo[], sel?: { include?: string[]; exclude?: string[] }) {
+  const inc = sel?.include?.map(globToRegExp);
+  const exc = sel?.exclude?.map(globToRegExp) ?? [];
+  const on: ModuleInfo[] = [], off: ModuleInfo[] = [];
+  for (const m of actions) {
+    const ok = (!inc || inc.some((r) => r.test(m.file))) && !exc.some((r) => r.test(m.file));
+    (ok ? on : off).push(m);
+  }
+  return { on, off };
+}
+
+export async function generateBoundaryFiles(root: string, inf: Inferred, modules: ModuleInfo[], opts: { actions?: { include?: string[]; exclude?: string[] } } = {}): Promise<ScaffoldOut> {
   const out: ScaffoldOut = { written: [], skipped: [] };
   const p = plan(modules);
+  const { on: hostActions, off: offActions } = selectActions(p.actions, opts.actions);
   const gen = join(root, ".rustybuns");
 
   // 1. server-only specifiers -> one stub module. Everything is a Proxy that
@@ -39,20 +63,25 @@ export const env = new Proxy({}, { get: () => noop });
 export class DurableObject { constructor(public ctx: any, public env: any) {} }
 `, out, true);
 
-  // 2. action proxies: same export names, each POSTs to the host.
+  // 2. action proxies: same export names. Included -> POST to the host.
+  //    Excluded -> reject locally; the host never imports the module.
   for (const m of p.actions) {
     const id = m.file.replace(/[^\w]+/g, "_");
-    const body = [`// GENERATED proxy for ${m.file}: "use server" runs on the Bun host.`,
-      `import { callAction } from "@rustybuns/shell-bun/client";`,
-      ...m.exports.map((fn) => `export const ${fn} = (...args: unknown[]) => callAction(${JSON.stringify(m.file)}, ${JSON.stringify(fn)}, args);`)].join("\n") + "\n";
+    const on = hostActions.includes(m);
+    const body = [`// GENERATED proxy for ${m.file}: ${on ? '"use server" runs on the Bun host.' : "excluded on desktop (rustybuns.config.ts -> desktop.actions)."}`,
+      `import { callAction, unavailable } from "@rustybuns/shell-bun/client";`,
+      ...m.exports.map((fn) => on
+        ? `export const ${fn} = (...args: unknown[]) => callAction(${JSON.stringify(m.file)}, ${JSON.stringify(fn)}, args);`
+        : `export const ${fn} = (..._args: unknown[]) => unavailable(${JSON.stringify(m.file)}, ${JSON.stringify(fn)});`)].join("\n") + "\n";
     await writeOnce(join(gen, "actions", id + ".ts"), body, out, true);
   }
 
   // 3. host action table: imports the REAL modules, keyed by file#fn.
   const tbl = [`// GENERATED: the host's action table. Real modules, real sqlite underneath.`,
-    ...p.actions.map((m, i) => `import * as a${i} from ${JSON.stringify(relative(gen, join(root, m.file)).replace(/\\/g, "/").replace(/^(?!\.)/, "./"))};`),
+    ...(offActions.length ? [`// excluded on desktop: ${offActions.map((m) => m.file).join(", ")}`] : []),
+    ...hostActions.map((m, i) => `import * as a${i} from ${JSON.stringify(relative(gen, join(root, m.file)).replace(/\\/g, "/").replace(/^(?!\.)/, "./"))};`),
     `export const actions: Record<string, Record<string, (...a: any[]) => unknown>> = {`,
-    ...p.actions.map((m, i) => `  ${JSON.stringify(m.file)}: a${i} as any,`),
+    ...hostActions.map((m, i) => `  ${JSON.stringify(m.file)}: a${i} as any,`),
     `};`].join("\n") + "\n";
   await writeOnce(join(gen, "actions.ts"), tbl, out, true);
 

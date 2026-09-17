@@ -6,10 +6,36 @@
 
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, statSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import type { DesktopOs, RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
+
+const EXTS = [".ts", ".tsx", ".mts", ".js", ".mjs", ".cjs", ".jsx"];
+
+/** Resolve like a bundler: exact file, file+ext, or a directory's index / package.json main. Never a bare directory. */
+export function resolveFileOrDir(base: string): string | null {
+  const isFile = (p: string) => { try { return statSync(p).isFile(); } catch { return false; } };
+  if (isFile(base)) return base;
+  for (const e of EXTS) if (isFile(base + e)) return base + e;
+  try {
+    if (statSync(base).isDirectory()) {
+      const pkg = join(base, "package.json");
+      if (isFile(pkg)) {
+        try {
+          const j = JSON.parse(readFileSync(pkg, "utf8"));
+          const main = typeof j.exports === "string" ? j.exports
+            : j.exports?.["."]?.import ?? j.exports?.["."]?.default ?? j.exports?.["."] ?? j.module ?? j.main;
+          if (typeof main === "string") { const m = resolveFileOrDir(join(base, main)); if (m) return m; }
+        } catch {}
+      }
+      for (const e of EXTS) if (isFile(join(base, "index" + e))) return join(base, "index" + e);
+      // Prisma 6 "prisma-client" generator emits client.ts; older ones index.js (handled above)
+      if (isFile(join(base, "client.ts"))) return join(base, "client.ts");
+    }
+  } catch {}
+  return null;
+}
 
 const ALL_OS: DesktopOs[] = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64"];
 
@@ -29,6 +55,8 @@ export function spaEntry(c: RustyBunsConfig): string {
   const kvNames = Object.entries(c.bindings).filter(([, b]) => b.type === "kv").map(([n]) => n);
   const d1s = Object.entries(c.bindings).filter(([, b]) => b.type === "d1").map(([n, b]) => [n, (b as any).databaseName as string, (b as any).migrationsDir as string | undefined] as const);
   const vars = Object.entries(c.bindings).filter(([, b]) => b.type === "var").map(([n, b]) => [n, (b as any).value as string]);
+  const r2s = Object.entries(c.bindings).filter(([, b]) => b.type === "r2").map(([n, b]) => [n, (b as any).bucketName as string] as const);
+  const mounts = d.mounts ?? {};
   return `// GENERATED desktop host (spa mode). Serves the SPA, runs the world in-process
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
@@ -43,9 +71,15 @@ const dataDir = ${JSON.stringify(dataDir)}.replace(/^~/, homedir());
 mkdirSync(dataDir, { recursive: true });
 const local = localBindings(dataDir);
 
-// Compiled: --asset embeds the dir at /$bunfs/root/<basename>. Dev: real path.
-const embedded = join(import.meta.dir, ${JSON.stringify(basename(clientDir))});
-const clientDir = existsSync(embedded) ? embedded : join(import.meta.dir, ${JSON.stringify("../" + clientDir)});
+// Compiled: --asset embeds a dir at /$bunfs/root/<basename>. Dev: the working tree.
+function resolveDir(rel: string): string {
+  const embedded = join(import.meta.dir, basename(rel));
+  return existsSync(embedded) ? embedded : join(process.cwd(), rel);
+}
+const clientDir = resolveDir(${JSON.stringify(clientDir)});
+const mounts: Record<string, string> = {
+${Object.entries(mounts).map(([route, dir]) => `  ${JSON.stringify(route)}: resolveDir(${JSON.stringify(dir)}),`).join("\n")}
+};
 
 // What the world sees as env. KV and D1 are real sqlite; vars are baked;
 // anything with no local twin (pipelines, R2) is a no-op reporter.
@@ -53,12 +87,13 @@ const env: Record<string, unknown> = {
 ${kvNames.map((n) => `  ${n}: local.kv(${JSON.stringify(n)}),`).join("\n")}
 ${d1s.map(([n, db]) => `  ${n}: local.d1(${JSON.stringify(db)}),`).join("\n")}
 ${vars.map(([n, v]) => `  ${n}: ${JSON.stringify(v)},`).join("\n")}
+${r2s.map(([n, bucket]) => { const dir = d.r2?.[n]; return `  ${n}: local.r2(${JSON.stringify(bucket)}${dir ? `, resolveDir(${JSON.stringify(dir)})` : ""}),`; }).join("\n")}
   LOG_PIPELINE: { send: async () => {} },
   LOG_COLDSTORE_PIPELINE: { send: async () => {} },
 };
 // D1 is sqlite: your wrangler migrations apply here unchanged, tracked in
 // d1_migrations. Embedded via --asset so the binary carries its own schema.
-${d1s.filter(([, , m]) => m).map(([n, , m]) => `for (const f of await applyD1Migrations(env.${n} as any, existsSync(join(import.meta.dir, ${JSON.stringify(basename(m!))})) ? join(import.meta.dir, ${JSON.stringify(basename(m!))}) : join(import.meta.dir, ${JSON.stringify("../" + m)}))) console.log("[migrate] " + f);`).join("\n")}
+${d1s.filter(([, , m]) => m).map(([n, , m]) => `for (const f of await applyD1Migrations(env.${n} as any, existsSync(join(import.meta.dir, ${JSON.stringify(basename(m!))})) ? join(import.meta.dir, ${JSON.stringify(basename(m!))}) : join(process.cwd(), ${JSON.stringify(m)}))) console.log("[migrate] " + f);`).join("\n")}
 const WORLD = local.durableObject(World as any, env, "WORLD", { codec: ${JSON.stringify((c.targets.desktop as any)?.storageCodec ?? "json")} });
 const identity: Record<string, string> = {
 ${Object.entries(identity).map(([k, v]) => `  ${JSON.stringify(k)}: \`${v}\`,`).join("\n")}
@@ -70,7 +105,7 @@ globalThis.__RB_IDENTITY = identity;
 const { actions } = await import("./actions.ts");
 
 const token = mintToken();
-const shell = serve<Record<string, unknown>>({ assets: clientDir, token, reporter: stdoutReporter });
+const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter });
 
 // The host IS the middleware: one local player, vouched at the upgrade,
 // exactly the headers the CF shell reads.
@@ -171,7 +206,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   {
     // Boundary glue is regenerated on every build: stubs, action proxies, host table.
     const { modules } = analyze({ srcDir: src.dir, aliases: src.aliases, ignore: src.ignore });
-    await generateBoundaryFiles(process.cwd(), src.inf, modules);
+    await generateBoundaryFiles(process.cwd(), src.inf, modules, { actions: d.actions });
   }
   const mode = d.mode ?? "spa";
   const build = mode === "spa" ? d.clientBuild : c.worker.build;
@@ -180,14 +215,37 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   await Bun.write(".rustybuns/desktop.ts", mode === "spa" ? spaEntry(c) : desktopEntry(c));
   const assets = mode === "spa" ? (d.clientDir ?? "dist/desktop") : c.worker.assets;
 
+  const shimPath = Bun.resolveSync("@rustybuns/shell-bun/shims", process.cwd());
+  const aliasEntries = Object.entries(src.aliases).sort((a, b) => b[0].length - a[0].length);
+  const plugins = [{
+    name: "rustybuns-shims",
+    setup(b: any) {
+      // Host side: the worker-runtime modules become the local runtime.
+      b.onResolve({ filter: /^(cloudflare:workers|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
+      // The app's aliases ("@/x", "~/x", "#lib/x"), resolved the way tsconfig/vite do.
+      b.onResolve({ filter: /^[@~#]/ }, (args: { path: string }) => {
+        for (const [alias, dir] of aliasEntries) {
+          if (args.path !== alias && !args.path.startsWith(alias + "/")) continue;
+          const base = join(process.cwd(), dir, args.path.slice(alias.length + 1));
+          const hit = resolveFileOrDir(base);
+          if (hit) return { path: hit };
+        }
+        return undefined;
+      });
+    },
+  }];
   const version = (await Bun.file("package.json").json().catch(() => ({})))?.version ?? "0.0.0";
   const sha = (await $`git rev-parse --short HEAD`.quiet().nothrow().text()).trim() || "nogit";
-  const defines = [`--define`, `RB_VERSION=${JSON.stringify(`${version}+${sha}`)}`];
-  for (const [k, v] of Object.entries(d.define ?? {})) defines.push("--define", `${k}=${JSON.stringify(v)}`);
+  const defineMap: Record<string, string> = { RB_VERSION: JSON.stringify(`${version}+${sha}`) };
+  for (const [k, v] of Object.entries(d.define ?? {})) defineMap[k] = JSON.stringify(v);
 
   if (opts.noCompile) {
-    console.log(`dev host: bun .rustybuns/desktop.ts`);
-    return ".rustybuns/desktop.ts";
+    // Dev host: same bundle pipeline as the binary, minus --compile. Nothing
+    // embedded; assets and migrations are read from the working tree.
+    const r = await Bun.build({ entrypoints: [".rustybuns/desktop.ts"], outdir: ".rustybuns/dev", target: "bun", define: defineMap, plugins, sourcemap: "linked", throw: false } as any);
+    if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
+    console.log(`dev host: rustybuns run desktop   (= bun .rustybuns/dev/desktop.js)`);
+    return ".rustybuns/dev/desktop.js";
   }
 
   const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}` as DesktopOs;
@@ -202,33 +260,19 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
 
   const outs: string[] = [];
   const migrationDirs = Object.values(c.bindings).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
-  const defineMap: Record<string, string> = {};
-  for (let i = 0; i < defines.length; i += 2) { const [k, v] = defines[i + 1]!.split(/=(.*)/s); defineMap[k!] = v!; }
-  const shimPath = Bun.resolveSync("@rustybuns/shell-bun/shims", process.cwd());
-  const aliasEntries = Object.entries(src.aliases).sort((a, b) => b[0].length - a[0].length);
+  const mountDirs = Object.values(d.mounts ?? {});
+  // Embedded dirs are keyed by basename, so two mounts named the same collide.
+  const names = [assets, ...migrationDirs, ...mountDirs].filter(Boolean).map((p) => basename(p!));
+  if (new Set(names).size !== names.length) throw new Error(`embedded directories must have distinct basenames: ${names.join(", ")}`);
   for (const t of targets) {
     const out = opts.outfile ?? `dist/${c.name}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
     const r = await Bun.build({
       entrypoints: [".rustybuns/desktop.ts"],
       outdir: dirname(out),          // Bun.build places compile.outfile under outdir
-      compile: { target: `bun-${t}`, outfile: basename(out), ...(assets || migrationDirs.length ? { assets: [assets, ...migrationDirs].filter(Boolean) } : {}) },
+      compile: { target: `bun-${t}`, outfile: basename(out), ...(assets || migrationDirs.length || mountDirs.length ? { assets: [assets, ...migrationDirs, ...mountDirs].filter(Boolean) } : {}) },
       define: defineMap,
-      plugins: [{
-        name: "rustybuns-shims",
-        setup(b) {
-          // Host side: the worker-runtime modules become the local runtime.
-          b.onResolve({ filter: /^(cloudflare:workers|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
-          // The app's aliases ("@/x", "~/x", "#lib/x"), resolved the way tsconfig/vite do.
-          b.onResolve({ filter: /^[@~#]/ }, (args) => {
-            for (const [alias, dir] of aliasEntries) {
-              if (args.path !== alias && !args.path.startsWith(alias + "/")) continue;
-              const base = join(process.cwd(), dir, args.path.slice(alias.length + 1));
-              for (const c of [base, base + ".ts", base + ".tsx", base + ".js", base + ".jsx", join(base, "index.ts"), join(base, "index.tsx")]) if (existsSync(c)) return { path: c };
-            }
-            return undefined;
-          });
-        },
-      }],
+      plugins,
+      throw: false,
     } as any);
     if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
     outs.push(out);

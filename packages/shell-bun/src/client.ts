@@ -10,3 +10,8 @@ export async function callAction<T = unknown>(module: string, fn: string, args: 
 export function worldSocket(path = "/ws"): WebSocket {
   return new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`);
 }
+
+/** What an excluded action's proxy does: reject clearly instead of reaching a host that never imported it. */
+export function unavailable(module: string, fn: string): Promise<never> {
+  return Promise.reject(new Error(`${fn} (${module}) is not available in the desktop build`));
+}

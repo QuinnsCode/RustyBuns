@@ -62,3 +62,25 @@ test("layout: app/ with ~ and #lib from tsconfig paths, no src/", () => {
   expect(t["app/C.tsx"]).toBe("client");
   expect(plan(modules).stubNames["#lib/db"]).toEqual(["thing"]);
 });
+
+test("jsonc: URLs and quoted slashes inside comments do not break parsing", async () => {
+  const { parseJsonc } = await import("../src/glue/jsonc.ts");
+  const j = parseJsonc(`{
+    /* see https://aka.ms/tsconfig.json */
+    "a": "http://x/y", // trailing
+    /** needs "esnext"/"nodenext" and "*" */
+    "b": ["*/", "//not a comment"],
+  }`);
+  expect(j).toEqual({ a: "http://x/y", b: ["*/", "//not a comment"] });
+});
+
+test("actions include/exclude globs", async () => {
+  const { selectActions, globToRegExp } = await import("../src/glue/desktop-scaffold.ts");
+  expect(globToRegExp("src/app/actions/game/**").test("src/app/actions/game/mapActions.ts")).toBe(true);
+  expect(globToRegExp("src/app/actions/game/**").test("src/app/actions/social/x.ts")).toBe(false);
+  expect(globToRegExp("**/user/functions.ts").test("src/app/pages/user/functions.ts")).toBe(true);
+  const mk = (file: string) => ({ file } as any);
+  const all = [mk("src/app/actions/game/mapActions.ts"), mk("src/app/actions/social/socialCrud.ts"), mk("src/app/pages/user/functions.ts")];
+  expect(selectActions(all, { include: ["src/app/actions/game/**"] }).on.map((m) => m.file)).toEqual(["src/app/actions/game/mapActions.ts"]);
+  expect(selectActions(all, { exclude: ["**/user/**", "**/social/**"] }).off.length).toBe(2);
+});

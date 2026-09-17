@@ -39,19 +39,21 @@ async function boundary(root = process.cwd()) {
   const cfg = (await Bun.file("rustybuns.config.ts").exists()) ? await loadConfig() : undefined;
   const src = sourceLayout(root, cfg);
   const { modules } = analyze({ root, srcDir: src.dir, aliases: src.aliases, ignore: src.ignore });
-  const files = await generateBoundaryFiles(root, src.inf, modules);
-  return { inf: src.inf, src, modules, files };
+  const files = await generateBoundaryFiles(root, src.inf, modules, { actions: cfg?.targets.desktop?.actions });
+  const { selectActions } = await import("./glue/desktop-scaffold.ts");
+  const excluded = new Set(selectActions(modules.filter((m) => m.tier === "action"), cfg?.targets.desktop?.actions).off.map((m) => m.file));
+  return { inf: src.inf, src, modules, files, excluded };
 }
 
 async function addDesktop(flags: string[]) {
   const root = process.cwd();
-  const { inf, src, modules } = await boundary(root);
+  const { inf, src, modules, excluded } = await boundary(root);
   const e = flags.indexOf("--entry");
   const out = await scaffoldDesktopPackage(root, inf, { entryComponent: e >= 0 ? flags[e + 1] : undefined, aliases: src.aliases });
-  console.log(report(modules));
+  console.log(report(modules, excluded));
   for (const w of out.written) console.log("wrote   " + w.replace(root + "/", ""));
   for (const s of out.skipped) console.log("kept    " + s.replace(root + "/", ""));
-  console.log(`\nnext: ${inf.runCmd("rustybuns build desktop --dev")}  (or point packages/desktop/main.tsx at your component)`);
+  console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")}, then ${inf.execCmd("rustybuns run desktop")}`);
 }
 
 async function init() {
@@ -67,7 +69,7 @@ async function init() {
   const cfg = wranglerToConfig(parseWrangler(await Bun.file(src).text()));
   // Fill desktop defaults from what the repo already has.
   const d = cfg.targets.desktop!;
-  d.clientBuild = inf.vite.desktopConfigPath ? `${inf.runCmd("exec vite").replace("bun exec", "bunx").replace("pnpm exec", "pnpm")} build --config vite.desktop.config.ts` : "vite build --config vite.desktop.config.ts";
+  d.clientBuild = `${inf.execCmd("vite")} build --config vite.desktop.config.ts`;
   if (inf.scripts["desktop:client"]) d.clientBuild = inf.runCmd("desktop:client") + (inf.scripts["desktop:sync"] ? ` && ${inf.runCmd("desktop:sync")}` : "");
   const host = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   d.targets = [host as any];
@@ -110,7 +112,13 @@ try {
       if (rest[0] !== "desktop") throw new Error("usage: rustybuns add desktop [--entry <file>#<Component>]");
       await addDesktop(rest.slice(1)); break;
     }
-    case "boundary": { const { modules } = await boundary(); console.log(report(modules)); break; }
+    case "run": {
+      if (rest[0] !== "desktop") throw new Error("usage: rustybuns run desktop");
+      if (!(await Bun.file(".rustybuns/dev/desktop.js").exists())) await buildDesktop(await loadConfig(), { noCompile: true });
+      const p = Bun.spawn(["bun", ".rustybuns/dev/desktop.js", ...rest.slice(1)], { stdio: ["inherit", "inherit", "inherit"] });
+      process.exit(await p.exited);
+    }
+    case "boundary": { const { modules, excluded } = await boundary(); console.log(report(modules, excluded)); break; }
     case "build": {
       const [what, ...flags] = rest;
       if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--target bun-darwin-arm64]");
@@ -125,8 +133,32 @@ try {
       console.log("copied alchemy.run.ts to project root. Delete rustybuns.config.ts when ready; you own the stack now.");
       break;
     }
+    case "--version": case "-v": case "version": {
+      console.log((await Bun.file(new URL("../package.json", import.meta.url)).json()).version); break;
+    }
     default:
-      console.log(`rustybuns <init|add desktop|boundary|generate|adopt|plan|deploy|destroy|dev|build desktop [--dev] [--target]|eject>`);
+      console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}
+Box and ship the web app you already have. A dev dependency, never in prod.
+
+  init                       read package.json / vite.config / tsconfig / wrangler.*,
+                             write rustybuns.config.ts + .rustybuns/alchemy.run.ts + wrangler.jsonc
+  add desktop [--entry F#C]  scaffold packages/desktop (index.html, main.tsx, world.ts) and
+                             vite.desktop.config.ts; keeps files that already exist
+  boundary                   classify src/: client / action / server / leak, regenerate stubs + proxies
+  generate                   regenerate .rustybuns/ from the config (safe to re-run)
+  adopt                      accept the generated wrangler.jsonc over a hand-written one
+
+  build desktop [--dev]      --dev: vite build + bundle the host, no compile  ->  run desktop
+             [--target T]    T = darwin-arm64 | darwin-x64 | linux-x64 | linux-arm64 | windows-x64
+                             (default: targets in the config; "all" cross-compiles TS-only builds)
+  run desktop                start the dev host (bun .rustybuns/dev/desktop.js)
+
+  plan | deploy | destroy    alchemy against the generated stack (--stage <name> passes through)
+  dev                        alchemy dev: workerd + local simulators for the edge column
+  eject                      copy alchemy.run.ts to the root; you own the stack from then on
+
+  Env:  RB_NO_BROWSER=1      do not open a browser; print the token URL instead
+  Docs: README.md · ADOPTION.md · ROADMAP.md · STATUS.md`);
   }
 } catch (e) {
   console.error(String((e as Error).message ?? e));

@@ -35,6 +35,29 @@ export interface DesktopTarget {
   targets?: "all" | DesktopOs[];
   window?: "app" | "tab";
   dataDir?: string;
+  /**
+   * Which "use server" modules the desktop host imports and runs for real.
+   * Globs on the module path. Excluded actions keep a client proxy that
+   * rejects with "not available on desktop" instead of reaching the host, so
+   * the UI degrades instead of crashing and the host never bundles their deps.
+   *   actions: { include: ["src/app/actions/game/**"] }
+   *   actions: { exclude: ["**\/user/functions.ts", "**\/social/**"] }
+   */
+  actions?: { include?: string[]; exclude?: string[] };
+  /**
+   * Extra static mounts on the host: URL prefix -> directory, embedded into the
+   * binary. The desktop twin of "the worker serves R2 at /asset/:key":
+   *   mounts: { "/asset": ".asset-cache/asset" }
+   * Sync the directory from R2 in clientBuild; content-hashed keys never go stale.
+   */
+  mounts?: Record<string, string>;
+  /**
+   * Which directory backs each R2 binding on the desktop (defaults to the data
+   * dir). Point it at a mount's directory so host-side bucket reads see the
+   * same files the route serves:
+   *   r2: { ASSETS_BUCKET: ".asset-cache/asset" }
+   */
+  r2?: Record<string, string>;
   /** DO storage codec: "json" (readable) or "v8" (structured clone, keeps TypedArrays). */
   storageCodec?: "json" | "v8";
   /** Extra --define values baked into the binary (RB_VERSION is always set). */

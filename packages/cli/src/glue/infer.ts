@@ -6,6 +6,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseJsonc } from "./jsonc.ts";
 
 export type Framework = "rwsdk" | "tanstack-start" | "vite-react" | "vite" | "unknown";
 export type PackageManager = "bun" | "pnpm" | "npm" | "yarn";
@@ -16,6 +17,8 @@ export interface Inferred {
   framework: Framework;
   pm: PackageManager;
   runCmd: (script: string) => string;
+  /** Run a dependency's bin: bunx / pnpm exec / yarn / npx. */
+  execCmd: (bin: string) => string;
   hasReact: boolean;
   hasThree: boolean;
   hasPrisma: boolean;
@@ -43,8 +46,7 @@ export function inferTsconfigAliases(root: string): Record<string, string> {
   const out: Record<string, string> = {};
   const cfg = ["tsconfig.json", "jsconfig.json"].map((c) => join(root, c)).find(existsSync);
   if (!cfg) return out;
-  const txt = readFileSync(cfg, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1");
-  let j: any; try { j = JSON.parse(txt); } catch { return out; }
+  let j: any; try { j = parseJsonc(readFileSync(cfg, "utf8")); } catch { return out; }
   const baseUrl: string = j.compilerOptions?.baseUrl ?? ".";
   for (const [k, v] of Object.entries<any>(j.compilerOptions?.paths ?? {})) {
     const target = Array.isArray(v) ? v[0] : v;
@@ -113,6 +115,7 @@ export function infer(root = process.cwd()): Inferred {
     version: pkg.version ?? "0.0.0",
     framework, pm,
     runCmd: (s) => pm === "npm" ? `npm run ${s}` : `${pm} ${s}`,
+    execCmd: (b) => pm === "bun" ? `bunx ${b}` : pm === "pnpm" ? `pnpm exec ${b}` : pm === "yarn" ? `yarn ${b}` : `npx ${b}`,
     hasReact: !!deps["react"] || framework === "rwsdk",
     hasThree: !!deps["three"],
     hasPrisma: !!deps["@prisma/client"] || !!deps["prisma"],

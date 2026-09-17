@@ -2,12 +2,8 @@
 
 import type { Binding, RustyBunsConfig } from "./config.ts";
 
-export function stripJsonc(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/,(\s*[}\]])/g, "$1");
-}
+import { stripJsonc } from "./glue/jsonc.ts";
+export { stripJsonc };
 
 export interface WranglerJson {
   name?: string;

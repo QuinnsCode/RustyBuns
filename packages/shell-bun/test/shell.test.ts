@@ -82,3 +82,24 @@ test("D1 migrations apply once and are tracked", async () => {
   // the ON CONFLICT target your comment warns about now exists
   await db.prepare("INSERT INTO world_progress (id,user_id,world_slug) VALUES (?,?,?) ON CONFLICT(user_id, world_slug) DO UPDATE SET id=excluded.id").bind("1", "u", "w").run();
 });
+
+test("r2 over a directory: put/get/head/list/delete + mount serving", async () => {
+  const { r2, serve: mk } = await import("../src/index.ts");
+  const { mkdtempSync } = await import("node:fs");
+  const dir = mkdtempSync("/tmp/r2-");
+  const b = r2(dir);
+  await b.put("models/tree.abc123.glb", new Uint8Array([1, 2, 3]), { httpMetadata: { contentType: "model/gltf-binary" } });
+  await b.put("models/rock.glb", "rock");
+  const o = await b.get("models/tree.abc123.glb");
+  expect(o!.size).toBe(3);
+  expect(o!.httpMetadata.contentType).toBe("model/gltf-binary");
+  expect((await b.list({ prefix: "models/" })).objects.map((x) => x.key)).toEqual(["models/rock.glb", "models/tree.abc123.glb"]);
+  expect(await b.head("nope")).toBeNull();
+  const shell = mk({ mounts: { "/asset": dir } });
+  const r = await fetch(shell.url + "/asset/models/rock.glb");
+  expect(await r.text()).toBe("rock");
+  expect((await fetch(shell.url + "/asset/missing")).status).toBe(404);
+  await b.delete("models/rock.glb");
+  expect(await b.head("models/rock.glb")).toBeNull();
+  await shell.stop();
+});

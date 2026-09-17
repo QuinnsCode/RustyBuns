@@ -44,11 +44,13 @@ apps/example         RWSDK-shaped wrangler.jsonc and a stand-in worker/client bu
 | `add desktop`: scaffolds packages/desktop + vite.desktop.config.ts + intro page | working |
 | Host runs `"use server"` actions for real (`/__rb/action`) with `cloudflare:workers` + `rwsdk/worker` shims | working, proven in the binary against sqlite |
 | `/__rb/info` runtime page | working |
+| `build desktop --dev` + `run desktop`: dev host through the same Bun.build pipeline (shims, aliases), no compile | working, proven on the example |
+| `desktop.actions.include/exclude` | working, tested |
 | Alchemy generation | generated against 2.0.0-beta.77 docs; not yet run against a real account |
 | Durable Object binding in async Workers | generated with a comment; API shape unverified |
 | Hetzner target | generated as a draft; Bun-vs-Node on `Hetzner.Service` unverified |
 | Durable Objects in-process: WebSocketPair, acceptWebSocket, hibernation handlers, blockConcurrencyWhile, storage, alarm | working, tested, proven in the compiled binary across restarts |
-| R2 -> directory adapter | slice 3 |
+| R2 -> directory adapter (`env.ASSETS_BUCKET` on desktop), `desktop.mounts` (route -> embedded dir), `desktop.r2` (binding -> dir) | working, tested, proven from the binary |
 | Rust crate + loader | written; needs `cargo` to build (`bun native/build.ts`) |
 | `--no-orphans` | not wired; launcher reaps children on exit instead |
 | Cross-OS desktop builds, signing, installers | CI matrix, slice 4 |
@@ -75,7 +77,8 @@ bun test packages/shell-bun
 cd apps/example
 bun ../../packages/cli/src/index.ts init
 bun ../../packages/cli/src/index.ts build desktop
-RB_NO_BROWSER=1 ./dist/druids-curse      # prints the token URL
+bun ../../packages/cli/src/index.ts run desktop   # dev host, no compile
+RB_NO_BROWSER=1 ./dist/druids-curse-*             # the binary; prints the token URL
 ```
 
 ## What the DO adapter does not emulate (yet)

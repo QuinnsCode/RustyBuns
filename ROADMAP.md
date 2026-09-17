@@ -17,7 +17,7 @@ Alchemy's `InferEnv`; the desktop cell is checked against the same type.
 | ws / stateful | A `Cloudflare.DurableObject` 🟡 | RB in-process DO ✅ | RB in-process DO ✅ | RB in-process DO ✅ | RB in-process DO ✅ |
 | sql | A `Cloudflare.D1` ✅ | RB sqlite on A `Hetzner.Volume` 🔲 · A `Neon`/`PlanetScale` 🔍 | A Neon/PlanetScale 🔍 | A Neon/PlanetScale/Railway PG 🔍 | RB sqlite D1 + migrations ✅ |
 | kv | A `Cloudflare.KV` ✅ | RB sqlite table ✅ | RB sqlite table ✅ | RB sqlite table ✅ | RB sqlite table ✅ |
-| blob | A `Cloudflare.R2` ✅ | RB dir on Volume 🔲 | 🔲 | 🔲 | RB dir adapter 🔲 |
+| blob | A `Cloudflare.R2` ✅ | RB dir on Volume ✅ (adapter) | RB dir ✅ | RB dir ✅ | RB dir adapter + mounts ✅ |
 | queues | A `Cloudflare.Queues` 🔲 | RB in-process 🔲 | 🔲 | 🔲 | RB in-process 🔲 |
 | logs | A `Cloudflare.Pipelines` 🔲 · A `Axiom` 🔍 | A `Axiom` 🔍 | A `Axiom` 🔍 | A `Axiom` 🔍 | stdout ✅ |
 | auth | framework + A `BetterAuth` 🔍 | A `BetterAuth` 🔍 | A `BetterAuth` 🔍 | A `BetterAuth` 🔍 | RB launch token ✅ |

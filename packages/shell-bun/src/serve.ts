@@ -8,11 +8,19 @@
 import type { Server, ServerWebSocket } from "bun";
 import type { CommsPort, ExecutionContext, FetchHandler, Reporter, Socket, SocketHandlers } from "@rustybuns/ports";
 import { join, normalize } from "node:path";
+import { statSync } from "node:fs";
+
+/** fs.statSync works inside /$bunfs (embedded assets); Bun.file().stat() does not always. */
+function kind(p: string): "file" | "dir" | null {
+  try { const st = statSync(p); return st.isDirectory() ? "dir" : st.isFile() ? "file" : null; } catch { return null; }
+}
 import { installCloudflareGlobals, type LocalWebSocket } from "./bindings/durable-object.ts";
 
 export interface ServeOptions<Env> {
   /** Directory of built client assets (Vite dist). Served before fetch(). */
   assets?: string;
+  /** Extra static mounts: URL prefix -> directory. e.g. { "/asset": ".asset-cache/asset" }. Checked before `assets`. */
+  mounts?: Record<string, string>;
   /** Paths that must reach the Worker before asset matching (CF runWorkerFirst). */
   runWorkerFirst?: string[];
   /** Per-launch token. Undefined = no gate (headless/container mode with its own auth). */
@@ -71,16 +79,22 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   };
 
   const asset = async (url: URL): Promise<Response | null> => {
+    for (const [route, dir] of Object.entries(opts.mounts ?? {})) {
+      if (url.pathname !== route && !url.pathname.startsWith(route.replace(/\/$/, "") + "/")) continue;
+      const root = normalize(dir);
+      const p = normalize(join(root, decodeURIComponent(url.pathname.slice(route.replace(/\/$/, "").length))));
+      if (!p.startsWith(root)) return null;
+      if (kind(p) === "file") return new Response(Bun.file(p));
+      return new Response("not found", { status: 404 });
+    }
     if (!opts.assets) return null;
     const root = normalize(opts.assets);
     let p = normalize(join(root, decodeURIComponent(url.pathname)));
     if (!p.startsWith(root)) return null;
-    let f = Bun.file(p);
-    if (!(await f.exists()) || (await f.stat()).isDirectory()) {
-      const idx = Bun.file(join(p, "index.html"));
-      if (await idx.exists()) f = idx; else return null;
-    }
-    return new Response(f);
+    let k = kind(p);
+    if (k === "dir") { p = join(p, "index.html"); k = kind(p); }
+    if (k !== "file") return null;
+    return new Response(Bun.file(p));
   };
 
   const wrap = (ws: ServerWebSocket<WsData>): Socket => ({
