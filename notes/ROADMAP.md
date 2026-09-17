@@ -12,9 +12,9 @@ Alchemy's `InferEnv`; the desktop cell is checked against the same type.
 
 | Need | Cloudflare | Hetzner | Fly | Railway | Desktop |
 |---|---|---|---|---|---|
-| http | A `Cloudflare.Worker` ✅ | A `Hetzner.Service` 🟡 | A 🔍 | A `Railway.Service` / `Function` (Bun) 🔍 | RB `serve()` ✅ |
+| http | A `Cloudflare.Worker` ✅ live | A `Hetzner.Service` 🟡 | A 🔍 | A `Railway.Service` / `Function` (Bun) 🔍 | RB `serve()` ✅ |
 | static | A Worker `assets` ✅ / `Website.*` | A `Hetzner.Website.*` 🔍 | A 🔍 | A 🔍 | RB `--asset` ✅ |
-| ws / stateful | A `Cloudflare.DurableObject` 🟡 | RB in-process DO ✅ | RB in-process DO ✅ | RB in-process DO ✅ | RB in-process DO ✅ |
+| ws / stateful | A `Cloudflare.DurableObject` ✅ live | RB in-process DO ✅ | RB in-process DO ✅ | RB in-process DO ✅ | RB in-process DO ✅ |
 | sql | A `Cloudflare.D1` ✅ | RB sqlite on A `Hetzner.Volume` 🔲 · A `Neon`/`PlanetScale` 🔍 | A Neon/PlanetScale 🔍 | A Neon/PlanetScale/Railway PG 🔍 | RB sqlite D1 + migrations ✅ |
 | kv | A `Cloudflare.KV` ✅ | RB sqlite table ✅ | RB sqlite table ✅ | RB sqlite table ✅ | RB sqlite table ✅ |
 | blob | A `Cloudflare.R2` ✅ | RB dir on Volume ✅ (adapter) | RB dir ✅ | RB dir ✅ | RB dir adapter + mounts ✅ |
@@ -34,7 +34,7 @@ not engineering.
 
 ## Happy path (in order)
 
-1. `plan` against a throwaway Cloudflare account; fix the Worker/DO generator. Unblocks the whole edge column.
+1. ~~`plan` against a throwaway Cloudflare account~~ done: deployed Worker + 3 DOs + D1 + KV + R2 from a generated stack.
 2. Verify `Hetzner.Service` runtime (Bun vs Node); pick Service or Server+cloud-init. Unblocks the box column.
 3. Restructure `gen/` around the matrix above; Fly and Railway become columns, not copies.
 4. R2 -> directory adapter; `pipeline` binding type (pass-through on edge, stdout elsewhere).

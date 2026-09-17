@@ -118,12 +118,21 @@ async function stackHash(): Promise<string> {
   return Bun.hash(a + "\n" + c).toString(16);
 }
 
+/** Run the project-local alchemy with the terminal attached, so its prompts work. */
+async function runAlchemy(args: string[]): Promise<number> {
+  const local = ["node_modules/.bin/alchemy"].find((p) => require("node:fs").existsSync(p));
+  const cmd = local ? [local, ...args] : ["bunx", "alchemy", ...args];
+  const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"] });
+  return await p.exited;
+}
+
 async function alchemy(sub: string, args: string[]) {
   await generate({ adopt: false });
   const hash = await stackHash();
   const stampFile = ".rustybuns/planned";
   if (sub === "plan") {
-    await $`bunx alchemy plan --config .rustybuns/alchemy.run.ts ${args}`;
+    const code = await runAlchemy(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args]);
+    if (code !== 0) process.exit(code);
     await Bun.write(stampFile, hash);
     return;
   }
@@ -138,7 +147,9 @@ async function alchemy(sub: string, args: string[]) {
       process.exit(2);
     }
   }
-  await $`bunx alchemy ${sub} --config .rustybuns/alchemy.run.ts ${args.filter((a) => a !== "--yes")}`;
+  // --yes satisfies our plan check above AND is forwarded to alchemy's own prompt.
+  const code = await runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]);
+  if (code !== 0) process.exit(code);
 }
 
 try {
