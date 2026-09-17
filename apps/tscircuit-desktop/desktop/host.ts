@@ -12,6 +12,7 @@
 //   GET  /api/project/events          SSE: a file changed on disk
 //   POST /api/analyze?min=&engine=    Circuit JSON in, analysis out (Rust, TS fallback)
 //   POST /api/export?format=          write gerbers | bom | pnp | json into <project>/exports
+//   *    /api/proxy/<host>/<path>      forward to an allowed host (see PROXY_HOSTS)
 
 import type { HostContext } from "@rustybuns/shell-bun";
 import { existsSync, readdirSync, statSync, watch, mkdirSync } from "node:fs";
@@ -27,6 +28,38 @@ const MAX_FILE = 2_000_000;
 const MAX_FILES = 500;
 
 let project: string | null = null;
+
+/**
+ * Hosts the evaluator may reach through the host. EasyEDA's API refuses
+ * browser requests from anywhere but tscircuit.com (CORS), so the part
+ * lookups go through here. Anything else is refused: this is not an open proxy.
+ */
+const PROXY_HOSTS = (host: string) => host === "easyeda.com" || host.endsWith(".easyeda.com");
+const FORWARD_HEADERS = ["accept", "content-type", "x-requested-with"];
+
+async function proxy(req: Request, url: URL, ctx: HostContext): Promise<Response> {
+  const rest = url.pathname.slice("/api/proxy/".length);
+  const slash = rest.indexOf("/");
+  const host = slash < 0 ? rest : rest.slice(0, slash);
+  if (!/^[a-z0-9.-]+$/i.test(host) || !PROXY_HOSTS(host.toLowerCase())) return bad(`not an allowed host: ${host}`, 403);
+  const target = `https://${host}${slash < 0 ? "/" : rest.slice(slash)}${url.search}`;
+  const headers = new Headers();
+  for (const h of FORWARD_HEADERS) { const v = req.headers.get(h); if (v) headers.set(h, v); }
+  try {
+    const res = await fetch(target, {
+      method: req.method,
+      headers,
+      body: req.method === "GET" || req.method === "HEAD" ? undefined : await req.arrayBuffer(),
+      redirect: "follow",
+    });
+    const out = new Headers();
+    for (const h of ["content-type", "cache-control"]) { const v = res.headers.get(h); if (v) out.set(h, v); }
+    return new Response(res.body, { status: res.status, headers: out });
+  } catch (err) {
+    ctx.reporter.breadcrumb("proxy failed", { target, error: String(err) });
+    return bad(`could not reach ${host}: ${(err as Error).message}`, 502);
+  }
+}
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const bad = (msg: string, status = 400) => json({ error: msg }, status);
@@ -221,6 +254,7 @@ export default {
       if (path === "/api/project/events") return events();
       if (path === "/api/analyze" && req.method === "POST") return runAnalysis(req, url);
       if (path === "/api/export" && req.method === "POST") return runExport(req, url);
+      if (path.startsWith("/api/proxy/")) return proxy(req, url, ctx);
       return bad("no such route", 404);
     } catch (err) {
       ctx.reporter.escaped("host", err, { path });

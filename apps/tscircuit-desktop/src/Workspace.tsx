@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RunFrame } from "@tscircuit/runframe/runner";
-import evalWebWorkerBlobUrl from "@tscircuit/eval/blob-url";
+import { evalWorkerUrl } from "./evalWorker.ts";
 import { api, type Status } from "./api.ts";
 import { CodeEditor } from "./CodeEditor.tsx";
 import { AnalysisPanel } from "./AnalysisPanel.tsx";
@@ -80,7 +80,7 @@ export function Workspace({ status, onClose }: { status: Status; onClose: () => 
               // Scripts that call circuit.add(...) are entrypoints; files that
               // export a component are rendered through mainComponentPath.
               {...(/\bcircuit\.add\(/.test(fsMap[board] ?? "") ? { entrypoint: board } : { mainComponentPath: board })}
-              evalWebWorkerBlobUrl={evalWebWorkerBlobUrl}
+              evalWebWorkerBlobUrl={evalWorkerUrl}
               forceLatestEvalVersion={false}
               showRunButton={false}
               showFileMenu={false}

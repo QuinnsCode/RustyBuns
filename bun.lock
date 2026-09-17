@@ -29,6 +29,22 @@
         "vite": "^6.2.6",
       },
     },
+    "apps/splat-desktop": {
+      "name": "splat-desktop",
+      "version": "0.1.0",
+      "dependencies": {
+        "@rustybuns/shell-bun": "workspace:*",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+      },
+      "devDependencies": {
+        "@rustybuns/cli": "workspace:*",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "@vitejs/plugin-react": "^4.3.0",
+        "vite": "^6.2.6",
+      },
+    },
     "apps/tscircuit-desktop": {
       "name": "tscircuit-desktop",
       "version": "0.1.0",
@@ -1096,6 +1112,8 @@
     "spicets": ["spicets@0.0.4", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-qo2dAjKxCtLdxeALJHA3KXc5GC//EUMpeRMtvDwa+qV77FZuunS3uHuG0abjGwnHWmc7hU4sMfpS0zMM7GFpUA=="],
 
     "spicey": ["spicey@0.0.14", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-iktSN1BteKEpou3158v25fxGJsNZ4MFeBVV0bZFZ5UZ5NnqusVxVQ1ZrPnCO+2FCmTIBqTD66n0GKMxF6+N/xg=="],
+
+    "splat-desktop": ["splat-desktop@workspace:apps/splat-desktop"],
 
     "splaytree": ["splaytree@3.2.3", "", {}, "sha512-7OXrNWzy6CK+r7Ch9OLPBDTKfB6XlWHjX4P0RU5B3IgFuWPeYN0XtRtlexGRjgbQxpfaUve6jTAwBGWuGntz/w=="],
 
