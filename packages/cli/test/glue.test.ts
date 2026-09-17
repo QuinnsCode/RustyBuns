@@ -84,3 +84,37 @@ test("actions include/exclude globs", async () => {
   expect(selectActions(all, { include: ["src/app/actions/game/**"] }).on.map((m) => m.file)).toEqual(["src/app/actions/game/mapActions.ts"]);
   expect(selectActions(all, { exclude: ["**/user/**", "**/social/**"] }).off.length).toBe(2);
 });
+
+test("deploy guardrail: refuses without a matching plan, accepts --yes", async () => {
+  const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const r = mkdtempSync(tmpdir() + "/rbdeploy-");
+  writeFileSync(r + "/package.json", JSON.stringify({ name: "g", dependencies: { vite: "6", react: "19" } }));
+  writeFileSync(r + "/wrangler.jsonc", `{ "name": "g", "main": "src/worker.tsx", "compatibility_date": "2026-01-01" }`);
+  mkdirSync(r + "/src"); writeFileSync(r + "/src/worker.tsx", "export default { fetch: () => new Response('') }");
+  const cli = new URL("../src/index.ts", import.meta.url).pathname;
+  // stub bunx so no real alchemy runs; record what it was called with
+  const bin = r + "/bin"; mkdirSync(bin);
+  writeFileSync(bin + "/bunx", `#!/bin/sh\necho "STUB $@" >> ${r}/calls.log\n`); require("node:fs").chmodSync(bin + "/bunx", 0o755);
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  const run = (...a: string[]) => Bun.spawnSync(["bun", cli, ...a], { cwd: r, env, stdout: "pipe", stderr: "pipe" });
+  // init needs @rustybuns/cli resolvable for the config import; link the package dir
+  mkdirSync(r + "/node_modules/@rustybuns", { recursive: true });
+  require("node:fs").symlinkSync(new URL("..", import.meta.url).pathname, r + "/node_modules/@rustybuns/cli");
+  const i = run("init"); if (i.exitCode !== 0) console.log(i.stdout.toString(), i.stderr.toString());
+  expect(i.exitCode).toBe(0);
+  const d1 = run("deploy");
+  expect(d1.exitCode).toBe(2);
+  expect(d1.stderr.toString()).toContain("no plan on record");
+  expect(run("plan").exitCode).toBe(0);
+  expect(run("deploy").exitCode).toBe(0);
+  const calls = await Bun.file(r + "/calls.log").text();
+  expect(calls).toContain("STUB alchemy plan");
+  expect(calls).toContain("STUB alchemy deploy");
+  // config change invalidates the plan
+  writeFileSync(r + "/rustybuns.config.ts", (await Bun.file(r + "/rustybuns.config.ts").text()).replace('"name": "g"', '"name": "g2"'));
+  const d2 = run("deploy");
+  expect(d2.exitCode).toBe(2);
+  expect(d2.stderr.toString()).toContain("config changed");
+  expect(run("deploy", "--yes").exitCode).toBe(0);
+});

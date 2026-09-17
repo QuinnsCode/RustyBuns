@@ -94,9 +94,34 @@ async function generate(opts: { adopt: boolean }) {
   else console.log(`wrangler.jsonc ${r}`);
 }
 
+/** Hash of what would be deployed: the generated stack + the config. */
+async function stackHash(): Promise<string> {
+  const a = await Bun.file(".rustybuns/alchemy.run.ts").text();
+  const c = await Bun.file("rustybuns.config.ts").text();
+  return Bun.hash(a + "\n" + c).toString(16);
+}
+
 async function alchemy(sub: string, args: string[]) {
   await generate({ adopt: false });
-  await $`bunx alchemy ${sub} --config .rustybuns/alchemy.run.ts ${args}`;
+  const hash = await stackHash();
+  const stampFile = ".rustybuns/planned";
+  if (sub === "plan") {
+    await $`bunx alchemy plan --config .rustybuns/alchemy.run.ts ${args}`;
+    await Bun.write(stampFile, hash);
+    return;
+  }
+  if (sub === "deploy" && !args.includes("--yes")) {
+    // GUARDRAIL: deploy creates real resources. Require a plan for THIS exact
+    // config first, so nobody provisions a stack they have not looked at.
+    const planned = (await Bun.file(stampFile).exists()) ? (await Bun.file(stampFile).text()).trim() : null;
+    if (planned !== hash) {
+      console.error(planned
+        ? "config changed since the last plan. Run `rustybuns plan` again, or pass --yes to skip."
+        : "no plan on record for this config. Run `rustybuns plan` first (creates nothing), or pass --yes to skip.");
+      process.exit(2);
+    }
+  }
+  await $`bunx alchemy ${sub} --config .rustybuns/alchemy.run.ts ${args.filter((a) => a !== "--yes")}`;
 }
 
 try {
@@ -153,7 +178,10 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              (default: targets in the config; "all" cross-compiles TS-only builds)
   run desktop                start the dev host (bun .rustybuns/dev/desktop.js)
 
-  plan | deploy | destroy    alchemy against the generated stack (--stage <name> passes through)
+  plan                       alchemy plan: shows what would be created, creates nothing
+  deploy [--yes]             alchemy deploy; refuses unless plan ran for this exact config
+  destroy                    alchemy destroy: removes everything the stack created
+                             (--stage <name> passes through to all three)
   dev                        alchemy dev: workerd + local simulators for the edge column
   eject                      copy alchemy.run.ts to the root; you own the stack from then on
 

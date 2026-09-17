@@ -1,7 +1,7 @@
 {
   "name": "@rustybuns/cli",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -23,7 +23,8 @@
     "./config": "./src/config.ts"
   },
   "files": [
-    "src"
+    "src",
+    "README.md"
   ],
   "dependencies": {
     "@rustybuns/shell-bun": "workspace:*",

@@ -44,8 +44,8 @@ Output: `dist/<name>-<os>-<arch>`. `targets` in the config picks the OS list;
 
 ```
 pnpm add -D alchemy@latest effect@latest
-pnpm exec rustybuns plan       # creates nothing
-pnpm exec rustybuns deploy
+pnpm exec rustybuns plan       # shows what would be created; creates nothing
+pnpm exec rustybuns deploy     # refuses unless plan ran for this exact config (--yes to skip)
 pnpm exec rustybuns destroy
 ```
 
