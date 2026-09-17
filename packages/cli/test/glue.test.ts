@@ -36,6 +36,10 @@ test("wrangler round trip keeps every binding and generates both files", async (
   const a = generateAlchemy(c);
   expect(a).toContain('Cloudflare.D1.Database("DB"');
   expect(a).toContain("Cloudflare.InferEnv<typeof Worker>");
+  expect(a).toContain('WORLD_DURABLE_OBJECT: Cloudflare.DurableObject("WORLD_DURABLE_OBJECT", { className: "WorldDurableObject" })');
+  expect(a).not.toContain("DurableObjectNamespace");
+  expect(a).toContain('import * as Command from "alchemy/Command"');
+  expect(a).toContain("providers: Cloudflare.providers()");
   const g = JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, ""));
   expect(g.durable_objects.bindings.length).toBe(3);
   expect(g.r2_buckets[0].bucket_name).toBe("druids-curse-assets");
@@ -117,4 +121,15 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   expect(d2.exitCode).toBe(2);
   expect(d2.stderr.toString()).toContain("config changed");
   expect(run("deploy", "--yes").exitCode).toBe(0);
+});
+
+test("add deploy: pinned install command and overrides per package manager", async () => {
+  const { installCommand, applyOverrides } = await import("../src/glue/deploy-deps.ts");
+  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.77 effect@4\.0\.0-rc\.112 /);
+  expect(installCommand("bun", false)).toMatch(/^bun add -d /);
+  const p = applyOverrides({ pnpm: { overrides: { "@types/three": "0.185.4" } } }, "pnpm");
+  expect(p.changed).toBe(true);
+  expect(p.pkg.pnpm.overrides["@types/three"]).toBe("0.185.4");
+  expect(p.pkg.pnpm.overrides["@effect/platform-node-shared"]).toBe("4.0.0-rc.112");
+  expect(applyOverrides({}, "yarn").pkg.resolutions["effect"]).toBe("4.0.0-rc.112");
 });

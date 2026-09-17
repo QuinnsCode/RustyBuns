@@ -43,11 +43,13 @@ Output: `dist/<name>-<os>-<arch>`. `targets` in the config picks the OS list;
 ## Deploy
 
 ```
-pnpm add -D alchemy@latest effect@latest
-pnpm exec rustybuns plan       # shows what would be created; creates nothing
-pnpm exec rustybuns deploy     # refuses unless plan ran for this exact config (--yes to skip)
+pnpm exec rustybuns add deploy   # installs the pinned alchemy + effect set; Effect is rc, carets drift
+pnpm exec rustybuns plan         # shows what would be created; creates nothing
+pnpm exec rustybuns deploy       # refuses unless plan ran for this exact config (--yes to skip)
 pnpm exec rustybuns destroy
 ```
 
 Use a different `name` in the config than your live app the first time.
+On pnpm 10, packages published in the last 24h are held back; if `add deploy` complains, add
+`minimumReleaseAgeExclude: ["alchemy", "effect", "@effect/*"]` to `pnpm-workspace.yaml`.
 Add `box: { provider: "hetzner" }` under `targets` for a VM column.

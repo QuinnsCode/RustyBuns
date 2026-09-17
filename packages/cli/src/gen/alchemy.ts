@@ -18,11 +18,10 @@ function resource(name: string, b: Binding): string | null {
     case "r2":
       return `export const ${id} = Cloudflare.R2.Bucket("${name}");`;
     case "durable_object":
-      // Async Workers bind a DO by its class export in `main`. Alchemy needs the
-      // class declared; we reference it by name and let the type check tell us
-      // if the shape drifted. See: https://alchemy.run/cloudflare/compute/durable-objects
-      return `// Durable Object "${name}" -> class ${b.className} exported from the worker bundle.\n` +
-             `export const ${id} = Cloudflare.DurableObjectNamespace("${name}", { className: "${b.className}"${b.scriptName ? `, scriptName: "${b.scriptName}"` : ""} });`;
+      // Async Workers bind a DO exported by `main` with Cloudflare.DurableObject
+      // in `env` (src/Cloudflare/Workers/DurableObject.ts, "Async Workers").
+      // Not a top-level resource: it is created inline in env below.
+      return null;
     case "var":
     case "secret":
       return null;
@@ -35,22 +34,27 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   lines.push(`//   rustybuns eject   (keeps this file, you own it from then on)`);
   lines.push(`import * as Alchemy from "alchemy";`);
   lines.push(`import * as Cloudflare from "alchemy/Cloudflare";`);
+  lines.push(`import * as Command from "alchemy/Command";`);
   if (c.targets.box) lines.push(`import * as Hetzner from "alchemy/Hetzner";`);
   lines.push(`import * as Effect from "effect/Effect";`);
+  lines.push(`import * as Config from "effect/Config";`);
+  if (c.targets.box) lines.push(`import * as Layer from "effect/Layer";`);
   lines.push(``);
 
   const envEntries: string[] = [];
   for (const [name, b] of Object.entries(c.bindings)) {
     const r = resource(name, b);
     if (r) { lines.push(r); envEntries.push(`${name}: ${ident(name)}`); }
+    else if (b.type === "durable_object")
+      envEntries.push(`${name}: Cloudflare.DurableObject("${name}", { className: "${b.className}"${b.scriptName ? `, scriptName: "${b.scriptName}"` : ""} })`);
     else if (b.type === "var") envEntries.push(`${name}: ${JSON.stringify(b.value)}`);
-    else if (b.type === "secret") envEntries.push(`${name}: Alchemy.secret("${name}")`);
+    else if (b.type === "secret") envEntries.push(`${name}: Config.redacted("${name}")`);
   }
   lines.push(``);
 
   if (c.worker.build) {
     lines.push(`// Build the app (RWSDK: vite build -> dist/worker + dist/client) before deploy.`);
-    lines.push(`export const Build = Alchemy.Command.Build("Build", { command: ${JSON.stringify(c.worker.build)} });`);
+    lines.push(`export const Build = Command.Build("Build", { command: ${JSON.stringify(c.worker.build)}, outdir: "dist" });`);
     lines.push(``);
   }
 
@@ -86,7 +90,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
 
   lines.push(`export default Alchemy.Stack(`);
   lines.push(`  ${JSON.stringify(c.name)},`);
-  lines.push(`  { providers: [Cloudflare.providers()${c.targets.box ? ", Hetzner.providers()" : ""}], state: Alchemy.localState() },`);
+  lines.push(`  { providers: ${c.targets.box ? "Layer.mergeAll(Cloudflare.providers(), Hetzner.providers())" : "Cloudflare.providers()"}, state: Alchemy.localState() },`);
   lines.push(`  Effect.gen(function* () {`);
   if (c.worker.build) lines.push(`    yield* Build;`);
   lines.push(`    const worker = yield* Worker;`);

@@ -12,6 +12,7 @@ import { infer } from "./glue/infer.ts";
 import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
+import { installCommand, applyOverrides, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
 
@@ -54,6 +55,21 @@ async function addDesktop(flags: string[]) {
   for (const w of out.written) console.log("wrote   " + w.replace(root + "/", ""));
   for (const s of out.skipped) console.log("kept    " + s.replace(root + "/", ""));
   console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")}, then ${inf.execCmd("rustybuns run desktop")}`);
+}
+
+/** Install the pinned Alchemy + Effect set and force transitive @effect/* to match. */
+async function addDeploy(dryRun: boolean) {
+  const inf = infer();
+  const pkgPath = "package.json";
+  const pkg = await Bun.file(pkgPath).json();
+  const { changed } = applyOverrides(pkg, inf.pm);
+  const cmd = installCommand(inf.pm, await Bun.file("pnpm-workspace.yaml").exists());
+  console.log(`pinned deploy deps: ${Object.entries(DEPLOY_DEPS).map(([n, v]) => `${n}@${v}`).join(", ")}`);
+  if (dryRun) { console.log(`would write ${inf.pm === "pnpm" ? "pnpm.overrides" : "overrides"} to package.json and run:\n  ${cmd}`); return; }
+  if (changed) { await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); console.log("wrote overrides to package.json"); }
+  console.log(`$ ${cmd}`);
+  await $`sh -c ${cmd}`;
+  console.log(`\nnext: set a throwaway "name" in rustybuns.config.ts, then ${inf.execCmd("rustybuns plan")}`);
 }
 
 async function init() {
@@ -134,7 +150,8 @@ try {
     case "plan": await alchemy("plan", rest); break;
     case "dev": await alchemy("dev", rest); break;
     case "add": {
-      if (rest[0] !== "desktop") throw new Error("usage: rustybuns add desktop [--entry <file>#<Component>]");
+      if (rest[0] === "deploy") { await addDeploy(rest.includes("--dry-run")); break; }
+      if (rest[0] !== "desktop") throw new Error("usage: rustybuns add desktop [--entry <file>#<Component>] | add deploy [--dry-run]");
       await addDesktop(rest.slice(1)); break;
     }
     case "run": {
@@ -169,6 +186,7 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              write rustybuns.config.ts + .rustybuns/alchemy.run.ts + wrangler.jsonc
   add desktop [--entry F#C]  scaffold packages/desktop (index.html, main.tsx, world.ts) and
                              vite.desktop.config.ts; keeps files that already exist
+  add deploy [--dry-run]     install the pinned alchemy + effect set (and pnpm/npm overrides)
   boundary                   classify src/: client / action / server / leak, regenerate stubs + proxies
   generate                   regenerate .rustybuns/ from the config (safe to re-run)
   adopt                      accept the generated wrangler.jsonc over a hand-written one
