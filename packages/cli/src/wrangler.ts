@@ -1,6 +1,7 @@
 // wrangler.jsonc -> RustyBunsConfig. Reads what RWSDK's scaffold emits.
 
 import type { Binding, RustyBunsConfig } from "./config.ts";
+import { inferWorkerBuild } from "./glue/build-script.ts";
 
 import { stripJsonc } from "./glue/jsonc.ts";
 export { stripJsonc };
@@ -24,7 +25,7 @@ export function parseWrangler(src: string): WranglerJson {
   return JSON.parse(stripJsonc(src));
 }
 
-export function wranglerToConfig(w: WranglerJson): RustyBunsConfig {
+export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string> = {}): RustyBunsConfig {
   const bindings: Record<string, Binding> = {};
   for (const d of w.d1_databases ?? []) bindings[d.binding] = { type: "d1", databaseName: d.database_name, migrationsDir: d.migrations_dir };
   for (const k of w.kv_namespaces ?? []) bindings[k.binding] = { type: "kv" };
@@ -41,7 +42,7 @@ export function wranglerToConfig(w: WranglerJson): RustyBunsConfig {
       runWorkerFirst: Array.isArray(rwf) ? rwf : rwf === true ? ["/*"] : undefined,
       compatibilityDate: w.compatibility_date ?? new Date().toISOString().slice(0, 10),
       compatibilityFlags: w.compatibility_flags ?? ["nodejs_compat"],
-      build: "vite build",
+      build: inferWorkerBuild(scripts).build,
     },
     bindings,
     targets: {

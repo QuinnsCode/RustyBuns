@@ -133,3 +133,16 @@ test("add deploy: pinned install command and overrides per package manager", asy
   expect(p.pkg.pnpm.overrides["@effect/platform-node-shared"]).toBe("4.0.0-rc.112");
   expect(applyOverrides({}, "yarn").pkg.resolutions["effect"]).toBe("4.0.0-rc.112");
 });
+
+test("infer worker build from the release script", async () => {
+  const { inferWorkerBuild } = await import("../src/glue/build-script.ts");
+  const scripts = {
+    build: "vite build",
+    clean: "pnpm run clean:vite",
+    release: "rw-scripts ensure-deploy-env && pnpm run clean && prisma generate && RWSDK_DEPLOY=1 pnpm run build && wrangler deploy",
+  };
+  expect(inferWorkerBuild(scripts)).toEqual({ build: "prisma generate && RWSDK_DEPLOY=1 vite build", from: "release" });
+  expect(inferWorkerBuild({ build: "vite build" })).toEqual({ build: "vite build", from: "build" });
+  expect(inferWorkerBuild({ deploy: "npm run build && wrangler deploy", build: "tsc && vite build" })).toEqual({ build: "tsc && vite build", from: "deploy" });
+  expect(inferWorkerBuild({})).toEqual({ build: "vite build", from: "default" });
+});

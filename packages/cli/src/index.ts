@@ -82,7 +82,8 @@ async function init() {
     : (await Bun.file("wrangler.toml").exists()) ? "wrangler.toml" : null;
   if (!src) throw new Error("no wrangler.jsonc/json found. Init inside an RWSDK (or any Workers) app.");
   if (src.endsWith(".toml")) throw new Error("wrangler.toml: convert to wrangler.jsonc first (wrangler supports both).");
-  const cfg = wranglerToConfig(parseWrangler(await Bun.file(src).text()));
+  const cfg = wranglerToConfig(parseWrangler(await Bun.file(src).text()), inf.scripts);
+  { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts); console.log(`build:    ${b.build}  (from "${b.from}" script)`); }
   // Fill desktop defaults from what the repo already has.
   const d = cfg.targets.desktop!;
   d.clientBuild = `${inf.execCmd("vite")} build --config vite.desktop.config.ts`;

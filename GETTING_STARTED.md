@@ -40,7 +40,7 @@ pnpm exec rustybuns build desktop
 Output: `dist/<name>-<os>-<arch>`. `targets` in the config picks the OS list;
 `"all"` cross-compiles from one machine when there is no Rust in the build.
 
-## Deploy (cloudflare examle for now)
+## Deploy
 
 ```
 pnpm exec rustybuns add deploy
