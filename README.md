@@ -1,41 +1,84 @@
 # 🥐 Rusty Buns
 
-**Ship the web app you already have as a desktop binary, and deploy it anywhere Alchemy reaches.**
+**Bring your Vite Node web app -> get Native Binaries for FREE -> then get easy deployments that work local offline AND over all the big clouds!**
 
-A dev dependency. Your `src/` is never edited. Bun runs a local server beside the user's own browser; sqlite stands in for D1, KV, Durable Object storage, and R2.
+rustybuns is just a dev dependency. Your `src/` is never edited. Bun runs a local server beside the user's own browser; sqlite stands in for D1, KV, Durable Object storage, R2, all the fun services!
 
-> Status: `0.1.4`, alpha. Desktop verified on macOS and Linux. Cloudflare deploy verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). Hetzner / Fly / Railway not yet.
+> Status: `0.1.4`, alpha. Desktop verified on macOS and Linux. Cloudflare deploy verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). Hetzner / Fly / Railway next. **We prioritize the happy path for a Vite React Node app, but this setup is flexible for many setups!**
 
-## Quick start
+## The four flows
 
-Prerequisites: Bun 1.4+, an app that builds with `vite build`, a `wrangler.jsonc`.
+1. Get us downloaded and set up
+2. Get your native binary
+3. Set up deployments
+4. Deploy (Cloudflare for now)
+
+Each one is a few commands. The long version is in [GETTING_STARTED.md](GETTING_STARTED.md).
+
+## 1. Setup
+
+Prereqs:
+- Bun 1.4+
+- an app that builds with `vite build`
+- for the Cloudflare deploy flow: a `wrangler.jsonc`
 
 ```
 pnpm add -D @rustybuns/cli @rustybuns/shell-bun
 pnpm exec rustybuns init
+```
+
+`init` reads your app and writes `rustybuns.config.ts`. Add `.rustybuns/` and `wrangler.generated.jsonc` to `.gitignore`.
+
+## 2. Native binary
+
+```
 pnpm exec rustybuns add desktop
 pnpm exec rustybuns build desktop --dev && pnpm exec rustybuns run desktop
 ```
 
-Your app opens in Chrome, running on a local Bun host. Then:
+Your app opens in the browser, running on a local Bun host. When it looks right:
 
 ```
 pnpm exec rustybuns build desktop        # dist/<name>-<os>-<arch>
 ```
 
-Add `.rustybuns/` and `wrangler.generated.jsonc` to `.gitignore`. Details in [GETTING_STARTED.md](GETTING_STARTED.md).
+## 3. Set up deployments
 
-## What it does
+```
+pnpm exec rustybuns add deploy
+pnpm exec alchemy profile edit --profile default --add Cloudflare
+```
 
-- Reads `package.json`, `vite.config.*`, `tsconfig` paths, and `wrangler.*` to infer your setup.
-- Runs your app as a desktop binary for macOS, Linux, Windows. Server actions run for real against sqlite. Assets and migrations are embedded.
-- Generates a typed Alchemy program from your bindings for cloud deploys.
-- Lets you opt into Rust (WASM in the tab, `bun:ffi` on the host) and `SharedArrayBuffer` workers.
+`add deploy` installs the pinned Alchemy + Effect set. The profile step is once per machine: OAuth, All Scopes, pick your account.
 
-## What it does not do
+## 4. Deploy
+
+```
+pnpm exec rustybuns plan       # shows what would be created, creates nothing
+pnpm exec rustybuns deploy     # asks to confirm, then builds and uploads
+pnpm exec rustybuns destroy    # removes everything the stack created
+```
+
+Use a different `name` in the config than your live app the first time.
+
+## So... what's going on here?
+
+- Infer the setup you need for deployment.
+- Compile your app as a desktop binary for any or all of: macOS, Linux, Windows. Server actions run for real against sqlite. Assets and migrations are just embedded.
+- Generate a typed Alchemy program (the plan of what the app needs to deploy) from your bindings, so you can take your app anywhere and deploy to many different providers as fast as they can provision.
+- Opt into Rust (WASM in the tab, `bun:ffi` on the host) and `SharedArrayBuffer` workers in the web.
+
+## What we aren't trying to do
 
 - Mobile, native menus or tray, pixel-identical rendering across browsers, console targets.
-- Yet: verified cloud deploys, installers and signing, auto-update, `add rust` / `add worker` scaffolds, frameworks other than Vite + React as the tested reference.
+
+## Later?
+
+- Hetzner / Fly / Railway deploys
+- installers + signing
+- auto-update
+- `add rust` / `add worker` scaffolds
+- frameworks other than Vite + React
 
 ## Commands
 
@@ -43,14 +86,15 @@ Add `.rustybuns/` and `wrangler.generated.jsonc` to `.gitignore`. Details in [GE
 |---|---|
 | `init` | infer the app, write `rustybuns.config.ts`, `.rustybuns/alchemy.run.ts`, `wrangler.jsonc` |
 | `add desktop [--entry file#Component]` | scaffold `packages/desktop/` and `vite.desktop.config.ts`; keeps existing files |
+| `add deploy [--dry-run]` | install the pinned alchemy + effect set and package manager overrides |
 | `boundary` | classify `src/` as client / action / server / leak; regenerate stubs and proxies |
 | `generate` / `adopt` | regenerate `.rustybuns/`; accept the generated `wrangler.jsonc` |
 | `build desktop [--dev] [--target T]` | `--dev` bundles the host without compiling; otherwise builds binaries per target |
 | `run desktop` | start the dev host |
-| `plan` / `deploy` / `destroy` / `dev` | Alchemy against the generated stack |
+| `plan` / `deploy [--yes]` / `destroy` / `dev` | Alchemy against the generated stack; `deploy` refuses without a matching `plan` |
 | `eject` | copy `alchemy.run.ts` to the root; you own it |
 
-`RB_NO_BROWSER=1` prints the token URL instead of opening a browser.
+`RB_NO_BROWSER=1` prints the token URL instead of opening a browser. `--profile <name>` passes through to Alchemy for multi-account setups.
 
 ## Config reference (`rustybuns.config.ts`)
 
