@@ -1,0 +1,19 @@
+[package]
+name = "tsci_analysis"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# cdylib: bun:ffi on the host, and a plain .wasm for the browser worker
+# (no wasm-bindgen: the same extern "C" functions are the wasm exports).
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["parallel"]
+# Multi-core clearance check. Off for wasm: build with --no-default-features.
+parallel = ["dep:rayon"]
+
+[dependencies]
+# float_roundtrip: parse numbers exactly like JS does, or near-tied results sort differently.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+rayon = { version = "1", optional = true }

@@ -146,3 +146,39 @@ test("infer worker build from the release script", async () => {
   expect(inferWorkerBuild({ deploy: "npm run build && wrangler deploy", build: "tsc && vite build" })).toEqual({ build: "tsc && vite build", from: "deploy" });
   expect(inferWorkerBuild({})).toEqual({ build: "vite build", from: "default" });
 });
+
+test("spa entry: desktop-only app with a host module, no world, header overrides", async () => {
+  const { spaEntry } = await import("../src/build.ts");
+  const src = spaEntry({
+    name: "tsci-desk",
+    targets: { desktop: { mode: "spa", world: false, host: "desktop/host.ts", headers: { "Cross-Origin-Embedder-Policy": "credentialless" } } },
+  } as any);
+  expect(src).not.toContain("import World");
+  expect(src).toContain('import host from "../desktop/host.ts"');
+  expect(src).toContain("const WORLD: any = null;");
+  expect(src).toContain('"Cross-Origin-Embedder-Policy":"credentialless"');
+  expect(src).toContain("await host.fetch(req, hostCtx)");
+});
+
+test("spa entry: default still binds the world and has no host", async () => {
+  const { spaEntry } = await import("../src/build.ts");
+  const src = spaEntry({ name: "x", bindings: {}, targets: { desktop: { mode: "spa" } } } as any);
+  expect(src).toContain('import World from "../packages/desktop/world.ts"');
+  expect(src).toContain("const host: any = null;");
+});
+
+test("nativeDirs refuses crates that were not built", async () => {
+  const { nativeDirs } = await import("../src/build.ts");
+  expect(() => nativeDirs(["definitely_not_built"])).toThrow(/not built/);
+  expect(nativeDirs()).toEqual([]);
+});
+
+test("build desktop refuses a client build in dist/, where the binary goes", async () => {
+  const { buildDesktop } = await import("../src/build.ts");
+  const dir = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "rb-"));
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    await expect(buildDesktop({ name: "x", targets: { desktop: { mode: "spa", clientDir: "dist", world: false } } } as any)).rejects.toThrow(/dist\/ui/);
+  } finally { process.chdir(cwd); }
+});

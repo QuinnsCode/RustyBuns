@@ -80,7 +80,7 @@ async function init() {
   const src = (await Bun.file("wrangler.jsonc").exists()) ? "wrangler.jsonc"
     : (await Bun.file("wrangler.json").exists()) ? "wrangler.json"
     : (await Bun.file("wrangler.toml").exists()) ? "wrangler.toml" : null;
-  if (!src) throw new Error("no wrangler.jsonc/json found. Init inside an RWSDK (or any Workers) app.");
+  if (!src || rest.includes("--spa")) { await initSpa(inf); return; }
   if (src.endsWith(".toml")) throw new Error("wrangler.toml: convert to wrangler.jsonc first (wrangler supports both).");
   const cfg = wranglerToConfig(parseWrangler(await Bun.file(src).text()), inf.scripts);
   { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts); console.log(`build:    ${b.build}  (from "${b.from}" script)`); }
@@ -101,8 +101,52 @@ async function init() {
   console.log(`\nnext: rustybuns add desktop [--entry ./src/app/App.tsx#App]`);
 }
 
+/**
+ * No wrangler: a plain Vite SPA. The desktop target is the whole story:
+ * your `vite build` output, served by the Bun host, plus an optional host
+ * module for the backend routes the app needs (files, native, exports).
+ */
+async function initSpa(inf: ReturnType<typeof infer>) {
+  const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
+  const cfg = {
+    name: inf.name.replace(/^@[^/]+\//, ""),
+    source: { dir: inf.srcDir, aliases: inf.aliases },
+    bindings: {},
+    targets: {
+      desktop: {
+        mode: "spa",
+        // dist/ holds the binaries; the UI gets its own folder inside it.
+        clientBuild: `${inf.execCmd("vite")} build --outDir dist/ui --emptyOutDir`,
+        clientDir: "dist/ui",
+        world: false,
+        host: "desktop/host.ts",
+        targets: [hostTag],
+      },
+    },
+  };
+  await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
+  console.log("wrote rustybuns.config.ts (desktop-only: no wrangler found)");
+  if (!(await Bun.file("desktop/host.ts").exists())) {
+    await Bun.write("desktop/host.ts", `// Your desktop backend. Runs in the Bun host next to your built SPA.
+// Return a Response for routes you own, null for everything else.
+import type { HostContext } from "@rustybuns/shell-bun";
+
+export default {
+  async fetch(req: Request, ctx: HostContext): Promise<Response | null> {
+    const url = new URL(req.url);
+    if (url.pathname === "/api/hello") return Response.json({ hello: ctx.identity["X-User-Name"], dataDir: ctx.dataDir });
+    return null;
+  },
+};
+`);
+    console.log("wrote desktop/host.ts");
+  }
+  console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}`);
+}
+
 async function generate(opts: { adopt: boolean }) {
   const cfg = await loadConfig();
+  if (!cfg.worker) { console.log("desktop-only config: nothing to generate for the edge"); return; }
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
   console.log("wrote .rustybuns/alchemy.run.ts");
@@ -127,6 +171,7 @@ async function runAlchemy(args: string[]): Promise<number> {
 }
 
 async function alchemy(sub: string, args: string[]) {
+  if (!(await loadConfig()).worker) throw new Error("desktop-only app: no edge stack to plan or deploy");
   await generate({ adopt: false });
   const hash = await stackHash();
   const stampFile = ".rustybuns/planned";
@@ -154,7 +199,7 @@ async function alchemy(sub: string, args: string[]) {
 
 try {
   switch (cmd) {
-    case "init": await init(); break;
+    case "init": await init(); break;   // --spa forces the desktop-only path
     case "generate": await generate({ adopt: false }); break;
     case "adopt": await generate({ adopt: true }); break;
     case "deploy": await alchemy("deploy", rest); break;
@@ -194,8 +239,9 @@ try {
       console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}
 Box and ship the web app you already have. A dev dependency, never in prod.
 
-  init                       read package.json / vite.config / tsconfig / wrangler.*,
+  init [--spa]               read package.json / vite.config / tsconfig / wrangler.*,
                              write rustybuns.config.ts + .rustybuns/alchemy.run.ts + wrangler.jsonc
+                             (no wrangler, or --spa: desktop-only config + desktop/host.ts)
   add desktop [--entry F#C]  scaffold packages/desktop (index.html, main.tsx, world.ts) and
                              vite.desktop.config.ts; keeps files that already exist
   add deploy [--dry-run]     install the pinned alchemy + effect set (and pnpm/npm overrides)

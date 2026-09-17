@@ -10,7 +10,7 @@
 // keyed by content hash on first run.
 
 import { dlopen, type FFIFunction, type ConvertFns } from "bun:ffi";
-import { existsSync, mkdirSync, copyFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -43,7 +43,13 @@ async function materialize(path: string, opts: LoadOptions): Promise<string> {
   const dir = opts.cacheDir ?? join(homedir(), ".cache", "rustybuns");
   mkdirSync(dir, { recursive: true });
   const out = join(dir, `${hash}-${path.split("/").pop()}`);
-  if (!existsSync(out)) copyFileSync(path, out);
+  if (!existsSync(out)) {
+    // copyFileSync can't read out of /$bunfs; write the bytes we already have.
+    // tmp + rename: two instances starting together never dlopen a partial file.
+    const tmp = `${out}.${process.pid}.tmp`;
+    writeFileSync(tmp, new Uint8Array(bytes), { mode: 0o755 });
+    renameSync(tmp, out);
+  }
   return out;
 }
 

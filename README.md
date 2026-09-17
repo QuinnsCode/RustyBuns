@@ -124,3 +124,21 @@ Token-gated, `127.0.0.1` only, COOP/COEP set so `SharedArrayBuffer` works. `/__r
 ## License
 
 Apache-2.0. See [LICENSING.md](LICENSING.md).
+
+## Desktop-only apps (no Cloudflare)
+
+A plain Vite app works too. With no `wrangler.jsonc` (or with `--spa`), `rustybuns init` writes a desktop-only config and a `desktop/host.ts` for your backend routes:
+
+```ts
+desktop: {
+  mode: "spa",
+  clientBuild: "bun run build",
+  clientDir: "dist/ui",
+  world: false,                        // no world socket
+  host: "desktop/host.ts",             // export default { fetch(req, ctx) }, null = not mine
+  native: ["my_crate"],                // embed native/dist/my_crate in the binary
+  headers: { "Cross-Origin-Embedder-Policy": "credentialless" },
+}
+```
+
+The full example is [`apps/tscircuit-desktop`](apps/tscircuit-desktop): tscircuit as a single-file desktop app with a Rust analysis engine.
