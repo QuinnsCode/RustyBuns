@@ -16,6 +16,14 @@
         "@rustybuns/shell-bun": "workspace:*",
       },
     },
+    "apps/spa-example": {
+      "name": "spa-example",
+      "version": "0.3.1",
+      "dependencies": {
+        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/shell-bun": "workspace:*",
+      },
+    },
     "packages/cli": {
       "name": "@rustybuns/cli",
       "version": "0.0.1",
@@ -59,6 +67,8 @@
     "bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
     "example": ["example@workspace:apps/example"],
+
+    "spa-example": ["spa-example@workspace:apps/spa-example"],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 

@@ -80,4 +80,29 @@ export class D1Database {
   close(): void { this.db.close(); }
 }
 
+/**
+ * Apply a wrangler-style migrations dir (0001_*.sql, 0002_*.sql ...) to this
+ * sqlite file, tracking what ran in d1_migrations exactly as D1 does. D1 is
+ * sqlite, so the same files work unchanged. Idempotent; call at every boot.
+ */
+export async function applyD1Migrations(db: D1Database, dir: string): Promise<string[]> {
+  const { readdirSync, existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  if (!existsSync(dir)) return [];
+  db.db.exec("CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  const done = new Set((db.db.query("SELECT name FROM d1_migrations").all() as { name: string }[]).map((r) => r.name));
+  const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+  const applied: string[] = [];
+  for (const f of files) {
+    if (done.has(f)) continue;
+    const sql = await Bun.file(join(dir, f)).text();
+    db.db.transaction(() => {
+      db.db.exec(sql);
+      db.db.query("INSERT INTO d1_migrations (name) VALUES (?)").run(f);
+    })();
+    applied.push(f);
+  }
+  return applied;
+}
+
 export const d1 = (path?: string) => new D1Database(path);

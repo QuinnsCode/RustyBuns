@@ -85,7 +85,11 @@ export class LocalDurableObjectState {
     };
   }
 
-  waitUntil(p: Promise<unknown>) { this.pending.push(p); }
+  waitUntil(p: Promise<unknown>) {
+    // A rejected waitUntil is otherwise invisible: CF drops it, and a
+    // hand-rolled host would console.error. Do the latter.
+    this.pending.push(p.catch((err) => console.error("[waitUntil]", err)));
+  }
   async blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.gate.then(fn);
     this.gate = run.catch(() => {});

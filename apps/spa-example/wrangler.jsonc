@@ -1,0 +1,15 @@
+{
+  "name": "druids-curse-votv",
+  "main": "src/worker.tsx",
+  "compatibility_date": "2025-05-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "binding": "ASSETS" },
+  "durable_objects": { "bindings": [
+    { "name": "SESSION_DURABLE_OBJECT", "class_name": "SessionDurableObject" },
+    { "name": "WORLD_DURABLE_OBJECT", "class_name": "WorldDurableObject" },
+    { "name": "MAP_BUILDER_DO", "class_name": "MapBuilderDO" } ] },
+  "kv_namespaces": [{ "binding": "PRESENCE_KV", "id": "7ebcc55910ee42d6961721684c8286c2" }],
+  "vars": { "WEBAUTHN_APP_NAME": "druids-curse-votv", "BETTER_AUTH_URL": "https://druids-curse-votv.notryanquinn.workers.dev" },
+  "d1_databases": [{ "binding": "DB", "database_name": "druids-curse-votv-db", "database_id": "02a14450" }],
+  "r2_buckets": [{ "binding": "ASSETS_BUCKET", "bucket_name": "druids-curse-assets" }]
+}

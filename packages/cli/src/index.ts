@@ -72,7 +72,7 @@ try {
       const [what, ...flags] = rest;
       if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--target bun-darwin-arm64]");
       const t = flags.indexOf("--target");
-      const out = await buildDesktop(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined });
+      const out = await buildDesktop(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined, noCompile: flags.includes("--dev") });
       console.log(`built ${out}`);
       break;
     }

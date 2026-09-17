@@ -48,6 +48,17 @@ export function wranglerToConfig(w: WranglerJson): RustyBunsConfig {
       build: "vite build",
     },
     bindings,
-    targets: { edge: { provider: "cloudflare" }, desktop: { window: "app" } },
+    targets: {
+      edge: { provider: "cloudflare" },
+      desktop: {
+        mode: "spa",
+        clientBuild: "vite build --config vite.desktop.config.ts",
+        clientDir: "dist/desktop",
+        world: "packages/desktop/world.ts",
+        worldPath: "/ws",
+        targets: ["darwin-arm64"],
+        window: "app",
+      },
+    },
   };
 }

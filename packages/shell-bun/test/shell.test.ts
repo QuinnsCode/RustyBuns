@@ -58,3 +58,27 @@ test("serve: token gate, worker fetch, websocket round trip", async () => {
   ws.close();
   await shell.stop();
 });
+
+test("storage v8 codec keeps TypedArrays and Maps", async () => {
+  const s = storage(":memory:", { codec: "v8" });
+  await s.put("pos", new Float32Array([1.5, 2.5]));
+  await s.put("m", new Map([["a", 1]]));
+  expect(await s.get<Float32Array>("pos")).toBeInstanceOf(Float32Array);
+  expect((await s.get<Map<string, number>>("m"))!.get("a")).toBe(1);
+  const j = storage(":memory:");
+  await j.put("pos", new Float32Array([1.5]));
+  expect(await j.get("pos")).toEqual({ "0": 1.5 });   // the silent JSON degradation, documented
+});
+
+test("D1 migrations apply once and are tracked", async () => {
+  const { applyD1Migrations } = await import("../src/index.ts");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const dir = mkdtempSync("/tmp/mig-");
+  writeFileSync(`${dir}/0001_init.sql`, "CREATE TABLE world_progress (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, world_slug TEXT NOT NULL, UNIQUE(user_id, world_slug));");
+  writeFileSync(`${dir}/0002_unlocks.sql`, "CREATE TABLE world_unlocks (id TEXT PRIMARY KEY, world_slug TEXT, key TEXT, UNIQUE(world_slug, key));");
+  const db = d1(":memory:");
+  expect(await applyD1Migrations(db, dir)).toEqual(["0001_init.sql", "0002_unlocks.sql"]);
+  expect(await applyD1Migrations(db, dir)).toEqual([]);
+  // the ON CONFLICT target your comment warns about now exists
+  await db.prepare("INSERT INTO world_progress (id,user_id,world_slug) VALUES (?,?,?) ON CONFLICT(user_id, world_slug) DO UPDATE SET id=excluded.id").bind("1", "u", "w").run();
+});
