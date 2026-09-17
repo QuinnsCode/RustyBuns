@@ -3,7 +3,7 @@
 // json, size, etag, httpMetadata, customMetadata, writeHttpMetadata).
 // Keys map to files; a sidecar .meta.json carries metadata when set.
 
-import { mkdirSync, readdirSync, statSync, existsSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync, existsSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 export interface R2ObjectLike {
@@ -14,15 +14,30 @@ export interface R2ObjectLike {
 }
 
 export class R2Bucket {
-  constructor(private dir: string) { mkdirSync(dir, { recursive: true }); }
+  /**
+   * @param dir      where objects live. May be read-only (an embedded /$bunfs dir).
+   * @param overlay  writable dir for puts/deletes when `dir` is read-only; reads
+   *                 check the overlay first, then `dir`. Defaults to `dir`.
+   */
+  constructor(private dir: string, private overlay: string = dir) {
+    if (!overlay.startsWith("/$bunfs")) mkdirSync(overlay, { recursive: true });
+  }
 
-  private path(key: string) {
-    const p = join(this.dir, key);
-    if (!p.startsWith(this.dir)) throw new Error("bad key");
+  private within(root: string, key: string) {
+    const p = join(root, key);
+    if (!p.startsWith(root)) throw new Error("bad key");
     return p;
   }
+  /** Resolve a key for reading: overlay wins, then base. Tombstones hide base keys. */
+  private path(key: string) {
+    const o = this.within(this.overlay, key);
+    if (existsSync(o)) return o;
+    if (existsSync(o + ".deleted")) return o;   // deleted from a read-only base
+    return this.within(this.dir, key);
+  }
+  private wpath(key: string) { return this.within(this.overlay, key); }
   private meta(key: string): { httpMetadata?: Record<string, string>; customMetadata?: Record<string, string> } {
-    try { return JSON.parse(require("node:fs").readFileSync(this.path(key) + ".meta.json", "utf8")); } catch { return {}; }
+    try { return JSON.parse(readFileSync(this.path(key) + ".meta.json", "utf8")); } catch { return {}; }
   }
   private obj(key: string, withBody: boolean): R2ObjectLike | null {
     const p = this.path(key);
@@ -46,18 +61,25 @@ export class R2Bucket {
   async get(key: string) { return this.obj(key, true); }
   async head(key: string) { return this.obj(key, false); }
   async put(key: string, value: ArrayBuffer | ArrayBufferView | string | ReadableStream | Blob | null, opts?: { httpMetadata?: Record<string, string>; customMetadata?: Record<string, string> }) {
-    const p = this.path(key); mkdirSync(dirname(p), { recursive: true });
+    const p = this.wpath(key); mkdirSync(dirname(p), { recursive: true });
+    rmSync(p + ".deleted", { force: true });
     await Bun.write(p, value instanceof ReadableStream ? new Response(value) : (value ?? ""));
     if (opts?.httpMetadata || opts?.customMetadata) await Bun.write(p + ".meta.json", JSON.stringify(opts));
     return this.obj(key, false)!;
   }
   async delete(keys: string | string[]) {
-    for (const k of Array.isArray(keys) ? keys : [keys]) { rmSync(this.path(k), { force: true }); rmSync(this.path(k) + ".meta.json", { force: true }); }
+    for (const k of Array.isArray(keys) ? keys : [keys]) {
+      const p = this.wpath(k);
+      rmSync(p, { force: true }); rmSync(p + ".meta.json", { force: true });
+      // A key that only exists in a read-only base gets a tombstone.
+      if (existsSync(this.within(this.dir, k)) && this.dir !== this.overlay) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p + ".deleted", ""); }
+    }
   }
   async list(opts?: { prefix?: string; limit?: number; cursor?: string; delimiter?: string }) {
-    const all: string[] = [];
-    const walk = (d: string, rel: string) => { for (const e of readdirSync(d)) { const p = join(d, e); const r = rel ? `${rel}/${e}` : e; if (statSync(p).isDirectory()) walk(p, r); else if (!e.endsWith(".meta.json")) all.push(r); } };
-    walk(this.dir, "");
+    const set = new Set<string>(); const dead = new Set<string>();
+    const walk = (d: string, rel: string) => { if (!existsSync(d)) return; for (const e of readdirSync(d)) { const p = join(d, e); const r = rel ? `${rel}/${e}` : e; if (statSync(p).isDirectory()) walk(p, r); else if (e.endsWith(".deleted")) dead.add(r.slice(0, -8)); else if (!e.endsWith(".meta.json")) set.add(r); } };
+    walk(this.dir, ""); walk(this.overlay, "");
+    const all = [...set].filter((k) => !dead.has(k));
     const prefix = opts?.prefix ?? ""; const limit = opts?.limit ?? 1000; const after = opts?.cursor ?? "";
     const keys = all.filter((k) => k.startsWith(prefix) && k > after).sort();
     const page = keys.slice(0, limit);
@@ -66,4 +88,4 @@ export class R2Bucket {
   }
 }
 
-export const r2 = (dir: string) => new R2Bucket(dir);
+export const r2 = (dir: string, overlay?: string) => new R2Bucket(dir, overlay);

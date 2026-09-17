@@ -103,3 +103,19 @@ test("r2 over a directory: put/get/head/list/delete + mount serving", async () =
   expect(await b.head("models/rock.glb")).toBeNull();
   await shell.stop();
 });
+
+test("r2 overlay: read-only base, writable overlay, tombstones", async () => {
+  const { r2 } = await import("../src/index.ts");
+  const { mkdtempSync, writeFileSync, chmodSync } = await import("node:fs");
+  const base = mkdtempSync("/tmp/r2base-"), over = mkdtempSync("/tmp/r2over-");
+  writeFileSync(base + "/shipped.glb", "SHIPPED");
+  chmodSync(base, 0o555);
+  const b = r2(base, over);
+  expect(await (await b.get("shipped.glb"))!.text()).toBe("SHIPPED");
+  await b.put("new.bin", "NEW");
+  expect((await b.list()).objects.map((o) => o.key).sort()).toEqual(["new.bin", "shipped.glb"]);
+  await b.delete("shipped.glb");
+  expect(await b.head("shipped.glb")).toBeNull();
+  expect((await b.list()).objects.map((o) => o.key)).toEqual(["new.bin"]);
+  chmodSync(base, 0o755);
+});

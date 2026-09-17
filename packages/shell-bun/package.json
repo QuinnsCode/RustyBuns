@@ -1,17 +1,33 @@
 {
   "name": "@rustybuns/shell-bun",
-  "version": "0.0.1",
   "type": "module",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/QuinnsCode/RustyBuns"
+  },
+  "homepage": "https://github.com/QuinnsCode/RustyBuns",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "description": "The Bun host: token-gated server, in-process Durable Objects, sqlite behind D1/KV/DO storage, R2 over a directory, launcher.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "dependencies": {
-    "@rustybuns/ports": "workspace:*"
-  },
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
     "./intro": "./src/intro.tsx",
     "./shims": "./src/shims.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "@rustybuns/ports": "workspace:*"
   },
   "peerDependencies": {
     "react": "*",
@@ -24,5 +40,12 @@
     "react-dom": {
       "optional": true
     }
-  }
+  },
+  "keywords": [
+    "rustybuns",
+    "bun",
+    "desktop",
+    "durable-objects",
+    "sqlite"
+  ]
 }

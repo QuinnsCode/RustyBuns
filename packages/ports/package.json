@@ -1,1 +1,31 @@
-{ "name": "@rustybuns/ports", "version": "0.0.1", "type": "module", "main": "./src/index.ts", "types": "./src/index.ts" }
+{
+  "name": "@rustybuns/ports",
+  "type": "module",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/QuinnsCode/RustyBuns"
+  },
+  "homepage": "https://github.com/QuinnsCode/RustyBuns",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "description": "Structural port types for Rusty Buns shells and apps. Zero deps.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "rustybuns",
+    "bun",
+    "ports"
+  ]
+}

@@ -1,184 +1,82 @@
 # 🥐 Rusty Buns
 
-**Your web app, shipped as a native binary, with a server you can move anywhere.**
+**Ship the web app you already have as a desktop binary, and deploy it anywhere Alchemy reaches.**
 
-> Status: alpha, slice 4. Desktop path verified on Linux; Alchemy generation not yet run against a live account. Details in [STATUS.md](STATUS.md).
+A dev dependency. Your `src/` is never edited. Bun runs a local server beside the user's own browser; sqlite stands in for D1, KV, Durable Object storage, and R2.
 
-Write TypeScript. Opt into Rust when something is slow. Reuse the React you already have. Put the server wherever you want it.
+> Status: `0.1.0`, alpha. Desktop verified on macOS and Linux. Cloud deploys are generated but not yet verified against a live account.
 
-*(Or Patina Dog, if the bakery lawyers show up. 🐕)*
+## Quick start
 
----
-
-## 🧭 The idea in one breath
-
-Bun beside the browser. Rust behind either one when you opt in. React reused as is. A server that runs next to you, in a container, or on the edge, and the client can't tell the difference.
-
----
-
-## 🦀 Why not Tauri
-
-I wanted it to work. Small binary, fast, everyone recommends it. Three things stopped me.
-
-**You have to write Rust.** The backend is Rust, period. My web team can't touch it, and every small change is a Rust compile. I wanted Rust where it matters and TypeScript everywhere else. Tauri makes it the other way around.
-
-**The webview is whatever the OS has.** WebKitGTK on Linux, WebView2 on Windows, Safari's WebKit on Mac. For a form app that's fine. For WebGPU, SharedArrayBuffer, gamepad, or audio, it's a lottery. The user's own Chrome is newer than anything Tauri hands me.
-
-**The backend can't leave the desktop.** A Tauri core is tied to the window. When I needed the same logic in a container or on the edge, there was no path. You write it twice.
-
-> 🤝 Tauri still wins on bundle size, sandboxing, native menus, and mobile. If you need those, use it.
-
----
-
-## ⚡ Why not Electron
-
-Electron is the safe pick. I still didn't use it.
-
-**You ship a browser.** 150 to 250 MB of Chromium, a second engine in memory, and a full Chromium download on every update. The user already has a browser, and it's probably newer.
-
-**The backend is Node, stuck in the window.** Same problem as Tauri. It can't be lifted out and run somewhere else. And Node's WebSocket stack is slower than Bun's at the one thing my server does all day.
-
-**Rust is a tax.** napi-rs, electron-rebuild, ABI matching per Electron version, breaks on every upgrade. `bun:ffi` is open a library and call it.
-
-**Two protocols.** One for IPC in the window, another for the network. I wanted one WebSocket that works whether the server is next to you or across an ocean.
-
-> 🤝 Electron still wins on deterministic rendering, native window features, installers, and fifteen years of answered bugs. If your app is mostly a window, use it.
-
----
-
-## 💭 What I actually wanted
-
-I just want to write TypeScript.
-
-And when something is slow, I want to write fast code for that one part and not change anything else.
-
-That's it. That's the whole requirement. Here's how the pieces line up to give me that.
-
-### 🍞 Bun
-It's the runtime, but it's also everything around the runtime that used to be twelve packages. SQLite, SQL, WebSockets, static serving, image processing, cron, a test runner, a bundler, and compile to a single binary. And it's written in Rust now with a native FFI, so calling into a Rust library is cheap. So why shouldn't I?
-
-### 🌐 The browser
-I already have an offline internet browser on every machine I'd ship to. If I open a tab pointed at my local Bun server, every React component I already wrote just works. No rewrite, no webview, no wrapper.
-
-### 🧵 Web workers
-If I have the browser, I have workers. That's where compute goes to get off the main thread. Rust compiled to WASM runs there too.
-
-### 🦀 Rust, when I choose
-In the browser as WASM in a worker. On the server as a native library behind `bun:ffi`. Same crate, two targets, and only for the functions that need it.
-
-### 🚀 Eject anything
-The server is a plain Bun process. Run it next to the browser for single player. Put it in a container for multiplayer. Put it on the edge for persistence. The client doesn't know the difference because it always talks WebSocket.
-
-So why not unite all of it?
-
-*🎙️ rusty buns, whispered, tapping gently on the microphone*
-
----
-
-## 🗺️ Where the server lives
-
-| Target | What it's for | Storage |
-|---|---|---|
-| 💻 Beside the browser | Single player, offline, desktop binary | `bun:sqlite` |
-| 📦 In a container | Multiplayer, beefy box, Hetzner/Fly/anything | Postgres via `Bun.SQL` |
-| 🌍 On the edge | Global persistence | Cloudflare Durable Object + D1 |
-
-Same engine. Same ports. Same WebSocket. The deploy target is a config choice, not an architecture decision.
-
----
-
-## 🔗 How the pieces talk
-
-Three buses, picked by where the two sides live.
-
-| Between | Bus | Notes |
-|---|---|---|
-| 🧵 Threads in one process | `SharedArrayBuffer` + `Atomics` | Works in the browser tab (workers + WASM) and in Bun (workers + Rust via `bun:ffi` pointers). Zero copy. |
-| 🌐 Browser and server | WebSocket | The browser's only door. Binary frames, same protocol whether the server is local or remote. |
-| 📦 Server and server | TCP, UDP, Unix socket | Bun to Bun, Bun to a Rust sidecar, box to box. No browser in the way, so no WebSocket needed. |
-
-The engine doesn't care which one carried the bytes. A socket is anything with `send` and `close`, so a browser over WebSocket and a headless bot over TCP sit in the same list.
-
----
-
-## 🎁 What you can buy
-
-Three SKUs. Each is a fixed-scope deliverable with a named artifact at the end.
-
-### 🖥️ SKU 1: Desktop Binary
-
-**For:** anyone with a React/Vite app who wants a downloadable product without Electron.
-
-**Deliverables:**
-- Signed, notarized installers for macOS (arm64/x64), Windows, Linux. One `bun build --compile` matrix, frontend embedded via `--asset`
-- Launcher: opens in the user's Chrome in `--app` mode with your icon; server lifecycle bound to the launcher (`--no-orphans`); single-instance lock; per-launch auth token
-- Local persistence on `bun:sqlite`; offline by default
-- Auto-update channel (manifest + signed delta downloads)
-- CI pipeline that produces all three platforms on tag
-
-**What you get:** a `.dmg`, `.msi`, `.AppImage`, and a release pipeline you own.
-
-### 🔌 SKU 2: Portable Backend
-
-**For:** teams who want single-player and multiplayer, or laptop and cloud, to be the same code.
-
-**Deliverables:**
-- Your domain logic refactored behind the ports contract (`Ctx` / `Socket` / `Storage` / `Reporter`). Platform-free core
-- Three shells, all passing the same test suite: local (SKU 1), Docker, Cloudflare Durable Object
-- `Bun.SQL` adapters: SQLite local, Postgres in the box, D1 on the edge. One query layer
-- Graceful drain on deploy, memory-pressure eviction, Redis pub/sub when you need more than one box
-- Binary WebSocket protocol with backpressure handling; load test report at N clients × tick rate
-
-**What you get:** `docker compose up` and a `wrangler deploy` of the same engine that ships in the desktop build.
-
-### 🏎️ SKU 3: Native Acceleration
-
-**For:** the app that has a hot path TS can't hold. Inference, media, data, physics.
-
-**Deliverables:**
-- Profile first: a `--cpu-prof-md` report identifying the actual hot functions (you get the report either way)
-- Rust crate behind `bun:ffi` for the server-side hot path, or a `wasm-bindgen` worker for the client-side one, with capability negotiation so the app degrades cleanly where the native path is absent
-- Drop-in reference modules: local LLM / whisper inference, image pipeline (`Bun.Image` first, Rust when it isn't enough), columnar data via Polars / DuckDB, vector search
-- Cross-platform cdylib build matrix + a memory-ownership contract, documented
-
-**What you get:** the same app, 10 to 50× faster on the one thing that was slow, and a doc explaining who owns every pointer.
-
----
-
-## 🙅 What this is not
-
-No console targets. No pixel-identical rendering across browsers. No native menus, tray, or dialogs. No mobile. That's the trade, and it's why it costs a fraction of a native rebuild.
-
----
-
-## 🧁 The three sentences
-
-1. You keep your web app and your web team. Nothing is rewritten.
-2. One codebase becomes a desktop binary, a Docker container, and an edge deployment. Same server, three targets.
-3. When something's slow, we drop that one function into Rust. Nothing else changes.
-
----
-
-## 🧠 How the desktop build treats RSC
-
-Locally there is no cloud to keep work away from, so the server/client split
-collapses: `"use server"` actions run for real on the Bun host, server
-components render client-side, request context is the one local user. Your
-`src/` is never edited; the boundary analysis generates stubs and proxies at
-build time. See [ROADMAP.md](ROADMAP.md) for the target matrix.
-
-## 🛠️ Run it
+Prerequisites: Bun 1.4+, an app that builds with `vite build`, a `wrangler.jsonc`.
 
 ```
-bun install && bun test
-cd apps/example
-bun ../../packages/cli/src/index.ts init
-bun ../../packages/cli/src/index.ts build desktop
-./dist/druids-curse
+pnpm add -D @rustybuns/cli @rustybuns/shell-bun
+pnpm exec rustybuns init
+pnpm exec rustybuns add desktop
+pnpm exec rustybuns build desktop --dev && pnpm exec rustybuns run desktop
 ```
 
-Licensed Apache-2.0. See [LICENSING.md](LICENSING.md) for the stack rule.
+Your app opens in Chrome, running on a local Bun host. Then:
 
----
+```
+pnpm exec rustybuns build desktop        # dist/<name>-<os>-<arch>
+```
 
-<p align="center"><sub>🥐 made with Bun, seasoned with Rust, served in your browser</sub></p>
+Add `.rustybuns/` and `wrangler.generated.jsonc` to `.gitignore`. Details in [GETTING_STARTED.md](GETTING_STARTED.md).
+
+## What it does
+
+- Reads `package.json`, `vite.config.*`, `tsconfig` paths, and `wrangler.*` to infer your setup.
+- Runs your app as a desktop binary for macOS, Linux, Windows. Server actions run for real against sqlite. Assets and migrations are embedded.
+- Generates a typed Alchemy program from your bindings for cloud deploys.
+- Lets you opt into Rust (WASM in the tab, `bun:ffi` on the host) and `SharedArrayBuffer` workers.
+
+## What it does not do
+
+- Mobile, native menus or tray, pixel-identical rendering across browsers, console targets.
+- Yet: verified cloud deploys, installers and signing, auto-update, `add rust` / `add worker` scaffolds, frameworks other than Vite + React as the tested reference.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `init` | infer the app, write `rustybuns.config.ts`, `.rustybuns/alchemy.run.ts`, `wrangler.jsonc` |
+| `add desktop [--entry file#Component]` | scaffold `packages/desktop/` and `vite.desktop.config.ts`; keeps existing files |
+| `boundary` | classify `src/` as client / action / server / leak; regenerate stubs and proxies |
+| `generate` / `adopt` | regenerate `.rustybuns/`; accept the generated `wrangler.jsonc` |
+| `build desktop [--dev] [--target T]` | `--dev` bundles the host without compiling; otherwise builds binaries per target |
+| `run desktop` | start the dev host |
+| `plan` / `deploy` / `destroy` / `dev` | Alchemy against the generated stack |
+| `eject` | copy `alchemy.run.ts` to the root; you own it |
+
+`RB_NO_BROWSER=1` prints the token URL instead of opening a browser.
+
+## Config reference (`rustybuns.config.ts`)
+
+| Key | Values |
+|---|---|
+| `source` | `dir`, `aliases`, `ignore` (inferred from tsconfig paths) |
+| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `var`, `secret` |
+| `targets.edge` | `provider: "cloudflare"`, `domain` |
+| `targets.box` | `provider: "hetzner"`, `region`, `serverType` (draft) |
+| `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world`, `worldPath`, `identity`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define` |
+
+## Where things run
+
+| Need | Cloudflare | Any VM | Desktop |
+|---|---|---|---|
+| http | Worker | Bun `serve()` | Bun `serve()` |
+| WebSocket state | Durable Object | in-process DO | in-process DO |
+| SQL | D1 | sqlite or Postgres | sqlite |
+| KV | KV | sqlite table | sqlite table |
+| blob | R2 | directory | embedded directory |
+| native (FFI, SAB) | no | yes | yes |
+
+## Desktop host
+
+Token-gated, `127.0.0.1` only, COOP/COEP set so `SharedArrayBuffer` works. `/__rb/info` shows runtime info; `/__rb/action` runs `"use server"` functions. `cloudflare:workers` and `rwsdk/worker` are shimmed on the host. D1 migrations apply at boot. `RB_VERSION` is `<package version>+<git sha>`. Data lives in `~/.<app-name>/`.
+
+## License
+
+Apache-2.0. See [LICENSING.md](LICENSING.md).

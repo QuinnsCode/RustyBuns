@@ -1,4 +1,40 @@
-{ "name": "@rustybuns/cli", "version": "0.0.1", "type": "module",
-  "bin": { "rustybuns": "./src/index.ts" },
-  "exports": { ".": "./src/index.ts", "./config": "./src/config.ts" },
-  "dependencies": { "@rustybuns/shell-bun": "workspace:*", "@rustybuns/ports": "workspace:*" } }
+{
+  "name": "@rustybuns/cli",
+  "type": "module",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/QuinnsCode/RustyBuns"
+  },
+  "homepage": "https://github.com/QuinnsCode/RustyBuns",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "description": "Box and ship the web app you already have: init, add desktop, build desktop, plan/deploy via Alchemy.",
+  "bin": {
+    "rustybuns": "./src/index.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "@rustybuns/shell-bun": "workspace:*",
+    "@rustybuns/ports": "workspace:*"
+  },
+  "keywords": [
+    "rustybuns",
+    "bun",
+    "vite",
+    "cloudflare",
+    "alchemy",
+    "desktop"
+  ]
+}

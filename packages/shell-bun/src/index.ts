@@ -36,8 +36,9 @@ export function localBindings(dataDir: string) {
     d1: (name: string) => d1(`${dataDir}/${name}.sqlite`),
     kv: (name: string) => kv(`${dataDir}/kv.sqlite`, name),
     storage: (name: string, opts?: StorageOptions) => storage(`${dataDir}/do_${name}.sqlite`, opts),
-    /** R2 over a directory. Pass an embedded/synced dir to read shipped assets; defaults to the data dir. */
-    r2: (bucket: string, dir?: string) => r2(dir ?? `${dataDir}/r2/${bucket}`),
+    /** R2 over a directory. With `dir` (an embedded/synced set, possibly read-only) reads come
+     *  from it and writes land in the data dir overlay; without it, everything lives in the data dir. */
+    r2: (bucket: string, dir?: string) => r2(dir ?? `${dataDir}/r2/${bucket}`, `${dataDir}/r2/${bucket}`),
     durableObject: <Env>(Ctor: DurableObjectCtor<Env>, env: Env, binding: string, opts?: { codec?: "json" | "v8" }) =>
       durableObject(Ctor, env, { storage: (id) => storage(`${dataDir}/do_${binding}_${id}.sqlite`, { codec: opts?.codec }) }),
   };

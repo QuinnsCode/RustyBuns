@@ -158,7 +158,7 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   eject                      copy alchemy.run.ts to the root; you own the stack from then on
 
   Env:  RB_NO_BROWSER=1      do not open a browser; print the token URL instead
-  Docs: README.md · ADOPTION.md · ROADMAP.md · STATUS.md`);
+  Docs: README.md · GETTING_STARTED.md`);
   }
 } catch (e) {
   console.error(String((e as Error).message ?? e));
