@@ -1,0 +1,25 @@
+{
+  "name": "motion-midi",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "build:native": "bun scripts/build-native.ts",
+    "song": "bun scripts/make-demo-song.ts",
+    "bench": "bun bench/bounce.ts",
+    "test": "bun test test",
+    "build": "vite build --outDir dist/client"
+  },
+  "dependencies": {
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/native": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "vite": "^6.2.6"
+  }
+}

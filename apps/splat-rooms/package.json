@@ -1,0 +1,17 @@
+{
+  "name": "splat-rooms",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": { "build": "vite build --outDir dist/client" },
+  "dependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "@fontsource/barlow-condensed": "^5.2.5",
+    "@fontsource/ibm-plex-sans": "^5.2.5",
+    "playcanvas": "^2.22.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": { "vite": "^6.2.6" }
+}

@@ -3,6 +3,7 @@
 
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
 import { parseWrangler, wranglerToConfig } from "./wrangler.ts";
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
@@ -72,81 +73,75 @@ async function addDeploy(dryRun: boolean) {
   console.log(`\nnext: set a throwaway "name" in rustybuns.config.ts, then ${inf.execCmd("rustybuns plan")}`);
 }
 
+/** KEY=VALUE lines from .dev.vars (wrangler's local secrets file). Values never leave the machine. */
+function readDevVars(): Record<string, string> {
+  if (!existsSync(".dev.vars")) return {};
+  const out: Record<string, string> = {};
+  for (const line of readFileSync(".dev.vars", "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (m) out[m[1]] = m[2].replace(/^(["'])(.*)\1$/, "$2");
+  }
+  return out;
+}
+
 async function init() {
   const inf = infer();
+  console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}`);
   console.log(`detected: ${inf.framework} app "${inf.name}" (${inf.pm}${inf.hasReact ? ", react" : ""}${inf.hasThree ? ", three" : ""}${inf.hasPrisma ? ", prisma" : ""}${inf.hasBetterAuth ? ", better-auth" : ""})`);
   console.log(`source:   ${inf.srcDir}/ (${inf.srcDirSource}${Object.keys(inf.aliases).length ? `, aliases ${Object.entries(inf.aliases).map(([a, d]) => `${a}->${d}`).join(" ")}` : ""})`);
   if (inf.srcDirSource === "guess") console.log(`          not sure about that; set source: { dir, aliases } in rustybuns.config.ts if it's wrong`);
   const src = (await Bun.file("wrangler.jsonc").exists()) ? "wrangler.jsonc"
     : (await Bun.file("wrangler.json").exists()) ? "wrangler.json"
     : (await Bun.file("wrangler.toml").exists()) ? "wrangler.toml" : null;
-  if (!src || rest.includes("--spa")) { await initSpa(inf); return; }
+  if (!src) throw new Error("no wrangler.jsonc/json found. Init inside an RWSDK (or any Workers) app.");
   if (src.endsWith(".toml")) throw new Error("wrangler.toml: convert to wrangler.jsonc first (wrangler supports both).");
   const cfg = wranglerToConfig(parseWrangler(await Bun.file(src).text()), inf.scripts);
   { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts); console.log(`build:    ${b.build}  (from "${b.from}" script)`); }
-  // Fill desktop defaults from what the repo already has.
+  // D1: wrangler's own default migrations dir is ./migrations when migrations_dir is unset.
+  for (const b of Object.values(cfg.bindings)) {
+    if (b.type === "d1" && !b.migrationsDir && existsSync("migrations")) b.migrationsDir = "migrations";
+  }
+  // Built worker entry: rwsdk 1.x emits dist/worker/index.js, 0.x emitted dist/worker/worker.js.
+  {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    const rw = String({ ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) }["rwsdk"] ?? "");
+    const major = Number(rw.replace(/^[^0-9]*/, "").split(".")[0]);
+    if (major >= 1) cfg.worker.builtMain = "dist/worker/index.js";
+  }
+  // Secrets: names only, from .dev.vars. Values are read from .dev.vars at deploy time.
+  const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k]);
+  for (const k of secrets) cfg.bindings[k] = { type: "secret" };
+  if (secrets.length) console.log(`secrets:  ${secrets.join(" ")}  (names from .dev.vars)`);
+  // Desktop client build: always the vite.desktop.config.ts that `add desktop` generates.
+  // Never the app's own scripts: they can point at files Rusty Buns doesn't own.
   const d = cfg.targets.desktop!;
   d.clientBuild = `${inf.execCmd("vite")} build --config vite.desktop.config.ts`;
-  if (inf.scripts["desktop:client"]) d.clientBuild = inf.runCmd("desktop:client") + (inf.scripts["desktop:sync"] ? ` && ${inf.runCmd("desktop:sync")}` : "");
   const host = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   d.targets = [host as any];
-  cfg.source = { dir: inf.srcDir, aliases: inf.aliases };
   cfg.source = { dir: inf.srcDir, aliases: inf.aliases };
   const body = `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`;
   await Bun.write("rustybuns.config.ts", body);
   console.log(`wrote rustybuns.config.ts from ${src}`);
+  {
+    const gi = Bun.file(".gitignore");
+    const cur = (await gi.exists()) ? await gi.text() : "";
+    const want = [".rustybuns/", "wrangler.generated.jsonc", ".alchemy/"];
+    const have = new Set(cur.split("\n").map((l) => l.trim()));
+    const missing = want.filter((l) => !have.has(l));
+    if (missing.length) {
+      const sep = cur === "" || cur.endsWith("\n") ? "" : "\n";
+      await Bun.write(".gitignore", `${cur}${sep}\n# rustybuns\n${missing.join("\n")}\n`);
+      console.log(`added to .gitignore: ${missing.join(" ")}`);
+    }
+  }
   await generate({ adopt: false });
   const { modules } = await boundary();
   console.log(report(modules));
   console.log(`\nnext: rustybuns add desktop [--entry ./src/app/App.tsx#App]`);
 }
 
-/**
- * No wrangler: a plain Vite SPA. The desktop target is the whole story:
- * your `vite build` output, served by the Bun host, plus an optional host
- * module for the backend routes the app needs (files, native, exports).
- */
-async function initSpa(inf: ReturnType<typeof infer>) {
-  const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
-  const cfg = {
-    name: inf.name.replace(/^@[^/]+\//, ""),
-    source: { dir: inf.srcDir, aliases: inf.aliases },
-    bindings: {},
-    targets: {
-      desktop: {
-        mode: "spa",
-        // dist/ holds the binaries; the UI gets its own folder inside it.
-        clientBuild: `${inf.execCmd("vite")} build --outDir dist/ui --emptyOutDir`,
-        clientDir: "dist/ui",
-        world: false,
-        host: "desktop/host.ts",
-        targets: [hostTag],
-      },
-    },
-  };
-  await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
-  console.log("wrote rustybuns.config.ts (desktop-only: no wrangler found)");
-  if (!(await Bun.file("desktop/host.ts").exists())) {
-    await Bun.write("desktop/host.ts", `// Your desktop backend. Runs in the Bun host next to your built SPA.
-// Return a Response for routes you own, null for everything else.
-import type { HostContext } from "@rustybuns/shell-bun";
-
-export default {
-  async fetch(req: Request, ctx: HostContext): Promise<Response | null> {
-    const url = new URL(req.url);
-    if (url.pathname === "/api/hello") return Response.json({ hello: ctx.identity["X-User-Name"], dataDir: ctx.dataDir });
-    return null;
-  },
-};
-`);
-    console.log("wrote desktop/host.ts");
-  }
-  console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}`);
-}
-
 async function generate(opts: { adopt: boolean }) {
   const cfg = await loadConfig();
-  if (!cfg.worker) { console.log("desktop-only config: nothing to generate for the edge"); return; }
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
   console.log("wrote .rustybuns/alchemy.run.ts");
@@ -166,12 +161,13 @@ async function stackHash(): Promise<string> {
 async function runAlchemy(args: string[]): Promise<number> {
   const local = ["node_modules/.bin/alchemy"].find((p) => require("node:fs").existsSync(p));
   const cmd = local ? [local, ...args] : ["bunx", "alchemy", ...args];
-  const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"] });
+  // Secret values come from .dev.vars; anything already exported in the shell wins.
+  const env = { ...readDevVars(), ...process.env };
+  const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"], env });
   return await p.exited;
 }
 
 async function alchemy(sub: string, args: string[]) {
-  if (!(await loadConfig()).worker) throw new Error("desktop-only app: no edge stack to plan or deploy");
   await generate({ adopt: false });
   const hash = await stackHash();
   const stampFile = ".rustybuns/planned";
@@ -199,7 +195,7 @@ async function alchemy(sub: string, args: string[]) {
 
 try {
   switch (cmd) {
-    case "init": await init(); break;   // --spa forces the desktop-only path
+    case "init": await init(); break;
     case "generate": await generate({ adopt: false }); break;
     case "adopt": await generate({ adopt: true }); break;
     case "deploy": await alchemy("deploy", rest); break;
@@ -239,9 +235,8 @@ try {
       console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}
 Box and ship the web app you already have. A dev dependency, never in prod.
 
-  init [--spa]               read package.json / vite.config / tsconfig / wrangler.*,
+  init                       read package.json / vite.config / tsconfig / wrangler.*,
                              write rustybuns.config.ts + .rustybuns/alchemy.run.ts + wrangler.jsonc
-                             (no wrangler, or --spa: desktop-only config + desktop/host.ts)
   add desktop [--entry F#C]  scaffold packages/desktop (index.html, main.tsx, world.ts) and
                              vite.desktop.config.ts; keeps files that already exist
   add deploy [--dry-run]     install the pinned alchemy + effect set (and pnpm/npm overrides)

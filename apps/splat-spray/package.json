@@ -1,0 +1,23 @@
+{
+  "name": "splat-spray",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "bun test",
+    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop"
+  },
+  "dependencies": {
+    "@rustybuns/shell-bun": "workspace:*",
+    "@sparkjsdev/spark": "2.2.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@types/three": "^0.180.0",
+    "vite": "^6.2.6"
+  }
+}

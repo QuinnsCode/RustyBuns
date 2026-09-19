@@ -5,7 +5,6 @@
 import type { RustyBunsConfig } from "../config.ts";
 
 export function generateWrangler(c: RustyBunsConfig): string {
-  if (!c.worker) throw new Error("this config has no worker section (desktop-only app); there is no edge stack to generate");
   const w: Record<string, unknown> = {
     $schema: "node_modules/wrangler/config-schema.json",
     name: c.name,

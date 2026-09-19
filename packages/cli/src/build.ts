@@ -7,7 +7,7 @@
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, statSync, readFileSync } from "node:fs";
-import { join, dirname, normalize } from "node:path";
+import { join, dirname } from "node:path";
 import type { DesktopOs, RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 
@@ -52,22 +52,19 @@ export function spaEntry(c: RustyBunsConfig): string {
     "X-World-Owner": "local",
     ...(d.identity ?? {}),
   };
-  const bindings = c.bindings ?? {};
-  const hasWorld = d.world !== false;
-  const kvNames = Object.entries(bindings).filter(([, b]) => b.type === "kv").map(([n]) => n);
-  const d1s = Object.entries(bindings).filter(([, b]) => b.type === "d1").map(([n, b]) => [n, (b as any).databaseName as string, (b as any).migrationsDir as string | undefined] as const);
-  const vars = Object.entries(bindings).filter(([, b]) => b.type === "var").map(([n, b]) => [n, (b as any).value as string]);
-  const r2s = Object.entries(bindings).filter(([, b]) => b.type === "r2").map(([n, b]) => [n, (b as any).bucketName as string] as const);
+  const kvNames = Object.entries(c.bindings).filter(([, b]) => b.type === "kv").map(([n]) => n);
+  const d1s = Object.entries(c.bindings).filter(([, b]) => b.type === "d1").map(([n, b]) => [n, (b as any).databaseName as string, (b as any).migrationsDir as string | undefined] as const);
+  const vars = Object.entries(c.bindings).filter(([, b]) => b.type === "var").map(([n, b]) => [n, (b as any).value as string]);
+  const r2s = Object.entries(c.bindings).filter(([, b]) => b.type === "r2").map(([n, b]) => [n, (b as any).bucketName as string] as const);
   const mounts = d.mounts ?? {};
   return `// GENERATED desktop host (spa mode). Serves the SPA, runs the world in-process
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
 import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations } from "@rustybuns/shell-bun";
-${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
-${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
+import World from ${JSON.stringify("../" + (d.world ?? "packages/desktop/world.ts"))};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, isAbsolute } from "node:path";
 
 declare const RB_VERSION: string;
 const dataDir = ${JSON.stringify(dataDir)}.replace(/^~/, homedir());
@@ -76,6 +73,10 @@ const local = localBindings(dataDir);
 
 // Compiled: --asset embeds a dir at /$bunfs/root/<basename>. Dev: the working tree.
 function resolveDir(rel: string): string {
+  // A mount under ~ or an absolute path is the user's own directory: read it
+  // where it lives, never embedded, so its contents can change after the build.
+  if (rel.startsWith("~")) return rel.replace(/^~/, homedir());
+  if (isAbsolute(rel)) return rel;
   const embedded = join(import.meta.dir, basename(rel));
   return existsSync(embedded) ? embedded : join(process.cwd(), rel);
 }
@@ -97,7 +98,7 @@ ${r2s.map(([n, bucket]) => { const dir = d.r2?.[n]; return `  ${n}: local.r2(${J
 // D1 is sqlite: your wrangler migrations apply here unchanged, tracked in
 // d1_migrations. Embedded via --asset so the binary carries its own schema.
 ${d1s.filter(([, , m]) => m).map(([n, , m]) => `for (const f of await applyD1Migrations(env.${n} as any, existsSync(join(import.meta.dir, ${JSON.stringify(basename(m!))})) ? join(import.meta.dir, ${JSON.stringify(basename(m!))}) : join(process.cwd(), ${JSON.stringify(m)}))) console.log("[migrate] " + f);`).join("\n")}
-${hasWorld ? `const WORLD = local.durableObject(World as any, env, "WORLD", { codec: ${JSON.stringify((c.targets.desktop as any)?.storageCodec ?? "json")} });` : "const WORLD: any = null;"}
+const WORLD = local.durableObject(World as any, env, "WORLD", { codec: ${JSON.stringify((c.targets.desktop as any)?.storageCodec ?? "json")} });
 const identity: Record<string, string> = {
 ${Object.entries(identity).map(([k, v]) => `  ${JSON.stringify(k)}: \`${v}\`,`).join("\n")}
 };
@@ -108,15 +109,14 @@ globalThis.__RB_IDENTITY = identity;
 const { actions } = await import("./actions.ts");
 
 const token = mintToken();
-const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})} });
-const hostCtx = { env, dataDir, identity, reporter: stdoutReporter };
+const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter });
 
 // The host IS the middleware: one local player, vouched at the upgrade,
 // exactly the headers the CF shell reads.
 shell.mount({
   async fetch(req) {
     const url = new URL(req.url);
-    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
+    if (url.pathname === ${JSON.stringify(worldPath)}) {
       const h = new Headers(req.headers);
       for (const [k, v] of Object.entries(identity)) h.set(k, v);
       return WORLD.get(WORLD.idFromName("local")).fetch(new Request(req.url, { headers: h }));
@@ -124,7 +124,7 @@ shell.mount({
     if (url.pathname === "/__rb/info") {
       return Response.json({ app: ${JSON.stringify(c.name)}, version: typeof RB_VERSION === "string" ? RB_VERSION : "dev", bun: Bun.version,
         platform: \`\${process.platform}-\${process.arch}\`, dataDir, user: identity["X-User-Id"], actions: Object.keys(actions).length,
-        bindings: Object.keys(env), host: !!host, caps: { sab: true, ffi: true, fs: true } });
+        bindings: Object.keys(env), caps: { sab: true, ffi: true, fs: true } });
     }
     if (url.pathname === "/__rb/action" && req.method === "POST") {
       // "use server" runs here, for real, against sqlite. Same code as the edge.
@@ -133,11 +133,6 @@ shell.mount({
       if (!f) return new Response(\`no action \${module}#\${fn}\`, { status: 404 });
       try { return Response.json((await f(...args)) ?? null); }
       catch (err) { stdoutReporter.escaped("action", err, { module, fn }); return new Response(String((err as Error).message ?? err), { status: 500 }); }
-    }
-    if (host) {
-      // App-owned routes. null = not mine, fall through.
-      const res = await host.fetch(req, hostCtx);
-      if (res) return res;
     }
     return new Response("not found", { status: 404 });
   },
@@ -153,7 +148,7 @@ export function desktopEntry(c: RustyBunsConfig): string {
   const dataDir = c.targets.desktop?.dataDir ?? `~/.${c.name}`;
   const bind: string[] = [];
   const dos: { name: string; className: string }[] = [];
-  for (const [name, b] of Object.entries(c.bindings ?? {})) {
+  for (const [name, b] of Object.entries(c.bindings)) {
     switch (b.type) {
       case "d1": bind.push(`  ${name}: local.d1(${JSON.stringify(b.databaseName)}),`); break;
       case "kv": bind.push(`  ${name}: local.kv(${JSON.stringify(name)}),`); break;
@@ -169,16 +164,16 @@ export function desktopEntry(c: RustyBunsConfig): string {
   return `// GENERATED desktop entry. The RWSDK worker runs here, on the user's machine,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 import { serve, openBrowser, mintToken, localBindings, stdoutReporter } from "@rustybuns/shell-bun";
-import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + (c.worker!.builtMain ?? c.worker!.main))};
+import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + (c.worker.builtMain ?? c.worker.main))};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, isAbsolute } from "node:path";
 
 // Compiled: --asset embeds the dir at /$bunfs/root/<basename>. Dev: use the real path.
 function assetDir(rel: string): string | undefined {
   if (!rel) return undefined;
   const embedded = join(import.meta.dir, basename(rel));
-  return existsSync(embedded) ? embedded : join(process.cwd(), rel);
+  return existsSync(embedded) ? embedded : join(import.meta.dir, rel);
 }
 
 const dataDir = ${JSON.stringify(dataDir)}.replace(/^~/, homedir());
@@ -191,13 +186,11 @@ ${bind.join("\n")}
 // Durable Objects run in-process. Bound after env exists because a DO's
 // constructor receives this same env (a DO can use DB, KV, other DOs).
 ${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
-// Lets import { env } from "cloudflare:workers" see the local bindings.
-globalThis.__RB_ENV = env;
 
 const token = mintToken();
 const shell = serve<typeof env>({
-  assets: assetDir(${JSON.stringify(c.worker!.assets ?? "")}),
-  runWorkerFirst: ${JSON.stringify(c.worker!.runWorkerFirst ?? [])},
+  assets: assetDir(${JSON.stringify(c.worker.assets ? "../" + c.worker.assets : "")}),
+  runWorkerFirst: ${JSON.stringify(c.worker.runWorkerFirst ?? [])},
   token,
   reporter: stdoutReporter,
 });
@@ -211,25 +204,46 @@ import { sourceLayout } from "./glue/source.ts";
 import { analyze } from "./glue/boundary.ts";
 import { generateBoundaryFiles } from "./glue/desktop-scaffold.ts";
 
+// Rust cdylibs from native/dist/<crate>/<os>-<arch>/ ride inside the binary at
+// /$bunfs/root/native/<crate>/<os>-<arch>/, where @rustybuns/native looks.
+// Only the platforms being built are staged, so each binary carries its own lib.
+export const NATIVE_STAGE = ".rustybuns/native";
+async function stageNative(targets: DesktopOs[]): Promise<string[]> {
+  const { rm, cp, readdir } = await import("node:fs/promises");
+  const { existsSync } = await import("node:fs");
+  await rm(NATIVE_STAGE, { recursive: true, force: true });
+  if (!existsSync("native/dist")) {
+    console.warn("[native] native/Cargo.toml exists but native/dist is empty: the binary will take the TS path. Build the cdylib first.");
+    return [];
+  }
+  const staged: string[] = [];
+  for (const crate of await readdir("native/dist")) {
+    for (const t of targets) {
+      const nodeTag = t.replace(/^windows-/, "win32-");   // DesktopOs -> process.platform-arch
+      const src = join("native/dist", crate, nodeTag);
+      if (!existsSync(src)) { console.warn(`[native] ${crate}: no build for ${nodeTag}; that binary takes the TS path.`); continue; }
+      await cp(src, join(NATIVE_STAGE, crate, nodeTag), { recursive: true });
+      staged.push(`${crate}/${nodeTag}`);
+    }
+  }
+  if (staged.length) console.log(`[native] embedding ${staged.join(", ")}`);
+  return staged;
+}
+
 export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; outfile?: string; noCompile?: boolean } = {}) {
   const d = c.targets.desktop ?? {};
-  const mode = d.mode ?? "spa";
-  const clientDir = d.clientDir ?? "dist/desktop";
-  if (mode === "spa" && !opts.noCompile && normalize(clientDir).replace(/\/$/, "") === "dist" && !opts.outfile) {
-    throw new Error(`the client build is in dist/, which is also where binaries go (and vite empties it on every build). Build the UI into dist/ui: clientBuild "vite build --outDir dist/ui", clientDir "dist/ui".`);
-  }
   const src = sourceLayout(process.cwd(), c);
   {
     // Boundary glue is regenerated on every build: stubs, action proxies, host table.
     const { modules } = analyze({ srcDir: src.dir, aliases: src.aliases, ignore: src.ignore });
     await generateBoundaryFiles(process.cwd(), src.inf, modules, { actions: d.actions });
   }
-  if (mode === "worker" && !c.worker) throw new Error("desktop.mode \"worker\" needs a worker section; desktop-only apps use mode \"spa\"");
-  const build = mode === "spa" ? d.clientBuild : c.worker!.build;
+  const mode = d.mode ?? "spa";
+  const build = mode === "spa" ? d.clientBuild : c.worker.build;
   if (build) await $`sh -c ${build}`;
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(".rustybuns/desktop.ts", mode === "spa" ? spaEntry(c) : desktopEntry(c));
-  const assets = mode === "spa" ? (d.clientDir ?? "dist/desktop") : c.worker!.assets;
+  const assets = mode === "spa" ? (d.clientDir ?? "dist/desktop") : c.worker.assets;
 
   const shimPath = Bun.resolveSync("@rustybuns/shell-bun/shims", process.cwd());
   const aliasEntries = Object.entries(src.aliases).sort((a, b) => b[0].length - a[0].length);
@@ -275,8 +289,11 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   }
 
   const outs: string[] = [];
-  const migrationDirs = Object.values(c.bindings ?? {}).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
-  const mountDirs = [...Object.values(d.mounts ?? {}), ...nativeDirs(d.native)];
+  const nativeTags = hasRust ? await stageNative(targets) : [];
+  const migrationDirs = Object.values(c.bindings).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
+  // External mounts (~ or absolute) stay on disk; only project dirs are embedded.
+  const external = (dir: string) => dir.startsWith("~") || dir.startsWith("/");
+  const mountDirs = [...Object.values(d.mounts ?? {}).filter((dir) => !external(dir)), ...(nativeTags.length ? [NATIVE_STAGE] : [])];
   // Embedded dirs are keyed by basename, so two mounts named the same collide.
   const names = [assets, ...migrationDirs, ...mountDirs].filter(Boolean).map((p) => basename(p!));
   if (new Set(names).size !== names.length) throw new Error(`embedded directories must have distinct basenames: ${names.join(", ")}`);
@@ -294,11 +311,4 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
     outs.push(out);
   }
   return outs.join("\n");
-}
-
-/** native/dist/<crate> for each embedded crate; loadNative() finds them at /$bunfs/root/<crate>/<os-arch>/. */
-export function nativeDirs(names: string[] = []): string[] {
-  const missing = names.filter((n) => !existsSync(join("native", "dist", n)));
-  if (missing.length) throw new Error(`native crate(s) not built: ${missing.join(", ")}. Run \`bun native/build.ts\` first.`);
-  return names.map((n) => join("native", "dist", n));
 }

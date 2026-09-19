@@ -5,12 +5,12 @@
 // Search order:
 //   1. opts.dir
 //   2. native/dist/<name>/<platform>-<arch>/     (dev, after `cargo build`)
-//   3. /$bunfs/root/<name>/<platform>-<arch>/    (compiled binary, --asset)
+//   3. /$bunfs/root/native/<name>/<platform>-<arch>/  (compiled binary; `rustybuns build desktop` embeds it)
 // dlopen can't map a file inside the binary, so (3) copies it to a cache dir
 // keyed by content hash on first run.
 
 import { dlopen, type FFIFunction, type ConvertFns } from "bun:ffi";
-import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, renameSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -31,6 +31,7 @@ function candidates(name: string, opts: LoadOptions): string[] {
     opts.dir && join(opts.dir, f),
     join(process.cwd(), "native", "dist", name, tag, f),
     join(import.meta.dir, "..", "..", "..", "native", "dist", name, tag, f),
+    join("/$bunfs/root", "native", name, tag, f),   // rustybuns build desktop embeds here
     join("/$bunfs/root", name, tag, f),
     join("/$bunfs/root", tag, f),
   ].filter(Boolean) as string[];
@@ -44,10 +45,11 @@ async function materialize(path: string, opts: LoadOptions): Promise<string> {
   mkdirSync(dir, { recursive: true });
   const out = join(dir, `${hash}-${path.split("/").pop()}`);
   if (!existsSync(out)) {
-    // copyFileSync can't read out of /$bunfs; write the bytes we already have.
-    // tmp + rename: two instances starting together never dlopen a partial file.
+    // copyFileSync can't read /$bunfs; write the bytes we already have. tmp +
+    // rename so a second instance never dlopens a half-written file.
     const tmp = `${out}.${process.pid}.tmp`;
-    writeFileSync(tmp, new Uint8Array(bytes), { mode: 0o755 });
+    writeFileSync(tmp, new Uint8Array(bytes));
+    chmodSync(tmp, 0o755);
     renameSync(tmp, out);
   }
   return out;

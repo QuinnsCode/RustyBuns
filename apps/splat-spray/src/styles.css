@@ -1,0 +1,77 @@
+/* Night: the scene is the only light. Paint-can orange for everything you touch. */
+:root {
+  --ink: #f3efe6;
+  --dim: #8f8a80;
+  --paint: #ff7a1a;
+  --glass: rgba(18, 16, 14, 0.72);
+  color-scheme: dark;
+  font: 15px/1.4 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+
+.hud { position: fixed; top: 1.2rem; left: 1.4rem; pointer-events: none; }
+.count { display: flex; align-items: baseline; gap: .5rem; }
+.count span { font-size: 3.4rem; font-weight: 800; line-height: 1; color: var(--paint); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+.count small { font-size: 1rem; color: var(--dim); }
+.timer { font-size: 1.4rem; color: var(--dim); font-variant-numeric: tabular-nums; margin-left: .4rem; }
+#prompt { margin: .2rem 0 0; font-size: 1.5rem; font-weight: 750; letter-spacing: -.01em; }
+#hint { margin: .3rem 0 0; color: var(--dim); max-width: 34rem; }
+.score { margin: .2rem 0 0; color: var(--dim); font-size: .85rem; font-variant-numeric: tabular-nums; }
+
+.gone { display: none; }
+.guess { position: fixed; left: 50%; bottom: 1.4rem; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .5rem; padding: .6rem .8rem; background: var(--glass); border-radius: 14px; backdrop-filter: blur(8px); max-width: calc(100% - 2rem); }
+.guess label { font-weight: 700; }
+.guess input { font: inherit; color: var(--ink); background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); border-radius: 9px; padding: .45rem .7rem; width: 14rem; }
+.guess p { flex-basis: 100%; margin: 0; text-align: center; min-height: 1.2em; }
+button, .file { font: inherit; color: var(--ink); background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); border-radius: 9px; padding: .45rem .8rem; cursor: pointer; }
+.guess button { background: var(--paint); border-color: var(--paint); color: #1d0e02; font-weight: 700; }
+button:hover, .file:hover { border-color: var(--ink); }
+:focus-visible { outline: 2px solid var(--paint); outline-offset: 2px; }
+
+.tools { position: fixed; top: 1.2rem; right: 1.4rem; display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: flex-end; max-width: 40rem; }
+.tools label { color: var(--dim); display: flex; align-items: center; gap: .4rem; }
+.tools input[type=range] { accent-color: var(--paint); }
+.file input { display: none; }
+
+.crosshair { position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; pointer-events: none; opacity: .35; }
+.crosshair::before, .crosshair::after { content: ""; position: absolute; background: var(--paint); }
+.crosshair::before { left: 50%; top: 0; width: 1px; height: 100%; margin-left: -.5px; }
+.crosshair::after { top: 50%; left: 0; height: 1px; width: 100%; margin-top: -.5px; }
+
+/* Which mode you're in has to be obvious at a glance: the cursor, the
+   reticle, a banner and a glow round the edge of the screen all change. */
+:root { --pick: #7ee08a; }
+#view { cursor: crosshair; }
+body.picking #view {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M12 3.5a2 2 0 0 1 4 0V14h1V6a2 2 0 0 1 4 0v8h1v-5a2 2 0 0 1 4 0v11c0 4.4-3.1 8-7.5 8h-2C12.6 28 9 24.4 9 20v-4l-2.2-3.3a2 2 0 0 1 3.3-2.2L12 13z' fill='%237ee08a' stroke='%23103018' stroke-width='1.6'/%3E%3C/svg%3E") 12 2, pointer;
+}
+body.picking .crosshair { opacity: 1; width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 2px solid var(--pick); border-radius: 50%; }
+body.picking .crosshair::before, body.picking .crosshair::after { background: var(--pick); }
+body.picking .crosshair::before { top: -8px; height: 8px; }
+body.picking .crosshair::after { left: -8px; width: 8px; }
+
+.mode-edge { position: fixed; inset: 0; pointer-events: none; transition: box-shadow .15s ease; }
+body.picking .mode-edge { box-shadow: inset 0 0 0 3px rgba(126, 224, 138, .55), inset 0 0 90px rgba(126, 224, 138, .12); }
+
+.mode { position: fixed; left: 50%; bottom: 1.1rem; transform: translateX(-50%); padding: .35rem .8rem; border-radius: 999px; background: var(--glass); font-size: .85rem; font-weight: 650; letter-spacing: .01em; pointer-events: none; }
+.mode-pick { display: none; color: var(--pick); }
+body.picking .mode-scan { display: none; }
+body.picking .mode-pick { display: inline; }
+body.picking .mode { box-shadow: 0 0 0 1px rgba(126, 224, 138, .5); }
+
+.tools kbd { font: inherit; font-size: .78em; opacity: .7; border: 1px solid currentColor; border-radius: 4px; padding: 0 .25em; margin-left: .35em; }
+#pick[aria-pressed="true"] { background: var(--pick); border-color: var(--pick); color: #0d2413; font-weight: 700; }
+.puff.hit { background: #7ee08a; }
+.puff.miss { background: #ff5d5d; }
+.puff { position: fixed; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--paint); pointer-events: none; animation: puff .3s ease-out forwards; }
+@keyframes puff { to { transform: scale(4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .crosshair { position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; pointer-events: none; opacity: .35; }
+.crosshair::before, .crosshair::after { content: ""; position: absolute; background: var(--paint); }
+.crosshair::before { left: 50%; top: 0; width: 1px; height: 100%; margin-left: -.5px; }
+.crosshair::after { top: 50%; left: 0; height: 1px; width: 100%; margin-top: -.5px; }
+
+.puff { animation-duration: .01s; } }
+@media (max-width: 640px) { .count span { font-size: 3rem; } .tools { top: auto; bottom: 6.5rem; right: .8rem; } }

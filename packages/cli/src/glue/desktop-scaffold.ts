@@ -121,6 +121,20 @@ export function rustybuns(): Plugin {
   return out;
 }
 
+/** "--entry ./src/App.tsx#App": the part after # is a named export; without it, the default export. */
+export function entryName(entry: string): string { return entry.split("#")[1] || "App"; }
+
+/** The import line for main.tsx, which lives in `dir`, so the path is made relative to it. */
+export function entryImport(root: string, dir: string, entry: string): string {
+  const [file, named] = entry.split("#");
+  let spec = file;
+  if (file.startsWith(".")) {
+    spec = relative(dir, join(root, file)).split("\\").join("/");
+    if (!spec.startsWith(".")) spec = "./" + spec;
+  }
+  return named ? `import { ${named} } from ${JSON.stringify(spec)};` : `import App from ${JSON.stringify(spec)};`;
+}
+
 /** Written once: the developer owns these afterwards. */
 export async function scaffoldDesktopPackage(root: string, inf: Inferred, opts: { dir?: string; entryComponent?: string; aliases?: Record<string, string> } = {}): Promise<ScaffoldOut> {
   const out: ScaffoldOut = { written: [], skipped: [] };
@@ -146,10 +160,10 @@ export async function scaffoldDesktopPackage(root: string, inf: Inferred, opts: 
 // StrictMode omitted on purpose: its double-mount opens two sockets in a shipped binary.
 import { createRoot } from "react-dom/client";
 import { Suspense } from "react";
-import ${opts.entryComponent!.split("#")[1] ?? "App"} from ${JSON.stringify(opts.entryComponent!.split("#")[0])};
+${entryImport(root, dir, opts.entryComponent!)}
 
 createRoot(document.getElementById("root")!).render(
-  <Suspense fallback={null}><${opts.entryComponent!.split("#")[1] ?? "App"} netPath="/ws" /></Suspense>,
+  <Suspense fallback={null}><${entryName(opts.entryComponent!)} netPath="/ws" /></Suspense>,
 );
 ` : `// Desktop entry. No app component was pointed at yet, so this renders the
 // Rusty Buns intro page: it proves the host, the world socket, storage and
@@ -195,9 +209,9 @@ export default class World {
 import { defineConfig } from "vite";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { rustybuns } from "./.rustybuns/vite";
+import { rustybuns } from "./.rustybuns/vite.ts";
 
-const req = createRequire(resolve(__dirname, ${JSON.stringify((opts.dir ?? "packages/desktop") + "/package.json")}));
+const req = createRequire(resolve(import.meta.dirname, ${JSON.stringify((opts.dir ?? "packages/desktop") + "/package.json")}));
 const reactAlias = {
   react: resolve(req.resolve("react"), ".."),
   "react-dom": resolve(req.resolve("react-dom"), ".."),
@@ -205,18 +219,18 @@ const reactAlias = {
 };
 export default defineConfig({
   plugins: [rustybuns()],
-  root: resolve(__dirname, ${JSON.stringify(opts.dir ?? "packages/desktop")}),
-  publicDir: resolve(__dirname, "public"),
+  root: resolve(import.meta.dirname, ${JSON.stringify(opts.dir ?? "packages/desktop")}),
+  publicDir: resolve(import.meta.dirname, "public"),
   resolve: {
     alias: {
-${Object.entries(appAliases).map(([a, d]) => `      ${JSON.stringify(a)}: resolve(__dirname, ${JSON.stringify(d)}),`).join("\n")}
+${Object.entries(appAliases).map(([a, d]) => `      ${JSON.stringify(a)}: resolve(import.meta.dirname, ${JSON.stringify(d)}),`).join("\n")}
       ...reactAlias,
     },
     dedupe: ["react", "react-dom"${inf.hasThree ? ', "three"' : ""}],
   },
   esbuild: { jsx: "automatic" },
   build: {
-    outDir: resolve(__dirname, "dist/desktop"),
+    outDir: resolve(import.meta.dirname, "dist/desktop"),
     emptyOutDir: true,
     sourcemap: true,
     target: "esnext",

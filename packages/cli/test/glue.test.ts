@@ -4,6 +4,7 @@ import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
+import { spaEntry } from "../src/build.ts";
 
 const root = new URL("../../../apps/spa-example", import.meta.url).pathname;
 
@@ -147,38 +148,18 @@ test("infer worker build from the release script", async () => {
   expect(inferWorkerBuild({})).toEqual({ build: "vite build", from: "default" });
 });
 
-test("spa entry: desktop-only app with a host module, no world, header overrides", async () => {
-  const { spaEntry } = await import("../src/build.ts");
-  const src = spaEntry({
-    name: "tsci-desk",
-    targets: { desktop: { mode: "spa", world: false, host: "desktop/host.ts", headers: { "Cross-Origin-Embedder-Policy": "credentialless" } } },
-  } as any);
-  expect(src).not.toContain("import World");
-  expect(src).toContain('import host from "../desktop/host.ts"');
-  expect(src).toContain("const WORLD: any = null;");
-  expect(src).toContain('"Cross-Origin-Embedder-Policy":"credentialless"');
-  expect(src).toContain("await host.fetch(req, hostCtx)");
+import { entryImport, entryName } from "../src/glue/desktop-scaffold.ts";
+test("add desktop --entry: path is relative to packages/desktop, #Name is a named import", () => {
+  expect(entryImport("/app", "/app/packages/desktop", "./src/ui/App.tsx#App")).toBe('import { App } from "../../src/ui/App.tsx";');
+  expect(entryImport("/app", "/app/packages/desktop", "./src/Main.tsx")).toBe('import App from "../../src/Main.tsx";');
+  expect(entryImport("/app", "/app/packages/desktop", "@/app/App#Game")).toBe('import { Game } from "@/app/App";');
+  expect(entryName("./x.tsx#Game")).toBe("Game");
+  expect(entryName("./x.tsx")).toBe("App");
 });
 
-test("spa entry: default still binds the world and has no host", async () => {
-  const { spaEntry } = await import("../src/build.ts");
-  const src = spaEntry({ name: "x", bindings: {}, targets: { desktop: { mode: "spa" } } } as any);
-  expect(src).toContain('import World from "../packages/desktop/world.ts"');
-  expect(src).toContain("const host: any = null;");
-});
-
-test("nativeDirs refuses crates that were not built", async () => {
-  const { nativeDirs } = await import("../src/build.ts");
-  expect(() => nativeDirs(["definitely_not_built"])).toThrow(/not built/);
-  expect(nativeDirs()).toEqual([]);
-});
-
-test("build desktop refuses a client build in dist/, where the binary goes", async () => {
-  const { buildDesktop } = await import("../src/build.ts");
-  const dir = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "rb-"));
-  const cwd = process.cwd();
-  process.chdir(dir);
-  try {
-    await expect(buildDesktop({ name: "x", targets: { desktop: { mode: "spa", clientDir: "dist", world: false } } } as any)).rejects.toThrow(/dist\/ui/);
-  } finally { process.chdir(cwd); }
+test("mounts under ~ or an absolute path are not embedded in the binary", () => {
+  const c = wranglerToConfig(parseWrangler('{"name":"m","main":"src/w.ts","compatibility_date":"2025-05-07"}'));
+  const host = spaEntry({ ...c, targets: { ...c.targets, desktop: { ...(c.targets as any).desktop, mounts: { "/scenes": "~/SplatRooms", "/asset": ".asset-cache" } } } } as any);
+  expect(host).toContain('"/scenes": resolveDir("~/SplatRooms")');
+  expect(host).toContain('rel.startsWith("~")');   // the generated host expands it at runtime
 });

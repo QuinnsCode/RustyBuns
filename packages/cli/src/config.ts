@@ -26,25 +26,7 @@ export interface DesktopTarget {
    *   new (ctx, env) => { fetch(req), webSocketMessage?, webSocketClose?, alarm? }
    * No `extends DurableObject` needed. It is bound in-process with sqlite storage.
    */
-  world?: string | false;
-  /**
-   * spa: module whose default export is `{ fetch(req, ctx) }`, for your own
-   * host routes (files, native calls, exports). Return null to fall through
-   * to a 404. ctx: { env, dataDir, identity, reporter }. This is how a plain
-   * Vite app gets a backend without pretending to be a Worker.
-   */
-  host?: string;
-  /**
-   * Response header overrides. The default is full cross-origin isolation
-   * (COEP require-corp) for SharedArrayBuffer; apps that load CDN resources
-   * without CORP headers want { "Cross-Origin-Embedder-Policy": "credentialless" }.
-   */
-  headers?: Record<string, string>;
-  /**
-   * Rust crates under native/crates to embed in the binary. Each is built to
-   * native/dist/<name>/<os-arch>/ by native/build.ts and found by loadNative().
-   */
-  native?: string[];
+  world?: string;
   /** spa: path the client's WorldSocket connects to. */
   worldPath?: string;
   /** spa: headers the host vouches at upgrade, like your CF middleware would. */
@@ -90,8 +72,7 @@ export interface RustyBunsConfig {
    *   source: { dir: "app", aliases: { "~": "app", "#lib": "lib" } }
    */
   source?: { dir?: string; aliases?: Record<string, string>; ignore?: string[] };
-  /** The Workers side. Omitted for desktop-only apps (plain Vite, no Cloudflare). */
-  worker?: {
+  worker: {
     /** Entry as wrangler sees it (RWSDK: src/worker.tsx). */
     main: string;
     /** Prebuilt worker bundle after `vite build`; deployed byte-for-byte. */

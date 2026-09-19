@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Splat spy</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <canvas id="view" aria-label="A dark room. Fire paint to reveal it, then pick the thing you were asked to find."></canvas>
+    <div class="crosshair" aria-hidden="true"></div>
+    <div class="mode-edge" aria-hidden="true"></div>
+    <div id="mode" class="mode" role="status">
+      <span class="mode-scan">Scanning — hold to fire, Shift to pick</span>
+      <span class="mode-pick">Pick mode — click the thing you spy</span>
+    </div>
+    <header class="hud">
+      <div class="count"><span id="rounds">0</span><small>shots<br />this find</small><span id="timer" class="timer">0.0s</span></div>
+      <h1 id="prompt">Loading…</h1>
+      <p id="hint"></p>
+      <p id="score" class="score"></p>
+    </header>
+    <div class="tools">
+      <button id="pick" type="button" aria-pressed="false" title="Or hold Shift">Pick mode <kbd>Shift</kbd></button>
+      <button id="next" type="button" hidden>Next</button>
+      <label title="Rounds per second while the trigger is held">Rate <input id="rate" type="range" min="3" max="20" value="9" /></label>
+      <button id="reveal" type="button">Reveal all</button>
+      <button id="reset" type="button">Start over</button>
+    </div>
+  </body>
+  <script type="module" src="/src/main.ts"></script>
+</html>

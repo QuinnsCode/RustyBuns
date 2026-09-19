@@ -4,7 +4,7 @@
 
 rustybuns is just a dev dependency. Your `src/` is never edited. Bun runs a local server beside the user's own browser; sqlite stands in for D1, KV, Durable Object storage, R2, all the fun services!
 
-> Status: `0.1.4`, alpha. Desktop verified on macOS and Linux. Cloudflare deploy verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). Hetzner / Fly / Railway next. **We prioritize the happy path for a Vite React Node app, but this setup is flexible for many setups!**
+> Status: `0.1.5`, alpha. Desktop verified on macOS and Linux. Cloudflare deploy verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). Hetzner / Fly / Railway next. **We prioritize the happy path for a Vite React Node app, but this setup is flexible for many setups!**
 
 ## The four flows
 
@@ -27,7 +27,9 @@ pnpm add -D @rustybuns/cli @rustybuns/shell-bun
 pnpm exec rustybuns init
 ```
 
-`init` reads your app and writes `rustybuns.config.ts`. Add `.rustybuns/` and `wrangler.generated.jsonc` to `.gitignore`.
+In a pnpm workspace (your repo has a `pnpm-workspace.yaml`), install with `-Dw` instead of `-D`.
+
+`init` reads your app and writes `rustybuns.config.ts`. It prints its version first, and adds `.rustybuns/`, `wrangler.generated.jsonc` and `.alchemy/` to `.gitignore`. Secret names come from `.dev.vars`; their values stay on your machine and are read from `.dev.vars` at deploy time.
 
 ## 2. Native binary
 
@@ -59,7 +61,7 @@ pnpm exec rustybuns deploy     # asks to confirm, then builds and uploads
 pnpm exec rustybuns destroy    # removes everything the stack created
 ```
 
-Use a different `name` in the config than your live app the first time.
+Use a different `name` in the config than your live app the first time. If a `var` holds your live app's URL (an auth base URL, say), point it at the new one too: `https://<name>.<account>.workers.dev`.
 
 ## So... what's going on here?
 
@@ -124,21 +126,3 @@ Token-gated, `127.0.0.1` only, COOP/COEP set so `SharedArrayBuffer` works. `/__r
 ## License
 
 Apache-2.0. See [LICENSING.md](LICENSING.md).
-
-## Desktop-only apps (no Cloudflare)
-
-A plain Vite app works too. With no `wrangler.jsonc` (or with `--spa`), `rustybuns init` writes a desktop-only config and a `desktop/host.ts` for your backend routes:
-
-```ts
-desktop: {
-  mode: "spa",
-  clientBuild: "bun run build",
-  clientDir: "dist/ui",
-  world: false,                        // no world socket
-  host: "desktop/host.ts",             // export default { fetch(req, ctx) }, null = not mine
-  native: ["my_crate"],                // embed native/dist/my_crate in the binary
-  headers: { "Cross-Origin-Embedder-Policy": "credentialless" },
-}
-```
-
-The full example is [`apps/tscircuit-desktop`](apps/tscircuit-desktop): tscircuit as a single-file desktop app with a Rust analysis engine.

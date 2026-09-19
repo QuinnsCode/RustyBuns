@@ -30,14 +30,6 @@ export const stdoutReporter: Reporter = {
   escaped: (where, err, ctx) => console.error(`[escaped:${where}]`, err, ctx ?? ""),
 };
 
-/** What a desktop host module's fetch(req, ctx) receives. */
-export interface HostContext {
-  env: Record<string, unknown>;
-  dataDir: string;
-  identity: Record<string, string>;
-  reporter: Reporter;
-}
-
 /** Local binding bundle: everything a desktop build hands to the Worker's env. */
 export function localBindings(dataDir: string) {
   return {

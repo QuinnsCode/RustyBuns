@@ -1,0 +1,6 @@
+{
+  "name": "splat-rooms",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-05-07",
+  "assets": { "directory": "dist/client", "binding": "ASSETS" }
+}
