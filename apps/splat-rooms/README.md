@@ -4,18 +4,26 @@ Two things: a hunting game in photoreal splat rooms, and a browser for [Interior
 
 ## Play
 
-**Play** tab, pick a room, **Start hunt**. The room blacks out and you're told what to find. Drag to look, space fires one splat, shift-space sprays twenty. Each shot lights the patch of room it lands on, permanently: this is a map you build, not a torch you sweep. Charge holds twelve and refills one every 1.5 s, so a spray costs you the next nine seconds; far hits light less than close ones. When you think you've spotted the thing, hit **P** and click it. A wrong pick tells you what you actually clicked and costs four charge.
+The app opens on a menu: **Quick hunt** drops you in a random room, **Choose a room** shows every room with your best score, **Room browser** is the object viewer below, and **How to play** has the controls.
+
+In a hunt, the room blacks out and you're told what to find. Drag to look, space fires one splat, shift-space sprays twenty. Each shot lights the patch of room it lands on, permanently: this is a map you build, not a torch you sweep. Charge holds twelve and refills one every 1.5 s, so a spray costs you the next nine seconds; far hits light less than close ones. When you think you've spotted the thing, hit **P** and click it. A wrong pick tells you what you actually clicked and costs four charge. **Esc** pauses.
+
+A find scores 1000, minus 4 per second, 8 per splat and 120 per wrong pick (`src/game/score.ts`); 750+ is three stars. Bests per room live in the app's localStorage.
 
 Rounds are built backwards, which is what makes them fair: pick a target, find a standing spot with clear line of sight to it, then face 22° off it so it's in view but not centred. A round that can't be seen is never offered. Targets prefer rare labels, so you get "find the microwave" rather than "find a cup" in a room holding six hundred cups.
 
 ## Get scenes
 
-Scenes go in `~/Documents/SplatRooms/<scene>/` (override with `SPLAT_ROOMS_DIR`), one folder per scene, straight from the dataset:
+Scenes go in `~/Documents/SplatRooms/<scene>/` (override with `SPLAT_ROOMS_DIR`), one folder per scene, straight from the dataset. The dataset is gated: accept the terms on its page, then put a read token in `HF_TOKEN` or `~/.cache/huggingface/token`. Then, from this folder:
 
 ```
-hf download spatialverse/InteriorGS --repo-type dataset \
-  --include "0002_*/*" --local-dir ~/Documents/SplatRooms
+bun scripts/fetch-scenes.ts --list      # what you have, what's next
+bun scripts/fetch-scenes.ts             # the next scene after your last one
+bun scripts/fetch-scenes.ts --next 5    # the next five
+bun scripts/fetch-scenes.ts 0042_840512 # a specific one
 ```
+
+It resumes: files download as `.part` and only complete ones are kept. New scenes show up when you go back to the menu.
 
 A folder needs `labels.json`; `3dgs_compressed.ply` (~31 MB) adds the visuals, and `occupancy.json` / `structure.json` come along for later. A labels-only folder still opens: you get the boxes and the object list, which is enough to judge whether a room is worth downloading in full.
 

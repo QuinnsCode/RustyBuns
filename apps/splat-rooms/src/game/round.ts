@@ -7,7 +7,7 @@
 import { toObb, rayObb, type Obb, type Vec3 } from "../viewer/boxes.ts";
 import type { SceneDetail, SceneObject } from "../actions/scenes.ts";
 
-const STRUCTURAL = new Set([
+export const STRUCTURAL = new Set([
   "wall", "floor", "ceiling", "window", "door", "downlights", "Spotlight",
   "Linear lamp", "Track Light", "central air-conditioning", "curtain", "carpet",
 ]);
