@@ -38,7 +38,7 @@ export async function listScenes(): Promise<{ dir: string; scenes: SceneSummary[
     for (const o of objs) counts.set(o.label, (counts.get(o.label) ?? 0) + 1);
     scenes.push({
       id, objects: objs.length, kinds: counts.size, splatMb, hasSplats: splatMb > 0,
-      top: [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4),
+      top: [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8),
     });
   }
   return { dir: SCENES_DIR, scenes };

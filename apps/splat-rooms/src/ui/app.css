@@ -55,13 +55,8 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; }
 }
 
 /* --- Play --- */
-.shell-play { grid-template-columns: 260px 1fr; }
-.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
-.tab { flex: 1; padding: 7px 0; background: #1c2026; border: 1px solid var(--edge); border-radius: 5px;
-  color: var(--dim); cursor: pointer; font: 600 .95rem var(--silk); }
-.tab.is-on { color: #0e1013; background: var(--accent); border-color: var(--accent); }
 
-.game { min-width: 0; }
+.game { height: 100%; min-width: 0; }
 .game-stage { position: relative; width: 100%; height: 100%; background: #000; overflow: hidden; }
 .game-stage canvas { display: block; width: 100%; height: 100%; }
 .mask { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
@@ -74,8 +69,7 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; }
 
 .game-hud { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 12px;
   align-items: center; background: #0b0d10cc; border: 1px solid var(--edge); border-radius: 6px; padding: 9px 12px; }
-.game-hud select { padding: 6px 8px; background: #1c2026; color: inherit; border: 1px solid var(--edge); border-radius: 5px; font: inherit; }
-.find { font: 600 1.4rem/1 var(--silk); }
+.target { font: 600 1.4rem/1 var(--silk); }
 .charge { display: flex; gap: 3px; }
 .charge i { width: 7px; height: 16px; border-radius: 2px; background: #2a3037; }
 .charge i.on { background: var(--accent); }
@@ -89,3 +83,53 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; }
   padding: 40px; text-align: center; pointer-events: none; }
 .game-intro h2 { font: 700 2.6rem/1 var(--silk); margin: 0 0 10px; }
 .game-intro p { max-width: 54ch; color: var(--dim); }
+
+.hud-room { margin-left: auto; }
+.go, .big, .back { font: 600 1rem var(--silk); letter-spacing: .02em; cursor: pointer; border-radius: 5px; }
+.go { padding: 6px 14px; color: #0e1013; background: var(--accent); border: 1px solid var(--accent); }
+.go:hover:not(:disabled) { filter: brightness(1.1); }
+button:disabled { opacity: .45; cursor: default; }
+.back { padding: 4px 0; margin-bottom: 10px; background: none; border: 0; color: var(--dim); }
+.back:hover { color: var(--accent); }
+code { font: .85em ui-monospace, Menlo, monospace; background: #1c2026; border: 1px solid var(--edge); border-radius: 3px; padding: 1px 5px; }
+
+/* --- Menus --- */
+.screen { height: 100%; overflow-y: auto; padding: 28px 24px;
+  background: radial-gradient(ellipse at 50% 30%, #1a2a22 0%, var(--bg) 60%); }
+.menu { display: grid; place-items: center; }
+.menu-card { width: min(440px, 100%); display: grid; gap: 10px; }
+.kicker { margin: 0; color: var(--accent); font: 600 .95rem var(--silk); letter-spacing: .14em; text-transform: uppercase; }
+.title { font: 600 clamp(3rem, 9vw, 5rem)/.9 var(--silk); margin: 0; letter-spacing: .01em; }
+.menu-nav { display: grid; gap: 8px; margin: 14px 0 6px; }
+.big { padding: 12px 16px; font-size: 1.25rem; text-align: left; color: var(--ink); background: #1c2026; border: 1px solid var(--edge); }
+.big:hover:not(:disabled) { border-color: var(--accent); }
+.big.go { color: #0e1013; background: var(--accent); border-color: var(--accent); }
+.howto ol { padding-left: 20px; margin: 0; display: grid; gap: 8px; }
+.howto h2 { margin-top: 10px; }
+
+.screen-head { display: flex; align-items: baseline; gap: 18px; max-width: 1100px; margin: 0 auto 16px; }
+.screen-head h1 { margin: 0; }
+.rooms-screen > p { max-width: 1100px; margin: 18px auto 0; }
+.room-grid { list-style: none; padding: 0; margin: 0 auto; max-width: 1100px;
+  display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.room-card { width: 100%; height: 100%; display: grid; gap: 4px; align-content: start; text-align: left; padding: 14px;
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 8px; color: inherit; font: inherit; cursor: pointer; }
+.room-card:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); }
+.room-id { font: 600 1.35rem/1 var(--silk); }
+.room-top { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-foot { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--edge); font-size: .85rem; }
+.room-foot b { color: var(--accent); }
+
+/* --- In-game overlays --- */
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: #000a; backdrop-filter: blur(3px); }
+/* After a find the room is fully lit: keep it visible, park the panel to one side. */
+.overlay-clear { background: none; backdrop-filter: none; place-items: end; padding: 70px 16px 16px; pointer-events: none; }
+.overlay-clear .panel { pointer-events: auto; }
+.panel { width: min(320px, 100%); display: grid; gap: 8px; padding: 20px; text-align: center;
+  background: #0b0d10ee; border: 1px solid var(--edge); border-radius: 10px; }
+.panel h2 { font-size: 1.8rem; margin: 0; }
+.panel .big { text-align: center; }
+.stars { font-size: 2.2rem; line-height: 1; letter-spacing: 4px; color: #2a3037; }
+.stars .on { color: #f2c94c; }
+.points { margin: 0; font: 600 3rem/1 var(--silk); font-variant-numeric: tabular-nums; }
+.badge { margin-left: 10px; vertical-align: middle; padding: 2px 7px; border-radius: 4px; background: var(--accent); color: #0e1013; font: 600 .85rem var(--silk); text-transform: uppercase; }
