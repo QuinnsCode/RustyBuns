@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type Timed } from "./api.ts";
 import { analyzeInBrowser } from "./analysis/client.ts";
 
 const ENGINE_LABEL: Record<string, string> = {
-  "rust-native": "Rust, native (host)",
+  "rust-native": "Rust, native (host, all cores)",
   "ts-host": "TypeScript (host)",
   "rust-wasm": "Rust, wasm (browser)",
   "ts-worker": "TypeScript (browser)",
@@ -18,13 +18,19 @@ export function AnalysisPanel({ native, board, circuitJson, renderedAt }: {
   const [race, setRace] = useState<Timed[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [exported, setExported] = useState<string | null>(null);
+  const [exported, setExported] = useState<{ text: string; dir?: string } | null>(null);
+  const seq = useRef(0);
 
   // Every finished render gets analyzed on the fastest engine available.
+  // Only the newest request may land: typing a new gap fires several.
   useEffect(() => {
     if (!circuitJson) return;
     setRace(null);
-    api.analyze(JSON.stringify(circuitJson), min).then((r) => { setLatest(r); setError(null); }, (e) => setError(e.message));
+    const mine = ++seq.current;
+    api.analyze(JSON.stringify(circuitJson), min).then(
+      (r) => { if (mine === seq.current) { setLatest(r); setError(null); } },
+      (e) => { if (mine === seq.current) setError(e.message); },
+    );
   }, [renderedAt, min]);
 
   const compare = async () => {
@@ -47,8 +53,8 @@ export function AnalysisPanel({ native, board, circuitJson, renderedAt }: {
     if (!circuitJson || !board) return;
     try {
       const r = await api.export(format, circuitJson, board);
-      setExported(`Wrote ${r.written.length} file${r.written.length === 1 ? "" : "s"} to ${r.dir}`);
-    } catch (e) { setExported(`Export failed: ${(e as Error).message}`); }
+      setExported({ text: `Wrote ${r.written.length} file${r.written.length === 1 ? "" : "s"} to ${r.dir}`, dir: r.dir });
+    } catch (e) { setExported({ text: `Export failed: ${(e as Error).message}` }); }
   };
 
   const r = latest?.result;
@@ -83,12 +89,18 @@ export function AnalysisPanel({ native, board, circuitJson, renderedAt }: {
             </p>
             <dl>
               <dt>Closest gap</dt><dd className="num">{fmt(r.clearance.min_gap_mm, 3)} mm</dd>
-              <dt>Pairs checked</dt><dd className="num">{r.clearance.pairs_checked.toLocaleString()}</dd>
+              <dt>Pairs measured</dt>
+              <dd className="num" title="The spatial index only measures copper that could be close. Brute force would measure every pair.">
+                {r.clearance.pairs_checked.toLocaleString()} of {r.clearance.pairs_possible.toLocaleString()}
+              </dd>
             </dl>
             {r.clearance.violations.length > 0 && (
               <ol className="violations">
                 {r.clearance.violations.slice(0, 12).map((v, i) => (
-                  <li key={i}><code>{v.a}</code> to <code>{v.b}</code> <span className="num">{fmt(v.gap_mm, 3)}</span></li>
+                  <li key={i} title={`${v.a} to ${v.b}`}>
+                    <span className="nets">{v.net_a ?? <code>{v.a}</code>} ↔ {v.net_b ?? <code>{v.b}</code>}</span>
+                    <span className="num">{fmt(v.gap_mm, 3)} mm</span>
+                  </li>
                 ))}
               </ol>
             )}
@@ -142,12 +154,17 @@ export function AnalysisPanel({ native, board, circuitJson, renderedAt }: {
             <h3>Export</h3>
             <p className="muted">Files go to <code>exports/</code> in the project folder.</p>
             <div className="row wrap">
-              <button onClick={() => exportAs("gerbers")}>Gerbers + drill</button>
+              <button onClick={() => exportAs("gerbers")}>Gerbers + drill (.zip)</button>
               <button onClick={() => exportAs("bom")}>BOM</button>
               <button onClick={() => exportAs("pnp")}>Pick and place</button>
               <button onClick={() => exportAs("json")}>Circuit JSON</button>
             </div>
-            {exported && <p className="muted" role="status">{exported}</p>}
+            {exported && (
+              <p className="muted" role="status">
+                {exported.text}{" "}
+                {exported.dir && <button className="link" onClick={() => api.reveal(exported.dir!)}>Show in folder</button>}
+              </p>
+            )}
           </section>
         </>
       )}

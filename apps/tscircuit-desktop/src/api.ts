@@ -25,4 +25,5 @@ export const api = {
     call<Timed>(`/api/analyze?min=${min}&engine=${engine}`, { method: "POST", body: circuitJson }),
   export: (format: string, circuitJson: unknown[], board: string) =>
     call<{ dir: string; written: string[] }>(`/api/export?format=${format}`, post({ circuitJson, board })),
+  reveal: (path: string) => call<{ ok: true }>("/api/reveal", post({ path })),
 };
