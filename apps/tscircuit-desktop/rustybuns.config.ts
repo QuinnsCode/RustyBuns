@@ -18,7 +18,6 @@ export default defineConfig({
       headers: { "Cross-Origin-Embedder-Policy": "credentialless" },
       window: "app",
       dataDir: "~/.tscircuit-desktop",
-      targets: ["linux-x64"],
     },
   },
 });

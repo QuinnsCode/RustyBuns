@@ -107,7 +107,7 @@ async function init() {
     const pkg = JSON.parse(readFileSync("package.json", "utf8"));
     const rw = String({ ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) }["rwsdk"] ?? "");
     const major = Number(rw.replace(/^[^0-9]*/, "").split(".")[0]);
-    if (major >= 1) cfg.worker.builtMain = "dist/worker/index.js";
+    if (major >= 1) cfg.worker!.builtMain = "dist/worker/index.js";
   }
   // Secrets: names only, from .dev.vars. Values are read from .dev.vars at deploy time.
   const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k]);

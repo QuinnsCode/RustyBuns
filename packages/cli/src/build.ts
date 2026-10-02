@@ -205,7 +205,7 @@ import { basename, join, isAbsolute } from "node:path";
 function assetDir(rel: string): string | undefined {
   if (!rel) return undefined;
   const embedded = join(import.meta.dir, basename(rel));
-  return existsSync(embedded) ? embedded : join(import.meta.dir, rel);
+  return existsSync(embedded) ? embedded : join(process.cwd(), rel);
 }
 
 const dataDir = ${h.dataDir};
@@ -218,10 +218,12 @@ ${bind.join("\n")}
 // Durable Objects run in-process. Bound after env exists because a DO's
 // constructor receives this same env (a DO can use DB, KV, other DOs).
 ${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
+// Lets import { env } from "cloudflare:workers" see the local bindings.
+globalThis.__RB_ENV = env;
 
 const token = ${h.token};
 const shell = serve<typeof env>({
-  assets: assetDir(${JSON.stringify(c.worker!.assets ? "../" + c.worker!.assets : "")}),
+  assets: assetDir(${JSON.stringify(c.worker!.assets ?? "")}),
   runWorkerFirst: ${JSON.stringify(c.worker!.runWorkerFirst ?? [])},
   token,
   reporter: stdoutReporter${h.listen},
@@ -281,6 +283,16 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   }
   if (mode === "worker" && !c.worker) throw new Error("desktop.mode \"worker\" needs a worker section; desktop-only apps use mode \"spa\"");
   const build = mode === "spa" ? d.clientBuild : c.worker!.build;
+  // Before the client build: a target mistake shouldn't cost a full UI build first.
+  const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}` as DesktopOs;
+  const targets: DesktopOs[] = opts.target ? [opts.target as DesktopOs]
+    : d.targets === "all" ? ALL_OS
+    : d.targets ?? [hostTag];
+
+  const hasRust = await Bun.file("native/Cargo.toml").exists();
+  if (hasRust && targets.some((t) => t !== hostTag)) {
+    throw new Error(`native/ has Rust crates: cdylibs do not cross-compile. Build ${targets.filter((t) => t !== hostTag).join(", ")} on their own OS (CI matrix), or pass --target ${hostTag}.`);
+  }
   if (build) await $`sh -c ${build}`;
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(entry, mode === "spa" ? spaEntry(c, host) : desktopEntry(c, host));
@@ -319,15 +331,6 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
     return ".rustybuns/dev/desktop.js";
   }
 
-  const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}` as DesktopOs;
-  const targets: DesktopOs[] = opts.target ? [opts.target as DesktopOs]
-    : d.targets === "all" ? ALL_OS
-    : d.targets ?? [hostTag];
-
-  const hasRust = await Bun.file("native/Cargo.toml").exists();
-  if (hasRust && targets.some((t) => t !== hostTag)) {
-    throw new Error(`native/ has Rust crates: cdylibs do not cross-compile. Build ${targets.filter((t) => t !== hostTag).join(", ")} on their own OS (CI matrix), or pass --target ${hostTag}.`);
-  }
 
   const outs: string[] = [];
   // desktop.native names the crates to embed (all built crates when unset);

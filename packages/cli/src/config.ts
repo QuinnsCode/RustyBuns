@@ -41,8 +41,10 @@ export interface DesktopTarget {
    */
   headers?: Record<string, string>;
   /**
-   * Rust crates under native/crates to embed in the binary. Each is built to
-   * native/dist/<name>/<os-arch>/ by native/build.ts and found by loadNative().
+   * Which crates from native/dist/<name>/<os-arch>/ to embed (default: every
+   * built crate). Each is built by native/build.ts; only the target OS's library
+   * goes into each binary, where loadNative() finds it. A named crate that was
+   * never built is an error.
    */
   native?: string[];
   /** spa: path the client's WorldSocket connects to. */

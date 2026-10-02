@@ -10,15 +10,16 @@
 //   GET  /api/project/files           { path: contents } for RunFrame's fsMap
 //   PUT  /api/project/file?path=      save one file
 //   GET  /api/project/events          SSE: a file changed on disk
-//   POST /api/analyze?min=&engine=    Circuit JSON in, analysis out (Rust, TS fallback)
+//   POST /api/analyze?min=&engine=    Circuit JSON in, analysis out (Rust on its own thread, TS fallback)
 //   POST /api/export?format=          write gerbers | bom | pnp | json into <project>/exports
+//   POST /api/reveal  {path}          show a project folder in Finder / Explorer / the file manager
 //   *    /api/proxy/<host>/<path>      forward to an allowed host (see PROXY_HOSTS)
 
 import type { HostContext } from "@rustybuns/shell-bun";
 import { existsSync, readdirSync, statSync, watch, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { analyzeNative, nativeAvailable } from "./native.ts";
+import { analyzeNativeAsync, nativeAvailable } from "./native.ts";
 import { analyze } from "../src/analysis/analyze.ts";
 import { STARTER_CIRCUIT } from "./starter.ts";
 
@@ -150,8 +151,9 @@ async function runAnalysis(req: Request, url: URL) {
   const text = await req.text();
   const t0 = performance.now();
   if (want !== "ts" && nativeAvailable) {
-    const out = analyzeNative(text, min)!;
+    const out = await analyzeNativeAsync(text, min)!;
     const ms = performance.now() - t0;
+    if (out.startsWith('{"error"')) return bad(JSON.parse(out).error, 422);
     return new Response(`{"engine":"rust-native","ms":${ms.toFixed(2)},"result":${out}}`, { headers: { "content-type": "application/json" } });
   }
   if (want === "native") return bad("native library not available on this build", 501);
@@ -162,6 +164,15 @@ async function runAnalysis(req: Request, url: URL) {
   return json({ engine: "ts-host", ms: +(performance.now() - t0).toFixed(2), result });
 }
 
+/** Open a folder inside the project in the OS file manager. */
+async function reveal(raw: unknown) {
+  const p = typeof raw === "string" ? inProject(relative(project ?? "", raw)) : null;
+  if (!p || !existsSync(p)) return bad("not a folder in the open project");
+  const cmd = process.platform === "darwin" ? ["open", p] : process.platform === "win32" ? ["explorer", p] : ["xdg-open", p];
+  Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" });
+  return json({ ok: true });
+}
+
 async function runExport(req: Request, url: URL) {
   if (!project) return bad("no project open");
   const format = url.searchParams.get("format") ?? "";
@@ -169,7 +180,7 @@ async function runExport(req: Request, url: URL) {
   if (!Array.isArray(circuitJson)) return bad("circuitJson required");
   const stem = basename(board).replace(/\.circuit\.tsx$|\.tsx$/, "") || "board";
   const outDir = join(project, "exports", stem);
-  const files: Record<string, string> = {};
+  const files: Record<string, string | Uint8Array> = {};
   switch (format) {
     case "gerbers": {
       const { convertCircuitJsonToGerberFiles, convertCircuitJsonToExcellonDrillCommands, stringifyExcellonDrill } = await import("circuit-json-to-gerber");
@@ -178,6 +189,9 @@ async function runExport(req: Request, url: URL) {
       const unplated = convertCircuitJsonToExcellonDrillCommands({ circuitJson, is_plated: false } as any);
       files["gerbers/plated.drl"] = stringifyExcellonDrill(plated);
       files["gerbers/unplated.drl"] = stringifyExcellonDrill(unplated);
+      // What fab upload forms (JLCPCB, PCBWay, OSH Park) take: one flat zip.
+      const { zipSync, strToU8 } = await import("fflate");
+      files["gerbers.zip"] = zipSync(Object.fromEntries(Object.entries(files).map(([k, v]) => [basename(k), strToU8(v as string)])));
       break;
     }
     case "bom": {
@@ -254,6 +268,7 @@ export default {
       if (path === "/api/project/events") return events();
       if (path === "/api/analyze" && req.method === "POST") return runAnalysis(req, url);
       if (path === "/api/export" && req.method === "POST") return runExport(req, url);
+      if (path === "/api/reveal" && req.method === "POST") return reveal(((await req.json()) as any).path);
       if (path.startsWith("/api/proxy/")) return proxy(req, url, ctx);
       return bad("no such route", 404);
     } catch (err) {

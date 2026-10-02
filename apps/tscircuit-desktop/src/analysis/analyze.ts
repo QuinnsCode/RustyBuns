@@ -6,6 +6,10 @@
 export const MAX_VIOLATIONS = 50;
 export const DEFAULT_VIA_DIAMETER = 0.6;
 export const DEFAULT_TRACE_WIDTH = 0.15;
+/** First search radius for the clearance check. Real boards' closest gaps are well under it. */
+export const SEARCH_START_MM = 1.0;
+/** Slack on index queries so a pair right at the radius is never lost to rounding. */
+const EPS = 1e-9;
 
 export interface Analysis {
   board: { width_mm: number; height_mm: number; area_mm2: number; layers: number };
@@ -14,8 +18,8 @@ export interface Analysis {
   copper: { trace_mm2: number; pad_mm2: number; via_mm2: number; total_mm2: number; density_pct: number | null };
   longest_nets: { name: string; ports: number; length_mm: number }[];
   clearance: {
-    min_clearance_mm: number; pairs_checked: number; min_gap_mm: number | null;
-    violation_count: number; violations: { a: string; b: string; gap_mm: number }[];
+    min_clearance_mm: number; pairs_checked: number; pairs_possible: number; search_radius_mm: number; min_gap_mm: number | null;
+    violation_count: number; violations: { a: string; b: string; gap_mm: number; net_a: string | null; net_b: string | null }[];
   };
 }
 
@@ -74,13 +78,121 @@ function segRect(s: Seg, r: Pad): number {
   return d;
 }
 
+// ---------- spatial index (keep in lockstep with lib.rs) ----------
+type Box = [number, number, number, number];
+interface Violation { a: string; b: string; gap: number; ga: number; gb: number }
+
+/** Uniform grid over item bounding boxes; an item sits in every cell its box touches. */
+class Grid {
+  minx = Infinity; miny = Infinity; cell: number; nx: number; ny: number; cells: number[][]; firstX: Int32Array; firstY: Int32Array;
+  constructor(boxes: Box[], search: number) {
+    let maxx = -Infinity, maxy = -Infinity;
+    for (const b of boxes) {
+      this.minx = Math.min(this.minx, b[0]); this.miny = Math.min(this.miny, b[1]);
+      maxx = Math.max(maxx, b[2]); maxy = Math.max(maxy, b[3]);
+    }
+    const n = Math.max(boxes.length, 1);
+    const w = Math.max(maxx - this.minx, 0), h = Math.max(maxy - this.miny, 0);
+    // ~one item per cell, never thinner than a line's worth, never below the radius.
+    this.cell = Math.max(Math.sqrt((w * h) / n), (w + h) / n, search, 0.01);
+    this.nx = Math.floor(w / this.cell) + 1;
+    this.ny = Math.floor(h / this.cell) + 1;
+    this.cells = Array.from({ length: this.nx * this.ny }, () => []);
+    this.firstX = new Int32Array(boxes.length);
+    this.firstY = new Int32Array(boxes.length);
+    boxes.forEach((b, k) => {
+      const [x0, x1, y0, y1] = this.range(b[0], b[1], b[2], b[3]);
+      for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) this.cells[cy * this.nx + cx]!.push(k);
+      this.firstX[k] = x0;
+      this.firstY[k] = y0;
+    });
+  }
+  ix(v: number, lo: number, n: number): number {
+    const i = Math.floor((v - lo) / this.cell);
+    return i < 0 ? 0 : i >= n - 1 ? n - 1 : i;
+  }
+  range(x0: number, y0: number, x1: number, y1: number) {
+    return [this.ix(x0, this.minx, this.nx), this.ix(x1, this.minx, this.nx), this.ix(y0, this.miny, this.ny), this.ix(y1, this.miny, this.ny)] as const;
+  }
+  /**
+   * Calls f once for each item whose cells meet the box. An item shares several
+   * cells with the query; it is visited only in the first of them (lowest x,
+   * then lowest y), so no "seen" set is needed.
+   */
+  query(x0: number, y0: number, x1: number, y1: number, f: (k: number) => void) {
+    const [cx0, cx1, cy0, cy1] = this.range(x0, y0, x1, y1);
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        for (const k of this.cells[cy * this.nx + cx]!) {
+          if (cx === Math.max(cx0, this.firstX[k]!) && cy === Math.max(cy0, this.firstY[k]!)) f(k);
+        }
+      }
+    }
+  }
+}
+
+const segBox = (s: Seg): Box => [Math.min(s.x1, s.x2) - s.hw, Math.min(s.y1, s.y2) - s.hw, Math.max(s.x1, s.x2) + s.hw, Math.max(s.y1, s.y2) + s.hw];
+const padBox = (p: Pad): Box => [p.minx, p.miny, p.maxx, p.maxy];
+
+/** Width plus height of everything: a radius this big makes every pair a candidate. */
+function extent(segs: Seg[], pads: Pad[]): number {
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const b of [...segs.map(segBox), ...pads.map(padBox)]) {
+    minx = Math.min(minx, b[0]); miny = Math.min(miny, b[1]); maxx = Math.max(maxx, b[2]); maxy = Math.max(maxy, b[3]);
+  }
+  return minx > maxx ? 0 : maxx - minx + (maxy - miny);
+}
+
+/** One pass: every pair whose copper is within `search` of each other is measured. */
+function clearancePass(segs: Seg[], pads: Pad[], minClearance: number, search: number) {
+  const boxes = [...segs.map(segBox), ...pads.map(padBox)];
+  const grid = new Grid(boxes, search);
+  const ns = segs.length;
+  let checked = 0, minGap = Infinity;
+  const viols: Violation[] = [];
+  for (let i = 0; i < ns; i++) {
+    const a = segs[i]!, b = boxes[i]!, q = a.hw + search + EPS;
+    grid.query(b[0] - q, b[1] - q, b[2] + q, b[3] + q, (k) => {
+      let gap: number, id: string, group: number;
+      if (k < ns) {
+        if (k <= i) return;
+        const o = segs[k]!;
+        if (o.layer !== a.layer || o.group === a.group) return;
+        gap = segSeg(a, o) - a.hw - o.hw; id = o.id; group = o.group;
+      } else {
+        const p = pads[k - ns]!;
+        if (p.layer !== a.layer || p.group === a.group) return;
+        gap = p.circle ? pointSeg(p.circle[0], p.circle[1], a) - p.circle[2] - a.hw : segRect(a, p) - a.hw;
+        id = p.id; group = p.group;
+      }
+      checked++;
+      if (gap < minGap) minGap = gap;
+      if (gap < minClearance) viols.push({ a: a.id, b: id, gap, ga: a.group, gb: group });
+    });
+  }
+  return { checked, minGap, viols };
+}
+
+/** What brute force would measure: same-layer, other-net pairs, counted per layer and net. */
+function pairsPossible(segs: Seg[], pads: Pad[]): number {
+  const layer = new Map<string, [number, number]>(), net = new Map<string, [number, number]>();
+  const bump = (m: Map<string, [number, number]>, k: string, i: 0 | 1) => { const v = m.get(k) ?? [0, 0]; v[i]++; m.set(k, v); };
+  for (const s of segs) { bump(layer, s.layer, 0); bump(net, `${s.layer}\0${s.group}`, 0); }
+  for (const p of pads) { bump(layer, p.layer, 1); bump(net, `${p.layer}\0${p.group}`, 1); }
+  const pairs = ([s, p]: [number, number]) => (s * Math.max(s - 1, 0)) / 2 + s * p;
+  let total = 0;
+  for (const v of layer.values()) total += pairs(v);
+  for (const v of net.values()) total -= pairs(v);
+  return total;
+}
+
 /** floor(x+0.5), matching lib.rs (Math.round and Rust round disagree on negative halves). */
 const r6 = (x: number) => Math.floor(x * 1e6 + 0.5) / 1e6;
 const str = (e: any, k: string): string => (typeof e?.[k] === "string" ? e[k] : "");
 const num = (e: any, k: string): number | undefined => (typeof e?.[k] === "number" ? e[k] : undefined);
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-export function analyze(elements: any[], minClearance: number): Analysis {
+export function analyze(elements: any[], minClearance: number, bruteForce = false): Analysis {
   const byType = (t: string) => elements.filter((e) => str(e, "type") === t);
 
   // board
@@ -208,27 +320,16 @@ export function analyze(elements: any[], minClearance: number): Analysis {
     }
   });
 
-  // clearance: every segment vs every later segment and every pad, other nets, same layer
-  let checked = 0, minGap = Infinity;
-  const viols: { a: string; b: string; gap: number }[] = [];
-  for (let i = 0; i < segs.length; i++) {
-    const a = segs[i]!;
-    for (let j = i + 1; j < segs.length; j++) {
-      const b = segs[j]!;
-      if (b.layer !== a.layer || b.group === a.group) continue;
-      checked++;
-      const gap = segSeg(a, b) - a.hw - b.hw;
-      if (gap < minGap) minGap = gap;
-      if (gap < minClearance) viols.push({ a: a.id, b: b.id, gap });
-    }
-    for (const p of pads) {
-      if (p.layer !== a.layer || p.group === a.group) continue;
-      checked++;
-      const gap = p.circle ? pointSeg(p.circle[0], p.circle[1], a) - p.circle[2] - a.hw : segRect(a, p) - a.hw;
-      if (gap < minGap) minGap = gap;
-      if (gap < minClearance) viols.push({ a: a.id, b: p.id, gap });
-    }
-  }
+  // clearance: segment vs later segments and pads, other nets, same layer, through
+  // the spatial index. It is exact: pairs within the search radius are all found,
+  // so the radius only grows (x4) when the closest gap could lie beyond it.
+  // bruteForce skips the index (one cell, every pair): the reference the tests hold it to.
+  let search = bruteForce ? Number.MAX_VALUE / 4 : Math.max(minClearance, SEARCH_START_MM);
+  const span = extent(segs, pads);
+  let pass = clearancePass(segs, pads, minClearance, search);
+  while (!(pass.minGap < search || search >= span)) { search *= 4; pass = clearancePass(segs, pads, minClearance, search); }
+  const { checked, minGap, viols } = pass;
+  const netOf = (g: number) => (g >= 0 ? groupName.get(g) ?? null : null);
   viols.sort((x, y) => x.gap - y.gap || cmp(x.a, y.a) || cmp(x.b, y.b));
 
   // nets: every group with 2+ ports
@@ -255,10 +356,10 @@ export function analyze(elements: any[], minClearance: number): Analysis {
     },
     longest_nets: netRows.slice(0, 10).map((r) => ({ name: r.name, ports: r.ports, length_mm: r6(r.length) })),
     clearance: {
-      min_clearance_mm: minClearance, pairs_checked: checked,
+      min_clearance_mm: minClearance, pairs_checked: checked, pairs_possible: pairsPossible(segs, pads), search_radius_mm: search,
       min_gap_mm: Number.isFinite(minGap) ? r6(minGap) : null,
       violation_count: viols.length,
-      violations: viols.slice(0, MAX_VIOLATIONS).map((v) => ({ a: v.a, b: v.b, gap_mm: r6(v.gap) })),
+      violations: viols.slice(0, MAX_VIOLATIONS).map((v) => ({ a: v.a, b: v.b, gap_mm: r6(v.gap), net_a: netOf(v.ga), net_b: netOf(v.gb) })),
     },
   };
 }

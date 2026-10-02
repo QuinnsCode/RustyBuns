@@ -92,8 +92,10 @@ dd { margin: 0; text-align: right; }
 .drc { font-weight: 600; padding-left: .6rem; border-left: 3px solid; }
 .drc.ok { border-color: var(--ok); }
 .drc.bad { border-color: var(--drc); color: var(--drc); }
-.violations { margin: .4rem 0 0; padding-left: 1.4rem; font-size: .8rem; }
-.violations .num { color: var(--drc); float: right; }
+.violations { margin: .4rem 0 0; padding: 0; list-style: none; font-size: .8rem; }
+.violations li { display: flex; gap: .5rem; justify-content: space-between; }
+.violations .nets { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.violations .num { color: var(--drc); flex: none; }
 .nets { width: 100%; font-size: .82rem; border-collapse: collapse; }
 .nets td { padding: .1rem 0; }
 .nets td + td { text-align: right; color: var(--silk-dim); }
