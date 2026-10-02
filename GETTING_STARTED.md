@@ -88,4 +88,39 @@ created, in reverse order.
 Your `wrangler.jsonc` bindings become the deployed resources: D1 (with migrations applied),
 KV, R2, and Durable Objects, bound to the Worker under the same names.
 
-Add `box: { provider: "hetzner" }` under `targets` for a VM column (draft).
+## 5. Deploy to Hetzner
+
+Add `box: { provider: "hetzner" }` under `targets`. Keep `edge` for both columns in one stack,
+or remove it for a Hetzner-only stack. Then, once per machine:
+
+```
+pnpm exec alchemy profile edit --profile default --add Hetzner
+```
+
+It asks for a Hetzner Cloud API token with read & write access (Console → Security → API tokens).
+In CI, set `HCLOUD_TOKEN` instead. Don't put it in `.dev.vars`, because `init` reads secret names
+from there.
+
+```
+pnpm exec rustybuns plan
+pnpm exec rustybuns deploy
+```
+
+Both run `rustybuns build box` first: your desktop host, compiled for Linux, with the token gate
+off and `/health` on. It lands in `.rustybuns/box/` next to `launch.mjs`, a small Node launcher,
+since Alchemy's `Hetzner.Service` starts every unit with `node`. `deploy` creates the server and a
+10 GB volume, copies both files over SSH, starts a systemd unit, waits for `/health`, and prints
+`http://<ipv4>:3000`. sqlite, KV and R2 directories live on the volume, so they survive
+redeploys. Secret values from `.dev.vars` go into the unit's env file.
+
+To pick a different server, set `location`, `serverType` (`cax*` types are ARM), `image`, `port`
+or `volumeSize` on `targets.box`. Changing `location`, `serverType` or `image` replaces the server.
+The volume lives on.
+
+To try the box locally before paying for one, build it for your own machine and start the launcher:
+
+```
+pnpm exec rustybuns build box --target darwin-arm64
+PORT=3000 DATA_DIR=/tmp/box node .rustybuns/box/launch.mjs
+curl localhost:3000/health
+```

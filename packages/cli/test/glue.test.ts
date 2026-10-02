@@ -218,3 +218,40 @@ test("boundary vite plugin swaps actions when vite reports a Windows path", asyn
   // Windows: same file, backslashes (Vite normalizes, but join() on Windows does not)
   expect(await rustybuns().resolveId.call(asVite(action.replace(/\//g, "\\")), "./bounce", r + "/src/x.ts", {})).toBe(proxy);
 });
+
+import { boxArch, boxLauncher } from "../src/box.ts";
+test("box: Hetzner stack runs the launcher, edge stays off unless asked for", () => {
+  const c = wranglerToConfig(parseWrangler('{"name":"b","main":"src/w.ts","compatibility_date":"2025-05-07"}'));
+  c.bindings.API_KEY = { type: "secret" };
+  const both = generateAlchemy({ ...c, targets: { ...c.targets, box: { provider: "hetzner" } } });
+  expect(both).toContain('Hetzner.Server("Box", { serverType: "cpx12", image: "ubuntu-24.04", location: "nbg1" })');
+  expect(both).toContain('Hetzner.Volume("Data", { size: 10, format: "ext4", server: Box, automount: true })');
+  expect(both).toContain('main: ".rustybuns/box/launch.mjs"');
+  expect(both).toContain("isExternal: true");
+  expect(both).toContain('API_KEY: process.env["API_KEY"] ?? ""');
+  expect(both).toContain("Layer.mergeAll(Cloudflare.providers(), Hetzner.providers())");
+  const boxOnly = generateAlchemy({ ...c, targets: { box: { provider: "hetzner", serverType: "cax11", volumeSize: 0 } } });
+  expect(boxOnly).not.toContain("Cloudflare");
+  expect(boxOnly).not.toContain("Hetzner.Volume");
+  expect(boxOnly).toContain('DATA_DIR: "/var/lib/b"');
+  expect(boxOnly).toContain("providers: Hetzner.providers()");
+  expect(boxArch("cax11")).toBe("linux-arm64");
+  expect(boxArch("cpx12")).toBe("linux-x64");
+  expect(boxLauncher({ ...c, targets: { box: { provider: "hetzner" } } })).toContain("HC_Volume_");
+});
+
+test("box host: public bind, no token, /health, secrets from env, no browser", () => {
+  const c = wranglerToConfig(parseWrangler('{"name":"b","main":"src/w.ts","compatibility_date":"2025-05-07"}'));
+  c.bindings.API_KEY = { type: "secret" };
+  const box = spaEntry(c, "box");
+  expect(box).toContain('hostname: "0.0.0.0", port: Number(process.env.PORT ?? 3000)');
+  expect(box).toContain("const token = undefined;");
+  expect(box).toContain('url.pathname === "/health"');
+  expect(box).toContain('API_KEY: process.env["API_KEY"] ?? ""');
+  expect(box).toContain('process.env.DATA_DIR ?? "/var/lib/b"');
+  expect(box).not.toContain("await openBrowser");
+  const desk = spaEntry(c);
+  expect(desk).toContain("const token = mintToken();");
+  expect(desk).toContain("await openBrowser");
+  expect(desk).not.toContain("/health");
+});
