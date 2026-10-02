@@ -184,6 +184,12 @@ test("spa entry: default still binds the world and has no host", async () => {
   expect(src).toContain("const host: any = null;");
 });
 
+test("nativeDirs refuses crates that were not built", async () => {
+  const { nativeDirs } = await import("../src/build.ts");
+  expect(() => nativeDirs(["definitely_not_built"])).toThrow(/not built/);
+  expect(nativeDirs()).toEqual([]);
+});
+
 test("build desktop refuses a client build in dist/, where the binary goes", async () => {
   const { buildDesktop } = await import("../src/build.ts");
   const dir = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "rb-"));
@@ -192,4 +198,73 @@ test("build desktop refuses a client build in dist/, where the binary goes", asy
   try {
     await expect(buildDesktop({ name: "x", targets: { desktop: { mode: "spa", clientDir: "dist", world: false } } } as any)).rejects.toThrow(/dist\/ui/);
   } finally { process.chdir(cwd); }
+});
+
+test("boundary vite plugin swaps actions when vite reports a Windows path", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs");
+  const { tmpdir } = require("node:os");
+  const { generateBoundaryFiles } = await import("../src/glue/desktop-scaffold.ts");
+  const r = mkdtempSync(tmpdir() + "/rbwin-");
+  mkdirSync(r + "/src/actions", { recursive: true });
+  writeFileSync(r + "/package.json", JSON.stringify({ name: "w", dependencies: { vite: "6" } }));
+  writeFileSync(r + "/src/actions/bounce.ts", `"use server";\nexport async function bounce() { return 1; }\n`);
+  const { modules } = analyze({ root: r, srcDir: "src", aliases: {} });
+  await generateBoundaryFiles(r, infer(r), modules, {});
+  const { rustybuns } = await import(r + "/.rustybuns/vite.ts");
+  const action = `${r}/src/actions/bounce.ts`;
+  const asVite = (id: string) => ({ resolve: async () => ({ id }) });
+  const proxy = await rustybuns().resolveId.call(asVite(action), "./bounce", r + "/src/x.ts", {});
+  expect(proxy).toMatch(/\.rustybuns\/actions\/.*bounce.*\.ts$/);
+  // Windows: same file, backslashes (Vite normalizes, but join() on Windows does not)
+  expect(await rustybuns().resolveId.call(asVite(action.replace(/\//g, "\\")), "./bounce", r + "/src/x.ts", {})).toBe(proxy);
+});
+
+import { boxArch, boxLauncher } from "../src/box.ts";
+test("box: Hetzner stack runs the launcher, edge stays off unless asked for", () => {
+  const c = wranglerToConfig(parseWrangler('{"name":"b","main":"src/w.ts","compatibility_date":"2025-05-07"}'));
+  c.bindings.API_KEY = { type: "secret" };
+  const both = generateAlchemy({ ...c, targets: { ...c.targets, box: { provider: "hetzner" } } });
+  expect(both).toContain('Hetzner.Server("Box", { serverType: "cpx12", image: "ubuntu-24.04", location: "nbg1" })');
+  expect(both).toContain('Hetzner.Volume("Data", { size: 10, format: "ext4", server: Box, automount: true })');
+  expect(both).toContain('main: ".rustybuns/box/launch.mjs"');
+  expect(both).toContain("isExternal: true");
+  expect(both).toContain('API_KEY: process.env["API_KEY"] ?? ""');
+  expect(both).toContain("Layer.mergeAll(Cloudflare.providers(), Hetzner.providers())");
+  const boxOnly = generateAlchemy({ ...c, targets: { box: { provider: "hetzner", serverType: "cax11", volumeSize: 0 } } });
+  expect(boxOnly).not.toContain("Cloudflare");
+  expect(boxOnly).not.toContain("Hetzner.Volume");
+  expect(boxOnly).toContain('DATA_DIR: "/var/lib/b"');
+  expect(boxOnly).toContain("providers: Hetzner.providers()");
+  expect(boxArch("cax11")).toBe("linux-arm64");
+  expect(boxArch("cpx12")).toBe("linux-x64");
+  expect(boxLauncher({ ...c, targets: { box: { provider: "hetzner" } } })).toContain("HC_Volume_");
+});
+
+test("box host: public bind, no token, /health, secrets from env, no browser", () => {
+  const c = wranglerToConfig(parseWrangler('{"name":"b","main":"src/w.ts","compatibility_date":"2025-05-07"}'));
+  c.bindings.API_KEY = { type: "secret" };
+  const box = spaEntry(c, "box");
+  expect(box).toContain('hostname: "0.0.0.0", port: Number(process.env.PORT ?? 3000)');
+  expect(box).toContain("const token = undefined;");
+  expect(box).toContain('url.pathname === "/health"');
+  expect(box).toContain('API_KEY: process.env["API_KEY"] ?? ""');
+  expect(box).toContain('process.env.DATA_DIR ?? "/var/lib/b"');
+  expect(box).not.toContain("await openBrowser");
+  const desk = spaEntry(c);
+  expect(desk).toContain("const token = mintToken();");
+  expect(desk).toContain("await openBrowser");
+  expect(desk).not.toContain("/health");
+});
+
+test("box: honors desktop.host and headers; a box-only app needs no worker section", () => {
+  const c = { name: "tsci", bindings: {}, targets: { box: { provider: "hetzner" }, desktop: { mode: "spa", world: false, host: "desktop/host.ts", headers: { "Cross-Origin-Embedder-Policy": "credentialless" } } } } as any;
+  const box = spaEntry(c, "box");
+  expect(box).toContain('import host from "../desktop/host.ts"');
+  expect(box).toContain('"Cross-Origin-Embedder-Policy":"credentialless"');
+  expect(box).toContain('hostname: "0.0.0.0"');
+  expect(box).toContain('url.pathname === "/health"');
+  const stack = generateAlchemy(c);
+  expect(stack).toContain('Hetzner.Service("Service"');
+  expect(stack).not.toContain("Cloudflare");
+  expect(() => generateAlchemy({ ...c, targets: { ...c.targets, edge: { provider: "cloudflare" } } })).toThrow(/no worker section/);
 });

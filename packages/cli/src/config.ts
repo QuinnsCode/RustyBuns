@@ -42,8 +42,9 @@ export interface DesktopTarget {
   headers?: Record<string, string>;
   /**
    * Which crates from native/dist/<name>/<os-arch>/ to embed (default: every
-   * built crate). Only the target OS's library goes into each binary, where
-   * loadNative() finds it.
+   * built crate). Each is built by native/build.ts; only the target OS's library
+   * goes into each binary, where loadNative() finds it. A named crate that was
+   * never built is an error.
    */
   native?: string[];
   /** spa: path the client's WorldSocket connects to. */
@@ -83,6 +84,26 @@ export interface DesktopTarget {
   define?: Record<string, string>;
 }
 
+/**
+ * One Hetzner Cloud server running the same Bun host the desktop build uses,
+ * public on 0.0.0.0:<port>, with sqlite on an attached Volume.
+ */
+export interface BoxTarget {
+  provider: "hetzner";
+  /** `nbg1`, `fsn1`, `hel1`, `ash`, `hil`, `sin`. Changing it replaces the server. */
+  location?: string;
+  /** @deprecated use `location` */
+  region?: string;
+  /** `cpx12`, `cx23`, `cax11` (ARM)... Picks the binary's arch. Changing it replaces the server. */
+  serverType?: string;
+  /** @default "ubuntu-24.04" */
+  image?: string;
+  /** Port the host listens on. @default 3000 */
+  port?: number;
+  /** Volume size in GB for sqlite + R2 dirs (min 10). 0 keeps data on the server's own disk. @default 10 */
+  volumeSize?: number;
+}
+
 export interface RustyBunsConfig {
   name: string;
   /**
@@ -108,7 +129,7 @@ export interface RustyBunsConfig {
   bindings: Record<string, Binding>;
   targets: {
     edge?: { provider: "cloudflare"; domain?: string };
-    box?: { provider: "hetzner"; region?: string; serverType?: string };
+    box?: BoxTarget;
     desktop?: DesktopTarget;
   };
 }

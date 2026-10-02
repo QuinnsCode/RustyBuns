@@ -8,6 +8,7 @@ import { parseWrangler, wranglerToConfig } from "./wrangler.ts";
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
+import { buildBox } from "./box.ts";
 import type { RustyBunsConfig } from "./config.ts";
 import { infer } from "./glue/infer.ts";
 import { sourceLayout } from "./glue/source.ts";
@@ -185,10 +186,11 @@ export default {
 
 async function generate(opts: { adopt: boolean }) {
   const cfg = await loadConfig();
-  if (!cfg.worker) { console.log("desktop-only config: nothing to generate for the edge"); return; }
+  if (!cfg.worker && !cfg.targets.box) { console.log("desktop-only config: nothing to generate for the edge"); return; }
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
   console.log("wrote .rustybuns/alchemy.run.ts");
+  if (!cfg.worker) return;   // box-only: no wrangler.jsonc
   const r = await writeIfChanged("wrangler.jsonc", generateWrangler(cfg), opts);
   if (r === "conflict") console.log("wrangler.jsonc is hand-written and differs; wrote wrangler.generated.jsonc. Diff it, then `rustybuns adopt`.");
   else console.log(`wrangler.jsonc ${r}`);
@@ -214,6 +216,10 @@ async function runAlchemy(args: string[]): Promise<number> {
 async function alchemy(sub: string, args: string[]) {
   if (!(await loadConfig()).worker) throw new Error("desktop-only app: no edge stack to plan or deploy");
   await generate({ adopt: false });
+  // Hetzner.Service hashes the box directory at plan time, so it has to exist first.
+  if ((sub === "plan" || sub === "deploy") && (await loadConfig()).targets.box) {
+    console.log(`built ${await buildBox(await loadConfig())}`);
+  }
   const hash = await stackHash();
   const stampFile = ".rustybuns/planned";
   if (sub === "plan") {
@@ -261,8 +267,9 @@ try {
     case "boundary": { const { modules, excluded } = await boundary(); console.log(report(modules, excluded)); break; }
     case "build": {
       const [what, ...flags] = rest;
-      if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--target bun-darwin-arm64]");
       const t = flags.indexOf("--target");
+      if (what === "box") { console.log(`built ${await buildBox(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined })}`); break; }
+      if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--dev] [--target darwin-arm64] | build box [--target linux-x64]");
       const out = await buildDesktop(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined, noCompile: flags.includes("--dev") });
       console.log(`built ${out}`);
       break;
@@ -294,8 +301,11 @@ Box and ship the web app you already have. A dev dependency, never in prod.
              [--target T]    T = darwin-arm64 | darwin-x64 | linux-x64 | linux-arm64 | windows-x64
                              (default: targets in the config; "all" cross-compiles TS-only builds)
   run desktop                start the dev host (bun .rustybuns/dev/desktop.js)
+  build box [--target T]     the same host for a Hetzner server: linux binary + node launcher
+                             in .rustybuns/box/ (plan and deploy run this for you)
 
   plan                       alchemy plan: shows what would be created, creates nothing
+                             (targets.edge -> Cloudflare, targets.box -> Hetzner, or both)
   deploy [--yes]             alchemy deploy; refuses unless plan ran for this exact config
   destroy                    alchemy destroy: removes everything the stack created
                              (--stage <name> passes through to all three)

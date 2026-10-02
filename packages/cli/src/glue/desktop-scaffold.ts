@@ -5,8 +5,12 @@
 import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, relative, dirname } from "node:path";
+
 import type { Inferred } from "./infer.ts";
 import { plan, type ModuleInfo } from "./boundary.ts";
+
+/** Vite reports module ids with forward slashes on every OS; Windows join() uses backslashes. */
+const posix = (p: string) => p.replace(/\\/g, "/");
 
 export interface ScaffoldOut { written: string[]; skipped: string[] }
 
@@ -100,10 +104,10 @@ export class DurableObject { constructor(public ctx: any, public env: any) {} }
   }
 
   // 5. the vite plugin: stub specifiers, and swap action modules for proxies by RESOLVED path
-  const actionMap = Object.fromEntries(p.actions.map((m) => [join(root, m.file), join(gen, "actions", m.file.replace(/[^\w]+/g, "_") + ".ts")]));
+  const actionMap = Object.fromEntries(p.actions.map((m) => [posix(join(root, m.file)), posix(join(gen, "actions", m.file.replace(/[^\w]+/g, "_") + ".ts"))]));
   await writeOnce(join(gen, "vite.ts"), `// GENERATED vite plugin: the desktop client's view of the server boundary.
 import type { Plugin } from "vite";
-const stubs: Record<string, string> = ${JSON.stringify(Object.fromEntries(Object.entries(stubFiles).map(([k, v]) => [k, join(root, v.replace("./", ""))])), null, 2)};
+const stubs: Record<string, string> = ${JSON.stringify(Object.fromEntries(Object.entries(stubFiles).map(([k, v]) => [k, posix(join(root, v.replace("./", "")))])), null, 2)};
 const actions: Record<string, string> = ${JSON.stringify(actionMap, null, 2)};
 export function rustybuns(): Plugin {
   return {
@@ -112,7 +116,8 @@ export function rustybuns(): Plugin {
     async resolveId(source, importer, opts) {
       if (stubs[source]) return stubs[source];
       const r = await this.resolve(source, importer, { ...opts, skipSelf: true });
-      if (r && actions[r.id]) return actions[r.id];
+      const id = r?.id.replace(/\\\\/g, "/");
+      if (id && actions[id]) return actions[id];
       return r;
     },
   };
