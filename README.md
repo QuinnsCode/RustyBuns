@@ -169,6 +169,8 @@ Current limits on the box:
 
 `rustybuns.config.ts` is the one file you own. `init` writes it, and every generated file comes from it.
 
+`worker` is only needed for the Cloudflare deploy. Leave it out for a desktop-only or Hetzner-only app.
+
 ```ts
 import { defineConfig } from "@rustybuns/cli/config";
 
@@ -203,7 +205,15 @@ export default defineConfig({
 | `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `var`, `secret` |
 | `targets.edge` | `provider: "cloudflare"`, `domain` |
 | `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize` |
-| `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world`, `worldPath`, `identity`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define` |
+| `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world` (or `false`), `worldPath`, `identity`, `host`, `headers`, `native`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define` |
+
+Three desktop keys are for apps that aren't Workers apps at all, like [tscircuit-desktop](apps/tscircuit-desktop/README.md):
+
+- **`host`** is a module whose default export is `{ fetch(req, ctx) }`. It's your backend routes (files, native calls, exports) without pretending to be a Worker. Return `null` to fall through.
+- **`headers`** overrides response headers. The default is full cross-origin isolation for `SharedArrayBuffer`. Apps that load CDN assets without CORP headers want `{ "Cross-Origin-Embedder-Policy": "credentialless" }`.
+- **`native`** names the Rust crates from `native/dist/` to embed. Leave it out to embed every built crate. Naming one that was never built is an error.
+
+The box host reads the same keys, so `host` routes and `headers` work on Hetzner too.
 
 ## The host
 

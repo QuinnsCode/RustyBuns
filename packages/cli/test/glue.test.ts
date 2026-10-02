@@ -255,3 +255,16 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(desk).toContain("await openBrowser");
   expect(desk).not.toContain("/health");
 });
+
+test("box: honors desktop.host and headers; a box-only app needs no worker section", () => {
+  const c = { name: "tsci", bindings: {}, targets: { box: { provider: "hetzner" }, desktop: { mode: "spa", world: false, host: "desktop/host.ts", headers: { "Cross-Origin-Embedder-Policy": "credentialless" } } } } as any;
+  const box = spaEntry(c, "box");
+  expect(box).toContain('import host from "../desktop/host.ts"');
+  expect(box).toContain('"Cross-Origin-Embedder-Policy":"credentialless"');
+  expect(box).toContain('hostname: "0.0.0.0"');
+  expect(box).toContain('url.pathname === "/health"');
+  const stack = generateAlchemy(c);
+  expect(stack).toContain('Hetzner.Service("Service"');
+  expect(stack).not.toContain("Cloudflare");
+  expect(() => generateAlchemy({ ...c, targets: { ...c.targets, edge: { provider: "cloudflare" } } })).toThrow(/no worker section/);
+});
