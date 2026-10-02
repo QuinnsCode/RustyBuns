@@ -4,13 +4,13 @@
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { parseWrangler, wranglerToConfig } from "./wrangler.ts";
+import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys } from "./wrangler.ts";
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
 import { buildBox } from "./box.ts";
 import type { RustyBunsConfig } from "./config.ts";
-import { infer } from "./glue/infer.ts";
+import { infer, readPackageJson } from "./glue/infer.ts";
 import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
@@ -86,18 +86,36 @@ function readDevVars(): Record<string, string> {
 }
 
 async function init() {
+  const force = rest.includes("--force");
   const inf = infer();
+  const spa = rest.includes("--spa");
+  const src = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].find((f) => existsSync(f)) ?? null;
+  // Refuse before printing or writing anything.
+  if (!inf.hasPackageJson) throw new Error("no package.json here. Run `rustybuns init` from your app's directory.");
+  if (existsSync("rustybuns.config.ts") && !force) throw new Error("rustybuns.config.ts already exists; init would overwrite it. Edit it directly, or pass --force to regenerate from scratch.");
+  if (inf.isWorkspaceRoot && !src && !inf.vite.configPath && inf.framework === "unknown")
+    throw new Error("this looks like a monorepo root (workspaces, no app here). cd into the package you want to ship and run init there.");
+  if (inf.framework === "unknown" && !src && !force)
+    throw new Error("no vite or rwsdk dependency in package.json, so this does not look like a web app Rusty Buns can box. Pass --force to write a config anyway.");
   console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}`);
   console.log(`detected: ${inf.framework} app "${inf.name}" (${inf.pm}${inf.hasReact ? ", react" : ""}${inf.hasThree ? ", three" : ""}${inf.hasPrisma ? ", prisma" : ""}${inf.hasBetterAuth ? ", better-auth" : ""})`);
   console.log(`source:   ${inf.srcDir}/ (${inf.srcDirSource}${Object.keys(inf.aliases).length ? `, aliases ${Object.entries(inf.aliases).map(([a, d]) => `${a}->${d}`).join(" ")}` : ""})`);
-  if (inf.srcDirSource === "guess") console.log(`          not sure about that; set source: { dir, aliases } in rustybuns.config.ts if it's wrong`);
-  const src = (await Bun.file("wrangler.jsonc").exists()) ? "wrangler.jsonc"
-    : (await Bun.file("wrangler.json").exists()) ? "wrangler.json"
-    : (await Bun.file("wrangler.toml").exists()) ? "wrangler.toml" : null;
-  if (!src || rest.includes("--spa")) { await initSpa(inf); return; }
-  if (src.endsWith(".toml")) throw new Error("wrangler.toml: convert to wrangler.jsonc first (wrangler supports both).");
-  const cfg = wranglerToConfig(parseWrangler(await Bun.file(src).text()), inf.scripts);
-  { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts); console.log(`build:    ${b.build}  (from "${b.from}" script)`); }
+  if (inf.srcDirSource === "guess") {
+    console.log(inf.srcDir === "."
+      ? `          no src/, app/, lib/, client/ or web/ found, so the whole project root is treated as source.\n          set source: { dir, aliases } in rustybuns.config.ts before running add desktop`
+      : `          not sure about that; set source: { dir, aliases } in rustybuns.config.ts if it's wrong`);
+  }
+  if (!src || spa) {
+    if (src && spa) console.log(`ignoring ${src} (--spa): desktop-only config. Remove the flag to carry its bindings over.`);
+    await initSpa(inf); return;
+  }
+  const wsrc = await Bun.file(src).text();
+  const w = src.endsWith(".toml") ? parseWranglerToml(wsrc) : parseWrangler(wsrc);
+  const dropped = droppedWranglerKeys(w);
+  if (dropped.length) console.log(`not carried over: ${dropped.join(", ")}\n          (bindings, triggers, routes and env.* are not in rustybuns.config.ts yet; keep them in ${src} and do NOT run \`rustybuns adopt\`)`);
+  const cfg = wranglerToConfig(w, inf.scripts);
+  if (!existsSync(cfg.worker!.main)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
+  { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts); console.log(`build:    ${b.build}  (${b.from === "default" ? "no build/release/deploy script found; using the default" : `from "${b.from}" script`})`); }
   // D1: wrangler's own default migrations dir is ./migrations when migrations_dir is unset.
   for (const b of Object.values(cfg.bindings)) {
     if (b.type === "d1" && !b.migrationsDir && existsSync("migrations")) b.migrationsDir = "migrations";
@@ -119,6 +137,7 @@ async function init() {
   d.clientBuild = `${inf.execCmd("vite")} build --config vite.desktop.config.ts`;
   const host = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   d.targets = [host as any];
+  console.log(`desktop:  building for ${host} only; add other targets in rustybuns.config.ts`);
   cfg.source = { dir: inf.srcDir, aliases: inf.aliases };
   const body = `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`;
   await Bun.write("rustybuns.config.ts", body);
@@ -184,6 +203,13 @@ export default {
   console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}`);
 }
 
+/** Keys in a hand-written wrangler file that the generated one cannot reproduce. */
+function wranglerLosses(): string[] {
+  const f = ["wrangler.jsonc", "wrangler.json"].find((x) => existsSync(x));
+  if (!f) return [];
+  try { return droppedWranglerKeys(parseWrangler(readFileSync(f, "utf8"))); } catch { return []; }
+}
+
 async function generate(opts: { adopt: boolean }) {
   const cfg = await loadConfig();
   if (!cfg.worker && !cfg.targets.box) { console.log("desktop-only config: nothing to generate for the edge"); return; }
@@ -191,8 +217,12 @@ async function generate(opts: { adopt: boolean }) {
   await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
   console.log("wrote .rustybuns/alchemy.run.ts");
   if (!cfg.worker) return;   // box-only: no wrangler.jsonc
+  if (opts.adopt && !rest.includes("--force")) {
+    const lost = wranglerLosses();
+    if (lost.length) throw new Error(`adopt would delete from wrangler.jsonc: ${lost.join(", ")}. Move those into the config first, or pass --force.`);
+  }
   const r = await writeIfChanged("wrangler.jsonc", generateWrangler(cfg), opts);
-  if (r === "conflict") console.log("wrangler.jsonc is hand-written and differs; wrote wrangler.generated.jsonc. Diff it, then `rustybuns adopt`.");
+  if (r === "conflict") console.log("wrangler.jsonc is hand-written and differs; wrote wrangler.generated.jsonc. Diff it" + (wranglerLosses().length ? " (it lacks " + wranglerLosses().join(", ") + ", so adopt will refuse)." : ", then `rustybuns adopt`."));
   else console.log(`wrangler.jsonc ${r}`);
 }
 
@@ -287,15 +317,17 @@ try {
       console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}
 Box and ship the web app you already have. A dev dependency, never in prod.
 
-  init [--spa]               read package.json / vite.config / tsconfig / wrangler.*,
+  init [--spa] [--force]     read package.json / vite.config / tsconfig / wrangler.*,
                              write rustybuns.config.ts + .rustybuns/alchemy.run.ts + wrangler.jsonc
                              (no wrangler, or --spa: desktop-only config + desktop/host.ts)
+                             refuses to overwrite an existing config unless --force
   add desktop [--entry F#C]  scaffold packages/desktop (index.html, main.tsx, world.ts) and
                              vite.desktop.config.ts; keeps files that already exist
   add deploy [--dry-run]     install the pinned alchemy + effect set (and pnpm/npm overrides)
   boundary                   classify src/: client / action / server / leak, regenerate stubs + proxies
   generate                   regenerate .rustybuns/ from the config (safe to re-run)
-  adopt                      accept the generated wrangler.jsonc over a hand-written one
+  adopt [--force]            accept the generated wrangler.jsonc over a hand-written one
+                             (refuses if that would drop bindings/triggers/routes it cannot represent)
 
   build desktop [--dev]      --dev: vite build + bundle the host, no compile  ->  run desktop
              [--target T]    T = darwin-arm64 | darwin-x64 | linux-x64 | linux-arm64 | windows-x64

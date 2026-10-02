@@ -9,6 +9,6 @@ export function sourceLayout(root: string, cfg?: Partial<RustyBunsConfig>): Sour
   const inf = infer(root);
   const dir = cfg?.source?.dir ?? inf.srcDir;
   const aliases = { "@": dir, ...inf.aliases, ...(cfg?.source?.aliases ?? {}) };
-  const ignore = [/node_modules/, /\.test\.[tj]sx?$/, /\.d\.ts$/, /\/scripts\//, ...(cfg?.source?.ignore ?? []).map((g) => new RegExp(g))];
+  const ignore = [/node_modules/, /(^|\/)(dist|\.rustybuns)\//, /\.test\.[tj]sx?$/, /\.d\.ts$/, /\/scripts\//, ...(cfg?.source?.ignore ?? []).map((g) => new RegExp(g))];
   return { dir, aliases, ignore, from: cfg?.source?.dir ? "config" : inf.srcDirSource, inf };
 }

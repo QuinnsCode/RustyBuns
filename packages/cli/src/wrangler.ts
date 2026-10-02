@@ -25,6 +25,22 @@ export function parseWrangler(src: string): WranglerJson {
   return JSON.parse(stripJsonc(src));
 }
 
+/** wrangler.toml uses the same key names as the JSON form, so Bun's TOML parser is all it takes. */
+export function parseWranglerToml(src: string): WranglerJson {
+  return (Bun as any).TOML.parse(src) as WranglerJson;
+}
+
+/** Top-level keys that Rusty Buns reads. Anything else in a wrangler file is not carried into the config. */
+const HANDLED = new Set([
+  "$schema", "name", "main", "compatibility_date", "compatibility_flags", "assets",
+  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars",
+]);
+
+/** Wrangler keys (bindings, triggers, routes, per-env overrides) that `init` cannot represent yet. */
+export function droppedWranglerKeys(w: WranglerJson): string[] {
+  return Object.keys(w).filter((k) => !HANDLED.has(k));
+}
+
 export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string> = {}): RustyBunsConfig {
   const bindings: Record<string, Binding> = {};
   for (const d of w.d1_databases ?? []) bindings[d.binding] = { type: "d1", databaseName: d.database_name, migrationsDir: d.migrations_dir };

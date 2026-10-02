@@ -4,8 +4,8 @@
 //   wrangler.*    -> bindings, compat, assets   (see ../wrangler.ts)
 // Everything is best-effort text analysis; nothing here executes user code.
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join, dirname, resolve, relative, sep } from "node:path";
 import { parseJsonc } from "./jsonc.ts";
 
 export type Framework = "rwsdk" | "tanstack-start" | "vite-react" | "vite" | "unknown";
@@ -39,21 +39,50 @@ export interface Inferred {
   aliases: Record<string, string>;
   srcDirSource: "tsconfig" | "vite" | "guess";
   workerEntry: string | null;
+  /** package.json declares workspaces (or pnpm-workspace.yaml exists): likely a monorepo root. */
+  isWorkspaceRoot: boolean;
+  hasPackageJson: boolean;
 }
 
-/** tsconfig paths -> { alias: dir }. "@/*": ["./src/*"] becomes { "@": "src" }. */
+/** package.json, or a clear error naming the file when it exists but does not parse. */
+export function readPackageJson(root: string): any | null {
+  const p = join(root, "package.json");
+  if (!existsSync(p)) return null;
+  try { return JSON.parse(readFileSync(p, "utf8")); }
+  catch (e) { throw new Error(`${p} is not valid JSON (${(e as Error).message.split("\n")[0]}); fix it and re-run`); }
+}
+
+/**
+ * tsconfig paths -> { alias: dir }. "@/*": ["./src/*"] becomes { "@": "src" }.
+ * Follows relative `extends` (string or array), nearer configs win, and each
+ * `paths` is resolved against the config that declares it.
+ */
 export function inferTsconfigAliases(root: string): Record<string, string> {
+  const start = ["tsconfig.json", "jsconfig.json"].map((c) => join(root, c)).find(existsSync);
+  return start ? readTsAliases(root, start, new Set()) : {};
+}
+
+function readTsAliases(root: string, file: string, seen: Set<string>): Record<string, string> {
+  if (seen.has(file) || seen.size > 8) return {};
+  seen.add(file);
+  let j: any; try { j = parseJsonc(readFileSync(file, "utf8")); } catch { return {}; }
+  const dir = dirname(file);
   const out: Record<string, string> = {};
-  const cfg = ["tsconfig.json", "jsconfig.json"].map((c) => join(root, c)).find(existsSync);
-  if (!cfg) return out;
-  let j: any; try { j = parseJsonc(readFileSync(cfg, "utf8")); } catch { return out; }
-  const baseUrl: string = j.compilerOptions?.baseUrl ?? ".";
+  const parents: string[] = ([] as string[]).concat(j.extends ?? []);
+  for (const e of parents) {
+    if (!e.startsWith(".")) continue;   // package presets (@tsconfig/*) carry no app aliases
+    const f = resolve(dir, e);
+    const cand = [f, f + ".json"].find((c) => existsSync(c) && statSync(c).isFile());
+    if (cand) Object.assign(out, readTsAliases(root, cand, seen));
+  }
+  const base = resolve(dir, j.compilerOptions?.baseUrl ?? ".");
   for (const [k, v] of Object.entries<any>(j.compilerOptions?.paths ?? {})) {
     const target = Array.isArray(v) ? v[0] : v;
     if (typeof target !== "string") continue;
     const alias = k.replace(/\/\*$/, "");
-    const dir = join(baseUrl, target.replace(/^\.\//, "").replace(/\/\*$/, "")).replace(/^\.\//, "");
-    if (alias && !alias.includes("*")) out[alias] = dir;
+    const abs = resolve(base, target.replace(/\/\*$/, ""));
+    const rel = relative(root, abs).split(sep).join("/") || ".";
+    if (alias && !alias.includes("*")) out[alias] = rel;
   }
   return out;
 }
@@ -66,6 +95,12 @@ export function detectPm(root: string): PackageManager {
   if (existsSync(join(root, "bun.lock")) || existsSync(join(root, "bun.lockb"))) return "bun";
   if (existsSync(join(root, "pnpm-lock.yaml"))) return "pnpm";
   if (existsSync(join(root, "yarn.lock"))) return "yarn";
+  if (existsSync(join(root, "package-lock.json"))) return "npm";
+  // No lockfile yet (fresh clone, or a monorepo child): the corepack field, then the install-time env.
+  const declared = String(readJson(join(root, "package.json"))?.packageManager ?? "").split("@")[0];
+  if (declared === "bun" || declared === "pnpm" || declared === "yarn" || declared === "npm") return declared;
+  const ua = process.env.npm_config_user_agent?.split("/")[0];
+  if (ua === "bun" || ua === "pnpm" || ua === "yarn") return ua;
   return "npm";
 }
 
@@ -93,7 +128,7 @@ export function inferVite(root: string) {
 }
 
 export function infer(root = process.cwd()): Inferred {
-  const pkg = readJson(join(root, "package.json")) ?? {};
+  const pkg = readPackageJson(root) ?? {};
   const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
   const vite = inferVite(root);
   const framework: Framework =
@@ -122,5 +157,7 @@ export function infer(root = process.cwd()): Inferred {
     hasBetterAuth: !!deps["better-auth"],
     scripts: pkg.scripts ?? {},
     vite, wranglerPath, srcDir, aliases, srcDirSource, workerEntry,
+    isWorkspaceRoot: !!pkg.workspaces || existsSync(join(root, "pnpm-workspace.yaml")),
+    hasPackageJson: existsSync(join(root, "package.json")),
   };
 }
