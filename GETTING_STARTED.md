@@ -1,6 +1,8 @@
 # Getting started
 
-Four flows. Each builds on the last, but you can stop after any of them.
+Rusty Buns wraps the web app you already have so the same code ships as a desktop binary, a Cloudflare Worker and a Linux server. You don't need to know Rust or Bun to use it. You write a Vite app, and Rusty Buns carries it to every place it needs to run. Why this and not Electron or Tauri: see the [README](README.md#how-it-compares).
+
+Five flows. Each builds on the last, but you can stop after any of them.
 
 ## 1. Setup
 
@@ -58,6 +60,8 @@ pnpm exec alchemy profile edit --profile default --add Cloudflare
 
 `add deploy` installs the pinned alchemy + effect set and writes package manager overrides
 so transitive `@effect/*` versions cannot drift (Effect is rc; carets break within days).
+Effect is what makes the deploy typed: the config, the generated stack and each provider are checked
+by the compiler before anything is created. You don't write any Effect yourself unless you `eject`.
 
 The profile step runs once per machine: choose OAuth, All Scopes, then the account you want
 to deploy to. It is saved in `~/.alchemy/`. If you manage several Cloudflare accounts, make a

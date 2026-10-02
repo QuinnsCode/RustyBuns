@@ -1,6 +1,10 @@
 # 🥐 Rusty Buns
 
-Take the Vite app you already have and ship it three ways: as a desktop binary, as a Cloudflare Worker, and on a Linux server. Same code, same bindings, no rewrite.
+**Write your app once. Ship it everywhere.**
+
+Rusty Buns wraps the web app you already have so the same code ships as a desktop binary, a Cloudflare Worker, and a Linux server, with the same bindings and no rewrite.
+
+You don't have to learn Rust or Bun to use it. (We use them underneath. Rust is there if you want it, Bun is the runtime that makes one-file binaries possible.) You write a Vite app. Rusty Buns is the abstraction that carries it to every place it needs to run.
 
 ```sh
 pnpm add -D @rustybuns/cli @rustybuns/shell-bun
@@ -12,15 +16,56 @@ pnpm exec rustybuns deploy              # Cloudflare, Hetzner, or both
 Rusty Buns is a dev dependency. It never edits `src/` and never ships in your bundle. `init` reads `package.json`, `vite.config`, `tsconfig` and `wrangler.jsonc`, then writes one config file. Everything else is generated from it:
 
 - a **Bun host** that runs your app on `Bun.serve()`, with sqlite standing in for D1, KV, R2 and Durable Object storage
-- an **[Alchemy](https://alchemy.run) stack** that creates the cloud resources your bindings describe
+- a typed **[Alchemy](https://alchemy.run) + [Effect](https://effect.website) stack** that creates the cloud resources your bindings describe
 
 > **Alpha, `0.1.5`.** Desktop is verified on macOS and Linux. The Cloudflare deploy is verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). The Hetzner box builds and runs locally but hasn't been deployed to a real account yet. Fly and Railway come after. The happy path is a Vite + React app on Workers, but anything Vite builds should work.
 
 ## Why
 
-A Workers app is tied to Cloudflare by its bindings. Your code calls `env.DB.prepare()` and `env.KV.get()`, and those only exist inside workerd.
+### The problem
 
-Rusty Buns gives every binding a local twin on sqlite and the filesystem, and runs your `fetch` handler under Bun. Once your app runs on a laptop that way, it runs on any Linux box too. The cloud deploy is generated from the same binding list, so the three targets never drift apart.
+A Workers app is tied to Cloudflare by its bindings. Your code calls `env.DB.prepare()` and `env.KV.get()`, and those only exist inside workerd. A web app is tied to a browser tab. Getting either one onto a laptop, a VPS, and the edge usually means three codebases or three rewrites.
+
+### The idea
+
+Your app is five things: **http, comms, storage, memory, identity**. Each one has a real implementation on every target, so Rusty Buns gives every binding a local twin (sqlite and the filesystem) and runs your `fetch` handler under Bun. Once your app runs on a laptop that way, it runs on any Linux box too. The cloud deploy is generated from the same binding list, so the three targets never drift apart.
+
+### Typed deploys, thanks to Effect
+
+The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, soon Fly and Railway) is a typed Layer. Swap a target by changing one line of config, and the compiler tells you what's missing before anything is created. `plan` shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
+
+### How it compares
+
+Rusty Buns isn't a UI toolkit. It doesn't draw your window; your app does. That puts it in a different spot from the usual desktop options:
+
+| | **Electron** | **Tauri** | **Rusty Buns** |
+|---|---|---|---|
+| What you write | web app + Node main process | web app + Rust backend (commands) | **the web app you already have**, plus optional Rust |
+| Rendering | bundled Chromium | the OS webview | your installed Chrome, or your default browser |
+| Backend language | Node | Rust | TypeScript (Workers-shaped `fetch`), Rust optional via FFI |
+| Output | installer, ~100+ MB | installer, small | one self-contained binary (about 90 to 110 MB in our examples) |
+| Ships to the cloud too | no | no | **yes**: Cloudflare Worker and Linux server from the same code |
+| Backend code is portable to a server | rewrite | rewrite | same handler, same bindings |
+| Native menus, tray, auto-update, signed installers | yes | yes | **not yet** (see roadmap) |
+| Pixel-identical rendering everywhere | yes | no | no |
+
+The honest trade: if you need a native window with menus and a tray, pick Electron or Tauri. If what you have is a web app with a backend, and you want that same app on a laptop, on the edge, *and* on a VPS, that's what Rusty Buns is for. Your users download one file and need no Node, no Bun and no install step.
+
+### A full-stack framework, by accident
+
+We set out to wrap apps, and ended up with the pieces of a full-stack framework anyway:
+
+| A framework gives you | Rusty Buns gives you |
+|---|---|
+| a server runtime | the Bun host (`Bun.serve`, WebSockets, hibernating DO-style objects) |
+| a database and migrations | D1-shaped sqlite with migrations applied at boot |
+| KV, blob storage, secrets | KV on sqlite, R2-shaped directories, secrets by name |
+| server actions / RPC | `"use server"` functions run for real against sqlite (`/__rb/action`) |
+| build and bundling | Vite in, one binary out |
+| deploy and infrastructure | a typed Alchemy + Effect stack, plan before deploy |
+| native code escape hatch | Rust cdylibs over `bun:ffi`, with a TypeScript fallback |
+
+The difference is that we don't ask you to adopt any of it. It's the shape Cloudflare already standardized (`fetch`, Durable Objects, D1, KV, R2), so leaving is a `git rm`, not a rewrite. Who it's for is in [ADOPTION.md](ADOPTION.md).
 
 ## How it works
 

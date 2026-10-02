@@ -4,6 +4,20 @@ Rusty Buns is a dev dependency. It never ships in your app; it boxes and
 deploys the app you already have. Everything it asks you to adopt is a plain
 primitive you would want anyway, so leaving is a `git rm`, not a rewrite.
 
+## What it is
+
+An abstraction that wraps your app so it ships everywhere: a desktop binary, a
+Cloudflare Worker, a Linux server. You do not have to write Rust or use Bun
+yourself; they are the engine underneath, and Rust is an opt-in escape hatch.
+
+It is not a UI toolkit, so it does not compete with Electron or Tauri on native
+windows, menus or tray. It competes on reach: the same app and the same backend
+also deploy to the edge and to a VPS, and the deploy is typed through Alchemy
+and Effect. Because it already has a runtime, storage, server actions, a build
+and a deploy, it behaves like a full-stack framework, but it asks you to adopt
+only the shapes Cloudflare already standardized. See the
+[README](README.md#how-it-compares) for the side-by-side.
+
 ## Who this is for
 
 | You are | You have | You want | What you touch |
@@ -65,7 +79,7 @@ The host is a Bun process, so anything Bun can reach, your app can reach:
 
 ## Phases of adoption
 
-1. **Infer.** `rustybuns init` reads `package.json`, `vite.config.*`, `tsconfig` paths, `wrangler.*`. Writes `rustybuns.config.ts` and the Alchemy stack. Nothing in your source changes. You can stop here and just have typed deploys.
+1. **Infer.** `rustybuns init` reads `package.json`, `vite.config.*`, `tsconfig` paths, `wrangler.*`. Writes `rustybuns.config.ts` and the Alchemy stack. Nothing in your source changes. You can stop here and just have typed deploys, which is the Effect payoff on its own.
 2. **Desktop.** `rustybuns add desktop` scaffolds a plain-SPA entry and a world class; `build desktop --dev` + `run desktop` boots your app on a local Bun host with sqlite behind every binding, server actions running for real, and an intro page if you have not pointed at a component yet. `build desktop` gives you binaries.
 3. **Move the server.** Add `box: { provider: "hetzner" }` (or fly, railway) to targets. Same engine, same bindings, different Layer. `rustybuns deploy box`.
 4. **Opt into compute.** `add worker <name>` for a typed worker over SAB in the tab; `add rust <name> --front|--back` when TS is not enough. Profile first; the TS path always remains as the fallback.
