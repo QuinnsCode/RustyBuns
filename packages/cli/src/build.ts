@@ -37,12 +37,33 @@ export function resolveFileOrDir(base: string): string | null {
   return null;
 }
 
+/**
+ * Where the generated host runs.
+ * "desktop": 127.0.0.1, launch token, opens a browser, data in ~/.<name>.
+ * "box": 0.0.0.0:$PORT, no token, /health, data in $DATA_DIR. Same app code.
+ */
+export type HostKind = "desktop" | "box";
+
+/** Data dir expression, server port/hostname and the launch tail for each host kind. */
+function hostParts(c: RustyBunsConfig, host: HostKind, desktopDataDir: string) {
+  const box = host === "box";
+  return {
+    box,
+    dataDir: box
+      ? `process.env.DATA_DIR ?? ${JSON.stringify(`/var/lib/${c.name}`)}`
+      : `${JSON.stringify(desktopDataDir)}.replace(/^~/, homedir())`,
+    token: box ? "undefined" : "mintToken()",
+    listen: box ? `, hostname: "0.0.0.0", port: Number(process.env.PORT ?? 3000)` : "",
+    launch: box ? "" : `await openBrowser({ url: shell.url, token, window: ${JSON.stringify(c.targets.desktop?.window ?? "app")} });\n`,
+  };
+}
+
 const ALL_OS: DesktopOs[] = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64"];
 
 /** spa mode: your Vite SPA + your world class. No worker, no RSC, no shims. */
-export function spaEntry(c: RustyBunsConfig): string {
+export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string {
   const d = c.targets.desktop ?? {};
-  const dataDir = d.dataDir ?? `~/.${c.name}`;
+  const h = hostParts(c, host, d.dataDir ?? `~/.${c.name}`);
   const worldPath = d.worldPath ?? "/ws";
   const clientDir = d.clientDir ?? "dist/desktop";
   const identity = {
@@ -58,8 +79,10 @@ export function spaEntry(c: RustyBunsConfig): string {
   const d1s = Object.entries(bindings).filter(([, b]) => b.type === "d1").map(([n, b]) => [n, (b as any).databaseName as string, (b as any).migrationsDir as string | undefined] as const);
   const vars = Object.entries(bindings).filter(([, b]) => b.type === "var").map(([n, b]) => [n, (b as any).value as string]);
   const r2s = Object.entries(bindings).filter(([, b]) => b.type === "r2").map(([n, b]) => [n, (b as any).bucketName as string] as const);
+  // Desktop has no secrets; a box reads them from its env file.
+  const secrets = h.box ? Object.entries(bindings).filter(([, b]) => b.type === "secret").map(([n]) => n) : [];
   const mounts = d.mounts ?? {};
-  return `// GENERATED desktop host (spa mode). Serves the SPA, runs the world in-process
+  return `// GENERATED ${host} host (spa mode). Serves the SPA, runs the world in-process
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
 import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations } from "@rustybuns/shell-bun";
@@ -70,7 +93,7 @@ import { mkdirSync, existsSync } from "node:fs";
 import { basename, join, isAbsolute } from "node:path";
 
 declare const RB_VERSION: string;
-const dataDir = ${JSON.stringify(dataDir)}.replace(/^~/, homedir());
+const dataDir = ${h.dataDir};
 mkdirSync(dataDir, { recursive: true });
 const local = localBindings(dataDir);
 
@@ -95,6 +118,7 @@ ${kvNames.map((n) => `  ${n}: local.kv(${JSON.stringify(n)}),`).join("\n")}
 ${d1s.map(([n, db]) => `  ${n}: local.d1(${JSON.stringify(db)}),`).join("\n")}
 ${vars.map(([n, v]) => `  ${n}: ${JSON.stringify(v)},`).join("\n")}
 ${r2s.map(([n, bucket]) => { const dir = d.r2?.[n]; return `  ${n}: local.r2(${JSON.stringify(bucket)}${dir ? `, resolveDir(${JSON.stringify(dir)})` : ""}),`; }).join("\n")}
+${secrets.map((n) => `  ${n}: process.env[${JSON.stringify(n)}] ?? "",`).join("\n")}
   LOG_PIPELINE: { send: async () => {} },
   LOG_COLDSTORE_PIPELINE: { send: async () => {} },
 };
@@ -111,8 +135,8 @@ globalThis.__RB_ENV = env;
 globalThis.__RB_IDENTITY = identity;
 const { actions } = await import("./actions.ts");
 
-const token = mintToken();
-const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})} });
+const token = ${h.token};
+const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${h.listen} });
 const hostCtx = { env, dataDir, identity, reporter: stdoutReporter };
 
 // The host IS the middleware: one local player, vouched at the upgrade,
@@ -120,7 +144,7 @@ const hostCtx = { env, dataDir, identity, reporter: stdoutReporter };
 shell.mount({
   async fetch(req) {
     const url = new URL(req.url);
-    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
+${h.box ? `    if (url.pathname === "/health") return new Response("ok");\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
       const h = new Headers(req.headers);
       for (const [k, v] of Object.entries(identity)) h.set(k, v);
       return WORLD.get(WORLD.idFromName("local")).fetch(new Request(req.url, { headers: h }));
@@ -148,13 +172,12 @@ shell.mount({
 }, env);
 
 console.log(\`[${c.name} \${typeof RB_VERSION === "string" ? RB_VERSION : "dev"}] serving \${shell.url}\`);
-await openBrowser({ url: shell.url, token, window: ${JSON.stringify(d.window ?? "app")} });
-`;
+${h.launch}`;
 }
 
 
-export function desktopEntry(c: RustyBunsConfig): string {
-  const dataDir = c.targets.desktop?.dataDir ?? `~/.${c.name}`;
+export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string {
+  const h = hostParts(c, host, c.targets.desktop?.dataDir ?? `~/.${c.name}`);
   const bind: string[] = [];
   const dos: { name: string; className: string }[] = [];
   for (const [name, b] of Object.entries(c.bindings ?? {})) {
@@ -170,7 +193,7 @@ export function desktopEntry(c: RustyBunsConfig): string {
         break;
     }
   }
-  return `// GENERATED desktop entry. The RWSDK worker runs here, on the user's machine,
+  return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 import { serve, openBrowser, mintToken, localBindings, stdoutReporter } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + (c.worker!.builtMain ?? c.worker!.main))};
@@ -185,7 +208,7 @@ function assetDir(rel: string): string | undefined {
   return existsSync(embedded) ? embedded : join(import.meta.dir, rel);
 }
 
-const dataDir = ${JSON.stringify(dataDir)}.replace(/^~/, homedir());
+const dataDir = ${h.dataDir};
 mkdirSync(dataDir, { recursive: true });
 const local = localBindings(dataDir);
 
@@ -196,17 +219,18 @@ ${bind.join("\n")}
 // constructor receives this same env (a DO can use DB, KV, other DOs).
 ${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
 
-const token = mintToken();
+const token = ${h.token};
 const shell = serve<typeof env>({
   assets: assetDir(${JSON.stringify(c.worker!.assets ? "../" + c.worker!.assets : "")}),
   runWorkerFirst: ${JSON.stringify(c.worker!.runWorkerFirst ?? [])},
   token,
-  reporter: stdoutReporter,
+  reporter: stdoutReporter${h.listen},
 });
-shell.mount(worker as any, env);
+${h.box
+  ? `shell.mount({ fetch: (req: Request, e: any, ctx: any) => new URL(req.url).pathname === "/health" ? new Response("ok") : (worker as any).fetch(req, e, ctx) } as any, env);`
+  : `shell.mount(worker as any, env);`}
 console.log(\`[${c.name}] serving \${shell.url}\`);
-await openBrowser({ url: shell.url, token, window: ${JSON.stringify(c.targets.desktop?.window ?? "app")} });
-`;
+${h.launch}`;
 }
 
 import { sourceLayout } from "./glue/source.ts";
@@ -240,7 +264,9 @@ async function stageNative(targets: DesktopOs[], only?: string[]): Promise<strin
   return staged;
 }
 
-export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; outfile?: string; noCompile?: boolean } = {}) {
+export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; outfile?: string; noCompile?: boolean; host?: HostKind } = {}) {
+  const host = opts.host ?? "desktop";
+  const entry = `.rustybuns/${host}.ts`;
   const d = c.targets.desktop ?? {};
   const mode = d.mode ?? "spa";
   const clientDir = d.clientDir ?? "dist/desktop";
@@ -257,7 +283,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   const build = mode === "spa" ? d.clientBuild : c.worker!.build;
   if (build) await $`sh -c ${build}`;
   await mkdir(".rustybuns", { recursive: true });
-  await Bun.write(".rustybuns/desktop.ts", mode === "spa" ? spaEntry(c) : desktopEntry(c));
+  await Bun.write(entry, mode === "spa" ? spaEntry(c, host) : desktopEntry(c, host));
   const assets = mode === "spa" ? (d.clientDir ?? "dist/desktop") : c.worker!.assets;
 
   const shimPath = Bun.resolveSync("@rustybuns/shell-bun/shims", process.cwd());
@@ -287,7 +313,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   if (opts.noCompile) {
     // Dev host: same bundle pipeline as the binary, minus --compile. Nothing
     // embedded; assets and migrations are read from the working tree.
-    const r = await Bun.build({ entrypoints: [".rustybuns/desktop.ts"], outdir: ".rustybuns/dev", target: "bun", define: defineMap, plugins, sourcemap: "linked", throw: false } as any);
+    const r = await Bun.build({ entrypoints: [entry], outdir: ".rustybuns/dev", target: "bun", define: defineMap, plugins, sourcemap: "linked", throw: false } as any);
     if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
     console.log(`dev host: rustybuns run desktop   (= bun .rustybuns/dev/desktop.js)`);
     return ".rustybuns/dev/desktop.js";
@@ -318,7 +344,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   for (const t of targets) {
     const out = opts.outfile ?? `dist/${c.name}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
     const r = await Bun.build({
-      entrypoints: [".rustybuns/desktop.ts"],
+      entrypoints: [entry],
       outdir: dirname(out),          // Bun.build places compile.outfile under outdir
       compile: { target: `bun-${t}`, outfile: basename(out), ...(assets || migrationDirs.length || mountDirs.length ? { assets: [assets, ...migrationDirs, ...mountDirs].filter(Boolean) } : {}) },
       define: defineMap,
