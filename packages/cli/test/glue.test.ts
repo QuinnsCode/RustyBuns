@@ -199,3 +199,22 @@ test("build desktop refuses a client build in dist/, where the binary goes", asy
     await expect(buildDesktop({ name: "x", targets: { desktop: { mode: "spa", clientDir: "dist", world: false } } } as any)).rejects.toThrow(/dist\/ui/);
   } finally { process.chdir(cwd); }
 });
+
+test("boundary vite plugin swaps actions when vite reports a Windows path", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs");
+  const { tmpdir } = require("node:os");
+  const { generateBoundaryFiles } = await import("../src/glue/desktop-scaffold.ts");
+  const r = mkdtempSync(tmpdir() + "/rbwin-");
+  mkdirSync(r + "/src/actions", { recursive: true });
+  writeFileSync(r + "/package.json", JSON.stringify({ name: "w", dependencies: { vite: "6" } }));
+  writeFileSync(r + "/src/actions/bounce.ts", `"use server";\nexport async function bounce() { return 1; }\n`);
+  const { modules } = analyze({ root: r, srcDir: "src", aliases: {} });
+  await generateBoundaryFiles(r, infer(r), modules, {});
+  const { rustybuns } = await import(r + "/.rustybuns/vite.ts");
+  const action = `${r}/src/actions/bounce.ts`;
+  const asVite = (id: string) => ({ resolve: async () => ({ id }) });
+  const proxy = await rustybuns().resolveId.call(asVite(action), "./bounce", r + "/src/x.ts", {});
+  expect(proxy).toMatch(/\.rustybuns\/actions\/.*bounce.*\.ts$/);
+  // Windows: same file, backslashes (Vite normalizes, but join() on Windows does not)
+  expect(await rustybuns().resolveId.call(asVite(action.replace(/\//g, "\\")), "./bounce", r + "/src/x.ts", {})).toBe(proxy);
+});
