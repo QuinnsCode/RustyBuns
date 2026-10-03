@@ -1,0 +1,29 @@
+{
+  "name": "auto-rig",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "build:native": "bun scripts/build-native.ts",
+    "test": "bun test test",
+    "dev": "vite",
+    "build": "vite build --outDir dist/client",
+    "desktop:dev": "bunx rustybuns build desktop --dev && bunx rustybuns run desktop",
+    "desktop:build": "bunx rustybuns build desktop"
+  },
+  "dependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/native": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "closed-chain-ik": "github:gkjohnson/closed-chain-ik-js#1132da3dc3ac774426e9af503e4915bc04ca413b",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/react": "19",
+    "@types/react-dom": "19",
+    "@types/three": "^0.180.0",
+    "vite": "^6.2.6"
+  }
+}
