@@ -6,6 +6,7 @@ Each example lives in `apps/` and is not part of any published package: installi
 |---------|-------|--------------|
 | [tscircuit desktop](apps/tscircuit-desktop/README.md) | A real, heavy Vite app as one self-contained binary, with a Rust engine and a TypeScript fallback | Large (the tscircuit toolchain) |
 | [fm-daw](apps/fm-daw/README.md) | An FM groovebox: Rust as wasm in the audio thread, the same crate over FFI on the host, a world DO that saves the project | Small |
+| [auto-rig](apps/auto-rig/README.md) | Drop in a model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical results | Small |
 | [spa-example](apps/spa-example) | An RWSDK / Cloudflare app on the desktop: a world Durable Object, D1 and KV on sqlite | Small |
 | [example](apps/example) | Worker mode, plus a probe for the sample Rust crate in `native/crates/rb_hello` | Small |
 
@@ -41,6 +42,22 @@ bun run desktop:dev
 ```
 
 [Full guide →](apps/fm-daw/README.md)
+
+## auto-rig
+
+Drop in a GLB (or a built-in sample) and get a skeleton, skin weights, and IK you can drag, with pinned feet, a free root, and clasped hands.
+
+- **Rigging from geometry alone.** Voxelize, take geodesic slices from the thickest point (a Reeb graph), then bind skin weights by voxel distance.
+- **Two engines, identical rigs.** The Rust cdylib (over bun:ffi) and the TypeScript twin agree bit for bit. *Race the engines* times both.
+- **Uses:** a `"use server"` action that calls `desktop.native`, a Web Worker fallback in the plain browser, and [closed-chain-ik](https://github.com/gkjohnson/closed-chain-ik-js) for the IK.
+
+```
+cd apps/auto-rig
+bun run build:native     # optional: the Rust rigger
+bun run desktop:dev
+```
+
+[Full guide →](apps/auto-rig/README.md)
 
 ## spa-example
 
