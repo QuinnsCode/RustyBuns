@@ -119,3 +119,52 @@ test("r2 overlay: read-only base, writable overlay, tombstones", async () => {
   expect((await b.list()).objects.map((o) => o.key)).toEqual(["new.bin"]);
   chmodSync(base, 0o755);
 });
+
+test("serve: guests reach only the listed path, with a passphrase and no redirect; principal is vouched", async () => {
+  let pass: string | undefined;
+  const shell = serve({ token: "t0k", guest: { paths: ["/ws"], passphrase: () => pass } });
+  const seen: string[] = [];
+  shell.mount({ async fetch(req) { seen.push(req.headers.get("x-rb-principal")!); return new Response("ok"); } }, {});
+  shell.comms.websocket("/ws", { message: (ws, d) => ws.send("echo:" + d), close: () => {} });
+  shell.comms.websocket("/other", { message: (ws, d) => ws.send(d), close: () => {} });
+
+  const wsStatus = (path: string, headers: Record<string, string> = {}) => new Promise<"open" | "closed">((res) => {
+    const ws = new WebSocket(shell.url.replace("http", "ws") + path, { headers } as any);
+    ws.onopen = () => { ws.close(); res("open"); };
+    ws.onerror = () => res("closed"); ws.onclose = () => res("closed");
+  });
+  // closed until the host sets a passphrase
+  expect(await wsStatus("/ws?join=secret")).toBe("closed");
+  pass = "secret";
+  expect(await wsStatus("/ws?join=wrong")).toBe("closed");
+  expect(await wsStatus("/ws?join=secret")).toBe("open");
+  expect(await wsStatus("/other?join=secret")).toBe("closed");       // not a guest path
+  expect((await fetch(shell.url + "/x?join=secret")).status).toBe(403);   // nor is anything else
+  expect((await fetch(shell.url + "/__rb/action?join=secret", { method: "POST" })).status).toBe(403);
+  // the host's own cookie still wins on the guest path, and the client cannot forge the principal
+  const cookie = (await fetch(shell.url + "/x?token=t0k", { redirect: "manual" })).headers.get("set-cookie")!;
+  expect(cookie).toMatch(/^rb_token_\d+=t0k/);
+  await fetch(shell.url + "/x", { headers: { cookie, "x-rb-principal": "guest" } });
+  expect(seen).toEqual(["host"]);
+  pass = undefined;
+  expect(await wsStatus("/ws?join=secret")).toBe("closed");
+  await shell.stop();
+});
+
+test("serve: rebind keeps the port and the open sockets", async () => {
+  const shell = serve({});
+  shell.comms.websocket("/ws", { message: (ws, d) => ws.send("echo:" + d), close: () => {} });
+  const port = shell.port;
+  expect(shell.hostname).toBe("127.0.0.1");
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  await new Promise((r) => (ws.onopen = r));
+  expect(shell.rebind({ hostname: "0.0.0.0" })).toEqual({ hostname: "0.0.0.0", port });
+  expect(shell.url).toBe(`http://0.0.0.0:${port}`);
+  const got = new Promise<string>((res) => (ws.onmessage = (m) => res(String(m.data))));
+  ws.send("hi");
+  expect(await got).toBe("echo:hi");            // the pre-rebind socket is still served
+  const ws2 = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  await new Promise((r) => (ws2.onopen = r));   // and loopback still answers on the new listener
+  ws.close(); ws2.close();
+  await shell.stop();
+});

@@ -6,3 +6,4 @@ native/dist
 *.sqlite*
 wrangler.generated.jsonc
 .DS_Store
+.e2e-*

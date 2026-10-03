@@ -51,6 +51,29 @@ export interface DesktopTarget {
   worldPath?: string;
   /** spa: headers the host vouches at upgrade, like your CF middleware would. */
   identity?: Record<string, string>;
+  /**
+   * Where the desktop host listens. Default 127.0.0.1 on a random port, which
+   * only this machine can reach. `RB_LISTEN=host:port` or `--listen host:port`
+   * at launch override it, and the running host can move with POST /__rb/host.
+   */
+  listen?: { hostname?: string; port?: number };
+  /**
+   * spa: let other machines join the world. A guest reaches only `worldPath`,
+   * with `?join=<passphrase>` on the upgrade and no cookie; the SPA, assets and
+   * actions stay token-only. Each guest brings its own `?uid=&name=` identity
+   * (trust on first use); the host's own socket keeps the local identity.
+   *   guests: { max: 8 }                 closed until the UI opens it
+   *   guests: { join: "pass", max: 8 }   open from launch (RB_JOIN / --join override)
+   * No TLS: this is ws:// on a LAN. See README "Multiplayer on a LAN".
+   */
+  guests?: {
+    /** Passphrase at launch. Unset = closed until POST /__rb/host { join }. */
+    join?: string;
+    /** Concurrent guest sockets. @default 8 */
+    max?: number;
+    /** Guests must send `?v=` equal to this; default the build's RB_VERSION. false skips the check. */
+    version?: string | false;
+  };
   /** "all" or a list. TS-only builds cross-compile; Rust cdylibs need a per-OS matrix. */
   targets?: "all" | DesktopOs[];
   window?: "app" | "tab";

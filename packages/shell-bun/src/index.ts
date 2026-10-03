@@ -11,6 +11,7 @@ export { r2, R2Bucket } from "./bindings/r2.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
 import type { MemoryPort, Reporter } from "@rustybuns/ports";
+import type { BunShell } from "./serve.ts";
 import { d1 } from "./bindings/d1.ts";
 import { kv } from "./bindings/kv.ts";
 import { storage, type StorageOptions } from "./bindings/storage.ts";
@@ -34,8 +35,23 @@ export const stdoutReporter: Reporter = {
 export interface HostContext {
   env: Record<string, unknown>;
   dataDir: string;
+  /** The host's own identity. A guest's travels on its upgrade request instead. */
   identity: Record<string, string>;
   reporter: Reporter;
+  /** The shell itself: `shell.comms.sockets()` for who is connected, `shell.rebind()` to move. */
+  shell: BunShell<Record<string, unknown>>;
+  /** Multiplayer state the generated host keeps: see POST /__rb/host. */
+  guests: GuestState;
+}
+
+export interface GuestState {
+  /** Current join passphrase; undefined = closed. */
+  join?: string;
+  max: number;
+  /** Required `?v=` for guests; undefined = not checked. */
+  version?: string;
+  /** Live guest sockets (the host's own is not counted). */
+  connected(): number;
 }
 
 /** Local binding bundle: everything a desktop build hands to the Worker's env. */

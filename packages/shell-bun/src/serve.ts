@@ -4,11 +4,19 @@
 //   3. mounts a Workers-shaped fetch(request, env, ctx) for everything else
 //   4. routes WebSocket upgrades on registered paths to the app's handlers
 // The app never learns it is not on Cloudflare.
+//
+// Guests: with `guest` set, the listed paths (the world socket) also accept a
+// join passphrase as a query param, with no redirect and no cookie, so a page
+// served from another machine's own 127.0.0.1 can open a WebSocket here.
+// Everything else stays token-only. The mounted handler learns which it got
+// from the `x-rb-principal` request header ("host" | "guest"), which the shell
+// strips from incoming requests before setting it.
 
 import type { Server, ServerWebSocket } from "bun";
 import type { CommsPort, ExecutionContext, FetchHandler, Reporter, Socket, SocketHandlers } from "@rustybuns/ports";
 import { join, normalize } from "node:path";
 import { statSync } from "node:fs";
+import { timingSafeEqual } from "node:crypto";
 
 /** fs.statSync works inside /$bunfs (embedded assets); Bun.file().stat() does not always. */
 function kind(p: string): "file" | "dir" | null {
@@ -30,7 +38,20 @@ export interface ServeOptions<Env> {
   port?: number;
   hostname?: string;
   reporter?: Reporter;
+  /** Remote guests: a second credential, checked only on these paths. */
+  guest?: GuestOptions;
 }
+
+export interface GuestOptions {
+  /** Exact paths a guest may reach, e.g. ["/ws"]. */
+  paths: string[];
+  /** Query param carrying the passphrase. @default "join" */
+  param?: string;
+  /** The passphrase; a function is re-read per request so the host can open, rotate and close at runtime. undefined = closed. */
+  passphrase?: string | (() => string | undefined);
+}
+
+export type Principal = "host" | "guest";
 
 const ISOLATION = {
   "Cross-Origin-Opener-Policy": "same-origin",
@@ -41,12 +62,25 @@ const ISOLATION = {
 interface WsData { path: string; attachment: unknown; wrapped: Socket; bridge?: LocalWebSocket }
 
 export interface BunShell<Env> {
-  server: Server<WsData>;
-  url: string;
+  /** The live listener. Replaced by rebind(). */
+  readonly server: Server<WsData>;
+  readonly url: string;
+  readonly hostname: string;
+  readonly port: number;
   comms: CommsPort;
   mount(handler: FetchHandler<Env>, env: Env): void;
+  /**
+   * Listen somewhere else without restarting the process: stops accepting on
+   * the old address (open sockets stay up) and binds the new one. Keeping the
+   * port is what lets the host's own page keep working across a rebind, since
+   * 0.0.0.0 still answers on loopback.
+   */
+  rebind(opts: { hostname?: string; port?: number }): { hostname: string; port: number };
   stop(): Promise<void>;
 }
+
+/** Equal-length compare that does not short-circuit on the first differing byte. */
+const same = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length > 0 && x.length === y.length && timingSafeEqual(x, y); };
 
 export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   installCloudflareGlobals();
@@ -63,17 +97,27 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
   };
 
-  const gate = (req: Request, url: URL): Response | null => {
-    if (!opts.token) return null;
+  // Two instances on one machine both set cookies for 127.0.0.1 (cookies ignore
+  // the port), so the name carries the port and they coexist.
+  let port = 0;
+  const cookieName = () => `rb_token_${port}`;
+  const gate = (req: Request, url: URL): Response | Principal => {
+    if (!opts.token) return "host";
     const cookie = req.headers.get("cookie") ?? "";
-    if (cookie.includes(`rb_token=${opts.token}`)) return null;
+    if (cookie.includes(`${cookieName()}=${opts.token}`)) return "host";
     const q = url.searchParams.get("token");
-    if (q === opts.token) {
+    if (q !== null && same(q, opts.token)) {
       url.searchParams.delete("token");
       return new Response(null, {
         status: 302,
-        headers: { Location: url.pathname + url.search, "Set-Cookie": `rb_token=${opts.token}; Path=/; HttpOnly; SameSite=Strict` },
+        headers: { Location: url.pathname + url.search, "Set-Cookie": `${cookieName()}=${opts.token}; Path=/; HttpOnly; SameSite=Strict` },
       });
+    }
+    const g = opts.guest;
+    if (g && g.paths.includes(url.pathname)) {
+      const pass = typeof g.passphrase === "function" ? g.passphrase() : g.passphrase;
+      const given = url.searchParams.get(g.param ?? "join");
+      if (pass && given !== null && same(given, pass)) return "guest";
     }
     return new Response("forbidden", { status: 403 });
   };
@@ -104,16 +148,20 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     deserializeAttachment: () => ws.data.attachment,
   });
 
-  const server = Bun.serve<WsData>({
-    port: opts.port ?? 0,
-    hostname: opts.hostname ?? "127.0.0.1",
-    async fetch(req, srv) {
-      const url = new URL(req.url);
-      const denied = gate(req, url);
-      if (denied) return denied;
+  const listen = (hostname: string, port: number) => Bun.serve<WsData>({
+    port, hostname,
+    async fetch(raw, srv) {
+      const url = new URL(raw.url);
+      const who = gate(raw, url);
+      if (who instanceof Response) return who;
+      // Vouch the principal to the handler; never trust the client's copy.
+      const h = new Headers(raw.headers);
+      for (const k of [...h.keys()]) if (k.startsWith("x-rb-")) h.delete(k);
+      h.set("x-rb-principal", who);
+      const req = new Request(raw, { headers: h });
 
       if (req.headers.get("upgrade")?.toLowerCase() === "websocket" && wsRoutes.has(url.pathname)) {
-        const ok = srv.upgrade(req, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket } });
+        const ok = srv.upgrade(raw, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket } });
         return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
       }
 
@@ -134,7 +182,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
           // code run in-process untouched.
           const client = (res as any).webSocket as LocalWebSocket | undefined;
           if (res.status === 101 && client) {
-            const ok = srv.upgrade(req, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket, bridge: client } });
+            const ok = srv.upgrade(raw, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket, bridge: client } });
             return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
           }
           return withHeaders(res);
@@ -171,15 +219,29 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     },
   });
 
-  const url = `http://${server.hostname}:${server.port}`;
+  let server = listen(opts.hostname ?? "127.0.0.1", opts.port ?? 0);
+  port = server.port!;
   return {
-    server, url,
+    get server() { return server; },
+    get url() { return `http://${server.hostname}:${server.port}`; },
+    get hostname() { return server.hostname!; },
+    get port() { return server.port!; },
     comms: {
       websocket: (path, handlers) => { wsRoutes.set(path, handlers); },
       sockets: () => [...live],
       broadcast: (d) => { for (const s of live) { try { s.send(d); } catch {} } },
     },
     mount(h, e) { handler = h; env = e; },
+    rebind(o) {
+      const hostname = o.hostname ?? server.hostname!, next = o.port ?? server.port!;
+      if (hostname === server.hostname && next === server.port) return { hostname, port: next };
+      // stop(false) resolves only once every connection has closed, so it is
+      // not awaited; the listening socket itself is released synchronously.
+      void server.stop(false);
+      server = listen(hostname, next);
+      port = server.port!;
+      return { hostname: server.hostname!, port };
+    },
     async stop() { await server.stop(true); },
   };
 }
