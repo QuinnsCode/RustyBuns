@@ -1,7 +1,9 @@
 // HOST-SIDE shim for `cloudflare:workers` and `rwsdk/worker`, bundled into the
 // desktop binary in place of the real modules. Actions and db modules that do
 // `import { env } from "cloudflare:workers"` get the host's env (sqlite D1, KV,
-// in-process DOs); `requestInfo` is the one local identity.
+// in-process DOs); `requestInfo` is the one local identity. Actions are only
+// reachable on the host's token-gated page, so this is always the host: a
+// remote guest reaches the world socket alone and carries its identity there.
 declare global { var __RB_ENV: Record<string, unknown> | undefined; var __RB_IDENTITY: Record<string, string> | undefined; }
 
 export const env: Record<string, any> = new Proxy({}, {

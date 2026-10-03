@@ -18,7 +18,7 @@ Rusty Buns is a dev dependency. It never edits `src/` and never ships in your bu
 - a **Bun host** that runs your app on `Bun.serve()`, with sqlite standing in for D1, KV, R2 and Durable Object storage
 - a typed **[Alchemy](https://alchemy.run) + [Effect](https://effect.website) stack** that creates the cloud resources your bindings describe
 
-> **Alpha, `0.1.5`.** Desktop is verified on macOS and Linux. The Cloudflare deploy is verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). The Hetzner box builds and runs locally but hasn't been deployed to a real account yet. Fly and Railway come after. The happy path is a Vite + React app on Workers, but anything Vite builds should work.
+> **Alpha, `0.1.6`.** Desktop is verified on macOS and Linux. The Cloudflare deploy is verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). The Hetzner box builds and runs locally but hasn't been deployed to a real account yet. Fly and Railway come after. The happy path is a Vite + React app on Workers, but anything Vite builds should work.
 
 ## Why
 
@@ -250,7 +250,7 @@ export default defineConfig({
 | `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `var`, `secret` |
 | `targets.edge` | `provider: "cloudflare"`, `domain` |
 | `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize` |
-| `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world` (or `false`), `worldPath`, `identity`, `host`, `headers`, `native`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define` |
+| `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world` (or `false`), `worldPath`, `identity`, `listen` (`hostname`, `port`), `guests` (`join`, `max`, `version`), `host`, `headers`, `native`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define` |
 
 Three desktop keys are for apps that aren't Workers apps at all, like [tscircuit-desktop](apps/tscircuit-desktop/README.md):
 
@@ -262,9 +262,47 @@ The box host reads the same keys, so `host` routes and `headers` work on Hetzner
 
 ## The host
 
-The desktop host only listens on `127.0.0.1`, and every request needs the per-launch token. It sets COOP/COEP so `SharedArrayBuffer` works. `/__rb/info` shows runtime info, and `/__rb/action` runs your `"use server"` functions against sqlite. `cloudflare:workers` and `rwsdk/worker` are shimmed. D1 migrations apply at boot and are tracked in `d1_migrations`. `RB_VERSION` is `<package version>+<git sha>`. Data lives in `~/.<app-name>/`.
+The desktop host listens on `127.0.0.1` on a random port by default (`listen` in the config, `--listen host:port` or `RB_LISTEN` at launch), and every request needs the per-launch token. It sets COOP/COEP so `SharedArrayBuffer` works. `/__rb/info` shows runtime info, and `/__rb/action` runs your `"use server"` functions against sqlite. `cloudflare:workers` and `rwsdk/worker` are shimmed. D1 migrations apply at boot and are tracked in `d1_migrations`. `RB_VERSION` is `<package version>+<git sha>`. Data lives in `~/.<app-name>/`.
 
 The box host is the same program, minus the token and the browser.
+
+### Multiplayer on a LAN
+
+A `spa` desktop can host its world for other copies of the app. Each guest runs its own binary, whose page is served from its own `127.0.0.1`, and opens one WebSocket to the host machine. Nothing else crosses the network: the SPA, assets, `/__rb/info` and `/__rb/action` stay behind the host's token, and a guest never gets that token.
+
+```ts
+desktop: { mode: "spa", guests: { max: 8 } }      // closed until the UI opens it
+```
+
+The host's page opens and closes the world at runtime, so there is no rebuild between "single player" and "host a world":
+
+```ts
+// "Host a world": listen on every interface (the port stays the same, so this page keeps working) and set a passphrase
+await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ listen: { hostname: "0.0.0.0" }, join: "orange-kettle" }) });
+// "Stop hosting"
+await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) });
+// Who is here: `/__rb/info` has listen, sockets, and guests { open, connected, max, version }
+```
+
+A guest connects to the host's address with the join query; `worldSocket` from `@rustybuns/shell-bun/client` builds it:
+
+```ts
+import { worldSocket, playerId } from "@rustybuns/shell-bun/client";
+worldSocket("http://192.168.1.20:4000/ws", { join: "orange-kettle", uid: playerId(), name: "Ada", v: RB_VERSION });
+```
+
+What the host checks before upgrading, in order, each with a JSON `{ error }` body:
+
+| Check | Response |
+|---|---|
+| `join` missing or wrong, or the world is closed | `403` |
+| `v` differs from the host's build (`RB_VERSION`, or `guests.version`) | `409 version_mismatch` with `expected` |
+| `guests.max` sockets already connected | `503 full` |
+| `uid` not `1-64` of `[A-Za-z0-9_-]`, equal to the host's id, or `name` not 1-32 printable characters | `400 bad_identity` |
+
+The world then sees the same headers it would on Cloudflare: `X-User-Id` and `X-User-Name` from the guest's query, `X-World-Slug` and `X-World-Owner` from the host, and `X-RB-Principal: host | guest`. The host's own socket keeps the local identity, and its `?uid=` is ignored. Your world class can do its own checks before accepting the socket; the `host` module gets `ctx.shell` (`comms.sockets()`, `rebind()`) and `ctx.guests`.
+
+The trust model is a join passphrase plus trust-on-first-use identity: a `uid` is whatever a guest says it is, so treat it as a stable handle, not proof. There is no TLS, so this is `ws://` on a network you trust. Guest pages are served over http from their own host, so a `ws://` target is not mixed content; a page served over https could only open `wss://`. Two instances on one machine coexist (the token cookie is named per port), which is the easy way to test. Running a world on a public box or through a relay is the same wire protocol, but not something this version sets up.
 
 Durable Objects run in-process with WebSocket hibernation handlers, `blockConcurrencyWhile`, alarms and storage. Not emulated yet: eviction, cross-script DOs, socket tags, and the SQLite-backed `ctx.storage.sql` API.
 

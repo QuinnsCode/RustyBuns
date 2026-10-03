@@ -53,7 +53,7 @@ function hostParts(c: RustyBunsConfig, host: HostKind, desktopDataDir: string) {
       ? `process.env.DATA_DIR ?? ${JSON.stringify(`/var/lib/${c.name}`)}`
       : `${JSON.stringify(desktopDataDir)}.replace(/^~/, homedir())`,
     token: box ? "undefined" : "mintToken()",
-    listen: box ? `, hostname: "0.0.0.0", port: Number(process.env.PORT ?? 3000)` : "",
+    listen: box ? `, hostname: "0.0.0.0", port: Number(process.env.PORT ?? 3000)` : `, hostname: listen.hostname, port: listen.port`,
     launch: box ? "" : `await openBrowser({ url: shell.url, token, window: ${JSON.stringify(c.targets.desktop?.window ?? "app")} });\n`,
   };
 }
@@ -82,10 +82,13 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
   // Desktop has no secrets; a box reads them from its env file.
   const secrets = h.box ? Object.entries(bindings).filter(([, b]) => b.type === "secret").map(([n]) => n) : [];
   const mounts = d.mounts ?? {};
+  const g = d.guests ?? {};
+  const guestVersion = g.version === false ? "undefined" : g.version ? JSON.stringify(g.version) : `(typeof RB_VERSION === "string" ? RB_VERSION : undefined)`;
   return `// GENERATED ${host} host (spa mode). Serves the SPA, runs the world in-process
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
+// Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations } from "@rustybuns/shell-bun";
+import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir } from "node:os";
@@ -135,24 +138,79 @@ globalThis.__RB_ENV = env;
 globalThis.__RB_IDENTITY = identity;
 const { actions } = await import("./actions.ts");
 
+// Launch overrides: --listen host:port / RB_LISTEN, --join pass / RB_JOIN.
+const argv = process.argv.slice(2);
+const flag = (n: string) => { const i = argv.indexOf("--" + n); return i >= 0 ? argv[i + 1] : undefined; };
+const [lh, lp] = (flag("listen") ?? process.env.RB_LISTEN ?? "").split(":");
+const listen = { hostname: lh || ${JSON.stringify(d.listen?.hostname ?? "127.0.0.1")}, port: lp ? Number(lp) : ${d.listen?.port ?? 0} };
+let guestCount = 0;
+const guests: GuestState = {
+  join: flag("join") ?? process.env.RB_JOIN ?? ${g.join ? JSON.stringify(g.join) : "undefined"},
+  max: ${g.max ?? 8},
+  version: ${guestVersion},
+  connected: () => guestCount,
+};
 const token = ${h.token};
-const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${h.listen} });
-const hostCtx = { env, dataDir, identity, reporter: stdoutReporter };
+const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${h.listen},
+  guest: { paths: [${JSON.stringify(worldPath)}], passphrase: () => guests.join } });
+const hostCtx = { env, dataDir, identity, reporter: stdoutReporter, shell, guests };
 
-// The host IS the middleware: one local player, vouched at the upgrade,
-// exactly the headers the CF shell reads.
+// A guest's identity rides on its upgrade: trust on first use, shaped like
+// the host's, never the host's own id. The id is a stable per-player token
+// the client generates once and keeps.
+const UID = /^[A-Za-z0-9_-]{1,64}$/, NAME = /^[^\\p{C}]{1,32}$/u;
+function guestIdentity(url: URL): Record<string, string> | string {
+  const uid = url.searchParams.get("uid") ?? "", name = url.searchParams.get("name") ?? uid;
+  if (!UID.test(uid)) return "bad uid: 1-64 of [A-Za-z0-9_-]";
+  if (uid === identity["X-User-Id"]) return "uid is the host's";
+  if (!NAME.test(name)) return "bad name: 1-32 printable characters";
+  return { ...identity, "X-User-Id": uid, "X-User-Name": name };
+}
+const reject = (status: number, error: string, extra: Record<string, unknown> = {}) => Response.json({ error, ...extra }, { status });
+
+// The host IS the middleware: the local player vouched at the upgrade,
+// exactly the headers the CF shell reads; guests vouched from their query.
 shell.mount({
   async fetch(req) {
     const url = new URL(req.url);
+    const guest = req.headers.get("x-rb-principal") === "guest";
 ${h.box ? `    if (url.pathname === "/health") return new Response("ok");\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
       const h = new Headers(req.headers);
-      for (const [k, v] of Object.entries(identity)) h.set(k, v);
-      return WORLD.get(WORLD.idFromName("local")).fetch(new Request(req.url, { headers: h }));
+      let who = identity;
+      if (guest) {
+        if (guests.version !== undefined && url.searchParams.get("v") !== guests.version) return reject(409, "version_mismatch", { expected: guests.version, got: url.searchParams.get("v") });
+        if (guestCount >= guests.max) return reject(503, "full", { max: guests.max });
+        const id = guestIdentity(url);
+        if (typeof id === "string") return reject(400, "bad_identity", { detail: id });
+        who = id;
+      }
+      for (const [k, v] of Object.entries(who)) h.set(k, v);
+      h.set("X-RB-Principal", guest ? "guest" : "host");
+      const res = await WORLD.get(WORLD.idFromName("local")).fetch(new Request(req.url, { headers: h }));
+      const sock = (res as any).webSocket;
+      if (guest && res.status === 101 && sock) {
+        guestCount++;
+        const prev = sock.onClose;
+        sock.onClose = (code: number, reason: string) => { guestCount--; prev?.(code, reason); };
+      }
+      return res;
     }
     if (url.pathname === "/__rb/info") {
       return Response.json({ app: ${JSON.stringify(c.name)}, version: typeof RB_VERSION === "string" ? RB_VERSION : "dev", bun: Bun.version,
         platform: \`\${process.platform}-\${process.arch}\`, dataDir, user: identity["X-User-Id"], actions: Object.keys(actions).length,
-        bindings: Object.keys(env), host: !!host, caps: { sab: true, ffi: true, fs: true } });
+        bindings: Object.keys(env), host: !!host, caps: { sab: true, ffi: true, fs: true },
+        listen: { hostname: shell.hostname, port: shell.port }, sockets: shell.comms.sockets().length,
+        guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null } });
+    }
+    if (url.pathname === "/__rb/host" && req.method === "POST") {
+      // Host-page control: { listen?: { hostname, port }, join?: string | null, max?: number, version?: string | null }.
+      // "Host a world" = { listen: { hostname: "0.0.0.0" }, join: "pass" }; "Stop hosting" = { join: null, listen: { hostname: "127.0.0.1" } }.
+      const b = await req.json() as { listen?: { hostname?: string; port?: number }; join?: string | null; max?: number; version?: string | null };
+      if ("join" in b) guests.join = typeof b.join === "string" && b.join.length > 0 ? b.join : undefined;
+      if (typeof b.max === "number" && b.max >= 0) guests.max = b.max;
+      if ("version" in b) guests.version = b.version ?? undefined;
+      if (b.listen) shell.rebind(b.listen);
+      return Response.json({ listen: { hostname: shell.hostname, port: shell.port }, guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null } });
     }
     if (url.pathname === "/__rb/action" && req.method === "POST") {
       // "use server" runs here, for real, against sqlite. Same code as the edge.
@@ -211,6 +269,10 @@ function assetDir(rel: string): string | undefined {
 const dataDir = ${h.dataDir};
 mkdirSync(dataDir, { recursive: true });
 const local = localBindings(dataDir);
+const argv = process.argv.slice(2);
+const flag = (n: string) => { const i = argv.indexOf("--" + n); return i >= 0 ? argv[i + 1] : undefined; };
+const [lh, lp] = (flag("listen") ?? process.env.RB_LISTEN ?? "").split(":");
+const listen = { hostname: lh || ${JSON.stringify(c.targets.desktop?.listen?.hostname ?? "127.0.0.1")}, port: lp ? Number(lp) : ${c.targets.desktop?.listen?.port ?? 0} };
 
 const env: Record<string, unknown> = {
 ${bind.join("\n")}
