@@ -1,0 +1,30 @@
+{
+  "name": "fm-daw",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "build:native": "bun scripts/build-native.ts",
+    "test": "bun test test",
+    "bench": "bun bench/engines.ts",
+    "dev": "vite",
+    "build": "vite build --outDir dist/client",
+    "desktop:dev": "bunx rustybuns build desktop --dev && bunx rustybuns run desktop",
+    "desktop:build": "bunx rustybuns build desktop"
+  },
+  "dependencies": {
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/native": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "19",
+    "@types/react-dom": "19",
+    "vite": "^6.2.6"
+  }
+}

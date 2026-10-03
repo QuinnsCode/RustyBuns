@@ -1,0 +1,6 @@
+node_modules
+dist
+native/target
+native/dist
+public/fm_daw.wasm
+.rustybuns
