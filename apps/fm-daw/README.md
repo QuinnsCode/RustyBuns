@@ -4,21 +4,37 @@ A small FM groovebox: five FM drums and three FM synths, a step sequencer and a 
 
 ## Run it
 
-```
-bun install                     # at the repo root
-cd apps/fm-daw
-rustup target add wasm32-unknown-unknown   # once per machine
-bun run build:native            # needs cargo; skip it and the app uses TypeScript only
-bunx rustybuns build desktop --dev && bunx rustybuns run desktop
-```
+Run every command from the folder named in its step.
+
+1. **Install** (repo root, once, and again after pulling new dependencies):
+   ```
+   bun install
+   ```
+2. **Go to the app:**
+   ```
+   cd apps/fm-daw
+   ```
+3. **Optional, for the Rust sound engine** (once per machine; needs [rustup](https://rustup.rs)):
+   ```
+   rustup target add wasm32-unknown-unknown
+   bun run build:native
+   ```
+   Skip this and the app uses the TypeScript engine only. It still works.
+4. **Build and launch the desktop app:**
+   ```
+   bun run desktop:dev
+   ```
+   This is `bunx rustybuns build desktop --dev && bunx rustybuns run desktop`. Turn your speakers down first.
 
 Ship a binary for this machine (about 62 MB on macOS arm64, with the Rust engine inside):
 
 ```
-bunx rustybuns build desktop    # dist/fm-daw-<os>-<arch>
+bun run desktop:build           # dist/fm-daw-<os>-<arch>
 ```
 
-In a plain browser with hot reload: `bunx rustybuns generate` once, then `bun run dev`. Saving goes away there (no world), and bounces download instead.
+### Plain browser with hot reload
+
+`bun run dev` needs `.rustybuns/vite.ts`, which only `rustybuns build desktop` writes (`rustybuns generate` does not). So run step 4 once first, or just `bunx rustybuns build desktop --dev`; after that, `bun run dev` works. If you see `Could not resolve "./.rustybuns/vite"`, this is why. Saving goes away in the browser (no world), and bounces download instead.
 
 ## Play
 
