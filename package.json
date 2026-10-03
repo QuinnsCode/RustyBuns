@@ -9,13 +9,13 @@
   "scripts": {
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "test": "bun test",
-    "publish:all": "for p in ports shell-bun native cli; do (cd packages/$p && bun publish --access public); done"
+    "publish:all": "bun scripts/check-release.ts && for p in ports shell-bun native cli; do (cd packages/$p && bun publish --access public); done"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",
     "typescript": "^5.9.0"
   },
-  "version": "0.1.6",
+  "version": "0.1.7",
   "license": "Apache-2.0",
   "dependencies": {
     "playcanvas": "^2.22.2"
