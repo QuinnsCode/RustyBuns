@@ -5,6 +5,7 @@ Each example lives in `apps/` and is not part of any published package: installi
 | Example | Shows | Install size |
 |---------|-------|--------------|
 | [tscircuit desktop](apps/tscircuit-desktop/README.md) | A real, heavy Vite app as one self-contained binary, with a Rust engine and a TypeScript fallback | Large (the tscircuit toolchain) |
+| [fm-daw](apps/fm-daw/README.md) | An FM groovebox: Rust as wasm in the audio thread, the same crate over FFI on the host, a world DO that saves the project | Small |
 | [spa-example](apps/spa-example) | An RWSDK / Cloudflare app on the desktop: a world Durable Object, D1 and KV on sqlite | Small |
 | [example](apps/example) | Worker mode, plus a probe for the sample Rust crate in `native/crates/rb_hello` | Small |
 
@@ -24,6 +25,22 @@ bun run desktop:dev
 ```
 
 [Full guide →](apps/tscircuit-desktop/README.md)
+
+## fm-daw
+
+Five FM drums and three FM synths with a step grid, a piano roll, keyboard and MIDI recording, and quantize.
+
+- **One Rust crate, two builds.** `wasm32` renders live audio in the AudioWorklet; the cdylib runs on the host over `bun:ffi`. Both match the TypeScript engine bit for bit, and you can switch engines mid-groove.
+- **Speaker-safe by construction.** Params are clamped in the engine and a limiter holds every sample under −1 dBFS; the tests try to break it.
+- **Uses:** spa mode with a world (`desktop.world`) that saves the project to sqlite, `"use server"` actions for bounces, and the same world class as a Durable Object for shared jam rooms on Cloudflare.
+
+```
+cd apps/fm-daw
+bun run build:native     # optional: the Rust engine (cdylib + wasm)
+bun run desktop:dev
+```
+
+[Full guide →](apps/fm-daw/README.md)
 
 ## spa-example
 
