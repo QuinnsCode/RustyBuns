@@ -9,7 +9,7 @@ bun install                      # repo root; re-run after pulling
 rustup target add wasm32-unknown-unknown   # only for fm-daw's Rust engine
 ```
 
-- **Bun 1.4+** is required. **Rust (cargo)** is optional: apps with a Rust engine fall back to TypeScript without it.
+- **Bun 1.4+** is required. **Rust (cargo)** is required for tscircuit-desktop. For the other apps it is optional: they fall back to TypeScript without it.
 - `RB_NO_BROWSER=1` prints the desktop URL instead of opening a browser.
 - First launch of a built binary on macOS: it is unsigned, so right-click → Open, or `xattr -d com.apple.quarantine <file>`.
 
@@ -28,7 +28,7 @@ Ship a single binary instead: `bunx rustybuns build desktop` → `dist/<app>-<os
 
 | App | What it is | Best for demoing | Launch (from `apps/<app>`) |
 |---|---|---|---|
-| **tscircuit-desktop** | tscircuit (React for electronics) as a desktop app: board preview, checks, Gerber/BOM export | "A heavy real-world Vite app as one binary" | `bun native/build.ts` (optional Rust), then `bun run desktop:dev` |
+| **tscircuit-desktop** | tscircuit (React for electronics) as a desktop app: board preview, checks, Gerber/BOM export | "A heavy real-world Vite app as one binary" | `bun native/build.ts` (required), then `bun run desktop:dev` |
 | **fm-daw** | FM groovebox: 5 drums, 3 synths, step grid, piano roll, MIDI/keyboard recording | Rust vs TypeScript engine, switchable mid-groove; project saved to sqlite | `bun run build:native` (optional), then `bun run desktop:dev` |
 | **motion-midi** | A synth written in Rust and TS; renders a song and plays it | Rust-vs-TS speed ("Compare engines") | `bun run build:native` (optional), then standard launch |
 | **splat-desktop** | SuperSplat 3D Gaussian-splat editor with a folder-based scene library | Big files served from disk, "your files stay local" | `bun run desktop:dev` |
@@ -42,10 +42,10 @@ Ship a single binary instead: `bunx rustybuns build desktop` → `dist/<app>-<os
 ### tscircuit-desktop
 ```sh
 cd apps/tscircuit-desktop
-bun native/build.ts          # optional: Rust engine
+bun native/build.ts          # required: the build stops without it
 bun run desktop:dev
 ```
-Open a folder of boards (sample boards are in `fixtures/`). Click **Compare engines** to watch Rust native, Rust wasm and TypeScript run on the same board. If Rust is missing, the app says so and uses TypeScript.
+Open a folder of boards (sample boards are in `fixtures/`). Click **Compare engines** to watch Rust native, Rust wasm and TypeScript run on the same board. This app needs cargo to build. If you skip `bun native/build.ts`, the build fails with `native crate(s) not built: tsci_analysis`.
 
 ### fm-daw
 ```sh
