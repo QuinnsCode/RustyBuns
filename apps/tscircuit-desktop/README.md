@@ -34,7 +34,7 @@ Click **Compare engines** in the app to watch all three run on your own board.
 
 If the Rust engine is missing or fails to load, the app says so, and switches to the TypeScript engine with the same results. Nothing crashes.
 
-Each binary carries the Rust library for its own OS (the macOS arm64 download has the macOS arm64 library). Building without Rust installed still works; you get a TypeScript-only binary.
+Each binary carries the Rust library for its own OS (the macOS arm64 download has the macOS arm64 library). To build without Rust, remove `native: ["tsci_analysis"]` from `rustybuns.config.ts`. You get a TypeScript-only binary.
 
 ## Features
 
@@ -62,13 +62,13 @@ Reproduce with `bun scripts/bench.ts <traces>` (add `--brute` for the no-index "
 
 ## Build it yourself
 
-You need [Bun](https://bun.sh) 1.4+. [Rust](https://rustup.rs) is optional: without it you get a TypeScript-only build.
+You need [Bun](https://bun.sh) 1.4+ and [Rust](https://rustup.rs). `rustybuns.config.ts` lists `tsci_analysis` under `native`, so `rustybuns build desktop` stops with `native crate(s) not built: tsci_analysis` until you run `bun native/build.ts`.
 
 ```
 git clone https://github.com/QuinnsCode/RustyBuns
 cd RustyBuns && bun install
 cd apps/tscircuit-desktop
-bun native/build.ts          # optional: the Rust engine (and the wasm one, if the target is installed)
+bun native/build.ts          # required: the Rust engine (and the wasm one, if the target is installed)
 bun run desktop:dev          # builds the UI (a minute or two) and opens the app
 bun run desktop:build        # the single file: dist/tscircuit-desktop-<os>-<arch>
 ```
