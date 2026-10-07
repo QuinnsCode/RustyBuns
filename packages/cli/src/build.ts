@@ -10,6 +10,8 @@ import { existsSync, statSync, readFileSync } from "node:fs";
 import { join, dirname, normalize } from "node:path";
 import type { DesktopOs, RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
+import { Profiler } from "./profile.ts";
+import { BUN_CHECK_MIN, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
 
 const EXTS = [".ts", ".tsx", ".mts", ".js", ".mjs", ".cjs", ".jsx"];
 
@@ -328,7 +330,34 @@ async function stageNative(targets: DesktopOs[], only?: string[]): Promise<strin
   return staged;
 }
 
-export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; outfile?: string; noCompile?: boolean; host?: HostKind } = {}) {
+export interface BuildOpts {
+  target?: string; outfile?: string; noCompile?: boolean; host?: HostKind;
+  /** Type check the app before the client build, with this checker ("auto" picks the fastest). */
+  check?: CheckerName | "auto";
+  /** Time each step, print the table and save it under .rustybuns/profile/. */
+  profile?: boolean;
+}
+
+/** Type check the app's own tsconfig. Throws with the checker's output on errors. */
+async function checkApp(prof: Profiler | undefined, want: CheckerName | "auto") {
+  const tsconfig = existsSync("tsconfig.json") ? "tsconfig.json" : null;
+  const c = pickChecker(want, tsconfig);
+  if (!c) {
+    console.warn(`[check] skipped: no type checker (Bun >= ${BUN_CHECK_MIN}, tsc-rs or typescript${tsconfig ? "" : ", and no tsconfig.json"})`);
+    prof?.steps.push({ name: "typecheck app", ms: 0, note: "skipped" });
+    return;
+  }
+  const r = prof ? await prof.step("typecheck app", () => runCheck(c, tsconfig), c.name) : await runCheck(c, tsconfig);
+  if (!r.ok) {
+    console.error(r.output);
+    if (prof) await prof.finish();
+    throw new Error(`type errors (${c.name}); nothing was built. Drop --check to build anyway.`);
+  }
+}
+
+export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
+  const prof = opts.profile ? new Profiler(opts.noCompile ? "build desktop --dev" : "build desktop") : undefined;
+  const step = <T>(name: string, fn: () => T | Promise<T>) => prof ? prof.step(name, fn) : Promise.resolve(fn());
   const host = opts.host ?? "desktop";
   const entry = `.rustybuns/${host}.ts`;
   const d = c.targets.desktop ?? {};
@@ -338,11 +367,11 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
     throw new Error(`the client build is in dist/, which is also where binaries go (and vite empties it on every build). Build the UI into dist/ui: clientBuild "vite build --outDir dist/ui", clientDir "dist/ui".`);
   }
   const src = sourceLayout(process.cwd(), c);
-  {
+  await step("boundary glue", async () => {
     // Boundary glue is regenerated on every build: stubs, action proxies, host table.
     const { modules } = analyze({ srcDir: src.dir, aliases: src.aliases, ignore: src.ignore });
     await generateBoundaryFiles(process.cwd(), src.inf, modules, { actions: d.actions });
-  }
+  });
   if (mode === "worker" && !c.worker) throw new Error("desktop.mode \"worker\" needs a worker section; desktop-only apps use mode \"spa\"");
   const build = mode === "spa" ? d.clientBuild : c.worker!.build;
   // Before the client build: a target mistake shouldn't cost a full UI build first.
@@ -355,7 +384,10 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   if (hasRust && targets.some((t) => t !== hostTag)) {
     throw new Error(`native/ has Rust crates: cdylibs do not cross-compile. Build ${targets.filter((t) => t !== hostTag).join(", ")} on their own OS (CI matrix), or pass --target ${hostTag}.`);
   }
-  if (build) await $`sh -c ${build}`;
+  // After the glue (the app imports the generated stubs), before the client build:
+  // a type error shouldn't cost a full UI build and a 100 MB compile first.
+  if (opts.check) await checkApp(prof, opts.check);
+  if (build) await step("client build", () => $`sh -c ${build}`);
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(entry, mode === "spa" ? spaEntry(c, host) : desktopEntry(c, host));
   const assets = mode === "spa" ? (d.clientDir ?? "dist/desktop") : c.worker!.assets;
@@ -387,7 +419,8 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   if (opts.noCompile) {
     // Dev host: same bundle pipeline as the binary, minus --compile. Nothing
     // embedded; assets and migrations are read from the working tree.
-    const r = await Bun.build({ entrypoints: [entry], outdir: ".rustybuns/dev", target: "bun", define: defineMap, plugins, sourcemap: "linked", throw: false } as any);
+    const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir: ".rustybuns/dev", target: "bun", define: defineMap, plugins, sourcemap: "linked", throw: false } as any));
+    await prof?.finish();
     if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
     console.log(`dev host: rustybuns run desktop   (= bun .rustybuns/dev/desktop.js)`);
     return ".rustybuns/dev/desktop.js";
@@ -398,7 +431,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   // desktop.native names the crates to embed (all built crates when unset);
   // a named crate that was never built is an error, not a silent TS fallback.
   if (d.native?.length) nativeDirs(d.native);
-  const nativeTags = hasRust ? await stageNative(targets, d.native) : [];
+  const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, d.native)) : [];
   const migrationDirs = Object.values(c.bindings ?? {}).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
   // External mounts (~ or absolute) stay on disk; only project dirs are embedded.
   const external = (dir: string) => dir.startsWith("~") || dir.startsWith("/");
@@ -408,17 +441,18 @@ export async function buildDesktop(c: RustyBunsConfig, opts: { target?: string; 
   if (new Set(names).size !== names.length) throw new Error(`embedded directories must have distinct basenames: ${names.join(", ")}`);
   for (const t of targets) {
     const out = opts.outfile ?? `dist/${c.name}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
-    const r = await Bun.build({
+    const r = await step(`compile ${t}`, () => Bun.build({
       entrypoints: [entry],
       outdir: dirname(out),          // Bun.build places compile.outfile under outdir
       compile: { target: `bun-${t}`, outfile: basename(out), ...(assets || migrationDirs.length || mountDirs.length ? { assets: [assets, ...migrationDirs, ...mountDirs].filter(Boolean) } : {}) },
       define: defineMap,
       plugins,
       throw: false,
-    } as any);
+    } as any));
     if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
     outs.push(out);
   }
+  await prof?.finish();
   return outs.join("\n");
 }
 

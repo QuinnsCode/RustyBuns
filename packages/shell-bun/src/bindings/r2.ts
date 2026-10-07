@@ -63,7 +63,7 @@ export class R2Bucket {
   async put(key: string, value: ArrayBuffer | ArrayBufferView | string | ReadableStream | Blob | null, opts?: { httpMetadata?: Record<string, string>; customMetadata?: Record<string, string> }) {
     const p = this.wpath(key); mkdirSync(dirname(p), { recursive: true });
     rmSync(p + ".deleted", { force: true });
-    await Bun.write(p, value instanceof ReadableStream ? new Response(value) : (value ?? ""));
+    await Bun.write(p, new Response((value ?? "") as BodyInit));   // one Bun.write overload for every body type
     if (opts?.httpMetadata || opts?.customMetadata) await Bun.write(p + ".meta.json", JSON.stringify(opts));
     return this.obj(key, false)!;
   }

@@ -15,6 +15,8 @@ import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
 import { installCommand, applyOverrides, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
+import { Profiler } from "./profile.ts";
+import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
 
@@ -243,17 +245,39 @@ async function runAlchemy(args: string[]): Promise<number> {
   return await p.exited;
 }
 
-async function alchemy(sub: string, args: string[]) {
-  if (!(await loadConfig()).worker) throw new Error("desktop-only app: no edge stack to plan or deploy");
-  await generate({ adopt: false });
-  // Hetzner.Service hashes the box directory at plan time, so it has to exist first.
-  if ((sub === "plan" || sub === "deploy") && (await loadConfig()).targets.box) {
-    console.log(`built ${await buildBox(await loadConfig())}`);
+/**
+ * Type check the generated stack before Alchemy sees it, so a bad config fails
+ * here (in well under a second with bun check) instead of halfway into a plan.
+ */
+async function checkStack(prof: Profiler, want: CheckerName | "auto") {
+  await Bun.write(STACK_TSCONFIG, stackTsconfig());
+  const c = pickChecker(want, STACK_TSCONFIG);
+  if (!c) { prof.steps.push({ name: "typecheck stack", ms: 0, note: `skipped: no checker (Bun >= ${BUN_CHECK_MIN}, tsc-rs or typescript)` }); return; }
+  const r = await prof.step("typecheck stack", () => runCheck(c, STACK_TSCONFIG), c.name);
+  if (!r.ok) {
+    console.error(r.output);
+    await prof.finish();
+    throw new Error(`the generated stack does not type check (${c.name}). Fix rustybuns.config.ts, or pass --no-check to skip.`);
   }
+}
+
+async function alchemy(sub: string, rawArgs: string[]) {
+  const cfg = await loadConfig();
+  if (!cfg.worker) throw new Error("desktop-only app: no edge stack to plan or deploy");
+  const profiled = sub === "plan" || sub === "deploy";
+  const { on: check, checker, rest: args } = checkFlags(rawArgs, profiled);
+  const prof = new Profiler(sub);
+  await prof.step("generate", () => generate({ adopt: false }));
+  // Hetzner.Service hashes the box directory at plan time, so it has to exist first.
+  if (profiled && cfg.targets.box) {
+    console.log(`built ${await prof.step("build box", () => buildBox(cfg))}`);
+  }
+  if (check) await checkStack(prof, checker);
   const hash = await stackHash();
   const stampFile = ".rustybuns/planned";
   if (sub === "plan") {
-    const code = await runAlchemy(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args]);
+    const code = await prof.step("alchemy plan", () => runAlchemy(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args]));
+    await prof.finish();
     if (code !== 0) process.exit(code);
     await Bun.write(stampFile, hash);
     return;
@@ -270,7 +294,8 @@ async function alchemy(sub: string, args: string[]) {
     }
   }
   // --yes satisfies our plan check above AND is forwarded to alchemy's own prompt.
-  const code = await runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]);
+  const code = await prof.step(`alchemy ${sub}`, () => runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]));
+  if (profiled) await prof.finish();
   if (code !== 0) process.exit(code);
 }
 
@@ -299,8 +324,9 @@ try {
       const [what, ...flags] = rest;
       const t = flags.indexOf("--target");
       if (what === "box") { console.log(`built ${await buildBox(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined })}`); break; }
-      if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--dev] [--target darwin-arm64] | build box [--target linux-x64]");
-      const out = await buildDesktop(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined, noCompile: flags.includes("--dev") });
+      if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--dev] [--check] [--checker bun|tsc-rs|tsc] [--target darwin-arm64] | build box [--target linux-x64]");
+      const { on: check, checker } = checkFlags(flags, false);
+      const out = await buildDesktop(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined, noCompile: flags.includes("--dev"), check: check ? checker : undefined, profile: true });
       console.log(`built ${out}`);
       break;
     }
@@ -332,19 +358,26 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   build desktop [--dev]      --dev: vite build + bundle the host, no compile  ->  run desktop
              [--target T]    T = darwin-arm64 | darwin-x64 | linux-x64 | linux-arm64 | windows-x64
                              (default: targets in the config; "all" cross-compiles TS-only builds)
+             [--check]       type check the app (its tsconfig) before the vite build
   run desktop                start the dev host (bun .rustybuns/dev/desktop.js)
   build box [--target T]     the same host for a Hetzner server: linux binary + node launcher
                              in .rustybuns/box/ (plan and deploy run this for you)
 
   plan                       alchemy plan: shows what would be created, creates nothing
                              (targets.edge -> Cloudflare, targets.box -> Hetzner, or both)
+                             type checks the generated stack first (--no-check skips)
   deploy [--yes]             alchemy deploy; refuses unless plan ran for this exact config
   destroy                    alchemy destroy: removes everything the stack created
                              (--stage <name> passes through to all three)
   dev                        alchemy dev: workerd + local simulators for the edge column
+  --checker bun|tsc-rs|tsc   pick the type checker (default: bun check on Bun >= 1.4.3, else
+                             tsc-rs, else tsc; tsc-rs first when tsconfig has the Effect plugin)
+                             build desktop, plan and deploy print a per-step timing table and
+                             save it to .rustybuns/profile/, with deltas against the last run
   eject                      copy alchemy.run.ts to the root; you own the stack from then on
 
   Env:  RB_NO_BROWSER=1      do not open a browser; print the token URL instead
+        RB_BUN=<path>        a Bun with \`bun check\` to type check with (e.g. a canary)
   Docs: README.md · GETTING_STARTED.md`);
   }
 } catch (e) {
