@@ -326,6 +326,7 @@ apps/                example apps, see EXAMPLES.md
 | [splat-rooms](apps/splat-rooms/README.md) | a splat hunting game with a Durable Object world and a mount read from your disk |
 | [motion-midi](apps/motion-midi/README.md) | one synth written in Rust and in TypeScript, checked sample by sample |
 | [fm-daw](apps/fm-daw/README.md) | an FM groovebox: live Rust (wasm) or TS engine in an AudioWorklet, QWERTY + MIDI recording, a world that saves your groove |
+| [auto-rig](apps/auto-rig/README.md) | drop in a 3D model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical output |
 | [spa-example](apps/spa-example) | an RWSDK app with D1, KV and a world DO, all on sqlite |
 
 More in [EXAMPLES.md](EXAMPLES.md).
