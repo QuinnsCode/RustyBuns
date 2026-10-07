@@ -32,7 +32,22 @@ Your app is five things: **http, comms, storage, memory, identity**. Each one ha
 
 ### Typed deploys, thanks to Effect
 
-The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, soon Fly and Railway) is a typed Layer. Swap a target by changing one line of config, and the compiler tells you what's missing before anything is created. `plan` shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
+The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, soon Fly and Railway) is a typed Layer. Swap a target by changing one line of config, and the compiler tells you what's missing before anything is created. `plan` type checks the generated stack first, then shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
+
+### Type checking and per-step timing
+
+`plan` and `deploy` type check the generated stack before Alchemy runs (`--no-check` skips). `build desktop --check` type checks your app before the client build, so a type error costs well under a second instead of a full build. The checker is picked automatically: [`bun check`](https://bun.com/docs/runtime/check) on Bun 1.4.3 or newer, else [tsc-rs](https://github.com/pingdotgg/ts-rust), else `tsc`. tsc-rs goes first when the tsconfig enables `@effect/language-service`, because only tsc-rs runs Effect's diagnostics (a stack step written without `yield*` silently never runs; tsc-rs flags it as TS377001). `--checker bun|tsc-rs|tsc` picks one yourself.
+
+`build desktop`, `plan` and `deploy` print how long each step took and save it to `.rustybuns/profile/`. The next run shows the change per step, so you can see what a checker or Bun upgrade actually saved:
+
+```
+profile: build desktop  (bun 1.4.3)
+  boundary glue             2ms    0%  =
+  typecheck app            56ms    7%  -1.03s (19.4x faster)  [bun]
+  client build            652ms   76%  +16ms
+  compile darwin-arm64    138ms   16%  +14ms
+  total                   858ms  -1.00s (2.2x faster)
+```
 
 ### How it compares
 
