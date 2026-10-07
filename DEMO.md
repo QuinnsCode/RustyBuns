@@ -30,6 +30,7 @@ Ship a single binary instead: `bunx rustybuns build desktop` → `dist/<app>-<os
 |---|---|---|---|
 | **tscircuit-desktop** | tscircuit (React for electronics) as a desktop app: board preview, checks, Gerber/BOM export | "A heavy real-world Vite app as one binary" | `bun native/build.ts` (required), then `bun run desktop:dev` |
 | **fm-daw** | FM groovebox: 5 drums, 3 synths, step grid, piano roll, MIDI/keyboard recording | Rust vs TypeScript engine, switchable mid-groove; project saved to sqlite | `bun run build:native` (optional), then `bun run desktop:dev` |
+| **auto-rig** | Drop in a 3D model; it finds a skeleton, skin weights and IK you can drag | Rust vs TypeScript speed ("Race the engines"); posing a model it rigged itself | `bun run build:native` (optional), then `bun run desktop:dev` |
 | **motion-midi** | A synth written in Rust and TS; renders a song and plays it | Rust-vs-TS speed ("Compare engines") | `bun run build:native` (optional), then standard launch |
 | **splat-desktop** | SuperSplat 3D Gaussian-splat editor with a folder-based scene library | Big files served from disk, "your files stay local" | `bun run desktop:dev` |
 | **splat-rooms** | Splat hunting game plus an InteriorGS room/object browser | A game that runs on the same stack | `bun scripts/fetch-scenes.ts` (needs `HF_TOKEN`), then standard launch |
@@ -54,6 +55,14 @@ bun run build:native         # optional, needs rustup
 bun run desktop:dev
 ```
 **Turn your speakers down first.** Record from the computer keyboard or a MIDI keyboard, quantize, and flip the engine selector while the groove plays. The browser-only `bun run dev` needs `.rustybuns/vite.ts`, which only `rustybuns build desktop` writes. Run the desktop build once first, or you will get `Could not resolve "./.rustybuns/vite"`. Saving is disabled in the browser.
+
+### auto-rig
+```sh
+cd apps/auto-rig
+bun run build:native         # optional, needs cargo
+bun run desktop:dev
+```
+Starts on the Gingerbread sample, already rigged. Click a hand handle and drag the arrows: the arm bends while the pinned feet and head stay put. Uncheck **Pin the root** and the whole body follows. Shift-click a second tip to clasp them. Try **Fox** (downloaded from GitHub on click) with **Skin weights** on, then **Race the engines**. Drop in any `.glb` to rig it, and **Download rigged .glb** to keep it.
 
 ### motion-midi
 ```sh
@@ -106,13 +115,14 @@ bun run desktop
 ```
 The framework's worker-mode test app (D1, KV and a Durable Object under Bun). The Rust probe is `native-probe.ts`, which loads `native/crates/rb_hello`.
 
-## Suggested demo order (about 10 minutes)
+## Suggested demo order (about 12 minutes)
 
 1. **splat-spray**: instant, visual, zero setup.
 2. **fm-daw**: audio, and the Rust/TS switch mid-groove.
-3. **tscircuit-desktop**: a big real app shipped as one file, with **Compare engines**.
-4. **splat-desktop** or **splat-rooms**: 3D scenes read from local disk.
-5. **spa-example**: Cloudflare bindings and LAN multiplayer, if there is time.
+3. **auto-rig**: drag a limb on a model it rigged itself, then **Race the engines**.
+4. **tscircuit-desktop**: a big real app shipped as one file, with **Compare engines**.
+5. **splat-desktop** or **splat-rooms**: 3D scenes read from local disk.
+6. **spa-example**: Cloudflare bindings and LAN multiplayer, if there is time.
 
 ## Troubleshooting
 
