@@ -16,6 +16,7 @@ import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { Profiler } from "./profile.ts";
+import { checkSpend, costReport } from "./costs.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -268,6 +269,7 @@ async function alchemy(sub: string, rawArgs: string[]) {
   const cfg = await loadConfig();
   if (!cfg.worker) throw new Error("desktop-only app: no edge stack to plan or deploy");
   const profiled = sub === "plan" || sub === "deploy";
+  if (profiled) { checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
   const { on: check, checker, rest: args } = checkFlags(rawArgs, profiled);
   const prof = new Profiler(sub);
   await prof.step("generate", () => generate({ adopt: false }));
@@ -300,6 +302,7 @@ async function alchemy(sub: string, rawArgs: string[]) {
   const code = await prof.step(`alchemy ${sub}`, () => runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]));
   if (profiled) await prof.finish();
   if (code !== 0) process.exit(code);
+  if (sub === "deploy" && cfg.targets.box) console.log("\nthe box bills hourly from now on; `rustybuns destroy` stops it.");
 }
 
 try {
@@ -370,6 +373,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              (targets.edge -> Cloudflare, targets.box -> Hetzner, or both)
                              type checks the generated stack first (--no-check skips)
   deploy [--yes]             alchemy deploy; refuses unless plan ran for this exact config
+                             plan and deploy list the stack's billable resources first, and
+                             refuse a large Hetzner server without box.allowLargeServer (COSTS.md)
   destroy                    alchemy destroy: removes everything the stack created
                              (--stage <name> passes through to all three)
   dev                        alchemy dev: workerd + local simulators for the edge column

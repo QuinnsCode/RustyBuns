@@ -114,7 +114,7 @@ The desktop and box hosts are the same generated program. The desktop build bind
 
 ## Getting started
 
-There are five flows. Each builds on the one before, and you can stop after any of them. The long version is in [GETTING_STARTED.md](GETTING_STARTED.md).
+There are five flows. Each builds on the one before, and you can stop after any of them. The long version is in [GETTING_STARTED.md](GETTING_STARTED.md). What each flow can bill you for, and how to cap it, is in [COSTS.md](COSTS.md).
 
 You need Bun 1.4+, an app that builds with `vite build`, and a `wrangler.jsonc` if you want the Cloudflare deploy.
 
