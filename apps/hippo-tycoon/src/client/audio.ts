@@ -124,6 +124,20 @@ export class Sound {
     }
   }
 
+  /** The wrestling finale's effects. */
+  sfx(name: "bell" | "whoosh" | "slam" | "boing" | "splat" | "ding" | "crowd") {
+    if (!this.ctx) return;
+    switch (name) {
+      case "bell": for (let i = 0; i < 3; i++) { this.tone(1320, 0.9, "sine", 0.22, 1300, i * 0.38); this.tone(1980, 0.6, "sine", 0.1, 1960, i * 0.38); } break;
+      case "crowd": this.noise(2.4, 700, 0.6, 0.22); this.noise(1.6, 1500, 0.5, 0.12, 0.4); this.tone(180, 1.4, "sawtooth", 0.05, 260, 0.1, 600); break;
+      case "whoosh": this.noise(0.55, 600, 0.9, 0.35); this.noise(0.4, 2400, 1.4, 0.18, 0.12); break;
+      case "slam": this.tone(120, 0.35, "sine", 0.6, 38); this.noise(0.25, 300, 0.7, 0.45); break;
+      case "boing": this.tone(180, 0.5, "sine", 0.35, 760); this.tone(760, 0.4, "sine", 0.25, 220, 0.18); break;
+      case "splat": this.noise(0.35, 900, 0.8, 0.4, 0, "lowpass"); this.tone(320, 0.3, "sine", 0.3, 70); break;
+      case "ding": [1568, 2093, 2637].forEach((f, i) => this.tone(f, 0.9, "sine", 0.18, f, i * 0.1)); break;
+    }
+  }
+
   beep(high: boolean) { this.tone(high ? 880 : 440, high ? 0.5 : 0.15, "sine", 0.3); }
 
   fanfare() {

@@ -25,10 +25,10 @@ Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (its geyser
 (Art direction, later: first a Victorian-industrial town, then the jungle island. The sim, rules and modes did not change.)
 
 **The cast (seats 0..3, south first).** Names are original; personality comes from build, colour and gear, all primitives:
-- **Baron Gulpington**: big and round, white linen jacket over a teal tee, gold aviators with teal mirror lenses, three chains, gold teeth, a cigar. The boss.
-- **Crude Carl**: tall and narrow, pastel pink jacket over black, black wayfarers, a red bandana, a moustache, a cigar with a drip of oil on his lip.
-- **Big Barrel Bertha**: widest of the four, a black coat with a white fur collar, cat-eye shades, a hot pink tee, triple chain, gold teeth, huge brows. Deepest grunt.
-- **Gusher Gus**: small and wiry, olive camo jacket, a black headband, white-framed mirror shades, two chains, gold teeth. Shrill snort.
+- **Baron Gulpington** ("El General"): big and round, an olive dress jacket with gold epaulettes and a chestful of medals, a black beret with a gold oil-drop badge, gold aviators with teal mirror lenses, three chains, gold teeth, a cigar.
+- **Crude Carl**: tall and narrow, a black beret, dark fatigues crossed by two bandoliers of oil vials, black wayfarers, a moustache, a cigar with a drip of oil on his lip.
+- **Big Barrel Bertha**: widest of the four, a black coat with a white fur collar, a maroon beret, a bandolier and a few medals, cat-eye shades, triple chain, gold teeth, huge brows. Deepest grunt.
+- **Gusher Gus**: small and wiry, olive camo jacket, a black headband, a bandolier, white-framed mirror shades, two chains, gold teeth. Shrill snort.
 
 Everybody has angry brows. Steam puffs from the ears when sputtering. They snarl (brows drop, teeth show) when someone else eats a gold drop.
 
@@ -45,6 +45,8 @@ Everybody has angry brows. Steam puffs from the ears when sputtering. They snarl
   - **Nail/bolt** (grey, spiky): −2 and a **sore jaw** (slide speed halved 3 s).
   - **Water drop** (blue): no points, your next gulp is a dud ("Watered down!").
 - **Slick**: a gold drop that isn't eaten within ~6 s splatters into an oil slick that makes drops near it skate faster. Keeps the board lively.
+
+**The finale.** After the round the richest hippo straps on a championship belt and wrestles every loser out of the basin, last place first, each in a different silly way (airplane spin, mud slam, punt, and the runner-up launched to the stars). Ties share the belt; if everyone ties, nobody is thrown. Pure presentation (`src/client/render/cinematic.ts`); the sim has settled the standings.
 
 **Round.** 60 s (configurable 30/60/90). Drip rate ramps up over time; the last 10 s is "Overflow!" (2× spawn, more golds, more nails). The richest hippo wins; ties share. Score is shown as net worth in $ millions (1 point = $1M, a ticker that rolls up); the podium crowns the richest hippo, then "Rematch" (same seats) or "Lobby".
 
