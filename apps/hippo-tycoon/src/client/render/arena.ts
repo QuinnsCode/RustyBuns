@@ -5,7 +5,6 @@ import { Smoke, type Animated } from "./industry.ts";
 import { ferns, mountains, palm, rockRim, type Palm } from "./jungle.ts";
 import { buildOffice } from "./office.ts";
 import { basalt, moss } from "./textures.ts";
-import type { Particles } from "./fx.ts";
 
 /** Sim (x, y) on the pan -> three.js (x, height, -y). */
 export const at = (x: number, y: number, h = 0) => new THREE.Vector3(x, h, -y);
@@ -23,14 +22,14 @@ export class Arena {
   private palms: Palm[] = [];
   private mist: Smoke;
 
-  constructor(fx: Particles) {
+  constructor() {
     const g = this.group;
     const floor = new THREE.Mesh(new THREE.CircleGeometry(WALL_R, 96), new THREE.MeshPhysicalMaterial({ map: basalt(), roughness: 0.28, metalness: 0.55, clearcoat: 0.8, clearcoatRoughness: 0.15 }));
     floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; g.add(floor);
     const lip = new THREE.Mesh(new THREE.TorusGeometry(WALL_R + 0.3, 0.5, 12, 96), new THREE.MeshStandardMaterial({ color: 0x35352f, roughness: 0.95 }));
     lip.rotation.x = Math.PI / 2; lip.position.y = 0.05; lip.receiveShadow = true; g.add(lip);
     g.add(rockRim());
-    this.geyser = new Geyser(fx); g.add(this.geyser.group);
+    this.geyser = new Geyser(); g.add(this.geyser.group);
 
     const mossTex = moss(48, 48);
     const ground = new THREE.Mesh(new THREE.CircleGeometry(170, 64), new THREE.MeshStandardMaterial({ map: mossTex, bumpMap: mossTex, bumpScale: 1.5, roughness: 1 }));

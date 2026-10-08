@@ -2,7 +2,7 @@
 
 A small, original arcade game that ships as a Rusty Buns example: **four angry, greedy tycoon hippos around a pan of oil, each trying to chomp the most oil drops.** The hippos got hooked on the lifestyle oil money bought them, and they are absolutely not cute about it. It exists to show people the whole Rusty Buns story (Cloudflare-first app, same code as a desktop binary, LAN party mode, deploy anywhere) without any of the owner's private game content.
 
-Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (Rust is an optional later milestone).
+Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (its geyser fluid has a Rust/wasm build and a TypeScript twin).
 
 (Concept history: this started as "Drip Derby", cartoon cars eating oil drops. The mechanic, architecture, modes and milestones are unchanged; the cast and the look are new.)
 
