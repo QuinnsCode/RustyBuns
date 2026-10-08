@@ -125,6 +125,8 @@ export interface BoxTarget {
   port?: number;
   /** Volume size in GB for sqlite + R2 dirs (min 10). 0 keeps data on the server's own disk. @default 10 */
   volumeSize?: number;
+  /** Required for ccx (dedicated) or tier 3+ types like cpx31. Small tiers need nothing. See COSTS.md. */
+  allowLargeServer?: boolean;
 }
 
 export interface RustyBunsConfig {
