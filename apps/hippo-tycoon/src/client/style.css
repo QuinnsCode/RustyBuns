@@ -21,8 +21,9 @@ button, input, select { font: inherit; color: inherit; }
 .menu { position: fixed; inset: 0; display: grid; place-items: center; overflow: auto; padding: 20px;
   background: radial-gradient(900px 500px at 50% 0%, rgba(255, 170, 40, 0.16), transparent 60%), radial-gradient(700px 500px at 100% 100%, rgba(120, 80, 255, 0.12), transparent 60%), var(--bg); }
 .card { width: min(520px, 100%); padding: 32px; border: 1px solid var(--line); border-radius: 22px; background: var(--glass); backdrop-filter: blur(24px) saturate(1.4); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.title { margin: 0; font-size: 48px; line-height: 1; font-weight: 800; letter-spacing: -0.04em; text-align: center; background: linear-gradient(180deg, #fff2c2, var(--gold) 45%, var(--gold2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.tag { text-align: center; margin: 10px 0 26px; color: var(--dim); font-size: 15px; }
+.title { margin: 0; font-family: "Bodoni 72", Didot, "Playfair Display", Georgia, "Times New Roman", serif; font-size: 44px; line-height: 1.05; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; text-align: center; background: linear-gradient(180deg, #fff2c2, var(--gold) 45%, var(--gold2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tag { text-align: center; margin: 12px 0 26px; color: var(--dim); font-size: 14px; letter-spacing: 0.02em; }
+.tag::before, .tag::after { content: "✦"; color: var(--gold2); margin: 0 10px; font-size: 11px; vertical-align: 1px; }
 .col { display: grid; gap: 10px; }
 .btn { padding: 13px 18px; border-radius: 12px; border: 1px solid var(--line); background: var(--glass2); color: var(--text); font-weight: 600; font-size: 15px; cursor: pointer; transition: transform 0.12s, background 0.12s, border-color 0.12s; }
 .btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.11); border-color: rgba(255, 255, 255, 0.22); transform: translateY(-1px); }
