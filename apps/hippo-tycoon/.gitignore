@@ -4,3 +4,5 @@ dist
 .wrangler
 .e2e-*
 .alchemy
+native/target
+public/hippo_fluid.wasm

@@ -2,6 +2,8 @@
 
 Four angry, greedy oil-baron hippos around an oil geyser on a jungle island (misty fluted peaks, palms, tiki torches, an abandoned derrick or two), each trying to chomp the most oil the geyser fires into the basin. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode. Built with [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
 
+The oil geyser's gush is a particle fluid simulation written in **Rust** (compiled to WebAssembly) with a TypeScript twin as the fallback; a test holds the two to bit-identical output.
+
 Everything on screen is built in code: the hippos, the stilt lodges, the palms, the mountains, the geyser and the drops are three.js primitives, the textures are drawn on a canvas at startup and the sounds are synthesised. There are no asset files.
 
 ![Four hippos round the oil pan, chomping drops; the purple one in front is yours](docs/gulp.gif)
@@ -24,6 +26,14 @@ Run every command from the folder named in its step.
 ```
 bun run dev            # vite, hot reload: http://localhost:5173
 ```
+
+### The Rust fluid (optional)
+
+```
+bun run build:native   # cargo + the wasm32 target -> public/hippo_fluid.wasm (needs rustup)
+```
+
+Without it the geyser runs the TypeScript twin (same output, a bit slower). The corner of the game says which one is running (`fluid: Rust/wasm`). The wasm is a build output and is not committed.
 
 ### The desktop app (solo, couch, and hosting a LAN game)
 
@@ -99,6 +109,7 @@ sim (rules, 30 Hz) ─▶ engine (Match: seats, phases, bots) ─▶ Driver seam
 src/sim/       the game: pure, deterministic, 30 Hz. No DOM, no clock, no Math.random (a test enforces it)
 src/engine/    platform-free: Match (lobby > countdown > playing > podium, seats, bots), Room (sockets), tick loop, wire
 src/client/    React UI, three.js renderer, input, audio, LocalDriver and NetDriver
+src/client/render/fluid.ts   the geyser's fluid: the TypeScript twin + the wasm loader (native/crates/hippo_fluid is the Rust)
 src/room-do.ts the one World class: the Cloudflare Durable Object and the in-process desktop world
 src/worker.ts  the Cloudflare entry: validates and vouches identity, routes rooms
 ```
@@ -112,7 +123,7 @@ src/worker.ts  the Cloudflare entry: validates and vouches identity, routes room
 ## Tests
 
 ```
-bun test test          # sim, bots, match, wire, room (fake ports), worker, input, and a real LAN party
+bun test test          # sim, bots, match, wire, room (fake ports), worker, input, the fluid (Rust == TypeScript), and a real LAN party
 ```
 
 `test/lan.test.ts` boots the generated Rusty Buns desktop host with this app's world, then plays a round with the host page and two LAN guests on real sockets.

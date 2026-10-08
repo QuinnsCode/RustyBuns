@@ -22,6 +22,7 @@ export function Game({ driver, ctls, muted, onMute, onExit, lobby }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const [frame, setFrame] = useState<Frame | null>(null);
+  const [fluid, setFluid] = useState("");
   const sound = useRef(new Sound());
   const mutedRef = useRef(muted); mutedRef.current = muted;
 
@@ -69,7 +70,7 @@ export function Game({ driver, ctls, muted, onMute, onExit, lobby }: Props) {
       if (f.phase === "lobby" || f.phase === "countdown") { if (lastPhase === "podium") lastCd = -1; }
       lastPhase = f.phase;
       renderer.draw(f, now);
-      if (now - lastUi > 100 || f.phase !== frame?.phase) { lastUi = now; setFrame(f); }
+      if (now - lastUi > 100 || f.phase !== frame?.phase) { lastUi = now; setFrame(f); setFluid(renderer.fluidEngine); }
     };
     raf = requestAnimationFrame(loop);
     return () => {
@@ -88,6 +89,7 @@ export function Game({ driver, ctls, muted, onMute, onExit, lobby }: Props) {
       {frame && frame.phase === "podium" && <Podium frame={frame} canAct={hostIsMe} onRematch={() => driver.command({ t: "rematch" })} onExit={onExit} />}
       {frame && lobby?.(frame)}
       <div className="corner">
+        <span className="pill" title="the oil geyser's fluid simulation">{fluid === "rust" ? "fluid: Rust/wasm" : "fluid: TypeScript"}</span>
         <span className="pill" onClick={() => onMute(!muted)}>{muted ? "Unmute" : "Mute"}</span>
         <span className="pill" onClick={onExit}>Menu</span>
       </div>

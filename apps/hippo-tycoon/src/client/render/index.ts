@@ -5,6 +5,7 @@ import { hippoPoint, lungeAt } from "../../sim/geom.ts";
 import { AXES } from "../../sim/geom.ts";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Arena, at } from "./arena.ts";
+import { loadFluid } from "./fluid.ts";
 import { Post } from "./post.ts";
 import { DropLayer } from "./drops.ts";
 import { Particles, Popups } from "./fx.ts";
@@ -60,7 +61,8 @@ export class Renderer {
     const glow = new THREE.PointLight(0xff9a4a, 22, 26, 1.8);     // the geyser lights the pan from within
     glow.position.set(0, 3.5, 0); this.scene.add(glow);
     const rim = new THREE.DirectionalLight(0x9fd8ff, 0.7); rim.position.set(14, 9, -18); this.scene.add(rim);
-    this.arena = new Arena(this.fx);
+    this.arena = new Arena();
+    void loadFluid().then((f) => this.arena.geyser.setFluid(f));      // the Rust/wasm build if it is there, else the TypeScript twin
     this.scene.add(this.arena.group, this.drops.group, this.fx.points);
     for (let i = 0; i < SEATS; i++) { const r = new HippoRig(i); this.rigs.push(r); this.scene.add(r.group); }
     this.post = new Post(this.gl, this.scene, this.camera, canvas.clientWidth || 800, canvas.clientHeight || 600);
@@ -170,6 +172,9 @@ export class Renderer {
     this.fx.emit(r.group.localToWorld(r.ears.clone()), 0xe8e8e8, 2, 1.8, 0.8, -1.5, 1);           // steam from the ears
     this.fx.emit(r.group.localToWorld(r.mouth.clone()), 0x3a3a3a, 2, 1.4, 0.9, -1, 1);           // smoke from the cough
   }
+
+  /** Which engine runs the geyser's fluid: "rust" or "ts". */
+  get fluidEngine() { return this.arena.geyser.engine; }
 
   dispose() { this.gl.dispose(); }
 }

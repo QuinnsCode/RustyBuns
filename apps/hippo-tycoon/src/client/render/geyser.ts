@@ -1,50 +1,82 @@
-// The oil geyser: a glossy black column that surges every time a drop is
-// fired, throws spray, and steams. Drops are launched from its top (DropLayer
-// lofts them in an arc), so the pan visibly drinks from this vent.
+// The oil geyser: a low lava-rock vent with an oil-filled crater, and a gush of
+// droplets from a particle fluid (Rust/wasm, or its TypeScript twin) that fans
+// out, falls and splashes into the basin. It surges every time a drop is fired
+// (DropLayer lofts the drop out of the vent in an arc), so the basin visibly
+// drinks from it. Nothing here touches the game's rules.
 import * as THREE from "three";
 import { GOLD } from "../../sim/rules.ts";
-import type { Particles } from "./fx.ts";
+import { CAP, FluidTS, STRIDE, type Fluid } from "./fluid.ts";
 import { Smoke } from "./industry.ts";
 
-const OIL = new THREE.MeshPhysicalMaterial({ color: 0x060504, metalness: 0.3, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.04, transparent: true, opacity: 0.94 });
+const STEP = 1 / 60;                                   // the fluid runs at its own fixed rate
+const OIL = new THREE.MeshPhysicalMaterial({ color: 0x060504, metalness: 0.3, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.04 });
+const DROPLET = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.1, clearcoat: 1, clearcoatRoughness: 0.05 });
+const OIL_COLOR = new THREE.Color(0.035, 0.028, 0.02), GOLD_COLOR = new THREE.Color(1, 0.72, 0.16);
 
 export class Geyser {
   readonly group = new THREE.Group();
-  private column: THREE.Mesh;
-  private cap: THREE.Mesh;
+  private fluid: Fluid = new FluidTS(1);
+  private drops: THREE.InstancedMesh;
   private surge = 0;
+  private goldFor = 0;
+  private acc = 0;
+  private emitAcc = 0;
   private steam: Smoke;
+  private m = new THREE.Matrix4();
 
-  constructor(private fx: Particles) {
+  constructor() {
     const g = this.group, rock = new THREE.MeshStandardMaterial({ color: 0x3a3a34, roughness: 0.95, flatShading: true });
-    // a lava-rock mound with a crater, and the oil that has pooled round it
-    const pool = new THREE.Mesh(new THREE.CircleGeometry(2.1, 36), OIL); pool.rotation.x = -Math.PI / 2; pool.position.y = 0.02; g.add(pool);
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * Math.PI * 2, s = 0.5 + (i % 3) * 0.12;
+    // a broad, low lava-rock mound with a crater full of oil, and the pool that has spilled round it
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(2.6, 40), OIL); pool.rotation.x = -Math.PI / 2; pool.position.y = 0.02; g.add(pool);
+    const mound = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.9, 0.85, 18, 2, true), rock); mound.position.y = 0.42; mound.castShadow = true; g.add(mound);
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2, s = 0.34 + (i % 3) * 0.1;
       const r = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 1), rock);
-      r.position.set(Math.cos(a) * 0.95, 0.28 + (i % 2) * 0.1, Math.sin(a) * 0.95); r.scale.set(1, 0.7, 1); r.rotation.set(i, i * 2, 0); r.castShadow = true; g.add(r);
+      r.position.set(Math.cos(a) * (1.25 + (i % 2) * 0.35), 0.2 + (i % 2) * 0.28, Math.sin(a) * (1.25 + (i % 2) * 0.35)); r.scale.set(1, 0.7, 1); r.rotation.set(i, i * 2, 0); r.castShadow = true; g.add(r);
     }
-    this.column = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.92, 1, 24, 14, true), OIL);
-    this.column.castShadow = true; g.add(this.column);
-    this.cap = new THREE.Mesh(new THREE.SphereGeometry(0.7, 20, 14), OIL); g.add(this.cap);
-    this.steam = new Smoke([{ at: new THREE.Vector3(0, 4.4, 0), rate: 0.9, size: 3, tint: 0xe4efe8 }], 8, 7, 0.22);
+    const crater = new THREE.Mesh(new THREE.CircleGeometry(0.98, 28), OIL); crater.rotation.x = -Math.PI / 2; crater.position.y = 0.84; g.add(crater);
+
+    this.drops = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), DROPLET, CAP);
+    this.drops.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.drops.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 3), 3);
+    this.drops.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    this.drops.frustumCulled = false; this.drops.castShadow = true; this.drops.count = 0;
+    g.add(this.drops);
+
+    this.steam = new Smoke([{ at: new THREE.Vector3(0, 1.4, 0), rate: 0.8, size: 2.6, tint: 0xe4efe8 }], 6, 6, 0.14);
     g.add(this.steam.group);
   }
 
-  /** A drop was fired: surge the column and throw spray (gold throws a golden one). */
+  /** Swap in the Rust build once it has loaded (or keep the TypeScript twin). */
+  setFluid(f: Fluid) { this.fluid = f; }
+  get engine() { return this.fluid.engine; }
+
+  /** A drop was fired: the vent surges (gold surges gold). */
   erupt(kind: number) {
     this.surge = Math.min(1.4, this.surge + (kind === GOLD ? 1 : 0.7));
-    const top = new THREE.Vector3(0, 3.2 + this.surge * 2.2, 0);
-    this.fx.emit(top, kind === GOLD ? 0xffc933 : 0xb07a30, kind === GOLD ? 40 : 26, 3.4, 1.0, 9, 2.7);   // oil spray catching the low sun
-    if (kind !== GOLD) this.fx.emit(top, 0xe0b060, 8, 3, 0.8, 9, 2.4);
+    if (kind === GOLD) this.goldFor = 0.45;
   }
 
-  update(t: number, dt: number) {
-    this.surge *= Math.pow(0.04, dt);                      // settles in about a second
-    const h = 2.6 + this.surge * 3.2 + Math.sin(t * 3.1) * 0.2 + Math.sin(t * 7.3) * 0.08;
-    this.column.scale.set(1 + Math.sin(t * 19) * 0.05 * this.surge, h, 1 + Math.cos(t * 17) * 0.05 * this.surge);
-    this.column.position.y = h / 2;
-    this.cap.position.y = h + 0.1; this.cap.scale.set(1.15 + this.surge * 0.3, 1 + this.surge * 0.35, 1.15 + this.surge * 0.3);   // the head of the gush
+  update(_t: number, dt: number) {
+    this.surge *= Math.pow(0.04, dt);                       // settles in about a second
+    this.goldFor = Math.max(0, this.goldFor - dt);
+    this.acc += Math.min(dt, 0.1);
+    while (this.acc >= STEP) {
+      this.acc -= STEP;
+      this.emitAcc += 0.4 + this.surge * 4.2;               // a steady bubble, and a gush on every shot
+      const emit = Math.floor(this.emitAcc); this.emitAcc -= emit;
+      this.fluid.step(STEP, emit, 4.2 + this.surge * 4.6, this.goldFor > 0 ? 1 : 0);
+    }
+    const n = this.fluid.count, o = this.fluid.out, ic = this.drops.instanceColor!.array as Float32Array, im = this.drops.instanceMatrix.array as Float32Array;
+    for (let k = 0; k < n; k++) {
+      const s = o[k * STRIDE + 3]! * 2.3;            // drawn fatter than simulated: oil, not mist
+      this.m.makeScale(s, s, s).setPosition(o[k * STRIDE]!, o[k * STRIDE + 1]!, -o[k * STRIDE + 2]!);
+      this.m.toArray(im, k * 16);
+      const c = o[k * STRIDE + 4]! > 0.5 ? GOLD_COLOR : OIL_COLOR;
+      ic[k * 3] = c.r; ic[k * 3 + 1] = c.g; ic[k * 3 + 2] = c.b;
+    }
+    this.drops.count = n;
+    this.drops.instanceMatrix.needsUpdate = true; this.drops.instanceColor!.needsUpdate = true;
     this.steam.update(dt, 0.3);
   }
 }
