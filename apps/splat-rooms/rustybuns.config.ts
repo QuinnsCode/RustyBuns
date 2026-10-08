@@ -23,9 +23,6 @@ export default defineConfig({
       "clientDir": "dist/desktop",
       "world": "packages/desktop/world.ts",
       "worldPath": "/ws",
-      "targets": [
-        "linux-x64"
-      ],
       "window": "app",
       // Scene folders live on the user's disk, so this mount is read where it
       // is and never embedded in the binary. Override with SPLAT_ROOMS_DIR.

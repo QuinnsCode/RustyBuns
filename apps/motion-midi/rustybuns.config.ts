@@ -23,9 +23,6 @@ export default defineConfig({
       "clientDir": "dist/desktop",
       "world": "packages/desktop/world.ts",
       "worldPath": "/ws",
-      "targets": [
-        "linux-x64"
-      ],
       "window": "app"
     }
   },
