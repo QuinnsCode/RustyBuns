@@ -91,6 +91,8 @@
         "react-dom": "19.2.8",
       },
       "devDependencies": {
+        "@types/react": "19",
+        "@types/react-dom": "19",
         "vite": "^6.2.6",
       },
     },
@@ -151,6 +153,8 @@
         "react-dom": "19.2.8",
       },
       "devDependencies": {
+        "@types/react": "19",
+        "@types/react-dom": "19",
         "vite": "^6.2.6",
       },
     },
