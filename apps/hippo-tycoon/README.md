@@ -4,6 +4,8 @@ Four angry, greedy oil-baron hippos around a riveted iron pan, each trying to ch
 
 Everything on screen is built in code: the hippos, the brick counting-houses, the drops are three.js primitives, the textures are drawn on a canvas at startup and the sounds are synthesised. There are no asset files.
 
+![Four hippos round the oil pan, chomping drops; the purple one in front is yours](docs/gulp.gif)
+
 ## Run it
 
 Run every command from the folder named in its step.
@@ -34,6 +36,8 @@ The build type-checks the app first (`--check`; Bun 1.4.2 has no `bun check`, so
 
 ### A LAN party
 
+![The LAN lobby: the host's address and port, the join code, and four seats, three of them bots](docs/lobby.png)
+
 1. On one machine, launch the desktop app and choose **Host a LAN game**. The lobby shows `address:port` and a **join code**.
 2. On the others, launch their own copy of the app (or open the dev server on `http://`) and choose **Join a LAN game**. Enter the address and the code.
 3. The host picks bots and round length and presses **Start round**. Empty seats are bots; a player who leaves hands their seat to a bot, keeping the score.
@@ -56,6 +60,10 @@ Deploying is yours to run: `bunx rustybuns plan` (creates nothing), then `bunx r
 
 ## Play
 
+| Menu | A round |
+|---|---|
+| ![The menu: Solo, Couch, Host and Join a LAN game, your name, bot difficulty and round length](docs/menu.png) | ![A round in progress: the net-worth HUD, 15 seconds left, drops on the pan](docs/round.png) |
+
 | | Slide | Chomp | Bellow (ready) |
 |---|---|---|---|
 | Player 1 | <kbd>A</kbd> / <kbd>D</kbd> | <kbd>W</kbd> or <kbd>Space</kbd> | <kbd>Q</kbd> |
@@ -75,7 +83,17 @@ Solo accepts both keyboard layouts. In **Couch**, pick who sits where; a gamepad
 
 A gold drop nobody eats for 6 s splatters into a slick that makes nearby drops skate faster. A round is 30, 60 or 90 seconds; the drip rate ramps up and the last 10 seconds are **Overflow** (twice the drips, more gold, more bolts). The richest hippo wins; ties share. Every number is in `src/sim/rules.ts`.
 
+| Overflow, then the podium | The podium |
+|---|---|
+| ![The last seconds of Overflow end on the RICHEST HIPPO podium](docs/finale.gif) | ![The podium: final net worth, the winner crowned, Rematch and Menu](docs/podium.png) |
+
 ## How it is built
+
+```
+sim (rules, 30 Hz) ─▶ engine (Match: seats, phases, bots) ─▶ Driver seam ─┬─ LocalDriver: solo and couch, the Match runs in the page
+                                                                          └─ NetDriver ──ws──▶ World (room-do.ts) ─┬─ Cloudflare: one Durable Object per room
+                                                                                                                   └─ desktop binary: the same class in-process; the LAN host
+```
 
 ```
 src/sim/       the game: pure, deterministic, 30 Hz. No DOM, no clock, no Math.random (a test enforces it)
