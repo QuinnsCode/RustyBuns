@@ -296,7 +296,7 @@ The host's page opens and closes the world at runtime, so there is no rebuild be
 await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ listen: { hostname: "0.0.0.0" }, join: "orange-kettle" }) });
 // "Stop hosting"
 await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) });
-// Who is here: `/__rb/info` has listen, sockets, and guests { open, connected, max, version }
+// Who is here: `/__rb/info` has listen, lan (this machine's addresses, to show friends), sockets, and guests { open, connected, max, version }
 ```
 
 A guest connects to the host's address with the join query; `worldSocket` from `@rustybuns/shell-bun/client` builds it:
@@ -341,6 +341,7 @@ apps/                example apps, see EXAMPLES.md
 | [splat-rooms](apps/splat-rooms/README.md) | a splat hunting game with a Durable Object world and a mount read from your disk |
 | [motion-midi](apps/motion-midi/README.md) | one synth written in Rust and in TypeScript, checked sample by sample |
 | [fm-daw](apps/fm-daw/README.md) | an FM groovebox: live Rust (wasm) or TS engine in an AudioWorklet, QWERTY + MIDI recording, a world that saves your groove |
+| [hippo-tycoon](apps/hippo-tycoon/README.md) | four angry oil-baron hippos in a Victorian oil pan: solo, couch, LAN party (`guests`) and online rooms, one World class on Cloudflare and in the binary |
 | [auto-rig](apps/auto-rig/README.md) | drop in a 3D model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical output |
 | [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain, campers vs park rangers, vs AI or on a LAN: one game run by the page or by the world, each player sent only what they can see |
 | [spa-example](apps/spa-example) | an RWSDK app with D1, KV and a world DO, all on sqlite |

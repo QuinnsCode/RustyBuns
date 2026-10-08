@@ -60,6 +60,7 @@ pnpm exec alchemy profile edit --profile default --add Cloudflare
 
 `add deploy` installs the pinned alchemy + effect set and writes package manager overrides
 so transitive `@effect/*` versions cannot drift (Effect is rc; carets break within days).
+In a monorepo the overrides go in the **workspace root's** `package.json`: Bun, npm and yarn ignore them in a member.
 Effect is what makes the deploy typed: the config, the generated stack and each provider are checked
 by the compiler before anything is created. You don't write any Effect yourself unless you `eject`.
 

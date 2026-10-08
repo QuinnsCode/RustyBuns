@@ -1,9 +1,10 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inferTsconfigAliases, detectPm } from "../src/glue/infer.ts";
 import { parseWranglerToml, droppedWranglerKeys } from "../src/wrangler.ts";
+import { workspaceRoot } from "../src/glue/deploy-deps.ts";
 
 const CLI = new URL("../src/index.ts", import.meta.url).pathname;
 
@@ -126,4 +127,24 @@ test("package manager: lockfiles, then packageManager field", () => {
 test("wrangler toml parse and dropped keys", () => {
   const w = parseWranglerToml('name = "x"\n[ai]\nbinding = "AI"\n[triggers]\ncrons = ["* * * * *"]\n');
   expect(droppedWranglerKeys(w)).toEqual(["ai", "triggers"]);
+});
+
+test("add deploy writes overrides at the workspace root, where bun reads them", () => {
+  const root = mkdtempSync(join(tmpdir(), "rb-ws-"));
+  try {
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "mono", workspaces: ["packages/*", "apps/*"] }));
+    for (const d of ["apps/web", "packages/lib", "tools/script"]) { mkdirSync(join(root, d), { recursive: true }); writeFileSync(join(root, d, "package.json"), "{}"); }
+    expect(workspaceRoot(join(root, "apps/web"))).toBe(root);
+    expect(workspaceRoot(join(root, "packages/lib"))).toBe(root);
+    expect(workspaceRoot(join(root, "tools/script"))).toBeNull();      // not a listed member
+    expect(workspaceRoot(root)).toBeNull();                                // the root itself is not a member
+    // yarn's object form, and a negated pattern
+    writeFileSync(join(root, "package.json"), JSON.stringify({ workspaces: { packages: ["apps/*"] } }));
+    expect(workspaceRoot(join(root, "apps/web"))).toBe(root);
+    // a lone project has no workspace
+    const lone = mkdtempSync(join(tmpdir(), "rb-lone-"));
+    writeFileSync(join(lone, "package.json"), JSON.stringify({ name: "solo" }));
+    expect(workspaceRoot(lone)).toBeNull();
+    rmSync(lone, { recursive: true, force: true });
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

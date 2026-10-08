@@ -19,5 +19,12 @@
   "license": "Apache-2.0",
   "dependencies": {
     "playcanvas": "^2.22.2"
+  },
+  "overrides": {
+    "effect": "4.0.0-rc.112",
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.112"
   }
 }

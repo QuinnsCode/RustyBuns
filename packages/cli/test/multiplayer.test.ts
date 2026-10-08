@@ -21,7 +21,7 @@ export default class World {
     server.send(JSON.stringify({ id: req.headers.get("X-User-Id"), name: req.headers.get("X-User-Name"), principal: req.headers.get("X-RB-Principal"), slug: req.headers.get("X-World-Slug") }));
     return new Response(null, { status: 101, webSocket: client });
   }
-  webSocketMessage(ws: any, m: any) { ws.send("echo:" + m); }
+  webSocketMessage(ws: any, m: any) { if (m === "bye") ws.close(4000, "bye"); else ws.send("echo:" + m); }
 }`);
   writeFileSync(join(root, ".rustybuns/actions.ts"), `export const actions: Record<string, Record<string, Function>> = { m: { f: async () => 42 } };`);
   const entry = spaEntry({ name: "e2e", bindings: {}, targets: { desktop: { mode: "spa", clientDir: "dist/ui", dataDir: join(root, "data"), guests: { max: 2, version: "v1" } } } } as any);
@@ -53,6 +53,9 @@ test("generated host: host identity by cookie, guests by passphrase with their o
     let i = await info();
     expect(i.listen).toEqual({ hostname: "127.0.0.1", port: Number(new URL(url).port) });
     expect(i.guests).toEqual({ open: false, connected: 0, max: 2, version: "v1" });
+    // the host page needs an address to show its friends; the browser cannot find its own LAN IP
+    expect(Array.isArray(i.lan)).toBe(true);
+    for (const ip of i.lan) expect(ip).toMatch(/^\d{1,3}(\.\d{1,3}){3}$/);
 
     // the host's socket: local identity, and ?uid= cannot override it
     const h = await connect(`${url}/ws?uid=evil&name=Evil`, { cookie });
@@ -104,5 +107,22 @@ test("generated host: --listen and --join at launch", async () => {
     expect(new URL(url).hostname).toBe("0.0.0.0");
     const g = await connect(`http://127.0.0.1:${new URL(url).port}/ws?join=fromenv&uid=g1&v=v1`);
     expect("hello" in g && g.hello.id).toBe("g1");
+  } finally { p.kill(); }
+});
+
+test("generated host: a guest the world closes frees exactly one slot", async () => {
+  const { p, url } = await launch({ RB_JOIN: "pw" }, ["--listen", "127.0.0.1:0"]);
+  try {
+    const a = await connect(`${url}/ws?join=pw&uid=a&v=v1`), b = await connect(`${url}/ws?join=pw&uid=b&v=v1`);
+    expect("hello" in a && "hello" in b).toBe(true);
+    const closed = new Promise<{ code: number }>((res) => ((b as any).ws.onclose = (e: any) => res({ code: e.code })));
+    (b as any).ws.send("bye");                        // the world closes b itself, with its own code
+    expect((await closed).code).toBe(4000);           // and the code reaches the guest
+    await Bun.sleep(50);
+    // two more guests fit: a still holds one of the two slots. A double decrement would have let a third in.
+    const c = await connect(`${url}/ws?join=pw&uid=c&v=v1`);
+    expect("hello" in c).toBe(true);
+    const status = async (q: string) => (await fetch(`${url}/ws?${q}`, { headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "x", "sec-websocket-version": "13" } })).status;
+    expect(await status("join=pw&uid=d&v=v1")).toBe(503);   // full: a and c
   } finally { p.kill(); }
 });
