@@ -35,6 +35,7 @@ export function Menu({ settings, onSettings, onSolo, onCouch, extra }: MenuProps
           {extra}
           <div className="row"><label htmlFor="menu-name">Your name</label><input id="menu-name" className="text" style={{ width: 200 }} maxLength={32} value={settings.name} placeholder="Tycoon" onChange={(e) => onSettings({ ...settings, name: e.target.value })} /></div>
           <div className="row"><label id="menu-bots">Bots</label><Seg<Difficulty> labelledBy="menu-bots" value={settings.difficulty} options={DIFFICULTIES} onChange={(difficulty) => onSettings({ ...settings, difficulty })} /></div>
+          <div className="row"><label id="menu-players">Here (LAN/online)</label><Seg<1 | 2> labelledBy="menu-players" value={settings.players} options={[1, 2]} label={(n) => (n === 1 ? "1 player" : "2 players")} onChange={(players) => onSettings({ ...settings, players })} /></div>
           <div className="row"><label id="menu-round">Round</label><Seg<number> labelledBy="menu-round" value={settings.secs} options={ROUND_SECS} label={(s) => `${s}s`} onChange={(secs) => onSettings({ ...settings, secs })} /></div>
           <div className="row">
             <button className="btn" style={{ flex: 1 }} onClick={() => setOptions(true)}>Options</button>

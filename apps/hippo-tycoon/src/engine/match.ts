@@ -9,8 +9,21 @@ import { newState, step } from "../sim/step.ts";
 import { NO_INPUT, type Event, type Hippo, type Input, type State } from "../sim/types.ts";
 
 export type Phase = "lobby" | "countdown" | "playing" | "podium";
-export interface Cfg { secs: number; difficulty: Difficulty }
-export const DEFAULT_CFG: Cfg = { secs: DEFAULT_ROUND_SECS, difficulty: "normal" };
+export interface Cfg {
+  secs: number;
+  /** The last "all bots" choice. Setting it sets every seat's bot. */
+  difficulty: Difficulty;
+  /** Per seat: how the bot plays when one drives that seat. */
+  bots: Difficulty[];
+}
+export const DEFAULT_CFG: Readonly<Cfg> = Object.freeze({ secs: DEFAULT_ROUND_SECS, difficulty: "normal", bots: Object.freeze(Array<Difficulty>(SEATS).fill("normal")) as Difficulty[] });
+
+/** Merge a partial config; a `difficulty` without `bots` sets every seat's bot. */
+export function mergeCfg(base: Cfg, c: Partial<Cfg>): Cfg {
+  const difficulty = c.difficulty ?? base.difficulty;
+  const bots = Array.from({ length: SEATS }, (_, i) => c.bots?.[i] ?? (c.difficulty !== undefined ? c.difficulty : base.bots[i] ?? difficulty));
+  return { secs: c.secs ?? base.secs, difficulty, bots };
+}
 
 export interface Seat {
   /** null = a bot drives. */
@@ -41,6 +54,8 @@ export interface Persisted {
   phase: Phase; cfg: Cfg; round: number; baseSeed: number;
   seats: { uid: string | null; name: string }[];
   scores: number[];
+  /** Per seat: the human who last left it, so they get it back. */
+  away?: (string | null)[];
 }
 
 /** A latched control: move holds, gulp and bellow are edges consumed by one tick. */
@@ -59,9 +74,11 @@ export class Match {
   private mem: BotMem[] = [];
   private botRng: { rng: number }[] = [];
   private pending: Event[] = [];
+  /** Per seat: the uid of the human who last left it. Their seat to come back to while a bot holds it. */
+  private away: (string | null)[] = Array(SEATS).fill(null);
 
   constructor(public baseSeed: number, cfg: Partial<Cfg> = {}) {
-    this.cfg = { ...DEFAULT_CFG, ...cfg };
+    this.cfg = mergeCfg(DEFAULT_CFG, cfg);
     this.seats = Array.from({ length: SEATS }, (_, i) => ({ uid: null, name: SEAT_NAMES[i]!, ready: false }));
     this.sim = newState(mixSeed(baseSeed, 0), this.cfg.secs);
     this.resetBots();
@@ -73,13 +90,21 @@ export class Match {
   /** The first human in seat order owns the room's settings and Start. */
   hostSeat(): number { return this.seats.findIndex((s) => s.uid !== null); }
 
-  /** Take a seat (a bot's, at any time). `prefer` is honoured when a bot holds it. Returns -1 if full. */
+  /**
+   * Take a seat (a bot's, at any time): `prefer` if free; else, for a human
+   * coming back, the seat they left if a bot still holds it; else the first
+   * free seat nobody is coming back to, then any free seat. -1 if full.
+   */
   join(uid: string, name: string, prefer?: number): number {
     const have = this.seatOf(uid);
     if (have >= 0) { this.seats[have]!.name = name; return have; }
     const free = (i: number) => this.seats[i]!.uid === null;
-    let seat = prefer !== undefined && prefer >= 0 && prefer < SEATS && free(prefer) ? prefer : this.seats.findIndex((_, i) => free(i));
+    const back = this.away.indexOf(uid);
+    const seat = prefer !== undefined && prefer >= 0 && prefer < SEATS && free(prefer) ? prefer
+      : back >= 0 && free(back) ? back
+      : [...this.seats.keys()].find((i) => free(i) && this.away[i] === null) ?? this.seats.findIndex((_, i) => free(i));
     if (seat < 0) return -1;
+    this.claim(seat, uid);
     this.seats[seat] = { uid, name, ready: false };
     this.mem[seat] = newBotMem();
     this.latch[seat] = { move: 0, gulp: false, bellow: false };
@@ -90,6 +115,8 @@ export class Match {
   leave(uid: string): number {
     const seat = this.seatOf(uid);
     if (seat < 0) return -1;
+    this.claim(-1, uid);
+    this.away[seat] = uid;
     this.seats[seat] = { uid: null, name: SEAT_NAMES[seat]!, ready: false };
     this.mem[seat] = newBotMem();
     this.latch[seat] = { move: 0, gulp: false, bellow: false };
@@ -101,14 +128,23 @@ export class Match {
   moveSeat(uid: string, to: number): boolean {
     const from = this.seatOf(uid);
     if (this.phase !== "lobby" || from < 0 || to < 0 || to >= SEATS || this.seats[to]!.uid !== null) return false;
+    this.claim(to, uid);
     this.seats[to] = { ...this.seats[from]!, ready: false };
     this.seats[from] = { uid: null, name: SEAT_NAMES[from]!, ready: false };
     return true;
   }
 
+  /** Who is coming back to which seat (null = nobody). */
+  awayFrom(): readonly (string | null)[] { return this.away; }
+
+  /** `uid` holds `seat` now (or no seat, -1): forget their old seat, and whoever was coming back to this one. */
+  private claim(seat: number, uid: string) {
+    this.away = this.away.map((u, i) => (u === uid || i === seat ? null : u));
+  }
+
   setCfg(c: Partial<Cfg>) {
     if (this.phase !== "lobby") return;
-    this.cfg = { ...this.cfg, ...c };
+    this.cfg = mergeCfg(this.cfg, c);
     this.sim = newState(mixSeed(this.baseSeed, this.round), this.cfg.secs);
   }
 
@@ -161,7 +197,7 @@ export class Match {
       const inputs: Input[] = [];
       for (let i = 0; i < SEATS; i++) {
         const l = this.latch[i]!;
-        if (this.seats[i]!.uid === null) inputs.push(bot(this.sim, i, PERSONALITIES[this.cfg.difficulty], this.mem[i]!, this.botRng[i]!));
+        if (this.seats[i]!.uid === null) inputs.push(bot(this.sim, i, PERSONALITIES[this.cfg.bots[i] ?? this.cfg.difficulty], this.mem[i]!, this.botRng[i]!));
         else inputs.push({ move: l.move, gulp: l.gulp, bellow: l.bellow });
       }
       evs = step(this.sim, inputs);
@@ -196,17 +232,19 @@ export class Match {
 
   persisted(): Persisted {
     return { phase: this.phase, cfg: this.cfg, round: this.round, baseSeed: this.baseSeed,
-      seats: this.seats.map((s) => ({ uid: s.uid, name: s.name })), scores: this.sim.hippos.map((h) => h.score) };
+      seats: this.seats.map((s) => ({ uid: s.uid, name: s.name })), scores: this.sim.hippos.map((h) => h.score), away: [...this.away] };
   }
 
   /**
    * Restore after an eviction. The sim is not replayed: a round that was
    * running starts over from its countdown (same seed, scores reset); a
    * lobby or podium comes back as it was. Seats are reclaimed by the room
-   * from live sockets, so a human who is gone becomes a bot.
+   * from live sockets, so a human who is gone becomes a bot; every human who
+   * held a seat is owed it back (see join).
    */
   restore(p: Persisted) {
-    this.baseSeed = p.baseSeed; this.cfg = { ...DEFAULT_CFG, ...p.cfg }; this.round = p.round;
+    this.baseSeed = p.baseSeed; this.cfg = mergeCfg(mergeCfg(DEFAULT_CFG, { difficulty: p.cfg?.difficulty }), { secs: p.cfg?.secs, bots: p.cfg?.bots }); this.round = p.round;
+    this.away = Array.from({ length: SEATS }, (_, i) => p.seats[i]?.uid ?? p.away?.[i] ?? null);
     this.sim = newState(mixSeed(p.baseSeed, p.round), this.cfg.secs);
     this.resetBots();
     if (p.phase === "podium") { this.phase = "podium"; p.scores.forEach((sc, i) => { this.sim.hippos[i]!.score = sc; }); this.sim.over = true; }

@@ -1,7 +1,7 @@
 // The world socket: backoff reconnects, the version handshake, a ping for the
 // HUD, and a clean close when the page goes away. It speaks messages, not
 // frames; NetDriver turns those into something to draw.
-import { CLOSE_FULL, CLOSE_REPLACED, CLOSE_VERSION, PROTO_VERSION, decodeServer, type ClientMsg, type ServerMsg } from "../engine/wire.ts";
+import { CLOSE_FLOOD, CLOSE_FULL, CLOSE_REPLACED, CLOSE_VERSION, PROTO_VERSION, decodeServer, type ClientMsg, type ServerMsg } from "../engine/wire.ts";
 
 export type NetState = "connecting" | "online" | "offline" | "refused";
 
@@ -14,7 +14,7 @@ export interface NetEvents {
 }
 
 /** Codes that mean "do not try again": the server told us why. */
-const FINAL = new Set([CLOSE_VERSION, CLOSE_REPLACED, CLOSE_FULL]);
+const FINAL = new Set([CLOSE_VERSION, CLOSE_REPLACED, CLOSE_FULL, CLOSE_FLOOD]);
 
 export class NetSocket {
   private ws: WebSocket | null = null;
@@ -26,8 +26,11 @@ export class NetSocket {
   private pingN = 0;
   private lastErr = "";
 
-  /** `open` builds a fresh WebSocket each time (the URL carries identity and the join code). */
-  constructor(private open: () => WebSocket, private ev: NetEvents) {
+  /**
+   * `open` builds a fresh WebSocket each time (the URL carries identity and the join code).
+   * `players`: how many seats this machine asks for (couch players on one socket).
+   */
+  constructor(private open: () => WebSocket, private ev: NetEvents, private players = 1) {
     this.connect();
     window.addEventListener("pagehide", this.leave);
   }
@@ -41,7 +44,7 @@ export class NetSocket {
     this.ws = ws;
     ws.onopen = () => {
       this.tries = 0; this.lastErr = "";
-      ws.send(JSON.stringify({ t: "hello", v: PROTO_VERSION }));
+      ws.send(JSON.stringify(this.players > 1 ? { t: "hello", v: PROTO_VERSION, k: this.players } : { t: "hello", v: PROTO_VERSION }));
       this.ev.onState("online");
       this.ev.onOpen();
       this.pinger = setInterval(() => this.ping(), 2000);

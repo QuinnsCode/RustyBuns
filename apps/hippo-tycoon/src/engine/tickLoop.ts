@@ -26,6 +26,8 @@ export class TickLoop {
   constructor(private clock: Clock, private cb: TickCallbacks) {}
 
   get active() { return this.running; }
+  /** Clock time of the last wake (or the start): a watchdog compares it with now. */
+  get lastBeat() { return this.last; }
 
   start() {
     if (this.running) return;

@@ -6,6 +6,40 @@ import { CLIFF, type Zone } from "../zones/zone.ts";
 export type Role = "camper" | "ranger";
 export type TimeOfDay = "day" | "dusk" | "night";
 
+/**
+ * The conditions a round is played in: the lobby's pick, or the park's live
+ * weather (see weather.ts). fog, rain and wind run 0..1.
+ */
+export interface Sky {
+  tod: TimeOfDay;
+  fog: number;
+  rain: number;
+  wind: number;
+  /** Heavy cloud: a darker day, and a night with no moon or stars. */
+  overcast: boolean;
+  /** The rain is snow (it falls differently; it hushes steps the same). */
+  snow: boolean;
+}
+
+export const clearSky = (tod: TimeOfDay): Sky => ({ tod, fog: 0, rain: 0, wind: 0, overcast: false, snow: false });
+
+export const WEATHER = {
+  /** Dense fog cuts sight by this fraction, and a flashlight's reach by the second. */
+  fogSight: 0.6,
+  fogTorch: 0.45,
+  /** An overcast night is this much darker than a moonlit one. */
+  moonless: 0.7,
+  /** Heavy rain cuts how far footsteps carry by this fraction. */
+  rainHush: 0.55,
+  /** A gale makes rustles and steps this much harder to place (jitter x (1 + this)). */
+  windJitter: 1.5,
+};
+
+/** How far footsteps carry through the rain. */
+export const stepReach = (sky: Sky, reach: number) => reach * (1 - WEATHER.rainHush * sky.rain);
+/** How roughly a sound can be placed in the wind. */
+export const soundJitter = (sky: Sky, j: number) => j * (1 + WEATHER.windJitter * sky.wind);
+
 export const MOVE = {
   camper: { walk: 3.2, run: 6.0, crouch: 1.4 },
   // Rangers are faster: a camper who's been spotted in the open should be caught.
@@ -97,14 +131,23 @@ export const SIGHT = {
   crouchFactor: 0.6,
 };
 
-/** Can `a` see `b`? Range from the light, then line of sight past terrain and props. */
-export function canSee(z: Zone, tod: TimeOfDay, a: Seer, b: Seen): boolean {
+/** How far you can see in the open, and how far a flashlight reaches. */
+export function sightRange(sky: Sky): { open: number; torch: number } {
+  let open: number = SIGHT.range[sky.tod];
+  if (sky.tod === "night" && sky.overcast) open *= WEATHER.moonless;
+  return { open: open * (1 - WEATHER.fogSight * sky.fog), torch: SIGHT.torch.range * (1 - WEATHER.fogTorch * sky.fog) };
+}
+
+/** Can `a` see `b`? Range from the light and the weather, then line of sight past terrain and props. */
+export function canSee(z: Zone, sky: Sky | TimeOfDay, a: Seer, b: Seen): boolean {
+  const s = typeof sky === "string" ? clearSky(sky) : sky;
   const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
-  let range: number = SIGHT.range[tod];
+  const reach = sightRange(s);
+  let range = reach.open;
   let lit = false;
-  if (a.light && tod !== "day" && d < SIGHT.torch.range) {
+  if (a.light && s.tod !== "day" && d < reach.torch) {
     const ang = Math.abs(wrap(Math.atan2(dx, dy) - a.yaw));
-    if (ang < SIGHT.torch.halfAngle) { range = Math.max(range, SIGHT.torch.range); lit = true; }
+    if (ang < SIGHT.torch.halfAngle) { range = Math.max(range, reach.torch); lit = true; }
   }
   if (b.crouch) {
     const bush = z.bushAt(b.x, b.y);

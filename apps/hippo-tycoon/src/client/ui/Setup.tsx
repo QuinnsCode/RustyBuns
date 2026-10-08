@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { SEAT_NAMES, SEATS } from "../../sim/rules.ts";
+import { DIFFICULTIES, SEAT_NAMES, SEATS, type Difficulty } from "../../sim/rules.ts";
 import { CTL_LABEL, type Ctl } from "../input.ts";
 
 const OPTIONS: Ctl[] = ["bot", "kb1", "kb2", "pad0", "pad1", "pad2", "pad3"];
 
-/** Couch seat picker: each seat takes a controller or a bot. */
-export function Setup({ onStart, onBack }: { onStart: (ctls: Ctl[]) => void; onBack: () => void }) {
+/** Couch seat picker: each seat takes a controller or a bot, and each bot its own difficulty. */
+export function Setup({ onStart, onBack, difficulty }: { onStart: (ctls: Ctl[], bots: Difficulty[]) => void; onBack: () => void; difficulty: Difficulty }) {
   const [seats, setSeats] = useState<Ctl[]>(["kb1", "kb2", "bot", "bot"]);
+  const [bots, setBots] = useState<Difficulty[]>(() => Array<Difficulty>(SEATS).fill(difficulty));
+  const cycleBot = (seat: number) => setBots((b) => b.map((d, i) => (i === seat ? DIFFICULTIES[(DIFFICULTIES.indexOf(d) + 1) % DIFFICULTIES.length]! : d)));
   const [pads, setPads] = useState<boolean[]>([false, false, false, false]);
 
   // a gamepad "joins" when it first shows up or any of its buttons is pressed
@@ -40,14 +42,15 @@ export function Setup({ onStart, onBack }: { onStart: (ctls: Ctl[]) => void; onB
           {Array.from({ length: SEATS }, (_, i) => (
             <div key={i} className={"seat" + (seats[i] !== "bot" ? " mine" : "")}>
               <b id={`seat-${i}`}>{SEAT_NAMES[i]}</b>
-              <span className="who" id={`seat-${i}-who`}>{seats[i] === "bot" ? "Bot" : `Player · ${CTL_LABEL[seats[i]!]}`}</span>
+              <span className="who" id={`seat-${i}-who`}>{seats[i] === "bot" ? `Bot · ${bots[i]}` : `Player · ${CTL_LABEL[seats[i]!]}`}</span>
               <button className="btn" onClick={() => cycle(i)} aria-describedby={`seat-${i}-who`} aria-label={`Change who plays ${SEAT_NAMES[i]}`} autoFocus={i === 0}>Change</button>
+              {seats[i] === "bot" && <button className="btn" onClick={() => cycleBot(i)} aria-describedby={`seat-${i}-who`} aria-label={`Change ${SEAT_NAMES[i]}'s bot difficulty`}>Difficulty</button>}
             </div>
           ))}
         </div>
         <div className="col" style={{ marginTop: 16 }}>
-          <button className="btn go" disabled={humans === 0} onClick={() => onStart(seats)}>Start</button>
-          <p className="sr-only" aria-live="polite">{seats.map((c, i) => `${SEAT_NAMES[i]}: ${c === "bot" ? "bot" : CTL_LABEL[c]}`).join(", ")}</p>
+          <button className="btn go" disabled={humans === 0} onClick={() => onStart(seats, bots)}>Start</button>
+          <p className="sr-only" aria-live="polite">{seats.map((c, i) => `${SEAT_NAMES[i]}: ${c === "bot" ? `${bots[i]} bot` : CTL_LABEL[c]}`).join(", ")}</p>
           <button className="btn" onClick={onBack}>Back</button>
         </div>
         <p className="hint">Press a button on a gamepad to join with it. Keyboard players share the keyboard: A/D + W + Q, and arrows + ↑ + /.</p>

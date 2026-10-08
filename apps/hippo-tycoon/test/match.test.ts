@@ -57,7 +57,7 @@ test("the last human leaving mid-round sends the room back to the lobby", () => 
 test("config only changes in the lobby", () => {
   const m = new Match(4);
   m.setCfg({ secs: 90, difficulty: "hard" });
-  expect(m.cfg).toEqual({ secs: 90, difficulty: "hard" });
+  expect(m.cfg).toEqual({ secs: 90, difficulty: "hard", bots: ["hard", "hard", "hard", "hard"] });
   expect(m.sim.roundTicks).toBe(90 * 30);
   m.join("a", "Ada"); m.start();
   m.setCfg({ secs: 30 });
@@ -106,4 +106,34 @@ test("restore: a running round restarts, lobby and podium come back as they were
   const podium = new Match(0); podium.restore(m.persisted());
   expect(podium.phase).toBe("podium");
   expect(podium.sim.hippos[2]!.score).toBe(11);
+});
+
+test("per-seat bot difficulty: each bot plays its own level, and the match stays deterministic", () => {
+  const play = (bots?: ("easy" | "normal" | "hard")[]) => {
+    const m = new Match(11, { secs: 30, ...(bots ? { bots } : { difficulty: "easy" }) });
+    m.start(); run(m, COUNTDOWN_TICKS + 30 * 30);
+    return hashState(m.sim);
+  };
+  const mixed: ("easy" | "normal" | "hard")[] = ["hard", "easy", "easy", "easy"];
+  expect(play(mixed)).toBe(play(mixed));
+  expect(play(mixed)).not.toBe(play());               // seat 0's bot really plays hard
+  expect(play(["easy", "easy", "easy", "easy"])).toBe(play());
+  const m = new Match(1);
+  m.setCfg({ bots: mixed });
+  expect(m.cfg).toEqual({ secs: 60, difficulty: "normal", bots: mixed });
+  m.setCfg({ difficulty: "hard" });                    // "all bots" overrides every seat
+  expect(m.cfg.bots).toEqual(["hard", "hard", "hard", "hard"]);
+  const back = new Match(2); back.restore({ ...m.persisted(), cfg: { secs: 90, difficulty: "easy" } as never });
+  expect(back.cfg.bots).toEqual(["easy", "easy", "easy", "easy"]);   // a save from before per-seat bots
+});
+
+test("seats are owed back: a leaver's seat is skipped by newcomers and theirs when they return", () => {
+  const m = new Match(1);
+  m.join("a", "A"); m.join("b", "B"); m.join("c", "C");
+  m.leave("b");
+  expect(m.join("d", "D")).toBe(3);
+  expect(m.join("e", "E")).toBe(1);                    // the only seat left: taken after all
+  m.leave("e"); m.leave("d");
+  expect(m.join("b", "B")).toBe(1);                    // every free seat is owed to someone (e, d): b takes the first
+  expect(m.awayFrom()).toEqual([null, null, null, "d"]);
 });

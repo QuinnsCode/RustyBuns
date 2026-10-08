@@ -1,0 +1,8 @@
+{
+  "name": "@lydell/node-pty",
+  "version": "0.0.0-rustybuns",
+  "description": "node-pty, the Rusty Buns way: a native-addon-free shim over Bun.spawn({ terminal })",
+  "type": "module",
+  "main": "index.js",
+  "exports": { ".": "./index.js" }
+}

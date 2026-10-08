@@ -1,7 +1,7 @@
 // The seam. The renderer and UI only ever see a Frame; they never learn
 // whether it came from a local Match or from a server's snapshots.
 import { Match, type Cfg, type Phase, type Snapshot } from "../engine/match.ts";
-import { TICK_HZ } from "../sim/rules.ts";
+import { TICK_HZ, type Difficulty } from "../sim/rules.ts";
 import type { Event } from "../sim/types.ts";
 
 export interface SeatView { name: string; human: boolean; ready: boolean; mine: boolean }
@@ -20,12 +20,19 @@ export interface Frame {
   /** Events not yet delivered to a previous frame. */
   events: Event[];
   /** Net-only: connection state and room facts. */
-  net?: { state: "connecting" | "online" | "offline" | "refused"; message?: string; code?: string; ping?: number };
+  net?: {
+    state: "connecting" | "online" | "offline" | "refused"; message?: string; code?: string; ping?: number;
+    /** In the room with no seat: watching. */
+    watching?: boolean;
+    /** How many are watching. */
+    watchers?: number;
+  };
 }
 
 export type Command =
   | { t: "start" } | { t: "rematch" } | { t: "lobby" }
-  | { t: "cfg"; cfg: Partial<Cfg> } | { t: "seat"; seat: number };
+  | { t: "cfg"; cfg: Partial<Cfg> } | { t: "seat"; seat: number }
+  | { t: "bot"; seat: number; difficulty: Difficulty };
 
 export interface Driver {
   readonly kind: "local" | "net";
@@ -84,6 +91,7 @@ export class LocalDriver implements Driver {
   command(c: Command) {
     if (c.t === "rematch") this.match.start();
     else if (c.t === "cfg") this.match.setCfg(c.cfg);
+    else if (c.t === "bot") this.match.setCfg({ bots: this.match.cfg.bots.map((d, i) => (i === c.seat ? c.difficulty : d)) });
   }
 
   dispose() {}

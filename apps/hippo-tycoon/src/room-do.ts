@@ -22,7 +22,10 @@ export class World {
     // The shell vouches identity in these headers; a message body never can.
     const uid = request.headers.get("X-User-Id");
     if (!uid) return new Response("Unauthenticated", { status: 401 });
-    const name = clean(request.headers.get("X-User-Name"), 24) || "Tycoon";
+    // The desktop host's own page (principal "host", which only the host's shell
+    // sets) names its hippo from the menu; the vouched name is the OS username.
+    const own = request.headers.get("X-RB-Principal") === "host" ? clean(new URL(request.url).searchParams.get("name"), 24) : "";
+    const name = own || clean(request.headers.get("X-User-Name"), 24) || "Tycoon";
     const [client, server] = Object.values(new WebSocketPair()) as any[];
     this.ctx.acceptWebSocket(server);
     this.room.onConnect(server, uid, name, clean(request.headers.get("X-Room"), 16));

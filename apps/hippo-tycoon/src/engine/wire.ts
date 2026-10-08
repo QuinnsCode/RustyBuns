@@ -7,26 +7,33 @@ import type { Cfg, Phase, Snapshot } from "./match.ts";
 import { DIFFICULTIES, ROUND_SECS, SEATS, type Difficulty } from "../sim/rules.ts";
 import type { Event, Hippo } from "../sim/types.ts";
 
-export const PROTO_VERSION = 1;
+export const PROTO_VERSION = 2;
 /** The `v=` a LAN guest sends, and the host requires (see rustybuns.config.ts). */
 export const LAN_VERSION = `hippo-tycoon-p${PROTO_VERSION}`;
 export const MAX_CLIENT_MESSAGE = 512;
 
-/** Close codes the client treats as final (no reconnect). */
-export const CLOSE_VERSION = 4000, CLOSE_REPLACED = 4001, CLOSE_FULL = 4003;
+/**
+ * Close codes the client treats as final (no reconnect). CLOSE_FULL is kept
+ * for old builds: a fifth human now watches instead (hello with no seats).
+ */
+export const CLOSE_VERSION = 4000, CLOSE_REPLACED = 4001, CLOSE_FULL = 4003, CLOSE_FLOOD = 4008;
 
+// v2: `hello.k` asks for k seats on one socket (couch players over the network);
+// `in.s` and `seat.s` say which of them; `cfg.n` sets one seat's bot; the room
+// frame says which seats are yours (`you`), every bot's difficulty (`bd`) and how
+// many are watching (`sp`). A hello reply with `you: -1` means you are watching.
 export type ClientMsg =
-  | { t: "hello"; v: number }
-  | { t: "in"; m: number; g: 0 | 1; h: 0 | 1 }
+  | { t: "hello"; v: number; k?: number }
+  | { t: "in"; m: number; g: 0 | 1; h: 0 | 1; s?: number }
   | { t: "start" } | { t: "rematch" } | { t: "lobby" }
-  | { t: "cfg"; secs?: number; diff?: Difficulty }
-  | { t: "seat"; n: number }
+  | { t: "cfg"; secs?: number; diff?: Difficulty; n?: number }
+  | { t: "seat"; n: number; s?: number }
   | { t: "ping"; n: number };
 
 export interface RoomSeat { n: string; h: 0 | 1; r: 0 | 1 }
 export type ServerMsg =
   | { t: "hello"; v: number; seq: number; you: number; room: string }
-  | { t: "room"; seq: number; ph: Phase; seats: RoomSeat[]; secs: number; diff: Difficulty; host: number }
+  | { t: "room"; seq: number; ph: Phase; seats: RoomSeat[]; secs: number; diff: Difficulty; bd: Difficulty[]; host: number; you: number[]; sp: number }
   | { t: "snap"; tick: number; round: number; ph: Phase; cd: number; left: number; hp: number[][]; dr: number[][]; sl: number[][]; ev: Event[] }
   | { t: "pong"; n: number }
   | { t: "err"; msg: string };
@@ -41,16 +48,23 @@ export function decodeClient(raw: unknown): ClientMsg | null {
   try { m = JSON.parse(raw); } catch { return null; }
   if (!m || typeof m !== "object") return null;
   switch (m.t) {
-    case "hello": return isInt(m.v, 0, 1e6) ? { t: "hello", v: m.v } : null;
-    case "in": return isInt(m.m, -100, 100) && (m.g === 0 || m.g === 1) && (m.h === 0 || m.h === 1) ? { t: "in", m: m.m, g: m.g, h: m.h } : null;
+    case "hello":
+      if (!isInt(m.v, 0, 1e6) || (m.k !== undefined && !isInt(m.k, 1, SEATS))) return null;
+      return m.k !== undefined ? { t: "hello", v: m.v, k: m.k } : { t: "hello", v: m.v };
+    case "in":
+      if (!isInt(m.m, -100, 100) || !(m.g === 0 || m.g === 1) || !(m.h === 0 || m.h === 1) || (m.s !== undefined && !isInt(m.s, 0, SEATS - 1))) return null;
+      return m.s !== undefined ? { t: "in", m: m.m, g: m.g, h: m.h, s: m.s } : { t: "in", m: m.m, g: m.g, h: m.h };
     case "start": case "rematch": case "lobby": return { t: m.t };
     case "cfg": {
       const out: ClientMsg = { t: "cfg" };
       if (m.secs !== undefined) { if (!(ROUND_SECS as readonly unknown[]).includes(m.secs)) return null; out.secs = m.secs as number; }
       if (m.diff !== undefined) { if (!(DIFFICULTIES as readonly unknown[]).includes(m.diff)) return null; out.diff = m.diff as Difficulty; }
+      if (m.n !== undefined) { if (!isInt(m.n, 0, SEATS - 1) || out.diff === undefined || out.secs !== undefined) return null; out.n = m.n; }
       return out;
     }
-    case "seat": return isInt(m.n, 0, SEATS - 1) ? { t: "seat", n: m.n } : null;
+    case "seat":
+      if (!isInt(m.n, 0, SEATS - 1) || (m.s !== undefined && !isInt(m.s, 0, SEATS - 1))) return null;
+      return m.s !== undefined ? { t: "seat", n: m.n, s: m.s } : { t: "seat", n: m.n };
     case "ping": return isInt(m.n, 0, 2 ** 31) ? { t: "ping", n: m.n } : null;
     default: return null;
   }
@@ -63,7 +77,7 @@ export function decodeServer(raw: unknown): ServerMsg | null {
     const m = JSON.parse(raw);
     if (!m || typeof m.t !== "string") return null;
     if (m.t === "snap" && (!Array.isArray(m.hp) || !Array.isArray(m.dr) || !PHASES.includes(m.ph))) return null;
-    if (m.t === "room" && (!Array.isArray(m.seats) || !PHASES.includes(m.ph))) return null;
+    if (m.t === "room" && (!Array.isArray(m.seats) || !PHASES.includes(m.ph) || !Array.isArray(m.you))) return null;
     return m as ServerMsg;
   } catch { return null; }
 }
@@ -97,4 +111,7 @@ export function decodeSnapshot(m: Snap): Snapshot {
   };
 }
 
-export const roomCfg = (m: Extract<ServerMsg, { t: "room" }>): Cfg => ({ secs: m.secs, difficulty: m.diff });
+export const roomCfg = (m: Extract<ServerMsg, { t: "room" }>): Cfg => ({
+  secs: m.secs, difficulty: m.diff,
+  bots: Array.from({ length: SEATS }, (_, i) => (DIFFICULTIES.includes(m.bd?.[i]!) ? m.bd[i]! : m.diff)),
+});

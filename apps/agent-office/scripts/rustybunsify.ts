@@ -1,0 +1,158 @@
+#!/usr/bin/env bun
+// 🥐 Rusty Buns-ify Agent Office (https://github.com/AgentSystemLabs/agent-office, MIT).
+//
+//   bun scripts/rustybunsify.ts                  fetch the latest release into ./office, swap node-pty for the Bun shim
+//   bun scripts/rustybunsify.ts compile          ...then build ./dist/agent-office-<os>-<arch>, one self-contained file
+//   bun scripts/rustybunsify.ts compile --all    ...for darwin-arm64, darwin-x64, linux-x64 and linux-arm64
+//
+// AGENT_OFFICE_TAG=v0.1.206 pins a release. Nothing upstream is forked: every run starts from the release
+// tarball and applies the same few patches, each of which fails loudly if its target moves.
+import { $ } from "bun";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+const REPO = "AgentSystemLabs/agent-office";
+const root = path.dirname(import.meta.dir);
+const office = path.join(root, "office");
+const srv = path.join(office, "dist/server/server");
+
+const tag = process.env.AGENT_OFFICE_TAG ?? (await latestTag());
+const stamp = path.join(office, ".rustybuns");
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === tag && !process.argv.includes("--fresh")) {
+  console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
+} else {
+  await prepare(tag);
+}
+if (process.argv[2] === "compile") await compile(tag);
+
+async function latestTag(): Promise<string> {
+  const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+    headers: { accept: "application/vnd.github+json" },
+  });
+  if (!res.ok) throw new Error(`couldn't look up the latest Agent Office release (${res.status}); set AGENT_OFFICE_TAG`);
+  return ((await res.json()) as { tag_name: string }).tag_name;
+}
+
+async function prepare(tag: string) {
+  console.log(`🥐 Rusty Buns-ifying Agent Office ${tag}`);
+
+  // 1. the release tarball, cached
+  const cache = path.join(root, ".cache");
+  const tgz = path.join(cache, `agent-office-${tag}.tgz`);
+  if (!existsSync(tgz)) {
+    mkdirSync(cache, { recursive: true });
+    const res = await fetch(`https://github.com/${REPO}/releases/download/${tag}/agent-office.tgz`);
+    if (!res.ok) throw new Error(`download of ${tag} failed (${res.status})`);
+    await Bun.write(tgz, res);
+  }
+  rmSync(office, { recursive: true, force: true });
+  const tmp = `${office}.tmp`;
+  rmSync(tmp, { recursive: true, force: true });
+  mkdirSync(tmp, { recursive: true });
+  await $`tar -xzf ${tgz} -C ${tmp}`.quiet();
+  renameSync(path.join(tmp, "package"), office);
+  rmSync(tmp, { recursive: true, force: true });
+
+  // 2. its runtime dependencies, with Bun
+  await $`bun install --production --ignore-scripts`.cwd(office).quiet();
+
+  // 3. native node-pty out, the Bun PTY shim in
+  const lydell = path.join(office, "node_modules/@lydell");
+  for (const d of existsSync(lydell) ? readdirSync(lydell) : []) rmSync(path.join(lydell, d), { recursive: true, force: true });
+  cpSync(path.join(root, "shim/node-pty"), path.join(lydell, "node-pty"), { recursive: true });
+
+  // 4. Node loads xterm's CJS "main"; Bun's bundler would pick the ESM "module", which has no default export
+  for (const p of ["@xterm/headless", "@xterm/addon-serialize"]) {
+    const f = path.join(office, "node_modules", p, "package.json");
+    const pkg = JSON.parse(readFileSync(f, "utf8"));
+    delete pkg.module;
+    writeFileSync(f, JSON.stringify(pkg, null, 2));
+  }
+
+  // 5. small patches so it also runs from inside a compiled binary, where its code lives at /$bunfs
+  patch("http/static.js", "const candidates = [",
+    "const candidates = [...(process.env.AGENT_OFFICE_PUBLIC_DIR ? [process.env.AGENT_OFFICE_PUBLIC_DIR] : []), ");
+  // /$bunfs "exists" to the binary's own fs calls, but the OS can't chdir there, so check the path itself
+  patch("ptys.js", "cwd: path.dirname(here),",
+    "cwd: path.dirname(here).includes('$bunfs') ? __rbHome() : path.dirname(here),");
+  prepend("ptys.js", "import { homedir as __rbHome } from 'node:os';\n");
+  patch("workers/process.js", "export function binScript(name) {",
+    "export function binScript(name) {\n    if (process.env.AGENT_OFFICE_RUSTYBUNS_BIN)\n        return `/rustybuns/bin/${name}`;");
+
+  writeFileSync(stamp, `${tag}\n`);
+  console.log("   ✓ ./office  (bun run office starts it)");
+}
+
+async function compile(tag: string) {
+  const gen = path.join(root, ".gen");
+  rmSync(gen, { recursive: true, force: true });
+  mkdirSync(gen, { recursive: true });
+
+  // the 3D client, embedded file by file; the binary unpacks it once into the user's cache
+  const pub = path.join(office, "dist/public");
+  const files = [...new Bun.Glob("**/*").scanSync({ cwd: pub, dot: true })];
+  writeFileSync(path.join(gen, "assets.js"),
+    files.map((f, i) => `import a${i} from ${JSON.stringify(path.join(pub, f))} with { type: "file" };`).join("\n") +
+    `\nexport default [${files.map((f, i) => `[${JSON.stringify(f)}, a${i}]`).join(",")}];\n`);
+
+  // one entry for every job the binary has: the office, its pty host, and the office-workers / office-queue commands
+  const bin = (name: string) => JSON.stringify(path.join(office, "bin", name));
+  writeFileSync(path.join(gen, "entry.js"), `
+import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import os from "node:os";
+const arg = process.argv[2] ?? "";
+const helper = { "/rustybuns/bin/office-workers.js": "workers", "/rustybuns/bin/office-queue.js": "queue" }[arg];
+if (helper === "workers") {
+  process.exitCode = await (await import(${bin("office-workers.js")})).main(process.argv.slice(3));
+} else if (helper === "queue") {
+  process.exitCode = await (await import(${bin("office-queue.js")})).main(process.argv.slice(3));
+} else if (path.basename(arg).startsWith("ptyhost")) {
+  // the office re-runs itself as its pty host: <bin> <code dir>/ptyhost.js <socket> <info>
+  process.argv.splice(2, 1);
+  await import(${JSON.stringify(path.join(srv, "ptyhost.js"))});
+} else {
+  const { default: assets } = await import("./assets.js");
+  const cache = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache");
+  const dir = path.join(cache, "agent-office-rustybuns", ${JSON.stringify(tag)}, "public");
+  if (!existsSync(path.join(dir, ".ok"))) {
+    const tmp = dir + ".tmp-" + process.pid;
+    for (const [rel, src] of assets) {
+      mkdirSync(path.dirname(path.join(tmp, rel)), { recursive: true });
+      writeFileSync(path.join(tmp, rel), new Uint8Array(await Bun.file(src).arrayBuffer()));
+    }
+    writeFileSync(path.join(tmp, ".ok"), "");
+    mkdirSync(path.dirname(dir), { recursive: true });
+    try { renameSync(tmp, dir); } catch {}
+  }
+  process.env.AGENT_OFFICE_PUBLIC_DIR ??= dir;
+  process.env.AGENT_OFFICE_RUSTYBUNS_BIN = "1";
+  await import(${JSON.stringify(path.join(srv, "cli.js"))});
+}
+`);
+
+  const host = `${process.platform}-${process.arch}`;
+  const targets = process.argv.includes("--all") ? ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"] : [host];
+  mkdirSync(path.join(root, "dist"), { recursive: true });
+  for (const t of targets) {
+    const out = path.join(root, "dist", `agent-office-${t}`);
+    // macOS kills a signed binary rewritten in place, so never overwrite one
+    rmSync(out, { force: true });
+    const t0 = performance.now();
+    await $`bun build --compile --minify-syntax --target=bun-${t} ${path.join(gen, "entry.js")} --outfile ${out}`.cwd(office).quiet();
+    const mb = (Bun.file(out).size / 1e6).toFixed(0);
+    console.log(`   ✓ dist/agent-office-${t}  ${mb} MB  ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+  }
+}
+
+function patch(rel: string, from: string, to: string) {
+  const file = path.join(srv, rel);
+  const s = readFileSync(file, "utf8");
+  if (!s.includes(from)) throw new Error(`Agent Office changed: patch target moved in ${rel}: ${from}`);
+  writeFileSync(file, s.replace(from, to));
+}
+
+function prepend(rel: string, text: string) {
+  const file = path.join(srv, rel);
+  writeFileSync(file, text + readFileSync(file, "utf8"));
+}

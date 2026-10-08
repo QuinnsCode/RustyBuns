@@ -38,6 +38,7 @@ export function Game({ driver, ctls, settings, onSettings, onExit, lobby }: Prop
   const renderer = useRef<Renderer | null>(null);
   const settingsRef = useRef(settings); settingsRef.current = settings;
   const ui = useRef({ phase: "", options: false }); ui.current.options = options;
+  const ctlsOf = (seat: number, k: number) => (driver.kind === "net" && ctls[k]?.length ? ctls[k]! : controlsFor(ctls, seat));
 
   useEffect(() => {
     sound.current.setMix({ muted: settings.muted, music: settings.music, effects: settings.effects });
@@ -73,11 +74,12 @@ export function Game({ driver, ctls, settings, onSettings, onExit, lobby }: Prop
       raf = requestAnimationFrame(loop);
       const dt = now - last; last = now;
       controls.beginFrame();
-      for (const seat of driver.mine()) {
-        const c = controls.sample(controlsFor(ctls, seat));
+      // local play: controls by seat; net: by local player, since the room picks the seats
+      driver.mine().forEach((seat, k) => {
+        const c = controls.sample(ctlsOf(seat, k));
         driver.input(seat, c.move, c.gulp, c.bellow);
         if (c.gulp && driver.kind === "net") r.predictGulp(seat, now);
-      }
+      });
       controls.endFrame();
       const f = driver.advance(dt);
       ui.current.phase = f.phase;
@@ -101,7 +103,7 @@ export function Game({ driver, ctls, settings, onSettings, onExit, lobby }: Prop
 
   const hostIsMe = frame ? frame.mine.includes(frame.hostSeat) || driver.kind === "local" : true;
   const showHint = frame && (frame.phase === "countdown" || frame.phase === "playing") && (hint ?? autoHint);
-  const local = frame?.mine.map((seat) => ({ name: frame.seats[seat]?.name || SEAT_NAMES[seat]!, ctls: controlsFor(ctls, seat) })) ?? [];
+  const local = frame?.mine.map((seat, k) => ({ name: frame.seats[seat]?.name || SEAT_NAMES[seat]!, ctls: ctlsOf(seat, k) })) ?? [];
   return (
     <>
       <div className="stage"><canvas ref={canvas} role="img" aria-label="Four hippos round an oil geyser in a jungle basin" /></div>

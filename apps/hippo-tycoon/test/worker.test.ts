@@ -11,6 +11,8 @@ env.WORLD = durableObject(World as never, env);
 const shell = serve<any>({ hostname: "127.0.0.1", port: 0 });   // no token: the Worker is the front door here
 shell.mount({ fetch: (req: Request, e: any) => worker.fetch(req, e) } as never, env);
 afterAll(() => shell.stop());
+// Real sockets into a ticking world: generous waits so a loaded machine is not a failure.
+const SLOW = 30_000;
 
 const base = `ws://127.0.0.1:${shell.port}`;
 function open(q: string, headers: Record<string, string> = {}) {
@@ -22,7 +24,7 @@ function open(q: string, headers: Record<string, string> = {}) {
   ws.onclose = (e) => { closed = e.code; };
   return { ws, msgs, get closed() { return closed; }, last: <T extends ServerMsg["t"]>(t: T) => msgs.filter((m) => m.t === t).at(-1) as Extract<ServerMsg, { t: T }> | undefined };
 }
-const until = async (f: () => unknown, ms = 3000) => { const end = Date.now() + ms; while (!f()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(15); } };
+const until = async (f: () => unknown, ms = 15000) => { const end = Date.now() + ms; while (!f()) { if (Date.now() > end) throw new Error("timed out"); await Bun.sleep(15); } };
 const status = async (q: string, headers: Record<string, string> = {}) =>
   (await fetch(`http://127.0.0.1:${shell.port}/ws?${q}`, { headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13", ...headers } })).status;
 
@@ -35,7 +37,7 @@ test("the page comes from assets; /ws needs a websocket, a room code and a playe
   expect(await status("room=ABCD")).toBe(400);                        // no uid
   expect(await status("room=ABCD&uid=short")).toBe(400);              // uid too short
   expect(await status("room=ABCD&uid=has%20space%20in%20it")).toBe(400);
-});
+}, SLOW);
 
 test("two players in one room share it; another room is another world", async () => {
   const a = open("room=QRST&uid=player-aaaa&name=Ada"), b = open("room=qrst&uid=player-bbbb&name=Bo"), c = open("room=OTHER&uid=player-cccc&name=Cy");
@@ -46,7 +48,7 @@ test("two players in one room share it; another room is another world", async ()
   expect(a.last("room")!.seats.slice(0, 2).map((s) => s.n)).toEqual(["Ada", "Bo"]);
   expect(c.last("room")!.seats.filter((s) => s.h).length).toBe(1);
   for (const x of [a, b, c]) x.ws.close();
-});
+}, SLOW);
 
 test("identity is the Worker's: client-sent identity headers are stripped, the name is cleaned", async () => {
   const sneaky = open("room=SNEK&uid=player-real1&name=%07Eve%0A", { "X-User-Id": "admin", "X-User-Name": "Root", "X-Room": "NOPE" });
@@ -54,7 +56,7 @@ test("identity is the Worker's: client-sent identity headers are stripped, the n
   expect(sneaky.last("room")!.seats[0]!.n).toBe("Eve");
   expect(sneaky.last("hello")!.room).toBe("SNEK");
   sneaky.ws.close();
-});
+}, SLOW);
 
 test("a second tab of the same player takes over; the room fills at four", async () => {
   const one = open("room=FULL&uid=player-dup01&name=One");
@@ -65,7 +67,38 @@ test("a second tab of the same player takes over; the room fills at four", async
   const others = ["x", "y", "z"].map((n) => open(`room=FULL&uid=player-${n}${n}${n}${n}1&name=${n}`));
   await until(() => others.every((o) => o.last("hello")));
   const fifth = open("room=FULL&uid=player-fifth1&name=Five");
-  await until(() => fifth.closed !== null);
-  expect(fifth.closed).toBe(4003);
-  for (const x of [two, ...others]) x.ws.close();
-});
+  await until(() => fifth.last("hello"));
+  expect(fifth.last("hello")!.you).toBe(-1);                         // a fifth human watches
+  await until(() => two.last("room")?.sp === 1);
+  for (const x of [two, ...others, fifth]) x.ws.close();
+}, SLOW);
+
+test("a cross-site page cannot open a room; our origin, localhost and the LAN can", async () => {
+  expect(await status("room=ORIG&uid=player-orig1", { Origin: "https://evil.example" })).toBe(403);
+  for (const origin of [`http://127.0.0.1:${shell.port}`, "http://localhost:5173", "http://192.168.1.20:4000"]) {
+    const c = open(`room=ORIG&uid=player-orig1&name=O`, { Origin: origin });
+    await until(() => c.last("hello"));
+    c.ws.close();
+    await until(() => c.closed !== null);
+  }
+}, SLOW);
+
+test("one address can only open so many new rooms a minute; rejoining one it has is free", async () => {
+  const ip = { "CF-Connecting-IP": "203.0.113.7" };
+  const rooms = Array.from({ length: 12 }, (_, i) => `MINT${i}`);
+  for (const r of rooms) expect(await status(`room=${r}&uid=player-mint1`, ip)).not.toBe(429);
+  expect(await status("room=MINTX&uid=player-mint1", ip)).toBe(429);
+  expect(await status("room=MINT3&uid=player-mint1", ip)).not.toBe(429);
+  expect(await status("room=MINTX&uid=player-mint1", { "CF-Connecting-IP": "203.0.113.8" })).not.toBe(429);
+}, SLOW);
+
+test("a couch pair rides one socket into an online room", async () => {
+  const msgs: ServerMsg[] = [];
+  const ws = new WebSocket(`${base}/ws?room=PAIR&uid=player-pair1&name=Duo`);
+  ws.onopen = () => ws.send(JSON.stringify({ t: "hello", v: PROTO_VERSION, k: 2 }));
+  ws.onmessage = (e) => msgs.push(JSON.parse(String(e.data)));
+  const room = () => msgs.filter((m) => m.t === "room").at(-1) as Extract<ServerMsg, { t: "room" }> | undefined;
+  await until(() => room()?.you.length === 2);
+  expect(room()!.seats.slice(0, 2).map((s) => s.n)).toEqual(["Duo", "Duo 2"]);
+  ws.close();
+}, SLOW);

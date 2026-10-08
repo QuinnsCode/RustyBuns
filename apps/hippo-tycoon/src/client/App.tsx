@@ -10,6 +10,7 @@ import { JoinLan, JoinOnline } from "./ui/Join.tsx";
 import { Menu } from "./ui/Menu.tsx";
 import { NetLobby } from "./ui/NetLobby.tsx";
 import { Setup } from "./ui/Setup.tsx";
+import type { Difficulty } from "../sim/rules.ts";
 
 type Screen =
   | { t: "menu"; error?: string }
@@ -17,6 +18,8 @@ type Screen =
   | { t: "play"; driver: Driver; ctls: Ctl[][]; lan?: { code: string; info: HostInfo } };
 
 const SOLO_CTL: Ctl[][] = [["kbAll", "touch"], [], [], []];
+/** Two players on one machine in a net game: by local player, not by seat (the room picks seats). */
+const NET_PAIR_CTL: Ctl[][] = [["kb1", "pad0"], ["kb2", "pad1"]];
 
 export function App() {
   const [settings, setSettings] = useState<Settings>(loadSettings);
@@ -38,13 +41,13 @@ export function App() {
   const cfg = useMemo(() => ({ secs: settings.secs, difficulty: settings.difficulty }), [settings.secs, settings.difficulty]);
   const name = nameOf(settings);
 
-  const playLocal = (ctls: Ctl[][]) => {
+  const playLocal = (ctls: Ctl[][], bots?: Difficulty[]) => {
     const first = ctls.findIndex((x) => x.length);
     const seats = ctls.map((c, i) => ({ human: c.length > 0, name: i === first ? name : `Player ${i + 1}` }));
-    setScreen({ t: "play", driver: new LocalDriver(seats, cfg, (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0), ctls });
+    setScreen({ t: "play", driver: new LocalDriver(seats, bots ? { ...cfg, bots } : cfg, (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0), ctls });
   };
   const playNet = (open: () => WebSocket, lan?: { code: string; info: HostInfo }) =>
-    setScreen({ t: "play", driver: new NetDriver(open), ctls: SOLO_CTL, lan });
+    setScreen({ t: "play", driver: new NetDriver(open, settings.players), ctls: settings.players > 1 ? NET_PAIR_CTL : SOLO_CTL, lan });
 
   const exit = () => {
     if (screen.t === "play") { screen.driver.dispose(); if (screen.lan) void closeLan(); }
@@ -55,7 +58,7 @@ export function App() {
     try {
       const code = makeJoinCode();
       const info = await openLan(code);
-      playNet(ownWorldSocket, { code, info });
+      playNet(() => ownWorldSocket(name), { code, info });
     } catch (e) { setScreen({ t: "menu", error: String((e as Error).message ?? e) }); }
   };
 
@@ -73,7 +76,7 @@ export function App() {
   }
   const canJoinLan = desktop !== null || location.protocol === "http:";
   const page =
-    screen.t === "couch" ? <Setup onBack={() => setScreen({ t: "menu" })} onStart={(seats) => playLocal(seats.map((c) => (c === "bot" ? [] : [c])))} />
+    screen.t === "couch" ? <Setup difficulty={settings.difficulty} onBack={() => setScreen({ t: "menu" })} onStart={(seats, bots) => playLocal(seats.map((c) => (c === "bot" ? [] : [c])), bots)} />
     : screen.t === "joinLan" ? <JoinLan onBack={() => setScreen({ t: "menu" })} onJoin={(address, code) => playNet(() => lanSocket(address, code, name))} />
     : screen.t === "joinOnline" ? <JoinOnline onBack={() => setScreen({ t: "menu" })} onJoin={(room) => playNet(() => onlineSocket(room, name))} />
     : <Menu settings={settings} onSettings={update} onSolo={() => playLocal(SOLO_CTL)} onCouch={() => setScreen({ t: "couch" })}

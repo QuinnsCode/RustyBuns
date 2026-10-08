@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { hashString, rng } from "../geo.ts";
 import { HUNT, circleAt, type ActorView, type Circle, type Cue, type Look, type View } from "../hunt/game.ts";
-import type { TimeOfDay } from "../hunt/sim.ts";
+import { clearSky, type Sky, type TimeOfDay } from "../hunt/sim.ts";
 import { zoneById, type Prop, type PropKind, type Zone } from "../zones/zone.ts";
 import { makeCharacter, nameTag, pose, type Character } from "./characters.ts";
 
@@ -18,6 +18,16 @@ const SKY: Record<TimeOfDay, { sky: string; fog: string; near: number; far: numb
   dusk: { sky: "#e79a6b", fog: "#b98a78", near: 30, far: 230, hemi: ["#ffcfae", "#2d2a2a", 0.55], sun: ["#ffb177", 1.3], elev: 0.12 },
   night: { sky: "#070b16", fog: "#05070d", near: 8, far: 95, hemi: ["#5d6f9e", "#0c0d12", 0.32], sun: ["#9fb4ff", 0.22], elev: 0.7 },
 };
+/** What cloud and fog wash the sky towards. */
+const GREY: Record<TimeOfDay, { cloud: string; mist: string }> = {
+  day: { cloud: "#8f989f", mist: "#b8bfc4" },
+  dusk: { cloud: "#6e6466", mist: "#8c7f7a" },
+  night: { cloud: "#05070b", mist: "#0d1014" },
+};
+/** Rain and snow fall in a box this big round the camera. */
+const PRECIP = { half: 22, height: 14, rain: 3500, snow: 2200 };
+
+interface Precip { obj: THREE.LineSegments | THREE.Points; pos: Float32Array; n: number; snow: boolean; wind: number }
 
 export class World3D {
   readonly renderer: THREE.WebGLRenderer;
@@ -36,6 +46,13 @@ export class World3D {
   private finalRing: THREE.Mesh;
   private cueMeshes = new Map<number, { obj: THREE.Object3D; at: number; kind: Cue["kind"] }>();
   private tod: TimeOfDay | null = null;
+  private skyKey = "";
+  private fogNear = 1;
+  private fogFar = 2;
+  private hemiBase = 1;
+  private precip: Precip | null = null;
+  /** Shared by every swaying material: bushes and treetops move in the wind. */
+  private sway = { uTime: { value: 0 }, uWind: { value: 0 } };
   private fog = new THREE.Fog("#000", 1, 2);
   private clock = new THREE.Clock();
 
@@ -141,6 +158,23 @@ export class World3D {
       mesh.castShadow = true; mesh.receiveShadow = true;
       out.push(mesh);
     };
+    // Bend the top of a mesh in the wind, more the higher up (k per local metre).
+    const swaying = <M extends THREE.Material>(mat: M, k: number): M => {
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uTime = this.sway.uTime; sh.uniforms.uWind = this.sway.uWind;
+        sh.vertexShader = "uniform float uTime;\nuniform float uWind;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+          #ifdef USE_INSTANCING
+            vec3 swayAt = instanceMatrix[3].xyz;
+          #else
+            vec3 swayAt = vec3(0.0);
+          #endif
+          float sw = uWind * ${k.toFixed(4)} * max(0.0, position.y);
+          transformed.x += sin(uTime * (1.2 + uWind) + swayAt.x * 0.37 + swayAt.z * 0.21) * sw;
+          transformed.z += cos(uTime * (0.9 + uWind) + swayAt.x * 0.19 - swayAt.z * 0.31) * sw * 0.6;`);
+      };
+      mat.customProgramCacheKey = () => `sway${k}`;
+      return mat;
+    };
     const r = rng(hashString(z.data.id + ":tint"));
     // Pines: a trunk and three stacked cones.
     const pineTrunk = new THREE.CylinderGeometry(0.18, 0.3, 4, 7).translate(0, 2, 0);
@@ -151,7 +185,7 @@ export class World3D {
     ])!;
     const pines = by.get("pine") ?? [];
     place(pineTrunk, m("#5b4029"), pines, (p) => [p.size, p.size, p.size], undefined, 0.2);
-    place(pineTop, m("#ffffff"), pines, (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.3 + r() * 0.06, 0.35 + r() * 0.15, 0.17 + r() * 0.06));
+    place(pineTop, swaying(m("#ffffff"), 0.025), pines, (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.3 + r() * 0.06, 0.35 + r() * 0.15, 0.17 + r() * 0.06));
     // Sequoias: huge red trunks, crowns high up.
     const seqs = by.get("sequoia") ?? [];
     place(new THREE.CylinderGeometry(1.1, 2.0, 30, 12).translate(0, 15, 0), m("#8a4a2b"), seqs, (p) => [p.size, p.size, p.size], undefined, 0.5);
@@ -159,9 +193,9 @@ export class World3D {
       new THREE.DodecahedronGeometry(4.5).scale(1, 0.8, 1).translate(0, 30, 0),
       new THREE.DodecahedronGeometry(3.5).scale(1, 0.8, 1).translate(1.5, 35, 0.5),
       new THREE.DodecahedronGeometry(3).scale(1, 0.8, 1).translate(-1.2, 26, -1),
-    ])!, m("#ffffff", { flatShading: true }), seqs, (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.28, 0.4, 0.2 + r() * 0.05));
+    ])!, swaying(m("#ffffff", { flatShading: true }), 0.01), seqs, (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.28, 0.4, 0.2 + r() * 0.05));
     // Bushes: soft lumps you can crouch in.
-    place(new THREE.IcosahedronGeometry(1, 1).scale(1, 0.75, 1).translate(0, 0.55, 0), m("#ffffff", { flatShading: true }), by.get("bush") ?? [],
+    place(new THREE.IcosahedronGeometry(1, 1).scale(1, 0.75, 1).translate(0, 0.55, 0), swaying(m("#ffffff", { flatShading: true }), 0.14), by.get("bush") ?? [],
       (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.24 + r() * 0.08, 0.45, 0.22 + r() * 0.08), 0.1);
     place(new THREE.DodecahedronGeometry(1, 0).scale(1, 0.75, 1.1), m("#8b8a84", { flatShading: true }), by.get("boulder") ?? [],
       (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.1, 0.05, 0.42 + r() * 0.15), -0.1);
@@ -230,18 +264,37 @@ export class World3D {
 
   // ---- time of day --------------------------------------------------------------
 
-  setTime(tod: TimeOfDay) {
-    if (this.tod === tod) return;
-    this.tod = tod;
-    const s = SKY[tod];
-    this.scene.background = new THREE.Color(s.sky);
-    this.fog.color.set(s.fog);
+  setTime(tod: TimeOfDay) { this.setSky(clearSky(tod)); }
+
+  /** Light, fog, cloud, rain and wind for a round's conditions. */
+  setSky(sky: Sky) {
+    const key = JSON.stringify(sky);
+    if (this.skyKey === key) return;
+    this.skyKey = key;
+    const tod = this.tod = sky.tod;
+    const s = SKY[tod], grey = GREY[tod];
+    const skyCol = new THREE.Color(s.sky), fogCol = new THREE.Color(s.fog);
+    let hemi = s.hemi[2], sun = s.sun[1], near = s.near, far = s.far;
+    if (sky.overcast || sky.rain > 0.2) {
+      skyCol.lerp(new THREE.Color(grey.cloud), 0.7); fogCol.lerp(new THREE.Color(grey.cloud), 0.6);
+      hemi *= 0.75; sun *= 0.35;
+    }
+    if (sky.fog > 0) {
+      fogCol.lerp(new THREE.Color(grey.mist), sky.fog);
+      skyCol.lerp(fogCol, sky.fog);
+      near *= 1 - 0.85 * sky.fog; far *= 1 - 0.8 * sky.fog;
+    }
+    this.fogNear = near; this.fogFar = far; this.hemiBase = hemi;
+    this.scene.background = skyCol;
+    this.fog.color.copy(fogCol);
     this.scene.fog = this.fog;
-    this.hemi.color.set(s.hemi[0]); this.hemi.groundColor.set(s.hemi[1]); this.hemi.intensity = s.hemi[2];
-    this.sun.color.set(s.sun[0]); this.sun.intensity = s.sun[1];
+    this.hemi.color.set(s.hemi[0]); this.hemi.groundColor.set(s.hemi[1]); this.hemi.intensity = hemi;
+    this.sun.color.set(s.sun[0]); this.sun.intensity = sun;
     this.sun.castShadow = tod !== "night";
+    this.sway.uWind.value = sky.wind;
     if (this.stars) { this.scene.remove(this.stars); this.stars = null; }
-    if (tod === "night") {
+    // Clouds or fog hide the stars (and the moon: that's why it's darker).
+    if (tod === "night" && !sky.overcast && sky.fog < 0.5) {
       const r = rng(7), pts = new Float32Array(1500 * 3);
       for (let i = 0; i < 1500; i++) {
         const a = r() * Math.PI * 2, e = Math.asin(0.05 + r() * 0.95), d = 900;
@@ -252,6 +305,48 @@ export class World3D {
       this.stars = new THREE.Points(geo, new THREE.PointsMaterial({ color: "#dfe7ff", size: 2, sizeAttenuation: false, fog: false }));
       this.scene.add(this.stars);
     }
+    if (this.precip) { this.scene.remove(this.precip.obj); this.precip.obj.geometry.dispose(); this.precip = null; }
+    if (sky.rain > 0.05) this.precip = this.makePrecip(sky);
+  }
+
+  /** Rain as falling streaks, snow as drifting flakes, in a box that follows the camera. */
+  private makePrecip(sky: Sky): Precip {
+    const { half, height } = PRECIP;
+    const n = Math.round((sky.snow ? PRECIP.snow : PRECIP.rain) * Math.min(1, sky.rain));
+    const r = rng(11);
+    const per = sky.snow ? 3 : 6;
+    const pos = new Float32Array(n * per);
+    for (let i = 0; i < n; i++) {
+      const x = (r() * 2 - 1) * half, y = (r() * 2 - 1) * height, z = (r() * 2 - 1) * half;
+      pos.set(sky.snow ? [x, y, z] : [x, y, z, x, y - 0.5, z], i * per);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const night = sky.tod === "night";
+    const obj = sky.snow
+      ? new THREE.Points(geo, new THREE.PointsMaterial({ color: night ? "#7d8594" : "#f4f7fb", size: 0.09, transparent: true, opacity: 0.9, depthWrite: false }))
+      : new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: night ? "#4c5666" : "#b4c2d2", transparent: true, opacity: 0.5, depthWrite: false }));
+    obj.frustumCulled = false;
+    this.scene.add(obj);
+    return { obj, pos, n, snow: sky.snow, wind: sky.wind };
+  }
+
+  private fall(dt: number) {
+    const p = this.precip;
+    if (!p) return;
+    const { half, height } = PRECIP;
+    const fall = (p.snow ? 1.3 : 11) * dt, drift = (p.snow ? 2.5 : 4) * p.wind * dt;
+    const per = p.snow ? 3 : 6, slant = p.wind * 0.18, t = this.sway.uTime.value;
+    for (let i = 0; i < p.n; i++) {
+      const o = i * per;
+      let x = p.pos[o] + drift + (p.snow ? Math.sin(t * 1.5 + i) * 0.4 * dt : 0), y = p.pos[o + 1] - fall;
+      if (y < -height) { y += 2 * height; x = (Math.random() * 2 - 1) * half; }
+      if (x > half) x -= 2 * half;
+      p.pos[o] = x; p.pos[o + 1] = y;
+      if (!p.snow) { p.pos[o + 3] = x + slant; p.pos[o + 4] = y - 0.5; p.pos[o + 5] = p.pos[o + 2]; }
+    }
+    (p.obj.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    p.obj.position.copy(this.camera.position);
   }
 
   // ---- per frame ----------------------------------------------------------------
@@ -264,7 +359,8 @@ export class World3D {
     const dt = Math.min(0.1, this.clock.getDelta());
     const z = this.zone;
     if (!z || !this.tod) return;
-    this.fog.near = SKY[this.tod].near; this.fog.far = SKY[this.tod].far;
+    this.fog.near = this.fogNear; this.fog.far = this.fogFar;
+    this.sway.uTime.value += dt;
     const r = v.round;
     if (this.stars) this.stars.position.copy(this.camera.position);
 
@@ -318,6 +414,7 @@ export class World3D {
     this.circle(r?.circle ?? null, z, now, v.phase === "hunt");
     if (me) this.place(z, me, cam);
     else if (follow) this.follow(z, follow.x, follow.y, follow.yaw);
+    this.fall(dt);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -429,7 +526,7 @@ export class World3D {
     this.sun.position.set(-80, 150, 60);
     this.sun.target.position.set(0, 0, 0);
     this.renderer.render(this.scene, this.camera);
-    this.hemi.intensity = SKY[this.tod].hemi[2];
+    this.hemi.intensity = this.hemiBase;
   }
 }
 

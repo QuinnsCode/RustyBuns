@@ -23,7 +23,7 @@ async function launch() {
   const p = Bun.spawn(["bun", ".rustybuns/e2e-desktop.ts"], { cwd: app, env: { ...process.env, RB_NO_BROWSER: "1" }, stdout: "pipe", stderr: "pipe" });
   let out = "";
   const reader = p.stdout.getReader();
-  const deadline = Date.now() + 15000;
+  const deadline = Date.now() + 30000;
   while (!/open http/.test(out) && Date.now() < deadline) { const { value, done } = await reader.read(); if (done) break; out += new TextDecoder().decode(value); }
   const m = out.match(/open (http:\/\/[^/]+)\/\?token=(\S+)/);
   if (!m) throw new Error("host did not start:\n" + out + (await new Response(p.stderr).text()));
@@ -34,15 +34,15 @@ class Client {
   msgs: ServerMsg[] = [];
   closed: { code: number; reason: string } | null = null;
   private ws: WebSocket;
-  constructor(url: string, headers: Record<string, string> = {}, hello = PROTO_VERSION) {
+  constructor(url: string, headers: Record<string, string> = {}, hello = PROTO_VERSION, k = 1) {
     this.ws = new WebSocket(url.replace("http", "ws"), { headers } as never);
-    this.ws.onopen = () => this.send({ t: "hello", v: hello });
+    this.ws.onopen = () => this.send(k > 1 ? { t: "hello", v: hello, k } : { t: "hello", v: hello });
     this.ws.onmessage = (e) => this.msgs.push(JSON.parse(String(e.data)));
     this.ws.onclose = (e) => { this.closed = { code: e.code, reason: e.reason }; };
   }
   send(m: object) { this.ws.send(JSON.stringify(m)); }
   of<T extends ServerMsg["t"]>(t: T) { return this.msgs.filter((m) => m.t === t) as Extract<ServerMsg, { t: T }>[]; }
-  async until(f: () => unknown, ms = 8000) { const end = Date.now() + ms; while (!f()) { if (Date.now() > end) throw new Error("timed out; rooms " + JSON.stringify(this.of("room").map((r) => [r.seq, r.ph, r.seats.filter((s) => s.h).map((s) => s.n).join("+")])) + " host " + JSON.stringify(this.of("room").at(-1)?.host) + " closed " + JSON.stringify(this.closed)); await Bun.sleep(20); } }
+  async until(f: () => unknown, ms = 20000) { const end = Date.now() + ms; while (!f()) { if (Date.now() > end) throw new Error("timed out; rooms " + JSON.stringify(this.of("room").map((r) => [r.seq, r.ph, r.seats.filter((s) => s.h).map((s) => s.n).join("+")])) + " host " + JSON.stringify(this.of("room").at(-1)?.host) + " closed " + JSON.stringify(this.closed)); await Bun.sleep(20); } }
   close() { this.ws.close(); }
 }
 
@@ -52,10 +52,12 @@ test("LAN party: host and guests share one ticking world", async () => {
     const cookie = (await fetch(`${url}/?token=${token}`, { redirect: "manual" })).headers.get("set-cookie")!;
     const post = (body: object) => fetch(`${url}/__rb/host`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()) as Promise<any>;
 
-    // the host's own page: local identity, seat 0
-    const host = new Client(`${url}/ws`, { cookie });
+    // the host's own page: local identity, seat 0, named from the menu rather than the OS username
+    const host = new Client(`${url}/ws?name=Hippo%20Host`, { cookie });
     await host.until(() => host.of("hello").length);
     expect(host.of("hello")[0]).toMatchObject({ you: 0 });
+    await host.until(() => host.of("room").length);
+    expect(host.of("room").at(-1)!.seats[0]!.n).toBe("Hippo Host");
 
     // closed until the host opens it, then guests are let in on the app's wire version
     const early = new Client(`${url}/ws?join=pw&uid=g0&name=Early&v=${LAN_VERSION}`);
@@ -73,39 +75,56 @@ test("LAN party: host and guests share one ticking world", async () => {
     expect(old.of("err")[0]!.msg).toMatch(/protocol/);
 
     const g1 = new Client(`${url}/ws?join=pw&uid=g1&name=Guest%20One&v=${LAN_VERSION}`);
-    const g2 = new Client(`${url}/ws?join=pw&uid=g2&name=Guest%20Two&v=${LAN_VERSION}`);
-    await g1.until(() => g1.of("hello").length); await g2.until(() => g2.of("hello").length);
-    expect(new Set([g1.of("hello")[0]!.you, g2.of("hello")[0]!.you, 0]).size).toBe(3);   // three humans, three seats
-    await host.until(() => host.of("room").at(-1)?.seats.filter((s) => s.h).length === 3);
-    expect(host.of("room").at(-1)!.seats.map((s) => s.n)).toContain("Guest One");
+    // guest two brings a couch partner on the same socket: two seats
+    const g2 = new Client(`${url}/ws?join=pw&uid=g2&name=Guest%20Two&v=${LAN_VERSION}`, {}, PROTO_VERSION, 2);
+    await g1.until(() => g1.of("hello").length); await g2.until(() => g2.of("room").at(-1)?.you.length === 2);
+    const pair = g2.of("room").at(-1)!.you;
+    expect(new Set([g1.of("hello")[0]!.you, ...pair, 0]).size).toBe(4);   // four humans, four seats
+    await host.until(() => host.of("room").at(-1)?.seats.filter((s) => s.h).length === 4);
+    expect(host.of("room").at(-1)!.seats.map((s) => s.n)).toEqual(expect.arrayContaining(["Guest One", "Guest Two", "Guest Two 2"]));
+    // a fifth human (a third guest) watches instead of being turned away
+    const g3 = new Client(`${url}/ws?join=pw&uid=g3&name=Guest%20Three&v=${LAN_VERSION}`);
+    await g3.until(() => g3.of("hello").length);
+    expect(g3.of("hello")[0]!.you).toBe(-1);
+    await host.until(() => host.of("room").at(-1)?.sp === 1);
 
     // the host (first human) starts a short round; every client sees it tick
     host.send({ t: "cfg", secs: 30 });
     host.send({ t: "start" });
-    await g1.until(() => g1.of("room").at(-1)?.ph === "playing", 10000);
+    await g1.until(() => g1.of("room").at(-1)?.ph === "playing", 20000);
     const t0 = g1.of("snap").length;
     g1.send({ t: "in", m: 100, g: 1, h: 0 });
-    await Bun.sleep(1000);
-    const perSec = g1.of("snap").length - t0;
-    expect(perSec).toBeGreaterThanOrEqual(10);       // ~15 Hz over a real in-process socket
-    expect(perSec).toBeLessThanOrEqual(20);
+    // measured over two real seconds, not one assumed one: a loaded machine
+    // oversleeps, and the tick loop catches up in bursts after a stall
+    const w0 = performance.now();
+    await Bun.sleep(2000);
+    const perSec = (g1.of("snap").length - t0) / ((performance.now() - w0) / 1000);
+    expect(perSec).toBeGreaterThanOrEqual(8);        // ~15 Hz over a real in-process socket
+    expect(perSec).toBeLessThanOrEqual(22);          // and not the 30 Hz tick rate
     const ticks = g1.of("snap").map((s) => s.tick);
     // the sim tick never runs backwards within a round (it holds still through the countdown)
     expect(ticks.every((t, i) => i === 0 || t >= ticks[i - 1]! || g1.of("snap")[i]!.round !== g1.of("snap")[i - 1]!.round)).toBe(true);
     const last = g1.of("snap").at(-1)!;
     expect(last.hp[1]![0]).toBeGreaterThan(0);        // guest one slid right: input crossed the LAN
     expect(last.dr.length).toBeGreaterThan(0);        // and the drops are dripping
+    // the couch partner drives their own seat over the shared socket
+    g2.send({ t: "in", m: -100, g: 0, h: 0, s: pair[1] });
+    await g2.until(() => (g2.of("snap").at(-1)?.hp[pair[1]!]?.[0] ?? 0) < 0);
+    expect(g3.of("snap").length).toBeGreaterThan(0);  // and the watcher sees it all
 
-    // a guest leaves: the seat goes back to a bot, the others are told
+    // a guest leaves: both their seats go back to bots, the others are told
     g2.close();
     await host.until(() => host.of("room").at(-1)?.seats.filter((s) => s.h).length === 2);
-    expect((await (await fetch(`${url}/__rb/info`, { headers: { cookie } })).json() as any).guests.connected).toBe(1);
+    // the host shell counts its guests on its own, so let that count catch up too
+    const connected = async () => (await (await fetch(`${url}/__rb/info`, { headers: { cookie } })).json() as any).guests.connected;
+    for (const end = Date.now() + 20000; await connected() !== 2 && Date.now() < end;) await Bun.sleep(50);
+    expect(await connected()).toBe(2);
+    g3.close();
 
     // stop hosting closes the door to new guests; the connected one keeps playing
     await post({ join: null, listen: { hostname: "127.0.0.1" } });
     const n = g1.of("snap").length;
-    await Bun.sleep(400);
-    expect(g1.of("snap").length).toBeGreaterThan(n);
+    await g1.until(() => g1.of("snap").length > n);
     host.close(); g1.close();
   } finally { p.kill(); }
-}, 40000);
+}, 120_000);   // a real host process and sockets: slow to start on a loaded machine

@@ -14,11 +14,13 @@ export interface Settings {
   /** Colour fringe, grain, scanline and vignette. The colour grade stays. */
   filmLook: boolean;
   quality: Quality;
+  /** How many sit at this machine in a LAN or online game (one socket, that many seats). */
+  players: 1 | 2;
 }
 const KEY = "hippo-tycoon.settings";
 export const DEFAULTS: Settings = {
   name: "", difficulty: "normal", secs: DEFAULT_ROUND_SECS, muted: false,
-  music: true, effects: true, reducedMotion: null, filmLook: true, quality: "high",
+  music: true, effects: true, reducedMotion: null, filmLook: true, quality: "high", players: 1,
 };
 
 /** Saved settings over the defaults; anything malformed falls back field by field. */
@@ -30,6 +32,7 @@ export function parseSettings(raw: string | null): Settings {
     const v = saved[k], d = DEFAULTS[k];
     if (k === "reducedMotion") { if (v === null || typeof v === "boolean") out[k] = v; }
     else if (k === "quality") { if (QUALITIES.includes(v as Quality)) out[k] = v; }
+    else if (k === "players") { if (v === 1 || v === 2) out[k] = v; }
     else if (v !== undefined && typeof v === typeof d) out[k] = v;
   }
   return out as unknown as Settings;
