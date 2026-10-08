@@ -1,13 +1,35 @@
 import * as THREE from "three";
 import type { Hippo } from "../../sim/types.ts";
 import { LOOKS, type Look } from "./looks.ts";
+import { mergeChildren } from "./merge.ts";
 
-const GOLD = new THREE.MeshStandardMaterial({ color: 0xffc933, metalness: 1, roughness: 0.2 });
+/**
+ * A cool rim of light round every hippo (a fresnel term added to the emissive), so the
+ * silhouettes, shades and hats read against the dark jungle from the gameplay camera.
+ */
+export const RIM = { value: new THREE.Color(0x5fcfff).multiplyScalar(0.16) };
+const rimmed = new WeakSet<THREE.Material>();
+function rimLight(m: THREE.Material) {
+  if (rimmed.has(m) || !(m instanceof THREE.MeshStandardMaterial)) return;
+  rimmed.add(m);
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uRim = RIM;
+    sh.fragmentShader = "uniform vec3 uRim;\n" + sh.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+      { float rim = 1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0); totalEmissiveRadiance += uRim * rim * rim * rim; }`);
+  };
+}
+
+const GOLD = new THREE.MeshStandardMaterial({ color: 0xffc933, metalness: 1, roughness: 0.2, emissive: 0x3a2600 });
 const WHITE = new THREE.MeshStandardMaterial({ color: 0xf2ecdc, roughness: 0.45 });
 const DARK = new THREE.MeshStandardMaterial({ color: 0x120d0a, roughness: 0.5 });
 const OIL = new THREE.MeshPhysicalMaterial({ color: 0x050505, metalness: 0.6, roughness: 0.1, clearcoat: 1 });
 const GLASS = new THREE.MeshPhysicalMaterial({ color: 0xcfe8ff, roughness: 0.05, transparent: true, opacity: 0.28, metalness: 0, clearcoat: 1 });
-const mat = (color: number, rough = 0.6) => new THREE.MeshStandardMaterial({ color, roughness: rough });
+const mats = new Map<string, THREE.MeshStandardMaterial>();
+/** One material per colour and roughness, shared by every rig, so like parts merge into one draw. */
+const mat = (color: number, rough = 0.6) => {
+  const key = `${color}/${rough}`;
+  return mats.get(key) ?? mats.set(key, new THREE.MeshStandardMaterial({ color, roughness: rough })).get(key)!;
+};
 
 function ellipsoid(m: THREE.Material, sx: number, sy: number, sz: number, x = 0, y = 0, z = 0): THREE.Mesh {
   const e = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 18), m);
@@ -88,7 +110,10 @@ export class HippoRig {
     if (L.cigar) this.cigar();
     if (L.moustache !== null) this.moustache(L);
     this.hat(L);
-    this.group.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
+    this.group.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; rimLight(o.material as THREE.Material); } });
+    // ~100 little meshes become about twenty draws; the brows and jaw still move on their own
+    mergeChildren(this.body); mergeChildren(this.belt); mergeChildren(this.jaw);
+    mergeChildren(this.head, (o) => this.brows.includes(o as THREE.Mesh));
   }
 
   /** The tee under the jacket, the lapels, and camo blotches if it is that kind of jacket. */
@@ -109,9 +134,9 @@ export class HippoRig {
     const curve = new THREE.CatmullRomCurve3(pts);
     this.body.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.075, 6), strap));
     for (let i = 1; i <= 8; i++) {
-      const p = curve.getPoint(i / 9), vial = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.085, 0.3, 8), OIL);
+      const p = curve.getPoint(i / 9), vial = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.105, 0.36, 8), OIL);
       vial.position.copy(p).add(new THREE.Vector3(0, 0, -0.06)); vial.rotation.z = dir * 0.5; this.body.add(vial);
-      this.body.add(ellipsoid(GOLD, 0.07, 0.05, 0.07, p.x - dir * 0.07, p.y + 0.13, p.z - 0.06));
+      this.body.add(ellipsoid(GOLD, 0.09, 0.06, 0.09, p.x - dir * 0.07, p.y + 0.16, p.z - 0.06));
     }
   }
 
@@ -120,8 +145,8 @@ export class HippoRig {
     const rib = [0xc8102e, 0x1f4aa8, 0x2f8a3a];
     for (let i = 0; i < n; i++) {
       const col = i % 3, row = Math.floor(i / 3), x = (0.28 + col * 0.2) * bw, y = (1.2 - row * 0.28) * bh;
-      this.body.add(box(mat(rib[(i + row) % 3]!, 0.6), 0.1, 0.2, 0.04, x, y + 0.1, -0.84));
-      const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.035, 14), GOLD); disc.rotation.x = Math.PI / 2; disc.position.set(x, y - 0.06, -0.86); this.body.add(disc);
+      this.body.add(box(mat(rib[(i + row) % 3]!, 0.6), 0.13, 0.22, 0.04, x, y + 0.1, -0.84));
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.125, 0.125, 0.04, 14), GOLD); disc.rotation.x = Math.PI / 2; disc.position.set(x, y - 0.06, -0.86); this.body.add(disc);
     }
   }
 
@@ -215,7 +240,7 @@ export class HippoRig {
     if (L.hat === "beret") {                                   // a flat wool beret, tipped over one ear, with a gold oil-drop badge
       const b = ellipsoid(m, 1.0, 0.3, 0.95, 0, 2.16, -0.7); b.rotation.z = 0.26; b.rotation.x = -0.08; this.head.add(b);
       this.head.add(ellipsoid(m, 0.07, 0.1, 0.07, 0.1, 2.46, -0.7));
-      const badge = ellipsoid(GOLD, 0.11, 0.14, 0.04, -0.34, 2.18, -1.52); badge.rotation.z = 0.26; this.head.add(badge);
+      const badge = ellipsoid(GOLD, 0.15, 0.19, 0.05, -0.34, 2.18, -1.52); badge.rotation.z = 0.26; this.head.add(badge);
       return;
     }
     if (L.hat !== "bandana") return;                           // a rolled headband, knotted at the back

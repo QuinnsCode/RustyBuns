@@ -3,6 +3,7 @@
 // pump-jack half sunk in the mud, a couple of barrels. Barely anything built.
 import * as THREE from "three";
 import { barrels, derrick, pumpJack, RUST, DARK_IRON, VINE, type Animated } from "./industry.ts";
+import { mergeChildren } from "./merge.ts";
 
 const MOSS = new THREE.MeshStandardMaterial({ color: 0x3c5a26, roughness: 1 });
 
@@ -32,5 +33,6 @@ export function ruins(): { group: THREE.Group; animated: Animated[] } {
 
   const b = barrels(); b.rotation.set(0, 0.5, 0); put(b, -13.8, 0, 8.5);
   const tipped = barrels(); tipped.scale.setScalar(0.8); tipped.rotation.set(0, 1.2, 1.35); put(tipped, 14, 0.5, 11);
+  for (const part of [g, rig, jack, b, tipped]) mergeChildren(part);   // the jack's beam is its own group, so it still nods
   return { group: g, animated };
 }

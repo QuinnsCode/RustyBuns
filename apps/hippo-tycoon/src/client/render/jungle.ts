@@ -93,13 +93,14 @@ function bushGeometry(seed: number, fronds: number, scale: number, upright = 0):
 /**
  * A dense jungle round a clearing. Palms keep out of a wedge between the camera
  * (to the south, +z) and the pan so nothing tall stands in the view; low bushes
- * and ferns fill that wedge instead.
+ * and ferns fill that wedge instead. `density` (0..1, the quality preset) thins
+ * everything out evenly.
  */
-export function forest(): THREE.Group & { update(t: number): void } {
+export function forest(density = 1): THREE.Group & { update(t: number): void } {
   const g = new THREE.Group() as THREE.Group & { update(t: number): void };
   const r = rng(99), { barkMat, leafMat } = materials();
-  const place = (n: number, rMin: number, rMax: number, keep: (x: number, z: number, d: number) => boolean, gap: number) => {
-    const out: { x: number; z: number; d: number; a: number }[] = [];
+  const place = (want: number, rMin: number, rMax: number, keep: (x: number, z: number, d: number) => boolean, gap: number) => {
+    const out: { x: number; z: number; d: number; a: number }[] = [], n = Math.max(1, Math.round(want * density));
     for (let tries = 0; out.length < n && tries < n * 40; tries++) {
       const a = r() * Math.PI * 2, d = Math.sqrt(r() * (rMax * rMax - rMin * rMin) + rMin * rMin), x = Math.cos(a) * d, z = Math.sin(a) * d;
       if (!keep(x, z, d) || out.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < gap * gap)) continue;
@@ -155,13 +156,13 @@ export function forest(): THREE.Group & { update(t: number): void } {
 /** Fluted, jungle-covered peaks fading into the haze, with one thin waterfall. */
 export function mountains(): THREE.Group {
   const g = new THREE.Group(), r = rng(31);
-  const peaks = 11;
+  const peaks = 11, cones: THREE.BufferGeometry[] = [];
   for (let i = 0; i < peaks; i++) {
     const a = (i / peaks) * Math.PI * 2 + r() * 0.2, d = 120 + r() * 40, h = 55 + r() * 45, w = 34 + r() * 22;
     const geo = new THREE.ConeGeometry(w, h, 56, 16, true);
     const p = geo.attributes.position!, col = new Float32Array(p.count * 3), phase = r() * 9;
     for (let k = 0; k < p.count; k++) {
-      const x = p.getX(k), y = p.getY(k), z = p.getZ(k), ang = Math.atan2(z, x), t = (y + h / 2) / h;
+      const x = p.getX(k), y = p.getY(k), z = p.getZ(k), ang = Math.atan2(z, x), t = Math.min(1, Math.max(0, (y + h / 2) / h));   // clamped: at the apex 1 - t can round below 0, and pow() of that is NaN, which bloom smears into black blocks
       const flute = 1 + 0.2 * Math.sin(ang * 9 + phase) + 0.1 * Math.sin(ang * 21 + phase * 2) * (1 - t);   // sheer green ridges
       p.setX(k, x * flute); p.setZ(k, z * flute);
       p.setY(k, y + Math.sin(ang * 5 + phase) * 3 * t);
@@ -170,15 +171,14 @@ export function mountains(): THREE.Group {
       col.set([base.r, base.g, base.b], k * 3);
     }
     geo.setAttribute("color", new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
-    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }));
-    m.position.set(Math.cos(a) * d, h / 2 - 6, Math.sin(a) * d);
-    g.add(m);
+    cones.push(geo.translate(Math.cos(a) * d, h / 2 - 6, Math.sin(a) * d));
     if (i === 3) {                                          // a waterfall down the face toward the pan
       const wf = new THREE.Mesh(new THREE.PlaneGeometry(2.4, h * 0.75), new THREE.MeshBasicMaterial({ color: 0xeaf6f2, transparent: true, opacity: 0.6, fog: true }));
       wf.position.set(Math.cos(a) * (d - w * 0.62), h * 0.42 - 6, Math.sin(a) * (d - w * 0.62)); wf.lookAt(0, wf.position.y, 0);
       g.add(wf);
     }
   }
+  g.add(new THREE.Mesh(mergeGeometries(cones)!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide })));   // eleven peaks, one draw
   return g;
 }
 

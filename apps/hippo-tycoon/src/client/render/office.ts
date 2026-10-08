@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { LOOKS } from "./looks.ts";
 import type { Animated } from "./industry.ts";
+import { mergeChildren } from "./merge.ts";
 
 function rng(seed: number) {
   let x = seed >>> 0;
@@ -46,5 +47,6 @@ export function buildOffice(seat: number): Office {
     put(new THREE.CylinderGeometry(0.02, 0.025, h, 4), stem, x, h / 2, z);
     put(new THREE.SphereGeometry(0.13 + r() * 0.07, 8, 6), petals, x, h + 0.05, z).castShadow = false;
   }
+  mergeChildren(g);                                    // ~40 stones, stems and petals -> a handful of draws
   return { group: g, animated: [] };
 }

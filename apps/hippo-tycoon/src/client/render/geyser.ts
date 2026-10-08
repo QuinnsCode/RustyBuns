@@ -7,10 +7,16 @@ import * as THREE from "three";
 import { GOLD } from "../../sim/rules.ts";
 import { CAP, FluidTS, STRIDE, type Fluid } from "./fluid.ts";
 import { Smoke } from "./industry.ts";
+import { mergeChildren } from "./merge.ts";
 
 const STEP = 1 / 60;                                   // the fluid runs at its own fixed rate
 const OIL = new THREE.MeshPhysicalMaterial({ color: 0x060504, metalness: 0.3, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.04 });
-const DROPLET = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.45, roughness: 0.1, clearcoat: 1, clearcoatRoughness: 0.05 });
+// Black oil vanishes against a dark basin, so each droplet carries a thin-film sheen (iridescence)
+// and strong reflections: from the gameplay camera the gush reads as a glossy, rainbow-slicked jet.
+const DROPLET = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff, metalness: 0.25, roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.03,
+  iridescence: 1, iridescenceIOR: 1.7, iridescenceThicknessRange: [180, 620], envMapIntensity: 4, sheen: 0.6, sheenColor: new THREE.Color(0x9a6cff),
+});
 const OIL_COLOR = new THREE.Color(0.035, 0.028, 0.02), GOLD_COLOR = new THREE.Color(1, 0.72, 0.16);
 
 export class Geyser {
@@ -23,6 +29,8 @@ export class Geyser {
   private emitAcc = 0;
   private steam: Smoke;
   private m = new THREE.Matrix4();
+  /** Most droplets alive at once (the quality preset); the fluid stops spawning at the cap. */
+  cap = CAP;
 
   constructor() {
     const g = this.group, rock = new THREE.MeshStandardMaterial({ color: 0x3a3a34, roughness: 0.95, flatShading: true });
@@ -35,6 +43,7 @@ export class Geyser {
       r.position.set(Math.cos(a) * (1.25 + (i % 2) * 0.35), 0.2 + (i % 2) * 0.28, Math.sin(a) * (1.25 + (i % 2) * 0.35)); r.scale.set(1, 0.7, 1); r.rotation.set(i, i * 2, 0); r.castShadow = true; g.add(r);
     }
     const crater = new THREE.Mesh(new THREE.CircleGeometry(0.98, 28), OIL); crater.rotation.x = -Math.PI / 2; crater.position.y = 0.84; g.add(crater);
+    mergeChildren(g);
 
     this.drops = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 10, 8), DROPLET, CAP);
     this.drops.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -51,9 +60,9 @@ export class Geyser {
   setFluid(f: Fluid) { this.fluid = f; }
   get engine() { return this.fluid.engine; }
 
-  /** A drop was fired: the vent surges (gold surges gold). */
-  erupt(kind: number) {
-    this.surge = Math.min(1.4, this.surge + (kind === GOLD ? 1 : 0.7));
+  /** A drop was fired: the vent surges (gold surges gold). `strength` > 1 is a bigger blast (the preview's "surge"). */
+  erupt(kind: number, strength = 1) {
+    this.surge = Math.min(1.4 * Math.max(1, strength), this.surge + (kind === GOLD ? 1 : 0.7) * strength);
     if (kind === GOLD) this.goldFor = 0.45;
   }
 
@@ -63,13 +72,13 @@ export class Geyser {
     this.acc += Math.min(dt, 0.1);
     while (this.acc >= STEP) {
       this.acc -= STEP;
-      this.emitAcc += 0.4 + this.surge * 4.2;               // a steady bubble, and a gush on every shot
-      const emit = Math.floor(this.emitAcc); this.emitAcc -= emit;
-      this.fluid.step(STEP, emit, 4.2 + this.surge * 4.6, this.goldFor > 0 ? 1 : 0);
+      this.emitAcc += 0.5 + this.surge * 5;                 // a steady bubble, and a gush on every shot
+      const emit = Math.min(Math.floor(this.emitAcc), Math.max(0, this.cap - this.fluid.count)); this.emitAcc -= Math.floor(this.emitAcc);
+      this.fluid.step(STEP, emit, 4.6 + this.surge * 5.6, this.goldFor > 0 ? 1 : 0);   // a surge throws the jet ~7 m up
     }
     const n = this.fluid.count, o = this.fluid.out, ic = this.drops.instanceColor!.array as Float32Array, im = this.drops.instanceMatrix.array as Float32Array;
     for (let k = 0; k < n; k++) {
-      const s = o[k * STRIDE + 3]! * 2.3;            // drawn fatter than simulated: oil, not mist
+      const s = o[k * STRIDE + 3]! * 2.8;            // drawn fatter than simulated, so neighbours touch: a jet of oil, not beads
       this.m.makeScale(s, s, s).setPosition(o[k * STRIDE]!, o[k * STRIDE + 1]!, -o[k * STRIDE + 2]!);
       this.m.toArray(im, k * 16);
       const c = o[k * STRIDE + 4]! > 0.5 ? GOLD_COLOR : OIL_COLOR;

@@ -45,3 +45,28 @@ test("a bot seat samples as nothing", () => {
   expect(c.sample(["bot"])).toEqual({ move: 0, gulp: false, bellow: false });
   expect(c.sample([])).toEqual({ move: 0, gulp: false, bellow: false });
 });
+
+test("while a menu owns the keyboard, Space and Enter reach the focused button, not the game", () => {
+  const w = new EventTarget(), c = new Controls();
+  let ui = true, prevented = 0;
+  c.attach(w as unknown as Window, { uiKeys: () => ui });
+  const down = (code: string) => { const e = new Event("keydown") as Event & { code: string; repeat: boolean }; Object.assign(e, { code, repeat: false, preventDefault() { prevented++; } }); w.dispatchEvent(e); };
+  down("Enter"); down("Space");
+  expect(c.sample(["kbAll"]).gulp).toBe(false);
+  expect(prevented).toBe(0);                            // the browser still clicks the button
+  down("KeyQ");                                         // other keys still play (Q readies up in the lobby)
+  expect(c.sample(["kbAll"]).bellow).toBe(true);
+  c.endFrame(); ui = false;
+  down("Enter");
+  expect(c.sample(["kbAll"]).gulp).toBe(true);
+  expect(prevented).toBe(2);                            // Q and Enter: the page must not scroll
+});
+
+test("a networked player is controlled from any seat the server gives them", async () => {
+  const { controlsFor } = await import("../src/client/input.ts");
+  const solo = [["kbAll", "touch"], [], [], []] as const;
+  for (const seat of [0, 1, 2, 3]) expect(controlsFor(solo as never, seat)).toEqual(["kbAll", "touch"]);
+  const couch = [["kb1"], ["kb2"], [], ["pad0"]] as const;
+  expect(controlsFor(couch as never, 1)).toEqual(["kb2"]);
+  expect(controlsFor(couch as never, 3)).toEqual(["pad0"]);
+});

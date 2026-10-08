@@ -20,7 +20,7 @@ export class Arena {
   private flies!: ReturnType<typeof fireflies>;
   private mist: Smoke;
 
-  constructor() {
+  constructor(private foliage = 1) {
     const g = this.group;
     const floor = new THREE.Mesh(new THREE.CircleGeometry(WALL_R, 96), new THREE.MeshPhysicalMaterial({ map: basalt(), roughness: 0.28, metalness: 0.55, clearcoat: 0.8, clearcoatRoughness: 0.15 }));
     floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; g.add(floor);
@@ -55,7 +55,16 @@ export class Arena {
     const clearing = new THREE.Mesh(new THREE.CircleGeometry(CLEARING + 2, 64), new THREE.MeshStandardMaterial({ map: dirt(), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
     clearing.rotation.x = -Math.PI / 2; clearing.position.y = -0.03; clearing.receiveShadow = true; this.group.add(clearing);
     const old = ruins(); this.group.add(old.group); this.animated.push(...old.animated);
-    this.forest = forest(); this.group.add(this.forest);
+    this.forest = forest(this.foliage); this.group.add(this.forest);
+  }
+
+  /** Replant the jungle at another density (the quality preset). */
+  setFoliage(density: number) {
+    if (density === this.foliage) return;
+    this.foliage = density;
+    this.group.remove(this.forest);
+    this.forest.traverse((o) => { if (o instanceof THREE.InstancedMesh) { o.geometry.dispose(); o.dispose(); } });   // the bark and leaf materials are shared and kept
+    this.forest = forest(density); this.group.add(this.forest);
   }
 
   update(t: number, dt: number) {

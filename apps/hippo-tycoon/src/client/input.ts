@@ -14,6 +14,17 @@ const SCHEMES = {
 } as const;
 const ALL_CODES = new Set<string>([...Object.values(KEYS).flatMap((k) => [...k.left, ...k.right, ...k.gulp, ...k.bellow])]);
 const DEADZONE = 0.25;
+/** The keys a focused button answers to. */
+const UI_CODES = new Set(["Space", "Enter", "NumpadEnter"]);
+
+/** Whether a key event is aimed at a focusable control (a button, link, select, text box). */
+export const onControl = (t: EventTarget | null): boolean =>
+  !!t && typeof (t as Element).closest === "function" && !!(t as Element).closest("button, a[href], select, textarea, input, [role=button]");
+
+export interface AttachOpts {
+  /** True when Space/Enter should go to the focused control instead of the game (a podium, a lobby, an open dialog). */
+  uiKeys?: (e: KeyboardEvent) => boolean;
+}
 
 export const CTL_LABEL: Record<Ctl, string> = {
   bot: "Bot", kb1: "A / D  W  Q", kb2: "← / →  ↑  /", kbAll: "Keyboard", pad0: "Gamepad 1", pad1: "Gamepad 2", pad2: "Gamepad 3", pad3: "Gamepad 4", touch: "Touch",
@@ -28,8 +39,9 @@ export class Controls {
   private touchGulp = false;
   private off: (() => void)[] = [];
 
-  attach(target: Window = window) {
+  attach(target: Window = window, opts: AttachOpts = {}) {
     const kd = (e: KeyboardEvent) => {
+      if (UI_CODES.has(e.code) && opts.uiKeys?.(e)) return;                  // let the focused button have it
       if (ALL_CODES.has(e.code) && !(typeof HTMLInputElement !== "undefined" && e.target instanceof HTMLInputElement)) e.preventDefault();
       if (e.repeat) return;
       this.down.add(e.code); this.pressed.add(e.code);
@@ -102,4 +114,14 @@ export class Controls {
   }
 
   endFrame() { this.pressed.clear(); this.touchGulp = false; }
+}
+
+/**
+ * The controls a seat this machine plays answers to. Couch seats have their own; a
+ * networked player has one seat, wherever the server put them, played with the
+ * first entry (keyboard and touch).
+ */
+export function controlsFor(ctls: readonly (readonly Ctl[])[], seat: number): readonly Ctl[] {
+  const own = ctls[seat];
+  return own && own.length ? own : ctls.find((c) => c.length) ?? ["kbAll", "touch"];
 }

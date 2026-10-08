@@ -45,6 +45,9 @@ export class Particles {
     }
   }
 
+  /** Drop every live particle (a skipped or restarted finale leaves no confetti hanging). */
+  clear() { this.life.fill(0); for (let i = 0; i < CAP; i++) this.pos[i * 3 + 1] = -100; (this.points.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true; }
+
   update(dt: number) {
     for (let i = 0; i < CAP; i++) {
       if (this.life[i]! <= 0) { this.pos[i * 3 + 1] = -100; continue; }
@@ -70,4 +73,5 @@ export class Popups {
     this.host.appendChild(el);
     setTimeout(() => el.remove(), 1100);
   }
+  clear() { for (const el of [...this.host.querySelectorAll(".popup")]) el.remove(); }
 }

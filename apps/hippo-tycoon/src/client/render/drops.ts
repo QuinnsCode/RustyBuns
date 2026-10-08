@@ -3,7 +3,7 @@ import { DROP_R, GOLD, NAIL, SLICK_R, SLUDGE, WATER } from "../../sim/rules.ts";
 import { at } from "./arena.ts";
 
 const oilMat = new THREE.MeshPhysicalMaterial({ color: 0x060606, metalness: 0.5, roughness: 0.08, clearcoat: 1, clearcoatRoughness: 0.05 });
-const goldMat = new THREE.MeshStandardMaterial({ color: 0xffc933, metalness: 1, roughness: 0.18, emissive: 0xffa800, emissiveIntensity: 0.55 });
+const goldMat = new THREE.MeshStandardMaterial({ color: 0xffc933, metalness: 1, roughness: 0.18, emissive: 0xffa800, emissiveIntensity: 0.55, flatShading: true });
 const sludgeMat = new THREE.MeshStandardMaterial({ color: 0x4b3318, roughness: 0.95, flatShading: true });
 const steel = new THREE.MeshStandardMaterial({ color: 0xa5abb2, metalness: 1, roughness: 0.3 });
 const waterMat = new THREE.MeshPhysicalMaterial({ color: 0x55b6ff, roughness: 0.05, transparent: true, opacity: 0.8, emissive: 0x0a3d66, emissiveIntensity: 0.5 });
@@ -36,12 +36,22 @@ function bolt(): THREE.Group {
   return w;
 }
 
+/** A teardrop standing on its round end: water reads by shape, not only by blue. */
+function tear(): THREE.Mesh {
+  const R = DROP_R * 0.95, pts: THREE.Vector2[] = [];
+  for (let i = 0; i <= 8; i++) { const a = -Math.PI / 2 + (i / 8) * (Math.PI / 2); pts.push(new THREE.Vector2(Math.cos(a) * R, Math.sin(a) * R)); }   // a round bottom
+  for (let i = 1; i <= 10; i++) { const s = i / 10; pts.push(new THREE.Vector2(R * (1 - s) ** 1.6, s * R * 1.7)); }                                // tapering to a point
+  return new THREE.Mesh(new THREE.LatheGeometry(pts, 18), waterMat);
+}
+
+// Every kind has its own silhouette as well as its own colour (for colour-blind players):
+// oil a smooth ball, gold a faceted gem, sludge a lumpy clod, a nail a spiky bolt, water a teardrop.
 function make(kind: number): THREE.Object3D {
   switch (kind) {
-    case GOLD: return new THREE.Mesh(new THREE.SphereGeometry(DROP_R * 1.12, 20, 14), goldMat);
+    case GOLD: return new THREE.Mesh(new THREE.OctahedronGeometry(DROP_R * 1.3, 0), goldMat);
     case SLUDGE: return lump();
     case NAIL: return bolt();
-    case WATER: return new THREE.Mesh(new THREE.SphereGeometry(DROP_R, 18, 12), waterMat);
+    case WATER: return tear();
     default: return new THREE.Mesh(new THREE.SphereGeometry(DROP_R, 20, 14), oilMat);
   }
 }
@@ -64,7 +74,7 @@ export class DropLayer {
       const r = Math.hypot(d.x, d.y), loft = r < 2.6 ? 2.7 * (1 - (r / 2.6) ** 2) : 0;
       m.position.copy(at(d.x, d.y, DROP_R + 0.02 + loft));
       if (d.kind === NAIL || d.kind === SLUDGE) m.rotation.y = t * 3 + d.id;
-      if (d.kind === GOLD) m.scale.setScalar(1 + Math.sin(t * 9 + d.id) * 0.06);
+      if (d.kind === GOLD) { m.scale.setScalar(1 + Math.sin(t * 9 + d.id) * 0.06); m.rotation.y = t * 2 + d.id; }
     }
     for (const [id, m] of this.live) if (!seen.has(id)) { this.group.remove(m); this.live.delete(id); }
   }

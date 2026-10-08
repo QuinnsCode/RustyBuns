@@ -39,14 +39,15 @@ export function Setup({ onStart, onBack }: { onStart: (ctls: Ctl[]) => void; onB
         <div className="seats">
           {Array.from({ length: SEATS }, (_, i) => (
             <div key={i} className={"seat" + (seats[i] !== "bot" ? " mine" : "")}>
-              <b>{SEAT_NAMES[i]}</b>
-              <span className="who">{seats[i] === "bot" ? "Bot" : `Player · ${CTL_LABEL[seats[i]!]}`}</span>
-              <button className="btn" onClick={() => cycle(i)}>Change</button>
+              <b id={`seat-${i}`}>{SEAT_NAMES[i]}</b>
+              <span className="who" id={`seat-${i}-who`}>{seats[i] === "bot" ? "Bot" : `Player · ${CTL_LABEL[seats[i]!]}`}</span>
+              <button className="btn" onClick={() => cycle(i)} aria-describedby={`seat-${i}-who`} aria-label={`Change who plays ${SEAT_NAMES[i]}`} autoFocus={i === 0}>Change</button>
             </div>
           ))}
         </div>
         <div className="col" style={{ marginTop: 16 }}>
           <button className="btn go" disabled={humans === 0} onClick={() => onStart(seats)}>Start</button>
+          <p className="sr-only" aria-live="polite">{seats.map((c, i) => `${SEAT_NAMES[i]}: ${c === "bot" ? "bot" : CTL_LABEL[c]}`).join(", ")}</p>
           <button className="btn" onClick={onBack}>Back</button>
         </div>
         <p className="hint">Press a button on a gamepad to join with it. Keyboard players share the keyboard: A/D + W + Q, and arrows + ↑ + /.</p>
