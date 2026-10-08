@@ -109,7 +109,7 @@ sim (rules, 30 Hz) ─▶ engine (Match: seats, phases, bots) ─▶ Driver seam
 src/sim/       the game: pure, deterministic, 30 Hz. No DOM, no clock, no Math.random (a test enforces it)
 src/engine/    platform-free: Match (lobby > countdown > playing > podium, seats, bots), Room (sockets), tick loop, wire
 src/client/    React UI, three.js renderer, input, audio, LocalDriver and NetDriver
-src/client/render/fluid.ts   the geyser's fluid: the TypeScript twin + the wasm loader (native/crates/hippo_fluid is the Rust)
+src/client/render/fluid.ts   the geyser's fluid: the TypeScript twin + the wasm loader (rust/crates/hippo_fluid is the Rust)
 src/room-do.ts the one World class: the Cloudflare Durable Object and the in-process desktop world
 src/worker.ts  the Cloudflare entry: validates and vouches identity, routes rooms
 ```

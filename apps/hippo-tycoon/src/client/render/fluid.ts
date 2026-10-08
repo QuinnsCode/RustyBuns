@@ -1,5 +1,5 @@
 // The geyser's fluid. The same particle simulation exists twice: in Rust
-// (native/crates/hippo_fluid, loaded as WebAssembly) and here in TypeScript.
+// (rust/crates/hippo_fluid, loaded as WebAssembly) and here in TypeScript.
 // They run the same arithmetic in the same order on f64 with nothing but
 // + - * / sqrt, so they agree bit for bit (test/fluid.test.ts holds them to it).
 // If the wasm is missing or fails to load, this twin is used. It only decorates
