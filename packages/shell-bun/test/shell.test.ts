@@ -8,7 +8,7 @@ test("d1 adapter: prepare/bind/all/first/run", async () => {
   expect(r.meta.last_row_id).toBe(1);
   const all = await db.prepare("SELECT * FROM users").all();
   expect(all.results).toEqual([{ id: 1, name: "ada" }]);
-  expect(await db.prepare("SELECT name FROM users WHERE id = ?").bind(1).first("name")).toBe("ada");
+  expect(await db.prepare("SELECT name FROM users WHERE id = ?").bind(1).first<string>("name")).toBe("ada");
 });
 
 test("kv adapter: ttl and list", async () => {
@@ -26,7 +26,7 @@ test("storage port: DO shape", async () => {
   const s = storage(":memory:");
   await s.put("sceneId", "hub");
   await s.put("unlocks", ["a"]);
-  expect(await s.get("sceneId")).toBe("hub");
+  expect(await s.get<string>("sceneId")).toBe("hub");
   expect((await s.list({ prefix: "s" })).get("sceneId")).toBe("hub");
   expect(await s.delete("sceneId")).toBe(true);
 });
@@ -67,7 +67,7 @@ test("storage v8 codec keeps TypedArrays and Maps", async () => {
   expect((await s.get<Map<string, number>>("m"))!.get("a")).toBe(1);
   const j = storage(":memory:");
   await j.put("pos", new Float32Array([1.5]));
-  expect(await j.get("pos")).toEqual({ "0": 1.5 });   // the silent JSON degradation, documented
+  expect(await j.get<Record<string, number>>("pos")).toEqual({ "0": 1.5 });   // the silent JSON degradation, documented
 });
 
 test("D1 migrations apply once and are tracked", async () => {

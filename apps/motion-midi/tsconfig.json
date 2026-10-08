@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun", "vite/client"]
+  },
+  // .ts only: the .tsx UI needs @types/react, which this app doesn't install yet.
+  "include": ["src/**/*.ts", "packages/desktop/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "bench/**/*.ts", "rustybuns.config.ts"]
+}

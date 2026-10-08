@@ -32,7 +32,7 @@ async function tree(path = "", auth: Record<string, string>): Promise<Entry[]> {
   // The tree API pages with a Link header.
   let url: string | null = `${API}${path ? `/${path}` : ""}?limit=1000`;
   while (url) {
-    const r = await fetch(url, { headers: auth });
+    const r: Response = await fetch(url, { headers: auth });
     if (!r.ok) throw new Error(`listing ${path || "dataset"}: HTTP ${r.status}`);
     out.push(...((await r.json()) as Entry[]));
     url = r.headers.get("link")?.match(/<([^>]+)>;\s*rel="next"/)?.[1] ?? null;

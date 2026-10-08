@@ -1,5 +1,7 @@
 // What the game repo's packages/desktop/world.ts looks like: the CF shell's
 // body with the base class removed. ctx is structurally a DurableObjectState.
+// A Cloudflare global; the host installs it before loading this module.
+declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 export default class World {
   private boots = 0;
   constructor(private ctx: any, private env: any) {

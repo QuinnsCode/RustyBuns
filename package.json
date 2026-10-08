@@ -7,7 +7,7 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+    "typecheck": "bun scripts/typecheck.ts",
     "test": "bun test",
     "publish:all": "bun scripts/check-release.ts && for p in ports shell-bun native cli; do (cd packages/$p && bun publish --access public); done"
   },

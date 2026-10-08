@@ -56,6 +56,6 @@ export function analyzeNativeAsync(circuitJson: string, minClearanceMm: number):
   const input = Buffer.from(circuitJson);   // Rust copies it before the call returns
   return new Promise((resolve) => {
     waiting.set(id, resolve);
-    lib.tsci_analyze_async(input, input.byteLength, minClearanceMm, id, done.ptr);
+    lib.tsci_analyze_async(input, input.byteLength, minClearanceMm, id, done);
   });
 }
