@@ -5,6 +5,7 @@
 import { worldSocket, playerId } from "@rustybuns/shell-bun/client";
 import type { Look, Msg, View } from "../hunt/game.ts";
 import { Room, TICK_MS } from "../room.ts";
+import { fetchWeather } from "../weather.ts";
 
 export type SessionStatus = { state: "connecting" | "online" | "closed"; error?: string };
 
@@ -23,7 +24,7 @@ export class LocalSession implements Session {
   offset = 0;
   onView: (v: View) => void = () => {};
   onStatus: (s: SessionStatus) => void = () => {};
-  private room = new Room();
+  private room = new Room(Date.now(), fetchWeather);
   private timer: ReturnType<typeof setInterval>;
   private sent = -1;
   readonly me = "you";
