@@ -30,6 +30,8 @@ export type Command =
 export interface Driver {
   readonly kind: "local" | "net";
   advance(dtMs: number): Frame;
+  /** Seats this machine controls right now (cheap; does not consume events). */
+  mine(): number[];
   /** The latest control for a seat. Move holds; gulp and bellow are presses. */
   input(seat: number, move: number, gulp: boolean, bellow: boolean): void;
   command(c: Command): void;
@@ -48,11 +50,11 @@ export class LocalDriver implements Driver {
   private prev: Snapshot;
   private cur: Snapshot;
   private events: Event[] = [];
-  private mine: number[] = [];
+  private mine_: number[] = [];
 
   constructor(seats: LocalSeat[], cfg: Partial<Cfg>, seed: number) {
     this.match = new Match(seed, cfg);
-    seats.forEach((s, i) => { if (s.human) { this.match.join(`local:${i}`, s.name, i); this.mine.push(i); } });
+    seats.forEach((s, i) => { if (s.human) { this.match.join(`local:${i}`, s.name, i); this.mine_.push(i); } });
     this.match.start();
     this.prev = this.cur = this.match.snapshot();
   }
@@ -70,10 +72,12 @@ export class LocalDriver implements Driver {
     const m = this.match;
     return {
       phase: m.phase, prev: this.prev, cur: this.cur, alpha: this.acc / TICK_MS,
-      seats: m.seats.map((s, i) => ({ name: s.name, human: s.uid !== null, ready: s.ready, mine: this.mine.includes(i) })),
-      mine: this.mine, cfg: m.cfg, hostSeat: m.hostSeat(), events,
+      seats: m.seats.map((s, i) => ({ name: s.name, human: s.uid !== null, ready: s.ready, mine: this.mine_.includes(i) })),
+      mine: this.mine_, cfg: m.cfg, hostSeat: m.hostSeat(), events,
     };
   }
+
+  mine() { return this.mine_; }
 
   input(seat: number, move: number, gulp: boolean, bellow: boolean) { this.match.input(seat, move, gulp, bellow); }
 

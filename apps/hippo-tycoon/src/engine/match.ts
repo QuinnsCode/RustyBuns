@@ -24,6 +24,8 @@ export interface SlickView { id: number; x: number; y: number; life: number }
 /** Everything a renderer needs for one moment. Local and networked play produce the same thing. */
 export interface Snapshot {
   tick: number;
+  /** Which round this is; ticks restart from 0 each round. */
+  round: number;
   phase: Phase;
   /** Ticks of countdown left. */
   countdown: number;
@@ -178,7 +180,7 @@ export class Match {
     const s = this.sim;
     const events = this.pending; this.pending = [];
     return {
-      tick: s.tick, phase: this.phase, countdown: this.countdown, left: s.roundTicks - s.tick,
+      tick: s.tick, round: this.round, phase: this.phase, countdown: this.countdown, left: s.roundTicks - s.tick,
       hippos: s.hippos.map((h) => ({ ...h })),
       drops: s.drops.map((d) => ({ id: d.id, kind: d.kind, x: d.x, y: d.y })),
       slicks: s.slicks.map((k) => ({ id: k.id, x: k.x, y: k.y, life: k.life })),

@@ -16,11 +16,9 @@ interface Props {
   onExit: () => void;
   /** Extra overlay (the network lobby). */
   lobby?: (frame: Frame) => React.ReactNode;
-  /** Net drivers pass the seat the server gave them; local ones use ctls. */
-  seatsOf?: (frame: Frame) => number[];
 }
 
-export function Game({ driver, ctls, muted, onMute, onExit, lobby, seatsOf }: Props) {
+export function Game({ driver, ctls, muted, onMute, onExit, lobby }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const [frame, setFrame] = useState<Frame | null>(null);
@@ -55,9 +53,7 @@ export function Game({ driver, ctls, muted, onMute, onExit, lobby, seatsOf }: Pr
       raf = requestAnimationFrame(loop);
       const dt = now - last; last = now;
       controls.beginFrame();
-      const peek = driver.advance(0);
-      const seats = seatsOf ? seatsOf(peek) : peek.mine;
-      for (const seat of seats) {
+      for (const seat of driver.mine()) {
         const c = controls.sample(ctls[seat] ?? ctls[0] ?? ["kbAll", "touch"]);
         driver.input(seat, c.move, c.gulp, c.bellow);
         if (c.gulp && driver.kind === "net") renderer.predictGulp(seat, now);

@@ -34,7 +34,7 @@ export function Setup({ onStart, onBack }: { onStart: (ctls: Ctl[]) => void; onB
   return (
     <div className="menu">
       <div className="card">
-        <h1 className="title" style={{ fontSize: 40 }}>COUCH</h1>
+        <h1 className="title" style={{ fontSize: 34 }}>COUCH</h1>
         <p className="tag">Pick who sits where. Bots take the empty offices.</p>
         <div className="seats">
           {Array.from({ length: SEATS }, (_, i) => (
