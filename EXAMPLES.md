@@ -63,7 +63,7 @@ bun run desktop:dev
 
 ## hippo-tycoon
 
-Four angry oil-baron hippos in a Victorian oil pan, chomping drops of oil for net worth. Empty seats are bots; humans take them over and hand them back.
+Four angry oil-baron hippos on a jungle island, chomping the drops an oil geyser fires into a basalt basin, for net worth. Empty seats are bots; humans take them over and hand them back.
 
 - **One world, two homes.** The room is a single class: a Durable Object per room code on Cloudflare, and the same class in-process in the desktop binary, where `desktop.guests` opens it to friends on the LAN.
 - **A game with no assets.** The hippos, the town and the drops are three.js primitives, the textures are drawn at startup and the sounds are synthesised.

@@ -1,8 +1,8 @@
 # Hippo Tycoon
 
-Four angry, greedy oil-baron hippos around a riveted iron pan, each trying to chomp the most oil. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode. Built with [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
+Four angry, greedy oil-baron hippos around an oil geyser on a jungle island (misty fluted peaks, palms, tiki torches, an abandoned derrick or two), each trying to chomp the most oil the geyser fires into the basin. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode. Built with [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
 
-Everything on screen is built in code: the hippos, the brick counting-houses, the drops are three.js primitives, the textures are drawn on a canvas at startup and the sounds are synthesised. There are no asset files.
+Everything on screen is built in code: the hippos, the stilt lodges, the palms, the mountains, the geyser and the drops are three.js primitives, the textures are drawn on a canvas at startup and the sounds are synthesised. There are no asset files.
 
 ## Run it
 

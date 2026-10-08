@@ -60,7 +60,9 @@ export class DropLayer {
       seen.add(d.id);
       let m = this.live.get(d.id);
       if (!m) { m = make(d.kind); this.live.set(d.id, m); this.group.add(m); }
-      m.position.copy(at(d.x, d.y, DROP_R + 0.02));
+      // fresh drops are fired from the geyser: loft them in an arc that lands as they clear the vent
+      const r = Math.hypot(d.x, d.y), loft = r < 2.6 ? 2.7 * (1 - (r / 2.6) ** 2) : 0;
+      m.position.copy(at(d.x, d.y, DROP_R + 0.02 + loft));
       if (d.kind === NAIL || d.kind === SLUDGE) m.rotation.y = t * 3 + d.id;
       if (d.kind === GOLD) m.scale.setScalar(1 + Math.sin(t * 9 + d.id) * 0.06);
     }

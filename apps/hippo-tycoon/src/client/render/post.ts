@@ -1,4 +1,4 @@
-// A little cinema on top: bloom for the gold and the gaslight, then a warm
+// A little cinema on top: bloom for the gold and the torchlight, then a warm
 // grade with a vignette and a touch of grain. Falls back to a plain render
 // if the composer cannot be built (the game never depends on it).
 import * as THREE from "three";
@@ -17,10 +17,10 @@ const Grade = {
     void main(){
       vec4 c = texture2D(tDiffuse, vUv);
       float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
-      vec3 warm = mix(vec3(l) * vec3(1.05, 0.92, 0.78), c.rgb, 0.82);              // a pinch of sepia, mostly colour
+      vec3 warm = mix(vec3(l) * vec3(1.04, 0.96, 0.84), c.rgb, 0.94);              // a pinch of warmth, mostly colour
       warm = mix(warm * vec3(0.92, 0.95, 1.06), warm * vec3(1.08, 1.0, 0.9), smoothstep(0.2, 0.8, l)); // cool shadows, warm lights
       float v = smoothstep(1.05, 0.25, length((vUv - 0.5) * vec2(1.15, 1.0)));
-      warm *= mix(0.55, 1.0, v);
+      warm *= mix(0.62, 1.0, v);
       warm += (hash(vUv * 900.0 + time) - 0.5) * 0.028;
       gl_FragColor = vec4(warm, c.a);
     }`,

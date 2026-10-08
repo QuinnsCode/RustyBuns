@@ -1,5 +1,5 @@
 :root {
-  --bg: #0b0b0f; --glass: rgba(20, 20, 28, 0.62); --glass2: rgba(255, 255, 255, 0.06);
+  --bg: #08100d; --glass: rgba(20, 20, 28, 0.62); --glass2: rgba(255, 255, 255, 0.06);
   --line: rgba(255, 255, 255, 0.10); --text: #f3f1ea; --dim: #9a98a3;
   --gold: #ffcb47; --gold2: #ff9d2e; --green: #3ddc84; --red: #ff6b5b; --blue: #7cc8ff;
   --r: 14px;
@@ -19,7 +19,7 @@ button, input, select { font: inherit; color: inherit; }
 @keyframes rise { from { transform: translate(-50%, -50%) scale(0.7); opacity: 1; } 60% { opacity: 1; } to { transform: translate(-50%, -200%) scale(1.1); opacity: 0; } }
 
 .menu { position: fixed; inset: 0; display: grid; place-items: center; overflow: auto; padding: 20px;
-  background: radial-gradient(900px 500px at 50% 0%, rgba(255, 170, 40, 0.16), transparent 60%), radial-gradient(700px 500px at 100% 100%, rgba(120, 80, 255, 0.12), transparent 60%), var(--bg); }
+  background: radial-gradient(900px 520px at 50% 0%, rgba(255, 176, 70, 0.18), transparent 62%), radial-gradient(800px 560px at 0% 100%, rgba(40, 150, 120, 0.2), transparent 60%), radial-gradient(700px 500px at 100% 100%, rgba(30, 110, 90, 0.16), transparent 60%), var(--bg); }
 .card { width: min(520px, 100%); padding: 32px; border: 1px solid var(--line); border-radius: 22px; background: var(--glass); backdrop-filter: blur(24px) saturate(1.4); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
 .title { margin: 0; font-family: "Bodoni 72", Didot, "Playfair Display", Georgia, "Times New Roman", serif; font-size: 44px; line-height: 1.05; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; text-align: center; background: linear-gradient(180deg, #fff2c2, var(--gold) 45%, var(--gold2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .tag { text-align: center; margin: 12px 0 26px; color: var(--dim); font-size: 14px; letter-spacing: 0.02em; }
