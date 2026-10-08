@@ -7,6 +7,12 @@
 // shell sees the 101, upgrades the real Bun socket, and bridges it to `client`.
 // From then on browser frames reach `webSocketMessage(server, data)` and
 // `server.send()` reaches the browser. Zero changes to the DO.
+//
+// Eviction: `namespace.evict(id)` drops the instance the way CF does after
+// hibernation or a restart. Storage, the alarm, accepted sockets (with their
+// tags and attachments) survive; the next event (fetch, socket frame, close,
+// alarm) constructs a fresh instance from them. Tests use it to exercise the
+// restore path, which never runs otherwise because the shell never evicts.
 
 import type { StoragePort } from "@rustybuns/ports";
 
@@ -20,7 +26,7 @@ export class LocalWebSocket {
   closeBrowser: ((code?: number, reason?: string) => void) | null = null;
   /** Set by the DO state on the SERVER end: hibernation delivery. */
   onMessage: ((d: string | ArrayBuffer) => void) | null = null;
-  onClose: ((code: number, reason: string) => void) | null = null;
+  onClose: ((code: number, reason: string, clean: boolean) => void) | null = null;
   peer!: LocalWebSocket;
   /** Frames sent before the shell attached the real socket (CF buffers these too). */
   queue: Data[] = [];
@@ -40,7 +46,8 @@ export class LocalWebSocket {
     this.readyState = 3;
     this.peer.readyState = 3;
     this.peer.closeBrowser?.(code, reason);
-    this.peer.onClose?.(code, reason);
+    // A close the DO starts itself is a close handshake, so always clean.
+    this.peer.onClose?.(code, reason, true);
   }
   serializeAttachment(v: unknown) { this.attachment = v; }
   deserializeAttachment(): unknown { return this.attachment; }
@@ -63,25 +70,44 @@ export class DurableObjectId {
   equals(o: DurableObjectId) { return this.hex === o.hex; }
 }
 
+/** What outlives an instance: everything CF keeps across eviction. */
+interface Slot {
+  storage: StoragePort;
+  /** Accepted sockets and their tags, in accept order. */
+  sockets: Map<LocalWebSocket, string[]>;
+  alarmAt: number | null;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+const MAX_TAGS = 10, MAX_TAG_LEN = 256;
+
 export class LocalDurableObjectState {
-  private sockets: LocalWebSocket[] = [];
   private gate: Promise<unknown> = Promise.resolve();
   readonly storage: StoragePort & { getAlarm(): Promise<number | null> };
-  private alarmAt: number | null = null;
   pending: Promise<unknown>[] = [];
+  /** Set by `namespace.evict()`. The instance is gone; see `evicted()`. */
+  private dead = false;
+  private warned = false;
+  private readonly slot: Slot;
 
-  private timer: ReturnType<typeof setTimeout> | null = null;
-  constructor(readonly id: DurableObjectId, storage: StoragePort, private onAlarm: () => void) {
-    const self = this;
+  constructor(readonly id: DurableObjectId, storage: StoragePort | Slot, private onAlarm: () => void) {
+    this.slot = "sockets" in storage ? storage : { storage, sockets: new Map(), alarmAt: null, timer: null };
+    const self = this, slot = this.slot, base = slot.storage;
+    // A zombie timer from an evicted instance must not clobber what the fresh
+    // instance writes: drop its writes (reads stay harmless).
+    const write = <A extends unknown[], R>(fn: (...a: A) => Promise<R>, dead: R) =>
+      (...a: A): Promise<R> => self.zombie() ? Promise.resolve(dead) : fn(...a);
     this.storage = {
-      ...storage,
-      async setAlarm(at) {
-        self.alarmAt = at;
-        if (self.timer) clearTimeout(self.timer);
-        self.timer = setTimeout(() => { self.timer = null; self.alarmAt = null; self.onAlarm(); }, Math.max(0, at - Date.now()));
-      },
-      async deleteAlarm() { self.alarmAt = null; if (self.timer) clearTimeout(self.timer); self.timer = null; },
-      async getAlarm() { return self.alarmAt; },
+      ...base,
+      put: write(base.put.bind(base), undefined),
+      delete: write(base.delete.bind(base), false),
+      setAlarm: write(async (at: number) => {
+        slot.alarmAt = at;
+        if (slot.timer) clearTimeout(slot.timer);
+        slot.timer = setTimeout(() => { slot.timer = null; slot.alarmAt = null; self.onAlarm(); }, Math.max(0, at - Date.now()));
+      }, undefined),
+      deleteAlarm: write(async () => { slot.alarmAt = null; if (slot.timer) clearTimeout(slot.timer); slot.timer = null; }, undefined),
+      async getAlarm() { return slot.alarmAt; },
     };
   }
 
@@ -98,14 +124,42 @@ export class LocalDurableObjectState {
   /** Await this before delivering any event: mirrors CF's constructor gate. */
   ready() { return this.gate; }
 
-  acceptWebSocket(ws: LocalWebSocket, _tags?: string[]) {
+  acceptWebSocket(ws: LocalWebSocket, tags: string[] = []) {
+    if (tags.length > MAX_TAGS) throw new Error(`acceptWebSocket: at most ${MAX_TAGS} tags, got ${tags.length}`);
+    for (const t of tags) {
+      if (typeof t !== "string" || t.length === 0 || t.length > MAX_TAG_LEN) throw new Error(`acceptWebSocket: tags must be 1-${MAX_TAG_LEN} character strings`);
+    }
     ws.accept();
-    this.sockets.push(ws);
-    ws.onClose = () => { const i = this.sockets.indexOf(ws); if (i >= 0) this.sockets.splice(i, 1); };
+    this.slot.sockets.set(ws, [...new Set(tags)]);
+    ws.onClose = () => { this.slot.sockets.delete(ws); };
   }
-  getWebSockets(_tag?: string): LocalWebSocket[] { return [...this.sockets]; }
+  /** Accepted sockets, optionally only those carrying `tag`. Empty once evicted. */
+  getWebSockets(tag?: string): LocalWebSocket[] {
+    if (this.zombie()) return [];
+    const out: LocalWebSocket[] = [];
+    for (const [ws, tags] of this.slot.sockets) if (tag === undefined || tags.includes(tag)) out.push(ws);
+    return out;
+  }
+  getTags(ws: LocalWebSocket): string[] {
+    const tags = this.slot.sockets.get(ws);
+    if (!tags) throw new Error("getTags: socket was not accepted with acceptWebSocket()");
+    return [...tags];
+  }
   /** Drop a socket from the live list (bridge close). */
-  _detach(ws: LocalWebSocket) { const i = this.sockets.indexOf(ws); if (i >= 0) this.sockets.splice(i, 1); }
+  _detach(ws: LocalWebSocket) { this.slot.sockets.delete(ws); }
+  /** Called by the namespace on eviction. */
+  _evict() { this.dead = true; }
+
+  /** True once evicted. Timers the old instance started still fire in-process
+   * (nothing can kill them); this makes its ctx go quiet instead. */
+  private zombie() {
+    if (!this.dead) return false;
+    if (!this.warned) {
+      this.warned = true;
+      console.warn(`[durable-object] ${this.id} was evicted but its old instance is still running (a timer?); its socket list is empty and storage writes are dropped`);
+    }
+    return true;
+  }
 }
 
 // ---- Namespace ----------------------------------------------------------------
@@ -126,6 +180,7 @@ export interface NamespaceOptions {
 }
 
 export class LocalDurableObjectNamespace<Env> {
+  private slots = new Map<string, Slot>();
   private instances = new Map<string, { obj: DurableObjectLike; state: LocalDurableObjectState }>();
   constructor(private Ctor: DurableObjectCtor<Env>, private env: Env, private opts: NamespaceOptions = {}) {}
 
@@ -133,34 +188,62 @@ export class LocalDurableObjectNamespace<Env> {
   idFromString(hex: string) { return new DurableObjectId(null, hex); }
   newUniqueId() { return new DurableObjectId(null, crypto.randomUUID().replace(/-/g, "")); }
 
+  /** The live instance for `id`, constructed (or reconstructed after eviction) on demand. */
   private instance(id: DurableObjectId) {
     const key = id.toString();
     let inst = this.instances.get(key);
     if (!inst) {
-      const storage = this.opts.storage?.(key) ?? memoryStorage();
-      const state = new LocalDurableObjectState(id, storage, () => { void inst?.obj.alarm?.(); });
-      const obj = new this.Ctor(state, this.env);
-      inst = { obj, state };
+      let slot = this.slots.get(key);
+      if (!slot) {
+        slot = { storage: this.opts.storage?.(key) ?? memoryStorage(), sockets: new Map(), alarmAt: null, timer: null };
+        this.slots.set(key, slot);
+      }
+      // The alarm lives in the slot, so it fires into whichever instance is live then.
+      const state = new LocalDurableObjectState(id, slot, () => { void this.deliver(id, (obj) => obj.alarm?.()); });
+      inst = { obj: new this.Ctor(state, this.env), state };
       this.instances.set(key, inst);
     }
     return inst;
   }
 
-  get(id: DurableObjectId) {
+  /** Run one event against the live instance, after its constructor gate. */
+  private async deliver<T>(id: DurableObjectId, fn: (obj: DurableObjectLike) => T): Promise<Awaited<T>> {
     const { obj, state } = this.instance(id);
+    await state.ready();
+    return await fn(obj);
+  }
+
+  /**
+   * Test hook: evict `id` as CF does after hibernation or a restart. The
+   * in-memory instance is dropped; storage, the pending alarm and accepted
+   * sockets (tags, attachments) are kept, and the next event builds a new
+   * instance from them. Returns false if no instance was live.
+   */
+  evict(id: DurableObjectId | string): boolean {
+    const key = id.toString();
+    const inst = this.instances.get(key);
+    if (!inst) return false;
+    this.instances.delete(key);
+    inst.state._evict();
+    return true;
+  }
+
+  get(id: DurableObjectId) {
     return {
       id,
       fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-        await state.ready();
         const req = input instanceof Request ? input : new Request(input, init);
-        const res = await obj.fetch(req);
+        const res = await this.deliver(id, (obj) => obj.fetch(req));
         const client = (res as any).webSocket as LocalWebSocket | undefined;
         if (res.status === 101 && client) {
           const server = client.peer;
-          // hibernation delivery: browser frames -> DO handlers
-          client.onMessage = (d) => { void obj.webSocketMessage?.(server, d); };
+          // Hibernation delivery: browser frames -> whichever instance is live.
+          client.onMessage = (d) => { void this.deliver(id, (obj) => obj.webSocketMessage?.(server, d)); };
           const origClose = server.onClose;
-          client.onClose = (code, reason) => { state._detach(server); origClose?.(code, reason); void obj.webSocketClose?.(server, code, reason, true); };
+          client.onClose = (code, reason, clean) => {
+            origClose?.(code, reason, clean);
+            void this.deliver(id, (obj) => obj.webSocketClose?.(server, code, reason, clean));
+          };
         }
         return res;
       },

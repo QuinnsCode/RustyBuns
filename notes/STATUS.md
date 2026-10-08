@@ -83,7 +83,6 @@ RB_NO_BROWSER=1 ./dist/druids-curse-*             # the binary; prints the token
 
 ## What the DO adapter does not emulate (yet)
 
-- Eviction. The shell never evicts, so an app's eviction defenses are no-ops (correct).
+- Automatic eviction. The shell never evicts on its own; tests call `namespace.evict(id)` to drop an instance and rebuild it from storage, the pending alarm and live sockets. Timers the old instance started keep firing in-process, but its ctx goes quiet (no sockets, writes dropped).
 - Cross-script DOs (`script_name`). No local twin; left unbound with a comment.
-- Tags on `acceptWebSocket` / `getWebSockets(tag)`. Accepted, ignored.
 - Storage transactions and `sql` (SQLite-backed DO API). Only get/put/delete/list/alarm.
