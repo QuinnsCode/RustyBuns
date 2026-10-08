@@ -3,7 +3,9 @@ import type { Frame } from "../driver.ts";
 import { GOLD, GULP_BACK, GULP_OUT, NAIL, SEATS, SLUDGE, TICK_HZ, WATER } from "../../sim/rules.ts";
 import { hippoPoint, lungeAt } from "../../sim/geom.ts";
 import { AXES } from "../../sim/geom.ts";
-import { at, buildArena } from "./arena.ts";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { Arena, at } from "./arena.ts";
+import { Post } from "./post.ts";
 import { DropLayer } from "./drops.ts";
 import { Particles, Popups } from "./fx.ts";
 import { HippoRig } from "./hippo.ts";
@@ -27,25 +29,41 @@ export class Renderer {
   private predicted = new Array<number>(SEATS).fill(-1e9);
   private lastNow = 0;
   private smokeClock = 0;
+  private arena: Arena;
+  private post: Post;
 
   constructor(private canvas: HTMLCanvasElement, overlay: HTMLElement) {
-    this.gl = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+    this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
     this.gl.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.gl.shadowMap.enabled = true; this.gl.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.gl.toneMapping = THREE.ACESFilmicToneMapping; this.gl.toneMappingExposure = 1.25;
+    this.gl.toneMapping = THREE.ACESFilmicToneMapping; this.gl.toneMappingExposure = 1.05;
     this.popups = new Popups(overlay);
-    this.scene.background = new THREE.Color(0x1d120c);
-    this.scene.fog = new THREE.Fog(0x1d120c, 45, 90);
-    this.scene.add(new THREE.HemisphereLight(0xfff0d8, 0x4a3020, 1.5));
-    const sun = new THREE.DirectionalLight(0xfff0d0, 2.4);
-    sun.position.set(7, 16, 9); sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -17, right: 17, top: 17, bottom: -17, near: 1, far: 50 });
+
+    // a smoggy dusk: a vertical gradient behind, haze in front, a dim studio environment for reflections
+    const bg = document.createElement("canvas"); bg.width = 4; bg.height = 256;
+    const g2 = bg.getContext("2d")!, grad = g2.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, "#14100e"); grad.addColorStop(0.55, "#3a2a20"); grad.addColorStop(1, "#7a5232");
+    g2.fillStyle = grad; g2.fillRect(0, 0, 4, 256);
+    const bgTex = new THREE.CanvasTexture(bg); bgTex.colorSpace = THREE.SRGBColorSpace;
+    this.scene.background = bgTex;
+    this.scene.fog = new THREE.Fog(0x33261c, 55, 130);
+    const pmrem = new THREE.PMREMGenerator(this.gl);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.55;
+
+    this.scene.add(new THREE.HemisphereLight(0xffd9a8, 0x2a1d16, 0.5));
+    const sun = new THREE.DirectionalLight(0xffc98a, 3.1);       // low amber sun from the front-left
+    sun.position.set(-14, 20, 16); sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
+    Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 70 });
     this.scene.add(sun);
-    const lamp = new THREE.PointLight(0xffb060, 120, 40, 1.6);
-    lamp.position.set(0, 9, 0); this.scene.add(lamp);
-    this.scene.add(buildArena(), this.drops.group, this.fx.points);
+    const lamp = new THREE.PointLight(0xffa54a, 90, 36, 1.7);     // the gaslit glow over the pan
+    lamp.position.set(0, 7, 0); this.scene.add(lamp);
+    const rim = new THREE.DirectionalLight(0x7fa6ff, 0.6); rim.position.set(12, 8, -16); this.scene.add(rim);
+    this.arena = new Arena();
+    this.scene.add(this.arena.group, this.drops.group, this.fx.points);
     for (let i = 0; i < SEATS; i++) { const r = new HippoRig(i); this.rigs.push(r); this.scene.add(r.group); }
+    this.post = new Post(this.gl, this.scene, this.camera, canvas.clientWidth || 800, canvas.clientHeight || 600);
     this.resize();
   }
 
@@ -53,6 +71,7 @@ export class Renderer {
     const w = this.canvas.clientWidth || 800, h = this.canvas.clientHeight || 600;
     this.gl.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+    this.post?.resize(w * this.gl.getPixelRatio(), h * this.gl.getPixelRatio());
   }
 
   /** The player pressed gulp: start the lunge now; the server decides what it ate. */
@@ -66,9 +85,9 @@ export class Renderer {
   }
 
   private frameCamera(now: number) {
-    const a = this.camera.aspect, k = Math.max(1.5, 2.0 / a);
+    const a = this.camera.aspect, k = Math.max(1.18, 1.6 / a);
     const s = this.shake; this.shake *= 0.9;
-    this.camera.position.set((Math.random() - 0.5) * s, 21 * k + (Math.random() - 0.5) * s, 21 * k);
+    this.camera.position.set(Math.sin(now / 4000) * 0.8 + (Math.random() - 0.5) * s, 19 * k + (Math.random() - 0.5) * s, 22 * k);
     this.camera.lookAt(0, 0, 1.2 * k - 2);
     void now;
   }
@@ -138,8 +157,9 @@ export class Renderer {
       this.fx.emit(at(d.x, d.y, 0.8), 0xfff0a0, 1, 1.4, 0.5, 1);
     }
     this.fx.update(dt);
+    this.arena.update(t, dt);
     this.frameCamera(now);
-    this.gl.render(this.scene, this.camera);
+    this.post.render(t);
   }
 
   private smoke(seat: number, dt: number) {
