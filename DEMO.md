@@ -1,6 +1,6 @@
 # Demoing the Rusty Buns apps locally
 
-Everything below runs from a clone of the repo. All nine apps live in `apps/`.
+Everything below runs from a clone of the repo. All eleven apps live in `apps/`.
 
 ## One-time setup
 
@@ -32,6 +32,7 @@ Ship a single binary instead: `bunx rustybuns build desktop` → `dist/<app>-<os
 | **fm-daw** | FM groovebox: 5 drums, 3 synths, step grid, piano roll, MIDI/keyboard recording | Rust vs TypeScript engine, switchable mid-groove; project saved to sqlite | `bun run build:native` (optional), then `bun run desktop:dev` |
 | **auto-rig** | Drop in a 3D model; it finds a skeleton, skin weights and IK you can drag | Rust vs TypeScript speed ("Race the engines"); posing a model it rigged itself | `bun run build:native` (optional), then `bun run desktop:dev` |
 | **hippo-tycoon** | Four angry oil-baron hippos in a Victorian pan; solo, couch, LAN party, online rooms | A game that is the Cloudflare app and the binary at once; hosting a LAN party | `bun run desktop:dev` (browser: `bun run dev`) |
+| **park-hide-seek** | 3D hide and seek on real Yosemite terrain: campers vs park rangers | LAN multiplayer between two copies of the app; a night hunt with flashlights | `bun run desktop:dev` |
 | **motion-midi** | A synth written in Rust and TS; renders a song and plays it | Rust-vs-TS speed ("Compare engines") | `bun run build:native` (optional), then standard launch |
 | **splat-desktop** | SuperSplat 3D Gaussian-splat editor with a folder-based scene library | Big files served from disk, "your files stay local" | `bun run desktop:dev` |
 | **splat-rooms** | Splat hunting game plus an InteriorGS room/object browser | A game that runs on the same stack | `bun scripts/fetch-scenes.ts` (needs `HF_TOKEN`), then standard launch |
@@ -73,6 +74,13 @@ bun run dev                  # or just the browser: solo and couch
 ```
 Press **Solo**, or **Couch** to seat two or more people on one keyboard (A/D + W, and arrows + up). For the LAN party, build the binary (`bun run desktop:build`), launch it twice, choose **Host a LAN game** in one, and **Join a LAN game** in the other with the address and code the host shows. Online rooms run on workerd locally: `bun run build && bunx wrangler dev --local`, then **Online room** in two tabs (`bun scripts/smoke-online.ts` plays one for you). Nothing here deploys; `rustybuns deploy` stays yours.
 
+### park-hide-seek
+```sh
+cd apps/park-hide-seek
+bun run desktop:dev          # or `bun run dev` for Play vs AI in a browser
+```
+**Play vs AI** starts a lobby with three normal bots: dress your camper, pick a zone (Night is the showpiece) and start. Click the drop map to land, `C` to crouch in a bush, `V` for first person. As a ranger: `F` flashlight, `Q` call out, `M` radio. For LAN, one machine clicks **Host a LAN game** and reads out the address and passphrase; the other runs its own copy and clicks **Join a LAN game**. On one machine, run two copies with `RB_LISTEN=127.0.0.1:4411` and `:4412` (see the app README).
+
 ### motion-midi
 ```sh
 cd apps/motion-midi
@@ -109,7 +117,7 @@ bun test
 Hold the left button to scan, right-drag to look, **Shift-click** to pick, **Space** for the next round. The easiest demo: it needs no downloads.
 
 ### spa-example
-There is no `rustybuns.config.ts` or `desktop` script in this folder, so it is the least turnkey app. Before the demo, try `bunx rustybuns init` followed by the standard launch, and rehearse it. This is also the app to show LAN multiplayer with:
+There is no `rustybuns.config.ts` or `desktop` script in this folder, so it is the least turnkey app. Before the demo, try `bunx rustybuns init` followed by the standard launch, and rehearse it. For a turnkey LAN demo, use **park-hide-seek** instead. To show the raw pieces here:
 
 - Set `desktop: { mode: "spa", guests: { max: 8 } }` in the config.
 - The host UI calls `POST /__rb/host` with `{ listen: { hostname: "0.0.0.0" }, join: "<passphrase>" }`.
@@ -124,7 +132,7 @@ bun run desktop
 ```
 The framework's worker-mode test app (D1, KV and a Durable Object under Bun). The Rust probe is `native-probe.ts`, which loads `native/crates/rb_hello`.
 
-## Suggested demo order (about 14 minutes)
+## Suggested demo order (about 16 minutes)
 
 1. **splat-spray**: instant, visual, zero setup.
 2. **hippo-tycoon**: a game with no assets; solo, then host a LAN game and join it from a second copy.
@@ -132,7 +140,8 @@ The framework's worker-mode test app (D1, KV and a Durable Object under Bun). Th
 4. **auto-rig**: drag a limb on a model it rigged itself, then **Race the engines**.
 5. **tscircuit-desktop**: a big real app shipped as one file, with **Compare engines**.
 6. **splat-desktop** or **splat-rooms**: 3D scenes read from local disk.
-7. **spa-example**: Cloudflare bindings and LAN multiplayer, if there is time.
+7. **park-hide-seek**: host a LAN game on one laptop and join from another.
+8. **spa-example**: Cloudflare bindings and LAN multiplayer, if there is time.
 
 ## Troubleshooting
 

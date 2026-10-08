@@ -8,6 +8,7 @@ Each example lives in `apps/` and is not part of any published package: installi
 | [fm-daw](apps/fm-daw/README.md) | An FM groovebox: Rust as wasm in the audio thread, the same crate over FFI on the host, a world DO that saves the project | Small |
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | A four-player arcade game: solo, couch, LAN party and online rooms from one codebase; the room is a Durable Object on Cloudflare and runs in-process in the binary | Small (three.js) |
 | [auto-rig](apps/auto-rig/README.md) | Drop in a model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical results | Small |
+| [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain: campers vs park rangers, vs AI bots or with friends on a LAN | Small |
 | [spa-example](apps/spa-example) | An RWSDK / Cloudflare app on the desktop: a world Durable Object, D1 and KV on sqlite | Small |
 | [example](apps/example) | Worker mode, plus a probe for the sample Rust crate in `native/crates/rb_hello` | Small |
 
@@ -66,7 +67,7 @@ Four angry oil-baron hippos in a Victorian oil pan, chomping drops of oil for ne
 
 - **One world, two homes.** The room is a single class: a Durable Object per room code on Cloudflare, and the same class in-process in the desktop binary, where `desktop.guests` opens it to friends on the LAN.
 - **A game with no assets.** The hippos, the town and the drops are three.js primitives, the textures are drawn at startup and the sounds are synthesised.
-- **Uses:** `desktop.world`, `desktop.guests` (the first app to), `/__rb/host` and `/__rb/info` (with the host's LAN addresses), a Worker that vouches identity, a pure deterministic sim with a test that holds it to that.
+- **Uses:** `desktop.world`, `desktop.guests`, `/__rb/host` and `/__rb/info` (with the host's LAN addresses), a Worker that vouches identity, a pure deterministic sim with a test that holds it to that.
 
 ```
 cd apps/hippo-tycoon
@@ -75,6 +76,21 @@ bun run desktop:dev      # the desktop app; host a LAN game from the menu
 ```
 
 [Full guide →](apps/hippo-tycoon/README.md)
+
+## park-hide-seek
+
+Campers drop into a zone around a real Yosemite attraction and hide; park rangers hunt them with flashlights, call-outs and radio questions, while the search area closes in. The terrain is real elevation data shrunk six times; people and trees stay life-size.
+
+- **One game, two hosts.** Single player runs the game in the page; a LAN game runs the same code in the world.
+- **Each player is sent only what they could see:** the host checks light, range and line of sight past terrain and props, so a ranger's client never receives a hidden camper. Bots play from the same views.
+- **Uses:** spa mode with a world class, `guests` opened and closed at runtime with `POST /__rb/host`, `worldSocket()` for guests, and a `desktop.host` route for the LAN address.
+
+```
+cd apps/park-hide-seek
+bun run desktop:dev      # Play vs AI, or Host / Join a LAN game
+```
+
+[Full guide →](apps/park-hide-seek/README.md)
 
 ## spa-example
 

@@ -18,7 +18,7 @@ Rusty Buns is a dev dependency. It never edits `src/` and never ships in your bu
 - a **Bun host** that runs your app on `Bun.serve()`, with sqlite standing in for D1, KV, R2 and Durable Object storage
 - a typed **[Alchemy](https://alchemy.run) + [Effect](https://effect.website) stack** that creates the cloud resources your bindings describe
 
-> **Alpha, `0.1.7`.** Desktop is verified on macOS and Linux. The Cloudflare deploy is verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). The Hetzner box builds and runs locally but hasn't been deployed to a real account yet. Fly and Railway come after. The happy path is a Vite + React app on Workers, but anything Vite builds should work.
+> **Alpha, `0.1.8`.** Desktop is verified on macOS and Linux. The Cloudflare deploy is verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). The Hetzner box builds and runs locally but hasn't been deployed to a real account yet. Fly and Railway come after. The happy path is a Vite + React app on Workers, but anything Vite builds should work.
 
 ## Why
 
@@ -343,6 +343,7 @@ apps/                example apps, see EXAMPLES.md
 | [fm-daw](apps/fm-daw/README.md) | an FM groovebox: live Rust (wasm) or TS engine in an AudioWorklet, QWERTY + MIDI recording, a world that saves your groove |
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | four angry oil-baron hippos in a Victorian oil pan: solo, couch, LAN party (`guests`) and online rooms, one World class on Cloudflare and in the binary |
 | [auto-rig](apps/auto-rig/README.md) | drop in a 3D model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical output |
+| [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain, campers vs park rangers, vs AI or on a LAN: one game run by the page or by the world, each player sent only what they can see |
 | [spa-example](apps/spa-example) | an RWSDK app with D1, KV and a world DO, all on sqlite |
 
 More in [EXAMPLES.md](EXAMPLES.md).

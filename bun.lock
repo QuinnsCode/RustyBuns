@@ -94,6 +94,19 @@
         "vite": "^6.2.6",
       },
     },
+    "apps/park-hide-seek": {
+      "name": "park-hide-seek",
+      "version": "0.0.1",
+      "dependencies": {
+        "@rustybuns/shell-bun": "workspace:*",
+        "three": "^0.180.0",
+      },
+      "devDependencies": {
+        "@rustybuns/cli": "workspace:*",
+        "@types/three": "^0.180.0",
+        "vite": "^6.2.6",
+      },
+    },
     "apps/spa-example": {
       "name": "spa-example",
       "version": "0.3.1",
@@ -215,7 +228,7 @@
     },
     "packages/cli": {
       "name": "@rustybuns/cli",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "bin": {
         "rustybuns": "./src/index.ts",
       },
@@ -226,15 +239,15 @@
     },
     "packages/native": {
       "name": "@rustybuns/native",
-      "version": "0.1.7",
+      "version": "0.1.8",
     },
     "packages/ports": {
       "name": "@rustybuns/ports",
-      "version": "0.1.7",
+      "version": "0.1.8",
     },
     "packages/shell-bun": {
       "name": "@rustybuns/shell-bun",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "dependencies": {
         "@rustybuns/ports": "workspace:*",
       },
@@ -1553,6 +1566,8 @@
     "papaparse": ["papaparse@5.7.0", "", {}, "sha512-qBGxg/7Q3Kl9Wfhrz2Z74UnvnHTXLNG6jmKJFeBvP2+y4lV7So+7SR62+Zd47JvdrCkX+nDcnr0ObPzek/+6RA=="],
 
     "parent-module": ["parent-module@1.0.1", "", { "dependencies": { "callsites": "^3.0.0" } }, "sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g=="],
+
+    "park-hide-seek": ["park-hide-seek@workspace:apps/park-hide-seek"],
 
     "parse-color": ["parse-color@1.0.0", "", { "dependencies": { "color-convert": "~0.5.0" } }, "sha512-fuDHYgFHJGbpGMgw9skY/bj3HL/Jrn4l/5rSspy00DoT4RyLnDcRvPxdZ+r6OFwIsgAuhDh4I09tAId4mI12bw=="],
 
