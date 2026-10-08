@@ -352,12 +352,14 @@ function frame() {
   world.resize();
   const v = view;
   if (!v) {
+    controls.active = false;
     // Behind the menu: the valley under Yosemite Falls, at dusk.
     world.setZone(ZONES[2].id); world.setTime("dusk"); world.orbit(t);
     return;
   }
   const now = serverNow();
   renderPanels();
+  controls.active = v.phase !== "lobby" && v.phase !== "over";
   if (v.phase === "lobby" || v.phase === "over") {
     world.setZone(v.zonePick === "random" ? ZONES[Math.floor(t / 15000) % ZONES.length].id : v.zonePick);
     world.setTime(v.tod);
@@ -374,6 +376,8 @@ function frame() {
   if (controls.take("KeyM") && (v.phase === "hide" || v.phase === "hunt")) { mapOpen = !mapOpen; if (mapOpen) controls.release(); }
   if (controls.take("KeyV")) { camMode = camMode === "first" ? "third" : "first"; store.set("cam", camMode); }
   if (controls.take("Tab")) spectate++;
+  // Taken every frame, so a press while counting in the cabin doesn't fire once the hunt starts.
+  const lightKey = controls.take("KeyF"), callKey = controls.take("KeyQ");
 
   // Your body: move it here, tell the host where it went.
   const ranger = you?.role === "ranger";
@@ -397,8 +401,8 @@ function frame() {
     const ox = body.x, oy = body.y;
     step(z, body, you!.role, inp, dt);
     body.speed = Math.hypot(body.x - ox, body.y - oy) / Math.max(dt, 1e-3);
-    if (ranger && controls.take("KeyF")) light = !light;
-    if (ranger && controls.take("KeyQ") && v.phase === "hunt") { send({ t: "call" }); sounds.call(0.8, CALLS[Math.floor(Math.random() * CALLS.length)]); }
+    if (ranger && lightKey) light = !light;
+    if (ranger && callKey && v.phase === "hunt") { send({ t: "call" }); sounds.call(0.8, CALLS[Math.floor(Math.random() * CALLS.length)]); }
     if (t - lastSend > 50) {
       lastSend = t;
       send({ t: "pos", x: body.x, y: body.y, yaw: body.yaw, pitch: body.pitch, crouch: body.crouch, run: body.run, light: ranger && light });
