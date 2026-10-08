@@ -40,6 +40,7 @@ That's it. Now pick an app.
 | [Splat Desktop](#splat-desktop) | Edit 3D scans of real places | ⭐⭐ Takes a minute |
 | [tscircuit Desktop](#tscircuit-desktop) | Design real circuit boards | ⭐⭐⭐ Needs Rust |
 | [Splat Rooms](#splat-rooms) | Hunt objects in photo-real 3D rooms | ⭐⭐⭐ Needs a grown-up account |
+| [Agent Office](#agent-office) | Run a 3D office where AI helpers write code at desks | ⭐⭐⭐ Needs a grown-up's Claude account |
 
 ---
 
@@ -223,6 +224,27 @@ bun run desktop:dev
 
 **Menu:** the app opens on it. **How to play** has all the controls. **Quick hunt** drops you in a random room.
 
+## Agent Office
+
+**The cartoon office that helped build Rusty Buns, as one file.** AI helpers sit at desks and write code while you walk around and watch their screens.
+
+**Needs a grown-up:** the helpers are [Claude Code](https://claude.com/claude-code), so someone has to be signed in to it first. Then:
+```
+cd apps/agent-office
+bun run office
+```
+
+| Do this | Keys |
+|---|---|
+| Walk / run | <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> / hold <kbd>Shift</kbd> |
+| Hire a helper, open its screen, ride the elevator | Walk up and press <kbd>E</kbd> |
+| Give a helper a job | <kbd>P</kbd> |
+| Close a window | <kbd>Esc</kbd> |
+
+**Menu:** <kbd>Tab</kbd> opens it. The first time, the office shows its password once (write it down), then asks you to ride the elevator and add a project. `bun run desktop:build` makes the one-file version.
+
+[Full guide →](apps/agent-office/README.md)
+
 ---
 
 ## For developers: what each example shows
@@ -234,6 +256,7 @@ bun run desktop:dev
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | A four-player arcade game: solo, couch, LAN party and online rooms from one codebase; the room is a Durable Object on Cloudflare and runs in-process in the binary | Small (three.js) |
 | [auto-rig](apps/auto-rig/README.md) | Drop in a model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical results | Small |
 | [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain: campers vs park rangers, vs AI bots or with friends on a LAN | Small |
+| [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary for macOS and Linux: a native addon swapped for Bun's PTY, assets embedded, nothing forked | Medium (downloads the release) |
 | [spa-example](apps/spa-example) | An RWSDK / Cloudflare app on the desktop: a world Durable Object, D1 and KV on sqlite | Small |
 | [example](apps/example) | Worker mode, plus a probe for the sample Rust crate in `native/crates/rb_hello` | Small |
 
