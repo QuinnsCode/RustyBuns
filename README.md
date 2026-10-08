@@ -18,7 +18,7 @@ Rusty Buns is a dev dependency. It never edits `src/` and never ships in your bu
 - a **Bun host** that runs your app on `Bun.serve()`, with sqlite standing in for D1, KV, R2 and Durable Object storage
 - a typed **[Alchemy](https://alchemy.run) + [Effect](https://effect.website) stack** that creates the cloud resources your bindings describe
 
-> **Alpha, `0.1.7`.** Desktop is verified on macOS and Linux. The Cloudflare deploy is verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). The Hetzner box builds and runs locally but hasn't been deployed to a real account yet. Fly and Railway come after. The happy path is a Vite + React app on Workers, but anything Vite builds should work.
+> **Alpha, `0.1.8`.** Desktop is verified on macOS and Linux. The Cloudflare deploy is verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). The Hetzner box builds and runs locally but hasn't been deployed to a real account yet. Fly and Railway come after. The happy path is a Vite + React app on Workers, but anything Vite builds should work.
 
 ## Why
 
