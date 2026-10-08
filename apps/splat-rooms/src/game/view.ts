@@ -242,7 +242,7 @@ export class GameView {
     this.highlight = null;
     this.yaw = round.yaw;
     this.pitch = Math.max(-25, Math.min(25, round.pitch));
-    if (plyUrl && this.asset?.file?.url !== plyUrl) {
+    if (plyUrl && (this.asset?.file as { url?: string } | null | undefined)?.url !== plyUrl) {
       if (this.splat) { this.splat.destroy(); this.splat = undefined; }
       if (this.asset) { this.app.assets.remove(this.asset); this.asset.unload(); this.asset = undefined; }
       this.opts.onProgress?.("Loading room…");

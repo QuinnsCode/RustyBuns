@@ -181,6 +181,8 @@ createRoot(document.getElementById("root")!).render(<Intro />);
   await writeOnce(join(dir, "world.ts"), `// The world: a class with a Durable Object's shape and no base class.
 // The host binds it in-process with sqlite storage and alarms; the same class
 // (plus \`extends DurableObject\`) is your Cloudflare shell.
+// A Cloudflare global; the host installs it before loading this module.
+declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 export default class World {
   private boots = 0;
   constructor(private ctx: any, private env: any) {

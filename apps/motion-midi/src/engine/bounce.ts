@@ -21,7 +21,7 @@ export function bounce(engine: Renderer, sampleRate: number, now: () => number =
 }
 
 /** 16-bit PCM stereo WAV. */
-export function encodeWav(audio: Float32Array, sampleRate: number): Uint8Array {
+export function encodeWav(audio: Float32Array, sampleRate: number): Uint8Array<ArrayBuffer> {
   const n = audio.length;
   const buf = new ArrayBuffer(44 + n * 2);
   const v = new DataView(buf);

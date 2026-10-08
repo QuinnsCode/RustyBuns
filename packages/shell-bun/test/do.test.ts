@@ -1,6 +1,8 @@
 import { test, expect } from "bun:test";
 import { serve, durableObject, type LocalDurableObjectState } from "../src/index.ts";
 
+declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
+
 // Shaped like a real hibernating DO: constructor gate, WebSocketPair, 101,
 // webSocketMessage delivery, storage, alarm, getWebSockets broadcast.
 class World {
