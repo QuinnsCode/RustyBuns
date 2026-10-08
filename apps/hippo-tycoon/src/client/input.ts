@@ -30,7 +30,7 @@ export class Controls {
 
   attach(target: Window = window) {
     const kd = (e: KeyboardEvent) => {
-      if (ALL_CODES.has(e.code) && !(e.target instanceof HTMLInputElement)) e.preventDefault();
+      if (ALL_CODES.has(e.code) && !(typeof HTMLInputElement !== "undefined" && e.target instanceof HTMLInputElement)) e.preventDefault();
       if (e.repeat) return;
       this.down.add(e.code); this.pressed.add(e.code);
     };
