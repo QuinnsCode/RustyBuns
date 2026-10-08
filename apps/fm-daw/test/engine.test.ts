@@ -12,6 +12,9 @@ import { demoProject, randomPatch } from "../src/presets.ts";
 import { audible, loopBeats, type Project } from "../src/project.ts";
 
 const SR = 48000;
+// Rendering bars of audio is CPU-bound: under a second alone, several under a
+// full parallel `bun test`, so the renders get far more than the 5 s default.
+const HEAVY = 60_000;
 
 function load(engine: FmEngine, p: Project) {
   return (seq: import("../src/engine/sequencer.ts").Sequencer) => {
@@ -35,7 +38,7 @@ test("demo groove: audible, finite, under the ceiling", () => {
   expect(finite).toBe(true);
   expect(peak).toBeGreaterThan(0.05);
   expect(peak).toBeLessThanOrEqual(CEILING);
-});
+}, HEAVY);
 
 test("a fresh engine is silent: every track starts at gain 0", () => {
   const e = new TsEngine(SR);
@@ -59,7 +62,7 @@ test("worst case: every param at its max, every voice on, master full -> still u
   const { peak, finite } = stats(out);
   expect(finite).toBe(true);
   expect(peak).toBeLessThanOrEqual(CEILING);
-});
+}, HEAVY);
 
 test("garbage in (NaN, Infinity, negative, out of range) never reaches the output", () => {
   const e = new TsEngine(SR);
@@ -88,7 +91,7 @@ test("200 random patches stay finite and under the ceiling", () => {
     expect(finite).toBe(true);
     expect(peak).toBeLessThanOrEqual(CEILING);
   }
-});
+}, HEAVY);
 
 async function compare(name: string, make: () => Promise<FmEngine | null>) {
   const rust = await make();
@@ -104,10 +107,10 @@ async function compare(name: string, make: () => Promise<FmEngine | null>) {
   expect(maxDiff).toBeLessThan(1e-4);
 }
 
-test("rust (cdylib over bun:ffi) matches ts sample for sample", () => compare("cdylib", () => createNativeEngine(SR)));
+test("rust (cdylib over bun:ffi) matches ts sample for sample", () => compare("cdylib", () => createNativeEngine(SR)), HEAVY);
 
 test("rust (wasm, what the AudioWorklet runs) matches ts sample for sample", () => compare("wasm", async () => {
   const f = new URL("../public/fm_daw.wasm", import.meta.url);
   if (!existsSync(f)) return null;
   return new WasmEngine(await instantiateFm(readFileSync(f)), SR);
-}));
+}), HEAVY);

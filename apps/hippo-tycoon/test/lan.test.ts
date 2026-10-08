@@ -23,7 +23,7 @@ async function launch() {
   const p = Bun.spawn(["bun", ".rustybuns/e2e-desktop.ts"], { cwd: app, env: { ...process.env, RB_NO_BROWSER: "1" }, stdout: "pipe", stderr: "pipe" });
   let out = "";
   const reader = p.stdout.getReader();
-  const deadline = Date.now() + 15000;
+  const deadline = Date.now() + 30000;
   while (!/open http/.test(out) && Date.now() < deadline) { const { value, done } = await reader.read(); if (done) break; out += new TextDecoder().decode(value); }
   const m = out.match(/open (http:\/\/[^/]+)\/\?token=(\S+)/);
   if (!m) throw new Error("host did not start:\n" + out + (await new Response(p.stderr).text()));
@@ -42,7 +42,7 @@ class Client {
   }
   send(m: object) { this.ws.send(JSON.stringify(m)); }
   of<T extends ServerMsg["t"]>(t: T) { return this.msgs.filter((m) => m.t === t) as Extract<ServerMsg, { t: T }>[]; }
-  async until(f: () => unknown, ms = 8000) { const end = Date.now() + ms; while (!f()) { if (Date.now() > end) throw new Error("timed out; rooms " + JSON.stringify(this.of("room").map((r) => [r.seq, r.ph, r.seats.filter((s) => s.h).map((s) => s.n).join("+")])) + " host " + JSON.stringify(this.of("room").at(-1)?.host) + " closed " + JSON.stringify(this.closed)); await Bun.sleep(20); } }
+  async until(f: () => unknown, ms = 20000) { const end = Date.now() + ms; while (!f()) { if (Date.now() > end) throw new Error("timed out; rooms " + JSON.stringify(this.of("room").map((r) => [r.seq, r.ph, r.seats.filter((s) => s.h).map((s) => s.n).join("+")])) + " host " + JSON.stringify(this.of("room").at(-1)?.host) + " closed " + JSON.stringify(this.closed)); await Bun.sleep(20); } }
   close() { this.ws.close(); }
 }
 
@@ -82,13 +82,16 @@ test("LAN party: host and guests share one ticking world", async () => {
     // the host (first human) starts a short round; every client sees it tick
     host.send({ t: "cfg", secs: 30 });
     host.send({ t: "start" });
-    await g1.until(() => g1.of("room").at(-1)?.ph === "playing", 10000);
+    await g1.until(() => g1.of("room").at(-1)?.ph === "playing", 20000);
     const t0 = g1.of("snap").length;
     g1.send({ t: "in", m: 100, g: 1, h: 0 });
-    await Bun.sleep(1000);
-    const perSec = g1.of("snap").length - t0;
-    expect(perSec).toBeGreaterThanOrEqual(10);       // ~15 Hz over a real in-process socket
-    expect(perSec).toBeLessThanOrEqual(20);
+    // measured over two real seconds, not one assumed one: a loaded machine
+    // oversleeps, and the tick loop catches up in bursts after a stall
+    const w0 = performance.now();
+    await Bun.sleep(2000);
+    const perSec = (g1.of("snap").length - t0) / ((performance.now() - w0) / 1000);
+    expect(perSec).toBeGreaterThanOrEqual(8);        // ~15 Hz over a real in-process socket
+    expect(perSec).toBeLessThanOrEqual(22);          // and not the 30 Hz tick rate
     const ticks = g1.of("snap").map((s) => s.tick);
     // the sim tick never runs backwards within a round (it holds still through the countdown)
     expect(ticks.every((t, i) => i === 0 || t >= ticks[i - 1]! || g1.of("snap")[i]!.round !== g1.of("snap")[i - 1]!.round)).toBe(true);
@@ -99,13 +102,15 @@ test("LAN party: host and guests share one ticking world", async () => {
     // a guest leaves: the seat goes back to a bot, the others are told
     g2.close();
     await host.until(() => host.of("room").at(-1)?.seats.filter((s) => s.h).length === 2);
-    expect((await (await fetch(`${url}/__rb/info`, { headers: { cookie } })).json() as any).guests.connected).toBe(1);
+    // the host shell counts its guests on its own, so let that count catch up too
+    const connected = async () => (await (await fetch(`${url}/__rb/info`, { headers: { cookie } })).json() as any).guests.connected;
+    for (const end = Date.now() + 20000; await connected() !== 1 && Date.now() < end;) await Bun.sleep(50);
+    expect(await connected()).toBe(1);
 
     // stop hosting closes the door to new guests; the connected one keeps playing
     await post({ join: null, listen: { hostname: "127.0.0.1" } });
     const n = g1.of("snap").length;
-    await Bun.sleep(400);
-    expect(g1.of("snap").length).toBeGreaterThan(n);
+    await g1.until(() => g1.of("snap").length > n);
     host.close(); g1.close();
   } finally { p.kill(); }
-}, 40000);
+}, 120_000);   // a real host process and sockets: slow to start on a loaded machine

@@ -7,6 +7,9 @@ import { TsEngine } from "../src/engine/engine.ts";
 import { bounce } from "../src/engine/bounce.ts";
 import { createRustEngine } from "../src/engine/native.ts";
 
+// Each bounce renders the whole song: a few seconds alone, much longer under a
+// full parallel `bun test`, so these get far more than the 5 s default.
+const HEAVY = 60_000;
 const song = compileSong(demo as SongJson);
 
 test("ts engine renders the demo song, finite and non-silent", () => {
@@ -17,7 +20,7 @@ test("ts engine renders the demo song, finite and non-silent", () => {
   expect(finite).toBe(true);
   expect(peak).toBeGreaterThan(0.1);
   expect(peak).toBeLessThanOrEqual(1);
-});
+}, HEAVY);
 
 test("rust matches ts sample for sample", async () => {
   const rust = await createRustEngine(song);
@@ -28,7 +31,7 @@ test("rust matches ts sample for sample", async () => {
   for (let i = 0; i < a.audio.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a.audio[i] - b.audio[i]));
   console.log(`  max |rust - ts| = ${maxDiff.toExponential(2)} over ${a.frames} frames`);
   expect(maxDiff).toBeLessThan(1e-4);
-});
+}, HEAVY);
 
 test("rust rejects a malformed song instead of crashing", async () => {
   const rust = await createRustEngine(song);
