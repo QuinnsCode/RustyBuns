@@ -218,7 +218,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
           // The world closed first (LocalWebSocket.close already ran its close path): do not run it twice.
           if (b.readyState === 3) return;
           b.readyState = 3; b.peer.readyState = 3;   // the DO's end must see the close too
-          b.onClose?.(code, reason);
+          b.onClose?.(code, reason, code !== 1006);   // 1006: the socket dropped without a close frame
           return;
         }
         wsRoutes.get(ws.data.path)?.close(ws.data.wrapped, code, reason);

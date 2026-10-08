@@ -321,7 +321,7 @@ The world then sees the same headers it would on Cloudflare: `X-User-Id` and `X-
 
 The trust model is a join passphrase plus trust-on-first-use identity: a `uid` is whatever a guest says it is, so treat it as a stable handle, not proof. There is no TLS, so this is `ws://` on a network you trust. Guest pages are served over http from their own host, so a `ws://` target is not mixed content; a page served over https could only open `wss://`. Two instances on one machine coexist (the token cookie is named per port), which is the easy way to test. Running a world on a public box or through a relay is the same wire protocol, but not something this version sets up.
 
-Durable Objects run in-process with WebSocket hibernation handlers, `blockConcurrencyWhile`, alarms and storage. Not emulated yet: eviction, cross-script DOs, socket tags, and the SQLite-backed `ctx.storage.sql` API.
+Durable Objects run in-process with WebSocket hibernation handlers, `blockConcurrencyWhile`, alarms and storage. Socket tags (`getWebSockets(tag)`, `getTags`) work, and `namespace.evict(id)` drops an instance so a test can exercise the restore path from storage plus live sockets. Not emulated yet: automatic eviction, cross-script DOs, and the SQLite-backed `ctx.storage.sql` API.
 
 ## Repo layout
 
