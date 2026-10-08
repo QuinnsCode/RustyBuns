@@ -1,23 +1,21 @@
-# Motion MIDI: the Rust cdylib doesn't cross-compile, so each OS builds its own
-# library and its own binary. Artifacts: one desktop binary per platform.
+# Motion MIDI, everyday check: one Linux job, Rust == TS golden test, no binaries.
+# Desktop binaries for every OS come from motion-midi-drop.yml, run on milestones.
 name: motion-midi
 on:
   push:
-    paths: ["apps/motion-midi/**", "packages/**", ".github/workflows/motion-midi.yml"]
+    branches: [main]
+    paths: ["apps/motion-midi/**", "packages/native/**", ".github/workflows/motion-midi.yml"]
   pull_request:
-    paths: ["apps/motion-midi/**", "packages/**", ".github/workflows/motion-midi.yml"]
+    paths: ["apps/motion-midi/**", "packages/native/**", ".github/workflows/motion-midi.yml"]
   workflow_dispatch:
 
+concurrency:
+  group: motion-midi-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-latest, target: linux-x64 }
-          - { os: macos-latest, target: darwin-arm64 }
-          - { os: windows-latest, target: windows-x64 }
-    runs-on: ${{ matrix.os }}
+  test:
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/motion-midi
@@ -26,12 +24,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: "1.4.2" }
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: apps/motion-midi/native }
       - run: bun install
         working-directory: .
       - run: bun run build:native
       - run: bun test test            # includes the Rust == TS golden test
-      - run: bun ../../packages/cli/src/index.ts build desktop --target ${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: motion-midi-${{ matrix.target }}
-          path: apps/motion-midi/dist/motion-midi-*
