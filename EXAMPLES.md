@@ -72,6 +72,8 @@ Gamepads work too.
 
 **Hide and seek in a real national park.** Campers drop in and hide. Park rangers hunt them with flashlights, and at night it gets spooky.
 
+**Play it online, no install:** https://park-hide-seek.notryanquinn.workers.dev. Press **Create an online room** and send friends the link, or just press **Play vs AI**.
+
 **Start it:**
 ```
 cd apps/park-hide-seek
@@ -255,7 +257,7 @@ bun run office
 | [fm-daw](apps/fm-daw/README.md) | An FM groovebox: Rust as wasm in the audio thread, the same crate over FFI on the host, a world DO that saves the project | Small |
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | A four-player arcade game: solo, couch, LAN party and online rooms from one codebase; the room is a Durable Object on Cloudflare and runs in-process in the binary | Small (three.js) |
 | [auto-rig](apps/auto-rig/README.md) | Drop in a model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical results | Small |
-| [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain: campers vs park rangers, vs AI bots or with friends on a LAN | Small |
+| [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain: campers vs park rangers, vs AI bots, in online rooms, or with friends on a LAN | Small |
 | [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary for macOS and Linux: a native addon swapped for Bun's PTY, assets embedded, nothing forked | Medium (downloads the release) |
 | [spa-example](apps/spa-example) | An RWSDK / Cloudflare app on the desktop: a world Durable Object, D1 and KV on sqlite | Small |
 | [example](apps/example) | Worker mode, plus a probe for the sample Rust crate in `native/crates/rb_hello` | Small |
@@ -288,9 +290,9 @@ For demo scripts, the optional Rust engines and troubleshooting, see [DEMO.md](D
 
 ### park-hide-seek
 
-- **One game, two hosts.** Single player runs the game in the page; a LAN game runs the same code in the world.
+- **One game, three hosts.** Single player runs the game in the page. A LAN game runs the same code in the world on the host's machine, and an online room runs that same world as a Durable Object on Cloudflare (`src/edge/worker.ts`).
 - **Each player is sent only what they could see:** the host checks light, range and line of sight past terrain and props, so a ranger's client never receives a hidden camper. Bots play from the same views.
-- **Uses:** spa mode with a world class, `guests` opened and closed at runtime with `POST /__rb/host`, `worldSocket()` for guests, and a `desktop.host` route for the LAN address.
+- **Uses:** spa mode with a world class, `guests` opened and closed at runtime with `POST /__rb/host`, `worldSocket()` for guests, a `desktop.host` route for the LAN address, and a Worker that vouches identity and routes room codes to Durable Objects.
 
 ### spa-example
 
