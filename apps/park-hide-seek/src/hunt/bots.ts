@@ -64,7 +64,7 @@ export class HuntBot {
       if (you.role === "ranger") out.push(...this.thinkRanger(game, v, z, now));
       else this.thinkCamper(v, z, now);
     }
-    if (dt > 0) out.push(this.move(z, you.role, dt, now, v.tod !== "day" && you.role === "ranger"));
+    if (dt > 0) out.push(this.move(z, you.role, dt, now, r!.sky.tod !== "day" && you.role === "ranger"));
     return out;
   }
 

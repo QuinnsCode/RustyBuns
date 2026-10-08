@@ -196,7 +196,7 @@ ${h.box ? `    if (url.pathname === "/health") return new Response("ok");\n` : "
       if (guest && res.status === 101 && sock) {
         guestCount++;
         const prev = sock.onClose;
-        sock.onClose = (code: number, reason: string) => { guestCount--; prev?.(code, reason); };
+        sock.onClose = (code: number, reason: string, clean: boolean) => { guestCount--; prev?.(code, reason, clean); };
       }
       return res;
     }

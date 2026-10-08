@@ -88,3 +88,92 @@ test("in-process DO: upgrade, hibernation delivery, broadcast, storage, alarm", 
   a.close();
   await shell.stop();
 });
+
+// Room with tags and an in-memory counter that only storage carries across eviction.
+class Tagged {
+  boots: number;
+  mem = 0;
+  closes: [string, number, boolean][] = [];
+  constructor(private ctx: LocalDurableObjectState, private env: { log: Tagged[] }) {
+    env.log.push(this);
+    this.boots = env.log.length;
+    ctx.blockConcurrencyWhile(async () => { this.mem = (await ctx.storage.get<number>("n")) ?? 0; });
+  }
+  async fetch(request: Request): Promise<Response> {
+    const team = new URL(request.url).searchParams.get("team")!;
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair) as any[];
+    this.ctx.acceptWebSocket(server, [team, "all"]);
+    server.serializeAttachment({ team });
+    return new Response(null, { status: 101, webSocket: client } as any);
+  }
+  async webSocketMessage(ws: any, m: string | ArrayBuffer) {
+    if (m === "kick") return ws.close(4000, "kicked");
+    this.mem++;
+    await this.ctx.storage.put("n", this.mem);
+    const team = ws.deserializeAttachment().team;
+    for (const s of this.ctx.getWebSockets(team)) s.send(`${team}:${this.mem}:boot${this.boots}:${this.ctx.getTags(s).join("+")}`);
+  }
+  webSocketClose(ws: any, code: number, _reason: string, clean: boolean) { this.closes.push([ws.deserializeAttachment().team, code, clean]); }
+  alarm() { this.env.log.at(-1)!.closes.push(["alarm", this.boots, true]); }
+}
+
+test("in-process DO: socket tags, eviction + rebuild, alarm across eviction, clean flag", async () => {
+  const env = { log: [] as Tagged[] };
+  const NS = durableObject(Tagged, env);
+  const stub = NS.getByName("room");
+  const sock = async (team: string) => {
+    const res = await stub.fetch(`http://do/?team=${team}`);
+    const c = (res as any).webSocket;
+    const got: string[] = [];
+    c.toBrowser = (d: string) => got.push(d);
+    return { c, got };
+  };
+  const red = await sock("red"), red2 = await sock("red"), blue = await sock("blue");
+
+  // getWebSockets(tag) filters; getTags reports what acceptWebSocket got
+  red.c.onMessage("go"); await Bun.sleep(5);
+  expect(red.got).toEqual(["red:1:boot1:red+all"]);
+  expect(red2.got).toEqual(["red:1:boot1:red+all"]);
+  expect(blue.got).toEqual([]);
+  expect(() => env.log[0]!["ctx"].acceptWebSocket(new WebSocketPair()[1] as any, Array(11).fill("x"))).toThrow();
+
+  // evict: next frame builds a fresh instance from storage + the live sockets
+  expect(NS.evict(stub.id)).toBe(true);
+  expect(NS.evict(stub.id)).toBe(false);
+  await env.log[0]!["ctx"].storage.put("n", 999);   // a zombie write is dropped
+  blue.c.onMessage("go"); await Bun.sleep(5);
+  expect(env.log.length).toBe(2);
+  expect(blue.got).toEqual(["blue:2:boot2:blue+all"]);   // count restored from storage, tags survived
+
+  // an alarm set before eviction fires into the instance live at the time
+  await env.log[1]!["ctx"].storage.setAlarm(Date.now() + 10);
+  NS.evict(stub.id);
+  await Bun.sleep(30);
+  expect(env.log.length).toBe(3);
+  expect(env.log[2]!.closes).toContainEqual(["alarm", 3, true]);
+
+  // clean flag: a DO-side close is clean; a dropped browser socket is not
+  red.c.onMessage("kick"); await Bun.sleep(5);
+  red2.c.readyState = 3; red2.c.onClose(1006, "", false); await Bun.sleep(5);
+  expect(env.log[2]!.closes).toContainEqual(["red", 4000, true]);
+  expect(env.log[2]!.closes).toContainEqual(["red", 1006, false]);
+  expect(env.log[2]!["ctx"].getWebSockets().length).toBe(1);   // only blue left
+});
+
+test("serve bridge: an abnormal browser drop reaches webSocketClose with clean=false", async () => {
+  const env = { log: [] as Tagged[] };
+  const NS = durableObject(Tagged, env);
+  const shell = serve<{ NS: typeof NS }>({});
+  shell.mount({ fetch: (req, e) => e.NS.getByName("r").fetch(req) }, { NS });
+  const url = shell.url.replace("http", "ws");
+  const open = () => new Promise<WebSocket>((res) => { const w = new WebSocket(`${url}/?team=a`); w.onopen = () => res(w); });
+  const a = await open(), b = await open();
+  a.close(1000, "bye");
+  (b as any).terminate();   // no close frame
+  await Bun.sleep(50);
+  const closes = env.log[0]!.closes;
+  expect(closes).toContainEqual(["a", 1000, true]);
+  expect(closes).toContainEqual(["a", 1006, false]);
+  await shell.stop();
+});

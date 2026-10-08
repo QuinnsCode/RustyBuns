@@ -4,6 +4,7 @@
 // The Room here is the same one the page runs for single player.
 import { Room, TICK_MS } from "../../src/room.ts";
 import { parseMsg } from "../../src/hunt/game.ts";
+import { fetchWeather } from "../../src/weather.ts";
 
 // Provided by workerd and by the Rusty Buns host.
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
@@ -13,7 +14,8 @@ const SEND_MS = 66;
 const MAX_MESSAGE = 4096;
 
 export default class World {
-  private room = new Room();
+  // The host looks up the park's weather; guests get it in their views.
+  private room = new Room(Date.now(), fetchWeather);
   private timer: ReturnType<typeof setInterval> | null = null;
   private sent = new WeakMap<object, { v: number; at: number }>();
 
