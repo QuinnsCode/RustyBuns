@@ -212,3 +212,47 @@ export function torch(): THREE.Group & { update(t: number): void } {
   g.update = (t) => { flame.scale.set(1 + Math.sin(t * 17) * 0.1, 1 + Math.sin(t * 11 + 1) * 0.22 + Math.sin(t * 29) * 0.1, 1 + Math.cos(t * 13) * 0.1); };
   return g;
 }
+
+/** Slanting shafts of sunset through the canopy: additive, slow to breathe. */
+export function lightShafts(): THREE.Group & { update(t: number): void } {
+  const g = new THREE.Group() as THREE.Group & { update(t: number): void };
+  const c = document.createElement("canvas"); c.width = 8; c.height = 128;
+  const x = c.getContext("2d")!, grad = x.createLinearGradient(0, 0, 0, 128);
+  grad.addColorStop(0, "rgba(255,150,110,0)"); grad.addColorStop(0.3, "rgba(255,150,110,0.9)"); grad.addColorStop(0.75, "rgba(255,120,150,0.5)"); grad.addColorStop(1, "rgba(255,120,150,0)");
+  x.fillStyle = grad; x.fillRect(0, 0, 8, 128);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const rays: { m: THREE.Mesh; base: number; ph: number }[] = [];
+  [[-34, -30], [-24, -22], [-14, -34], [10, -32], [22, -24], [34, -30], [-40, 4], [40, 2]].forEach(([px, pz], i) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(5 + (i % 3) * 2, 60), new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, opacity: 0.1, fog: false }));
+    m.position.set(px!, 24, pz!); m.rotation.z = 0.55; m.rotation.y = (i % 2 ? 0.3 : -0.3);
+    g.add(m); rays.push({ m, base: 0.07 + (i % 3) * 0.025, ph: i * 1.7 });
+  });
+  g.update = (t) => { for (const r of rays) (r.m.material as THREE.MeshBasicMaterial).opacity = r.base * (0.7 + 0.3 * Math.sin(t * 0.35 + r.ph)); };
+  return g;
+}
+
+/** Fireflies drifting low through the jungle: neon pink and cyan. */
+export function fireflies(): THREE.Points & { update(t: number): void } {
+  const n = 160, r = rng(7), base = new Float32Array(n * 3), pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+  const pink = new THREE.Color(0xff5aa8), cyan = new THREE.Color(0x4aeaff);
+  for (let i = 0; i < n; i++) {
+    const a = r() * Math.PI * 2, d = 13 + r() * 28;
+    base.set([Math.cos(a) * d, 0.5 + r() * 4.5, Math.sin(a) * d], i * 3);
+    const c = i % 2 ? pink : cyan; col.set([c.r, c.g, c.b], i * 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3)); geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  const dot = document.createElement("canvas"); dot.width = dot.height = 32;
+  const x = dot.getContext("2d")!, grad = x.createRadialGradient(16, 16, 1, 16, 16, 15);
+  grad.addColorStop(0, "#fff"); grad.addColorStop(0.35, "#fffa"); grad.addColorStop(1, "#fff0"); x.fillStyle = grad; x.fillRect(0, 0, 32, 32);
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.42, map: new THREE.CanvasTexture(dot), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true })) as unknown as THREE.Points & { update(t: number): void };
+  pts.frustumCulled = false;
+  pts.update = (t) => {
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = base[i * 3]! + Math.sin(t * 0.4 + i) * 1.4; pos[i * 3 + 1] = base[i * 3 + 1]! + Math.sin(t * 0.7 + i * 1.3) * 0.6; pos[i * 3 + 2] = base[i * 3 + 2]! + Math.cos(t * 0.33 + i * 0.7) * 1.4;
+    }
+    geo.attributes.position!.needsUpdate = true;
+    (pts.material as THREE.PointsMaterial).opacity = 0.85;
+  };
+  return pts;
+}

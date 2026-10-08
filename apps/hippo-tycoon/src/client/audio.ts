@@ -41,6 +41,17 @@ export class Sound {
       setTimeout(bird, 3500 + Math.random() * 6500);
     };
     setTimeout(bird, 2500);
+    // a slow, tense 80s synth pulse underneath: a bass note on the beat, a quiet minor arpeggio between
+    const arp = [57, 60, 64, 67, 64, 60, 62, 59], hz = (n: number) => 440 * 2 ** ((n - 69) / 12);
+    let step = 0;
+    setInterval(() => {
+      if (!this.ctx || this.ctx.state !== "running") return;
+      const n = arp[step % arp.length]!;
+      if (step % 4 === 0) this.tone(hz(n - 24), 0.9, "sawtooth", 0.05, hz(n - 24) * 0.98, 0, 220);
+      this.tone(hz(n), 0.32, "triangle", 0.03, hz(n), 0, 1800);
+      if (step % 16 === 8) this.tone(hz(n + 12), 1.6, "sine", 0.025, hz(n + 12) * 1.01);
+      step++;
+    }, 300);
   }
 
   setMuted(m: boolean) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 0.5; }
