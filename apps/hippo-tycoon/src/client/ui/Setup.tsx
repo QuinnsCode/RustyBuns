@@ -41,15 +41,16 @@ export function Setup({ onStart, onBack, difficulty }: { onStart: (ctls: Ctl[], 
         <div className="seats">
           {Array.from({ length: SEATS }, (_, i) => (
             <div key={i} className={"seat" + (seats[i] !== "bot" ? " mine" : "")}>
-              <b>{SEAT_NAMES[i]}</b>
-              <span className="who">{seats[i] === "bot" ? `Bot · ${bots[i]}` : `Player · ${CTL_LABEL[seats[i]!]}`}</span>
-              <button className="btn" onClick={() => cycle(i)}>Change</button>
-              {seats[i] === "bot" && <button className="btn" onClick={() => cycleBot(i)}>Difficulty</button>}
+              <b id={`seat-${i}`}>{SEAT_NAMES[i]}</b>
+              <span className="who" id={`seat-${i}-who`}>{seats[i] === "bot" ? `Bot · ${bots[i]}` : `Player · ${CTL_LABEL[seats[i]!]}`}</span>
+              <button className="btn" onClick={() => cycle(i)} aria-describedby={`seat-${i}-who`} aria-label={`Change who plays ${SEAT_NAMES[i]}`} autoFocus={i === 0}>Change</button>
+              {seats[i] === "bot" && <button className="btn" onClick={() => cycleBot(i)} aria-describedby={`seat-${i}-who`} aria-label={`Change ${SEAT_NAMES[i]}'s bot difficulty`}>Difficulty</button>}
             </div>
           ))}
         </div>
         <div className="col" style={{ marginTop: 16 }}>
           <button className="btn go" disabled={humans === 0} onClick={() => onStart(seats, bots)}>Start</button>
+          <p className="sr-only" aria-live="polite">{seats.map((c, i) => `${SEAT_NAMES[i]}: ${c === "bot" ? `${bots[i]} bot` : CTL_LABEL[c]}`).join(", ")}</p>
           <button className="btn" onClick={onBack}>Back</button>
         </div>
         <p className="hint">Press a button on a gamepad to join with it. Keyboard players share the keyboard: A/D + W + Q, and arrows + ↑ + /.</p>

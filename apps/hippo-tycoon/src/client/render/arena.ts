@@ -1,79 +1,76 @@
 import * as THREE from "three";
 import { A_REST, SEATS, WALL_R, seatAngle } from "../../sim/rules.ts";
-import { BRASS, IRON, SOOT, Smoke, type Animated } from "./industry.ts";
+import { Geyser } from "./geyser.ts";
+import { Smoke, type Animated } from "./industry.ts";
+import { CLEARING, fireflies, forest, lightShafts, mountains, rockRim } from "./jungle.ts";
+import { ruins } from "./ruins.ts";
 import { buildOffice } from "./office.ts";
-import { cobble, iron } from "./textures.ts";
+import { basalt, dirt, moss } from "./textures.ts";
 
 /** Sim (x, y) on the pan -> three.js (x, height, -y). */
 export const at = (x: number, y: number, h = 0) => new THREE.Vector3(x, h, -y);
 
-function skyline(): THREE.Group {
-  const g = new THREE.Group(), mat = new THREE.MeshStandardMaterial({ color: 0x18110e, roughness: 1 });
-  const win = new THREE.MeshBasicMaterial({ color: 0xffb45a });
-  let x = 7;
-  const r = () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 4294967296);
-  for (let i = 0; i < 46; i++) {
-    const a = (i / 46) * Math.PI * 2 + r() * 0.05, d = 52 + r() * 14, w = 5 + r() * 7, h = 6 + r() * 12;
-    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 5 + r() * 5), mat);
-    b.position.set(Math.cos(a) * d, h / 2, Math.sin(a) * d); b.rotation.y = -a; g.add(b);
-    for (let k = 0; k < 3; k++) if (r() < 0.6) {
-      const wn = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.3), win);
-      wn.position.set(Math.cos(a) * (d - 2.6) + (r() - 0.5) * 2, 2 + r() * (h - 3), Math.sin(a) * (d - 2.6)); wn.lookAt(0, wn.position.y, 0); g.add(wn);
-    }
-    if (r() < 0.45) {
-      const st = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.0, 14 + r() * 8, 8), mat);
-      st.position.set(Math.cos(a + 0.04) * (d + 3), 7 + h / 2, Math.sin(a + 0.04) * (d + 3)); g.add(st);
-    }
-  }
-  return g;
-}
-
-/** The pan, the town round it, and everything that moves without being asked. */
+/** The basin, the geyser, four outposts and the jungle round them. */
 export class Arena {
   readonly group = new THREE.Group();
+  readonly geyser: Geyser;
   private animated: Animated[] = [];
-  private smoke: Smoke;
+  private forest!: ReturnType<typeof forest>;
+  private shafts!: ReturnType<typeof lightShafts>;
+  private flies!: ReturnType<typeof fireflies>;
+  private mist: Smoke;
 
-  constructor() {
+  constructor(private foliage = 1) {
     const g = this.group;
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(WALL_R, 96), new THREE.MeshPhysicalMaterial({ map: iron(), roughness: 0.3, metalness: 0.9, clearcoat: 0.7, clearcoatRoughness: 0.2 }));
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(WALL_R, 96), new THREE.MeshPhysicalMaterial({ map: basalt(), roughness: 0.28, metalness: 0.55, clearcoat: 0.8, clearcoatRoughness: 0.15 }));
     floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; g.add(floor);
-    const rimIron = new THREE.Mesh(new THREE.TorusGeometry(WALL_R + 0.45, 0.55, 14, 96), IRON);
-    rimIron.rotation.x = Math.PI / 2; rimIron.position.y = 0.25; rimIron.castShadow = true; g.add(rimIron);
-    const rimBrass = new THREE.Mesh(new THREE.TorusGeometry(WALL_R + 0.05, 0.14, 10, 96), BRASS);
-    rimBrass.rotation.x = Math.PI / 2; rimBrass.position.y = 0.42; g.add(rimBrass);
-    const rivets = new THREE.InstancedMesh(new THREE.SphereGeometry(0.16, 8, 6), BRASS, 72);
-    const m = new THREE.Matrix4();
-    for (let i = 0; i < 72; i++) { const a = (i / 72) * Math.PI * 2; m.setPosition(Math.cos(a) * (WALL_R + 0.5), 0.82, Math.sin(a) * (WALL_R + 0.5)); rivets.setMatrixAt(i, m); }
-    g.add(rivets);
-    // the drip spout in the middle
-    const spout = new THREE.Mesh(new THREE.LatheGeometry([[0.9, 0], [0.9, 0.18], [0.55, 0.3], [0.45, 0.7], [0.62, 0.78], [0.62, 0.9], [0.0, 0.9]].map(([x, y]) => new THREE.Vector2(x, y)), 24), BRASS);
-    spout.castShadow = true; g.add(spout);
-    const drain = new THREE.Mesh(new THREE.CircleGeometry(0.34, 20), SOOT); drain.rotation.x = Math.PI / 2; drain.position.y = 0.91; g.add(drain);
+    const lip = new THREE.Mesh(new THREE.TorusGeometry(WALL_R + 0.3, 0.5, 12, 96), new THREE.MeshStandardMaterial({ color: 0x35352f, roughness: 0.95 }));
+    lip.rotation.x = Math.PI / 2; lip.position.y = 0.05; lip.receiveShadow = true; g.add(lip);
+    g.add(rockRim());
+    this.geyser = new Geyser(); g.add(this.geyser.group);
 
-    const cob = cobble(70, 70);
-    const ground = new THREE.Mesh(new THREE.CircleGeometry(90, 64), new THREE.MeshStandardMaterial({ map: cob, bumpMap: cob, bumpScale: 2, roughness: 0.95, color: 0x8a7a6c }));
+    const mossTex = moss(48, 48);
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(170, 64), new THREE.MeshStandardMaterial({ map: mossTex, bumpMap: mossTex, bumpScale: 1.5, roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.06; ground.receiveShadow = true; g.add(ground);
-    g.add(skyline());
+    g.add(mountains());
 
-    const stacks: { at: THREE.Vector3; rate: number; size: number; tint: number }[] = [];
     for (let i = 0; i < SEATS; i++) {
       const o = buildOffice(i), a = seatAngle(i);
       o.group.position.set(Math.cos(a) * A_REST, 0, -Math.sin(a) * A_REST);
       o.group.rotation.y = Math.atan2(Math.cos(a), -Math.sin(a));
-      g.add(o.group);
-      this.animated.push(...o.animated);
-      o.group.updateMatrixWorld(true);
-      stacks.push({ at: o.group.localToWorld(o.smokeAt.clone()), rate: 1, size: 2.2, tint: 0x8a8076 });
+      g.add(o.group); this.animated.push(...o.animated);
     }
-    // far-off mills smoke too
-    for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2 + 0.3; stacks.push({ at: new THREE.Vector3(Math.cos(a) * 58, 24, Math.sin(a) * 58), rate: 0.6, size: 6, tint: 0x6a5f55 }); }
-    this.smoke = new Smoke(stacks);
-    g.add(this.smoke.group);
+    this.plant();
+    this.shafts = lightShafts(); this.flies = fireflies(); g.add(this.shafts, this.flies);
+    this.mist = new Smoke(Array.from({ length: 7 }, (_, i) => { const a = (i / 7) * Math.PI * 2 + 0.4; return { at: new THREE.Vector3(Math.cos(a) * 46, 1.5, Math.sin(a) * 46), rate: 0.3, size: 14, tint: 0x8a8ab8 }; }), 5, 5, 0.1);
+    g.add(this.mist.group);
+  }
+
+  /**
+   * A lost oil well, found in the jungle: a rough patch of oil-stained mud, the rusting
+   * ruins of the old works, and jungle pressing in on every side, thickest up front.
+   * The camera's line of sight to the pan stays open (see forest()).
+   */
+  private plant() {
+    const clearing = new THREE.Mesh(new THREE.CircleGeometry(CLEARING + 2, 64), new THREE.MeshStandardMaterial({ map: dirt(), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
+    clearing.rotation.x = -Math.PI / 2; clearing.position.y = -0.03; clearing.receiveShadow = true; this.group.add(clearing);
+    const old = ruins(); this.group.add(old.group); this.animated.push(...old.animated);
+    this.forest = forest(this.foliage); this.group.add(this.forest);
+  }
+
+  /** Replant the jungle at another density (the quality preset). */
+  setFoliage(density: number) {
+    if (density === this.foliage) return;
+    this.foliage = density;
+    this.group.remove(this.forest);
+    this.forest.traverse((o) => { if (o instanceof THREE.InstancedMesh) { o.geometry.dispose(); o.dispose(); } });   // the bark and leaf materials are shared and kept
+    this.forest = forest(density); this.group.add(this.forest);
   }
 
   update(t: number, dt: number) {
     for (const a of this.animated) a.update(t);
-    this.smoke.update(dt);
+    this.forest.update(t); this.shafts.update(t); this.flies.update(t);
+    this.geyser.update(t, dt);
+    this.mist.update(dt, 0.2);
   }
 }

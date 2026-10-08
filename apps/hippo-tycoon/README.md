@@ -1,8 +1,12 @@
 # Hippo Tycoon
 
-Four angry, greedy oil-baron hippos around a riveted iron pan, each trying to chomp the most oil. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode. Built with [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
+Four angry, greedy oil-baron hippos around a lost oil geyser deep in the jungle (misty fluted peaks, lush ferns and palms, a rusted wellhead and a fallen derrick half swallowed by vines), each trying to chomp the most oil the geyser fires into the basin. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode. Built with [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
 
-Everything on screen is built in code: the hippos, the brick counting-houses, the drops are three.js primitives, the textures are drawn on a canvas at startup and the sounds are synthesised. There are no asset files.
+The oil geyser's gush is a particle fluid simulation written in **Rust** (compiled to WebAssembly) with a TypeScript twin as the fallback; a test holds the two to bit-identical output.
+
+The four bosses dress like guerrilla warlords at a Miami sunset: berets, bandoliers of oil vials, gold epaulettes and medals, mirrored shades, chains and cigars. (Vibe only; nothing from any film or show.)
+
+Everything on screen is built in code: the hippos, the ruins, the palms and ferns, the mountains, the geyser and the drops are three.js primitives, the textures are drawn on a canvas at startup and the sounds are synthesised. There are no asset files.
 
 ![Four hippos round the oil pan, chomping drops; the purple one in front is yours](docs/gulp.gif)
 
@@ -24,6 +28,14 @@ Run every command from the folder named in its step.
 ```
 bun run dev            # vite, hot reload: http://localhost:5173
 ```
+
+### The Rust fluid (optional)
+
+```
+bun run build:native   # cargo + the wasm32 target -> public/hippo_fluid.wasm (needs rustup)
+```
+
+Without it the geyser runs the TypeScript twin (same output, a bit slower). The corner of the game says which one is running (`fluid: Rust/wasm`). The wasm is a build output and is not committed.
 
 ### The desktop app (solo, couch, and hosting a LAN game)
 
@@ -77,17 +89,44 @@ Solo accepts both keyboard layouts. In **Couch**, pick who sits where; a gamepad
 
 | Drop | Worth | What happens |
 |---|---|---|
-| Oil (black) | +$1M | the common one |
-| Premium gold | +$3M | rare, comes in bursts, faster; the other hippos snarl |
-| Sludge (brown) | −$1M | you choke and cough smoke: no sliding or chomping for 1 s |
+| Oil (a black ball) | +$1M | the common one |
+| Premium gold (a faceted gem) | +$3M | rare, comes in bursts, faster; the other hippos snarl |
+| Sludge (a brown, lumpy clod) | −$1M | you choke and cough smoke: no sliding or chomping for 1 s |
 | Bolt (grey, spiky) | −$2M | sore jaw: half slide speed for 3 s |
-| Water (blue) | $0 | your next chomp is a dud: "watered down!" |
+| Water (a blue teardrop) | $0 | your next chomp is a dud: "watered down!" |
 
-A gold drop nobody eats for 6 s splatters into a slick that makes nearby drops skate faster. A round is 30, 60 or 90 seconds; the drip rate ramps up and the last 10 seconds are **Overflow** (twice the drips, more gold, more bolts). The richest hippo wins; ties share. Every number is in `src/sim/rules.ts`.
+Every drop has its own shape as well as its own colour. Press <kbd>H</kbd> in a round (or **How to play** on the menu) for the controls and this legend on screen; it also shows itself for the countdown and the first seconds.
+
+A gold drop nobody eats for 6 s splatters into a slick that makes nearby drops skate faster. A round is 30, 60 or 90 seconds; the drip rate ramps up and the last 10 seconds are **Overflow** (twice the drips, more gold, more bolts). The richest hippo wins; ties share. Then comes the **finale**: the winner straps on a championship belt, bellows, and wrestles the losers out of the basin one at a time, last place first (an airplane spin, a mud slam, a punt, and the runner-up launched at the stars), into the jungle. Every number is in `src/sim/rules.ts`.
 
 | Overflow, then the podium | The podium |
 |---|---|
 | ![The last seconds of Overflow end on the RICHEST HIPPO podium](docs/finale.gif) | ![The podium: final net worth, the winner crowned, Rematch and Menu](docs/podium.png) |
+
+### Options and accessibility
+
+**Options** (on the menu, and in a round's corner) are saved in the browser with your name:
+
+- **Reduced motion**: no screen shake, camera sway, countdown fly-in, finale camera moves, flailing or bouncing text. It follows the system's `prefers-reduced-motion` until you pick.
+- **Film look**: the colour fringe, grain, scanline and vignette (the teal-and-pink grade stays).
+- **Quality**: low / medium / high: shadows, bloom, how thick the jungle is, and how many droplets the geyser keeps in the air.
+- **Sound**, **Music** (the synth pulse) and **Effects** (everything else), each on its own.
+
+Menus, the lobby and the podium work from the keyboard (<kbd>Tab</kbd>, <kbd>Enter</kbd>, <kbd>Space</kbd>, <kbd>Esc</kbd> closes Options), with a visible focus ring; the score cards, podium and buttons are labelled for screen readers. `test/contrast.test.ts` checks the HUD, cards, buttons and popups against WCAG contrast.
+
+### The dev preview page
+
+`bun run dev`, then open [`/preview`](http://localhost:5173/preview) (or `?preview=finale`, `?preview=round`, `?preview=turntable`). It drives the real renderer without a round:
+
+- **finale**: set each seat's score, human or bot, name and which seat is yours; pick each toss's style; play, pause, scrub and skip.
+- **round**: pose each hippo (roar, snarl, sputter, sore, belt), fire the geyser (oil, gold, a big surge), show one of each drop.
+- **turntable**: one hippo, or all four, at full size under studio light, turning.
+
+Quality, film look and reduced motion switch live, and the page shows the frame's draw calls. Everything is in the URL too (see the top of `src/client/preview/Preview.tsx`), so a view can be linked or screenshotted. It only exists in dev: a production build leaves it out (`test/build.test.ts` checks).
+
+| The finale, scrubbed to the grab | The turntable |
+|---|---|
+| ![The preview page: the finale paused on a grab, with the seat, toss-style and transport controls](docs/preview/preview-page.jpg) | ![All four hippos side by side at full size, roaring](docs/preview/turntable-all.jpg) |
 
 ## How it is built
 
@@ -101,6 +140,7 @@ sim (rules, 30 Hz) ─▶ engine (Match: seats, phases, bots) ─▶ Driver seam
 src/sim/       the game: pure, deterministic, 30 Hz. No DOM, no clock, no Math.random (a test enforces it)
 src/engine/    platform-free: Match (lobby > countdown > playing > podium, seats, bots), Room (sockets), tick loop, wire
 src/client/    React UI, three.js renderer, input, audio, LocalDriver and NetDriver
+src/client/render/fluid.ts   the geyser's fluid: the TypeScript twin + the wasm loader (rust/crates/hippo_fluid is the Rust)
 src/room-do.ts the one World class: the Cloudflare Durable Object and the in-process desktop world
 src/worker.ts  the Cloudflare entry: validates and vouches identity, routes rooms
 ```
@@ -115,7 +155,8 @@ src/worker.ts  the Cloudflare entry: validates and vouches identity, routes room
 ## Tests
 
 ```
-bun test test          # sim, bots, match, wire, room (fake ports), worker, input, and a real LAN party
+bun test test          # sim, bots, match, wire, room (fake ports), worker, input, the fluid (Rust == TypeScript), a real LAN party,
+                       # the finale, settings and cues, contrast, and that a production build leaves the preview page out
 ```
 
 `test/lan.test.ts` boots the generated Rusty Buns desktop host with this app's world, then plays a round with the host page and two LAN guests on real sockets.

@@ -2,7 +2,7 @@
 
 A small, original arcade game that ships as a Rusty Buns example: **four angry, greedy tycoon hippos around a pan of oil, each trying to chomp the most oil drops.** The hippos got hooked on the lifestyle oil money bought them, and they are absolutely not cute about it. It exists to show people the whole Rusty Buns story (Cloudflare-first app, same code as a desktop binary, LAN party mode, deploy anywhere) without any of the owner's private game content.
 
-Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (Rust is an optional later milestone).
+Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (its geyser fluid has a Rust/wasm build and a TypeScript twin).
 
 (Concept history: this started as "Drip Derby", cartoon cars eating oil drops. The mechanic, architecture, modes and milestones are unchanged; the cast and the look are new.)
 
@@ -12,20 +12,23 @@ Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (Rust is an
 - **IP, theirs.** The core mechanic (slide, lunge to eat, drops bouncing in a tray) is fine. The look and the names must be our own:
   - Do **not** use the name "Hungry Hungry Hippos", or Hasbro's board look: no four coloured plastic hippos around a white marble tray, no lever-tail press.
   - Do **not** do a Monopoly-man look: no top hat + monocle + white moustache combination (and no top hats at all, to stay clear).
-  - Original character names only (below). Original look: dark oil pan, gaudy derrick offices, tycoon bling.
+  - The current direction is hot, humid and serious: a jungle at a Miami-sunset dusk, 80s crime-drama style (linen suits, mirrored shades, gold chains, neon pink and cyan) with a tense jungle-action mood. Vibe only: no names, characters, creatures, vision modes, logos or music from any film or show.
+  - Original character names only (below). Original look: a jungle island (Kauai / Isla Sorna mood: misty fluted green peaks, lush palms and ferns), a lost oil well found overgrown in a clearing, a basalt basin fed by an oil geyser, a rusted derrick or two, island-baron bling. Barely any sign of people.
 - **No binary assets.** Hippos, offices, arena and drops are built from three.js primitives in code. Sounds are WebAudio-synthesised (grunts, bellows, chomps). Nothing to license.
 - **Small files.** druids-curse's pain was 2000+ line god-files. Keep every file under ~400 lines; split by concern.
 - **Sim purity.** `src/sim/**` has no DOM, no `console.*`, no `Date.now`/`Math.random` (seeded RNG only), no imports outside `src/sim`. Same input sequence + seed = same state, bit for bit.
 
 ## 1. The game
 
-**Board.** A round oil pan arena seen from above, slightly tilted (iso-ish camera). Four gaudy little "offices" (a derrick, a brass nameplate, a neon dollar sign) at N/E/S/W. Each seat is a tycoon hippo sitting in its office mouth.
+**Board.** A round basalt basin on a jungle island, seen from above, slightly tilted (iso-ish camera). An **oil geyser** in the middle fires the drops out in arcs. Four hippos hold N/E/S/W, each on its own scrapped-up patch of mud with a shoulder of mossy boulders (low on the camera's side, so nothing hides the player). The jungle presses in on every side and is thickest up front, but a wedge between the camera and the basin stays low so the view is never blocked. Each seat is a tycoon hippo fighting for its spot.
 
-**The cast (seats 0..3, south first).** Names are original; personality comes from build, colour and bling, all primitives:
-- **Baron Gulpington**: big and round, purple pinstripe suit, a gold crown-shaped hard hat, a chunky gold chain, a pinky ring on every pinky. Bellows like a tuba.
-- **Crude Carl**: tall, narrow, mirrored shades, money-green suit and tie, oil-derrick hard hat, a cigar-shaped drop of oil hanging from his lip.
-- **Big Barrel Bertha**: widest of the four, oil-barrel-orange jacket, a triple gold chain, gold teeth, huge brows. Deepest grunt.
-- **Gusher Gus**: small and wiry, tan, backwards flat cap, gold tooth grill, loud checked jacket. Shrill snort.
+(Art direction, later: first a Victorian-industrial town, then the jungle island. The sim, rules and modes did not change.)
+
+**The cast (seats 0..3, south first).** Names are original; personality comes from build, colour and gear, all primitives:
+- **Baron Gulpington** ("El General"): big and round, an olive dress jacket with gold epaulettes and a chestful of medals, a black beret with a gold oil-drop badge, gold aviators with teal mirror lenses, three chains, gold teeth, a cigar.
+- **Crude Carl**: tall and narrow, a black beret, dark fatigues crossed by two bandoliers of oil vials, black wayfarers, a moustache, a cigar with a drip of oil on his lip.
+- **Big Barrel Bertha**: widest of the four, a black coat with a white fur collar, a maroon beret, a bandolier and a few medals, cat-eye shades, triple chain, gold teeth, huge brows. Deepest grunt.
+- **Gusher Gus**: small and wiry, olive camo jacket, a black headband, a bandolier, white-framed mirror shades, two chains, gold teeth. Shrill snort.
 
 Everybody has angry brows. Steam puffs from the ears when sputtering. They snarl (brows drop, teeth show) when someone else eats a gold drop.
 
@@ -42,6 +45,8 @@ Everybody has angry brows. Steam puffs from the ears when sputtering. They snarl
   - **Nail/bolt** (grey, spiky): −2 and a **sore jaw** (slide speed halved 3 s).
   - **Water drop** (blue): no points, your next gulp is a dud ("Watered down!").
 - **Slick**: a gold drop that isn't eaten within ~6 s splatters into an oil slick that makes drops near it skate faster. Keeps the board lively.
+
+**The finale.** After the round the richest hippo straps on a championship belt and wrestles every loser out of the basin, last place first, each in a different silly way (airplane spin, mud slam, punt, and the runner-up launched to the stars). Ties share the belt; if everyone ties, nobody is thrown. Pure presentation (`src/client/render/cinematic.ts`); the sim has settled the standings.
 
 **Round.** 60 s (configurable 30/60/90). Drip rate ramps up over time; the last 10 s is "Overflow!" (2× spawn, more golds, more nails). The richest hippo wins; ties share. Score is shown as net worth in $ millions (1 point = $1M, a ticker that rolls up); the podium crowns the richest hippo, then "Rematch" (same seats) or "Lobby".
 
@@ -121,16 +126,16 @@ apps/hippo-tycoon/
 
 ## 4. What to reuse, and from where
 
-From **druids-curse-votv** (`/Users/ryanquinn/agent-office/QuinnsCode/druids-curse-votv`), read for *patterns*, rewrite small:
-- `packages/world/src/enginePorts.ts`: the ports idea
-- `packages/world/src/tickLoop.ts`: fixed-step loop, catch-up cap, throw guard
-- `src/durableObjects/WorldDurableObject.ts` + `packages/desktop/world.ts`: one engine, two thin shells
-- `src/app/game/net/simDriver.ts`: Local vs Network driver seam
-- `src/app/game/net/worldSocket.ts`: reconnect/backoff, close on `pagehide`
-- `packages/sim/src/controllers.ts`: AI emits input only
-- `packages/sim/src/wire.ts`: PROTO_VERSION + quantisation idea
-- `src/worker.tsx` `handleWorldUpgrade`: identity vouching before the DO
-- `packages/desktop/main.tsx`: no StrictMode (it opens two sockets)
+From **a private game** (the owner's own multiplayer project, not in this repo), read for *patterns*, rewrite small:
+- its engine ports: the ports idea
+- its tick loop: fixed-step loop, catch-up cap, throw guard
+- its world Durable Object and desktop world: one engine, two thin shells
+- its sim driver: Local vs Network driver seam
+- its world socket: reconnect/backoff, close on `pagehide`
+- its AI controllers: AI emits input only
+- its wire format: PROTO_VERSION + quantisation idea
+- its worker's world upgrade handler: identity vouching before the DO
+- its desktop entry: no StrictMode (it opens two sockets)
 
 From **RustyBuns** (this repo):
 - `apps/fm-daw/` is the closest app shape: spa desktop + `src/worker.ts` exporting the world class for Cloudflare, `src/ui/net.ts` reconnect client, `vite.desktop.config.ts`, tests, README style. **Caveat:** fm-daw sets `builtMain` with `bundle:false` but its vite build only emits `dist/client`. Its deploy path looks untested. For hippo-tycoon either drop `builtMain` so alchemy bundles `src/worker.ts`, or make the worker build real. Verify with `rustybuns plan`.

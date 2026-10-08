@@ -14,7 +14,7 @@ export function Worth({ value }: { value: number }) {
     return () => clearInterval(id);
   }, []);
   const v = Math.round(shown);
-  return <span className={"v" + (v < 0 ? " neg" : "")}>${v}M</span>;
+  return <span className={"v" + (v < 0 ? " neg" : "")} aria-hidden>${v}M</span>;
 }
 
 export function Hud({ frame }: { frame: Frame }) {
@@ -24,17 +24,20 @@ export function Hud({ frame }: { frame: Frame }) {
   const cd = Math.ceil(cur.countdown / TICK_HZ);
   return (
     <>
-      <div className="hud">
-        {cur.hippos.map((h) => (
-          <div key={h.seat} className={"score" + (mine.includes(h.seat) ? " mine" : "")} style={{ borderColor: mine.includes(h.seat) ? undefined : hex(LOOKS[h.seat]!.accent) + "99" }}>
-            <div className="n">{seats[h.seat]?.human ? seats[h.seat]!.name : SEAT_NAMES[h.seat]}{seats[h.seat]?.human ? "" : " (bot)"}</div>
-            <Worth value={h.score} />
-          </div>
-        ))}
+      <div className="hud" role="region" aria-label="Net worth">
+        {cur.hippos.map((h) => {
+          const human = seats[h.seat]?.human, name = human ? seats[h.seat]!.name : SEAT_NAMES[h.seat], you = mine.includes(h.seat);
+          return (
+            <div key={h.seat} role="group" aria-label={`${name}${human ? "" : ", bot"}${you ? ", you" : ""}: $${h.score} million`} className={"score" + (you ? " mine" : "")} style={{ borderColor: you ? undefined : hex(LOOKS[h.seat]!.accent) + "99" }}>
+              <div className="n" aria-hidden>{you && <span className="you">YOU · </span>}{name}{human ? "" : " (bot)"}</div>
+              <Worth value={h.score} />
+            </div>
+          );
+        })}
       </div>
-      {frame.phase === "playing" && <div className={"clock" + (overflow ? " hot" : "")}>{secs}</div>}
-      {frame.phase === "countdown" && <div className="banner" key={cd}>{cd > 0 ? cd : "CHOMP!"}</div>}
-      {overflow && cur.left > OVERFLOW_TICKS - TICK_HZ * 2 && <div className="banner red">OVERFLOW!</div>}
+      {frame.phase === "playing" && <div className={"clock" + (overflow ? " hot" : "")} role="timer" aria-label={`${secs} seconds left`}>{secs}</div>}
+      {frame.phase === "countdown" && <div className="banner" key={cd} aria-live="assertive">{cd > 0 ? cd : "CHOMP!"}</div>}
+      {overflow && cur.left > OVERFLOW_TICKS - TICK_HZ * 2 && <div className="banner red" role="alert">OVERFLOW!</div>}
     </>
   );
 }
