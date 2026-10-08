@@ -3,7 +3,7 @@
 // and online games talk to a world (see session.ts).
 
 import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
-import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, dropOk, outside, randomLook, type BotLevel, type Look, type Msg, type View } from "../hunt/game.ts";
+import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, dropOk, outside, randomLook, type BotLevel, type Look, type Msg, type View } from "../hunt/game.ts";
 import { step, type Body } from "../hunt/sim.ts";
 import { ZONES, zoneById, type Zone } from "../zones/zone.ts";
 import { describe } from "../weather.ts";
@@ -190,7 +190,8 @@ function renderLobby(v: View) {
     ${hosting ? `<section><h2>Friends join with</h2><div class="lan">Address: ${hosting.addresses.length ? hosting.addresses.map((a) => `<code>${a}:${hosting!.port}</code>`).join(" or ") : "<em>no network found</em>"}<br>Passphrase: <code>${esc(hosting.pass)}</code></div></section>` : ""}
     <section><h2>Players</h2><ul class="players">${v.players.map((p) => `<li><span class="who">${esc(p.name)}${p.id === v.me ? " (you)" : ""}</span>${p.bot ? `<span class="badge">${p.bot} AI</span>` : ""}${p.id === v.hostId ? `<span class="badge">host</span>` : ""}${host && p.id !== v.me ? `<button data-kick="${esc(p.id)}" title="Remove">✕</button>` : ""}<span class="pts">${p.score}</span></li>`).join("")}</ul></section>
     <section class="row-btns">${host ? `<button class="primary" data-action="start" ${v.players.filter((p) => p.online).length < 2 ? "disabled" : ""}>Start the hunt</button>` : `<em>Waiting for ${esc(nameOf(v, v.hostId ?? ""))} to start…</em>`}<button data-action="leave">${session?.kind === "host" ? "Stop hosting" : "Leave"}</button></section>
-    <p class="note">One ranger a round (two once there are five players); everyone else camps. Campers score a point per second hidden, plus ${HUNT.survivalBonus} for lasting the whole hunt. Rangers score ${HUNT.catchPoints} per catch.</p>`;
+    <p class="note">One ranger a round (two once there are five players); everyone else camps. Campers score a point per second hidden, plus ${HUNT.survivalBonus} for camping out. Rangers score ${HUNT.catchPoints} per catch.</p>
+    <p class="note"><strong>Bigfoot</strong> is hiding where the search area closes in. Whoever reaches him first ends the round and scores ${HUNT.bigfootPoints}. If a camper finds him, every camper still out has camped out. If a ranger does, they haven't. Listen for his howl.</p>`;
   if (html !== lastLobby) { lastLobby = html; $("lobby-main").innerHTML = html; }
 }
 
@@ -255,7 +256,8 @@ function renderResults(v: View) {
   if (v.phase === "results" && r?.results) {
     const z = zoneById(v.zone);
     const rows = [...r.results].sort((a, b) => b.points - a.points).map((x) => {
-      const what = x.role === "ranger" ? `ranger · ${x.points / HUNT.catchPoints} caught` : x.caughtAt === null ? "camped out!" : `caught after ${Math.round((x.caughtAt - r.huntStartedAt) / 1000)} s`;
+      const catches = (x.points - (x.bigfoot ? HUNT.bigfootPoints : 0)) / HUNT.catchPoints;
+      const what = (x.bigfoot ? "found Bigfoot! · " : "") + (x.role === "ranger" ? `ranger · ${catches} caught` : x.caughtAt === null ? "camped out!" : `caught after ${Math.round((x.caughtAt - r.huntStartedAt) / 1000)} s`);
       return `<tr><td>${esc(nameOf(v, x.id))}${x.id === v.me ? " (you)" : ""}</td><td>${what}</td><td>+${x.points}</td></tr>`;
     }).join("");
     html = `<h3>Round ${r.n + 1}: ${esc(z.data.name)}</h3><table>${rows}</table><p class="note">Next round in a few seconds…</p>`;
@@ -316,9 +318,9 @@ function renderRadio(v: View, z: Zone, now: number) {
     if (!radioFor || !campers.includes(radioFor)) radioFor = campers[0] ?? null;
     const tabs = campers.length > 1 ? `<h2 style="margin-top:12px">Shading for</h2><div class="row-btns">${campers.map((id) => `<button data-radio="${esc(id)}" aria-pressed="${id === radioFor}">${esc(nameOf(v, id))}</button>`).join("")}</div>` : "";
     const cool = now < s.cooldownUntil ? `Radio busy: ${Math.ceil((s.cooldownUntil - now) / 1000)} s` : "Every camper's radio answers truthfully, for where they are right now.";
-    html = `<h2>Radio</h2><div>${qs}</div><div class="why">${cool}</div>${tabs}${askLog(v)}<p class="note">Shaded: where the radio says they can't be (when you asked; they may have moved since). Orange: the search area. Dashed: where it ends up.</p><button data-action="close-map">Back to the park (M)</button>`;
+    html = `<h2>Radio</h2><div>${qs}</div><div class="why">${cool}</div>${tabs}${askLog(v)}<p class="note">Shaded: where the radio says they can't be (when you asked; they may have moved since). Orange: the search area. It closes in on Bigfoot, purple rings are his howls.</p><button data-action="close-map">Back to the park (M)</button>`;
   } else {
-    html = `<h2>${esc(z.data.name)}</h2><p class="note">Orange: the search area, closing in. Dashed: where it ends up. Get inside before it reaches you, or the rangers will see you from anywhere.</p>${askLog(v)}<button data-action="close-map">Back to the park (M)</button>`;
+    html = `<h2>${esc(z.data.name)}</h2><p class="note">Orange: the search area, closing in on wherever Bigfoot is hiding. Get inside before it reaches you, or the rangers will see you from anywhere. Purple rings are his howls.</p>${askLog(v)}<button data-action="close-map">Back to the park (M)</button>`;
   }
   if (html !== lastRadio) { lastRadio = html; $("radio").innerHTML = html; }
 }
@@ -425,11 +427,12 @@ function frame() {
     heard.add(c.id);
     const me = body ?? (you ? { x: you.x, y: you.y, yaw: you.yaw } : null);
     if (!me) continue;
-    const p = place(c.x - me.x, c.y - me.y, me.yaw, c.kind === "call" ? 120 : 60);
+    const p = place(c.x - me.x, c.y - me.y, me.yaw, c.kind === "call" ? 120 : c.kind === "howl" ? 400 : 60);
     if (c.kind === "rustle") sounds.rustle(p.vol, p.pan);
     else if (c.kind === "step") sounds.step(p.vol, p.pan);
     else if (c.kind === "call" && c.by !== v.me) sounds.call(p.vol, CALLS[c.id % CALLS.length]);
     else if (c.kind === "caught") sounds.caught();
+    else if (c.kind === "howl") sounds.howl(Math.max(0.25, p.vol), p.pan);
   }
 
   // The map overlay: the drop screen, or M.
@@ -458,12 +461,14 @@ function hud(v: View, z: Zone, now: number) {
   // The banner: flashes first, then warnings.
   let text = "", warn = false;
   if (flash && Date.now() < flash.until) text = flash.text;
+  else if (r.bigfoot?.foundBy) text = r.bigfoot.foundBy === v.me ? "You found Bigfoot!" : `${nameOf(v, r.bigfoot.foundBy)} found Bigfoot!`;
+  else if (r.bigfoot && body && v.phase === "hunt") text = "Bigfoot! Get to him!";
   else if (you?.caughtAt != null) text = `Caught after ${Math.round((you.caughtAt - r.huntStartedAt) / 1000)} s. Spectating: Tab to switch.`;
   else if (body && r.circle && v.phase === "hunt" && !ranger) {
     const k = circleAt(r.circle, now);
     const edge = k.r - Math.hypot(body.x - k.x, body.y - k.y);
     if (outside(r.circle, now, body.x, body.y)) { text = "Outside the search area: the rangers can see you! Get back in."; warn = true; }
-    else if (edge < 15 && now < r.circle.to) { text = `The search area is closing in: ${Math.round(edge)} m to the edge`; warn = true; }
+    else if (edge < 15 && closed(r.huntStartedAt, now) < 1) { text = `The search area is closing in: ${Math.round(edge)} m to the edge`; warn = true; }
   }
   const b = $("banner");
   if (b.textContent !== text) b.textContent = text;

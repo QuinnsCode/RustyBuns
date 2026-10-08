@@ -289,6 +289,57 @@ describe("the hunt", () => {
   });
 });
 
+describe("Bigfoot", () => {
+  test("hides in the final circle, and is only seen up close", () => {
+    const { g, tick, now, z } = hunt("el-capitan", "day");
+    tick((HUNT.dropSecs + HUNT.hideSecs) * 1000);
+    const r = g.round!, f = r.bigfoot!, c = r.circle!;
+    expect(Math.hypot(f.x - c.x1, f.y - c.y1)).toBeLessThanOrEqual(c.r1 * HUNT.bigfootSpread + 1e-6);
+    expect(z.inside(f.x, f.y)).toBe(true);
+    const a = r.actors.get("c")!;
+    a.x = f.x + 40; a.y = f.y;
+    expect(g.view("c", now()).round!.bigfoot).toBeNull();
+  });
+
+  test("a camper who finds him ends the round: every camper still out camps out", () => {
+    const { g, tick, rid, cid } = hunt();
+    tick((HUNT.dropSecs + HUNT.hideSecs) * 1000);
+    tick(20_000);
+    const r = g.round!, f = r.bigfoot!, a = r.actors.get("c")!;
+    a.x = f.x + 0.5; a.y = f.y;
+    tick(TICK_MS);
+    expect(g.phase).toBe("results");
+    expect(r.foundBy).toBe(cid);
+    const mine = r.results!.find((x) => x.id === cid)!;
+    expect(mine.bigfoot).toBe(true);
+    expect(mine.points).toBe(20 + HUNT.survivalBonus + HUNT.bigfootPoints);
+    expect(r.results!.find((x) => x.id === rid)!.points).toBe(0);
+  });
+
+  test("a ranger who finds him first scores, and the campers don't camp out", () => {
+    const { g, tick, rid, cid } = hunt();
+    tick((HUNT.dropSecs + HUNT.hideSecs) * 1000);
+    tick(30_000);
+    const r = g.round!, f = r.bigfoot!, a = r.actors.get("r")!;
+    a.x = f.x; a.y = f.y + 0.5;
+    tick(TICK_MS);
+    expect(g.phase).toBe("results");
+    expect(r.results!.find((x) => x.id === rid)!.points).toBe(HUNT.bigfootPoints);
+    expect(r.results!.find((x) => x.id === cid)!.points).toBe(30);
+  });
+
+  test("everyone hears him howl, roughly where he is", () => {
+    const { g, tick, now } = hunt();
+    tick((HUNT.dropSecs + HUNT.hideSecs) * 1000);
+    tick(HUNT.shrinkFrom * 1000 + HUNT.howlEverySecs * 1000 + 100);
+    const f = g.round!.bigfoot!;
+    const howl = g.view("c", now()).round!.cues.find((q) => q.kind === "howl");
+    expect(howl).toBeDefined();
+    expect(g.view("r", now()).round!.cues.some((q) => q.kind === "howl")).toBe(true);
+    expect(Math.hypot(howl!.x - f.x, howl!.y - f.y)).toBeLessThan(HUNT.howlJitter * 2.5 + 1e-6);
+  });
+});
+
 test("bots play a whole match in every zone", () => {
   for (const z of ZONES) {
     const room = new Room(11);

@@ -7,7 +7,7 @@ import { hashString, rng } from "../geo.ts";
 import { HUNT, circleAt, type ActorView, type Circle, type Cue, type Look, type View } from "../hunt/game.ts";
 import { clearSky, type Sky, type TimeOfDay } from "../hunt/sim.ts";
 import { zoneById, type Prop, type PropKind, type Zone } from "../zones/zone.ts";
-import { makeCharacter, nameTag, pose, type Character } from "./characters.ts";
+import { makeBigfoot, makeCharacter, nameTag, pose, type Character } from "./characters.ts";
 
 export const toThree = (x: number, y: number, h: number) => new THREE.Vector3(x, h, -y);
 
@@ -40,10 +40,10 @@ export class World3D {
   private stars: THREE.Points | null = null;
   private remotes = new Map<string, Remote>();
   private me: Character | null = null;
+  private bigfoot: Character | null = null;
   private meKey = "";
   private wall: THREE.Mesh;
   private wallTex: THREE.CanvasTexture;
-  private finalRing: THREE.Mesh;
   private cueMeshes = new Map<number, { obj: THREE.Object3D; at: number; kind: Cue["kind"] }>();
   private tod: TimeOfDay | null = null;
   private skyKey = "";
@@ -82,9 +82,7 @@ export class World3D {
     this.wall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 128, 1, true),
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }));
     this.wall.renderOrder = 5;
-    this.finalRing = new THREE.Mesh(new THREE.RingGeometry(0.97, 1, 128), new THREE.MeshBasicMaterial({ color: "#ffd166", transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, fog: false }));
-    this.finalRing.rotation.x = -Math.PI / 2;
-    this.scene.add(this.wall, this.finalRing);
+    this.scene.add(this.wall);
   }
 
   resize() {
@@ -389,6 +387,17 @@ export class World3D {
       this.placeChar(rem.ch, z, rem.x, rem.y, rem.yaw, rem.pitch, rem.crouch, rem.speed, rem.light, dt, rem.caught);
     }
 
+    // Bigfoot, when you can see him: crouched in his bush, standing tall once he's found.
+    const bf = r?.bigfoot ?? null;
+    if (bf && !this.bigfoot) { this.bigfoot = makeBigfoot(); this.scene.add(this.bigfoot.root); }
+    if (this.bigfoot) {
+      this.bigfoot.root.visible = !!bf;
+      if (bf) {
+        this.placeChar(this.bigfoot, z, bf.x, bf.y, bf.yaw, 0, !bf.foundBy, 0, false, dt, false);
+        this.bigfoot.tag.visible = !!bf.foundBy;
+      }
+    }
+
     // You.
     const meRole = r?.you?.role ?? null;
     const key = meRole ? `${meRole}:${JSON.stringify(look)}` : "";
@@ -464,7 +473,7 @@ export class World3D {
   }
 
   private circle(c: Circle | null, z: Zone, now: number, show: boolean) {
-    this.wall.visible = this.finalRing.visible = show && !!c;
+    this.wall.visible = show && !!c;
     if (!c || !show) return;
     const k = circleAt(c, now);
     // A tall band from below the valley floor to above the rim; stripes stay ~3 m wide whatever the size.
@@ -474,8 +483,6 @@ export class World3D {
     this.wall.position.copy(toThree(k.x, k.y, height / 2 - 10));
     this.wall.scale.set(k.r, height, k.r);
     this.wallTex.repeat.set(Math.round((2 * Math.PI * k.r) / 3), height / 3);
-    this.finalRing.position.copy(toThree(c.x1, c.y1, z.height(c.x1, c.y1) + 0.3));
-    this.finalRing.scale.setScalar(c.r1);
   }
 
   private cues(v: View, z: Zone, now: number) {
@@ -484,13 +491,13 @@ export class World3D {
       if (c.kind === "caught" && c.by === v.me) continue;
       live.add(c.id);
       if (this.cueMeshes.has(c.id)) continue;
-      const color = c.kind === "rustle" ? "#9be36b" : c.kind === "step" ? "#f2d17b" : c.kind === "call" ? "#ffb347" : "#ff5a4a";
+      const color = c.kind === "rustle" ? "#9be36b" : c.kind === "step" ? "#f2d17b" : c.kind === "call" ? "#ffb347" : c.kind === "howl" ? "#c08cff" : "#ff5a4a";
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, fog: false }));
       ring.rotation.x = -Math.PI / 2;
       const g = new THREE.Group();
       g.add(ring);
-      if (c.kind === "rustle" || c.kind === "step") {
-        const mark = nameTag(c.kind === "rustle" ? "rustle?" : "footsteps", color);
+      if (c.kind === "rustle" || c.kind === "step" || c.kind === "howl") {
+        const mark = nameTag(c.kind === "rustle" ? "rustle?" : c.kind === "howl" ? "a howl?" : "footsteps", color);
         mark.position.y = 2.2;
         g.add(mark);
       }
@@ -503,7 +510,7 @@ export class World3D {
       if (!live.has(id) || age > 5) { this.scene.remove(m.obj); this.cueMeshes.delete(id); continue; }
       const ring = m.obj.children[0] as THREE.Mesh;
       // A call spreads out to how far it carries, then fades.
-      const grow = m.kind === "call" ? Math.min(HUNT.callRadius, 4 + age * 40) : 1 + age * 2.5;
+      const grow = m.kind === "call" ? Math.min(HUNT.callRadius, 4 + age * 40) : m.kind === "howl" ? Math.min(HUNT.howlJitter, 3 + age * 12) : 1 + age * 2.5;
       ring.scale.setScalar(grow);
       (ring.material as THREE.MeshBasicMaterial).opacity = Math.max(0, (m.kind === "call" ? 0.7 - age / 2 : 0.9 - age / 5));
     }

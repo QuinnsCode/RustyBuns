@@ -8,6 +8,7 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { PANTS, SHIRTS, SKINS, type Look } from "../hunt/game.ts";
 import type { Role } from "../hunt/sim.ts";
+import { rng } from "../geo.ts";
 
 export interface Character {
   root: THREE.Group;
@@ -399,4 +400,96 @@ export function pose(ch: Character, speed: number, crouch: boolean, pitch: numbe
   ch.arms[1].rotation.z = 0.08;
   ch.head.rotation.x = -pitch * 0.8 - 0.3 * k;
   ch.tag.position.y = 2.32 - 0.5 * k;
+}
+
+/**
+ * Bigfoot: the same joints as a person (so pose() crouches and walks him), but
+ * shaggy, long-armed, and 1.4 times as big. Tufts of fur break up his outline.
+ */
+export function makeBigfoot(): Character {
+  const fur = mat("#4a3423", { roughness: 1 });
+  const furDark = mat("#33231a", { roughness: 1 });
+  const hide = mat("#2a1e17", { roughness: 0.75 });
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const tuft = (r: number) => mesh(geo(`tuft${r}`, () => new THREE.ConeGeometry(r, r * 2.6, 5)), furDark);
+
+  const legs: THREE.Group[] = [], knees: THREE.Group[] = [];
+  for (const side of [-1, 1]) {
+    const hip = new THREE.Group();
+    hip.position.set(0.13 * side, HIP_Y, 0);
+    hip.add(mesh(capsule(0.12, THIGH - 0.1), fur, 0, -THIGH / 2, 0, true));
+    const knee = new THREE.Group();
+    knee.position.y = -THIGH;
+    knee.add(mesh(capsule(0.1, SHIN - 0.08), fur, 0, -SHIN / 2 + 0.02, 0, true));
+    // the famous feet
+    knee.add(mesh(rbox(0.18, 0.09, 0.4, 0.04), hide, 0, -SHIN - 0.01, 0.08, true));
+    hip.add(knee);
+    body.add(hip);
+    legs.push(hip);
+    knees.push(knee);
+  }
+
+  const upper = new THREE.Group();
+  upper.position.y = HIP_Y;
+  body.add(upper);
+  const U = (y: number) => y - HIP_Y;
+  const torso = mesh(capsule(0.27, 0.42), fur, 0, U(1.3), 0, true);
+  torso.scale.set(1.15, 1, 0.8);
+  upper.add(torso);
+  // a hunch of shoulders, and shaggy tufts all over
+  upper.add(mesh(sphere(0.24), fur, 0, U(1.58), -0.06, true));
+  const r = rng(7);
+  for (let i = 0; i < 18; i++) {
+    const a = r() * Math.PI * 2, y = 1.0 + r() * 0.6;
+    const t = tuft(0.05 + r() * 0.03);
+    t.position.set(Math.sin(a) * 0.29, U(y), Math.cos(a) * 0.22);
+    t.rotation.set(Math.cos(a) * 1.2 + 0.6, 0, -Math.sin(a) * 1.2);
+    upper.add(t);
+  }
+
+  const arms: THREE.Group[] = [], elbows: THREE.Group[] = [];
+  for (const side of [-1, 1]) {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(0.34 * side, U(1.52), 0);
+    shoulder.add(mesh(sphere(0.11), fur, 0, 0, 0));
+    shoulder.add(mesh(capsule(0.095, 0.26), fur, 0, -0.18, 0, true));
+    const elbow = new THREE.Group();
+    elbow.position.y = -0.36;
+    elbow.add(mesh(capsule(0.085, 0.26), fur, 0, -0.17, 0, true));
+    const hand = mesh(sphere(0.085), hide, 0, -0.4, 0.01);
+    hand.scale.set(0.9, 1.25, 0.8);
+    elbow.add(hand);
+    shoulder.add(elbow);
+    upper.add(shoulder);
+    arms.push(shoulder);
+    elbows.push(elbow);
+  }
+
+  // A low, crested head with a bare face and a heavy brow.
+  const head = new THREE.Group();
+  head.position.set(0, U(1.66), 0.05);
+  const skull = mesh(sphere(0.19, 18, 12), fur, 0, 0.12, 0, true);
+  skull.scale.set(1, 1.15, 1);
+  const crest = mesh(sphere(0.1, 10, 8), furDark, 0, 0.3, -0.04);
+  crest.scale.set(0.6, 1, 1.3);
+  const face = mesh(sphere(0.13, 14, 10), hide, 0, 0.09, 0.09);
+  face.scale.set(1, 1.05, 0.7);
+  const brow = mesh(capsule(0.03, 0.17), furDark, 0, 0.17, 0.17);
+  brow.rotation.z = Math.PI / 2;
+  head.add(skull, crest, face, brow);
+  for (const side of [-1, 1]) head.add(mesh(sphere(0.022, 8, 6), mat("#f2c14e", { emissive: "#5a3a00" }), 0.055 * side, 0.13, 0.19));
+  upper.add(head);
+
+  const tag = nameTag("Bigfoot", "#ffb27a");
+  tag.position.y = 2.32;
+  tag.visible = false;
+  root.add(tag);
+  root.scale.setScalar(1.4);
+  return {
+    root, head, body, upper, light: null, beam: null, tag, role: "camper", phase: 0, crouchT: 1,
+    legs: legs as [THREE.Group, THREE.Group], knees: knees as [THREE.Group, THREE.Group],
+    arms: arms as [THREE.Group, THREE.Group], elbows: elbows as [THREE.Group, THREE.Group],
+  };
 }

@@ -40,6 +40,26 @@ export const sounds = {
     u.volume = Math.min(1, vol); u.rate = 1.05; u.pitch = 0.8;
     speechSynthesis.speak(u);
   },
+  /** Bigfoot: a long, low whoop that rises and falls. */
+  howl(vol: number, pan: number) {
+    if (vol <= 0.02) return;
+    const a = ac(), t = a.currentTime;
+    if (a.state === "suspended") void a.resume();
+    const o = a.createOscillator(), f = a.createBiquadFilter(), g = a.createGain(), p = a.createStereoPanner();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(170, t);
+    o.frequency.exponentialRampToValueAtTime(330, t + 0.5);
+    o.frequency.setValueAtTime(330, t + 0.9);
+    o.frequency.exponentialRampToValueAtTime(140, t + 1.8);
+    f.type = "lowpass"; f.frequency.value = 900;
+    g.gain.setValueAtTime(0.001, t);
+    g.gain.exponentialRampToValueAtTime(0.25 * vol, t + 0.25);
+    g.gain.setValueAtTime(0.25 * vol, t + 1.3);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 1.9);
+    p.pan.value = Math.max(-1, Math.min(1, pan));
+    o.connect(f).connect(g).connect(p).connect(a.destination);
+    o.start(t); o.stop(t + 2);
+  },
   unlock() { const a = ac(); if (a.state === "suspended") void a.resume(); },
 };
 
