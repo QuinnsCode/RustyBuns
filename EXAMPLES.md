@@ -7,6 +7,7 @@ Each example lives in `apps/` and is not part of any published package: installi
 | [tscircuit desktop](apps/tscircuit-desktop/README.md) | A real, heavy Vite app as one self-contained binary, with a Rust engine and a TypeScript fallback | Large (the tscircuit toolchain) |
 | [fm-daw](apps/fm-daw/README.md) | An FM groovebox: Rust as wasm in the audio thread, the same crate over FFI on the host, a world DO that saves the project | Small |
 | [auto-rig](apps/auto-rig/README.md) | Drop in a model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical results | Small |
+| [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain: campers vs park rangers, vs AI bots or with friends on a LAN | Small |
 | [spa-example](apps/spa-example) | An RWSDK / Cloudflare app on the desktop: a world Durable Object, D1 and KV on sqlite | Small |
 | [example](apps/example) | Worker mode, plus a probe for the sample Rust crate in `native/crates/rb_hello` | Small |
 
@@ -58,6 +59,21 @@ bun run desktop:dev
 ```
 
 [Full guide →](apps/auto-rig/README.md)
+
+## park-hide-seek
+
+Campers drop into a zone around a real Yosemite attraction and hide; park rangers hunt them with flashlights, call-outs and radio questions, while the search area closes in. The terrain is real elevation data shrunk six times; people and trees stay life-size.
+
+- **One game, two hosts.** Single player runs the game in the page; a LAN game runs the same code in the world.
+- **Each player is sent only what they could see:** the host checks light, range and line of sight past terrain and props, so a ranger's client never receives a hidden camper. Bots play from the same views.
+- **Uses:** spa mode with a world class, `guests` opened and closed at runtime with `POST /__rb/host`, `worldSocket()` for guests, and a `desktop.host` route for the LAN address.
+
+```
+cd apps/park-hide-seek
+bun run desktop:dev      # Play vs AI, or Host / Join a LAN game
+```
+
+[Full guide →](apps/park-hide-seek/README.md)
 
 ## spa-example
 
