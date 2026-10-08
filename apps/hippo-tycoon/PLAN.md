@@ -25,7 +25,7 @@ Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (Rust is an
 - **Baron Gulpington**: big and round, purple pinstripe suit, a gold crown-shaped hard hat, a chunky gold chain, a pinky ring on every pinky. Bellows like a tuba.
 - **Crude Carl**: tall, narrow, mirrored shades, money-green suit and tie, oil-derrick hard hat, a cigar-shaped drop of oil hanging from his lip.
 - **Big Barrel Bertha**: widest of the four, oil-barrel-orange jacket, a triple gold chain, gold teeth, huge brows. Deepest grunt.
-- **Gusher Gus**: small and wiry, tan, backwards flat cap, gold tooth grill, loud checked jacket. Shrill honk-snort.
+- **Gusher Gus**: small and wiry, tan, backwards flat cap, gold tooth grill, loud checked jacket. Shrill snort.
 
 Everybody has angry brows. Steam puffs from the ears when sputtering. They snarl (brows drop, teeth show) when someone else eats a gold drop.
 

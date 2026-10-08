@@ -1,0 +1,27 @@
+{
+  "name": "hippo-tycoon",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "test": "bun test test",
+    "dev": "vite",
+    "build": "vite build --outDir dist/client",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+    "desktop:dev": "bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop",
+    "desktop:build": "bunx rustybuns build desktop --check"
+  },
+  "dependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/react": "19",
+    "@types/react-dom": "19",
+    "@types/three": "^0.180.0",
+    "vite": "^6.2.6"
+  }
+}
