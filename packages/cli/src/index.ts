@@ -14,7 +14,7 @@ import { infer, readPackageJson } from "./glue/infer.ts";
 import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
-import { installCommand, applyOverrides, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
+import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { Profiler } from "./profile.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
@@ -64,13 +64,16 @@ async function addDesktop(flags: string[]) {
 /** Install the pinned Alchemy + Effect set and force transitive @effect/* to match. */
 async function addDeploy(dryRun: boolean) {
   const inf = infer();
-  const pkgPath = "package.json";
+  // In a workspace the overrides must live in the root package.json; a member's are ignored.
+  const root = workspaceRoot(process.cwd());
+  const pkgPath = root ? `${root}/package.json` : "package.json";
   const pkg = await Bun.file(pkgPath).json();
   const { changed } = applyOverrides(pkg, inf.pm);
   const cmd = installCommand(inf.pm, await Bun.file("pnpm-workspace.yaml").exists());
   console.log(`pinned deploy deps: ${Object.entries(DEPLOY_DEPS).map(([n, v]) => `${n}@${v}`).join(", ")}`);
-  if (dryRun) { console.log(`would write ${inf.pm === "pnpm" ? "pnpm.overrides" : "overrides"} to package.json and run:\n  ${cmd}`); return; }
-  if (changed) { await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); console.log("wrote overrides to package.json"); }
+  const where = root ? `the workspace root (${pkgPath})` : "package.json";
+  if (dryRun) { console.log(`would write ${inf.pm === "pnpm" ? "pnpm.overrides" : "overrides"} to ${where} and run:\n  ${cmd}`); return; }
+  if (changed) { await Bun.write(pkgPath, JSON.stringify(pkg, null, 2) + "\n"); console.log(`wrote overrides to ${where}`); }
   console.log(`$ ${cmd}`);
   await $`sh -c ${cmd}`;
   console.log(`\nnext: set a throwaway "name" in rustybuns.config.ts, then ${inf.execCmd("rustybuns plan")}`);

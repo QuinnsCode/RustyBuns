@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+
 // The Alchemy + Effect version set that is known to work together. Alchemy is
 // beta and Effect is rc; carets drift across breaking changes within days, so
 // every package here is pinned exactly and (on pnpm) forced via overrides.
@@ -34,4 +37,27 @@ export function applyOverrides(pkg: any, pm: string): { pkg: any; changed: boole
   const before = JSON.stringify(target[key] ?? {});
   target[key] = { ...(target[key] ?? {}), ...DEPLOY_OVERRIDES };
   return { pkg, changed: before !== JSON.stringify(target[key]) };
+}
+
+/**
+ * The workspace root `dir` is a member of, or null. Bun, npm and yarn only honour
+ * `overrides`/`resolutions` in the ROOT package.json: written into a member they
+ * are silently ignored, and Alchemy then fails to load its peers (a transitive
+ * @effect/* resolves to a version that cannot find `effect`).
+ */
+export function workspaceRoot(dir: string): string | null {
+  const start = resolve(dir);
+  for (let d = dirname(start); ; d = dirname(d)) {
+    const pkgPath = join(d, "package.json");
+    if (existsSync(pkgPath)) {
+      try {
+        const ws = JSON.parse(readFileSync(pkgPath, "utf8")).workspaces;
+        const patterns: string[] = Array.isArray(ws) ? ws : Array.isArray(ws?.packages) ? ws.packages : [];
+        const rel = relative(d, start).split("\\").join("/");
+        if (patterns.some((p) => !p.startsWith("!") && new Bun.Glob(p.replace(/\/$/, "")).match(rel))) return d;
+      } catch { /* not a readable package.json: keep walking */ }
+    }
+    if (existsSync(join(d, "pnpm-workspace.yaml"))) return d;
+    if (dirname(d) === d) return null;
+  }
 }
