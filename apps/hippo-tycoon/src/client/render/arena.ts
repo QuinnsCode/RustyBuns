@@ -2,24 +2,20 @@ import * as THREE from "three";
 import { A_REST, SEATS, WALL_R, seatAngle } from "../../sim/rules.ts";
 import { Geyser } from "./geyser.ts";
 import { Smoke, type Animated } from "./industry.ts";
-import { ferns, mountains, palm, rockRim, type Palm } from "./jungle.ts";
+import { CLEARING, claim, forest, mountains, rockRim } from "./jungle.ts";
 import { buildOffice } from "./office.ts";
-import { basalt, moss } from "./textures.ts";
+import { LOOKS } from "./looks.ts";
+import { basalt, dirt, moss } from "./textures.ts";
 
 /** Sim (x, y) on the pan -> three.js (x, height, -y). */
 export const at = (x: number, y: number, h = 0) => new THREE.Vector3(x, h, -y);
-
-function rng(seed: number) {
-  let x = seed >>> 0;
-  return () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 4294967296);
-}
 
 /** The basin, the geyser, four outposts and the jungle round them. */
 export class Arena {
   readonly group = new THREE.Group();
   readonly geyser: Geyser;
   private animated: Animated[] = [];
-  private palms: Palm[] = [];
+  private forest!: ReturnType<typeof forest>;
   private mist: Smoke;
 
   constructor() {
@@ -48,32 +44,20 @@ export class Arena {
   }
 
   /**
-   * Palms and ferns. The camera sits to the south looking north, so nothing tall
-   * goes in that wedge near the pan: the trees crowd the far side and the flanks,
-   * lean outward, and the ones that do stand south are far back and short.
+   * The oil clearing the hippos have claimed: packed, oil-stained ground, stumps
+   * and felled trunks along its edge, claim stakes in each baron's colour, and
+   * jungle pressing in on every side. The camera's side stays open (see forest()).
    */
   private plant() {
-    const r = rng(99);
-    for (let i = 0; i < 34; i++) {
-      const a = r() * Math.PI * 2, d = 27 + r() * 26;
-      const x = Math.cos(a), z = Math.sin(a);                      // z > 0 is toward the camera
-      if (z > 0.35 && d < 44) continue;                            // keep the camera's side clear
-      const tall = z > 0.2 ? 5.5 + r() * 2.5 : 6.5 + r() * 3.5;
-      const p = palm(i + 1, tall, x * (1.5 + r() * 2.5), z * (1.5 + r() * 2.5));
-      p.group.position.set(x * d, 0, z * d); p.group.rotation.y = r() * 6.28;
-      this.group.add(p.group); this.palms.push(p);
-    }
-    for (let i = 0; i < 26; i++) {                                  // ground cover between the outposts and in the rim gaps
-      const a = r() * Math.PI * 2, d = WALL_R + 8 + r() * 14;
-      if (Math.sin(a) > 0.55 && d < 24) continue;
-      const f = ferns(i + 200, 5); f.position.set(Math.cos(a) * d, 0, Math.sin(a) * d); f.scale.setScalar(1 + r() * 0.8);
-      this.group.add(f);
-    }
+    const clearing = new THREE.Mesh(new THREE.CircleGeometry(CLEARING + 3, 64), new THREE.MeshStandardMaterial({ map: dirt(), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
+    clearing.rotation.x = -Math.PI / 2; clearing.position.y = -0.03; clearing.receiveShadow = true; this.group.add(clearing);
+    this.group.add(claim(LOOKS.map((l) => l.accent)));
+    this.forest = forest(); this.group.add(this.forest);
   }
 
   update(t: number, dt: number) {
     for (const a of this.animated) a.update(t);
-    for (const p of this.palms) { p.crown.rotation.z = Math.sin(t * 0.9 + p.phase) * 0.05; p.crown.rotation.x = Math.cos(t * 0.7 + p.phase) * 0.04; }
+    this.forest.update(t);
     this.geyser.update(t, dt);
     this.mist.update(dt, 0.2);
   }

@@ -116,6 +116,32 @@ export function moss(rx = 40, ry = 40): THREE.CanvasTexture {
   return finish(c, rx, ry);
 }
 
+/** Packed, oil-stained earth for the clearing; fades to nothing at its edge so it melts into the moss. */
+export function dirt(): THREE.CanvasTexture {
+  const [c, g] = canvas(512), r = rng(23);
+  g.fillStyle = "#4a3826"; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${r() < 0.5 ? "20,14,8" : "120,96,64"},${r() * 0.16})`; g.beginPath(); g.arc(r() * 512, r() * 512, 2 + r() * 14, 0, Math.PI * 2); g.fill(); }
+  for (let i = 0; i < 26; i++) {                                    // old oil stains
+    const x = r() * 512, y = r() * 512, rad = 14 + r() * 50, grd = g.createRadialGradient(x, y, 2, x, y, rad);
+    grd.addColorStop(0, "rgba(8,6,4,0.55)"); grd.addColorStop(1, "rgba(8,6,4,0)"); g.fillStyle = grd; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  g.globalCompositeOperation = "destination-in";                    // soft round edge
+  const fade = g.createRadialGradient(256, 256, 150, 256, 256, 254);
+  fade.addColorStop(0, "rgba(0,0,0,1)"); fade.addColorStop(0.72, "rgba(0,0,0,0.9)"); fade.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = fade; g.fillRect(0, 0, 512, 512);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+
+/** A felled trunk's cut face: pale wood with growth rings. */
+export function rings(): THREE.CanvasTexture {
+  const [c, g] = canvas(128);
+  g.fillStyle = "#b99a62"; g.fillRect(0, 0, 128, 128);
+  for (let r = 60; r > 3; r -= 7) { g.strokeStyle = `rgba(80,52,24,${0.25 + (r % 14) / 40})`; g.lineWidth = 2; g.beginPath(); g.arc(64, 64, r, 0, Math.PI * 2); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 /** Soft smoke blob, white with alpha, tinted per use. */
 export function puff(): THREE.CanvasTexture {
   const [c, g] = canvas(64);
