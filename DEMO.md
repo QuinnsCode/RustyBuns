@@ -1,6 +1,6 @@
 # Demoing the Rusty Buns apps locally
 
-Everything below runs from a clone of the repo. All eight apps live in `apps/`.
+Everything below runs from a clone of the repo. All ten apps live in `apps/`.
 
 ## One-time setup
 
@@ -31,6 +31,7 @@ Ship a single binary instead: `bunx rustybuns build desktop` → `dist/<app>-<os
 | **tscircuit-desktop** | tscircuit (React for electronics) as a desktop app: board preview, checks, Gerber/BOM export | "A heavy real-world Vite app as one binary" | `bun native/build.ts` (required), then `bun run desktop:dev` |
 | **fm-daw** | FM groovebox: 5 drums, 3 synths, step grid, piano roll, MIDI/keyboard recording | Rust vs TypeScript engine, switchable mid-groove; project saved to sqlite | `bun run build:native` (optional), then `bun run desktop:dev` |
 | **auto-rig** | Drop in a 3D model; it finds a skeleton, skin weights and IK you can drag | Rust vs TypeScript speed ("Race the engines"); posing a model it rigged itself | `bun run build:native` (optional), then `bun run desktop:dev` |
+| **park-hide-seek** | 3D hide and seek on real Yosemite terrain: campers vs park rangers | LAN multiplayer between two copies of the app; a night hunt with flashlights | `bun run desktop:dev` |
 | **motion-midi** | A synth written in Rust and TS; renders a song and plays it | Rust-vs-TS speed ("Compare engines") | `bun run build:native` (optional), then standard launch |
 | **splat-desktop** | SuperSplat 3D Gaussian-splat editor with a folder-based scene library | Big files served from disk, "your files stay local" | `bun run desktop:dev` |
 | **splat-rooms** | Splat hunting game plus an InteriorGS room/object browser | A game that runs on the same stack | `bun scripts/fetch-scenes.ts` (needs `HF_TOKEN`), then standard launch |
@@ -63,6 +64,13 @@ bun run build:native         # optional, needs cargo
 bun run desktop:dev
 ```
 Starts on the Gingerbread sample, already rigged. Click a hand handle and drag the arrows: the arm bends while the pinned feet and head stay put. Uncheck **Pin the root** and the whole body follows. Shift-click a second tip to clasp them. Try **Fox** (downloaded from GitHub on click) with **Skin weights** on, then **Race the engines**. Drop in any `.glb` to rig it, and **Download rigged .glb** to keep it.
+
+### park-hide-seek
+```sh
+cd apps/park-hide-seek
+bun run desktop:dev          # or `bun run dev` for Play vs AI in a browser
+```
+**Play vs AI** starts a lobby with three normal bots: dress your camper, pick a zone (Night is the showpiece) and start. Click the drop map to land, `C` to crouch in a bush, `V` for first person. As a ranger: `F` flashlight, `Q` call out, `M` radio. For LAN, one machine clicks **Host a LAN game** and reads out the address and passphrase; the other runs its own copy and clicks **Join a LAN game**. On one machine, run two copies with `RB_LISTEN=127.0.0.1:4411` and `:4412` (see the app README).
 
 ### motion-midi
 ```sh
@@ -100,7 +108,7 @@ bun test
 Hold the left button to scan, right-drag to look, **Shift-click** to pick, **Space** for the next round. The easiest demo: it needs no downloads.
 
 ### spa-example
-There is no `rustybuns.config.ts` or `desktop` script in this folder, so it is the least turnkey app. Before the demo, try `bunx rustybuns init` followed by the standard launch, and rehearse it. This is also the app to show LAN multiplayer with:
+There is no `rustybuns.config.ts` or `desktop` script in this folder, so it is the least turnkey app. Before the demo, try `bunx rustybuns init` followed by the standard launch, and rehearse it. For a turnkey LAN demo, use **park-hide-seek** instead. To show the raw pieces here:
 
 - Set `desktop: { mode: "spa", guests: { max: 8 } }` in the config.
 - The host UI calls `POST /__rb/host` with `{ listen: { hostname: "0.0.0.0" }, join: "<passphrase>" }`.
@@ -122,7 +130,8 @@ The framework's worker-mode test app (D1, KV and a Durable Object under Bun). Th
 3. **auto-rig**: drag a limb on a model it rigged itself, then **Race the engines**.
 4. **tscircuit-desktop**: a big real app shipped as one file, with **Compare engines**.
 5. **splat-desktop** or **splat-rooms**: 3D scenes read from local disk.
-6. **spa-example**: Cloudflare bindings and LAN multiplayer, if there is time.
+6. **park-hide-seek**: host a LAN game on one laptop and join from another.
+7. **spa-example**: Cloudflare bindings on a laptop, if there is time.
 
 ## Troubleshooting
 

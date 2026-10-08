@@ -1,0 +1,24 @@
+{
+  "name": "park-hide-seek",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "bun test",
+    "fetch-parks": "bun scripts/fetch-parks.ts",
+    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop",
+    "fetch-zones": "bun scripts/fetch-zones.ts"
+  },
+  "dependencies": {
+    "@rustybuns/shell-bun": "workspace:*",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "vite": "^6.2.6",
+    "@types/three": "^0.180.0"
+  }
+}
