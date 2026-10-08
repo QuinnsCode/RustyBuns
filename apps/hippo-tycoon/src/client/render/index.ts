@@ -6,6 +6,7 @@ import { AXES } from "../../sim/geom.ts";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { Arena, at } from "./arena.ts";
 import { loadFluid } from "./fluid.ts";
+import { Cinematic, type Sfx } from "./cinematic.ts";
 import { Post } from "./post.ts";
 import { DropLayer } from "./drops.ts";
 import { Particles, Popups } from "./fx.ts";
@@ -32,8 +33,11 @@ export class Renderer {
   private smokeClock = 0;
   private arena: Arena;
   private post: Post;
+  private cine: Cinematic;
+  private lastPhase = "";
+  private lastFrame: Frame | null = null;
 
-  constructor(private canvas: HTMLCanvasElement, overlay: HTMLElement) {
+  constructor(private canvas: HTMLCanvasElement, overlay: HTMLElement, opts: { sfx?: (s: Sfx) => void } = {}) {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
     this.gl.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.gl.shadowMap.enabled = true; this.gl.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -67,6 +71,10 @@ export class Renderer {
     void loadFluid().then((f) => this.arena.geyser.setFluid(f));      // the Rust/wasm build if it is there, else the TypeScript twin
     this.scene.add(this.arena.group, this.drops.group, this.fx.points);
     for (let i = 0; i < SEATS; i++) { const r = new HippoRig(i); this.rigs.push(r); this.scene.add(r.group); }
+    this.cine = new Cinematic(this.rigs, {
+      fx: this.fx, shake: (n) => { this.shake = Math.max(this.shake, n); }, sfx: (n) => opts.sfx?.(n),
+      popup: (text, pos, color, big) => this.popups.show(this.project(pos), text, color, big),
+    });
     this.post = new Post(this.gl, this.scene, this.camera, canvas.clientWidth || 800, canvas.clientHeight || 600);
     this.resize();
   }
@@ -138,7 +146,12 @@ export class Renderer {
     const t = now / 1000, { prev, cur, alpha } = frame;
     for (const e of frame.events) this.onEvent(e, now, frame);
 
-    for (let i = 0; i < SEATS; i++) {
+    if (frame.phase === "podium" && this.lastPhase !== "podium") this.cine.start(cur.hippos.map((h) => h.score), cur.hippos.map((h) => h.slide), now);
+    if (frame.phase !== "podium" && this.cine.active) this.cine.stop();
+    this.lastPhase = frame.phase; this.lastFrame = frame;
+    if (this.cine.active) this.cine.update(now, t);
+
+    for (let i = 0; i < SEATS && !this.cine.active; i++) {
       const hp = prev.hippos[i]!, hc = cur.hippos[i]!;
       const slide = lerp(hp.slide, hc.slide, alpha);
       let g = hc.gulp >= 0 ? (hp.gulp >= 0 ? lerp(hp.gulp, hc.gulp, alpha) : alpha * hc.gulp) : -1;
@@ -148,14 +161,14 @@ export class Renderer {
       const p = hippoPoint(i, slide, lunge);
       const rig = this.rigs[i]!, k = AXES[i]!;
       rig.group.position.copy(at(p.x, p.y, 0));
-      rig.group.rotation.y = Math.atan2(k.ax, -k.ay);
+      rig.group.rotation.set(0, Math.atan2(k.ax, -k.ay), 0);
       const snarl = Math.max(0, Math.min(1, (this.snarlUntil[i]! - now) / 400));
       rig.pose(hc, lunge, jawOpen(g), snarl, t);
       if (hc.sputter > 0) this.smoke(i, dt);
     }
     // drops and slicks blend by id between the two snapshots
     const before = new Map(prev.drops.map((d) => [d.id, d]));
-    this.drops.sync(cur.drops.map((d) => {
+    this.drops.sync(frame.phase === "podium" ? [] : cur.drops.map((d) => {
       const b = before.get(d.id);
       return b ? { id: d.id, kind: d.kind, x: lerp(b.x, d.x, alpha), y: lerp(b.y, d.y, alpha) } : d;
     }), t);
@@ -178,6 +191,9 @@ export class Renderer {
     this.fx.emit(r.group.localToWorld(r.ears.clone()), 0xe8e8e8, 2, 1.8, 0.8, -1.5, 1);           // steam from the ears
     this.fx.emit(r.group.localToWorld(r.mouth.clone()), 0x3a3a3a, 2, 1.4, 0.9, -1, 1);           // smoke from the cough
   }
+
+  /** Dev hook: jump the finale to this many seconds in and redraw. */
+  seek(seconds: number) { this.cine.override = seconds; if (this.lastFrame) this.draw(this.lastFrame, performance.now()); }
 
   /** Which engine runs the geyser's fluid: "rust" or "ts". */
   get fluidEngine() { return this.arena.geyser.engine; }

@@ -32,7 +32,7 @@ export function Game({ driver, ctls, muted, onMute, onExit, lobby }: Props) {
 
   useEffect(() => {
     const cv = canvas.current!, snd = sound.current;
-    const renderer = new Renderer(cv, overlay.current!);
+    const renderer = new Renderer(cv, overlay.current!, { sfx: (n) => snd.sfx(n) });
     const controls = new Controls();
     controls.attach();
     if (ctls.some((c) => c.includes("touch"))) controls.attachTouch(cv);
@@ -45,7 +45,7 @@ export function Game({ driver, ctls, muted, onMute, onExit, lobby }: Props) {
     if (import.meta.env.DEV) {
       // dev hook: background tabs pause rAF, so tests and screenshots step the sim by hand
       (window as unknown as { __hippo: unknown }).__hippo = {
-        driver,
+        driver, seek: (s: number) => renderer.seek(s),
         run: (ms: number) => { let f: Frame | undefined; for (let t = 0; t < ms; t += 33) { f = driver.advance(33); if (f.events.length) for (const e of f.events) renderer.draw({ ...f, events: [e] }, performance.now()); } if (f) renderer.draw({ ...f, events: [] }, performance.now()); return f ? { phase: f.phase, scores: f.cur.hippos.map((h) => h.score), drops: f.cur.drops.length } : null; },
       };
     }

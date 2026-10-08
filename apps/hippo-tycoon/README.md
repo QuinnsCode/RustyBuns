@@ -4,6 +4,8 @@ Four angry, greedy oil-baron hippos around a lost oil geyser deep in the jungle 
 
 The oil geyser's gush is a particle fluid simulation written in **Rust** (compiled to WebAssembly) with a TypeScript twin as the fallback; a test holds the two to bit-identical output.
 
+The four bosses dress like guerrilla warlords at a Miami sunset: berets, bandoliers of oil vials, gold epaulettes and medals, mirrored shades, chains and cigars. (Vibe only; nothing from any film or show.)
+
 Everything on screen is built in code: the hippos, the ruins, the palms and ferns, the mountains, the geyser and the drops are three.js primitives, the textures are drawn on a canvas at startup and the sounds are synthesised. There are no asset files.
 
 ![Four hippos round the oil pan, chomping drops; the purple one in front is yours](docs/gulp.gif)
@@ -91,7 +93,7 @@ Solo accepts both keyboard layouts. In **Couch**, pick who sits where; a gamepad
 | Bolt (grey, spiky) | −$2M | sore jaw: half slide speed for 3 s |
 | Water (blue) | $0 | your next chomp is a dud: "watered down!" |
 
-A gold drop nobody eats for 6 s splatters into a slick that makes nearby drops skate faster. A round is 30, 60 or 90 seconds; the drip rate ramps up and the last 10 seconds are **Overflow** (twice the drips, more gold, more bolts). The richest hippo wins; ties share. Every number is in `src/sim/rules.ts`.
+A gold drop nobody eats for 6 s splatters into a slick that makes nearby drops skate faster. A round is 30, 60 or 90 seconds; the drip rate ramps up and the last 10 seconds are **Overflow** (twice the drips, more gold, more bolts). The richest hippo wins; ties share. Then comes the **finale**: the winner straps on a championship belt, bellows, and wrestles the losers out of the basin one at a time, last place first (an airplane spin, a mud slam, a punt, and the runner-up launched at the stars), into the jungle. Every number is in `src/sim/rules.ts`.
 
 | Overflow, then the podium | The podium |
 |---|---|

@@ -8,8 +8,8 @@ export function Podium({ frame, canAct, onRematch, onExit }: { frame: Frame; can
   return (
     <div className="podium">
       <div className="card">
-        <h1 className="title" style={{ fontSize: 34 }}>{rows.filter((r) => r.score === top).length > 1 ? "A SHARED FORTUNE" : "RICHEST HIPPO"}</h1>
-        <p className="tag">Final net worth</p>
+        <h1 className="title" style={{ fontSize: 26 }}>{rows.filter((r) => r.score === top).length > 1 ? "A SHARED FORTUNE" : "RICHEST HIPPO"}</h1>
+        <p className="tag" style={{ margin: "8px 0 6px" }}>Final net worth</p>
         <ol>
           {rows.map((r) => (
             <li key={r.seat} className={r.score === top ? "win" : ""}>

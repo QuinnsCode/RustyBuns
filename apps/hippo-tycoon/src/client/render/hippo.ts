@@ -51,6 +51,10 @@ export class HippoRig {
     this.body.add(ellipsoid(coat, 1.25 * bw, 0.95 * bh, 1.4 * bd, 0, 0.95 * bh, 0.75));
     this.waistcoat(L, bw, bh);
     if (L.fur) this.furCollar(bh);
+    for (let k = 0; k < L.bandolier; k++) this.bandolier(k, bw, bh);
+    if (L.medals) this.medals(L.medals, bw, bh);
+    if (L.epaulettes) this.epaulettes(bw, bh);
+    this.addBelt(bh);
     // short legs
     for (const x of [-0.7 * bw, 0.7 * bw]) this.body.add(ellipsoid(skin, 0.35, 0.3, 0.45, x, 0.3, 0.1));
     // arms in coat sleeves; a gold ring on the pinky
@@ -97,6 +101,48 @@ export class HippoRig {
       for (let k = 0; k < 14; k++) { const a = k * 2.4 + 1; this.body.add(ellipsoid(mat(blot[k % 3]!, 0.9), 0.22, 0.17, 0.06, Math.cos(a) * 0.95 * bw, (0.95 + Math.sin(a * 1.3) * 0.5) * bh, -0.15 + Math.sin(a) * 0.5)); }
     }
   }
+
+  /** A cross-chest strap of oil vials (a little black bottle with a gold cap), one way or the other. */
+  private bandolier(k: number, bw: number, bh: number) {
+    const dir = k % 2 === 0 ? 1 : -1, strap = mat(0x4a3220, 0.8);
+    const pts = [new THREE.Vector3(-dir * 0.95 * bw, 1.55 * bh, -0.15), new THREE.Vector3(-dir * 0.4 * bw, 1.15 * bh, -0.78), new THREE.Vector3(dir * 0.35 * bw, 0.7 * bh, -0.82), new THREE.Vector3(dir * 0.95 * bw, 0.28 * bh, -0.25)];
+    const curve = new THREE.CatmullRomCurve3(pts);
+    this.body.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, 0.075, 6), strap));
+    for (let i = 1; i <= 8; i++) {
+      const p = curve.getPoint(i / 9), vial = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.085, 0.3, 8), OIL);
+      vial.position.copy(p).add(new THREE.Vector3(0, 0, -0.06)); vial.rotation.z = dir * 0.5; this.body.add(vial);
+      this.body.add(ellipsoid(GOLD, 0.07, 0.05, 0.07, p.x - dir * 0.07, p.y + 0.13, p.z - 0.06));
+    }
+  }
+
+  /** Medals: gold discs on coloured ribbons, in rows on the left breast. */
+  private medals(n: number, bw: number, bh: number) {
+    const rib = [0xc8102e, 0x1f4aa8, 0x2f8a3a];
+    for (let i = 0; i < n; i++) {
+      const col = i % 3, row = Math.floor(i / 3), x = (0.28 + col * 0.2) * bw, y = (1.2 - row * 0.28) * bh;
+      this.body.add(box(mat(rib[(i + row) % 3]!, 0.6), 0.1, 0.2, 0.04, x, y + 0.1, -0.84));
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.035, 14), GOLD); disc.rotation.x = Math.PI / 2; disc.position.set(x, y - 0.06, -0.86); this.body.add(disc);
+    }
+  }
+
+  /** Gold epaulettes with a fringe. */
+  private epaulettes(bw: number, bh: number) {
+    for (const s of [-1, 1]) {
+      this.body.add(box(GOLD, 0.62, 0.07, 0.34, s * 0.98 * bw, 1.5 * bh, -0.08));
+      for (let k = -2; k <= 2; k++) { const f = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 5), GOLD); f.position.set(s * (0.98 * bw + 0.34), 1.43 * bh, -0.08 + k * 0.07); this.body.add(f); }
+    }
+  }
+
+  /** A championship belt, off until somebody earns it. */
+  readonly belt = new THREE.Group();
+  private addBelt(bh: number) {
+    const leather = mat(0x1a1210, 0.6), ring = new THREE.Mesh(new THREE.TorusGeometry(1.32, 0.17, 10, 36), leather);
+    ring.rotation.x = Math.PI / 2; ring.scale.set(1.1, 1.25, 1); ring.position.set(0, 0.62 * bh, 0.75);
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.1, 22), GOLD); plate.rotation.x = Math.PI / 2; plate.position.set(0, 0.62 * bh, -0.78 - 0.02);
+    const gem = ellipsoid(new THREE.MeshStandardMaterial({ color: 0xff2a4a, emissive: 0xff2a4a, emissiveIntensity: 0.6 }), 0.13, 0.13, 0.05, 0, 0.62 * bh, -0.86);
+    this.belt.add(ring, plate, gem); this.belt.visible = false; this.body.add(this.belt);
+  }
+  setChampion(on: boolean) { this.belt.visible = on; }
 
   /** A white fur collar round the neck. */
   private furCollar(bh: number) {
@@ -165,8 +211,14 @@ export class HippoRig {
   }
 
   private hat(L: Look) {
-    if (L.hat !== "bandana") return;                           // a rolled headband, knotted at the back
     const m = mat(L.hatColor, 0.8);
+    if (L.hat === "beret") {                                   // a flat wool beret, tipped over one ear, with a gold oil-drop badge
+      const b = ellipsoid(m, 1.0, 0.3, 0.95, 0, 2.16, -0.7); b.rotation.z = 0.26; b.rotation.x = -0.08; this.head.add(b);
+      this.head.add(ellipsoid(m, 0.07, 0.1, 0.07, 0.1, 2.46, -0.7));
+      const badge = ellipsoid(GOLD, 0.11, 0.14, 0.04, -0.34, 2.18, -1.52); badge.rotation.z = 0.26; this.head.add(badge);
+      return;
+    }
+    if (L.hat !== "bandana") return;                           // a rolled headband, knotted at the back
     const band = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.095, 8, 32), m); band.rotation.x = Math.PI / 2 + 0.12; band.position.set(0, 2.0, -0.68); band.scale.set(1.04 * L.snout ** 0.3, 0.93, 1); this.head.add(band);
     this.head.add(ellipsoid(m, 0.15, 0.15, 0.11, 0, 1.98, 0.08));
     for (const s of [-1, 1]) { const tail = ellipsoid(m, 0.065, 0.32, 0.05, s * 0.14, 1.72, 0.14); tail.rotation.z = s * 0.3; this.head.add(tail); }
