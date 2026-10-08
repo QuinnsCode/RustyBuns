@@ -20,6 +20,12 @@ export function NetLobby({ frame, driver, info, onExit }: { frame: Frame; driver
   if (frame.phase !== "lobby") return null;
   return (
     <div className="lobby"><div className="card" style={{ width: "100%" }}>
+      {net?.code && (
+        <div style={{ textAlign: "center", marginBottom: 10 }}>
+          <div className="code">{net.code}</div>
+          <div className="hint" style={{ margin: 0 }}>Room code: friends pick "Online room" and type it in</div>
+        </div>
+      )}
       {info}
       <div className="seats" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
         {frame.seats.map((s, i) => (

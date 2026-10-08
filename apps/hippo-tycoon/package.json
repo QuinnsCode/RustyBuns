@@ -19,9 +19,13 @@
     "three": "^0.180.0"
   },
   "devDependencies": {
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.112",
     "@types/react": "19",
     "@types/react-dom": "19",
     "@types/three": "^0.180.0",
+    "alchemy": "2.0.0-beta.77",
+    "effect": "4.0.0-rc.112",
     "vite": "^6.2.6"
   }
 }

@@ -3,3 +3,4 @@ dist
 .rustybuns
 .wrangler
 .e2e-*
+.alchemy
