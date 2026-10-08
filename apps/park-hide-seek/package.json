@@ -10,7 +10,9 @@
     "fetch-parks": "bun scripts/fetch-parks.ts",
     "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop",
-    "fetch-zones": "bun scripts/fetch-zones.ts"
+    "fetch-zones": "bun scripts/fetch-zones.ts",
+    "edge:dev": "vite build && bunx wrangler dev",
+    "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
     "@rustybuns/shell-bun": "workspace:*",

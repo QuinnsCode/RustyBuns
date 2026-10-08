@@ -20,7 +20,13 @@
           <button id="solo" class="primary">Play vs AI</button>
           <button id="host" data-desktop>Host a LAN game</button>
           <button id="show-join" data-desktop>Join a LAN game</button>
+          <button id="online" data-online hidden>Create an online room</button>
+          <button id="show-room" data-online hidden>Join with a room code</button>
         </div>
+        <form id="room-join" class="join" hidden>
+          <label class="field">Room code <input id="room" maxlength="8" placeholder="PIKA" autocomplete="off" autocapitalize="characters" required /></label>
+          <button class="primary" type="submit">Join</button>
+        </form>
         <form id="join" class="join" hidden>
           <label class="field">Host address <input id="addr" placeholder="192.168.1.20:41234" autocomplete="off" required /></label>
           <label class="field">Passphrase <input id="pass" placeholder="marmot-canyon" autocomplete="off" required /></label>

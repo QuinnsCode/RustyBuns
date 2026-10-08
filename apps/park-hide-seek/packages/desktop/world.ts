@@ -1,8 +1,10 @@
-// The LAN world: one hunt, hosted in-process by whoever clicked "Host a LAN game".
-// Guests reach it over ws:// with the join passphrase (see the README's
-// "Multiplayer on a LAN"); the host vouches X-User-Id / X-User-Name for each.
+// The world: one hunt. On the desktop it runs in-process for whoever clicked
+// "Host a LAN game", and guests reach it over ws:// with the join passphrase;
+// the host vouches X-User-Id / X-User-Name for each. Online it is the Durable
+// Object behind each room code (src/edge/worker.ts vouches instead).
 // The Room here is the same one the page runs for single player.
 import { Room, TICK_MS } from "../../src/room.ts";
+import { TokenBucket } from "../../src/edge/limits.ts";
 import { parseMsg } from "../../src/hunt/game.ts";
 import { fetchWeather } from "../../src/weather.ts";
 
@@ -12,12 +14,15 @@ declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 // Views go out at most this often per socket.
 const SEND_MS = 66;
 const MAX_MESSAGE = 4096;
+// Positions come in about 20 a second; anything past this is dropped.
+const MSG_RATE = 40, MSG_BURST = 80;
 
 export default class World {
   // The host looks up the park's weather; guests get it in their views.
   private room = new Room(Date.now(), fetchWeather);
   private timer: ReturnType<typeof setInterval> | null = null;
   private sent = new WeakMap<object, { v: number; at: number }>();
+  private buckets = new WeakMap<object, TokenBucket>();
 
   constructor(private ctx: any, private env: any) {}
 
@@ -41,11 +46,15 @@ export default class World {
 
   webSocketMessage(ws: any, raw: string | ArrayBuffer) {
     if (typeof raw !== "string" || raw.length > MAX_MESSAGE) return;
+    const now = Date.now();
+    let b = this.buckets.get(ws);
+    if (!b) { b = new TokenBucket(MSG_RATE, MSG_BURST, now); this.buckets.set(ws, b); }
+    if (!b.take(now)) return;
     const { id } = ws.deserializeAttachment() as { id: string };
     let m;
     try { m = parseMsg(JSON.parse(raw)); } catch { return; }
     if (!m) return;
-    this.room.handle(id, m, Date.now());
+    this.room.handle(id, m, now);
     // Positions stream in all the time; the tick sends views out at its own pace.
     if (m.t !== "pos") this.flush(true);
   }

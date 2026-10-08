@@ -1,6 +1,6 @@
 // The page: menu, lobby (with the camper customizer), the drop map, the 3D
 // hunt, the radio map, and results. Solo games run the Room right here; LAN
-// games talk to a world (see session.ts).
+// and online games talk to a world (see session.ts).
 
 import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
 import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, dropOk, outside, randomLook, type BotLevel, type Look, type Msg, type View } from "../hunt/game.ts";
@@ -10,7 +10,7 @@ import { describe } from "../weather.ts";
 import { CALLS, place, sounds } from "./audio.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
-import { LocalSession, NetSession, playerId, type Session } from "./session.ts";
+import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
 
@@ -26,6 +26,8 @@ const store = {
 let session: Session | null = null;
 let view: View | null = null;
 let hosting: { pass: string; addresses: string[]; port: number } | null = null;
+/** The online room this page is in, if any. */
+let room: string | null = null;
 let info: { app?: string; version?: string } | null = null;
 let look: Look = (() => { try { const l = JSON.parse(store.get("look")); if (l && HATS.includes(l.hat)) return l as Look; } catch {} return randomLook(); })();
 
@@ -62,13 +64,23 @@ $<HTMLInputElement>("addr").value = store.get("addr");
 const myName = () => (nameInput.value.trim() || "Camper").slice(0, 24);
 const menuError = (s: string) => { $("menu-error").textContent = s; };
 
+const ROOM = /^[A-Z0-9]{4,8}$/;
+// No 0/O or 1/I, so a code read out loud comes out right.
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const roomCode = () => Array.from(crypto.getRandomValues(new Uint32Array(5)), (n) => CODE_CHARS[n % CODE_CHARS.length]).join("");
+const roomLink = (code: string) => `${location.origin}${location.pathname}?room=${code}`;
+
 (async () => {
   info = await fetch("/__rb/info").then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const desktop = info?.app === "park-hide-seek";
   for (const el of document.querySelectorAll<HTMLElement>("[data-desktop]")) el.hidden = !desktop;
+  for (const el of document.querySelectorAll<HTMLElement>("[data-online]")) el.hidden = desktop;
   $("menu-note").textContent = desktop
     ? "LAN games: one person hosts, everyone else runs their own copy of the app and joins with the address and passphrase."
-    : "Running in a plain browser: Play vs AI works here. LAN games need the desktop app (bun run desktop:dev).";
+    : "Online: create a room and send friends its link or code. Up to 8 players; fill the rest with AI.";
+  // A shared link (?room=CODE) opens with the code filled in.
+  const shared = new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
+  if (!desktop && ROOM.test(shared)) { $<HTMLInputElement>("room").value = shared; $("room-join").hidden = false; }
 })();
 
 $("solo").onclick = () => { store.set("name", myName()); sounds.unlock(); start(new LocalSession(myName(), look)); };
@@ -103,6 +115,26 @@ $<HTMLFormElement>("join").onsubmit = (e) => {
   s.send({ t: "look", look });
 };
 
+// ---- online rooms ---------------------------------------------------------------
+
+function goOnline(code: string) {
+  store.set("name", myName()); sounds.unlock(); menuError("");
+  room = code;
+  history.replaceState(null, "", roomLink(code));
+  const s = new NetSession("online", "/ws", { room: code, uid: tabPlayerId(), name: myName() });
+  start(s);
+  s.send({ t: "look", look });
+}
+
+$("online").onclick = () => goOnline(roomCode());
+$("show-room").onclick = () => { $("room-join").hidden = !$("room-join").hidden; $<HTMLInputElement>("room").focus(); };
+$<HTMLFormElement>("room-join").onsubmit = (e) => {
+  e.preventDefault();
+  const code = $<HTMLInputElement>("room").value.trim().toUpperCase();
+  if (!ROOM.test(code)) { menuError("Room codes are 4 to 8 letters and numbers, like PIKA7."); return; }
+  goOnline(code);
+};
+
 function start(s: Session) {
   session = s;
   view = null;
@@ -124,6 +156,7 @@ async function leave() {
   session?.close();
   session = null; view = null; body = null;
   controls.release();
+  if (room) { room = null; history.replaceState(null, "", location.pathname); }
   if (hosting) {
     hosting = null;
     await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) }).catch(() => {});
@@ -153,6 +186,7 @@ function renderLobby(v: View) {
     <section><h2>Time of day and weather</h2><div class="row-btns"><button data-live="1" aria-pressed="${v.live}" ${dis}>Live: the park right now<small>Real weather and time of day</small></button>${(["day", "dusk", "night"] as const).map((t) => `<button data-tod="${t}" aria-pressed="${!v.live && v.tod === t}" ${dis}>${t === "day" ? "Day" : t === "dusk" ? "Dusk" : "Night (flashlights)"}</button>`).join("")}</div>${v.live ? `<p class="note">Rain hides footsteps, fog cuts how far anyone sees, wind makes rustles hard to place. If the weather can't be reached, it's ${v.tod}.</p>` : ""}</section>
     ${host ? `<section><h2>Rounds</h2><div class="row-btns"><button data-laps="1" aria-pressed="${v.laps === 1}">Everyone's a ranger once</button><button data-laps="2" aria-pressed="${v.laps === 2}">Twice</button></div></section>
     <section><h2>Add an AI player</h2><div class="row-btns"><button data-bot="easy">Easy</button><button data-bot="normal">Normal</button><button data-bot="hard">Hard</button></div></section>` : ""}
+    ${room ? `<section><h2>Friends join with</h2><div class="lan">Room code: <code>${room}</code><br>Or send them this link: <code>${esc(roomLink(room))}</code> <button data-action="copy">Copy link</button></div></section>` : ""}
     ${hosting ? `<section><h2>Friends join with</h2><div class="lan">Address: ${hosting.addresses.length ? hosting.addresses.map((a) => `<code>${a}:${hosting!.port}</code>`).join(" or ") : "<em>no network found</em>"}<br>Passphrase: <code>${esc(hosting.pass)}</code></div></section>` : ""}
     <section><h2>Players</h2><ul class="players">${v.players.map((p) => `<li><span class="who">${esc(p.name)}${p.id === v.me ? " (you)" : ""}</span>${p.bot ? `<span class="badge">${p.bot} AI</span>` : ""}${p.id === v.hostId ? `<span class="badge">host</span>` : ""}${host && p.id !== v.me ? `<button data-kick="${esc(p.id)}" title="Remove">✕</button>` : ""}<span class="pts">${p.score}</span></li>`).join("")}</ul></section>
     <section class="row-btns">${host ? `<button class="primary" data-action="start" ${v.players.filter((p) => p.online).length < 2 ? "disabled" : ""}>Start the hunt</button>` : `<em>Waiting for ${esc(nameOf(v, v.hostId ?? ""))} to start…</em>`}<button data-action="leave">${session?.kind === "host" ? "Stop hosting" : "Leave"}</button></section>
@@ -197,6 +231,7 @@ document.addEventListener("click", (e) => {
   else if (d.action === "start") send({ t: "start" });
   else if (d.action === "lobby") send({ t: "lobby" });
   else if (d.action === "leave") void leave();
+  else if (d.action === "copy" && room) void navigator.clipboard?.writeText(roomLink(room)).then(() => note("Link copied"), () => {});
   else if (d.action === "close-map") mapOpen = false;
 });
 

@@ -6,7 +6,7 @@ Hide and seek in a real national park, in 3D. Campers drop into a zone around a 
 - **No find button.** A ranger catches a camper by reaching them. To get there they sweep with a flashlight, listen for footsteps, call out ("Anybody out there?") so nearby campers rustle, and use radio questions that shade the map. Rangers are faster than campers, so a camper who's spotted in the open should run for cover.
 - **The real weather, right now.** By default a round plays in the park's actual conditions and time of day: at 3 pm in Yosemite it's day, after sunset it's flashlights. Rain hides footsteps, fog shortens how far anyone sees, wind sways the bushes and makes rustles hard to place, and a cloudy night has no moon. The lobby can pick day, dusk or night by hand instead.
 - **The search area closes in.** During the hunt a circle shrinks towards a point everyone can see. Campers outside it stand out like a flare, so sooner or later everyone has to move, and moving makes noise.
-- **Play vs AI**, or **LAN multiplayer** on the desktop: one person hosts, friends run their own copy and join. Bots can fill any game.
+- **Play vs AI**, **online rooms** in the browser (share a code or link), or **LAN multiplayer** on the desktop: one person hosts, friends run their own copy and join. Bots can fill any game.
 
 Built with [Three.js](https://threejs.org) and [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
 
@@ -18,6 +18,15 @@ bun install
 bun run dev              # browser: Play vs AI
 bun run desktop:dev      # desktop app: Play vs AI, or Host / Join a LAN game
 bun test                 # zones, movement, sight, rules, bots
+```
+
+## Online
+
+The browser build can also be played online at https://park-hide-seek.notryanquinn.workers.dev: *Create an online room*, then send friends the link (`?room=CODE`) or the code. `src/edge/worker.ts` serves the page and sends `/ws?room=CODE` to that room's Durable Object, which is the same World class the desktop runs for LAN games (`packages/desktop/world.ts`). The Worker vouches each player's id and name, refuses WebSockets from other sites, and limits how many new rooms one address can open a minute. The world drops messages from any socket sending faster than it should. Whoever reaches a room first hosts it, and if they leave, someone else takes over. A room lives in memory, so it ends once everyone leaves.
+
+```
+bun run edge:dev         # the Worker locally (wrangler dev)
+bun run deploy           # build and deploy (wrangler deploy)
 ```
 
 **A round:** *drop* (15 s: click the zone map to pick where you land, or get dropped at random) → *hide* (30 s: rangers count in the cabin) → *hunt* (3 min) → *results*. Everyone takes a turn as ranger; two rangers once there are five players.
