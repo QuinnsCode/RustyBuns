@@ -47,6 +47,8 @@ That's it. Now pick an app.
 
 **Four angry, greedy hippos around a pan of oil. Slide, chomp the drops, get rich.** Black oil is $1M and gold is $3M. Dodge the brown sludge and the spiky bolts.
 
+![Four hippos chomping oil drops in the pan](apps/hippo-tycoon/docs/gulp.gif)
+
 **Start it:**
 ```
 cd apps/hippo-tycoon

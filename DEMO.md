@@ -67,6 +67,9 @@ bun run desktop:dev
 Starts on the Gingerbread sample, already rigged. Click a hand handle and drag the arrows: the arm bends while the pinned feet and head stay put. Uncheck **Pin the root** and the whole body follows. Shift-click a second tip to clasp them. Try **Fox** (downloaded from GitHub on click) with **Skin weights** on, then **Race the engines**. Drop in any `.glb` to rig it, and **Download rigged .glb** to keep it.
 
 ### hippo-tycoon
+
+![A round in progress: four hippos, the net-worth HUD and drops on the pan](apps/hippo-tycoon/docs/round.png)
+
 ```sh
 cd apps/hippo-tycoon
 bun run desktop:dev          # the desktop app (type-checks first)
