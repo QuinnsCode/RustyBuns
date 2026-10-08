@@ -213,7 +213,14 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       },
       close(ws, code, reason) {
         const i = live.indexOf(ws.data.wrapped); if (i >= 0) live.splice(i, 1);
-        if (ws.data.bridge) { ws.data.bridge.readyState = 3; ws.data.bridge.onClose?.(code, reason); return; }
+        if (ws.data.bridge) {
+          const b = ws.data.bridge;
+          // The world closed first (LocalWebSocket.close already ran its close path): do not run it twice.
+          if (b.readyState === 3) return;
+          b.readyState = 3; b.peer.readyState = 3;   // the DO's end must see the close too
+          b.onClose?.(code, reason);
+          return;
+        }
         wsRoutes.get(ws.data.path)?.close(ws.data.wrapped, code, reason);
       },
     },

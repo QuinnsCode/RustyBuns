@@ -93,11 +93,14 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
-import { homedir } from "node:os";
+import { homedir, networkInterfaces } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
 import { basename, join, isAbsolute } from "node:path";
 
 declare const RB_VERSION: string;
+// What a guest on the LAN would type: this machine's non-loopback IPv4 addresses.
+const lanAddresses = (): string[] => Object.values(networkInterfaces()).flatMap((l) => l ?? [])
+  .filter((i) => (i.family === "IPv4" || (i.family as unknown) === 4) && !i.internal).map((i) => i.address);
 const dataDir = ${h.dataDir};
 mkdirSync(dataDir, { recursive: true });
 const local = localBindings(dataDir);
@@ -201,7 +204,7 @@ ${h.box ? `    if (url.pathname === "/health") return new Response("ok");\n` : "
       return Response.json({ app: ${JSON.stringify(c.name)}, version: typeof RB_VERSION === "string" ? RB_VERSION : "dev", bun: Bun.version,
         platform: \`\${process.platform}-\${process.arch}\`, dataDir, user: identity["X-User-Id"], actions: Object.keys(actions).length,
         bindings: Object.keys(env), host: !!host, caps: { sab: true, ffi: true, fs: true },
-        listen: { hostname: shell.hostname, port: shell.port }, sockets: shell.comms.sockets().length,
+        listen: { hostname: shell.hostname, port: shell.port }, lan: lanAddresses(), sockets: shell.comms.sockets().length,
         guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null } });
     }
     if (url.pathname === "/__rb/host" && req.method === "POST") {
