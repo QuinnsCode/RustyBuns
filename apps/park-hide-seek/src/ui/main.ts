@@ -6,6 +6,7 @@ import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } f
 import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, dropOk, outside, randomLook, type BotLevel, type Look, type Msg, type View } from "../hunt/game.ts";
 import { step, type Body } from "../hunt/sim.ts";
 import { ZONES, zoneById, type Zone } from "../zones/zone.ts";
+import { describe } from "../weather.ts";
 import { CALLS, place, sounds } from "./audio.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
@@ -109,7 +110,9 @@ function start(s: Session) {
   s.onView = (v) => {
     const prev = view;
     view = v;
-    if (prev?.round?.id !== v.round?.id) { radioFor = null; spectate = 0; light = v.tod !== "day"; mapOpen = false; }
+    if (prev?.round?.id !== v.round?.id) { radioFor = null; spectate = 0; mapOpen = false; }
+    // Flashlight on after dark, again when the live weather turns out to be night.
+    if (v.round && (prev?.round?.id !== v.round.id || prev.round.sky.tod !== v.round.sky.tod)) light = v.round.sky.tod !== "day";
     if (prev?.phase !== v.phase) onPhase(v);
     $("menu").hidden = true;
     renderPanels();
@@ -147,7 +150,7 @@ function renderLobby(v: View) {
     ...ZONES.map((z) => `<button data-zone="${z.id}" aria-pressed="${v.zonePick === z.id}" ${dis}>${esc(z.name)}<small>${esc(z.blurb)}</small></button>`)].join("");
   const html = `
     <section><h2>Yosemite National Park</h2><div class="zones">${zones}</div></section>
-    <section><h2>Time of day</h2><div class="row-btns">${(["day", "dusk", "night"] as const).map((t) => `<button data-tod="${t}" aria-pressed="${v.tod === t}" ${dis}>${t === "day" ? "Day" : t === "dusk" ? "Dusk" : "Night (flashlights)"}</button>`).join("")}</div></section>
+    <section><h2>Time of day and weather</h2><div class="row-btns"><button data-live="1" aria-pressed="${v.live}" ${dis}>Live: the park right now<small>Real weather and time of day</small></button>${(["day", "dusk", "night"] as const).map((t) => `<button data-tod="${t}" aria-pressed="${!v.live && v.tod === t}" ${dis}>${t === "day" ? "Day" : t === "dusk" ? "Dusk" : "Night (flashlights)"}</button>`).join("")}</div>${v.live ? `<p class="note">Rain hides footsteps, fog cuts how far anyone sees, wind makes rustles hard to place. If the weather can't be reached, it's ${v.tod}.</p>` : ""}</section>
     ${host ? `<section><h2>Rounds</h2><div class="row-btns"><button data-laps="1" aria-pressed="${v.laps === 1}">Everyone's a ranger once</button><button data-laps="2" aria-pressed="${v.laps === 2}">Twice</button></div></section>
     <section><h2>Add an AI player</h2><div class="row-btns"><button data-bot="easy">Easy</button><button data-bot="normal">Normal</button><button data-bot="hard">Hard</button></div></section>` : ""}
     ${hosting ? `<section><h2>Friends join with</h2><div class="lan">Address: ${hosting.addresses.length ? hosting.addresses.map((a) => `<code>${a}:${hosting!.port}</code>`).join(" or ") : "<em>no network found</em>"}<br>Passphrase: <code>${esc(hosting.pass)}</code></div></section>` : ""}
@@ -184,7 +187,8 @@ document.addEventListener("click", (e) => {
   if (!b || b.disabled) return;
   const d = b.dataset;
   if (d.zone) send({ t: "settings", zone: d.zone });
-  else if (d.tod) send({ t: "settings", tod: d.tod as View["tod"] });
+  else if (d.live) send({ t: "settings", live: true });
+  else if (d.tod) send({ t: "settings", tod: d.tod as View["tod"], live: false });
   else if (d.laps) send({ t: "settings", laps: Number(d.laps) });
   else if (d.bot) send({ t: "bot", level: d.bot as BotLevel });
   else if (d.kick) send({ t: "kick", id: d.kick });
@@ -325,7 +329,7 @@ function frame() {
     return;
   }
   world.setZone(v.zone);
-  world.setTime(v.tod);
+  world.setSky(v.round!.sky);
   const z = zoneById(v.zone);
   const r = v.round!;
   const you = r.you;
@@ -409,6 +413,8 @@ function hud(v: View, z: Zone, now: number) {
   const ranger = you?.role === "ranger";
   const left = Math.max(0, v.endsAt - now);
   $("zone-name").textContent = z.data.name;
+  const sky = r.weather ? describe(r.weather) : r.sky.tod[0].toUpperCase() + r.sky.tod.slice(1);
+  if ($("sky").textContent !== sky) $("sky").textContent = sky;
   $("phase").textContent = v.phase === "hide" ? "Hiding" : v.phase === "hunt" ? "The hunt" : v.phase === "results" ? "Round over" : "";
   const clock = $("clock");
   clock.textContent = `${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")}`;

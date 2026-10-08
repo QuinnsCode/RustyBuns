@@ -11,7 +11,8 @@ import { rng, type Pt } from "../geo.ts";
 import { cellAt, type Grid } from "../grid.ts";
 import { NO_ASKS, RADIO, askBlocked, answerText, parseAsk, radioGrid, resolve, toKm, type Ask, type AskKind, type Clue, type RadioState } from "../clues.ts";
 import { CLIFF, ZONES, zoneById, type Zone } from "../zones/zone.ts";
-import { MOVE, TAG_REACH, canSee, resolve as pushOut, type Body, type Role, type TimeOfDay } from "./sim.ts";
+import { MOVE, TAG_REACH, canSee, clearSky, resolve as pushOut, soundJitter, stepReach, type Body, type Role, type Sky, type TimeOfDay } from "./sim.ts";
+import { describe, type Weather } from "../weather.ts";
 
 export const HUNT = {
   dropSecs: 15,
@@ -67,7 +68,7 @@ export const HATS: Hat[] = ["none", "beanie", "cap", "bucket"];
 export type Msg =
   | { t: "name"; name: string }
   | { t: "look"; look: Look }
-  | { t: "settings"; zone?: string; tod?: TimeOfDay; laps?: number }
+  | { t: "settings"; zone?: string; tod?: TimeOfDay; live?: boolean; laps?: number }
   | { t: "bot"; level: BotLevel }
   | { t: "kick"; id: string }
   | { t: "start" }
@@ -110,7 +111,10 @@ export interface View {
   zone: string;
   /** The lobby's choice: a zone id or "random". */
   zonePick: string;
+  /** The lobby's time of day: what's played with live weather off, or if it can't be fetched. */
   tod: TimeOfDay;
+  /** Play in the park's live weather and real time of day. */
+  live: boolean;
   laps: number;
   players: PlayerView[];
   round: null | {
@@ -126,6 +130,10 @@ export interface View {
     radio: (RadioState & { x: number; y: number }) | null;
     huntStartedAt: number;
     circle: Circle | null;
+    /** The conditions this round is played in. */
+    sky: Sky;
+    /** The live reading behind `sky`, if there is one. */
+    weather: Weather | null;
     /** Everyone's result, once the round is over. */
     results: RoundResult[] | null;
   };
@@ -145,6 +153,9 @@ interface Round {
   huntStartedAt: number;
   circle: Circle | null;
   results: RoundResult[] | null;
+  /** null while the live weather is on its way; settled by the time the hunt starts. */
+  sky: Sky | null;
+  weather: Weather | null;
   lastCall: Map<string, number>;
   lastStep: Map<string, number>;
   /** ranger id -> camper id -> last time seen, so a camper doesn't flicker at the edge of sight. */
@@ -167,6 +178,7 @@ export class Hunt {
   endsAt = 0;
   zonePick = "random";
   tod: TimeOfDay = "night";
+  live = true;
   laps = 1;
   round: Round | null = null;
   schedule: string[][] = [];
@@ -182,6 +194,8 @@ export class Hunt {
   constructor(seed = Date.now()) { this.rand = rng(seed); }
 
   zone(): Zone { return zoneById(this.round?.zone ?? (this.zonePick === "random" ? ZONES[0].id : this.zonePick)); }
+  /** The round's conditions, or the lobby's while the live weather is on its way. */
+  sky(): Sky { return this.round?.sky ?? clearSky(this.tod); }
   radioGrid(z = this.zone()): Grid {
     let g = this.grids.get(z.data.id);
     if (!g) { g = radioGrid(z); this.grids.set(z.data.id, g); }
@@ -231,6 +245,7 @@ export class Hunt {
         if (!host || this.phase !== "lobby") return;
         if (m.zone && (m.zone === "random" || ZONES.some((z) => z.id === m.zone))) this.zonePick = m.zone;
         if (m.tod === "day" || m.tod === "dusk" || m.tod === "night") this.tod = m.tod;
+        if (typeof m.live === "boolean") this.live = m.live;
         if (m.laps === 1 || m.laps === 2) this.laps = m.laps;
         this.touch();
         return;
@@ -291,15 +306,39 @@ export class Hunt {
     const actors = new Map<string, Actor>();
     for (const p of online) {
       const role: Role = rangers.includes(p.id) ? "ranger" : "camper";
-      actors.set(p.id, { id: p.id, role, x: z.station.x, y: z.station.y, yaw: z.station.yaw, pitch: 0, stamina: 1, crouch: false, run: false, light: this.tod !== "day", caughtAt: null, caughtBy: null, drop: null, movedAt: now });
+      actors.set(p.id, { id: p.id, role, x: z.station.x, y: z.station.y, yaw: z.station.yaw, pitch: 0, stamina: 1, crouch: false, run: false, light: this.live || this.tod !== "day", caughtAt: null, caughtBy: null, drop: null, movedAt: now });
     }
     this.round = {
       id: ++this.rounds, n, zone, rangers, actors, cues: [], asks: [], radio: new Map(rangers.map((id) => [id, { x: 0, y: 0, cooldownUntil: 0, used: NO_ASKS(), lastAsk: null }])),
-      huntStartedAt: 0, circle: null, results: null, lastCall: new Map(), lastStep: new Map(), seen: new Map(),
+      huntStartedAt: 0, circle: null, results: null, sky: this.live ? null : clearSky(this.tod), weather: null,
+      lastCall: new Map(), lastStep: new Map(), seen: new Map(),
     };
     this.phase = "drop";
     this.endsAt = now + HUNT.dropSecs * 1000;
     this.say(`Round ${n + 1}: ${z.data.name}. ${rangers.map(who).join(" and ")} ${rangers.length > 1 ? "are" : "is"} on patrol`);
+    this.touch();
+  }
+
+  // ---- weather ----------------------------------------------------------------
+
+  /** The round waiting on live weather, and where to look it up: whoever hosts fetches it. */
+  wantsWeather(): { round: number; center: [number, number] } | null {
+    const r = this.round;
+    if (!r || r.sky || (this.phase !== "drop" && this.phase !== "hide")) return null;
+    return { round: r.id, center: zoneById(r.zone).data.center };
+  }
+
+  /**
+   * The live weather for a round, or null if it couldn't be had (then the
+   * lobby's time of day stands). Too late once the hunt has started.
+   */
+  setWeather(round: number, w: Weather | null, now: number) {
+    const r = this.round;
+    if (!r || r.id !== round || r.sky || (this.phase !== "drop" && this.phase !== "hide")) return;
+    r.sky = w?.sky ?? clearSky(this.tod);
+    r.weather = w;
+    for (const a of r.actors.values()) a.light = a.role === "ranger" && r.sky.tod !== "day";
+    this.say(w ? `Live from ${zoneById(r.zone).data.name}: ${describe(w)}` : `No live weather, so it's ${this.tod} as picked in the lobby`);
     this.touch();
   }
 
@@ -365,6 +404,8 @@ export class Hunt {
       this.touch();
     } else if (this.phase === "hide" && now >= this.endsAt) {
       const z = this.zone();
+      // The weather never came: play the lobby's pick.
+      r.sky ??= clearSky(this.tod);
       for (const id of r.rangers) {
         const a = r.actors.get(id)!;
         // Step out of the cabin's front door.
@@ -378,7 +419,7 @@ export class Hunt {
       for (let k = 0; k < 20 && Math.hypot(end[0], end[1]) > z.R * (1 - HUNT.finalRadius) * 0.9; k++) end = this.randomDrop(z);
       r.circle = { x0: 0, y0: 0, r0: z.R, x1: end[0], y1: end[1], r1: z.R * HUNT.finalRadius, from: now + HUNT.shrinkFrom * 1000, to: now + HUNT.shrinkTo * 1000 };
       this.endsAt = now + HUNT.huntSecs * 1000;
-      this.say(`The rangers are out${this.tod === "night" ? " with flashlights" : ""}!`);
+      this.say(`The rangers are out${r.sky.tod === "night" ? " with flashlights" : ""}!`);
       this.touch();
     } else if (this.phase === "hunt") {
       this.tags(r, now);
@@ -433,16 +474,19 @@ export class Hunt {
 
   /** Running is loud; walking is quiet; crouching is silent. */
   private footsteps(r: Round, now: number) {
+    const sky = this.sky();
     for (const a of r.actors.values()) {
       if (a.role !== "camper" || a.caughtAt !== null || a.crouch) continue;
       const moving = now - a.movedAt < 300;
       if (!moving) continue;
-      const every = a.run ? 450 : 700, reach = a.run ? 45 : 14;
+      // Rain drowns them out.
+      const every = a.run ? 450 : 700, reach = stepReach(sky, a.run ? 45 : 14);
       if (now - (r.lastStep.get(a.id) ?? 0) < every) continue;
       // Only if some ranger is close enough to hear.
       if (!r.rangers.some((id) => { const g = r.actors.get(id)!; return Math.hypot(g.x - a.x, g.y - a.y) < reach; })) continue;
       r.lastStep.set(a.id, now);
-      this.cue(r, "step", a.x + (this.rand() - 0.5) * 3, a.y + (this.rand() - 0.5) * 3, a.id, "rangers", now);
+      const j = soundJitter(sky, 1);
+      this.cue(r, "step", a.x + (this.rand() - 0.5) * 3 * j, a.y + (this.rand() - 0.5) * 3 * j, a.id, "rangers", now);
     }
   }
 
@@ -467,7 +511,8 @@ export class Hunt {
       const moving = now - c.movedAt < 400;
       // Close by, nobody stays perfectly still; farther out, it's a coin toss unless you're moving.
       if (d > 28 && !moving && this.rand() < 0.5) continue;
-      const j = 1 + d * 0.12;
+      // Wind makes a rustle harder to place.
+      const j = soundJitter(this.sky(), 1 + d * 0.12);
       this.cue(r, "rustle", c.x + (this.rand() - 0.5) * 2 * j, c.y + (this.rand() - 0.5) * 2 * j, c.id, "rangers", now + 300 + this.rand() * 900);
     }
     this.touch();
@@ -533,12 +578,14 @@ export class Hunt {
         radio: rs && mine ? { ...rs, x: toKm(mine.x), y: toKm(mine.y) } : null,
         huntStartedAt: r.huntStartedAt,
         circle: r.circle,
+        sky: this.sky(),
+        weather: r.weather,
         results: r.results,
       };
     }
     return {
       me, hostId: this.hostId, phase: this.phase, now, endsAt: this.endsAt,
-      zone: r?.zone ?? this.zone().data.id, zonePick: this.zonePick, tod: this.tod, laps: this.laps,
+      zone: r?.zone ?? this.zone().data.id, zonePick: this.zonePick, tod: this.tod, live: this.live, laps: this.laps,
       players: this.players.map(({ id, name, bot, score, online, look }) => ({ id, name, bot, score, online, look })),
       round,
       log: this.log.slice(-6).map((l) => this.logText(l)),
@@ -552,7 +599,7 @@ export class Hunt {
     if (this.phase === "hide") return false; // rangers are in the cabin
     if (me.role === "camper") return Math.hypot(a.x - me.x, a.y - me.y) < HUNT.rangerVisible;
     // Outside the search area, a camper stands out like a flare.
-    const ok = outside(this.round!.circle, now, a.x, a.y) || canSee(z, this.tod, { ...me }, a);
+    const ok = outside(this.round!.circle, now, a.x, a.y) || canSee(z, this.sky(), { ...me }, a);
     if (ok) seen.set(a.id, now);
     // Linger a moment, so the edge of a flashlight doesn't strobe.
     return ok || now - (seen.get(a.id) ?? -Infinity) < 400;
@@ -582,7 +629,7 @@ export function parseMsg(raw: unknown): Msg | null {
         && l.shirt >= 0 && l.shirt < SHIRTS.length && l.pants >= 0 && l.pants < PANTS.length && l.skin >= 0 && l.skin < SKINS.length;
       return ok ? { t: "look", look: { shirt: l.shirt | 0, pants: l.pants | 0, skin: l.skin | 0, hat: l.hat, pack: !!l.pack } } : null;
     }
-    case "settings": return { t: "settings", zone: typeof m.zone === "string" ? m.zone : undefined, tod: m.tod, laps: num(m.laps) ? m.laps : undefined };
+    case "settings": return { t: "settings", zone: typeof m.zone === "string" ? m.zone : undefined, tod: m.tod, live: typeof m.live === "boolean" ? m.live : undefined, laps: num(m.laps) ? m.laps : undefined };
     case "bot": return ["easy", "normal", "hard"].includes(m.level) ? { t: "bot", level: m.level } : null;
     case "kick": return typeof m.id === "string" ? { t: "kick", id: m.id } : null;
     case "start": case "lobby": case "call": return { t: m.t };
