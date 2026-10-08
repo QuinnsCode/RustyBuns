@@ -194,7 +194,7 @@
     },
     "packages/cli": {
       "name": "@rustybuns/cli",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "bin": {
         "rustybuns": "./src/index.ts",
       },
@@ -205,15 +205,15 @@
     },
     "packages/native": {
       "name": "@rustybuns/native",
-      "version": "0.1.7",
+      "version": "0.1.8",
     },
     "packages/ports": {
       "name": "@rustybuns/ports",
-      "version": "0.1.7",
+      "version": "0.1.8",
     },
     "packages/shell-bun": {
       "name": "@rustybuns/shell-bun",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "dependencies": {
         "@rustybuns/ports": "workspace:*",
       },
