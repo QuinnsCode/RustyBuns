@@ -13,6 +13,8 @@ import { NetSocket, type NetState } from "./net.ts";
 
 const DELAY_TICKS = 3;          // render this far behind the newest snapshot
 const KEEP = 40;
+/** A held stick changes every frame; the server ticks at 30 Hz, so a move goes out at most this often per seat. Presses go at once. */
+const MOVE_EVERY_MS = 30;
 
 const blank = (): Snapshot => ({
   tick: 0, round: 0, phase: "lobby", countdown: 0, left: 0, events: [], drops: [], slicks: [],
@@ -30,30 +32,37 @@ export class NetDriver implements Driver {
   private seats: SeatView[] = Array.from({ length: SEATS }, (_, i) => ({ name: SEAT_NAMES[i]!, human: false, ready: false, mine: false }));
   private cfg: Cfg = DEFAULT_CFG;
   private host = 0;
-  private you = -1;
+  /** Seats this machine drives, from the latest room frame (or the hello). */
+  private you: number[] = [];
+  private watching = false;
+  private watchers = 0;
   private roomSeq = 0;
   private roomPhase: Snapshot["phase"] = "lobby";
   private state: NetState = "connecting";
   private message: string | undefined;
   private ping: number | undefined;
   private room = "";
-  private held = { move: 0 };
+  private held = new Map<number, { move: number; at: number }>();
 
-  constructor(open: () => WebSocket) {
+  /** `players`: couch players on this machine, each asking the room for a seat. */
+  constructor(open: () => WebSocket, players = 1) {
     this.sock = new NetSocket(open, {
       onMessage: (m) => this.onMessage(m),
-      onState: (s, msg) => { this.state = s; this.message = msg; if (s !== "online") this.you = -1; },
+      onState: (s, msg) => { this.state = s; this.message = msg; if (s !== "online") { this.you = []; this.watching = false; } },
       onPing: (ms) => { this.ping = Math.round(ms); },
-      onOpen: () => { this.held.move = 0; },
-    });
+      onOpen: () => { this.held.clear(); },
+    }, players);
   }
 
   private onMessage(m: ServerMsg) {
-    if (m.t === "hello") { this.you = m.you; this.room = m.room; return; }
+    if (m.t === "hello") { this.you = m.you >= 0 ? [m.you] : []; this.watching = m.you < 0; this.room = m.room; return; }
     if (m.t === "room") {
       if (m.seq <= this.roomSeq) return;          // a late, older control frame
       this.roomSeq = m.seq; this.roomPhase = m.ph; this.cfg = roomCfg(m); this.host = m.host;
-      this.seats = m.seats.map((s, i) => ({ name: s.n, human: s.h === 1, ready: s.r === 1, mine: i === this.you }));
+      this.you = m.you.filter((s) => Number.isInteger(s) && s >= 0 && s < SEATS);
+      this.watching = this.you.length === 0;
+      this.watchers = typeof m.sp === "number" ? m.sp : 0;
+      this.seats = m.seats.map((s, i) => ({ name: s.n, human: s.h === 1, ready: s.r === 1, mine: this.you.includes(i) }));
       return;
     }
     if (m.t !== "snap") return;
@@ -93,21 +102,23 @@ export class NetDriver implements Driver {
     return {
       phase: this.roomPhase === "lobby" || !latest ? this.roomPhase : latest.phase,
       prev, cur, alpha,
-      seats: this.seats.map((s, i) => ({ ...s, mine: i === this.you })),
-      mine: this.you >= 0 ? [this.you] : [],
+      seats: this.seats.map((s, i) => ({ ...s, mine: this.you.includes(i) })),
+      mine: this.you,
       cfg: this.cfg, hostSeat: this.host, events,
-      net: { state: this.state, message: this.message, code: this.room, ping: this.ping },
+      net: { state: this.state, message: this.message, code: this.room, ping: this.ping, watching: this.state === "online" && this.watching, watchers: this.watchers },
     };
   }
 
-  mine() { return this.you >= 0 ? [this.you] : []; }
+  mine() { return this.you; }
 
   input(seat: number, move: number, gulp: boolean, bellow: boolean) {
-    if (seat !== this.you) return;
-    const m = Math.round(Math.max(-1, Math.min(1, move)) * 100);
-    if (m !== this.held.move || gulp || bellow) {
-      this.held.move = m;
-      this.sock.send({ t: "in", m, g: gulp ? 1 : 0, h: bellow ? 1 : 0 });
+    if (!this.you.includes(seat)) return;
+    const m = Math.round(Math.max(-1, Math.min(1, move)) * 100), now = performance.now();
+    const h = this.held.get(seat) ?? { move: 0, at: -Infinity };
+    // a changed move waits out MOVE_EVERY_MS; the next frame's call sends the latest one
+    if (gulp || bellow || (m !== h.move && now - h.at >= MOVE_EVERY_MS)) {
+      this.held.set(seat, { move: m, at: now });
+      this.sock.send({ t: "in", m, g: gulp ? 1 : 0, h: bellow ? 1 : 0, s: seat });
     }
   }
 
@@ -118,6 +129,7 @@ export class NetDriver implements Driver {
       case "lobby": this.sock.send({ t: "lobby" }); break;
       case "seat": this.sock.send({ t: "seat", n: c.seat }); break;
       case "cfg": this.sock.send({ t: "cfg", secs: c.cfg.secs, diff: c.cfg.difficulty }); break;
+      case "bot": this.sock.send({ t: "cfg", n: c.seat, diff: c.difficulty }); break;
     }
   }
 

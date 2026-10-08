@@ -29,6 +29,7 @@ export function Menu({ settings, onSettings, onSolo, onCouch, extra }: MenuProps
           {extra}
           <div className="row"><label>Your name</label><input className="text" style={{ width: 200 }} maxLength={32} value={settings.name} placeholder="Tycoon" onChange={(e) => onSettings({ ...settings, name: e.target.value })} /></div>
           <div className="row"><label>Bots</label><Seg<Difficulty> value={settings.difficulty} options={DIFFICULTIES} onChange={(difficulty) => onSettings({ ...settings, difficulty })} /></div>
+          <div className="row"><label>Here (LAN/online)</label><Seg<1 | 2> value={settings.players} options={[1, 2]} label={(n) => (n === 1 ? "1 player" : "2 players")} onChange={(players) => onSettings({ ...settings, players })} /></div>
           <div className="row"><label>Round</label><Seg<number> value={settings.secs} options={ROUND_SECS} label={(s) => `${s}s`} onChange={(secs) => onSettings({ ...settings, secs })} /></div>
         </div>
         <p className="hint">A / D slide · W or Space chomp · Q bellow &nbsp;|&nbsp; ← / → · ↑ or Enter · / &nbsp;|&nbsp; gamepad: stick, A, B</p>

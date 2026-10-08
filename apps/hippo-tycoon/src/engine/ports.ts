@@ -13,6 +13,8 @@ export interface EngineSocket {
 export interface EngineStorage {
   get<T = unknown>(key: string): Promise<T | undefined>;
   put(key: string, value: unknown): Promise<void>;
+  /** The DO alarm: alarm() is called at about this time, even after an eviction. */
+  setAlarm?(at: number): Promise<void>;
 }
 
 export interface EngineCtx {

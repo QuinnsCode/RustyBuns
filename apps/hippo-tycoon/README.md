@@ -40,9 +40,11 @@ The build type-checks the app first (`--check`; Bun 1.4.2 has no `bun check`, so
 
 1. On one machine, launch the desktop app and choose **Host a LAN game**. The lobby shows `address:port` and a **join code**.
 2. On the others, launch their own copy of the app (or open the dev server on `http://`) and choose **Join a LAN game**. Enter the address and the code.
-3. The host picks bots and round length and presses **Start round**. Empty seats are bots; a player who leaves hands their seat to a bot, keeping the score.
+3. The host picks bots (all at once, or one seat at a time with **Difficulty**) and round length and presses **Start round**. Empty seats are bots; a player who leaves hands their seat to a bot, keeping the score, and gets that seat back when they rejoin.
 
-Up to four people: the host plus three guests (`guests: { max: 3 }`). There is no TLS, so this is for a network you trust. A guest's page must be served over `http://` (a desktop build or the dev server); a page served over `https://` cannot open the `ws://` connection. To try it on one machine, launch two copies of the binary and join with the host's LAN address.
+Two people can share one machine in a LAN or online game: set **Here (LAN/online)** to 2 players in the menu (A/D + W + Q and the arrows, or gamepads 1 and 2). One connection then drives two seats. A human who arrives when all four seats are taken watches, and can **Sit here** when a seat frees up.
+
+Up to four guest connections: the host plus three guests (`guests: { max: 3 }`). There is no TLS, so this is for a network you trust. A guest's page must be served over `http://` (a desktop build or the dev server); a page served over `https://` cannot open the `ws://` connection. To try it on one machine, launch two copies of the binary and join with the host's LAN address.
 
 ### Online rooms (Cloudflare)
 
@@ -106,7 +108,8 @@ src/worker.ts  the Cloudflare entry: validates and vouches identity, routes room
 - **One game, two homes.** `World` runs on Cloudflare as a Durable Object and, unchanged, inside the desktop binary where Rusty Buns binds it in-process. The LAN host is just that world with the `guests` door opened.
 - **Server-authoritative.** Clients send inputs; the room steps at 30 Hz and sends snapshots at 15 Hz; the client draws two snapshots about 100 ms behind. Your own chomp animates the moment you press it, and the server still decides what was eaten.
 - **The same match everywhere.** Solo and couch use the same `Match` the room runs, through `LocalDriver`, so a round plays the same wherever it runs. Bots are input-only drivers with their own seeded randomness, so who is a bot never changes which drops drip.
-- **Persistence is deliberately small.** A room saves its phase, seats, scores and round seed when they change. If the Durable Object is evicted mid-round, the round restarts from its countdown with the same seed and scores reset; the seats are rebuilt from the sockets that are still connected.
+- **Persistence is deliberately small.** A room saves its phase, seats, scores and round seed when the phase or seats change, not as scores tick: a mid-round score means nothing without the drops and positions it came from. If the Durable Object is evicted mid-round, the round restarts from its countdown with the same seed and scores reset; the players still connected go back to the seats they held. Podium scores are saved at the podium. A storage alarm checks the tick loop every 10 s while anyone is seated and restarts it if it has stopped.
+- **Abuse limits.** Each connection has a message budget (60 a second per seat it drives); a flood is closed (`4008`) and its seats go to bots. The Worker refuses a WebSocket upgrade from another site's page (`Origin`; localhost and LAN addresses are allowed for dev) and limits how many distinct rooms one address opens a minute (per Worker isolate).
 - **Identity.** Online, the Worker validates the player id and name from the query, strips any client-sent `X-*` header and vouches its own. On a LAN, the Rusty Buns host vouches the identity. The world never trusts a message body.
 
 ## Tests

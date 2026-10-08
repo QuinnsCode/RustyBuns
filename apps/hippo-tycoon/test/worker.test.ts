@@ -67,7 +67,38 @@ test("a second tab of the same player takes over; the room fills at four", async
   const others = ["x", "y", "z"].map((n) => open(`room=FULL&uid=player-${n}${n}${n}${n}1&name=${n}`));
   await until(() => others.every((o) => o.last("hello")));
   const fifth = open("room=FULL&uid=player-fifth1&name=Five");
-  await until(() => fifth.closed !== null);
-  expect(fifth.closed).toBe(4003);
-  for (const x of [two, ...others]) x.ws.close();
+  await until(() => fifth.last("hello"));
+  expect(fifth.last("hello")!.you).toBe(-1);                         // a fifth human watches
+  await until(() => two.last("room")?.sp === 1);
+  for (const x of [two, ...others, fifth]) x.ws.close();
+}, SLOW);
+
+test("a cross-site page cannot open a room; our origin, localhost and the LAN can", async () => {
+  expect(await status("room=ORIG&uid=player-orig1", { Origin: "https://evil.example" })).toBe(403);
+  for (const origin of [`http://127.0.0.1:${shell.port}`, "http://localhost:5173", "http://192.168.1.20:4000"]) {
+    const c = open(`room=ORIG&uid=player-orig1&name=O`, { Origin: origin });
+    await until(() => c.last("hello"));
+    c.ws.close();
+    await until(() => c.closed !== null);
+  }
+}, SLOW);
+
+test("one address can only open so many new rooms a minute; rejoining one it has is free", async () => {
+  const ip = { "CF-Connecting-IP": "203.0.113.7" };
+  const rooms = Array.from({ length: 12 }, (_, i) => `MINT${i}`);
+  for (const r of rooms) expect(await status(`room=${r}&uid=player-mint1`, ip)).not.toBe(429);
+  expect(await status("room=MINTX&uid=player-mint1", ip)).toBe(429);
+  expect(await status("room=MINT3&uid=player-mint1", ip)).not.toBe(429);
+  expect(await status("room=MINTX&uid=player-mint1", { "CF-Connecting-IP": "203.0.113.8" })).not.toBe(429);
+}, SLOW);
+
+test("a couch pair rides one socket into an online room", async () => {
+  const msgs: ServerMsg[] = [];
+  const ws = new WebSocket(`${base}/ws?room=PAIR&uid=player-pair1&name=Duo`);
+  ws.onopen = () => ws.send(JSON.stringify({ t: "hello", v: PROTO_VERSION, k: 2 }));
+  ws.onmessage = (e) => msgs.push(JSON.parse(String(e.data)));
+  const room = () => msgs.filter((m) => m.t === "room").at(-1) as Extract<ServerMsg, { t: "room" }> | undefined;
+  await until(() => room()?.you.length === 2);
+  expect(room()!.seats.slice(0, 2).map((s) => s.n)).toEqual(["Duo", "Duo 2"]);
+  ws.close();
 }, SLOW);
