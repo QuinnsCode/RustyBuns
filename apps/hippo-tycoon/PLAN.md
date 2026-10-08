@@ -121,16 +121,16 @@ apps/hippo-tycoon/
 
 ## 4. What to reuse, and from where
 
-From **druids-curse-votv** (`/Users/ryanquinn/agent-office/QuinnsCode/druids-curse-votv`), read for *patterns*, rewrite small:
-- `packages/world/src/enginePorts.ts`: the ports idea
-- `packages/world/src/tickLoop.ts`: fixed-step loop, catch-up cap, throw guard
-- `src/durableObjects/WorldDurableObject.ts` + `packages/desktop/world.ts`: one engine, two thin shells
-- `src/app/game/net/simDriver.ts`: Local vs Network driver seam
-- `src/app/game/net/worldSocket.ts`: reconnect/backoff, close on `pagehide`
-- `packages/sim/src/controllers.ts`: AI emits input only
-- `packages/sim/src/wire.ts`: PROTO_VERSION + quantisation idea
-- `src/worker.tsx` `handleWorldUpgrade`: identity vouching before the DO
-- `packages/desktop/main.tsx`: no StrictMode (it opens two sockets)
+From **a private game** (the owner's own multiplayer project, not in this repo), read for *patterns*, rewrite small:
+- its engine ports: the ports idea
+- its tick loop: fixed-step loop, catch-up cap, throw guard
+- its world Durable Object and desktop world: one engine, two thin shells
+- its sim driver: Local vs Network driver seam
+- its world socket: reconnect/backoff, close on `pagehide`
+- its AI controllers: AI emits input only
+- its wire format: PROTO_VERSION + quantisation idea
+- its worker's world upgrade handler: identity vouching before the DO
+- its desktop entry: no StrictMode (it opens two sockets)
 
 From **RustyBuns** (this repo):
 - `apps/fm-daw/` is the closest app shape: spa desktop + `src/worker.ts` exporting the world class for Cloudflare, `src/ui/net.ts` reconnect client, `vite.desktop.config.ts`, tests, README style. **Caveat:** fm-daw sets `builtMain` with `bundle:false` but its vite build only emits `dist/client`. Its deploy path looks untested. For hippo-tycoon either drop `builtMain` so alchemy bundles `src/worker.ts`, or make the worker build real. Verify with `rustybuns plan`.
