@@ -1,10 +1,10 @@
 # Hippo Tycoon
 
-Four angry, greedy oil-baron hippos around an oil geyser on a jungle island (misty fluted peaks, palms, tiki torches, an abandoned derrick or two), each trying to chomp the most oil the geyser fires into the basin. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode. Built with [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
+Four angry, greedy oil-baron hippos around a lost oil geyser deep in the jungle (misty fluted peaks, lush ferns and palms, a rusted wellhead and a fallen derrick half swallowed by vines), each trying to chomp the most oil the geyser fires into the basin. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode. Built with [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
 
 The oil geyser's gush is a particle fluid simulation written in **Rust** (compiled to WebAssembly) with a TypeScript twin as the fallback; a test holds the two to bit-identical output.
 
-Everything on screen is built in code: the hippos, the stilt lodges, the palms, the mountains, the geyser and the drops are three.js primitives, the textures are drawn on a canvas at startup and the sounds are synthesised. There are no asset files.
+Everything on screen is built in code: the hippos, the ruins, the palms and ferns, the mountains, the geyser and the drops are three.js primitives, the textures are drawn on a canvas at startup and the sounds are synthesised. There are no asset files.
 
 ![Four hippos round the oil pan, chomping drops; the purple one in front is yours](docs/gulp.gif)
 

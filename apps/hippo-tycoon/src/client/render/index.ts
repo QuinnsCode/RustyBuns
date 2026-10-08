@@ -106,12 +106,16 @@ export class Renderer {
         if (kind === GOLD) {
           this.shake = Math.max(this.shake, 0.55);
           for (let s = 0; s < SEATS; s++) if (s !== e.seat) this.snarlUntil[s] = now + 1100;   // jealous growls
-        } else if (e.pts < 0) this.shake = Math.max(this.shake, 0.25);
+        } else {
+          for (let s = 0; s < SEATS; s++) if (s !== e.seat) this.snarlUntil[s] = Math.max(this.snarlUntil[s]!, now + 420);   // everyone resents every bite
+          if (e.pts < 0) this.shake = Math.max(this.shake, 0.25);
+        }
         if (kind === NAIL) this.popups.show(this.project(at(...this.seatXY(e.seat), 3)), "OW! SORE JAW", "#ffb14a");
         if (kind === SLUDGE) this.popups.show(this.project(at(...this.seatXY(e.seat), 3)), "*COUGH*", "#c9a26a");
         if (kind === WATER) this.popups.show(this.project(at(...this.seatXY(e.seat), 3)), "WATERED DOWN!", "#7fc8ff", true);
         break;
       }
+      case "gulp": this.fx.emit(this.rigPoint(e.seat, 0.2), 0x6a5238, 9, 3.2, 0.55, 8, 0.7); break;   // dirt kicked up by the lunge
       case "dud": this.popups.show(this.project(at(...this.seatXY(e.seat), 3)), "*glub*", "#7fc8ff"); break;
       case "bellow": this.fx.emit(this.rigPoint(e.seat, 1.6), 0xffe9b0, 18, 5, 0.5, 0); break;
       case "slick": this.fx.emit(at(e.x, e.y, 0.2), 0xb07aff, 24, 3.5, 0.9, 2); this.popups.show(this.project(at(e.x, e.y, 1.5)), "SLICK!", "#d9b3ff"); break;

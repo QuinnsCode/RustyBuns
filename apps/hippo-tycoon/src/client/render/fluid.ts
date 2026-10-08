@@ -54,10 +54,10 @@ export class FluidTS implements Fluid {
     const i = found;
     const jx = (this.rand() - 0.5) * 0.25;
     const jz = (this.rand() - 0.5) * 0.25;
-    const spread = 1.6 + speed * 0.35;
+    const spread = 2.8 + speed * 0.6;
     const vx = (this.rand() - 0.5) * spread;
     const vz = (this.rand() - 0.5) * spread;
-    const vy = speed * (0.75 + 0.5 * this.rand());
+    const vy = speed * (0.7 + 0.4 * this.rand());
     const rad = 0.09 + 0.08 * this.rand();
     const life = 1.8 + 0.8 * this.rand();
     this.x[i] = jx; this.y[i] = VENT_Y; this.z[i] = jz;
