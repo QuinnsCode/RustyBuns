@@ -302,9 +302,11 @@ await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, l
 A guest connects to the host's address with the join query; `worldSocket` from `@rustybuns/shell-bun/client` builds it:
 
 ```ts
-import { worldSocket, playerId } from "@rustybuns/shell-bun/client";
-worldSocket("http://192.168.1.20:4000/ws", { join: "orange-kettle", uid: playerId(), name: "Ada", v: RB_VERSION });
+import { worldSocket, playerId, wireVersion } from "@rustybuns/shell-bun/client";
+worldSocket("http://192.168.1.20:4000/ws", { join: "orange-kettle", uid: playerId(), name: "Ada", v: await wireVersion() });
 ```
+
+`RB_VERSION` is only defined in the host bundle, not in your client build. `wireVersion()` asks the guest's own host (`/__rb/info`) which version it checks guests against. The guest runs the same app, so a matching build sends what the remote host expects.
 
 What the host checks before upgrading, in order, each with a JSON `{ error }` body:
 

@@ -117,7 +117,7 @@ apps/hippo-tycoon/
 
 **Persistence.** Keep it minimal (druids' eviction defences were the most fragile part): the room DO persists only `{phase, seats, scores, roundSeed, roundStartTick}` on phase changes. If evicted mid-round, it resumes from the seed by fast-forwarding, or simply restarts the round. Pick the simple one and document it. No D1, no auth, no KV needed for v1.
 
-**Identity.** Online: the worker mints `X-User-Id` (random UUID, stored client-side in localStorage) and `X-User-Name` from the query, the DO trusts only headers. LAN: the Rusty Buns host vouches identity (`worldSocket(url, { join, uid: playerId(), name, v: RB_VERSION })`). Never trust identity from message bodies.
+**Identity.** Online: the worker mints `X-User-Id` (random UUID, stored client-side in localStorage) and `X-User-Name` from the query, the DO trusts only headers. LAN: the Rusty Buns host vouches identity (`worldSocket(url, { join, uid: playerId(), name, v: LAN_VERSION })`). Never trust identity from message bodies.
 
 ## 4. What to reuse, and from where
 
