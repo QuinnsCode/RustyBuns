@@ -36,31 +36,31 @@ export class Renderer {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
     this.gl.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.gl.shadowMap.enabled = true; this.gl.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.gl.toneMapping = THREE.ACESFilmicToneMapping; this.gl.toneMappingExposure = 1.05;
+    this.gl.toneMapping = THREE.ACESFilmicToneMapping; this.gl.toneMappingExposure = 1.0;
     this.popups = new Popups(overlay);
 
-    // a smoggy dusk: a vertical gradient behind, haze in front, a dim studio environment for reflections
+    // golden hour over a tropical island: teal sky, a warm band at the horizon, green haze in front
     const bg = document.createElement("canvas"); bg.width = 4; bg.height = 256;
     const g2 = bg.getContext("2d")!, grad = g2.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0, "#14100e"); grad.addColorStop(0.55, "#3a2a20"); grad.addColorStop(1, "#7a5232");
+    grad.addColorStop(0, "#0f3a4a"); grad.addColorStop(0.4, "#3f8a86"); grad.addColorStop(0.72, "#f2b878"); grad.addColorStop(1, "#7a8a5a");
     g2.fillStyle = grad; g2.fillRect(0, 0, 4, 256);
     const bgTex = new THREE.CanvasTexture(bg); bgTex.colorSpace = THREE.SRGBColorSpace;
     this.scene.background = bgTex;
-    this.scene.fog = new THREE.Fog(0x33261c, 55, 130);
+    this.scene.fog = new THREE.Fog(0x93a67e, 90, 280);
     const pmrem = new THREE.PMREMGenerator(this.gl);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.55;
+    this.scene.environmentIntensity = 0.38;
 
-    this.scene.add(new THREE.HemisphereLight(0xffd9a8, 0x2a1d16, 0.5));
-    const sun = new THREE.DirectionalLight(0xffc98a, 3.1);       // low amber sun from the front-left
-    sun.position.set(-14, 20, 16); sun.castShadow = true;
+    this.scene.add(new THREE.HemisphereLight(0xcdeedd, 0x3a4a24, 0.8));
+    const sun = new THREE.DirectionalLight(0xffd29a, 2.9);       // low golden sun from the front-left
+    sun.position.set(-18, 20, 14); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
-    Object.assign(sun.shadow.camera, { left: -22, right: 22, top: 22, bottom: -22, near: 1, far: 70 });
+    Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 80 });
     this.scene.add(sun);
-    const lamp = new THREE.PointLight(0xffa54a, 90, 36, 1.7);     // the gaslit glow over the pan
-    lamp.position.set(0, 7, 0); this.scene.add(lamp);
-    const rim = new THREE.DirectionalLight(0x7fa6ff, 0.6); rim.position.set(12, 8, -16); this.scene.add(rim);
-    this.arena = new Arena();
+    const glow = new THREE.PointLight(0xff9a4a, 22, 26, 1.8);     // the geyser lights the pan from within
+    glow.position.set(0, 3.5, 0); this.scene.add(glow);
+    const rim = new THREE.DirectionalLight(0x9fd8ff, 0.7); rim.position.set(14, 9, -18); this.scene.add(rim);
+    this.arena = new Arena(this.fx);
     this.scene.add(this.arena.group, this.drops.group, this.fx.points);
     for (let i = 0; i < SEATS; i++) { const r = new HippoRig(i); this.rigs.push(r); this.scene.add(r.group); }
     this.post = new Post(this.gl, this.scene, this.camera, canvas.clientWidth || 800, canvas.clientHeight || 600);
@@ -87,8 +87,8 @@ export class Renderer {
   private frameCamera(now: number) {
     const a = this.camera.aspect, k = Math.max(1.18, 1.6 / a);
     const s = this.shake; this.shake *= 0.9;
-    this.camera.position.set(Math.sin(now / 4000) * 0.8 + (Math.random() - 0.5) * s, 19 * k + (Math.random() - 0.5) * s, 22 * k);
-    this.camera.lookAt(0, 0, 1.2 * k - 2);
+    this.camera.position.set(Math.sin(now / 4000) * 0.8 + (Math.random() - 0.5) * s, 15.5 * k + (Math.random() - 0.5) * s, 26 * k);
+    this.camera.lookAt(0, 0.5, 1.0 * k - 3.5);
     void now;
   }
 
@@ -114,7 +114,7 @@ export class Renderer {
       case "bellow": this.fx.emit(this.rigPoint(e.seat, 1.6), 0xffe9b0, 18, 5, 0.5, 0); break;
       case "slick": this.fx.emit(at(e.x, e.y, 0.2), 0xb07aff, 24, 3.5, 0.9, 2); this.popups.show(this.project(at(e.x, e.y, 1.5)), "SLICK!", "#d9b3ff"); break;
       case "overflow": this.shake = 0.8; break;
-      case "spawn": this.fx.emit(at(0, 0, 0.5), 0x222222, 2, 1.6, 0.4, 3); break;
+      case "spawn": this.arena.geyser.erupt(e.kind); break;
       default: break;
     }
     void frame;

@@ -22,7 +22,25 @@ export class Sound {
       const n = this.ctx.sampleRate, buf = this.ctx.createBuffer(1, n, n), d = buf.getChannelData(0);
       let x = 1; for (let i = 0; i < n; i++) { x = (x * 16807) % 2147483647; d[i] = x / 1073741823 - 1; }
       this.noiseBuf = buf;
+      this.ambience();
     } catch { this.ctx = null; }
+  }
+
+  /** The island at dusk: a cicada shimmer under the game, and the odd bird call. */
+  private ambience() {
+    const c = this.ctx; if (!c || !this.master || !this.noiseBuf) return;
+    const src = c.createBufferSource(), band = c.createBiquadFilter(), g = c.createGain(), lfo = c.createOscillator(), depth = c.createGain();
+    src.buffer = this.noiseBuf; src.loop = true; band.type = "bandpass"; band.frequency.value = 5200; band.Q.value = 3;
+    g.gain.value = 0.018; lfo.frequency.value = 7; depth.gain.value = 0.014;
+    lfo.connect(depth); depth.connect(g.gain); src.connect(band); band.connect(g); g.connect(this.master);
+    src.start(); lfo.start();
+    const bird = () => {
+      if (!this.ctx) return;
+      const base = 1500 + Math.random() * 1400, n = 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) this.tone(base * (1 + i * 0.12), 0.11, "sine", 0.05, base * (1.35 + i * 0.1), i * 0.15);
+      setTimeout(bird, 3500 + Math.random() * 6500);
+    };
+    setTimeout(bird, 2500);
   }
 
   setMuted(m: boolean) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 0.5; }

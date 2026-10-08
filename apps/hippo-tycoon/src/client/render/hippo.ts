@@ -46,14 +46,11 @@ export class HippoRig {
     this.group.add(this.body); this.body.add(this.head);
     this.group.scale.setScalar(1.3);
 
-    // tailcoat torso, waistcoat front with brass buttons, cravat with a pin
+    // linen jacket over an aloha shirt, and a flower lei
     const [bw, bh, bd] = L.bulk;
     this.body.add(ellipsoid(coat, 1.25 * bw, 0.95 * bh, 1.4 * bd, 0, 0.95 * bh, 0.75));
     this.waistcoat(L, bw, bh);
-    this.body.add(ellipsoid(mat(L.cravat, 0.5), 0.34, 0.26, 0.26, 0, 1.38 * bh, -0.55 * bd));
-    this.body.add(ellipsoid(GOLD, 0.06, 0.06, 0.06, 0, 1.3 * bh, -0.78 * bd));
-    // coat tails behind
-    for (const s of [-1, 1]) this.body.add(ellipsoid(coat, 0.4, 0.7, 0.28, s * 0.55 * bw, 0.5, 1.95 * bd));
+    this.lei(L, bh);
     // short legs
     for (const x of [-0.7 * bw, 0.7 * bw]) this.body.add(ellipsoid(skin, 0.35, 0.3, 0.45, x, 0.3, 0.1));
     // arms in coat sleeves; a gold ring on the pinky
@@ -90,15 +87,25 @@ export class HippoRig {
     this.group.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   }
 
+  /** The aloha shirt: bold flowers scattered over the chest. */
   private waistcoat(L: Look, bw: number, bh: number) {
-    const vest = mat(L.waistcoat, 0.55);
-    this.body.add(ellipsoid(vest, 0.78 * bw, 0.72 * bh, 0.7, 0, 0.9 * bh, -0.4));
-    if (L.pinstripe) {
-      const coat = mat(0x6a3a6c, 0.7);
-      for (let i = -3; i <= 3; i++) this.body.add(box(coat, 0.035, 1.3, 2.0, i * 0.3 * bw, 0.95 * bh, 0.9));
+    this.body.add(ellipsoid(mat(L.waistcoat, 0.55), 0.78 * bw, 0.72 * bh, 0.7, 0, 0.9 * bh, -0.4));
+    const pal = [0xff5a7a, 0xffd24a, 0xfff4e0, 0xff9a3a];
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 9) * Math.PI * 2 + this.seat, rr = 0.2 + (k % 3) * 0.17;
+      const f = ellipsoid(mat(pal[(k + this.seat) % 4]!, 0.5), 0.1, 0.1, 0.03, Math.cos(a) * rr * bw, (0.9 + Math.sin(a) * rr * 0.9) * bh, -0.74);
+      this.body.add(f);
+      this.body.add(ellipsoid(GOLD, 0.035, 0.035, 0.03, f.position.x, f.position.y, -0.77));
     }
-    if (L.checked) for (let i = -2; i <= 2; i++) for (let j = -1; j <= 1; j++) if ((i + j) % 2 === 0) this.body.add(box(mat(0x7a1a1a, 0.6), 0.2, 0.2, 0.05, i * 0.24 * bw, 0.9 * bh + j * 0.24, -0.73));
-    for (let k = 0; k < 3; k++) this.body.add(ellipsoid(GOLD, 0.055, 0.055, 0.04, 0, (1.1 - k * 0.27) * bh, -0.74));
+  }
+
+  /** A lei of orange, pink and cream blossoms round the neck. */
+  private lei(L: Look, bh: number) {
+    const cols = [L.cravat, 0xfff1d8, 0xff9a3a, 0xff6a9a];
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2;
+      this.body.add(ellipsoid(mat(cols[k % 4]!, 0.55), 0.13, 0.11, 0.13, Math.cos(a) * 0.74, 1.3 * bh - Math.max(0, -Math.sin(a)) * 0.35, -0.66 + Math.sin(a) * 0.5));
+    }
   }
 
   private watch(L: Look, bw: number, bh: number, bd: number) {
@@ -156,29 +163,27 @@ export class HippoRig {
   }
 
   private hat(L: Look) {
-    const m = mat(L.hatColor, 0.45);
-    if (L.hat === "bowler") {                                  // a round derby with a gold band: a bowler, not a top hat
-      this.head.add(dome(m, 0.8, 0, 2.2, -0.65, 0.95));
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.98, 0.98, 0.06, 28), m); brim.position.set(0, 2.2, -0.65); this.head.add(brim);
-      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.82, 0.14, 28), GOLD); band.position.set(0, 2.3, -0.65); this.head.add(band);
-    } else if (L.hat === "miner") {                            // a brass pit helmet with a glowing lamp and goggles pushed up
+    const m = mat(L.hatColor, 0.6);
+    if (L.hat === "panama") {                                  // a straw panama with a dark band
+      this.head.add(dome(m, 0.8, 0, 2.2, -0.65, 0.9));
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.05, 30), m); brim.position.set(0, 2.2, -0.65); this.head.add(brim);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.82, 0.14, 28), mat(0x2a1e18, 0.6)); band.position.set(0, 2.3, -0.65); this.head.add(band);
+    } else if (L.hat === "miner") {                            // an explorer's helmet with a glowing lamp, goggles pushed up
       this.head.add(dome(m, 0.8, 0, 2.2, -0.65, 0.85));
-      const brim = box(m, 1.5, 0.07, 0.65, 0, 2.2, -1.35); this.head.add(brim);
+      this.head.add(box(m, 1.5, 0.07, 0.65, 0, 2.2, -1.35));
       const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.26, 14), GOLD); lamp.rotation.x = Math.PI / 2; lamp.position.set(0, 2.55, -1.38); this.head.add(lamp);
       const lens = new THREE.Mesh(new THREE.CircleGeometry(0.15, 14), new THREE.MeshStandardMaterial({ color: 0xfff1b0, emissive: 0xffd36a, emissiveIntensity: 3 })); lens.position.set(0, 2.55, -1.52); lens.rotation.y = Math.PI; this.head.add(lens);
-      for (const sx of [-0.3, 0.3]) { const lenz = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.04, 8, 18), mat(0x7a5a2a, 0.5)); lenz.position.set(sx, 2.62, -0.55); lenz.rotation.x = -0.5; this.head.add(lenz); }
-    } else if (L.hat === "bonnet") {                           // wide brim, ribbon, and a plume
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.15, 0.07, 30), m); brim.position.set(0, 2.18, -0.65); brim.rotation.z = 0.08; this.head.add(brim);
-      this.head.add(dome(m, 0.7, 0, 2.2, -0.65, 0.8));
-      const ribbon = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.16, 24), mat(0xe9c46a, 0.5)); ribbon.position.set(0, 2.32, -0.65); this.head.add(ribbon);
-      for (let i = 0; i < 5; i++) {
-        const f = ellipsoid(mat(i % 2 ? 0xd4af37 : 0xc8324b, 0.8), 0.1, 0.55, 0.05, 0.5 + i * 0.12, 2.8 + i * 0.06, -0.7 - i * 0.05);
-        f.rotation.z = -0.5 - i * 0.18; this.head.add(f);
-      }
-    } else {                                                   // newsboy cap
-      this.head.add(dome(m, 0.8, 0, 2.15, -0.65, 0.6));
-      this.head.add(box(m, 0.95, 0.05, 0.5, 0, 2.2, -1.5));
-      this.head.add(ellipsoid(m, 0.08, 0.08, 0.08, 0, 2.6, -0.65));
+      for (const sx of [-0.3, 0.3]) { const lenz = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.04, 8, 18), mat(0x5a3a1a, 0.5)); lenz.position.set(sx, 2.62, -0.55); lenz.rotation.x = -0.5; this.head.add(lenz); }
+    } else if (L.hat === "sunhat") {                           // a big floppy brim and a hibiscus
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.2, 0.05, 32), m); brim.position.set(0, 2.16, -0.65); brim.rotation.z = 0.07; this.head.add(brim);
+      this.head.add(dome(m, 0.7, 0, 2.18, -0.65, 0.8));
+      const ribbon = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.15, 24), mat(0xd8434a, 0.5)); ribbon.position.set(0, 2.3, -0.65); this.head.add(ribbon);
+      for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; const pe = ellipsoid(mat(0xff3a6a, 0.5), 0.2, 0.06, 0.12, 0.62 + Math.cos(a) * 0.18, 2.5, -0.65 + Math.sin(a) * 0.18); pe.rotation.y = -a; this.head.add(pe); }
+      this.head.add(ellipsoid(GOLD, 0.07, 0.07, 0.07, 0.62, 2.55, -0.65));
+    } else {                                                   // a bucket hat
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.86, 0.6, 24), m); body.position.set(0, 2.36, -0.65); this.head.add(body);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.05, 28), m); brim.position.set(0, 2.1, -0.65); this.head.add(brim);
+      this.head.add(dome(m, 0.62, 0, 2.64, -0.65, 0.18));
     }
   }
 

@@ -22,7 +22,7 @@ export function Menu({ settings, onSettings, onSolo, onCouch, extra }: MenuProps
     <div className="menu">
       <div className="card">
         <h1 className="title">HIPPO TYCOON</h1>
-        <p className="tag">Four angry oil barons. One pan. Eat the money.</p>
+        <p className="tag">Four angry oil barons. One geyser. Eat the money.</p>
         <div className="col">
           <button className="btn go" onClick={onSolo}>Solo (vs 3 bots)</button>
           <button className="btn" onClick={onCouch}>Couch (2–4 on one screen)</button>

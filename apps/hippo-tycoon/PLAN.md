@@ -12,14 +12,16 @@ Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (Rust is an
 - **IP, theirs.** The core mechanic (slide, lunge to eat, drops bouncing in a tray) is fine. The look and the names must be our own:
   - Do **not** use the name "Hungry Hungry Hippos", or Hasbro's board look: no four coloured plastic hippos around a white marble tray, no lever-tail press.
   - Do **not** do a Monopoly-man look: no top hat + monocle + white moustache combination (and no top hats at all, to stay clear).
-  - Original character names only (below). Original look: dark oil pan, gaudy derrick offices, tycoon bling.
+  - Original character names only (below). Original look: a jungle island (Kauai / Isla Sorna mood: misty fluted green peaks, palms, tiki torches), a basalt basin fed by an oil geyser, rusting derricks, island-baron bling.
 - **No binary assets.** Hippos, offices, arena and drops are built from three.js primitives in code. Sounds are WebAudio-synthesised (grunts, bellows, chomps). Nothing to license.
 - **Small files.** druids-curse's pain was 2000+ line god-files. Keep every file under ~400 lines; split by concern.
 - **Sim purity.** `src/sim/**` has no DOM, no `console.*`, no `Date.now`/`Math.random` (seeded RNG only), no imports outside `src/sim`. Same input sequence + seed = same state, bit for bit.
 
 ## 1. The game
 
-**Board.** A round oil pan arena seen from above, slightly tilted (iso-ish camera). Four gaudy little "offices" (a derrick, a brass nameplate, a neon dollar sign) at N/E/S/W. Each seat is a tycoon hippo sitting in its office mouth.
+**Board.** A round basalt basin on a jungle island, seen from above, slightly tilted (iso-ish camera). An **oil geyser** in the middle fires the drops out in arcs. Four island outposts (a bamboo fence, a carved nameplate, tiki torches, a rusting derrick, a pump-jack, a stilt lodge) at N/E/S/W; the lodge nearest the camera is left off so it never hides the player. Palms and ferns stay behind and beside the outposts, leaning away from the camera. Each seat is a tycoon hippo sitting in its outpost mouth.
+
+(Art direction, later: first a Victorian-industrial town, then the jungle island. The sim, rules and modes did not change.)
 
 **The cast (seats 0..3, south first).** Names are original; personality comes from build, colour and bling, all primitives:
 - **Baron Gulpington**: big and round, purple pinstripe suit, a gold crown-shaped hard hat, a chunky gold chain, a pinky ring on every pinky. Bellows like a tuba.
