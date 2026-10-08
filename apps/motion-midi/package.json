@@ -8,7 +8,8 @@
     "song": "bun scripts/make-demo-song.ts",
     "bench": "bun bench/bounce.ts",
     "test": "bun test test",
-    "build": "vite build --outDir dist/client"
+    "build": "vite build --outDir dist/client",
+    "desktop:dev": "bunx rustybuns build desktop --dev && bunx rustybuns run desktop"
   },
   "dependencies": {
     "@fontsource/barlow-condensed": "^5.3.0",

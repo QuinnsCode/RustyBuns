@@ -33,9 +33,9 @@ Ship a single binary instead: `bunx rustybuns build desktop` → `dist/<app>-<os
 | **auto-rig** | Drop in a 3D model; it finds a skeleton, skin weights and IK you can drag | Rust vs TypeScript speed ("Race the engines"); posing a model it rigged itself | `bun run build:native` (optional), then `bun run desktop:dev` |
 | **hippo-tycoon** | Four angry oil-baron hippos in a Victorian pan; solo, couch, LAN party, online rooms | A game that is the Cloudflare app and the binary at once; hosting a LAN party | `bun run desktop:dev` (browser: `bun run dev`) |
 | **park-hide-seek** | 3D hide and seek on real Yosemite terrain: campers vs park rangers | LAN multiplayer between two copies of the app; a night hunt with flashlights | `bun run desktop:dev` |
-| **motion-midi** | A synth written in Rust and TS; renders a song and plays it | Rust-vs-TS speed ("Compare engines") | `bun run build:native` (optional), then standard launch |
+| **motion-midi** | A synth written in Rust and TS; renders a song and plays it | Rust-vs-TS speed ("Compare engines") | `bun run build:native` (optional), then `bun run desktop:dev` |
 | **splat-desktop** | SuperSplat 3D Gaussian-splat editor with a folder-based scene library | Big files served from disk, "your files stay local" | `bun run desktop:dev` |
-| **splat-rooms** | Splat hunting game plus an InteriorGS room/object browser | A game that runs on the same stack | `bun scripts/fetch-scenes.ts` (needs `HF_TOKEN`), then standard launch |
+| **splat-rooms** | Splat hunting game plus an InteriorGS room/object browser | A game that runs on the same stack | `bun scripts/fetch-scenes.ts` (needs `HF_TOKEN`), then `bun run desktop:dev` |
 | **splat-spray** | "I spy" game in a dark generated splat room (Three.js + Spark) | Zero-asset game; the easiest visual demo | `bun run dev` (browser) or `bun run desktop:dev` |
 | **spa-example** | RWSDK app on the desktop: world Durable Object, D1 and KV on sqlite | Cloudflare bindings running on a laptop; LAN multiplayer host | See notes below |
 | **example** | Worker-mode test app plus a probe of the sample Rust crate | Worker bundle under Bun | `bun run desktop` |
@@ -85,7 +85,7 @@ bun run desktop:dev          # or `bun run dev` for Play vs AI in a browser
 ```sh
 cd apps/motion-midi
 bun run build:native
-bunx rustybuns build desktop --dev && bunx rustybuns run desktop
+bun run desktop:dev
 bun run bench 1 4 8          # optional: CLI benchmark, Rust 1.6x to 5x faster
 ```
 Hit **Render and play**, then open **Compare engines**.
@@ -103,7 +103,7 @@ Open the folder you put scenes in. Needs WebGPU: use Chrome or Edge (it opens as
 cd apps/splat-rooms
 bun scripts/fetch-scenes.ts --list     # what you have
 bun scripts/fetch-scenes.ts --next 3   # download scenes
-bunx rustybuns build desktop --dev && bunx rustybuns run desktop
+bun run desktop:dev
 ```
 Scenes come from the gated [InteriorGS](https://huggingface.co/datasets/spatialverse/InteriorGS) dataset. Accept its terms, then set `HF_TOKEN` (or `~/.cache/huggingface/token`). They land in `~/Documents/SplatRooms/` (override with `SPLAT_ROOMS_DIR`). A labels-only folder still opens in the room browser. Menu: **Quick hunt**, **Choose a room**, **Room browser**. In a hunt, drag to look, **Space** fires, **Shift-Space** sprays, **P** then click to pick, **Esc** pauses. Real-GPU framerates are the least-verified part, so rehearse on the demo machine.
 

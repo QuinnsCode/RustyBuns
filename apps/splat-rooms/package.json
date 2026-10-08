@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "version": "0.0.1",
-  "scripts": { "build": "vite build --outDir dist/client" },
+  "scripts": {
+    "build": "vite build --outDir dist/client",
+    "desktop:dev": "bunx rustybuns build desktop --dev && bunx rustybuns run desktop"
+  },
   "dependencies": {
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
