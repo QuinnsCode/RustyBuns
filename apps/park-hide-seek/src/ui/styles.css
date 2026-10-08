@@ -15,7 +15,7 @@
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body { font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: #10140f; }
 button { font: inherit; cursor: pointer; border: 1px solid var(--brown-2); background: var(--paper); color: var(--ink); border-radius: 6px; padding: 7px 12px; }
-button:hover:not(:disabled) { background: #fffaf0; }
+button:hover:not(:disabled):not([aria-pressed="true"]) { background: #fffaf0; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 button.primary { background: var(--brown); color: #fdf6e3; border-color: var(--brown); font-weight: 600; }
 button.primary:hover:not(:disabled) { background: #5d4830; }
@@ -51,6 +51,7 @@ h1 span { color: var(--red); }
 .lobby-look { width: 260px; }
 .preview { width: 100%; height: 220px; display: block; background: linear-gradient(#dfe9d2, #f6f0e1); border-radius: 8px; }
 .zones { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.row-btns + .zones { margin-top: 8px; }
 .zones button { text-align: left; padding: 7px 9px; line-height: 1.2; }
 .zones button small, .row-btns button small { display: block; font-size: 11px; opacity: 0.75; }
 .row-btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

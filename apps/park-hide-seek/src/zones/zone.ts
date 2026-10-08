@@ -12,12 +12,30 @@ import elCapitan from "./data/el-capitan.json";
 import yosemiteFalls from "./data/yosemite-falls.json";
 import glacierPoint from "./data/glacier-point.json";
 import mariposaGrove from "./data/mariposa-grove.json";
+import oldFaithful from "./data/old-faithful.json";
+import grandPrismatic from "./data/grand-prismatic.json";
 
-export const ZONES: ZoneData[] = [halfDome, elCapitan, yosemiteFalls, glacierPoint, mariposaGrove] as ZoneData[];
+export const ZONES: ZoneData[] = [halfDome, elCapitan, yosemiteFalls, glacierPoint, mariposaGrove, oldFaithful, grandPrismatic] as ZoneData[];
+
+/** The parks with zones, in lobby order. */
+export const PARKS: { code: string; name: string }[] = [
+  { code: "YOSE", name: "Yosemite" },
+  { code: "YELL", name: "Yellowstone" },
+];
+
+/**
+ * The zones a lobby pick can drop into: "random" is any zone, "random:YELL" any
+ * in that park, otherwise the one zone. Empty when the pick names nothing.
+ */
+export function zonesFor(pick: string): ZoneData[] {
+  if (pick === "random") return ZONES;
+  if (pick.startsWith("random:")) return ZONES.filter((z) => z.park === pick.slice(7));
+  return ZONES.filter((z) => z.id === pick);
+}
 
 export const SCALE = 6;
 
-export type PropKind = "pine" | "sequoia" | "bush" | "boulder" | "tent" | "log" | "cabin" | "outhouse" | "table" | "sign";
+export type PropKind = "pine" | "sequoia" | "bush" | "boulder" | "tent" | "log" | "cabin" | "outhouse" | "table" | "sign" | "geyser" | "pool";
 
 export interface Prop {
   kind: PropKind;
@@ -29,7 +47,7 @@ export interface Prop {
   tall: number;
   rot: number;
   size: number;
-  /** For signposts. */
+  /** For signposts, and the name of a geyser. */
   label?: string;
 }
 
@@ -192,11 +210,27 @@ export class Zone {
       this.add({ kind, x, y, r: kind === "tent" ? 1.4 : kind === "outhouse" ? 0.9 : 1.1, tall: kind === "table" ? 0.8 : 2.2, rot: r() * Math.PI * 2, size: 1 });
       placed++;
     }
-    // Signposts at the named places.
+    // Geyser basins: a cone at each named geyser, a hot pool at each spring.
+    // Neither hides you (they're low), but you can't walk into them.
+    const hot: Prop[] = [];
     for (const m of this.landmarks) {
-      if (!this.inside(m.gx, m.gy, 2) || this.slope(m.gx, m.gy) > CLIFF) continue;
-      this.add({ kind: "sign", x: m.gx, y: m.gy, r: 0.2, tall: 2, rot: r() * Math.PI, size: 1, label: m.name });
+      if ((m.kind !== "geyser" && m.kind !== "spring") || !this.inside(m.gx, m.gy, 6) || !this.free(m.gx, m.gy, 2)) continue;
+      const pool = /pool|spring/i.test(m.name);
+      const size = /grand prismatic|excelsior/i.test(m.name) ? 3 : /old faithful|castle|grand geyser|beehive/i.test(m.name) ? 1.6 : 0.8 + r() * 0.5;
+      const p: Prop = pool ? { kind: "pool", x: m.gx, y: m.gy, r: 2.6 * size, tall: 0, rot: r() * Math.PI * 2, size }
+        : { kind: "geyser", x: m.gx, y: m.gy, r: 1.1 * size, tall: 1.2 * size, rot: r() * Math.PI * 2, size, label: m.name };
+      this.add(p);
+      hot.push(p);
     }
+    // Signposts at the named places, beside the geyser if there is one.
+    for (const m of this.landmarks) {
+      const by = hot.find((p) => p.x === m.gx && p.y === m.gy);
+      const x = by ? m.gx + by.r + 1.5 : m.gx, y = m.gy;
+      if (!this.inside(x, y, 2) || this.slope(x, y) > CLIFF) continue;
+      this.add({ kind: "sign", x, y, r: 0.2, tall: 2, rot: r() * Math.PI, size: 1, label: m.name });
+    }
+    // Nothing grows on the hot ground round them.
+    const scalded = (x: number, y: number) => hot.some((p) => Math.hypot(p.x - x, p.y - y) < p.r + 10);
     // Trees, bushes, boulders and logs, thinning out on steep rock.
     const sequoia = this.data.trees === "sequoia";
     const target = { tree: sequoia ? 160 : 520, bush: 320, boulder: 140, log: 50 };
@@ -210,7 +244,7 @@ export class Zone {
     const clumps = Array.from({ length: 14 }, () => { const a = r() * Math.PI * 2, d = Math.sqrt(r()) * R; return [Math.cos(a) * d, Math.sin(a) * d, 25 + r() * 45] as const; });
     const forest = (x: number, y: number) => clumps.reduce((m, [cx, cy, cr]) => Math.max(m, 1 - Math.hypot(x - cx, y - cy) / cr), 0);
     tries("tree", (x, y, s) => {
-      if (s > 0.9 || r() > 0.15 + forest(x, y) * 0.85) return false;
+      if (s > 0.9 || r() > 0.15 + forest(x, y) * 0.85 || scalded(x, y)) return false;
       const big = sequoia && r() < 0.55;
       const kind: PropKind = big ? "sequoia" : "pine";
       const size = big ? 0.8 + r() * 0.6 : 0.7 + r() * 0.6;
@@ -220,7 +254,7 @@ export class Zone {
       return true;
     });
     tries("bush", (x, y, s) => {
-      if (s > 0.7) return false;
+      if (s > 0.7 || scalded(x, y)) return false;
       const size = 1.1 + r() * 0.7;
       if (!this.free(x, y, size)) return false;
       this.add({ kind: "bush", x, y, r: 0, tall: 1.3 * size, rot: r() * Math.PI * 2, size });
@@ -234,7 +268,7 @@ export class Zone {
       return true;
     });
     tries("log", (x, y, s) => {
-      if (s > 0.4 || !this.free(x, y, 2.5)) return false;
+      if (s > 0.4 || scalded(x, y) || !this.free(x, y, 2.5)) return false;
       this.add({ kind: "log", x, y, r: 0.6, tall: 0.7, rot: r() * Math.PI, size: 0.8 + r() * 0.6 });
       return true;
     });

@@ -29,6 +29,11 @@ const PRECIP = { half: 22, height: 14, rain: 3500, snow: 2200 };
 
 interface Precip { obj: THREE.LineSegments | THREE.Points; pos: Float32Array; n: number; snow: boolean; wind: number }
 
+/** A geyser's steam: a wisp most of the time, a tall column when it goes off. */
+interface Plume { steam: THREE.Mesh; water: THREE.Mesh; size: number; period: number; offset: number }
+/** Seconds a geyser erupts for. */
+const ERUPTS = 14;
+
 export class World3D {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -55,6 +60,7 @@ export class World3D {
   private sway = { uTime: { value: 0 }, uWind: { value: 0 } };
   private fog = new THREE.Fog("#000", 1, 2);
   private clock = new THREE.Clock();
+  private plumes: Plume[] = [];
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -103,6 +109,7 @@ export class World3D {
     const z = zoneById(id);
     this.zone = z;
     this.zoneGroup.clear();
+    this.plumes = [];
     for (const r of this.remotes.values()) this.scene.remove(r.ch.root);
     this.remotes.clear();
     this.zoneGroup.add(this.terrain(z), ...this.props(z));
@@ -116,6 +123,8 @@ export class World3D {
     const colors = new Float32Array(pos.count * 3);
     const r = rng(hashString(z.data.id + ":ground"));
     const grass = new THREE.Color("#6d8a4a"), forest = new THREE.Color("#4d6634"), dirt = new THREE.Color("#8b7a55"), rock = new THREE.Color("#8f8d86"), pale = new THREE.Color("#b9b6ac");
+    // Pale sinter round geysers and hot pools, where nothing grows.
+    const sinter = new THREE.Color("#d9d3c2"), hot = z.props.filter((p) => p.kind === "geyser" || p.kind === "pool");
     const c = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), y = -pos.getZ(i);
@@ -125,6 +134,8 @@ export class World3D {
       if (s > 1.0) c.copy(rock).lerp(pale, Math.min(1, (s - 1) * 0.8));
       else if (s > 0.55) c.copy(dirt).lerp(rock, (s - 0.55) / 0.45);
       else c.copy(grass).lerp(forest, 0.4 + r() * 0.4).lerp(dirt, Math.max(0, s - 0.3));
+      const bare = hot.reduce((m, p) => Math.min(m, Math.hypot(p.x - x, p.y - y) - p.r), Infinity);
+      if (bare < 12) c.lerp(sinter, Math.min(1, (12 - bare) / 6));
       c.offsetHSL(0, 0, (r() - 0.5) * 0.04);
       if (!z.inside(x, y)) c.multiplyScalar(0.75);
       colors.set([c.r, c.g, c.b], i * 3);
@@ -205,6 +216,35 @@ export class World3D {
     for (const p of by.get("outhouse") ?? []) out.push(this.building(z, p, 1.3, 2.3, 1.3, "#6d5034", "#4a3a2a", "Restroom"));
     for (const p of by.get("cabin") ?? []) out.push(this.building(z, p, 7, 3.6, 6, "#7b5636", "#3f4a32", "Ranger Station"));
     for (const p of by.get("sign") ?? []) out.push(this.signpost(z, p));
+    // Geysers: a sinter cone, and steam that's mostly a wisp until it erupts.
+    place(new THREE.ConeGeometry(1.3, 1.2, 10, 1, true).translate(0, 0.5, 0), m("#cfc6ae", { flatShading: true, side: THREE.DoubleSide }), by.get("geyser") ?? [], (p) => [p.size, p.size, p.size], undefined, 0.1);
+    const steam = new THREE.MeshBasicMaterial({ color: "#f4f6f8", transparent: true, opacity: 0.35, depthWrite: false });
+    const water = new THREE.MeshBasicMaterial({ color: "#e4f1f7", transparent: true, opacity: 0.7, depthWrite: false });
+    const column = new THREE.CylinderGeometry(1, 0.35, 1, 10, 1, true).translate(0, 0.5, 0);
+    for (const p of by.get("geyser") ?? []) {
+      const at = toThree(p.x, p.y, z.height(p.x, p.y) + 1.1 * p.size);
+      const s = new THREE.Mesh(column, steam), w = new THREE.Mesh(column, water);
+      s.position.copy(at); w.position.copy(at);
+      out.push(s, w);
+      // Old Faithful keeps its name: about every hour and a half, squeezed into a round.
+      const h = hashString(p.label ?? "");
+      this.plumes.push({ steam: s, water: w, size: p.size, period: /old faithful/i.test(p.label ?? "") ? 90 : 70 + (h % 150), offset: h % 997 });
+    }
+    // Hot pools: deep blue in the middle, rings of orange round the edge.
+    const ring = document.createElement("canvas");
+    ring.width = ring.height = 128;
+    const rg = ring.getContext("2d")!, grad = rg.createRadialGradient(64, 64, 4, 64, 64, 64);
+    for (const [at, col] of [[0, "#1d5fa8"], [0.45, "#3fa6c9"], [0.62, "#9fd4a8"], [0.74, "#e8c75a"], [0.86, "#d9772e"], [1, "rgba(200, 110, 60, 0)"]] as const) grad.addColorStop(at, col);
+    rg.fillStyle = grad; rg.fillRect(0, 0, 128, 128);
+    const poolTex = new THREE.CanvasTexture(ring);
+    poolTex.colorSpace = THREE.SRGBColorSpace;
+    const poolMat = new THREE.MeshStandardMaterial({ map: poolTex, transparent: true, roughness: 0.15, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+    for (const p of by.get("pool") ?? []) {
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(p.r * 1.25, 32).rotateX(-Math.PI / 2), poolMat);
+      disc.position.copy(toThree(p.x, p.y, z.height(p.x, p.y) + 0.12));
+      disc.rotation.y = p.rot;
+      out.push(disc);
+    }
     return out;
   }
 
@@ -359,6 +399,7 @@ export class World3D {
     if (!z || !this.tod) return;
     this.fog.near = this.fogNear; this.fog.far = this.fogFar;
     this.sway.uTime.value += dt;
+    this.erupt();
     const r = v.round;
     if (this.stars) this.stars.position.copy(this.camera.position);
 
@@ -516,10 +557,25 @@ export class World3D {
     }
   }
 
+  /** Geysers on the wall clock, so everyone in a round sees the same eruption. */
+  private erupt() {
+    const now = Date.now() / 1000;
+    for (const g of this.plumes) {
+      const t = (now + g.offset) % g.period;
+      // Up fast, die down slower; a wisp of steam the rest of the time.
+      const k = t < ERUPTS ? Math.min(1, t / 2) * Math.min(1, (ERUPTS - t) / 6) : 0;
+      const wisp = 1 + Math.sin(now * 0.7 + g.offset) * 0.25;
+      g.steam.scale.set(g.size * (0.8 + k * 2.5), g.size * (3 * wisp + k * 28), g.size * (0.8 + k * 2.5));
+      g.water.visible = k > 0.05;
+      g.water.scale.set(g.size * 0.35, g.size * k * 20, g.size * 0.35);
+    }
+  }
+
   /** Lobby: slowly circle the zone. */
   orbit(t: number) {
     const z = this.zone;
     if (!z || !this.tod) return;
+    this.erupt();
     // From up here the whole zone should show, even on a dark night.
     this.fog.near = 250; this.fog.far = 900;
     if (this.tod === "night") this.hemi.intensity = 0.6;

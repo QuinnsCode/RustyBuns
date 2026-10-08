@@ -1,8 +1,8 @@
 # Park Hide & Seek
 
-Hide and seek in a real national park, in 3D. Campers drop into a zone around a famous attraction (Half Dome, El Capitan, Yosemite Falls, Glacier Point, the Mariposa Grove sequoias) and hide. Park rangers come looking, with flashlights after dark. Last the whole hunt and you camped out successfully.
+Hide and seek in a real national park, in 3D. Campers drop into a zone around a famous attraction (Half Dome, El Capitan, Yosemite Falls, Glacier Point, the Mariposa Grove sequoias in Yosemite; Old Faithful and Grand Prismatic in Yellowstone) and hide. Park rangers come looking, with flashlights after dark. Last the whole hunt and you camped out successfully.
 
-- **The ground is real.** Each zone is 2 km of actual Yosemite terrain from public elevation data, shrunk six times in every direction: El Capitan is still a sheer wall, just 150 m tall instead of 900. People, trees and tents stay life-size.
+- **The ground is real.** Each zone is 2 km of actual park terrain from public elevation data, shrunk six times in every direction: El Capitan is still a sheer wall, just 150 m tall instead of 900. People, trees and tents stay life-size.
 - **No find button.** A ranger catches a camper by reaching them. To get there they sweep with a flashlight, listen for footsteps, call out ("Anybody out there?") so nearby campers rustle, and use radio questions that shade the map. Rangers are faster than campers, so a camper who's spotted in the open should run for cover.
 - **The real weather, right now.** By default a round plays in the park's actual conditions and time of day: at 3 pm in Yosemite it's day, after sunset it's flashlights. Rain hides footsteps, fog shortens how far anyone sees, wind sways the bushes and makes rustles hard to place, and a cloudy night has no moon. The lobby can pick day, dusk or night by hand instead.
 - **Find Bigfoot, or don't get caught.** Bigfoot is hiding in the park. Whoever reaches him first ends the round, like catching the snitch: a camper who finds him wins it for every camper still out, a ranger who finds him wins it for the rangers. Otherwise campers just have to last the three minutes.
@@ -58,9 +58,9 @@ All of it is fetched once by scripts and committed, so the game never downloads 
 
 - **Terrain:** `bun scripts/fetch-zones.ts` reads the public [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Terrarium PNGs, mostly USGS 3DEP in the US) around each attraction and writes a 161×161 heightmap per zone (`src/zones/data`, about 70 KB each). It decodes the PNGs itself, with no image library.
 - **Signposts:** named places inside each zone (Diving Board, Lost Arrow Spire, Grizzly Giant…) from [OpenStreetMap](https://www.openstreetmap.org/copyright) via Overpass. Map data © OpenStreetMap contributors, ODbL.
-- **Parks:** `bun scripts/fetch-parks.ts` keeps NPS boundaries and OSM features for eight parks in `src/parks/data`. Zones are placed with them. To add a zone (in any of those parks), add it to `ZONES` in `scripts/fetch-zones.ts`, run the script with its id, and import the JSON in `src/zones/zone.ts`.
+- **Parks:** `bun scripts/fetch-parks.ts` keeps NPS boundaries and OSM features for eight parks in `src/parks/data`. Zones are placed with them. To add a zone (in any of those parks), add it to `ZONES` in `scripts/fetch-zones.ts`, run the script with its id, and import the JSON in `src/zones/zone.ts` (and add the park to `PARKS` there if it's new). Overpass often answers 504; the script retries, so expect to run it more than once.
 
-The props (pines, sequoias, bushes, boulders, logs, a campground, the ranger station) are generated from a seed per zone: every player gets the same park, and nothing is placed on rock too steep to stand on.
+The props (pines, sequoias, bushes, boulders, logs, a campground, the ranger station) are generated from a seed per zone: every player gets the same park, and nothing is placed on rock too steep to stand on. In geyser basins every named geyser gets a sinter cone and every hot spring a pool, with bare ground round them; the geysers erupt on the wall clock (Old Faithful every 90 s), so everyone sees the same eruption.
 
 ## How it works
 

@@ -59,6 +59,8 @@ export class ZoneMap {
       else if (p.kind === "pine" || p.kind === "sequoia") { g.fillStyle = p.kind === "pine" ? "rgba(25, 55, 25, 0.75)" : "rgba(120, 50, 25, 0.85)"; g.beginPath(); g.arc(x, y, Math.max(1.5, (p.kind === "pine" ? 2.2 : 4) * p.size * k), 0, 7); g.fill(); }
       else if (p.kind === "boulder") { g.fillStyle = "rgba(110, 108, 100, 0.9)"; g.beginPath(); g.arc(x, y, Math.max(1, p.r * k), 0, 7); g.fill(); }
       else if (p.kind === "tent") { g.fillStyle = "#e0702b"; g.fillRect(x - 2, y - 2, 4, 4); }
+      else if (p.kind === "pool") { g.fillStyle = "rgba(50, 140, 200, 0.9)"; g.beginPath(); g.arc(x, y, Math.max(2, p.r * k), 0, 7); g.fill(); }
+      else if (p.kind === "geyser") { g.fillStyle = "rgba(235, 230, 215, 0.95)"; g.beginPath(); g.arc(x, y, Math.max(2, p.r * k), 0, 7); g.fill(); }
     }
     this.base = { id: z.data.id, canvas: c };
     return c;
