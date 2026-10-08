@@ -3,6 +3,8 @@ import { ALL_THINGS, buildRoom, roomSlots } from "../src/levels/room.ts";
 import { SceneBuilder } from "../src/levels/scene.ts";
 
 const room = buildRoom();
+// Building a whole room is CPU-bound: ~0.7 s alone, several under a full parallel `bun test`.
+const HEAVY = 30_000;
 
 test("every thing in the room is a findable object with splats", () => {
   expect(room.objects.length).toBe(ALL_THINGS.length);
@@ -57,7 +59,7 @@ test("the room is deterministic and a reasonable size", () => {
   expect(room.count).toBe(buildRoom().count);
   expect(room.count).toBeGreaterThan(50_000);
   expect(room.count).toBeLessThan(900_000);
-});
+}, HEAVY);
 
 test("scenery is untagged, so it can't be picked", () => {
   const b = new SceneBuilder();
@@ -92,4 +94,4 @@ test("shuffling moves things and keeps them apart", async () => {
     if (a.id >= c.id) continue;
     expect(a.center.distanceTo(c.center)).toBeGreaterThan((a.radius + c.radius) * 0.5);
   }
-});
+}, HEAVY);

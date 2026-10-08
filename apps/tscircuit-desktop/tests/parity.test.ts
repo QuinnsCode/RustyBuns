@@ -26,6 +26,8 @@ const wasm = existsSync(wasmPath) ? await loadWasm(readFileSync(wasmPath)) : nul
 
 if (!nativeAvailable) console.warn("[tscircuit-desktop] Rust engine not built: skipping native parity tests. Run `bun native/build.ts` in apps/tscircuit-desktop.");
 if (!wasm) console.warn("[tscircuit-desktop] wasm engine not built: skipping wasm parity tests. `rustup target add wasm32-unknown-unknown`, then `bun native/build.ts`.");
+// Brute-force checks are CPU-bound: ~2 s alone, far more under a full parallel `bun test`.
+const HEAVY = 60_000;
 const withRust = test.skipIf(!nativeAvailable);
 const withWasm = test.skipIf(!wasm);
 
@@ -69,12 +71,12 @@ test("the spatial index is exact: same answer as brute force", () => {
       }
     }
   }
-});
+}, HEAVY);
 
 test("the index skips most pairs on a big board", () => {
   const c = analyze(syntheticBoard(4000, 0.3), 0.2).clearance;
   expect(c.pairs_checked * 50).toBeLessThan(c.pairs_possible);
-});
+}, HEAVY);
 
 for (const [name, els, min] of boards) {
   withRust(`native parity on ${name}`, () => {

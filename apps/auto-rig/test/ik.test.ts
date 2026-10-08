@@ -3,6 +3,9 @@ import { analyze } from "../src/rig/analyze.ts";
 import { gingerbread } from "../src/rig/samples.ts";
 import { IkRig } from "../src/ui/ik.ts";
 
+// Every test analyzes the mesh and runs the solver: ~1 s alone, more under load.
+const HEAVY = 30_000;
+
 const dist = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 function setup() {
@@ -25,7 +28,7 @@ test("a dragged hand reaches its goal and the other tips hold still", () => {
   solveFor(ik);
   expect(dist(ik.worldPosition(hand), goal)).toBeLessThan(0.01);
   for (const [t, p] of others) expect(dist(ik.worldPosition(t), p)).toBeLessThan(0.01);
-});
+}, HEAVY);
 
 test("clasping pulls one hand to the other", () => {
   const { ik, hand } = setup();
@@ -36,7 +39,7 @@ test("clasping pulls one hand to the other", () => {
   ik.moveGoal(hand, 0, 1.3, 0.35);
   solveFor(ik, 200);
   expect(dist(ik.worldPosition(hand), ik.worldPosition(other))).toBeLessThan(0.02);
-});
+}, HEAVY);
 
 test("reset returns to the rest pose", () => {
   const { ik, hand } = setup();
@@ -46,4 +49,4 @@ test("reset returns to the rest pose", () => {
   solveFor(ik);
   ik.reset();
   expect(dist(ik.worldPosition(hand), rest)).toBeLessThan(1e-4);
-});
+}, HEAVY);
