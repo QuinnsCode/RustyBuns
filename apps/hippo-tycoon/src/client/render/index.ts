@@ -37,30 +37,32 @@ export class Renderer {
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
     this.gl.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.gl.shadowMap.enabled = true; this.gl.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.gl.toneMapping = THREE.ACESFilmicToneMapping; this.gl.toneMappingExposure = 1.0;
+    this.gl.toneMapping = THREE.ACESFilmicToneMapping; this.gl.toneMappingExposure = 0.95;
     this.popups = new Popups(overlay);
 
-    // golden hour over a tropical island: teal sky, a warm band at the horizon, green haze in front
+    // a hot, humid dusk: a Miami sunset (indigo, pink, orange) behind a haze of purple-green, neon in the shadows
     const bg = document.createElement("canvas"); bg.width = 4; bg.height = 256;
     const g2 = bg.getContext("2d")!, grad = g2.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0, "#0f3a4a"); grad.addColorStop(0.4, "#3f8a86"); grad.addColorStop(0.72, "#f2b878"); grad.addColorStop(1, "#7a8a5a");
+    grad.addColorStop(0, "#0a0620"); grad.addColorStop(0.35, "#3d1858"); grad.addColorStop(0.6, "#d9437a"); grad.addColorStop(0.74, "#ff9a58"); grad.addColorStop(1, "#1d2a24");
     g2.fillStyle = grad; g2.fillRect(0, 0, 4, 256);
     const bgTex = new THREE.CanvasTexture(bg); bgTex.colorSpace = THREE.SRGBColorSpace;
     this.scene.background = bgTex;
-    this.scene.fog = new THREE.Fog(0x93a67e, 90, 280);
+    this.scene.fog = new THREE.Fog(0x3a3350, 55, 210);
     const pmrem = new THREE.PMREMGenerator(this.gl);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.38;
+    this.scene.environmentIntensity = 0.3;
 
-    this.scene.add(new THREE.HemisphereLight(0xcdeedd, 0x3a4a24, 0.8));
-    const sun = new THREE.DirectionalLight(0xffd29a, 2.9);       // low golden sun from the front-left
-    sun.position.set(-18, 20, 14); sun.castShadow = true;
+    this.scene.add(new THREE.HemisphereLight(0x8a6ab0, 0x16241a, 0.55));
+    const sun = new THREE.DirectionalLight(0xff8a5a, 2.3);       // the low sun, burnt orange
+    sun.position.set(-22, 11, 14); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
     Object.assign(sun.shadow.camera, { left: -24, right: 24, top: 24, bottom: -24, near: 1, far: 80 });
     this.scene.add(sun);
-    const glow = new THREE.PointLight(0xff9a4a, 22, 26, 1.8);     // the geyser lights the pan from within
+    const glow = new THREE.PointLight(0xff9a4a, 26, 26, 1.8);     // the geyser lights the basin from within
     glow.position.set(0, 3.5, 0); this.scene.add(glow);
-    const rim = new THREE.DirectionalLight(0x9fd8ff, 0.7); rim.position.set(14, 9, -18); this.scene.add(rim);
+    const rim = new THREE.DirectionalLight(0x39e6ff, 1.5); rim.position.set(16, 9, -20); this.scene.add(rim);     // cyan from behind
+    const pink = new THREE.PointLight(0xff3d9a, 70, 30, 1.7); pink.position.set(-13, 3, 5); this.scene.add(pink);   // and neon pink from the left
+    const cyan = new THREE.PointLight(0x39e6ff, 55, 30, 1.7); cyan.position.set(13, 3, -3); this.scene.add(cyan);
     this.arena = new Arena();
     void loadFluid().then((f) => this.arena.geyser.setFluid(f));      // the Rust/wasm build if it is there, else the TypeScript twin
     this.scene.add(this.arena.group, this.drops.group, this.fx.points);

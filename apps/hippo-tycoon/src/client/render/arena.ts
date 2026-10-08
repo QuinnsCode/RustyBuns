@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { A_REST, SEATS, WALL_R, seatAngle } from "../../sim/rules.ts";
 import { Geyser } from "./geyser.ts";
 import { Smoke, type Animated } from "./industry.ts";
-import { CLEARING, forest, mountains, rockRim } from "./jungle.ts";
+import { CLEARING, fireflies, forest, lightShafts, mountains, rockRim } from "./jungle.ts";
 import { ruins } from "./ruins.ts";
 import { buildOffice } from "./office.ts";
 import { basalt, dirt, moss } from "./textures.ts";
@@ -16,6 +16,8 @@ export class Arena {
   readonly geyser: Geyser;
   private animated: Animated[] = [];
   private forest!: ReturnType<typeof forest>;
+  private shafts!: ReturnType<typeof lightShafts>;
+  private flies!: ReturnType<typeof fireflies>;
   private mist: Smoke;
 
   constructor() {
@@ -39,7 +41,8 @@ export class Arena {
       g.add(o.group); this.animated.push(...o.animated);
     }
     this.plant();
-    this.mist = new Smoke(Array.from({ length: 7 }, (_, i) => { const a = (i / 7) * Math.PI * 2 + 0.4; return { at: new THREE.Vector3(Math.cos(a) * 46, 1.5, Math.sin(a) * 46), rate: 0.3, size: 14, tint: 0xcfe0cf }; }), 5, 5, 0.1);
+    this.shafts = lightShafts(); this.flies = fireflies(); g.add(this.shafts, this.flies);
+    this.mist = new Smoke(Array.from({ length: 7 }, (_, i) => { const a = (i / 7) * Math.PI * 2 + 0.4; return { at: new THREE.Vector3(Math.cos(a) * 46, 1.5, Math.sin(a) * 46), rate: 0.3, size: 14, tint: 0x8a8ab8 }; }), 5, 5, 0.1);
     g.add(this.mist.group);
   }
 
@@ -57,7 +60,7 @@ export class Arena {
 
   update(t: number, dt: number) {
     for (const a of this.animated) a.update(t);
-    this.forest.update(t);
+    this.forest.update(t); this.shafts.update(t); this.flies.update(t);
     this.geyser.update(t, dt);
     this.mist.update(dt, 0.2);
   }

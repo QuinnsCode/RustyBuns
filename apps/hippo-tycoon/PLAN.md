@@ -12,6 +12,7 @@ Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (its geyser
 - **IP, theirs.** The core mechanic (slide, lunge to eat, drops bouncing in a tray) is fine. The look and the names must be our own:
   - Do **not** use the name "Hungry Hungry Hippos", or Hasbro's board look: no four coloured plastic hippos around a white marble tray, no lever-tail press.
   - Do **not** do a Monopoly-man look: no top hat + monocle + white moustache combination (and no top hats at all, to stay clear).
+  - The current direction is hot, humid and serious: a jungle at a Miami-sunset dusk, 80s crime-drama style (linen suits, mirrored shades, gold chains, neon pink and cyan) with a tense jungle-action mood. Vibe only: no names, characters, creatures, vision modes, logos or music from any film or show.
   - Original character names only (below). Original look: a jungle island (Kauai / Isla Sorna mood: misty fluted green peaks, lush palms and ferns), a lost oil well found overgrown in a clearing, a basalt basin fed by an oil geyser, a rusted derrick or two, island-baron bling. Barely any sign of people.
 - **No binary assets.** Hippos, offices, arena and drops are built from three.js primitives in code. Sounds are WebAudio-synthesised (grunts, bellows, chomps). Nothing to license.
 - **Small files.** druids-curse's pain was 2000+ line god-files. Keep every file under ~400 lines; split by concern.
@@ -23,11 +24,11 @@ Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (its geyser
 
 (Art direction, later: first a Victorian-industrial town, then the jungle island. The sim, rules and modes did not change.)
 
-**The cast (seats 0..3, south first).** Names are original; personality comes from build, colour and bling, all primitives:
-- **Baron Gulpington**: big and round, purple pinstripe suit, a gold crown-shaped hard hat, a chunky gold chain, a pinky ring on every pinky. Bellows like a tuba.
-- **Crude Carl**: tall, narrow, mirrored shades, money-green suit and tie, oil-derrick hard hat, a cigar-shaped drop of oil hanging from his lip.
-- **Big Barrel Bertha**: widest of the four, oil-barrel-orange jacket, a triple gold chain, gold teeth, huge brows. Deepest grunt.
-- **Gusher Gus**: small and wiry, tan, backwards flat cap, gold tooth grill, loud checked jacket. Shrill snort.
+**The cast (seats 0..3, south first).** Names are original; personality comes from build, colour and gear, all primitives:
+- **Baron Gulpington**: big and round, white linen jacket over a teal tee, gold aviators with teal mirror lenses, three chains, gold teeth, a cigar. The boss.
+- **Crude Carl**: tall and narrow, pastel pink jacket over black, black wayfarers, a red bandana, a moustache, a cigar with a drip of oil on his lip.
+- **Big Barrel Bertha**: widest of the four, a black coat with a white fur collar, cat-eye shades, a hot pink tee, triple chain, gold teeth, huge brows. Deepest grunt.
+- **Gusher Gus**: small and wiry, olive camo jacket, a black headband, white-framed mirror shades, two chains, gold teeth. Shrill snort.
 
 Everybody has angry brows. Steam puffs from the ears when sputtering. They snarl (brows drop, teeth show) when someone else eats a gold drop.
 

@@ -46,11 +46,11 @@ export class HippoRig {
     this.group.add(this.body); this.body.add(this.head);
     this.group.scale.setScalar(1.3);
 
-    // linen jacket over an aloha shirt, and a flower lei
+    // a jacket over a tee, lapels, a gold watch
     const [bw, bh, bd] = L.bulk;
     this.body.add(ellipsoid(coat, 1.25 * bw, 0.95 * bh, 1.4 * bd, 0, 0.95 * bh, 0.75));
     this.waistcoat(L, bw, bh);
-    this.lei(L, bh);
+    if (L.fur) this.furCollar(bh);
     // short legs
     for (const x of [-0.7 * bw, 0.7 * bw]) this.body.add(ellipsoid(skin, 0.35, 0.3, 0.45, x, 0.3, 0.1));
     // arms in coat sleeves; a gold ring on the pinky
@@ -80,32 +80,28 @@ export class HippoRig {
     this.teeth(L);
     this.head.add(this.jaw);
     this.eyes(L);
-    this.monocle(L);
+    this.shades(L);
     if (L.cigar) this.cigar();
     if (L.moustache !== null) this.moustache(L);
     this.hat(L);
     this.group.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   }
 
-  /** The aloha shirt: bold flowers scattered over the chest. */
+  /** The tee under the jacket, the lapels, and camo blotches if it is that kind of jacket. */
   private waistcoat(L: Look, bw: number, bh: number) {
-    this.body.add(ellipsoid(mat(L.waistcoat, 0.55), 0.78 * bw, 0.72 * bh, 0.7, 0, 0.9 * bh, -0.4));
-    const pal = [0xff5a7a, 0xffd24a, 0xfff4e0, 0xff9a3a];
-    for (let k = 0; k < 9; k++) {
-      const a = (k / 9) * Math.PI * 2 + this.seat, rr = 0.2 + (k % 3) * 0.17;
-      const f = ellipsoid(mat(pal[(k + this.seat) % 4]!, 0.5), 0.1, 0.1, 0.03, Math.cos(a) * rr * bw, (0.9 + Math.sin(a) * rr * 0.9) * bh, -0.74);
-      this.body.add(f);
-      this.body.add(ellipsoid(GOLD, 0.035, 0.035, 0.03, f.position.x, f.position.y, -0.77));
+    this.body.add(ellipsoid(mat(L.waistcoat, 0.55), 0.7 * bw, 0.72 * bh, 0.7, 0, 0.9 * bh, -0.42));
+    const lapel = mat(L.suit, 0.7);
+    for (const s of [-1, 1]) { const l = box(lapel, 0.28, 1.0 * bh, 0.12, s * 0.5 * bw, 0.95 * bh, -0.72); l.rotation.z = s * 0.22; this.body.add(l); }
+    if (L.camo) {
+      const blot = [0x2a3418, 0x6a5a30, 0x1c2410];
+      for (let k = 0; k < 14; k++) { const a = k * 2.4 + 1; this.body.add(ellipsoid(mat(blot[k % 3]!, 0.9), 0.22, 0.17, 0.06, Math.cos(a) * 0.95 * bw, (0.95 + Math.sin(a * 1.3) * 0.5) * bh, -0.15 + Math.sin(a) * 0.5)); }
     }
   }
 
-  /** A lei of orange, pink and cream blossoms round the neck. */
-  private lei(L: Look, bh: number) {
-    const cols = [L.cravat, 0xfff1d8, 0xff9a3a, 0xff6a9a];
-    for (let k = 0; k < 16; k++) {
-      const a = (k / 16) * Math.PI * 2;
-      this.body.add(ellipsoid(mat(cols[k % 4]!, 0.55), 0.13, 0.11, 0.13, Math.cos(a) * 0.74, 1.3 * bh - Math.max(0, -Math.sin(a)) * 0.35, -0.66 + Math.sin(a) * 0.5));
-    }
+  /** A white fur collar round the neck. */
+  private furCollar(bh: number) {
+    const fur = mat(0xeee6d6, 1);
+    for (let k = 0; k < 14; k++) { const a = (k / 14) * Math.PI * 2; this.body.add(ellipsoid(fur, 0.3, 0.24, 0.3, Math.cos(a) * 0.82, 1.28 * bh, -0.62 + Math.sin(a) * 0.55)); }
   }
 
   private watch(L: Look, bw: number, bh: number, bd: number) {
@@ -152,39 +148,28 @@ export class HippoRig {
     }
   }
 
-  /** A brass-rimmed monocle on the right eye, its chain looping to the waistcoat. */
-  private monocle(L: Look) {
-    const x = 0.5 * L.snout, y = 1.95, z = -1.36;
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.045, 10, 28), GOLD);
-    ring.position.set(x, y, z);
-    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.26, 24), GLASS); lens.position.set(x, y, z - 0.005); lens.rotation.y = Math.PI;
-    const chain = tube(GOLD, [new THREE.Vector3(x + 0.2, y - 0.2, z + 0.02), new THREE.Vector3(x + 0.42, y - 0.5, z + 0.25), new THREE.Vector3(x + 0.55, y - 0.9, z + 0.5), new THREE.Vector3(x + 0.4, y - 1.2, z + 0.4)], 0.018);
-    this.head.add(ring, lens, chain);
+  /** Mirrored shades: the 80s kind, a different frame for each boss. They hide the eyes and keep the glare. */
+  private shades(L: Look) {
+    const frame = new THREE.MeshStandardMaterial({ color: L.frame, metalness: L.frame === 0xe0b030 || L.frame === 0xd8a830 ? 1 : 0.2, roughness: 0.35 });
+    const lens = new THREE.MeshPhysicalMaterial({ color: L.lens, metalness: 1, roughness: 0.04, clearcoat: 1, emissive: L.lens, emissiveIntensity: 0.18 });
+    const w = 0.42 * L.snout, y = 1.96, z = -1.33;
+    const sx = L.shades === "wayfarer" ? [0.5, 0.34] : L.shades === "square" ? [0.46, 0.4] : L.shades === "cateye" ? [0.5, 0.3] : [0.46, 0.44];   // lens width, height
+    for (const s of [-1, 1]) {
+      const lens3 = ellipsoid(lens, sx[0]! * 0.5, sx[1]! * 0.5, 0.07, s * w, y, z);
+      const rim = L.shades === "wayfarer" || L.shades === "square" ? box(frame, sx[0]! + 0.07, sx[1]! + 0.07, 0.06, s * w, y, z + 0.03) : ellipsoid(frame, sx[0]! * 0.5 + 0.04, sx[1]! * 0.5 + 0.04, 0.05, s * w, y, z + 0.03);
+      if (L.shades === "cateye") { rim.rotation.z = -s * 0.2; lens3.rotation.z = -s * 0.2; }
+      this.head.add(rim, lens3);
+    }
+    this.head.add(box(frame, w * 0.9, 0.07, 0.07, 0, y + 0.06, z + 0.02));                                    // the bridge
+    for (const s of [-1, 1]) this.head.add(box(frame, 0.05, 0.06, 0.9, s * (w + sx[0]! * 0.5 + 0.1), y, z + 0.4));   // the arms
   }
 
   private hat(L: Look) {
-    const m = mat(L.hatColor, 0.6);
-    if (L.hat === "panama") {                                  // a straw panama with a dark band
-      this.head.add(dome(m, 0.8, 0, 2.2, -0.65, 0.9));
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.05, 30), m); brim.position.set(0, 2.2, -0.65); this.head.add(brim);
-      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.82, 0.14, 28), mat(0x2a1e18, 0.6)); band.position.set(0, 2.3, -0.65); this.head.add(band);
-    } else if (L.hat === "miner") {                            // an explorer's helmet with a glowing lamp, goggles pushed up
-      this.head.add(dome(m, 0.8, 0, 2.2, -0.65, 0.85));
-      this.head.add(box(m, 1.5, 0.07, 0.65, 0, 2.2, -1.35));
-      const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.26, 14), GOLD); lamp.rotation.x = Math.PI / 2; lamp.position.set(0, 2.55, -1.38); this.head.add(lamp);
-      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.15, 14), new THREE.MeshStandardMaterial({ color: 0xfff1b0, emissive: 0xffd36a, emissiveIntensity: 3 })); lens.position.set(0, 2.55, -1.52); lens.rotation.y = Math.PI; this.head.add(lens);
-      for (const sx of [-0.3, 0.3]) { const lenz = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.04, 8, 18), mat(0x5a3a1a, 0.5)); lenz.position.set(sx, 2.62, -0.55); lenz.rotation.x = -0.5; this.head.add(lenz); }
-    } else if (L.hat === "sunhat") {                           // a big floppy brim and a hibiscus
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.2, 0.05, 32), m); brim.position.set(0, 2.16, -0.65); brim.rotation.z = 0.07; this.head.add(brim);
-      this.head.add(dome(m, 0.7, 0, 2.18, -0.65, 0.8));
-      const ribbon = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.15, 24), mat(0xd8434a, 0.5)); ribbon.position.set(0, 2.3, -0.65); this.head.add(ribbon);
-      for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; const pe = ellipsoid(mat(0xff3a6a, 0.5), 0.2, 0.06, 0.12, 0.62 + Math.cos(a) * 0.18, 2.5, -0.65 + Math.sin(a) * 0.18); pe.rotation.y = -a; this.head.add(pe); }
-      this.head.add(ellipsoid(GOLD, 0.07, 0.07, 0.07, 0.62, 2.55, -0.65));
-    } else {                                                   // a bucket hat
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.86, 0.6, 24), m); body.position.set(0, 2.36, -0.65); this.head.add(body);
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.05, 28), m); brim.position.set(0, 2.1, -0.65); this.head.add(brim);
-      this.head.add(dome(m, 0.62, 0, 2.64, -0.65, 0.18));
-    }
+    if (L.hat !== "bandana") return;                           // a rolled headband, knotted at the back
+    const m = mat(L.hatColor, 0.8);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.095, 8, 32), m); band.rotation.x = Math.PI / 2 + 0.12; band.position.set(0, 2.0, -0.68); band.scale.set(1.04 * L.snout ** 0.3, 0.93, 1); this.head.add(band);
+    this.head.add(ellipsoid(m, 0.15, 0.15, 0.11, 0, 1.98, 0.08));
+    for (const s of [-1, 1]) { const tail = ellipsoid(m, 0.065, 0.32, 0.05, s * 0.14, 1.72, 0.14); tail.rotation.z = s * 0.3; this.head.add(tail); }
   }
 
   /** `lunge` 0..1, `jawOpen` 0..1, `snarl` 0..1 (angry brows, bared teeth). */
