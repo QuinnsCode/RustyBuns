@@ -53,11 +53,12 @@ export function Game({ driver, ctls, muted, onMute, onExit, lobby }: Props) {
       raf = requestAnimationFrame(loop);
       const dt = now - last; last = now;
       controls.beginFrame();
-      for (const seat of driver.mine()) {
-        const c = controls.sample(ctls[seat] ?? ctls[0] ?? ["kbAll", "touch"]);
+      // local play: controls by seat; net: by local player, since the room picks the seats
+      driver.mine().forEach((seat, k) => {
+        const c = controls.sample((driver.kind === "net" ? ctls[k] : ctls[seat]) ?? ctls[0] ?? ["kbAll", "touch"]);
         driver.input(seat, c.move, c.gulp, c.bellow);
         if (c.gulp && driver.kind === "net") renderer.predictGulp(seat, now);
-      }
+      });
       controls.endFrame();
       const f = driver.advance(dt);
       for (const e of f.events) snd.event(e, f.mine);

@@ -1,8 +1,9 @@
 import { DEFAULT_ROUND_SECS, type Difficulty } from "../sim/rules.ts";
 
-export interface Settings { name: string; difficulty: Difficulty; secs: number; muted: boolean }
+/** `players`: how many sit at this machine in a LAN or online game (one socket, that many seats). */
+export interface Settings { name: string; difficulty: Difficulty; secs: number; muted: boolean; players: 1 | 2 }
 const KEY = "hippo-tycoon.settings";
-export const DEFAULTS: Settings = { name: "", difficulty: "normal", secs: DEFAULT_ROUND_SECS, muted: false };
+export const DEFAULTS: Settings = { name: "", difficulty: "normal", secs: DEFAULT_ROUND_SECS, muted: false, players: 1 };
 
 export function loadSettings(): Settings {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") }; } catch { return { ...DEFAULTS }; }

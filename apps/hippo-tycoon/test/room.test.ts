@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { Room } from "../src/engine/room.ts";
+import { MAX_WATCHERS, MSG_BURST, Room, WATCHDOG_MS } from "../src/engine/room.ts";
 import { TickLoop, TICK_MS, MAX_CATCHUP } from "../src/engine/tickLoop.ts";
-import { CLOSE_FULL, CLOSE_REPLACED, CLOSE_VERSION, PROTO_VERSION } from "../src/engine/wire.ts";
+import { CLOSE_FLOOD, CLOSE_FULL, CLOSE_REPLACED, CLOSE_VERSION, PROTO_VERSION } from "../src/engine/wire.ts";
 import { COUNTDOWN_TICKS } from "../src/sim/rules.ts";
 import { FakeCtx, FakeSocket, ManualClock } from "./fakes.ts";
 
@@ -66,12 +66,126 @@ test("join, bot takeover, leave hands the seat back", () => {
   expect(b.last("room")!.host).toBe(1);                // the host moves to the next human
 });
 
-test("a fifth human is told the room is full", () => {
-  const { join } = setup();
-  for (const u of ["a", "b", "c", "d"]) join(u);
-  const e = join("e");
-  expect(e.closed?.code).toBe(CLOSE_FULL);
-  expect(e.last("err")!.msg).toMatch(/full/);
+test("a fifth human watches, can sit when a seat frees, and the gallery has a limit", () => {
+  const { room, join, say, ctx, clock } = setup();
+  const [a, b] = ["a", "b", "c", "d"].map((u) => join(u));
+  const e = join("e", "Eve");
+  expect(e.closed).toBeNull();
+  expect(e.last("hello")!.you).toBe(-1);
+  expect(e.last("room")!.you).toEqual([]);
+  expect(a!.last("room")!.sp).toBe(1);
+  expect(a!.last("room")!.you).toEqual([0]);
+  say(a!, { t: "start" });
+  clock.advance(1000 * 4);
+  expect(e.of("snap").length).toBeGreaterThan(0);        // the gallery sees the round
+  say(e, { t: "in", m: 100, g: 1, h: 0 });
+  clock.advance(500);
+  expect(room.match.seatOf("e")).toBe(-1);               // and cannot drive anything
+  say(e, { t: "start" }); say(e, { t: "seat", n: 1 });   // nor steer, nor take a human's seat
+  expect(room.match.seats[1]!.uid).toBe("b");
+  ctx.sockets = ctx.sockets.filter((s) => s !== b); room.webSocketClose(b!);
+  say(e, { t: "seat", n: 1 });                           // mid-round: a watcher takes over the bot
+  expect(room.match.seatOf("e")).toBe(1);
+  expect(e.last("room")!.you).toEqual([1]);
+  expect(a!.last("room")!.sp).toBe(0);
+  const gallery = Array.from({ length: MAX_WATCHERS }, (_, i) => join(`w${i}`));
+  expect(gallery.every((w) => w.closed === null)).toBe(true);
+  const late = join("late");
+  expect(late.closed?.code).toBe(CLOSE_FULL);
+  expect(late.last("err")!.msg).toMatch(/full/);
+});
+
+test("couch over the network: one socket, two seats, each driven by its own input", () => {
+  const { room, ctx, say, join } = setup();
+  const pair = new FakeSocket(); ctx.sockets.push(pair);
+  room.onConnect(pair, "a", "Ada");
+  say(pair, { t: "hello", v: PROTO_VERSION, k: 2 });
+  const b = join("b", "Bo");
+  expect(pair.last("hello")!.you).toBe(0);
+  expect(pair.last("room")!.you).toEqual([0, 1]);
+  expect(b.last("room")!.you).toEqual([2]);
+  expect(room.match.seats.map((s) => s.name).slice(0, 3)).toEqual(["Ada", "Ada 2", "Bo"]);
+  say(pair, { t: "in", m: 0, g: 0, h: 1, s: 1 });          // the second player readies their own seat
+  expect(room.match.seats.map((s) => s.ready)).toEqual([false, true, false, false]);
+  say(pair, { t: "in", m: 0, g: 0, h: 1 });                // no seat field: the first player
+  expect(room.match.seats[0]!.ready).toBe(true);
+  say(pair, { t: "in", m: 0, g: 0, h: 1, s: 2 });          // not this socket's seat
+  expect(room.match.seats[2]!.ready).toBe(false);
+  say(pair, { t: "hello", v: PROTO_VERSION, k: 1 });       // back to one player: the partner's seat frees
+  expect(room.match.seatOf("a+2")).toBe(-1);
+  expect(pair.last("room")!.you).toEqual([0]);
+  ctx.sockets = ctx.sockets.filter((s) => s !== pair); room.webSocketClose(pair);
+  expect(room.match.humans()).toBe(1);
+});
+
+test("a dropped human comes back to their own seat; the bot kept it warm", () => {
+  const { room, join, say, ctx, clock } = setup();
+  const a = join("a"), b = join("b"); join("c");
+  say(a, { t: "start" });
+  clock.advance(1000 * 4);
+  ctx.sockets = ctx.sockets.filter((s) => s !== b); room.webSocketClose(b);
+  room.match.sim.hippos[1]!.score = 9;
+  const d = join("d");
+  expect(d.last("hello")!.you).toBe(3);                  // not Bo's seat while Bo may come back
+  join("b");
+  expect(room.match.seatOf("b")).toBe(1);
+  expect(room.match.sim.hippos[1]!.score).toBe(9);       // and the fortune the bot kept
+  const p = new FakeSocket(); ctx.sockets.push(p); room.onConnect(p, "p", "Pat");
+  say(p, { t: "hello", v: PROTO_VERSION, k: 2 });        // a couch pair that only half fits... the room is full
+  expect(p.last("hello")!.you).toBe(-1);
+  ctx.sockets = ctx.sockets.filter((s) => s !== d); room.webSocketClose(d);
+  say(p, { t: "seat", n: 3 });
+  expect(room.match.seatOf("p")).toBe(3);
+});
+
+test("per-seat bot difficulty: only the host sets it, and the room frame carries it", () => {
+  const { room, join, say } = setup();
+  const a = join("a"), b = join("b");
+  say(b, { t: "cfg", n: 2, diff: "hard" });
+  expect(room.match.cfg.bots[2]).toBe("normal");
+  say(a, { t: "cfg", n: 2, diff: "hard" });
+  say(a, { t: "cfg", n: 3, diff: "easy" });
+  expect(room.match.cfg.bots).toEqual(["normal", "normal", "hard", "easy"]);
+  expect(b.last("room")!.bd).toEqual(["normal", "normal", "hard", "easy"]);
+  say(a, { t: "cfg", diff: "easy" });                    // "all bots" sets every seat
+  expect(b.last("room")!.bd).toEqual(["easy", "easy", "easy", "easy"]);
+});
+
+test("flood: a socket over its message budget is closed and its seat freed; a busy player is not", () => {
+  const { room, join, say, clock, errors } = setup();
+  const a = join("a"), b = join("b");
+  for (let i = 0; i < 30 * 10; i++) { say(a, { t: "in", m: i % 200 - 100, g: i % 7 === 0 ? 1 : 0, h: 0 }); if (i % 15 === 0) say(a, { t: "ping", n: i }); clock.advance(1000 / 30); }
+  expect(a.closed).toBeNull();                           // 30 moves a second for ten seconds, plus pings
+  for (let i = 0; i < MSG_BURST + 5; i++) say(b, { t: "ping", n: i });
+  expect(b.closed?.code).toBe(CLOSE_FLOOD);
+  expect(b.last("err")!.msg).toMatch(/Too many/);
+  expect(room.match.seatOf("b")).toBe(-1);
+  const pongs = b.of("pong").length;
+  say(b, { t: "ping", n: 1 });
+  expect(b.of("pong").length).toBe(pongs);               // nothing more counts
+  expect(errors.length).toBe(1);                         // reported once
+});
+
+test("watchdog: a dead tick loop is revived by the storage alarm while players are seated", () => {
+  const { room, join, ctx, clock, errors } = setup();
+  const a = join("a");
+  expect(ctx.alarmAt).toBe(clock.now() + WATCHDOG_MS);
+  clock.advance(500);
+  clock.dropAll();                                       // the timer is lost: the loop is dead
+  const n = a.of("snap").length;
+  clock.advance(5000);
+  expect(a.of("snap").length).toBe(n);
+  room.alarm();
+  expect(errors.length).toBe(1);
+  expect(ctx.alarmAt).toBe(clock.now() + WATCHDOG_MS);   // and the next check is set
+  clock.advance(2000);
+  expect(a.of("snap").length).toBeGreaterThan(n);
+  room.alarm();                                          // a healthy loop is left alone
+  expect(errors.length).toBe(1);
+  ctx.sockets = []; room.webSocketClose(a);
+  ctx.alarmAt = null;
+  room.alarm();
+  expect(ctx.alarmAt).toBeNull();                        // nobody seated: the alarms lapse
 });
 
 test("the same player from a second tab replaces the first and keeps the seat", () => {
@@ -93,7 +207,7 @@ test("only the host steers the room", () => {
   say(b, { t: "cfg", secs: 90 });
   expect(room.match.cfg.secs).toBe(60);
   say(a, { t: "cfg", secs: 90, diff: "hard" });
-  expect(room.match.cfg).toEqual({ secs: 90, difficulty: "hard" });
+  expect(room.match.cfg).toEqual({ secs: 90, difficulty: "hard", bots: ["hard", "hard", "hard", "hard"] });
   say(a, { t: "start" });
   expect(room.match.phase).toBe("countdown");
 });
@@ -189,4 +303,35 @@ test("tick loop: catch-up is capped after a stall, then steady", () => {
   const before = steps;
   clock.advance(TICK_MS * 2);
   expect(steps - before).toBeLessThanOrEqual(MAX_CATCHUP * 2 + 2);   // a capped burst, not 150 ticks
+});
+
+test("eviction: couch pairs and rejoins go back to the seats they held, whatever order the sockets wake in", async () => {
+  const { ctx, room, join, say, clock } = setup();
+  const pair = new FakeSocket(); ctx.sockets.push(pair);
+  room.onConnect(pair, "a", "Ada");
+  say(pair, { t: "hello", v: PROTO_VERSION, k: 2 });
+  join("b", "Bo"); join("c"); join("d");
+  expect(join("e").last("hello")!.you).toBe(-1);
+  say(pair, { t: "start" });
+  clock.advance(1000 * 5);
+  await Promise.resolve();
+  ctx.sockets.reverse();
+  const again = new Room(ctx, { clock: new ManualClock(), seed: 1 });
+  await again.restore();
+  expect(["a", "a+2", "b", "c", "d", "e"].map((u) => again.match.seatOf(u))).toEqual([0, 1, 2, 3, -1, -1]);
+});
+
+test("scores persist at the podium; a round cut short by an eviction replays from its countdown", async () => {
+  const { ctx, room, join, say, clock } = setup();
+  const a = join("a");
+  say(a, { t: "cfg", secs: 30 }); say(a, { t: "start" });
+  clock.advance(1000 * 40);
+  expect(room.match.phase).toBe("podium");
+  await Promise.resolve();
+  const scores = room.match.sim.hippos.map((h) => h.score);
+  expect(scores.some((x) => x !== 0)).toBe(true);
+  const again = new Room(ctx, { clock: new ManualClock() });
+  await again.restore();
+  expect(again.match.phase).toBe("podium");
+  expect(again.match.sim.hippos.map((h) => h.score)).toEqual(scores);
 });

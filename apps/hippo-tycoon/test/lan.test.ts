@@ -34,9 +34,9 @@ class Client {
   msgs: ServerMsg[] = [];
   closed: { code: number; reason: string } | null = null;
   private ws: WebSocket;
-  constructor(url: string, headers: Record<string, string> = {}, hello = PROTO_VERSION) {
+  constructor(url: string, headers: Record<string, string> = {}, hello = PROTO_VERSION, k = 1) {
     this.ws = new WebSocket(url.replace("http", "ws"), { headers } as never);
-    this.ws.onopen = () => this.send({ t: "hello", v: hello });
+    this.ws.onopen = () => this.send(k > 1 ? { t: "hello", v: hello, k } : { t: "hello", v: hello });
     this.ws.onmessage = (e) => this.msgs.push(JSON.parse(String(e.data)));
     this.ws.onclose = (e) => { this.closed = { code: e.code, reason: e.reason }; };
   }
@@ -52,10 +52,12 @@ test("LAN party: host and guests share one ticking world", async () => {
     const cookie = (await fetch(`${url}/?token=${token}`, { redirect: "manual" })).headers.get("set-cookie")!;
     const post = (body: object) => fetch(`${url}/__rb/host`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()) as Promise<any>;
 
-    // the host's own page: local identity, seat 0
-    const host = new Client(`${url}/ws`, { cookie });
+    // the host's own page: local identity, seat 0, named from the menu rather than the OS username
+    const host = new Client(`${url}/ws?name=Hippo%20Host`, { cookie });
     await host.until(() => host.of("hello").length);
     expect(host.of("hello")[0]).toMatchObject({ you: 0 });
+    await host.until(() => host.of("room").length);
+    expect(host.of("room").at(-1)!.seats[0]!.n).toBe("Hippo Host");
 
     // closed until the host opens it, then guests are let in on the app's wire version
     const early = new Client(`${url}/ws?join=pw&uid=g0&name=Early&v=${LAN_VERSION}`);
@@ -73,11 +75,18 @@ test("LAN party: host and guests share one ticking world", async () => {
     expect(old.of("err")[0]!.msg).toMatch(/protocol/);
 
     const g1 = new Client(`${url}/ws?join=pw&uid=g1&name=Guest%20One&v=${LAN_VERSION}`);
-    const g2 = new Client(`${url}/ws?join=pw&uid=g2&name=Guest%20Two&v=${LAN_VERSION}`);
-    await g1.until(() => g1.of("hello").length); await g2.until(() => g2.of("hello").length);
-    expect(new Set([g1.of("hello")[0]!.you, g2.of("hello")[0]!.you, 0]).size).toBe(3);   // three humans, three seats
-    await host.until(() => host.of("room").at(-1)?.seats.filter((s) => s.h).length === 3);
-    expect(host.of("room").at(-1)!.seats.map((s) => s.n)).toContain("Guest One");
+    // guest two brings a couch partner on the same socket: two seats
+    const g2 = new Client(`${url}/ws?join=pw&uid=g2&name=Guest%20Two&v=${LAN_VERSION}`, {}, PROTO_VERSION, 2);
+    await g1.until(() => g1.of("hello").length); await g2.until(() => g2.of("room").at(-1)?.you.length === 2);
+    const pair = g2.of("room").at(-1)!.you;
+    expect(new Set([g1.of("hello")[0]!.you, ...pair, 0]).size).toBe(4);   // four humans, four seats
+    await host.until(() => host.of("room").at(-1)?.seats.filter((s) => s.h).length === 4);
+    expect(host.of("room").at(-1)!.seats.map((s) => s.n)).toEqual(expect.arrayContaining(["Guest One", "Guest Two", "Guest Two 2"]));
+    // a fifth human (a third guest) watches instead of being turned away
+    const g3 = new Client(`${url}/ws?join=pw&uid=g3&name=Guest%20Three&v=${LAN_VERSION}`);
+    await g3.until(() => g3.of("hello").length);
+    expect(g3.of("hello")[0]!.you).toBe(-1);
+    await host.until(() => host.of("room").at(-1)?.sp === 1);
 
     // the host (first human) starts a short round; every client sees it tick
     host.send({ t: "cfg", secs: 30 });
@@ -95,11 +104,16 @@ test("LAN party: host and guests share one ticking world", async () => {
     const last = g1.of("snap").at(-1)!;
     expect(last.hp[1]![0]).toBeGreaterThan(0);        // guest one slid right: input crossed the LAN
     expect(last.dr.length).toBeGreaterThan(0);        // and the drops are dripping
+    // the couch partner drives their own seat over the shared socket
+    g2.send({ t: "in", m: -100, g: 0, h: 0, s: pair[1] });
+    await g2.until(() => (g2.of("snap").at(-1)?.hp[pair[1]!]?.[0] ?? 0) < 0);
+    expect(g3.of("snap").length).toBeGreaterThan(0);  // and the watcher sees it all
 
-    // a guest leaves: the seat goes back to a bot, the others are told
+    // a guest leaves: both their seats go back to bots, the others are told
     g2.close();
     await host.until(() => host.of("room").at(-1)?.seats.filter((s) => s.h).length === 2);
-    expect((await (await fetch(`${url}/__rb/info`, { headers: { cookie } })).json() as any).guests.connected).toBe(1);
+    expect((await (await fetch(`${url}/__rb/info`, { headers: { cookie } })).json() as any).guests.connected).toBe(2);
+    g3.close();
 
     // stop hosting closes the door to new guests; the connected one keeps playing
     await post({ join: null, listen: { hostname: "127.0.0.1" } });

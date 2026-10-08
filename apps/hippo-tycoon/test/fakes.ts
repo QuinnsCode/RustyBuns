@@ -17,9 +17,11 @@ export class FakeSocket implements EngineSocket {
 export class FakeCtx implements EngineCtx {
   sockets: FakeSocket[] = [];
   store = new Map<string, unknown>();
+  alarmAt: number | null = null;
   storage = {
     get: async <T>(k: string) => structuredClone(this.store.get(k)) as T | undefined,
     put: async (k: string, v: unknown) => { this.store.set(k, structuredClone(v)); },
+    setAlarm: async (at: number) => { this.alarmAt = at; },
   };
   getWebSockets() { return this.sockets.filter((s) => !s.closed); }
 }
@@ -42,4 +44,6 @@ export class ManualClock implements Clock {
     this.t = end;
   }
   pending() { return this.q.length; }
+  /** Lose every scheduled callback, as if the platform dropped the timers. */
+  dropAll() { this.q = []; }
 }

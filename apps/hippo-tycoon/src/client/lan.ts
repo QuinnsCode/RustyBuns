@@ -54,8 +54,12 @@ export function lanUrl(address: string): string | null {
 export const lanSocket = (address: string, code: string, name: string) =>
   worldSocket(lanUrl(address)!, { join: code, uid: playerId(), name, v: LAN_VERSION });
 
-/** The host's own page talks to its own world: same origin, the host identity is vouched. */
-export const ownWorldSocket = () => worldSocket("/ws");
+/**
+ * The host's own page talks to its own world: same origin, the host identity is
+ * vouched. The vouched name is the OS username, so the page passes the menu's
+ * name, which the world takes from the host's own page only.
+ */
+export const ownWorldSocket = (name: string) => worldSocket("/ws", { name });
 
 /** Online room: the Worker vouches the identity it validates from this query. */
 export const onlineSocket = (room: string, name: string) => worldSocket("/ws", { room, uid: playerId(), name });
