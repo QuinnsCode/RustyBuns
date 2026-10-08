@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CLIFF, SCALE, ZONES, zoneById, type Zone } from "../src/zones/zone.ts";
+import { CLIFF, PARKS, SCALE, ZONES, zoneById, zonesFor, type Zone } from "../src/zones/zone.ts";
 import { MOVE, canSee, clearLine, step, type Body } from "../src/hunt/sim.ts";
 import { HUNT, Hunt, circleAt, dropOk, parseMsg } from "../src/hunt/game.ts";
 import { fits, radioGrid, toKm } from "../src/clues.ts";
@@ -35,6 +35,10 @@ describe.each(ZONES.map((d) => [d.id] as const))("%s", (id) => {
     let ok = 0;
     for (let k = 0; k < 200; k++) { const a = k * 2.4, d = Math.sqrt(k / 200) * z.R; if (dropOk(z, Math.cos(a) * d, Math.sin(a) * d)) ok++; }
     expect(ok).toBeGreaterThan(50);
+  });
+
+  test("landmarks are where they are, not all piled at the centre", () => {
+    expect(z.data.landmarks.every((m) => Number.isFinite(m.x) && Number.isFinite(m.y))).toBe(true);
   });
 
   test("props: plenty of bushes to hide in, every one inside the zone", () => {
@@ -355,6 +359,33 @@ test("bots play a whole match in every zone", () => {
     expect(g.phase).toBe("over");
   }
 }, 120_000);
+
+test("lobby picks: any park, any zone in one park, or one zone", () => {
+  for (const p of PARKS) expect(zonesFor(`random:${p.code}`).length).toBeGreaterThan(0);
+  expect(zonesFor("random")).toEqual(ZONES);
+  expect(zonesFor("random:YELL").every((z) => z.park === "YELL")).toBe(true);
+  expect(zonesFor("random:NOPE")).toEqual([]);
+  const g = new Room(5).game, now = 1_000_000;
+  g.join("h", "Host", now, { host: true });
+  g.join("b", "Bo", now);
+  g.handle("h", { t: "settings", zone: "random:NOPE" }, now);
+  expect(g.zonePick).toBe("random");
+  g.handle("h", { t: "settings", zone: "random:YELL" }, now);
+  expect(g.zonePick).toBe("random:YELL");
+  g.handle("h", { t: "start" }, now);
+  expect(zoneById(g.round!.zone).data.park).toBe("YELL");
+});
+
+test("Yellowstone's geyser basins have geysers, hot pools and bare ground round them", () => {
+  const of = zoneById("old-faithful"), gp = zoneById("grand-prismatic");
+  expect(of.props.some((p) => p.kind === "geyser" && p.label === "Old Faithful")).toBe(true);
+  expect(gp.props.some((p) => p.kind === "pool")).toBe(true);
+  for (const z of [of, gp]) {
+    const hot = z.props.filter((p) => p.kind === "geyser" || p.kind === "pool");
+    const trees = z.props.filter((p) => p.kind === "pine");
+    expect(trees.every((t) => hot.every((h) => Math.hypot(h.x - t.x, h.y - t.y) >= h.r + 10))).toBe(true);
+  }
+});
 
 test("parseMsg rejects junk from the wire", () => {
   expect(parseMsg(null)).toBeNull();

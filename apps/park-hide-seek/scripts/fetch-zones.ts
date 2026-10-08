@@ -23,6 +23,8 @@ const ZONES: ZoneSpec[] = [
   { id: "yosemite-falls", park: "yose", name: "Yosemite Falls", blurb: "The valley floor under the tallest falls in the park", lat: 37.749, lon: -119.5966, trees: "pine" },
   { id: "glacier-point", park: "yose", name: "Glacier Point", blurb: "The rim, 1,000 m above the valley", lat: 37.7306, lon: -119.5738, trees: "pine" },
   { id: "mariposa-grove", park: "yose", name: "Mariposa Grove", blurb: "Giant sequoias, some 3,000 years old", lat: 37.511, lon: -119.601, trees: "sequoia" },
+  { id: "old-faithful", park: "yell", name: "Old Faithful", blurb: "The Upper Geyser Basin: steaming vents, boardwalks, lodgepole pines", lat: 44.4625, lon: -110.8275, trees: "pine" },
+  { id: "grand-prismatic", park: "yell", name: "Grand Prismatic", blurb: "Midway Geyser Basin, the rainbow spring and the Firehole River", lat: 44.5251, lon: -110.8382, trees: "pine" },
 ];
 
 /** Half-width of a zone on the ground, in real metres. */
@@ -103,19 +105,20 @@ async function elevation(lon: number, lat: number): Promise<number> {
 async function namedFeatures(z: ZoneSpec): Promise<{ name: string; kind: Landmark["kind"]; lat: number; lon: number; ele?: number }[]> {
   const around = `(around:${REAL_RADIUS * 0.95},${z.lat},${z.lon})`;
   const q = `[out:json][timeout:60];(
-    node["name"]["natural"~"^(peak|waterfall|tree|rock|cliff|saddle|spring|cave_entrance|arch)$"]${around};
+    node["name"]["natural"~"^(peak|waterfall|tree|rock|cliff|saddle|spring|hot_spring|geyser|cave_entrance|arch)$"]${around};
     node["name"]["waterway"="waterfall"]${around};
     node["name"]["tourism"~"^(viewpoint|attraction|picnic_site|camp_site)$"]${around};
     node["name"]["historic"]${around};
-  );out tags;`;
+  );out;`;
   for (let i = 0; i < 5; i++) {
     const r = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: new URLSearchParams({ data: q }), headers: { "user-agent": "rustybuns-park-hide-seek/0.1" } });
     if (r.ok) {
       const j = await r.json() as { elements: { lat: number; lon: number; tags: Record<string, string> }[] };
-      return j.elements.map((e) => {
+      // USGS "unnamed geyser" codes (UNNG-MGB-9) make poor signposts.
+      return j.elements.filter((e) => !/^UNNG/.test(e.tags.name)).map((e) => {
         const t = e.tags;
-        const kind: Landmark["kind"] = t.natural === "peak" ? "peak" : t.natural === "waterfall" || t.waterway === "waterfall" ? "falls"
-          : t.natural === "spring" ? "spring" : t.natural === "arch" ? "arch" : t.natural === "cave_entrance" ? "cave" : "view";
+        const kind: Landmark["kind"] = t.natural === "peak" ? "peak" : t.natural === "geyser" ? "geyser" : t.natural === "waterfall" || t.waterway === "waterfall" ? "falls"
+          : t.natural === "spring" || t.natural === "hot_spring" ? "spring" : t.natural === "arch" ? "arch" : t.natural === "cave_entrance" ? "cave" : "view";
         const ele = Number.parseFloat(t.ele ?? "");
         return { name: t.name, kind, lat: e.lat, lon: e.lon, ...(ele ? { ele: Math.round(ele) } : {}) };
       });
@@ -144,6 +147,8 @@ async function build(z: ZoneSpec): Promise<ZoneData> {
     .map((m) => ({ ...m, x: Math.round((m.x - px) * 1000), y: Math.round((m.y - py) * 1000) }))
     .filter((m) => Math.hypot(m.x, m.y) < REAL_RADIUS * 0.95);
   const near = (await namedFeatures(z)).map(({ lat, lon, ...m }) => ({ ...m, x: Math.round((lon - z.lon) * mPerDegLon), y: Math.round((lat - z.lat) * mPerDegLat) }));
+  // The park's start is often a landmark in its own right (Old Faithful): keep what it is.
+  for (const m of fromPark) if (m.kind === "start") m.kind = near.find((f) => f.name === m.name)?.kind ?? m.kind;
   // Dedupe by name, park data first; keep it to signposts a player can learn.
   const seen = new Set<string>();
   const landmarks = [...fromPark, ...near].filter((m) => !seen.has(m.name) && seen.add(m.name)).slice(0, 24);

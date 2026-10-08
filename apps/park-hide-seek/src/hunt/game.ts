@@ -14,7 +14,7 @@
 import { rng, type Pt } from "../geo.ts";
 import { cellAt, type Grid } from "../grid.ts";
 import { NO_ASKS, RADIO, askBlocked, answerText, parseAsk, radioGrid, resolve, toKm, type Ask, type AskKind, type Clue, type RadioState } from "../clues.ts";
-import { CLIFF, ZONES, zoneById, type Zone } from "../zones/zone.ts";
+import { CLIFF, zoneById, zonesFor, type Zone } from "../zones/zone.ts";
 import { MOVE, TAG_REACH, canSee, clearSky, resolve as pushOut, soundJitter, stepReach, type Body, type Role, type Sky, type TimeOfDay } from "./sim.ts";
 import { describe, type Weather } from "../weather.ts";
 
@@ -140,7 +140,7 @@ export interface View {
   now: number;
   endsAt: number;
   zone: string;
-  /** The lobby's choice: a zone id or "random". */
+  /** The lobby's choice: a zone id, "random" (any park) or "random:YELL" (any zone in that park). */
   zonePick: string;
   /** The lobby's time of day: what's played with live weather off, or if it can't be fetched. */
   tod: TimeOfDay;
@@ -229,7 +229,7 @@ export class Hunt {
 
   constructor(seed = Date.now()) { this.rand = rng(seed); }
 
-  zone(): Zone { return zoneById(this.round?.zone ?? (this.zonePick === "random" ? ZONES[0].id : this.zonePick)); }
+  zone(): Zone { return zoneById(this.round?.zone ?? zonesFor(this.zonePick)[0].id); }
   /** The round's conditions, or the lobby's while the live weather is on its way. */
   sky(): Sky { return this.round?.sky ?? clearSky(this.tod); }
   radioGrid(z = this.zone()): Grid {
@@ -279,7 +279,7 @@ export class Hunt {
       case "look": p.look = m.look; this.touch(); return;
       case "settings":
         if (!host || this.phase !== "lobby") return;
-        if (m.zone && (m.zone === "random" || ZONES.some((z) => z.id === m.zone))) this.zonePick = m.zone;
+        if (m.zone && zonesFor(m.zone).length) this.zonePick = m.zone;
         if (m.tod === "day" || m.tod === "dusk" || m.tod === "night") this.tod = m.tod;
         if (typeof m.live === "boolean") this.live = m.live;
         if (m.laps === 1 || m.laps === 2) this.laps = m.laps;
@@ -337,7 +337,8 @@ export class Hunt {
     const online = this.players.filter((p) => p.online);
     if (n >= this.schedule.length || online.length < 2) { this.finish(); return; }
     const rangers = this.schedule[n].filter((id) => online.some((p) => p.id === id));
-    const zone = this.zonePick === "random" ? ZONES[Math.floor(this.rand() * ZONES.length)].id : this.zonePick;
+    const pool = zonesFor(this.zonePick);
+    const zone = pool[Math.floor(this.rand() * pool.length)].id;
     const z = zoneById(zone);
     const actors = new Map<string, Actor>();
     for (const p of online) {
