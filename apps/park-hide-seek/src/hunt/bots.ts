@@ -4,18 +4,21 @@
 // Ranger: sweep bush to bush (preferring wherever the radio says campers could
 // be), call out now and then, run to rustles and footsteps, chase what it sees.
 // Camper: drop somewhere bushy, crouch in a bush, bolt when a ranger gets close.
+// Bigfoot: everyone runs for him once they see him; rangers (and the bolder
+// campers, later in the hunt) search the bushes where the circle is closing.
 
 import { rng, type Pt } from "../geo.ts";
 import { cellAt } from "../grid.ts";
 import { allAsks, possible, resolve, toKm, type Clue } from "../clues.ts";
 import { zoneById, type Prop, type Zone } from "../zones/zone.ts";
 import { step, wrap, type Body, type MoveInput } from "./sim.ts";
-import { circleAt, type BotLevel, type Hunt, type Msg, type View } from "./game.ts";
+import { circleAt, closed, type BotLevel, type Hunt, type Msg, type View } from "./game.ts";
 
-const LEVEL: Record<BotLevel, { react: number; callEvery: number; radio: boolean; panic: number; sweep: number }> = {
-  easy: { react: 900, callEvery: 22, radio: false, panic: 7, sweep: 2.5 },
-  normal: { react: 450, callEvery: 14, radio: true, panic: 12, sweep: 3.5 },
-  hard: { react: 250, callEvery: 11, radio: true, panic: 17, sweep: 4.5 },
+// bold: the chance a camper bot goes looking for Bigfoot once the circle is closing.
+const LEVEL: Record<BotLevel, { react: number; callEvery: number; radio: boolean; panic: number; sweep: number; bold: number }> = {
+  easy: { react: 900, callEvery: 22, radio: false, panic: 7, sweep: 2.5, bold: 0.15 },
+  normal: { react: 450, callEvery: 14, radio: true, panic: 12, sweep: 3.5, bold: 0.45 },
+  hard: { react: 250, callEvery: 11, radio: true, panic: 17, sweep: 4.5, bold: 0.75 },
 };
 
 export class HuntBot {
@@ -32,6 +35,7 @@ export class HuntBot {
   /** Bushes to check round a rustle or footstep, nearest first. */
   private search: Prop[] = [];
   private fleeUntil = 0;
+  private bold = false;
   private stuck = { x: 0, y: 0, at: 0, detourUntil: 0, dir: 0 };
   private lastTick = 0;
 
@@ -72,6 +76,7 @@ export class HuntBot {
     this.roundId = id;
     this.body = null; this.goal = null; this.running = false; this.crouching = false;
     this.visited.clear(); this.heard.clear(); this.search = []; this.fleeUntil = 0;
+    this.bold = this.rand() < LEVEL[this.level].bold;
     this.nextCall = now + 8000 + this.rand() * 6000;
     this.nextThink = now + 1500 + this.rand() * 4000;
   }
@@ -137,16 +142,31 @@ export class HuntBot {
     }
     if (now < this.fleeUntil) return;
     this.running = false;
-    // The search area is closing: get inside the final circle before it reaches us.
-    const c = r.circle;
-    const inFinal = (x: number, y: number) => !c || Math.hypot(x - c.x1, y - c.y1) < c.r1 - 3;
+    if (r.bigfoot && !r.bigfoot.foundBy) { this.goal = [r.bigfoot.x, r.bigfoot.y]; this.running = true; this.crouching = false; return; }
+    // Bold campers go looking once the circle is halfway in, sweeping bushes round its middle
+    // (it closes on Bigfoot, so the middle is the best guess).
+    const c0 = r.circle;
+    if (this.bold && c0 && closed(r.huntStartedAt, now) > 0.5) {
+      const k0 = circleAt(c0, now);
+      for (const p of z.near(b.x, b.y, 3)) if (p.kind === "bush" && Math.hypot(p.x - b.x, p.y - b.y) < 3) this.visited.add(p);
+      const near = (g: Pt) => Math.hypot(g[0] - k0.x, g[1] - k0.y) <= k0.r * 0.5;
+      if (!this.goal || !near(this.goal) || Math.hypot(this.goal[0] - b.x, this.goal[1] - b.y) < 1.2) {
+        const target = this.bestBush(z, b, (p) => (this.visited.has(p) || !near([p.x, p.y]) ? Infinity : Math.hypot(p.x - b.x, p.y - b.y) + this.rand() * 6), 250);
+        if (target) this.goal = [target.x, target.y];
+      }
+      this.crouching = false;
+      return;
+    }
+    // The search area is closing: get well inside it before it reaches us.
+    const c = r.circle, kc = c && circleAt(c, now);
+    const inFinal = (x: number, y: number) => !kc || Math.hypot(x - kc.x, y - kc.y) < kc.r * 0.6;
     if (c && !inFinal(b.x, b.y)) {
       const k = circleAt(c, now);
       const margin = k.r - Math.hypot(b.x - k.x, b.y - k.y);
-      if (margin < 25 || now > c.from) {
+      if (margin < 25 || closed(r.huntStartedAt, now) > 0) {
         if (!this.goal || !inFinal(this.goal[0], this.goal[1])) {
           const target = this.bestBush(z, b, (p) => (inFinal(p.x, p.y) ? Math.hypot(p.x - b.x, p.y - b.y) + this.rand() * 10 : Infinity), 250);
-          this.goal = target ? [target.x, target.y] : [c.x1, c.y1];
+          this.goal = target ? [target.x, target.y] : [kc!.x, kc!.y];
         }
         this.crouching = false;
         this.running = margin < 3;
@@ -187,6 +207,7 @@ export class HuntBot {
     // Mark bushes we've swept past.
     for (const p of z.near(b.x, b.y, L.sweep)) if (p.kind === "bush" && Math.hypot(p.x - b.x, p.y - b.y) < L.sweep) this.visited.add(p);
 
+    if (r.bigfoot && !r.bigfoot.foundBy) { this.goal = [r.bigfoot.x, r.bigfoot.y]; this.running = true; return out; }
     const seen = r.others.filter((o) => o.role === "camper" && o.caughtAt === null);
     if (seen.length) {
       let t = seen[0], td = Infinity;
@@ -194,12 +215,14 @@ export class HuntBot {
       this.goal = [t.x, t.y]; this.running = true;
       return out;
     }
-    const cue = r.cues.filter((c) => (c.kind === "rustle" || c.kind === "step") && now - c.at < 5000 && !this.heard.has(c.id))
+    // Howls are worth chasing once the circle has closed in enough to make them count.
+    const howls = closed(r.huntStartedAt, now) > 0.5;
+    const cue = r.cues.filter((c) => (c.kind === "rustle" || c.kind === "step" || (howls && c.kind === "howl")) && now - c.at < 5000 && !this.heard.has(c.id))
       .sort((a, c) => Math.hypot(a.x - b.x, a.y - b.y) - Math.hypot(c.x - b.x, c.y - b.y))[0];
     if (cue) {
       this.heard.add(cue.id);
       // Head there, then check every bush round it (cues are only roughly placed).
-      const reach = cue.kind === "rustle" ? 4 + Math.hypot(cue.x - b.x, cue.y - b.y) * 0.15 : 5;
+      const reach = cue.kind === "howl" ? 20 : cue.kind === "rustle" ? 4 + Math.hypot(cue.x - b.x, cue.y - b.y) * 0.15 : 5;
       this.search = z.near(cue.x, cue.y, reach + 2).filter((p) => p.kind === "bush" && Math.hypot(p.x - cue.x, p.y - cue.y) < reach + 2)
         .sort((p, q) => Math.hypot(p.x - cue.x, p.y - cue.y) - Math.hypot(q.x - cue.x, q.y - cue.y));
       this.goal = [cue.x, cue.y];
@@ -247,7 +270,11 @@ export class HuntBot {
       if (k && Math.hypot(p.x - k.x, p.y - k.y) > k.r) continue;
       let score = Math.hypot(p.x - b.x, p.y - b.y) + this.rand() * 12;
       // Everyone can see where the search area ends up, and campers head there.
-      if (c) score += Math.max(0, Math.hypot(p.x - c.x1, p.y - c.y1) - c.r1) * 0.6;
+      // Campers (and Bigfoot) are towards the middle, and the more it's closed the surer that is.
+      if (k) {
+        const late = closed(v.round!.huntStartedAt, v.now);
+        score += Math.max(0, Math.hypot(p.x - k.x, p.y - k.y) - k.r * (1 - 0.5 * late)) * (0.6 + 1.5 * late);
+      }
       if (mask && !mask[cellAt(g, toKm(p.x), toKm(p.y))]) score += 400;
       if (score < s) { s = score; best = p; }
     }

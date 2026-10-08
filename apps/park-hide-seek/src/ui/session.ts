@@ -1,6 +1,6 @@
 // Where the match runs, from the page's point of view. Local: the Room runs
 // right here (single player, no host needed). Net: the Room runs in a world,
-// this machine's or a friend's, and views arrive over a WebSocket.
+// this machine's or a friend's or an online room's, and views arrive over a WebSocket.
 
 import { worldSocket, playerId } from "@rustybuns/shell-bun/client";
 import type { Look, Msg, View } from "../hunt/game.ts";
@@ -10,7 +10,7 @@ import { fetchWeather } from "../weather.ts";
 export type SessionStatus = { state: "connecting" | "online" | "closed"; error?: string };
 
 export interface Session {
-  readonly kind: "solo" | "host" | "guest";
+  readonly kind: "solo" | "host" | "guest" | "online";
   send(m: Msg): void;
   close(): void;
   /** Server clock minus this clock, in ms. */
@@ -60,8 +60,8 @@ export class NetSession implements Session {
   private queue: string[] = [];
   private seen = false;
 
-  /** host: this machine's world at /ws. guest: `http://ip:port/ws` with the join query. */
-  constructor(readonly kind: "host" | "guest", target: string, params: Record<string, string | undefined> = {}) {
+  /** host: this machine's world at /ws. guest: `http://ip:port/ws` with the join query. online: /ws?room=CODE on the site. */
+  constructor(readonly kind: "host" | "guest" | "online", target: string, params: Record<string, string | undefined> = {}) {
     this.ws = worldSocket(target, params);
     this.onStatus({ state: "connecting" });
     this.ws.onopen = () => { for (const m of this.queue.splice(0)) this.ws.send(m); this.onStatus({ state: "online" }); };
@@ -77,6 +77,7 @@ export class NetSession implements Session {
       if (this.closed) return;
       // A refused upgrade gives the page no status code, so name the usual causes.
       const error = this.seen ? "Lost the connection to the host."
+        : kind === "online" ? "Couldn't reach that room. It may be full (8 players), or the server is busy; try again in a minute."
         : kind === "guest" ? "Couldn't join. Check the address and passphrase, that the host clicked Host a game, that you're on the same network, and that you both run the same build."
         : "Couldn't open the game world on this machine.";
       this.onStatus({ state: "closed", error });
@@ -92,3 +93,17 @@ export class NetSession implements Session {
 }
 
 export { playerId };
+
+/**
+ * Online, one id per tab, kept across reloads so a reload rejoins as the same
+ * player, but two tabs are two players (handy for trying it alone).
+ */
+export function tabPlayerId(): string {
+  try {
+    const have = sessionStorage.getItem("phs.uid");
+    if (have) return have;
+    const id = crypto.randomUUID().replace(/-/g, "");
+    sessionStorage.setItem("phs.uid", id);
+    return id;
+  } catch { return crypto.randomUUID().replace(/-/g, ""); }
+}

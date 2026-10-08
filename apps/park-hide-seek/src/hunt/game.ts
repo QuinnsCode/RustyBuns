@@ -3,6 +3,10 @@
 // no "find" button. To narrow things down they call out (nearby campers rustle),
 // listen for footsteps, sweep with a flashlight at night, and use radio questions.
 //
+// Bigfoot hides near where the search area ends up. Whoever reaches him first
+// ends the round: a camper wins it for every camper still out, a ranger for the
+// rangers. Otherwise campers just have to last the hunt.
+//
 // One Hunt runs wherever the match is hosted (the page for single player, the
 // world for LAN games). Everyone gets view(id): a ranger is only ever sent the
 // campers they can actually see from where they stand.
@@ -32,6 +36,15 @@ export const HUNT = {
   shrinkFrom: 35,
   shrinkTo: 150,
   finalRadius: 0.3,
+  /** Bigfoot hides within this fraction of the final circle's radius from its centre. */
+  bigfootSpread: 0.5,
+  /** Reach him to find him; he can only be seen this close (less in the dark), even standing in the open. */
+  bigfootReach: 2,
+  bigfootSight: 6,
+  bigfootPoints: 100,
+  /** Once the circle starts closing he howls now and then; everyone hears it, placed this roughly. */
+  howlEverySecs: 25,
+  howlJitter: 30,
 };
 
 /** The search area: a circle that closes in on a point during the hunt. */
@@ -40,6 +53,21 @@ export interface Circle { x0: number; y0: number; r0: number; x1: number; y1: nu
 export function circleAt(c: Circle, now: number): { x: number; y: number; r: number } {
   const t = Math.max(0, Math.min(1, (now - c.from) / (c.to - c.from || 1)));
   return { x: c.x0 + (c.x1 - c.x0) * t, y: c.y0 + (c.y1 - c.y0) * t, r: c.r0 + (c.r1 - c.r0) * t };
+}
+
+/**
+ * The circle as players get it: where it is now and where it'll be a moment
+ * later, so it closes smoothly on screen without giving away where it ends up
+ * (that's where Bigfoot is). You can still watch which way it's heading.
+ */
+export function circleAhead(c: Circle, now: number, ms = 3000): Circle {
+  const a = circleAt(c, now), b = circleAt(c, now + ms);
+  return { x0: a.x, y0: a.y, r0: a.r, x1: b.x, y1: b.y, r1: b.r, from: now, to: now + ms };
+}
+
+/** How far the circle has closed: 0 before it starts, 1 once it's done. */
+export function closed(huntStartedAt: number, now: number): number {
+  return Math.max(0, Math.min(1, (now - huntStartedAt - HUNT.shrinkFrom * 1000) / ((HUNT.shrinkTo - HUNT.shrinkFrom) * 1000)));
 }
 
 export function outside(c: Circle | null, now: number, x: number, y: number): boolean {
@@ -90,12 +118,15 @@ export interface Actor extends Body {
   movedAt: number;
 }
 
-export type CueKind = "step" | "rustle" | "call" | "caught";
+export type CueKind = "step" | "rustle" | "call" | "caught" | "howl";
 export interface Cue { id: number; kind: CueKind; x: number; y: number; at: number; by: string; to: "rangers" | "campers" | "all" }
 
 export interface AskLog { at: number; ask: Ask; by: string; x: number; y: number; answers: { id: string; text: string; clue: Clue }[] }
 
-export interface RoundResult { id: string; role: Role; caughtAt: number | null; points: number }
+export interface RoundResult { id: string; role: Role; caughtAt: number | null; points: number; bigfoot?: boolean }
+
+/** Where Bigfoot is, sent only to someone who can see him (or once he's found). */
+export interface BigfootView { x: number; y: number; yaw: number; foundBy: string | null }
 
 export interface PlayerView { id: string; name: string; bot: BotLevel | null; score: number; online: boolean; look: Look }
 
@@ -130,6 +161,8 @@ export interface View {
     radio: (RadioState & { x: number; y: number }) | null;
     huntStartedAt: number;
     circle: Circle | null;
+    /** Bigfoot, if you can see him. */
+    bigfoot: BigfootView | null;
     /** The conditions this round is played in. */
     sky: Sky;
     /** The live reading behind `sky`, if there is one. */
@@ -152,6 +185,9 @@ interface Round {
   radio: Map<string, RadioState>;
   huntStartedAt: number;
   circle: Circle | null;
+  bigfoot: { x: number; y: number; yaw: number } | null;
+  foundBy: string | null;
+  lastHowl: number;
   results: RoundResult[] | null;
   /** null while the live weather is on its way; settled by the time the hunt starts. */
   sky: Sky | null;
@@ -310,7 +346,7 @@ export class Hunt {
     }
     this.round = {
       id: ++this.rounds, n, zone, rangers, actors, cues: [], asks: [], radio: new Map(rangers.map((id) => [id, { x: 0, y: 0, cooldownUntil: 0, used: NO_ASKS(), lastAsk: null }])),
-      huntStartedAt: 0, circle: null, results: null, sky: this.live ? null : clearSky(this.tod), weather: null,
+      huntStartedAt: 0, circle: null, bigfoot: null, foundBy: null, lastHowl: 0, results: null, sky: this.live ? null : clearSky(this.tod), weather: null,
       lastCall: new Map(), lastStep: new Map(), seen: new Map(),
     };
     this.phase = "drop";
@@ -366,23 +402,29 @@ export class Hunt {
     const huntEnd = Math.min(now, r.huntStartedAt + HUNT.huntSecs * 1000);
     const results: RoundResult[] = [];
     let caught = 0;
+    const lasted = this.phase === "hunt" && now >= r.huntStartedAt + HUNT.huntSecs * 1000 - 50;
+    const finder = r.foundBy ? r.actors.get(r.foundBy) : undefined;
+    // Lasting the whole hunt, or a camper finding Bigfoot, counts as camping out.
+    const campersWin = lasted || finder?.role === "camper";
+    const bonus = (id: string) => (id === r.foundBy ? HUNT.bigfootPoints : 0);
     for (const a of r.actors.values()) {
       if (a.role !== "camper") continue;
-      const survived = a.caughtAt === null && this.phase === "hunt" && now >= r.huntStartedAt + HUNT.huntSecs * 1000 - 50;
-      const pts = a.caughtAt !== null ? Math.round((a.caughtAt - r.huntStartedAt) / 1000)
-        : survived ? HUNT.huntSecs + HUNT.survivalBonus
+      const secs = a.caughtAt !== null ? Math.round((a.caughtAt - r.huntStartedAt) / 1000)
+        : lasted ? HUNT.huntSecs
         : Math.round(Math.max(0, huntEnd - (r.huntStartedAt || huntEnd)) / 1000);
+      const pts = secs + (a.caughtAt === null && campersWin ? HUNT.survivalBonus : 0) + bonus(a.id);
       if (a.caughtAt !== null) caught++;
-      results.push({ id: a.id, role: "camper", caughtAt: a.caughtAt, points: pts });
+      results.push({ id: a.id, role: "camper", caughtAt: a.caughtAt, points: pts, bigfoot: a.id === r.foundBy || undefined });
     }
     for (const id of r.rangers) {
       const catches = [...r.actors.values()].filter((a) => a.caughtBy === id).length;
-      results.push({ id, role: "ranger", caughtAt: null, points: catches * HUNT.catchPoints });
+      results.push({ id, role: "ranger", caughtAt: null, points: catches * HUNT.catchPoints + bonus(id), bigfoot: id === r.foundBy || undefined });
     }
     for (const res of results) { const p = this.players.find((q) => q.id === res.id); if (p) p.score += res.points; }
     r.results = results;
     const campers = results.filter((x) => x.role === "camper").length;
-    this.say(caught === campers ? "Every camper caught!" : `${campers - caught} camper${campers - caught === 1 ? "" : "s"} camped out successfully`);
+    if (finder) this.say(finder.role === "camper" ? `Bigfoot found! ${campers - caught} camper${campers - caught === 1 ? "" : "s"} camped out` : "The rangers found Bigfoot");
+    else this.say(caught === campers ? "Every camper caught!" : `${campers - caught} camper${campers - caught === 1 ? "" : "s"} camped out successfully`);
     this.phase = "results";
     this.endsAt = now + HUNT.resultsSecs * 1000;
     this.touch();
@@ -418,12 +460,16 @@ export class Hunt {
       let end = this.randomDrop(z);
       for (let k = 0; k < 20 && Math.hypot(end[0], end[1]) > z.R * (1 - HUNT.finalRadius) * 0.9; k++) end = this.randomDrop(z);
       r.circle = { x0: 0, y0: 0, r0: z.R, x1: end[0], y1: end[1], r1: z.R * HUNT.finalRadius, from: now + HUNT.shrinkFrom * 1000, to: now + HUNT.shrinkTo * 1000 };
+      r.bigfoot = this.bigfootSpot(z, r.circle);
+      r.lastHowl = now;
       this.endsAt = now + HUNT.huntSecs * 1000;
       this.say(`The rangers are out${r.sky.tod === "night" ? " with flashlights" : ""}!`);
       this.touch();
     } else if (this.phase === "hunt") {
       this.tags(r, now);
       this.footsteps(r, now);
+      this.howl(r, now);
+      if (this.findBigfoot(r, now)) { this.endRound(now); return; }
       r.cues = r.cues.filter((c) => now - c.at < 6000);
       const campers = [...r.actors.values()].filter((a) => a.role === "camper");
       if (campers.every((a) => a.caughtAt !== null || !this.players.find((p) => p.id === a.id)?.online)) this.endRound(now);
@@ -470,6 +516,41 @@ export class Hunt {
         this.touch();
       }
     }
+  }
+
+  /** A bush near where the search area ends up, on ground you can stand on. */
+  private bigfootSpot(z: Zone, c: Circle): { x: number; y: number; yaw: number } {
+    const reach = c.r1 * HUNT.bigfootSpread;
+    const bushes = z.near(c.x1, c.y1, reach).filter((p) => p.kind === "bush" && Math.hypot(p.x - c.x1, p.y - c.y1) < reach && dropOk(z, p.x, p.y));
+    const b = bushes.length ? bushes[Math.floor(this.rand() * bushes.length)] : null;
+    return { x: b?.x ?? c.x1, y: b?.y ?? c.y1, yaw: this.rand() * Math.PI * 2 };
+  }
+
+  /** Anyone still in the hunt who reaches Bigfoot finds him. */
+  private findBigfoot(r: Round, now: number): boolean {
+    const f = r.bigfoot;
+    if (!f || r.foundBy) return !!r.foundBy;
+    const z = this.zone();
+    for (const a of r.actors.values()) {
+      if (a.caughtAt !== null || !this.players.find((p) => p.id === a.id)?.online) continue;
+      if (Math.hypot(a.x - f.x, a.y - f.y) > HUNT.bigfootReach || Math.abs(z.height(a.x, a.y) - z.height(f.x, f.y)) > 2.5) continue;
+      r.foundBy = a.id;
+      this.cue(r, "caught", f.x, f.y, a.id, "all", now);
+      this.say(`${who(a.id)} found Bigfoot after ${Math.round((now - r.huntStartedAt) / 1000)} s!`);
+      this.touch();
+      return true;
+    }
+    return false;
+  }
+
+  /** Every so often, a howl from roughly where he is. The wind blurs it more. */
+  private howl(r: Round, now: number) {
+    const f = r.bigfoot;
+    if (!f || closed(r.huntStartedAt, now) <= 0 || now - r.lastHowl < HUNT.howlEverySecs * 1000) return;
+    r.lastHowl = now - this.rand() * 5000;
+    const j = soundJitter(this.sky(), HUNT.howlJitter), a = this.rand() * Math.PI * 2, d = Math.sqrt(this.rand()) * j;
+    this.cue(r, "howl", f.x + Math.cos(a) * d, f.y + Math.sin(a) * d, "bigfoot", "all", now);
+    this.touch();
   }
 
   /** Running is loud; walking is quiet; crouching is silent. */
@@ -577,7 +658,8 @@ export class Hunt {
         others, cues, asks,
         radio: rs && mine ? { ...rs, x: toKm(mine.x), y: toKm(mine.y) } : null,
         huntStartedAt: r.huntStartedAt,
-        circle: r.circle,
+        circle: r.circle && circleAhead(r.circle, now),
+        bigfoot: this.bigfootFor(z, r, mine, spectator, now, seen),
         sky: this.sky(),
         weather: r.weather,
         results: r.results,
@@ -590,6 +672,19 @@ export class Hunt {
       round,
       log: this.log.slice(-6).map((l) => this.logText(l)),
     };
+  }
+
+  /** Bigfoot: to everyone once found or once the round's over, otherwise only up close and in sight. */
+  private bigfootFor(z: Zone, r: Round, me: Actor | null, spectator: boolean, now: number, seen: Map<string, number>): BigfootView | null {
+    const f = r.bigfoot;
+    if (!f || this.phase === "hide") return null;
+    let ok = spectator || !!r.foundBy;
+    if (!ok && me) {
+      ok = Math.hypot(f.x - me.x, f.y - me.y) < HUNT.bigfootSight && canSee(z, this.sky(), me, { x: f.x, y: f.y, crouch: false });
+      if (ok) seen.set("bigfoot", now);
+      ok ||= now - (seen.get("bigfoot") ?? -Infinity) < 400;
+    }
+    return ok ? { ...f, foundBy: r.foundBy } : null;
   }
 
   /** Teammates always; rangers to campers from afar; campers to rangers only by sight. */

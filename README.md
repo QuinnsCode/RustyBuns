@@ -345,7 +345,7 @@ apps/                example apps, see EXAMPLES.md
 | [fm-daw](apps/fm-daw/README.md) | an FM groovebox: live Rust (wasm) or TS engine in an AudioWorklet, QWERTY + MIDI recording, a world that saves your groove |
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | four angry oil-baron hippos around an oil geyser on a jungle island: solo, couch, LAN party (`guests`) and online rooms, one World class on Cloudflare and in the binary |
 | [auto-rig](apps/auto-rig/README.md) | drop in a 3D model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical output |
-| [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain, campers vs park rangers, vs AI or on a LAN: one game run by the page or by the world, each player sent only what they can see |
+| [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain, campers vs park rangers racing to find Bigfoot, vs AI, in online rooms ([play it](https://park-hide-seek.notryanquinn.workers.dev)) or on a LAN: one game run by the page or by the world, on Cloudflare or in the binary, each player sent only what they can see |
 | [spa-example](apps/spa-example) | an RWSDK app with D1, KV and a world DO, all on sqlite |
 
 More in [EXAMPLES.md](EXAMPLES.md).

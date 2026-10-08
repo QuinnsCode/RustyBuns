@@ -5,8 +5,9 @@ Hide and seek in a real national park, in 3D. Campers drop into a zone around a 
 - **The ground is real.** Each zone is 2 km of actual Yosemite terrain from public elevation data, shrunk six times in every direction: El Capitan is still a sheer wall, just 150 m tall instead of 900. People, trees and tents stay life-size.
 - **No find button.** A ranger catches a camper by reaching them. To get there they sweep with a flashlight, listen for footsteps, call out ("Anybody out there?") so nearby campers rustle, and use radio questions that shade the map. Rangers are faster than campers, so a camper who's spotted in the open should run for cover.
 - **The real weather, right now.** By default a round plays in the park's actual conditions and time of day: at 3 pm in Yosemite it's day, after sunset it's flashlights. Rain hides footsteps, fog shortens how far anyone sees, wind sways the bushes and makes rustles hard to place, and a cloudy night has no moon. The lobby can pick day, dusk or night by hand instead.
-- **The search area closes in.** During the hunt a circle shrinks towards a point everyone can see. Campers outside it stand out like a flare, so sooner or later everyone has to move, and moving makes noise.
-- **Play vs AI**, or **LAN multiplayer** on the desktop: one person hosts, friends run their own copy and join. Bots can fill any game.
+- **Find Bigfoot, or don't get caught.** Bigfoot is hiding in the park. Whoever reaches him first ends the round, like catching the snitch: a camper who finds him wins it for every camper still out, a ranger who finds him wins it for the rangers. Otherwise campers just have to last the three minutes.
+- **The search area closes in on him.** During the hunt a circle shrinks towards wherever Bigfoot is hiding. Nobody is told where it ends up, but everyone can watch which way it's heading, rangers included. Campers outside it stand out like a flare, so sooner or later everyone has to move, and moving makes noise.
+- **Play vs AI**, **online rooms** in the browser (share a code or link), or **LAN multiplayer** on the desktop: one person hosts, friends run their own copy and join. Bots can fill any game.
 
 Built with [Three.js](https://threejs.org) and [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
 
@@ -20,6 +21,15 @@ bun run desktop:dev      # desktop app: Play vs AI, or Host / Join a LAN game
 bun test                 # zones, movement, sight, rules, bots
 ```
 
+## Online
+
+The browser build can also be played online at https://park-hide-seek.notryanquinn.workers.dev: *Create an online room*, then send friends the link (`?room=CODE`) or the code. `src/edge/worker.ts` serves the page and sends `/ws?room=CODE` to that room's Durable Object, which is the same World class the desktop runs for LAN games (`packages/desktop/world.ts`). The Worker vouches each player's id and name, refuses WebSockets from other sites, and limits how many new rooms one address can open a minute. The world drops messages from any socket sending faster than it should. Whoever reaches a room first hosts it, and if they leave, someone else takes over. A room lives in memory, so it ends once everyone leaves.
+
+```
+bun run edge:dev         # the Worker locally (wrangler dev)
+bun run deploy           # build and deploy (wrangler deploy)
+```
+
 **A round:** *drop* (15 s: click the zone map to pick where you land, or get dropped at random) → *hide* (30 s: rangers count in the cabin) → *hunt* (3 min) → *results*. Everyone takes a turn as ranger; two rangers once there are five players.
 
 | | |
@@ -31,7 +41,7 @@ bun test                 # zones, movement, sight, rules, bots
 | Ranger | `F` flashlight, `Q` call out (10 s cooldown) |
 | Spectating | `Tab` cycles who you follow once you're caught |
 
-**Scoring:** campers get a point per second they last in the hunt, plus 30 for lasting the whole thing. Rangers get 40 per catch.
+**Scoring:** campers get a point per second they last in the hunt, plus 30 for camping out (lasting the whole thing, or still being out when a camper finds Bigfoot). Rangers get 40 per catch. Finding Bigfoot is worth 100 to whoever does it.
 
 **Your camper:** the lobby has a customizer (jacket, pants, skin, hat, backpack) with a live preview; it's saved in the browser and everyone in a LAN game sees it.
 
@@ -73,11 +83,14 @@ So a modified client can't show hidden campers, because their positions never re
 
 **Cues.** Running campers make footsteps that rangers within 45 m hear, and walking ones within 14 m. Crouching is silent. A call makes campers within 55 m rustle: always if they're close, sometimes if they're farther, always if they're moving. Rustles and steps are placed roughly, so a ranger has to search round them. Sounds are synthesized, and calls are spoken by the browser.
 
+**Bigfoot** (`src/hunt/game.ts`) hides in a bush near where the circle ends up (within half its final radius of the centre). He's only seen within 6 m, and only in sight (less at night, unless a flashlight finds him), and reaching within 2 m finds him. Once the circle starts closing he howls every 25 s or so, which everyone hears, placed up to 30 m off (more in the wind). Players are only sent the circle as it is now and 3 s ahead, never where it ends up, so his spot stays secret until the circle gives it away. In bot games he's found in about 40% of rounds, about as often by campers as by rangers, usually in the last minute.
+
 **Radio questions** (`src/clues.ts`): radar ("within 300 m of me?"), compass, thermometer and nearest signpost or peak. They're answered truthfully by every camper's radio and shaded on the ranger's map. Answers are worked out on a grid, so the shading and the answer always agree. Campers keep moving, so a clue is true for where they were when it was asked.
 
 **The bots** (`src/hunt/bots.ts`) only know what their view tells them:
 - **Ranger bots** sweep bush to bush, preferring where the radio says campers could be and where the circle is heading. They call out now and then, search the bushes round every rustle, and chase anyone their light finds.
-- **Camper bots** drop somewhere bushy, crouch in a bush, move into the final circle before it reaches them, and run for cover on the far side when a ranger gets close.
+- **Camper bots** drop somewhere bushy, crouch in a bush, move well inside the circle before it reaches them, and run for cover on the far side when a ranger gets close. The bolder ones go looking for Bigfoot round the middle of the circle once it's halfway in.
+- **Everyone** runs for Bigfoot the moment they see him, and ranger bots chase his howls late in the hunt.
 
 Headless bot-vs-bot rounds: easy rangers catch about a third of the campers, normal about two thirds, and hard most of them.
 

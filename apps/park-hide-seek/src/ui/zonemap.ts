@@ -110,14 +110,12 @@ export class ZoneMap {
     ctx.strokeStyle = "#2b2116"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(X(0), Y(0), z.R * s, 0, Math.PI * 2); ctx.stroke();
 
-    // The closing circle and where it ends up.
+    // The closing circle (where it ends up is a secret: that's where Bigfoot is).
     const c = v.round?.circle;
     if (c && v.phase === "hunt") {
       const k = circleAt(c, opts.now);
       ctx.strokeStyle = "rgba(255, 140, 50, 0.95)"; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(X(k.x), Y(k.y), k.r * s, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([6, 5]); ctx.strokeStyle = "rgba(255, 209, 102, 0.95)"; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(X(c.x1), Y(c.y1), c.r1 * s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     }
 
     // During the drop: the no-drop area round the cabin.
@@ -142,6 +140,17 @@ export class ZoneMap {
       ctx.strokeStyle = cue.kind === "rustle" ? `rgba(120, 220, 90, ${1 - age / 5})` : `rgba(240, 200, 100, ${1 - age / 5})`;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(X(cue.x), Y(cue.y), 4 + age * 3, 0, Math.PI * 2); ctx.stroke();
+    }
+    const bf = v.round?.bigfoot;
+    if (bf) {
+      ctx.fillStyle = "#7a4a2a"; ctx.strokeStyle = "#ffb27a"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(X(bf.x), Y(bf.y), 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    for (const cue of v.round?.cues ?? []) {
+      if (cue.kind !== "howl") continue;
+      const age = (opts.now - cue.at) / 1000;
+      ctx.strokeStyle = `rgba(192, 140, 255, ${Math.max(0, 1 - age / 5)})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(X(cue.x), Y(cue.y), (6 + age * 4) * Math.max(1, s * 3), 0, Math.PI * 2); ctx.stroke();
     }
     for (const o of v.round?.others ?? []) {
       ctx.fillStyle = o.role === "ranger" ? "#e8c547" : o.caughtAt !== null ? "#888" : "#ffffff";

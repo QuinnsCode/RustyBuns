@@ -1,16 +1,16 @@
 // The page: menu, lobby (with the camper customizer), the drop map, the 3D
 // hunt, the radio map, and results. Solo games run the Room right here; LAN
-// games talk to a world (see session.ts).
+// and online games talk to a world (see session.ts).
 
 import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
-import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, dropOk, outside, randomLook, type BotLevel, type Look, type Msg, type View } from "../hunt/game.ts";
+import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, dropOk, outside, randomLook, type BotLevel, type Look, type Msg, type View } from "../hunt/game.ts";
 import { step, type Body } from "../hunt/sim.ts";
 import { ZONES, zoneById, type Zone } from "../zones/zone.ts";
 import { describe } from "../weather.ts";
 import { CALLS, place, sounds } from "./audio.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
-import { LocalSession, NetSession, playerId, type Session } from "./session.ts";
+import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
 
@@ -26,6 +26,8 @@ const store = {
 let session: Session | null = null;
 let view: View | null = null;
 let hosting: { pass: string; addresses: string[]; port: number } | null = null;
+/** The online room this page is in, if any. */
+let room: string | null = null;
 let info: { app?: string; version?: string } | null = null;
 let look: Look = (() => { try { const l = JSON.parse(store.get("look")); if (l && HATS.includes(l.hat)) return l as Look; } catch {} return randomLook(); })();
 
@@ -62,13 +64,23 @@ $<HTMLInputElement>("addr").value = store.get("addr");
 const myName = () => (nameInput.value.trim() || "Camper").slice(0, 24);
 const menuError = (s: string) => { $("menu-error").textContent = s; };
 
+const ROOM = /^[A-Z0-9]{4,8}$/;
+// No 0/O or 1/I, so a code read out loud comes out right.
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const roomCode = () => Array.from(crypto.getRandomValues(new Uint32Array(5)), (n) => CODE_CHARS[n % CODE_CHARS.length]).join("");
+const roomLink = (code: string) => `${location.origin}${location.pathname}?room=${code}`;
+
 (async () => {
   info = await fetch("/__rb/info").then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const desktop = info?.app === "park-hide-seek";
   for (const el of document.querySelectorAll<HTMLElement>("[data-desktop]")) el.hidden = !desktop;
+  for (const el of document.querySelectorAll<HTMLElement>("[data-online]")) el.hidden = desktop;
   $("menu-note").textContent = desktop
     ? "LAN games: one person hosts, everyone else runs their own copy of the app and joins with the address and passphrase."
-    : "Running in a plain browser: Play vs AI works here. LAN games need the desktop app (bun run desktop:dev).";
+    : "Online: create a room and send friends its link or code. Up to 8 players; fill the rest with AI.";
+  // A shared link (?room=CODE) opens with the code filled in.
+  const shared = new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
+  if (!desktop && ROOM.test(shared)) { $<HTMLInputElement>("room").value = shared; $("room-join").hidden = false; }
 })();
 
 $("solo").onclick = () => { store.set("name", myName()); sounds.unlock(); start(new LocalSession(myName(), look)); };
@@ -103,6 +115,26 @@ $<HTMLFormElement>("join").onsubmit = (e) => {
   s.send({ t: "look", look });
 };
 
+// ---- online rooms ---------------------------------------------------------------
+
+function goOnline(code: string) {
+  store.set("name", myName()); sounds.unlock(); menuError("");
+  room = code;
+  history.replaceState(null, "", roomLink(code));
+  const s = new NetSession("online", "/ws", { room: code, uid: tabPlayerId(), name: myName() });
+  start(s);
+  s.send({ t: "look", look });
+}
+
+$("online").onclick = () => goOnline(roomCode());
+$("show-room").onclick = () => { $("room-join").hidden = !$("room-join").hidden; $<HTMLInputElement>("room").focus(); };
+$<HTMLFormElement>("room-join").onsubmit = (e) => {
+  e.preventDefault();
+  const code = $<HTMLInputElement>("room").value.trim().toUpperCase();
+  if (!ROOM.test(code)) { menuError("Room codes are 4 to 8 letters and numbers, like PIKA7."); return; }
+  goOnline(code);
+};
+
 function start(s: Session) {
   session = s;
   view = null;
@@ -124,6 +156,7 @@ async function leave() {
   session?.close();
   session = null; view = null; body = null;
   controls.release();
+  if (room) { room = null; history.replaceState(null, "", location.pathname); }
   if (hosting) {
     hosting = null;
     await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) }).catch(() => {});
@@ -153,10 +186,12 @@ function renderLobby(v: View) {
     <section><h2>Time of day and weather</h2><div class="row-btns"><button data-live="1" aria-pressed="${v.live}" ${dis}>Live: the park right now<small>Real weather and time of day</small></button>${(["day", "dusk", "night"] as const).map((t) => `<button data-tod="${t}" aria-pressed="${!v.live && v.tod === t}" ${dis}>${t === "day" ? "Day" : t === "dusk" ? "Dusk" : "Night (flashlights)"}</button>`).join("")}</div>${v.live ? `<p class="note">Rain hides footsteps, fog cuts how far anyone sees, wind makes rustles hard to place. If the weather can't be reached, it's ${v.tod}.</p>` : ""}</section>
     ${host ? `<section><h2>Rounds</h2><div class="row-btns"><button data-laps="1" aria-pressed="${v.laps === 1}">Everyone's a ranger once</button><button data-laps="2" aria-pressed="${v.laps === 2}">Twice</button></div></section>
     <section><h2>Add an AI player</h2><div class="row-btns"><button data-bot="easy">Easy</button><button data-bot="normal">Normal</button><button data-bot="hard">Hard</button></div></section>` : ""}
+    ${room ? `<section><h2>Friends join with</h2><div class="lan">Room code: <code>${room}</code><br>Or send them this link: <code>${esc(roomLink(room))}</code> <button data-action="copy">Copy link</button></div></section>` : ""}
     ${hosting ? `<section><h2>Friends join with</h2><div class="lan">Address: ${hosting.addresses.length ? hosting.addresses.map((a) => `<code>${a}:${hosting!.port}</code>`).join(" or ") : "<em>no network found</em>"}<br>Passphrase: <code>${esc(hosting.pass)}</code></div></section>` : ""}
     <section><h2>Players</h2><ul class="players">${v.players.map((p) => `<li><span class="who">${esc(p.name)}${p.id === v.me ? " (you)" : ""}</span>${p.bot ? `<span class="badge">${p.bot} AI</span>` : ""}${p.id === v.hostId ? `<span class="badge">host</span>` : ""}${host && p.id !== v.me ? `<button data-kick="${esc(p.id)}" title="Remove">✕</button>` : ""}<span class="pts">${p.score}</span></li>`).join("")}</ul></section>
     <section class="row-btns">${host ? `<button class="primary" data-action="start" ${v.players.filter((p) => p.online).length < 2 ? "disabled" : ""}>Start the hunt</button>` : `<em>Waiting for ${esc(nameOf(v, v.hostId ?? ""))} to start…</em>`}<button data-action="leave">${session?.kind === "host" ? "Stop hosting" : "Leave"}</button></section>
-    <p class="note">One ranger a round (two once there are five players); everyone else camps. Campers score a point per second hidden, plus ${HUNT.survivalBonus} for lasting the whole hunt. Rangers score ${HUNT.catchPoints} per catch.</p>`;
+    <p class="note">One ranger a round (two once there are five players); everyone else camps. Campers score a point per second hidden, plus ${HUNT.survivalBonus} for camping out. Rangers score ${HUNT.catchPoints} per catch.</p>
+    <p class="note"><strong>Bigfoot</strong> is hiding where the search area closes in. Whoever reaches him first ends the round and scores ${HUNT.bigfootPoints}. If a camper finds him, every camper still out has camped out. If a ranger does, they haven't. Listen for his howl.</p>`;
   if (html !== lastLobby) { lastLobby = html; $("lobby-main").innerHTML = html; }
 }
 
@@ -197,6 +232,7 @@ document.addEventListener("click", (e) => {
   else if (d.action === "start") send({ t: "start" });
   else if (d.action === "lobby") send({ t: "lobby" });
   else if (d.action === "leave") void leave();
+  else if (d.action === "copy" && room) void navigator.clipboard?.writeText(roomLink(room)).then(() => note("Link copied"), () => {});
   else if (d.action === "close-map") mapOpen = false;
 });
 
@@ -220,7 +256,8 @@ function renderResults(v: View) {
   if (v.phase === "results" && r?.results) {
     const z = zoneById(v.zone);
     const rows = [...r.results].sort((a, b) => b.points - a.points).map((x) => {
-      const what = x.role === "ranger" ? `ranger · ${x.points / HUNT.catchPoints} caught` : x.caughtAt === null ? "camped out!" : `caught after ${Math.round((x.caughtAt - r.huntStartedAt) / 1000)} s`;
+      const catches = (x.points - (x.bigfoot ? HUNT.bigfootPoints : 0)) / HUNT.catchPoints;
+      const what = (x.bigfoot ? "found Bigfoot! · " : "") + (x.role === "ranger" ? `ranger · ${catches} caught` : x.caughtAt === null ? "camped out!" : `caught after ${Math.round((x.caughtAt - r.huntStartedAt) / 1000)} s`);
       return `<tr><td>${esc(nameOf(v, x.id))}${x.id === v.me ? " (you)" : ""}</td><td>${what}</td><td>+${x.points}</td></tr>`;
     }).join("");
     html = `<h3>Round ${r.n + 1}: ${esc(z.data.name)}</h3><table>${rows}</table><p class="note">Next round in a few seconds…</p>`;
@@ -281,9 +318,9 @@ function renderRadio(v: View, z: Zone, now: number) {
     if (!radioFor || !campers.includes(radioFor)) radioFor = campers[0] ?? null;
     const tabs = campers.length > 1 ? `<h2 style="margin-top:12px">Shading for</h2><div class="row-btns">${campers.map((id) => `<button data-radio="${esc(id)}" aria-pressed="${id === radioFor}">${esc(nameOf(v, id))}</button>`).join("")}</div>` : "";
     const cool = now < s.cooldownUntil ? `Radio busy: ${Math.ceil((s.cooldownUntil - now) / 1000)} s` : "Every camper's radio answers truthfully, for where they are right now.";
-    html = `<h2>Radio</h2><div>${qs}</div><div class="why">${cool}</div>${tabs}${askLog(v)}<p class="note">Shaded: where the radio says they can't be (when you asked; they may have moved since). Orange: the search area. Dashed: where it ends up.</p><button data-action="close-map">Back to the park (M)</button>`;
+    html = `<h2>Radio</h2><div>${qs}</div><div class="why">${cool}</div>${tabs}${askLog(v)}<p class="note">Shaded: where the radio says they can't be (when you asked; they may have moved since). Orange: the search area. It closes in on Bigfoot, purple rings are his howls.</p><button data-action="close-map">Back to the park (M)</button>`;
   } else {
-    html = `<h2>${esc(z.data.name)}</h2><p class="note">Orange: the search area, closing in. Dashed: where it ends up. Get inside before it reaches you, or the rangers will see you from anywhere.</p>${askLog(v)}<button data-action="close-map">Back to the park (M)</button>`;
+    html = `<h2>${esc(z.data.name)}</h2><p class="note">Orange: the search area, closing in on wherever Bigfoot is hiding. Get inside before it reaches you, or the rangers will see you from anywhere. Purple rings are his howls.</p>${askLog(v)}<button data-action="close-map">Back to the park (M)</button>`;
   }
   if (html !== lastRadio) { lastRadio = html; $("radio").innerHTML = html; }
 }
@@ -390,11 +427,12 @@ function frame() {
     heard.add(c.id);
     const me = body ?? (you ? { x: you.x, y: you.y, yaw: you.yaw } : null);
     if (!me) continue;
-    const p = place(c.x - me.x, c.y - me.y, me.yaw, c.kind === "call" ? 120 : 60);
+    const p = place(c.x - me.x, c.y - me.y, me.yaw, c.kind === "call" ? 120 : c.kind === "howl" ? 400 : 60);
     if (c.kind === "rustle") sounds.rustle(p.vol, p.pan);
     else if (c.kind === "step") sounds.step(p.vol, p.pan);
     else if (c.kind === "call" && c.by !== v.me) sounds.call(p.vol, CALLS[c.id % CALLS.length]);
     else if (c.kind === "caught") sounds.caught();
+    else if (c.kind === "howl") sounds.howl(Math.max(0.25, p.vol), p.pan);
   }
 
   // The map overlay: the drop screen, or M.
@@ -423,12 +461,14 @@ function hud(v: View, z: Zone, now: number) {
   // The banner: flashes first, then warnings.
   let text = "", warn = false;
   if (flash && Date.now() < flash.until) text = flash.text;
+  else if (r.bigfoot?.foundBy) text = r.bigfoot.foundBy === v.me ? "You found Bigfoot!" : `${nameOf(v, r.bigfoot.foundBy)} found Bigfoot!`;
+  else if (r.bigfoot && body && v.phase === "hunt") text = "Bigfoot! Get to him!";
   else if (you?.caughtAt != null) text = `Caught after ${Math.round((you.caughtAt - r.huntStartedAt) / 1000)} s. Spectating: Tab to switch.`;
   else if (body && r.circle && v.phase === "hunt" && !ranger) {
     const k = circleAt(r.circle, now);
     const edge = k.r - Math.hypot(body.x - k.x, body.y - k.y);
     if (outside(r.circle, now, body.x, body.y)) { text = "Outside the search area: the rangers can see you! Get back in."; warn = true; }
-    else if (edge < 15 && now < r.circle.to) { text = `The search area is closing in: ${Math.round(edge)} m to the edge`; warn = true; }
+    else if (edge < 15 && closed(r.huntStartedAt, now) < 1) { text = `The search area is closing in: ${Math.round(edge)} m to the edge`; warn = true; }
   }
   const b = $("banner");
   if (b.textContent !== text) b.textContent = text;
