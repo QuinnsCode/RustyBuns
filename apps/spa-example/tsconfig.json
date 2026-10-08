@@ -1,6 +1,12 @@
 {
   "extends": "../../tsconfig.json",
-  // src/ and vite.config.ts need rwsdk and the Cloudflare types, which this
-  // fixture doesn't install (packages/cli/test/glue.test.ts only reads it).
-  "include": ["packages/desktop"]
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    // The vite "@" alias, so tsc resolves "@/db" the way vite does.
+    "paths": { "@/*": ["./src/*"] }
+  },
+  // rwsdk, @cloudflare/vite-plugin and cloudflare:workers come from
+  // types/fixture.d.ts; the fixture doesn't install them.
+  "include": ["src", "packages/desktop", "types", "vite.config.ts"]
 }
