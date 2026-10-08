@@ -2,9 +2,9 @@ import * as THREE from "three";
 import { A_REST, SEATS, WALL_R, seatAngle } from "../../sim/rules.ts";
 import { Geyser } from "./geyser.ts";
 import { Smoke, type Animated } from "./industry.ts";
-import { CLEARING, claim, forest, mountains, rockRim } from "./jungle.ts";
+import { CLEARING, forest, mountains, rockRim } from "./jungle.ts";
+import { ruins } from "./ruins.ts";
 import { buildOffice } from "./office.ts";
-import { LOOKS } from "./looks.ts";
 import { basalt, dirt, moss } from "./textures.ts";
 
 /** Sim (x, y) on the pan -> three.js (x, height, -y). */
@@ -44,14 +44,14 @@ export class Arena {
   }
 
   /**
-   * The oil clearing the hippos have claimed: packed, oil-stained ground, stumps
-   * and felled trunks along its edge, claim stakes in each baron's colour, and
-   * jungle pressing in on every side. The camera's side stays open (see forest()).
+   * A lost oil well, found in the jungle: a rough patch of oil-stained mud, the rusting
+   * ruins of the old works, and jungle pressing in on every side, thickest up front.
+   * The camera's line of sight to the pan stays open (see forest()).
    */
   private plant() {
-    const clearing = new THREE.Mesh(new THREE.CircleGeometry(CLEARING + 3, 64), new THREE.MeshStandardMaterial({ map: dirt(), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
+    const clearing = new THREE.Mesh(new THREE.CircleGeometry(CLEARING + 2, 64), new THREE.MeshStandardMaterial({ map: dirt(), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
     clearing.rotation.x = -Math.PI / 2; clearing.position.y = -0.03; clearing.receiveShadow = true; this.group.add(clearing);
-    this.group.add(claim(LOOKS.map((l) => l.accent)));
+    const old = ruins(); this.group.add(old.group); this.animated.push(...old.animated);
     this.forest = forest(); this.group.add(this.forest);
   }
 

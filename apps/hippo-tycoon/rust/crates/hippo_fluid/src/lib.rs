@@ -64,10 +64,10 @@ impl State {
         let i = found;
         let jx = (self.rand() - 0.5) * 0.25;
         let jz = (self.rand() - 0.5) * 0.25;
-        let spread = 1.6 + speed * 0.35;
+        let spread = 2.8 + speed * 0.6;
         let vx = (self.rand() - 0.5) * spread;
         let vz = (self.rand() - 0.5) * spread;
-        let vy = speed * (0.75 + 0.5 * self.rand());
+        let vy = speed * (0.7 + 0.4 * self.rand());
         let rad = 0.09 + 0.08 * self.rand();
         let life = 1.8 + 0.8 * self.rand();
         self.x[i] = jx; self.y[i] = VENT_Y; self.z[i] = jz;

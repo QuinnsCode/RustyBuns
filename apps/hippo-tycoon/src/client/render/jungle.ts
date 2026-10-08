@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { WALL_R } from "../../sim/rules.ts";
 import { FLAME } from "./industry.ts";
-import { bark, frond, rings } from "./textures.ts";
+import { bark, frond } from "./textures.ts";
 
 function rng(seed: number) {
   let x = seed >>> 0;
@@ -15,7 +15,7 @@ function rng(seed: number) {
 // Everything beyond the clearing is instanced: a handful of palm shapes, bushes
 // and ferns, each one two draw calls however many are planted, swaying in the
 // vertex shader. The clearing itself (the pan, the outposts, the view) stays open.
-export const CLEARING = 26;                    // radius of the claimed ground
+export const CLEARING = 19;                    // radius of the cleared ground: the basin, its rocks, the hippos' dens
 
 let frondGeo: THREE.BufferGeometry | null = null;
 /** One drooping frond card, bent along its length. */
@@ -80,11 +80,11 @@ function palmGeometry(seed: number, height: number, lean: number): THREE.BufferG
 }
 
 /** A bush: a fan of fronds from one point (ferns are small ones). */
-function bushGeometry(seed: number, fronds: number, scale: number): THREE.BufferGeometry {
+function bushGeometry(seed: number, fronds: number, scale: number, upright = 0): THREE.BufferGeometry {
   const r = rng(seed), cards: THREE.BufferGeometry[] = [];
   for (let k = 0; k < fronds; k++) {
     const s = scale * (0.7 + r() * 0.5), m = new THREE.Matrix4().makeRotationY(r() * 6.28)
-      .multiply(new THREE.Matrix4().makeRotationX(-0.75 - r() * 0.6)).multiply(new THREE.Matrix4().makeScale(s, s, s));
+      .multiply(new THREE.Matrix4().makeRotationX(-(0.75 - upright * 0.55) - r() * 0.6)).multiply(new THREE.Matrix4().makeScale(s, s, s));
     cards.push(frondGeometry().clone().applyMatrix4(m));
   }
   return mergeGeometries(cards)!;
@@ -110,7 +110,7 @@ export function forest(): THREE.Group & { update(t: number): void } {
   const inView = (x: number, z: number, d: number) => z > 0 && Math.abs(x) < 0.85 * z && d < 58;   // between the lens and the pan
 
   // palms: five shapes, instanced, leaning out of the clearing
-  const palms = place(190, CLEARING + 1.5, 78, (x, z, d) => !inView(x, z, d), 2.4);
+  const palms = place(260, CLEARING + 1, 80, (x, z, d) => !inView(x, z, d), 2.2);
   const shapes = [0, 1, 2, 3, 4].map((i) => ({ geo: palmGeometry(i * 7 + 3, 8 + i * 1.7, 2 + i * 0.7), at: [] as typeof palms }));
   palms.forEach((p, i) => shapes[i % shapes.length]!.at.push(p));
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
@@ -125,43 +125,29 @@ export function forest(): THREE.Group & { update(t: number): void } {
     mesh.castShadow = false; mesh.frustumCulled = false; g.add(mesh);
   }
 
-  // bushes and ferns: thick everywhere beyond the cleared ground, including the view wedge
-  const fill = (geo: THREE.BufferGeometry, n: number, rMin: number, rMax: number, size: [number, number], gap: number) => {
-    const spots = place(n, rMin, rMax, () => true, gap);
+  // undergrowth: thick everywhere beyond the cleared ground, and thickest up front
+  const fill = (geo: THREE.BufferGeometry, n: number, rMin: number, rMax: number, size: [number, number], gap: number, keep: (x: number, z: number, d: number) => boolean = () => true, y = -0.05) => {
+    const spots = place(n, rMin, rMax, keep, gap);
     const mesh = new THREE.InstancedMesh(geo, leafMat, spots.length);
-    spots.forEach((p, i) => { const s = size[0] + r() * (size[1] - size[0]); e.set(0, r() * 6.28, 0); q.setFromEuler(e); m.compose(pos.set(p.x, -0.05, p.z), q, sc.set(s, s, s)); mesh.setMatrixAt(i, m); });
+    spots.forEach((p, i) => { const s = size[0] + r() * (size[1] - size[0]); e.set(0, r() * 6.28, 0); q.setFromEuler(e); m.compose(pos.set(p.x, y, p.z), q, sc.set(s, s, s)); mesh.setMatrixAt(i, m); });
     mesh.frustumCulled = false; g.add(mesh);
   };
-  fill(bushGeometry(5, 9, 0.9), 420, CLEARING + 0.5, 70, [0.9, 1.7], 1.4);
-  fill(bushGeometry(8, 7, 0.45), 360, CLEARING - 3, 55, [0.9, 1.5], 0.8);
+  // The window onto the pan: from the camera (south) a widening wedge stays free of anything tall.
+  const wedge = (x: number, z: number) => z > 6 && Math.abs(x) < 0.5 * z + 6;
+  fill(bushGeometry(5, 9, 0.9), 1100, CLEARING - 4.5, 75, [0.9, 1.8], 1.15, (x, z) => !wedge(x, z));
+  fill(bushGeometry(8, 7, 0.45), 900, CLEARING - 6, 60, [0.9, 1.5], 0.7, (x, z) => !wedge(x, z));
+  fill(bushGeometry(3, 7, 0.3), 320, 15.5, 44, [0.6, 1.0], 0.9, (x, z) => wedge(x, z) && z > 15);       // low ground cover in the window
+  // big upright leaf fans (banana, philodendron) framing the shot from the corners and flanks
+  fill(bushGeometry(12, 8, 1.05, 1), 80, 13.5, 42, [1.1, 1.9], 3.0, (x, z) => z > 6 && Math.abs(x) > 0.5 * z + 9);
+  fill(bushGeometry(14, 6, 0.75, 0.6), 120, 14, 46, [0.9, 1.6], 2.0, (x, z) => !wedge(x, z));
+
+  // flowers scattered through it all: hibiscus red, orchid pink, ginger orange, canary
+  const spots = place(420, CLEARING - 5, 52, (x, z, d) => d > CLEARING - 5 && (!wedge(x, z) || z > 15), 0.9), cols = [0xff3b4e, 0xff7ab0, 0xff8a2a, 0xffd23a, 0xfff0e0];
+  const blooms = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 7, 5), new THREE.MeshStandardMaterial({ roughness: 0.6, emissive: 0x331018, emissiveIntensity: 0.4 }), spots.length);
+  spots.forEach((p, i) => { const s = 0.12 + r() * 0.16; m.compose(pos.set(p.x, 0.5 + r() * 1.3, p.z), q.identity(), sc.set(s * 1.3, s * 0.7, s * 1.3)); blooms.setMatrixAt(i, m); blooms.setColorAt(i, new THREE.Color(cols[i % cols.length]!)); });
+  blooms.frustumCulled = false; g.add(blooms);
 
   g.update = (t) => { swayUniform.value = t; };
-  return g;
-}
-
-/** The claim: stumps and felled logs round the cleared edge, and stakes flying each baron's colour. */
-export function claim(colors: number[]): THREE.Group {
-  const g = new THREE.Group(), r = rng(55);
-  const wood = new THREE.MeshStandardMaterial({ map: bark(), roughness: 0.95 }), cut = new THREE.MeshStandardMaterial({ map: rings(), roughness: 0.8 });
-  for (let i = 0; i < 18; i++) {                              // stumps where the palms were cleared
-    const a = r() * Math.PI * 2, d = CLEARING - 1 + r() * 2.2, h = 0.4 + r() * 0.5, rad = 0.35 + r() * 0.3;
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad * 1.15, h, 10), [wood, cut, cut]);
-    body.position.set(Math.cos(a) * d, h / 2, Math.sin(a) * d); body.castShadow = true; g.add(body);
-  }
-  for (let i = 0; i < 9; i++) {                               // felled trunks lying across the edge
-    const a = r() * Math.PI * 2, d = CLEARING + 0.5 + r() * 2.5, len = 4 + r() * 3;
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, len, 9), [wood, cut, cut]);
-    log.rotation.set(Math.PI / 2, 0, a + Math.PI / 2 + (r() - 0.5) * 0.8); log.position.set(Math.cos(a) * d, 0.3, Math.sin(a) * d); log.castShadow = true; g.add(log);
-  }
-  const pole = new THREE.MeshStandardMaterial({ color: 0x8a7a3a, roughness: 0.7 });
-  for (let i = 0; i < 24; i++) {                              // claim stakes with pennants, all the way round
-    const a = (i / 24) * Math.PI * 2 + 0.05, d = CLEARING - 0.5;
-    const stake = new THREE.Group(); stake.position.set(Math.cos(a) * d, 0, Math.sin(a) * d);
-    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 3.2, 6), pole); p.position.y = 1.6; p.castShadow = true; stake.add(p);
-    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.5), new THREE.MeshStandardMaterial({ color: colors[i % colors.length]!, roughness: 0.8, side: THREE.DoubleSide }));
-    flag.position.set(0.45, 2.95, 0); flag.rotation.y = -a; stake.add(flag);
-    g.add(stake);
-  }
   return g;
 }
 

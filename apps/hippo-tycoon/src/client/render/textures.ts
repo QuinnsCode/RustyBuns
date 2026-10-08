@@ -125,10 +125,12 @@ export function dirt(): THREE.CanvasTexture {
     const x = r() * 512, y = r() * 512, rad = 14 + r() * 50, grd = g.createRadialGradient(x, y, 2, x, y, rad);
     grd.addColorStop(0, "rgba(8,6,4,0.55)"); grd.addColorStop(1, "rgba(8,6,4,0)"); g.fillStyle = grd; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
   }
-  g.globalCompositeOperation = "destination-in";                    // soft round edge
-  const fade = g.createRadialGradient(256, 256, 150, 256, 256, 254);
-  fade.addColorStop(0, "rgba(0,0,0,1)"); fade.addColorStop(0.72, "rgba(0,0,0,0.9)"); fade.addColorStop(1, "rgba(0,0,0,0)");
-  g.fillStyle = fade; g.fillRect(0, 0, 512, 512);
+  g.globalCompositeOperation = "destination-in";                    // a ragged edge: noisy blobs, not a circle
+  g.fillStyle = "#000"; g.beginPath(); g.arc(256, 256, 150, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < 160; i++) {
+    const a = r() * Math.PI * 2, d = 120 + r() * 120, rad = 14 + r() * 38, grd = g.createRadialGradient(256 + Math.cos(a) * d, 256 + Math.sin(a) * d, 1, 256 + Math.cos(a) * d, 256 + Math.sin(a) * d, rad);
+    grd.addColorStop(0, `rgba(0,0,0,${0.9 - (d - 120) / 200})`); grd.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = grd; g.fillRect(0, 0, 512, 512);
+  }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   return t;
 }
