@@ -1,0 +1,120 @@
+# Desktop binaries for every app (or a few), on demand, into R2 under hidden folders.
+# Run it from the Actions tab (pick apps, leave dry on to only see what builds), or
+# push a tag <app>-v<version> to drop one app for real. Links are in each drop job's summary.
+# A PR that changes this pipeline dry-runs every app, so a broken build shows before merge.
+#
+# Apps with Rust cdylibs (native/) build on one runner per OS; the rest cross-compile
+# every target from one Linux job. The table lives in scripts/ci-apps.ts.
+name: desktop-drop
+on:
+  push:
+    tags: ["*-v*"]
+  pull_request:
+    paths: [".github/workflows/desktop-drop.yml", "scripts/ci-apps.ts", "scripts/drop.ts"]
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: "all, or a comma list (hippo-tycoon,fm-daw)"
+        default: all
+      version:
+        description: "Version label for the folder (default: each app's package.json version)"
+        required: false
+      dry:
+        description: "Dry run: build and keep the binaries as run artifacts, upload nothing to R2"
+        type: boolean
+        default: true
+
+concurrency:
+  group: desktop-drop-${{ github.ref }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.p.outputs.build }}
+      apps: ${{ steps.p.outputs.apps }}
+      version: ${{ steps.p.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: "1.4.2" }
+      - id: p
+        run: |
+          apps="${{ inputs.apps }}"; version="${{ inputs.version }}"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then   # <app>-v<version>
+            tag="${GITHUB_REF#refs/tags/}"; apps="${tag%-v*}"; version="${tag##*-v}"
+          fi
+          bun scripts/ci-apps.ts drop "$apps" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    strategy:
+      fail-fast: false      # one broken app shouldn't hide whether the rest build
+      matrix: ${{ fromJSON(needs.plan.outputs.build) }}
+    name: ${{ matrix.app }} ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: "1.4.2" }
+      - if: matrix.prep
+        uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-unknown-unknown }
+      - if: matrix.prep
+        uses: Swatinem/rust-cache@v2
+        with: { workspaces: "${{ matrix.cargo }}" }
+      - run: bun install
+        working-directory: .
+      - if: matrix.prep
+        run: ${{ matrix.prep }}
+      - if: matrix.test
+        run: ${{ matrix.test }}     # a native binary still gets its tests on its own OS
+      - run: ${{ matrix.build }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-${{ matrix.target }}
+          path: apps/${{ matrix.app }}/dist/${{ matrix.app }}-*
+          if-no-files-found: error
+          retention-days: 7
+
+  drop:
+    needs: [plan, build]
+    if: ${{ !cancelled() }}     # drop whichever apps built, even if another failed
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+    name: drop ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: "1.4.2" }
+      - uses: actions/download-artifact@v4
+        with: { path: bins, pattern: "${{ matrix.app }}-*", merge-multiple: true }
+      - name: Every target built?
+        run: |
+          # A half-built app (say, Windows failed) isn't dropped; its artifacts are still on the run.
+          ls -la bins
+          want=$(bun -e 'const m=JSON.parse(process.argv[1]).include.filter(e=>e.app===process.argv[2]);console.log(m.length)' '${{ needs.plan.outputs.build }}' '${{ matrix.app }}')
+          got=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq "[.artifacts[].name | select(startswith(\"${{ matrix.app }}-\"))] | length")
+          echo "artifacts: $got of $want"
+          [ "$got" = "$want" ]
+        env: { GH_TOKEN: "${{ github.token }}" }
+      - name: Drop
+        run: |
+          v="${{ needs.plan.outputs.version }}"
+          [ -z "$v" ] && v="$(bun -p 'require("./apps/${{ matrix.app }}/package.json").version')"
+          bun scripts/drop.ts --app "${{ matrix.app }}" --version "$v" ${{ (inputs.dry || github.event_name == 'pull_request') && '--dry out' || '' }} bins/*
+        env:
+          # One bucket for every app's drops; each app gets its own top-level folder.
+          CLOUDFLARE_ACCOUNT_ID: c2d417e655e0ef55de8fe2d07874f521
+          R2_BUCKET: rustybuns-drops
+          R2_PUBLIC_URL: ${{ vars.DROPS_PUBLIC_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.DROPS_CLOUDFLARE_API_TOKEN }}  # R2 write on rustybuns-drops only
+          DROP_SECRET: ${{ secrets.DROP_SECRET }}
