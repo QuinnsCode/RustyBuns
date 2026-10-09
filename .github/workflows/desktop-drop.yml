@@ -3,6 +3,8 @@
 # push a tag <app>-v<version> to drop one app for real (<app>-v1.2.0 is stable,
 # <app>-v1.3.0-beta.1 experimental). Each app keeps the latest stable, the latest
 # experimental and the stable before; older builds are deleted. Links are in each drop job's summary.
+# A stable tag also makes a public GitHub Release with the binaries: that's what the
+# README links. The R2 drops stay hidden, for beta testers.
 # A PR that changes this pipeline dry-runs every app, so a broken build shows before merge.
 #
 # Apps with Rust cdylibs (native/) build on one runner per OS; the rest cross-compile
@@ -102,6 +104,9 @@ jobs:
     name: drop ${{ matrix.app }}
     runs-on: ubuntu-latest
     concurrency: drop-${{ matrix.app }}   # channels.json is read, changed, written: one drop per app at a time
+    permissions:
+      contents: write   # the GitHub Release on a stable tag
+      actions: read     # the artifact count below
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -129,3 +134,22 @@ jobs:
           R2_PUBLIC_URL: ${{ vars.DROPS_PUBLIC_URL }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.DROPS_CLOUDFLARE_API_TOKEN }}  # R2 token: Object Read & Write on rustybuns-drops only
           DROP_SECRET: ${{ secrets.DROP_SECRET }}
+      - name: GitHub Release
+        if: github.event_name == 'push' && needs.plan.outputs.channel == 'stable'
+        run: |
+          app="${{ matrix.app }}"; v="${{ needs.plan.outputs.version }}"
+          (cd bins && sha256sum * > SHA256SUMS)
+          cat > notes.md <<EOF
+          Desktop binaries for [$app](https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_REF_NAME/apps/$app), built from $GITHUB_REF_NAME. One file, nothing to install: Bun is inside.
+
+          Pick yours: \`darwin-arm64\` is a Mac with Apple silicon, \`darwin-x64\` an Intel Mac, \`windows-x64\` Windows, \`linux-x64\` / \`linux-arm64\` Linux.
+
+          **Mac:** it isn't signed, so macOS blocks a double click. In Terminal: \`cd ~/Downloads && chmod +x $app-darwin-* && xattr -d com.apple.quarantine $app-darwin-*\`, then \`./$app-darwin-arm64\` (or \`-x64\`).
+
+          **Windows:** SmartScreen may warn about an unknown app: More info, then Run anyway.
+
+          **Linux:** \`chmod +x $app-linux-*\` and run it.
+          EOF
+          # --latest=false: the repo's "latest" release stays the npm packages' one.
+          gh release create "$GITHUB_REF_NAME" bins/* --title "$app $v" --notes-file notes.md --latest=false --verify-tag
+        env: { GH_TOKEN: "${{ github.token }}" }
