@@ -262,8 +262,8 @@ bun run office
 | [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor on a folder of scenes: a plain Vite app, a `desktop.host` for file routes, `headers` for CDN assets | Medium |
 | [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game: a world class, and a `mounts` folder streamed from disk with range requests, never embedded | Small (scenes download separately) |
 | [splat-spray](apps/splat-spray/README.md) | The smallest config: a three.js SPA with no backend, `world: false`, ten lines | Small |
-| [spa-example](apps/spa-example) | An RWSDK / Cloudflare app on the desktop: a world Durable Object, D1 and KV on sqlite | Small |
-| [example](apps/example) | Worker mode, plus a probe for the sample Rust crate in `native/crates/rb_hello` | Small |
+| [spa-example](apps/spa-example/README.md) | A test fixture, not an app: a slice of a real RWSDK game that `glue.test.ts` uses to check `init` and the boundary report | None (never built) |
+| [example](apps/example/README.md) | Worker mode: a hand-written Worker with D1, KV and a Durable Object as a binary, plus a probe for the sample Rust crate | Small |
 
 For demo scripts, the optional Rust engines and troubleshooting, see [DEMO.md](DEMO.md).
 
@@ -299,11 +299,11 @@ For demo scripts, the optional Rust engines and troubleshooting, see [DEMO.md](D
 
 ### spa-example
 
-An RWSDK app boxed for the desktop: its world Durable Object runs in-process, D1 and KV run on sqlite, and the client connects over the same WebSocket it uses on Cloudflare.
+A test fixture, not an app you run: a slice of Druids Curse, the live RWSDK game Rusty Buns was first built to box. `packages/cli/test/glue.test.ts` reads it to check that `init` finds the framework, migrations and bindings, and that the boundary report sorts client, leaky client, action and server-only files correctly.
 
 ### example
 
-The framework's worker-mode test app: the full Worker bundle running under Bun, with a native probe that loads the sample Rust crate.
+The framework's worker-mode test app: a hand-written Worker (D1 visit counter, KV, a hibernating Durable Object) running under Bun as one binary, with a native probe that loads the sample Rust crate or takes the TypeScript path.
 
 ## Coming next
 

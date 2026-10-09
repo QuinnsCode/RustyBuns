@@ -7,7 +7,7 @@
   // RWSDK serves the client build from here
   "assets": { "binding": "ASSETS", "directory": "dist/client" },
   "d1_databases": [
-    { "binding": "DB", "database_name": "druids-curse-db", "database_id": "xxx", "migrations_dir": "migrations" },
+    { "binding": "DB", "database_name": "druids-curse-db", "database_id": "xxx" },
   ],
   "kv_namespaces": [{ "binding": "PRESENCE_KV", "id": "yyy" }],
   "durable_objects": { "bindings": [{ "name": "WORLD_DURABLE_OBJECT", "class_name": "WorldDurableObject" }] },

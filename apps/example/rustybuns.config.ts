@@ -15,8 +15,7 @@ export default defineConfig({
   "bindings": {
     "DB": {
       "type": "d1",
-      "databaseName": "druids-curse-db",
-      "migrationsDir": "migrations"
+      "databaseName": "druids-curse-db"
     },
     "PRESENCE_KV": {
       "type": "kv"
@@ -35,6 +34,7 @@ export default defineConfig({
       "provider": "cloudflare"
     },
     "desktop": {
+      "mode": "worker",
       "window": "app"
     }
   }
