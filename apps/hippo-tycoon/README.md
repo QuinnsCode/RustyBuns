@@ -72,7 +72,14 @@ bun scripts/smoke-online.ts http://127.0.0.1:8787     # a scripted two-player ro
 
 Open `http://127.0.0.1:8787` in two tabs, choose **Online room**, make a room in one, and type its code in the other.
 
-Deploying is yours to run: `bunx rustybuns plan` (creates nothing), then `bunx rustybuns deploy`. `plan` needs a live Cloudflare login (`alchemy profile refresh`). The Alchemy and Effect versions Alchemy needs are pinned in the **repo root** `package.json` (`overrides`), because Bun ignores overrides inside a workspace member.
+`wrangler dev` bundles the Worker with wrangler's own bundler, but a deploy ships Alchemy's bundle. To run Alchemy's bundle in workerd before deploying (no login needed, nothing created in the cloud):
+
+```
+bun run build
+bun scripts/check-alchemy-bundle.ts        # Alchemy's rolldown bundle -> workerd -> the smoke round
+```
+
+Deploying is yours to run: `bunx rustybuns plan` (creates nothing; it lists `[Build]`, `[Worker]` and `[Worker/WORLD]` to create), then `bunx rustybuns deploy`, then `bun scripts/smoke-online.ts https://<the deployed url>`. Both need a live Cloudflare login: `alchemy profile refresh --profile default --provider Cloudflare`, or `bunx rustybuns login cloudflare`. In CI, set `CI=true`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` instead. Even `rustybuns dev` needs the login. The deploy's build step (`worker.build`) compiles the wasm fluid when cargo and the `wasm32-unknown-unknown` target are installed, and the TypeScript twin ships otherwise. The Alchemy and Effect versions Alchemy needs are pinned in the **repo root** `package.json` (`overrides`), because Bun ignores overrides inside a workspace member.
 
 ## Play
 
@@ -176,4 +183,4 @@ profile: build desktop  (bun 1.4.2)
   total                   3.09s
 ```
 
-`build desktop --dev --check`: typecheck 2.70 s, client build 1.54 s, bundle dev host 12 ms, total 4.28 s. `rustybuns plan`: the generated stack type-checks in 3.09 s with tsc.
+`build desktop --dev --check`: typecheck 2.70 s, client build 1.54 s, bundle dev host 12 ms, total 4.28 s. `rustybuns plan`: the generated stack type-checks in 3.90 s with tsc, and the Alchemy plan takes 1.42 s.
