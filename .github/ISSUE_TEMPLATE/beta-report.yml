@@ -1,0 +1,30 @@
+# Opened from the "Something broke?" link on a drop's download page, which fills
+# in app, version, channel and commit. The tester picks their OS and says what happened.
+name: Beta build report
+description: A desktop build didn't download, open or run right
+title: "[beta] "
+labels: ["beta", "bug"]
+body:
+  - type: input
+    id: app
+    attributes: { label: App }
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes: { label: Version and channel, description: "e.g. 0.2.0 (stable)" }
+    validations: { required: true }
+  - type: input
+    id: commit
+    attributes: { label: Commit }
+  - type: dropdown
+    id: os
+    attributes:
+      label: Your computer
+      options: ["Mac (Apple silicon)", "Mac (Intel)", "Windows", "Linux", "Linux (ARM)"]
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, what you got. Paste any error text or the terminal output.
+    validations: { required: true }

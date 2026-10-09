@@ -127,5 +127,5 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: c2d417e655e0ef55de8fe2d07874f521
           R2_BUCKET: rustybuns-drops
           R2_PUBLIC_URL: ${{ vars.DROPS_PUBLIC_URL }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.DROPS_CLOUDFLARE_API_TOKEN }}  # R2 write on rustybuns-drops only
+          CLOUDFLARE_API_TOKEN: ${{ secrets.DROPS_CLOUDFLARE_API_TOKEN }}  # R2 token: Object Read & Write on rustybuns-drops only
           DROP_SECRET: ${{ secrets.DROP_SECRET }}
