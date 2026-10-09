@@ -8,13 +8,13 @@ import { code, json, NAME, type Env } from "./env.ts";
 export interface Level { n: number; slug: string; title: string; repo: string; branch: string; blurb: string }
 
 export const LEVELS: Level[] = [
-  { n: 1, slug: "alchemy", title: "Alchemy", repo: "alchemy-run/alchemy", branch: "main", blurb: "Infrastructure as TypeScript. The tool that deploys this app." },
-  { n: 2, slug: "t3code", title: "T3 Code", repo: "pingdotgg/t3code", branch: "main", blurb: "A desktop home for coding agents." },
-  { n: 3, slug: "tanstack", title: "TanStack Router & Start", repo: "TanStack/router", branch: "main", blurb: "Type-safe routing, and the full-stack framework built on it." },
-  { n: 4, slug: "effect", title: "Effect", repo: "Effect-TS/effect", branch: "main", blurb: "Typed effects, errors and concurrency for TypeScript." },
-  { n: 5, slug: "react", title: "React", repo: "react/react", branch: "main", blurb: "The library for web and native user interfaces." },
-  { n: 6, slug: "nextjs", title: "Next.js", repo: "vercel/next.js", branch: "canary", blurb: "The React framework, all of it." },
-  { n: 7, slug: "bun", title: "Bun", repo: "oven-sh/bun", branch: "main", blurb: "Runtime, bundler, test runner and package manager in one, in Zig." },
+  { n: 1, slug: "mitt", title: "mitt", repo: "developit/mitt", branch: "main", blurb: "A whole event emitter in about 200 bytes. A warm-up." },
+  { n: 2, slug: "clsx", title: "clsx", repo: "lukeed/clsx", branch: "master", blurb: "Class names, joined. Tiny and everywhere." },
+  { n: 3, slug: "ky", title: "Ky", repo: "sindresorhus/ky", branch: "main", blurb: "fetch, with the sharp edges filed off." },
+  { n: 4, slug: "zustand", title: "Zustand", repo: "pmndrs/zustand", branch: "main", blurb: "React state in a hook, and not much else." },
+  { n: 5, slug: "hono", title: "Hono", repo: "honojs/hono", branch: "main", blurb: "A web framework that runs on every edge." },
+  { n: 6, slug: "express", title: "Express", repo: "expressjs/express", branch: "master", blurb: "The Node web framework, the original." },
+  { n: 7, slug: "preact", title: "Preact", repo: "preactjs/preact", branch: "main", blurb: "React's API in 3 KB. The boss level." },
 ];
 
 const artifactName = (slug: string) => `level-${slug}`;
