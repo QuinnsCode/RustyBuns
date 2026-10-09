@@ -1,4 +1,4 @@
-// gitcode: a code host where each file is a Durable Object and your profile
+// codeSplitters: a code host where each file is a Durable Object and your profile
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.
 //
@@ -27,7 +27,7 @@ const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>
 const NAME = /^(?=.{1,39}$)[a-z0-9]+(-[a-z0-9]+)*$/;
 
 function who(req: Request) {
-  const m = /(?:^|;\s*)gc_user=([a-z0-9-]+)/.exec(req.headers.get("cookie") ?? "");
+  const m = /(?:^|;\s*)cs_user=([a-z0-9-]+)/.exec(req.headers.get("cookie") ?? "");
   return m?.[1] ?? null;
 }
 
@@ -45,7 +45,7 @@ const fileStub = (env: Env, owner: string, repo: string, path: string) =>
 /** Call the file's DO as `user`. */
 function toFile(env: Env, owner: string, repo: string, path: string, user: string, op: string, init: RequestInit = {}, search = "") {
   const headers = new Headers(init.headers);
-  headers.set("x-gitcode-user", user);
+  headers.set("x-codesplitters-user", user);
   return fileStub(env, owner, repo, path).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 
@@ -83,7 +83,7 @@ export default {
       const { name } = await body<{ name: string }>();
       if (!NAME.test(name ?? "")) return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
       await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
-      return json({ name }, 200, { "set-cookie": `gc_user=${name}; Path=/; SameSite=Lax` });
+      return json({ name }, 200, { "set-cookie": `cs_user=${name}; Path=/; SameSite=Lax` });
     }
 
     // GET|PUT /api/me
@@ -115,7 +115,7 @@ export default {
       await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at) VALUES (?, ?, ?, ?)").bind(user, name, visibility, Date.now()).run();
       if (env.ARTIFACTS) {
         // One artifact repo per excavation; "--" can't appear in either name, so it can't collide.
-        const art = await env.ARTIFACTS.create(`${user}--${name}`, { description: `gitcode ${user}/${name}`, setDefaultBranch: "main" });
+        const art = await env.ARTIFACTS.create(`${user}--${name}`, { description: `codeSplitters ${user}/${name}`, setDefaultBranch: "main" });
         await env.DB.prepare("UPDATE repos SET artifact = ?, artifact_remote = ? WHERE owner = ? AND name = ?").bind(art.name, art.remote, user, name).run();
       }
       return json({ owner: user, name, visibility }, 201);

@@ -2,7 +2,7 @@
 // infra; this file only feeds RWSDK's local dev. Do not hand-edit.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "gitcode",
+  "name": "codesplitters",
   "main": "src/worker.ts",
   "compatibility_date": "2026-06-01",
   "compatibility_flags": [],
@@ -13,7 +13,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "gitcode-db",
+      "database_name": "codesplitters-db",
       "database_id": "managed-by-alchemy",
       "migrations_dir": "migrations"
     }
@@ -21,7 +21,7 @@
   "artifacts": [
     {
       "binding": "ARTIFACTS",
-      "namespace": "gitcode"
+      "namespace": "codesplitters"
     }
   ],
   "durable_objects": {

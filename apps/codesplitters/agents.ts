@@ -97,10 +97,12 @@ export async function run(call: Call, opts: { owner?: string; repo?: string; del
 if (import.meta.main) {
   const arg = (f: string) => { const i = process.argv.indexOf(f); return i > 0 ? process.argv[i + 1] : undefined; };
   const url = arg("--url");
-  const call = url ? remote(url, arg("--cookie")) : await local();
+  const app = url ? null : await local();
+  const call = app ?? remote(url!, arg("--cookie"));
   const { doc, commit, stats } = await run(call, { delay: url ? 400 : 5 });
   console.log(`\ncatalogued ${commit.sha.slice(0, 10)} at rev ${commit.rev}`);
   console.log(commit.git?.commit ? `pushed git commit ${commit.git.commit.slice(0, 10)} to ${commit.git.remote}\n` : `no git push: ${commit.git?.error ?? "no Artifacts binding"}\n`);
   for (const l of doc.lines) console.log(`${l.by.padEnd(14)} r${String(l.rev).padEnd(3)} ${l.text}`);
   console.log("\n" + Object.entries(stats).map(([n, s]) => `${n}: ${s.edits} edits, ${s.conflicts} conflicts`).join("\n"));
+  app?.close();
 }

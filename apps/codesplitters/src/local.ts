@@ -12,9 +12,8 @@ export async function local() {
   const env: any = { DB: d1(":memory:") };
   env.FILES = durableObject(FileDurableObject as any, env);
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
-  const dir = mkdtempSync(join(tmpdir(), "gitcode-artifacts-"));
-  process.once("exit", () => rmSync(dir, { recursive: true, force: true }));
-  env.ARTIFACTS = new LocalArtifacts(dir, "gitcode");
+  const dir = mkdtempSync(join(tmpdir(), "codesplitters-artifacts-"));
+  env.ARTIFACTS = new LocalArtifacts(dir, "codesplitters");
   const git = Bun.serve({ port: 0, fetch: (req) => gitHttp(req, [env.ARTIFACTS]) });
   git.unref();
   env.ARTIFACTS.remoteBase = `http://127.0.0.1:${git.port}`;
@@ -22,9 +21,13 @@ export async function local() {
   /** Call the app as `user` (a name, or null for logged out). */
   return Object.assign((user: string | null, path: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers);
-    if (user) headers.set("cookie", `gc_user=${user}`);
-    return worker.fetch(new Request("http://gitcode.local" + path, { ...init, headers }), env);
-  }, { artifacts: env.ARTIFACTS as LocalArtifacts });
+    if (user) headers.set("cookie", `cs_user=${user}`);
+    return worker.fetch(new Request("http://codesplitters.local" + path, { ...init, headers }), env);
+  }, {
+    artifacts: env.ARTIFACTS as LocalArtifacts,
+    /** Stop the git server and delete the temp repos. */
+    close() { git.stop(true); rmSync(dir, { recursive: true, force: true }); },
+  });
 }
 
 export type Call = (user: string | null, path: string, init?: RequestInit) => Promise<Response>;
@@ -33,7 +36,7 @@ export type Call = (user: string | null, path: string, init?: RequestInit) => Pr
 export function remote(base: string, extraCookie = ""): Call {
   return (user, path, init = {}) => {
     const headers = new Headers(init.headers);
-    headers.set("cookie", [user ? `gc_user=${user}` : "", extraCookie].filter(Boolean).join("; "));
+    headers.set("cookie", [user ? `cs_user=${user}` : "", extraCookie].filter(Boolean).join("; "));
     return fetch(base.replace(/\/$/, "") + path, { ...init, headers });
   };
 }
