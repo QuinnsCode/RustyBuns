@@ -20,7 +20,7 @@ export async function run({ cmd, path, text }) {
     await mkdir(dirname(at), { recursive: true });
     await writeFile(at, text);
     const { code, out } = await new Promise((done) => {
-      const p = spawn(cmd.bin, cmd.args, { cwd: dir, env: { ...process.env, ...cmd.env }, stdio: ["ignore", "pipe", "pipe"] });
+      const p = spawn(cmd.bin, cmd.args, { cwd: dir, env: { ...process.env, ...cmd.env, PWD: dir }, stdio: ["ignore", "pipe", "pipe"] });
       let out = "";
       p.stdout.on("data", (b) => { out += b; });
       p.stderr.on("data", (b) => { out += b; });
