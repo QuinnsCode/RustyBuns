@@ -5,12 +5,13 @@ import { LocalArtifacts, applyD1Migrations, d1, durableObject, gitHttp, installC
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import worker, { FileDurableObject } from "./worker.ts";
+import worker, { FileDurableObject, GameRoom } from "./worker.ts";
 
 export async function local(extra: Record<string, string> = {}) {
   installCloudflareGlobals();
   const env: any = { DB: d1(":memory:"), ...extra };
   env.FILES = durableObject(FileDurableObject as any, env);
+  env.GAMES = durableObject(GameRoom as any, env);
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
   const dir = mkdtempSync(join(tmpdir(), "codesplitters-artifacts-"));
   env.ARTIFACTS = new LocalArtifacts(dir, "codesplitters");

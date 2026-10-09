@@ -8,7 +8,10 @@ import { code, json, NAME, type Env } from "./env.ts";
 import { identityRoutes, identify, isAdmin } from "./identity.ts";
 import { levelRoutes } from "./levels.ts";
 import { githubRoutes } from "./github.ts";
+import { gameRoutes } from "./game.ts";
+import { createShare, shareRoutes } from "./shares.ts";
 export { FileDurableObject } from "./file-do.ts";
+export { GameRoom } from "./game-do.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
@@ -36,6 +39,10 @@ export default {
     if (levels) return levels;
     const github = await githubRoutes(req, env, p, user);
     if (github) return github;
+    const game = await gameRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read);
+    if (game) return game;
+    const share = await shareRoutes(req, env, p, user);
+    if (share) return share;
 
     // GET|PUT /api/me
     if (p[1] === "me") {
@@ -89,6 +96,19 @@ export default {
         // Where the fork's git lives: a bare repo on this machine, or Cloudflare Artifacts.
         const home = h ? (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(art?.remote ?? h.remote) ? "local" : "cloud") : null;
         return json({ ...r, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, home });
+      }
+      // PUT /api/repos/:o/:r {visibility}  (owner only)
+      if (!p[4] && req.method === "PUT") {
+        if (user !== owner) return json({ error: "owner only" }, 403);
+        const { visibility } = await body<{ visibility: string }>();
+        if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
+        await env.DB.prepare("UPDATE repos SET visibility = ? WHERE owner = ? AND name = ?").bind(visibility, owner, repo).run();
+        return json({ visibility });
+      }
+      // POST /api/repos/:o/:r/shares {path, from, to, note}  a live link to some lines
+      if (p[4] === "shares" && req.method === "POST") {
+        const v = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+        return createShare(env, owner, repo, user, a, v?.visibility === "private", await body());
       }
       // GET /api/repos/:o/:r/tree?path=dir  the repo's git tree, plus files written here but not catalogued yet
       if (p[4] === "tree") {

@@ -6,182 +6,240 @@
 <title>codeSplitters</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500&family=Geist+Mono:wght@300;400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 <style>
-  /* 70 / 20 / 10: whitish founding-document paper, iron-gall ink, one oxblood accent. */
+  /* A bright code host in GitHub's shape, with a little of the archive in it:
+     parchment on the headers, a wax-seal red for the main actions, gold for
+     the odd flourish, and an old printed serif for the masthead. */
   :root {
-    --paper: #f7f3e8;      /* 70: the page */
-    --paper-2: #fbf9f2;    /* a lighter sheet for panels */
-    --ink: #2b2620;        /* 20: text */
-    --ink-2: #6f665a;      /* secondary text */
-    --rule: #e3dac6;       /* hairlines */
-    --accent: #8c2f22;     /* 10: links, primary actions, the stamp */
+    --bg: #ffffff;
+    --canvas: #f6f8fa;       /* panels, bars */
+    --border: #d1d9e0;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --link: #0969da;
+    --seal: #8c2f22;         /* primary actions */
+    --seal-hover: #a63a2b;
+    --parchment: #faf5e8;    /* headers, the hero */
+    --parchment-edge: #e8dcbf;
+    --gold: #a4823b;
+    --select: #fff8c5;       /* selected lines */
     --sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
     --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --serif: "IM Fell English", Georgia, serif;
   }
   * { box-sizing: border-box; }
-  html { background: var(--paper); }
-  body {
-    margin: 0; color: var(--ink); font: 300 15px/1.6 var(--sans); letter-spacing: -0.005em;
-    -webkit-font-smoothing: antialiased;
-    /* The paper: a faint uneven tone and a very light grain. */
-    background:
-      radial-gradient(ellipse 80% 60% at 15% 10%, rgba(214, 196, 150, .14), transparent 70%),
-      radial-gradient(ellipse 70% 50% at 90% 85%, rgba(200, 178, 130, .12), transparent 70%),
-      var(--paper);
-    min-height: 100vh;
-  }
-  body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1; opacity: .35; mix-blend-mode: multiply;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .55  0 0 0 0 .47  0 0 0 0 .33  0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 400 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+  a { color: var(--link); text-decoration: none; } a:hover { text-decoration: underline; }
+  [data-lucide], svg.lucide { width: 16px; height: 16px; stroke-width: 1.75; vertical-align: -3px; flex: none; }
+  code { font-family: var(--mono); font-size: 12.5px; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; }
 
-  header { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 14px 24px; border-bottom: 1px solid var(--rule); }
-  header h1 { margin: 0; font: 500 17px/1 var(--sans); letter-spacing: -0.02em; }
-  header h1 a { color: var(--ink); text-decoration: none; }
-  header h1 small { display: inline; margin-left: 10px; font-weight: 300; font-size: 13px; letter-spacing: 0; color: var(--ink-2); }
-  main { max-width: 920px; margin: 0 auto; padding: 32px 24px 80px; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
-
-  input, select, textarea, button { font: 400 14px/1.4 var(--sans); color: var(--ink); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ink-2); }
+  /* Buttons, inputs: GitHub's proportions. */
+  input, select, textarea { font: 400 14px/20px var(--sans); color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--link); outline-offset: -1px; border-color: transparent; }
   textarea { font-family: var(--mono); font-size: 13px; }
-  button { cursor: pointer; font-weight: 400; }
-  button:hover { border-color: var(--ink-2); }
-  button.primary { background: var(--ink); color: var(--paper-2); border-color: var(--ink); }
-  button.primary:hover { background: var(--accent); border-color: var(--accent); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; font: 500 13px/20px var(--sans); color: var(--fg); background: var(--canvas); border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; cursor: pointer; white-space: nowrap; text-decoration: none !important; }
+  .btn:hover { background: #eff2f5; }
+  .btn.primary { background: var(--seal); border-color: var(--seal); color: #fff; }
+  .btn.primary:hover { background: var(--seal-hover); }
+  .btn.ghost { background: transparent; border-color: transparent; }
+  .btn[disabled] { opacity: .45; cursor: default; }
+  .btn .count { background: rgba(31,35,40,.08); border-radius: 10px; padding: 0 6px; font-size: 12px; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; font: 500 12px/18px var(--sans); color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; background: var(--bg); }
+  button.badge { cursor: pointer; } button.badge:hover { border-color: var(--muted); }
+  .label { font: 500 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 
-  .card { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 20px 22px; margin: 0 0 20px; }
-  .card h2, .card h3 { font-weight: 400; letter-spacing: -0.02em; margin: 0 0 10px; }
-  .card h2 { font-size: 24px; } .card h3 { font-size: 16px; font-weight: 500; }
-  .muted { color: var(--ink-2); } .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .label { font: 400 11px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 4px; }
-  code { font-family: var(--mono); font-size: .92em; }
+  /* The top bar. */
+  .top { display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: var(--canvas); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
+  .brand { display: flex; align-items: center; gap: 8px; color: var(--fg); font: 600 15px var(--sans); letter-spacing: -0.01em; }
+  .brand:hover { text-decoration: none; }
+  .brand svg { width: 26px; height: 26px; }
+  .jump { display: flex; align-items: center; gap: 8px; min-width: 280px; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; font: 400 13px var(--sans); }
+  .jump:hover { border-color: var(--muted); }
+  .jump kbd, .palette kbd { margin-left: auto; font: 500 11px var(--mono); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; color: var(--muted); background: var(--canvas); }
+  #who { display: flex; align-items: center; gap: 8px; }
+  #who form { display: flex; gap: 6px; }
+  main { padding: 0 0 60px; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 20px; }
 
-  /* The artifact: plain mono on a lighter sheet, blame in the margin. */
-  .code { font: 300 13px/1.8 var(--mono); padding: 14px 6px; }
-  .ln { display: grid; grid-template-columns: 30px 120px 44px 1fr; gap: 10px; padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 3px; }
-  .ln:hover { background: rgba(43, 38, 32, .035); }
-  .ln .n, .ln .by, .ln .rev { color: var(--ink-2); opacity: .75; user-select: none; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
-  .ln .n { text-align: right; }
-  /* A fresh line from another hand: a brief accent wash in the margin. */
-  .ln.mod { box-shadow: inset 2px 0 var(--accent); } .ln.mod .by { color: var(--accent); opacity: 1; }
-  .fork-note { border-left: 2px solid var(--accent); padding: 2px 0 2px 12px; margin: 10px 0 0; font-size: 14px; }
+  /* Repo header and the IDE: files on the left, the code on the right. */
+  .repohead { background: var(--parchment); border-bottom: 1px solid var(--parchment-edge); }
+  .repohead .wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 16px; padding-bottom: 14px; }
+  .repohead h1 { margin: 0; font: 400 20px/1.3 var(--sans); display: flex; align-items: center; gap: 8px; }
+  .repohead h1 b { font-weight: 600; }
+  .repohead .sub { width: 100%; color: var(--muted); font-size: 13px; margin-top: -4px; }
+  .ide { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; padding-top: 18px; }
+  .side { border: 1px solid var(--border); border-radius: 6px; align-self: start; position: sticky; top: 70px; max-height: calc(100vh - 90px); overflow: auto; }
+  .side h2 { margin: 0; padding: 8px 12px; font: 600 13px var(--sans); background: var(--canvas); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; }
+  .files a { display: flex; align-items: center; gap: 8px; padding: 4px 12px; color: var(--fg); font-size: 13px; border-left: 2px solid transparent; }
+  .files a:hover { background: var(--canvas); text-decoration: none; }
+  .files a.on { background: #eef1f4; border-left-color: var(--seal); font-weight: 500; }
+  .files a .ic-dir { color: #54aeff; fill: #b6e3ff; } .files a .ic-file { color: var(--muted); }
+  .pane { min-width: 0; }
+  .box { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; background: var(--bg); }
+  .box > .bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; background: var(--canvas); border-bottom: 1px solid var(--border); font-size: 13px; }
+  .box > .body { padding: 14px 16px; }
+  .crumbs { font: 600 14px var(--sans); } .crumbs a { font-weight: 400; } .crumbs .sep { color: var(--muted); margin: 0 4px; }
+  .table a.rowlink { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: center; padding: 7px 16px; border-top: 1px solid var(--border); color: var(--fg); }
+  .table a.rowlink:first-child { border-top: 0; } .table a.rowlink:hover { background: var(--canvas); text-decoration: none; }
+  /* A fork: lines modded since the clone get a seal mark; where it came from sits under the header. */
+  .ln.mod { box-shadow: inset 2px 0 var(--seal); } .ln.mod .by { color: var(--seal); }
   .gh-list { max-height: 220px; overflow: auto; margin-top: 8px; }
-  .gh-list button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 3px 0; font: inherit; color: var(--accent); cursor: pointer; }
-  .gh-list button[disabled] { color: var(--ink-2); cursor: default; }
-  .ln.flash { animation: ink 1.4s ease-out; } .ln.flash .t { animation: type .6s steps(28, end); }
-  @keyframes ink { from { background: rgba(140, 47, 34, .1); } }
-  @keyframes type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
-  .ln input { width: 100%; padding: 0 6px; font: inherit; }
-  mark { background: rgba(140, 47, 34, .12); color: inherit; padding: 0 2px; border-radius: 2px; }
+  .gh-list button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 3px 0; font: inherit; color: var(--link); cursor: pointer; }
+  .gh-list button[disabled] { color: var(--muted); cursor: default; }
 
-  .stamp { display: inline-block; border: 1px solid var(--accent); color: var(--accent); padding: 0 6px; margin-right: 8px;
-    font: 400 10px/1.7 var(--mono); letter-spacing: .1em; text-transform: uppercase; border-radius: 3px; }
-  .entry { padding: 6px 0; border-bottom: 1px solid var(--rule); } .entry:last-child { border-bottom: 0; }
-  input[type=range] { accent-color: var(--accent); padding: 0; background: none; border: 0; }
+  /* Code: a line-number gutter you can click, blame faint on the side. */
+  .code { font: 400 12.5px/20px var(--mono); overflow-x: auto; tab-size: 4; }
+  .ln { display: grid; grid-template-columns: 56px 110px minmax(0, 1fr); }
+  .ln .n { text-align: right; padding-right: 12px; color: #8c959f; cursor: pointer; user-select: none; }
+  .ln .n:hover { color: var(--fg); }
+  .ln .by { color: #8c959f; font-size: 11.5px; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-right: 1px solid var(--border); user-select: none; }
+  .ln .t { white-space: pre; padding: 0 16px; }
+  .code.plain .ln { grid-template-columns: 56px minmax(0, 1fr); }
+  .ln.sel { background: var(--select); } .ln.sel .n { color: var(--fg); box-shadow: inset 2px 0 0 var(--gold); }
+  .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: #dafbe1; } }
+  .ln.claim .t { box-shadow: inset 2px 0 0 #bf8700; }
+  .ln input { width: 100%; font: inherit; padding: 0 4px; border-radius: 3px; }
+  .ln:first-child { padding-top: 6px; } .ln:last-child { padding-bottom: 6px; }
+  mark { background: #fff8c5; color: inherit; border-radius: 2px; }
 
-  /* Someone's own page, mounted plainly. */
-  .photo { margin: 0 0 20px; padding: 8px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; }
-  .photo iframe { width: 100%; height: 220px; border: 0; border-radius: 4px; background: #fff; display: block; }
-  .photo figcaption { padding: 8px 4px 0; font-size: 12px; color: var(--ink-2); }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; } .two .card { margin: 0; }
-  @media (max-width: 700px) { main { padding: 20px 16px 60px; } header { padding: 12px 16px; } .two { grid-template-columns: 1fr; } .ln { grid-template-columns: 24px 76px 1fr; } .ln .rev { display: none; } }
-  /* Folders and files. */
-  .tree { display: grid; gap: 2px; margin: 8px 0 14px; font: 300 14px/1.8 var(--mono); }
-  .tree a { color: var(--ink); padding: 0 6px; border-radius: 4px; } .tree a:hover { background: rgba(43, 38, 32, .05); text-decoration: none; }
-  .tree .entry-dir { font-weight: 400; }
-  /* Sign in. */
-  .signin { position: relative; } .signin summary { list-style: none; cursor: pointer; padding: 6px 10px; border-radius: 6px; background: var(--ink); color: var(--paper-2); font-size: 14px; }
-  .signin summary::-webkit-details-marker { display: none; }
-  .signin .panel { position: absolute; right: 0; top: 40px; z-index: 5; width: 280px; display: grid; gap: 8px; padding: 14px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 10px 30px -18px rgba(43, 38, 32, .5); }
-  .signin form { display: grid; gap: 8px; }
-  /* Levels. */
-  .levels-title { font: 400 22px/1.2 var(--sans); letter-spacing: -0.02em; margin: 4px 0 14px; }
-  .levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-bottom: 30px; }
-  .level { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 12px 14px; color: var(--ink); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; }
-  .level:hover { border-color: var(--ink-2); text-decoration: none; }
-  .level b { display: block; font-weight: 500; } .level .muted { font: 300 12px var(--mono); }
-  .lvl-n { font: 300 20px/1 var(--mono); color: var(--ink-2); }
-  .lvl-st { font: 400 10px/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
-  .st-ready { color: var(--accent); }
+  /* Popovers (share, clone, invite). */
+  .pop { position: relative; }
+  .pop > .panel { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 340px; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(140,149,159,.25); display: grid; gap: 8px; }
+  .pop > .panel[hidden] { display: none; }
+  .copyline { display: flex; gap: 6px; } .copyline input { flex: 1; font: 12px var(--mono); }
 
-  /* Landing intro. */
-  .hero { padding: 8px 0 24px; }
-  .headline { font: 300 clamp(32px, 6vw, 56px)/1.05 var(--sans); letter-spacing: -0.04em; margin: 6px 0 14px; }
-  .split-word { color: var(--accent); }
-  .lede { max-width: 620px; color: var(--ink-2); font-size: 17px; margin: 0 0 26px; }
-  .stage { position: relative; height: 300px; border: 1px solid var(--rule); border-radius: 10px; background: var(--paper-2); overflow: hidden; font: 300 13px/1.9 var(--mono); }
-  .piece { position: absolute; left: 0; top: 0; display: flex; gap: 14px; padding: 0 12px 0 18px; white-space: pre; border: 1px solid transparent; border-radius: 6px;
-    will-change: transform; transition: border-color .5s, background .5s, padding .5s, box-shadow .5s; }
-  .piece .who { width: 96px; color: var(--ink-2); opacity: .7; font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
-  .piece.apart { border-color: var(--rule); background: var(--paper); padding: 4px 12px; box-shadow: 0 6px 14px -10px rgba(43, 38, 32, .35); }
-  /* The split: a hairline slit of accent that opens across the file. */
-  .slit { position: absolute; top: 8px; bottom: 8px; left: 0; width: 1px; background: var(--accent); opacity: 0; pointer-events: none; }
+  /* The hero: a parchment sheet with a fine double rule, like a charter. */
+  .hero { background: var(--parchment); border-bottom: 1px solid var(--parchment-edge); }
+  .hero .wrap { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 40px; align-items: center; padding-top: 44px; padding-bottom: 40px; }
+  .est { font: italic 400 15px var(--serif); color: var(--gold); letter-spacing: .02em; }
+  .headline { font: 600 clamp(32px, 4.6vw, 52px)/1.04 var(--sans); letter-spacing: -0.035em; margin: 8px 0 14px; }
+  .headline em { font: italic 400 1.08em var(--serif); color: var(--seal); letter-spacing: -0.01em; }
+  .lede { color: var(--muted); font-size: 16px; max-width: 560px; margin: 0 0 22px; }
+  .stage { position: relative; height: 290px; border: 1px solid var(--parchment-edge); outline: 1px solid var(--parchment-edge); outline-offset: 3px; border-radius: 4px; background: #fffdf7; overflow: hidden; font: 400 12.5px/1.9 var(--mono); }
+  .piece { position: absolute; left: 0; top: 0; display: flex; gap: 14px; padding: 0 12px 0 18px; white-space: pre; border: 1px solid transparent; border-radius: 6px; will-change: transform; transition: border-color .5s, background .5s, padding .5s, box-shadow .5s; }
+  .piece .who { width: 96px; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+  .piece.apart { border-color: var(--border); background: var(--bg); padding: 4px 12px; box-shadow: 0 6px 14px -10px rgba(31,35,40,.35); }
+  .slit { position: absolute; top: 8px; bottom: 8px; left: 0; width: 1px; background: var(--seal); opacity: 0; pointer-events: none; }
   .slit.go { animation: slit .75s cubic-bezier(.7, 0, .3, 1) forwards; }
   @keyframes slit { 0% { left: 0; opacity: 0; } 15% { opacity: .9; } 85% { opacity: .9; } 100% { left: 100%; opacity: 0; } }
   .piece.hit { animation: hit 1.1s ease-out; } .piece.hit .txt { animation: type .5s steps(24, end); }
-  @keyframes hit { from { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(140, 47, 34, .08); } }
-  .seal { position: absolute; right: 16px; bottom: 14px; font: 400 11px/1.7 var(--mono); letter-spacing: .06em; color: var(--accent);
-    border: 1px solid var(--accent); border-radius: 4px; padding: 1px 8px; opacity: 0; transform: translateY(6px); transition: opacity .5s, transform .5s; }
+  @keyframes hit { from { border-color: var(--seal); box-shadow: 0 0 0 3px rgba(140,47,34,.08); } }
+  @keyframes type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+  .seal { position: absolute; right: 14px; bottom: 12px; font: 500 11px/1.7 var(--mono); color: var(--seal); border: 1px solid var(--seal); border-radius: 4px; padding: 1px 8px; opacity: 0; transform: translateY(6px); transition: opacity .5s, transform .5s; background: #fffdf7; }
   .seal.on { opacity: 1; transform: none; }
-  .phases { display: flex; gap: 22px; flex-wrap: wrap; list-style: none; padding: 0; margin: 12px 2px 0; font: 400 11px/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); counter-reset: ph; }
-  .phases li { opacity: .45; transition: opacity .4s; counter-increment: ph; } .phases li::before { content: counter(ph) " · "; }
-  .phases li.on { opacity: 1; color: var(--ink); }
-  .pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin: 34px 0 30px; padding-top: 26px; border-top: 1px solid var(--rule); }
-  .pillars h3 { font: 400 18px/1.3 var(--sans); letter-spacing: -0.02em; margin: 0 0 6px; }
-  .pillars p { margin: 0; color: var(--ink-2); font-size: 14px; }
-  @media (max-width: 700px) { .pillars { grid-template-columns: 1fr; gap: 18px; } .stage { height: 340px; font-size: 12px; } .piece .who { width: 70px; } }
+  .phases { display: flex; gap: 18px; flex-wrap: wrap; list-style: none; padding: 0; margin: 10px 2px 0; font: 500 11px/1.6 var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); counter-reset: ph; }
+  .phases li { opacity: .45; transition: opacity .4s; counter-increment: ph; } .phases li::before { content: counter(ph) " · "; } .phases li.on { opacity: 1; color: var(--fg); }
+
+  /* Home sections. */
+  .section { padding-top: 34px; }
+  .section h2 { font: 600 20px var(--sans); letter-spacing: -0.02em; margin: 4px 0 4px; }
+  .section > .wrap > p { margin: 0 0 16px; }
+  .cmds { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+  .cmd { display: grid; grid-template-columns: 32px 1fr; gap: 4px 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); }
+  .cmd .ico { grid-row: span 3; width: 32px; height: 32px; border-radius: 6px; background: var(--parchment); border: 1px solid var(--parchment-edge); display: grid; place-items: center; color: var(--seal); }
+  .cmd b { font-weight: 600; } .cmd span { color: var(--muted); font-size: 13px; } .cmd code { color: var(--muted); font-size: 11.5px; }
+  .levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .level { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center; padding: 12px 14px; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; }
+  .level:hover { border-color: var(--muted); text-decoration: none; }
+  .level b { display: block; font-weight: 600; } .level .muted { font: 12px var(--mono); }
+  .lvl-n { font: italic 400 20px var(--serif); color: var(--gold); }
+  .lvl-st { font: 500 11px var(--sans); color: var(--muted); } .st-ready { color: #1a7f37; }
+
+  /* Profiles, collections, search. */
+  .cards { display: grid; gap: 16px; padding-top: 20px; } .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .photo iframe { width: 100%; height: 220px; border: 0; display: block; background: #fff; }
+  .list a { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); } .list a:first-child { border-top: 0; }
+
+  /* The command palette. */
+  .palette { position: fixed; inset: 0; z-index: 50; background: rgba(31,35,40,.35); display: grid; justify-items: center; align-items: start; padding-top: 12vh; }
+  .palette[hidden] { display: none; }
+  .palette .sheet { width: min(640px, calc(100vw - 32px)); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 16px 48px rgba(31,35,40,.3); overflow: hidden; }
+  .palette .q { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .palette .q input { flex: 1; border: 0; outline: 0; font-size: 15px; padding: 4px 0; }
+  .palette .q .ask { font: 500 12px var(--sans); color: var(--seal); background: var(--parchment); border: 1px solid var(--parchment-edge); border-radius: 4px; padding: 0 6px; }
+  .palette ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow: auto; }
+  .palette li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+  .palette li .api { margin-left: auto; font: 11.5px var(--mono); color: var(--muted); }
+  .palette li.on { background: var(--canvas); box-shadow: inset 2px 0 0 var(--seal); }
+  .palette .group { padding: 8px 10px 2px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); cursor: default; }
+  .palette .foot { padding: 7px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); background: var(--canvas); }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--fg); color: #fff; padding: 8px 14px; border-radius: 6px; font-size: 13px; z-index: 60; }
+
+  @media (max-width: 860px) {
+    .ide, .hero .wrap, .two { grid-template-columns: 1fr; } .side { position: static; max-height: 240px; }
+    .jump { min-width: 0; flex: 1; } .jump span { display: none; } .ln { grid-template-columns: 44px minmax(0, 1fr); } .ln .by { display: none; }
+    .wrap { padding: 0 16px; } .top { padding: 10px 16px; }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1><a href="#/">codeSplitters<small>an archive of code</small></a></h1>
-  <form id="search" class="row"><input name="q" placeholder="search the archive" size="24"></form>
-  <span style="flex:1"></span>
+<header class="top">
+  <a class="brand" href="#/" aria-label="codeSplitters home">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="#8c2f22"/><circle cx="16" cy="16" r="11" fill="none" stroke="#e9b8a8" stroke-width=".8" stroke-dasharray="1.5 1.5"/><path d="M9 16h6M17 16h6M16 9v14" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+    codeSplitters
+  </a>
+  <button class="jump" id="jump" type="button"><i data-lucide="search"></i><span>Search or run a command</span><kbd>⌘K</kbd></button>
+  <span class="grow"></span>
+  <a class="btn ghost" href="/play.html#l/mitt" title="the game"><i data-lucide="gamepad-2"></i>Play</a>
   <span id="who"></span>
 </header>
 <main id="app"></main>
+<div class="palette" id="palette" hidden><div class="sheet" role="dialog" aria-label="Commands">
+  <div class="q"><i data-lucide="command"></i><span class="ask" id="pal-ask" hidden></span><input id="pal-q" placeholder="Type a command, or search code" autocomplete="off"><kbd>esc</kbd></div>
+  <ul id="pal-list"></ul>
+  <div class="foot">Every command here is one API call, shown on the right, so a person and an agent do the same thing the same way.</div>
+</div></div>
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const icon = (name, cls = "") => `<i data-lucide="${name}"${cls ? ` class="${cls}"` : ""}></i>`;
+const icons = () => { try { lucide.createIcons(); } catch {} };
 // Who you are comes from the server: an alias (desktop, demos) or a Better Auth account.
 let session = { mode: "alias", user: null, providers: [] };
 const me = () => session.user;
 const api = async (path, body, method) => {
-  const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
+  const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || j.message || r.status);
   return j;
 };
 const app = $("#app");
 let socket = null;
+// What the page is showing, so the palette can offer what makes sense here.
+let ctx = {};
+function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 2400); }
+async function copy(text, what = "Copied") { try { await navigator.clipboard.writeText(text); toast(what); } catch { prompt("Copy this:", text); } }
 
 async function refreshSession() { session = await api("/session").catch(() => session); }
 
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `<a href="#/u/${u}">@${u}</a> <button id="out">sign out</button>`;
-    $("#out").addEventListener("click", async () => {
-      await (session.mode === "accounts" ? api("/auth/sign-out", {}) : api("/logout", {})).catch(() => {});
-      await refreshSession(); header(); route();
-    });
-    return;
+    $("#who").innerHTML = `<a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#out").addEventListener("click", signOut);
+    return icons();
   }
   if (session.mode === "alias") {
-    $("#who").innerHTML = `<form id="login" class="row"><input name="name" placeholder="your alias" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="primary">sign in</button></form>`;
+    $("#who").innerHTML = `<form id="login"><input name="name" placeholder="your alias" required pattern="[a-z0-9]+(-[a-z0-9]+)*" size="12"><button class="btn primary">${icon("log-in")}Sign in</button></form>`;
     $("#login").addEventListener("submit", async (e) => { e.preventDefault(); await api("/login", { name: e.target.name.value }); await refreshSession(); header(); route(); });
-    return;
+    return icons();
   }
   // Accounts: a small panel with the configured providers and email.
   const label = { github: "GitHub", google: "Google" };
-  $("#who").innerHTML = `<details class="signin"><summary class="button primary">sign in</summary><div class="panel">
-      ${session.providers.filter((p) => p !== "email").map((p) => `<button data-provider="${p}" style="width:100%">Continue with ${label[p] ?? p}</button>`).join("")}
-      <form id="email"><input name="email" type="email" placeholder="email" required autocomplete="email">
+  $("#who").innerHTML = `<div class="pop"><button class="btn primary" id="signin">${icon("log-in")}Sign in</button><div class="panel" hidden>
+      ${session.providers.filter((p) => p !== "email").map((p) => `<button class="btn" data-provider="${p}">Continue with ${label[p] ?? p}</button>`).join("")}
+      <form id="email" style="display:grid;gap:8px"><input name="email" type="email" placeholder="email" required autocomplete="email">
         <input name="password" type="password" placeholder="password (8+ characters)" required minlength="8" autocomplete="current-password">
         <input name="name" placeholder="your name (new accounts)" autocomplete="name">
-        <div class="row"><button class="primary" name="in">sign in</button><button name="up">create account</button></div>
-        <p class="muted" id="authmsg" style="margin:0;font-size:12px"></p></form></div></details>`;
+        <div class="row"><button class="btn primary" name="in">Sign in</button><button class="btn" name="up">Create account</button></div>
+        <p class="muted" id="authmsg" style="margin:0;font-size:12px"></p></form></div></div>`;
+  popover($("#signin"));
   for (const b of $("#who").querySelectorAll("[data-provider]"))
     b.addEventListener("click", async () => { const r = await api("/auth/sign-in/social", { provider: b.dataset.provider, callbackURL: location.href }); location.href = r.url; });
   $("#email").addEventListener("submit", async (e) => {
@@ -193,22 +251,62 @@ function header() {
       await refreshSession(); header(); route();
     } catch (err) { $("#authmsg").textContent = String(err.message || err); }
   });
+  icons();
 }
-$("#search").addEventListener("submit", (e) => { e.preventDefault(); location.hash = "#/search/" + encodeURIComponent(e.target.q.value); });
+async function signOut() {
+  await (session.mode === "accounts" ? api("/auth/sign-out", {}) : api("/logout", {})).catch(() => {});
+  await refreshSession(); header(); route();
+}
+/** A button that opens the panel next to it; a click elsewhere closes it. */
+function popover(btn) {
+  const panel = btn.nextElementSibling;
+  btn.addEventListener("click", (e) => { e.stopPropagation(); panel.hidden = !panel.hidden; panel.querySelector("input")?.focus(); });
+  panel.addEventListener("click", (e) => e.stopPropagation());
+  document.addEventListener("click", () => (panel.hidden = true));
+  return panel;
+}
 
-/** " / a / b" links for a path under `base`. */
-function crumbs(base, path) {
+// ---- shared pieces ---------------------------------------------------------------
+function crumbs(base, root, path) {
   const segs = path.split("/").filter(Boolean);
-  return segs.map((seg, i) => ` / <a href="${base}/${encodeURIComponent(segs.slice(0, i + 1).join("/"))}">${esc(seg)}</a>`).join("");
+  return `<span class="crumbs"><a href="${base}">${esc(root)}</a>${segs.map((seg, i) => `<span class="sep">/</span>` + (i === segs.length - 1 ? `<b>${esc(seg)}</b>` : `<a href="${base}/${encodeURIComponent(segs.slice(0, i + 1).join("/"))}">${esc(seg)}</a>`)).join("")}</span>`;
 }
-function listing(tree, href) {
-  if (!tree.entries.length) return '<p class="muted">nothing unearthed yet</p>';
-  return `<div class="tree">${tree.entries.map((e) => `<a class="entry-${e.type}" href="${href(e)}">${e.type === "dir" ? "▸ " : ""}${esc(e.name)}</a>`).join("")}</div>`;
+/** The file tree on the left: the folder you're in, with a way up. */
+function sidebar(tree, href, dir, current) {
+  const up = dir ? `<a href="${href({ type: "dir", path: dir.split("/").slice(0, -1).join("/") })}">${icon("corner-left-up", "ic-file")}..</a>` : "";
+  return `<aside class="side"><h2>${icon("folder-tree")}Files</h2><nav class="files">${up}${tree.entries.map((e) =>
+    `<a class="${e.path === current ? "on" : ""}" href="${href(e)}">${e.type === "dir" ? icon("folder", "ic-dir") : icon("file", "ic-file")}${esc(e.name)}</a>`).join("") || '<p class="muted" style="padding:8px 12px;margin:0">nothing here yet</p>'}</nav></aside>`;
 }
-function forkForm(slug) {
-  if (!me()) return '<div class="card muted">Sign in to dig this up: fork it into a git repo you own.</div>';
-  return `<form id="fork" class="card"><h3>Dig it up</h3><p class="muted" style="margin-top:0">Digging up is forking. You get your own copy of this repo, history and all, in a git repo you own. Change any line; upstream never hears about it.</p>
-    <div class="row"><span>call your fork</span><input name="name" value="${slug}" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="primary">dig it up (fork)</button><span class="muted" id="forkmsg"></span></div></form>`;
+function table(tree, href) {
+  if (!tree.entries.length) return '<div class="body muted">Nothing unearthed yet.</div>';
+  return `<div class="table">${tree.entries.map((e) => `<a class="rowlink" href="${href(e)}">${e.type === "dir" ? icon("folder", "ic-dir") : icon("file", "ic-file")}<span>${esc(e.name)}</span></a>`).join("")}</div>`;
+}
+function codeRows(lines, { blame = true, start = 1 } = {}) {
+  return lines.map((l, i) => `<div class="ln" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${esc(l.text) || " "}</span></div>`).join("");
+}
+/** Click a line number to select it; shift-click to select a range. Calls back with [from, to] (1-based). */
+function selectable(box, onChange) {
+  let anchor = null;
+  box.addEventListener("click", (e) => {
+    const n = e.target.closest(".n"); if (!n) return;
+    const i = Number(n.parentElement.dataset.i);
+    const [a, b] = e.shiftKey && anchor !== null ? [Math.min(anchor, i), Math.max(anchor, i)] : [i, i];
+    if (!e.shiftKey) anchor = i;
+    box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("sel", k >= a && k <= b));
+    onChange([a + 1, b + 1]);
+  });
+}
+// The game's door on a level or repo page, with whoever is already in there.
+function playButton(room) {
+  setTimeout(async () => {
+    const st = await api(`/game/${room}`).catch(() => null), el = $("#waiting");
+    if (st && el && st.players.length) { el.textContent = st.players.length; el.hidden = false; el.title = `${st.players.join(", ")} ${st.state === "playing" ? "mid-round" : "waiting"}`; }
+  });
+  return `<a class="btn" href="/play.html#${room}" title="the backrooms of this repo">${icon("gamepad-2")}Play<span class="count" id="waiting" hidden></span></a>`;
+}
+function visBadge(v, canFlip) {
+  const [ic, word] = v === "private" ? ["lock", "Private"] : ["globe", "Public"];
+  return canFlip ? `<button class="badge" id="flip" title="click to make it ${v === "private" ? "public" : "private"}">${icon(ic)}${word}</button>` : `<span class="badge">${icon(ic)}${word}</span>`;
 }
 // Where a fork came from, where its git lives, and who owns it.
 function forkNote(r, owner) {
@@ -216,60 +314,62 @@ function forkNote(r, owner) {
   const gh = r.upstream.replace(/^github:/, "");
   const at = r.upstream_commit ? ` at <code>${esc(r.upstream_commit.slice(0, 7))}</code>` : "";
   const where = r.home === "local" ? "a local git repo on this machine" : r.home === "cloud" ? "Cloudflare Artifacts" : "its own git repo";
-  return `<p class="fork-note">A fork of <a href="https://github.com/${esc(gh)}" rel="noopener">github.com/${esc(gh)}</a>${at}, cloned into ${where}. ${esc(owner)} owns this copy: edits and catalogues land here, never upstream.</p>`;
+  return `A fork of <a href="https://github.com/${esc(gh)}" rel="noopener">github.com/${esc(gh)}</a>${at}, cloned into ${where}. ${esc(owner)} owns this copy: edits and catalogues land here, never upstream.`;
 }
 
+// ---- views ---------------------------------------------------------------------------
 const views = {
   async home() {
+    ctx = { view: "home" };
     app.innerHTML = `
-      <section class="hero">
-        <div class="label">codeSplitters</div>
-        <h2 class="headline">Git, <span class="split-word">split apart</span>.<br>And put back together.</h2>
-        <p class="lede">Every file tears into lines. Every line lives in its own object, with its own author and history.
-          People and agents edit at the same time, and it all closes back up as a real git commit.</p>
-        <div class="stage" id="stage" aria-label="A file splitting into lines, being edited by agents, and rejoining as a git commit"></div>
-        <ol class="phases" id="phases">
-          <li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li>
-        </ol>
-      </section>
-      <section class="pillars">
-        <div><h3>Connect all over</h3><p>Every file is live. Agents and people work in the same file at once, and each change streams to everyone watching, line by line.</p></div>
-        <div><h3>Scale all over</h3><p>Each file is its own Durable Object, so a million files are a million small objects, not one big server. They scale out, not up.</p></div>
-        <div><h3>Sandbox all over</h3><p>Each file is isolated in its own object. Each agent gets a token scoped to one repo, and each profile renders in a sandbox. Nothing leaks across.</p></div>
-      </section>
-      <section><div class="label">levels</div><h3 class="levels-title">Dig into the code everyone runs</h3>
-        <p class="muted" style="margin:-6px 0 14px">Digging one up forks it into a git repo you own. Mod any line; upstream stays as it was. Any public GitHub repo works too, from your journal.</p>
-        <div class="levels" id="levels"></div></section>
-      <div class="card row" style="justify-content:space-between">
-        ${me() ? `<span>Welcome back, ${esc(me())}.</span><a href="#/u/${me()}">Open your journal →</a>`
-          : `<span class="muted">Pick an alias up top to start. In this proof of concept, an alias is all it takes.</span>`}
-      </div>`;
+      <section class="hero"><div class="wrap">
+        <div>
+          <div class="est">Est. MMXXVI · an archive of living code</div>
+          <h1 class="headline">Git, <em>split apart</em>.<br>And put back together.</h1>
+          <p class="lede">Every file tears into lines, and every line keeps its own author and history. People and agents edit together, live, and it all closes back up as a real git commit.</p>
+          <div class="row"><button class="btn primary" id="hero-cmd">${icon("command")}Open the command palette</button><a class="btn" href="/play.html#l/mitt">${icon("gamepad-2")}Play: lines off the walls</a></div>
+        </div>
+        <div><div class="stage" id="stage" aria-label="A file splitting into lines, being edited by agents, and rejoining as a git commit"></div>
+          <ol class="phases" id="phases"><li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li></ol></div>
+      </div></section>
+      <section class="section"><div class="wrap">
+        <div class="label">what you can do</div><h2>Everything is one command, for people and agents alike</h2>
+        <p class="muted">Press <kbd>⌘K</kbd> anywhere. Each of these is a single call to the API underneath, so an agent can do anything you can.</p>
+        <div class="cmds">${HOME_CMDS.map(([ic, title, what, call]) => `<div class="cmd"><span class="ico">${icon(ic)}</span><b>${title}</b><span>${what}</span><code>${call}</code></div>`).join("")}</div>
+      </div></section>
+      <section class="section"><div class="wrap">
+        <div class="label">levels</div><h2>Dig into code people love</h2><p class="muted">Real repos, imported into Artifacts. Browse them, dig one up (fork it into a git repo you own; upstream stays as it was), or play one. Any public GitHub repo works too, from your profile.</p>
+        <div class="levels" id="levels"></div>
+      </div></section>`;
+    $("#hero-cmd").addEventListener("click", () => palette.open());
     intro($("#stage"), $("#phases"));
     const levels = await api("/levels").catch(() => []);
-    const st = { ready: "open", importing: "being excavated", failed: "dig failed", buried: "buried" };
-    $("#levels").innerHTML = levels.map((l) => `<a class="level" href="#/l/${l.slug}"><span class="lvl-n">${String(l.n).padStart(2, "0")}</span>
+    const st = { ready: "open", importing: "digging…", failed: "dig failed", buried: "buried" };
+    $("#levels").innerHTML = levels.map((l) => `<a class="level" href="#/l/${l.slug}"><span class="lvl-n">${["I","II","III","IV","V","VI","VII","VIII"][l.n - 1] ?? l.n}</span>
       <span><b>${esc(l.title)}</b><span class="muted">${esc(l.repo)}</span></span><span class="lvl-st st-${l.status}">${st[l.status] ?? l.status}</span></a>`).join("");
+    icons();
   },
 
   async u(name) {
     const { user, repos, playlists } = await api("/users/" + name);
     const mine = name === me();
-    app.innerHTML = `
-      ${user.theme_html ? `<figure class="photo"><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe><figcaption>${esc(name)}, as found</figcaption></figure>` : ""}
-      <div class="card"><div class="label">field journal of</div><h2>${esc(name)}</h2><p>${esc(user.bio) || '<span class="muted">no notes yet</span>'}</p></div>
+    ctx = { view: "u", name };
+    app.innerHTML = `<div class="repohead"><div class="wrap"><h1>${icon("user")}<b>${esc(name)}</b></h1><div class="sub">${esc(user.bio) || "no notes yet"}</div></div></div>
+      <div class="wrap cards">
+      ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
       <div class="two">
-        <div class="card"><h3>Excavations</h3>${repos.map((r) => `<div><a href="#/r/${r.owner}/${r.name}">${esc(r.name)}</a> <span class="muted">${r.visibility === "private" ? "sealed" : "open"}</span></div>`).join("") || '<p class="muted">no digs yet</p>'}
-          ${mine ? `<form id="newrepo" class="row" style="margin-top:8px"><input name="name" placeholder="dig-site" required><select name="visibility"><option value="public">open</option><option value="private">sealed</option></select><button class="primary">break ground</button></form>` : ""}</div>
-        ${mine ? `<form id="ghdig" class="card"><h3>Dig up a GitHub repo</h3><p class="muted" style="margin-top:0">Fork any public GitHub repo into a git repo you own here, then mod it line by line.</p>
-          <div class="row"><input name="repo" placeholder="owner/name or a github.com URL" required style="flex:1"><input name="name" placeholder="name (optional)" style="width:150px"><button class="primary">dig it up (fork)</button></div>
-          <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></form>` : ""}
-        <div class="card"><h3>Collections</h3>${playlists.map((p) => `<div><a href="#/p/${p.id}">❦ ${esc(p.title)}</a></div>`).join("") || '<p class="muted">nothing collected yet</p>'}
-          ${mine ? `<form id="newpl" class="row" style="margin-top:8px"><input name="title" placeholder="regexes of the lost city" required><button class="primary">start a collection</button></form>` : ""}</div>
+        <div class="box"><div class="bar">${icon("book-marked")}<b>Repos</b></div><div class="body list">${repos.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}</a>`).join("") || '<span class="muted">no repos yet</span>'}
+          ${mine ? `<form id="newrepo" class="row" style="margin-top:10px"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn primary">${icon("plus")}Create</button></form>` : ""}</div></div>
+        ${mine ? `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div><div class="body"><p class="muted" style="margin-top:0">Fork any public GitHub repo into a git repo you own here, then mod it line by line. Upstream never hears about it.</p>
+          <div class="row"><input name="repo" placeholder="owner/name or a github.com URL" required style="flex:1"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up (fork)</button></div>
+          <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form>` : ""}
+        <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
+          ${mine ? `<form id="newpl" class="row" style="margin-top:10px"><input name="title" placeholder="regexes of the lost city" required><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
       </div>
-      ${mine ? `<form id="theme" class="card"><h3>Your page</h3><p class="muted">Any HTML and CSS, pasted into your journal. It renders in a sandbox, so no scripts.</p>
-        <input name="bio" placeholder="a line about you" value="${esc(user.bio)}" style="width:100%;margin-bottom:8px">
-        <textarea name="theme_html" rows="6" style="width:100%" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
-        <button class="primary">save</button></form>` : ""}`;
+      ${mine ? `<form id="theme" class="box"><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">any HTML and CSS, rendered in a sandbox (no scripts)</span></div><div class="body" style="display:grid;gap:8px">
+        <input name="bio" placeholder="a line about you" value="${esc(user.bio)}">
+        <textarea name="theme_html" rows="6" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
+        <div><button class="btn primary">Save</button></div></div></form>` : ""}</div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
     $("#newrepo")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api("/repos", { name: f.name.value, visibility: f.visibility.value }); location.hash = `#/r/${me()}/${f.name.value}`; });
     if ($("#ghdig")) {
@@ -291,79 +391,126 @@ const views = {
     }
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
+    icons();
+  },
+
+  /** The header every repo page shares: name, visibility, and its main actions. */
+  repoHead(owner, repo, r) {
+    const isOwner = owner === me();
+    return `<div class="repohead"><div class="wrap">
+      <h1>${icon(r.visibility === "private" ? "lock" : "book")}<a href="#/u/${owner}">${esc(owner)}</a><span class="muted">/</span><b><a href="#/r/${owner}/${repo}">${esc(repo)}</a></b></h1>
+      ${visBadge(r.visibility, isOwner)}
+      <span class="grow"></span>
+      ${playButton(`r/${owner}/${repo}`)}
+      ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. Agents join the same way.</span><div class="copyline"><input name="name" placeholder="agent-linter or a person's handle" required><button class="btn primary">Invite</button></div><span class="muted" style="font-size:12px">crew: ${r.collaborators.map(esc).join(", ") || "just you"}</span></form></div>` : `<span class="badge">${icon("users")}${r.collaborators.length + 1} in crew</span>`}
+      ${r.clone ? `<div class="pop"><button class="btn primary" id="clone">${icon("code")}Clone</button><div class="panel" hidden><b>${icon("terminal")} Clone with git</b><span class="muted" style="font-size:13px">A real git remote in Cloudflare Artifacts. The token in it is read-only and lasts an hour.</span><div class="copyline"><input readonly value="${esc(r.clone)}"><button class="btn" id="clone-copy">${icon("copy")}</button></div></div></div>` : ""}
+      ${r.upstream ? `<div class="sub">${icon("git-fork")} ${r.level ? `Level <a href="#/l/${r.level}">${esc(r.level)}</a>, dug up. ` : ""}${forkNote(r, owner)}</div>` : r.level ? `<div class="sub">${icon("git-fork")} forked from level <a href="#/l/${r.level}">${esc(r.level)}</a></div>` : ""}
+    </div></div>`;
+  },
+  wireRepoHead(owner, repo, r) {
+    if ($("#invite")) {
+      popover($("#invite"));
+      $("#invite-form").addEventListener("submit", async (e) => { e.preventDefault(); await api(`/repos/${owner}/${repo}/collaborators`, { name: e.target.name.value }); toast(`${e.target.name.value} joined the crew`); route(); });
+    }
+    if ($("#clone")) { popover($("#clone")); $("#clone-copy").addEventListener("click", () => copy(r.clone, "Clone command copied")); }
+    $("#flip")?.addEventListener("click", async () => { await api(`/repos/${owner}/${repo}`, { visibility: r.visibility === "private" ? "public" : "private" }, "PUT"); route(); });
   },
 
   async r(owner, repo, dir = "") {
     const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(dir)}`)]);
-    app.innerHTML = `<div class="card"><div class="label">excavation · ${r.visibility === "private" ? "sealed" : "open to the public"}${r.upstream ? " · fork" : ""}${r.level ? ` of level <a href="#/l/${r.level}">${esc(r.level)}</a>` : ""}</div>
-      <h2><a href="#/u/${owner}">${esc(owner)}</a> / <a href="#/r/${owner}/${repo}">${esc(repo)}</a>${crumbs(`#/r/${owner}/${repo}`, dir)}</h2>${dir ? "" : forkNote(r, owner)}
-      ${tree.forking ? '<p class="muted">Still cloning this fork. Give it a moment and reload.</p>' : tree.lost ? '<p class="muted">The clone never landed. Dig it up again under another name.</p>' : listing(tree, (e) => e.type === "dir" ? `#/r/${owner}/${repo}/${encodeURIComponent(e.path)}` : `#/f/${owner}/${repo}/${encodeURIComponent(e.path)}`)}
-      <p class="muted">crew: ${r.collaborators.map(esc).join(", ") || "none"}</p>
-      ${r.clone ? `<div class="label" style="margin-top:12px">take a rubbing (git clone, good for an hour)</div><div class="code" style="padding:6px 10px;margin-top:4px;user-select:all;white-space:pre-wrap;overflow-wrap:anywhere">${esc(r.clone)}</div>` : ""}</div>
-      ${r.canWrite ? `<form id="newfile" class="card"><h3>Unearth an artifact</h3><input name="path" placeholder="src/hello.ts" value="${dir ? esc(dir) + "/" : ""}" required style="width:100%;margin-bottom:8px"><textarea name="content" rows="6" style="width:100%"></textarea><button class="primary">catalogue it</button></form>` : ""}
-      ${owner === me() ? `<form id="collab" class="card row"><input name="name" placeholder="agent-linter" required><button>add to crew</button></form>` : ""}`;
-    $("#newfile")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api(`/repos/${owner}/${repo}/files`, { path: f.path.value, content: f.content.value }); location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(f.path.value)}`; });
-    $("#collab")?.addEventListener("submit", async (e) => { e.preventDefault(); await api(`/repos/${owner}/${repo}/collaborators`, { name: e.target.name.value }); route(); });
+    ctx = { view: "r", owner, repo, dir, canWrite: r.canWrite, isOwner: owner === me(), visibility: r.visibility, clone: r.clone };
+    const href = (e) => e.type === "dir" ? `#/r/${owner}/${repo}${e.path ? "/" + encodeURIComponent(e.path) : ""}` : `#/f/${owner}/${repo}/${encodeURIComponent(e.path)}`;
+    app.innerHTML = views.repoHead(owner, repo, r) + `<div class="wrap ide">${sidebar(tree, href, dir, null)}<section class="pane">
+      <div class="box"><div class="bar">${crumbs(`#/r/${owner}/${repo}`, repo, dir)}<span class="grow"></span>${tree.commit ? `${icon("git-commit-horizontal")}<code>${tree.commit.hash.slice(0, 7)}</code><span class="muted">${esc(tree.commit.message)}</span>` : ""}
+        ${r.canWrite ? `<div class="pop"><button class="btn" id="add">${icon("file-plus")}Add file</button><form class="panel" id="newfile" hidden style="width:420px"><b>New file</b><input name="path" placeholder="src/hello.ts" value="${dir ? esc(dir) + "/" : ""}" required><textarea name="content" rows="6" placeholder="its first lines"></textarea><div><button class="btn primary">Create</button></div></form></div>` : ""}</div>
+        ${tree.forking ? '<div class="body muted">Still cloning this fork. Give it a moment and reload.</div>' : tree.lost ? '<div class="body muted">The clone never landed. Dig it up again under another name.</div>' : table(tree, href)}</div>
+    </section></div>`;
+    views.wireRepoHead(owner, repo, r);
+    if ($("#add")) { popover($("#add")); $("#newfile").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api(`/repos/${owner}/${repo}/files`, { path: f.path.value, content: f.content.value }); location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(f.path.value)}`; }); }
+    icons();
   },
 
-  // A level: browse it read-only; fork it to dig.
+  // A level: browse it read-only; fork it to edit.
   async l(slug, path = "") {
     const levels = await api("/levels"), level = levels.find((l) => l.slug === slug);
     if (!level) throw new Error("no such level");
-    const head = `<div class="card"><div class="label">level ${level.n} · <a href="https://github.com/${level.repo}" rel="noopener">${esc(level.repo)}</a></div>
-      <h2><a href="#/l/${slug}">${esc(level.title)}</a>${crumbs(`#/l/${slug}`, path)}</h2><p class="muted" style="margin:0">${esc(level.blurb)}</p>`;
+    ctx = { view: "l", slug, path, level };
+    const head = `<div class="repohead"><div class="wrap"><h1>${icon("landmark")}<span class="muted">level ${level.n} ·</span><b><a href="#/l/${slug}">${esc(level.title)}</a></b></h1>
+      <span class="badge">${icon("globe")}Public · read-only</span><span class="grow"></span>${level.status === "ready" ? playButton(`l/${slug}`) : ""}
+      ${me() && level.status === "ready" ? `<div class="pop"><button class="btn primary" id="forkbtn">${icon("git-fork")}Fork</button><form class="panel" id="fork" hidden><b>Dig it up: fork into your repos</b><span class="muted" style="font-size:13px">Your own writable copy, with the level's history, in a git repo you own. Change any line; upstream never hears about it.</span><div class="copyline"><input name="name" value="${slug}" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="btn primary">Fork</button></div><span class="muted" id="forkmsg"></span></form></div>` : ""}
+      <div class="sub"><a href="https://github.com/${level.repo}" rel="noopener">${icon("github")} ${esc(level.repo)}</a> · ${esc(level.blurb)}</div></div></div>`;
     if (level.status !== "ready") {
-      app.innerHTML = head + `<p>${level.status === "importing" ? "Being excavated now. This takes a minute or two for the big ones." : level.status === "failed" ? `The dig failed: ${esc(level.error)}` : "Still buried."}</p>
-        ${me() ? `<button id="import" class="primary">${level.status === "failed" ? "try again" : "excavate it"}</button> <span class="muted" id="impmsg"></span>` : ""}</div>`;
+      app.innerHTML = head + `<div class="wrap" style="padding-top:20px"><div class="box"><div class="body">${level.status === "importing" ? "Being dug up now. This takes a minute for the big ones." : level.status === "failed" ? `The dig failed: ${esc(level.error)}` : "Still buried."}
+        ${me() ? `<p><button id="import" class="btn primary">${icon("shovel")}${level.status === "failed" ? "Try again" : "Dig it up"}</button> <span class="muted" id="impmsg"></span></p>` : ""}</div></div></div>`;
       $("#import")?.addEventListener("click", async () => { try { await api(`/levels/${slug}/import`, {}); route(); } catch (e) { $("#impmsg").textContent = e.message; } });
-      return;
+      return icons();
     }
     // A path is a file if the server can read it as one; otherwise a folder.
     const file = path ? await api(`/levels/${slug}/file?path=${encodeURIComponent(path)}`).catch((e) => ({ error: e.message })) : null;
     const isFile = !!file && !file.error?.match(/no such file/);
-    if (isFile) {
-      app.innerHTML = head + `</div>` + (file.error ? `<div class="card muted">${esc(file.error)}</div>`
-        : `<div class="code card">${file.text.replace(/\n$/, "").split("\n").map((t, i) => `<div class="ln" style="grid-template-columns:40px 1fr"><span class="n">${i + 1}</span><span class="t">${esc(t) || " "}</span></div>`).join("")}</div>`)
-        + forkForm(slug);
-    } else {
-      const tree = await api(`/levels/${slug}/tree?path=${encodeURIComponent(path)}`);
-      app.innerHTML = head + (tree.commit ? `<p class="muted" style="font-size:13px">at <code>${tree.commit.hash.slice(0, 10)}</code> ${esc(tree.commit.message)}</p>` : "")
-        + listing(tree, (e) => `#/l/${slug}/${encodeURIComponent(e.path)}`) + `</div>` + forkForm(slug);
+    const dir = isFile ? path.split("/").slice(0, -1).join("/") : path;
+    const tree = await api(`/levels/${slug}/tree?path=${encodeURIComponent(dir)}`);
+    const href = (e) => `#/l/${slug}${e.path ? "/" + encodeURIComponent(e.path) : ""}`;
+    const pane = isFile
+      ? `<div class="box"><div class="bar">${crumbs(`#/l/${slug}`, slug, path)}<span class="grow"></span>${file.text ? `<span class="muted">${file.text.split("\n").length} lines · read-only</span>` : ""}</div>
+         ${file.error ? `<div class="body muted">${esc(file.error)}</div>` : `<div class="code plain">${codeRows(file.text.replace(/\n$/, "").split("\n").map((text) => ({ text })), { blame: false })}</div>`}</div>`
+      : `<div class="box"><div class="bar">${crumbs(`#/l/${slug}`, slug, path)}<span class="grow"></span>${tree.commit ? `${icon("git-commit-horizontal")}<code>${tree.commit.hash.slice(0, 7)}</code><span class="muted">${esc(tree.commit.message)}</span>` : ""}</div>${table(tree, href)}</div>`;
+    app.innerHTML = head + `<div class="wrap ide">${sidebar(tree, href, dir, isFile ? path : null)}<section class="pane">${pane}</section></div>`;
+    if ($("#forkbtn")) {
+      popover($("#forkbtn"));
+      $("#fork").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try { const r = await api(`/levels/${slug}/fork`, { name: e.target.name.value }); location.hash = `#/r/${r.owner}/${r.name}` + (dir ? "/" + encodeURIComponent(dir) : ""); }
+        catch (err) { $("#forkmsg").textContent = err.message; }
+      });
     }
-    $("#fork")?.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      try {
-        const r = await api(`/levels/${slug}/fork`, { name: e.target.name.value });
-        // Land in the same folder you were looking at in the level.
-        const dir = isFile ? path.split("/").slice(0, -1).join("/") : path;
-        location.hash = `#/r/${r.owner}/${r.name}` + (dir ? "/" + encodeURIComponent(dir) : "");
-      }
-      catch (err) { $("#forkmsg").textContent = err.message; }
-    });
+    icons();
   },
 
   async f(owner, repo, path) {
-    const base = `/repos/${owner}/${repo}/do`, q = "?path=" + encodeURIComponent(path);
-    const [r, commits] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`${base}/commits${q}`)]);
-    let doc = await api(`${base}/file${q}`), viewing = null;
-    app.innerHTML = `<div class="card"><div class="label">artifact${r.upstream ? ` · in ${esc(owner)}'s fork of ${esc(r.upstream.replace(/^github:/, ""))}` : ""}</div><h2><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a> / ${esc(path)}</h2>
-      ${r.upstream ? '<p class="muted" id="modded" style="margin:0 0 8px;font-size:13px"></p>' : ""}
-      <div class="row"><label>carbon date <input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"></label> <span id="revl"></span> <span class="muted" id="who-here"></span>
-      ${r.canWrite ? `<input id="msg" placeholder="field note"><button id="commit" class="primary">catalogue</button>` : ""}</div></div>
-      <div class="code card" id="lines"></div>
-      ${me() ? `<form id="track" class="card row">collect lines <input name="from" type="number" min="1" value="1" style="width:70px"> to <input name="to" type="number" min="1" value="3" style="width:70px"> to <select name="pl"></select> <input name="note" placeholder="why it belongs in a museum"><button>collect</button></form>` : ""}
-      <div class="card"><h3>Catalogue</h3><div id="commits"></div></div>`;
+    const base = `/repos/${owner}/${repo}/do`, q = "?path=" + encodeURIComponent(path), dir = path.split("/").slice(0, -1).join("/");
+    const [r, commits, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`${base}/commits${q}`), api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(dir)}`)]);
+    let doc = await api(`${base}/file${q}`), viewing = null, sel = null;
+    ctx = { view: "f", owner, repo, path, canWrite: r.canWrite, isOwner: owner === me(), visibility: r.visibility, clone: r.clone, get sel() { return sel; }, base, q };
+    const href = (e) => e.type === "dir" ? `#/r/${owner}/${repo}${e.path ? "/" + encodeURIComponent(e.path) : ""}` : `#/f/${owner}/${repo}/${encodeURIComponent(e.path)}`;
+    app.innerHTML = views.repoHead(owner, repo, r) + `<div class="wrap ide">${sidebar(tree, href, dir, path)}<section class="pane">
+      <div class="box"><div class="bar">${crumbs(`#/r/${owner}/${repo}`, repo, path)}<span class="muted" id="who-here"></span><span class="grow"></span>
+        ${r.upstream ? '<span class="muted" id="modded"></span>' : ""}
+        <span class="muted" id="revl"></span>
+        <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit, line by line.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}" style="accent-color:var(--seal)"></div></div>
+        ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
+        <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
+        ${r.canWrite ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}
+      </div>
+      <div class="code" id="lines"></div></div>
+      <div class="box"><div class="bar">${icon("scroll-text")}<b>Commits</b></div><div class="body" id="commits"></div></div>
+      ${r.canWrite ? '<p class="muted" style="font-size:12px">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it.</p>' : ""}
+    </section></div>`;
+    views.wireRepoHead(owner, repo, r);
+    const box = $("#lines");
     const draw = (d, fresh = new Set()) => {
       const live = viewing === null;
-      $("#lines").innerHTML = d.lines.map((l, i) => `<div class="ln${fresh.has(l.id) ? " flash" : ""}${r.upstream && l.by !== "upstream" ? " mod" : ""}" data-id="${l.id}"><span class="n">${i + 1}</span><span class="by" title="${esc(l.by)}">${esc(l.by)}</span><span class="rev">r${l.rev}</span><span class="t">${esc(l.text) || " "}</span></div>`).join("");
-      if (r.upstream) { const n = d.lines.filter((l) => l.by !== "upstream").length; $("#modded").textContent = n ? `${n} of ${d.lines.length} lines modded in this fork (marked); the rest are as cloned` : "every line is as cloned from upstream"; }
-      $("#revl").textContent = live ? `present day, r${doc.rev}` : `dated to r${viewing} of ${doc.rev}`;
-      if (live && r.canWrite) for (const el of app.querySelectorAll(".ln")) el.addEventListener("dblclick", () => edit(el));
+      box.innerHTML = codeRows(d.lines);
+      if (r.upstream) {
+        box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("mod", d.lines[k].by !== "upstream"));
+        const n = d.lines.filter((l) => l.by !== "upstream").length;
+        $("#modded").textContent = n ? `${n} of ${d.lines.length} lines modded in this fork` : "as cloned from upstream";
+      }
+      fresh.forEach((id) => box.querySelector(`[data-id="${id}"]`)?.classList.add("flash"));
+      if (sel) box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("sel", k >= sel[0] - 1 && k <= sel[1] - 1));
+      $("#revl").textContent = live ? `${d.lines.length} lines · r${doc.rev}` : `as of r${viewing} of ${doc.rev}`;
+      if (live && r.canWrite) for (const el of box.querySelectorAll(".ln")) el.addEventListener("dblclick", () => edit(el));
     };
-    const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c) => `<div class="entry"><span class="stamp">catalogued</span><code>${c.sha.slice(0, 10)}</code> r${c.rev} ${esc(c.message)} <span class="muted">by ${esc(c.by)}</span></div>`).join("") || '<p class="muted">not catalogued yet. The archive search only sees catalogued artifacts.</p>';
+    selectable(box, (range) => {
+      sel = range;
+      const label = range[0] === range[1] ? `line ${range[0]}` : `lines ${range[0]}–${range[1]}`;
+      for (const b of ["#share", "#collect"]) if ($(b)) $(b).disabled = false;
+      if ($("#share-range")) $("#share-range").textContent = label;
+    });
+    const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c) => `<div class="row" style="padding:4px 0">${icon("git-commit-horizontal")}<code>${c.sha.slice(0, 7)}</code>${esc(c.message)} <span class="muted">· ${esc(c.by)} · r${c.rev}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
     const edit = (el) => {
       const line = doc.lines.find((l) => l.id === el.dataset.id);
-      const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}" title="Enter saves, Shift+Enter adds a line below, empty + Enter deletes">`;
+      const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}">`;
       const inp = $("input", t); inp.focus();
       inp.addEventListener("keydown", async (e) => {
         if (e.key === "Escape") return draw(doc);
@@ -372,27 +519,43 @@ const views = {
           : inp.value === "" ? [{ kind: "delete", line: line.id, base: line.rev }]
           : [{ kind: "set", line: line.id, base: line.rev, text: inp.value }];
         // The broadcast has already updated `doc`; close the editor and show it.
-        try { await send(ops); draw(doc); } catch (err) { alertLine(el, err.message); }
+        try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
       });
     };
-    const alertLine = (el, msg) => { $(".t", el).textContent = "conflict: " + msg + " (reloaded)"; setTimeout(() => draw(doc), 1500); };
     draw(doc); drawCommits(commits);
+    popover($("#hist"));
     $("#rev").addEventListener("input", async (e) => {
       const v = Number(e.target.value);
       viewing = v >= doc.rev ? null : v;
       draw(viewing === null ? doc : await api(`${base}/at${q}&rev=${v}`));
     });
-    $("#commit")?.addEventListener("click", async () => {
-      const c = await api(`${base}/commit${q}`, { message: $("#msg").value });
-      $("#msg").value = "";
-      $("#revl").textContent = c.git?.commit ? `sent to the archive: ${c.git.commit.slice(0, 10)}` : c.git?.error ? `archive refused: ${c.git.error}` : $("#revl").textContent;
-    });
-    if ($("#track")) {
-      const { playlists } = await api("/users/" + me());
-      $("#track select").innerHTML = playlists.map((p) => `<option value="${p.id}">${esc(p.title)}</option>`).join("") || "<option disabled>start a collection in your journal</option>";
-      $("#track").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target;
-        await api(`/playlists/${f.pl.value}/tracks`, { owner, repo, path, from: +f.from.value, to: +f.to.value, note: f.note.value }); location.hash = "#/p/" + f.pl.value; });
+    if ($("#commit")) {
+      popover($("#commit"));
+      $("#commit-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const c = await api(`${base}/commit${q}`, { message: $("#msg").value });
+        $("#msg").value = ""; $("#commit-form").hidden = true;
+        toast(c.git?.commit ? `Committed and pushed: ${c.git.commit.slice(0, 7)}` : c.git?.error ? `Committed; the push failed: ${c.git.error}` : "Committed");
+      });
     }
+    if ($("#share")) {
+      popover($("#share"));
+      $("#share-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const s = await api(`/repos/${owner}/${repo}/shares`, { path, from: sel[0], to: sel[1], note: e.target.note.value });
+        const url = `${location.origin}/#/s/${s.id}`;
+        $("#share-out").hidden = false; $("#share-out input").value = url; copy(url, "Link copied");
+      });
+      $("#share-copy").addEventListener("click", () => copy($("#share-out input").value, "Link copied"));
+    }
+    if ($("#collect")) {
+      popover($("#collect"));
+      const { playlists } = await api("/users/" + me());
+      $("#track select").innerHTML = playlists.map((p) => `<option value="${p.id}">${esc(p.title)}</option>`).join("") || "<option disabled>start a collection on your profile first</option>";
+      $("#track").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target;
+        await api(`/playlists/${f.pl.value}/tracks`, { owner, repo, path, from: sel[0], to: sel[1], note: f.note.value }); location.hash = "#/p/" + f.pl.value; });
+    }
+    icons();
     // Live: every applied op from every editor arrives here, and is applied in
     // place. Our own edits go out on the same socket and wait for an ack.
     let seq = 0;
@@ -420,32 +583,72 @@ const views = {
         const p = pending.get(msg.id); pending.delete(msg.id);
         return msg.type === "ack" ? p?.ok(msg) : p?.fail(new Error(msg.error || msg.conflicts?.[0]?.reason || "conflict"));
       }
-      if (msg.type === "presence") return $("#who-here").textContent = msg.who.length > 1 ? `· here now: ${msg.who.join(", ")}` : "";
+      if (msg.type === "presence") return $("#who-here").textContent = msg.who.length > 1 ? ` · here now: ${msg.who.join(", ")}` : "";
       if (msg.type === "commit") return drawCommits(await api(`${base}/commits${q}`));
       if (msg.type !== "ops") return;
       // In order: apply in place. Missed something (a gap): fetch the whole file.
       if (msg.applied[0]?.rev === doc.rev + 1) msg.applied.forEach(applyLocal);
       else if (msg.rev > doc.rev) doc = await api(`${base}/file${q}`);
       const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
-      if (viewing === null && !app.querySelector(".ln input")) draw(doc, new Set(msg.applied.map((a) => a.line)));
+      if (viewing === null && !box.querySelector(".ln input")) draw(doc, new Set(msg.applied.map((a) => a.line)));
     };
+  },
+
+  // A shared range: just those lines, live, for anyone with the link.
+  async s(id) {
+    ctx = { view: "s", id };
+    let timer = 0;
+    const load = async () => {
+      const s = await api("/shares/" + id);
+      const where = `${esc(s.owner)}/${esc(s.repo)} · ${esc(s.path)}`;
+      app.innerHTML = `<div class="wrap" style="max-width:980px;padding-top:28px">
+        <div class="box"><div class="bar">${icon("share-2")}<b>${where}</b>${s.gone ? "" : `<span class="muted">· lines ${s.from}–${s.to}</span>`}<span class="grow"></span>
+          <span class="badge" title="refreshes every few seconds">${icon("radio")}live</span>${s.visibility === "private" ? `<span class="badge">${icon("lock")}from a private repo</span>` : `<a class="btn" href="#/f/${s.owner}/${s.repo}/${encodeURIComponent(s.path)}">${icon("file-code")}Open the file</a>`}
+          ${s.by === me() || s.owner === me() ? `<button class="btn" id="revoke">${icon("link-2-off")}Revoke</button>` : ""}</div>
+          ${s.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--parchment)">${esc(s.note)} <span class="muted">· shared by ${esc(s.by)}</span></div>` : ""}
+          ${s.gone ? '<div class="body muted">These lines are gone: every one of them was deleted.</div>' : `<div class="code">${codeRows(s.lines)}</div>`}</div>
+        <p class="muted" style="font-size:12px">${s.visibility === "private" ? "Only these lines are shared. The rest of the repo stays private." : "A live share: it follows these lines as they change."}</p></div>`;
+      $("#revoke")?.addEventListener("click", async () => { await api("/shares/" + id, undefined, "DELETE"); clearInterval(timer); toast("Link revoked"); location.hash = "#/"; });
+      icons();
+    };
+    await load();
+    timer = setInterval(() => { if (location.hash !== "#/s/" + id) return clearInterval(timer); if (!document.hidden) load().catch(() => {}); }, 6000);
   },
 
   async p(id) {
     const pl = await api("/playlists/" + id);
-    app.innerHTML = `<div class="card"><div class="label">collection</div><h2>${esc(pl.title)}</h2><p class="muted">assembled by <a href="#/u/${pl.owner}">@${esc(pl.owner)}</a></p></div>
-      ${pl.tracks.map((t, i) => `<div class="card"><div class="row"><b>${i + 1}.</b> <a href="#/f/${t.owner}/${t.repo}/${encodeURIComponent(t.path)}">${esc(t.owner)}/${esc(t.repo)}/${esc(t.path)}</a> <span class="muted">lines ${t.from_line}–${t.to_line}</span></div>
-        ${t.note ? `<p>${esc(t.note)}</p>` : ""}<div class="code">${t.lines.map((l) => `<div class="ln" style="grid-template-columns:124px 1fr"><span class="by">${esc(l.by)}</span><span>${esc(l.text) || " "}</span></div>`).join("")}</div></div>`).join("") || '<div class="card muted">The cases are empty. Open any artifact and collect a few lines.</div>'}`;
+    ctx = { view: "p", id };
+    app.innerHTML = `<div class="repohead"><div class="wrap"><h1>${icon("library")}<b>${esc(pl.title)}</b></h1><div class="sub">a collection by <a href="#/u/${pl.owner}">@${esc(pl.owner)}</a></div></div></div>
+      <div class="wrap cards">${pl.tracks.map((t, i) => `<div class="box"><div class="bar"><b>${i + 1}.</b><a href="#/f/${t.owner}/${t.repo}/${encodeURIComponent(t.path)}">${esc(t.owner)}/${esc(t.repo)}/${esc(t.path)}</a><span class="muted">lines ${t.from_line}–${t.to_line}</span></div>
+        ${t.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--parchment)">${esc(t.note)}</div>` : ""}<div class="code">${codeRows(t.lines, { start: t.from_line })}</div></div>`).join("") || '<div class="box"><div class="body muted">Nothing collected yet. Open any file, select some lines, and Collect.</div></div>'}</div>`;
+    icons();
   },
 
   async search(q) {
     q = decodeURIComponent(q || "");
-    $("#search").q.value = q;
+    ctx = { view: "search", q };
     const hits = await api("/search?q=" + encodeURIComponent(q));
-    app.innerHTML = `<div class="card"><div class="label">archive search</div><h2>“${esc(q)}”</h2>${hits.map((h) => `<div style="margin-bottom:10px"><a href="#/f/${h.owner}/${h.repo}/${encodeURIComponent(h.path)}">${esc(h.owner)}/${esc(h.repo)}/${esc(h.path)}</a>
-      <div class="code" style="padding:4px 8px">${esc(h.snippet).replace(/«/g, "<mark>").replace(/»/g, "</mark>")}</div></div>`).join("") || '<p class="muted">No record of it. The archive only holds catalogued artifacts.</p>'}</div>`;
+    app.innerHTML = `<div class="wrap" style="padding-top:24px"><h2 style="margin:0 0 14px;font-weight:600">${icon("search")} “${esc(q)}”</h2>${hits.map((h) => `<div class="box"><div class="bar">${icon("file-code")}<a href="#/f/${h.owner}/${h.repo}/${encodeURIComponent(h.path)}">${esc(h.owner)}/${esc(h.repo)}/${esc(h.path)}</a></div>
+      <div class="body code">${esc(h.snippet).replace(/«/g, "<mark>").replace(/»/g, "</mark>")}</div></div>`).join("") || '<p class="muted">Nothing found. Search covers committed files only.</p>'}</div>`;
+    icons();
   },
 };
+
+// What the home page lists, and the palette offers: [icon, title, what it does, the API call].
+const HOME_CMDS = [
+  ["landmark", "Browse a level", "Walk any imported repo, read-only.", "GET /api/levels/:slug/tree"],
+  ["git-fork", "Fork a level", "Your own writable copy, in its own Artifact.", "POST /api/levels/:slug/fork"],
+  ["pencil-line", "Edit live, together", "Every line is its own record. Edits stream to everyone in the file.", "WS /api/repos/:o/:r/do/ws"],
+  ["share-2", "Share some lines", "A live link to a range, even from a private repo.", "POST /api/repos/:o/:r/shares"],
+  ["user-plus", "Invite your crew", "People and agents, same door.", "POST /api/repos/:o/:r/collaborators"],
+  ["lock", "Public or private", "Flip a repo either way.", "PUT /api/repos/:o/:r"],
+  ["git-commit-horizontal", "Commit to git", "Pushes a real commit to the repo's Artifact.", "POST /api/repos/:o/:r/do/commit"],
+  ["terminal", "Clone with git", "A real remote, with a read token that lasts an hour.", "GET /api/repos/:o/:r"],
+  ["history", "Time travel", "Replay a file to any edit, with blame per line.", "GET /api/repos/:o/:r/do/at?rev="],
+  ["bookmark-plus", "Collect lines", "Playlists of code you love, on your profile.", "POST /api/playlists/:id/tracks"],
+  ["search", "Search code", "Everything committed that you're allowed to see.", "GET /api/search?q="],
+  ["gamepad-2", "Play the backrooms", "Every repo is a level. The lines fight back.", "WS /api/game/:room/ws"],
+];
 
 // The landing intro, calm to swarm: a file sits still on clean paper; a slit
 // opens across it; its lines tear free and take off as a flock, swooping and
@@ -532,6 +735,95 @@ function intro(stage, phases) {
   cycle();
 }
 
+// ---- the command palette ---------------------------------------------------------------
+// Commands depend on where you are. Each names the one API call it makes.
+async function commands() {
+  const out = [], add = (group, ic, title, apiCall, run, ask) => out.push({ group, ic, title, api: apiCall, run, ask });
+  const c = ctx, u = me();
+  if (c.view === "f") {
+    const range = c.sel ? (c.sel[0] === c.sel[1] ? `line ${c.sel[0]}` : `lines ${c.sel[0]}–${c.sel[1]}`) : null;
+    if (u) add("This file", "share-2", range ? `Share ${range}` : "Share lines…", `POST /api/repos/${c.owner}/${c.repo}/shares`, async (arg) => {
+      const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
+      const s = await api(`/repos/${c.owner}/${c.repo}/shares`, { path: c.path, from, to: to || from });
+      copy(`${location.origin}/#/s/${s.id}`, `Link to lines ${s.from}–${s.to} copied`);
+    }, c.sel ? null : "which lines, like 4-12");
+    if (c.canWrite) add("This file", "git-commit-horizontal", "Commit this file", `POST /api/repos/${c.owner}/${c.repo}/do/commit`, async (msg) => {
+      const r = await api(`${c.base}/commit${c.q}`, { message: msg }); toast(r.git?.commit ? `Pushed ${r.git.commit.slice(0, 7)}` : "Committed");
+    }, "commit message");
+  }
+  if (c.view === "f" || c.view === "r") {
+    if (c.canWrite) add("This repo", "file-plus", "Add a file", `POST /api/repos/${c.owner}/${c.repo}/files`, async (p) => {
+      await api(`/repos/${c.owner}/${c.repo}/files`, { path: p, content: "" }); location.hash = `#/f/${c.owner}/${c.repo}/${encodeURIComponent(p)}`;
+    }, "path, like src/hello.ts");
+    if (c.isOwner) add("This repo", "user-plus", "Invite someone to the crew", `POST /api/repos/${c.owner}/${c.repo}/collaborators`, async (name) => {
+      await api(`/repos/${c.owner}/${c.repo}/collaborators`, { name }); toast(`${name} joined the crew`); route();
+    }, "their handle");
+    if (c.isOwner) add("This repo", c.visibility === "private" ? "globe" : "lock", c.visibility === "private" ? "Make this repo public" : "Make this repo private", `PUT /api/repos/${c.owner}/${c.repo}`, async () => {
+      await api(`/repos/${c.owner}/${c.repo}`, { visibility: c.visibility === "private" ? "public" : "private" }, "PUT"); route();
+    });
+    if (c.clone) add("This repo", "terminal", "Copy the git clone command", `GET /api/repos/${c.owner}/${c.repo}`, () => copy(c.clone, "Clone command copied"));
+    add("This repo", "gamepad-2", "Play this repo's backrooms", `WS /api/game/r/${c.owner}/${c.repo}/ws`, () => (location.href = `/play.html#r/${c.owner}/${c.repo}`));
+  }
+  if (c.view === "l" && c.level?.status === "ready") {
+    if (u) add("This level", "git-fork", `Fork ${c.level.title}`, `POST /api/levels/${c.slug}/fork`, async (name) => {
+      const r = await api(`/levels/${c.slug}/fork`, { name: name || c.slug }); location.hash = `#/r/${r.owner}/${r.name}`;
+    }, "name for your copy");
+    add("This level", "gamepad-2", `Play ${c.level.title}`, `WS /api/game/l/${c.slug}/ws`, () => (location.href = `/play.html#l/${c.slug}`));
+  }
+  add("Anywhere", "search", "Search code", "GET /api/search?q=", (q) => (location.hash = "#/search/" + encodeURIComponent(q)), "what to look for");
+  if (u) add("Anywhere", "book-plus", "New repo", "POST /api/repos", async (name) => { await api("/repos", { name }); location.hash = `#/r/${u}/${name}`; }, "repo name");
+  if (u) add("Anywhere", "user", "Your profile", `GET /api/users/${u}`, () => (location.hash = `#/u/${u}`));
+  for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
+  add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
+  if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
+  return out;
+}
+
+const palette = {
+  el: $("#palette"), input: $("#pal-q"), list: $("#pal-list"), all: [], shown: [], at: 0, asking: null,
+  async open() {
+    this.asking = null; $("#pal-ask").hidden = true; this.input.placeholder = "Type a command, or search code";
+    this.el.hidden = false; this.input.value = ""; this.input.focus();
+    this.all = await commands(); this.render();
+  },
+  close() { this.el.hidden = true; },
+  render() {
+    if (this.asking) { this.list.innerHTML = `<li class="on">${icon(this.asking.ic)}<span>${esc(this.asking.title)}: press Enter</span><span class="api">${esc(this.asking.api)}</span></li>`; return icons(); }
+    const q = this.input.value.trim().toLowerCase();
+    this.shown = this.all.filter((c) => !q || c.title.toLowerCase().includes(q) || c.group.toLowerCase().includes(q));
+    // Words that match nothing: offer them as a code search.
+    if (q && !this.shown.length) this.shown = [{ group: "Search", ic: "search", title: `Search code for “${this.input.value.trim()}”`, api: "GET /api/search?q=", run: () => (location.hash = "#/search/" + encodeURIComponent(this.input.value.trim())) }];
+    this.at = Math.min(this.at, Math.max(0, this.shown.length - 1));
+    let group = null;
+    this.list.innerHTML = this.shown.map((c, i) => (c.group !== group ? `<li class="group">${esc((group = c.group))}</li>` : "")
+      + `<li data-i="${i}" class="${i === this.at ? "on" : ""}">${icon(c.ic)}<span>${esc(c.title)}${c.ask ? "…" : ""}</span><span class="api">${esc(c.api)}</span></li>`).join("");
+    icons();
+    this.list.querySelector("li.on")?.scrollIntoView({ block: "nearest" });
+  },
+  async run(c) {
+    if (c.ask && !this.asking) {
+      this.asking = c; $("#pal-ask").hidden = false; $("#pal-ask").textContent = c.title;
+      this.input.value = ""; this.input.placeholder = c.ask; this.render(); return;
+    }
+    const arg = this.input.value.trim();
+    if (c.ask && !arg) return;
+    this.close();
+    try { await c.run(arg); } catch (e) { toast(String(e.message || e)); }
+  },
+};
+palette.input.addEventListener("input", () => { palette.at = 0; palette.render(); });
+palette.input.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.preventDefault(); return palette.asking ? palette.open() : palette.close(); }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); palette.at = (palette.at + (e.key === "ArrowDown" ? 1 : -1) + palette.shown.length) % Math.max(1, palette.shown.length); return palette.render(); }
+  if (e.key === "Enter") { e.preventDefault(); const c = palette.asking ?? palette.shown[palette.at]; if (c) palette.run(c); }
+});
+palette.list.addEventListener("click", (e) => { const li = e.target.closest("li[data-i]"); if (li) palette.run(palette.shown[Number(li.dataset.i)]); });
+palette.el.addEventListener("click", (e) => { if (e.target === palette.el) palette.close(); });
+$("#jump").addEventListener("click", () => palette.open());
+addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); palette.el.hidden ? palette.open() : palette.close(); }
+});
+
 // Views and how many plain segments come before a path tail: #/f/owner/repo/<path>.
 const FIXED = { f: 2, r: 2, l: 1 };
 async function route() {
@@ -540,11 +832,13 @@ async function route() {
   const [, view = "home", ...args] = location.hash.replace(/^#/, "").split("/");
   const n = FIXED[view];
   const parts = n === undefined ? args.map(decodeURIComponent) : [...args.slice(0, n).map(decodeURIComponent), decodeURIComponent(args.slice(n).join("/"))];
-  try { await (views[view] ?? views.home)(...parts); }
-  catch (err) { app.innerHTML = `<div class="card">${esc(err.message)}</div>`; }
+  try { await (views[view] && view !== "repoHead" && view !== "wireRepoHead" ? views[view] : views.home)(...parts); }
+  catch (err) { app.innerHTML = `<div class="wrap" style="padding-top:24px"><div class="box"><div class="body">${esc(err.message)}</div></div></div>`; }
+  window.scrollTo(0, 0);
 }
 addEventListener("hashchange", route);
 refreshSession().then(() => { header(); route(); });
+icons();
 </script>
 </body>
 </html>
