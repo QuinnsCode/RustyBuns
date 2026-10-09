@@ -29,6 +29,12 @@
   #health i { display: block; height: 100%; background: var(--ink); transition: width .15s; }
   #health.low i { background: var(--accent); }
   #cross { top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(255,255,255,.8); }
+  /* The press meter: how long the bat has been held against a line. The orange notch is the sweet spot. */
+  #press { top: 50%; left: 50%; width: 140px; margin: 22px 0 0 -70px; height: 6px; background: rgba(255,255,255,.85); border: 1px solid var(--edge); border-radius: 3px; overflow: hidden; opacity: 0; }
+  #press.on { opacity: 1; }
+  #press b { position: absolute; top: 0; bottom: 0; background: var(--accent-soft); border-left: 1px solid var(--accent); border-right: 1px solid var(--accent); }
+  #press i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink); }
+  #press.sweet i { background: var(--accent); }
   #banner { top: 30%; left: 0; right: 0; text-align: center; font: 600 64px/1 var(--sans); letter-spacing: -0.05em; color: var(--ink); opacity: 0; transition: opacity .25s; text-shadow: 0 1px 0 #fff; }
   #banner small { display: block; margin-top: 10px; font: 500 13px/1.5 var(--mono); letter-spacing: .04em; color: var(--ink-2); }
   #hurt { inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(232,89,12,.45)); opacity: 0; transition: opacity .3s; }
@@ -60,6 +66,7 @@
 <div class="hud" id="tr"><div id="score" class="big">0</div><div id="combo"></div><div id="others"></div></div>
 <div class="hud" id="bl"><div id="hp">100</div><div id="health"><i style="width:100%"></i></div></div>
 <div class="hud" id="cross"></div>
+<div class="hud" id="press"><b></b><i></i></div>
 <div class="hud" id="banner"></div>
 <div class="hud" id="hurt"></div>
 
@@ -69,7 +76,7 @@
   <p class="muted" style="margin:6px 0 0">Every folder is a room. The walls are the code. The code is restless. Grab the bat.</p>
   <ul id="lobby-players"></ul>
   <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><span class="muted" id="lobby-msg"></span></div>
-  <div class="keys"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swing · <kbd>shift</kbd> run<br>walk into a doorway to go into that folder · club other players too</div>
+  <div class="keys"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swing · <kbd>hold</kbd> press the bat into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
   <p style="margin:14px 0 0;font-size:13px"><a id="back" href="/">← back to the site</a></p>
 </div></div>
 <div class="panel" id="lock" hidden style="background:transparent;place-items:end center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;padding:12px 18px"><b>Click to grab the bat</b> <span class="muted">· Esc lets go</span></div></div>
@@ -296,10 +303,11 @@ async function enter(path, from) {
   const door = here.doors.find((d) => !d.up && d.path === from) ?? here.doors.find((d) => d.up);
   if (door) {
     const [x, z] = fromWall(door.wall, door.c, 1.6, here.half);
-    player.pos.set(x, 1.6, z);
+    player.pos.set(x, EYE, z);
     const [nx, nz] = NORMAL[door.wall];
     player.yaw = Math.atan2(-nx, -nz);
-  } else { player.pos.set(0, 1.6, here.half - 2); player.yaw = 0; }
+  } else { player.pos.set(0, EYE, here.half - 2); player.yaw = 0; }
+  if (pin) letGo(true);
   // Whatever was chasing you follows you through the door.
   for (const e of enemies) if (e.state !== "smacked") {
     const d = door ?? { wall: 2, c: 0 };
@@ -318,9 +326,13 @@ async function enter(path, from) {
 }
 
 // ---- the player ------------------------------------------------------------------
-const player = { pos: new THREE.Vector3(0, 1.6, 0), vel: new THREE.Vector3(), yaw: 0, pitch: 0, hp: 100, score: 0, combo: 1, comboT: 0, alive: false };
+const EYE = 1.6;
+const player = { pos: new THREE.Vector3(0, EYE, 0), vel: new THREE.Vector3(), vy: 0, yaw: 0, pitch: 0, hp: 100, score: 0, combo: 1, comboT: 0, alive: false };
 const keys = new Set();
-addEventListener("keydown", (e) => keys.add(e.code));
+addEventListener("keydown", (e) => {
+  keys.add(e.code);
+  if (e.code === "Space" && playing) { e.preventDefault(); if (player.alive && player.pos.y <= EYE + 0.01) player.vy = 5.8; }
+});
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("mousemove", (e) => {
   if (document.pointerLockElement !== renderer.domElement) return;
@@ -329,7 +341,9 @@ addEventListener("mousemove", (e) => {
 });
 document.addEventListener("pointerlockchange", () => { $("#lock").hidden = !playing || document.pointerLockElement === renderer.domElement; });
 $("#lock").addEventListener("click", () => renderer.domElement.requestPointerLock());
-renderer.domElement.addEventListener("mousedown", () => { if (document.pointerLockElement === renderer.domElement) swing(); });
+let held = false;
+renderer.domElement.addEventListener("mousedown", () => { if (document.pointerLockElement === renderer.domElement) { held = true; swing(); } });
+addEventListener("mouseup", () => { held = false; if (pin) letGo(); });
 
 // The bat: ash, with an oxblood grip.
 const bat = new THREE.Group();
@@ -342,11 +356,71 @@ const batPivot = new THREE.Group(); batPivot.add(bat); camera.add(batPivot);
 batPivot.position.set(0.46, -0.52, -0.55);
 // Overhead: cocked back over the shoulder, then chopped straight down in front.
 const REST = new THREE.Euler(0.65, 0, -0.12), FOLLOW = new THREE.Euler(-1.8, 0.2, 0.25);
-let swingT = -1, swingHit = new Set();
+let swingT = -1, swingHit = new Set(), hitStop = 0;
 
 function swing() {
   if (!player.alive || swingT >= 0) return;
   swingT = 0; swingHit = new Set(); sound.whoosh();
+}
+
+// Hitboxes are segments: the bat, each line (its length, as it flies), and you (feet to head).
+// The bat's hitbox swings through the crosshair, not off to the right where the bat is drawn.
+const BAT_R = 0.22, BAT_REACH = 2.3, LINE_R = 0.1, BODY_R = 0.3;
+const batHit = new THREE.Object3D(); batHit.position.set(0, -0.25, -0.1); camera.add(batHit);
+function batSeg(a, b) { batHit.updateMatrixWorld(true); batHit.localToWorld(a.set(0, 0.15, 0)); batHit.localToWorld(b.set(0, BAT_REACH, 0)); }
+function lineSeg(e, a, b) {
+  if (e.kind === "tube" && e.state !== "peel") { a.copy(e.root.position); b.copy(a); b.y += Math.min(e.w, 3.2); return; }
+  const ax = tmpV.set(1, 0, 0).applyQuaternion(e.root.quaternion).multiplyScalar(e.w / 2);
+  a.copy(e.root.position).sub(ax); b.copy(e.root.position).add(ax);
+}
+function bodySeg(a, b) { a.set(player.pos.x, player.pos.y - EYE + 0.12, player.pos.z); b.set(player.pos.x, player.pos.y + 0.12, player.pos.z); }
+// Closest distance between segments p1q1 and p2q2; `at` gets the closest point on p1q1.
+const sd1 = new THREE.Vector3(), sd2 = new THREE.Vector3(), sr = new THREE.Vector3(), sc = new THREE.Vector3();
+function segDist(p1, q1, p2, q2, at) {
+  sd1.subVectors(q1, p1); sd2.subVectors(q2, p2); sr.subVectors(p1, p2);
+  const a = sd1.dot(sd1), e = sd2.dot(sd2), f = sd2.dot(sr), c = sd1.dot(sr), b = sd1.dot(sd2), den = a * e - b * b;
+  let s, t;
+  if (e <= 1e-9) { t = 0; s = a > 1e-9 ? Math.min(1, Math.max(0, -c / a)) : 0; }   // the second "segment" is a point
+  else { s = den > 1e-9 ? Math.min(1, Math.max(0, (b * f - c * e) / den)) : 0; t = (b * s + f) / e; }
+  if (t < 0) { t = 0; s = a > 1e-9 ? Math.min(1, Math.max(0, -c / a)) : 0; }
+  else if (t > 1) { t = 1; s = a > 1e-9 ? Math.min(1, Math.max(0, (b - c) / a)) : 0; }
+  const p = sc.copy(p1).addScaledVector(sd1, s);
+  if (at) at.copy(p);
+  return p.distanceTo(sd2.multiplyScalar(t).add(p2));
+}
+
+// The press: keep the button down when the bat lands and it grinds into the line.
+// Let go in the sweet spot and the line splits clean; too soon is a dent, too long and the bat jams.
+// While you're pressing, the rest of the horde keeps coming.
+const SWEET = [0.55, 0.85], JAM = 1.5;
+let pin = null;   // {e, at (camera-space contact), off (center minus root), c}
+function pressDamage(c) {
+  if (c < SWEET[0]) return 1 + Math.floor(2.99 * c / SWEET[0]);
+  if (c <= SWEET[1]) return Infinity;
+  return Math.max(1, Math.round(3 - 2 * (c - SWEET[1]) / (JAM - SWEET[1])));
+}
+function pressOn(e, at) {
+  pin = { e, at: camera.worldToLocal(at.clone()), off: at.clone().sub(e.root.position), c: 0, grind: 0, rang: false };
+  e.state = "pinned"; e.vel.set(0, 0, 0);
+}
+function letGo(slipped) {
+  const { e, c } = pin; pin = null;
+  if (!enemies.includes(e)) return;
+  camera.getWorldDirection(fwd);
+  const sweet = !slipped && c >= SWEET[0] && c <= SWEET[1];
+  e.state = "fly";
+  damage(e, slipped ? 1 : pressDamage(c), fwd, sweet ? 1.6 : 1.1);
+  if (sweet) { player.score += 200 * player.combo; banner("SPLIT", "sweet spot", 0.8); sound.ding(); }
+  else if (slipped) banner("", c >= JAM ? "the bat jammed" : "knocked off the line", 0.7);
+}
+// Every hit chips a line; the one that empties it sends it flying.
+function damage(e, n, dir, power = 1) {
+  e.hp -= n;
+  if (e.hp <= 0) return smack(e, dir.clone().setY(Math.max(0.2, dir.y)), power);
+  player.score += 10 * n;
+  e.mesh.scale.y = 0.45 + 0.55 * e.hp / e.maxHp;
+  e.vel.copy(dir).setY(0).normalize().multiplyScalar(9).setY(2.5); e.stun = 0.45; e.t = 0;
+  sound.thwack(0.5);
 }
 
 // ---- enemies: lines off the wall -------------------------------------------------
@@ -374,8 +448,9 @@ function spawn() {
   const geo = stripGeo(line, tube ? LINE_H * 2.6 : LINE_H * 2.2, 14);
   mesh = new THREE.Mesh(geo, a.angry);
   root.add(mesh); scene.add(root);
+  const hp = (tube ? 5 : 3) + Math.floor(wave / 3);
   enemies.push({ kind: tube ? "tube" : "bird", root, mesh, geo, w: Math.max(line.w, 0.2), state: src ? "peel" : "fly", t: 0, wait: 0, phase: rng() * 6,
-    vel: new THREE.Vector3(), circle: 1 + rng() * 2.5, orbit: rng() * Math.PI * 2, spin: new THREE.Vector3() });
+    hp, maxHp: hp, stun: 0, vel: new THREE.Vector3(), circle: 1 + rng() * 2.5, orbit: rng() * Math.PI * 2, spin: new THREE.Vector3() });
   return true;
 }
 
@@ -414,6 +489,7 @@ function bend(e, time) {
   pos.needsUpdate = true;
 }
 
+const ea = new THREE.Vector3(), eb = new THREE.Vector3(), ba = new THREE.Vector3(), bb = new THREE.Vector3();
 function updateEnemies(dt, time) {
   const eye = player.pos;
   for (const e of [...enemies]) {
@@ -424,18 +500,34 @@ function updateEnemies(dt, time) {
         e.state = "fly"; e.t = 0;
         if (e.kind === "tube") { e.root.position.y = 0; const n = tmpV.set(0, 0, 1).applyQuaternion(e.root.quaternion); e.root.position.addScaledVector(n, 0.8); }
       }
+    } else if (e.state === "pinned") {
+      // Ground into the bat: it rides the bat wherever you look.
+      e.root.position.copy(camera.localToWorld(tmpV.copy(pin.at))).sub(pin.off);
+      e.mesh.position.z = (Math.random() - 0.5) * 0.04;
+    } else if (e.state === "fly" && e.stun > 0) {
+      // Knocked back but not out: it tumbles off, then comes again.
+      e.stun -= dt;
+      e.vel.multiplyScalar(Math.max(0, 1 - dt * 3)); if (e.kind === "bird") e.vel.y -= 6 * dt;
+      e.root.position.addScaledVector(e.vel, dt);
+      e.root.position.x = Math.max(-here.half + 0.3, Math.min(here.half - 0.3, e.root.position.x));
+      e.root.position.z = Math.max(-here.half + 0.3, Math.min(here.half - 0.3, e.root.position.z));
+      e.root.position.y = e.kind === "tube" ? 0 : Math.max(0.3, Math.min(H - 0.4, e.root.position.y));
     } else if (e.state === "fly") {
       if (e.kind === "bird") {
-        // Circle overhead, then dive at your head; after a hit, back up to circle again.
+        // Circle overhead, then dive: at your head, or skimming the carpet at your legs (jump it).
+        // After a hit, back up to circle again.
         e.orbit += dt * (1.4 + wave * 0.08);
         const diving = (e.t % (e.circle + 1.6)) > e.circle;
-        const target = diving ? tmpV.copy(eye) : tmpV.set(eye.x + Math.cos(e.orbit) * 4.5, 3.4 + Math.sin(e.orbit * 2) * 0.5, eye.z + Math.sin(e.orbit) * 4.5);
+        if (diving && !e.diving) { e.low = rng() < 0.4; if (e.low) sound.swoop(); }
+        e.diving = diving;
+        const target = !diving ? tmpV.set(eye.x + Math.cos(e.orbit) * 4.5, 3.4 + Math.sin(e.orbit * 2) * 0.5, eye.z + Math.sin(e.orbit) * 4.5)
+          : e.low ? tmpV.set(eye.x, 0.35, eye.z) : tmpV.copy(eye);
         const speed = diving ? 8 + wave * 0.6 : 4.5 + wave * 0.35;
         const want = target.sub(e.root.position).normalize().multiplyScalar(speed);
         e.vel.lerp(want, Math.min(1, dt * 3));
         for (const o of enemies) if (o !== e && o.state === "fly" && o.root.position.distanceTo(e.root.position) < 1.1) e.vel.add(tmpV.copy(e.root.position).sub(o.root.position).multiplyScalar(dt * 6));
         e.root.position.addScaledVector(e.vel, dt);
-        e.root.position.y = Math.max(0.6, Math.min(H - 0.4, e.root.position.y));
+        e.root.position.y = Math.max(diving && e.low ? 0.3 : 0.6, Math.min(H - 0.4, e.root.position.y));
         // Wings across the way it's going: the line spans the wingspan.
         tmpQ.copy(e.root.quaternion);
         e.root.lookAt(tmpV.copy(e.root.position).add(e.vel));
@@ -453,13 +545,13 @@ function updateEnemies(dt, time) {
         e.mesh.scale.x = Math.min(1, 3.2 / e.w);
         if (d < 0.1) e.root.position.x += 0.1;
       }
-      const c = center(e, new THREE.Vector3());
-      const reach = e.kind === "bird" ? c.distanceTo(eye) : Math.hypot(c.x - eye.x, c.z - eye.z);
-      if (reach < (e.kind === "bird" ? 0.85 : 0.7) && player.alive) {
-        hurt(e.kind === "bird" ? 8 : 12);
-        e.vel.copy(c).sub(eye).normalize().multiplyScalar(9); e.vel.y = 4;
+      lineSeg(e, ea, eb); bodySeg(ba, bb);
+      if (player.alive && segDist(ea, eb, ba, bb) < LINE_R + BODY_R) {
+        const c = center(e, new THREE.Vector3());
+        hurt(e.kind === "bird" ? 8 : 12, null, e.low && e.diving ? "it took your legs out" : "");
+        e.vel.copy(c).sub(eye).setY(0).normalize().multiplyScalar(9); e.vel.y = 4;
         e.root.position.addScaledVector(e.vel, 0.08);
-        e.t = 0; e.circle = 1.5 + rng() * 2;
+        e.stun = 0.35; e.t = 0; e.circle = 1.5 + rng() * 2;
       }
     } else if (e.state === "smacked") {
       e.vel.y -= 14 * dt;
@@ -628,9 +720,11 @@ function updateWaves(dt) {
 
 // ---- you -------------------------------------------------------------------------
 let shake = 0;
-function hurt(n, by) {
+function hurt(n, by, why) {
   if (!player.alive) return;
   player.hp -= n; shake = 0.25; sound.hurt();
+  if (pin) letGo(true);
+  if (why) banner("", why, 0.8);
   $("#hurt").style.opacity = 1; setTimeout(() => ($("#hurt").style.opacity = 0), 160);
   if (by) banner("", `clubbed by ${by}`, 1.2);
   if (player.hp <= 0) die();
@@ -639,12 +733,15 @@ function hurt(n, by) {
 let transit = false;
 function updatePlayer(dt) {
   const f = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0), s = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
-  const speed = keys.has("ShiftLeft") || keys.has("ShiftRight") ? 8 : 4.8;
+  // Pressing the bat into a line pins you down to a shuffle.
+  const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 8 : 4.8) * (pin ? 0.45 : 1);
   const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
   const move = new THREE.Vector3(-sin * f + cos * s, 0, -cos * f - sin * s);
   if (move.lengthSq() > 1) move.normalize();
   player.pos.addScaledVector(move, speed * dt).addScaledVector(player.vel, dt);
   player.vel.multiplyScalar(Math.max(0, 1 - dt * 5));
+  player.vy -= 16 * dt; player.pos.y += player.vy * dt;
+  if (player.pos.y <= EYE) { player.pos.y = EYE; player.vy = 0; }
   // Walls stop you, except a doorway, which takes you into that folder.
   const m = 0.35;
   for (let i = 0; i < 4 && here; i++) {
@@ -654,45 +751,77 @@ function updatePlayer(dt) {
     if (door) { if (d < -0.3 && !transit) { transit = true; const from = here.path; enter(door.path, from).finally(() => (transit = false)); return; } continue; }
     const [x, z] = fromWall(i, a, m, here.half); player.pos.x = x; player.pos.z = z;
   }
-  const bob = move.lengthSq() ? Math.sin(performance.now() / (speed > 6 ? 90 : 130)) * 0.04 : 0;
-  camera.position.set(player.pos.x + (Math.random() - 0.5) * shake * 0.3, 1.6 + bob, player.pos.z + (Math.random() - 0.5) * shake * 0.3);
+  const bob = move.lengthSq() && player.pos.y <= EYE ? Math.sin(performance.now() / (speed > 6 ? 90 : 130)) * 0.04 : 0;
+  camera.position.set(player.pos.x + (Math.random() - 0.5) * shake * 0.3, player.pos.y + bob, player.pos.z + (Math.random() - 0.5) * shake * 0.3);
   camera.rotation.set(player.pitch, player.yaw, 0);
   shake = Math.max(0, shake - dt);
 }
 
-function updateBat(dt) {
-  if (swingT < 0) { batPivot.rotation.copy(REST); return; }
-  swingT += dt / 0.3;
-  const k = Math.min(1, swingT), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+const pa = new THREE.Vector3(), pb = new THREE.Vector3(), hitAt = new THREE.Vector3();
+function setBat(k) {
+  const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
   batPivot.rotation.set(REST.x + (FOLLOW.x - REST.x) * e, REST.y + (FOLLOW.y - REST.y) * e, REST.z + (FOLLOW.z - REST.z) * e);
-  if (k > 0.3 && k < 0.85) {
-    camera.getWorldDirection(fwd);
-    let hits = 0;
-    for (const e2 of enemies) {
-      if (e2.state === "smacked" || swingHit.has(e2)) continue;
-      const c = center(e2, tmpV), to = c.clone().sub(player.pos), d = to.length();
-      // The tube men are tall: hit them anywhere along their height.
-      const near = e2.kind === "tube" ? Math.hypot(to.x, to.z) < 2.6 : d < 2.9;
-      if (near && to.normalize().dot(fwd) > (e2.kind === "tube" ? 0.2 : 0.45)) { swingHit.add(e2); smack(e2, fwd.clone().setY(Math.max(0.2, fwd.y))); hits++; }
-    }
-    for (const b of bosses) {
-      if (swingHit.has(b)) continue;
-      const to = b.root.position.clone().sub(player.pos), d = to.length();
-      if (d < 2.2 + b.size && to.normalize().dot(fwd) > 0.3) { swingHit.add(b); snap(b, fwd); }
-    }
-    for (const [id, o] of others) {
-      if (swingHit.has(id) || o.room !== here?.path) continue;
-      const to = o.group.position.clone().setY(1.2).sub(player.pos), d = to.length();
-      if (d < 2.6 && to.normalize().dot(fwd) > 0.4) {
-        swingHit.add(id); send({ t: "hit", target: id, dir: [fwd.x, fwd.z] });
-        player.score += 50; sound.thwack(); banner("", `you clubbed ${o.user}`, 1);
+  batHit.rotation.copy(batPivot.rotation);
+}
+function updateBat(dt) {
+  if (pin) {
+    // Held against the line: the bat shudders, the meter fills.
+    pin.c += dt; pin.grind -= dt;
+    batPivot.rotation.z += (Math.random() - 0.5) * 0.03;
+    if (pin.grind <= 0) { pin.grind = 0.07; sound.grind(pin.c / JAM); }
+    if (!pin.rang && pin.c >= SWEET[0]) { pin.rang = true; sound.ding(); }
+    if (pin.c >= JAM) letGo(true);
+    else if (!held) letGo();
+    return;
+  }
+  if (swingT < 0) { setBat(0); return; }
+  if (hitStop > 0) { hitStop -= dt; return; }
+  const k0 = Math.min(1, swingT);
+  swingT += dt / 0.3;
+  const k = Math.min(1, swingT);
+  camera.updateMatrixWorld(true);
+  camera.getWorldDirection(fwd);
+  // Sweep the bat from where it was to where it is, in steps, so a fast swing can't pass through a line.
+  let hits = 0;
+  if (k > 0.22 && k0 < 0.95) {
+    for (let step = 1; step <= 3 && !pin; step++) {
+      setBat(Math.max(0.22, Math.min(0.95, k0 + (k - k0) * step / 3)));
+      batSeg(pa, pb);
+      let best = null, bestD = Infinity;
+      for (const e2 of enemies) {
+        if ((e2.state !== "fly" && e2.state !== "peel") || swingHit.has(e2)) continue;
+        lineSeg(e2, ea, eb);
+        if (segDist(pa, pb, ea, eb, hitAt) > BAT_R + LINE_R) continue;
+        swingHit.add(e2); hits++;
+        const d = hitAt.distanceTo(pa);
+        if (d < bestD) { bestD = d; best = { e: e2, at: hitAt.clone() }; }
+        else damage(e2, 1, fwd);
+      }
+      if (best) {
+        hitStop = 0.05;
+        // Still holding the button when it lands: press into it. Otherwise a quick chip.
+        if (held && best.e.state === "fly") { pressOn(best.e, best.at); sound.thwack(0.6); }
+        else damage(best.e, 1, fwd);
+      }
+      // A noodle monster is a knot with strands all round: a ball the bat has to reach.
+      for (const bo of bosses) {
+        if (swingHit.has(bo)) continue;
+        if (segDist(pa, pb, bo.root.position, bo.root.position) < BAT_R + 0.9 * bo.size) { swingHit.add(bo); hitStop = 0.05; snap(bo, fwd); }
+      }
+      for (const [id, o] of others) {
+        if (swingHit.has(id) || o.room !== here?.path) continue;
+        ea.copy(o.group.position); eb.copy(ea); eb.y += 1.8;
+        if (segDist(pa, pb, ea, eb) < BAT_R + BODY_R) {
+          swingHit.add(id); send({ t: "hit", target: id, dir: [fwd.x, fwd.z] });
+          player.score += 50; sound.thwack(); banner("", `you clubbed ${o.user}`, 1);
+        }
       }
     }
     if (hits >= 3) { player.score += 500; banner("HOME RUN", `${hits} lines in one swing`, 1.2); }
   }
+  if (!pin) setBat(k);
   if (k >= 1) swingT = -1;
 }
-
 // ---- other players ----------------------------------------------------------------
 const others = new Map();   // id -> {group, user, room, to, yaw}
 function avatar(user) {
@@ -735,7 +864,7 @@ function connect() {
     else if (m.t === "pos") {
       let o = others.get(m.id);
       if (!o) { o = { group: avatar(m.user), user: m.user, to: new THREE.Vector3() }; others.set(m.id, o); }
-      o.to.set(m.p[0], 0, m.p[2]); o.yaw = m.yaw; o.room = m.room; o.swing = m.swing;
+      o.to.set(m.p[0], m.p[1] || 0, m.p[2]); o.yaw = m.yaw; o.room = m.room; o.swing = m.swing;
     } else if (m.t === "clubbed") {
       player.vel.set(m.dir[0], 0, m.dir[1]).multiplyScalar(14);
       hurt(6, m.by);
@@ -761,10 +890,11 @@ async function begin(seed, startAt) {
   playing = true; roundSeed = seed;
   rng = mulberry(seed);
   $("#lobby").hidden = true; $("#over").hidden = true;
+  pin = null;
   for (const e of [...enemies]) drop(e);
   for (const b of [...bosses]) unboss(b);
   awoken.clear();
-  Object.assign(player, { hp: 100, score: 0, combo: 1, alive: false });
+  Object.assign(player, { hp: 100, vy: 0, score: 0, combo: 1, alive: false });
   wave = 0; toSpawn = 0; breakT = 0;
   if (!here || here.path !== "") await enter("");
   for (const l of here.lines) if (!l.mesh.parent) l.wall.add(l.mesh);
@@ -816,13 +946,25 @@ const sound = {
     s.connect(f).connect(g).connect(c.destination); s.start();
     return { f, c };
   },
-  thwack() {
-    this.noise(0.12, 1600, 1.2, 0.9);
+  thwack(v = 1) {
+    this.noise(0.12, 1600, 1.2, 0.9 * v);
     if (!this.ctx) return;
     const c = this.ctx, o = c.createOscillator(), g = c.createGain();
     o.frequency.setValueAtTime(180, c.currentTime); o.frequency.exponentialRampToValueAtTime(60, c.currentTime + 0.12);
-    g.gain.setValueAtTime(0.5, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.15);
+    g.gain.setValueAtTime(0.5 * v, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.15);
     o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 0.16);
+  },
+  // The bat grinding into a line, rising as the press goes on.
+  grind(k) { this.noise(0.06, 300 + 900 * k, 3, 0.18); },
+  ding() { this.tone("sine", 1320, 0.25, 0.12); },
+  // A low bird's whistle as it drops for your legs.
+  swoop() { const o = this.tone("triangle", 900, 0.5, 0.05); o?.frequency.exponentialRampToValueAtTime(220, this.ctx.currentTime + 0.5); },
+  tone(type, f, len, vol) {
+    if (!this.ctx) return;
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.value = f; g.gain.setValueAtTime(vol, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + len);
+    o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + len);
+    return o;
   },
   whoosh() { const n = this.noise(0.22, 500, 0.7, 0.25); n?.f.frequency.exponentialRampToValueAtTime(2500, n.c.currentTime + 0.2); },
   // The noodle monsters: a low, wobbling drone that swells as one gets close.
@@ -864,6 +1006,7 @@ const sound = {
 };
 
 // ---- HUD ----------------------------------------------------------------------------
+Object.assign($("#press b").style, { left: SWEET[0] / JAM * 100 + "%", width: (SWEET[1] - SWEET[0]) / JAM * 100 + "%" });
 let bannerTimer = 0;
 function banner(big, small = "", secs = 1.8) {
   $("#banner").innerHTML = `${esc(big)}${small ? `<small>${esc(small)}</small>` : ""}`;
@@ -878,6 +1021,11 @@ function hud() {
   $("#hp").textContent = `${Math.ceil(hp)} health`;
   $("#health i").style.width = hp + "%";
   $("#health").classList.toggle("low", hp < 30);
+  $("#press").classList.toggle("on", !!pin);
+  if (pin) {
+    $("#press i").style.width = Math.min(100, pin.c / JAM * 100) + "%";
+    $("#press").classList.toggle("sweet", pin.c >= SWEET[0] && pin.c <= SWEET[1]);
+  }
 }
 
 // ---- loop ---------------------------------------------------------------------------
@@ -892,7 +1040,7 @@ function frame(now, manual) {
     flicker -= dt; if (flicker < 0) { hemi.intensity = rng() < 0.06 ? 1.3 : 2.6; flicker = 0.08 + Math.random() * 0.5; }
     if (now - sent > 100 && playing) {
       sent = now;
-      send({ t: "pos", p: [player.pos.x, 0, player.pos.z], yaw: player.yaw, room: here.path, swing: swingT >= 0 });
+      send({ t: "pos", p: [player.pos.x, player.pos.y - EYE, player.pos.z], yaw: player.yaw, room: here.path, swing: swingT >= 0 });
       if (player.score !== lastScore) { lastScore = player.score; send({ t: "score", score: player.score, wave }); }
     }
   }
@@ -908,7 +1056,7 @@ if (!(await enter(""))) $("#lobby-msg").textContent = "this room isn't dug up ye
 connect();
 requestAnimationFrame(frame);
 // For poking at it from the console.
-window.game = { player, enemies, bosses, others, get here() { return here; }, get wave() { return wave; }, get toSpawn() { return toSpawn; }, spawn, swing, lava, step: (ms = 16) => frame(last + ms, true) };
+window.game = { player, enemies, bosses, others, get here() { return here; }, get wave() { return wave; }, get toSpawn() { return toSpawn; }, spawn, swing, lava, get pin() { return pin; }, set held(v) { held = v; if (!v && pin) letGo(); }, step: (ms = 16) => frame(last + ms, true) };
 </script>
 </body>
 </html>
