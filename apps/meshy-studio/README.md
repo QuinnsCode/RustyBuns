@@ -26,14 +26,17 @@ Drop images on the app window, or put them straight into `000` in Finder. Drag a
 
 ## The filename is the label
 
-`<prefix>_<name>[_h<meters> | _l<meters>][_bottom | _center].png`
+`<prefix>_<name>[_h<meters> | _l<meters> | _auto][_bottom | _center][_draft].png`
 
 - `flora_oak_h12_bottom.png` uses the Flora preset, is scaled to 12 m tall with the origin at the bottom centre, and becomes `flora_oak.glb`.
 - `_l0.5` sets the longest side instead of the height. `_center` puts the origin at the middle of the bounding box.
-- A `.txt` file with the same name holds a `texture_prompt`, which costs Meshy 10 more credits.
+- `_auto` asks Meshy to guess the real-world height (`auto_size`, origin sent as `origin_at`), and the model is kept at Meshy's size.
+- `_draft` makes an untextured shape now, to texture later (below).
+- A `.txt` file with the same name holds a `texture_prompt`. A `<name>.texture.png` beside the image is a texture reference image (`texture_image_url`). Either costs Meshy 10 more credits on a textured send.
 
 | Prefix | Meshy model | Default size | Origin | About |
 |---|---|---|---|---|
+| `draft_` | meshy-6-lite, no texture | 1 m tall | bottom | 5 credits |
 | `item_` | smart topology, 4,000 polys | longest side 0.5 m | center | 15 credits |
 | `flora_` | meshy-6-lite, 15,000 polys | 6 m tall | bottom | 15 credits |
 | `environ_` | meshy-7.1, 30,000 polys, PBR | 4 m tall | bottom | 30 credits |
@@ -48,6 +51,30 @@ Each card can change its preset, size and origin before you press Send. After a 
 - **Credits on the account** are always in the top bar, next to what this workspace has spent so far.
 - **Every send asks first.** The confirmation itemizes the cost by preset (from [Meshy's price table](https://docs.meshy.ai/en/api/pricing)), shows the balance before and after, and how much of what's left it uses. It can be turned off in Settings.
 - **A batch limit** (300 credits per send by default; 0 turns it off) and **the real balance** are checked by the backend, not just the screen: a send over either is refused. If the batch grew after you confirmed it, the send is refused too, so you never pay more than you saw.
+
+## Draft first, texture later
+
+Generating untextured costs 5 credits on meshy-6-lite or smart topology (20 on meshy-6 or 7.1). Texturing a finished draft with Meshy's [Retexture](https://docs.meshy.ai/en/api/retexture) costs 10 more (15 at 8k). So you can try a whole folder of ideas at 5 each and pay for texture only on the keepers.
+
+- Tick **Draft** on a card, name the image `…_draft.png`, use the `draft_` preset, or tick **Untextured drafts** in the send confirmation (it re-prices the batch).
+- A finished draft says **Untextured**. Press **Texture** on the card, **Texture N drafts** in the bar, or drag it Ready → Queue on the board. The cost is confirmed first.
+- The texture is styled from the card's text prompt, else its `.texture.png`, else the concept image itself. Meshy keeps the UVs it made. The textured model replaces the draft in `001` and `002`.
+- A draft that's textured later costs the same in total as texturing up front (5 + 10 = 15 on meshy-6-lite): the saving is everything you don't texture.
+
+## Presets: every Meshy option
+
+**Presets** in the top bar edits `meshy-presets.json` with every [Image to 3D](https://docs.meshy.ai/en/api/image-to-3d) option:
+
+- model type, AI model, ultra geometry resolution
+- texture on/off, PBR, texture resolution
+- remesh, topology, target polycount, adaptive decimation, keeping the pre-remesh model
+- pose, image enhancement, remove lighting
+- transparent and four-view thumbnails, moderation
+- extra formats (fbx, obj, usdz, stl, 3mf) downloaded into `001`, with texture maps beside them
+
+It also covers every [Retexture](https://docs.meshy.ai/en/api/retexture) option for the texture step: model, keep UVs, PBR, resolution and remove lighting.
+
+Anything left on "Meshy default" isn't sent, so Meshy's own default applies. The editor shows each preset's textured, draft and texture-later price as you change it. It flags what Meshy would reject (4k texture on meshy-6-lite, ultra geometry off meshy-7.1, polycount out of range) and won't save those. Settings that don't apply to the chosen model are left out of the request. Deprecated options (`ultra_mode`, `hd_texture`, `is_a_t_pose`, `symmetry_mode`, `lowpoly`) aren't offered.
 
 ## What happens on Send
 
@@ -93,9 +120,10 @@ MESHY_API_KEY=msy_... bun engine/cli.ts ~/MyGame/meshes --send     # send everyt
 
 ## What was checked
 
-- `bun test`: 13 tests. They cover label parsing, the price table, the scale and origin math on a real `.glb`, and the whole send → poll → download → fit loop against a fake Meshy. They also cover a 402 pause and resume, cancel-while-pending with a refund, a Meshy failure then retry, a free re-fit, moving between folders, the key file's `0600` mode and refusing paths that escape the workspace. Also: the key never comes back out of the status route, the spend guards (confirmed amount, batch limit, balance) refusing sends in the backend, the engine folder copy (renames included), and the Blender import script with awkward paths.
+- `bun test`: 19 tests. They cover label parsing, the price table, the scale and origin math on a real `.glb`, and the whole send → poll → download → fit loop against a fake Meshy. They also cover a 402 pause and resume, cancel-while-pending with a refund, a Meshy failure then retry, a free re-fit, moving between folders, the key file's `0600` mode and refusing paths that escape the workspace. Also: the key never comes back out of the status route, the spend guards (confirmed amount, batch limit, balance) refusing sends in the backend, the engine folder copy (renames included), and the Blender import script with awkward paths. Also: draft and texture-later pricing, every option reaching the request body (and the ones that don't apply being dropped), the preset checks, the preset editor's save rules, extra formats and texture maps downloading into `001`, and a draft batch where only one model gets the texture step.
 - The Blender import, run in real Blender (headless): two finished models came in at the right sizes (12 m tall becomes 12 on Blender's Z-up axis).
 - The built binary, clicked through in Chrome against the fake Meshy: a wrong key refused, a right key saved, images dropped in Finder showing up with parsed labels, a preset changed on a card, four sent, all four landing in `002_ready` (including `forest/`) at exactly the labelled sizes, a height changed afterwards with no new Meshy job, and everything still there after a restart. And after the redesign: the key masked while typing and only dots once saved, a 105-credit batch refused by a 50-credit limit in the confirmation, a card dragged Inbox → Queue, confirmed and walked through to Ready, and its model copied byte for byte into a Unity `Assets/Meshy` folder.
+- The draft flow in the app against the fake Meshy: three images sent as untextured drafts (60 credits re-priced to 30), one textured with a confirmed 10 credits, its card going Untextured → Texturing → Ready, and a preset edited (meshy-7.1 → meshy-6-lite, prices updating live) and saved to `meshy-presets.json`.
 - **Not checked inside Unity or Unreal** (neither is installed here): only that the files land in the folder.
 - **Not yet checked against the real Meshy API.** Meshy has no free test key, so the first real batch spends credits.
 

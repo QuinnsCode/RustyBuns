@@ -9,7 +9,8 @@
 //   GET  /api/fs/list?dir=  POST /api/fs/pick      choose a workspace folder
 //   POST /api/workspace/open {dir}  POST /api/workspace/close
 //   GET  /api/jobs                        every card, the folders and presets
-//   POST /api/jobs/{send,retry,cancel,edit,move}   card actions; send and retry check the spend guards
+//   POST /api/jobs/{send,texture,retry,cancel,edit,move}   card actions; send, texture and retry check the spend guards
+//   POST /api/presets {presets}           save the preset editor
 //   POST /api/sync {dir, engine} | {off}  also copy finished models into a game engine's folder
 //   POST /api/blender {keys?}             open finished models in Blender
 //   POST /api/folders {name}              new organizing folder in 000
@@ -205,14 +206,20 @@ export default {
         const b = await body(req);
         const act = path.slice("/api/jobs/".length);
         try {
+          const keys = Array.isArray(b.keys) ? b.keys.map(String) : undefined;
+          const confirmed = b.credits === undefined ? undefined : Number(b.credits);
           if (act === "send") {
-            const keys = Array.isArray(b.keys) ? b.keys.map(String) : undefined;
-            const stop = await guard(ctx, ws.estimate(keys).credits, b.credits === undefined ? undefined : Number(b.credits));
+            const stop = await guard(ctx, ws.estimate(keys, { draft: !!b.draft }).credits, confirmed);
             if (stop) return bad(stop, 402);
-            await ws.send(keys);
+            await ws.send(keys, { draft: !!b.draft });
+          } else if (act === "texture") {
+            const stop = await guard(ctx, ws.estimateTexture(keys).credits, confirmed);
+            if (stop) return bad(stop, 402);
+            await ws.textureModels(keys);
           } else if (act === "retry") {
             const j = ws.get(String(b.key));
-            const stop = j.raw ? null : await guard(ctx, j.estimate);
+            const cost = j.texture?.state === "failed" ? j.texture.estimate : j.raw ? 0 : j.estimate;
+            const stop = await guard(ctx, cost, confirmed);
             if (stop) return bad(stop, 402);
             await ws.retry(j.key);
           }
@@ -226,7 +233,11 @@ export default {
         } catch (e) {
           return bad(e instanceof MeshyError ? e.friendly : String((e as Error).message ?? e));
         }
-        if (act === "send" || act === "retry") ws.tick();
+        if (act === "send" || act === "texture" || act === "retry") ws.tick();
+        return json(ws.summary());
+      }
+      if (path === "/api/presets" && req.method === "POST") {
+        try { await ws.setPresets((await body(req)).presets); } catch (e) { return bad((e as Error).message); }
         return json(ws.summary());
       }
       if (path === "/api/sync" && req.method === "POST") {

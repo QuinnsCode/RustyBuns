@@ -19,6 +19,7 @@ export async function boxGlb(): Promise<Uint8Array> {
 export interface Fake {
   base: string;
   created: any[];
+  retextured: any[];
   /** Next POST answers with this status instead of creating. */
   failNext: number | null;
   /** Tasks Meshy will fail instead of finish. */
@@ -29,22 +30,29 @@ export interface Fake {
 export async function fakeMeshy(key = "msy_test"): Promise<Fake> {
   const glb = await boxGlb();
   const polls = new Map<string, number>();
-  const fake: Fake = { base: "", created: [], failNext: null, failTasks: new Set(), stop: () => server.stop(true) };
+  const formats = new Map<string, string[]>();
+  const fake: Fake = { base: "", created: [], retextured: [], failNext: null, failTasks: new Set(), stop: () => server.stop(true) };
   const server = Bun.serve({
     port: 0,
     async fetch(req) {
       const url = new URL(req.url);
       if (url.pathname === "/assets/model.glb") return new Response(glb as Uint8Array<ArrayBuffer>);
+      if (url.pathname.startsWith("/assets/")) return new Response(`fake ${url.pathname}`);
       if (req.headers.get("authorization") !== `Bearer ${key}`) return Response.json({ message: "Invalid API key" }, { status: 401 });
       if (url.pathname === "/v1/balance") return Response.json({ balance: 1000 });
-      if (url.pathname === "/v1/image-to-3d" && req.method === "POST") {
+      if ((url.pathname === "/v1/image-to-3d" || url.pathname === "/v1/retexture") && req.method === "POST") {
         if (fake.failNext) { const s = fake.failNext; fake.failNext = null; return Response.json({ message: "nope" }, { status: s }); }
-        const id = `task-${fake.created.length + 1}`;
-        fake.created.push({ id, ...(await req.json() as object) });
+        const body = await req.json() as any;
+        const re = url.pathname === "/v1/retexture";
+        if (re && !fake.created.some((c) => c.id === body.input_task_id)) return Response.json({ message: "invalid input task" }, { status: 400 });
+        const list = re ? fake.retextured : fake.created;
+        const id = `${re ? "tex" : "task"}-${list.length + 1}`;
+        list.push({ id, ...body });
         polls.set(id, 0);
+        formats.set(id, body.target_formats ?? ["glb"]);
         return Response.json({ result: id });
       }
-      const m = /^\/v1\/image-to-3d\/(.+)$/.exec(url.pathname);
+      const m = /^\/v1\/(?:image-to-3d|retexture)\/(.+)$/.exec(url.pathname);
       if (m) {
         const id = m[1]!;
         if (!polls.has(id)) return Response.json({ message: "not found" }, { status: 404 });
@@ -58,7 +66,15 @@ export async function fakeMeshy(key = "msy_test"): Promise<Fake> {
         if (n === 0) return Response.json({ id, status: "PENDING", progress: 0 });
         if (n === 1) return Response.json({ id, status: "IN_PROGRESS", progress: 50, thumbnail_url: `${fake.base}/assets/thumb.png` });
         if (fake.failTasks.has(id)) return Response.json({ id, status: "FAILED", progress: 0, task_error: { message: "Image too dark" } });
-        return Response.json({ id, status: "SUCCEEDED", progress: 100, consumed_credits: 15, model_urls: { glb: `${fake.base}/assets/model.glb` } });
+        const urls: Record<string, string> = {};
+        for (const f of formats.get(id)!) urls[f] = f === "glb" ? `${fake.base}/assets/model.glb` : `${fake.base}/assets/model.${f}`;
+        if (urls.obj) urls.mtl = `${fake.base}/assets/model.mtl`;
+        return Response.json({
+          id, status: "SUCCEEDED", progress: 100, consumed_credits: id.startsWith("tex") ? 10 : 15, model_urls: urls,
+          // Untextured drafts come back without texture maps.
+          ...(id.startsWith("tex") || fake.created.find((c) => c.id === id)?.should_texture !== false
+            ? { texture_urls: [{ base_color: `${fake.base}/assets/base_color.png` }] } : {}),
+        });
       }
       return Response.json({ message: "no route" }, { status: 404 });
     },

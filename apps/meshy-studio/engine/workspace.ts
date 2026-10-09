@@ -2,19 +2,27 @@
 //
 //   000_to_be_meshyd/               drop images here (subfolders are kept all the way through)
 //   000_to_be_meshyd/already done/  images move here once Meshy has them
-//   001_has_been_meshyd/            the raw .glb from Meshy, untouched
+//   001_has_been_meshyd/            the raw .glb from Meshy, untouched (plus any extra formats)
 //   002_ready/                      the scaled, origin-fixed copy
 //   meshy-jobs.json                 one row per image: the ledger
 //   meshy-presets.json              the presets, editable and shareable
 //
-// The ledger is written before any file moves, so quitting mid-batch loses
-// nothing and never sends an image twice.
+// Beside an image, <stem>.txt holds a texture prompt and <stem>.texture.png a texture
+// reference image.
+//
+// Each image has two tracks. The shape (Image to 3D) runs first; a draft is sent
+// without texture, and its Texture track (Retexture) can run later, only on the
+// models worth keeping. The ledger is written before any file moves, so quitting
+// mid-batch loses nothing and never sends an image twice.
 
 import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { describeSize, IMAGE_EXT, parseLabel } from "./labels.ts";
-import { download, Meshy, MeshyError, type Task } from "./meshy.ts";
-import { createBody, estimateCredits, presetFor, STARTER_PRESETS, type Origin, type Preset, type Size } from "./presets.ts";
+import { describeSize, IMAGE_EXT, parseLabel, TEXTURE_REF } from "./labels.ts";
+import { download, Meshy, MeshyError, type Kind, type Task } from "./meshy.ts";
+import {
+  checkPreset, createBody, estimateCredits, estimateRetexture, presetFor, retextureBody, STARTER_PRESETS,
+  type CardInput, type Origin, type Preset, type Size,
+} from "./presets.ts";
 import { fitGlb } from "./fit.ts";
 
 export const INBOX = "000_to_be_meshyd";
@@ -31,6 +39,17 @@ export interface Sync { dir: string; engine: Engine }
 
 export type JobState = "new" | "queued" | "running" | "downloaded" | "done" | "failed";
 
+/** The Texture step on a finished draft. */
+export interface TextureTrack {
+  state: "queued" | "running" | "done" | "failed";
+  taskId?: string;
+  meshyStatus?: Task["status"];
+  progress: number;
+  estimate: number;
+  credits?: number;
+  error?: string;
+}
+
 export interface Job {
   /** Path under 000 when the image was found, "/"-separated. Stable id. */
   key: string;
@@ -43,6 +62,12 @@ export interface Job {
   size: Size;
   origin: Origin;
   texturePrompt?: string;
+  /** A <stem>.texture.png sits beside the image. */
+  textureImage?: boolean;
+  /** Shape only; texture later. */
+  draft?: boolean;
+  /** Whether the model in 001 has Meshy's texture on it. */
+  textured?: boolean;
   state: JobState;
   taskId?: string;
   meshyStatus?: Task["status"];
@@ -51,9 +76,12 @@ export interface Job {
   error?: string;
   estimate: number;
   credits?: number;
+  texture?: TextureTrack;
   /** Paths under 001 and 002 once written. */
   raw?: string;
   ready?: string;
+  /** Extra files from Meshy in 001: other formats, texture maps, the pre-remesh model. */
+  extras?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -61,6 +89,8 @@ export interface Job {
 export interface Pause { reason: string; until?: number }
 
 const mime = (f: string) => /\.png$/i.test(f) ? "image/png" : "image/jpeg";
+const dataUri = async (path: string) => `data:${mime(path)};base64,${Buffer.from(await Bun.file(path).bytes()).toString("base64")}`;
+const textureRefFor = (imagePath: string) => ["png", "jpg", "jpeg"].map((e) => imagePath.replace(IMAGE_EXT, `.texture.${e}`)).find(existsSync);
 
 export class Workspace {
   readonly dir: string;
@@ -113,6 +143,8 @@ export class Workspace {
   }
 
   private touch(j: Job, patch: Partial<Job>) { Object.assign(j, patch, { updatedAt: Date.now() }); }
+  private card(j: Job): CardInput { return { texturePrompt: j.texturePrompt, textureImage: j.textureImage ? "yes" : undefined, draft: j.draft }; }
+  private reprice(j: Job) { j.estimate = estimateCredits(this.preset(j).options, this.card(j)); }
 
   /** Subfolders of 000 (organizing folders), "/"-separated, "" first. */
   folders(): string[] {
@@ -136,12 +168,16 @@ export class Workspace {
     const seen = new Set<string>();
     for (const folder of this.folders()) {
       for (const name of readdirSync(this.path(INBOX, folder))) {
-        if (!IMAGE_EXT.test(name) || name.startsWith(".")) continue;
+        if (!IMAGE_EXT.test(name) || TEXTURE_REF.test(name) || name.startsWith(".")) continue;
         const key = folder ? `${folder}/${name}` : name;
         seen.add(key);
         const old = this.jobs.get(key);
         // An image dropped again after its job finished is a new job.
-        if (old && !(old.where === "sent" && (old.state === "done" || old.state === "failed"))) continue;
+        if (old && !(old.where === "sent" && (old.state === "done" || old.state === "failed"))) {
+          // Sidecars can be added or removed until it's sent.
+          if (old.state === "new" && old.where === "inbox") changed = (await this.readSidecars(old)) || changed;
+          continue;
+        }
         this.jobs.set(key, await this.newJob(folder, name));
         changed = true;
       }
@@ -152,16 +188,30 @@ export class Workspace {
     if (changed) await this.save();
   }
 
+  /** <stem>.txt is a texture prompt, <stem>.texture.png a texture reference image. True if either changed. */
+  private async readSidecars(j: Job): Promise<boolean> {
+    const img = this.imagePath(j);
+    const txt = img.replace(IMAGE_EXT, ".txt");
+    const prompt = existsSync(txt) ? (await Bun.file(txt).text()).trim() || undefined : undefined;
+    const ref = !!textureRefFor(img) || undefined;
+    if (prompt === j.texturePrompt && ref === j.textureImage) return false;
+    j.texturePrompt = prompt;
+    j.textureImage = ref;
+    this.reprice(j);
+    return true;
+  }
+
   private async newJob(folder: string, file: string): Promise<Job> {
     const label = parseLabel(file, this.presets);
-    const side = this.path(INBOX, folder, file.replace(IMAGE_EXT, ".txt"));
-    const texturePrompt = existsSync(side) ? (await Bun.file(side).text()).trim() || undefined : undefined;
     const now = Date.now();
-    return {
+    const j: Job = {
       key: folder ? `${folder}/${file}` : file, folder, file, where: "inbox",
-      prefix: label.preset.prefix, outName: label.outName, size: label.size, origin: label.origin, texturePrompt,
-      state: "new", progress: 0, estimate: estimateCredits(label.preset.options, texturePrompt), createdAt: now, updatedAt: now,
+      prefix: label.preset.prefix, outName: label.outName, size: label.size, origin: label.origin,
+      draft: label.draft || undefined, state: "new", progress: 0, estimate: 0, createdAt: now, updatedAt: now,
     };
+    await this.readSidecars(j);
+    this.reprice(j);
+    return j;
   }
 
   preset(j: Job) { return this.presets.find((p) => p.prefix === j.prefix) ?? presetFor("", this.presets); }
@@ -174,13 +224,16 @@ export class Workspace {
   }
 
   /** Change a card. Before sending: anything. After the model is down: size, origin and name re-fit for free. */
-  async edit(key: string, patch: { prefix?: string; size?: Size; origin?: Origin; outName?: string; texturePrompt?: string }) {
+  async edit(key: string, patch: { prefix?: string; size?: Size; origin?: Origin; outName?: string; texturePrompt?: string; draft?: boolean }) {
     const j = this.get(key);
     const unsent = j.state === "new" || (j.state === "failed" && !j.taskId);
-    if (!unsent && (patch.prefix !== undefined || patch.texturePrompt !== undefined)) throw new Error("already sent to Meshy; only size, origin and name can change now");
+    if (!unsent && (patch.prefix !== undefined || patch.texturePrompt !== undefined || patch.draft !== undefined)) throw new Error("already sent to Meshy; only size, origin and name can change now");
+    if (!unsent && patch.size && "auto" in patch.size) throw new Error("Meshy's size guess is made when the image is sent; pick meters now");
     if (patch.outName !== undefined && !/^[^/\\:*?"<>|]+$/.test(patch.outName)) throw new Error("that name has characters a file can't have");
+    if (patch.prefix !== undefined && !this.presets.some((p) => p.prefix === patch.prefix)) throw new Error(`no preset with prefix "${patch.prefix}"`);
+    if (patch.draft === false) patch.draft = undefined;
     this.touch(j, patch);
-    if (unsent) j.estimate = estimateCredits(this.preset(j).options, j.texturePrompt);
+    if (unsent) this.reprice(j);
     if (j.raw && (patch.size || patch.origin || patch.outName)) await this.fit(j);
     await this.save();
   }
@@ -194,23 +247,38 @@ export class Workspace {
     if (nk === key) return;
     if (this.jobs.has(nk)) throw new Error(`${folder || "the top folder"} already has ${j.file}`);
     const from = this.imagePath(j);
+    const sides = [from.replace(IMAGE_EXT, ".txt"), textureRefFor(from)].filter((p): p is string => !!p && existsSync(p));
     j.folder = folder;
     const to = this.imagePath(j);
     mkdirSync(dirname(to), { recursive: true });
     renameSync(from, to);
-    const side = from.replace(IMAGE_EXT, ".txt");
-    if (existsSync(side)) renameSync(side, to.replace(IMAGE_EXT, ".txt"));
+    for (const s of sides) renameSync(s, join(dirname(to), basename(s)));
     this.jobs.delete(key);
     this.touch(j, { key: nk });
     this.jobs.set(nk, j);
     await this.save();
   }
 
-  /** Queue new cards (all of them, or the given keys). Also lifts a pause. */
-  async send(keys?: string[]) {
+  /** Queue new cards (all of them, or the given keys); `draft` sends them without texture. Also lifts a pause. */
+  async send(keys?: string[], opts: { draft?: boolean } = {}) {
     this.pause = null;
     for (const j of this.jobs.values()) {
-      if (j.state === "new" && (!keys || keys.includes(j.key))) this.touch(j, { state: "queued", error: undefined });
+      if (j.state !== "new" || (keys && !keys.includes(j.key))) continue;
+      if (opts.draft) { j.draft = true; this.reprice(j); }
+      this.touch(j, { state: "queued", error: undefined });
+    }
+    await this.save();
+  }
+
+  /** Finished models still without texture, which the Texture step can take. */
+  canTexture(j: Job) { return j.state === "done" && !j.textured && !!j.taskId && (!j.texture || j.texture.state === "failed"); }
+
+  /** Queue the Texture step (Retexture) on finished drafts: the given ones, or all of them. */
+  async textureModels(keys?: string[]) {
+    this.pause = null;
+    for (const j of this.jobs.values()) {
+      if (!this.canTexture(j) || (keys && !keys.includes(j.key))) continue;
+      this.touch(j, { texture: { state: "queued", progress: 0, estimate: estimateRetexture(this.preset(j).retexture) } });
     }
     await this.save();
   }
@@ -218,26 +286,41 @@ export class Workspace {
   /** Retry from the last good step: re-fit if the model is already down, else send again. */
   async retry(key: string) {
     const j = this.get(key);
+    if (j.texture?.state === "failed") {
+      this.touch(j, { texture: { state: "queued", progress: 0, estimate: j.texture.estimate } });
+      await this.save();
+      return;
+    }
     if (j.state !== "failed") return;
     if (j.raw && existsSync(this.path(RAW, j.raw))) { await this.fit(j); await this.save(); return; }
     this.touch(j, { state: "queued", taskId: undefined, meshyStatus: undefined, progress: 0, error: undefined, thumbnail: undefined });
     await this.save();
   }
 
-  /** Unqueue, or cancel at Meshy while PENDING (refunded). The image goes back to 000. */
+  /** Unqueue, or cancel at Meshy while PENDING (refunded). A cancelled shape's image goes back to 000. */
   async cancel(key: string) {
     const j = this.get(key);
+    const t = j.texture;
+    if (t && (t.state === "queued" || t.state === "running")) {
+      if (t.state === "running") await this.cancelAt("retexture", t.taskId!);
+      this.touch(j, { texture: undefined });
+      await this.save();
+      return;
+    }
     if (j.state === "queued") { this.touch(j, { state: "new" }); await this.save(); return; }
     if (j.state !== "running" || !j.taskId) throw new Error("nothing to cancel");
-    const meshy = this.client();
-    try { await meshy.cancel(j.taskId); }
+    await this.cancelAt("image-to-3d", j.taskId);
+    this.restore(j);
+    this.touch(j, { state: "new", taskId: undefined, meshyStatus: undefined, progress: 0, thumbnail: undefined });
+    await this.save();
+  }
+
+  private async cancelAt(kind: Kind, id: string) {
+    try { await this.client().cancel(id, kind); }
     catch (e) {
       if (e instanceof MeshyError && e.status === 409) throw new Error("Meshy has started this one, so it can't be cancelled.");
       throw e;
     }
-    this.restore(j);
-    this.touch(j, { state: "new", taskId: undefined, meshyStatus: undefined, progress: 0, thumbnail: undefined });
-    await this.save();
   }
 
   private restore(j: Job) {
@@ -253,22 +336,33 @@ export class Workspace {
     return new Meshy(k);
   }
 
-  /** One pass of the work loop: poll running jobs, submit queued ones under the limit. */
+  /** Tasks Meshy is holding for us: shapes and textures share the account's queue limit. */
+  private busyAtMeshy() { return [...this.jobs.values()].filter((j) => j.state === "running" || j.texture?.state === "running").length; }
+
+  /** One pass of the work loop: poll running tasks, submit queued ones under the limit. */
   async tick() {
     if (this.busy) return;
     this.busy = true;
     try {
       await this.scan();
-      const running = [...this.jobs.values()].filter((j) => j.state === "running");
-      const queued = [...this.jobs.values()].filter((j) => j.state === "queued");
-      if (!running.length && !queued.length) return;
+      const all = [...this.jobs.values()];
+      const running = all.filter((j) => j.state === "running");
+      const texturing = all.filter((j) => j.texture?.state === "running");
+      const queued = all.filter((j) => j.state === "queued");
+      const toTexture = all.filter((j) => j.texture?.state === "queued");
+      if (!running.length && !texturing.length && !queued.length && !toTexture.length) return;
       const meshy = this.client();
       for (const j of running) await this.poll(meshy, j);
+      for (const j of texturing) await this.pollTexture(meshy, j);
       if (this.pause?.until && this.pause.until <= Date.now()) this.pause = null;
-      let slots = this.maxQueued - [...this.jobs.values()].filter((j) => j.state === "running").length;
+      let slots = this.maxQueued - this.busyAtMeshy();
       for (const j of queued) {
         if (slots <= 0 || this.pause) break;
         if (await this.submit(meshy, j)) slots--;
+      }
+      for (const j of toTexture) {
+        if (slots <= 0 || this.pause) break;
+        if (await this.submitTexture(meshy, j)) slots--;
       }
     } catch (e) {
       this.onMeshyError(e);
@@ -289,16 +383,18 @@ export class Workspace {
   private async submit(meshy: Meshy, j: Job): Promise<boolean> {
     const img = this.imagePath(j);
     try {
-      const bytes = await Bun.file(img).bytes();
-      const uri = `data:${mime(j.file)};base64,${Buffer.from(bytes).toString("base64")}`;
-      const taskId = await meshy.create(createBody(uri, this.preset(j).options, j.texturePrompt));
+      const ref = textureRefFor(img);
+      const card = { ...this.card(j), textureImage: ref ? await dataUri(ref) : undefined };
+      const taskId = await meshy.create(createBody(await dataUri(img), this.preset(j), card));
       // The task id is on disk before the image moves: a crash here never re-buys it.
       this.touch(j, { state: "running", taskId, meshyStatus: "PENDING", progress: 0 });
       await this.save();
       if (j.where === "inbox") {
         const to = this.path(INBOX, SENT, j.folder, j.file);
+        const sides = [img.replace(IMAGE_EXT, ".txt"), ref].filter((p): p is string => !!p && existsSync(p));
         mkdirSync(dirname(to), { recursive: true });
         renameSync(img, to);
+        for (const s of sides) renameSync(s, join(dirname(to), basename(s)));
         j.where = "sent";
         await this.save();
       }
@@ -306,6 +402,26 @@ export class Workspace {
     } catch (e) {
       if (this.onMeshyError(e)) return false;
       this.touch(j, { state: "failed", error: e instanceof MeshyError ? e.friendly : String((e as Error).message ?? e) });
+      await this.save();
+      return false;
+    }
+  }
+
+  /** Style for the Texture step: the card's prompt, else its texture image, else the concept image itself. */
+  private async submitTexture(meshy: Meshy, j: Job): Promise<boolean> {
+    const t = j.texture!;
+    try {
+      const img = this.imagePath(j);
+      const ref = textureRefFor(img);
+      const style = j.texturePrompt ? { prompt: j.texturePrompt } : { imageDataUri: await dataUri(ref ?? img) };
+      const p = this.preset(j);
+      const taskId = await meshy.create(retextureBody(j.taskId!, p.retexture, style, p.formats), "retexture");
+      this.touch(j, { texture: { ...t, state: "running", taskId, meshyStatus: "PENDING", progress: 0 } });
+      await this.save();
+      return true;
+    } catch (e) {
+      if (this.onMeshyError(e)) return false;
+      this.touch(j, { texture: { ...t, state: "failed", error: e instanceof MeshyError ? e.friendly : String((e as Error).message ?? e) } });
       await this.save();
       return false;
     }
@@ -324,22 +440,72 @@ export class Workspace {
     if (t.status === "FAILED" || t.status === "CANCELED") {
       this.touch(j, { state: "failed", error: t.task_error?.message || `Meshy marked it ${t.status.toLowerCase()}.` });
     } else if (t.status === "SUCCEEDED") {
-      const url = t.model_urls?.glb;
-      if (!url) this.touch(j, { state: "failed", error: "Meshy finished without a .glb." });
-      else {
-        try {
-          const glb = await download(url);
-          const raw = this.outPath(j, RAW);
-          await Bun.write(this.path(RAW, raw), glb);
-          this.touch(j, { state: "downloaded", raw });
-          await this.save();
-          await this.fit(j);
-        } catch (e) {
-          this.touch(j, { state: "failed", error: `Download failed: ${(e as Error).message}` });
-        }
+      try {
+        await this.saveModels(j, t);
+        this.touch(j, { state: "downloaded", textured: !j.draft && this.preset(j).options.should_texture !== false });
+        await this.save();
+        await this.fit(j);
+      } catch (e) {
+        this.touch(j, { state: "failed", error: (e as Error).message });
       }
     } else if (`${j.meshyStatus}/${j.progress}/${j.thumbnail}` === before) return;
     await this.save();
+  }
+
+  private async pollTexture(meshy: Meshy, j: Job) {
+    const tex = j.texture!;
+    let t: Task;
+    try { t = await meshy.get(tex.taskId!, "retexture"); }
+    catch (e) {
+      if (this.onMeshyError(e)) return;
+      if (e instanceof MeshyError && e.status === 404) { this.touch(j, { texture: { ...tex, state: "failed", error: "Meshy no longer has this task." } }); await this.save(); }
+      return;
+    }
+    const before = `${tex.meshyStatus}/${tex.progress}`;
+    const next: TextureTrack = { ...tex, meshyStatus: t.status, progress: t.progress ?? tex.progress, credits: t.consumed_credits ?? tex.credits };
+    this.touch(j, { texture: next, thumbnail: t.thumbnail_url ?? j.thumbnail });
+    if (t.status === "FAILED" || t.status === "CANCELED") {
+      this.touch(j, { texture: { ...next, state: "failed", error: t.task_error?.message || `Meshy marked it ${t.status.toLowerCase()}.` } });
+    } else if (t.status === "SUCCEEDED") {
+      try {
+        await this.saveModels(j, t);
+        this.touch(j, { textured: true, texture: { ...next, state: "done", progress: 100 } });
+        await this.save();
+        await this.fit(j);
+      } catch (e) {
+        this.touch(j, { texture: { ...next, state: "failed", error: (e as Error).message } });
+      }
+    } else if (`${next.meshyStatus}/${next.progress}` === before) return;
+    await this.save();
+  }
+
+  /**
+   * A succeeded task's files into 001: the .glb (always), the preset's extra formats, the
+   * pre-remesh model, and the texture maps when a non-glb format wants them beside it.
+   * Meshy's links expire, so this runs as soon as the task succeeds.
+   */
+  private async saveModels(j: Job, t: Task) {
+    const glb = t.model_urls?.glb;
+    if (!glb) throw new Error("Meshy finished without a .glb.");
+    const raw = j.raw ?? this.outPath(j, RAW);
+    try { await Bun.write(this.path(RAW, raw), await download(glb)); }
+    catch (e) { throw new Error(`Download failed: ${(e as Error).message}`); }
+    j.raw = raw;
+    const base = raw.replace(/\.glb$/, "");
+    const extras = new Set(j.extras ?? []);
+    const want = (this.preset(j).formats ?? []).filter((f) => f !== "glb");
+    const files: [string, string | undefined][] = want.map((f) => [`${base}.${f}`, t.model_urls?.[f]]);
+    if (want.includes("obj")) files.push([`${base}.mtl`, t.model_urls?.mtl]);
+    files.push([`${base}.pre_remesh.glb`, t.model_urls?.pre_remeshed_glb]);
+    if (want.some((f) => f !== "stl" && f !== "3mf")) {
+      for (const [map, url] of Object.entries(t.texture_urls?.[0] ?? {})) files.push([`${base}.textures/${map}.png`, url]);
+    }
+    for (const [rel, url] of files) {
+      if (!url) continue;
+      try { await Bun.write(this.path(RAW, rel), await download(url)); extras.add(rel); }
+      catch (e) { console.error(`[meshy-studio] extra file ${rel}`, e); }
+    }
+    j.extras = extras.size ? [...extras].sort() : undefined;
   }
 
   /** <folder>/<outName>.glb, with _2, _3 when another job already owns that name. */
@@ -353,16 +519,17 @@ export class Workspace {
     }
   }
 
-  /** 001 -> 002: scale and set the origin. Free, so it reruns whenever the card changes. */
+  /** 001 -> 002: scale and set the origin (Meshy's own size guess is kept as it came). Free, so it reruns whenever the card changes. */
   private async fit(j: Job) {
     try {
-      const out = await fitGlb(await Bun.file(this.path(RAW, j.raw!)).bytes(), j.size, j.origin);
+      const raw = await Bun.file(this.path(RAW, j.raw!)).bytes();
+      const out = "auto" in j.size ? raw : (await fitGlb(raw, j.size, j.origin)).glb;
       const ready = this.outPath(j, READY);
       if (j.ready && j.ready !== ready) {
         rmSync(this.path(READY, j.ready), { force: true });
         if (this.sync) rmSync(join(this.sync.dir, j.ready), { force: true });
       }
-      await Bun.write(this.path(READY, ready), out.glb);
+      await Bun.write(this.path(READY, ready), out);
       this.touch(j, { state: "done", ready, error: undefined });
       this.copyOut(j);
     } catch (e) {
@@ -395,10 +562,39 @@ export class Workspace {
     this.version++;
   }
 
-  /** Credits a send of these unsent cards would cost (all new cards when no keys). */
-  estimate(keys?: string[]) {
+  /** Replace the presets (the editor saves through here). Unsent cards whose preset went away fall back to Default. */
+  async setPresets(list: Preset[]) {
+    if (!Array.isArray(list) || !list.length) throw new Error("keep at least one preset");
+    const prefixes = list.map((p) => p.prefix);
+    if (!prefixes.includes("")) throw new Error("keep the Default preset (empty prefix): it catches every unlabelled image");
+    const dupe = prefixes.find((p, i) => prefixes.indexOf(p) !== i);
+    if (dupe !== undefined) throw new Error(`two presets use the prefix "${dupe}"`);
+    for (const p of list) {
+      if (!p.label?.trim()) throw new Error("every preset needs a name");
+      const bad = checkPreset(p).filter((m) => !m.includes("only appl"));
+      if (bad.length) throw new Error(`${p.label}: ${bad[0]}`);
+    }
+    this.presets = list;
+    await Bun.write(this.path(PRESETS), JSON.stringify(list, null, 2) + "\n");
+    for (const j of this.jobs.values()) {
+      if (j.state !== "new" && !(j.state === "failed" && !j.taskId)) continue;
+      if (!prefixes.includes(j.prefix)) j.prefix = "";
+      this.reprice(j);
+    }
+    await this.save();
+  }
+
+  /** Credits a send of these unsent cards would cost (all new cards when no keys), optionally as drafts. */
+  estimate(keys?: string[], opts: { draft?: boolean } = {}) {
     const js = [...this.jobs.values()].filter((j) => j.state === "new" && (!keys || keys.includes(j.key)));
-    return { count: js.length, credits: js.reduce((n, j) => n + j.estimate, 0) };
+    const cost = (j: Job) => opts.draft ? estimateCredits(this.preset(j).options, { ...this.card(j), draft: true }) : j.estimate;
+    return { count: js.length, credits: js.reduce((n, j) => n + cost(j), 0) };
+  }
+
+  /** Credits the Texture step on these finished drafts would cost. */
+  estimateTexture(keys?: string[]) {
+    const js = [...this.jobs.values()].filter((j) => this.canTexture(j) && (!keys || keys.includes(j.key)));
+    return { count: js.length, credits: js.reduce((n, j) => n + estimateRetexture(this.preset(j).retexture), 0) };
   }
 
   summary() {
@@ -406,8 +602,12 @@ export class Workspace {
     return {
       dir: this.dir, name: basename(this.dir), version: this.version, pause: this.pause, maxQueued: this.maxQueued,
       folders: this.folders(), presets: this.presets, sync: this.sync,
-      spent: jobs.reduce((n, j) => n + (j.credits ?? 0), 0),
-      jobs: jobs.map((j) => ({ ...j, sizeText: describeSize(j.size), presetLabel: this.preset(j).label })),
+      spent: jobs.reduce((n, j) => n + (j.credits ?? 0) + (j.texture?.credits ?? 0), 0),
+      jobs: jobs.map((j) => ({
+        ...j, sizeText: describeSize(j.size), presetLabel: this.preset(j).label,
+        draftEstimate: estimateCredits(this.preset(j).options, { ...this.card(j), draft: true }),
+        textureEstimate: estimateRetexture(this.preset(j).retexture),
+      })),
     };
   }
 }
