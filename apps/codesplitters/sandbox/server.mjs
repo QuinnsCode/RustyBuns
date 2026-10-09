@@ -40,7 +40,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (req.method !== "POST" || req.url !== "/run") { res.writeHead(404).end(); return; }
     let body = "";
     for await (const chunk of req) body += chunk;
-    const out = await run(JSON.parse(body));
-    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
+    try {
+      const out = await run(JSON.parse(body));
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
+    } catch (e) {
+      res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: String(e) }));
+    }
   }).listen(8080);
 }

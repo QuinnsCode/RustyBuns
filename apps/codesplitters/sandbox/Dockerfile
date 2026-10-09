@@ -9,7 +9,7 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex @earendil-works/pi-co
   && npm cache clean --force
 
 WORKDIR /srv
-COPY server.mjs .
+COPY --chmod=644 server.mjs .
 USER node
 EXPOSE 8080
 CMD ["node", "server.mjs"]
