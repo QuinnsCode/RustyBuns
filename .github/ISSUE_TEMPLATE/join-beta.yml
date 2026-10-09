@@ -1,0 +1,35 @@
+# Sign up to try desktop builds before they're stable. We tag you on this issue
+# when a new experimental build lands for an app you picked.
+name: Join the beta
+description: Try desktop builds early and tell us when they break
+title: "[beta tester] "
+labels: ["beta-tester"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for coming along for the ride! Builds are unsigned, so your OS will warn you the first time; the download page says how to open them.
+  - type: checkboxes
+    id: apps
+    attributes:
+      label: Which apps?
+      options:
+        - label: agent-office
+        - label: auto-rig
+        - label: fm-daw
+        - label: hippo-tycoon
+        - label: motion-midi
+        - label: park-hide-seek
+        - label: splat-desktop
+        - label: splat-rooms
+        - label: splat-spray
+        - label: tscircuit-desktop
+  - type: checkboxes
+    id: os
+    attributes:
+      label: Your computer(s)
+      options:
+        - label: Mac (Apple silicon)
+        - label: Mac (Intel)
+        - label: Windows
+        - label: Linux
+        - label: Linux (ARM)
