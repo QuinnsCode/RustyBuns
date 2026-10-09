@@ -19,7 +19,7 @@ import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { DesktopOs, HetznerBoxTarget, RailwayBoxTarget, RustyBunsConfig } from "./config.ts";
-import { buildDesktop, embeddedDirs } from "./build.ts";
+import { buildDesktop, embeddedDirs, localRust } from "./build.ts";
 
 export const BOX_DIR = ".rustybuns/box";
 export const RAILWAY_DIR = ".rustybuns/railway";
@@ -63,11 +63,7 @@ CMD ["bun", "/app/box.js"]
 `;
 }
 
-/** The local rustc's version (`1.96.0`), so the image builds with the same Rust; "stable" without one. */
-export function localRust(): string {
-  const r = Bun.spawnSync(["rustc", "--version"], { stdout: "pipe", stderr: "ignore" });
-  return /rustc (\d+\.\d+\.\d+)/.exec(r.stdout.toString())?.[1] ?? "stable";
-}
+
 
 export function boxDefaults(b: HetznerBoxTarget) {
   return {
@@ -152,7 +148,7 @@ export async function buildRailway(c: RustyBunsConfig): Promise<string> {
     const missing = want.filter((n) => !all.includes(n));
     if (missing.length) throw new Error(`desktop.native names crates that are not in native/crates: ${missing.join(", ")}`);
     if (want.length) {
-      native = { crates: want, rust: localRust() };
+      native = { crates: want, rust: localRust() ?? "stable" };
       await mkdir(join(RAILWAY_DIR, "native"), { recursive: true });
       for (const f of ["Cargo.toml", "Cargo.lock"]) if (existsSync(join("native", f))) await cp(join("native", f), join(RAILWAY_DIR, "native", f));
       await cp("native/crates", join(RAILWAY_DIR, "native", "crates"), { recursive: true, filter: (src) => !/\/(target|dist)(\/|$)/.test(src) });

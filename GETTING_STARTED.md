@@ -79,7 +79,7 @@ targets: {
 | Status | verified live | verified live |
 | You get | `https://<service>.up.railway.app`, a Volume for sqlite | `http://<ipv4>:3000`, a 10 GB Volume for sqlite |
 | Cost | by usage, sleeps when idle; **set a hard usage limit first** | hourly until destroyed |
-| Rust crates | yes, built inside the image | yes (deploy from Linux) |
+| Rust crates | yes, built inside the image | yes, built in Docker when you're not on Linux |
 | Log in | `rustybuns login railway` (an *account* token, or the browser) | `rustybuns login hetzner` (a read & write API token) |
 
 Then the same three commands: `plan`, `deploy`, `destroy`. Both run `rustybuns build box` first.
