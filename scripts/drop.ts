@@ -118,6 +118,13 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 }
 
 function mb(n: number) { return `${(n / 1048576).toFixed(1)} MB`; }
+// The beta issue forms (.github/ISSUE_TEMPLATE), prefilled for this build.
+function repo() { return `https://github.com/${process.env.GITHUB_REPOSITORY || "QuinnsCode/RustyBuns"}`; }
+function reportUrl() {
+  const q = new URLSearchParams({ template: "beta-report.yml", title: `[beta] ${app} ${version}: `, app, version: `${version} (${channel})`, commit: sha });
+  return `${repo()}/issues/new?${q}`;
+}
+function joinUrl() { return `${repo()}/issues/new?template=join-beta.yml`; }
 function esc(s: string) { return s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`); }
 function style() { return `<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem;color:#222;background:#fff}
 a.dl{display:block;padding:.8rem 1rem;margin:.5rem 0;border:1px solid #ccc;border-radius:8px;text-decoration:none;color:inherit}
@@ -134,6 +141,7 @@ ${row("Stable", "the one to use", s.stable)}
 ${row("Experimental", "newest, may break", s.experimental)}
 ${row("Previous", "the stable before this one", s.historical)}
 <p><small>Older versions aren't kept: build them from the source at that commit.</small></p>
+<p><small>Want to try builds early? <a href="${esc(joinUrl())}">Join the beta</a>.</small></p>
 `;
 }
 function page() {
@@ -149,6 +157,7 @@ ${rows.map((r) => `<a class="dl" href="${esc(r.name)}" download><b>${esc(label(r
 <p><b>Mac:</b> in Terminal, <code>cd ~/Downloads && chmod +x ${esc(app)}-darwin-* && xattr -d com.apple.quarantine ${esc(app)}-darwin-*</code>, then run it. It isn't signed, so macOS blocks a double click.</p>
 <p><b>Windows:</b> SmartScreen may warn about an unknown app: More info, then Run anyway.</p>
 <p><b>Linux:</b> <code>chmod +x ${esc(app)}-linux-*</code> and run it.</p>
+<p><b>Something broke?</b> <a href="${esc(reportUrl())}">Report it</a> (app, version and commit are filled in), or <a href="${esc(joinUrl())}">join the beta</a> to hear about new builds.</p>
 <p><small><a href="SHA256SUMS">SHA256SUMS</a></small></p>
 `;
 }
