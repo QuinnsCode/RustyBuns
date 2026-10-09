@@ -210,7 +210,7 @@ export default {
       const t = await body<{ owner: string; repo: string; path: string; from: number; to: number; note?: string }>();
       if (!(await access(env, t.owner, t.repo, user)).read) return json({ error: "not found" }, 404);
       const from = Math.max(1, Math.floor(t.from)), to = Math.max(from, Math.floor(t.to));
-      const doc = await (await toFile(env, t.owner, t.repo, t.path, user, "file")).json() as { lines?: { id: string }[] };
+      const doc = await (await toFile(env, t.owner, t.repo, t.path, user!, "file")).json() as { lines?: { id: string }[] };
       const first = doc.lines?.[from - 1], last = doc.lines?.[Math.min(to, doc.lines.length) - 1];
       if (!first || !last) return json({ error: "no such lines" }, 400);
       await env.DB.prepare("INSERT INTO tracks (playlist, owner, repo, path, from_line, to_line, from_id, to_id, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
