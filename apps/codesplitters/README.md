@@ -10,6 +10,8 @@
 
 Identity is a name in a cookie. That is not auth.
 
+**Checked on Cloudflare** (2026-10-09, Workers, D1, Durable Objects, Artifacts): three agents edited one file at once, cataloguing pushed a commit to Artifacts that a stock `git clone` and `git pull` fetched, a second catalogue chained onto the first, private repos answered 404 to others, search found catalogued code, and an edit streamed live to an open page.
+
 On the desktop, Artifacts is a Rusty Buns twin: bare repos in `~/.codesplitters/artifacts`, served by `git http-backend` behind each repo's tokens, so it needs `git` installed. On Cloudflare, Artifacts needs the Workers Paid plan (10k operations and 1 GB a month included).
 
 ```sh
