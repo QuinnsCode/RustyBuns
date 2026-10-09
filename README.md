@@ -65,7 +65,7 @@ Only when TypeScript isn't fast enough. Every Rust engine in this repo ships wit
 Honestly:
 
 - **No native menus, tray, installers, signing or auto-update yet.** If you need a native-feeling window today, use Electron or Tauri.
-- **The binary is about 90 to 110 MB**, because Bun is inside it. It's one file with no install step, but it isn't small.
+- **The binary is about 60 to 110 MB**, depending on the app, because Bun is inside it. It's one file with no install step, but it isn't small.
 - **It renders in the user's Chrome** (or default browser), not a bundled one.
 
 If what you have is a web app with a backend, and you want it on a laptop, on the edge *and* on a server, nothing else does all three from one codebase.
