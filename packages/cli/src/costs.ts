@@ -28,6 +28,7 @@ export function billables(c: RustyBunsConfig): Billable[] {
       if (b.type === "durable_object") out.push({ what: `Durable Object ${name}`, kind: "usage", note: "duration while awake: open sockets, timers, tick loops" });
       if (b.type === "d1") out.push({ what: `D1 ${name}`, kind: "usage", note: "rows read/written + storage" });
       if (b.type === "kv") out.push({ what: `KV ${name}`, kind: "usage", note: "reads/writes + storage" });
+      if (b.type === "artifacts") out.push({ what: `Artifacts ${name}`, kind: "usage", note: "Workers Paid only; 10k ops + 1 GB a month included, then $0.15 per 1k ops and $0.50 per GB-month" });
       if (b.type === "r2") out.push({ what: `R2 ${name}`, kind: "usage", note: "storage + operations (egress is free)" });
     }
   }

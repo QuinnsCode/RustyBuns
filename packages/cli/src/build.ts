@@ -284,6 +284,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   const bind: string[] = [];
   const dos: { name: string; className: string }[] = [];
   const migrations: [string, string][] = [];
+  const artifacts: string[] = [];
   for (const [name, b] of Object.entries(c.bindings ?? {})) {
     switch (b.type) {
       case "d1":
@@ -294,6 +295,10 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "var": bind.push(`  ${name}: ${JSON.stringify(b.value)},`); break;
       case "secret": bind.push(`  ${name}: process.env[${JSON.stringify(name)}] ?? "",`); break;
       case "r2": bind.push(`  // ${name}: R2 -> directory adapter (slice 2)`); break;
+      case "artifacts":
+        bind.push(`  ${name}: local.artifacts(${JSON.stringify(b.namespace)}),`);
+        artifacts.push(name);
+        break;
       case "durable_object":
         if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);
         else dos.push({ name, className: b.className });
@@ -302,7 +307,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   }
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
-import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations } from "@rustybuns/shell-bun";
+import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations${artifacts.length ? ", gitHttp" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + (c.worker!.builtMain ?? c.worker!.main))};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
@@ -340,8 +345,11 @@ const shell = serve<typeof env>({
   assets: assetDir(${JSON.stringify(c.worker!.assets ?? "")}),
   runWorkerFirst: ${JSON.stringify(c.worker!.runWorkerFirst ?? [])},
   token,
-  reporter: stdoutReporter${h.listen},
+  reporter: stdoutReporter${h.listen},${artifacts.length ? `
+  // Artifacts remotes: git clients bring a repo token, not the host cookie.
+  open: { "/__rb/git/": (req: Request) => gitHttp(req, [${artifacts.map((n) => `env.${n} as any`).join(", ")}]) },` : ""}
 });
+${artifacts.map((n) => `(env.${n} as any).remoteBase = shell.url;`).join("\n")}
 ${h.box
   ? `shell.mount({ fetch: (req: Request, e: any, ctx: any) => new URL(req.url).pathname === "/health" ? new Response("ok") : (worker as any).fetch(req, e, ctx) } as any, env);`
   : `shell.mount(worker as any, env);`}

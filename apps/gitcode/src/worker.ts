@@ -5,16 +5,26 @@
 // Identity is a name in a cookie. That is a proof of concept, not auth.
 
 import { fromText } from "./lines.ts";
+import { push } from "./git.ts";
 export { FileDurableObject } from "./file-do.ts";
 
 interface Env {
   DB: any;
   FILES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** Cloudflare Artifacts (a bare-repo twin on the desktop). Optional: without it, nothing is pushed. */
+  ARTIFACTS?: {
+    create(name: string, opts?: { description?: string; setDefaultBranch?: string }): Promise<{ name: string; remote: string }>;
+    get(name: string): Promise<{
+      info(): Promise<{ remote?: string }>;
+      createToken(scope?: "read" | "write", ttl?: number): Promise<{ plaintext: string }>;
+    }>;
+  };
 }
 
 const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json", ...headers } });
-const NAME = /^[a-z0-9][a-z0-9-]{0,38}$/;
+// Single dashes only, so "owner--repo" names an artifact unambiguously.
+const NAME = /^(?=.{1,39}$)[a-z0-9]+(-[a-z0-9]+)*$/;
 
 function who(req: Request) {
   const m = /(?:^|;\s*)gc_user=([a-z0-9-]+)/.exec(req.headers.get("cookie") ?? "");
@@ -39,6 +49,24 @@ function toFile(env: Env, owner: string, repo: string, path: string, user: strin
   return fileStub(env, owner, repo, path).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 
+/** The artifact repo's remote and a fresh token for it, or null if the repo has none. */
+async function artifact(env: Env, owner: string, repo: string, scope: "read" | "write", ttl: number) {
+  const r = await env.DB.prepare("SELECT artifact, artifact_remote FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  if (!env.ARTIFACTS || !r?.artifact) return null;
+  const handle = await env.ARTIFACTS.get(r.artifact);
+  const [info, token] = await Promise.all([handle.info().catch(() => ({} as { remote?: string })), handle.createToken(scope, ttl)]);
+  return { remote: (info.remote ?? r.artifact_remote) as string, token: token.plaintext };
+}
+
+/** Push every catalogued file in the repo to its artifact as one commit. */
+async function pushArchive(env: Env, owner: string, repo: string, author: string, message: string) {
+  const a = await artifact(env, owner, repo, "write", 300);
+  if (!a) return null;
+  const { results } = await env.DB.prepare("SELECT path, content FROM file_search WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const files = Object.fromEntries(results.map((f: any) => [f.path, f.content.endsWith("\n") ? f.content : f.content + "\n"]));
+  return { remote: a.remote, ...(await push(a.remote, a.token, { files, message, author })) };
+}
+
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
 const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
 
@@ -53,7 +81,7 @@ export default {
     // POST /api/login {name}
     if (p[1] === "login" && req.method === "POST") {
       const { name } = await body<{ name: string }>();
-      if (!NAME.test(name ?? "")) return json({ error: "name: lowercase letters, digits and dashes" }, 400);
+      if (!NAME.test(name ?? "")) return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
       await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
       return json({ name }, 200, { "set-cookie": `gc_user=${name}; Path=/; SameSite=Lax` });
     }
@@ -85,6 +113,11 @@ export default {
       if (!NAME.test(name ?? "")) return json({ error: "bad repo name" }, 400);
       if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
       await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at) VALUES (?, ?, ?, ?)").bind(user, name, visibility, Date.now()).run();
+      if (env.ARTIFACTS) {
+        // One artifact repo per excavation; "--" can't appear in either name, so it can't collide.
+        const art = await env.ARTIFACTS.create(`${user}--${name}`, { description: `gitcode ${user}/${name}`, setDefaultBranch: "main" });
+        await env.DB.prepare("UPDATE repos SET artifact = ?, artifact_remote = ? WHERE owner = ? AND name = ?").bind(art.name, art.remote, user, name).run();
+      }
       return json({ owner: user, name, visibility }, 201);
     }
 
@@ -99,7 +132,11 @@ export default {
         const r = await env.DB.prepare("SELECT * FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         const { results: files } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? ORDER BY path").bind(owner, repo).all();
         const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-        return json({ ...r, files: files.map((f: any) => f.path), collaborators: collaborators.map((c: any) => c.name), canWrite: a.write });
+        // Anyone who can read the repo can clone its artifact, with an hour-long read token.
+        const art = await artifact(env, owner, repo, "read", 3600).catch(() => null);
+        const clone = art && `git clone ${art.remote.replace("://", `://x:${art.token.split("?")[0]}@`)} ${repo}`;
+        const { artifact: _, artifact_remote: __, ...pub } = r;
+        return json({ ...pub, files: files.map((f: any) => f.path), collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone });
       }
       // POST /api/repos/:o/:r/collaborators {name}  (owner only; this is how agents get in)
       if (p[4] === "collaborators" && req.method === "POST") {
@@ -132,12 +169,14 @@ export default {
           url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "");
         if (p[5] === "commit" && res.ok) {
           // Index what was committed, not every keystroke.
-          const { commit, content } = (await res.json()) as { commit: unknown; content: string };
+          const { commit, content } = (await res.json()) as { commit: { message: string }; content: string };
           await env.DB.batch([
             env.DB.prepare("DELETE FROM file_search WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path),
             env.DB.prepare("INSERT INTO file_search (owner, repo, path, content) VALUES (?, ?, ?, ?)").bind(owner, repo, path, content),
           ]);
-          return json(commit);
+          // The catalogue entry stands even if the push fails; the next one carries it.
+          const git = await pushArchive(env, owner, repo, user!, commit.message).catch((e: Error) => ({ error: e.message }));
+          return json({ ...commit, git });
         }
         return res;
       }

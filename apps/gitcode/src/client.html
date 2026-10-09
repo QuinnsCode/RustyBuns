@@ -153,7 +153,8 @@ const views = {
     const r = await api(`/repos/${owner}/${repo}`);
     app.innerHTML = `<div class="card"><div class="label">excavation · ${r.visibility === "private" ? "sealed" : "open to the public"}</div><h2><a href="#/u/${owner}">${esc(owner)}</a> / ${esc(repo)}</h2>
       ${r.files.map((f) => `<div><a href="#/f/${owner}/${repo}/${encodeURIComponent(f)}">${esc(f)}</a></div>`).join("") || '<p class="muted">nothing unearthed yet</p>'}
-      <p class="muted">crew: ${r.collaborators.map(esc).join(", ") || "none"}</p></div>
+      <p class="muted">crew: ${r.collaborators.map(esc).join(", ") || "none"}</p>
+      ${r.clone ? `<div class="label" style="margin-top:12px">take a rubbing (git clone, good for an hour)</div><div class="code" style="padding:6px 10px;margin-top:4px;user-select:all;white-space:pre-wrap;overflow-wrap:anywhere">${esc(r.clone)}</div>` : ""}</div>
       ${r.canWrite ? `<form id="newfile" class="card"><h3>Unearth an artifact</h3><input name="path" placeholder="src/hello.ts" required style="width:100%;margin-bottom:8px"><textarea name="content" rows="6" style="width:100%"></textarea><button class="primary">catalogue it</button></form>` : ""}
       ${owner === me() ? `<form id="collab" class="card row"><input name="name" placeholder="agent-linter" required><button>add to crew</button></form>` : ""}`;
     $("#newfile")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api(`/repos/${owner}/${repo}/files`, { path: f.path.value, content: f.content.value }); location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(f.path.value)}`; });
@@ -197,7 +198,11 @@ const views = {
       viewing = v >= doc.rev ? null : v;
       draw(viewing === null ? doc : await api(`${base}/at${q}&rev=${v}`));
     });
-    $("#commit")?.addEventListener("click", async () => { await api(`${base}/commit${q}`, { message: $("#msg").value }); $("#msg").value = ""; });
+    $("#commit")?.addEventListener("click", async () => {
+      const c = await api(`${base}/commit${q}`, { message: $("#msg").value });
+      $("#msg").value = "";
+      $("#revl").textContent = c.git?.commit ? `sent to the archive: ${c.git.commit.slice(0, 10)}` : c.git?.error ? `archive refused: ${c.git.error}` : $("#revl").textContent;
+    });
     if ($("#track")) {
       const { playlists } = await api("/users/" + me());
       $("#track select").innerHTML = playlists.map((p) => `<option value="${p.id}">${esc(p.title)}</option>`).join("") || "<option disabled>start a collection in your journal</option>";

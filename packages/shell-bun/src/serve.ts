@@ -40,6 +40,12 @@ export interface ServeOptions<Env> {
   reporter?: Reporter;
   /** Remote guests: a second credential, checked only on these paths. */
   guest?: GuestOptions;
+  /**
+   * Routes that carry their own auth and skip the token gate: URL prefix ->
+   * handler. Local Artifacts git remotes use this (git clients send a repo
+   * token, not the host's cookie).
+   */
+  open?: Record<string, (req: Request) => Response | Promise<Response>>;
 }
 
 export interface GuestOptions {
@@ -152,6 +158,8 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     port, hostname,
     async fetch(raw, srv) {
       const url = new URL(raw.url);
+      for (const [prefix, route] of Object.entries(opts.open ?? {}))
+        if (url.pathname.startsWith(prefix)) return withHeaders(await route(raw));
       const who = gate(raw, url);
       if (who instanceof Response) return who;
       // Vouch the principal to the handler; never trust the client's copy.

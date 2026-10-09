@@ -5,6 +5,8 @@ export type Binding =
   | { type: "kv" }
   | { type: "r2"; bucketName: string }
   | { type: "durable_object"; className: string; scriptName?: string }
+  /** Cloudflare Artifacts: git repos created at runtime. Locally, bare repos served over git HTTP. */
+  | { type: "artifacts"; namespace: string }
   | { type: "var"; value: string }
   | {
       type: "secret";

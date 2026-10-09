@@ -371,3 +371,19 @@ test("worker-mode host applies D1 migrations, like the spa host", () => {
   } as any);
   expect(src).toContain(`applyD1Migrations(env.DB as any, assetDir("migrations")!)`);
 });
+
+test("artifacts: wrangler, alchemy and the desktop host all get the binding", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", assets: "dist/client", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { ARTIFACTS: { type: "artifacts", namespace: "gitcode" } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  expect(generateWrangler(c)).toContain(`"artifacts": [\n    {\n      "binding": "ARTIFACTS",\n      "namespace": "gitcode"`);
+  const a = generateAlchemy(c);
+  expect(a).toContain(`export const ARTIFACTS = Cloudflare.Artifacts.Namespace("ARTIFACTS", { namespace: "gitcode" });`);
+  expect(a).toContain(`ARTIFACTS: ARTIFACTS`);
+  const host = desktopEntry(c);
+  expect(host).toContain(`ARTIFACTS: local.artifacts("gitcode"),`);
+  expect(host).toContain(`open: { "/__rb/git/": (req: Request) => gitHttp(req, [env.ARTIFACTS as any]) },`);
+  expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
+});

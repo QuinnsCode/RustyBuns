@@ -83,3 +83,28 @@ describe("app", () => {
     expect(Object.values(stats).every((s) => s.edits > 0)).toBe(true);
   });
 });
+
+describe("artifacts", () => {
+  test("cataloguing pushes the repo's catalogued files as a git commit you can clone", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "dig" });
+    await post(call, "ana", "/api/repos/ana/dig/files", { path: "src/a.ts", content: "export const a = 1" });
+    await post(call, "ana", "/api/repos/ana/dig/files", { path: "README", content: "found it" });
+    const c1 = await (await post(call, "ana", "/api/repos/ana/dig/do/commit?path=src%2Fa.ts", { message: "first find" })).json() as any;
+    expect(c1.git.commit).toMatch(/^[0-9a-f]{40}$/);
+    const c2 = await (await post(call, "ana", "/api/repos/ana/dig/do/commit?path=README", { message: "second" })).json() as any;
+    expect(c2.git.parent).toBe(c1.git.commit);
+
+    const repo = await call.artifacts.get("ana--dig");
+    expect((await repo.log()).map((c) => c.message)).toEqual(["second", "first find"]);
+    expect(await (await repo.readFile({ ref: "main", path: "src/a.ts" }))!.text()).toBe("export const a = 1\n");
+
+    // The clone command on the repo page works with a stock git client.
+    const { clone } = await (await call(null, "/api/repos/ana/dig")).json() as any;
+    const dir = (await import("node:fs")).mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "gc-clone-"));
+    const p = Bun.spawn(["sh", "-c", clone], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    expect(await p.exited).toBe(0);
+    expect(await Bun.file(`${dir}/dig/README`).text()).toBe("found it\n");
+  });
+});

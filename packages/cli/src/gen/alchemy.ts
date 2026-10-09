@@ -19,6 +19,9 @@ function resource(name: string, b: Binding): string | null {
       return `export const ${id} = Cloudflare.KV.Namespace("${name}");`;
     case "r2":
       return `export const ${id} = Cloudflare.R2.Bucket("${name}");`;
+    case "artifacts":
+      // A binding marker: namespaces appear with their first repo, nothing to provision.
+      return `export const ${id} = Cloudflare.Artifacts.Namespace("${name}", { namespace: ${JSON.stringify(b.namespace)} });`;
     case "durable_object":
       // Async Workers bind a DO exported by `main` with Cloudflare.DurableObject
       // in `env` (src/Cloudflare/Workers/DurableObject.ts, "Async Workers").

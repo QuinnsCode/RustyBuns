@@ -15,6 +15,8 @@ export default defineConfig({
     DB: { type: "d1", databaseName: "gitcode-db", migrationsDir: "migrations" },
     // One Durable Object per file.
     FILES: { type: "durable_object", className: "FileDurableObject" },
+    // One git repo per excavation; cataloguing pushes to it.
+    ARTIFACTS: { type: "artifacts", namespace: "gitcode" },
   },
   targets: {
     edge: { provider: "cloudflare" },

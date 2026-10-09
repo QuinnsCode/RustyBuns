@@ -16,7 +16,7 @@ export function generateWrangler(c: RustyBunsConfig): string {
   if (c.worker.assets) {
     w["assets"] = { binding: "ASSETS", directory: c.worker.assets, ...(c.worker.runWorkerFirst ? { run_worker_first: c.worker.runWorkerFirst } : {}) };
   }
-  const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [];
+  const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [];
   const vars: Record<string, string> = {};
   const sqliteClasses: string[] = [];
   for (const [name, b] of Object.entries(c.bindings)) {
@@ -25,10 +25,12 @@ export function generateWrangler(c: RustyBunsConfig): string {
     if (b.type === "r2") r2.push({ binding: name, bucket_name: b.bucketName });
     if (b.type === "durable_object") { dos.push({ name, class_name: b.className, ...(b.scriptName ? { script_name: b.scriptName } : {}) }); if (!b.scriptName) sqliteClasses.push(b.className); }
     if (b.type === "var") vars[name] = b.value;
+    if (b.type === "artifacts") artifacts.push({ binding: name, namespace: b.namespace });
   }
   if (d1.length) w["d1_databases"] = d1;
   if (kv.length) w["kv_namespaces"] = kv;
   if (r2.length) w["r2_buckets"] = r2;
+  if (artifacts.length) w["artifacts"] = artifacts;
   if (dos.length) w["durable_objects"] = { bindings: dos };
   if (sqliteClasses.length) w["migrations"] = [{ tag: "v1", new_sqlite_classes: sqliteClasses }];
   if (Object.keys(vars).length) w["vars"] = vars;
