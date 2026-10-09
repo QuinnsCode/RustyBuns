@@ -46,6 +46,13 @@ To watch the agents live, open a file in the app, then point the demo at it with
 bun agents.ts --url http://127.0.0.1:PORT --cookie 'rb_token_PORT=TOKEN'
 ```
 
+To put a real coding agent (claude, codex, pi or opencode, installed and logged in) on a file: it edits a copy on disk, and its edit is diffed back into line ops under its own name. If someone changes a line it also changed, it re-runs on the new text (`--retries`, default 2). After the last run their version is kept and the conflicts are printed.
+
+```sh
+bun agent.ts --harness claude --url http://127.0.0.1:PORT --cookie 'rb_token_PORT=TOKEN' \
+  --as agent-claude --repo owner/name --path src/app.ts --task "add a doc line to every function"
+```
+
 ## Layout
 
 | File | What |
@@ -61,4 +68,8 @@ bun agents.ts --url http://127.0.0.1:PORT --cookie 'rb_token_PORT=TOKEN'
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
 | `migrations/` | the D1 schema |
+| `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
+| `src/harness.ts` | the coding-agent CLIs and the prompt each one gets |
+| `src/agent-run.ts` | runs an agent on a file: snapshot, edit, diff, post, re-run on conflicts |
 | `agents.ts` | the three-agent demo |
+| `agent.ts` | one real coding agent on one file |
