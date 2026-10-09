@@ -313,3 +313,46 @@ test("box: Railway stack uploads the bundle context, sleeps by default, data on 
   expect(railwayDockerfile("1.4.2")).toContain("FROM oven/bun:1.4.2-slim");
   expect(railwayDockerfile("1.4.2")).toContain('CMD ["bun", "/app/box.js"]');
 });
+
+import { generateEnvSchema, mintedSecrets } from "../src/wheel.ts";
+test("experimental.wheel: agent mints secrets in the stack, op secrets go through varlock", () => {
+  const c = wranglerToConfig(parseWrangler('{"name":"w","main":"src/w.ts","compatibility_date":"2025-05-07"}'));
+  c.bindings.SESSION_SECRET = { type: "secret" };
+  c.bindings.STRIPE_KEY = { type: "secret", op: "op://rb-test/stripe/credential" };
+  // No flag: unchanged, and an op reference alone is refused.
+  expect(() => generateAlchemy(c)).toThrow(/needs experimental.wheel/);
+  delete c.bindings.STRIPE_KEY.op;
+  expect(generateAlchemy(c)).toContain('SESSION_SECRET: Config.redacted("SESSION_SECRET")');
+  expect(generateEnvSchema(c)).toBeNull();
+  c.bindings.STRIPE_KEY = { type: "secret", op: "op://rb-test/stripe/credential" };
+
+  const agent = { ...c, experimental: { wheel: "agent" as const } };
+  expect(mintedSecrets(agent)).toEqual(["SESSION_SECRET"]);
+  const edge = generateAlchemy(agent);
+  expect(edge).toContain("export const Worker = Effect.gen(function* () {");
+  expect(edge).toContain('  const SESSION_SECRET = yield* Alchemy.makeRandom("SESSION_SECRET");');
+  expect(edge).toContain('  return yield* Cloudflare.Worker("Worker", {');
+  expect(edge).toContain('SESSION_SECRET: SESSION_SECRET, STRIPE_KEY: Config.redacted("STRIPE_KEY")');
+  expect(edge).toContain("Cloudflare.InferEnv<typeof Worker>");
+  const schema = generateEnvSchema(agent)!;
+  expect(schema).toContain("# @plugin(@varlock/1password-plugin@2.0.4)");
+  expect(schema).toContain("# @initOp(token=$OP_TOKEN, allowAppAuth=false)");
+  expect(schema).toContain("STRIPE_KEY=op(op://rb-test/stripe/credential)");
+  expect(schema).not.toContain("SESSION_SECRET");
+
+  // Railway: the minted value rides in the Service env; the Volume attaches to the created Service.
+  const rail = generateAlchemy({ ...agent, targets: { box: { provider: "railway" } } });
+  expect(rail).toContain('return yield* Railway.Service("Service", {');
+  expect(rail).toContain('STRIPE_KEY: process.env["STRIPE_KEY"] ?? "", SESSION_SECRET: SESSION_SECRET');
+  expect(rail).toContain('return yield* Railway.Volume("Data", { project: Project, service, mountPath: "/data" });');
+  expect(rail).toContain("providers: Layer.mergeAll(Railway.providers(), Alchemy.RandomProvider())");
+  expect(() => generateAlchemy({ ...agent, targets: { ...c.targets, box: { provider: "hetzner" } } })).toThrow(/can't mint secrets on a Hetzner box/);
+
+  // Human: nothing minted, 1Password through the app only.
+  const human = { ...c, experimental: { wheel: "human" as const } };
+  expect(mintedSecrets(human)).toEqual([]);
+  expect(generateAlchemy(human)).toContain('SESSION_SECRET: Config.redacted("SESSION_SECRET")');
+  expect(generateEnvSchema(human)).toContain("# @initOp(allowAppAuth=true)");
+  expect(generateEnvSchema(human)).not.toContain("OP_TOKEN");
+  expect(() => generateAlchemy({ ...human, bindings: { X: { type: "secret", op: "vault/item" } } })).toThrow(/1Password reference/);
+});
