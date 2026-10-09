@@ -16,7 +16,7 @@ also deploy to the edge and to a VPS, and the deploy is typed through Alchemy
 and Effect. Because it already has a runtime, storage, server actions, a build
 and a deploy, it behaves like a full-stack framework, but it asks you to adopt
 only the shapes Cloudflare already standardized. See the
-[README](README.md#how-it-compares) for the side-by-side.
+[README](README.md#the-questions-everyone-asks) for the head-to-head.
 
 ## Who this is for
 
