@@ -66,7 +66,7 @@ The desktop and box hosts are the same generated program. The desktop build bind
 | KV | KV | sqlite table | sqlite table | sqlite table |
 | blob | R2 | directory on a Volume | directory on a Volume | embedded directory |
 | secrets | Worker secrets | env file on the server | service variables | n/a |
-| native (FFI, `SharedArrayBuffer`) | no | yes | `SharedArrayBuffer` yes, crates not yet | yes |
+| native (FFI, `SharedArrayBuffer`) | no | yes | yes (crates built in the image) | yes |
 
 
 ## Deploy to Hetzner
@@ -110,9 +110,9 @@ Current limits on the box:
 
 - **Plain HTTP on the port.** No TLS or domain yet. Put Cloudflare in front, or wait for the load balancer and certificate support on the roadmap.
 - **A box plays like the edge, not like the desktop.** There's no local player: each WebSocket at `worldPath` is a guest with its own id (`?uid=&name=` when the client sends them, trust on first use as on the LAN, otherwise a fresh id per connection), and `?room=CODE` picks that room's world, as the edge Worker routes it (codes are 1-32 of `[A-Za-z0-9_-]`, at most 200 rooms per box; no `room` is one shared world). `/__rb/info` and `POST /__rb/host` answer 404, so pages take their online path, and nobody on the internet can close the world or rebind the server. There's no real login: put the box behind your own auth if identity matters.
-- **`/health` says where data lives.** Its `X-RB-Data` header is `volume` when the data dir is its own filesystem (an attached Volume) and `container` when a redeploy would throw it away.
+- **`/health` says where data lives.** Its `X-RB-Data` header is `volume` when the data dir is its own filesystem (an attached Volume) and `container` when a redeploy would throw it away. `X-RB-Boots` counts the starts recorded in the data dir, so it only grows across a redeploy when the data survived it.
 - **Secrets are plaintext at rest.** They go into `/opt/<unit>/env` on the server and into Alchemy's local state in `.alchemy/`. Don't keep `HCLOUD_TOKEN` in `.dev.vars`, or `init` will treat it as an app secret.
-- **Rust crates need a Linux build machine.** If `native/` has crates, run `deploy` on Linux (or in CI), since cdylibs don't cross-compile.
+- **Rust crates on Hetzner need a Linux build machine.** If `native/` has crates, run `deploy` on Linux (or in CI), since cdylibs don't cross-compile. (Railway builds them in the image, so any machine can deploy.)
 
 ## Deploy to Railway
 
@@ -131,7 +131,7 @@ pnpm exec rustybuns plan
 pnpm exec rustybuns deploy     # prints  box: https://<service>.up.railway.app
 ```
 
-Railway's upload is a Docker context capped at 32 MiB, and a compiled Bun binary is about 35 MB gzipped before your app is in it. So the Railway box isn't a binary: `rustybuns build box` bundles the same host without `--compile` into `.rustybuns/railway/`, copies the directories a binary would embed (client build, migrations, mounts) next to it, and writes a Dockerfile on `oven/bun` at the version that built it. A typical app comes to well under a megabyte. Then `deploy` creates a Project, a Service with a `*.up.railway.app` domain and a `/health` check, and a Volume at `/data` for sqlite.
+Railway's upload is a Docker context capped at 32 MiB, and a compiled Bun binary is about 35 MB gzipped before your app is in it. So the Railway box isn't a binary: `rustybuns build box` bundles the same host without `--compile` into `.rustybuns/railway/`, copies the directories a binary would embed (client build, migrations, mounts) next to it, and writes a Dockerfile on `oven/bun` at the version that built it. A typical app comes to well under a megabyte; `build box` stops early, naming the biggest parts, if the context would pass 32 MiB. Then `deploy` creates a Project, a Service with a `*.up.railway.app` domain and a `/health` check, and a Volume at `/data` for sqlite.
 
 | `targets.box` key | Default | Notes |
 |---|---|---|
@@ -140,7 +140,9 @@ Railway's upload is a Docker context capped at 32 MiB, and a compiled Bun binary
 | `volume` | `true` | `false` keeps data in the container, lost on every redeploy |
 | `sleep` | `true` | sleeps when idle, so a quiet box costs close to nothing; the first request wakes it, and in-memory world state starts fresh (sqlite doesn't) |
 
-HTTPS comes with the Railway domain. Identity works the same as on Hetzner. Rust crates aren't carried yet, so use the Hetzner box for an app with `native/` crates.
+HTTPS comes with the Railway domain. Identity works the same as on Hetzner.
+
+Rust crates ride along as source. When `native/Cargo.toml` exists, the Dockerfile gets a first stage on the same `oven/bun` image (so the same glibc as the runtime) that installs your local `rustc` version with rustup, builds the workspace, and copies each crate in `desktop.native` (all of `native/crates` when unset) to `native/dist/<crate>/linux-<arch>/`, where `loadNative()` looks. A crate that needs system libraries beyond `build-essential` and `pkg-config` will fail that stage.
 
 `login railway` takes `oauth` (a browser login) or `stored` with a pasted **account** token (railway.com → Account Settings → Tokens, with no workspace picked; a project token can't create projects). Press Enter at the API URL prompt. Set a hard usage limit in the Railway workspace before the first deploy ([COSTS.md](COSTS.md)).
 

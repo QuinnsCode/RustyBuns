@@ -8,7 +8,7 @@ export default defineConfig({
     assets: "dist/client",
     compatibilityDate: "2026-09-01",
     compatibilityFlags: [],
-    build: "bunx vite build --outDir dist/client",
+    build: "bun scripts/build-native.ts --optional && bunx vite build --outDir dist/client",
   },
   // The edge's World. The desktop runs the very same class in-process (desktop.world).
   bindings: {
@@ -18,7 +18,7 @@ export default defineConfig({
     edge: { provider: "cloudflare" },
     desktop: {
       mode: "spa",
-      clientBuild: "bunx vite build --config vite.desktop.config.ts",
+      clientBuild: "bun scripts/build-native.ts --optional && bunx vite build --config vite.desktop.config.ts",
       clientDir: "dist/desktop",
       world: "packages/desktop/world.ts",
       worldPath: "/ws",

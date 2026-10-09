@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   root: resolve(__dirname, "packages/desktop"),
+  // public/ is the app's, not the desktop entry's: hippo_fluid.wasm lives there.
+  publicDir: resolve(__dirname, "public"),
   esbuild: { jsx: "automatic" },
   build: {
     outDir: resolve(__dirname, "dist/desktop"),

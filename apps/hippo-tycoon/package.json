@@ -6,7 +6,7 @@
   "scripts": {
     "test": "bun test test",
     "dev": "vite",
-    "build": "vite build --outDir dist/client",
+    "build": "bun scripts/build-native.ts --optional && vite build --outDir dist/client",
     "build:native": "bun scripts/build-native.ts",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "desktop:dev": "bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop",

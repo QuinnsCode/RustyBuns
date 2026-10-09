@@ -15,7 +15,7 @@ Alchemy's `InferEnv`; the desktop cell is checked against the same type.
 | http | A `Cloudflare.Worker` ✅ live | A `Hetzner.Service` (`isExternal` Node launcher -> compiled Bun host) 🟡 | A 🔍 | A `Railway.Service` (local context: Bun bundle on `oven/bun`) ✅ live | RB `serve()` ✅ |
 | static | A Worker `assets` ✅ / `Website.*` | A `Hetzner.Website.*` 🔍 | A 🔍 | A 🔍 | RB `--asset` ✅ |
 | ws / stateful | A `Cloudflare.DurableObject` ✅ live | RB in-process DO ✅ | RB in-process DO ✅ | RB in-process DO ✅ | RB in-process DO ✅ |
-| sql | A `Cloudflare.D1` ✅ | RB sqlite on A `Hetzner.Volume` 🟡 · A `Neon`/`PlanetScale` 🔍 | A Neon/PlanetScale 🔍 | RB sqlite on A `Railway.Volume` 🟡 · A Railway PG / Neon 🔍 | RB sqlite D1 + migrations ✅ |
+| sql | A `Cloudflare.D1` ✅ | RB sqlite on A `Hetzner.Volume` 🟡 · A `Neon`/`PlanetScale` 🔍 | A Neon/PlanetScale 🔍 | RB sqlite on A `Railway.Volume` ✅ (survives redeploys: `X-RB-Boots`) · A Railway PG / Neon 🔍 | RB sqlite D1 + migrations ✅ |
 | kv | A `Cloudflare.KV` ✅ | RB sqlite table ✅ | RB sqlite table ✅ | RB sqlite table ✅ | RB sqlite table ✅ |
 | blob | A `Cloudflare.R2` ✅ | RB dir on Volume ✅ (adapter) | RB dir ✅ | RB dir ✅ | RB dir adapter + mounts ✅ |
 | queues | A `Cloudflare.Queues` 🔲 | RB in-process 🔲 | 🔲 | 🔲 | RB in-process 🔲 |

@@ -258,7 +258,8 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).toContain('if (url.pathname === "/__rb/info") return reject(404, "not_on_box");');
   expect(box).toContain("WORLD.idFromName(room)");
   expect(box).toContain("MAX_ROOMS = 200");
-  expect(box).toContain('"X-RB-Data": dataMount');
+  expect(box).toContain('"X-RB-Data": dataMount, "X-RB-Boots": String(boots)');
+  expect(box).toContain('join(dataDir, ".rb-boots")');
   const desk = spaEntry(c);
   expect(desk).toContain('const guest = req.headers.get("x-rb-principal") === "guest";');
   expect(desk).not.toContain("boxIdentity");
