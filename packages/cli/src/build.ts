@@ -335,6 +335,8 @@ async function stageNative(targets: DesktopOs[], only?: string[]): Promise<strin
 
 export interface BuildOpts {
   target?: string; outfile?: string; noCompile?: boolean; host?: HostKind;
+  /** noCompile: where the bundle goes. @default ".rustybuns/dev" */
+  outdir?: string;
   /** Type check the app before the client build, with this checker ("auto" picks the fastest). */
   check?: CheckerName | "auto";
   /** Time each step, print the table and save it under .rustybuns/profile/. */
@@ -422,11 +424,12 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   if (opts.noCompile) {
     // Dev host: same bundle pipeline as the binary, minus --compile. Nothing
     // embedded; assets and migrations are read from the working tree.
-    const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir: ".rustybuns/dev", target: "bun", define: defineMap, plugins, sourcemap: "linked", throw: false } as any));
+    const outdir = opts.outdir ?? ".rustybuns/dev";
+    const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir, target: "bun", define: defineMap, plugins, sourcemap: "linked", throw: false } as any));
     await prof?.finish();
     if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
-    console.log(`dev host: rustybuns run desktop   (= bun .rustybuns/dev/desktop.js)`);
-    return ".rustybuns/dev/desktop.js";
+    if (!opts.outdir) console.log(`dev host: rustybuns run desktop   (= bun .rustybuns/dev/desktop.js)`);
+    return `${outdir}/${host}.js`;
   }
 
 
@@ -435,10 +438,8 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   // a named crate that was never built is an error, not a silent TS fallback.
   if (d.native?.length) nativeDirs(d.native);
   const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, d.native)) : [];
-  const migrationDirs = Object.values(c.bindings ?? {}).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
-  // External mounts (~ or absolute) stay on disk; only project dirs are embedded.
-  const external = (dir: string) => dir.startsWith("~") || dir.startsWith("/");
-  const mountDirs = [...Object.values(d.mounts ?? {}).filter((dir) => !external(dir)), ...(nativeTags.length ? [NATIVE_STAGE] : [])];
+  const { migrationDirs, mountDirs: projectMounts } = embeddedDirs(c);
+  const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : [])];
   // Embedded dirs are keyed by basename, so two mounts named the same collide.
   const names = [assets, ...migrationDirs, ...mountDirs].filter(Boolean).map((p) => basename(p!));
   if (new Set(names).size !== names.length) throw new Error(`embedded directories must have distinct basenames: ${names.join(", ")}`);
@@ -457,6 +458,21 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   }
   await prof?.finish();
   return outs.join("\n");
+}
+
+/**
+ * The project directories a build carries with it: the client build, D1
+ * migrations and project-relative mounts. The host finds each one next to
+ * itself by basename (resolveDir), embedded or copied.
+ */
+export function embeddedDirs(c: RustyBunsConfig) {
+  const d = c.targets.desktop ?? {};
+  const assets = (d.mode ?? "spa") === "spa" ? (d.clientDir ?? "dist/desktop") : c.worker?.assets;
+  const migrationDirs = Object.values(c.bindings ?? {}).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
+  // External mounts (~ or absolute) stay on disk; only project dirs are embedded.
+  const external = (dir: string) => dir.startsWith("~") || dir.startsWith("/");
+  const mountDirs = Object.values(d.mounts ?? {}).filter((dir) => !external(dir));
+  return { assets, migrationDirs, mountDirs };
 }
 
 /** native/dist/<crate> for each embedded crate; loadNative() finds them at /$bunfs/root/<crate>/<os-arch>/. */

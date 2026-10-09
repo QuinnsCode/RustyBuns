@@ -10,7 +10,7 @@ You don't have to learn Rust or Bun to use it. (We use them underneath. Rust is 
 pnpm add -D @rustybuns/cli @rustybuns/shell-bun
 pnpm exec rustybuns init                # reads your app, writes rustybuns.config.ts
 pnpm exec rustybuns build desktop       # dist/<name>-<os>-<arch>
-pnpm exec rustybuns deploy              # Cloudflare, Hetzner, or both
+pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway box
 ```
 
 Rusty Buns is a dev dependency. It never edits `src/` and never ships in your bundle. `init` reads `package.json`, `vite.config`, `tsconfig` and `wrangler.jsonc`, then writes one config file. Everything else is generated from it:
@@ -18,7 +18,7 @@ Rusty Buns is a dev dependency. It never edits `src/` and never ships in your bu
 - a **Bun host** that runs your app on `Bun.serve()`, with sqlite standing in for D1, KV, R2 and Durable Object storage
 - a typed **[Alchemy](https://alchemy.run) + [Effect](https://effect.website) stack** that creates the cloud resources your bindings describe
 
-> **Alpha, `0.1.8`.** Desktop is verified on macOS and Linux. The Cloudflare deploy is verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). The Hetzner box builds and runs locally but hasn't been deployed to a real account yet. Fly and Railway come after. The happy path is a Vite + React app on Workers, but anything Vite builds should work.
+> **Alpha, `0.1.8`.** Desktop is verified on macOS and Linux. The Cloudflare deploy is verified end to end (Worker, D1 with migrations, KV, R2, Durable Objects). The Railway box is verified live (hippo-tycoon: page, `/health`, the world over `wss://`, an in-place update and a destroy). The Hetzner box builds and runs locally but hasn't been deployed to a real account yet. Fly comes after. The happy path is a Vite + React app on Workers, but anything Vite builds should work.
 
 ## Why
 
@@ -32,7 +32,7 @@ Your app is five things: **http, comms, storage, memory, identity**. Each one ha
 
 ### Typed deploys, thanks to Effect
 
-The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, soon Fly and Railway) is a typed Layer. Swap a target by changing one line of config, and the compiler tells you what's missing before anything is created. `plan` type checks the generated stack first, then shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
+The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, Railway, soon Fly) is a typed Layer. Swap a target by changing one line of config, and the compiler tells you what's missing before anything is created. `plan` type checks the generated stack first, then shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
 
 ### Type checking and per-step timing
 
@@ -102,15 +102,15 @@ The desktop and box hosts are the same generated program. The desktop build bind
 
 ### Where things run
 
-| Need | Cloudflare | Hetzner | Desktop |
-|---|---|---|---|
-| http | Worker | Bun `serve()` | Bun `serve()` |
-| WebSocket state | Durable Object | in-process DO | in-process DO |
-| SQL | D1 | sqlite on a Volume | sqlite |
-| KV | KV | sqlite table | sqlite table |
-| blob | R2 | directory on a Volume | embedded directory |
-| secrets | Worker secrets | env file on the server | n/a |
-| native (FFI, `SharedArrayBuffer`) | no | yes | yes |
+| Need | Cloudflare | Hetzner | Railway | Desktop |
+|---|---|---|---|---|
+| http | Worker | Bun `serve()` | Bun `serve()` on `oven/bun` | Bun `serve()` |
+| WebSocket state | Durable Object | in-process DO | in-process DO | in-process DO |
+| SQL | D1 | sqlite on a Volume | sqlite on a Volume | sqlite |
+| KV | KV | sqlite table | sqlite table | sqlite table |
+| blob | R2 | directory on a Volume | directory on a Volume | embedded directory |
+| secrets | Worker secrets | env file on the server | service variables | n/a |
+| native (FFI, `SharedArrayBuffer`) | no | yes | `SharedArrayBuffer` yes, crates not yet | yes |
 
 ## Getting started
 
@@ -207,6 +207,34 @@ Current limits on the box:
 - **Secrets are plaintext at rest.** They go into `/opt/<unit>/env` on the server and into Alchemy's local state in `.alchemy/`. Don't keep `HCLOUD_TOKEN` in `.dev.vars`, or `init` will treat it as an app secret.
 - **Rust crates need a Linux build machine.** If `native/` has crates, run `deploy` on Linux (or in CI), since cdylibs don't cross-compile.
 
+### 6. Deploy to Railway
+
+Same box, different provider:
+
+```ts
+targets: {
+  edge: { provider: "cloudflare" },   // drop this line for a Railway-only stack
+  box: { provider: "railway" },
+}
+```
+
+```sh
+pnpm exec alchemy profile edit --profile default --add Railway     # browser login, or: export RAILWAY_API_TOKEN=...
+pnpm exec rustybuns plan
+pnpm exec rustybuns deploy     # prints  box: https://<service>.up.railway.app
+```
+
+Railway's upload is a Docker context capped at 32 MiB, and a compiled Bun binary is about 35 MB gzipped before your app is in it. So the Railway box isn't a binary: `rustybuns build box` bundles the same host without `--compile` into `.rustybuns/railway/`, copies the directories a binary would embed (client build, migrations, mounts) next to it, and writes a Dockerfile on `oven/bun` at the version that built it. A typical app comes to well under a megabyte. Then `deploy` creates a Project, a Service with a `*.up.railway.app` domain and a `/health` check, and a Volume at `/data` for sqlite.
+
+| `targets.box` key | Default | Notes |
+|---|---|---|
+| `region` | Railway's | `us-west2`, `us-east4`, `europe-west4`, `asia-southeast1` |
+| `port` | `3000` | |
+| `volume` | `true` | `false` keeps data in the container, lost on every redeploy |
+| `sleep` | `true` | sleeps when idle, so a quiet box costs close to nothing; the first request wakes it, and in-memory world state starts fresh (sqlite doesn't) |
+
+HTTPS comes with the Railway domain. Identity works the same as on Hetzner. Rust crates aren't carried yet, so use the Hetzner box for an app with `native/` crates.
+
 ## Commands
 
 | Command | What it does |
@@ -218,7 +246,7 @@ Current limits on the box:
 | `generate` / `adopt` | regenerate `.rustybuns/`; `adopt` accepts the generated `wrangler.jsonc` over a hand-written one |
 | `build desktop [--dev] [--target os-arch]` | `--dev` bundles without compiling, for `run desktop` |
 | `run desktop` | start the dev host |
-| `build box [--target os-arch]` | Linux binary + Node launcher in `.rustybuns/box/`; `--target` your own OS to try it locally |
+| `build box [--target os-arch]` | Hetzner: Linux binary + Node launcher in `.rustybuns/box/` (`--target` your own OS to try it locally). Railway: Bun bundle + Dockerfile in `.rustybuns/railway/` |
 | `plan` / `deploy [--yes]` / `destroy` | Alchemy against the generated stack; `deploy` refuses without a plan for this exact config |
 | `dev` | `alchemy dev`: workerd and local simulators for the edge |
 | `eject` | copy `alchemy.run.ts` to the project root; from then on you own it |
@@ -229,7 +257,7 @@ Current limits on the box:
 
 `rustybuns.config.ts` is the one file you own. `init` writes it, and every generated file comes from it.
 
-`worker` is only needed for the Cloudflare deploy. Leave it out for a desktop-only or Hetzner-only app.
+`worker` is only needed for the Cloudflare deploy. Leave it out for a desktop-only or box-only app.
 
 ```ts
 import { defineConfig } from "@rustybuns/cli/config";
@@ -352,12 +380,12 @@ More in [EXAMPLES.md](EXAMPLES.md).
 
 ## Roadmap
 
-Done: desktop binaries, the Cloudflare deploy, the Hetzner box (built, not yet live-tested).
+Done: desktop binaries, the Cloudflare deploy, the Railway box (live), the Hetzner box (built, not yet live-tested).
 
 Next, roughly in order:
 
 - a live Hetzner run, then TLS and a domain on the box (`Hetzner.LoadBalancer` + `Certificate`)
-- Fly and Railway as more box-style columns
+- Fly as another box-style column
 - `add worker` / `add rust` scaffolds: typed worker RPC over `SharedArrayBuffer`, a WASM or cdylib drop-in
 - `rustybuns test`: one E2E gate over the desktop binary, local workerd and a preview stage
 - installers and signing (`.app`/`.dmg`, `.msi`, AppImage) and auto-update

@@ -7,3 +7,4 @@ native/dist
 wrangler.generated.jsonc
 .DS_Store
 .e2e-*
+.alchemy/

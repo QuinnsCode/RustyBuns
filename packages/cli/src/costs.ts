@@ -4,7 +4,7 @@
 // account-side switches (Free plan, billing alerts) that actually cap a bill.
 
 import type { RustyBunsConfig } from "./config.ts";
-import { boxDefaults } from "./box.ts";
+import { boxDefaults, railwayDefaults } from "./box.ts";
 
 export interface Billable { what: string; kind: "fixed" | "usage"; note: string }
 
@@ -31,7 +31,13 @@ export function billables(c: RustyBunsConfig): Billable[] {
       if (b.type === "r2") out.push({ what: `R2 ${name}`, kind: "usage", note: "storage + operations (egress is free)" });
     }
   }
-  if (c.targets.box) {
+  if (c.targets.box?.provider === "railway") {
+    const r = railwayDefaults(c.targets.box);
+    out.push(r.sleep
+      ? { what: `Railway Service "${c.name}"`, kind: "usage", note: "vCPU + RAM by the minute while awake; sleeps when idle" }
+      : { what: `Railway Service "${c.name}"`, kind: "fixed", note: "sleep: false, so vCPU + RAM bill every minute until destroyed" });
+    if (r.volume) out.push({ what: "Railway Volume", kind: "usage", note: "storage used, by the GB-month, until destroyed" });
+  } else if (c.targets.box) {
     const b = boxDefaults(c.targets.box);
     out.push({ what: `Hetzner ${b.serverType} in ${b.location}`, kind: "fixed", note: "billed hourly until destroyed, even powered off" });
     if (b.volumeSize > 0) out.push({ what: `Hetzner Volume ${b.volumeSize} GB`, kind: "fixed", note: "billed until destroyed" });
@@ -52,7 +58,7 @@ export function costReport(c: RustyBunsConfig): string {
 /** Throws if the stack needs a spend opt-in the config does not give. */
 export function checkSpend(c: RustyBunsConfig): void {
   const box = c.targets.box;
-  if (!box) return;
+  if (box?.provider !== "hetzner") return;   // Railway bills usage; its cap is the workspace usage limit (COSTS.md)
   const { serverType } = boxDefaults(box);
   if (largeServer(serverType) && !box.allowLargeServer)
     throw new Error(`targets.box.serverType "${serverType}" is past the small shared tiers (cx/cpx/cax 1x-2x). ` +
