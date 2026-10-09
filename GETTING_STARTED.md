@@ -55,7 +55,7 @@ Output: `dist/<name>-<os>-<arch>`. `targets` in the config picks the OS list;
 
 ```
 pnpm exec rustybuns add deploy
-pnpm exec alchemy profile edit --profile default --add Cloudflare
+pnpm exec rustybuns login cloudflare
 ```
 
 `add deploy` installs the pinned alchemy + effect set and writes package manager overrides
@@ -99,7 +99,7 @@ Add `box: { provider: "hetzner" }` under `targets`. Keep `edge` for both columns
 or remove it for a Hetzner-only stack. Then, once per machine:
 
 ```
-pnpm exec alchemy profile edit --profile default --add Hetzner
+pnpm exec rustybuns login hetzner
 ```
 
 It asks for a Hetzner Cloud API token with read & write access (Console → Security → API tokens).
@@ -128,4 +128,37 @@ To try the box locally before paying for one, build it for your own machine and 
 pnpm exec rustybuns build box --target darwin-arm64
 PORT=3000 DATA_DIR=/tmp/box node .rustybuns/box/launch.mjs
 curl localhost:3000/health
+```
+
+## 6. Deploy to Railway
+
+Same box, on Railway: `box: { provider: "railway" }` under `targets`. Then, once per machine:
+
+```
+pnpm exec rustybuns login railway
+```
+
+Pick `oauth` for a browser login, or `stored` and paste an **account** token (railway.com →
+Account Settings → Tokens, with no workspace picked; a project token can't create projects).
+Press Enter at the API URL prompt. In CI, set `RAILWAY_API_TOKEN` instead.
+
+Before the first deploy, set a hard usage limit in the Railway workspace (see COSTS.md).
+
+```
+pnpm exec rustybuns plan
+pnpm exec rustybuns deploy
+```
+
+Railway's upload is capped at 32 MiB and a compiled Bun binary is bigger than that, so the
+Railway box is a Bun bundle instead: `rustybuns build box` writes `.rustybuns/railway/` (the
+bundle, your client build and migrations beside it, and a Dockerfile on `oven/bun`). `deploy`
+creates a Project, a Service with a `https://*.up.railway.app` domain and a `/health` check, and a
+Volume at `/data`, then prints the URL. The service sleeps when idle unless `sleep: false`.
+
+To try it locally, run the bundle from its own folder the way the image does:
+
+```
+pnpm exec rustybuns build box
+cd .rustybuns/railway && PORT=3000 DATA_DIR=/tmp/box bun box.js
+curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is the Volume
 ```

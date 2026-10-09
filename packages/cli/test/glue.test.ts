@@ -98,10 +98,10 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   writeFileSync(r + "/wrangler.jsonc", `{ "name": "g", "main": "src/worker.tsx", "compatibility_date": "2026-01-01" }`);
   mkdirSync(r + "/src"); writeFileSync(r + "/src/worker.tsx", "export default { fetch: () => new Response('') }");
   const cli = new URL("../src/index.ts", import.meta.url).pathname;
-  // stub bunx so no real alchemy runs; record what it was called with
-  const bin = r + "/bin"; mkdirSync(bin);
-  writeFileSync(bin + "/bunx", `#!/bin/sh\necho "STUB $@" >> ${r}/calls.log\n`); require("node:fs").chmodSync(bin + "/bunx", 0o755);
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  // stub the project's alchemy so no real one runs; record what it was called with
+  const bin = r + "/node_modules/.bin"; mkdirSync(bin, { recursive: true });
+  writeFileSync(bin + "/alchemy", `#!/bin/sh\necho "STUB alchemy $@" >> ${r}/calls.log\n`); require("node:fs").chmodSync(bin + "/alchemy", 0o755);
+  const env = { ...process.env };
   const run = (...a: string[]) => Bun.spawnSync(["bun", cli, ...a], { cwd: r, env, stdout: "pipe", stderr: "pipe" });
   // init needs @rustybuns/cli resolvable for the config import; link the package dir
   mkdirSync(r + "/node_modules/@rustybuns", { recursive: true });
@@ -255,9 +255,15 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).toContain("const id = boxIdentity(url);");
   expect(box).toContain('if (url.pathname === "/__rb/host") return reject(404, "not_on_box");');
   expect(box).not.toContain("version_mismatch");
+  expect(box).toContain('if (url.pathname === "/__rb/info") return reject(404, "not_on_box");');
+  expect(box).toContain("WORLD.idFromName(room)");
+  expect(box).toContain("MAX_ROOMS = 200");
+  expect(box).toContain('"X-RB-Data": dataMount');
   const desk = spaEntry(c);
   expect(desk).toContain('const guest = req.headers.get("x-rb-principal") === "guest";');
   expect(desk).not.toContain("boxIdentity");
+  expect(desk).toContain('WORLD.idFromName("local")');
+  expect(desk).not.toContain("not_on_box");
   expect(desk).toContain("version_mismatch");
   expect(desk).toContain("const token = mintToken();");
   expect(desk).toContain("await openBrowser");

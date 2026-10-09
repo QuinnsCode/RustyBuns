@@ -94,7 +94,7 @@ import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Mi
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, existsSync${h.box ? ", statSync" : ""} } from "node:fs";
 import { basename, join, isAbsolute } from "node:path";
 
 declare const RB_VERSION: string;
@@ -104,7 +104,11 @@ const lanAddresses = (): string[] => Object.values(networkInterfaces()).flatMap(
 const dataDir = ${h.dataDir};
 mkdirSync(dataDir, { recursive: true });
 const local = localBindings(dataDir);
-
+${h.box ? `// "volume" when the data dir is its own filesystem (an attached Volume), else
+// "container": data that a redeploy throws away. /health says which.
+const dataMount = statSync(dataDir).dev !== statSync("/").dev ? "volume" : "container";
+console.log("[data] " + dataDir + " on the " + dataMount);
+` : ""}
 // Compiled: --asset embeds a dir at /$bunfs/root/<basename>. Dev: the working tree.
 function resolveDir(rel: string): string {
   // A mount under ~ or an absolute path is the user's own directory: read it
@@ -173,11 +177,21 @@ function guestIdentity(url: URL): Record<string, string> | string {
 }
 const reject = (status: number, error: string, extra: Record<string, unknown> = {}) => Response.json({ error, ...extra }, { status });
 ${h.box ? `
-// A box is public: there is no local player, so every socket is a guest with
-// its own identity, the way the edge Worker vouches each player. ?uid=&name=
-// when the client sends them (trust on first use, as on the LAN), else a
-// fresh id for this connection. The page comes from this box, so no version
-// check. One more seat than guests.max: the host's seat nobody sits in.
+// A box is public and plays like the edge: no local player, so every socket
+// is a guest with its own identity, ?uid=&name= when the client sends them
+// (trust on first use, as on the LAN), else a fresh id for this connection.
+// ?room=CODE picks that room's world, as the edge Worker routes it; no room is
+// the one shared world. The world itself says when a room is full. The page
+// comes from this box, so no version check.
+const ROOM = /^[A-Za-z0-9_-]{1,32}$/, MAX_ROOMS = 200;
+const rooms = new Set<string>();
+function boxRoom(url: URL): string | null {
+  const room = url.searchParams.get("room");
+  if (room === null) return "local";
+  if (!ROOM.test(room)) return null;
+  if (!rooms.has(room)) { if (rooms.size >= MAX_ROOMS) return null; rooms.add(room); }
+  return "room:" + room;
+}
 function boxIdentity(url: URL): Record<string, string> | string {
   const uid = url.searchParams.get("uid");
   if (uid !== null) return guestIdentity(url);
@@ -193,12 +207,11 @@ shell.mount({
   async fetch(req) {
     const url = new URL(req.url);
     const guest = ${h.box ? "true" : `req.headers.get("x-rb-principal") === "guest"`};
-${h.box ? `    if (url.pathname === "/health") return new Response("ok");\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
+${h.box ? `    if (url.pathname === "/health") return new Response("ok", { headers: { "X-RB-Data": dataMount } });\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
       const h = new Headers(req.headers);
       let who = identity;
       if (guest) {
-${h.box ? `        if (guestCount >= guests.max + 1) return reject(503, "full", { max: guests.max + 1 });
-        const id = boxIdentity(url);` : `        if (guests.version !== undefined && url.searchParams.get("v") !== guests.version) return reject(409, "version_mismatch", { expected: guests.version, got: url.searchParams.get("v") });
+${h.box ? `        const id = boxIdentity(url);` : `        if (guests.version !== undefined && url.searchParams.get("v") !== guests.version) return reject(409, "version_mismatch", { expected: guests.version, got: url.searchParams.get("v") });
         if (guestCount >= guests.max) return reject(503, "full", { max: guests.max });
         const id = guestIdentity(url);`}
         if (typeof id === "string") return reject(400, "bad_identity", { detail: id });
@@ -206,7 +219,9 @@ ${h.box ? `        if (guestCount >= guests.max + 1) return reject(503, "full", 
       }
       for (const [k, v] of Object.entries(who)) h.set(k, v);
       h.set("X-RB-Principal", guest ? "guest" : "host");
-      const res = await WORLD.get(WORLD.idFromName("local")).fetch(new Request(req.url, { headers: h }));
+${h.box ? `      const room = boxRoom(url);
+      if (room === null) return reject(400, "bad_room", { detail: "1-32 of [A-Za-z0-9_-], and at most " + MAX_ROOMS + " rooms" });
+` : ""}      const res = await WORLD.get(WORLD.idFromName(${h.box ? "room" : `"local"`})).fetch(new Request(req.url, { headers: h }));
       const sock = (res as any).webSocket;
       if (guest && res.status === 101 && sock) {
         guestCount++;
@@ -215,7 +230,10 @@ ${h.box ? `        if (guestCount >= guests.max + 1) return reject(503, "full", 
       }
       return res;
     }
-    if (url.pathname === "/__rb/info") {
+${h.box ? `    // Pages read /__rb/info to tell the desktop from the web. A box is the web:
+    // no answer here, so they take their online path, the same as on the edge.
+    if (url.pathname === "/__rb/info") return reject(404, "not_on_box");
+` : ""}    if (url.pathname === "/__rb/info") {
       return Response.json({ app: ${JSON.stringify(c.name)}, version: typeof RB_VERSION === "string" ? RB_VERSION : "dev", bun: Bun.version,
         platform: \`\${process.platform}-\${process.arch}\`, dataDir, user: identity["X-User-Id"], actions: Object.keys(actions).length,
         bindings: Object.keys(env), host: !!host, caps: { sab: true, ffi: true, fs: true },
