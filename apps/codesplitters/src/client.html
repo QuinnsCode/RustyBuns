@@ -593,7 +593,7 @@ const views = {
     app.innerHTML = workbench(views.repoHead(owner, repo, r), {
       tab: `${icon("file")}${esc(path.split("/").pop())}`,
       bar: `${crumbs(`#/r/${owner}/${repo}`, repo, path)}<span class="grow"></span>
-        <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit. Older revisions show as a diff against now.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"><span class="legend"><span><i class="d"></i>taken out</span><span><i class="a"></i>put in</span></span></div></div>
+        <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit. Older revisions show as a diff against now.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"><span class="legend"><span><i class="d"></i>taken out</span><span><i class="a"></i>put in</span></span><a class="btn" id="smash" hidden title="the lines this took out, as furniture in the backrooms">${icon("hammer")}Smash what it took out</a></div></div>
         ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
         ${r.canWrite ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
@@ -613,8 +613,11 @@ const views = {
         const diff = diffRows(d.lines, doc.lines);
         box.innerHTML = diff.html;
         $("#revl").innerHTML = `<span class="diffstat">r${viewing} → r${doc.rev} <b class="${diff.del ? "minus" : "plus"}">−${diff.del}</b> <b class="plus">+${diff.add}</b></span>`;
+        $("#smash").hidden = !diff.del;
+        $("#smash").href = smashHref(viewing, doc.rev);
         return;
       }
+      $("#smash").hidden = true;
       box.innerHTML = codeRows(d.lines);
       if (r.upstream) {
         box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("mod", d.lines[k].by !== "upstream"));
@@ -633,7 +636,10 @@ const views = {
       if ($("#share-range")) $("#share-range").textContent = label;
       $("#st-sel").textContent = range[0] === range[1] ? `Ln ${range[0]}` : `Ln ${range[0]}–${range[1]}`;
     });
-    const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c) => `<div class="commit"><code>${c.sha.slice(0, 7)}</code><span>${esc(c.message)}</span><span class="muted">${esc(c.by)} · r${c.rev}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
+    // The game's "smash the removed lines": a revision pair of this file.
+    const smashHref = (from, to) => `/play.html#r/${owner}/${repo}?path=${encodeURIComponent(path)}&from=${from}&to=${to}`;
+    // Newest first, so a commit's parent is the next one down.
+    const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c, i) => `<div class="commit"><code>${c.sha.slice(0, 7)}</code><span>${esc(c.message)}</span><span class="muted">${esc(c.by)} · r${c.rev}${c.rev > (cs[i + 1]?.rev ?? 0) ? ` · <a href="${smashHref(cs[i + 1]?.rev ?? 0, c.rev)}" title="smash the lines this commit took out">smash</a>` : ""}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
     const edit = (el) => {
       const line = doc.lines.find((l) => l.id === el.dataset.id);
       const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}">`;
