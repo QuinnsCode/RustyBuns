@@ -11,7 +11,7 @@
     "test": "bun test test"
   },
   "devDependencies": {
-    "@types/three": "0.186",
+    "@types/three": "^0.180.0",
     "three": "0.186.1"
   }
 }
