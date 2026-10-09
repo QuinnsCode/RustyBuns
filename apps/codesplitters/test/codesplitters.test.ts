@@ -136,41 +136,41 @@ describe("levels", () => {
     const call = await local();
     // Stand in for an import (which needs the network): a repo with a few files, marked ready.
     const ns = call.artifacts, { push } = await import("../src/git.ts");
-    const made = await ns.create("level-alchemy");
-    await push(made.remote, made.token, { changes: { "README.md": "alchemy\n", "src/a.ts": "export const a = 1\n", "src/deep/b.ts": "b\n" }, message: "upstream", author: "upstream" });
-    await call.env.DB.prepare("INSERT INTO levels (slug, status) VALUES ('alchemy', 'ready')").run();
+    const made = await ns.create("level-hono");
+    await push(made.remote, made.token, { changes: { "README.md": "hono\n", "src/a.ts": "export const a = 1\n", "src/deep/b.ts": "b\n" }, message: "upstream", author: "upstream" });
+    await call.env.DB.prepare("INSERT INTO levels (slug, status) VALUES ('hono', 'ready')").run();
 
     const levels = await (await call(null, "/api/levels")).json() as any[];
-    expect(levels.map((l) => l.slug)).toEqual(["alchemy", "t3code", "tanstack", "effect", "react", "nextjs", "bun"]);
-    expect(levels[0].status).toBe("ready");
+    expect(levels.map((l) => l.slug)).toEqual(["mitt", "clsx", "ky", "zustand", "hono", "express", "preact"]);
+    expect(levels[4].status).toBe("ready");
     expect(levels[6].status).toBe("buried");
-    const root = await (await call(null, "/api/levels/alchemy/tree")).json() as any;
+    const root = await (await call(null, "/api/levels/hono/tree")).json() as any;
     expect(root.entries.map((e: any) => [e.name, e.type])).toEqual([["src", "dir"], ["README.md", "file"]]);
-    expect((await (await call(null, "/api/levels/alchemy/tree?path=src")).json() as any).entries.map((e: any) => e.path)).toEqual(["src/deep", "src/a.ts"]);
-    expect((await (await call(null, "/api/levels/alchemy/file?path=src/a.ts")).json() as any).text).toBe("export const a = 1\n");
-    expect((await call(null, "/api/levels/react/tree")).status).toBe(409);             // not excavated yet
-    expect((await post(call, null, "/api/levels/react/import", {})).status).toBe(403);   // and not by strangers
+    expect((await (await call(null, "/api/levels/hono/tree?path=src")).json() as any).entries.map((e: any) => e.path)).toEqual(["src/deep", "src/a.ts"]);
+    expect((await (await call(null, "/api/levels/hono/file?path=src/a.ts")).json() as any).text).toBe("export const a = 1\n");
+    expect((await call(null, "/api/levels/preact/tree")).status).toBe(409);             // not excavated yet
+    expect((await post(call, null, "/api/levels/preact/import", {})).status).toBe(403);   // and not by strangers
 
     await post(call, "ana", "/api/login", { name: "ana" });
-    expect((await post(call, "ana", "/api/levels/alchemy/fork", { name: "my-alchemy" })).status).toBe(201);
-    const tree = await (await call("ana", "/api/repos/ana/my-alchemy/tree?path=src/deep")).json() as any;
+    expect((await post(call, "ana", "/api/levels/hono/fork", { name: "my-hono" })).status).toBe(201);
+    const tree = await (await call("ana", "/api/repos/ana/my-hono/tree?path=src/deep")).json() as any;
     expect(tree.entries.map((e: any) => e.path)).toEqual(["src/deep/b.ts"]);
 
     // Opening a file from history makes it a live DO, attributed to upstream.
-    const f = "/api/repos/ana/my-alchemy/do", q = "?path=" + encodeURIComponent("src/deep/b.ts");
+    const f = "/api/repos/ana/my-hono/do", q = "?path=" + encodeURIComponent("src/deep/b.ts");
     const doc = await (await call("ana", `${f}/file${q}`)).json() as any;
     expect(doc.lines.map((l: any) => [l.text, l.by])).toEqual([["b", "upstream"]]);
     await post(call, "ana", `${f}/ops${q}`, { ops: [{ kind: "set", line: doc.lines[0].id, base: doc.lines[0].rev, text: "B, dug up" }] });
     const c = await (await post(call, "ana", `${f}/commit${q}`, { message: "dig" })).json() as any;
     expect(c.git.commit).toMatch(/^[0-9a-f]{40}$/);
 
-    const repo = await ns.get("ana--my-alchemy");
+    const repo = await ns.get("ana--my-hono");
     expect((await repo.log()).map((x) => x.message)).toEqual(["dig", "upstream"]);
     expect(await (await repo.readFile({ ref: "main", path: "src/deep/b.ts" }))!.text()).toBe("B, dug up\n");
     expect(await (await repo.readFile({ ref: "main", path: "src/a.ts" }))!.text()).toBe("export const a = 1\n");
-    expect(await (await repo.readFile({ ref: "main", path: "README.md" }))!.text()).toBe("alchemy\n");
+    expect(await (await repo.readFile({ ref: "main", path: "README.md" }))!.text()).toBe("hono\n");
     // The level itself is untouched.
-    expect((await (await ns.get("level-alchemy")).log()).length).toBe(1);
+    expect((await (await ns.get("level-hono")).log()).length).toBe(1);
   });
 });
 
