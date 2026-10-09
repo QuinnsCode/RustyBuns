@@ -48,6 +48,8 @@ export interface Env {
   GITHUB_TOKEN?: string;
   /** "off" stops the desktop asking the GitHub CLI for a token (the tests set it). */
   GH_CLI?: string;
+  /** Tests only: stands in for running a coding agent's CLI (see agent-run.ts). */
+  AGENT_EXEC?: unknown;
 }
 
 export const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>

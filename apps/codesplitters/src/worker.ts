@@ -5,15 +5,13 @@
 import { fromText } from "./lines.ts";
 import { fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
 import { code, json, NAME, type Env } from "./env.ts";
-import { actingAs, identityRoutes, identify, isAdmin } from "./identity.ts";
+import { identityRoutes, identify, isAdmin } from "./identity.ts";
 import { levelRoutes } from "./levels.ts";
 import { githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
-import { HARNESSES, type Harness } from "./harness.ts";
-import { localSandbox, runAgent } from "./agent-run.ts";
-import { containerSandbox } from "./sandbox.ts";
+import { agentRoutes } from "./agent-routes.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -51,6 +49,8 @@ const app = {
     if (game) return game;
     const share = await shareRoutes(req, env, p, user);
     if (share) return share;
+    const agents = await agentRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read, (r) => app.fetch(r, env));
+    if (agents) return agents;
 
     // GET|PUT /api/me
     if (p[1] === "me") {
@@ -155,30 +155,6 @@ const app = {
         await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
         await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
         return json({ ok: true });
-      }
-      // POST /api/repos/:o/:r/agents {harness, path, task, as?, model?, commit?, retries?}
-      // A coding agent edits one file, as you or (the owner's call) as a collaborator. On
-      // Cloudflare it runs in a container (AGENT_SANDBOX); on the desktop, on this machine.
-      if (p[4] === "agents" && req.method === "POST") {
-        if (!a.write) return json({ error: "no write access" }, 403);
-        const o = await body<{ harness: Harness; path: string; task: string; as?: string; model?: string; commit?: string; retries?: number }>();
-        if (!HARNESSES.includes(o.harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
-        if (!o.path || !o.task) return json({ error: "path and task" }, 400);
-        const as = o.as ?? user!;
-        if (as !== user && (user !== owner || !(await access(env, owner, repo, as)).write)) return json({ error: "only the owner runs agents as a collaborator" }, 403);
-        const sandbox = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : typeof Bun !== "undefined" ? localSandbox() : null;
-        if (!sandbox) return json({ error: "no agent sandbox here: bind AGENT_SANDBOX" }, 501);
-        // The runner talks to this app like any client, as the agent.
-        const self = (who: string | null, path: string, init?: RequestInit) => {
-          const r = new Request(new URL(path, url).toString(), init);
-          if (who) actingAs.set(r, who);
-          return app.fetch(r, env);
-        };
-        try {
-          return json(await runAgent(self, { user: as, owner, repo, path: o.path, harness: o.harness, task: o.task, model: o.model, commit: o.commit, retries: o.retries, sandbox }));
-        } catch (e) {
-          return json({ error: (e as Error).message }, 502);
-        }
       }
       // POST /api/repos/:o/:r/files {path, content, branch?}
       if (p[4] === "files" && req.method === "POST") {
@@ -285,4 +261,5 @@ const app = {
     return json({ error: "not found" }, 404);
   },
 };
+
 export default app;

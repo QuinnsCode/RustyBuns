@@ -107,6 +107,9 @@
   .sec { padding: 10px 14px; border-bottom: 1px solid var(--border); }
   .sec h3 { margin: 0 0 6px; font: 500 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .sec p { margin: 0 0 6px; } .sec .btn { margin: 2px 4px 2px 0; }
+  .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
+  .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent); } .sec .run .st.failed { color: var(--del-fg); }
+  .sec .run pre { margin: 4px 0 0; max-height: 180px; overflow: auto; font: 400 11.5px/1.45 var(--mono); white-space: pre-wrap; color: var(--muted); }
   .sec .commit { display: grid; grid-template-columns: auto 1fr; gap: 0 6px; padding: 3px 0; } .sec .commit .muted { grid-column: 2; font-size: 12px; }
   .status { display: flex; align-items: center; gap: 14px; flex: none; height: 24px; padding: 0 12px; background: var(--fg); color: #e6e6e6; font: 400 12px var(--mono); white-space: nowrap; overflow: hidden; }
   .status span { display: inline-flex; align-items: center; gap: 4px; } .status svg.lucide { width: 13px; height: 13px; vertical-align: 0; }
@@ -263,6 +266,7 @@ const api = async (path, body, method) => {
 };
 const app = $("#app");
 let socket = null;
+let agentTimer = null;
 // What the page is showing, so the palette can offer what makes sense here.
 let ctx = {};
 function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 2400); }
@@ -619,13 +623,15 @@ const views = {
     app.innerHTML = workbench(views.repoHead(owner, repo, r), {
       tab: `${icon("file")}${esc(path.split("/").pop())}`,
       bar: `${crumbs(`#/r/${owner}/${repo}`, repo, path)}<span class="grow"></span>
-        <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit. Older revisions show as a diff against now.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"><span class="legend"><span><i class="d"></i>taken out</span><span><i class="a"></i>put in</span></span></div></div>
+        <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit. Older revisions show as a diff against now.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"><span class="legend"><span><i class="d"></i>taken out</span><span><i class="a"></i>put in</span></span><a class="btn" id="smash" hidden title="the lines this took out, as furniture in the backrooms">${icon("hammer")}Smash what it took out</a></div></div>
         ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
+        ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
         ${r.canWrite ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
       body: `<div class="code" id="lines"></div>`,
       details: sec("radio", "Here now", `<p id="who-here" class="muted">just you</p>`)
         + (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, then share it.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
+        + (owner === me() && r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
         + sec("scroll-text", "Commits", `<div id="commits"></div>`)
         + views.repoDetails(owner, repo, r),
       status: views.repoStatus(r, null, `<span class="grow"></span><span id="st-sel"></span>${r.upstream ? '<span id="modded"></span>' : ""}<span id="revl"></span>`),
@@ -639,8 +645,11 @@ const views = {
         const diff = diffRows(d.lines, doc.lines);
         box.innerHTML = diff.html;
         $("#revl").innerHTML = `<span class="diffstat">r${viewing} → r${doc.rev} <b class="${diff.del ? "minus" : "plus"}">−${diff.del}</b> <b class="plus">+${diff.add}</b></span>`;
+        $("#smash").hidden = !diff.del;
+        $("#smash").href = smashHref(viewing, doc.rev);
         return;
       }
+      $("#smash").hidden = true;
       box.innerHTML = codeRows(d.lines);
       if (r.upstream) {
         box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("mod", d.lines[k].by !== "upstream"));
@@ -659,7 +668,10 @@ const views = {
       if ($("#share-range")) $("#share-range").textContent = label;
       $("#st-sel").textContent = range[0] === range[1] ? `Ln ${range[0]}` : `Ln ${range[0]}–${range[1]}`;
     });
-    const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c) => `<div class="commit"><code>${c.sha.slice(0, 7)}</code><span>${esc(c.message)}</span><span class="muted">${esc(c.by)} · r${c.rev}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
+    // The game's "smash the removed lines": a revision pair of this file.
+    const smashHref = (from, to) => `/play.html#r/${owner}/${repo}?path=${encodeURIComponent(path)}&from=${from}&to=${to}`;
+    // Newest first, so a commit's parent is the next one down.
+    const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c, i) => `<div class="commit"><code>${c.sha.slice(0, 7)}</code><span>${esc(c.message)}</span><span class="muted">${esc(c.by)} · r${c.rev}${c.rev > (cs[i + 1]?.rev ?? 0) ? ` · <a href="${smashHref(cs[i + 1]?.rev ?? 0, c.rev)}" title="smash the lines this commit took out">smash</a>` : ""}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
     const edit = (el) => {
       const line = doc.lines.find((l) => l.id === el.dataset.id);
       const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}">`;
@@ -688,6 +700,39 @@ const views = {
         const c = await api(`${base}/commit${q}`, { message: $("#msg").value });
         $("#msg").value = ""; $("#commit-form").hidden = true;
         toast(c.git?.commit ? `Committed and pushed: ${c.git.commit.slice(0, 7)}` : c.git?.error ? `Committed; the push failed: ${c.git.error}` : "Committed");
+      });
+    }
+    if ($("#agent")) {
+      // Runs are polled while one is going; the edits themselves arrive on the file's socket like anyone's.
+      const runsEl = $("#agent-runs");
+      const result = (x) => x.status === "running" ? esc(x.log[x.log.length - 1] ?? "starting…")
+        : x.status === "failed" ? esc(x.error.split("\n")[0])
+        : (x.applied ? `${x.applied} line ops landed at r${x.rev}` : "no changes") + (x.runs > 1 ? ` after ${x.runs} runs` : "")
+          + (x.conflicts.length ? `; ${x.conflicts.length} edit${x.conflicts.length > 1 ? "s" : ""} kept someone else's version` : "");
+      const pollAgents = async () => {
+        clearTimeout(agentTimer);
+        const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
+        if (!runsEl.isConnected) return;
+        runsEl.innerHTML = rs.map((x) => `<div class="run"><div class="row"><b>${esc(x.agent)}</b><span class="st ${x.status}">${x.status}</span></div><span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result(x)}</span>${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`).join("")
+          || '<span class="muted">No agents on this file yet. Press Agent to give one a task.</span>';
+        if (rs.some((x) => x.status === "running")) agentTimer = setTimeout(pollAgents, 1500);
+      };
+      pollAgents();
+      popover($("#agent"));
+      const f = $("#agent-form"), go = $("button.primary", f);
+      $("#agent").addEventListener("click", () => f.task.focus());
+      const av = await api("/agents").catch((e) => ({ available: false, why: e.message, harnesses: [], all: [] }));
+      ctx.agents = av; ctx.pollAgents = pollAgents;
+      f.harness.innerHTML = av.all.map((h) => `<option value="${h}"${av.harnesses.includes(h) ? "" : " disabled"}>${h}${av.harnesses.includes(h) ? "" : " (not installed)"}</option>`).join("");
+      if (av.harnesses.length) f.harness.value = av.harnesses[0];
+      else { $("#agent-why").textContent = av.why || "None of claude, codex, pi or opencode is installed on this machine."; go.disabled = true; }
+      f.addEventListener("submit", async (e) => {
+        e.preventDefault(); go.disabled = true;
+        try {
+          await api(`/repos/${owner}/${repo}/agents`, { path, harness: f.harness.value, task: f.task.value, model: f.model.value });
+          toast(`agent-${f.harness.value} is on it`); f.task.value = ""; f.hidden = true; pollAgents();
+        } catch (err) { toast(err.message); }
+        finally { go.disabled = false; }
       });
     }
     if ($("#share")) {
@@ -902,6 +947,9 @@ async function commands() {
     if (c.canWrite) add("This file", "git-commit-horizontal", "Commit this file", `POST /api/repos/${c.owner}/${c.repo}/do/commit`, async (msg) => {
       const r = await api(`${c.base}/commit${c.q}`, { message: msg }); toast(r.git?.commit ? `Pushed ${r.git.commit.slice(0, 7)}` : "Committed");
     }, "commit message");
+    for (const h of c.agents?.harnesses ?? []) add("This file", "bot", `Give ${h} a task on this file`, `POST /api/repos/${c.owner}/${c.repo}/agents`, async (task) => {
+      await api(`/repos/${c.owner}/${c.repo}/agents`, { path: c.path, harness: h, task }); toast(`agent-${h} is on it`); c.pollAgents?.();
+    }, "the task");
   }
   if (c.view === "f" || c.view === "r") {
     if (c.canWrite) add("This repo", "file-plus", "Add a file", `POST /api/repos/${c.owner}/${c.repo}/files`, async (p) => {
@@ -987,6 +1035,7 @@ addEventListener("keydown", (e) => {
 const FIXED = { f: 2, r: 2, l: 1 };
 async function route() {
   socket?.close(); socket = null;
+  clearTimeout(agentTimer);
   stopIntro();
   document.body.classList.remove("ide-mode");
   const [, view = "home", ...args] = location.hash.replace(/^#/, "").split("/");

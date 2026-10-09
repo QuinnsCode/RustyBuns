@@ -1,5 +1,5 @@
 // The server inside the agent container. One request runs one coding agent on
-// one file: POST /run {cmd: {bin, args}, path, text} writes the file into a
+// one file: POST /run {cmd: {bin, args, env?}, path, text} writes the file into a
 // fresh directory, runs the CLI there, and answers {code, out, text} with what
 // it left (text: null if it removed the file). Plain Node, no dependencies.
 
@@ -20,7 +20,7 @@ export async function run({ cmd, path, text }) {
     await mkdir(dirname(at), { recursive: true });
     await writeFile(at, text);
     const { code, out } = await new Promise((done) => {
-      const p = spawn(cmd.bin, cmd.args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
+      const p = spawn(cmd.bin, cmd.args, { cwd: dir, env: { ...process.env, ...cmd.env }, stdio: ["ignore", "pipe", "pipe"] });
       let out = "";
       p.stdout.on("data", (b) => { out += b; });
       p.stderr.on("data", (b) => { out += b; });

@@ -9,7 +9,16 @@ export type Harness = "claude" | "codex" | "pi" | "opencode";
 
 export const HARNESSES: Harness[] = ["claude", "codex", "pi", "opencode"];
 
-export interface Command { bin: string; args: string[] }
+export interface Command { bin: string; args: string[]; env?: Record<string, string> }
+
+// opencode reads permissions from config. OPENCODE_CONFIG_CONTENT outranks any
+// global or project config, so a stray opencode.json can't loosen it. Everything
+// is denied except reading and editing inside the working directory.
+export const OPENCODE_PERMISSION = {
+  "*": "deny",
+  read: "allow", edit: "allow", glob: "allow", grep: "allow", list: "allow",
+  external_directory: "deny",
+} as const;
 
 /** The command line that runs `harness` on `prompt` with `dir` as its working directory. */
 export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string } = {}): Command {
@@ -21,11 +30,14 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
     // Workspace-write sandbox: it can edit the scratch dir, not the rest of the machine.
     case "codex":
       return { bin: "codex", args: model(["exec", "--skip-git-repo-check", "-s", "workspace-write", prompt]) };
-    // Print mode, no session saved. Runs in the process cwd.
+    // Print mode, no session saved. Only the file tools, no bash, and no
+    // extensions, MCP or project-local config that could add tools back.
     case "pi":
-      return { bin: "pi", args: model(["-p", "--no-session", prompt]) };
+      return { bin: "pi", args: model(["-p", "--no-session", "--tools", "read,edit,write", "--no-extensions", "--no-mcp", "--no-approve", prompt]) };
+    // Permissions as above: no shell, no web, nothing outside the working directory.
+    // --pure skips third-party plugins, which run code when they load.
     case "opencode":
-      return { bin: "opencode", args: model(["run", prompt]) };
+      return { bin: "opencode", args: model(["run", "--pure", prompt]), env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: OPENCODE_PERMISSION }) } };
   }
 }
 

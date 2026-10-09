@@ -19,7 +19,7 @@ export type Sandbox = (cmd: Command, file: { path: string; text: string }) => Pr
 
 /** Runs the CLI with its working directory set to `cwd`, capturing stdout and stderr. */
 export const execCommand: Exec = async (cmd, cwd) => {
-  const proc = Bun.spawn([cmd.bin, ...cmd.args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn([cmd.bin, ...cmd.args], { cwd, env: { ...process.env, ...cmd.env }, stdout: "pipe", stderr: "pipe" });
   const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   return { code: await proc.exited, out: out + err };
 };

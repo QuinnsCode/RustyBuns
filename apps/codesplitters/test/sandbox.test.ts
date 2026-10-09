@@ -55,10 +55,10 @@ describe("AgentSandbox", () => {
   });
 });
 
-describe("POST /api/repos/:o/:r/agents", () => {
+describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
   /** The app with AGENT_SANDBOX bound to containers that run `server`. */
   async function hosted(server: (body: any) => Promise<unknown>) {
-    const call = await boot();
+    const call = await boot({ GH_CLI: "off" });
     opened.push(call);
     const runs: any[] = [];
     call.env.AGENT_SANDBOX = {
@@ -68,39 +68,39 @@ describe("POST /api/repos/:o/:r/agents", () => {
     const post = (user: string, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
     await post("ryan", "/api/login", { name: "ryan" });
     await post("ryan", "/api/repos", { name: "r1", visibility: "public" });
-    await post("ryan", "/api/repos/ryan/r1/collaborators", { name: "agent-x" });
     await post("ryan", "/api/repos/ryan/r1/collaborators", { name: "pat" });
     await post("ryan", "/api/repos/ryan/r1/files", { path: "src/a.js", content: "var x = 1\nf()" });
     return { call, post, runs };
   }
   const doc = async (call: Call) => await (await call("ryan", "/api/repos/ryan/r1/do/file?path=src/a.js")).json() as Doc;
 
-  test("the owner puts an agent on a file; it runs in a container and its lines are blamed on it", async () => {
+  test("every harness is offered, even where Bun can't run CLIs", async () => {
+    const { call } = await hosted(async (b) => b);
+    expect(await (await call(null, "/api/agents")).json()).toMatchObject({ available: true, harnesses: ["claude", "codex", "pi", "opencode"] });
+  });
+
+  test("the owner gives an agent a task; it runs in a container, answers when done, and its lines are blamed on it", async () => {
     const { call, post, runs } = await hosted(async (b) => ({ code: 0, out: "ok", text: b.text.replace("var", "let") }));
-    const res = await post("ryan", "/api/repos/ryan/r1/agents", { harness: "claude", path: "src/a.js", task: "use let", as: "agent-x" });
+    const res = await post("ryan", "/api/repos/ryan/r1/agents", { harness: "opencode", path: "src/a.js", task: "use let" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ changed: true, applied: 1, runs: 1, conflicts: [] });
-    expect(runs[0].cmd.bin).toBe("claude");
+    expect(await res.json()).toMatchObject({ agent: "agent-opencode", status: "done", applied: 1, conflicts: [] });
+    expect(runs[0].cmd.bin).toBe("opencode");
+    expect(runs[0].cmd.env.OPENCODE_CONFIG_CONTENT).toContain("deny"); // the harness's own limits reach the container
     expect(runs[0].text).toBe("var x = 1\nf()\n");
     const d = await doc(call);
     expect(text(d)).toBe("let x = 1\nf()");
-    expect(d.lines.map((l) => l.by)).toEqual(["agent-x", "ryan"]);
+    expect(d.lines.map((l) => l.by)).toEqual(["agent-opencode", "ryan"]);
   });
 
-  test("a collaborator runs one as themselves, not as someone else; a stranger not at all", async () => {
+  test("only the owner starts one", async () => {
     const { post } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
-    const ask = (user: string, as?: string) => post(user, "/api/repos/ryan/r1/agents", { harness: "pi", path: "src/a.js", task: "x", as });
-    expect((await ask("pat")).status).toBe(200);
-    expect((await ask("pat", "agent-x")).status).toBe(403);
-    expect((await ask("eve")).status).toBe(403);
-    expect((await post("ryan", "/api/repos/ryan/r1/agents", { harness: "vim", path: "src/a.js", task: "x" })).status).toBe(400);
+    expect((await post("pat", "/api/repos/ryan/r1/agents", { harness: "pi", path: "src/a.js", task: "x" })).status).toBe(403);
   });
 
-  test("a CLI that fails in the container comes back as an error, and nothing lands", async () => {
+  test("a CLI that fails in the container comes back as a failed run, and nothing lands", async () => {
     const { call, post } = await hosted(async () => ({ code: 1, out: "not logged in", text: "junk" }));
     const res = await post("ryan", "/api/repos/ryan/r1/agents", { harness: "codex", path: "src/a.js", task: "x" });
-    expect(res.status).toBe(502);
-    expect(((await res.json()) as { error: string }).error).toContain("not logged in");
+    expect(await res.json()).toMatchObject({ status: "failed" });
     expect(text(await doc(call))).toBe("var x = 1\nf()");
   });
 });

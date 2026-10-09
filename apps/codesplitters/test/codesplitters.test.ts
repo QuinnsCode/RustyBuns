@@ -377,6 +377,46 @@ describe("game", () => {
     expect(ana.last("start").seed).not.toBe(seed);
     expect(bo.last("start").seed).toBe(ana.last("start").seed);
   });
+
+  test("panic rooms: pick a mode, break pieces for everyone, walk in on the wreckage", async () => {
+    const call = await local();
+    const join = async (user: string) => {
+      const ws = ((await call(user, "/api/game/r/ana/dig/ws", { headers: { upgrade: "websocket" } })) as any).webSocket, got: any[] = [];
+      ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+      for (const d of ws.queue.splice(0)) got.push(JSON.parse(d));
+      const say = async (m: unknown) => { ws.onMessage(JSON.stringify(m)); await Bun.sleep(5); };
+      return { got, say, last: (t: string) => got.filter((m) => m.t === t).at(-1) };
+    };
+    await post(call, "ana", "/api/repos", { name: "dig" });
+    const ana = await join("ana"), bo = await join("bo");
+    expect(ana.last("lobby").mode).toBe("horde");
+
+    // Removed needs a diff; with one, everyone sees it.
+    await ana.say({ t: "mode", mode: "removed" });
+    expect(ana.last("note").text).toContain("diff");
+    await ana.say({ t: "mode", mode: "removed", diff: { path: "a.ts", from: 2, to: 5 } });
+    expect(bo.last("lobby")).toMatchObject({ mode: "removed", diff: { path: "a.ts", from: 2, to: 5 } });
+    await bo.say({ t: "mode", mode: "wreck" });
+    await bo.say({ t: "start" });
+    expect(ana.last("start")).toMatchObject({ mode: "wreck" });
+    await ana.say({ t: "mode", mode: "horde" });
+    expect(ana.last("note").text).toContain("between rounds");
+
+    // A break goes to the others once, and stays broken for the round.
+    await ana.say({ t: "break", id: "src|0|1" });
+    await ana.say({ t: "break", id: "src|0|1" });
+    expect(bo.got.filter((m) => m.t === "broke")).toEqual([{ t: "broke", id: "src|0|1", by: "ana" }]);
+    expect(ana.last("broke")).toBeUndefined();
+    const cy = await join("cy");
+    expect(cy.last("lobby")).toMatchObject({ state: "playing", mode: "wreck", broken: ["src|0|1"] });
+
+    // Next round starts clean, in the mode picked.
+    for (const p of [ana, bo, cy]) await p.say({ t: "dead", score: 10 });
+    expect(ana.last("lobby")).toMatchObject({ state: "waiting", mode: "wreck" });
+    await ana.say({ t: "start" });
+    const late = await join("di");
+    expect(late.last("lobby").broken).toEqual([]);
+  });
 });
 
 describe("shares", () => {

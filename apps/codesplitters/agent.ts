@@ -13,10 +13,12 @@
 //            After the last one, their version is kept and the conflicts are listed.
 // --hosted:  the app runs the agent, not this machine (POST /api/repos/:o/:r/agents):
 //            in a container on Cloudflare, so the CLI need not be installed here.
+//            --as is then the repo's owner; the edit is blamed on agent-<harness>.
 
 import { remote } from "./src/local.ts";
 import { HARNESSES, type Harness } from "./src/harness.ts";
 import { runAgent, type Result } from "./src/agent-run.ts";
+import type { Run } from "./src/agent-routes.ts";
 
 const arg = (f: string) => { const i = process.argv.indexOf(f); return i > 0 ? process.argv[i + 1] : undefined; };
 
@@ -35,9 +37,17 @@ const run = { owner, repo, path, harness, task, model: arg("--model"), commit: a
 let r: Result;
 if (process.argv.includes("--hosted")) {
   console.log(`${harness}: working on ${path} on ${url}`);
-  const res = await call(as, `/api/repos/${owner}/${repo}/agents`, { method: "POST", body: JSON.stringify(run) });
+  const res = await call(as, `/api/repos/${owner}/${repo}/agents`, { method: "POST", body: JSON.stringify({ path, harness, task, model: run.model }) });
   if (!res.ok) { console.error(`${res.status} ${await res.text()}`); process.exit(1); }
-  r = (await res.json()) as Result;
+  // A container run answers when done; a desktop one at once, so poll for it.
+  let h = (await res.json()) as Run;
+  while (h.status === "running") {
+    await Bun.sleep(2000);
+    const all = (await (await call(as, `/api/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`)).json()) as Run[];
+    h = all.find((x) => x.id === h.id) ?? h;
+  }
+  if (h.status === "failed") { console.error(h.error); process.exit(1); }
+  r = { harness, path, changed: !!h.applied, applied: h.applied ?? 0, runs: h.runs ?? 1, conflicts: h.conflicts ?? [], rev: h.rev ?? 0, output: h.output ?? "" };
 } else r = await runAgent(call, { ...run, user: as, log: console.log });
 
 console.log(`\n${r.harness} on ${r.path}: ${r.changed ? `${r.applied} line ops landed at rev ${r.rev}` : "no changes"}${r.runs > 1 ? ` (${r.runs} runs)` : ""}`);
