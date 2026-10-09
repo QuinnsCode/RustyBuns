@@ -20,6 +20,8 @@ Games, music makers and 3D tools you can run on your own computer. Pick one, pas
 
 That's it. Now pick an app.
 
+**Just want to play?** Hippo Tycoon, Park Hide & Seek, Splat Spray and FM Groovebox also come as a ready-made download: no Bun, no clone. Use the **Download** link under the app, pick the file for your computer, and follow the steps on that page to open it (it's not signed yet, so your Mac or Windows will ask once).
+
 ## How every app works
 
 - **Start:** paste the lines under **Start it**, from the `RustyBuns` folder. A window opens by itself.
@@ -50,6 +52,8 @@ That's it. Now pick an app.
 
 ![Four hippos chomping oil drops in the pan](apps/hippo-tycoon/docs/gulp.gif)
 
+**Download:** [hippo-tycoon for Mac, Windows and Linux](https://github.com/QuinnsCode/RustyBuns/releases?q=hippo-tycoon-v&expanded=true), or build it yourself:
+
 **Start it:**
 ```
 cd apps/hippo-tycoon
@@ -73,6 +77,8 @@ Gamepads work too.
 **Hide and seek in a real national park.** Campers drop in and hide. Park rangers hunt them with flashlights, and at night it gets spooky. Bigfoot is hiding out there too, where the search area closes in: whoever finds him first wins the round for their side.
 
 **Play it online, no install:** https://park-hide-seek.notryanquinn.workers.dev. Press **Create an online room** and send friends the link, or just press **Play vs AI**.
+
+**Download:** [park-hide-seek for Mac, Windows and Linux](https://github.com/QuinnsCode/RustyBuns/releases?q=park-hide-seek-v&expanded=true), or build it yourself:
 
 **Start it:**
 ```
@@ -98,6 +104,8 @@ bun run desktop:dev
 
 **Like I Spy in the dark.** A kid's room with 100 things in it is totally black. Every shot from your scanner lights up a few dots. Find the thing it asks for in the fewest shots.
 
+**Download:** [splat-spray for Mac, Windows and Linux](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true), or build it yourself:
+
 **Start it:**
 ```
 cd apps/splat-spray
@@ -118,6 +126,8 @@ bun run desktop:dev
 ## FM Groovebox (fm-daw)
 
 **Make a beat.** Five drums and three synths, a grid to click in beats, and your computer keyboard turns into a piano. **Turn your speakers down first!**
+
+**Download:** [fm-daw for Mac, Windows and Linux](https://github.com/QuinnsCode/RustyBuns/releases?q=fm-daw-v&expanded=true), or build it yourself:
 
 **Start it:**
 ```
