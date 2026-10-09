@@ -17,7 +17,9 @@ export interface ArtifactsRepo {
 export interface Artifacts {
   create(name: string, opts?: { readOnly?: boolean; description?: string; setDefaultBranch?: string }): Promise<{ name: string; remote: string; defaultBranch: string }>;
   get(name: string): Promise<ArtifactsRepo>;
-  import(params: { source: { url: string; branch?: string; depth?: number }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }): Promise<{ name: string; remote: string; defaultBranch: string }>;
+  /** Desktop only: true when import() can read a private source with `source.token`. */
+  readonly privateImports?: boolean;
+  import(params: { source: { url: string; branch?: string; depth?: number; token?: string }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }): Promise<{ name: string; remote: string; defaultBranch: string }>;
 }
 
 export interface Env {

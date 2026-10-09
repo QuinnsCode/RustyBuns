@@ -35,8 +35,8 @@ function git(args: string[], cwd?: string, input?: Uint8Array) {
   return r.stdout;
 }
 /** Async git, for anything that touches the network or copies a whole repo. */
-async function gitAsync(args: string[], cwd?: string) {
-  const p = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+async function gitAsync(args: string[], cwd?: string, env: Record<string, string> = {}) {
+  const p = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env } });
   const [code, err] = await Promise.all([p.exited, new Response(p.stderr).text()]);
   if (code !== 0) throw new Error(err.trim());
   return code;
@@ -48,6 +48,8 @@ export class LocalArtifacts {
   private tokens = new Map<string, Token>();
   /** Repos still importing or forking: get() refuses them, like Cloudflare. */
   private busy = new Map<string, "IMPORT_IN_PROGRESS" | "FORK_IN_PROGRESS">();
+  /** Unlike Cloudflare's, import() here takes a token for a private source. */
+  readonly privateImports = true;
 
   constructor(readonly dir: string, readonly namespace: string) { mkdirSync(dir, { recursive: true }); }
 
@@ -103,8 +105,10 @@ export class LocalArtifacts {
    * Import from an external remote. Returns at once with the repo marked
    * importing (get() throws IMPORT_IN_PROGRESS until the clone lands), the way
    * Cloudflare does it. `done` is for tests and hosts that want to wait.
+   * `source.token` (local only) reads a private source: it goes to git through
+   * the environment for this clone, so it is never in argv or the repo's config.
    */
-  async import(params: { source: { url: string; branch?: string; depth?: number }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }) {
+  async import(params: { source: { url: string; branch?: string; depth?: number; token?: string }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }) {
     const { source, target } = params;
     if (!/^https:\/\//.test(source.url)) throw new ArtifactsError("INVALID_INPUT", "source.url must be https");
     const name = target.name, p = this.path(name);
@@ -112,7 +116,11 @@ export class LocalArtifacts {
     this.busy.set(name, "IMPORT_IN_PROGRESS");
     const gh = /^https:\/\/github\.com\/([^/]+\/[^/.]+)/.exec(source.url);
     const args = ["clone", "--bare", "--quiet", "--single-branch", ...(source.branch ? ["--branch", source.branch] : []), ...(source.depth ? ["--depth", String(source.depth)] : []), source.url, p];
-    this.importing = gitAsync(args)
+    const auth: Record<string, string> = source.token ? {
+      GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.extraHeader",
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${btoa(`x-access-token:${source.token}`)}`,
+    } : {};
+    this.importing = gitAsync(args, undefined, auth)
       .then(() => this.stamp(p, { ...target.opts, source: gh ? `github:${gh[1]}` : source.url }))
       .catch((e) => { rmSync(p, { recursive: true, force: true }); this.failed.set(name, String(e.message ?? e)); })
       .finally(() => this.busy.delete(name));

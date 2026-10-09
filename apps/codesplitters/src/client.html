@@ -379,7 +379,7 @@ const views = {
         msg.textContent = g.login ? `Signed in to GitHub as @${g.login}, through ${via}. Pick one of yours, or type any public repo.`
           : g.error ? `GitHub didn't take the token (${g.error}). Public repos still work by name.`
           : "No GitHub access, so type a repo by name. On the desktop, run gh auth login and reload to see your own repos here.";
-        $("#ghlist").innerHTML = g.repos.map((x) => `<button type="button" data-repo="${esc(x.repo)}"${x.private ? " disabled title=\"private repos can't be dug up yet\"" : ""}>${esc(x.repo)}${x.private ? " · private" : ""}</button>`).join("");
+        $("#ghlist").innerHTML = g.repos.map((x) => `<button type="button" data-repo="${esc(x.repo)}"${x.private && !g.privateOk ? " disabled title=\"Cloudflare Artifacts imports public repos only: dig this up in the desktop app\"" : ""}>${esc(x.repo)}${x.private ? " · private" : ""}</button>`).join("");
         for (const b of $("#ghlist").querySelectorAll("button:not([disabled])")) b.addEventListener("click", () => { f.repo.value = b.dataset.repo; f.name.focus(); });
       }).catch(() => {});
       f.addEventListener("submit", async (e) => {
