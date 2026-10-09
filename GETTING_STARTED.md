@@ -1,6 +1,6 @@
 # Getting started
 
-Rusty Buns wraps the web app you already have so the same code ships as a desktop binary, a Cloudflare Worker and a Linux server. You don't need to know Rust or Bun to use it. You write a Vite app, and Rusty Buns carries it to every place it needs to run. Why this and not Electron or Tauri: see the [README](README.md#how-it-compares).
+Rusty Buns wraps the web app you already have so the same code ships as a desktop binary, a Cloudflare Worker and a Linux server. You don't need to know Rust or Bun to use it. You write a Vite app, and Rusty Buns carries it to every place it needs to run. Why this and not Electron or Tauri: see the [README](README.md#the-questions-everyone-asks).
 
 Five flows. Each builds on the last, but you can stop after any of them.
 
