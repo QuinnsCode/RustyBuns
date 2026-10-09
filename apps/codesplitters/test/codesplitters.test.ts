@@ -153,6 +153,9 @@ describe("levels", () => {
 
     await post(call, "ana", "/api/login", { name: "ana" });
     expect((await post(call, "ana", "/api/levels/hono/fork", { name: "my-hono" })).status).toBe(201);
+    // The fork says where it came from and that its git is local.
+    const meta = await (await call("ana", "/api/repos/ana/my-hono")).json() as any;
+    expect([meta.upstream, meta.upstream_commit?.length, meta.home]).toEqual(["github:honojs/hono", 40, "local"]);
     const tree = await (await call("ana", "/api/repos/ana/my-hono/tree?path=src/deep")).json() as any;
     expect(tree.entries.map((e: any) => e.path)).toEqual(["src/deep/b.ts"]);
 
@@ -191,5 +194,44 @@ describe("accounts", () => {
     const me = await (await call(null, "/api/me", { headers: { cookie } })).json() as any;
     expect(me.name).toBe("ana-lyst");
     expect((await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) })).status).toBe(201);
+  });
+});
+
+describe("github", () => {
+  test("dig up a GitHub repo: a fork you own, with where it came from", async () => {
+    const call = await local({ GH_CLI: "off", GITHUB_TOKEN: "t0k" });
+    // GitHub's API, faked; and the import, made local (a real one clones over the network).
+    const real = globalThis.fetch, seen: string[] = [];
+    globalThis.fetch = (async (u: string, init?: RequestInit) => {
+      seen.push(`${u} ${new Headers(init?.headers).get("authorization")}`);
+      const path = new URL(u).pathname;
+      if (path === "/user") return Response.json({ login: "ana-gh" });
+      if (path === "/user/repos") return Response.json([{ full_name: "ana-gh/Tiny.JS", private: false, default_branch: "trunk" }, { full_name: "ana-gh/secret", private: true, default_branch: "main" }]);
+      if (path === "/repos/ana-gh/Tiny.JS") return Response.json({ full_name: "ana-gh/Tiny.JS", private: false, default_branch: "trunk" });
+      if (path === "/repos/ana-gh/secret") return Response.json({ full_name: "ana-gh/secret", private: true, default_branch: "main" });
+      if (path === "/repos/ana-gh/Tiny.JS/commits/trunk") return Response.json({ sha: "a".repeat(40) });
+      return new Response("{}", { status: 404 });
+    }) as any;
+    const imports: any[] = [];
+    call.artifacts.import = (async (params: any) => { imports.push(params); return call.artifacts.create(params.target.name, { setDefaultBranch: params.source.branch }); }) as any;
+    try {
+      await post(call, "ana", "/api/login", { name: "ana" });
+      const list = await (await call("ana", "/api/github/repos")).json() as any;
+      expect([list.via, list.login, list.repos.map((r: any) => [r.repo, r.private])]).toEqual(["secret", "ana-gh", [["ana-gh/Tiny.JS", false], ["ana-gh/secret", true]]]);
+      expect(seen[0]).toEndWith("Bearer t0k");
+
+      expect((await post(call, null, "/api/github/dig", { repo: "ana-gh/Tiny.JS" })).status).toBe(401);
+      expect((await post(call, "ana", "/api/github/dig", { repo: "not a repo" })).status).toBe(400);
+      expect((await post(call, "ana", "/api/github/dig", { repo: "ana-gh/secret" })).status).toBe(422);
+      expect((await post(call, "ana", "/api/github/dig", { repo: "ana-gh/nope" })).status).toBe(404);
+      const dug = await post(call, "ana", "/api/github/dig", { repo: "https://github.com/ana-gh/Tiny.JS.git" });
+      expect(dug.status).toBe(201);
+      expect(await dug.json()).toEqual({ owner: "ana", name: "tiny-js", upstream: "github:ana-gh/Tiny.JS", commit: "a".repeat(40) });
+      expect(imports[0].source).toEqual({ url: "https://github.com/ana-gh/Tiny.JS.git", branch: "trunk", depth: 1 });
+      expect(imports[0].target.opts.readOnly).toBeUndefined();   // writable: it's ana's now
+      const meta = await (await call("ana", "/api/repos/ana/tiny-js")).json() as any;
+      expect([meta.upstream, meta.branch, meta.home, meta.canWrite]).toEqual(["github:ana-gh/Tiny.JS", "trunk", "local", true]);
+      expect((await post(call, "ana", "/api/github/dig", { repo: "ana-gh/Tiny.JS" })).status).toBe(409);
+    } finally { globalThis.fetch = real; }
   });
 });

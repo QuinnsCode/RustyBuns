@@ -89,15 +89,16 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
     const got = await readText(r.handle, level.branch, url.searchParams.get("path") ?? "");
     return "error" in got ? json({ error: got.error }, got.status) : json(got);
   }
-  // POST /api/levels/:slug/fork {name}  -> your own excavation, writable, with the level's history
+  // POST /api/levels/:slug/fork {name}  dig it up: your own fork, writable, with the level's history
   if (p[3] === "fork" && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
     const { name = slug } = (await req.json().catch(() => ({}))) as { name?: string };
     if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
     if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
     const art = await r.handle.fork(`${user}--${name}`, { description: `${user}'s dig of ${level.title}`, defaultBranchOnly: true });
-    await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, level) VALUES (?, ?, 'public', ?, ?, ?, ?, ?)")
-      .bind(user, name, Date.now(), art.name, art.remote, art.defaultBranch ?? level.branch, slug).run();
+    const [tip] = await r.handle.log({ ref: level.branch, limit: 1 });
+    await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, level, upstream, upstream_commit) VALUES (?, ?, 'public', ?, ?, ?, ?, ?, ?, ?)")
+      .bind(user, name, Date.now(), art.name, art.remote, art.defaultBranch ?? level.branch, slug, `github:${level.repo}`, tip?.hash ?? null).run();
     return json({ owner: user, name }, 201);
   }
   return json({ error: "not found" }, 404);

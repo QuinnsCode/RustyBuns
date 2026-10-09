@@ -64,6 +64,11 @@
   .ln .n, .ln .by, .ln .rev { color: var(--ink-2); opacity: .75; user-select: none; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
   .ln .n { text-align: right; }
   /* A fresh line from another hand: a brief accent wash in the margin. */
+  .ln.mod { box-shadow: inset 2px 0 var(--accent); } .ln.mod .by { color: var(--accent); opacity: 1; }
+  .fork-note { border-left: 2px solid var(--accent); padding: 2px 0 2px 12px; margin: 10px 0 0; font-size: 14px; }
+  .gh-list { max-height: 220px; overflow: auto; margin-top: 8px; }
+  .gh-list button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 3px 0; font: inherit; color: var(--accent); cursor: pointer; }
+  .gh-list button[disabled] { color: var(--ink-2); cursor: default; }
   .ln.flash { animation: ink 1.4s ease-out; } .ln.flash .t { animation: type .6s steps(28, end); }
   @keyframes ink { from { background: rgba(140, 47, 34, .1); } }
   @keyframes type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
@@ -201,8 +206,17 @@ function listing(tree, href) {
   return `<div class="tree">${tree.entries.map((e) => `<a class="entry-${e.type}" href="${href(e)}">${e.type === "dir" ? "▸ " : ""}${esc(e.name)}</a>`).join("")}</div>`;
 }
 function forkForm(slug) {
-  if (!me()) return '<div class="card muted">Sign in to fork this level and dig into it.</div>';
-  return `<form id="fork" class="card row"><span>Fork this level into your excavations as</span><input name="name" value="${slug}" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="primary">fork and dig</button><span class="muted" id="forkmsg"></span></form>`;
+  if (!me()) return '<div class="card muted">Sign in to dig this up: fork it into a git repo you own.</div>';
+  return `<form id="fork" class="card"><h3>Dig it up</h3><p class="muted" style="margin-top:0">Digging up is forking. You get your own copy of this repo, history and all, in a git repo you own. Change any line; upstream never hears about it.</p>
+    <div class="row"><span>call your fork</span><input name="name" value="${slug}" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="primary">dig it up (fork)</button><span class="muted" id="forkmsg"></span></div></form>`;
+}
+// Where a fork came from, where its git lives, and who owns it.
+function forkNote(r, owner) {
+  if (!r.upstream) return "";
+  const gh = r.upstream.replace(/^github:/, "");
+  const at = r.upstream_commit ? ` at <code>${esc(r.upstream_commit.slice(0, 7))}</code>` : "";
+  const where = r.home === "local" ? "a local git repo on this machine" : r.home === "cloud" ? "Cloudflare Artifacts" : "its own git repo";
+  return `<p class="fork-note">A fork of <a href="https://github.com/${esc(gh)}" rel="noopener">github.com/${esc(gh)}</a>${at}, cloned into ${where}. ${esc(owner)} owns this copy: edits and catalogues land here, never upstream.</p>`;
 }
 
 const views = {
@@ -224,6 +238,7 @@ const views = {
         <div><h3>Sandbox all over</h3><p>Each file is isolated in its own object. Each agent gets a token scoped to one repo, and each profile renders in a sandbox. Nothing leaks across.</p></div>
       </section>
       <section><div class="label">levels</div><h3 class="levels-title">Dig into the code everyone runs</h3>
+        <p class="muted" style="margin:-6px 0 14px">Digging one up forks it into a git repo you own. Mod any line; upstream stays as it was. Any public GitHub repo works too, from your journal.</p>
         <div class="levels" id="levels"></div></section>
       <div class="card row" style="justify-content:space-between">
         ${me() ? `<span>Welcome back, ${esc(me())}.</span><a href="#/u/${me()}">Open your journal →</a>`
@@ -245,6 +260,9 @@ const views = {
       <div class="two">
         <div class="card"><h3>Excavations</h3>${repos.map((r) => `<div><a href="#/r/${r.owner}/${r.name}">${esc(r.name)}</a> <span class="muted">${r.visibility === "private" ? "sealed" : "open"}</span></div>`).join("") || '<p class="muted">no digs yet</p>'}
           ${mine ? `<form id="newrepo" class="row" style="margin-top:8px"><input name="name" placeholder="dig-site" required><select name="visibility"><option value="public">open</option><option value="private">sealed</option></select><button class="primary">break ground</button></form>` : ""}</div>
+        ${mine ? `<form id="ghdig" class="card"><h3>Dig up a GitHub repo</h3><p class="muted" style="margin-top:0">Fork any public GitHub repo into a git repo you own here, then mod it line by line.</p>
+          <div class="row"><input name="repo" placeholder="owner/name or a github.com URL" required style="flex:1"><input name="name" placeholder="name (optional)" style="width:150px"><button class="primary">dig it up (fork)</button></div>
+          <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></form>` : ""}
         <div class="card"><h3>Collections</h3>${playlists.map((p) => `<div><a href="#/p/${p.id}">❦ ${esc(p.title)}</a></div>`).join("") || '<p class="muted">nothing collected yet</p>'}
           ${mine ? `<form id="newpl" class="row" style="margin-top:8px"><input name="title" placeholder="regexes of the lost city" required><button class="primary">start a collection</button></form>` : ""}</div>
       </div>
@@ -254,15 +272,32 @@ const views = {
         <button class="primary">save</button></form>` : ""}`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
     $("#newrepo")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api("/repos", { name: f.name.value, visibility: f.visibility.value }); location.hash = `#/r/${me()}/${f.name.value}`; });
+    if ($("#ghdig")) {
+      const f = $("#ghdig"), msg = $("#ghmsg");
+      api("/github/repos").then((g) => {
+        const via = { gh: "the GitHub CLI on this machine", account: "your GitHub sign-in", secret: "this host's GitHub token" }[g.via];
+        msg.textContent = g.login ? `Signed in to GitHub as @${g.login}, through ${via}. Pick one of yours, or type any public repo.`
+          : g.error ? `GitHub didn't take the token (${g.error}). Public repos still work by name.`
+          : "No GitHub access, so type a repo by name. On the desktop, run gh auth login and reload to see your own repos here.";
+        $("#ghlist").innerHTML = g.repos.map((x) => `<button type="button" data-repo="${esc(x.repo)}"${x.private ? " disabled title=\"private repos can't be dug up yet\"" : ""}>${esc(x.repo)}${x.private ? " · private" : ""}</button>`).join("");
+        for (const b of $("#ghlist").querySelectorAll("button:not([disabled])")) b.addEventListener("click", () => { f.repo.value = b.dataset.repo; f.name.focus(); });
+      }).catch(() => {});
+      f.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        msg.textContent = "cloning…";
+        try { const r = await api("/github/dig", { repo: f.repo.value, name: f.name.value || undefined }); location.hash = `#/r/${r.owner}/${r.name}`; }
+        catch (err) { msg.textContent = err.message; }
+      });
+    }
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
   },
 
   async r(owner, repo, dir = "") {
     const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(dir)}`)]);
-    app.innerHTML = `<div class="card"><div class="label">excavation · ${r.visibility === "private" ? "sealed" : "open to the public"}${r.level ? ` · forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>` : ""}</div>
-      <h2><a href="#/u/${owner}">${esc(owner)}</a> / <a href="#/r/${owner}/${repo}">${esc(repo)}</a>${crumbs(`#/r/${owner}/${repo}`, dir)}</h2>
-      ${tree.forking ? '<p class="muted">Still copying this dig from its level. Give it a moment and reload.</p>' : listing(tree, (e) => e.type === "dir" ? `#/r/${owner}/${repo}/${encodeURIComponent(e.path)}` : `#/f/${owner}/${repo}/${encodeURIComponent(e.path)}`)}
+    app.innerHTML = `<div class="card"><div class="label">excavation · ${r.visibility === "private" ? "sealed" : "open to the public"}${r.upstream ? " · fork" : ""}${r.level ? ` of level <a href="#/l/${r.level}">${esc(r.level)}</a>` : ""}</div>
+      <h2><a href="#/u/${owner}">${esc(owner)}</a> / <a href="#/r/${owner}/${repo}">${esc(repo)}</a>${crumbs(`#/r/${owner}/${repo}`, dir)}</h2>${dir ? "" : forkNote(r, owner)}
+      ${tree.forking ? '<p class="muted">Still cloning this fork. Give it a moment and reload.</p>' : tree.lost ? '<p class="muted">The clone never landed. Dig it up again under another name.</p>' : listing(tree, (e) => e.type === "dir" ? `#/r/${owner}/${repo}/${encodeURIComponent(e.path)}` : `#/f/${owner}/${repo}/${encodeURIComponent(e.path)}`)}
       <p class="muted">crew: ${r.collaborators.map(esc).join(", ") || "none"}</p>
       ${r.clone ? `<div class="label" style="margin-top:12px">take a rubbing (git clone, good for an hour)</div><div class="code" style="padding:6px 10px;margin-top:4px;user-select:all;white-space:pre-wrap;overflow-wrap:anywhere">${esc(r.clone)}</div>` : ""}</div>
       ${r.canWrite ? `<form id="newfile" class="card"><h3>Unearth an artifact</h3><input name="path" placeholder="src/hello.ts" value="${dir ? esc(dir) + "/" : ""}" required style="width:100%;margin-bottom:8px"><textarea name="content" rows="6" style="width:100%"></textarea><button class="primary">catalogue it</button></form>` : ""}
@@ -311,7 +346,8 @@ const views = {
     const base = `/repos/${owner}/${repo}/do`, q = "?path=" + encodeURIComponent(path);
     const [r, commits] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`${base}/commits${q}`)]);
     let doc = await api(`${base}/file${q}`), viewing = null;
-    app.innerHTML = `<div class="card"><div class="label">artifact</div><h2><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a> / ${esc(path)}</h2>
+    app.innerHTML = `<div class="card"><div class="label">artifact${r.upstream ? ` · in ${esc(owner)}'s fork of ${esc(r.upstream.replace(/^github:/, ""))}` : ""}</div><h2><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a> / ${esc(path)}</h2>
+      ${r.upstream ? '<p class="muted" id="modded" style="margin:0 0 8px;font-size:13px"></p>' : ""}
       <div class="row"><label>carbon date <input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"></label> <span id="revl"></span> <span class="muted" id="who-here"></span>
       ${r.canWrite ? `<input id="msg" placeholder="field note"><button id="commit" class="primary">catalogue</button>` : ""}</div></div>
       <div class="code card" id="lines"></div>
@@ -319,7 +355,8 @@ const views = {
       <div class="card"><h3>Catalogue</h3><div id="commits"></div></div>`;
     const draw = (d, fresh = new Set()) => {
       const live = viewing === null;
-      $("#lines").innerHTML = d.lines.map((l, i) => `<div class="ln${fresh.has(l.id) ? " flash" : ""}" data-id="${l.id}"><span class="n">${i + 1}</span><span class="by" title="${esc(l.by)}">${esc(l.by)}</span><span class="rev">r${l.rev}</span><span class="t">${esc(l.text) || " "}</span></div>`).join("");
+      $("#lines").innerHTML = d.lines.map((l, i) => `<div class="ln${fresh.has(l.id) ? " flash" : ""}${r.upstream && l.by !== "upstream" ? " mod" : ""}" data-id="${l.id}"><span class="n">${i + 1}</span><span class="by" title="${esc(l.by)}">${esc(l.by)}</span><span class="rev">r${l.rev}</span><span class="t">${esc(l.text) || " "}</span></div>`).join("");
+      if (r.upstream) { const n = d.lines.filter((l) => l.by !== "upstream").length; $("#modded").textContent = n ? `${n} of ${d.lines.length} lines modded in this fork (marked); the rest are as cloned` : "every line is as cloned from upstream"; }
       $("#revl").textContent = live ? `present day, r${doc.rev}` : `dated to r${viewing} of ${doc.rev}`;
       if (live && r.canWrite) for (const el of app.querySelectorAll(".ln")) el.addEventListener("dblclick", () => edit(el));
     };

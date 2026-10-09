@@ -7,6 +7,7 @@
 - **Cataloguing** (a commit) hashes the file with its parent, indexes it for search (D1 FTS5) and **pushes the repo to Cloudflare Artifacts** as a real git commit. Artifacts only takes writes as a git push, so `src/git.ts` builds the objects and the pack itself (Web Crypto and `CompressionStream`, no git library) and speaks smart HTTP. The repo page has a `git clone` line with an hour-long read token.
 - **Live, fast sync.** Edits go over the file's WebSocket and are acked; every open page gets the exact applied ops and patches itself in place (a gap in revs means a refetch). Presence shows who else has the file open.
 - **Levels.** Small, well-loved repos (mitt, clsx, Ky, Zustand, Hono, Express, Preact) imported into Artifacts shallow (depth 1) and read-only. Browse any of them; fork one into your own excavation to dig. A file only becomes a Durable Object when someone opens it, and a catalogue pushes only what changed on top of the parent tree, so editing one line of a big repo costs one blob, a few trees and a commit. Git trees are cached in D1 forever (they're named by hash).
+- **Dig it up = fork it.** Digging up a level, or any public GitHub repo (from your journal: type `owner/name` or pick from your own list), clones it into a git repo you own: a bare repo on this machine on the desktop, Cloudflare Artifacts on the edge. The repo and every file say where the fork came from and at which commit, and each line you mod is marked; untouched lines are blamed on `upstream`. GitHub never hears about any of it. Your repo list comes from a `GITHUB_TOKEN` secret, else your GitHub sign-in, else the GitHub CLI (`gh auth token`) on the desktop. Private GitHub repos show up in the list but can't be dug up yet: the clone is anonymous.
 - **Public or private repos.** A private repo you can't see answers 404, in search too.
 - **Your profile is your own HTML and CSS** (sandboxed, no scripts), plus **playlists**: line ranges from any file you can see, read live. A track holds its lines by id, so it follows them as the file changes around them.
 
@@ -50,6 +51,7 @@ bun agents.ts --url http://127.0.0.1:PORT --cookie 'rb_token_PORT=TOKEN'
 | `src/worker.ts` | routes, visibility, profiles, playlists, search |
 | `src/identity.ts` | accounts (Better Auth) or aliases, and handles |
 | `src/levels.ts` | the levels: import, browse, fork |
+| `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
 | `src/archive.ts` | Artifacts: trees (cached), files, first-open materializing, catalogue pushes |
 | `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
 | `migrations/` | the D1 schema |
