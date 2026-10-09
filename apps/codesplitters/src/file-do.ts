@@ -35,21 +35,19 @@ export class FileDurableObject {
     const route = url.pathname.split("/").pop();
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      const [client, server] = Object.values(new WebSocketPair());
+      // The Worker vouches for who this is and whether they may write; the
+      // socket carries that across hibernation.
+      const [client, server] = Object.values(new WebSocketPair()) as [unknown, any];
       this.ctx.acceptWebSocket(server);
+      server.serializeAttachment({ user: by, write: req.headers.get("x-codesplitters-write") === "1" });
+      this.presence();
       return new Response(null, { status: 101, webSocket: client } as ResponseInit);
     }
     if (req.method === "GET" && route === "file") return json(this.doc);
     if (req.method === "POST" && route === "ops") {
       const { ops, ifRev } = (await req.json()) as { ops: Op[]; ifRev?: number };
-      // Apply synchronously on the in-memory doc, then persist. No await sits
-      // between reading and mutating, so concurrent requests cannot interleave.
-      const r = apply(this.doc, ops, by, Date.now(), ifRev);
-      if (!r.ok) return json({ rev: this.doc.rev, conflicts: r.conflicts }, 409);
-      const doc = structuredClone(this.doc);
-      await Promise.all([this.ctx.storage.put("doc", doc), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad(a.rev), a))]);
-      this.broadcast({ type: "ops", rev: this.doc.rev, applied: r.applied });
-      return json({ rev: this.doc.rev, applied: r.applied });
+      const r = await this.edit(by, ops, ifRev);
+      return r.ok ? json({ rev: r.rev, applied: r.applied }) : json({ rev: r.rev, conflicts: r.conflicts }, 409);
     }
     if (req.method === "GET" && route === "log") return json(await this.log(Number(url.searchParams.get("since") ?? 0)));
     if (req.method === "GET" && route === "at") return json(replay(await this.log(0), Number(url.searchParams.get("rev"))));
@@ -81,6 +79,21 @@ export class FileDurableObject {
     return { commit, content };
   }
 
+  /**
+   * Apply a batch and tell everyone. Synchronous on the in-memory doc, so no
+   * await sits between reading and mutating and concurrent edits can't
+   * interleave; then persisted, then broadcast as the exact applied ops, so
+   * every open page updates in place without refetching.
+   */
+  async edit(by: string, ops: Op[], ifRev?: number) {
+    const r = apply(this.doc, ops, by, Date.now(), ifRev);
+    if (!r.ok) return { ok: false as const, rev: this.doc.rev, conflicts: r.conflicts };
+    const doc = structuredClone(this.doc);
+    await Promise.all([this.ctx.storage.put("doc", doc), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad(a.rev), a))]);
+    this.broadcast({ type: "ops", rev: this.doc.rev, applied: r.applied });
+    return { ok: true as const, rev: this.doc.rev, applied: r.applied };
+  }
+
   async log(since: number): Promise<Applied[]> {
     // Only prefix lists: that is the storage shape both Cloudflare and the local twin share.
     const m: Map<string, Applied> = await this.ctx.storage.list({ prefix: "op:" });
@@ -92,6 +105,23 @@ export class FileDurableObject {
     for (const ws of this.ctx.getWebSockets()) try { ws.send(s); } catch {}
   }
 
-  webSocketMessage() {}
-  webSocketClose() {}
+  /** Edits over the socket: {type:"ops", id, ops, ifRev?} -> {type:"ack"|"nack", id, ...}. */
+  async webSocketMessage(ws: any, raw: string | ArrayBuffer) {
+    let msg: { type?: string; id?: number; ops?: Op[]; ifRev?: number };
+    try { msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw)); } catch { return; }
+    if (msg.type !== "ops" || !Array.isArray(msg.ops)) return;
+    const who = (ws.deserializeAttachment() ?? {}) as { user?: string; write?: boolean };
+    if (!who.write) return ws.send(JSON.stringify({ type: "nack", id: msg.id, error: "no write access" }));
+    const r = await this.edit(who.user ?? "anon", msg.ops, msg.ifRev);
+    ws.send(JSON.stringify(r.ok ? { type: "ack", id: msg.id, rev: r.rev } : { type: "nack", id: msg.id, rev: r.rev, conflicts: r.conflicts }));
+  }
+  webSocketClose(ws: any) { try { ws.close(); } catch {} this.presence(ws); }
+  webSocketError(ws: any) { this.presence(ws); }
+
+  /** Who has this file open, sent to everyone in it. */
+  presence(leaving?: unknown) {
+    const who = new Set<string>();
+    for (const ws of this.ctx.getWebSockets()) if (ws !== leaving) who.add((ws.deserializeAttachment?.() ?? {}).user ?? "anon");
+    this.broadcast({ type: "presence", who: [...who].sort() });
+  }
 }

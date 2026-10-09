@@ -7,9 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import worker, { FileDurableObject } from "./worker.ts";
 
-export async function local() {
+export async function local(extra: Record<string, string> = {}) {
   installCloudflareGlobals();
-  const env: any = { DB: d1(":memory:") };
+  const env: any = { DB: d1(":memory:"), ...extra };
   env.FILES = durableObject(FileDurableObject as any, env);
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
   const dir = mkdtempSync(join(tmpdir(), "codesplitters-artifacts-"));
@@ -21,10 +21,11 @@ export async function local() {
   /** Call the app as `user` (a name, or null for logged out). */
   return Object.assign((user: string | null, path: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers);
-    if (user) headers.set("cookie", `cs_user=${user}`);
+    if (user) headers.set("cookie", [`cs_user=${user}`, headers.get("cookie")].filter(Boolean).join("; "));
     return worker.fetch(new Request("http://codesplitters.local" + path, { ...init, headers }), env);
   }, {
     artifacts: env.ARTIFACTS as LocalArtifacts,
+    env,
     /** Stop the git server and delete the temp repos. */
     close() { git.stop(true); rmSync(dir, { recursive: true, force: true }); },
   });

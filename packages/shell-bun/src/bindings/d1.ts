@@ -23,8 +23,14 @@ export class D1PreparedStatement {
 
   async all<T = Record<string, unknown>>(): Promise<D1Result<T>> {
     const t0 = performance.now();
+    // D1 reports writes made through all() too (INSERT ... RETURNING, or a
+    // query builder that runs everything via all()); count them the same way.
+    const total = () => (this.db.query("SELECT total_changes() AS c").get() as { c: number }).c;
+    const before = total();
     const results = this.stmt().all(...(this.params as any[])) as T[];
-    return { results, success: true, meta: this.meta(t0, results.length, 0) };
+    const changes = total() - before;
+    const last = changes ? Number((this.db.query("SELECT last_insert_rowid() AS id").get() as { id: number }).id) : 0;
+    return { results, success: true, meta: { ...this.meta(t0, results.length, changes), last_row_id: last } };
   }
 
   async first<T = Record<string, unknown>>(column?: string): Promise<T | null> {
@@ -55,18 +61,23 @@ export class D1PreparedStatement {
 }
 
 export class D1Database {
-  readonly db: Database;
+  /**
+   * The sqlite underneath. Not called `db`: real D1 has no such property, and
+   * libraries (Better Auth's Kysely adapter) read a `db` field as "already a
+   * Kysely config" and mistake this for one.
+   */
+  readonly sqlite: Database;
   constructor(path: string = ":memory:") {
-    this.db = new Database(path, { create: true });
-    this.db.exec("PRAGMA journal_mode = WAL;");
+    this.sqlite = new Database(path, { create: true });
+    this.sqlite.exec("PRAGMA journal_mode = WAL;");
   }
   prepare(sql: string): D1PreparedStatement {
-    return new D1PreparedStatement(this.db, sql);
+    return new D1PreparedStatement(this.sqlite, sql);
   }
   async batch<T = Record<string, unknown>>(stmts: D1PreparedStatement[]): Promise<D1Result<T>[]> {
     const out: D1Result<T>[] = [];
-    this.db.transaction(() => { /* wrapped below */ });
-    const tx = this.db.transaction(async () => {
+    this.sqlite.transaction(() => { /* wrapped below */ });
+    const tx = this.sqlite.transaction(async () => {
       for (const s of stmts) out.push(await s.all<T>());
     });
     await tx();
@@ -74,10 +85,10 @@ export class D1Database {
   }
   async exec(sql: string): Promise<{ count: number; duration: number }> {
     const t0 = performance.now();
-    this.db.exec(sql);
+    this.sqlite.exec(sql);
     return { count: sql.split(";").filter((s) => s.trim()).length, duration: performance.now() - t0 };
   }
-  close(): void { this.db.close(); }
+  close(): void { this.sqlite.close(); }
 }
 
 /**
@@ -89,16 +100,16 @@ export async function applyD1Migrations(db: D1Database, dir: string): Promise<st
   const { readdirSync, existsSync } = await import("node:fs");
   const { join } = await import("node:path");
   if (!existsSync(dir)) return [];
-  db.db.exec("CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
-  const done = new Set((db.db.query("SELECT name FROM d1_migrations").all() as { name: string }[]).map((r) => r.name));
+  db.sqlite.exec("CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  const done = new Set((db.sqlite.query("SELECT name FROM d1_migrations").all() as { name: string }[]).map((r) => r.name));
   const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
   const applied: string[] = [];
   for (const f of files) {
     if (done.has(f)) continue;
     const sql = await Bun.file(join(dir, f)).text();
-    db.db.transaction(() => {
-      db.db.exec(sql);
-      db.db.query("INSERT INTO d1_migrations (name) VALUES (?)").run(f);
+    db.sqlite.transaction(() => {
+      db.sqlite.exec(sql);
+      db.sqlite.query("INSERT INTO d1_migrations (name) VALUES (?)").run(f);
     })();
     applied.push(f);
   }

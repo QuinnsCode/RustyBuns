@@ -1,6 +1,7 @@
-// Push a snapshot of files to a git remote over smart HTTP, with no git
-// library: build the blob, tree and commit objects, pack them, and send one
-// receive-pack request. Artifacts only takes writes as a git push, and this is
+// Push changed files to a git remote over smart HTTP, with no git library:
+// build the blobs, rebuild only the trees along changed paths (reading the
+// rest from the parent), pack the new objects, and send one receive-pack
+// request. Artifacts only takes writes as a git push, and this is
 // all a push is. Runs the same in a Worker and under Bun (Web Crypto and
 // CompressionStream only).
 
@@ -29,28 +30,46 @@ async function obj(type: Obj["type"], body: Uint8Array): Promise<Obj> {
   return { type, body, id };
 }
 
-/** Blobs and nested trees for a flat { "a/b.ts": content } map. Returns the root tree last. */
-async function trees(files: Record<string, string>, out: Obj[]): Promise<Obj> {
-  const here: Record<string, string> = {}, sub: Record<string, Record<string, string>> = {};
-  for (const [path, content] of Object.entries(files)) {
+/** Reads an existing repo's commits and trees (the Artifacts repo handle has this shape). */
+export interface TreeReader {
+  readCommit(hash: string): Promise<{ treeHash: string } | null>;
+  readTree(hash: string): Promise<{ name: string; mode: string; hash: string; type: string }[] | null>;
+}
+interface Entry { name: string; mode: string; id: string; dir: boolean }
+
+/**
+ * The tree at `treeHash` with `changes` applied ({ "a/b.ts": content, "old.ts": null }).
+ * Only the trees along changed paths are rebuilt; everything else keeps its
+ * hash and stays out of the pack (the remote already has it). Returns null for
+ * an empty tree.
+ */
+async function apply(base: TreeReader | undefined, treeHash: string | null, changes: Record<string, string | null>, out: Obj[]): Promise<Obj | null> {
+  const entries = new Map<string, Entry>();
+  if (treeHash && base) for (const e of (await base.readTree(treeHash)) ?? []) entries.set(e.name, { name: e.name, mode: e.mode, id: e.hash, dir: e.type === "tree" });
+  const here: Record<string, string | null> = {}, sub: Record<string, Record<string, string | null>> = {};
+  for (const [path, content] of Object.entries(changes)) {
     const i = path.indexOf("/");
     if (i < 0) here[path] = content;
     else (sub[path.slice(0, i)] ??= {})[path.slice(i + 1)] = content;
   }
-  const entries: { name: string; mode: string; id: string; dir: boolean }[] = [];
   for (const [name, content] of Object.entries(here)) {
+    if (content === null) { entries.delete(name); continue; }
     const b = await obj("blob", enc.encode(content));
     out.push(b);
-    entries.push({ name, mode: "100644", id: b.id, dir: false });
+    const was = entries.get(name);
+    entries.set(name, { name, mode: was && !was.dir ? was.mode : "100644", id: b.id, dir: false });
   }
   for (const [name, inner] of Object.entries(sub)) {
-    const t = await trees(inner, out);
-    entries.push({ name, mode: "40000", id: t.id, dir: true });
+    const was = entries.get(name);
+    const t = await apply(base, was?.dir ? was.id : null, inner, out);
+    if (t) entries.set(name, { name, mode: "40000", id: t.id, dir: true });
+    else entries.delete(name);
   }
+  if (!entries.size) return null;
   // Git orders a tree as if each directory name ended in "/".
-  const key = (e: (typeof entries)[number]) => e.name + (e.dir ? "/" : "");
-  entries.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
-  const tree = await obj("tree", concat(entries.flatMap((e) => [enc.encode(`${e.mode} ${e.name}\0`), unhex(e.id)])));
+  const key = (e: Entry) => e.name + (e.dir ? "/" : "");
+  const sorted = [...entries.values()].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+  const tree = await obj("tree", concat(sorted.flatMap((e) => [enc.encode(`${e.mode} ${e.name}\0`), unhex(e.id)])));
   out.push(tree);
   return tree;
 }
@@ -84,13 +103,19 @@ function lines(buf: Uint8Array) {
   return out;
 }
 
-export interface Snapshot { files: Record<string, string>; message: string; author: string; branch?: string; at?: number }
+export interface Snapshot {
+  /** Paths to write (content) or remove (null). Everything else is kept from the parent commit. */
+  changes: Record<string, string | null>;
+  message: string; author: string; branch?: string; at?: number;
+  /** Reads the parent's trees. Without it, `changes` is the whole tree. */
+  base?: TreeReader;
+}
 
 const ZERO = "0".repeat(40);
 
 /**
- * Push `files` as the whole tree of a new commit on `branch`. The parent is
- * whatever the branch points at now; if someone moves it in between, retry.
+ * Push a commit on `branch` that applies `changes` to whatever the branch
+ * points at now. If someone moves it in between, rebuild on theirs and retry.
  */
 export async function push(remote: string, token: string, snap: Snapshot, tries = 3): Promise<{ commit: string; parent: string | null }> {
   const branch = snap.branch ?? "main", ref = `refs/heads/${branch}`;
@@ -103,7 +128,8 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
     const old = refs.map((l) => l.split("\0")[0]!.split(" ")).find(([, r]) => r === ref)?.[0] ?? ZERO;
 
     const objs: Obj[] = [];
-    const tree = await trees(snap.files, objs);
+    const parentTree = old !== ZERO && snap.base ? (await snap.base.readCommit(old))?.treeHash ?? null : null;
+    const tree = (await apply(snap.base, parentTree, snap.changes, objs)) ?? (objs.push(await obj("tree", new Uint8Array())), objs.at(-1)!);
     const when = `${Math.floor((snap.at ?? Date.now()) / 1000)} +0000`;
     const who = `${snap.author} <${snap.author}@codesplitters.local> ${when}`;
     const commit = await obj("commit", enc.encode(

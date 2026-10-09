@@ -81,6 +81,25 @@
   .photo figcaption { padding: 8px 4px 0; font-size: 12px; color: var(--ink-2); }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; } .two .card { margin: 0; }
   @media (max-width: 700px) { main { padding: 20px 16px 60px; } header { padding: 12px 16px; } .two { grid-template-columns: 1fr; } .ln { grid-template-columns: 24px 76px 1fr; } .ln .rev { display: none; } }
+  /* Folders and files. */
+  .tree { display: grid; gap: 2px; margin: 8px 0 14px; font: 300 14px/1.8 var(--mono); }
+  .tree a { color: var(--ink); padding: 0 6px; border-radius: 4px; } .tree a:hover { background: rgba(43, 38, 32, .05); text-decoration: none; }
+  .tree .entry-dir { font-weight: 400; }
+  /* Sign in. */
+  .signin { position: relative; } .signin summary { list-style: none; cursor: pointer; padding: 6px 10px; border-radius: 6px; background: var(--ink); color: var(--paper-2); font-size: 14px; }
+  .signin summary::-webkit-details-marker { display: none; }
+  .signin .panel { position: absolute; right: 0; top: 40px; z-index: 5; width: 280px; display: grid; gap: 8px; padding: 14px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 10px 30px -18px rgba(43, 38, 32, .5); }
+  .signin form { display: grid; gap: 8px; }
+  /* Levels. */
+  .levels-title { font: 400 22px/1.2 var(--sans); letter-spacing: -0.02em; margin: 4px 0 14px; }
+  .levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-bottom: 30px; }
+  .level { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 12px 14px; color: var(--ink); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; }
+  .level:hover { border-color: var(--ink-2); text-decoration: none; }
+  .level b { display: block; font-weight: 500; } .level .muted { font: 300 12px var(--mono); }
+  .lvl-n { font: 300 20px/1 var(--mono); color: var(--ink-2); }
+  .lvl-st { font: 400 10px/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+  .st-ready { color: var(--accent); }
+
   /* Landing intro. */
   .hero { padding: 8px 0 24px; }
   .headline { font: 300 clamp(32px, 6vw, 56px)/1.05 var(--sans); letter-spacing: -0.04em; margin: 6px 0 14px; }
@@ -120,25 +139,71 @@
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const me = () => (/(?:^|;\s*)cs_user=([a-z0-9-]+)/.exec(document.cookie) || [])[1];
+// Who you are comes from the server: an alias (desktop, demos) or a Better Auth account.
+let session = { mode: "alias", user: null, providers: [] };
+const me = () => session.user;
 const api = async (path, body, method) => {
   const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || r.status);
+  if (!r.ok) throw new Error(j.error || j.message || r.status);
   return j;
 };
 const app = $("#app");
 let socket = null;
 
+async function refreshSession() { session = await api("/session").catch(() => session); }
+
 function header() {
   const u = me();
-  $("#who").innerHTML = u
-    ? `<a href="#/u/${u}">@${u}</a> <button id="out">leave</button>`
-    : `<form id="login" class="row"><input name="name" placeholder="your alias" required pattern="[a-z0-9][a-z0-9-]*"><button class="primary">sign in</button></form>`;
-  $("#login")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/login", { name: e.target.name.value }); header(); route(); });
-  $("#out")?.addEventListener("click", () => { document.cookie = "cs_user=; Path=/; Max-Age=0"; header(); route(); });
+  if (u) {
+    $("#who").innerHTML = `<a href="#/u/${u}">@${u}</a> <button id="out">sign out</button>`;
+    $("#out").addEventListener("click", async () => {
+      await (session.mode === "accounts" ? api("/auth/sign-out", {}) : api("/logout", {})).catch(() => {});
+      await refreshSession(); header(); route();
+    });
+    return;
+  }
+  if (session.mode === "alias") {
+    $("#who").innerHTML = `<form id="login" class="row"><input name="name" placeholder="your alias" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="primary">sign in</button></form>`;
+    $("#login").addEventListener("submit", async (e) => { e.preventDefault(); await api("/login", { name: e.target.name.value }); await refreshSession(); header(); route(); });
+    return;
+  }
+  // Accounts: a small panel with the configured providers and email.
+  const label = { github: "GitHub", google: "Google" };
+  $("#who").innerHTML = `<details class="signin"><summary class="button primary">sign in</summary><div class="panel">
+      ${session.providers.filter((p) => p !== "email").map((p) => `<button data-provider="${p}" style="width:100%">Continue with ${label[p] ?? p}</button>`).join("")}
+      <form id="email"><input name="email" type="email" placeholder="email" required autocomplete="email">
+        <input name="password" type="password" placeholder="password (8+ characters)" required minlength="8" autocomplete="current-password">
+        <input name="name" placeholder="your name (new accounts)" autocomplete="name">
+        <div class="row"><button class="primary" name="in">sign in</button><button name="up">create account</button></div>
+        <p class="muted" id="authmsg" style="margin:0;font-size:12px"></p></form></div></details>`;
+  for (const b of $("#who").querySelectorAll("[data-provider]"))
+    b.addEventListener("click", async () => { const r = await api("/auth/sign-in/social", { provider: b.dataset.provider, callbackURL: location.href }); location.href = r.url; });
+  $("#email").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target, up = e.submitter?.name === "up";
+    try {
+      await api(up ? "/auth/sign-up/email" : "/auth/sign-in/email",
+        up ? { email: f.email.value, password: f.password.value, name: f.name.value || f.email.value.split("@")[0] } : { email: f.email.value, password: f.password.value });
+      await refreshSession(); header(); route();
+    } catch (err) { $("#authmsg").textContent = String(err.message || err); }
+  });
 }
 $("#search").addEventListener("submit", (e) => { e.preventDefault(); location.hash = "#/search/" + encodeURIComponent(e.target.q.value); });
+
+/** " / a / b" links for a path under `base`. */
+function crumbs(base, path) {
+  const segs = path.split("/").filter(Boolean);
+  return segs.map((seg, i) => ` / <a href="${base}/${encodeURIComponent(segs.slice(0, i + 1).join("/"))}">${esc(seg)}</a>`).join("");
+}
+function listing(tree, href) {
+  if (!tree.entries.length) return '<p class="muted">nothing unearthed yet</p>';
+  return `<div class="tree">${tree.entries.map((e) => `<a class="entry-${e.type}" href="${href(e)}">${e.type === "dir" ? "▸ " : ""}${esc(e.name)}</a>`).join("")}</div>`;
+}
+function forkForm(slug) {
+  if (!me()) return '<div class="card muted">Sign in to fork this level and dig into it.</div>';
+  return `<form id="fork" class="card row"><span>Fork this level into your excavations as</span><input name="name" value="${slug}" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="primary">fork and dig</button><span class="muted" id="forkmsg"></span></form>`;
+}
 
 const views = {
   async home() {
@@ -158,11 +223,17 @@ const views = {
         <div><h3>Scale all over</h3><p>Each file is its own Durable Object, so a million files are a million small objects, not one big server. They scale out, not up.</p></div>
         <div><h3>Sandbox all over</h3><p>Each file is isolated in its own object. Each agent gets a token scoped to one repo, and each profile renders in a sandbox. Nothing leaks across.</p></div>
       </section>
+      <section><div class="label">levels</div><h3 class="levels-title">Dig into the code everyone runs</h3>
+        <div class="levels" id="levels"></div></section>
       <div class="card row" style="justify-content:space-between">
         ${me() ? `<span>Welcome back, ${esc(me())}.</span><a href="#/u/${me()}">Open your journal →</a>`
           : `<span class="muted">Pick an alias up top to start. In this proof of concept, an alias is all it takes.</span>`}
       </div>`;
     intro($("#stage"), $("#phases"));
+    const levels = await api("/levels").catch(() => []);
+    const st = { ready: "open", importing: "being excavated", failed: "dig failed", buried: "buried" };
+    $("#levels").innerHTML = levels.map((l) => `<a class="level" href="#/l/${l.slug}"><span class="lvl-n">${String(l.n).padStart(2, "0")}</span>
+      <span><b>${esc(l.title)}</b><span class="muted">${esc(l.repo)}</span></span><span class="lvl-st st-${l.status}">${st[l.status] ?? l.status}</span></a>`).join("");
   },
 
   async u(name) {
@@ -187,16 +258,53 @@ const views = {
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
   },
 
-  async r(owner, repo) {
-    const r = await api(`/repos/${owner}/${repo}`);
-    app.innerHTML = `<div class="card"><div class="label">excavation · ${r.visibility === "private" ? "sealed" : "open to the public"}</div><h2><a href="#/u/${owner}">${esc(owner)}</a> / ${esc(repo)}</h2>
-      ${r.files.map((f) => `<div><a href="#/f/${owner}/${repo}/${encodeURIComponent(f)}">${esc(f)}</a></div>`).join("") || '<p class="muted">nothing unearthed yet</p>'}
+  async r(owner, repo, dir = "") {
+    const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(dir)}`)]);
+    app.innerHTML = `<div class="card"><div class="label">excavation · ${r.visibility === "private" ? "sealed" : "open to the public"}${r.level ? ` · forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>` : ""}</div>
+      <h2><a href="#/u/${owner}">${esc(owner)}</a> / <a href="#/r/${owner}/${repo}">${esc(repo)}</a>${crumbs(`#/r/${owner}/${repo}`, dir)}</h2>
+      ${tree.forking ? '<p class="muted">Still copying this dig from its level. Give it a moment and reload.</p>' : listing(tree, (e) => e.type === "dir" ? `#/r/${owner}/${repo}/${encodeURIComponent(e.path)}` : `#/f/${owner}/${repo}/${encodeURIComponent(e.path)}`)}
       <p class="muted">crew: ${r.collaborators.map(esc).join(", ") || "none"}</p>
       ${r.clone ? `<div class="label" style="margin-top:12px">take a rubbing (git clone, good for an hour)</div><div class="code" style="padding:6px 10px;margin-top:4px;user-select:all;white-space:pre-wrap;overflow-wrap:anywhere">${esc(r.clone)}</div>` : ""}</div>
-      ${r.canWrite ? `<form id="newfile" class="card"><h3>Unearth an artifact</h3><input name="path" placeholder="src/hello.ts" required style="width:100%;margin-bottom:8px"><textarea name="content" rows="6" style="width:100%"></textarea><button class="primary">catalogue it</button></form>` : ""}
+      ${r.canWrite ? `<form id="newfile" class="card"><h3>Unearth an artifact</h3><input name="path" placeholder="src/hello.ts" value="${dir ? esc(dir) + "/" : ""}" required style="width:100%;margin-bottom:8px"><textarea name="content" rows="6" style="width:100%"></textarea><button class="primary">catalogue it</button></form>` : ""}
       ${owner === me() ? `<form id="collab" class="card row"><input name="name" placeholder="agent-linter" required><button>add to crew</button></form>` : ""}`;
     $("#newfile")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api(`/repos/${owner}/${repo}/files`, { path: f.path.value, content: f.content.value }); location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(f.path.value)}`; });
     $("#collab")?.addEventListener("submit", async (e) => { e.preventDefault(); await api(`/repos/${owner}/${repo}/collaborators`, { name: e.target.name.value }); route(); });
+  },
+
+  // A level: browse it read-only; fork it to dig.
+  async l(slug, path = "") {
+    const levels = await api("/levels"), level = levels.find((l) => l.slug === slug);
+    if (!level) throw new Error("no such level");
+    const head = `<div class="card"><div class="label">level ${level.n} · <a href="https://github.com/${level.repo}" rel="noopener">${esc(level.repo)}</a></div>
+      <h2><a href="#/l/${slug}">${esc(level.title)}</a>${crumbs(`#/l/${slug}`, path)}</h2><p class="muted" style="margin:0">${esc(level.blurb)}</p>`;
+    if (level.status !== "ready") {
+      app.innerHTML = head + `<p>${level.status === "importing" ? "Being excavated now. This takes a minute or two for the big ones." : level.status === "failed" ? `The dig failed: ${esc(level.error)}` : "Still buried."}</p>
+        ${me() ? `<button id="import" class="primary">${level.status === "failed" ? "try again" : "excavate it"}</button> <span class="muted" id="impmsg"></span>` : ""}</div>`;
+      $("#import")?.addEventListener("click", async () => { try { await api(`/levels/${slug}/import`, {}); route(); } catch (e) { $("#impmsg").textContent = e.message; } });
+      return;
+    }
+    // A path is a file if the server can read it as one; otherwise a folder.
+    const file = path ? await api(`/levels/${slug}/file?path=${encodeURIComponent(path)}`).catch((e) => ({ error: e.message })) : null;
+    const isFile = !!file && !file.error?.match(/no such file/);
+    if (isFile) {
+      app.innerHTML = head + `</div>` + (file.error ? `<div class="card muted">${esc(file.error)}</div>`
+        : `<div class="code card">${file.text.replace(/\n$/, "").split("\n").map((t, i) => `<div class="ln" style="grid-template-columns:40px 1fr"><span class="n">${i + 1}</span><span class="t">${esc(t) || " "}</span></div>`).join("")}</div>`)
+        + forkForm(slug);
+    } else {
+      const tree = await api(`/levels/${slug}/tree?path=${encodeURIComponent(path)}`);
+      app.innerHTML = head + (tree.commit ? `<p class="muted" style="font-size:13px">at <code>${tree.commit.hash.slice(0, 10)}</code> ${esc(tree.commit.message)}</p>` : "")
+        + listing(tree, (e) => `#/l/${slug}/${encodeURIComponent(e.path)}`) + `</div>` + forkForm(slug);
+    }
+    $("#fork")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const r = await api(`/levels/${slug}/fork`, { name: e.target.name.value });
+        // Land in the same folder you were looking at in the level.
+        const dir = isFile ? path.split("/").slice(0, -1).join("/") : path;
+        location.hash = `#/r/${r.owner}/${r.name}` + (dir ? "/" + encodeURIComponent(dir) : "");
+      }
+      catch (err) { $("#forkmsg").textContent = err.message; }
+    });
   },
 
   async f(owner, repo, path) {
@@ -204,7 +312,7 @@ const views = {
     const [r, commits] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`${base}/commits${q}`)]);
     let doc = await api(`${base}/file${q}`), viewing = null;
     app.innerHTML = `<div class="card"><div class="label">artifact</div><h2><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a> / ${esc(path)}</h2>
-      <div class="row"><label>carbon date <input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"></label> <span id="revl"></span>
+      <div class="row"><label>carbon date <input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"></label> <span id="revl"></span> <span class="muted" id="who-here"></span>
       ${r.canWrite ? `<input id="msg" placeholder="field note"><button id="commit" class="primary">catalogue</button>` : ""}</div></div>
       <div class="code card" id="lines"></div>
       ${me() ? `<form id="track" class="card row">collect lines <input name="from" type="number" min="1" value="1" style="width:70px"> to <input name="to" type="number" min="1" value="3" style="width:70px"> to <select name="pl"></select> <input name="note" placeholder="why it belongs in a museum"><button>collect</button></form>` : ""}
@@ -226,7 +334,8 @@ const views = {
         const ops = e.shiftKey ? [{ kind: "insert", after: line.id, text: "" }]
           : inp.value === "" ? [{ kind: "delete", line: line.id, base: line.rev }]
           : [{ kind: "set", line: line.id, base: line.rev, text: inp.value }];
-        try { await api(`${base}/ops${q}`, { ops }); } catch (err) { alertLine(el, err.message); }
+        // The broadcast has already updated `doc`; close the editor and show it.
+        try { await send(ops); draw(doc); } catch (err) { alertLine(el, err.message); }
       });
     };
     const alertLine = (el, msg) => { $(".t", el).textContent = "conflict: " + msg + " (reloaded)"; setTimeout(() => draw(doc), 1500); };
@@ -247,12 +356,39 @@ const views = {
       $("#track").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target;
         await api(`/playlists/${f.pl.value}/tracks`, { owner, repo, path, from: +f.from.value, to: +f.to.value, note: f.note.value }); location.hash = "#/p/" + f.pl.value; });
     }
-    // Live: every op from every editor arrives here.
+    // Live: every applied op from every editor arrives here, and is applied in
+    // place. Our own edits go out on the same socket and wait for an ack.
+    let seq = 0;
+    const pending = new Map();
+    const send = (ops) => {
+      if (socket?.readyState !== WebSocket.OPEN) return api(`${base}/ops${q}`, { ops });
+      const id = ++seq;
+      socket.send(JSON.stringify({ type: "ops", id, ops }));
+      return new Promise((ok, fail) => {
+        pending.set(id, { ok, fail });
+        setTimeout(() => { if (pending.delete(id)) fail(new Error("no answer from the file; reload")); }, 8000);
+      });
+    };
+    const applyLocal = (a) => {
+      const i = doc.lines.findIndex((l) => l.id === (a.op.kind === "insert" ? a.op.after : a.line));
+      if (a.op.kind === "insert") doc.lines.splice(a.op.after === null ? 0 : i + 1, 0, { id: a.line, text: a.op.text, by: a.by, rev: a.rev });
+      else if (a.op.kind === "set") doc.lines[i] = { id: a.line, text: a.op.text, by: a.by, rev: a.rev };
+      else doc.lines.splice(i, 1);
+      doc.rev = a.rev;
+    };
     socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws${q}`);
     socket.onmessage = async (m) => {
       const msg = JSON.parse(m.data);
+      if (msg.type === "ack" || msg.type === "nack") {
+        const p = pending.get(msg.id); pending.delete(msg.id);
+        return msg.type === "ack" ? p?.ok(msg) : p?.fail(new Error(msg.error || msg.conflicts?.[0]?.reason || "conflict"));
+      }
+      if (msg.type === "presence") return $("#who-here").textContent = msg.who.length > 1 ? `· here now: ${msg.who.join(", ")}` : "";
       if (msg.type === "commit") return drawCommits(await api(`${base}/commits${q}`));
-      doc = await api(`${base}/file${q}`);
+      if (msg.type !== "ops") return;
+      // In order: apply in place. Missed something (a gap): fetch the whole file.
+      if (msg.applied[0]?.rev === doc.rev + 1) msg.applied.forEach(applyLocal);
+      else if (msg.rev > doc.rev) doc = await api(`${base}/file${q}`);
       const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
       if (viewing === null && !app.querySelector(".ln input")) draw(doc, new Set(msg.applied.map((a) => a.line)));
     };
@@ -359,15 +495,19 @@ function intro(stage, phases) {
   cycle();
 }
 
+// Views and how many plain segments come before a path tail: #/f/owner/repo/<path>.
+const FIXED = { f: 2, r: 2, l: 1 };
 async function route() {
   socket?.close(); socket = null;
   stopIntro();
   const [, view = "home", ...args] = location.hash.replace(/^#/, "").split("/");
-  try { await (views[view] ?? views.home)(...args.map((a, i) => view === "f" && i === 2 ? decodeURIComponent(args.slice(2).join("/")) : decodeURIComponent(a)).slice(0, view === "f" ? 3 : undefined)); }
+  const n = FIXED[view];
+  const parts = n === undefined ? args.map(decodeURIComponent) : [...args.slice(0, n).map(decodeURIComponent), decodeURIComponent(args.slice(n).join("/"))];
+  try { await (views[view] ?? views.home)(...parts); }
   catch (err) { app.innerHTML = `<div class="card">${esc(err.message)}</div>`; }
 }
 addEventListener("hashchange", route);
-header(); route();
+refreshSession().then(() => { header(); route(); });
 </script>
 </body>
 </html>
