@@ -1,4 +1,22 @@
-{ "name": "gitcode", "private": true, "type": "module",
-  "scripts": { "build": "bun run build.ts", "agents": "bun agents.ts", "test": "bun test test",
-    "desktop": "bun ../../packages/cli/src/index.ts build desktop --dev && bun ../../packages/cli/src/index.ts run desktop" },
-  "dependencies": { "@rustybuns/cli": "workspace:*", "@rustybuns/shell-bun": "workspace:*" } }
+{
+  "name": "gitcode",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run build.ts",
+    "agents": "bun agents.ts",
+    "test": "bun test test",
+    "desktop": "bun ../../packages/cli/src/index.ts build desktop --dev && bun ../../packages/cli/src/index.ts run desktop"
+  },
+  "dependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*"
+  },
+  "devDependencies": {
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.112",
+    "alchemy": "2.0.0-beta.77",
+    "effect": "4.0.0-rc.112"
+  }
+}

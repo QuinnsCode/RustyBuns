@@ -210,8 +210,11 @@ export default {
       const t = await body<{ owner: string; repo: string; path: string; from: number; to: number; note?: string }>();
       if (!(await access(env, t.owner, t.repo, user)).read) return json({ error: "not found" }, 404);
       const from = Math.max(1, Math.floor(t.from)), to = Math.max(from, Math.floor(t.to));
-      await env.DB.prepare("INSERT INTO tracks (playlist, owner, repo, path, from_line, to_line, note) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        .bind(pl.id, t.owner, t.repo, t.path, from, to, (t.note ?? "").slice(0, 280)).run();
+      const doc = await (await toFile(env, t.owner, t.repo, t.path, user!, "file")).json() as { lines?: { id: string }[] };
+      const first = doc.lines?.[from - 1], last = doc.lines?.[Math.min(to, doc.lines.length) - 1];
+      if (!first || !last) return json({ error: "no such lines" }, 400);
+      await env.DB.prepare("INSERT INTO tracks (playlist, owner, repo, path, from_line, to_line, from_id, to_id, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(pl.id, t.owner, t.repo, t.path, from, to, first.id, last.id, (t.note ?? "").slice(0, 280)).run();
       return json({ ok: true }, 201);
     }
     // GET /api/playlists/:id  each track with its lines as they are now
@@ -222,8 +225,11 @@ export default {
       const tracks = await Promise.all(results.map(async (t: any) => {
         // A track pointing into a repo that went private just disappears for you.
         if (!(await access(env, t.owner, t.repo, user)).read) return null;
-        const doc = await (await toFile(env, t.owner, t.repo, t.path, user ?? "anon", "file")).json() as { lines: { text: string; by: string }[] };
-        return { ...t, lines: doc.lines.slice(t.from_line - 1, t.to_line) };
+        const doc = await (await toFile(env, t.owner, t.repo, t.path, user ?? "anon", "file")).json() as { lines: { id: string; text: string; by: string }[] };
+        // Follow the lines by id; if either end was deleted, fall back to the numbers.
+        const i = doc.lines.findIndex((l) => l.id === t.from_id), j = doc.lines.findIndex((l) => l.id === t.to_id);
+        const [a, b] = i >= 0 && j >= i ? [i, j + 1] : [t.from_line - 1, t.to_line];
+        return { ...t, from_line: a + 1, to_line: b, lines: doc.lines.slice(a, b) };
       }));
       return json({ ...pl, tracks: tracks.filter(Boolean) });
     }

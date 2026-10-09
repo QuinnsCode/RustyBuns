@@ -41,10 +41,10 @@ export class FileDurableObject {
     }
     if (req.method === "GET" && route === "file") return json(this.doc);
     if (req.method === "POST" && route === "ops") {
-      const { ops } = (await req.json()) as { ops: Op[] };
+      const { ops, ifRev } = (await req.json()) as { ops: Op[]; ifRev?: number };
       // Apply synchronously on the in-memory doc, then persist. No await sits
       // between reading and mutating, so concurrent requests cannot interleave.
-      const r = apply(this.doc, ops, by);
+      const r = apply(this.doc, ops, by, Date.now(), ifRev);
       if (!r.ok) return json({ rev: this.doc.rev, conflicts: r.conflicts }, 409);
       const doc = structuredClone(this.doc);
       await Promise.all([this.ctx.storage.put("doc", doc), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad(a.rev), a))]);
