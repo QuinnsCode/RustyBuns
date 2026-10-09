@@ -66,6 +66,13 @@
         "vite": "^6.2.6",
       },
     },
+    "apps/gitcode": {
+      "name": "gitcode",
+      "dependencies": {
+        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/shell-bun": "workspace:*",
+      },
+    },
     "apps/hippo-tycoon": {
       "name": "hippo-tycoon",
       "version": "0.1.0",
@@ -1406,6 +1413,8 @@
     "get-nonce": ["get-nonce@1.0.1", "", {}, "sha512-FJhYRoDaiatfEkUK8HKlicmu/3SGFD51q3itKDGoSTysQJBnfOcxU5GxnhE1E6soB76MbT0MBtnKJuXyAx+96Q=="],
 
     "get-port-please": ["get-port-please@3.2.0", "", {}, "sha512-I9QVvBw5U/hw3RmWpYKRumUeaDgxTPd401x364rLmWBJcOQ753eov1eTgzDqRG9bqFIfDc7gfzcQEWrUri3o1A=="],
+
+    "gitcode": ["gitcode@workspace:apps/gitcode"],
 
     "github-from-package": ["github-from-package@0.0.0", "", {}, "sha512-SyHy3T1v2NUXn29OsWdxmK6RwHD+vkj3v8en8AOBZ1wBQ/hCAQ5bAQTD02kW4W9tUp/3Qh6J8r9EvntiyCmOOw=="],
 

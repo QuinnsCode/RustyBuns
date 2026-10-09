@@ -4,7 +4,7 @@ import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
-import { spaEntry } from "../src/build.ts";
+import { desktopEntry, spaEntry } from "../src/build.ts";
 
 const root = new URL("../../../apps/spa-example", import.meta.url).pathname;
 
@@ -361,4 +361,29 @@ test("experimental.wheel: agent mints secrets in the stack, op secrets go throug
   expect(plain).not.toContain("@plugin");
   expect(plain).toContain("SESSION_SECRET=");
   expect(() => generateAlchemy({ ...human, bindings: { X: { type: "secret", op: "vault/item" } } })).toThrow(/1Password reference/);
+});
+
+test("worker-mode host applies D1 migrations, like the spa host", () => {
+  const src = desktopEntry({
+    name: "w", worker: { main: "src/worker.ts", assets: "dist/client" },
+    bindings: { DB: { type: "d1", databaseName: "w-db", migrationsDir: "migrations" } },
+    targets: { desktop: { mode: "worker" } },
+  } as any);
+  expect(src).toContain(`applyD1Migrations(env.DB as any, assetDir("migrations")!)`);
+});
+
+test("artifacts: wrangler, alchemy and the desktop host all get the binding", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", assets: "dist/client", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { ARTIFACTS: { type: "artifacts", namespace: "gitcode" } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  expect(generateWrangler(c)).toContain(`"artifacts": [\n    {\n      "binding": "ARTIFACTS",\n      "namespace": "gitcode"`);
+  const a = generateAlchemy(c);
+  expect(a).toContain(`export const ARTIFACTS = Cloudflare.Artifacts.Namespace("ARTIFACTS", { namespace: "gitcode" });`);
+  expect(a).toContain(`ARTIFACTS: ARTIFACTS`);
+  const host = desktopEntry(c);
+  expect(host).toContain(`ARTIFACTS: local.artifacts("gitcode"),`);
+  expect(host).toContain(`open: { "/__rb/git/": (req: Request) => gitHttp(req, [env.ARTIFACTS as any]) },`);
+  expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
 });

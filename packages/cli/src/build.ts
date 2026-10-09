@@ -283,13 +283,22 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   const h = hostParts(c, host, c.targets.desktop?.dataDir ?? `~/.${c.name}`);
   const bind: string[] = [];
   const dos: { name: string; className: string }[] = [];
+  const migrations: [string, string][] = [];
+  const artifacts: string[] = [];
   for (const [name, b] of Object.entries(c.bindings ?? {})) {
     switch (b.type) {
-      case "d1": bind.push(`  ${name}: local.d1(${JSON.stringify(b.databaseName)}),`); break;
+      case "d1":
+        bind.push(`  ${name}: local.d1(${JSON.stringify(b.databaseName)}),`);
+        if (b.migrationsDir) migrations.push([name, b.migrationsDir]);
+        break;
       case "kv": bind.push(`  ${name}: local.kv(${JSON.stringify(name)}),`); break;
       case "var": bind.push(`  ${name}: ${JSON.stringify(b.value)},`); break;
       case "secret": bind.push(`  ${name}: process.env[${JSON.stringify(name)}] ?? "",`); break;
       case "r2": bind.push(`  // ${name}: R2 -> directory adapter (slice 2)`); break;
+      case "artifacts":
+        bind.push(`  ${name}: local.artifacts(${JSON.stringify(b.namespace)}),`);
+        artifacts.push(name);
+        break;
       case "durable_object":
         if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);
         else dos.push({ name, className: b.className });
@@ -298,7 +307,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   }
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
-import { serve, openBrowser, mintToken, localBindings, stdoutReporter } from "@rustybuns/shell-bun";
+import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations${artifacts.length ? ", gitHttp" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + (c.worker!.builtMain ?? c.worker!.main))};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
@@ -322,6 +331,9 @@ const listen = { hostname: lh || ${JSON.stringify(c.targets.desktop?.listen?.hos
 const env: Record<string, unknown> = {
 ${bind.join("\n")}
 };
+// D1 is sqlite: your wrangler migrations apply here unchanged, tracked in
+// d1_migrations. Embedded via --asset so the binary carries its own schema.
+${migrations.map(([n, m]) => `for (const f of await applyD1Migrations(env.${n} as any, assetDir(${JSON.stringify(m)})!)) console.log("[migrate] " + f);`).join("\n")}
 // Durable Objects run in-process. Bound after env exists because a DO's
 // constructor receives this same env (a DO can use DB, KV, other DOs).
 ${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
@@ -333,8 +345,11 @@ const shell = serve<typeof env>({
   assets: assetDir(${JSON.stringify(c.worker!.assets ?? "")}),
   runWorkerFirst: ${JSON.stringify(c.worker!.runWorkerFirst ?? [])},
   token,
-  reporter: stdoutReporter${h.listen},
+  reporter: stdoutReporter${h.listen},${artifacts.length ? `
+  // Artifacts remotes: git clients bring a repo token, not the host cookie.
+  open: { "/__rb/git/": (req: Request) => gitHttp(req, [${artifacts.map((n) => `env.${n} as any`).join(", ")}]) },` : ""}
 });
+${artifacts.map((n) => `(env.${n} as any).remoteBase = shell.url;`).join("\n")}
 ${h.box
   ? `shell.mount({ fetch: (req: Request, e: any, ctx: any) => new URL(req.url).pathname === "/health" ? new Response("ok") : (worker as any).fetch(req, e, ctx) } as any, env);`
   : `shell.mount(worker as any, env);`}
