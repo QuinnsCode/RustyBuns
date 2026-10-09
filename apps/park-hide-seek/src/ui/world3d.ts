@@ -33,6 +33,8 @@ interface Precip { obj: THREE.LineSegments | THREE.Points; pos: Float32Array; n:
 interface Plume { steam: THREE.Mesh; water: THREE.Mesh; size: number; period: number; offset: number }
 /** Seconds a geyser erupts for. */
 const ERUPTS = 14;
+/** How far bushes sit into the ground. */
+const BUSH_SINK = 0.1;
 
 export class World3D {
   readonly renderer: THREE.WebGLRenderer;
@@ -44,6 +46,7 @@ export class World3D {
   private sun = new THREE.DirectionalLight();
   private stars: THREE.Points | null = null;
   private remotes = new Map<string, Remote>();
+  private tmp = new THREE.Vector3();
   private me: Character | null = null;
   private bigfoot: Character | null = null;
   private meKey = "";
@@ -205,7 +208,7 @@ export class World3D {
     ])!, swaying(m("#ffffff", { flatShading: true }), 0.01), seqs, (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.28, 0.4, 0.2 + r() * 0.05));
     // Bushes: soft lumps you can crouch in.
     place(new THREE.IcosahedronGeometry(1, 1).scale(1, 0.75, 1).translate(0, 0.55, 0), swaying(m("#ffffff", { flatShading: true }), 0.14), by.get("bush") ?? [],
-      (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.24 + r() * 0.08, 0.45, 0.22 + r() * 0.08), 0.1);
+      (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.24 + r() * 0.08, 0.45, 0.22 + r() * 0.08), BUSH_SINK);
     place(new THREE.DodecahedronGeometry(1, 0).scale(1, 0.75, 1.1), m("#8b8a84", { flatShading: true }), by.get("boulder") ?? [],
       (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.1, 0.05, 0.42 + r() * 0.15), -0.1);
     place(new THREE.CylinderGeometry(0.35, 0.4, 4, 9).rotateZ(Math.PI / 2).translate(0, 0.3, 0), m("#6b4a2e"), by.get("log") ?? [], (p) => [p.size, p.size, p.size]);
@@ -478,6 +481,16 @@ export class World3D {
     ch.root.position.copy(toThree(x, y, z.height(x, y)));
     ch.root.rotation.y = Math.PI - yaw;
     pose(ch, speed, crouch, pitch, dt);
+    // Crouched in a bush, your head and hat still poke out of the top. You're only drawn for someone
+    // close enough to see you, so this shows them what they can see instead of hiding it in leaves.
+    const b = crouch && !caught ? z.bushAt(x, y) : null;
+    let lift = 0;
+    if (b) {
+      ch.root.updateMatrixWorld(true);
+      lift = Math.max(0, z.height(b.x, b.y) + b.tall - BUSH_SINK - ch.head.getWorldPosition(this.tmp).y);
+    }
+    ch.root.userData.lift = (ch.root.userData.lift ?? 0) + (lift - (ch.root.userData.lift ?? 0)) * Math.min(1, dt * 6);
+    ch.root.position.y += ch.root.userData.lift;
     // Caught campers sit down and glow a little, so it's clear they're out.
     if (caught) { ch.body.position.y = -0.5; ch.tag.material.color.set("#9a9a9a"); }
     const on = light && this.tod !== "day";
