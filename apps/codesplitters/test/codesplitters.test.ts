@@ -193,3 +193,98 @@ describe("accounts", () => {
     expect((await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) })).status).toBe(201);
   });
 });
+
+describe("game", () => {
+  test("a level's backrooms: folders are doors, files are walls, cached by commit", async () => {
+    const call = await local();
+    const ns = call.artifacts, { push } = await import("../src/git.ts");
+    const made = await ns.create("level-mitt");
+    await push(made.remote, made.token, { changes: { "README.md": "mitt\n\ttabbed\n", "src/index.ts": "export default 1\n", "logo.png": "\u0000png" }, message: "upstream", author: "upstream" });
+    const tip = (await (await ns.get("level-mitt")).log())[0]!.hash;
+    await call.env.DB.prepare("INSERT INTO levels (slug, status, commit_hash) VALUES ('mitt', 'ready', ?)").bind(tip).run();
+
+    const root = await (await call(null, "/api/game/l/mitt/walls")).json() as any;
+    expect(root.doors).toEqual([{ name: "src", path: "src" }]);
+    expect(root.files.map((f: any) => [f.name, f.lines])).toEqual([["logo.png", []], ["README.md", ["mitt", "  tabbed", ""]]]);
+    expect((await (await call(null, "/api/game/l/mitt/walls?path=src")).json() as any).files[0].lines[0]).toBe("export default 1");
+    expect((await call(null, "/api/game/l/mitt/walls?path=nope")).status).toBe(404);
+    expect((await call(null, "/api/game/l/clsx/walls")).status).toBe(409);       // not imported
+    // A second visit reads D1, not Artifacts.
+    expect((await call.env.DB.prepare("SELECT key FROM walls_cache ORDER BY key").all()).results.map((r: any) => r.key)).toEqual([`${tip}:`, `${tip}:src`]);
+    // Private repos stay private in the game too.
+    await post(call, "ana", "/api/repos", { name: "secret", visibility: "private" });
+    expect((await call("bo", "/api/game/r/ana/secret")).status).toBe(404);
+    expect((await call("ana", "/api/game/r/ana/secret")).status).toBe(200);
+  });
+
+  test("the room on a level's page: lobby, start, relay, clubbing, round over", async () => {
+    const call = await local();
+    const join = async (user: string) => {
+      const res = await call(user, "/api/game/l/mitt/ws", { headers: { upgrade: "websocket" } }) as any;
+      expect(res.status).toBe(101);
+      const ws = res.webSocket, got: any[] = [];
+      ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+      for (const d of ws.queue.splice(0)) got.push(JSON.parse(d));
+      const say = async (m: unknown) => { ws.onMessage(JSON.stringify(m)); await Bun.sleep(5); };
+      return { got, say, last: (t: string) => got.filter((m) => m.t === t).at(-1) };
+    };
+    const ana = await join("ana"), bo = await join("bo");
+    await Bun.sleep(5);
+    expect(ana.last("lobby").players.map((p: any) => p.user)).toEqual(["ana", "bo"]);
+    expect(await (await call(null, "/api/game/l/mitt")).json()).toEqual({ state: "waiting", players: ["ana", "bo"] });
+
+    // Both ready: the round starts for both with one seed.
+    await ana.say({ t: "ready" });
+    expect(ana.last("start")).toBeUndefined();
+    await bo.say({ t: "ready" });
+    expect(ana.last("start").seed).toBe(bo.last("start").seed);
+
+    const boId = bo.last("lobby").you;
+    await ana.say({ t: "pos", p: [1, 0, 2], yaw: 0.5, room: "src", swing: true });
+    expect(bo.last("pos")).toMatchObject({ user: "ana", p: [1, 0, 2], room: "src", swing: true });
+    expect(ana.last("pos")).toBeUndefined();                                   // not echoed back
+    await ana.say({ t: "hit", target: boId, dir: [1, 0] });
+    expect(bo.last("clubbed")).toEqual({ t: "clubbed", by: "ana", dir: [1, 0] });
+
+    await ana.say({ t: "dead", score: 700 });
+    expect(ana.last("over")).toBeUndefined();                                  // bo is still up
+    await bo.say({ t: "dead", score: 300 });
+    expect(ana.last("over").players.map((p: any) => [p.user, p.score])).toEqual([["ana", 700], ["bo", 300]]);
+    expect(ana.last("lobby").state).toBe("waiting");
+  });
+});
+
+describe("shares", () => {
+  test("share a few lines of a private repo: live, following the lines, nothing else leaks", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "vault", visibility: "private" });
+    await post(call, "ana", "/api/repos/ana/vault/files", { path: "a.ts", content: "one\ntwo\nthree\nfour" });
+    const made = await post(call, "ana", "/api/repos/ana/vault/shares", { path: "a.ts", from: 2, to: 3, note: "the good bit" });
+    expect(made.status).toBe(201);
+    const { id } = await made.json() as any;
+    const look = async (who: string | null) => (await (await call(who, `/api/shares/${id}`)).json()) as any;
+    expect((await look(null)).lines.map((l: any) => [l.n, l.text])).toEqual([[2, "two"], [3, "three"]]);
+    expect((await call("bo", "/api/repos/ana/vault/do/file?path=a.ts")).status).toBe(404);     // the rest stays sealed
+    expect((await post(call, "bo", "/api/repos/ana/vault/shares", { path: "a.ts", from: 1, to: 4 })).status).toBe(404);
+
+    // Edits around and inside the range: it follows the lines.
+    const doc = await (await call("ana", "/api/repos/ana/vault/do/file?path=a.ts")).json() as any;
+    const two = doc.lines[1];
+    await post(call, "ana", "/api/repos/ana/vault/do/ops?path=a.ts", { ops: [{ kind: "insert", after: null, text: "zero" }, { kind: "insert", after: two.id, text: "two and a half" }, { kind: "set", line: two.id, base: two.rev, text: "TWO" }] });
+    expect((await look("bo")).lines.map((l: any) => [l.n, l.text])).toEqual([[3, "TWO"], [4, "two and a half"], [5, "three"]]);
+
+    expect((await call("bo", `/api/shares/${id}`, { method: "DELETE" })).status).toBe(403);
+    expect((await call("ana", `/api/shares/${id}`, { method: "DELETE" })).status).toBe(200);
+    expect((await call(null, `/api/shares/${id}`)).status).toBe(404);
+  });
+
+  test("the owner flips a repo public or private", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "dig", visibility: "private" });
+    const put = (who: string, v: string) => call(who, "/api/repos/ana/dig", { method: "PUT", body: JSON.stringify({ visibility: v }) });
+    expect((await call("bo", "/api/repos/ana/dig")).status).toBe(404);
+    expect((await put("bo", "public")).status).toBe(404);
+    expect((await put("ana", "public")).status).toBe(200);
+    expect((await call("bo", "/api/repos/ana/dig")).status).toBe(200);
+  });
+});

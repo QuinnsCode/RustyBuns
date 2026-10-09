@@ -23,6 +23,8 @@ export interface Artifacts {
 export interface Env {
   DB: any;
   FILES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** One game room per level or repo: its lobby and multiplayer relay. */
+  GAMES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** Cloudflare Artifacts (a bare-repo twin on the desktop). Optional: without it, nothing is pushed. */
   ARTIFACTS?: Artifacts;
   /** Handles allowed to import levels when accounts are on (comma separated). */
