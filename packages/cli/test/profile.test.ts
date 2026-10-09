@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Profiler, formatProfile, type ProfileRun } from "../src/profile.ts";
-import { checkFlags, checkCommand, pickChecker, stackTsconfig, wantsEffectDiagnostics } from "../src/typecheck.ts";
+import { checkFlags, checkCommand, hasBunCheck, pickChecker, stackTsconfig, wantsEffectDiagnostics } from "../src/typecheck.ts";
 
 test("profiler: records each step in order, failed steps included", async () => {
   const p = new Profiler("plan");
@@ -44,6 +44,10 @@ test("checker commands and the Effect-plugin preference", () => {
   // An explicit checker that is not there is an error with the fix in it.
   const prev = process.env.RB_BUN; delete process.env.RB_BUN;
   try {
-    if (!Bun.semver.satisfies(Bun.version, ">=1.4.3")) expect(() => pickChecker("bun", null)).toThrow("bun upgrade");
+    if (!hasBunCheck(Bun.version)) expect(() => pickChecker("bun", null)).toThrow("bun upgrade --canary");
   } finally { if (prev !== undefined) process.env.RB_BUN = prev; }
+});
+
+test("bun check: 1.4.3 and its canaries have it, 1.4.2 doesn't", () => {
+  expect(["1.4.2", "1.4.3-canary.12+abc", "1.4.3", "1.5.0"].map(hasBunCheck)).toEqual([false, true, true, true]);
 });

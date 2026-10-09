@@ -502,7 +502,7 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   destroy                    alchemy destroy: removes everything the stack created
                              (--stage <name> passes through to all three)
   dev                        alchemy dev: workerd + local simulators for the edge column
-  --checker bun|tsc-rs|tsc   pick the type checker (default: bun check on Bun >= 1.4.3, else
+  --checker bun|tsc-rs|tsc   pick the type checker (default: bun check on Bun >= 1.4.3 or its canary, else
                              tsc-rs, else tsc; tsc-rs first when tsconfig has the Effect plugin)
                              build desktop, plan and deploy print a per-step timing table and
                              save it to .rustybuns/profile/, with deltas against the last run
