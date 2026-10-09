@@ -10,7 +10,16 @@ export type Harness = "claude" | "codex" | "pi" | "opencode";
 
 export const HARNESSES: Harness[] = ["claude", "codex", "pi", "opencode"];
 
-export interface Command { bin: string; args: string[] }
+export interface Command { bin: string; args: string[]; env?: Record<string, string> }
+
+// opencode reads permissions from config. OPENCODE_CONFIG_CONTENT outranks any
+// global or project config, so a stray opencode.json can't loosen it. Everything
+// is denied except reading and editing inside the working directory.
+export const OPENCODE_PERMISSION = {
+  "*": "deny",
+  read: "allow", edit: "allow", glob: "allow", grep: "allow", list: "allow",
+  external_directory: "deny",
+} as const;
 
 /** The command line that runs `harness` on `prompt` with `dir` as its working directory. */
 export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string } = {}): Command {
@@ -23,14 +32,17 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
     // (a write to $HOME is refused). Needs `codex login` or a provider in ~/.codex/config.toml.
     case "codex":
       return { bin: "codex", args: model(["exec", "--skip-git-repo-check", "-s", "workspace-write", prompt]) };
-    // Print mode, no session saved. Runs in the process cwd. pi defaults to Google,
-    // so pass --model as provider/id (e.g. anthropic/claude-sonnet-4-5) with that key set.
+    // Print mode, no session saved. Only the file tools, no bash, and no
+    // extensions, MCP or project-local config that could add tools back.
+    // pi defaults to Google, so pass --model as provider/id (e.g. anthropic/claude-sonnet-4-5).
     case "pi":
-      return { bin: "pi", args: model(["-p", "--no-session", prompt]) };
-    // Takes its project dir from $PWD, which execCommand sets. Edits without asking in
-    // run mode. Free models (e.g. opencode/big-pickle) work with no login.
+      return { bin: "pi", args: model(["-p", "--no-session", "--tools", "read,edit,write", "--no-extensions", "--no-mcp", "--no-approve", prompt]) };
+    // Permissions as above: no shell, no web, nothing outside the working directory.
+    // --pure skips third-party plugins, which run code when they load. It takes its
+    // project dir from $PWD, which execCommand sets. Its free models refuse this
+    // locked-down config, so it needs `opencode auth login` and a provider's model.
     case "opencode":
-      return { bin: "opencode", args: model(["run", prompt]) };
+      return { bin: "opencode", args: model(["run", "--pure", prompt]), env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: OPENCODE_PERMISSION }) } };
   }
 }
 
