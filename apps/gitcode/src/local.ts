@@ -2,7 +2,7 @@
 // demo run against. The only server is the git one Artifacts remotes need. The desktop build wires the same pieces.
 
 import { LocalArtifacts, applyD1Migrations, d1, durableObject, gitHttp, installCloudflareGlobals } from "@rustybuns/shell-bun";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import worker, { FileDurableObject } from "./worker.ts";
@@ -12,7 +12,9 @@ export async function local() {
   const env: any = { DB: d1(":memory:") };
   env.FILES = durableObject(FileDurableObject as any, env);
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
-  env.ARTIFACTS = new LocalArtifacts(mkdtempSync(join(tmpdir(), "gitcode-artifacts-")), "gitcode");
+  const dir = mkdtempSync(join(tmpdir(), "gitcode-artifacts-"));
+  process.once("exit", () => rmSync(dir, { recursive: true, force: true }));
+  env.ARTIFACTS = new LocalArtifacts(dir, "gitcode");
   const git = Bun.serve({ port: 0, fetch: (req) => gitHttp(req, [env.ARTIFACTS]) });
   git.unref();
   env.ARTIFACTS.remoteBase = `http://127.0.0.1:${git.port}`;

@@ -106,5 +106,6 @@ describe("artifacts", () => {
     const p = Bun.spawn(["sh", "-c", clone], { cwd: dir, stdout: "pipe", stderr: "pipe" });
     expect(await p.exited).toBe(0);
     expect(await Bun.file(`${dir}/dig/README`).text()).toBe("found it\n");
+    (await import("node:fs")).rmSync(dir, { recursive: true, force: true });
   });
 });
