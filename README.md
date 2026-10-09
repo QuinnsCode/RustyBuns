@@ -13,7 +13,7 @@ pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway 
 
 That's the whole product. Rusty Buns is a dev dependency: it never edits `src/` and never ships in your bundle.
 
-> **Alpha, `0.1.8`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Railway box is verified live. The Hetzner box builds and runs but hasn't been live-tested yet.
+> **Alpha, `0.1.8`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live.
 
 ## The idea in one paragraph
 
@@ -133,7 +133,7 @@ pnpm exec rustybuns destroy        # removes everything it created
 - [ADOPTION.md](ADOPTION.md): who it's for, and how to adopt it (and leave)
 - [COSTS.md](COSTS.md): what each deploy can bill you for, and how to cap it
 - [FRAMEWORKS.md](FRAMEWORKS.md): beyond Vite + React
-- [notes/ROADMAP.md](notes/ROADMAP.md): next up are a live Hetzner run, TLS on the box, Fly, installers and signing
+- [notes/ROADMAP.md](notes/ROADMAP.md): next up are TLS on the box, Fly, installers and signing
 
 ## License
 

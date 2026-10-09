@@ -225,7 +225,10 @@ test("box: Hetzner stack runs the launcher, edge stays off unless asked for", ()
   c.bindings.API_KEY = { type: "secret" };
   const both = generateAlchemy({ ...c, targets: { ...c.targets, box: { provider: "hetzner" } } });
   expect(both).toContain('Hetzner.Server("Box", { serverType: "cpx12", image: "ubuntu-24.04", location: "nbg1" })');
-  expect(both).toContain('Hetzner.Volume("Data", { size: 10, format: "ext4", server: Box, automount: true })');
+  // the Volume gets the created Server (its serverId), not the Server's definition
+  expect(both).toContain("const box = yield* Box;");
+  expect(both).toContain('Hetzner.Volume("Data", { size: 10, format: "ext4", server: box, automount: true })');
+  expect(both).not.toContain("server: Box, automount");
   expect(both).toContain('main: ".rustybuns/box/launch.mjs"');
   expect(both).toContain("isExternal: true");
   expect(both).toContain('API_KEY: process.env["API_KEY"] ?? ""');

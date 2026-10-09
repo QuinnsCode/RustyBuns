@@ -76,7 +76,7 @@ targets: {
 
 | | Railway | Hetzner |
 |---|---|---|
-| Status | verified live | builds and runs, not live-tested yet |
+| Status | verified live | verified live |
 | You get | `https://<service>.up.railway.app`, a Volume for sqlite | `http://<ipv4>:3000`, a 10 GB Volume for sqlite |
 | Cost | by usage, sleeps when idle; **set a hard usage limit first** | hourly until destroyed |
 | Rust crates | yes, built inside the image | yes (deploy from Linux) |

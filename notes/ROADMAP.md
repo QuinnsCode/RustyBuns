@@ -12,10 +12,10 @@ Alchemy's `InferEnv`; the desktop cell is checked against the same type.
 
 | Need | Cloudflare | Hetzner | Fly | Railway | Desktop |
 |---|---|---|---|---|---|
-| http | A `Cloudflare.Worker` ✅ live | A `Hetzner.Service` (`isExternal` Node launcher -> compiled Bun host) 🟡 | A 🔍 | A `Railway.Service` (local context: Bun bundle on `oven/bun`) ✅ live | RB `serve()` ✅ |
+| http | A `Cloudflare.Worker` ✅ live | A `Hetzner.Service` (`isExternal` Node launcher -> compiled Bun host) ✅ live | A 🔍 | A `Railway.Service` (local context: Bun bundle on `oven/bun`) ✅ live | RB `serve()` ✅ |
 | static | A Worker `assets` ✅ / `Website.*` | A `Hetzner.Website.*` 🔍 | A 🔍 | A 🔍 | RB `--asset` ✅ |
 | ws / stateful | A `Cloudflare.DurableObject` ✅ live | RB in-process DO ✅ | RB in-process DO ✅ | RB in-process DO ✅ | RB in-process DO ✅ |
-| sql | A `Cloudflare.D1` ✅ | RB sqlite on A `Hetzner.Volume` 🟡 · A `Neon`/`PlanetScale` 🔍 | A Neon/PlanetScale 🔍 | RB sqlite on A `Railway.Volume` ✅ (survives redeploys: `X-RB-Boots`) · A Railway PG / Neon 🔍 | RB sqlite D1 + migrations ✅ |
+| sql | A `Cloudflare.D1` ✅ | RB sqlite on A `Hetzner.Volume` ✅ (survives redeploys: `X-RB-Boots`) · A `Neon`/`PlanetScale` 🔍 | A Neon/PlanetScale 🔍 | RB sqlite on A `Railway.Volume` ✅ (survives redeploys: `X-RB-Boots`) · A Railway PG / Neon 🔍 | RB sqlite D1 + migrations ✅ |
 | kv | A `Cloudflare.KV` ✅ | RB sqlite table ✅ | RB sqlite table ✅ | RB sqlite table ✅ | RB sqlite table ✅ |
 | blob | A `Cloudflare.R2` ✅ | RB dir on Volume ✅ (adapter) | RB dir ✅ | RB dir ✅ | RB dir adapter + mounts ✅ |
 | queues | A `Cloudflare.Queues` 🔲 | RB in-process 🔲 | 🔲 | 🔲 | RB in-process 🔲 |
@@ -35,7 +35,7 @@ not engineering.
 ## Happy path (in order)
 
 1. ~~`plan` against a throwaway Cloudflare account~~ done: deployed Worker + 3 DOs + D1 + KV + R2 from a generated stack.
-2. ~~Verify `Hetzner.Service` runtime~~ Node 26 (beta.77 `hosted.ts`). Box = Service with `isExternal: true`, main is a Node launcher that execs the compiled Bun host from `extraFiles`. Generated + built + run locally; live Hetzner run pending.
+2. ~~Verify `Hetzner.Service` runtime~~ Node 26 (beta.77 `hosted.ts`). Box = Service with `isExternal: true`, main is a Node launcher that execs the compiled Bun host from `extraFiles`. Live: cpx12 + Volume, hippo-tycoon, rooms, wasm, and the Volume across a redeploy. The first live run found the Volume created unattached (fixed: it attaches to the created Server).
 3. Restructure `gen/` around the matrix above; Fly and Railway become columns, not copies. Railway is a box column (`provider: "railway"`), deployed live with hippo-tycoon.
 4. R2 -> directory adapter; `pipeline` binding type (pass-through on edge, stdout elsewhere).
 5. `rustybuns add worker <name>` / `add rust <name> --front|--back`: typed worker RPC over SAB, TS body by default, WASM or cdylib drop-in.
