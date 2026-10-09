@@ -1,6 +1,8 @@
 # Desktop binaries for every app (or a few), on demand, into R2 under hidden folders.
 # Run it from the Actions tab (pick apps, leave dry on to only see what builds), or
-# push a tag <app>-v<version> to drop one app for real. Links are in each drop job's summary.
+# push a tag <app>-v<version> to drop one app for real (<app>-v1.2.0 is stable,
+# <app>-v1.3.0-beta.1 experimental). Each app keeps the latest stable, the latest
+# experimental and the stable before; older builds are deleted. Links are in each drop job's summary.
 # A PR that changes this pipeline dry-runs every app, so a broken build shows before merge.
 #
 # Apps with Rust cdylibs (native/) build on one runner per OS; the rest cross-compile
@@ -19,6 +21,11 @@ on:
       version:
         description: "Version label for the folder (default: each app's package.json version)"
         required: false
+      channel:
+        description: "stable, or experimental (newest, may break)"
+        type: choice
+        options: [experimental, stable]
+        default: experimental
       dry:
         description: "Dry run: build and keep the binaries as run artifacts, upload nothing to R2"
         type: boolean
@@ -34,16 +41,19 @@ jobs:
       build: ${{ steps.p.outputs.build }}
       apps: ${{ steps.p.outputs.apps }}
       version: ${{ steps.p.outputs.version }}
+      channel: ${{ steps.p.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: "1.4.2" }
       - id: p
         run: |
-          apps="${{ inputs.apps }}"; version="${{ inputs.version }}"
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then   # <app>-v<version>
+          apps="${{ inputs.apps }}"; version="${{ inputs.version }}"; channel="${{ inputs.channel || 'experimental' }}"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then   # <app>-v<version>; a prerelease (1.3.0-beta.1) is experimental
             tag="${GITHUB_REF#refs/tags/}"; apps="${tag%-v*}"; version="${tag##*-v}"
+            [[ "$version" == *-* ]] && channel=experimental || channel=stable
           fi
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
           bun scripts/ci-apps.ts drop "$apps" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
@@ -91,6 +101,7 @@ jobs:
         app: ${{ fromJSON(needs.plan.outputs.apps) }}
     name: drop ${{ matrix.app }}
     runs-on: ubuntu-latest
+    concurrency: drop-${{ matrix.app }}   # channels.json is read, changed, written: one drop per app at a time
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -110,7 +121,7 @@ jobs:
         run: |
           v="${{ needs.plan.outputs.version }}"
           [ -z "$v" ] && v="$(bun -p 'require("./apps/${{ matrix.app }}/package.json").version')"
-          bun scripts/drop.ts --app "${{ matrix.app }}" --version "$v" ${{ (inputs.dry || github.event_name == 'pull_request') && '--dry out' || '' }} bins/*
+          bun scripts/drop.ts --app "${{ matrix.app }}" --version "$v" --channel "${{ needs.plan.outputs.channel }}" ${{ (inputs.dry || github.event_name == 'pull_request') && '--dry out' || '' }} bins/*
         env:
           # One bucket for every app's drops; each app gets its own top-level folder.
           CLOUDFLARE_ACCOUNT_ID: c2d417e655e0ef55de8fe2d07874f521
