@@ -4,6 +4,7 @@
 
 import { fromText } from "./lines.ts";
 import { push } from "./git.ts";
+import { noodles, type Noodle } from "./noodles.ts";
 import type { ArtifactsRepo, Env, TreeEntry } from "./env.ts";
 
 export const fileStub = (env: Env, owner: string, repo: string, path: string) =>
@@ -94,18 +95,21 @@ export async function pushCatalogue(env: Env, owner: string, repo: string, path:
   return { remote: a.remote, ...(await push(a.remote, a.token, { changes: { [path]: text }, message, author, branch: h.branch, base: h.handle })) };
 }
 
-export interface Walls { commit: string | null; doors: { name: string; path: string }[]; files: { name: string; path: string; lines: string[] }[] }
+export interface Walls { commit: string | null; doors: { name: string; path: string }[]; files: { name: string; path: string; lines: string[]; noodles?: Noodle[] }[] }
+// Bumped when a room carries something new, so cached rooms are built again.
+const WALLS_V = "v2:";
 const WALL_FILES = 12, WALL_DOORS = 12, WALL_LINES = 48, WALL_WIDTH = 90;
 
 /**
  * One room of the backrooms: folder `dir`'s subfolders (doors) and the first
  * lines of its files (the walls). Cached in D1 by commit and folder, so a
  * level's room costs Artifacts reads once, ever; pass `commit` when it's known
- * (a level's import) to skip even the log read.
+ * (a level's import) to skip even the log read. Each file also carries its
+ * type guards, the noodle monsters, when it has any.
  */
 export async function walls(env: Env, handle: ArtifactsRepo, ref: string, dir: string, commit?: string | null): Promise<Walls | null> {
   const cached = async (c: string) => {
-    const hit = await env.DB.prepare("SELECT data FROM walls_cache WHERE key = ?").bind(`${c}:${dir}`).first();
+    const hit = await env.DB.prepare("SELECT data FROM walls_cache WHERE key = ?").bind(`${WALLS_V}${c}:${dir}`).first();
     return hit ? (JSON.parse(hit.data) as Walls) : null;
   };
   if (commit) { const hit = await cached(commit); if (hit) return hit; }
@@ -119,10 +123,12 @@ export async function walls(env: Env, handle: ArtifactsRepo, ref: string, dir: s
     doors: listing.entries.filter((e) => e.type === "dir").slice(0, WALL_DOORS).map(({ name, path }) => ({ name, path })),
     files: await Promise.all(files.map(async ({ name, path }) => {
       const got = await readText(handle, ref, path).catch(() => ({ error: "unreadable", status: 500 }));
-      const lines = "text" in got ? got.text.split("\n").slice(0, WALL_LINES).map((l) => l.replace(/\t/g, "  ").slice(0, WALL_WIDTH)) : [];
-      return { name, path, lines };
+      if (!("text" in got)) return { name, path, lines: [] };
+      const lines = got.text.split("\n").slice(0, WALL_LINES).map((l) => l.replace(/\t/g, "  ").slice(0, WALL_WIDTH));
+      const found = noodles(got.text, WALL_WIDTH);
+      return found.length ? { name, path, lines, noodles: found } : { name, path, lines };
     })),
   };
-  if (key) await env.DB.prepare("INSERT OR IGNORE INTO walls_cache (key, data) VALUES (?, ?)").bind(`${key}:${dir}`, JSON.stringify(out)).run();
+  if (key) await env.DB.prepare("INSERT OR IGNORE INTO walls_cache (key, data) VALUES (?, ?)").bind(`${WALLS_V}${key}:${dir}`, JSON.stringify(out)).run();
   return out;
 }

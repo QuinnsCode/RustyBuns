@@ -11,7 +11,7 @@
 - **Public or private repos.** A private repo you can't see answers 404, in search too.
 - **Share some lines, not the repo.** Select a range (click a line number, shift-click another) and share it: a live link to just those lines that follows them by id as the file changes, and works from a private repo without opening anything else. GitHub's permalinks freeze a commit and need the whole repo public. Revocable by whoever shared it or the owner.
 - **One command palette (⌘K), one API.** Every action in the UI is a single API call, and the palette shows it next to the command, so people and agents do the same things the same way.
-- **The game.** Every repo is a level of a first-person game (`play.html`): you're in the backrooms of the codebase, folders are rooms, files' lines are pasted on the walls, and they tear off and come at you as paper birds and wacky waving tube men. Swing the bat. Players in the same room can club each other. One `GameRoom` Durable Object per level or repo is the lobby on its page.
+- **The game.** Every repo is a level of a first-person game (`play.html`): you're in the backrooms of the codebase, folders are rooms, files' lines are pasted on the walls, and they tear off and come at you as paper birds and wacky waving tube men. A file's type guards (`isRecord(x): x is …` and friends) crawl off its wall as noodle monsters, knots of their own lines that follow you from room to room; each hit snaps off a strand. Swing the bat. Players in the same room can club each other. One `GameRoom` Durable Object per level or repo is the lobby on its page.
 - **Your profile is your own HTML and CSS** (sandboxed, no scripts), plus **playlists**: line ranges from any file you can see, read live. A track holds its lines by id, so it follows them as the file changes around them.
 
 **Accounts** are Better Auth on D1: email and password, plus GitHub and Google when their keys are set. They're on whenever `BETTER_AUTH_SECRET` is set; without it (the desktop, tests, demos) a name in a cookie is all it takes. New accounts get a handle from their name or email.
@@ -56,6 +56,7 @@ bun agents.ts --url http://127.0.0.1:PORT --cookie 'rb_token_PORT=TOKEN'
 | `src/levels.ts` | the levels: import, browse, fork |
 | `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
 | `src/archive.ts` | Artifacts: trees (cached), files, first-open materializing, catalogue pushes |
+| `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
 | `migrations/` | the D1 schema |
 | `agents.ts` | the three-agent demo |
