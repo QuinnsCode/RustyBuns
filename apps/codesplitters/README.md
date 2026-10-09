@@ -3,6 +3,7 @@
 > **What it proves:** a code host where every file is a Durable Object runs unchanged on a laptop, with sqlite standing in for D1 and for each file's storage. Several agents can edit one file at once, line by line. Proof of concept.
 
 - **A file is a Durable Object.** It is the only writer for that file, so every edit from every agent lands in one order. Ops name lines by stable id, not index, so agents editing different lines never collide. Editing the same line is optimistic: an op carries the line's rev, and a stale one gets a 409 the agent retries. An edit that depends on other lines (is this variable ever reassigned?) sends `ifRev` and only lands if the whole file hasn't moved since it was read.
+- **Branches and merges, by line.** An agent opens a branch (`POST /api/repos/:o/:r/branches`) and edits with `?branch=name`: the first time it touches a file, that file's Durable Object forks a copy of itself, every line id and rev intact. Reviewing the branch (`GET .../branches/:name`) shows each file's ops against main as it is now, and any conflicts. A merge (`POST .../branches/:name/merge`) is a three-way merge by line id that main's file applies in one batch, each line keeping its author: lines only one side touched merge cleanly, and a line both sides changed is a conflict, settled per line with `resolve: {path: {lineId: "branch" | "main"}}`. Any conflict anywhere merges nothing. This is built on the line-op log, not git branches, so blame and live sync work the same on a branch; git hears about it when main is catalogued.
 - **Every line knows who wrote it and when.** The op log replays the file at any rev: blame and time travel come free.
 - **Cataloguing** (a commit) hashes the file with its parent, indexes it for search (D1 FTS5) and **pushes the repo to Cloudflare Artifacts** as a real git commit. Artifacts only takes writes as a git push, so `src/git.ts` builds the objects and the pack itself (Web Crypto and `CompressionStream`, no git library) and speaks smart HTTP. The repo page has a `git clone` line with an hour-long read token.
 - **Live, fast sync.** Edits go over the file's WebSocket and are acked; every open page gets the exact applied ops and patches itself in place (a gap in revs means a refetch). Presence shows who else has the file open.
@@ -11,7 +12,7 @@
 - **Public or private repos.** A private repo you can't see answers 404, in search too.
 - **Share some lines, not the repo.** Select a range (click a line number, shift-click another) and share it: a live link to just those lines that follows them by id as the file changes, and works from a private repo without opening anything else. GitHub's permalinks freeze a commit and need the whole repo public. Revocable by whoever shared it or the owner.
 - **One command palette (⌘K), one API.** Every action in the UI is a single API call, and the palette shows it next to the command, so people and agents do the same things the same way.
-- **The game.** Every repo is a level of a first-person game (`play.html`): you're in the backrooms of the codebase, folders are rooms, files' lines are pasted on the walls, and they tear off and come at you as paper birds and wacky waving tube men. Swing the bat. Players in the same room can club each other. One `GameRoom` Durable Object per level or repo is the lobby on its page. Pick a mode in the lobby: **horde** (the above), **wreck it** (a panic room: everyone smashes the walls, lava lamps and furniture made of the code, against the clock; nothing in the real repo is touched), or **smash the removed** (from a file's History or one of its commits: every line the diff took out is a desk, chair, shelf or lamp clad in that text; the lines it put in stand in ink, untouchable). What's broken is kept by the room for the round, so everyone, late joiners too, sees the same wreckage. Each material has its own synth impact: thud, crash, shatter, splinter, then debris settling.
+- **The game.** Every repo is a level of a first-person game (`play.html`): you're in the backrooms of the codebase, folders are rooms, files' lines are pasted on the walls, and they tear off and come at you as paper birds and wacky waving tube men. A file's type guards (`isRecord(x): x is …` and friends) crawl off its wall as noodle monsters, knots of their own lines that follow you from room to room; each hit snaps off a strand. Swing the bat. Players in the same room can club each other. One `GameRoom` Durable Object per level or repo is the lobby on its page. Pick a mode in the lobby: **horde** (the above), **wreck it** (a panic room: everyone smashes the walls, lava lamps and furniture made of the code, against the clock; nothing in the real repo is touched), or **smash the removed** (from a file's History or one of its commits: every line the diff took out is a desk, chair, shelf or lamp clad in that text; the lines it put in stand in ink, untouchable). What's broken is kept by the room for the round, so everyone, late joiners too, sees the same wreckage. Each material has its own synth impact: thud, crash, shatter, splinter, then debris settling.
 - **Your profile is your own HTML and CSS** (sandboxed, no scripts), plus **playlists**: line ranges from any file you can see, read live. A track holds its lines by id, so it follows them as the file changes around them.
 
 **Accounts** are Better Auth on D1: email and password, plus GitHub and Google when their keys are set. They're on whenever `BETTER_AUTH_SECRET` is set; without it (the desktop, tests, demos) a name in a cookie is all it takes. New accounts get a handle from their name or email.
@@ -45,6 +46,13 @@ To watch the agents live, open a file in the app, then point the demo at it with
 bun agents.ts --url http://127.0.0.1:PORT --cookie 'rb_token_PORT=TOKEN'
 ```
 
+To put a real coding agent (claude, codex, pi or opencode, installed and logged in) on a file: it edits a copy on disk, and its edit is diffed back into line ops under its own name. If someone changes a line it also changed, it re-runs on the new text (`--retries`, default 2). After the last run their version is kept and the conflicts are printed.
+
+```sh
+bun agent.ts --harness claude --url http://127.0.0.1:PORT --cookie 'rb_token_PORT=TOKEN' \
+  --as agent-claude --repo owner/name --path src/app.ts --task "add a doc line to every function"
+```
+
 ## Layout
 
 | File | What |
@@ -52,10 +60,16 @@ bun agents.ts --url http://127.0.0.1:PORT --cookie 'rb_token_PORT=TOKEN'
 | `src/lines.ts` | the line model: ops, conflicts, replay. Pure functions |
 | `src/file-do.ts` | the file Durable Object: ops, log, time travel, commits, a live socket |
 | `src/worker.ts` | routes, visibility, profiles, playlists, search |
+| `src/branches.ts` | branches: forking a file onto one, review, merge |
 | `src/identity.ts` | accounts (Better Auth) or aliases, and handles |
 | `src/levels.ts` | the levels: import, browse, fork |
 | `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
 | `src/archive.ts` | Artifacts: trees (cached), files, first-open materializing, catalogue pushes |
+| `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
 | `migrations/` | the D1 schema |
+| `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
+| `src/harness.ts` | the coding-agent CLIs and the prompt each one gets |
+| `src/agent-run.ts` | runs an agent on a file: snapshot, edit, diff, post, re-run on conflicts |
 | `agents.ts` | the three-agent demo |
+| `agent.ts` | one real coding agent on one file |
