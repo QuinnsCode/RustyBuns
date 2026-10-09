@@ -85,7 +85,7 @@ targets: {
 Then give Alchemy a Hetzner Cloud API token (Console → Security → API tokens, read & write):
 
 ```sh
-pnpm exec alchemy profile edit --profile default --add Hetzner     # or: export HCLOUD_TOKEN=...
+pnpm exec rustybuns login hetzner     # or: export HCLOUD_TOKEN=...
 pnpm exec rustybuns plan
 pnpm exec rustybuns deploy     # prints  box: http://<ipv4>:3000
 ```
@@ -109,7 +109,8 @@ The launcher exists because Alchemy's `Hetzner.Service` always starts `node <mai
 Current limits on the box:
 
 - **Plain HTTP on the port.** No TLS or domain yet. Put Cloudflare in front, or wait for the load balancer and certificate support on the roadmap.
-- **Every visitor is a guest.** A box has no local player, so each WebSocket at `worldPath` is a guest with its own id: `?uid=&name=` when the client sends them (trust on first use, as on the LAN), otherwise a fresh id per connection. That's how the edge Worker treats players too. The desktop's hosting control (`POST /__rb/host`) is off on a box, since anyone could call it. There's no real login: put the box behind your own auth if identity matters.
+- **A box plays like the edge, not like the desktop.** There's no local player: each WebSocket at `worldPath` is a guest with its own id (`?uid=&name=` when the client sends them, trust on first use as on the LAN, otherwise a fresh id per connection), and `?room=CODE` picks that room's world, as the edge Worker routes it (codes are 1-32 of `[A-Za-z0-9_-]`, at most 200 rooms per box; no `room` is one shared world). `/__rb/info` and `POST /__rb/host` answer 404, so pages take their online path, and nobody on the internet can close the world or rebind the server. There's no real login: put the box behind your own auth if identity matters.
+- **`/health` says where data lives.** Its `X-RB-Data` header is `volume` when the data dir is its own filesystem (an attached Volume) and `container` when a redeploy would throw it away.
 - **Secrets are plaintext at rest.** They go into `/opt/<unit>/env` on the server and into Alchemy's local state in `.alchemy/`. Don't keep `HCLOUD_TOKEN` in `.dev.vars`, or `init` will treat it as an app secret.
 - **Rust crates need a Linux build machine.** If `native/` has crates, run `deploy` on Linux (or in CI), since cdylibs don't cross-compile.
 
@@ -125,7 +126,7 @@ targets: {
 ```
 
 ```sh
-pnpm exec alchemy profile edit --profile default --add Railway     # browser login, or: export RAILWAY_API_TOKEN=...
+pnpm exec rustybuns login railway     # browser login or a pasted account token; or: export RAILWAY_API_TOKEN=...
 pnpm exec rustybuns plan
 pnpm exec rustybuns deploy     # prints  box: https://<service>.up.railway.app
 ```
@@ -153,6 +154,7 @@ HTTPS comes with the Railway domain. Identity works the same as on Hetzner. Rust
 | `build desktop [--dev] [--target os-arch]` | `--dev` bundles without compiling, for `run desktop` |
 | `run desktop` | start the dev host |
 | `build box [--target os-arch]` | Hetzner: Linux binary + Node launcher in `.rustybuns/box/` (`--target` your own OS to try it locally). Railway: Bun bundle + Dockerfile in `.rustybuns/railway/` |
+| `login <cloudflare\|hetzner\|railway>` | connect a provider account to your Alchemy profile (`~/.alchemy`, shared by every app), through this project's pinned Alchemy |
 | `plan` / `deploy [--yes]` / `destroy` | Alchemy against the generated stack; `deploy` refuses without a plan for this exact config |
 | `dev` | `alchemy dev`: workerd and local simulators for the edge |
 | `eject` | copy `alchemy.run.ts` to the project root; from then on you own it |

@@ -4,6 +4,7 @@
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys } from "./wrangler.ts";
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
@@ -239,10 +240,28 @@ async function stackHash(): Promise<string> {
   return Bun.hash(a + "\n" + c).toString(16);
 }
 
+/**
+ * The project's own alchemy CLI. Never a bare `bunx alchemy`: that fetches the
+ * newest beta from npm, which is not the pinned set and cannot find its peers.
+ */
+function alchemyCli(): string[] {
+  if (existsSync("node_modules/.bin/alchemy")) return ["node_modules/.bin/alchemy"];
+  let pkg: string | undefined;
+  try { pkg = Bun.resolveSync("alchemy/package.json", process.cwd()); } catch { /* not installed */ }
+  // Bun's auto-install resolves from its global cache; that copy has no peers either.
+  const version = pkg && !pkg.includes("/.bun/install/cache/") ? JSON.parse(readFileSync(pkg, "utf8")).version : undefined;
+  if (version === DEPLOY_DEPS.alchemy) return ["node", join(dirname(pkg!), "bin", "cli.js")];
+  throw new Error(version
+    ? `this project has alchemy ${version}, not the pinned ${DEPLOY_DEPS.alchemy}. Run \`rustybuns add deploy\` to pin it.`
+    : "no Alchemy in this project. Run `rustybuns add deploy` here first (it installs the pinned set), or cd into an app that has it.");
+}
+
+/** Alchemy's provider names, for `rustybuns login <provider>`. */
+const PROVIDERS: Record<string, string> = { cloudflare: "Cloudflare", hetzner: "Hetzner", railway: "Railway" };
+
 /** Run the project-local alchemy with the terminal attached, so its prompts work. */
 async function runAlchemy(args: string[]): Promise<number> {
-  const local = ["node_modules/.bin/alchemy"].find((p) => require("node:fs").existsSync(p));
-  const cmd = local ? [local, ...args] : ["bunx", "alchemy", ...args];
+  const cmd = [...alchemyCli(), ...args];
   // Secret values come from .dev.vars; anything already exported in the shell wins.
   const env = { ...readDevVars(), ...process.env };
   const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"], env });
@@ -315,6 +334,15 @@ try {
     case "deploy": await alchemy("deploy", rest); break;
     case "destroy": await alchemy("destroy", rest); break;
     case "plan": await alchemy("plan", rest); break;
+    case "login": {
+      // Connect a provider account to an Alchemy profile (~/.alchemy, shared by every app).
+      const [name, ...flags] = rest;
+      const provider = PROVIDERS[(name ?? "").toLowerCase()];
+      if (!provider) throw new Error(`usage: rustybuns login ${Object.keys(PROVIDERS).join("|")} [--profile <name>]`);
+      const code = await runAlchemy(["profile", "edit", "--add", provider, ...flags]);
+      if (code !== 0) process.exit(code);
+      break;
+    }
     case "dev": await alchemy("dev", rest); break;
     case "add": {
       if (rest[0] === "deploy") { await addDeploy(rest.includes("--dry-run")); break; }
@@ -372,6 +400,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              launcher in .rustybuns/box/, Railway a Bun bundle + Dockerfile
                              in .rustybuns/railway/ (plan and deploy run this for you)
 
+  login <provider>           connect cloudflare, hetzner or railway to your Alchemy profile
+                             (~/.alchemy: browser login or a pasted token; every app shares it)
   plan                       alchemy plan: shows what would be created, creates nothing
                              (targets.edge -> Cloudflare, targets.box -> Hetzner or Railway, or both)
                              type checks the generated stack first (--no-check skips)
