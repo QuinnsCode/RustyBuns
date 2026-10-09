@@ -264,3 +264,71 @@ progress::-moz-progress-bar { background: var(--patina); }
 .fields > select:first-child { flex: 1 1 100%; }
 .status { flex-wrap: wrap; row-gap: .35rem; }
 .status .credits { white-space: nowrap; }
+
+/* Selection, bulk changes */
+textarea { font: inherit; color: var(--text); background: #171513; border: 1px solid var(--edge); border-radius: 4px; padding: .4rem .55rem; width: 100%; resize: vertical; }
+textarea:focus { border-color: var(--patina); outline: none; box-shadow: 0 0 0 2px rgb(79 183 166 / .2); }
+.card.selected, .chip.selected { border-color: var(--rust); box-shadow: 0 0 0 1px var(--rust), 0 0 18px rgb(216 100 44 / .2); }
+.pics { position: relative; }
+.pics .pick { position: absolute; top: .45rem; left: .45rem; z-index: 2; width: 1.05rem; height: 1.05rem; accent-color: var(--rust); }
+.pics.text { background: #161412; }
+.prompt { margin: 0; padding: .9rem 1rem .9rem 2rem; font: italic .9rem/1.4 var(--sans, inherit); color: #e7cfb3; overflow: auto; height: 9.5rem; border-left: 3px solid var(--rust); }
+.views { display: grid; grid-auto-rows: 1fr; border-left: 1px solid var(--edge); }
+.views img { height: 100% !important; max-height: 9.5rem; }
+.pics:has(.views) { grid-template-columns: 2fr 1fr auto; }
+.src { font: 700 .62rem/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; padding: .15rem .35rem; border: 1px solid currentColor; border-radius: 3px; margin-right: .3rem; }
+.src-image { color: var(--dim); }
+.src-multi { color: var(--brass); }
+.src-text { color: var(--patina); }
+.prompt-edit { font-size: .82rem; }
+.fields .model { flex: 1 1 100%; }
+.card-options { border: 1px solid var(--edge); border-radius: 4px; padding: .2rem .6rem .6rem; background: #161412; max-height: 26rem; overflow: auto; }
+.card-options .field { grid-template-columns: 8.5rem 1fr; gap: .5rem; }
+.card-options .flabel { font-size: .78rem; }
+.card-options .fval select, .card-options .fval input { font-size: .78rem; }
+.card-options .tag { margin-left: .3rem; font-size: .55rem; padding: .15rem .3rem; }
+.ops { list-style: none; margin: 0; padding: .35rem 0 0; border-top: 1px dashed var(--edge); display: grid; gap: .25rem; counter-reset: op; }
+.op { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; font-size: .8rem; counter-increment: op; }
+.op::before { content: counter(op); font: 700 .62rem/1 var(--mono); color: var(--dim); width: 1rem; }
+.op button { padding: 0 .4rem; }
+.op progress { flex-basis: 100%; }
+.op-done .grow { color: var(--good); }
+.op-failed .grow { color: var(--bad); }
+.op-running .grow { color: var(--patina); }
+.bulk { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; padding: .55rem .9rem; margin-bottom: .9rem; border-color: var(--rust); }
+.bulk .row { margin: 0; font-size: .82rem; }
+.bulk select { padding: .22rem .4rem; font-size: .82rem; }
+
+/* Board chips */
+.chip .thumb { position: relative; width: 3rem; height: 3rem; }
+.chip .thumb input { position: absolute; top: -.2rem; left: -.2rem; accent-color: var(--rust); }
+.chip .src-text { display: grid; place-items: center; width: 3rem; height: 3rem; font: 700 1rem/1 var(--mono); border: 1px solid var(--edge); border-radius: 3px; }
+
+/* Concepts in the sidebar */
+.concepts { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.concepts li { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; font-size: .8rem; padding: .3rem .4rem; border: 1px solid var(--edge); border-radius: 3px; }
+.concepts li > .grow { display: grid; }
+.concepts .c-running { border-color: var(--patina); }
+.concepts .c-failed { border-color: var(--bad); }
+.concepts .c-done { opacity: .7; }
+.concepts button { padding: 0 .35rem; }
+
+/* Step and create dialogs */
+.kinds { display: flex; flex-wrap: wrap; gap: .3rem; margin: .7rem 0 .3rem; }
+.kinds button { font: 600 .7rem/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; padding: .5rem .65rem; background: transparent; color: var(--dim); }
+.kinds button.on { color: var(--rust-hi); border-color: var(--rust); background: rgb(216 100 44 / .12); }
+.drawer .form { margin-top: .5rem; }
+.drawer .end { margin-top: 1rem; align-items: center; }
+.drawer .end .credits { margin-right: auto; font-size: 1rem; }
+.library { list-style: none; margin: .4rem 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: .4rem; max-height: 20rem; overflow: auto; }
+.library button { width: 100%; display: grid; gap: .2rem; justify-items: start; text-align: left; padding: .35rem; white-space: normal; font-size: .8rem; }
+.library button.on { border-color: var(--rust); background: rgb(216 100 44 / .14); }
+.library img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 3px; background: #211e1b; }
+.refs { display: flex; gap: .4rem; margin: .4rem 0; }
+.refs img { width: 4rem; height: 4rem; object-fit: contain; border: 1px solid var(--edge); border-radius: 3px; background: #211e1b; }
+.cards > li, .card .body, .card .body > * { min-width: 0; }
+.card select, .card input, .card textarea { max-width: 100%; min-width: 0; }
+.fields > select:first-child, .fields .model { width: 100%; }
+.size { flex-wrap: nowrap; }
+.size select { width: auto; }
+.bill .n { white-space: nowrap; }

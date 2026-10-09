@@ -238,7 +238,7 @@ test("preset checks catch what Meshy would reject", () => {
   expect(checkPreset(base)).toEqual([]);
   expect(checkPreset({ ...base, options: { ai_model: "meshy-6-lite", texture_resolution: "8k" } })).toEqual(["meshy-6-lite textures at 2k only."]);
   expect(checkPreset({ ...base, options: { model_type: "smart-topology", target_polycount: 20000 } })[0]).toContain("15,000");
-  expect(checkPreset({ ...base, options: { ai_model: "meshy-6", geometry_resolution: "4k" } })[0]).toContain("meshy-7.1");
+  expect(checkPreset({ ...base, options: { ai_model: "meshy-6", geometry_resolution: "4k" } })[0]).toContain("only applies to meshy-7.1");
   expect(checkPreset({ ...base, size: { height: 0 } })).toEqual(["Height must be above 0 m."]);
 });
 
@@ -265,22 +265,22 @@ test("draft first, texture later: 5 credits now, Retexture on the keeper", async
   // Texture only the keeper.
   expect(ws.estimateTexture(["flora_fern_h2.png"]).credits).toBe(10);
   await ws.textureModels(["flora_fern_h2.png"]);
-  expect(fern.texture?.state).toBe("queued");
+  expect([fern.ops?.at(-1)?.kind, fern.ops?.at(-1)?.state]).toEqual(["retexture", "queued"]);
   for (let i = 0; i < 4; i++) await ws.tick();
   const rt = fake.retextured.at(-1);
   expect([rt.input_task_id, rt.image_style_url.startsWith("data:image/png;base64,"), rt.enable_pbr, rt.enable_original_uv]).toEqual([fern.taskId, true, true, true]);
-  expect([fern.textured, fern.texture?.state, fern.texture?.credits]).toEqual([true, "done", 10]);
+  expect([fern.textured, fern.ops?.at(-1)?.state, fern.ops?.at(-1)?.credits]).toEqual([true, "done", 10]);
   expect(existsSync(join(dir, RAW, "flora_fern.textures", "base_color.png"))).toBe(true);
   const r = await bounds(await Bun.file(join(dir, READY, "flora_fern.glb")).bytes());
   expect(r.max[1] - r.min[1]).toBeCloseTo(2);
-  expect(ws.get("flora_moss_h2.png").texture).toBeUndefined();
+  expect(ws.get("flora_moss_h2.png").ops).toBeUndefined();
   expect(ws.summary().spent).toBe(15 + 15 + 10);
   expect(ws.canTexture(fern)).toBe(false);
 
   // Unqueue a texture before it goes.
   await ws.textureModels(["flora_moss_h2.png"]);
   await ws.cancel("flora_moss_h2.png");
-  expect(ws.get("flora_moss_h2.png").texture).toBeUndefined();
+  expect(ws.get("flora_moss_h2.png").ops).toEqual([]);
 });
 
 test("presets: the editor's rules", async () => {

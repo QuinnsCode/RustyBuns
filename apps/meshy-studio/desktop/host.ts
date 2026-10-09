@@ -9,7 +9,13 @@
 //   GET  /api/fs/list?dir=  POST /api/fs/pick      choose a workspace folder
 //   POST /api/workspace/open {dir}  POST /api/workspace/close
 //   GET  /api/jobs                        every card, the folders and presets
-//   POST /api/jobs/{send,texture,retry,cancel,edit,move}   card actions; send, texture and retry check the spend guards
+//   POST /api/jobs/{send,texture,op,retry}             spend credits: each checks the spend guards first
+//   POST /api/jobs/{cancel,drop-op,edit,edit-many,move,combine,split}   card changes (free)
+//   POST /api/concepts {kind, params, folder, name, references?, credits}   Text/Image to Image
+//   POST /api/concepts/cancel {id}
+//   POST /api/create/text {folder, name, prompt}   a Text to 3D card (writes <name>.prompt.txt)
+//   GET  /api/animations?search=&category=   Meshy's animation library (free)
+//   GET  /api/usage?...                   billed tasks (Studio and Enterprise plans)
 //   POST /api/presets {presets}           save the preset editor
 //   POST /api/sync {dir, engine} | {off}  also copy finished models into a game engine's folder
 //   POST /api/blender {keys?}             open finished models in Blender
@@ -25,7 +31,10 @@ import { basename, dirname, join, resolve } from "node:path";
 import { Meshy, MeshyError } from "../engine/meshy.ts";
 import { IMAGE_EXT } from "../engine/labels.ts";
 import { findBlender, openInBlender } from "../engine/blender.ts";
-import { INBOX, RAW, READY, SENT, Workspace, type Engine } from "../engine/workspace.ts";
+import { INBOX, PROMPT_EXT, RAW, READY, SENT, Workspace, type Engine } from "../engine/workspace.ts";
+import { estimateConcept, type OpKind } from "../engine/ops.ts";
+
+const OP_KINDS: OpKind[] = ["retexture", "refine", "remesh", "resize", "uv-unwrap", "convert", "rig", "motion", "animate"];
 
 let ws: Workspace | null = null;
 let keyCache: string | null | undefined;
@@ -115,7 +124,9 @@ export default {
       if (path.startsWith("/img/")) {
         const j = ws?.jobs.get(decodeURIComponent(path.slice(5)));
         if (!j) return bad("not found", 404);
-        const p = ws!.imagePath(j);
+        const view = Number(url.searchParams.get("view") ?? 0);
+        const p = ws!.inputPaths(j)[view] ?? "";
+        if (j.source === "text") return bad("not an image", 404);
         if (!existsSync(p)) return bad("not found", 404);
         return new Response(Bun.file(p), { headers: { "content-type": TYPES[p.split(".").pop()!.toLowerCase()] ?? "application/octet-stream", "cache-control": "no-cache" } });
       }
@@ -197,6 +208,22 @@ export default {
       }
       if (path === "/api/workspace/close" && req.method === "POST") { ws?.stop(); ws = null; return json({ ok: true }); }
 
+      if (path === "/api/animations") {
+        const key = readKey(ctx);
+        if (!key) return bad("no API key", 401);
+        try { return json(await new Meshy(key).library({ search: url.searchParams.get("search") ?? undefined, category: url.searchParams.get("category") ?? undefined })); }
+        catch (e) { return bad(e instanceof MeshyError ? e.friendly : String(e), 502); }
+      }
+      if (path === "/api/usage") {
+        const key = readKey(ctx);
+        if (!key) return bad("no API key", 401);
+        const q = Object.fromEntries(url.searchParams);
+        try { return json(await new Meshy(key).usage({ ...q, page_num: q.page_num ? Number(q.page_num) : undefined, page_size: q.page_size ? Number(q.page_size) : undefined })); }
+        catch (e) {
+          if (e instanceof MeshyError && e.status === 403) return bad("Usage history comes with Meshy's Studio and Enterprise plans.", 403);
+          return bad(e instanceof MeshyError ? e.friendly : String(e), 502);
+        }
+      }
       if (!ws) return bad("no workspace open", 409);
       if (path === "/api/jobs") {
         await ws.scan();
@@ -216,15 +243,31 @@ export default {
             const stop = await guard(ctx, ws.estimateTexture(keys).credits, confirmed);
             if (stop) return bad(stop, 402);
             await ws.textureModels(keys);
+          } else if (act === "op") {
+            const kind = String(b.kind) as OpKind;
+            if (!OP_KINDS.includes(kind)) return bad("unknown step");
+            const ops: { kind: OpKind; params: any }[] = [{ kind, params: b.params ?? {} }, ...(Array.isArray(b.then) ? b.then : [])];
+            for (const o of ops) if (!OP_KINDS.includes(o.kind)) return bad("unknown step");
+            const total = ops.reduce((n, o) => n + ws!.estimateOp(keys ?? [], o.kind, o.params).credits, 0);
+            const stop = await guard(ctx, total, confirmed);
+            if (stop) return bad(stop, 402);
+            const skipped: string[] = [];
+            for (const o of ops) skipped.push(...await ws.addOp(keys ?? [], o.kind, o.params));
+            ws.tick();
+            return json({ ...ws.summary(), skipped });
           } else if (act === "retry") {
             const j = ws.get(String(b.key));
-            const cost = j.texture?.state === "failed" ? j.texture.estimate : j.raw ? 0 : j.estimate;
-            const stop = await guard(ctx, cost, confirmed);
+            const stop = await guard(ctx, ws.retryCost(j), confirmed);
             if (stop) return bad(stop, 402);
             await ws.retry(j.key);
           }
-          else if (act === "cancel") await ws.cancel(String(b.key));
+          else if (act === "cancel") await ws.cancel(String(b.key), b.op ? String(b.op) : undefined);
+          else if (act === "drop-op") await ws.dropOp(String(b.key), String(b.op));
           else if (act === "edit") await ws.edit(String(b.key), b.patch ?? {});
+          else if (act === "edit-many") return json({ ...ws.summary(), skipped: await ws.editMany(keys ?? [], b.patch ?? {}) });
+          else if (act === "combine") await ws.combine(keys ?? []);
+          else if (act === "prompt") await ws.setPrompt(String(b.key), String(b.prompt ?? ""));
+          else if (act === "split") await ws.split(String(b.key));
           else if (act === "move") {
             const f = cleanFolder(String(b.folder ?? ""));
             if (f === null) return bad("bad folder");
@@ -234,6 +277,38 @@ export default {
           return bad(e instanceof MeshyError ? e.friendly : String((e as Error).message ?? e));
         }
         if (act === "send" || act === "texture" || act === "retry") ws.tick();
+        return json(ws.summary());
+      }
+      if (path === "/api/concepts" && req.method === "POST") {
+        const b = await body(req);
+        const kind = b.kind === "image-to-image" ? "image-to-image" : "text-to-image";
+        const folder = cleanFolder(String(b.folder ?? ""));
+        if (folder === null) return bad("bad folder");
+        try {
+          const stop = await guard(ctx, estimateConcept(kind, b.params?.ai_model), b.credits === undefined ? undefined : Number(b.credits));
+          if (stop) return bad(stop, 402);
+          await ws.addConcept(kind, b.params ?? {}, { folder, name: String(b.name ?? ""), references: Array.isArray(b.references) ? b.references.map(String) : undefined });
+        } catch (e) { return bad(e instanceof MeshyError ? e.friendly : (e as Error).message); }
+        ws.tick();
+        return json(ws.summary());
+      }
+      if (path === "/api/concepts/cancel" && req.method === "POST") {
+        try { await ws.cancelConcept(String((await body(req)).id)); } catch (e) { return bad((e as Error).message); }
+        return json(ws.summary());
+      }
+      if (path === "/api/create/text" && req.method === "POST") {
+        const b = await body(req);
+        const folder = cleanFolder(String(b.folder ?? ""));
+        const name = String(b.name ?? "").trim();
+        const prompt = String(b.prompt ?? "").trim();
+        if (folder === null || !/^[^/\\:*?"<>|.][^/\\:*?"<>|]*$/.test(name)) return bad("give it a file name");
+        if (!prompt) return bad("write a prompt");
+        if (prompt.length > 800) return bad("Text to 3D prompts are 800 characters at most");
+        const file = ws.path(INBOX, folder, `${name}.prompt.txt`);
+        if (existsSync(file)) return bad(`${name}.prompt.txt already exists there`);
+        mkdirSync(dirname(file), { recursive: true });
+        await Bun.write(file, prompt + "\n");
+        await ws.scan();
         return json(ws.summary());
       }
       if (path === "/api/presets" && req.method === "POST") {
@@ -254,7 +329,8 @@ export default {
       }
       if (path === "/api/blender" && req.method === "POST") {
         const keys: string[] | undefined = (await body(req)).keys;
-        const files = [...ws.jobs.values()].filter((j) => j.state === "done" && j.ready && (!keys || keys.includes(j.key))).map((j) => ws!.path(READY, j.ready!));
+        const files = [...ws.jobs.values()].filter((j) => j.state === "done" && j.ready && (!keys || keys.includes(j.key)))
+          .flatMap((j) => [j.ready!, ...(j.readyExtras ?? [])].map((f) => ws!.path(READY, f)));
         if (!files.length) return bad("no finished models to open");
         if (!openInBlender(files)) return bad("Blender wasn't found. Install it, or set BLENDER_PATH.", 404);
         return json({ opened: files.length });
@@ -268,7 +344,7 @@ export default {
       if (path === "/api/upload" && req.method === "POST") {
         const f = cleanFolder(url.searchParams.get("folder") ?? "");
         const name = basename(url.searchParams.get("name") ?? "");
-        if (f === null || !IMAGE_EXT.test(name) || name.startsWith(".")) return bad("only .png and .jpg images");
+        if (f === null || !(IMAGE_EXT.test(name) || PROMPT_EXT.test(name)) || name.startsWith(".")) return bad("only .png and .jpg images, or .prompt.txt prompts");
         mkdirSync(ws.path(INBOX, f), { recursive: true });
         await Bun.write(ws.path(INBOX, f, name), await req.arrayBuffer());
         await ws.scan();

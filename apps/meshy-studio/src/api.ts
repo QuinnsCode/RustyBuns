@@ -1,10 +1,22 @@
 // Thin client for desktop/host.ts. The Meshy key never reaches this side.
-import type { Engine, Job, Sync } from "../engine/workspace.ts";
-import type { Origin, Preset, Size } from "../engine/presets.ts";
+import type { Concept, Engine, Job, Op, Overrides, Sync } from "../engine/workspace.ts";
+import type { MeshyOptions, ModelId, Origin, Preset, Size } from "../engine/presets.ts";
+import type { ConceptParams, OpKind, OpParams } from "../engine/ops.ts";
+import type { LibraryAction, UsageRecord } from "../engine/meshy.ts";
 
-export type { Engine, Job, Origin, Preset, Size, Sync };
+export type { Concept, ConceptParams, Engine, Job, LibraryAction, MeshyOptions, ModelId, Op, OpKind, OpParams, Origin, Overrides, Preset, Size, Sync, UsageRecord };
 export interface Settings { maxQueued: number; confirmSends: boolean; batchCap: number }
-export type Card = Job & { sizeText: string; presetLabel: string; draftEstimate: number; textureEstimate: number };
+export type Card = Job & {
+  sizeText: string; presetLabel: string; draftEstimate: number; textureEstimate: number;
+  /** The preset's options with this card's overrides. */
+  options: MeshyOptions; model: ModelId;
+  /** Unsent cards: what each model would cost here, and what Meshy would refuse. */
+  modelCosts?: Record<ModelId, { full: number; draft: number; problems: string[] }>;
+  problems: string[]; canTexture: boolean;
+};
+export type EditPatch = Partial<Pick<Job, "prefix" | "size" | "origin" | "outName" | "texturePrompt" | "draft">> & {
+  overrides?: Overrides; clear?: (keyof MeshyOptions)[]; model?: ModelId | "preset";
+};
 
 export interface Status {
   /** Whether a key is saved. Nothing of the key itself ever comes back. */
@@ -16,7 +28,7 @@ export interface Summary {
   dir: string; name: string; version: number; maxQueued: number;
   pause: { reason: string; until?: number } | null;
   folders: string[]; presets: Preset[]; jobs: Card[];
-  sync: Sync | null; spent: number;
+  sync: Sync | null; spent: number; concepts: Concept[];
 }
 
 async function call<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
@@ -47,7 +59,22 @@ export const api = {
   resume: () => act("send", { keys: [] }),
   retry: (key: string, credits?: number) => act("retry", { key, credits }),
   cancel: (key: string) => act("cancel", { key }),
-  edit: (key: string, patch: Partial<Pick<Job, "prefix" | "size" | "origin" | "outName" | "texturePrompt" | "draft">>) => act("edit", { key, patch }),
+  edit: (key: string, patch: EditPatch) => act("edit", { key, patch }),
+  editMany: (keys: string[], patch: EditPatch) => call<Summary & { skipped: string[] }>("/api/jobs/edit-many", { json: { keys, patch } }),
+  /** A step (and any that follow it, e.g. motion then animate) on these cards. */
+  op: <K extends OpKind>(keys: string[], kind: K, params: OpParams[K], credits: number, then: { kind: OpKind; params: unknown }[] = []) =>
+    call<Summary & { skipped: string[] }>("/api/jobs/op", { json: { keys, kind, params, credits, then } }),
+  cancelOp: (key: string, op: string) => act("cancel", { key, op }),
+  dropOp: (key: string, op: string) => act("drop-op", { key, op }),
+  combine: (keys: string[]) => act("combine", { keys }),
+  split: (key: string) => act("split", { key }),
+  setPrompt: (key: string, prompt: string) => act("prompt", { key, prompt }),
+  concept: (kind: Concept["kind"], params: ConceptParams, opts: { folder: string; name: string; references?: string[] }, credits: number) =>
+    call<Summary>("/api/concepts", { json: { kind, params, ...opts, credits } }),
+  cancelConcept: (id: string) => call<Summary>("/api/concepts/cancel", { json: { id } }),
+  createText: (folder: string, name: string, prompt: string) => call<Summary>("/api/create/text", { json: { folder, name, prompt } }),
+  animations: (q: { search?: string; category?: string } = {}) => call<LibraryAction[]>(`/api/animations?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`),
+  usage: (q: Record<string, string> = {}) => call<UsageRecord[]>(`/api/usage?${new URLSearchParams(q)}`),
   move: (key: string, folder: string) => act("move", { key, folder }),
   newFolder: (name: string) => call<Summary>("/api/folders", { json: { name } }),
   upload: (folder: string, file: File) =>
@@ -58,4 +85,4 @@ export const api = {
   reveal: (stage: "inbox" | "sent" | "raw" | "ready" | "root") => call<{ ok: true }>("/api/reveal", { json: { stage } }),
 };
 
-export const imageUrl = (key: string, v: number) => `/img/${encodeURIComponent(key)}?v=${v}`;
+export const imageUrl = (key: string, v: number, view = 0) => `/img/${encodeURIComponent(key)}?v=${v}${view ? `&view=${view}` : ""}`;

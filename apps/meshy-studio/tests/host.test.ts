@@ -99,3 +99,35 @@ test("engine sync: refuses a folder inside the workspace", async () => {
   expect((await (await post("/api/sync", { off: true })).json()).sync).toBeNull();
   _reset();
 });
+
+test("new routes: steps and concepts go through the spend guards; text cards, library, usage", async () => {
+  const dir = join(root, "Routes");
+  mkdirSync(dir);
+  await post("/api/workspace/open", { dir });
+  await post("/api/settings", { batchCap: 300 });
+
+  const t = await post("/api/create/text", { folder: "", name: "char_knight", prompt: "a stout knight" });
+  expect((await t.json()).jobs[0]).toMatchObject({ key: "char_knight.prompt.txt", source: "text", prompt: "a stout knight" });
+  expect((await post("/api/create/text", { folder: "", name: "char_knight", prompt: "again" })).status).toBe(400);
+  expect((await post("/api/create/text", { folder: "../x", name: "a", prompt: "b" })).status).toBe(400);
+
+  // A step on a card that isn't finished is skipped and costs nothing.
+  const op = await post("/api/jobs/op", { keys: ["char_knight.prompt.txt"], kind: "remesh", params: {}, credits: 0 });
+  expect((await op.json()).skipped).toEqual(["char_knight: The card needs a finished model first."]);
+  expect((await post("/api/jobs/op", { keys: [], kind: "explode", params: {} })).status).toBe(400);
+
+  // Concepts: confirmed amount and batch limit are checked.
+  const c1 = await post("/api/concepts", { kind: "text-to-image", params: { ai_model: "nano-banana-pro", prompt: "a lamp" }, name: "item_lamp", folder: "", credits: 3 });
+  expect([c1.status, (await c1.json()).error]).toEqual([402, expect.stringContaining("more than the 3 you confirmed")]);
+  await post("/api/settings", { batchCap: 5 });
+  const c2 = await post("/api/concepts", { kind: "text-to-image", params: { ai_model: "nano-banana-pro", prompt: "a lamp" }, name: "item_lamp", folder: "", credits: 9 });
+  expect((await c2.json()).error).toContain("over your 5-credit batch limit");
+  await post("/api/settings", { batchCap: 300 });
+  const c3 = await post("/api/concepts", { kind: "text-to-image", params: { ai_model: "nano-banana", prompt: "a lamp" }, name: "item_lamp", folder: "", credits: 3 });
+  expect((await c3.json()).concepts[0]).toMatchObject({ kind: "text-to-image", name: "item_lamp", estimate: 3 });
+
+  expect((await (await call("/api/animations?search=pun")).json()).map((a: any) => a.action_id)).toEqual([42]);
+  const u = await call("/api/usage");
+  expect([u.status, (await u.json()).error]).toEqual([403, "Usage history comes with Meshy's Studio and Enterprise plans."]);
+  _reset();
+});
