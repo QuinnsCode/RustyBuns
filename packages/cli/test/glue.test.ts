@@ -388,6 +388,24 @@ test("artifacts: wrangler, alchemy and the desktop host all get the binding", ()
   expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
 });
 
+test("container: wrangler and alchemy bind the class and its image; the desktop host leaves it out", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  const w = JSON.parse(generateWrangler(c).replace(/^\/\/.*\n/gm, ""));
+  expect(w.containers).toEqual([{ class_name: "AgentSandbox", image: "sandbox/Dockerfile", max_instances: 2, instance_type: "basic" }]);
+  expect(w.durable_objects.bindings).toEqual([{ name: "SANDBOX", class_name: "AgentSandbox" }]);
+  expect(w.migrations[0].new_sqlite_classes).toEqual(["AgentSandbox"]);
+  const a = generateAlchemy(c);
+  expect(a).toContain(`export const SANDBOX = Cloudflare.Container("SANDBOX", { className: "AgentSandbox", context: "sandbox", dockerfile: "Dockerfile", maxInstances: 2, instanceType: "basic" });`);
+  expect(a).toContain(`SANDBOX: SANDBOX`);
+  const host = desktopEntry(c);
+  expect(host).toContain(`// SANDBOX: Cloudflare Container (AgentSandbox) has no local twin`);
+  expect(host).not.toContain(`SANDBOX: local`);
+});
+
 test("desktopCrates: only crates that would be embedded count against cross targets", async () => {
   const { desktopCrates } = await import("../src/build.ts");
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");

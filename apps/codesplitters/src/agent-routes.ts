@@ -1,20 +1,24 @@
 // Coding agents from the file page. The repo owner picks a harness (claude,
 // codex, pi, opencode), types a task, and the agent runs on this machine with
-// the CLI's own login. Its edit lands as line ops on the file, so every open
-// page sees it live and blame says `agent-<harness>`.
+// the CLI's own login, or in a container when AGENT_SANDBOX is bound (Cloudflare;
+// see sandbox.ts). Its edit lands as line ops on the file, so every open page
+// sees it live and blame says `agent-<harness>`.
 //
-// Desktop only: the agent is a local CLI, so on Cloudflare (no Bun, no CLIs)
-// the routes say so. Owner only: the CLI runs as the machine's user and can run
-// shell commands, so only the person whose machine it is may start one.
+// On this machine: desktop only, since the CLI runs as the machine's user and can
+// run shell commands, so only the person whose machine it is may start one. In a
+// container it can't reach the host, so accounts may be on. Owner only either way.
+// A container run answers when it is done (200), since an isolate's memory is
+// not where the next poll lands; a local one answers at once (202).
 //
 //   GET  /api/agents                                     which harnesses this machine can run
 //   POST /api/repos/:o/:r/agents {path, harness, task, model?}  start one; answers at once
 //   GET  /api/repos/:o/:r/agents?path=                   this file's runs, newest first
 
 import { json, type Env } from "./env.ts";
-import { accountsOn } from "./identity.ts";
+import { accountsOn, actingAs } from "./identity.ts";
 import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
-import { runAgent, type Conflict, type Exec } from "./agent-run.ts";
+import { localSandbox, runAgent, type Conflict, type Exec } from "./agent-run.ts";
+import { containerSandbox } from "./sandbox.ts";
 
 export interface Run {
   id: number;
@@ -38,13 +42,14 @@ let nextId = 1;
 
 /** Why agents can't run here, or null when they can. The agent signs in by alias, so accounts must be off. */
 function unavailable(env: Env): string | null {
+  if (env.AGENT_SANDBOX) return null;
   if (typeof Bun === "undefined") return "Coding agents run on the desktop app, where their CLIs are installed.";
   if (accountsOn(env)) return "Coding agents need the desktop app (accounts off).";
   return null;
 }
 
 /** The harnesses whose CLI is on PATH (all of them when a test swaps the CLI out). */
-const installed = (env: Env) => env.AGENT_EXEC ? HARNESSES : HARNESSES.filter((h) => Bun.which(harnessCommand(h, "").bin));
+const installed = (env: Env) => env.AGENT_EXEC || env.AGENT_SANDBOX ? HARNESSES : HARNESSES.filter((h) => Bun.which(harnessCommand(h, "").bin));
 
 export async function agentRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null,
   canRead: (owner: string, repo: string) => Promise<boolean>,
@@ -74,9 +79,9 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   // The agent edits as its own collaborator, so blame shows which agent wrote what.
   const agent = `agent-${harness}`, origin = url.origin;
   const call = (who: string | null, path: string, init: RequestInit = {}) => {
-    const headers = new Headers(init.headers);
-    if (who) headers.set("cookie", `cs_user=${who}`);
-    return self(new Request(origin + path, { ...init, headers }));
+    const r = new Request(origin + path, init);
+    if (who) actingAs.set(r, who);
+    return self(r);
   };
   const added = await call(owner, `/api/repos/${owner}/${repo}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
   if (!added.ok) return json({ error: `adding ${agent}: ${await added.text()}` }, 500);
@@ -84,13 +89,15 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   const run: Run = { id: nextId++, owner, repo, path, harness, task: task.trim().slice(0, 2000), agent, status: "running", started: Date.now(), log: [] };
   runs.push(run);
   if (runs.length > 50) runs.splice(0, runs.length - 50);
-  runAgent(call, {
+  const sandbox = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
+  const done = runAgent(call, {
     user: agent, owner, repo, path, harness, task: run.task, model: model?.trim() || undefined,
-    exec: env.AGENT_EXEC as Exec | undefined, log: (s) => run.log.push(s),
+    sandbox, log: (s) => run.log.push(s),
   }).then((r) => {
     Object.assign(run, { status: "done", applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000) });
   }, (e: Error) => {
     Object.assign(run, { status: "failed", error: String(e?.message ?? e).slice(-4000) });
   });
+  if (env.AGENT_SANDBOX) { await done; return json(run); }
   return json(run, 202);
 }

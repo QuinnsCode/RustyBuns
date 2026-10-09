@@ -19,6 +19,14 @@ export default defineConfig({
     GAMES: { type: "durable_object", className: "GameRoom" },
     // One git repo per excavation; cataloguing pushes to it.
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
+    // Hosted coding agents: one container per run, each CLI installed (sandbox/Dockerfile).
+    // The desktop has no twin and runs the CLIs on the machine instead.
+    AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" },
+    // The CLIs' logins inside the container. Set the ones for the harnesses you use.
+    ANTHROPIC_API_KEY: { type: "secret" },        // claude, pi, opencode
+    CLAUDE_CODE_OAUTH_TOKEN: { type: "secret" },  // claude, from `claude setup-token`
+    OPENAI_API_KEY: { type: "secret" },           // codex, pi, opencode
+    CODEX_API_KEY: { type: "secret" },            // codex exec
     // Accounts (Better Auth). Unset on the desktop: it uses aliases. GitHub and
     // Google sign-in appear only when their pair is set.
     BETTER_AUTH_SECRET: { type: "secret" },

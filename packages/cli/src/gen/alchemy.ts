@@ -27,6 +27,13 @@ function resource(name: string, b: Binding): string | null {
       // in `env` (src/Cloudflare/Workers/DurableObject.ts, "Async Workers").
       // Not a top-level resource: it is created inline in env below.
       return null;
+    case "container": {
+      // The Container is the DO binding and its ContainerApplication together;
+      // the image builds from the Dockerfile's directory at deploy.
+      const at = b.dockerfile.lastIndexOf("/");
+      const [context, dockerfile] = at < 0 ? [".", b.dockerfile] : [b.dockerfile.slice(0, at), b.dockerfile.slice(at + 1)];
+      return `export const ${id} = Cloudflare.Container("${name}", { className: ${JSON.stringify(b.className)}, context: ${JSON.stringify(context)}, dockerfile: ${JSON.stringify(dockerfile)}, maxInstances: ${b.maxInstances ?? 1}, instanceType: ${JSON.stringify(b.instanceType ?? "lite")} });`;
+    }
     case "var":
     case "secret":
       return null;

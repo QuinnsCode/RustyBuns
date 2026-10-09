@@ -14,6 +14,7 @@ import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts
 import { agentRoutes } from "./agent-routes.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
+export { AgentSandbox } from "./sandbox.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();

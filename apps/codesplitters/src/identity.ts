@@ -61,7 +61,15 @@ async function handleFor(env: Env, u: { id: string; name?: string; email?: strin
   throw new Error("no free handle");
 }
 
+/**
+ * Requests the Worker makes to itself for a hosted agent, and who each acts as.
+ * Only code in this isolate holds the Request objects, so nothing outside can claim one.
+ */
+export const actingAs = new WeakMap<Request, string>();
+
 export async function identify(req: Request, env: Env): Promise<string | null> {
+  const inner = actingAs.get(req);
+  if (inner !== undefined) return inner;
   if (!accountsOn(env)) return aliasOf(req);
   const session = await authFor(env, new URL(req.url).origin).api.getSession({ headers: req.headers });
   return session ? handleFor(env, session.user) : null;

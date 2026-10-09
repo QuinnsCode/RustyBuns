@@ -7,6 +7,22 @@ export type Binding =
   | { type: "durable_object"; className: string; scriptName?: string }
   /** Cloudflare Artifacts: git repos created at runtime. Locally, bare repos served over git HTTP. */
   | { type: "artifacts"; namespace: string }
+  /**
+   * Cloudflare Containers: a Durable Object class exported by `main` with a
+   * container image behind it (the class reaches it through `ctx.container`).
+   * Edge only: the desktop has no twin, so the binding is left out there and
+   * the app falls back to running on the machine itself.
+   */
+  | {
+      type: "container";
+      className: string;
+      /** Path to the Dockerfile, relative to the app. Its directory is the build context. */
+      dockerfile: string;
+      /** Cap on instances running at once. @default 1 */
+      maxInstances?: number;
+      /** "lite" (1/16 vCPU, 256 MiB), "basic" (1/4 vCPU, 1 GiB), "standard-1" and up. @default "lite" */
+      instanceType?: string;
+    }
   | { type: "var"; value: string }
   | {
       type: "secret";

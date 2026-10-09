@@ -12,6 +12,14 @@
     "binding": "ASSETS",
     "directory": "dist/client"
   },
+  "containers": [
+    {
+      "class_name": "AgentSandbox",
+      "image": "sandbox/Dockerfile",
+      "max_instances": 2,
+      "instance_type": "basic"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
@@ -31,6 +39,14 @@
       {
         "name": "FILES",
         "class_name": "FileDurableObject"
+      },
+      {
+        "name": "GAMES",
+        "class_name": "GameRoom"
+      },
+      {
+        "name": "AGENT_SANDBOX",
+        "class_name": "AgentSandbox"
       }
     ]
   },
@@ -38,7 +54,9 @@
     {
       "tag": "v1",
       "new_sqlite_classes": [
-        "FileDurableObject"
+        "FileDurableObject",
+        "GameRoom",
+        "AgentSandbox"
       ]
     }
   ],
