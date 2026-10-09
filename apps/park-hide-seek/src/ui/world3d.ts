@@ -283,14 +283,19 @@ export class World3D {
     const c = document.createElement("canvas");
     c.width = 512; c.height = 128;
     const x = c.getContext("2d")!;
-    x.fillStyle = "#5a3d22"; x.fillRect(0, 0, 512, 128);
-    x.strokeStyle = "#e8d9b0"; x.lineWidth = 6; x.strokeRect(8, 8, 496, 112);
-    x.fillStyle = "#f3e7c4"; x.font = "46px Ultra, Georgia, serif"; x.textAlign = "center"; x.textBaseline = "middle";
-    let label = p.label ?? "";
-    while (x.measureText(label).width > 470 && label.length > 4) label = label.slice(0, -2) + "…";
-    x.fillText(label, 256, 66);
+    const paint = () => {
+      x.fillStyle = "#5a3d22"; x.fillRect(0, 0, 512, 128);
+      x.strokeStyle = "#e8d9b0"; x.lineWidth = 6; x.strokeRect(8, 8, 496, 112);
+      x.fillStyle = "#f3e7c4"; x.font = "46px Ultra, Georgia, serif"; x.textAlign = "center"; x.textBaseline = "middle";
+      let label = p.label ?? "";
+      while (x.measureText(label).width > 470 && label.length > 4) label = label.slice(0, -2) + "…";
+      x.fillText(label, 256, 66);
+    };
+    paint();
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
+    // On a cold load Ultra can still be on its way: paint the board again once it's here.
+    if (document.fonts && !document.fonts.check("46px Ultra")) void document.fonts.load("46px Ultra").then(() => { paint(); tex.needsUpdate = true; }).catch(() => {});
     const board = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.45, 0.06), [
       ...Array(4).fill(new THREE.MeshStandardMaterial({ color: "#5a3d22" })),
       new THREE.MeshStandardMaterial({ map: tex }), new THREE.MeshStandardMaterial({ map: tex }),

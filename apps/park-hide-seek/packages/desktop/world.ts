@@ -1,10 +1,12 @@
 // The world: one hunt. On the desktop it runs in-process for whoever clicked
 // "Host a LAN game", and guests reach it over ws:// with the join passphrase;
 // the host vouches X-User-Id / X-User-Name for each. Online it is the Durable
-// Object behind each room code (src/edge/worker.ts vouches instead).
+// Object behind each room code (src/edge/worker.ts vouches instead), and a
+// quick play room starts itself on an alarm the Matchmaker sets.
 // The Room here is the same one the page runs for single player.
 import { Room, TICK_MS } from "../../src/room.ts";
 import { TokenBucket } from "../../src/edge/limits.ts";
+import { QUICK } from "../../src/edge/match.ts";
 import { parseMsg } from "../../src/hunt/game.ts";
 import { fetchWeather } from "../../src/weather.ts";
 
@@ -27,6 +29,13 @@ export default class World {
   constructor(private ctx: any, private env: any) {}
 
   async fetch(request: Request): Promise<Response> {
+    // Only the Matchmaker gets here: the Worker sends players' requests on /ws.
+    if (new URL(request.url).pathname === "/quick") {
+      const at = Number(new URL(request.url).searchParams.get("at"));
+      if (!Number.isFinite(at)) return new Response("bad start time", { status: 400 });
+      await this.ctx.storage.setAlarm(at);
+      return new Response(null, { status: 204 });
+    }
     if (request.headers.get("Upgrade") !== "websocket") return new Response("websocket only", { status: 400 });
     const id = request.headers.get("X-User-Id");
     if (!id) return new Response("Unauthenticated", { status: 401 });
@@ -57,6 +66,15 @@ export default class World {
     this.room.handle(id, m, now);
     // Positions stream in all the time; the tick sends views out at its own pace.
     if (m.t !== "pos") this.flush(true);
+  }
+
+  /** Quick play's window closed: fill the room out with AI and start, on behalf of whoever hosts it. */
+  alarm() {
+    const g = this.room.game, host = g.hostId, now = Date.now();
+    if (!host || g.phase !== "lobby") return;
+    for (let n = g.players.filter((p) => p.online).length; n < QUICK.size; n++) this.room.handle(host, { t: "bot", level: "normal" }, now);
+    this.room.handle(host, { t: "start" }, now);
+    this.flush(true);
   }
 
   webSocketClose(ws: any) { this.gone(ws); }

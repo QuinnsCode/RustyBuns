@@ -11,6 +11,8 @@ describe("quick play", () => {
     expect(b.room).toBe(a.room);
     expect(a.startsIn).toBe(QUICK.windowMs);
     expect(1000 + a.startsIn).toBe(4000 + b.startsIn);
+    // Only the first one opens the room, so the World is told when to start just once.
+    expect([a.opened, b.opened]).toEqual([true, false]);
   });
 
   test("too close to the start opens a fresh room", () => {
