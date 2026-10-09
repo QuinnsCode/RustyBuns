@@ -35,6 +35,10 @@ export interface Env {
   GITHUB_CLIENT_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
+  /** A GitHub token for listing and digging up repos. Without it: the caller's GitHub sign-in, else `gh auth token`. */
+  GITHUB_TOKEN?: string;
+  /** "off" stops the desktop asking the GitHub CLI for a token (the tests set it). */
+  GH_CLI?: string;
 }
 
 export const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>

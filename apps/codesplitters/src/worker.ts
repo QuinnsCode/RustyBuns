@@ -7,6 +7,7 @@ import { fileStub, handleFor, access as artifactAccess, listDir, materialize, pu
 import { code, json, NAME, type Env } from "./env.ts";
 import { identityRoutes, identify, isAdmin } from "./identity.ts";
 import { levelRoutes } from "./levels.ts";
+import { githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
 export { FileDurableObject } from "./file-do.ts";
@@ -36,6 +37,8 @@ export default {
 
     const levels = await levelRoutes(req, env, p, url, user, isAdmin(env, user));
     if (levels) return levels;
+    const github = await githubRoutes(req, env, p, user);
+    if (github) return github;
     const game = await gameRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read);
     if (game) return game;
     const share = await shareRoutes(req, env, p, user);
@@ -84,13 +87,15 @@ export default {
 
       // GET /api/repos/:o/:r
       if (!p[4] && req.method === "GET") {
-        const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, created_at FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+        const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, created_at FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
         // Anyone who can read the repo can clone its artifact, with an hour-long read token.
         const h = await handleFor(env, owner, repo).catch(() => null);
         const art = h && await artifactAccess(h.handle, h.remote, "read", 3600).catch(() => null);
         const clone = art && `git clone ${art.remote.replace("://", `://x:${art.token.split("?")[0]}@`)} ${repo}`;
-        return json({ ...r, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone });
+        // Where the fork's git lives: a bare repo on this machine, or Cloudflare Artifacts.
+        const home = h ? (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(art?.remote ?? h.remote) ? "local" : "cloud") : null;
+        return json({ ...r, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, home });
       }
       // PUT /api/repos/:o/:r {visibility}  (owner only)
       if (!p[4] && req.method === "PUT") {
@@ -117,7 +122,8 @@ export default {
             commit = listing.commit && { hash: listing.commit.hash, message: listing.commit.message.split("\n")[0] };
           }
         } catch (e) {
-          if (code(e) === "FORK_IN_PROGRESS") return json({ forking: true, entries: [] }, 202);
+          if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return json({ forking: true, entries: [] }, 202);
+          if (code(e) === "NOT_FOUND") return json({ lost: true, entries: [] });   // a clone that never landed
           throw e;
         }
         const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path LIKE ? ESCAPE '\\'")
