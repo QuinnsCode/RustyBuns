@@ -5,7 +5,9 @@
   "name": "codesplitters",
   "main": "src/worker.ts",
   "compatibility_date": "2026-06-01",
-  "compatibility_flags": [],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "assets": {
     "binding": "ASSETS",
     "directory": "dist/client"

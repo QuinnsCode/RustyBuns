@@ -7,7 +7,7 @@ export default defineConfig({
     builtMain: "dist/worker/worker.js",
     assets: "dist/client",
     compatibilityDate: "2026-06-01",
-    compatibilityFlags: [],
+    compatibilityFlags: ["nodejs_compat"],   // Better Auth leans on Node APIs (AsyncLocalStorage)
     build: "bun run build.ts",
   },
   bindings: {
