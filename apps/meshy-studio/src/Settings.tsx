@@ -1,6 +1,7 @@
 // The settings panel: the Meshy key, spend guards, and where finished models go.
 import { useEffect, useState } from "react";
-import { api, type Engine, type Settings, type Status, type Summary } from "./api.ts";
+import { scrimProps } from "./scrim.ts";
+import { api, type Engine, type Settings, type Status, type Summary, type UsageRecord } from "./api.ts";
 
 const QUEUE_LIMITS: [string, number][] = [["Pro", 10], ["Studio", 20], ["Premium", 30], ["Ultra", 100]];
 
@@ -80,8 +81,8 @@ export function SettingsPanel({ status, sum, balance, onClose, onStatus, onSumma
   const connect = () => api.sync(dir, engine).then((x) => { onSummary(x); setError(null); }, (e) => setError(e.message));
 
   return (
-    <div className="scrim" onClick={onClose}>
-      <aside className="drawer plate" role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
+    <div className="scrim" {...scrimProps(onClose)}>
+      <aside className="drawer plate" role="dialog" aria-label="Settings">
         <header className="row">
           <h2>Settings</h2>
           <button className="ghost small" onClick={onClose} aria-label="Close settings">Close</button>
@@ -120,6 +121,8 @@ export function SettingsPanel({ status, sum, balance, onClose, onStatus, onSumma
           </label>
         </section>
 
+        <Usage />
+
         <section>
           <h3>Game engine</h3>
           <p className="muted small">Finished models are also copied here, keeping your folders, and re-copied when you resize or rename them.</p>
@@ -142,5 +145,36 @@ export function SettingsPanel({ status, sum, balance, onClose, onStatus, onSumma
         </section>
       </aside>
     </div>
+  );
+}
+
+/** Meshy's own record of billed tasks (Studio and Enterprise plans), newest first. */
+function Usage() {
+  const [rows, setRows] = useState<UsageRecord[] | null>(null);
+  const [days, setDays] = useState(30);
+  const [error, setError] = useState<string | null>(null);
+  const load = () => {
+    const end = new Date();
+    api.usage({ page_size: "100", start_time: new Date(end.getTime() - days * 864e5).toISOString(), end_time: end.toISOString() })
+      .then((r) => { setRows(r); setError(null); }, (e) => setError(e.message));
+  };
+  const total = rows?.reduce((n, r) => n + r.consumed_credits, 0) ?? 0;
+  const byEndpoint = new Map<string, number>();
+  for (const r of rows ?? []) byEndpoint.set(r.endpoint, (byEndpoint.get(r.endpoint) ?? 0) + r.consumed_credits);
+  return (
+    <section>
+      <h3>Usage history</h3>
+      <div className="row">
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))}>{[1, 7, 30, 90, 365].map((d) => <option key={d} value={d}>Last {d} day{d === 1 ? "" : "s"}</option>)}</select>
+        <button className="ghost small" onClick={load}>{rows ? "Refresh" : "Show"}</button>
+      </div>
+      {error && <p className="muted small">{error}</p>}
+      {rows && <>
+        <p className="small"><strong className="credits">{total.toLocaleString()}</strong> credits over {rows.length} task{rows.length === 1 ? "" : "s"}{rows.length === 100 ? " (the latest 100)" : ""}.</p>
+        <table className="bill">
+          <tbody>{[...byEndpoint].sort((a, b) => b[1] - a[1]).map(([e, n]) => <tr key={e}><td>{e}</td><td /><td className="n">{n}</td></tr>)}</tbody>
+        </table>
+      </>}
+    </section>
   );
 }
