@@ -3,6 +3,7 @@ import { apply, empty, fromText, replay, text, type Applied } from "../src/lines
 import { local as boot, type Call } from "../src/local.ts";
 import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
+import { noodles } from "../src/noodles.ts";
 
 // Every app instance makes a temp dir of git repos; remove them all at the end.
 const opened: { close(): void }[] = [];
@@ -252,22 +253,46 @@ describe("game", () => {
     const call = await local();
     const ns = call.artifacts, { push } = await import("../src/git.ts");
     const made = await ns.create("level-mitt");
-    await push(made.remote, made.token, { changes: { "README.md": "mitt\n\ttabbed\n", "src/index.ts": "export default 1\n", "logo.png": "\u0000png" }, message: "upstream", author: "upstream" });
+    await push(made.remote, made.token, { changes: { "README.md": "mitt\n\ttabbed\n", "src/index.ts": "export default 1\nexport function isRecord(x: unknown): x is Record<string, unknown> {\n\treturn typeof x === \"object\" && x !== null;\n}\n", "logo.png": "\u0000png" }, message: "upstream", author: "upstream" });
     const tip = (await (await ns.get("level-mitt")).log())[0]!.hash;
     await call.env.DB.prepare("INSERT INTO levels (slug, status, commit_hash) VALUES ('mitt', 'ready', ?)").bind(tip).run();
 
     const root = await (await call(null, "/api/game/l/mitt/walls")).json() as any;
     expect(root.doors).toEqual([{ name: "src", path: "src" }]);
     expect(root.files.map((f: any) => [f.name, f.lines])).toEqual([["logo.png", []], ["README.md", ["mitt", "  tabbed", ""]]]);
-    expect((await (await call(null, "/api/game/l/mitt/walls?path=src")).json() as any).files[0].lines[0]).toBe("export default 1");
+    const src = (await (await call(null, "/api/game/l/mitt/walls?path=src")).json() as any).files[0];
+    expect(src.lines[0]).toBe("export default 1");
+    // Its type guard is a noodle monster, sent with its line range.
+    expect(src.noodles).toEqual([{ name: "isRecord", start: 2, end: 4, record: true, lines: ["export function isRecord(x: unknown): x is Record<string, unknown> {", "  return typeof x === \"object\" && x !== null;", "}"] }]);
+    expect(root.files.every((f: any) => !f.noodles)).toBe(true);
     expect((await call(null, "/api/game/l/mitt/walls?path=nope")).status).toBe(404);
     expect((await call(null, "/api/game/l/clsx/walls")).status).toBe(409);       // not imported
     // A second visit reads D1, not Artifacts.
-    expect((await call.env.DB.prepare("SELECT key FROM walls_cache ORDER BY key").all()).results.map((r: any) => r.key)).toEqual([`${tip}:`, `${tip}:src`]);
+    expect((await call.env.DB.prepare("SELECT key FROM walls_cache ORDER BY key").all()).results.map((r: any) => r.key)).toEqual([`v2:${tip}:`, `v2:${tip}:src`]);
     // Private repos stay private in the game too.
     await post(call, "ana", "/api/repos", { name: "secret", visibility: "private" });
     expect((await call("bo", "/api/game/r/ana/secret")).status).toBe(404);
     expect((await call("ana", "/api/game/r/ana/secret")).status).toBe(200);
+  });
+
+  test("noodles: type guards, isRecord the biggest, with their line ranges", () => {
+    const found = noodles([
+      "import x from \"y\";",
+      "export function isRecord(value: unknown): value is Record<string, unknown> {",
+      "  if (typeof value !== \"object\") return false;",
+      "  return value !== null;",
+      "}",
+      "const isFoo = (x: unknown): x is { a: string } =>",
+      "  typeof x === \"object\" &&",
+      "  x !== null;",
+      "export const isBar = <T extends Record<string, unknown>>(x: T | null): x is T => x != null;",
+      "function notAGuard(x: unknown): boolean { return true }",
+      "function isObj(x: unknown): x is Foo | { b: 1 } {",
+      "  return true;",
+      "}",
+    ].join("\n"));
+    expect(found.map((n) => [n.name, n.start, n.end, n.record])).toEqual([["isRecord", 2, 5, true], ["isFoo", 6, 8, false], ["isBar", 9, 9, false], ["isObj", 11, 13, false]]);
+    expect(found[1]!.lines).toEqual(["const isFoo = (x: unknown): x is { a: string } =>", "  typeof x === \"object\" &&", "  x !== null;"]);
   });
 
   test("the room on a level's page: lobby, start, relay, clubbing, round over", async () => {

@@ -248,7 +248,7 @@ function buildRoom(path, w) {
   for (let x = -half + 3; x < half; x += 6) for (let z = -half + 3; z < half; z += 6) {
     const p = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.6), lightMat); p.rotation.x = Math.PI / 2; p.position.set(x, H - 0.01, z); group.add(p);
   }
-  const doors = [], lines = [];
+  const doors = [], lines = [], files = [];
   const doorMat = new THREE.MeshBasicMaterial({ color: "#0a0a0a" });
   panels.forEach((p, k) => {
     const wi = k % 4, slot = Math.floor(k / 4);
@@ -270,6 +270,7 @@ function buildRoom(path, w) {
       lavaWall(wall, c);
     } else if (p.kind === "file") {
       const a = atlas(p.file);
+      files.push({ file: p.file, wall: wi, c, atlas: a });
       const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.file.name, "#e8590c", 54), transparent: true }));
       lab.position.set(c, H - 0.35, 0.02); wall.add(lab);
       const left = c - PANEL / 2 + 0.4;
@@ -282,8 +283,9 @@ function buildRoom(path, w) {
     }
   });
   scene.add(group);
-  here = { path, half, group, doors, lines };
-  $("#where").textContent = (path ? path + "/" : "/") + `  ·  ${w.files.length} files, ${w.doors.length} doors`;
+  here = { path, half, group, doors, lines, files };
+  const lurking = files.reduce((n, f) => n + (f.file.noodles?.length ?? 0), 0);
+  $("#where").textContent = (path ? path + "/" : "/") + `  ·  ${w.files.length} files, ${w.doors.length} doors` + (lurking ? `  ·  ${lurking} noodle${lurking > 1 ? "s" : ""} lurking` : "");
 }
 
 async function enter(path, from) {
@@ -304,6 +306,13 @@ async function enter(path, from) {
     const [x, z] = fromWall(d.wall, d.c + (rng() - 0.5) * 1.6, -0.6 - rng() * 2, here.half);
     e.root.position.set(x, e.kind === "tube" ? 0 : 2 + rng(), z);
     e.wait = 0.6 + rng() * 1.2;
+  }
+  // So do the noodle monsters, but they take their time.
+  for (const b of bosses) {
+    const d = door ?? { wall: 2, c: 0 };
+    const [x, z] = fromWall(d.wall, d.c + (rng() - 0.5) * 1.2, -1.5, here.half);
+    b.root.position.set(x, 1.9, z);
+    b.wait = 2.5 + rng() * 2;
   }
   return true;
 }
@@ -472,6 +481,132 @@ function updateEnemies(dt, time) {
   }
 }
 
+// ---- the noodle monsters: a file's type guards, come for you ------------------------
+// Each guard the server found (`isRecord` biggest) crawls off its wall once a round
+// as a knot of long bendy strands, one per line, around its signature line. Slow,
+// but it follows you from room to room. Every bat hit snaps off a strand; down to
+// the signature, it dies.
+const bosses = [];
+const awoken = new Set();   // "path:start" of every guard that has come for you this round
+const MAX_BOSSES = 2;
+
+/** The signature, then a strand per line; a short guard is torn into strands of its own code. */
+function noodleLines(n) {
+  let rest = n.lines.slice(1).filter((l) => l.trim());
+  if (rest.length < 3) {
+    rest = [];
+    for (const w of n.lines.join(" ").split(/\s+/).filter(Boolean)) {
+      if (rest.length && (rest.at(-1) + " " + w).length <= 22) rest[rest.length - 1] += " " + w; else rest.push(w);
+    }
+  }
+  return [n.lines[0].trim(), ...rest.slice(0, ROWS - 1)];
+}
+
+function awaken(f, n) {
+  awoken.add(`${f.file.path}:${n.start}`);
+  const a = atlas({ path: `noodle:${f.file.path}:${n.start}`, name: n.name, lines: noodleLines(n) });
+  const [sig, ...strandLines] = a.lines;
+  if (!sig) return;
+  const size = n.record ? 1 : 0.7, root = new THREE.Group();
+  root.scale.setScalar(size);
+  // Guards from the same file crawl off it side by side.
+  const [x, z] = fromWall(f.wall, f.c + (bosses.length % 2 ? 1.6 : -1.6) * (f.file.noodles.length > 1), 0.8, here.half);
+  root.position.set(x, 1.9, z);
+  const core = new THREE.Mesh(stripGeo(sig, LINE_H * 3, 1), a.mat);
+  root.add(core);
+  // Strands all round, more of them hanging down than reaching up.
+  const strands = strandLines.map((line, k) => {
+    const y = (1 - 2 * (k + 0.5) / strandLines.length) * 0.8 - 0.2, r = Math.sqrt(1 - y * y), th = k * 2.39996;
+    const pivot = new THREE.Group();
+    pivot.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), new THREE.Vector3(Math.cos(th) * r, y, Math.sin(th) * r));
+    const w = Math.min(Math.max(line.w, 0.2), 4.5 / size), geo = stripGeo({ ...line, w }, LINE_H * 2.2, 24);
+    const mesh = new THREE.Mesh(geo, a.mat);
+    mesh.position.x = w / 2;
+    pivot.add(mesh); root.add(pivot);
+    return { pivot, mesh, geo, w, phase: Math.random() * 6.3 };
+  });
+  scene.add(root);
+  // The lines it's made of come off the wall with it.
+  for (const l of here.lines) if (l.atlas === f.atlas && l.line.i >= n.start - 1 && l.line.i < n.end) l.wall.remove(l.mesh);
+  bosses.push({ root, core, strands, a, name: n.name, where: `${f.file.path}:${n.start}–${n.end}`, record: n.record, size,
+    speed: (n.record ? 1.3 : 1.6) + wave * 0.05, wait: 1.5, hurtT: 0, phase: Math.random() * 6.3 });
+  banner(n.record ? "NOODLE MONSTER" : "a noodle", `${n.name} crawls off ${f.file.name}`, 2);
+  sound.groan();
+}
+
+function unboss(b) {
+  scene.remove(b.root);
+  b.core.geometry.dispose();
+  for (const s of b.strands) s.geo.dispose();
+  bosses.splice(bosses.indexOf(b), 1);
+}
+
+/** A bat hit: the nearest strand snaps off and flies; with none left, the guard dies. */
+function snap(b, dir) {
+  b.hurtT = 0.3; b.wait = Math.max(b.wait, 0.4); b.core.material = b.a.angry;
+  player.score += 150 * player.combo; player.combo = Math.min(8, player.combo + 1); player.comboT = 2.5;
+  sound.snap();
+  const near = b.strands.reduce((best, s) => {
+    const d = s.mesh.getWorldPosition(tmpV).distanceTo(player.pos);
+    return !best || d < best.d ? { s, d } : best;
+  }, null);
+  if (near) {
+    const s = near.s, root = new THREE.Group();
+    s.mesh.getWorldPosition(root.position); s.mesh.getWorldQuaternion(root.quaternion);
+    root.scale.setScalar(b.size);
+    s.mesh.position.set(0, 0, 0); s.mesh.material = b.a.angry; root.add(s.mesh); scene.add(root);
+    b.strands.splice(b.strands.indexOf(s), 1);
+    // It flies like a smacked line, then crumbles.
+    enemies.push({ kind: "bird", root, mesh: s.mesh, geo: s.geo, w: s.w, state: "smacked", t: 0, wait: 0, phase: 0,
+      vel: dir.clone().multiplyScalar(10).add(new THREE.Vector3(0, 5, 0)), spin: new THREE.Vector3(rng() * 10 - 5, rng() * 10 - 5, rng() * 10 - 5) });
+  }
+  if (!b.strands.length) {
+    for (let i = 0; i < 3; i++) burst(b.root.position.clone().add(new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5)));
+    player.score += b.record ? 2000 : 800;
+    banner("NOODLED", `${b.name} · ${b.where}`, 2);
+    unboss(b);
+  }
+}
+
+function updateBosses(dt, time) {
+  // Walk into a room whose files hold guards and they wake, a couple at a time.
+  if (player.alive && here && bosses.length < MAX_BOSSES)
+    for (const f of here.files) for (const n of f.file.noodles ?? [])
+      if (bosses.length < MAX_BOSSES && !awoken.has(`${f.file.path}:${n.start}`)) awaken(f, n);
+  let nearest = Infinity;
+  for (const b of bosses) {
+    b.hurtT -= dt;
+    const to = tmpV.set(player.pos.x - b.root.position.x, 0, player.pos.z - b.root.position.z), d = to.length();
+    nearest = Math.min(nearest, d);
+    if (b.wait > 0) b.wait -= dt;
+    else if (player.alive) {
+      // A slow lurch, never quite steady.
+      b.root.position.addScaledVector(to.normalize(), dt * b.speed * (0.6 + 0.4 * Math.abs(Math.sin(time * 1.3 + b.phase))));
+      const lim = here.half - 0.8;
+      b.root.position.x = Math.max(-lim, Math.min(lim, b.root.position.x)); b.root.position.z = Math.max(-lim, Math.min(lim, b.root.position.z));
+      if (d < 1.4 + b.size) {
+        hurt(b.record ? 14 : 9);
+        player.vel.copy(to).setY(0).multiplyScalar(10);
+        b.wait = 1.2;
+      }
+    }
+    b.root.position.y = 1.9 + Math.sin(time * 0.9 + b.phase) * 0.25;
+    b.root.lookAt(player.pos.x, b.root.position.y, player.pos.z);
+    for (const s of b.strands) {
+      s.mesh.material = b.hurtT > 0 ? b.a.angry : b.a.mat;
+      // Waves run out along each strand: the farther from the knot, the more it sways and reaches.
+      const pos = s.geo.attributes.position, base = s.geo.userData.base, hw = s.w / 2, reach = 1 + Math.sin(time * 0.8 + s.phase) * 0.12;
+      for (let k = 0; k < pos.count; k++) {
+        const x = base[k * 3], u = Math.max(0, (x / hw + 1) / 2);
+        pos.setXYZ(k, x * reach, base[k * 3 + 1] + Math.sin(time * 2.2 + s.phase - u * 5) * Math.pow(u, 1.4) * 0.5, Math.cos(time * 1.7 + s.phase - u * 3.5) * u * 0.45);
+      }
+      pos.needsUpdate = true;
+      s.mesh.position.x = s.w * reach / 2;
+    }
+  }
+  sound.drone(bosses.length && player.alive ? Math.max(0, 1 - nearest / 20) : 0, time);
+}
+
 // ---- waves -----------------------------------------------------------------------
 function startWave(n) {
   wave = n; toSpawn = 5 + 4 * (n - 1); spawnT = 1.2;
@@ -539,6 +674,11 @@ function updateBat(dt) {
       // The tube men are tall: hit them anywhere along their height.
       const near = e2.kind === "tube" ? Math.hypot(to.x, to.z) < 2.6 : d < 2.9;
       if (near && to.normalize().dot(fwd) > (e2.kind === "tube" ? 0.2 : 0.45)) { swingHit.add(e2); smack(e2, fwd.clone().setY(Math.max(0.2, fwd.y))); hits++; }
+    }
+    for (const b of bosses) {
+      if (swingHit.has(b)) continue;
+      const to = b.root.position.clone().sub(player.pos), d = to.length();
+      if (d < 2.2 + b.size && to.normalize().dot(fwd) > 0.3) { swingHit.add(b); snap(b, fwd); }
     }
     for (const [id, o] of others) {
       if (swingHit.has(id) || o.room !== here?.path) continue;
@@ -622,6 +762,8 @@ async function begin(seed, startAt) {
   rng = mulberry(seed);
   $("#lobby").hidden = true; $("#over").hidden = true;
   for (const e of [...enemies]) drop(e);
+  for (const b of [...bosses]) unboss(b);
+  awoken.clear();
   Object.assign(player, { hp: 100, score: 0, combo: 1, alive: false });
   wave = 0; toSpawn = 0; breakT = 0;
   if (!here || here.path !== "") await enter("");
@@ -683,6 +825,36 @@ const sound = {
     o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 0.16);
   },
   whoosh() { const n = this.noise(0.22, 500, 0.7, 0.25); n?.f.frequency.exponentialRampToValueAtTime(2500, n.c.currentTime + 0.2); },
+  // The noodle monsters: a low, wobbling drone that swells as one gets close.
+  droneGain: null, droneFilter: null,
+  drone(level, time) {
+    if (!this.ctx) return;
+    if (!this.droneGain) {
+      const c = this.ctx;
+      this.droneGain = c.createGain(); this.droneGain.gain.value = 0;
+      this.droneFilter = c.createBiquadFilter(); this.droneFilter.type = "lowpass"; this.droneFilter.frequency.value = 120;
+      this.droneFilter.connect(this.droneGain).connect(c.destination);
+      for (const f of [41, 43.7, 82.6]) { const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.value = f; o.connect(this.droneFilter); o.start(); }
+    }
+    this.droneGain.gain.setTargetAtTime(level * 0.09, this.ctx.currentTime, 0.3);
+    this.droneFilter.frequency.value = 90 + level * 160 + Math.sin(time * 0.7) * 40;
+  },
+  groan() {
+    if (!this.ctx) return;
+    const c = this.ctx, o = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+    o.type = "sawtooth"; o.frequency.setValueAtTime(70, c.currentTime); o.frequency.exponentialRampToValueAtTime(32, c.currentTime + 1.4);
+    f.type = "lowpass"; f.frequency.value = 260;
+    g.gain.setValueAtTime(0.001, c.currentTime); g.gain.exponentialRampToValueAtTime(0.35, c.currentTime + 0.3); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 1.5);
+    o.connect(f).connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 1.6);
+  },
+  snap() {
+    this.noise(0.16, 320, 2.5, 0.9);
+    if (!this.ctx) return;
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.frequency.setValueAtTime(220, c.currentTime); o.frequency.exponentialRampToValueAtTime(40, c.currentTime + 0.25);
+    g.gain.setValueAtTime(0.4, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.28);
+    o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 0.3);
+  },
   hurt() {
     if (!this.ctx) return;
     const c = this.ctx, o = c.createOscillator(), g = c.createGain();
@@ -714,7 +886,7 @@ function frame(now, manual) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const time = now / 1000;
   if (here) {
-    updatePlayer(dt); updateBat(dt); updateEnemies(dt, time); updateWaves(dt); updateOthers(dt); updateLava(time);
+    updatePlayer(dt); updateBat(dt); updateEnemies(dt, time); updateBosses(dt, time); updateWaves(dt); updateOthers(dt); updateLava(time);
     player.comboT -= dt; if (player.comboT <= 0) player.combo = 1;
     // The lights flicker now and then.
     flicker -= dt; if (flicker < 0) { hemi.intensity = rng() < 0.06 ? 1.3 : 2.6; flicker = 0.08 + Math.random() * 0.5; }
@@ -736,7 +908,7 @@ if (!(await enter(""))) $("#lobby-msg").textContent = "this room isn't dug up ye
 connect();
 requestAnimationFrame(frame);
 // For poking at it from the console.
-window.game = { player, enemies, others, get here() { return here; }, get wave() { return wave; }, get toSpawn() { return toSpawn; }, spawn, swing, lava, step: (ms = 16) => frame(last + ms, true) };
+window.game = { player, enemies, bosses, others, get here() { return here; }, get wave() { return wave; }, get toSpawn() { return toSpawn; }, spawn, swing, lava, step: (ms = 16) => frame(last + ms, true) };
 </script>
 </body>
 </html>
