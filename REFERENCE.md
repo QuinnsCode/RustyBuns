@@ -228,6 +228,8 @@ The box host reads the same keys, so `host` routes and `headers` work on Hetzner
 
 `experimental.wheel` decides who can unlock a stack's `secret` bindings. It may change or go away between releases.
 
+> **Not battle-tested yet.** Minting is tested end to end (create, redeploy, destroy, create again), and the generated stacks type check against Alchemy. The 1Password path, varlock fetching `op` secrets, has not been run against a real vault yet. Try it on a throwaway stack and a test vault before you point it at prod.
+
 ```ts
 experimental: { wheel: "agent" },   // or "human"
 bindings: {
@@ -241,7 +243,19 @@ bindings: {
 
 With the flag on, `generate` writes `.env.schema` at the app root: every secret by name and where it comes from, never a value. Commit it. It's the portable half: any laptop, CI job or agent that clones the repo resolves the same typed secrets from it, each behind its own wheel, and it works with [varlock](https://varlock.dev) outside Rusty Buns too. (If your `.gitignore` has `.env*`, add `!.env.schema`; `generate` reminds you.) Delete its `# GENERATED` header and it's yours: Rusty Buns stops rewriting it and uses it as-is.
 
+**Why [varlock](https://varlock.dev)?** It turns a `.env` file into a schema: every variable gets a type, a description and a `@sensitive` flag, and its value is a *reference* (`op(op://…)`) instead of the secret itself. You get the "what does this app need" story in one committed file that agents can read safely, plus pluggable stores (1Password, AWS, Vault, or any CLI), validation before anything runs, redaction of sensitive values in its output, and `varlock scan` to catch a secret someone pasted into code. It's MIT-licensed and works with any language, so the schema isn't tied to Rusty Buns.
+
 At plan and deploy time, varlock resolves the schema and the values reach Alchemy as env, so they go straight into Cloudflare or Railway secrets and never sit in a file. Install it with `bun add -d varlock` or `brew install dmno-dev/tap/varlock`. `"human"` also needs the 1Password CLI, `op`, with "Integrate with 1Password CLI" turned on in the app.
+
+**Why this is safe:**
+
+- **No values in the repo.** `.env.schema` holds names and references. Committing it leaks what you need, not what it is.
+- **Values only travel at deploy time.** varlock fetches them, Alchemy hands them to Cloudflare or Railway's own secret storage, and the running app reads them from there. Nothing is written to disk on the way, and the live app never talks to 1Password, so a 1Password outage blocks deploys, not your users.
+- **Minted secrets are disposable.** A test stack's secrets exist only as long as the stack. If one leaks, `destroy` and it's gone; there's nothing long-lived to rotate.
+- **An agent only gets what you scope.** `"agent"` uses a 1Password service account tied to the vaults you choose. Give it a test vault and it can't reach prod.
+- **Prod needs you.** `"human"` ignores any token, so only the 1Password app on your machine, behind Touch ID or a passkey, can unlock those secrets.
+
+What it doesn't do: once a value is fetched, the command that receives it can read it. A process you run with secrets can print them. The wheel decides who can *fetch* a secret, and vault scoping limits the damage; neither one sandboxes what happens after.
 
 Two limits. Minted secrets live in Alchemy's state in `.alchemy/`, in plain text, like every other Alchemy output; a CI runner that throws its state away gets fresh ones next time. And minting doesn't work on a Hetzner box yet, because its env file can't take a generated value, so give those secrets an `op` reference or use Railway.
 
