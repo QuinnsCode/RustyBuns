@@ -78,7 +78,12 @@ jobs:
       - if: matrix.prep
         uses: Swatinem/rust-cache@v2
         with: { workspaces: "${{ matrix.cargo }}" }
-      - run: bun install
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-
+      - run: bun install --frozen-lockfile
         working-directory: .
       - if: matrix.prep
         run: ${{ matrix.prep }}
