@@ -3,14 +3,18 @@
 
 export const MESHY_BASE = "https://api.meshy.ai/openapi/v1";
 
+export type Kind = "image-to-3d" | "retexture";
 export type TaskStatus = "PENDING" | "IN_PROGRESS" | "SUCCEEDED" | "FAILED" | "CANCELED";
 
 export interface Task {
   id: string;
   status: TaskStatus;
   progress: number;
-  model_urls?: { glb?: string };
+  /** glb, fbx, obj, usdz, mtl, stl, 3mf, pre_remeshed_glb: whichever were made. */
+  model_urls?: Record<string, string | undefined>;
   thumbnail_url?: string;
+  /** base_color, metallic, normal, roughness, emission: whichever were made. */
+  texture_urls?: Record<string, string>[];
   task_error?: { message?: string };
   consumed_credits?: number;
   expires_at?: number;
@@ -52,10 +56,11 @@ export class Meshy {
   }
 
   balance() { return this.call<{ balance: number }>("GET", "/balance"); }
-  async create(body: object): Promise<string> { return (await this.call<{ result: string }>("POST", "/image-to-3d", body)).result; }
-  get(id: string) { return this.call<Task>("GET", `/image-to-3d/${encodeURIComponent(id)}`); }
+  /** Image to 3D by default; "retexture" textures a finished model. Both work the same way. */
+  async create(body: object, kind: Kind = "image-to-3d"): Promise<string> { return (await this.call<{ result: string }>("POST", `/${kind}`, body)).result; }
+  get(id: string, kind: Kind = "image-to-3d") { return this.call<Task>("GET", `/${kind}/${encodeURIComponent(id)}`); }
   /** Only refunds a job still PENDING; Meshy answers 409 once it runs. */
-  cancel(id: string) { return this.call<void>("DELETE", `/image-to-3d/${encodeURIComponent(id)}`); }
+  cancel(id: string, kind: Kind = "image-to-3d") { return this.call<void>("DELETE", `/${kind}/${encodeURIComponent(id)}`); }
 }
 
 /** Signed asset URLs need no key; they expire, so download as soon as a job succeeds. */

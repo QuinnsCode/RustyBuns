@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NodeIO, getBounds } from "@gltf-transform/core";
 import { parseLabel } from "../engine/labels.ts";
-import { estimateCredits, STARTER_PRESETS } from "../engine/presets.ts";
+import { checkPreset, createBody, estimateCredits, estimateRetexture, retextureBody, STARTER_PRESETS, type Preset } from "../engine/presets.ts";
 import { fitGlb } from "../engine/fit.ts";
 import { INBOX, RAW, READY, SENT, Workspace } from "../engine/workspace.ts";
 import { boxGlb, fakeMeshy, type Fake } from "./fake-meshy.ts";
@@ -37,7 +37,7 @@ test("credit estimate follows Meshy's price table", () => {
   expect(estimateCredits(by("item_"))).toBe(15);
   expect(estimateCredits(by("flora_"))).toBe(15);
   expect(estimateCredits(by("environ_"))).toBe(30);
-  expect(estimateCredits(by("environ_"), "mossy bark")).toBe(40);
+  expect(estimateCredits(by("environ_"), { texturePrompt: "mossy bark" })).toBe(40);
   expect(estimateCredits({ ai_model: "meshy-7.1", should_texture: false })).toBe(20);
 });
 
@@ -180,4 +180,120 @@ test("no key pauses instead of failing every card", async () => {
 test("blender: the import script is valid Python with any path", () => {
   const expr = importExpr(['/a/b "c"/d\\e.glb', "/x/ünï.glb"]);
   expect(expr.split("\n")[2]).toBe('for p in ["/a/b \\"c\\"/d\\\\e.glb","/x/ünï.glb"]: bpy.ops.import_scene.gltf(filepath=p)');
+});
+
+test("labels: _auto asks Meshy for the size, _draft skips the texture", () => {
+  const a = parseLabel("environ_crate_auto_center_draft.png", STARTER_PRESETS);
+  expect([a.outName, a.size, a.origin, a.draft]).toEqual(["environ_crate", { auto: true }, "center", true]);
+});
+
+test("pricing: drafts, ultra geometry, 8k, retexture", () => {
+  expect(estimateCredits({ ai_model: "meshy-6-lite" }, { draft: true })).toBe(5);
+  expect(estimateCredits({ model_type: "smart-topology" }, { draft: true })).toBe(5);
+  expect(estimateCredits({ ai_model: "meshy-7.1" }, { draft: true })).toBe(20);
+  // a draft never pays for a texture prompt
+  expect(estimateCredits({ ai_model: "meshy-6-lite" }, { draft: true, texturePrompt: "bark" })).toBe(5);
+  expect(estimateCredits({ ai_model: "meshy-7.1", geometry_resolution: "4k" })).toBe(35);
+  expect(estimateCredits({ ai_model: "meshy-6-lite", geometry_resolution: "4k" })).toBe(15); // not applied to lite
+  expect(estimateCredits({ ai_model: "meshy-7.1", texture_resolution: "8k" })).toBe(35);
+  expect(estimateRetexture()).toBe(10);
+  expect(estimateRetexture({ texture_resolution: "8k" })).toBe(15);
+});
+
+test("request bodies: every option passes, the ones that don't apply are dropped", () => {
+  const p: Preset = {
+    prefix: "x_", label: "X", size: { auto: true }, origin: "center", formats: ["fbx", "obj", "glb"],
+    options: {
+      ai_model: "meshy-7.1", geometry_resolution: "2k", enable_pbr: true, texture_resolution: "4k",
+      should_remesh: true, topology: "quad", target_polycount: 20000, decimation_mode: 2, save_pre_remeshed_model: true,
+      pose_mode: "a-pose", image_enhancement: false, remove_lighting: false, alpha_thumbnail: true, multi_view_thumbnails: true, moderation: true,
+    },
+  };
+  const full = createBody("data:x", p, { texturePrompt: "rusty" });
+  expect(full).toMatchObject({
+    image_url: "data:x", ai_model: "meshy-7.1", geometry_resolution: "2k", enable_pbr: true, texture_resolution: "4k",
+    should_remesh: true, topology: "quad", target_polycount: 20000, decimation_mode: 2, save_pre_remeshed_model: true,
+    pose_mode: "a-pose", image_enhancement: false, alpha_thumbnail: true, multi_view_thumbnails: true, moderation: true,
+    texture_prompt: "rusty", auto_size: true, origin_at: "center", target_formats: ["glb", "fbx", "obj"],
+  });
+  expect("remove_lighting" in full).toBe(false); // meshy-6 only
+
+  const draft = createBody("data:x", p, { draft: true, texturePrompt: "rusty", textureImage: "data:t" });
+  expect(draft.should_texture).toBe(false);
+  for (const k of ["enable_pbr", "texture_resolution", "texture_prompt", "texture_image_url"]) expect(k in draft).toBe(false);
+
+  const t2 = createBody("data:x", { ...p, size: { height: 1 }, options: { model_type: "smart-topology", geometry_resolution: "4k", target_polycount: 3000 } });
+  expect([t2.ai_model, t2.target_polycount, "geometry_resolution" in t2, "auto_size" in t2]).toEqual(["meshy-t2", 3000, false, false]);
+  const noRemesh = createBody("data:x", { ...p, options: { ai_model: "meshy-6", topology: "quad", target_polycount: 5000, remove_lighting: false } });
+  expect(["topology" in noRemesh, "target_polycount" in noRemesh, noRemesh.remove_lighting]).toEqual([false, false, false]);
+  expect(createBody("data:x", p, { textureImage: "data:t" }).texture_image_url).toBe("data:t");
+
+  const rt = retextureBody("task-9", { ai_model: "meshy-6-lite", remove_lighting: true, enable_pbr: true }, { imageDataUri: "data:i" }, ["fbx"]);
+  expect(rt).toEqual({ input_task_id: "task-9", image_style_url: "data:i", ai_model: "meshy-6-lite", enable_original_uv: true, texture_resolution: "2k", enable_pbr: true, target_formats: ["glb", "fbx"] });
+  expect((retextureBody("t", undefined, { prompt: "moss" }) as { text_style_prompt?: string }).text_style_prompt).toBe("moss");
+});
+
+test("preset checks catch what Meshy would reject", () => {
+  const base: Preset = { prefix: "a_", label: "A", size: { height: 1 }, origin: "bottom", options: {} };
+  expect(checkPreset(base)).toEqual([]);
+  expect(checkPreset({ ...base, options: { ai_model: "meshy-6-lite", texture_resolution: "8k" } })).toEqual(["meshy-6-lite textures at 2k only."]);
+  expect(checkPreset({ ...base, options: { model_type: "smart-topology", target_polycount: 20000 } })[0]).toContain("15,000");
+  expect(checkPreset({ ...base, options: { ai_model: "meshy-6", geometry_resolution: "4k" } })[0]).toContain("meshy-7.1");
+  expect(checkPreset({ ...base, size: { height: 0 } })).toEqual(["Height must be above 0 m."]);
+});
+
+test("draft first, texture later: 5 credits now, Retexture on the keeper", async () => {
+  const dir = join(root, "drafts");
+  const ws = new Workspace(dir, () => "msy_test", 10);
+  await ws.open();
+  await ws.setPresets([...ws.presets.filter((p) => p.prefix !== "flora_"),
+    { ...STARTER_PRESETS.find((p) => p.prefix === "flora_")!, formats: ["fbx"], retexture: { enable_pbr: true } }]);
+  writeFileSync(join(dir, INBOX, "flora_fern_h2.png"), PNG);
+  writeFileSync(join(dir, INBOX, "flora_moss_h2.png"), PNG);
+  await ws.scan();
+  expect(ws.estimate(undefined, { draft: true }).credits).toBe(10);
+  await ws.send(undefined, { draft: true });
+  for (let i = 0; i < 4; i++) await ws.tick();
+  const fern = ws.get("flora_fern_h2.png");
+  const sent = fake.created.find((c) => c.id === fern.taskId);
+  expect([sent.should_texture, sent.target_formats]).toEqual([false, ["glb", "fbx"]]);
+  expect([fern.state, fern.textured, fern.estimate]).toEqual(["done", false, 5]);
+  expect(fern.extras).toEqual(["flora_fern.fbx"]);
+  expect(await Bun.file(join(dir, RAW, "flora_fern.fbx")).text()).toBe("fake /assets/model.fbx");
+  expect(ws.canTexture(fern)).toBe(true);
+
+  // Texture only the keeper.
+  expect(ws.estimateTexture(["flora_fern_h2.png"]).credits).toBe(10);
+  await ws.textureModels(["flora_fern_h2.png"]);
+  expect(fern.texture?.state).toBe("queued");
+  for (let i = 0; i < 4; i++) await ws.tick();
+  const rt = fake.retextured.at(-1);
+  expect([rt.input_task_id, rt.image_style_url.startsWith("data:image/png;base64,"), rt.enable_pbr, rt.enable_original_uv]).toEqual([fern.taskId, true, true, true]);
+  expect([fern.textured, fern.texture?.state, fern.texture?.credits]).toEqual([true, "done", 10]);
+  expect(existsSync(join(dir, RAW, "flora_fern.textures", "base_color.png"))).toBe(true);
+  const r = await bounds(await Bun.file(join(dir, READY, "flora_fern.glb")).bytes());
+  expect(r.max[1] - r.min[1]).toBeCloseTo(2);
+  expect(ws.get("flora_moss_h2.png").texture).toBeUndefined();
+  expect(ws.summary().spent).toBe(15 + 15 + 10);
+  expect(ws.canTexture(fern)).toBe(false);
+
+  // Unqueue a texture before it goes.
+  await ws.textureModels(["flora_moss_h2.png"]);
+  await ws.cancel("flora_moss_h2.png");
+  expect(ws.get("flora_moss_h2.png").texture).toBeUndefined();
+});
+
+test("presets: the editor's rules", async () => {
+  const ws = new Workspace(join(root, "presets"), () => "msy_test");
+  await ws.open();
+  const def = ws.presets.find((p) => p.prefix === "")!;
+  await expect(ws.setPresets([])).rejects.toThrow("at least one");
+  await expect(ws.setPresets(ws.presets.filter((p) => p.prefix !== ""))).rejects.toThrow("Default");
+  await expect(ws.setPresets([...ws.presets, { ...def, label: "Again" }])).rejects.toThrow("two presets");
+  await expect(ws.setPresets([...ws.presets, { ...def, prefix: "bad_", options: { ai_model: "meshy-6-lite", texture_resolution: "8k" } }])).rejects.toThrow("2k only");
+  writeFileSync(join(ws.dir, INBOX, "item_gem.png"), PNG);
+  await ws.scan();
+  await ws.setPresets(ws.presets.filter((p) => p.prefix !== "item_"));
+  expect(ws.get("item_gem.png").prefix).toBe("");
+  expect((await Bun.file(join(ws.dir, "meshy-presets.json")).json()).some((p: Preset) => p.prefix === "item_")).toBe(false);
 });
