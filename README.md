@@ -83,7 +83,7 @@ Coding agents are now writing most of the code. Rusty Buns is shaped for how the
 - **Rust without risk.** An agent can write the Rust engine and prove it matches the TypeScript one, sample by sample, and the TypeScript path keeps working if it doesn't.
 - **Leaving is a `git rm`.** Everything you adopt is a shape Cloudflare already standardized. No lock-in for you or your agent to untangle later.
 
-It's not theory. Much of this repo was built by Claude Code agents working in [Agent Office](apps/agent-office/README.md), which is itself one of the examples below.
+It's not theory. Nearly every commit in this repo is co-authored by Claude Code, some of them written at desks in [Agent Office](apps/agent-office/README.md), which is itself one of the examples below.
 
 ## See it work
 
@@ -101,7 +101,8 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor as a desktop app working on a folder on your disk |
 | [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game with a world class and 30 MB scenes streamed from a folder on your disk, never embedded |
 | [splat-spray](apps/splat-spray/README.md) | The smallest one: a three.js game with no backend at all, made a desktop app by a ten-line config |
-| [spa-example](apps/spa-example) | An RWSDK app with D1, KV and a world Durable Object, all on sqlite |
+| [example](apps/example/README.md) | A whole Worker (D1, KV, a Durable Object) as a desktop binary in half a second, plus a Rust FFI probe with a TypeScript fallback |
+| [spa-example](apps/spa-example/README.md) | Not an app: a slice of a real RWSDK game that the tests use to check `init` reads it right |
 
 Want to just play them? [EXAMPLES.md](EXAMPLES.md) is two lines per app, no experience needed.
 
