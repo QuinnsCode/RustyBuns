@@ -253,3 +253,38 @@ describe("game", () => {
     expect(ana.last("lobby").state).toBe("waiting");
   });
 });
+
+describe("shares", () => {
+  test("share a few lines of a private repo: live, following the lines, nothing else leaks", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "vault", visibility: "private" });
+    await post(call, "ana", "/api/repos/ana/vault/files", { path: "a.ts", content: "one\ntwo\nthree\nfour" });
+    const made = await post(call, "ana", "/api/repos/ana/vault/shares", { path: "a.ts", from: 2, to: 3, note: "the good bit" });
+    expect(made.status).toBe(201);
+    const { id } = await made.json() as any;
+    const look = async (who: string | null) => (await (await call(who, `/api/shares/${id}`)).json()) as any;
+    expect((await look(null)).lines.map((l: any) => [l.n, l.text])).toEqual([[2, "two"], [3, "three"]]);
+    expect((await call("bo", "/api/repos/ana/vault/do/file?path=a.ts")).status).toBe(404);     // the rest stays sealed
+    expect((await post(call, "bo", "/api/repos/ana/vault/shares", { path: "a.ts", from: 1, to: 4 })).status).toBe(404);
+
+    // Edits around and inside the range: it follows the lines.
+    const doc = await (await call("ana", "/api/repos/ana/vault/do/file?path=a.ts")).json() as any;
+    const two = doc.lines[1];
+    await post(call, "ana", "/api/repos/ana/vault/do/ops?path=a.ts", { ops: [{ kind: "insert", after: null, text: "zero" }, { kind: "insert", after: two.id, text: "two and a half" }, { kind: "set", line: two.id, base: two.rev, text: "TWO" }] });
+    expect((await look("bo")).lines.map((l: any) => [l.n, l.text])).toEqual([[3, "TWO"], [4, "two and a half"], [5, "three"]]);
+
+    expect((await call("bo", `/api/shares/${id}`, { method: "DELETE" })).status).toBe(403);
+    expect((await call("ana", `/api/shares/${id}`, { method: "DELETE" })).status).toBe(200);
+    expect((await call(null, `/api/shares/${id}`)).status).toBe(404);
+  });
+
+  test("the owner flips a repo public or private", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "dig", visibility: "private" });
+    const put = (who: string, v: string) => call(who, "/api/repos/ana/dig", { method: "PUT", body: JSON.stringify({ visibility: v }) });
+    expect((await call("bo", "/api/repos/ana/dig")).status).toBe(404);
+    expect((await put("bo", "public")).status).toBe(404);
+    expect((await put("ana", "public")).status).toBe(200);
+    expect((await call("bo", "/api/repos/ana/dig")).status).toBe(200);
+  });
+});

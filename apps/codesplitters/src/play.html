@@ -6,31 +6,33 @@
 <title>codeSplitters: the backrooms</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;700&family=Geist+Mono:wght@400;500&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --paper: #f7f3e8; --paper-2: #fbf9f2; --ink: #2b2620; --ink-2: #6f665a; --rule: #e3dac6; --accent: #8c2f22;
     --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, Menlo, monospace;
+    /* The HUD: a compressed highway-sign face, the office-game kind. */
+    --display: "Barlow Condensed", "Interstate Compressed", "Arial Narrow", sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #1c1915; color: var(--ink); font: 300 15px/1.5 var(--sans); }
   canvas#c { display: block; width: 100vw; height: 100vh; }
-  .hud { position: fixed; pointer-events: none; font: 500 13px/1.3 var(--mono); color: var(--paper); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .hud { position: fixed; pointer-events: none; font: 500 17px/1.2 var(--display); letter-spacing: .02em; color: var(--paper); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
   #tl { top: 14px; left: 16px; }
-  #tl .big { font: 700 22px/1.1 var(--sans); letter-spacing: -0.02em; }
+  #tl .big { font: 600 30px/1 var(--display); letter-spacing: .01em; text-transform: uppercase; }
   #tr { top: 14px; right: 16px; text-align: right; }
   #bl { bottom: 16px; left: 16px; width: 260px; }
   #health { height: 10px; border: 1px solid rgba(247,243,232,.7); margin-top: 6px; }
   #health i { display: block; height: 100%; background: var(--paper); transition: width .15s; }
   #health.low i { background: #c0543f; }
   #cross { top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--paper); opacity: .8; }
-  #banner { top: 30%; left: 0; right: 0; text-align: center; font: 700 56px/1 var(--sans); letter-spacing: -0.04em; color: var(--paper); opacity: 0; transition: opacity .25s; }
-  #banner small { display: block; font: 500 16px/1.6 var(--mono); letter-spacing: 0; }
+  #banner { top: 30%; left: 0; right: 0; text-align: center; font: 600 84px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; color: var(--paper); opacity: 0; transition: opacity .25s; }
+  #banner small { display: block; font: 500 22px/1.5 var(--display); letter-spacing: .04em; text-transform: none; }
   #hurt { inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(140,47,34,.55)); opacity: 0; transition: opacity .3s; }
   .panel { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(28,25,21,.55); }
   .panel[hidden] { display: none; }
   .card { width: min(520px, calc(100vw - 32px)); background: var(--paper); border: 1px solid var(--rule); padding: 26px 28px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
-  .card h1 { margin: 0 0 4px; font: 500 28px/1.1 var(--sans); letter-spacing: -0.03em; }
+  .card h1 { margin: 0 0 4px; font: 600 40px/1 var(--display); letter-spacing: .01em; text-transform: uppercase; }
   .label { font: 400 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); margin-bottom: 10px; }
   .muted { color: var(--ink-2); }
   .card ul { list-style: none; padding: 0; margin: 14px 0; border-top: 1px solid var(--rule); }
@@ -178,14 +180,52 @@ const NORMAL = [[0, 1], [-1, 0], [0, -1], [1, 0]];
 const toWall = (i, x, z, half) => [[x, z + half], [z, half - x], [-x, half - z], [-z, x + half]][i];        // -> [along, depth]
 const fromWall = (i, a, d, half) => [[a, -half + d], [half - d, a], [-a, half - d], [-half + d, -a]][i];  // -> [x, z]
 
+// ---- the lava lamps ---------------------------------------------------------------------
+const lava = [];   // {mesh, y0, speed, phase}
+const LAVA = [["#ff3a12", "#ffb08f"], ["#ff9d00", "#ffe08a"], ["#1f86ff", "#9fd0ff"], ["#8e3dff", "#d3b8ff"], ["#10b85e", "#9eeac0"], ["#ff2d8f", "#ffb0d6"]];
+const lampGeo = { glass: new THREE.CylinderGeometry(0.1, 0.15, 0.56, 14), base: new THREE.CylinderGeometry(0.15, 0.12, 0.22, 14), cap: new THREE.CylinderGeometry(0.06, 0.1, 0.1, 14), blob: new THREE.SphereGeometry(0.07, 12, 10), shelf: new THREE.BoxGeometry(PANEL - 0.5, 0.05, 0.42) };
+const lampMat = { metal: new THREE.MeshLambertMaterial({ color: "#7d838b" }), shelf: new THREE.MeshLambertMaterial({ color: "#c9b58c" }),
+  glass: LAVA.map(([, light]) => new THREE.MeshBasicMaterial({ color: light, transparent: true, opacity: 0.5, depthWrite: false })), blob: LAVA.map(([deep]) => new THREE.MeshBasicMaterial({ color: deep })) };
+/** Four shelves of lamps across one wall panel centred at `c`, each lamp slowly rising and sinking. */
+function lavaWall(wall, c) {
+  const k0 = Math.floor(c * 7);
+  for (let row = 0; row < 4; row++) {
+    const y = 0.55 + row * 1.08;
+    const shelf = new THREE.Mesh(lampGeo.shelf, lampMat.shelf); shelf.position.set(c, y - 0.025, 0.24); wall.add(shelf);
+    for (let col = 0; col < 8; col++) {
+      const x = c - PANEL / 2 + 0.6 + col * ((PANEL - 1.2) / 7), k = Math.abs(k0 + row * 5 + col * 7) % LAVA.length;
+      const base = new THREE.Mesh(lampGeo.base, lampMat.metal); base.position.set(x, y + 0.11, 0.24);
+      const glass = new THREE.Mesh(lampGeo.glass, lampMat.glass[k]); glass.position.set(x, y + 0.5, 0.24);
+      const cap = new THREE.Mesh(lampGeo.cap, lampMat.metal); cap.position.set(x, y + 0.83, 0.24);
+      wall.add(base, glass, cap);
+      for (let b = 0; b < 2; b++) {
+        const blob = new THREE.Mesh(lampGeo.blob, lampMat.blob[k]); blob.position.set(x + (b - 0.5) * 0.04, y + 0.5, 0.24); wall.add(blob);
+        lava.push({ mesh: blob, y0: y + 0.5, speed: 0.35 + Math.random() * 0.4, phase: Math.random() * 6.3 });
+      }
+    }
+  }
+  const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex("entropy wall", "#8c2f22", 54), transparent: true }));
+  lab.position.set(c, H - 0.35, 0.02); wall.add(lab);
+}
+function updateLava(time) {
+  for (const b of lava) {
+    const t = time * b.speed + b.phase;
+    b.mesh.position.y = b.y0 + Math.sin(t) * 0.17;
+    b.mesh.scale.set(1 + Math.sin(t * 2.3) * 0.18, 1.3 + Math.cos(t * 1.7) * 0.4, 1 + Math.sin(t * 2.3) * 0.18);
+  }
+}
+
 function buildRoom(path, w) {
-  if (here) { scene.remove(here.group); here.group.traverse((o) => { o.geometry?.dispose(); }); }
+  if (here) { scene.remove(here.group); here.group.traverse((o) => { if (!Object.values(lampGeo).includes(o.geometry)) o.geometry?.dispose(); }); }
   const panels = [
     ...w.files.filter((f) => f.lines.some((l) => l.trim())).map((f) => ({ kind: "file", file: f })),
     ...w.doors.map((d) => ({ kind: "door", name: d.name + "/", path: d.path })),
     ...(path ? [{ kind: "door", name: "../", path: path.split("/").slice(0, -1).join("/") }] : []),
   ];
+  // The lobby: a wall of lava lamps, the kind that keeps a certain San Francisco office's randomness honest.
+  if (!path) panels.push({ kind: "lava" }, { kind: "lava" });
   while (panels.length < 8) panels.push({ kind: "blank" });
+  lava.length = 0;
   // Shuffle so doors and files mix around the room, the same way every visit.
   const order = mulberry([...path].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7));
   panels.sort(() => order() - 0.5);
@@ -218,6 +258,8 @@ function buildRoom(path, w) {
       const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.name, p.name === "../" ? "#6f665a" : "#8c2f22"), transparent: true }));
       lab.position.set(c, DOOR_H + 0.45, 0.02); wall.add(lab);
       doors.push({ wall: wi, c, path: p.path, up: p.name === "../" });
+    } else if (p.kind === "lava") {
+      lavaWall(wall, c);
     } else if (p.kind === "file") {
       const a = atlas(p.file);
       const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.file.name, "#8c2f22", 54), transparent: true }));
@@ -280,8 +322,9 @@ const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.22, 8), new
 grip.position.y = -0.1;
 bat.add(barrel, grip);
 const batPivot = new THREE.Group(); batPivot.add(bat); camera.add(batPivot);
-batPivot.position.set(0.42, -0.42, -0.6);
-const REST = new THREE.Euler(-0.35, 0, -0.5), FOLLOW = new THREE.Euler(-1.35, 0.9, 1.6);
+batPivot.position.set(0.46, -0.52, -0.55);
+// Overhead: cocked back over the shoulder, then chopped straight down in front.
+const REST = new THREE.Euler(0.65, 0, -0.12), FOLLOW = new THREE.Euler(-1.8, 0.2, 0.25);
 let swingT = -1, swingHit = new Set();
 
 function swing() {
@@ -479,7 +522,7 @@ function updateBat(dt) {
   swingT += dt / 0.3;
   const k = Math.min(1, swingT), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
   batPivot.rotation.set(REST.x + (FOLLOW.x - REST.x) * e, REST.y + (FOLLOW.y - REST.y) * e, REST.z + (FOLLOW.z - REST.z) * e);
-  if (k > 0.2 && k < 0.75) {
+  if (k > 0.3 && k < 0.85) {
     camera.getWorldDirection(fwd);
     let hits = 0;
     for (const e2 of enemies) {
@@ -659,7 +702,7 @@ function frame(now, manual) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const time = now / 1000;
   if (here) {
-    updatePlayer(dt); updateBat(dt); updateEnemies(dt, time); updateWaves(dt); updateOthers(dt);
+    updatePlayer(dt); updateBat(dt); updateEnemies(dt, time); updateWaves(dt); updateOthers(dt); updateLava(time);
     player.comboT -= dt; if (player.comboT <= 0) player.combo = 1;
     // The lights flicker now and then.
     flicker -= dt; if (flicker < 0) { hemi.intensity = rng() < 0.06 ? 1.3 : 2.6; flicker = 0.08 + Math.random() * 0.5; }
@@ -681,7 +724,7 @@ if (!(await enter(""))) $("#lobby-msg").textContent = "this room isn't dug up ye
 connect();
 requestAnimationFrame(frame);
 // For poking at it from the console.
-window.game = { player, enemies, others, get here() { return here; }, get wave() { return wave; }, get toSpawn() { return toSpawn; }, spawn, swing, step: (ms = 16) => frame(last + ms, true) };
+window.game = { player, enemies, others, get here() { return here; }, get wave() { return wave; }, get toSpawn() { return toSpawn; }, spawn, swing, lava, step: (ms = 16) => frame(last + ms, true) };
 </script>
 </body>
 </html>
