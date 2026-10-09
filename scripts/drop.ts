@@ -15,11 +15,12 @@
 //
 //   bun scripts/drop.ts ... --channel stable       (default: experimental)
 //
-// Uploads with wrangler. Env: DROP_SECRET, R2_BUCKET, R2_PUBLIC_URL (no trailing
-// slash), and wrangler's CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID. GITHUB_SHA in CI.
+// Uploads over R2's S3 API, so an R2 token scoped to the one bucket is enough.
+// Env: DROP_SECRET, R2_BUCKET, R2_PUBLIC_URL (no trailing slash), CLOUDFLARE_ACCOUNT_ID,
+// CLOUDFLARE_API_TOKEN (an R2 token; its S3 keys are derived from it). GITHUB_SHA in CI.
 import { createHmac, createHash } from "node:crypto";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { S3Client } from "bun";
+import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -43,17 +44,26 @@ const base = env("R2_PUBLIC_URL");
 const url = `${base}/${dir}`;
 
 const bucket = env("R2_BUCKET");
-const tmp = await mkdtemp(join(tmpdir(), "drop-"));
-const WRANGLER = "wrangler@4.149.0";
+const s3 = new S3Client({ bucket, endpoint: `https://${env("CLOUDFLARE_ACCOUNT_ID")}.r2.cloudflarestorage.com`, ...(await s3Keys()) });
+
+// An R2 token's S3 keys: the token's id, and the SHA-256 of the token itself.
+// https://developers.cloudflare.com/r2/api/tokens/#get-s3-api-credentials-from-an-api-token
+async function s3Keys() {
+  if (o.dry) return { accessKeyId: "dry", secretAccessKey: "dry" };
+  const token = env("CLOUDFLARE_API_TOKEN");
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env("CLOUDFLARE_ACCOUNT_ID")}/tokens/verify`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const body = (await res.json()) as { success: boolean; result?: { id: string }; errors?: unknown };
+  if (!body.success || !body.result) fail(`CLOUDFLARE_API_TOKEN didn't verify: ${JSON.stringify(body.errors)}`);
+  return { accessKeyId: body.result.id, secretAccessKey: createHash("sha256").update(token).digest("hex") };
+}
 async function put(name: string, data: Uint8Array | string, type: string, disposition?: string, at = dir) {
   if (o.dry) {
     await mkdir(join(o.dry, at), { recursive: true });
     await writeFile(join(o.dry, at, name), data);
   } else {
-    const file = join(tmp, name);
-    await writeFile(file, data);
-    const cd = disposition ? ["--content-disposition", disposition] : [];
-    await Bun.$`bunx ${WRANGLER} r2 object put ${`${bucket}/${at}/${name}`} --remote --file ${file} --content-type ${type} ${cd}`.quiet();
+    await s3.write(`${at}/${name}`, data, { type, contentDisposition: disposition });
   }
   console.log(`  ${at === dir ? "" : `${at}/`}${name}`);
 }
@@ -89,17 +99,15 @@ await put("channels.json", JSON.stringify(slots, null, 2), "application/json", u
 await put("index.html", channelsPage(slots), "text/html; charset=utf-8", undefined, home);
 for (const b of gone) {
   console.log(`  delete ${b.version} (${b.dir})`);
-  if (!o.dry) for (const f of b.files) await Bun.$`bunx ${WRANGLER} r2 object delete ${`${bucket}/${b.dir}/${f}`} --remote`.quiet().nothrow();
+  if (!o.dry) for (const f of b.files) await s3.delete(`${b.dir}/${f}`);
 }
 console.log(`\n${base}/${home}/index.html`);
 
 async function readSlots(): Promise<Slots> {
   if (o.dry) return Bun.file(join(o.dry, home, "channels.json")).json().catch(() => ({}));
-  const r = await Bun.$`bunx ${WRANGLER} r2 object get ${`${bucket}/${home}/channels.json`} --remote --pipe`.quiet().nothrow();
-  if (r.exitCode === 0) return JSON.parse(r.stdout.toString());
-  // Missing on an app's first drop. Anything else and we'd forget older folders (left in R2, not deleted).
-  if (!/not.?found|does not exist|NoSuchKey/i.test(r.stderr.toString())) fail(`reading channels.json: ${r.stderr}`);
-  return {};
+  // Missing on an app's first drop. Any other error throws: we'd forget older folders.
+  const f = s3.file(`${home}/channels.json`);
+  return (await f.exists()) ? f.json() : {};
 }
 
 if (process.env.GITHUB_STEP_SUMMARY) {
