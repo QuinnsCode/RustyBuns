@@ -16,7 +16,7 @@
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "typescript": "^5.9.0"
   },
-  "version": "0.1.8",
+  "version": "0.1.9",
   "license": "Apache-2.0",
   "dependencies": {
     "playcanvas": "^2.22.2"
