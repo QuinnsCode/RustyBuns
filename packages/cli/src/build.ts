@@ -426,8 +426,15 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     : d.targets ?? [hostTag];
 
   const hasRust = await Bun.file("native/Cargo.toml").exists();
-  if (hasRust && targets.some((t) => t !== hostTag)) {
-    throw new Error(`native/ has Rust crates: cdylibs do not cross-compile. Build ${targets.filter((t) => t !== hostTag).join(", ")} on their own OS (CI matrix), or pass --target ${hostTag}.`);
+  // cdylibs do not cross-compile, but Linux ones build in Docker on any machine.
+  const cross = hasRust ? targets.filter((t) => t !== hostTag) : [];
+  const linuxCross = cross.filter((t) => t.startsWith("linux-"));
+  const otherCross = cross.filter((t) => !t.startsWith("linux-"));
+  if (otherCross.length) {
+    throw new Error(`native/ has Rust crates: cdylibs do not cross-compile. Build ${otherCross.join(", ")} on their own OS (CI matrix), or pass --target ${hostTag}.`);
+  }
+  if (linuxCross.length && !dockerUp()) {
+    throw new Error(`native/ has Rust crates and ${linuxCross.join(", ")} is not this machine: start Docker (they build in a Linux container), or build on Linux.`);
   }
   // After the glue (the app imports the generated stubs), before the client build:
   // a type error shouldn't cost a full UI build and a 100 MB compile first.
@@ -476,6 +483,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   const outs: string[] = [];
   // desktop.native names the crates to embed (all built crates when unset);
   // a named crate that was never built is an error, not a silent TS fallback.
+  for (const t of linuxCross) await step(`native ${t} (docker)`, () => buildLinuxNative(t, d.native));
   if (d.native?.length) nativeDirs(d.native);
   const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, d.native)) : [];
   const { migrationDirs, mountDirs: projectMounts } = embeddedDirs(c);
@@ -513,6 +521,40 @@ export function embeddedDirs(c: RustyBunsConfig) {
   const external = (dir: string) => dir.startsWith("~") || dir.startsWith("/");
   const mountDirs = Object.values(d.mounts ?? {}).filter((dir) => !external(dir));
   return { assets, migrationDirs, mountDirs };
+}
+
+/** The local rustc's version (`1.96.0`), so a container builds with the same Rust; undefined without one. */
+export function localRust(): string | undefined {
+  const r = Bun.spawnSync(["rustc", "--version"], { stdout: "pipe", stderr: "ignore" });
+  return /rustc (\d+\.\d+\.\d+)/.exec(r.stdout.toString())?.[1];
+}
+
+const dockerUp = () => Bun.spawnSync(["docker", "info"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+
+/**
+ * Build native/crates for a Linux target in Docker, into native/dist/<crate>/<target>/,
+ * where stageNative() picks them up. Debian bookworm's glibc (2.36) is older than
+ * the servers' (Ubuntu 24.04: 2.39), so the .so loads there. The local rustc's
+ * version, its own target dir, and a cached cargo registry volume.
+ */
+export async function buildLinuxNative(target: DesktopOs, only?: string[]): Promise<void> {
+  const arch = target === "linux-arm64" ? "arm64" : "amd64";
+  const crates = (await import("node:fs")).readdirSync("native/crates", { withFileTypes: true })
+    .filter((e) => e.isDirectory() && (!only?.length || only.includes(e.name))).map((e) => e.name);
+  const rust = localRust();
+  const image = `rust:${rust ? rust + "-" : ""}slim-bookworm`;
+  const targetDir = `native/target-${target}`;
+  console.log(`[native] building ${crates.join(", ")} for ${target} in ${image} (docker, linux/${arch})`);
+  const p = Bun.spawn(["docker", "run", "--rm", "--platform", `linux/${arch}`,
+    "-v", `${process.cwd()}/native:/src/native`, "-v", "rustybuns-cargo-registry:/usr/local/cargo/registry", "-w", "/src", image,
+    "cargo", "build", "--release", "--manifest-path", "native/Cargo.toml", "--target-dir", targetDir], { stdio: ["inherit", "inherit", "inherit"] });
+  if (await p.exited !== 0) throw new Error(`the Docker build of native/ for ${target} failed (see above)`);
+  const { mkdir, copyFile } = await import("node:fs/promises");
+  for (const c of crates) {
+    const out = join("native", "dist", c, target);
+    await mkdir(out, { recursive: true });
+    await copyFile(join(targetDir, "release", `lib${c}.so`), join(out, `lib${c}.so`));
+  }
 }
 
 /** native/dist/<crate> for each embedded crate; loadNative() finds them at /$bunfs/root/<crate>/<os-arch>/. */
