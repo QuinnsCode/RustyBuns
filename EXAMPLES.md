@@ -40,6 +40,7 @@ That's it. Now pick an app.
 | [Auto Rig](#auto-rig) | Give a 3D model bones, then pose it like a puppet | ⭐ Easy |
 | [Motion MIDI](#motion-midi) | Press play and race two music engines | ⭐ Easy |
 | [Splat Desktop](#splat-desktop) | Edit 3D scans of real places | ⭐⭐ Takes a minute |
+| [Meshy Batch Studio](#meshy-batch-studio) | Turn a folder of drawings into 3D game models | ⭐⭐ Needs a Meshy account |
 | [tscircuit Desktop](#tscircuit-desktop) | Design real circuit boards | ⭐⭐⭐ Needs Rust |
 | [Splat Rooms](#splat-rooms) | Hunt objects in photo-real 3D rooms | ⭐⭐⭐ Needs a grown-up account |
 | [Agent Office](#agent-office) | Run a 3D office where AI helpers write code at desks | ⭐⭐⭐ Needs a grown-up's Claude account |
@@ -201,6 +202,20 @@ bun run desktop:dev
 **Menu:** once a scene is open, you're in the full SuperSplat editor, and its menus are at the top.
 
 [Full guide →](apps/splat-desktop/README.md)
+
+## Meshy Batch Studio
+
+**Turn a folder of drawings into 3D models for a game.** Name a picture `flora_oak_h12.png` and you get back a 12 m tall oak tree, ready to drop into a game.
+
+**Needs a Meshy API key** (a paid Meshy plan, and every model costs credits). Then:
+```
+cd apps/meshy-studio
+bun run desktop:dev
+```
+
+**Controls:** paste your key, pick a folder, drop pictures on the window, and press **Send**. The finished models land in `002_ready`.
+
+[Full guide →](apps/meshy-studio/README.md)
 
 ## tscircuit Desktop
 
