@@ -1,5 +1,7 @@
 # Park Hide & Seek
 
+> **What it proves:** one game runs in the page, on a LAN host or on the edge, and each player is sent only what they can see. [Play it online](https://park-hide-seek.notryanquinn.workers.dev). One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
+
 Hide and seek in a real national park, in 3D. Campers drop into a zone around a famous attraction (Half Dome, El Capitan, Yosemite Falls, Glacier Point, the Mariposa Grove sequoias in Yosemite; Old Faithful and Grand Prismatic in Yellowstone) and hide. Park rangers come looking, with flashlights after dark. Last the whole hunt and you camped out successfully.
 
 - **The ground is real.** Each zone is 2 km of actual park terrain from public elevation data, shrunk six times in every direction: El Capitan is still a sheer wall, just 150 m tall instead of 900. People, trees and tents stay life-size.

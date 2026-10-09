@@ -142,6 +142,16 @@ Railway's upload is a Docker context capped at 32 MiB, and a compiled Bun binary
 
 HTTPS comes with the Railway domain. Identity works the same as on Hetzner. Rust crates aren't carried yet, so use the Hetzner box for an app with `native/` crates.
 
+`login railway` takes `oauth` (a browser login) or `stored` with a pasted **account** token (railway.com → Account Settings → Tokens, with no workspace picked; a project token can't create projects). Press Enter at the API URL prompt. Set a hard usage limit in the Railway workspace before the first deploy ([COSTS.md](COSTS.md)).
+
+To try it locally, run the bundle from its own folder the way the image does:
+
+```sh
+pnpm exec rustybuns build box
+cd .rustybuns/railway && PORT=3000 DATA_DIR=/tmp/box bun box.js
+curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is the Volume
+```
+
 ## Commands
 
 | Command | What it does |

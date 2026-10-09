@@ -1,164 +1,95 @@
 # Getting started
 
-Rusty Buns wraps the web app you already have so the same code ships as a desktop binary, a Cloudflare Worker and a Linux server. You don't need to know Rust or Bun to use it. You write a Vite app, and Rusty Buns carries it to every place it needs to run. Why this and not Electron or Tauri: see the [README](README.md#the-questions-everyone-asks).
+Four steps: set up, desktop, Cloudflare, a server. Each step builds on the one before, and you can stop after any of them. Why this and not Electron or Tauri: see the [README](README.md#the-questions-everyone-asks).
 
-Five flows. Each builds on the last, but you can stop after any of them.
+You need **Bun 1.4+** and an app that builds with `vite build`. For Cloudflare you also need a `wrangler.jsonc`.
 
-## 1. Setup
+## 1. Set up
 
-```
-pnpm add -D @rustybuns/cli @rustybuns/shell-bun
+```sh
+pnpm add -D @rustybuns/cli @rustybuns/shell-bun     # -Dw in a pnpm workspace
 pnpm exec rustybuns init
 ```
 
-Needs Bun 1.4+, an app that builds with `vite build`, and (for the deploy flow) a `wrangler.jsonc`.
-In a pnpm workspace (your repo has a `pnpm-workspace.yaml`), install with `-Dw` instead of `-D`.
+`init` reads your app and prints what it found: framework, package manager, source dir, aliases, build command, and which files are client code, `"use server"` actions or server-only. It writes `rustybuns.config.ts`, the one file you own, and nothing in `src/` changes.
 
-`init` prints its version, then what it detected: framework, package manager, source dir and aliases, the build
-command it inferred from your `release` or `build` script, and a boundary report of which files
-are client, `"use server"` actions, or server-only. It writes `rustybuns.config.ts` and
-`.rustybuns/alchemy.run.ts`. Nothing in `src/` changes.
+It also finds D1 migrations in `./migrations`, takes secret *names* from `.dev.vars` (the values never leave your machine), and gitignores what it generates.
 
-It also picks up D1 migrations from `./migrations`, secret names from `.dev.vars` (values stay
-on your machine), and adds `.rustybuns/`, `wrangler.generated.jsonc` and `.alchemy/` to `.gitignore`.
+## 2. Desktop
 
-## 2. Native binary
-
-```
+```sh
 pnpm exec rustybuns add desktop
-pnpm exec rustybuns build desktop --dev
-pnpm exec rustybuns run desktop
+pnpm exec rustybuns build desktop --dev && pnpm exec rustybuns run desktop
 ```
 
-`add desktop` writes `packages/desktop/` (`index.html`, `main.tsx`, `world.ts`) and
-`vite.desktop.config.ts`, skipping files you already have. `run desktop` opens Chrome
-with your app on a local Bun host. Data lives in `~/.<app-name>/`.
+Your app opens in Chrome on a local Bun host, with sqlite behind every binding. Data lives in `~/.<app-name>/`.
 
-Point it at your app:
+`add desktop` writes `packages/desktop/` and `vite.desktop.config.ts`, keeping any files you already have. To point it at your app:
 
-- `packages/desktop/main.tsx` renders our intro page until you import your own component. Use one below the RSC boundary (a `"use client"` component).
-- `packages/desktop/world.ts` is a template. If you have a Durable Object that owns a WebSocket, paste that class in and delete `extends DurableObject` and the `cloudflare:workers` import.
-- D1 migrations in `./migrations` are found automatically. If yours live elsewhere, set `migrationsDir` on the D1 binding.
-- If some `"use server"` modules should not run on the desktop (auth, social), set `desktop.actions: { include: ["src/app/actions/game/**"] }`.
-- If assets live in R2, sync them to a folder in your client build step and set `desktop.mounts: { "/asset": "path/to/folder" }` and `desktop.r2: { ASSETS_BUCKET: "path/to/folder" }`.
+- **`packages/desktop/main.tsx`** shows our intro page until you import your own component (a `"use client"` one, below any RSC boundary).
+- **`packages/desktop/world.ts`** is a template. If you have a Durable Object that owns a WebSocket, paste the class in and drop `extends DurableObject` and the `cloudflare:workers` import.
+- **Actions that shouldn't run on a laptop** (auth, social): `desktop.actions: { include: ["src/app/actions/game/**"] }`.
+- **Assets in R2:** copy them to a folder in your build and set `desktop.mounts: { "/asset": "dir" }` and `desktop.r2: { ASSETS_BUCKET: "dir" }`.
 
-Then the real thing:
+When it looks right, build the real thing:
 
-```
-pnpm exec rustybuns build desktop
+```sh
+pnpm exec rustybuns build desktop       # dist/<name>-<os>-<arch>
 ```
 
-Output: `dist/<name>-<os>-<arch>`. `targets` in the config picks the OS list;
-`"all"` cross-compiles from one machine when there is no Rust in the build.
+`targets: "all"` in the config cross-compiles macOS, Linux and Windows from one machine, as long as there's no Rust in the build.
 
-## 3. Set up deployments
+## 3. Cloudflare
 
-```
-pnpm exec rustybuns add deploy
-pnpm exec rustybuns login cloudflare
-```
-
-`add deploy` installs the pinned alchemy + effect set and writes package manager overrides
-so transitive `@effect/*` versions cannot drift (Effect is rc; carets break within days).
-In a monorepo the overrides go in the **workspace root's** `package.json`: Bun, npm and yarn ignore them in a member.
-Effect is what makes the deploy typed: the config, the generated stack and each provider are checked
-by the compiler before anything is created. You don't write any Effect yourself unless you `eject`.
-
-The profile step runs once per machine: choose OAuth, All Scopes, then the account you want
-to deploy to. It is saved in `~/.alchemy/`. If you manage several Cloudflare accounts, make a
-named profile per account (`alchemy profile create <name>`) and pass `--profile <name>` to
-`plan` and `deploy`. For CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` instead.
-
-On pnpm 10, packages published in the last 24h are held back. If `add deploy` complains,
-add `minimumReleaseAgeExclude: ["alchemy", "effect", "@effect/*", "@rustybuns/*"]` to `pnpm-workspace.yaml`.
-
-## 4. Deploy
-
-Set a different `name` in `rustybuns.config.ts` than your live app the first time, so the
-stack cannot touch existing resources. If a `var` holds your live app's URL (an auth base URL,
-say), point it at the new one too: `https://<name>.<account>.workers.dev`. Secret values are
-read from `.dev.vars` at deploy time.
-
-```
-pnpm exec rustybuns plan
-pnpm exec rustybuns deploy
-pnpm exec rustybuns destroy
+```sh
+pnpm exec rustybuns add deploy            # pinned Alchemy + Effect
+pnpm exec rustybuns login cloudflare      # once per machine
 ```
 
-`plan` shows what would be created and creates nothing. `deploy` refuses unless `plan` ran
-for this exact config, then shows the same list, asks you to confirm, builds, uploads, and
-prints the URL (`--yes` skips both prompts for CI). `destroy` removes everything the stack
-created, in reverse order.
+**The first time, give the config a different `name` than your live app**, so the stack can't touch anything that already exists. If a `var` holds your live URL (an auth base URL, say), point it at `https://<name>.<account>.workers.dev`.
 
-Your `wrangler.jsonc` bindings become the deployed resources: D1 (with migrations applied),
-KV, R2, and Durable Objects, bound to the Worker under the same names.
-
-## 5. Deploy to Hetzner
-
-Add `box: { provider: "hetzner" }` under `targets`. Keep `edge` for both columns in one stack,
-or remove it for a Hetzner-only stack. Then, once per machine:
-
-```
-pnpm exec rustybuns login hetzner
+```sh
+pnpm exec rustybuns plan       # shows what it would create; creates nothing
+pnpm exec rustybuns deploy     # refuses without a plan for this exact config, then asks
+pnpm exec rustybuns destroy    # removes everything the stack created
 ```
 
-It asks for a Hetzner Cloud API token with read & write access (Console → Security → API tokens).
-In CI, set `HCLOUD_TOKEN` instead. Don't put it in `.dev.vars`, because `init` reads secret names
-from there.
+Your bindings become real resources with the same names: a Worker, D1 (migrations applied), KV, R2 and Durable Objects. Secret values are read from `.dev.vars` at deploy time. `plan` also lists what can bill you; see [COSTS.md](COSTS.md).
 
+If something goes wrong here:
+
+- **pnpm 10 holds back packages less than a day old.** Add `minimumReleaseAgeExclude: ["alchemy", "effect", "@effect/*", "@rustybuns/*"]` to `pnpm-workspace.yaml`.
+- **In a monorepo,** `add deploy`'s version overrides go in the workspace root's `package.json`. Bun, npm and yarn ignore them in a member package.
+- **Several Cloudflare accounts:** `rustybuns login cloudflare --profile <name>`, then pass `--profile <name>` to `plan` and `deploy`.
+- **CI:** set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and pass `--yes`.
+
+## 4. A server (a "box")
+
+The same host the desktop uses, run on a Linux server. Add a `box` target next to `edge`, or replace `edge` with it:
+
+```ts
+targets: {
+  edge: { provider: "cloudflare" },
+  box: { provider: "railway" },      // or "hetzner"
+}
 ```
-pnpm exec rustybuns plan
-pnpm exec rustybuns deploy
-```
 
-Both run `rustybuns build box` first: your desktop host, compiled for Linux, with the token gate
-off and `/health` on. It lands in `.rustybuns/box/` next to `launch.mjs`, a small Node launcher,
-since Alchemy's `Hetzner.Service` starts every unit with `node`. `deploy` creates the server and a
-10 GB volume, copies both files over SSH, starts a systemd unit, waits for `/health`, and prints
-`http://<ipv4>:3000`. sqlite, KV and R2 directories live on the volume, so they survive
-redeploys. Secret values from `.dev.vars` go into the unit's env file.
+| | Railway | Hetzner |
+|---|---|---|
+| Status | verified live | builds and runs, not live-tested yet |
+| You get | `https://<service>.up.railway.app`, a Volume for sqlite | `http://<ipv4>:3000`, a 10 GB Volume for sqlite |
+| Cost | by usage, sleeps when idle; **set a hard usage limit first** | hourly until destroyed |
+| Rust crates | not yet | yes (deploy from Linux) |
+| Log in | `rustybuns login railway` (an *account* token, or the browser) | `rustybuns login hetzner` (a read & write API token) |
 
-To pick a different server, set `location`, `serverType` (`cax*` types are ARM), `image`, `port`
-or `volumeSize` on `targets.box`. Changing `location`, `serverType` or `image` replaces the server.
-The volume lives on.
+Then the same three commands: `plan`, `deploy`, `destroy`. Both run `rustybuns build box` first.
 
-To try the box locally before paying for one, build it for your own machine and start the launcher:
+Try a box locally before paying for one:
 
-```
-pnpm exec rustybuns build box --target darwin-arm64
-PORT=3000 DATA_DIR=/tmp/box node .rustybuns/box/launch.mjs
+```sh
+pnpm exec rustybuns build box --target darwin-arm64           # your own OS
+PORT=3000 DATA_DIR=/tmp/box node .rustybuns/box/launch.mjs     # the Hetzner shape
 curl localhost:3000/health
 ```
 
-## 6. Deploy to Railway
-
-Same box, on Railway: `box: { provider: "railway" }` under `targets`. Then, once per machine:
-
-```
-pnpm exec rustybuns login railway
-```
-
-Pick `oauth` for a browser login, or `stored` and paste an **account** token (railway.com →
-Account Settings → Tokens, with no workspace picked; a project token can't create projects).
-Press Enter at the API URL prompt. In CI, set `RAILWAY_API_TOKEN` instead.
-
-Before the first deploy, set a hard usage limit in the Railway workspace (see COSTS.md).
-
-```
-pnpm exec rustybuns plan
-pnpm exec rustybuns deploy
-```
-
-Railway's upload is capped at 32 MiB and a compiled Bun binary is bigger than that, so the
-Railway box is a Bun bundle instead: `rustybuns build box` writes `.rustybuns/railway/` (the
-bundle, your client build and migrations beside it, and a Dockerfile on `oven/bun`). `deploy`
-creates a Project, a Service with a `https://*.up.railway.app` domain and a `/health` check, and a
-Volume at `/data`, then prints the URL. The service sleeps when idle unless `sleep: false`.
-
-To try it locally, run the bundle from its own folder the way the image does:
-
-```
-pnpm exec rustybuns build box
-cd .rustybuns/railway && PORT=3000 DATA_DIR=/tmp/box bun box.js
-curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is the Volume
-```
+A box plays like the edge, not like the desktop: every visitor is their own guest, `?room=CODE` picks a room, and there's no login. Server keys, TLS, identity and the other limits are in [REFERENCE.md](REFERENCE.md#deploy-to-hetzner).

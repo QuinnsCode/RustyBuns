@@ -1,5 +1,7 @@
 # Splat spy (prototype)
 
+> **What it proves:** the smallest config: a three.js game with no backend at all becomes a desktop app in ten lines. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
+
 An I-spy game on Gaussian splats, in the spirit of *Scanner Sombre*. A kid's room holding **100 things** sits in total darkness. You hold a scanner: each shot throws a few hundred dots into the room, and wherever they land the real colours light up. The game asks for one thing ("I spy… a red crayon"), you scan until you spot it, then hold Shift and click it. A correct pick flies the camera in and dims everything else.
 
 **Fewest shots wins, and time breaks ties.** Every round the room is dark again and everything has moved, so memorising the layout doesn't help.

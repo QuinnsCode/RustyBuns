@@ -259,6 +259,9 @@ bun run office
 | [auto-rig](apps/auto-rig/README.md) | Drop in a model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical results | Small |
 | [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain: campers vs park rangers in a race to find Bigfoot, vs AI bots, in online rooms, or with friends on a LAN | Small |
 | [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary for macOS and Linux: a native addon swapped for Bun's PTY, assets embedded, nothing forked | Medium (downloads the release) |
+| [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor on a folder of scenes: a plain Vite app, a `desktop.host` for file routes, `headers` for CDN assets | Medium |
+| [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game: a world class, and a `mounts` folder streamed from disk with range requests, never embedded | Small (scenes download separately) |
+| [splat-spray](apps/splat-spray/README.md) | The smallest config: a three.js SPA with no backend, `world: false`, ten lines | Small |
 | [spa-example](apps/spa-example) | An RWSDK / Cloudflare app on the desktop: a world Durable Object, D1 and KV on sqlite | Small |
 | [example](apps/example) | Worker mode, plus a probe for the sample Rust crate in `native/crates/rb_hello` | Small |
 

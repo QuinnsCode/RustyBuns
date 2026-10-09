@@ -24,7 +24,7 @@ Every app is five things: **http, comms, storage, memory, identity**. Cloudflare
        ┌───────────────────┼────────────────────┐
     desktop              edge                  box
   Bun + sqlite      Worker + D1/KV/R2/DO    Bun + sqlite on a volume
-  one binary        your vite build         one binary under systemd
+  one binary        your vite build         Railway or Hetzner
 ```
 
 ## The questions everyone asks
@@ -68,7 +68,7 @@ Honestly:
 - **The binary is about 90 to 110 MB**, because Bun is inside it. It's one file with no install step, but it isn't small.
 - **It renders in the user's Chrome** (or default browser), not a bundled one.
 
-If what you have is a web app with a backend, and you want it on a laptop, on the edge *and* on a VPS, nothing else does all three from one codebase.
+If what you have is a web app with a backend, and you want it on a laptop, on the edge *and* on a server, nothing else does all three from one codebase.
 
 ## Why this is built for the agentic era
 
@@ -99,7 +99,8 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [auto-rig](apps/auto-rig/README.md) | Auto-rigging a 3D model in Rust and TypeScript with identical output |
 | [motion-midi](apps/motion-midi/README.md) | One synth in Rust and in TypeScript, checked sample by sample |
 | [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor as a desktop app working on a folder on your disk |
-| [splat-rooms](apps/splat-rooms/README.md) / [splat-spray](apps/splat-spray/README.md) | Splat hunting games: a Durable Object world and scenes read from your disk |
+| [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game with a world class and 30 MB scenes streamed from a folder on your disk, never embedded |
+| [splat-spray](apps/splat-spray/README.md) | The smallest one: a three.js game with no backend at all, made a desktop app by a ten-line config |
 | [spa-example](apps/spa-example) | An RWSDK app with D1, KV and a world Durable Object, all on sqlite |
 
 Want to just play them? [EXAMPLES.md](EXAMPLES.md) is two lines per app, no experience needed.

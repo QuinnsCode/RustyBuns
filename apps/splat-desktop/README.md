@@ -1,6 +1,8 @@
 # Splat desktop
 
-[SuperSplat](https://github.com/playcanvas/supersplat), PlayCanvas' open-source web editor for 3D Gaussian splats, as a desktop app. Open a folder of scenes, edit them, and keep everything on your disk. Built with [RustyBuns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
+> **What it proves:** a big open-source web editor (PlayCanvas' SuperSplat) becomes a desktop app that works on a folder on your disk. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
+
+[SuperSplat](https://github.com/playcanvas/supersplat), PlayCanvas' open-source web editor for 3D Gaussian splats, as a desktop app. Open a folder of scenes, edit them, and keep everything on your disk.
 
 This is phase 1 of a bigger idea: **phone video in, 3D scene out, trained on your own GPU.** Phase 1 brings the editor to the desktop; training with [Brush](https://github.com/ArthurBrussee/brush) comes next (see [Roadmap](#roadmap)).
 
