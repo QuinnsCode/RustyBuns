@@ -225,7 +225,10 @@ test("box: Hetzner stack runs the launcher, edge stays off unless asked for", ()
   c.bindings.API_KEY = { type: "secret" };
   const both = generateAlchemy({ ...c, targets: { ...c.targets, box: { provider: "hetzner" } } });
   expect(both).toContain('Hetzner.Server("Box", { serverType: "cpx12", image: "ubuntu-24.04", location: "nbg1" })');
-  expect(both).toContain('Hetzner.Volume("Data", { size: 10, format: "ext4", server: Box, automount: true })');
+  // the Volume gets the created Server (its serverId), not the Server's definition
+  expect(both).toContain("const box = yield* Box;");
+  expect(both).toContain('Hetzner.Volume("Data", { size: 10, format: "ext4", server: box, automount: true })');
+  expect(both).not.toContain("server: Box, automount");
   expect(both).toContain('main: ".rustybuns/box/launch.mjs"');
   expect(both).toContain("isExternal: true");
   expect(both).toContain('API_KEY: process.env["API_KEY"] ?? ""');
@@ -258,7 +261,8 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).toContain('if (url.pathname === "/__rb/info") return reject(404, "not_on_box");');
   expect(box).toContain("WORLD.idFromName(room)");
   expect(box).toContain("MAX_ROOMS = 200");
-  expect(box).toContain('"X-RB-Data": dataMount');
+  expect(box).toContain('"X-RB-Data": dataMount, "X-RB-Boots": String(boots)');
+  expect(box).toContain('join(dataDir, ".rb-boots")');
   const desk = spaEntry(c);
   expect(desk).toContain('const guest = req.headers.get("x-rb-principal") === "guest";');
   expect(desk).not.toContain("boxIdentity");

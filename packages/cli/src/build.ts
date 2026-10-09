@@ -94,7 +94,7 @@ import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Mi
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
-import { mkdirSync, existsSync${h.box ? ", statSync" : ""} } from "node:fs";
+import { mkdirSync, existsSync${h.box ? ", statSync, readFileSync, writeFileSync" : ""} } from "node:fs";
 import { basename, join, isAbsolute } from "node:path";
 
 declare const RB_VERSION: string;
@@ -107,7 +107,12 @@ const local = localBindings(dataDir);
 ${h.box ? `// "volume" when the data dir is its own filesystem (an attached Volume), else
 // "container": data that a redeploy throws away. /health says which.
 const dataMount = statSync(dataDir).dev !== statSync("/").dev ? "volume" : "container";
-console.log("[data] " + dataDir + " on the " + dataMount);
+// Starts of this box against this data dir. It only grows across a redeploy
+// when the data survived it; /health says it too.
+const bootFile = join(dataDir, ".rb-boots");
+const boots = (existsSync(bootFile) ? Number(readFileSync(bootFile, "utf8")) || 0 : 0) + 1;
+writeFileSync(bootFile, String(boots));
+console.log("[data] " + dataDir + " on the " + dataMount + ", start " + boots);
 ` : ""}
 // Compiled: --asset embeds a dir at /$bunfs/root/<basename>. Dev: the working tree.
 function resolveDir(rel: string): string {
@@ -207,7 +212,7 @@ shell.mount({
   async fetch(req) {
     const url = new URL(req.url);
     const guest = ${h.box ? "true" : `req.headers.get("x-rb-principal") === "guest"`};
-${h.box ? `    if (url.pathname === "/health") return new Response("ok", { headers: { "X-RB-Data": dataMount } });\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
+${h.box ? `    if (url.pathname === "/health") return new Response("ok", { headers: { "X-RB-Data": dataMount, "X-RB-Boots": String(boots) } });\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
       const h = new Headers(req.headers);
       let who = identity;
       if (guest) {
@@ -460,7 +465,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     // Dev host: same bundle pipeline as the binary, minus --compile. Nothing
     // embedded; assets and migrations are read from the working tree.
     const outdir = opts.outdir ?? ".rustybuns/dev";
-    const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir, target: "bun", define: defineMap, plugins, sourcemap: "linked", throw: false } as any));
+    const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir, target: "bun", define: defineMap, plugins, sourcemap: opts.outdir ? "none" : "linked", throw: false } as any));
     await prof?.finish();
     if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
     if (!opts.outdir) console.log(`dev host: rustybuns run desktop   (= bun .rustybuns/dev/desktop.js)`);

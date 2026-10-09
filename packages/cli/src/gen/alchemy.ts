@@ -98,8 +98,14 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     lines.push(`// runs \`node launch.mjs\` under systemd; the launcher execs the binary beside it.`);
     lines.push(`// sqlite, KV and R2 dirs live on the Volume. Secrets land in /opt/<unit>/env.`);
     lines.push(`export const Box = Hetzner.Server("Box", { serverType: ${JSON.stringify(box.serverType)}, image: ${JSON.stringify(box.image)}, location: ${JSON.stringify(box.location)} });`);
-    if (box.volumeSize > 0)
-      lines.push(`export const Data = Hetzner.Volume("Data", { size: ${box.volumeSize}, format: "ext4", server: Box, automount: true });`);
+    if (box.volumeSize > 0) {
+      // Hetzner.Volume reads serverId off the CREATED Server; given the Server's
+      // definition it attaches nothing and the launcher never finds the mount.
+      lines.push(`export const Data = Effect.gen(function* () {`);
+      lines.push(`  const box = yield* Box;`);
+      lines.push(`  return yield* Hetzner.Volume("Data", { size: ${box.volumeSize}, format: "ext4", server: box, automount: true });`);
+      lines.push(`});`);
+    }
     lines.push(`export const Service = Hetzner.Service("Service", {`);
     lines.push(`  server: Box,`);
     lines.push(`  main: ${JSON.stringify(`${BOX_DIR}/launch.mjs`)},`);
