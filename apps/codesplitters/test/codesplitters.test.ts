@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { apply, empty, fromText, replay, text, type Applied } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { run } from "../agents.ts";
+import { GameRoom } from "../src/game-do.ts";
 
 // Every app instance makes a temp dir of git repos; remove them all at the end.
 const opened: { close(): void }[] = [];
@@ -303,6 +304,19 @@ describe("game", () => {
     await bo.say({ t: "dead", score: 300 });
     expect(ana.last("over").players.map((p: any) => [p.user, p.score])).toEqual([["ana", 700], ["bo", 300]]);
     expect(ana.last("lobby").state).toBe("waiting");
+
+    // Next round: ana goes out, bo's tab goes quiet. Start says why it can't, until bo counts as idle.
+    await ana.say({ t: "start" });
+    const seed = ana.last("start").seed;
+    await ana.say({ t: "dead", score: 50 });
+    await ana.say({ t: "start" });
+    expect(ana.last("note").text).toContain("bo");
+    expect(ana.last("start").seed).toBe(seed);
+    const idle = GameRoom.IDLE_MS;
+    GameRoom.IDLE_MS = -1;
+    try { await ana.say({ t: "start" }); } finally { GameRoom.IDLE_MS = idle; }
+    expect(ana.last("start").seed).not.toBe(seed);
+    expect(bo.last("start").seed).toBe(ana.last("start").seed);
   });
 });
 

@@ -590,7 +590,8 @@ function connect() {
       for (const id of others.keys()) if (!m.players.some((p) => p.id === id)) { scene.remove(others.get(id).group); others.delete(id); }
       // Walked in on a round in progress: you're in it.
       if (m.state === "playing" && !playing && m.seed !== roundSeed) begin(m.seed, m.startAt);
-    } else if (m.t === "start") begin(m.seed, m.startAt);
+    } else if (m.t === "start") { if (m.seed !== roundSeed) playing = false; begin(m.seed, m.startAt); }
+    else if (m.t === "note") $("#lobby-msg").textContent = m.text;
     else if (m.t === "pos") {
       let o = others.get(m.id);
       if (!o) { o = { group: avatar(m.user), user: m.user, to: new THREE.Vector3() }; others.set(m.id, o); }
@@ -605,7 +606,10 @@ function connect() {
 function renderLobby() {
   const ps = lobbyState?.players ?? [];
   $("#lobby-players").innerHTML = ps.map((p) => `<li><span>${esc(p.user)}${p.id === me ? " (you)" : ""}</span><span class="${p.ready ? "ok" : "muted"}">${lobbyState.state === "playing" ? (p.alive ? `wave ${p.wave} · ${p.score}` : `out · ${p.score}`) : p.ready ? "ready" : "waiting"}</span></li>`).join("");
-  $("#ready").textContent = ps.find((p) => p.id === me)?.ready ? "not ready" : "ready";
+  const mine = ps.find((p) => p.id === me);
+  $("#ready").textContent = mine?.ready ? "not ready" : "ready";
+  if (ws && lobbyState?.state === "playing" && mine && !mine.alive) $("#lobby-msg").textContent = "You're out. The round ends when everyone is.";
+  else if (ws && lobbyState?.state === "waiting") $("#lobby-msg").textContent = "";
   $("#others").innerHTML = lobbyState?.state === "playing" ? ps.filter((p) => p.id !== me).map((p) => `${esc(p.user)} ${p.alive ? p.score : "out"}`).join("<br>") : "";
 }
 $("#start").addEventListener("click", () => { sound.init(); ws ? send({ t: "start" }) : begin(Math.floor(Math.random() * 2 ** 31), Date.now() + 3000); });
