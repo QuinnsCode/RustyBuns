@@ -15,6 +15,7 @@
     "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
+    "@fontsource/ultra": "^5.3.0",
     "@rustybuns/shell-bun": "workspace:*",
     "three": "^0.180.0"
   },

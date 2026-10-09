@@ -1,11 +1,12 @@
 // Park Hide & Seek online: the built page as static assets, and one World
-// Durable Object per room code (src/edge/worker.ts). `bun run deploy`.
+// Durable Object per room code (src/edge/worker.ts), and one Matchmaker for
+// quick play (src/edge/match.ts). `bun run deploy`.
 {
   "name": "park-hide-seek",
   "main": "src/edge/worker.ts",
   "compatibility_date": "2026-09-01",
   "assets": { "binding": "ASSETS", "directory": "dist/ui" },
-  "durable_objects": { "bindings": [{ "name": "WORLD", "class_name": "World" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["World"] }],
+  "durable_objects": { "bindings": [{ "name": "WORLD", "class_name": "World" }, { "name": "MATCH", "class_name": "Matchmaker" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["World"] }, { "tag": "v2", "new_sqlite_classes": ["Matchmaker"] }],
   "observability": { "enabled": true }
 }

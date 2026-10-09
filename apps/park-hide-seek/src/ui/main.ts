@@ -13,6 +13,9 @@ import { Preview } from "./preview.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
+import "@fontsource/ultra/latin-400.css";
+// The ranger station's sign is drawn on a canvas: have the lettering ready for it.
+void document.fonts?.load("46px Ultra");
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -28,6 +31,8 @@ let view: View | null = null;
 let hosting: { pass: string; addresses: string[]; port: number } | null = null;
 /** The online room this page is in, if any. */
 let room: string | null = null;
+/** Quick play: when this room starts by itself, and whether we've started it. */
+let quick: { at: number; started: boolean } | null = null;
 let info: { app?: string; version?: string } | null = null;
 let look: Look = (() => { try { const l = JSON.parse(store.get("look")); if (l && HATS.includes(l.hat)) return l as Look; } catch {} return randomLook(); })();
 
@@ -59,7 +64,9 @@ const note = (text: string, ms = 2500) => { flash = { text, until: Date.now() + 
 // ---- menu -----------------------------------------------------------------------
 
 const nameInput = $<HTMLInputElement>("name");
-nameInput.value = store.get("name");
+// First visit: a trail name, so nobody has to type before they play.
+const TRAIL_NAMES = ["Scout", "Switchback", "Trail Mix", "Pinecone", "Firefly", "Kindling", "S'more", "Bear Bait", "Wanderer", "Lookout"];
+nameInput.value = store.get("name") || TRAIL_NAMES[Math.floor(Math.random() * TRAIL_NAMES.length)];
 $<HTMLInputElement>("addr").value = store.get("addr");
 const myName = () => (nameInput.value.trim() || "Camper").slice(0, 24);
 const menuError = (s: string) => { $("menu-error").textContent = s; };
@@ -75,15 +82,36 @@ const roomLink = (code: string) => `${location.origin}${location.pathname}?room=
   const desktop = info?.app === "park-hide-seek";
   for (const el of document.querySelectorAll<HTMLElement>("[data-desktop]")) el.hidden = !desktop;
   for (const el of document.querySelectorAll<HTMLElement>("[data-online]")) el.hidden = desktop;
-  $("menu-note").textContent = desktop
-    ? "LAN games: one person hosts, everyone else runs their own copy of the app and joins with the address and passphrase."
-    : "Online: create a room and send friends its link or code. Up to 8 players; fill the rest with AI.";
+  if (!desktop) $("play-note").textContent = "Jump into a game with whoever's on. AI fills the empty spots.";
   // A shared link (?room=CODE) opens with the code filled in.
   const shared = new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
   if (!desktop && ROOM.test(shared)) { $<HTMLInputElement>("room").value = shared; $("room-join").hidden = false; }
 })();
 
-$("solo").onclick = () => { store.set("name", myName()); sounds.unlock(); start(new LocalSession(myName(), look)); };
+/** Against AI, here in the page. Quick play skips the lobby: a random zone, the live weather, three AI players. */
+function solo(go: boolean) {
+  store.set("name", myName()); sounds.unlock(); menuError("");
+  const s = new LocalSession(myName(), look);
+  start(s);
+  if (go) s.send({ t: "start" });
+}
+
+// Play: online, the room filling up right now (the Matchmaker, src/edge/match.ts).
+// On the desktop, or when there's no matchmaker to ask, straight into a game against AI.
+$("play").onclick = async () => {
+  if (info?.app === "park-hide-seek") { solo(true); return; }
+  const btn = $<HTMLButtonElement>("play");
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/match?uid=${encodeURIComponent(tabPlayerId())}`);
+    const m = res.ok ? await res.json() as { room?: string; startsIn?: number } : null;
+    if (m?.room && ROOM.test(m.room) && typeof m.startsIn === "number") {
+      goOnline(m.room);
+      quick = { at: Date.now() + m.startsIn, started: false };
+    } else solo(true);
+  } catch { solo(true); } finally { btn.disabled = false; }
+};
+$("custom").onclick = () => solo(false);
 
 const WORDS = ["marmot", "canyon", "sequoia", "geyser", "ranger", "bison", "summit", "meadow", "falls", "juniper", "osprey", "granite", "mesa", "elk", "pika", "aspen"];
 const passphrase = () => { const r = crypto.getRandomValues(new Uint32Array(2)); return `${WORDS[r[0] % WORDS.length]}-${WORDS[r[1] % WORDS.length]}`; };
@@ -120,6 +148,7 @@ $<HTMLFormElement>("join").onsubmit = (e) => {
 function goOnline(code: string) {
   store.set("name", myName()); sounds.unlock(); menuError("");
   room = code;
+  quick = null;
   history.replaceState(null, "", roomLink(code));
   const s = new NetSession("online", "/ws", { room: code, uid: tabPlayerId(), name: myName() });
   start(s);
@@ -157,6 +186,7 @@ async function leave() {
   session = null; view = null; body = null;
   controls.release();
   if (room) { room = null; history.replaceState(null, "", location.pathname); }
+  quick = null;
   if (hosting) {
     hosting = null;
     await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) }).catch(() => {});
@@ -171,12 +201,15 @@ function onPhase(v: View) {
   if (v.phase === "hide") { controls.clearPresses(); note(you?.role === "camper" ? "Find somewhere to hide! C to crouch in a bush." : "Counting at the ranger station…", 3500); }
   if (v.phase === "hunt") note(you?.role === "ranger" ? "Go find them! Q to call out, M for the radio." : "Here come the rangers. Stay still, stay quiet.", 3500);
   if (v.phase !== "hide" && v.phase !== "hunt") controls.release();
+  // Back in the lobby after a quick match: it's an ordinary room now, with settings.
+  if (v.phase === "lobby" && quick?.started) quick = null;
 }
 
 // ---- lobby ------------------------------------------------------------------------
 
 let lastLobby = "";
 function renderLobby(v: View) {
+  if (quick) { renderQuickLobby(v); return; }
   const host = v.hostId === v.me;
   const dis = host ? "" : "disabled";
   // The park picked, if any: "random" roams every park.
@@ -198,6 +231,28 @@ function renderLobby(v: View) {
     <p class="note"><strong>Bigfoot</strong> is hiding where the search area closes in. Whoever reaches him first ends the round and scores ${HUNT.bigfootPoints}. If a camper finds him, every camper still out has camped out. If a ranger does, they haven't. Listen for his howl.</p>`;
   if (html !== lastLobby) { lastLobby = html; $("lobby-main").innerHTML = html; }
 }
+
+/** Quick play: no settings, just who's here and the countdown. */
+function renderQuickLobby(v: View) {
+  const left = Math.max(0, Math.ceil((quick!.at - Date.now()) / 1000));
+  const people = v.players.filter((p) => !p.bot);
+  const html = `
+    <section><h2>Quick play</h2><p class="countdown">${left ? `Starting in ${left} s` : "Starting…"}</p>
+    <p class="note">Anyone who presses Play now joins you. AI fills the empty spots. Random zone, the park's live weather.</p></section>
+    <section><h2>Here so far</h2><ul class="players">${people.map((p) => `<li><span class="who">${esc(p.name)}${p.id === v.me ? " (you)" : ""}</span></li>`).join("")}</ul></section>
+    <section class="row-btns"><button data-action="leave">Leave</button></section>`;
+  if (html !== lastLobby) { lastLobby = html; $("lobby-main").innerHTML = html; }
+}
+
+/** Whoever hosts a quick room starts it once the window closes; if they leave, the next host does. */
+const QUICK_SIZE = 4;
+setInterval(() => {
+  const v = view;
+  if (!quick || quick.started || !v || v.phase !== "lobby" || v.hostId !== v.me || Date.now() < quick.at) return;
+  quick.started = true;
+  for (let n = v.players.filter((p) => p.online).length; n < QUICK_SIZE; n++) send({ t: "bot", level: "normal" });
+  send({ t: "start" });
+}, 250);
 
 let lastLook = "";
 function renderLook() {
