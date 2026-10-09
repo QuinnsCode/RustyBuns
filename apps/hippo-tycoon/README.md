@@ -70,6 +70,13 @@ bunx wrangler dev --local --port 8787      # the Worker + Durable Object
 bun scripts/smoke-online.ts http://127.0.0.1:8787     # a scripted two-player round
 ```
 
+To check that a room survives losing its Durable Object mid-round, `scripts/smoke-evict.ts` plays a round through the client's own reconnecting socket, evicts the room, and checks that both players reconnect to the seats they held and the round restarts from its countdown. Locally, eviction means restarting `wrangler dev`, which keeps the room's storage. On Cloudflare, it means a deploy that changes the code (a new var alone does not evict). A deploy reaches each object eventually, not all at once (about five minutes when this was tried), so give it a long `--wait`:
+
+```
+bun scripts/smoke-evict.ts http://127.0.0.1:8787                 # restart wrangler dev when it says EVICT NOW
+bun scripts/smoke-evict.ts https://<your-worker> --evict "bunx wrangler deploy --minify" --wait 1200
+```
+
 Open `http://127.0.0.1:8787` in two tabs, choose **Online room**, make a room in one, and type its code in the other.
 
 `wrangler dev` bundles the Worker with wrangler's own bundler, but a deploy ships Alchemy's bundle. To run Alchemy's bundle in workerd before deploying (no login needed, nothing created in the cloud):
