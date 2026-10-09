@@ -8,7 +8,8 @@
 //   bun scripts/smoke-evict.ts http://127.0.0.1:8787
 //   bun scripts/smoke-evict.ts https://hippo-tycoon.example.workers.dev --evict "bunx wrangler deploy --minify" --wait 1200
 // A deploy only evicts when the code changed (a new var is not enough), and it
-// reaches each object eventually, not at once: give it --wait (seconds, default 300).
+// reaches each object eventually, not at once (about five minutes when tried):
+// give it --wait (seconds, default 300).
 import { NetSocket, type NetState } from "../src/client/net.ts";
 import type { ServerMsg } from "../src/engine/wire.ts";
 
@@ -28,11 +29,14 @@ const at = () => `${((Date.now() - t0) / 1000).toFixed(1).padStart(6)}s`;
 class Player {
   msgs: ServerMsg[] = [];
   states: NetState[] = [];
+  /** The room's phase as this player last saw it before the first drop. */
+  phaseAtDrop: string | undefined;
+  msgsAtDrop = 0;
   net: NetSocket;
   constructor(readonly uid: string, readonly name: string) {
     this.net = new NetSocket(() => new WebSocket(`${base}/ws?room=${room}&uid=${uid}&name=${name}`), {
       onMessage: (m) => this.msgs.push(m),
-      onState: (s, why) => { if (s !== this.states.at(-1)) console.log(`${at()}  ${name} ${s}${why ? `: ${why}` : ""}`); this.states.push(s); },
+      onState: (s, why) => { if (s === "offline" && !this.phaseAtDrop) { this.phaseAtDrop = this.room()?.ph ?? "?"; this.msgsAtDrop = this.msgs.length; } if (s !== this.states.at(-1)) console.log(`${at()}  ${name} ${s}${why ? `: ${why}` : ""}`); this.states.push(s); },
       onPing: () => {},
       onOpen: () => {},
     });
@@ -55,7 +59,9 @@ a.net.send({ t: "cfg", secs: 90 });
 a.net.send({ t: "start" });
 await until("round playing", () => a.room()?.ph === "playing", 12000);
 await Bun.sleep(1500);
-const before = { a: a.msgs.length, b: b.msgs.length, helloA: a.of("hello").length, helloB: b.of("hello").length };
+// A deploy can take minutes to reach the room: rematch at every podium so a round is on when it lands.
+const keeper = setInterval(() => { if (!a.phaseAtDrop && a.room()?.ph === "podium") a.net.send({ t: "rematch" }); }, 250);
+const before = { helloA: a.of("hello").length, helloB: b.of("hello").length };
 
 if (evictCmd) {
   console.log(`${at()}  evicting: ${evictCmd}`);
@@ -66,12 +72,19 @@ if (evictCmd) {
 }
 
 await until("both sockets dropped", () => a.states.includes("offline") && b.states.includes("offline"), waitS * 1000);
+clearInterval(keeper);
+// What Match.restore brings back: a round in play restarts from its countdown; a lobby or podium is kept.
+const dropped = a.phaseAtDrop ?? "playing";
+const expect = dropped === "playing" || dropped === "countdown" ? "countdown" : dropped;
+console.log(`${at()}       dropped during ${dropped}, expecting ${expect} after the restore`);
 await until("both reconnected and said hello again", () => a.of("hello").length > before.helloA && b.of("hello").length > before.helloB, 120_000);
 const ha = a.of("hello").at(-1)!, hb = b.of("hello").at(-1)!;
 if (ha.you !== 0 || hb.you !== 1) { console.error(`FAIL: seats not given back (Ada ${ha.you}, Bo ${hb.you})`); process.exit(1); }
 console.log(`${at()}  ok   seats given back (Ada 0, Bo 1)`);
-const after = () => a.msgs.slice(before.a).filter((m) => m.t === "room") as Extract<ServerMsg, { t: "room" }>[];
-await until("round restarted from its countdown (restored from storage)", () => after().some((m) => m.ph === "countdown"), 10000);
+const after = () => a.msgs.slice(a.msgsAtDrop).filter((m) => m.t === "room") as Extract<ServerMsg, { t: "room" }>[];
+// the first room frame after the hello is the restored phase
+await until(`room came back at ${expect} (restored from storage)`, () => after()[0]?.ph === expect, 10000);
+if (expect === "podium") a.net.send({ t: "rematch" });
 await until("both seats human again", () => a.room()?.seats.filter((s) => s.h).length === 2);
 await until("round playing again", () => a.room()?.ph === "playing", 12000);
 const n0 = a.of("snap").length;
