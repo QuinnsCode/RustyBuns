@@ -54,7 +54,7 @@ pnpm exec rustybuns deploy     # refuses without a plan for this exact config, t
 pnpm exec rustybuns destroy    # removes everything the stack created
 ```
 
-Your bindings become real resources with the same names: a Worker, D1 (migrations applied), KV, R2 and Durable Objects. Secret values are read from `.dev.vars` at deploy time. `plan` also lists what can bill you; see [COSTS.md](COSTS.md).
+Your bindings become real resources with the same names: a Worker, D1 (migrations applied), KV, R2 and Durable Objects. Secret values are read from `.dev.vars` at deploy time. To have a test stack mint its own secrets, or to pull prod secrets from 1Password, see [who holds the keys](REFERENCE.md#who-holds-the-keys-experimental) (experimental). `plan` also lists what can bill you; see [COSTS.md](COSTS.md).
 
 If something goes wrong here:
 
