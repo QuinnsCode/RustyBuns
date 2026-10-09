@@ -1,7 +1,8 @@
 // The coding agents that can plug in. Each one is a CLI run non-interactively in
 // a scratch directory that holds just the file being edited; whatever it leaves
 // there is read back and turned into ops (see sync.ts). The CLI brings its own
-// model and login, so nothing about the model lives here.
+// model and login, so nothing about the model lives here. All four have been run
+// live on a small file with these exact command lines; setup is in the README.
 
 import type { Conflict } from "./agent-run.ts";
 
@@ -27,15 +28,19 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
     // Print mode, edits allowed without asking. It can still run shell commands.
     case "claude":
       return { bin: "claude", args: model(["-p", prompt, "--permission-mode", "acceptEdits"]) };
-    // Workspace-write sandbox: it can edit the scratch dir, not the rest of the machine.
+    // Workspace-write sandbox: it can edit the scratch dir, not the rest of the machine
+    // (a write to $HOME is refused). Needs `codex login` or a provider in ~/.codex/config.toml.
     case "codex":
       return { bin: "codex", args: model(["exec", "--skip-git-repo-check", "-s", "workspace-write", prompt]) };
     // Print mode, no session saved. Only the file tools, no bash, and no
     // extensions, MCP or project-local config that could add tools back.
+    // pi defaults to Google, so pass --model as provider/id (e.g. anthropic/claude-sonnet-4-5).
     case "pi":
       return { bin: "pi", args: model(["-p", "--no-session", "--tools", "read,edit,write", "--no-extensions", "--no-mcp", "--no-approve", prompt]) };
     // Permissions as above: no shell, no web, nothing outside the working directory.
-    // --pure skips third-party plugins, which run code when they load.
+    // --pure skips third-party plugins, which run code when they load. It takes its
+    // project dir from $PWD, which execCommand sets. Its free models refuse this
+    // locked-down config, so it needs `opencode auth login` and a provider's model.
     case "opencode":
       return { bin: "opencode", args: model(["run", "--pure", prompt]), env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: OPENCODE_PERMISSION }) } };
   }

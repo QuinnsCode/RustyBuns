@@ -1,11 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { harnessCommand, taskPrompt, HARNESSES } from "../src/harness.ts";
 import { execCommand, runAgent, toDisk, fromDisk, type Exec } from "../src/agent-run.ts";
-import { tmpdir } from "node:os";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -15,6 +15,15 @@ describe("disk text", () => {
   test("round-trips lines, including an empty file", () => {
     for (const s of ["a\nb", "", "one"]) expect(toDisk(fromDisk(s).map((text) => ({ text })))).toBe(s === "" ? "" : s + "\n");
     expect(fromDisk("a\nb\n")).toEqual(["a", "b"]);
+  });
+});
+
+describe("execCommand", () => {
+  test("the CLI sees the scratch dir as both cwd and $PWD (opencode reads $PWD)", async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "cs-exec-")));
+    const { code, out } = await execCommand({ bin: process.execPath, args: ["-e", "console.log(process.cwd() + ' ' + process.env.PWD)"] }, dir);
+    expect(code).toBe(0);
+    expect(out.trim()).toBe(`${dir} ${dir}`);
   });
 });
 
