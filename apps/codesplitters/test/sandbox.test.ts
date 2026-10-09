@@ -41,17 +41,27 @@ function fakeContainer(server: (body: any) => Promise<unknown>, bootFails = 0) {
 }
 
 describe("AgentSandbox", () => {
-  test("starts the container with the logins that are set, waits for its server, and stops it after the run", async () => {
+  test("starts the container, waits for its server, and stops it after the run", async () => {
     const { c, seen } = fakeContainer(run, 2);
     const env: any = { ANTHROPIC_API_KEY: "sk-a", OPENAI_API_KEY: "", GITHUB_TOKEN: "not-for-agents" };
     const res = await new AgentSandbox({ container: c }, env).fetch(new Request("http://sandbox/run", {
       method: "POST", body: JSON.stringify({ cmd: { bin: "sh", args: ["-c", "echo B >> a.js"] }, path: "a.js", text: "A\n" }),
     }));
     expect(await res.json()).toEqual({ code: 0, out: "", text: "A\nB\n" });
-    expect(seen.started?.env).toEqual({ ANTHROPIC_API_KEY: "sk-a" });
+    expect(seen.started?.env).toEqual({});   // not a harness: no logins at all
     expect(LOGINS).not.toContain("GITHUB_TOKEN" as any);
     expect(seen.tries).toBe(3);
     expect(seen.destroyed).toBe(1);
+  });
+  test("a run only gets its own harness's logins that are set", async () => {
+    const env: any = { ANTHROPIC_API_KEY: "sk-a", CLAUDE_CODE_OAUTH_TOKEN: "oat", OPENAI_API_KEY: "sk-o", CODEX_API_KEY: "" };
+    const started = async (bin: string) => {
+      const { c, seen } = fakeContainer(async () => ({ code: 0, out: "", text: "" }));
+      await new AgentSandbox({ container: c }, env).fetch(new Request("http://sandbox/run", { method: "POST", body: JSON.stringify({ cmd: { bin, args: [] }, path: "a.js", text: "" }) }));
+      return seen.started?.env;
+    };
+    expect(await started("claude")).toEqual({ ANTHROPIC_API_KEY: "sk-a", CLAUDE_CODE_OAUTH_TOKEN: "oat" });
+    expect(await started("codex")).toEqual({ OPENAI_API_KEY: "sk-o" });
   });
 });
 
@@ -60,6 +70,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
   async function hosted(server: (body: any) => Promise<unknown>) {
     const call = await boot({ GH_CLI: "off" });
     opened.push(call);
+    call.env.ADMINS = "ryan";
     const runs: any[] = [];
     call.env.AGENT_SANDBOX = {
       idFromName: (n: string) => n,
@@ -95,6 +106,17 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
   test("only the owner starts one", async () => {
     const { post } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
     expect((await post("pat", "/api/repos/ryan/r1/agents", { harness: "pi", path: "src/a.js", task: "x" })).status).toBe(403);
+  });
+
+  test("an owner who isn't in ADMINS can't start one: it bills the site's keys", async () => {
+    const { call, post } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
+    await post("sam", "/api/login", { name: "sam" });
+    await post("sam", "/api/repos", { name: "mine", visibility: "public" });
+    await post("sam", "/api/repos/sam/mine/files", { path: "a.js", content: "x" });
+    const res = await post("sam", "/api/repos/sam/mine/agents", { harness: "claude", path: "a.js", task: "x" });
+    expect(res.status).toBe(403);
+    call.env.ADMINS = undefined;
+    expect((await post("ryan", "/api/repos/ryan/r1/agents", { harness: "claude", path: "src/a.js", task: "x" })).status).toBe(403);
   });
 
   test("a CLI that fails in the container comes back as a failed run, and nothing lands", async () => {

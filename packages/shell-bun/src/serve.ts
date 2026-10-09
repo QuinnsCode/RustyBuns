@@ -14,7 +14,7 @@
 
 import type { Server, ServerWebSocket } from "bun";
 import type { CommsPort, ExecutionContext, FetchHandler, Reporter, Socket, SocketHandlers } from "@rustybuns/ports";
-import { join, normalize } from "node:path";
+import { join, normalize, sep } from "node:path";
 import { statSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 
@@ -87,6 +87,8 @@ export interface BunShell<Env> {
 
 /** Equal-length compare that does not short-circuit on the first differing byte. */
 const same = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length > 0 && x.length === y.length && timingSafeEqual(x, y); };
+/** p is root or under it; a bare prefix test would let /srv/dist-old pass for /srv/dist. */
+const inside = (root: string, p: string) => p === root || p.startsWith(root.endsWith(sep) ? root : root + sep);
 
 export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   installCloudflareGlobals();
@@ -110,7 +112,14 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   const gate = (req: Request, url: URL): Response | Principal => {
     if (!opts.token) return "host";
     const cookie = req.headers.get("cookie") ?? "";
-    if (cookie.includes(`${cookieName()}=${opts.token}`)) return "host";
+    if (cookie.includes(`${cookieName()}=${opts.token}`)) {
+      // SameSite counts every port on 127.0.0.1 as one site, so another local
+      // page's fetch or WebSocket would carry this cookie. Browsers always send
+      // Origin on those, so anything not from this server's own host is refused.
+      const origin = req.headers.get("origin");
+      if (origin !== null && origin !== `http://${req.headers.get("host")}`) return new Response("forbidden", { status: 403 });
+      return "host";
+    }
     const q = url.searchParams.get("token");
     if (q !== null && same(q, opts.token)) {
       url.searchParams.delete("token");
@@ -133,14 +142,14 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       if (url.pathname !== route && !url.pathname.startsWith(route.replace(/\/$/, "") + "/")) continue;
       const root = normalize(dir);
       const p = normalize(join(root, decodeURIComponent(url.pathname.slice(route.replace(/\/$/, "").length))));
-      if (!p.startsWith(root)) return null;
+      if (!inside(root, p)) return null;
       if (kind(p) === "file") return new Response(Bun.file(p));
       return new Response("not found", { status: 404 });
     }
     if (!opts.assets) return null;
     const root = normalize(opts.assets);
     let p = normalize(join(root, decodeURIComponent(url.pathname)));
-    if (!p.startsWith(root)) return null;
+    if (!inside(root, p)) return null;
     let k = kind(p);
     if (k === "dir") { p = join(p, "index.html"); k = kind(p); }
     if (k !== "file") return null;

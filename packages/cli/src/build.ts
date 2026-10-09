@@ -257,7 +257,10 @@ ${h.box ? `    // Hosting controls are the desktop owner's; on a public box anyo
       if (b.listen) shell.rebind(b.listen);
       return Response.json({ listen: { hostname: shell.hostname, port: shell.port }, guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null } });
     }
-    if (url.pathname === "/__rb/action" && req.method === "POST") {
+${h.box ? `    // Actions run as the desktop's one host identity. A box has no token, so
+    // anyone on the internet would be that user: actions stay off there.
+    if (url.pathname === "/__rb/action") return reject(404, "not_on_box");
+` : ""}    if (url.pathname === "/__rb/action" && req.method === "POST") {
       // "use server" runs here, for real, against sqlite. Same code as the edge.
       const { module, fn, args } = await req.json() as { module: string; fn: string; args: unknown[] };
       const f = actions[module]?.[fn];

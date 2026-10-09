@@ -168,3 +168,30 @@ test("serve: rebind keeps the port and the open sockets", async () => {
   ws.close(); ws2.close();
   await shell.stop();
 });
+
+test("serve: another local page's request carries the cookie but not our Origin, and is refused", async () => {
+  const shell = serve({ token: "t0k" });
+  shell.mount({ async fetch() { return new Response("ok"); } }, {});
+  const cookie = (await fetch(shell.url + "/x?token=t0k", { redirect: "manual" })).headers.get("set-cookie")!;
+  const post = (origin?: string) => fetch(shell.url + "/__rb/action", { method: "POST", headers: { cookie, ...(origin ? { origin } : {}) }, body: "{}" });
+  expect((await post("http://127.0.0.1:1")).status).toBe(403);   // same site to SameSite, another port
+  expect((await post("null")).status).toBe(403);                  // a sandboxed frame
+  expect((await post(shell.url)).status).toBe(200);
+  expect((await post()).status).toBe(200);                        // not a browser: no Origin, cookie still needed
+  await shell.stop();
+});
+
+test("paths stay inside their root, not just under a name that starts the same", async () => {
+  const { r2, serve: mk } = await import("../src/index.ts");
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { basename, join } = await import("node:path");
+  const dir = mkdtempSync("/tmp/r2-");
+  const sibling = dir + "-old";
+  mkdirSync(sibling);
+  writeFileSync(join(sibling, "secret"), "s");
+  const escape = `../${basename(dir)}-old/secret`;
+  await expect(r2(dir).get(escape)).rejects.toThrow("bad key");
+  const shell = mk({ mounts: { "/asset": dir }, assets: dir });
+  for (const p of ["/asset/", "/"]) expect(await (await fetch(shell.url + p + encodeURIComponent(escape))).text()).not.toBe("s");
+  await shell.stop();
+});
