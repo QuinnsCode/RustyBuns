@@ -9,11 +9,17 @@
   --green: #2f7d32;
   --gold: #e8c547;
   --line: #d3c6a6;
+  /* 80s park service: routed wooden signs, Unigrid black bands, sunset stripes. */
+  --sign: "Ultra", "Rockwell Extra Bold", Rockwell, Georgia, serif;
+  --grid: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --rust: #b4441c;
+  --orange: #e07a1f;
+  --sun: #f2b33d;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
-body { font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: #10140f; }
+body { font: 14px/1.45 var(--grid); color: var(--ink); background: #10140f; }
 button { font: inherit; cursor: pointer; border: 1px solid var(--brown-2); background: var(--paper); color: var(--ink); border-radius: 6px; padding: 7px 12px; }
 button:hover:not(:disabled) { background: #fffaf0; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -22,23 +28,40 @@ button.primary:hover:not(:disabled) { background: #5d4830; }
 button[aria-pressed="true"] { background: var(--brown); color: #fdf6e3; }
 input { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fffdf7; color: var(--ink); }
 [hidden] { display: none !important; }
-h2 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+h2 { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); }
 
 #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
 /* Menu */
 .menu { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px 16px; overflow: auto;
   background: linear-gradient(160deg, rgba(40, 30, 20, 0.15), rgba(20, 14, 8, 0.55)); }
-.menu-card { width: min(560px, 100%); background: var(--paper); border: 1px solid var(--line); border-top: 10px solid var(--brown); border-radius: 10px; padding: 28px; box-shadow: 0 20px 60px rgba(40, 30, 10, 0.25); }
-.eyebrow { margin: 0; text-transform: uppercase; letter-spacing: 0.12em; font-size: 11px; color: var(--muted); font-weight: 700; }
-h1 { font: 800 40px/1.05 ui-serif, Georgia, "Times New Roman", serif; margin: 6px 0 12px; color: var(--brown); }
-h1 span { color: var(--red); }
-.lede { color: var(--muted); margin: 0 0 18px; }
+.menu-card { width: min(520px, 100%); background: var(--paper); border-radius: 4px; overflow: hidden; box-shadow: 0 20px 60px rgba(40, 30, 10, 0.3); }
+.unigrid { display: flex; align-items: baseline; gap: 10px; background: #111; color: #fff; padding: 12px 22px 10px; }
+.unigrid b { font-size: 22px; letter-spacing: -0.01em; }
+.unigrid span { font-size: 12px; opacity: 0.85; }
+.stripes { display: grid; }
+.stripes i { display: block; height: 6px; }
+.stripes i:nth-child(1) { background: var(--brown); }
+.stripes i:nth-child(2) { background: var(--rust); }
+.stripes i:nth-child(3) { background: var(--orange); }
+.stripes i:nth-child(4) { background: var(--sun); }
+.menu-body { padding: 22px 26px 18px; }
+h1 { font: 400 clamp(28px, 8vw, 38px)/1.05 var(--sign); margin: 0 0 12px; color: var(--brown); letter-spacing: 0.005em; }
+h1 span { color: var(--rust); }
+.play { display: block; width: 100%; font: 400 26px/1 var(--sign); letter-spacing: 0.04em; padding: 16px; margin-top: 4px; border: 0; border-radius: 4px; color: #fdf3dc; background: var(--brown); box-shadow: inset 0 -5px 0 var(--rust); }
+.play:hover:not(:disabled) { background: #5d4830; }
+.more { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+button.link { border: 0; background: none; padding: 2px 0; font-weight: 700; color: var(--brown-2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
+button.link:hover:not(:disabled) { background: none; color: var(--rust); text-decoration-color: currentColor; }
+.credit { margin: 0; padding: 8px 26px; background: var(--paper-2); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: var(--muted); }
+.countdown { font: 400 30px/1.1 var(--sign); color: var(--brown); margin: 2px 0 6px; }
+.lede { color: var(--muted); margin: 0 0 16px; font-size: 15px; }
 .field { display: grid; gap: 4px; font-weight: 600; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
 .menu-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .join { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--line); }
-.note { color: var(--muted); font-size: 12px; margin: 14px 0 0; }
-.error { color: var(--red); font-weight: 600; margin: 8px 0 0; min-height: 1em; }
+.note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+.error { color: var(--red); font-weight: 600; margin: 8px 0 0; }
+.error:empty { display: none; }
 
 /* Panels */
 .panel { background: rgba(246, 240, 225, 0.96); border: 1px solid var(--line); border-radius: 10px; padding: 16px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); }
@@ -71,7 +94,7 @@ h1 span { color: var(--red); }
 /* HUD */
 .hud { position: fixed; inset: 0; pointer-events: none; color: #fdf6e3; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7); }
 .topbar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; align-items: baseline; background: rgba(20, 16, 10, 0.6); padding: 6px 16px; border-radius: 999px; white-space: nowrap; }
-#zone-name { font: 700 16px ui-serif, Georgia, serif; }
+#zone-name { font: 400 16px var(--sign); letter-spacing: 0.02em; }
 #phase { opacity: 0.85; }
 #sky { opacity: 0.75; font-size: 13px; }
 .clock { font: 700 18px ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
@@ -113,7 +136,7 @@ h1 span { color: var(--red); }
 /* Results */
 .results { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(10, 8, 4, 0.45); }
 .results .panel { width: min(520px, 92vw); }
-.results h3 { font: 800 26px ui-serif, Georgia, serif; margin: 0 0 10px; color: var(--brown); }
+.results h3 { font: 400 28px var(--sign); margin: 0 0 10px; color: var(--brown); }
 .results table { width: 100%; border-collapse: collapse; }
 .results td { padding: 4px 6px; border-bottom: 1px solid var(--line); }
 .results td:last-child { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }

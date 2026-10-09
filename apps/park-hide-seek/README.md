@@ -7,7 +7,7 @@ Hide and seek in a real national park, in 3D. Campers drop into a zone around a 
 - **The real weather, right now.** By default a round plays in the park's actual conditions and time of day: at 3 pm in Yosemite it's day, after sunset it's flashlights. Rain hides footsteps, fog shortens how far anyone sees, wind sways the bushes and makes rustles hard to place, and a cloudy night has no moon. The lobby can pick day, dusk or night by hand instead.
 - **Find Bigfoot, or don't get caught.** Bigfoot is hiding in the park. Whoever reaches him first ends the round, like catching the snitch: a camper who finds him wins it for every camper still out, a ranger who finds him wins it for the rangers. Otherwise campers just have to last the three minutes.
 - **The search area closes in on him.** During the hunt a circle shrinks towards wherever Bigfoot is hiding. Nobody is told where it ends up, but everyone can watch which way it's heading, rangers included. Campers outside it stand out like a flare, so sooner or later everyone has to move, and moving makes noise.
-- **Play vs AI**, **online rooms** in the browser (share a code or link), or **LAN multiplayer** on the desktop: one person hosts, friends run their own copy and join. Bots can fill any game.
+- **One button to play.** *Play* drops you straight into a game: online, with whoever else pressed it in the same few seconds and AI in the empty spots; on the desktop, against AI. The zone and the weather are picked for you. *Custom game*, *Play with friends* (a room code or link) and LAN games on the desktop are underneath, with the settings.
 
 Built with [Three.js](https://threejs.org) and [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
 
@@ -16,14 +16,14 @@ Built with [Three.js](https://threejs.org) and [Rusty Buns](../../README.md). Mo
 ```
 cd apps/park-hide-seek
 bun install
-bun run dev              # browser: Play vs AI
+bun run dev              # browser: Play (vs AI here; quick play needs the Worker, see Online)
 bun run desktop:dev      # desktop app: Play vs AI, or Host / Join a LAN game
 bun test                 # zones, movement, sight, rules, bots
 ```
 
 ## Online
 
-The browser build can also be played online at https://park-hide-seek.notryanquinn.workers.dev: *Create an online room*, then send friends the link (`?room=CODE`) or the code. `src/edge/worker.ts` serves the page and sends `/ws?room=CODE` to that room's Durable Object, which is the same World class the desktop runs for LAN games (`packages/desktop/world.ts`). The Worker vouches each player's id and name, refuses WebSockets from other sites, and limits how many new rooms one address can open a minute. The world drops messages from any socket sending faster than it should. Whoever reaches a room first hosts it, and if they leave, someone else takes over. A room lives in memory, so it ends once everyone leaves.
+The browser build can also be played online at https://park-hide-seek.notryanquinn.workers.dev. *Play* asks `/api/match` for a room: one Matchmaker Durable Object (`src/edge/match.ts`) hands everyone who asks within 12 seconds the same code, up to six people. Whoever hosts that room fills it out to four with AI and starts it when the 12 seconds are up. *Play with friends* makes a private room instead: send friends the link (`?room=CODE`) or the code. `src/edge/worker.ts` serves the page and sends `/ws?room=CODE` to that room's Durable Object, which is the same World class the desktop runs for LAN games (`packages/desktop/world.ts`). The Worker vouches each player's id and name, refuses WebSockets from other sites, and limits how many new rooms one address can open, and how many new players it can bring to quick play, a minute. The world drops messages from any socket sending faster than it should. Whoever reaches a room first hosts it, and if they leave, someone else takes over. A room lives in memory, so it ends once everyone leaves.
 
 ```
 bun run edge:dev         # the Worker locally (wrangler dev)
@@ -64,7 +64,7 @@ The props (pines, sequoias, bushes, boulders, logs, a campground, the ranger sta
 
 ## How it works
 
-**One game, two hosts.** `src/hunt/game.ts` is the whole game: phases, drops, movement checks, catching, calls, the closing circle, radio questions and scoring. `src/room.ts` adds the bots. For *Play vs AI* the page runs a Room itself. For LAN games the same Room runs inside the world (`packages/desktop/world.ts`), a Durable Object-shaped class that the Rusty Buns host runs in-process.
+**One game, two hosts.** `src/hunt/game.ts` is the whole game: phases, drops, movement checks, catching, calls, the closing circle, radio questions and scoring. `src/room.ts` adds the bots. Against AI the page runs a Room itself. For LAN games the same Room runs inside the world (`packages/desktop/world.ts`), a Durable Object-shaped class that the Rusty Buns host runs in-process.
 
 **Nobody gets told more than they could see.** Every player gets `view(id)`, built for them by the host. A ranger is sent a camper only if one could actually see the other (`src/hunt/sim.ts`):
 - **Range from the light:** 90 m by day, 45 m at dusk, 7 m at night, or 42 m inside a flashlight's 26° beam (less in fog; see Weather below).
@@ -75,7 +75,7 @@ So a modified client can't show hidden campers, because their positions never re
 
 **Moving feels instant.** Your own body moves in the page every frame, with the same `step()` the host uses: uphill is slower, cliffs can't be climbed, trunks can't be walked through, stamina runs out. The host accepts each position only as far as running could have taken you, and pushes you out of solid objects. The page follows the host only when the host reports a position the page never sent, which means it corrected you, so normal network lag doesn't yank you around.
 
-**Weather** (`src/weather.ts`): when a round starts, whoever hosts it (the page for *Play vs AI*, the world for LAN games) asks [Open-Meteo](https://open-meteo.com) (free, no key, for non-commercial use) for the zone's current temperature, weather code, cloud, wind, precipitation and `is_day`, plus today's sunrise and sunset. The half hour or so round sunset and sunrise is dusk. The reading goes out in everyone's view, so guests on a LAN never call the API and everyone plays in the same conditions. It's fetched during the drop; if it hasn't come by the time the hunt starts (offline, slow, refused), the lobby's time of day stands. The effects are in the shared sim (`Sky` and `WEATHER` in `src/hunt/sim.ts`), so visibility filtering and bots respect them:
+**Weather** (`src/weather.ts`): when a round starts, whoever hosts it (the page against AI, the world for LAN and online games) asks [Open-Meteo](https://open-meteo.com) (free, no key, for non-commercial use) for the zone's current temperature, weather code, cloud, wind, precipitation and `is_day`, plus today's sunrise and sunset. The half hour or so round sunset and sunrise is dusk. The reading goes out in everyone's view, so guests on a LAN never call the API and everyone plays in the same conditions. It's fetched during the drop; if it hasn't come by the time the hunt starts (offline, slow, refused), the lobby's time of day stands. The effects are in the shared sim (`Sky` and `WEATHER` in `src/hunt/sim.ts`), so visibility filtering and bots respect them:
 - **Fog:** sight ranges drop by up to 60%, flashlights by up to 45%.
 - **Rain** (or snow): footsteps carry up to 55% less far.
 - **Wind:** rustles and footsteps are placed up to 2.5 times more roughly.

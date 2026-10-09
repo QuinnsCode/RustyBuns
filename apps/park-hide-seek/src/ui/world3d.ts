@@ -242,7 +242,7 @@ export class World3D {
     const x = c.getContext("2d")!;
     x.fillStyle = "#5a3d22"; x.fillRect(0, 0, 512, 128);
     x.strokeStyle = "#e8d9b0"; x.lineWidth = 6; x.strokeRect(8, 8, 496, 112);
-    x.fillStyle = "#f3e7c4"; x.font = "600 46px Georgia, serif"; x.textAlign = "center"; x.textBaseline = "middle";
+    x.fillStyle = "#f3e7c4"; x.font = "46px Ultra, Georgia, serif"; x.textAlign = "center"; x.textBaseline = "middle";
     let label = p.label ?? "";
     while (x.measureText(label).width > 470 && label.length > 4) label = label.slice(0, -2) + "…";
     x.fillText(label, 256, 66);
