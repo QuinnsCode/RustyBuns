@@ -203,7 +203,7 @@ The launcher exists because Alchemy's `Hetzner.Service` always starts `node <mai
 Current limits on the box:
 
 - **Plain HTTP on the port.** No TLS or domain yet. Put Cloudflare in front, or wait for the load balancer and certificate support on the roadmap.
-- **One identity in `spa` mode.** The host vouches the same local user for every visitor, just like the desktop does. That's fine for a shared world or a tool behind your own auth, but it isn't multi-user.
+- **Every visitor is a guest.** A box has no local player, so each WebSocket at `worldPath` is a guest with its own id: `?uid=&name=` when the client sends them (trust on first use, as on the LAN), otherwise a fresh id per connection. That's how the edge Worker treats players too. The desktop's hosting control (`POST /__rb/host`) is off on a box, since anyone could call it. There's no real login: put the box behind your own auth if identity matters.
 - **Secrets are plaintext at rest.** They go into `/opt/<unit>/env` on the server and into Alchemy's local state in `.alchemy/`. Don't keep `HCLOUD_TOKEN` in `.dev.vars`, or `init` will treat it as an app secret.
 - **Rust crates need a Linux build machine.** If `native/` has crates, run `deploy` on Linux (or in CI), since cdylibs don't cross-compile.
 

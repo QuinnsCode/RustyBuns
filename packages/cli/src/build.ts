@@ -172,20 +172,35 @@ function guestIdentity(url: URL): Record<string, string> | string {
   return { ...identity, "X-User-Id": uid, "X-User-Name": name };
 }
 const reject = (status: number, error: string, extra: Record<string, unknown> = {}) => Response.json({ error, ...extra }, { status });
-
+${h.box ? `
+// A box is public: there is no local player, so every socket is a guest with
+// its own identity, the way the edge Worker vouches each player. ?uid=&name=
+// when the client sends them (trust on first use, as on the LAN), else a
+// fresh id for this connection. The page comes from this box, so no version
+// check. One more seat than guests.max: the host's seat nobody sits in.
+function boxIdentity(url: URL): Record<string, string> | string {
+  const uid = url.searchParams.get("uid");
+  if (uid !== null) return guestIdentity(url);
+  const name = url.searchParams.get("name") ?? "";
+  if (name && !NAME.test(name)) return "bad name: 1-32 printable characters";
+  const id = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  return { ...identity, "X-User-Id": id, "X-User-Name": name || \`\${identity["X-User-Name"]}-\${id.slice(0, 4)}\` };
+}
+` : ""}
 // The host IS the middleware: the local player vouched at the upgrade,
 // exactly the headers the CF shell reads; guests vouched from their query.
 shell.mount({
   async fetch(req) {
     const url = new URL(req.url);
-    const guest = req.headers.get("x-rb-principal") === "guest";
+    const guest = ${h.box ? "true" : `req.headers.get("x-rb-principal") === "guest"`};
 ${h.box ? `    if (url.pathname === "/health") return new Response("ok");\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
       const h = new Headers(req.headers);
       let who = identity;
       if (guest) {
-        if (guests.version !== undefined && url.searchParams.get("v") !== guests.version) return reject(409, "version_mismatch", { expected: guests.version, got: url.searchParams.get("v") });
+${h.box ? `        if (guestCount >= guests.max + 1) return reject(503, "full", { max: guests.max + 1 });
+        const id = boxIdentity(url);` : `        if (guests.version !== undefined && url.searchParams.get("v") !== guests.version) return reject(409, "version_mismatch", { expected: guests.version, got: url.searchParams.get("v") });
         if (guestCount >= guests.max) return reject(503, "full", { max: guests.max });
-        const id = guestIdentity(url);
+        const id = guestIdentity(url);`}
         if (typeof id === "string") return reject(400, "bad_identity", { detail: id });
         who = id;
       }
@@ -207,7 +222,9 @@ ${h.box ? `    if (url.pathname === "/health") return new Response("ok");\n` : "
         listen: { hostname: shell.hostname, port: shell.port }, lan: lanAddresses(), sockets: shell.comms.sockets().length,
         guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null } });
     }
-    if (url.pathname === "/__rb/host" && req.method === "POST") {
+${h.box ? `    // Hosting controls are the desktop owner's; on a public box anyone could call them.
+    if (url.pathname === "/__rb/host") return reject(404, "not_on_box");
+` : ""}    if (url.pathname === "/__rb/host" && req.method === "POST") {
       // Host-page control: { listen?: { hostname, port }, join?: string | null, max?: number, version?: string | null }.
       // "Host a world" = { listen: { hostname: "0.0.0.0" }, join: "pass" }; "Stop hosting" = { join: null, listen: { hostname: "127.0.0.1" } }.
       const b = await req.json() as { listen?: { hostname?: string; port?: number }; join?: string | null; max?: number; version?: string | null };

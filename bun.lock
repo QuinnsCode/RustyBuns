@@ -114,8 +114,13 @@
         "three": "^0.180.0",
       },
       "devDependencies": {
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
+        "@effect/platform-bun": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.112",
         "@rustybuns/cli": "workspace:*",
         "@types/three": "^0.180.0",
+        "alchemy": "2.0.0-beta.77",
+        "effect": "4.0.0-rc.112",
         "vite": "^6.2.6",
       },
     },

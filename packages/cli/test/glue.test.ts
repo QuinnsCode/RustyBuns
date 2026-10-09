@@ -250,7 +250,15 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).toContain('API_KEY: process.env["API_KEY"] ?? ""');
   expect(box).toContain('process.env.DATA_DIR ?? "/var/lib/b"');
   expect(box).not.toContain("await openBrowser");
+  // Public box: every socket is a guest with its own id; no hosting controls.
+  expect(box).toContain("const guest = true;");
+  expect(box).toContain("const id = boxIdentity(url);");
+  expect(box).toContain('if (url.pathname === "/__rb/host") return reject(404, "not_on_box");');
+  expect(box).not.toContain("version_mismatch");
   const desk = spaEntry(c);
+  expect(desk).toContain('const guest = req.headers.get("x-rb-principal") === "guest";');
+  expect(desk).not.toContain("boxIdentity");
+  expect(desk).toContain("version_mismatch");
   expect(desk).toContain("const token = mintToken();");
   expect(desk).toContain("await openBrowser");
   expect(desk).not.toContain("/health");
