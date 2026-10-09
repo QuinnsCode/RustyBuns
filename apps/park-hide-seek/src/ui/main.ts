@@ -31,8 +31,8 @@ let view: View | null = null;
 let hosting: { pass: string; addresses: string[]; port: number } | null = null;
 /** The online room this page is in, if any. */
 let room: string | null = null;
-/** Quick play: when this room starts by itself, and whether we've started it. */
-let quick: { at: number; started: boolean } | null = null;
+/** Quick play: when this room starts by itself (the World starts it, see world.ts). */
+let quick: { at: number } | null = null;
 let info: { app?: string; version?: string } | null = null;
 let look: Look = (() => { try { const l = JSON.parse(store.get("look")); if (l && HATS.includes(l.hat)) return l as Look; } catch {} return randomLook(); })();
 
@@ -107,7 +107,7 @@ $("play").onclick = async () => {
     const m = res.ok ? await res.json() as { room?: string; startsIn?: number } : null;
     if (m?.room && ROOM.test(m.room) && typeof m.startsIn === "number") {
       goOnline(m.room);
-      quick = { at: Date.now() + m.startsIn, started: false };
+      quick = { at: Date.now() + m.startsIn };
     } else solo(true);
   } catch { solo(true); } finally { btn.disabled = false; }
 };
@@ -201,8 +201,8 @@ function onPhase(v: View) {
   if (v.phase === "hide") { controls.clearPresses(); note(you?.role === "camper" ? "Find somewhere to hide! C to crouch in a bush." : "Counting at the ranger station…", 3500); }
   if (v.phase === "hunt") note(you?.role === "ranger" ? "Go find them! Q to call out, M for the radio." : "Here come the rangers. Stay still, stay quiet.", 3500);
   if (v.phase !== "hide" && v.phase !== "hunt") controls.release();
-  // Back in the lobby after a quick match: it's an ordinary room now, with settings.
-  if (v.phase === "lobby" && quick?.started) quick = null;
+  // Once a quick match is under way it's an ordinary room, with settings back in the lobby.
+  if (v.phase !== "lobby") quick = null;
 }
 
 // ---- lobby ------------------------------------------------------------------------
@@ -243,16 +243,6 @@ function renderQuickLobby(v: View) {
     <section class="row-btns"><button data-action="leave">Leave</button></section>`;
   if (html !== lastLobby) { lastLobby = html; $("lobby-main").innerHTML = html; }
 }
-
-/** Whoever hosts a quick room starts it once the window closes; if they leave, the next host does. */
-const QUICK_SIZE = 4;
-setInterval(() => {
-  const v = view;
-  if (!quick || quick.started || !v || v.phase !== "lobby" || v.hostId !== v.me || Date.now() < quick.at) return;
-  quick.started = true;
-  for (let n = v.players.filter((p) => p.online).length; n < QUICK_SIZE; n++) send({ t: "bot", level: "normal" });
-  send({ t: "start" });
-}, 250);
 
 let lastLook = "";
 function renderLook() {

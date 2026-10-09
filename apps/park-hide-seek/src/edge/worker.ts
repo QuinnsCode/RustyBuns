@@ -7,7 +7,7 @@
 // the Matchmaker hands out the room that's filling up right now.
 import World from "../../packages/desktop/world.ts";
 import { RoomMintGate, originAllowed } from "./limits.ts";
-import { Matchmaker } from "./match.ts";
+import { Matchmaker, type DONamespace } from "./match.ts";
 export { World, Matchmaker };
 
 interface Env {
@@ -15,7 +15,6 @@ interface Env {
   WORLD: DONamespace;
   MATCH: DONamespace;
 }
-type DONamespace = { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
 
 export const ROOM = /^[A-Z0-9]{4,8}$/;
 const UID = /^[A-Za-z0-9_-]{8,64}$/;
