@@ -4,7 +4,7 @@ import type { Origin, Preset, Size } from "../engine/presets.ts";
 
 export type { Engine, Job, Origin, Preset, Size, Sync };
 export interface Settings { maxQueued: number; confirmSends: boolean; batchCap: number }
-export type Card = Job & { sizeText: string; presetLabel: string };
+export type Card = Job & { sizeText: string; presetLabel: string; draftEstimate: number; textureEstimate: number };
 
 export interface Status {
   /** Whether a key is saved. Nothing of the key itself ever comes back. */
@@ -41,11 +41,13 @@ export const api = {
   close: () => call<{ ok: true }>("/api/workspace/close", { method: "POST" }),
   jobs: () => call<Summary>("/api/jobs"),
   /** `credits` is what the person confirmed; the host refuses if the batch now costs more. */
-  send: (keys: string[], credits: number) => act("send", { keys, credits }),
+  send: (keys: string[], credits: number, draft = false) => act("send", { keys, credits, draft }),
+  texture: (keys: string[], credits: number) => act("texture", { keys, credits }),
+  savePresets: (presets: Preset[]) => call<Summary>("/api/presets", { json: { presets } }),
   resume: () => act("send", { keys: [] }),
-  retry: (key: string) => act("retry", { key }),
+  retry: (key: string, credits?: number) => act("retry", { key, credits }),
   cancel: (key: string) => act("cancel", { key }),
-  edit: (key: string, patch: Partial<Pick<Job, "prefix" | "size" | "origin" | "outName" | "texturePrompt">>) => act("edit", { key, patch }),
+  edit: (key: string, patch: Partial<Pick<Job, "prefix" | "size" | "origin" | "outName" | "texturePrompt" | "draft">>) => act("edit", { key, patch }),
   move: (key: string, folder: string) => act("move", { key, folder }),
   newFolder: (name: string) => call<Summary>("/api/folders", { json: { name } }),
   upload: (folder: string, file: File) =>

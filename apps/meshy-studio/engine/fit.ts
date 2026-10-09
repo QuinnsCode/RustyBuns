@@ -12,7 +12,7 @@ const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 
 export interface FitResult { glb: Uint8Array; scale: number; before: [number, number, number]; after: [number, number, number] }
 
-export async function fitGlb(input: Uint8Array, size: Size, origin: Origin): Promise<FitResult> {
+export async function fitGlb(input: Uint8Array, size: Exclude<Size, { auto: true }>, origin: Origin): Promise<FitResult> {
   const doc = await io.readBinary(input);
   const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0];
   if (!scene) throw new Error("the .glb has no scene");

@@ -4,7 +4,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, imageUrl, type Card, type Status, type Summary } from "./api.ts";
 import { Board } from "./Board.tsx";
-import { ConfirmSend, type SendAsk } from "./Confirm.tsx";
+import { ConfirmSend, costOf, type SendAsk, type SendKind } from "./Confirm.tsx";
+import { PresetsPanel } from "./Presets.tsx";
 import { SettingsPanel } from "./Settings.tsx";
 
 const ALL = "\u0000all";
@@ -24,6 +25,7 @@ export function Studio({ status, onLeave, onStatus }: { status: Status; onLeave:
   const [dropping, setDropping] = useState(false);
   const [ask, setAsk] = useState<SendAsk | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [presetsOpen, setPresetsOpen] = useState(false);
 
   const setView = (v: View) => { setViewState(v); try { localStorage.setItem("meshy-view", v); } catch {} };
   const run = (p: Promise<Summary>) => p.then((s) => { setSum(s); setError(null); }, (e) => setError(e.message));
@@ -42,27 +44,32 @@ export function Studio({ status, onLeave, onStatus }: { status: Status; onLeave:
   if (!sum) return error ? <p className="fatal">{error}</p> : null;
 
   const fresh = shown.filter((j) => j.state === "new");
+  const drafts = shown.filter((j) => j.state === "done" && !j.textured && (!j.texture || j.texture.state === "failed"));
   const cost = fresh.reduce((n, j) => n + j.estimate, 0);
   const active = sum.jobs.filter((j) => j.state === "queued" || j.state === "running").length;
   const target = folder === ALL ? "" : folder;
   const low = balance !== null && cost > 0 && cost > balance;
 
   // Spending goes through here: confirm first unless the person turned that off.
-  const requestSend = (cards: Card[], retry = false) => {
+  const requestSend = (cards: Card[], kind: SendKind = "shape") => {
     if (!cards.length) return;
-    if (status.settings.confirmSends) setAsk({ cards, retry });
-    else doSend({ cards, retry }, cards.reduce((n, c) => n + c.estimate, 0));
+    if (status.settings.confirmSends) setAsk({ kind, cards });
+    else doSend({ kind, cards }, cards.reduce((n, c) => n + costOf(c, kind), 0), false);
   };
-  const doSend = async (a: SendAsk, credits: number) => {
+  const doSend = async (a: SendAsk, credits: number, draft: boolean) => {
     setAsk(null);
-    if (a.retry) for (const c of a.cards) await run(api.retry(c.key));
-    else await run(api.send(a.cards.map((c) => c.key), credits));
+    const keys = a.cards.map((c) => c.key);
+    if (a.kind === "retry") for (const c of a.cards) await run(api.retry(c.key, costOf(c, "retry")));
+    else if (a.kind === "texture") await run(api.texture(keys, credits));
+    else await run(api.send(keys, credits, draft));
   };
-  // A failed scale re-runs for free; only a failed Meshy job costs credits again.
+  // A failed scale re-runs for free; a failed Meshy job or texture costs credits again.
   const retry = (cards: Card[]) => {
-    for (const c of cards.filter((c) => c.raw)) run(api.retry(c.key));
-    requestSend(cards.filter((c) => !c.raw), true);
+    const free = cards.filter((c) => c.raw && c.texture?.state !== "failed");
+    for (const c of free) run(api.retry(c.key, 0));
+    requestSend(cards.filter((c) => !free.includes(c)), "retry");
   };
+  const texture = (cards: Card[]) => requestSend(cards, "texture");
   const blender = status.blender ? (cards: Card[]) => api.blender(cards.map((c) => c.key)).then(
     (r) => setNote(`Opening ${r.opened} model${r.opened === 1 ? "" : "s"} in Blender…`), (e) => setError(e.message)) : undefined;
 
@@ -98,6 +105,7 @@ export function Studio({ status, onLeave, onStatus }: { status: Status; onLeave:
           <strong className="credits">{balance === null ? "—" : balance.toLocaleString()}</strong>
           <span className="label">spent here {sum.spent.toLocaleString()}</span>
         </div>
+        <button className="ghost" onClick={() => setPresetsOpen(true)}>Presets</button>
         <button className="ghost" onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
       </header>
 
@@ -140,6 +148,7 @@ export function Studio({ status, onLeave, onStatus }: { status: Status; onLeave:
             Add images…
             <input type="file" accept=".png,.jpg,.jpeg" multiple hidden onChange={(e) => e.target.files && upload(e.target.files)} />
           </label>
+          {drafts.length > 0 && <button className="ghost" onClick={() => texture(drafts)}>Texture {drafts.length} draft{drafts.length === 1 ? "" : "s"} · ~{drafts.reduce((n, c) => n + c.textureEstimate, 0)}</button>}
           <button className="primary" disabled={!fresh.length} onClick={() => requestSend(fresh)}>
             {fresh.length ? `Send ${fresh.length} · ~${cost} credits` : "Nothing new to send"}
           </button>
@@ -155,17 +164,18 @@ export function Studio({ status, onLeave, onStatus }: { status: Status; onLeave:
             <p className="muted">The filename is the label: <code>flora_oak_h12_bottom.png</code> uses the Flora preset, scales to 12 m tall, origin at the bottom, and comes out as <code>flora_oak.glb</code>.</p>
           </div>
         ) : view === "pipeline" ? (
-          <Board cards={shown} act={{ send: (c) => requestSend(c), retry, cancel: (c) => run(api.cancel(c.key)), blender, say: setNote }} />
+          <Board cards={shown} act={{ send: (c) => requestSend(c), texture, retry, cancel: (c) => run(api.cancel(c.key)), blender, say: setNote }} />
         ) : (
           <ul className={`cards ${dropping ? "over" : ""}`}>
             {shown.map((j) => <CardView key={j.key} j={j} sum={sum} run={run} showFolder={folder === ALL}
-              onSend={() => requestSend([j])} onRetry={() => retry([j])} onBlender={blender && (() => blender([j]))} />)}
+              onSend={() => requestSend([j])} onRetry={() => retry([j])} onTexture={() => texture([j])} onBlender={blender && (() => blender([j]))} />)}
           </ul>
         )}
       </main>
 
       {note && <p className="toast" role="status">{note}</p>}
-      {ask && <ConfirmSend ask={ask} balance={balance} batchCap={status.settings.batchCap} onCancel={() => setAsk(null)} onConfirm={(n) => doSend(ask, n)} />}
+      {ask && <ConfirmSend ask={ask} balance={balance} batchCap={status.settings.batchCap} onCancel={() => setAsk(null)} onConfirm={(n, d) => doSend(ask, n, d)} />}
+      {presetsOpen && <PresetsPanel sum={sum} onClose={() => setPresetsOpen(false)} onSaved={setSum} />}
       {settingsOpen && <SettingsPanel status={status} sum={sum} balance={balance} onClose={() => setSettingsOpen(false)}
         onStatus={onStatus} onSummary={setSum} onBalance={refreshBalance} />}
     </div>
@@ -186,15 +196,20 @@ function FolderRow({ label, count, active, depth = 0, onClick, onDrop }: { label
 
 const STATE_TEXT: Record<Card["state"], string> = { new: "New", queued: "Queued", running: "With Meshy", downloaded: "Scaling", done: "Ready", failed: "Failed" };
 
-function CardView({ j, sum, run, showFolder, onSend, onRetry, onBlender }: {
+function CardView({ j, sum, run, showFolder, onSend, onRetry, onTexture, onBlender }: {
   j: Card; sum: Summary; run: (p: Promise<Summary>) => void; showFolder: boolean;
-  onSend: () => void; onRetry: () => void; onBlender?: () => void;
+  onSend: () => void; onRetry: () => void; onTexture: () => void; onBlender?: () => void;
 }) {
   const unsent = j.state === "new" || (j.state === "failed" && !j.taskId);
   const editable = unsent || !!j.raw;
-  const sizeKind = "height" in j.size ? "height" : "longest";
-  const sizeVal = "height" in j.size ? j.size.height : j.size.longest;
-  const setSize = (kind: string, v: number) => v > 0 && run(api.edit(j.key, { size: kind === "height" ? { height: v } : { longest: v } }));
+  const sizeKind = "height" in j.size ? "height" : "longest" in j.size ? "longest" : "auto";
+  const sizeVal = "height" in j.size ? j.size.height : "longest" in j.size ? j.size.longest : 1;
+  const setSize = (kind: string, v: number) => (kind === "auto" || v > 0) &&
+    run(api.edit(j.key, { size: kind === "auto" ? { auto: true } : kind === "height" ? { height: v } : { longest: v } }));
+  const tex = j.texture;
+  const texturing = tex?.state === "queued" || tex?.state === "running";
+  const canTexture = j.state === "done" && !j.textured && (!tex || tex.state === "failed");
+  const failed = j.state === "failed" || tex?.state === "failed";
 
   return (
     <li className={`card plate s-${j.state}`} draggable={unsent} onDragStart={(e) => e.dataTransfer.setData("application/x-meshy-card", j.key)}>
@@ -218,26 +233,44 @@ function CardView({ j, sum, run, showFolder, onSend, onRetry, onBlender }: {
           <span className="size">
             <select value={sizeKind} disabled={!editable} aria-label="Size by" onChange={(e) => setSize(e.target.value, sizeVal)}>
               <option value="height">Height</option><option value="longest">Longest</option>
+              {(unsent || sizeKind === "auto") && <option value="auto">Meshy's guess</option>}
             </select>
-            <input type="number" min="0.01" step="0.1" defaultValue={sizeVal} key={sizeVal} disabled={!editable} aria-label="Meters"
-              onBlur={(e) => Number(e.target.value) !== sizeVal && setSize(sizeKind, Number(e.target.value))} />
-            <span className="muted">m</span>
+            {sizeKind !== "auto" && <>
+              <input type="number" min="0.01" step="0.1" defaultValue={sizeVal} key={sizeVal} disabled={!editable} aria-label="Meters"
+                onBlur={(e) => Number(e.target.value) !== sizeVal && setSize(sizeKind, Number(e.target.value))} />
+              <span className="muted">m</span>
+            </>}
           </span>
           <select value={j.origin} disabled={!editable} aria-label="Origin" onChange={(e) => run(api.edit(j.key, { origin: e.target.value as Card["origin"] }))}>
             <option value="bottom">Origin bottom</option><option value="center">Origin center</option>
           </select>
         </div>
 
+        {unsent && (
+          <label className="check small" title="Shape only now; texture just the keepers later (Retexture)">
+            <input type="checkbox" checked={!!j.draft} onChange={(e) => run(api.edit(j.key, { draft: e.target.checked }))} />
+            Draft, no texture yet: ~{j.draftEstimate} now, ~{j.textureEstimate} to texture later
+          </label>
+        )}
+
         <div className="status">
-          <span className={`badge b-${j.state}`}>{STATE_TEXT[j.state]}{j.state === "running" && j.meshyStatus === "PENDING" ? " · waiting" : ""}</span>
-          <span className="small credits">{j.credits ? `${j.credits} cr` : `~${j.estimate} cr`}</span>
+          <span className={`badge b-${texturing ? "running" : j.state}`}>
+            {texturing ? (tex!.state === "queued" ? "Texture queued" : "Texturing") : STATE_TEXT[j.state]}
+            {(j.state === "running" && j.meshyStatus === "PENDING") || (tex?.state === "running" && tex.meshyStatus === "PENDING") ? " · waiting" : ""}
+          </span>
+          {j.state === "done" && !j.textured && !texturing && <span className="tag dim">Untextured</span>}
+          <span className="small credits">{(j.credits ?? 0) + (tex?.credits ?? 0) ? `${(j.credits ?? 0) + (tex?.credits ?? 0)} cr` : `~${j.estimate} cr`}</span>
           {j.state === "new" && <button className="ghost small" onClick={onSend}>Send</button>}
-          {(j.state === "queued" || (j.state === "running" && j.meshyStatus === "PENDING")) && <button className="ghost small" onClick={() => run(api.cancel(j.key))}>Cancel</button>}
-          {j.state === "failed" && <button className="ghost small" onClick={onRetry}>Retry</button>}
-          {j.state === "done" && onBlender && <button className="ghost small" onClick={onBlender}>Blender</button>}
+          {(j.state === "queued" || (j.state === "running" && j.meshyStatus === "PENDING") || tex?.state === "queued" || (tex?.state === "running" && tex.meshyStatus === "PENDING")) &&
+            <button className="ghost small" onClick={() => run(api.cancel(j.key))}>Cancel</button>}
+          {failed && <button className="ghost small" onClick={onRetry}>Retry</button>}
+          {canTexture && tex?.state !== "failed" && <button className="ghost small" onClick={onTexture}>Texture · ~{j.textureEstimate}</button>}
+          {j.state === "done" && !texturing && onBlender && <button className="ghost small" onClick={onBlender}>Blender</button>}
         </div>
         {j.state === "running" && <progress max={100} value={j.progress} aria-label="Meshy progress" />}
+        {tex?.state === "running" && <progress max={100} value={tex.progress} aria-label="Texture progress" />}
         {j.error && <p className="error small">{j.error}</p>}
+        {tex?.error && <p className="error small">Texture: {tex.error}</p>}
         {j.state === "done" && <p className="ok small">002_ready/{j.ready}</p>}
         {j.prefix === "" && unsent && <p className="warn small">No known prefix; using Default.</p>}
       </div>

@@ -20,7 +20,7 @@ export function Setup({ status, onDone }: { status: Status; onDone: () => void }
 function KeyStep({ status, onDone }: { status: Status; onDone: () => void }) {
   return (
     <section className="step plate">
-      <h2><span className="num">1</span> Your Meshy API key</h2>
+      <h2><span className="stepnum">1</span> Your Meshy API key</h2>
       <KeyField status={status} onSaved={onDone} />
     </section>
   );
@@ -40,7 +40,7 @@ function FolderStep({ status, onDone }: { status: Status; onDone: () => void }) 
 
   return (
     <section className="step plate">
-      <h2><span className="num">2</span> A workspace folder</h2>
+      <h2><span className="stepnum">2</span> A workspace folder</h2>
       <p className="muted">The app makes four folders in it: <code>000_to_be_meshyd</code> for your images, <code>already done</code> inside it for sent ones, <code>001_has_been_meshyd</code> for Meshy's raw models and <code>002_ready</code> for the scaled ones.</p>
       <div className="row"><button className="primary" onClick={pick}>Choose folder…</button></div>
       {error && <p className="error" role="alert">{error}</p>}
