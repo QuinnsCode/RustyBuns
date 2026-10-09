@@ -53,6 +53,15 @@ bun agent.ts --harness claude --url http://127.0.0.1:PORT --cookie 'rb_token_POR
   --as agent-claude --repo owner/name --path src/app.ts --task "add a doc line to every function"
 ```
 
+Each CLI brings its own login and model. `--model` is passed straight through.
+
+| Harness | Install | Login / model |
+|---|---|---|
+| `claude` | `npm i -g @anthropic-ai/claude-code` | `claude` once to log in |
+| `codex` | `npm i -g @openai/codex` | `codex login`, or a custom provider in `~/.codex/config.toml`. Runs in its workspace-write sandbox |
+| `pi` | `npm i -g @mariozechner/pi-coding-agent` | Defaults to Google, so pass `--model provider/id` (e.g. `anthropic/claude-sonnet-4-5`) with that provider's key in the env, or log in with `/login`. opencode's free tier refuses pi |
+| `opencode` | `npm i -g opencode-ai` | Free models need no login: `--model opencode/big-pickle`. `opencode auth login` for others |
+
 ## Layout
 
 | File | What |

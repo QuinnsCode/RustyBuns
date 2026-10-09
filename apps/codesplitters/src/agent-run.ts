@@ -13,9 +13,13 @@ import { diffToOps, rebase } from "./sync.ts";
 
 export type Exec = (cmd: Command, cwd: string) => Promise<{ code: number; out: string }>;
 
-/** Runs the CLI with its working directory set to `cwd`, capturing stdout and stderr. */
+/**
+ * Runs the CLI with its working directory set to `cwd`, capturing stdout and stderr.
+ * PWD is set too: opencode takes its project directory from $PWD, not the real cwd,
+ * and would otherwise edit the caller's directory.
+ */
 export const execCommand: Exec = async (cmd, cwd) => {
-  const proc = Bun.spawn([cmd.bin, ...cmd.args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn([cmd.bin, ...cmd.args], { cwd, env: { ...process.env, PWD: cwd }, stdout: "pipe", stderr: "pipe" });
   const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   return { code: await proc.exited, out: out + err };
 };

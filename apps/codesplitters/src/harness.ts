@@ -1,7 +1,8 @@
 // The coding agents that can plug in. Each one is a CLI run non-interactively in
 // a scratch directory that holds just the file being edited; whatever it leaves
 // there is read back and turned into ops (see sync.ts). The CLI brings its own
-// model and login, so nothing about the model lives here.
+// model and login, so nothing about the model lives here. All four have been run
+// live on a small file with these exact command lines; setup is in the README.
 
 import type { Conflict } from "./agent-run.ts";
 
@@ -18,12 +19,16 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
     // Print mode, edits allowed without asking. It can still run shell commands.
     case "claude":
       return { bin: "claude", args: model(["-p", prompt, "--permission-mode", "acceptEdits"]) };
-    // Workspace-write sandbox: it can edit the scratch dir, not the rest of the machine.
+    // Workspace-write sandbox: it can edit the scratch dir, not the rest of the machine
+    // (a write to $HOME is refused). Needs `codex login` or a provider in ~/.codex/config.toml.
     case "codex":
       return { bin: "codex", args: model(["exec", "--skip-git-repo-check", "-s", "workspace-write", prompt]) };
-    // Print mode, no session saved. Runs in the process cwd.
+    // Print mode, no session saved. Runs in the process cwd. pi defaults to Google,
+    // so pass --model as provider/id (e.g. anthropic/claude-sonnet-4-5) with that key set.
     case "pi":
       return { bin: "pi", args: model(["-p", "--no-session", prompt]) };
+    // Takes its project dir from $PWD, which execCommand sets. Edits without asking in
+    // run mode. Free models (e.g. opencode/big-pickle) work with no login.
     case "opencode":
       return { bin: "opencode", args: model(["run", prompt]) };
   }
