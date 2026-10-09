@@ -338,7 +338,8 @@ test("experimental.wheel: agent mints secrets in the stack, op secrets go throug
   expect(schema).toContain("# @plugin(@varlock/1password-plugin@2.0.4)");
   expect(schema).toContain("# @initOp(token=$OP_TOKEN, allowAppAuth=false)");
   expect(schema).toContain("STRIPE_KEY=op(op://rb-test/stripe/credential)");
-  expect(schema).not.toContain("SESSION_SECRET");
+  expect(schema).toContain("# SESSION_SECRET: minted by the stack");
+  expect(schema).not.toContain("SESSION_SECRET=");
 
   // Railway: the minted value rides in the Service env; the Volume attaches to the created Service.
   const rail = generateAlchemy({ ...agent, targets: { box: { provider: "railway" } } });
@@ -354,5 +355,10 @@ test("experimental.wheel: agent mints secrets in the stack, op secrets go throug
   expect(generateAlchemy(human)).toContain('SESSION_SECRET: Config.redacted("SESSION_SECRET")');
   expect(generateEnvSchema(human)).toContain("# @initOp(allowAppAuth=true)");
   expect(generateEnvSchema(human)).not.toContain("OP_TOKEN");
+  // Every secret is listed, so the schema is the whole contract; no op secrets means no plugin.
+  expect(generateEnvSchema(human)).toContain("# @sensitive\nSESSION_SECRET=\n");
+  const plain = generateEnvSchema({ ...human, bindings: { SESSION_SECRET: { type: "secret" } } })!;
+  expect(plain).not.toContain("@plugin");
+  expect(plain).toContain("SESSION_SECRET=");
   expect(() => generateAlchemy({ ...human, bindings: { X: { type: "secret", op: "vault/item" } } })).toThrow(/1Password reference/);
 });
