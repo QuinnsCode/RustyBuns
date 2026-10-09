@@ -267,13 +267,13 @@ async function checkStack(prof: Profiler, want: CheckerName | "auto") {
 
 async function alchemy(sub: string, rawArgs: string[]) {
   const cfg = await loadConfig();
-  if (!cfg.worker) throw new Error("desktop-only app: no edge stack to plan or deploy");
+  if (!cfg.worker && !cfg.targets.box) throw new Error("desktop-only app: no edge or box stack to plan or deploy");
   const profiled = sub === "plan" || sub === "deploy";
   if (profiled) { checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
   const { on: check, checker, rest: args } = checkFlags(rawArgs, profiled);
   const prof = new Profiler(sub);
   await prof.step("generate", () => generate({ adopt: false }));
-  // Hetzner.Service hashes the box directory at plan time, so it has to exist first.
+  // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
   if (profiled && cfg.targets.box) {
     console.log(`built ${await prof.step("build box", () => buildBox(cfg))}`);
   }
@@ -302,7 +302,9 @@ async function alchemy(sub: string, rawArgs: string[]) {
   const code = await prof.step(`alchemy ${sub}`, () => runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]));
   if (profiled) await prof.finish();
   if (code !== 0) process.exit(code);
-  if (sub === "deploy" && cfg.targets.box) console.log("\nthe box bills hourly from now on; `rustybuns destroy` stops it.");
+  if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"
+    ? "\nthe box bills by usage from now on (less while asleep); `rustybuns destroy` stops it."
+    : "\nthe box bills hourly from now on; `rustybuns destroy` stops it.");
 }
 
 try {
@@ -366,11 +368,12 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              (default: targets in the config; "all" cross-compiles TS-only builds)
              [--check]       type check the app (its tsconfig) before the vite build
   run desktop                start the dev host (bun .rustybuns/dev/desktop.js)
-  build box [--target T]     the same host for a Hetzner server: linux binary + node launcher
-                             in .rustybuns/box/ (plan and deploy run this for you)
+  build box [--target T]     the same host for the box: Hetzner gets a linux binary + node
+                             launcher in .rustybuns/box/, Railway a Bun bundle + Dockerfile
+                             in .rustybuns/railway/ (plan and deploy run this for you)
 
   plan                       alchemy plan: shows what would be created, creates nothing
-                             (targets.edge -> Cloudflare, targets.box -> Hetzner, or both)
+                             (targets.edge -> Cloudflare, targets.box -> Hetzner or Railway, or both)
                              type checks the generated stack first (--no-check skips)
   deploy [--yes]             alchemy deploy; refuses unless plan ran for this exact config
                              plan and deploy list the stack's billable resources first, and

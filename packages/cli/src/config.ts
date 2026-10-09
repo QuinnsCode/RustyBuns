@@ -108,10 +108,12 @@ export interface DesktopTarget {
 }
 
 /**
- * One Hetzner Cloud server running the same Bun host the desktop build uses,
+ * targets.box: one server running the same Bun host the desktop build uses.
+ *
+ * Hetzner: one Hetzner Cloud server running the same Bun host the desktop build uses,
  * public on 0.0.0.0:<port>, with sqlite on an attached Volume.
  */
-export interface BoxTarget {
+export interface HetznerBoxTarget {
   provider: "hetzner";
   /** `nbg1`, `fsn1`, `hel1`, `ash`, `hil`, `sin`. Changing it replaces the server. */
   location?: string;
@@ -128,6 +130,31 @@ export interface BoxTarget {
   /** Required for ccx (dedicated) or tier 3+ types like cpx31. Small tiers need nothing. See COSTS.md. */
   allowLargeServer?: boolean;
 }
+
+/**
+ * One Railway Service running the same Bun host, as a plain bundle on the
+ * oven/bun image (a compiled binary is over Railway's 32 MiB upload limit).
+ * sqlite + R2 dirs live on a Railway Volume. Billed by usage, so it sleeps
+ * when idle unless told otherwise.
+ */
+export interface RailwayBoxTarget {
+  provider: "railway";
+  /** `us-west2`, `us-east4`, `europe-west4`, `asia-southeast1`. Railway picks when unset. */
+  region?: string;
+  /** Port the host listens on (Railway routes the public domain to it). @default 3000 */
+  port?: number;
+  /** Keep sqlite + R2 dirs on a Railway Volume at /data. false keeps them in the container, lost on redeploy. @default true */
+  volume?: boolean;
+  /**
+   * Sleep the service when it has no traffic, so an idle box costs close to
+   * nothing. The first request after a sleep wakes it (a cold start of a
+   * second or two). In-memory world state is lost on sleep; sqlite is not.
+   * @default true
+   */
+  sleep?: boolean;
+}
+
+export type BoxTarget = HetznerBoxTarget | RailwayBoxTarget;
 
 export interface RustyBunsConfig {
   name: string;

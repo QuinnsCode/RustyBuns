@@ -5,7 +5,7 @@
 // eject path is "keep this file, delete the config".
 
 import type { Binding, RustyBunsConfig } from "../config.ts";
-import { BOX_DIR, boxDefaults } from "../box.ts";
+import { BOX_DIR, RAILWAY_DATA, RAILWAY_DIR, boxDefaults, railwayDefaults } from "../box.ts";
 
 const ident = (s: string) => s.replace(/[^A-Za-z0-9_]/g, "_");
 
@@ -33,7 +33,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   // Edge is on when asked for, or when nothing else is (configs from before targets.box).
   const edge = !!c.targets.edge || !c.targets.box;
   if (edge && !c.worker) throw new Error("this config has no worker section (desktop-only app); there is no edge stack to generate");
-  const box = c.targets.box ? boxDefaults(c.targets.box) : null;
+  const box = c.targets.box?.provider === "hetzner" ? boxDefaults(c.targets.box) : null;
+  const rail = c.targets.box?.provider === "railway" ? railwayDefaults(c.targets.box) : null;
   const w = c.worker!;   // only read when edge is on, which requires it
   const bindings = c.bindings ?? {};
   const lines: string[] = [];
@@ -43,9 +44,10 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   if (edge) lines.push(`import * as Cloudflare from "alchemy/Cloudflare";`);
   if (edge && w.build) lines.push(`import * as Command from "alchemy/Command";`);
   if (box) lines.push(`import * as Hetzner from "alchemy/Hetzner";`);
+  if (rail) lines.push(`import * as Railway from "alchemy/Railway";`);
   lines.push(`import * as Effect from "effect/Effect";`);
   if (edge) lines.push(`import * as Config from "effect/Config";`);
-  if (edge && box) lines.push(`import * as Layer from "effect/Layer";`);
+  if (edge && (box || rail)) lines.push(`import * as Layer from "effect/Layer";`);
   lines.push(``);
 
   if (edge) {
@@ -85,8 +87,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     lines.push(``);
   }
 
+  const secrets = Object.entries(bindings).filter(([, b]) => b.type === "secret").map(([n]) => n);
   if (box) {
-    const secrets = Object.entries(bindings).filter(([, b]) => b.type === "secret").map(([n]) => n);
     const env = [
       ...secrets.map((n) => `${n}: process.env[${JSON.stringify(n)}] ?? ""`),
       ...(box.volumeSize > 0 ? [] : [`DATA_DIR: ${JSON.stringify(`/var/lib/${c.name}`)}`]),
@@ -109,9 +111,39 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     lines.push(``);
   }
 
-  const providers = edge && box ? "Layer.mergeAll(Cloudflare.providers(), Hetzner.providers())"
-    : box ? "Hetzner.providers()" : "Cloudflare.providers()";
-  const out = [edge && "url: worker.url", box && "box: service.url"].filter(Boolean).join(", ");
+  if (rail) {
+    const env = [
+      `DATA_DIR: ${JSON.stringify(rail.volume ? RAILWAY_DATA : `/var/lib/${c.name}`)}`,
+      ...secrets.map((n) => `${n}: process.env[${JSON.stringify(n)}] ?? ""`),
+    ];
+    const region = rail.region ? `, region: ${JSON.stringify(rail.region)}` : "";
+    lines.push(`// ---- box target (Railway) -----------------------------------------------`);
+    lines.push(`// One Service running the host bundle (\`rustybuns build box\`) on oven/bun.`);
+    lines.push(`// The context dir is uploaded as-is; Railway builds its Dockerfile. sqlite,`);
+    lines.push(`// KV and R2 dirs live on the Volume. Secrets are service variables.`);
+    lines.push(`export const Project = Railway.Project("Project");`);
+    lines.push(`export const Service = Railway.Service("Service", {`);
+    lines.push(`  project: Project,`);
+    lines.push(`  context: ${JSON.stringify(RAILWAY_DIR)},`);
+    lines.push(`  port: ${rail.port},`);
+    if (rail.region) lines.push(`  region: ${JSON.stringify(rail.region)},`);
+    lines.push(`  healthcheckPath: "/health",`);
+    lines.push(`  sleepApplication: ${rail.sleep},  // idle = asleep = close to free; first request wakes it`);
+    lines.push(`  env: { ${env.join(", ")} },`);
+    lines.push(`});`);
+    if (rail.volume)
+      lines.push(`export const Data = Railway.Volume("Data", { project: Project, service: Service, mountPath: ${JSON.stringify(RAILWAY_DATA)}${region} });`);
+    lines.push(``);
+  }
+
+  // Box secrets are read from the deploying shell. The stack is checked with
+  // types: [], so declare the one piece of node it touches.
+  if ((box || rail) && secrets.length)
+    lines.splice(lines.findIndex((l) => l === ""), 0, `declare const process: { env: Record<string, string | undefined> };`);
+
+  const other = box ? "Hetzner.providers()" : rail ? "Railway.providers()" : null;
+  const providers = edge && other ? `Layer.mergeAll(Cloudflare.providers(), ${other})` : other ?? "Cloudflare.providers()";
+  const out = [edge && "url: worker.url", (box || rail) && "box: service.url"].filter(Boolean).join(", ");
   lines.push(`export default Alchemy.Stack(`);
   lines.push(`  ${JSON.stringify(c.name)},`);
   lines.push(`  { providers: ${providers}, state: Alchemy.localState() },`);
@@ -119,7 +151,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   if (edge && w.build) lines.push(`    yield* Build;`);
   if (edge) lines.push(`    const worker = yield* Worker;`);
   if (box && box.volumeSize > 0) lines.push(`    yield* Data;  // attached and mounted before the unit starts`);
-  if (box) lines.push(`    const service = yield* Service;`);
+  if (box || rail) lines.push(`    const service = yield* Service;`);
+  if (rail?.volume) lines.push(`    yield* Data;  // attaching it redeploys the service onto the mount`);
   lines.push(`    return { ${out} };`);
   lines.push(`  }),`);
   lines.push(`);`);

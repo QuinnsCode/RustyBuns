@@ -126,7 +126,7 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
 
 test("add deploy: pinned install command and overrides per package manager", async () => {
   const { installCommand, applyOverrides } = await import("../src/glue/deploy-deps.ts");
-  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.77 effect@4\.0\.0-rc\.112 /);
+  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.77 @alchemy\.run\/frontend-frameworks@2\.0\.0-beta\.77 effect@4\.0\.0-rc\.112 /);
   expect(installCommand("bun", false)).toMatch(/^bun add -d /);
   const p = applyOverrides({ pnpm: { overrides: { "@types/three": "0.185.4" } } }, "pnpm");
   expect(p.changed).toBe(true);
@@ -250,7 +250,15 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).toContain('API_KEY: process.env["API_KEY"] ?? ""');
   expect(box).toContain('process.env.DATA_DIR ?? "/var/lib/b"');
   expect(box).not.toContain("await openBrowser");
+  // Public box: every socket is a guest with its own id; no hosting controls.
+  expect(box).toContain("const guest = true;");
+  expect(box).toContain("const id = boxIdentity(url);");
+  expect(box).toContain('if (url.pathname === "/__rb/host") return reject(404, "not_on_box");');
+  expect(box).not.toContain("version_mismatch");
   const desk = spaEntry(c);
+  expect(desk).toContain('const guest = req.headers.get("x-rb-principal") === "guest";');
+  expect(desk).not.toContain("boxIdentity");
+  expect(desk).toContain("version_mismatch");
   expect(desk).toContain("const token = mintToken();");
   expect(desk).toContain("await openBrowser");
   expect(desk).not.toContain("/health");
@@ -267,4 +275,31 @@ test("box: honors desktop.host and headers; a box-only app needs no worker secti
   expect(stack).toContain('Hetzner.Service("Service"');
   expect(stack).not.toContain("Cloudflare");
   expect(() => generateAlchemy({ ...c, targets: { ...c.targets, edge: { provider: "cloudflare" } } })).toThrow(/no worker section/);
+});
+
+import { railwayDockerfile } from "../src/box.ts";
+test("box: Railway stack uploads the bundle context, sleeps by default, data on a Volume", () => {
+  const c = wranglerToConfig(parseWrangler('{"name":"b","main":"src/w.ts","compatibility_date":"2025-05-07"}'));
+  c.bindings.API_KEY = { type: "secret" };
+  const both = generateAlchemy({ ...c, targets: { ...c.targets, box: { provider: "railway", region: "europe-west4" } } });
+  expect(both).toContain('import * as Railway from "alchemy/Railway"');
+  expect(both).toContain("declare const process");
+  expect(both).toContain('export const Project = Railway.Project("Project");');
+  expect(both).toContain('context: ".rustybuns/railway"');
+  expect(both).toContain('region: "europe-west4"');
+  expect(both).toContain('healthcheckPath: "/health"');
+  expect(both).toContain("sleepApplication: true");
+  expect(both).toContain('DATA_DIR: "/data", API_KEY: process.env["API_KEY"] ?? ""');
+  expect(both).toContain('Railway.Volume("Data", { project: Project, service: Service, mountPath: "/data", region: "europe-west4" })');
+  expect(both).toContain("Layer.mergeAll(Cloudflare.providers(), Railway.providers())");
+  expect(both).toContain("return { url: worker.url, box: service.url };");
+  expect(both).not.toContain("Hetzner");
+  const boxOnly = generateAlchemy({ ...c, targets: { box: { provider: "railway", volume: false, sleep: false } } });
+  expect(boxOnly).not.toContain("Cloudflare");
+  expect(boxOnly).not.toContain("Railway.Volume");
+  expect(boxOnly).toContain('DATA_DIR: "/var/lib/b"');
+  expect(boxOnly).toContain("sleepApplication: false");
+  expect(boxOnly).toContain("providers: Railway.providers()");
+  expect(railwayDockerfile("1.4.2")).toContain("FROM oven/bun:1.4.2-slim");
+  expect(railwayDockerfile("1.4.2")).toContain('CMD ["bun", "/app/box.js"]');
 });

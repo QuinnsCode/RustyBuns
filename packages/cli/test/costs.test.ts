@@ -35,3 +35,12 @@ test("checkSpend: a large box needs the opt-in, a small one does not", () => {
   expect(() => checkSpend(boxed("ccx33", true))).not.toThrow();
   expect(() => checkSpend(edge)).not.toThrow();
 });
+
+test("billables: a Railway box is usage while it sleeps, fixed when it never does", () => {
+  const rail = (sleep?: boolean): RustyBunsConfig => ({ ...edge, targets: { box: { provider: "railway", sleep } } });
+  const asleep = billables(rail());
+  expect(asleep.map((r) => [r.what, r.kind])).toEqual([[`Railway Service "game"`, "usage"], ["Railway Volume", "usage"]]);
+  expect(billables(rail(false))[0]!.kind).toBe("fixed");
+  expect(costReport(rail(false))).toContain("rustybuns destroy");
+  expect(() => checkSpend(rail())).not.toThrow();
+});
