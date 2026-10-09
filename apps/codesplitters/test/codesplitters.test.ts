@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { apply, empty, fromText, replay, text, type Applied } from "../src/lines.ts";
+import { apply, empty, fromText, merge, replay, text, type Applied, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
+import { noodles } from "../src/noodles.ts";
 
 // Every app instance makes a temp dir of git repos; remove them all at the end.
 const opened: { close(): void }[] = [];
@@ -48,6 +49,40 @@ describe("lines", () => {
     expect(text(replay(log, 2))).toBe("one\ntwo");
     expect(replay(log, 3).lines[0]).toEqual({ id: "L1", text: "ONE", by: "x", rev: 3 });
     expect(replay(log)).toEqual(doc);
+  });
+});
+
+describe("merge", () => {
+  const fork = (content: string) => { const main = empty(); apply(main, fromText(content), "me"); return { base: structuredClone(main), main, branch: structuredClone(main) }; };
+  const land = (main: Doc, m: ReturnType<typeof merge>) => { const r = apply(main, m.ops, m.by, 0, main.rev); expect(r.ok).toBe(true); return text(main); };
+
+  test("lines only one side touched merge cleanly, each keeping its author", () => {
+    const { base, main, branch } = fork("a\nb\nc");
+    apply(main, [{ kind: "set", line: "L1", base: 1, text: "A" }, { kind: "insert", after: "L3", text: "main's" }], "ana");
+    apply(branch, [{ kind: "set", line: "L2", base: 2, text: "B" }, { kind: "insert", after: "L2", text: "x" }, { kind: "insert", after: "L4", text: "y" }, { kind: "delete", line: "L3", base: 3 }], "bot");
+    const m = merge(base, branch, main, {}, "bot");
+    expect(m.conflicts).toEqual([]);
+    expect(land(main, m)).toBe("A\nB\nx\ny\nmain's");
+    expect(main.lines.map((l) => l.by)).toEqual(["ana", "bot", "bot", "bot", "ana"]);
+  });
+
+  test("a line both sides changed is a conflict until it's settled", () => {
+    const { base, main, branch } = fork("a\nb");
+    apply(main, [{ kind: "set", line: "L1", base: 1, text: "main" }, { kind: "delete", line: "L2", base: 2 }], "ana");
+    apply(branch, [{ kind: "set", line: "L1", base: 1, text: "branch" }, { kind: "set", line: "L2", base: 2, text: "B" }], "bot");
+    expect(merge(base, branch, main).conflicts).toEqual([
+      { line: "L1", base: "a", main: "main", branch: "branch" },
+      { line: "L2", base: "b", main: null, branch: "B" },
+    ]);
+    // Keep the branch's L1, and bring L2 back as a new line.
+    expect(land(structuredClone(main), merge(base, branch, main, { L1: "branch", L2: "branch" }))).toBe("branch\nB");
+    expect(land(structuredClone(main), merge(base, branch, main, { L1: "main", L2: "main" }))).toBe("main");
+  });
+
+  test("the same change on both sides, or a line deleted on both, is no change", () => {
+    const { base, main, branch } = fork("a\nb");
+    for (const d of [main, branch]) apply(d, [{ kind: "set", line: "L1", base: 1, text: "A" }, { kind: "delete", line: "L2", base: 2 }], "x");
+    expect(merge(base, branch, main)).toEqual({ ops: [], by: [], conflicts: [] });
   });
 });
 
@@ -252,22 +287,46 @@ describe("game", () => {
     const call = await local();
     const ns = call.artifacts, { push } = await import("../src/git.ts");
     const made = await ns.create("level-mitt");
-    await push(made.remote, made.token, { changes: { "README.md": "mitt\n\ttabbed\n", "src/index.ts": "export default 1\n", "logo.png": "\u0000png" }, message: "upstream", author: "upstream" });
+    await push(made.remote, made.token, { changes: { "README.md": "mitt\n\ttabbed\n", "src/index.ts": "export default 1\nexport function isRecord(x: unknown): x is Record<string, unknown> {\n\treturn typeof x === \"object\" && x !== null;\n}\n", "logo.png": "\u0000png" }, message: "upstream", author: "upstream" });
     const tip = (await (await ns.get("level-mitt")).log())[0]!.hash;
     await call.env.DB.prepare("INSERT INTO levels (slug, status, commit_hash) VALUES ('mitt', 'ready', ?)").bind(tip).run();
 
     const root = await (await call(null, "/api/game/l/mitt/walls")).json() as any;
     expect(root.doors).toEqual([{ name: "src", path: "src" }]);
     expect(root.files.map((f: any) => [f.name, f.lines])).toEqual([["logo.png", []], ["README.md", ["mitt", "  tabbed", ""]]]);
-    expect((await (await call(null, "/api/game/l/mitt/walls?path=src")).json() as any).files[0].lines[0]).toBe("export default 1");
+    const src = (await (await call(null, "/api/game/l/mitt/walls?path=src")).json() as any).files[0];
+    expect(src.lines[0]).toBe("export default 1");
+    // Its type guard is a noodle monster, sent with its line range.
+    expect(src.noodles).toEqual([{ name: "isRecord", start: 2, end: 4, record: true, lines: ["export function isRecord(x: unknown): x is Record<string, unknown> {", "  return typeof x === \"object\" && x !== null;", "}"] }]);
+    expect(root.files.every((f: any) => !f.noodles)).toBe(true);
     expect((await call(null, "/api/game/l/mitt/walls?path=nope")).status).toBe(404);
     expect((await call(null, "/api/game/l/clsx/walls")).status).toBe(409);       // not imported
     // A second visit reads D1, not Artifacts.
-    expect((await call.env.DB.prepare("SELECT key FROM walls_cache ORDER BY key").all()).results.map((r: any) => r.key)).toEqual([`${tip}:`, `${tip}:src`]);
+    expect((await call.env.DB.prepare("SELECT key FROM walls_cache ORDER BY key").all()).results.map((r: any) => r.key)).toEqual([`v2:${tip}:`, `v2:${tip}:src`]);
     // Private repos stay private in the game too.
     await post(call, "ana", "/api/repos", { name: "secret", visibility: "private" });
     expect((await call("bo", "/api/game/r/ana/secret")).status).toBe(404);
     expect((await call("ana", "/api/game/r/ana/secret")).status).toBe(200);
+  });
+
+  test("noodles: type guards, isRecord the biggest, with their line ranges", () => {
+    const found = noodles([
+      "import x from \"y\";",
+      "export function isRecord(value: unknown): value is Record<string, unknown> {",
+      "  if (typeof value !== \"object\") return false;",
+      "  return value !== null;",
+      "}",
+      "const isFoo = (x: unknown): x is { a: string } =>",
+      "  typeof x === \"object\" &&",
+      "  x !== null;",
+      "export const isBar = <T extends Record<string, unknown>>(x: T | null): x is T => x != null;",
+      "function notAGuard(x: unknown): boolean { return true }",
+      "function isObj(x: unknown): x is Foo | { b: 1 } {",
+      "  return true;",
+      "}",
+    ].join("\n"));
+    expect(found.map((n) => [n.name, n.start, n.end, n.record])).toEqual([["isRecord", 2, 5, true], ["isFoo", 6, 8, false], ["isBar", 9, 9, false], ["isObj", 11, 13, false]]);
+    expect(found[1]!.lines).toEqual(["const isFoo = (x: unknown): x is { a: string } =>", "  typeof x === \"object\" &&", "  x !== null;"]);
   });
 
   test("the room on a level's page: lobby, start, relay, clubbing, round over", async () => {
@@ -342,6 +401,60 @@ describe("shares", () => {
     expect((await call("bo", `/api/shares/${id}`, { method: "DELETE" })).status).toBe(403);
     expect((await call("ana", `/api/shares/${id}`, { method: "DELETE" })).status).toBe(200);
     expect((await call(null, `/api/shares/${id}`)).status).toBe(404);
+  });
+
+  test("an agent works on a branch, and the owner reviews and merges it", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/collaborators", { name: "agent-a" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "a.js", content: "one\ntwo\nthree" });
+    expect((await post(call, "bo", "/api/repos/ana/r/branches", { name: "tidy" })).status).toBe(403);
+    expect((await post(call, "agent-a", "/api/repos/ana/r/branches", { name: "tidy" })).status).toBe(201);
+    const on = "/api/repos/ana/r/do", q = "?path=a.js&branch=tidy";
+    const ops = (user: string, query: string, o: unknown[]) => post(call, user, `${on}/ops${query}`, { ops: o });
+
+    // The branch's copy starts as main's, ids and revs included.
+    expect((await (await call("agent-a", `${on}/file${q}`)).json() as Doc).lines.map((l) => l.id)).toEqual(["L1", "L2", "L3"]);
+    expect((await ops("agent-a", q, [{ kind: "set", line: "L2", base: 2, text: "TWO" }, { kind: "insert", after: "L3", text: "four" }])).status).toBe(200);
+    expect((await post(call, "agent-a", "/api/repos/ana/r/files", { path: "new.js", content: "fresh", branch: "tidy" })).status).toBe(201);
+    // Main moves on meanwhile, on another line and on the same one.
+    await ops("ana", "?path=a.js", [{ kind: "set", line: "L1", base: 1, text: "ONE" }, { kind: "set", line: "L3", base: 3, text: "3" }]);
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.js")).json() as Doc)).toBe("ONE\ntwo\n3");
+
+    expect((await post(call, "ana", "/api/repos/ana/r/do/merge?path=a.js", {})).status).toBe(404);
+    expect((await post(call, "ana", `${on}/commit${q}`, {})).status).toBe(400);
+    const review = await (await call("ana", "/api/repos/ana/r/branches/tidy")).json() as any;
+    expect(review.files.map((f: any) => [f.path, f.ops.length, f.conflicts.length])).toEqual([["a.js", 2, 0], ["new.js", 1, 0]]);
+    expect((await post(call, "ana", "/api/repos/ana/r/branches/tidy/merge", {})).status).toBe(200);
+    const main = await (await call("ana", "/api/repos/ana/r/do/file?path=a.js")).json() as Doc;
+    expect(main.lines.map((l) => `${l.by}:${l.text}`)).toEqual(["ana:ONE", "agent-a:TWO", "ana:3", "agent-a:four"]);
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=new.js")).json() as Doc)).toBe("fresh");
+    expect((await (await call("ana", "/api/repos/ana/r/branches")).json() as any[])[0]).toMatchObject({ name: "tidy", status: "merged", merged_by: "ana" });
+    // A merged branch takes no more edits.
+    expect((await ops("agent-a", q, [{ kind: "insert", after: null, text: "late" }])).status).toBe(404);
+  });
+
+  test("a merge with a conflict lands nothing until each line is settled", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "a.js", content: "x\ny" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "b.js", content: "z" });
+    await post(call, "ana", "/api/repos/ana/r/branches", { name: "b1" });
+    const opsOn = (query: string, o: unknown[]) => post(call, "ana", `/api/repos/ana/r/do/ops${query}`, { ops: o });
+    await opsOn("?path=a.js&branch=b1", [{ kind: "set", line: "L1", base: 1, text: "branch" }]);
+    await opsOn("?path=b.js&branch=b1", [{ kind: "set", line: "L1", base: 1, text: "Z" }]);
+    await opsOn("?path=a.js", [{ kind: "set", line: "L1", base: 1, text: "main" }]);
+
+    const r = await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", {});
+    expect(r.status).toBe(409);
+    expect((await r.json() as any).conflicts).toEqual([{ path: "a.js", conflicts: [{ line: "L1", base: "x", main: "main", branch: "branch" }] }]);
+    // Not even the clean file landed.
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=b.js")).json() as Doc)).toBe("z");
+    expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.js": { L1: "branch" } } })).status).toBe(200);
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.js")).json() as Doc)).toBe("branch\ny");
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=b.js")).json() as Doc)).toBe("Z");
   });
 
   test("the owner flips a repo public or private", async () => {

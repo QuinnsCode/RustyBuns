@@ -69,6 +69,7 @@ export async function runAgent(call: Call, opts: {
   const maxRuns = 1 + (opts.retries ?? 2);
   const dir = mkdtempSync(join(tmpdir(), "codesplitters-agent-"));
   try {
+    // A file in a folder (src/app.ts) needs its folders in the scratch dir.
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     let applied = 0, changed = false, runs = 0, conflicts: Conflict[] = [], rev = 0, output = "";
     while (runs < maxRuns) {

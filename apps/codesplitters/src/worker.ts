@@ -10,6 +10,7 @@ import { levelRoutes } from "./levels.ts";
 import { githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
+import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -21,6 +22,9 @@ async function access(env: Env, owner: string, repo: string, user: string | null
   const write = user === owner || !!collab;
   return { read: r.visibility === "public" || write, write, exists: true };
 }
+
+// What a page or agent may ask a file's DO directly; forks and merges go through the branch routes.
+const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws"]);
 
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
 const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
@@ -140,6 +144,8 @@ const app = {
         }
         return json({ commit, entries });
       }
+      const branches = await branchRoutes(req, env, p, owner, repo, user, a);
+      if (branches) return branches;
       // POST /api/repos/:o/:r/collaborators {name}  (owner only; this is how agents get in)
       if (p[4] === "collaborators" && req.method === "POST") {
         if (user !== owner) return json({ error: "owner only" }, 403);
@@ -149,20 +155,27 @@ const app = {
         await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
         return json({ ok: true });
       }
-      // POST /api/repos/:o/:r/files {path, content}
+      // POST /api/repos/:o/:r/files {path, content, branch?}
       if (p[4] === "files" && req.method === "POST") {
         if (!a.write) return json({ error: "no write access" }, 403);
-        const { path, content = "" } = await body<{ path: string; content?: string }>();
+        const { path, content = "", branch } = await body<{ path: string; content?: string; branch?: string }>();
         if (!path || path.length > 200 || path.includes("..") || path.startsWith("/")) return json({ error: "bad path" }, 400);
+        if (branch) {
+          if (!(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
+          return createOn(env, owner, repo, branch, path, content, user!);
+        }
         const r = await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, path).run();
         if (!r.meta?.changes) return json({ error: "file exists" }, 409);
         await toFile(env, owner, repo, path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: fromText(content) }) });
         return json({ path }, 201);
       }
-      // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws)?path=...  -> the file's DO
-      if (p[4] === "do" && p[5]) {
-        const path = url.searchParams.get("path") ?? "";
-        const m = await materialize(env, owner, repo, path);
+      // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws)?path=...&branch=...  -> the file's DO, or its copy on a branch
+      if (p[4] === "do" && DO_ROUTES.has(p[5] ?? "")) {
+        const path = url.searchParams.get("path") ?? "", branch = url.searchParams.get("branch") || undefined;
+        if (branch && !(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
+        // A branch catalogues when it merges into main, not before.
+        if (branch && p[5] === "commit") return json({ error: "merge the branch, then commit main" }, 400);
+        const m = branch ? await materializeOn(env, owner, repo, branch, path) : await materialize(env, owner, repo, path);
         if ("error" in m) return json({ error: m.error }, m.status);
         const writes = p[5] === "ops" || p[5] === "commit";
         if (writes && !a.write) return json({ error: "no write access" }, 403);
@@ -171,10 +184,10 @@ const app = {
           const h = new Headers(req.headers);
           h.set("x-codesplitters-user", user ?? "anon");
           h.set("x-codesplitters-write", a.write ? "1" : "0");
-          return fileStub(env, owner, repo, path).fetch(new Request(req.url, { headers: h }));
+          return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
         }
-        const res = await toFile(env, owner, repo, path, user ?? "anon", p[5], { method: req.method, body: writes ? await req.text() : undefined },
-          url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "");
+        const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: writes ? await req.text() : undefined },
+          url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "", branch);
         if (p[5] === "commit" && res.ok) {
           // Index what was committed, not every keystroke.
           const { commit, content } = (await res.json()) as { commit: { message: string }; content: string };

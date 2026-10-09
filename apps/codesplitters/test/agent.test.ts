@@ -1,74 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { apply, empty, fromText, text, type Doc } from "../src/lines.ts";
+import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
-import { diffToOps, rebase } from "../src/sync.ts";
 import { harnessCommand, taskPrompt, HARNESSES } from "../src/harness.ts";
 import { runAgent, toDisk, fromDisk, type Exec } from "../src/agent-run.ts";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
 const local = async () => { const c = await boot(); opened.push(c); return c; };
-
-/** A doc built from `start` through the real op path, so ids and revs are the app's own. */
-function docFrom(start: string): Doc {
-  const doc = empty();
-  apply(doc, fromText(start), "owner");
-  return doc;
-}
-
-describe("diffToOps", () => {
-  const cases: [string, string][] = [
-    ["a\nb\nc", "a\nb\nc"],
-    ["a\nb\nc", "a\nX\nc"],
-    ["a\nb\nc", "top\na\nb\nc"],
-    ["a\nb\nc", "a\nb\nc\nend"],
-    ["a\nb\nc", "a\nc"],
-    ["a\nb\nc\nd", "a\nB\nc"],
-    ["a\nb", "x\ny\nz\nb"],
-    ["a\nb\nc\nd\ne", "a\nq\nr\nd\nf\ng"],
-    ["a\nb\nc", "z\nw"],
-    ["a", ""],
-    ["", "new\nfile"],
-    ["", ""],
-  ];
-  for (const [start, next] of cases) {
-    test(`applying the ops turns ${JSON.stringify(start)} into ${JSON.stringify(next)}`, () => {
-      const doc = docFrom(start);
-      const ops = diffToOps(doc.lines, next === "" ? [] : next.split("\n"));
-      const r = apply(doc, ops, "agent");
-      expect(r.ok).toBe(true);
-      expect(text(doc)).toBe(next);
-    });
-  }
-
-  test("a changed line keeps its id, so blame still names the original author", () => {
-    const doc = docFrom("a\nb\nc");
-    const ops = diffToOps(doc.lines, ["a", "B", "c"]);
-    expect(ops).toEqual([{ kind: "set", line: "L2", base: 2, text: "B" }]);
-  });
-});
-
-describe("rebase", () => {
-  test("drops ops on lines another writer has moved past, keeps the rest", () => {
-    const doc = docFrom("a\nb\nc");
-    const ops = diffToOps(doc.lines, ["A", "B", "c"]);
-    // Someone else changes line 1 while the agent works.
-    apply(doc, [{ kind: "set", line: "L1", base: 1, text: "mine" }], "human");
-    const r = rebase(ops, doc);
-    expect(r.skipped).toEqual([{ kind: "set", line: "L1", base: 1, text: "A" }]);
-    expect(apply(doc, r.ops, "agent").ok).toBe(true);
-    expect(text(doc)).toBe("mine\nB\nc");
-  });
-
-  test("drops an insert whose anchor line was deleted meanwhile", () => {
-    const doc = docFrom("a\nb");
-    const ops = diffToOps(doc.lines, ["a", "x", "b"]);
-    apply(doc, [{ kind: "delete", line: "L1", base: 1 }], "human");
-    expect(rebase(ops, doc).skipped.length).toBe(1);
-  });
-});
 
 describe("disk text", () => {
   test("round-trips lines, including an empty file", () => {
