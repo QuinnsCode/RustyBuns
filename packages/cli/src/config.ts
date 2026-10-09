@@ -208,6 +208,11 @@ export interface RustyBunsConfig {
      *   no token is accepted. A secret without `op` comes from the shell or
      *   .dev.vars, as without this flag.
      *
+     * Every secret is listed in a generated .env.schema at the app root, by
+     * name and source, never value: commit it and the same secrets resolve on
+     * any machine, CI job or agent, each behind its own wheel. Remove its
+     * "# GENERATED" header to own it.
+     *
      * `op` secrets need varlock (`bun add -d varlock`, or `brew install
      * dmno-dev/tap/varlock`); "human" also needs the 1Password CLI, `op`.
      */

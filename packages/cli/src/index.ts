@@ -18,7 +18,7 @@ import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-sc
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { Profiler } from "./profile.ts";
 import { checkSpend, costReport } from "./costs.ts";
-import { ENV_SCHEMA, generateEnvSchema } from "./wheel.ts";
+import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -224,9 +224,7 @@ async function generate(opts: { adopt: boolean }) {
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
   console.log("wrote .rustybuns/alchemy.run.ts");
-  const schema = generateEnvSchema(cfg);
-  if (schema) { await Bun.write(ENV_SCHEMA, schema); console.log(`wrote ${ENV_SCHEMA} (experimental.wheel: "${cfg.experimental!.wheel}")`); }
-  else await rm(ENV_SCHEMA, { force: true });
+  await writeEnvSchema(cfg);
   if (!cfg.worker) return;   // box-only: no wrangler.jsonc
   if (opts.adopt && !rest.includes("--force")) {
     const lost = wranglerLosses();
@@ -235,6 +233,21 @@ async function generate(opts: { adopt: boolean }) {
   const r = await writeIfChanged("wrangler.jsonc", generateWrangler(cfg), opts);
   if (r === "conflict") console.log("wrangler.jsonc is hand-written and differs; wrote wrangler.generated.jsonc. Diff it" + (wranglerLosses().length ? " (it lacks " + wranglerLosses().join(", ") + ", so adopt will refuse)." : ", then `rustybuns adopt`."));
   else console.log(`wrangler.jsonc ${r}`);
+}
+
+/** The app's .env.schema: generated until someone removes the header, then theirs. */
+async function writeEnvSchema(cfg: RustyBunsConfig) {
+  const schema = generateEnvSchema(cfg);
+  const cur = existsSync(ENV_SCHEMA) ? readFileSync(ENV_SCHEMA, "utf8") : null;
+  if (cur !== null && !cur.startsWith("# GENERATED")) {
+    if (cfg.experimental?.wheel) console.log(`${ENV_SCHEMA} is hand-written; using it as-is`);
+    return;
+  }
+  if (!schema) { if (cur !== null) { await rm(ENV_SCHEMA); console.log(`removed ${ENV_SCHEMA} (no experimental.wheel secrets)`); } return; }
+  if (cur !== schema) { await Bun.write(ENV_SCHEMA, schema); console.log(`wrote ${ENV_SCHEMA} (experimental.wheel: "${cfg.experimental!.wheel}"; commit it)`); }
+  // Plenty of .gitignores carry `.env*`, which would keep the schema out of the repo.
+  if (Bun.spawnSync(["git", "check-ignore", "-q", ENV_SCHEMA]).exitCode === 0)
+    console.log(`  .gitignore hides ${ENV_SCHEMA}; add a line \`!${ENV_SCHEMA}\` so it travels with the repo`);
 }
 
 /** Hash of what would be deployed: the generated stack + the config. */
@@ -277,10 +290,11 @@ function varlockCli(): string {
  * "human" strips any 1Password token, so only the app on this machine can unlock.
  */
 function underVarlock(cfg: RustyBunsConfig, cmd: string[], env: Record<string, string | undefined>): string[] {
+  const needs = schemaNeeds(readFileSync(ENV_SCHEMA, "utf8"));
   if (cfg.experimental?.wheel === "human") {
     delete env.OP_TOKEN; delete env.OP_SERVICE_ACCOUNT_TOKEN;
-    if (!Bun.which("op")) throw new Error(`experimental.wheel "human" unlocks 1Password through its CLI, \`op\`, which isn't on PATH. Install it and turn on "Integrate with 1Password CLI" in the 1Password app.`);
-  } else if (!env.OP_TOKEN) {
+    if (needs.opCli && !Bun.which("op")) throw new Error(`experimental.wheel "human" unlocks 1Password through its CLI, \`op\`, which isn't on PATH. Install it and turn on "Integrate with 1Password CLI" in the 1Password app.`);
+  } else if (needs.opToken && !env.OP_TOKEN) {
     throw new Error(`experimental.wheel "agent" reads op secrets with a 1Password service account token. Set OP_TOKEN (scope the account to this stack's vault).`);
   }
   return [varlockCli(), "run", "--path", ENV_SCHEMA, "--", ...cmd];
@@ -291,7 +305,7 @@ async function runAlchemy(args: string[], cfg?: RustyBunsConfig): Promise<number
   let cmd = [...alchemyCli(), ...args];
   // Secret values come from .dev.vars; anything already exported in the shell wins.
   const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env };
-  if (cfg && generateEnvSchema(cfg)) cmd = underVarlock(cfg, cmd, env);
+  if (cfg?.experimental?.wheel && existsSync(ENV_SCHEMA)) cmd = underVarlock(cfg, cmd, env);
   const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"], env });
   return await p.exited;
 }
