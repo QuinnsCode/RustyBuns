@@ -11,6 +11,7 @@ import { githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
+import { agentRoutes } from "./agent-routes.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 
@@ -28,7 +29,7 @@ const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws"
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
 const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
 
-export default {
+const app = {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -47,6 +48,8 @@ export default {
     if (game) return game;
     const share = await shareRoutes(req, env, p, user);
     if (share) return share;
+    const agents = await agentRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read, (r) => app.fetch(r, env));
+    if (agents) return agents;
 
     // GET|PUT /api/me
     if (p[1] === "me") {
@@ -257,3 +260,5 @@ export default {
     return json({ error: "not found" }, 404);
   },
 };
+
+export default app;

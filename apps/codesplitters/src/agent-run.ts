@@ -3,9 +3,9 @@
 // snapshot and posted to the file's Durable Object as line ops, so the edit
 // shows up live and carries the agent's name in blame like any other edit.
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Call } from "./local.ts";
 import type { Doc, Line, Op } from "./lines.ts";
 import { harnessCommand, taskPrompt, type Command, type Harness } from "./harness.ts";
@@ -15,7 +15,7 @@ export type Exec = (cmd: Command, cwd: string) => Promise<{ code: number; out: s
 
 /** Runs the CLI with its working directory set to `cwd`, capturing stdout and stderr. */
 export const execCommand: Exec = async (cmd, cwd) => {
-  const proc = Bun.spawn([cmd.bin, ...cmd.args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn([cmd.bin, ...cmd.args], { cwd, env: { ...process.env, ...cmd.env }, stdout: "pipe", stderr: "pipe" });
   const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   return { code: await proc.exited, out: out + err };
 };
@@ -69,6 +69,8 @@ export async function runAgent(call: Call, opts: {
   const maxRuns = 1 + (opts.retries ?? 2);
   const dir = mkdtempSync(join(tmpdir(), "codesplitters-agent-"));
   try {
+    // A file in a folder (src/app.ts) needs its folders in the scratch dir.
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
     let applied = 0, changed = false, runs = 0, conflicts: Conflict[] = [], rev = 0, output = "";
     while (runs < maxRuns) {
       runs++;
