@@ -7,14 +7,15 @@ import { push } from "./git.ts";
 import { noodles, type Noodle } from "./noodles.ts";
 import type { ArtifactsRepo, Env, TreeEntry } from "./env.ts";
 
-export const fileStub = (env: Env, owner: string, repo: string, path: string) =>
-  env.FILES.get(env.FILES.idFromName(`${owner}/${repo}/${path}`));
+/** A file's DO; on a branch, the branch's own copy of it ("@" can't appear in a repo name). */
+export const fileStub = (env: Env, owner: string, repo: string, path: string, branch?: string) =>
+  env.FILES.get(env.FILES.idFromName(`${owner}/${repo}${branch ? "@" + branch : ""}/${path}`));
 
-/** Call a file's DO as `user`. */
-export function toFile(env: Env, owner: string, repo: string, path: string, user: string, op: string, init: RequestInit = {}, search = "") {
+/** Call a file's DO (or its copy on `branch`) as `user`. */
+export function toFile(env: Env, owner: string, repo: string, path: string, user: string, op: string, init: RequestInit = {}, search = "", branch?: string) {
   const headers = new Headers(init.headers);
   headers.set("x-codesplitters-user", user);
-  return fileStub(env, owner, repo, path).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
+  return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 
 /** The repo row's artifact handle and branch, or null when it has none. */
