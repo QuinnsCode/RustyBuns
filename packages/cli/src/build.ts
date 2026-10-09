@@ -172,20 +172,35 @@ function guestIdentity(url: URL): Record<string, string> | string {
   return { ...identity, "X-User-Id": uid, "X-User-Name": name };
 }
 const reject = (status: number, error: string, extra: Record<string, unknown> = {}) => Response.json({ error, ...extra }, { status });
-
+${h.box ? `
+// A box is public: there is no local player, so every socket is a guest with
+// its own identity, the way the edge Worker vouches each player. ?uid=&name=
+// when the client sends them (trust on first use, as on the LAN), else a
+// fresh id for this connection. The page comes from this box, so no version
+// check. One more seat than guests.max: the host's seat nobody sits in.
+function boxIdentity(url: URL): Record<string, string> | string {
+  const uid = url.searchParams.get("uid");
+  if (uid !== null) return guestIdentity(url);
+  const name = url.searchParams.get("name") ?? "";
+  if (name && !NAME.test(name)) return "bad name: 1-32 printable characters";
+  const id = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  return { ...identity, "X-User-Id": id, "X-User-Name": name || \`\${identity["X-User-Name"]}-\${id.slice(0, 4)}\` };
+}
+` : ""}
 // The host IS the middleware: the local player vouched at the upgrade,
 // exactly the headers the CF shell reads; guests vouched from their query.
 shell.mount({
   async fetch(req) {
     const url = new URL(req.url);
-    const guest = req.headers.get("x-rb-principal") === "guest";
+    const guest = ${h.box ? "true" : `req.headers.get("x-rb-principal") === "guest"`};
 ${h.box ? `    if (url.pathname === "/health") return new Response("ok");\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
       const h = new Headers(req.headers);
       let who = identity;
       if (guest) {
-        if (guests.version !== undefined && url.searchParams.get("v") !== guests.version) return reject(409, "version_mismatch", { expected: guests.version, got: url.searchParams.get("v") });
+${h.box ? `        if (guestCount >= guests.max + 1) return reject(503, "full", { max: guests.max + 1 });
+        const id = boxIdentity(url);` : `        if (guests.version !== undefined && url.searchParams.get("v") !== guests.version) return reject(409, "version_mismatch", { expected: guests.version, got: url.searchParams.get("v") });
         if (guestCount >= guests.max) return reject(503, "full", { max: guests.max });
-        const id = guestIdentity(url);
+        const id = guestIdentity(url);`}
         if (typeof id === "string") return reject(400, "bad_identity", { detail: id });
         who = id;
       }
@@ -207,7 +222,9 @@ ${h.box ? `    if (url.pathname === "/health") return new Response("ok");\n` : "
         listen: { hostname: shell.hostname, port: shell.port }, lan: lanAddresses(), sockets: shell.comms.sockets().length,
         guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null } });
     }
-    if (url.pathname === "/__rb/host" && req.method === "POST") {
+${h.box ? `    // Hosting controls are the desktop owner's; on a public box anyone could call them.
+    if (url.pathname === "/__rb/host") return reject(404, "not_on_box");
+` : ""}    if (url.pathname === "/__rb/host" && req.method === "POST") {
       // Host-page control: { listen?: { hostname, port }, join?: string | null, max?: number, version?: string | null }.
       // "Host a world" = { listen: { hostname: "0.0.0.0" }, join: "pass" }; "Stop hosting" = { join: null, listen: { hostname: "127.0.0.1" } }.
       const b = await req.json() as { listen?: { hostname?: string; port?: number }; join?: string | null; max?: number; version?: string | null };
@@ -335,6 +352,8 @@ async function stageNative(targets: DesktopOs[], only?: string[]): Promise<strin
 
 export interface BuildOpts {
   target?: string; outfile?: string; noCompile?: boolean; host?: HostKind;
+  /** noCompile: where the bundle goes. @default ".rustybuns/dev" */
+  outdir?: string;
   /** Type check the app before the client build, with this checker ("auto" picks the fastest). */
   check?: CheckerName | "auto";
   /** Time each step, print the table and save it under .rustybuns/profile/. */
@@ -422,11 +441,12 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   if (opts.noCompile) {
     // Dev host: same bundle pipeline as the binary, minus --compile. Nothing
     // embedded; assets and migrations are read from the working tree.
-    const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir: ".rustybuns/dev", target: "bun", define: defineMap, plugins, sourcemap: "linked", throw: false } as any));
+    const outdir = opts.outdir ?? ".rustybuns/dev";
+    const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir, target: "bun", define: defineMap, plugins, sourcemap: "linked", throw: false } as any));
     await prof?.finish();
     if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
-    console.log(`dev host: rustybuns run desktop   (= bun .rustybuns/dev/desktop.js)`);
-    return ".rustybuns/dev/desktop.js";
+    if (!opts.outdir) console.log(`dev host: rustybuns run desktop   (= bun .rustybuns/dev/desktop.js)`);
+    return `${outdir}/${host}.js`;
   }
 
 
@@ -435,10 +455,8 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   // a named crate that was never built is an error, not a silent TS fallback.
   if (d.native?.length) nativeDirs(d.native);
   const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, d.native)) : [];
-  const migrationDirs = Object.values(c.bindings ?? {}).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
-  // External mounts (~ or absolute) stay on disk; only project dirs are embedded.
-  const external = (dir: string) => dir.startsWith("~") || dir.startsWith("/");
-  const mountDirs = [...Object.values(d.mounts ?? {}).filter((dir) => !external(dir)), ...(nativeTags.length ? [NATIVE_STAGE] : [])];
+  const { migrationDirs, mountDirs: projectMounts } = embeddedDirs(c);
+  const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : [])];
   // Embedded dirs are keyed by basename, so two mounts named the same collide.
   const names = [assets, ...migrationDirs, ...mountDirs].filter(Boolean).map((p) => basename(p!));
   if (new Set(names).size !== names.length) throw new Error(`embedded directories must have distinct basenames: ${names.join(", ")}`);
@@ -457,6 +475,21 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   }
   await prof?.finish();
   return outs.join("\n");
+}
+
+/**
+ * The project directories a build carries with it: the client build, D1
+ * migrations and project-relative mounts. The host finds each one next to
+ * itself by basename (resolveDir), embedded or copied.
+ */
+export function embeddedDirs(c: RustyBunsConfig) {
+  const d = c.targets.desktop ?? {};
+  const assets = (d.mode ?? "spa") === "spa" ? (d.clientDir ?? "dist/desktop") : c.worker?.assets;
+  const migrationDirs = Object.values(c.bindings ?? {}).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
+  // External mounts (~ or absolute) stay on disk; only project dirs are embedded.
+  const external = (dir: string) => dir.startsWith("~") || dir.startsWith("/");
+  const mountDirs = Object.values(d.mounts ?? {}).filter((dir) => !external(dir));
+  return { assets, migrationDirs, mountDirs };
 }
 
 /** native/dist/<crate> for each embedded crate; loadNative() finds them at /$bunfs/root/<crate>/<os-arch>/. */

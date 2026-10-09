@@ -46,6 +46,15 @@ Do these once. They are what actually cap a bill.
 - [ ] Look at Cloud Console → your project now and then for servers, Volumes,
       and snapshots you forgot.
 
+**Railway** (only if an app has `targets.box` with `provider: "railway"`)
+- [ ] Railway bills by usage (vCPU and RAM by the minute, Volume storage by the
+      GB-month) and has a real cap: Workspace → Usage → set a **hard usage
+      limit**, and services stop when it is hit. Set it low, at the plan's
+      included usage, before the first deploy.
+- [ ] Keep `sleep` on (the default). An idle service sleeps and stops billing
+      compute; `sleep: false` shows up as a **fixed** row in `plan`.
+- [ ] `rustybuns destroy` deletes the Project, Service and Volume.
+
 **GitHub Actions**
 - [ ] Nothing to do while the repo is public: standard runners (including
       macOS) are free for public repos. If it ever goes private, set the
@@ -69,6 +78,6 @@ A Durable Object bills for the time it is awake.
 ## What is live
 
 Check before you worry. `rustybuns plan` in an app shows what it would change;
-the Cloudflare dashboard (Workers & Pages, D1, KV, R2) and Hetzner Cloud Console
+the Cloudflare dashboard (Workers & Pages, D1, KV, R2), the Railway dashboard and Hetzner Cloud Console
 show what exists. `rustybuns destroy` in an app removes everything its stack
 created.

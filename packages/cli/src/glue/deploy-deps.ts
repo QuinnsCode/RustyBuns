@@ -7,6 +7,8 @@ import { dirname, join, relative, resolve } from "node:path";
 // Bump this table when Alchemy bumps its peers.
 export const DEPLOY_DEPS: Record<string, string> = {
   "alchemy": "2.0.0-beta.77",
+  // Alchemy's optional peer, loaded by alchemy/Railway even for a plain Service.
+  "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
   "effect": "4.0.0-rc.112",
   "@effect/platform-bun": "4.0.0-rc.112",
   "@effect/platform-node": "4.0.0-rc.112",

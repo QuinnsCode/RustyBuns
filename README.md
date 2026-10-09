@@ -8,12 +8,12 @@ No rewrite. No second codebase. No new language.
 pnpm add -D @rustybuns/cli @rustybuns/shell-bun
 pnpm exec rustybuns init                # reads your app, writes rustybuns.config.ts
 pnpm exec rustybuns build desktop       # dist/<name>-<os>-<arch>: one file, double-click it
-pnpm exec rustybuns deploy              # Cloudflare, Hetzner, or both
+pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway box
 ```
 
 That's the whole product. Rusty Buns is a dev dependency: it never edits `src/` and never ships in your bundle.
 
-> **Alpha, `0.1.8`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Hetzner box builds and runs but hasn't been live-tested yet.
+> **Alpha, `0.1.8`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Railway box is verified live. The Hetzner box builds and runs but hasn't been live-tested yet.
 
 ## The idea in one paragraph
 
@@ -127,11 +127,11 @@ pnpm exec rustybuns destroy        # removes everything it created
 ## Read more
 
 - [GETTING_STARTED.md](GETTING_STARTED.md): the full walkthrough, step by step
-- [REFERENCE.md](REFERENCE.md): every command, config key, the host, the Hetzner box, LAN multiplayer
+- [REFERENCE.md](REFERENCE.md): every command, config key, the host, the Hetzner and Railway boxes, LAN multiplayer
 - [ADOPTION.md](ADOPTION.md): who it's for, and how to adopt it (and leave)
 - [COSTS.md](COSTS.md): what each deploy can bill you for, and how to cap it
 - [FRAMEWORKS.md](FRAMEWORKS.md): beyond Vite + React
-- [notes/ROADMAP.md](notes/ROADMAP.md): next up are a live Hetzner run, TLS on the box, Fly and Railway, installers and signing
+- [notes/ROADMAP.md](notes/ROADMAP.md): next up are a live Hetzner run, TLS on the box, Fly, installers and signing
 
 ## License
 
