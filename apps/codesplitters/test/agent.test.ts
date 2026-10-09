@@ -5,7 +5,8 @@ import { apply, empty, fromText, text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { diffToOps, rebase } from "../src/sync.ts";
 import { harnessCommand, taskPrompt, HARNESSES } from "../src/harness.ts";
-import { runAgent, toDisk, fromDisk, type Exec } from "../src/agent-run.ts";
+import { execCommand, runAgent, toDisk, fromDisk, type Exec } from "../src/agent-run.ts";
+import { tmpdir } from "node:os";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -84,6 +85,25 @@ describe("harnessCommand", () => {
       expect(c.bin).toBeTruthy();
       expect(c.args.join(" ")).toContain("do it");
     }
+  });
+  test("pi gets only the file tools, no bash", () => {
+    const { args } = harnessCommand("pi", "do it");
+    expect(args[args.indexOf("--tools") + 1]).toBe("read,edit,write");
+    expect(args).toContain("--no-extensions");
+    expect(args).toContain("--no-mcp");
+  });
+  test("opencode denies everything but file tools in the working directory", () => {
+    const { args, env } = harnessCommand("opencode", "do it");
+    expect(args).toContain("--pure");
+    const { permission } = JSON.parse(env!.OPENCODE_CONFIG_CONTENT!);
+    expect(permission["*"]).toBe("deny");
+    expect(permission.external_directory).toBe("deny");
+    expect(permission.bash).toBeUndefined();
+    expect(permission.edit).toBe("allow");
+  });
+  test("execCommand passes the harness env to the CLI", async () => {
+    const r = await execCommand({ bin: "sh", args: ["-c", "echo $OPENCODE_CONFIG_CONTENT"], env: { OPENCODE_CONFIG_CONTENT: "{}" } }, tmpdir());
+    expect(r.out.trim()).toBe("{}");
   });
   test("the task prompt names the file and forbids git", () => {
     const p = taskPrompt("src/a.ts", "rename foo");
