@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gitcode archive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=IM+Fell+English+SC&display=swap" rel="stylesheet">
+<style>
+  /* Typewriter noir: a dark archive at night, artifacts on parchment under a desk lamp. */
+  :root {
+    --night: #0e0b08; --night2: #1a140e; --lamp: #f3d9a4; --smoke: #8a7a62;
+    --paper: #eadcb8; --paper-dark: #cdb88a; --ink: #2a1c0f; --pencil: #7d6a4c;
+    --stamp: #9b2318; --brass: #b8924f;
+    --type: "Special Elite", "Courier Prime", "Courier New", monospace;
+    --title: "IM Fell English SC", Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--lamp); font: 15px/1.6 var(--type);
+    background:
+      radial-gradient(ellipse 70% 55% at 50% 0%, rgba(243, 217, 164, .13), transparent 70%),
+      radial-gradient(ellipse at 50% 120%, #000 10%, transparent 60%),
+      var(--night);
+    min-height: 100vh;
+  }
+  /* Film grain over everything. */
+  body::after { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .09; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  header { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid #3a2c1c; box-shadow: 0 1px 0 #000; }
+  header h1 { margin: 0; font: 26px/1 var(--title); letter-spacing: .08em; }
+  header h1 a { color: var(--lamp); text-decoration: none; }
+  header h1 small { display: block; font: 11px/1.4 var(--type); letter-spacing: .25em; color: var(--smoke); text-transform: uppercase; }
+  main { max-width: 960px; margin: 0 auto; padding: 22px 16px 60px; }
+  a { color: var(--stamp); text-decoration-style: dotted; }
+  header a, #who a { color: var(--brass); }
+  input, select, textarea, button { font: inherit; color: var(--ink); background: #f6edd6; border: 1px solid var(--pencil); border-radius: 2px; padding: 4px 8px; }
+  header input { background: var(--night2); color: var(--lamp); border-color: #4a3a26; }
+  button { cursor: pointer; text-transform: uppercase; letter-spacing: .1em; font-size: 13px; }
+  button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  header button.primary { background: var(--brass); color: var(--night); border-color: var(--brass); }
+
+  /* A card is a scroll: aged paper with rolled ends. */
+  .card {
+    position: relative; color: var(--ink); margin: 0 0 30px; padding: 20px 24px;
+    background:
+      radial-gradient(circle at 18% 22%, rgba(140, 95, 40, .16), transparent 28%),
+      radial-gradient(circle at 85% 70%, rgba(120, 80, 30, .14), transparent 32%),
+      radial-gradient(ellipse at center, transparent 55%, rgba(110, 70, 25, .35) 100%),
+      var(--paper);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .6), inset 0 0 40px rgba(90, 55, 20, .25);
+  }
+  .card::before, .card::after { content: ""; position: absolute; left: -8px; right: -8px; height: 14px; border-radius: 7px;
+    background: linear-gradient(to bottom, #a88a55, #ead9b0 40%, #b8996a 75%, #6f5631); box-shadow: 0 3px 6px rgba(0, 0, 0, .5); }
+  .card::before { top: -7px; } .card::after { bottom: -7px; }
+  .card h2, .card h3 { font-family: var(--title); font-weight: normal; letter-spacing: .04em; margin: 0 0 8px; }
+  .card h2 { font-size: 26px; } .card h3 { font-size: 20px; border-bottom: 1px dashed var(--pencil); padding-bottom: 4px; }
+  .muted { color: var(--pencil); } .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .label { font-size: 11px; letter-spacing: .3em; text-transform: uppercase; color: var(--pencil); }
+
+  /* The artifact itself. */
+  .code { font: 14px/1.75 var(--type); padding: 18px 10px; }
+  .ln { display: grid; grid-template-columns: 34px 124px 50px 1fr; gap: 8px; padding: 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .ln:hover { background: rgba(155, 35, 24, .07); }
+  .ln .n, .ln .by, .ln .rev { color: var(--pencil); user-select: none; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-style: italic; }
+  .ln .by::before { content: "✎ "; opacity: .6; }
+  /* A fresh line is typed in, then the ink settles. */
+  .ln.flash { animation: ink 1.6s ease-out; } .ln.flash .t { animation: type .7s steps(28, end); }
+  @keyframes ink { from { background: rgba(155, 35, 24, .22); } }
+  @keyframes type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+  .ln input { width: 100%; padding: 0 4px; font: inherit; background: #fff8e6; }
+  mark { background: rgba(155, 35, 24, .22); color: inherit; padding: 0 2px; }
+
+  /* Rubber stamp on catalogued commits. */
+  .stamp { display: inline-block; transform: rotate(-4deg); border: 2px solid var(--stamp); color: var(--stamp); padding: 0 6px; margin-right: 6px;
+    font-size: 11px; letter-spacing: .2em; opacity: .85; border-radius: 3px; }
+  .entry { padding: 4px 0; border-bottom: 1px dotted var(--paper-dark); }
+  input[type=range] { accent-color: var(--stamp); }
+
+  /* A profile page is a photograph taped into the field journal. */
+  .photo { padding: 10px 10px 34px; background: #f4ecdc; box-shadow: 0 10px 25px rgba(0, 0, 0, .6); transform: rotate(-.6deg); margin: 0 0 30px; position: relative; }
+  .photo::before { content: ""; position: absolute; top: -10px; left: 42%; width: 90px; height: 22px; background: rgba(230, 215, 170, .75); transform: rotate(3deg); }
+  .photo iframe { width: 100%; height: 220px; border: 0; background: #fff; filter: sepia(.25) contrast(1.05); display: block; }
+  .photo figcaption { position: absolute; bottom: 8px; left: 14px; color: var(--ink); font-size: 13px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 700px) { .two { grid-template-columns: 1fr; } .ln { grid-template-columns: 26px 80px 1fr; } .ln .rev { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="#/">gitcode<small>archive of unearthed code</small></a></h1>
+  <form id="search" class="row"><input name="q" placeholder="search the archive" size="24"></form>
+  <span style="flex:1"></span>
+  <span id="who"></span>
+</header>
+<main id="app"></main>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const me = () => (/(?:^|;\s*)gc_user=([a-z0-9-]+)/.exec(document.cookie) || [])[1];
+const api = async (path, body, method) => {
+  const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+};
+const app = $("#app");
+let socket = null;
+
+function header() {
+  const u = me();
+  $("#who").innerHTML = u
+    ? `<a href="#/u/${u}">@${u}</a> <button id="out">leave</button>`
+    : `<form id="login" class="row"><input name="name" placeholder="your alias" required pattern="[a-z0-9][a-z0-9-]*"><button class="primary">sign in</button></form>`;
+  $("#login")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/login", { name: e.target.name.value }); header(); route(); });
+  $("#out")?.addEventListener("click", () => { document.cookie = "gc_user=; Path=/; Max-Age=0"; header(); route(); });
+}
+$("#search").addEventListener("submit", (e) => { e.preventDefault(); location.hash = "#/search/" + encodeURIComponent(e.target.q.value); });
+
+const views = {
+  async home() {
+    app.innerHTML = `<div class="card"><div class="label">case file no. 001</div><h2>Every file is an artifact.</h2>
+      <p>Each one sits in its own vault. Edits come in line by line, every line carries the mark of the hand that wrote it,
+      and carbon dating takes you back to any moment in its past. Several agents can dig at one artifact at once.</p>
+      <p>Your page is yours to decorate, the old way: your own HTML and CSS. Keep collections of the finest lines you find.</p>
+      ${me() ? `<p><a href="#/u/${me()}">Open your field journal</a> to start an excavation.</p>` : `<p class="muted">Give an alias up top to enter. (Proof of concept: an alias is all it takes.)</p>`}
+      <p class="muted">To watch agents dig: open an artifact, then run <code>bun agents.ts --url …</code> from <code>apps/gitcode</code>.</p></div>`;
+  },
+
+  async u(name) {
+    const { user, repos, playlists } = await api("/users/" + name);
+    const mine = name === me();
+    app.innerHTML = `
+      ${user.theme_html ? `<figure class="photo"><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe><figcaption>${esc(name)}, as found</figcaption></figure>` : ""}
+      <div class="card"><div class="label">field journal of</div><h2>${esc(name)}</h2><p>${esc(user.bio) || '<span class="muted">no notes yet</span>'}</p></div>
+      <div class="two">
+        <div class="card"><h3>Excavations</h3>${repos.map((r) => `<div><a href="#/r/${r.owner}/${r.name}">${esc(r.name)}</a> <span class="muted">${r.visibility === "private" ? "sealed" : "open"}</span></div>`).join("") || '<p class="muted">no digs yet</p>'}
+          ${mine ? `<form id="newrepo" class="row" style="margin-top:8px"><input name="name" placeholder="dig-site" required><select name="visibility"><option value="public">open</option><option value="private">sealed</option></select><button class="primary">break ground</button></form>` : ""}</div>
+        <div class="card"><h3>Collections</h3>${playlists.map((p) => `<div><a href="#/p/${p.id}">❦ ${esc(p.title)}</a></div>`).join("") || '<p class="muted">nothing collected yet</p>'}
+          ${mine ? `<form id="newpl" class="row" style="margin-top:8px"><input name="title" placeholder="regexes of the lost city" required><button class="primary">start a collection</button></form>` : ""}</div>
+      </div>
+      ${mine ? `<form id="theme" class="card"><h3>Your page</h3><p class="muted">Any HTML and CSS, pasted into your journal. It renders in a sandbox, so no scripts.</p>
+        <input name="bio" placeholder="a line about you" value="${esc(user.bio)}" style="width:100%;margin-bottom:8px">
+        <textarea name="theme_html" rows="6" style="width:100%" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
+        <button class="primary">save</button></form>` : ""}`;
+    const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
+    $("#newrepo")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api("/repos", { name: f.name.value, visibility: f.visibility.value }); location.hash = `#/r/${me()}/${f.name.value}`; });
+    $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
+    $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
+  },
+
+  async r(owner, repo) {
+    const r = await api(`/repos/${owner}/${repo}`);
+    app.innerHTML = `<div class="card"><div class="label">excavation · ${r.visibility === "private" ? "sealed" : "open to the public"}</div><h2><a href="#/u/${owner}">${esc(owner)}</a> / ${esc(repo)}</h2>
+      ${r.files.map((f) => `<div><a href="#/f/${owner}/${repo}/${encodeURIComponent(f)}">${esc(f)}</a></div>`).join("") || '<p class="muted">nothing unearthed yet</p>'}
+      <p class="muted">crew: ${r.collaborators.map(esc).join(", ") || "none"}</p></div>
+      ${r.canWrite ? `<form id="newfile" class="card"><h3>Unearth an artifact</h3><input name="path" placeholder="src/hello.ts" required style="width:100%;margin-bottom:8px"><textarea name="content" rows="6" style="width:100%"></textarea><button class="primary">catalogue it</button></form>` : ""}
+      ${owner === me() ? `<form id="collab" class="card row"><input name="name" placeholder="agent-linter" required><button>add to crew</button></form>` : ""}`;
+    $("#newfile")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api(`/repos/${owner}/${repo}/files`, { path: f.path.value, content: f.content.value }); location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(f.path.value)}`; });
+    $("#collab")?.addEventListener("submit", async (e) => { e.preventDefault(); await api(`/repos/${owner}/${repo}/collaborators`, { name: e.target.name.value }); route(); });
+  },
+
+  async f(owner, repo, path) {
+    const base = `/repos/${owner}/${repo}/do`, q = "?path=" + encodeURIComponent(path);
+    const [r, commits] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`${base}/commits${q}`)]);
+    let doc = await api(`${base}/file${q}`), viewing = null;
+    app.innerHTML = `<div class="card"><div class="label">artifact</div><h2><a href="#/r/${owner}/${repo}">${esc(owner)}/${esc(repo)}</a> / ${esc(path)}</h2>
+      <div class="row"><label>carbon date <input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"></label> <span id="revl"></span>
+      ${r.canWrite ? `<input id="msg" placeholder="field note"><button id="commit" class="primary">catalogue</button>` : ""}</div></div>
+      <div class="code card" id="lines"></div>
+      ${me() ? `<form id="track" class="card row">collect lines <input name="from" type="number" min="1" value="1" style="width:70px"> to <input name="to" type="number" min="1" value="3" style="width:70px"> to <select name="pl"></select> <input name="note" placeholder="why it belongs in a museum"><button>collect</button></form>` : ""}
+      <div class="card"><h3>Catalogue</h3><div id="commits"></div></div>`;
+    const draw = (d, fresh = new Set()) => {
+      const live = viewing === null;
+      $("#lines").innerHTML = d.lines.map((l, i) => `<div class="ln${fresh.has(l.id) ? " flash" : ""}" data-id="${l.id}"><span class="n">${i + 1}</span><span class="by" title="${esc(l.by)}">${esc(l.by)}</span><span class="rev">r${l.rev}</span><span class="t">${esc(l.text) || " "}</span></div>`).join("");
+      $("#revl").textContent = live ? `present day, r${doc.rev}` : `dated to r${viewing} of ${doc.rev}`;
+      if (live && r.canWrite) for (const el of app.querySelectorAll(".ln")) el.addEventListener("dblclick", () => edit(el));
+    };
+    const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c) => `<div class="entry"><span class="stamp">catalogued</span><code>${c.sha.slice(0, 10)}</code> r${c.rev} ${esc(c.message)} <span class="muted">by ${esc(c.by)}</span></div>`).join("") || '<p class="muted">not catalogued yet. The archive search only sees catalogued artifacts.</p>';
+    const edit = (el) => {
+      const line = doc.lines.find((l) => l.id === el.dataset.id);
+      const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}" title="Enter saves, Shift+Enter adds a line below, empty + Enter deletes">`;
+      const inp = $("input", t); inp.focus();
+      inp.addEventListener("keydown", async (e) => {
+        if (e.key === "Escape") return draw(doc);
+        if (e.key !== "Enter") return;
+        const ops = e.shiftKey ? [{ kind: "insert", after: line.id, text: "" }]
+          : inp.value === "" ? [{ kind: "delete", line: line.id, base: line.rev }]
+          : [{ kind: "set", line: line.id, base: line.rev, text: inp.value }];
+        try { await api(`${base}/ops${q}`, { ops }); } catch (err) { alertLine(el, err.message); }
+      });
+    };
+    const alertLine = (el, msg) => { $(".t", el).textContent = "conflict: " + msg + " (reloaded)"; setTimeout(() => draw(doc), 1500); };
+    draw(doc); drawCommits(commits);
+    $("#rev").addEventListener("input", async (e) => {
+      const v = Number(e.target.value);
+      viewing = v >= doc.rev ? null : v;
+      draw(viewing === null ? doc : await api(`${base}/at${q}&rev=${v}`));
+    });
+    $("#commit")?.addEventListener("click", async () => { await api(`${base}/commit${q}`, { message: $("#msg").value }); $("#msg").value = ""; });
+    if ($("#track")) {
+      const { playlists } = await api("/users/" + me());
+      $("#track select").innerHTML = playlists.map((p) => `<option value="${p.id}">${esc(p.title)}</option>`).join("") || "<option disabled>start a collection in your journal</option>";
+      $("#track").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target;
+        await api(`/playlists/${f.pl.value}/tracks`, { owner, repo, path, from: +f.from.value, to: +f.to.value, note: f.note.value }); location.hash = "#/p/" + f.pl.value; });
+    }
+    // Live: every op from every editor arrives here.
+    socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws${q}`);
+    socket.onmessage = async (m) => {
+      const msg = JSON.parse(m.data);
+      if (msg.type === "commit") return drawCommits(await api(`${base}/commits${q}`));
+      doc = await api(`${base}/file${q}`);
+      const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
+      if (viewing === null && !app.querySelector(".ln input")) draw(doc, new Set(msg.applied.map((a) => a.line)));
+    };
+  },
+
+  async p(id) {
+    const pl = await api("/playlists/" + id);
+    app.innerHTML = `<div class="card"><div class="label">collection</div><h2>${esc(pl.title)}</h2><p class="muted">assembled by <a href="#/u/${pl.owner}">@${esc(pl.owner)}</a></p></div>
+      ${pl.tracks.map((t, i) => `<div class="card"><div class="row"><b>${i + 1}.</b> <a href="#/f/${t.owner}/${t.repo}/${encodeURIComponent(t.path)}">${esc(t.owner)}/${esc(t.repo)}/${esc(t.path)}</a> <span class="muted">lines ${t.from_line}–${t.to_line}</span></div>
+        ${t.note ? `<p>${esc(t.note)}</p>` : ""}<div class="code">${t.lines.map((l) => `<div class="ln" style="grid-template-columns:124px 1fr"><span class="by">${esc(l.by)}</span><span>${esc(l.text) || " "}</span></div>`).join("")}</div></div>`).join("") || '<div class="card muted">The cases are empty. Open any artifact and collect a few lines.</div>'}`;
+  },
+
+  async search(q) {
+    q = decodeURIComponent(q || "");
+    $("#search").q.value = q;
+    const hits = await api("/search?q=" + encodeURIComponent(q));
+    app.innerHTML = `<div class="card"><div class="label">archive search</div><h2>“${esc(q)}”</h2>${hits.map((h) => `<div style="margin-bottom:10px"><a href="#/f/${h.owner}/${h.repo}/${encodeURIComponent(h.path)}">${esc(h.owner)}/${esc(h.repo)}/${esc(h.path)}</a>
+      <div class="code" style="padding:4px 8px">${esc(h.snippet).replace(/«/g, "<mark>").replace(/»/g, "</mark>")}</div></div>`).join("") || '<p class="muted">No record of it. The archive only holds catalogued artifacts.</p>'}</div>`;
+  },
+};
+
+async function route() {
+  socket?.close(); socket = null;
+  const [, view = "home", ...args] = location.hash.replace(/^#/, "").split("/");
+  try { await (views[view] ?? views.home)(...args.map((a, i) => view === "f" && i === 2 ? decodeURIComponent(args.slice(2).join("/")) : decodeURIComponent(a)).slice(0, view === "f" ? 3 : undefined)); }
+  catch (err) { app.innerHTML = `<div class="card">${esc(err.message)}</div>`; }
+}
+addEventListener("hashchange", route);
+header(); route();
+</script>
+</body>
+</html>
