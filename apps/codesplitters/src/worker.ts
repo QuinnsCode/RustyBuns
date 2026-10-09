@@ -5,14 +5,18 @@
 import { fromText } from "./lines.ts";
 import { fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
 import { code, json, NAME, type Env } from "./env.ts";
-import { identityRoutes, identify, isAdmin } from "./identity.ts";
+import { actingAs, identityRoutes, identify, isAdmin } from "./identity.ts";
 import { levelRoutes } from "./levels.ts";
 import { githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
+import { HARNESSES, type Harness } from "./harness.ts";
+import { localSandbox, runAgent } from "./agent-run.ts";
+import { containerSandbox } from "./sandbox.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
+export { AgentSandbox } from "./sandbox.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
@@ -28,7 +32,7 @@ const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws"
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
 const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
 
-export default {
+const app = {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -152,6 +156,30 @@ export default {
         await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
         return json({ ok: true });
       }
+      // POST /api/repos/:o/:r/agents {harness, path, task, as?, model?, commit?, retries?}
+      // A coding agent edits one file, as you or (the owner's call) as a collaborator. On
+      // Cloudflare it runs in a container (AGENT_SANDBOX); on the desktop, on this machine.
+      if (p[4] === "agents" && req.method === "POST") {
+        if (!a.write) return json({ error: "no write access" }, 403);
+        const o = await body<{ harness: Harness; path: string; task: string; as?: string; model?: string; commit?: string; retries?: number }>();
+        if (!HARNESSES.includes(o.harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
+        if (!o.path || !o.task) return json({ error: "path and task" }, 400);
+        const as = o.as ?? user!;
+        if (as !== user && (user !== owner || !(await access(env, owner, repo, as)).write)) return json({ error: "only the owner runs agents as a collaborator" }, 403);
+        const sandbox = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : typeof Bun !== "undefined" ? localSandbox() : null;
+        if (!sandbox) return json({ error: "no agent sandbox here: bind AGENT_SANDBOX" }, 501);
+        // The runner talks to this app like any client, as the agent.
+        const self = (who: string | null, path: string, init?: RequestInit) => {
+          const r = new Request(new URL(path, url).toString(), init);
+          if (who) actingAs.set(r, who);
+          return app.fetch(r, env);
+        };
+        try {
+          return json(await runAgent(self, { user: as, owner, repo, path: o.path, harness: o.harness, task: o.task, model: o.model, commit: o.commit, retries: o.retries, sandbox }));
+        } catch (e) {
+          return json({ error: (e as Error).message }, 502);
+        }
+      }
       // POST /api/repos/:o/:r/files {path, content, branch?}
       if (p[4] === "files" && req.method === "POST") {
         if (!a.write) return json({ error: "no write access" }, 403);
@@ -257,3 +285,4 @@ export default {
     return json({ error: "not found" }, 404);
   },
 };
+export default app;

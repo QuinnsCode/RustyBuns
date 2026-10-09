@@ -27,6 +27,13 @@ export interface Env {
   FILES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One game room per level or repo: its lobby and multiplayer relay. */
   GAMES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** Containers that run hosted coding agents (Cloudflare only; the desktop runs the CLIs itself). */
+  AGENT_SANDBOX?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** Logins for the agent CLIs in the sandbox (see sandbox.ts). */
+  ANTHROPIC_API_KEY?: string;
+  CLAUDE_CODE_OAUTH_TOKEN?: string;
+  OPENAI_API_KEY?: string;
+  CODEX_API_KEY?: string;
   /** Cloudflare Artifacts (a bare-repo twin on the desktop). Optional: without it, nothing is pushed. */
   ARTIFACTS?: Artifacts;
   /** Handles allowed to import levels when accounts are on (comma separated). */

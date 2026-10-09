@@ -53,6 +53,8 @@ bun agent.ts --harness claude --url http://127.0.0.1:PORT --cookie 'rb_token_POR
   --as agent-claude --repo owner/name --path src/app.ts --task "add a doc line to every function"
 ```
 
+On Cloudflare there is no CLI and no filesystem, so the app runs the agent itself, in a container: `POST /api/repos/:o/:r/agents {harness, path, task, as?, model?, commit?, retries?}`, or `bun agent.ts ... --hosted`. Each run starts its own container (`sandbox/Dockerfile`: every CLI plus a small server), hands it the file, and stops it when the agent is done, so nothing bills while idle; `AGENT_SANDBOX` caps it at two at once on the `basic` size. The CLIs log in with whichever secrets are set: `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`), `OPENAI_API_KEY`, `CODEX_API_KEY`. Containers need the Workers Paid plan. You run an agent as yourself, and the owner can run one as a collaborator. On the desktop the same route runs the CLI on the machine.
+
 ## Layout
 
 | File | What |
@@ -70,6 +72,8 @@ bun agent.ts --harness claude --url http://127.0.0.1:PORT --cookie 'rb_token_POR
 | `migrations/` | the D1 schema |
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
 | `src/harness.ts` | the coding-agent CLIs and the prompt each one gets |
-| `src/agent-run.ts` | runs an agent on a file: snapshot, edit, diff, post, re-run on conflicts |
+| `src/agent-run.ts` | runs an agent on a file: snapshot, edit in a sandbox, diff, post, re-run on conflicts |
+| `src/sandbox.ts` | the container Durable Object hosted agents run in |
+| `sandbox/` | the container image: the CLIs, and the server that runs one on one file |
 | `agents.ts` | the three-agent demo |
 | `agent.ts` | one real coding agent on one file |

@@ -299,6 +299,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
         bind.push(`  ${name}: local.artifacts(${JSON.stringify(b.namespace)}),`);
         artifacts.push(name);
         break;
+      case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;
       case "durable_object":
         if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);
         else dos.push({ name, className: b.className });
