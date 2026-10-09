@@ -387,3 +387,25 @@ test("artifacts: wrangler, alchemy and the desktop host all get the binding", ()
   expect(host).toContain(`open: { "/__rb/git/": (req: Request) => gitHttp(req, [env.ARTIFACTS as any]) },`);
   expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
 });
+
+test("desktopCrates: only crates that would be embedded count against cross targets", async () => {
+  const { desktopCrates } = await import("../src/build.ts");
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");
+  const { tmpdir } = require("node:os");
+  const dir = mkdtempSync(tmpdir() + "/rb-crates-");
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    expect(desktopCrates()).toEqual([]);                      // no native/
+    mkdirSync("native/crates/fluid", { recursive: true });
+    writeFileSync("native/Cargo.toml", "[workspace]\n");
+    expect(desktopCrates()).toEqual([]);                      // wasm-only: nothing built
+    expect(desktopCrates(["fluid"])).toEqual(["fluid"]);      // named: it must ship
+    mkdirSync("native/dist/fluid/darwin-arm64", { recursive: true });
+    expect(desktopCrates()).toEqual(["fluid"]);               // built cdylib
+    expect(desktopCrates(false)).toEqual([]);                 // opted out
+  } finally {
+    process.chdir(cwd);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

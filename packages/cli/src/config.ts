@@ -54,9 +54,10 @@ export interface DesktopTarget {
    * Which crates from native/dist/<name>/<os-arch>/ to embed (default: every
    * built crate). Each is built by native/build.ts; only the target OS's library
    * goes into each binary, where loadNative() finds it. A named crate that was
-   * never built is an error.
+   * never built is an error. false leaves native/ out of the binary entirely
+   * (e.g. its crates only build to wasm), so cross targets need no native build.
    */
-  native?: string[];
+  native?: string[] | false;
   /** spa: path the client's WorldSocket connects to. */
   worldPath?: string;
   /** spa: headers the host vouches at upgrade, like your CF middleware would. */

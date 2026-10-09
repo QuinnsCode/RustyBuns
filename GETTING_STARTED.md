@@ -37,7 +37,7 @@ When it looks right, build the real thing:
 pnpm exec rustybuns build desktop       # dist/<name>-<os>-<arch>
 ```
 
-`targets: "all"` in the config cross-compiles macOS, Linux and Windows from one machine, as long as there's no Rust in the build.
+`targets: "all"` in the config cross-compiles macOS, Linux and Windows from one machine, as long as there's no Rust cdylib in the build (wasm-only crates are fine; see `desktop.native` in REFERENCE.md).
 
 ## 3. Cloudflare
 

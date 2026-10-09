@@ -142,9 +142,10 @@ export async function buildRailway(c: RustyBunsConfig): Promise<string> {
   }
   // Rust crates travel as source; the image's first stage builds them for Linux.
   let native: RailwayNative | undefined;
-  if (existsSync("native/Cargo.toml")) {
+  const wantNative = c.targets.desktop?.native;
+  if (wantNative !== false && existsSync("native/Cargo.toml")) {
     const all = existsSync("native/crates") ? (await readdir("native/crates", { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name) : [];
-    const want = c.targets.desktop?.native?.length ? c.targets.desktop.native : all;
+    const want = wantNative?.length ? wantNative : all;
     const missing = want.filter((n) => !all.includes(n));
     if (missing.length) throw new Error(`desktop.native names crates that are not in native/crates: ${missing.join(", ")}`);
     if (want.length) {

@@ -6,7 +6,7 @@
 
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
-import { existsSync, statSync, readFileSync } from "node:fs";
+import { existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname, normalize } from "node:path";
 import type { DesktopOs, RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
@@ -440,11 +440,14 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     : d.targets === "all" ? ALL_OS
     : d.targets ?? [hostTag];
 
-  const hasRust = await Bun.file("native/Cargo.toml").exists();
+  // desktop.native: false keeps native/ out of the binary (a wasm-only crate, say).
+  const hasRust = d.native !== false && await Bun.file("native/Cargo.toml").exists();
+  const only = d.native || undefined;
   // cdylibs do not cross-compile, but Linux ones build in Docker on any machine.
+  // Elsewhere, refuse only when a crate would be embedded: named, or built in native/dist.
   const cross = hasRust ? targets.filter((t) => t !== hostTag) : [];
   const linuxCross = cross.filter((t) => t.startsWith("linux-"));
-  const otherCross = cross.filter((t) => !t.startsWith("linux-"));
+  const otherCross = desktopCrates(d.native).length ? cross.filter((t) => !t.startsWith("linux-")) : [];
   if (otherCross.length) {
     throw new Error(`native/ has Rust crates: cdylibs do not cross-compile. Build ${otherCross.join(", ")} on their own OS (CI matrix), or pass --target ${hostTag}.`);
   }
@@ -498,9 +501,9 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   const outs: string[] = [];
   // desktop.native names the crates to embed (all built crates when unset);
   // a named crate that was never built is an error, not a silent TS fallback.
-  for (const t of linuxCross) await step(`native ${t} (docker)`, () => buildLinuxNative(t, d.native));
-  if (d.native?.length) nativeDirs(d.native);
-  const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, d.native)) : [];
+  for (const t of linuxCross) await step(`native ${t} (docker)`, () => buildLinuxNative(t, only));
+  if (only?.length) nativeDirs(only);
+  const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, only)) : [];
   const { migrationDirs, mountDirs: projectMounts } = embeddedDirs(c);
   const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : [])];
   // Embedded dirs are keyed by basename, so two mounts named the same collide.
@@ -570,6 +573,18 @@ export async function buildLinuxNative(target: DesktopOs, only?: string[]): Prom
     await mkdir(out, { recursive: true });
     await copyFile(join(targetDir, "release", `lib${c}.so`), join(out, `lib${c}.so`));
   }
+}
+
+/**
+ * The crates a desktop binary would embed: desktop.native when it names some,
+ * else every crate already built into native/dist. None without native/Cargo.toml,
+ * or with desktop.native: false.
+ */
+export function desktopCrates(native?: string[] | false): string[] {
+  if (native === false || !existsSync("native/Cargo.toml")) return [];
+  if (native?.length) return native;
+  if (!existsSync("native/dist")) return [];
+  return readdirSync("native/dist", { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
 }
 
 /** native/dist/<crate> for each embedded crate; loadNative() finds them at /$bunfs/root/<crate>/<os-arch>/. */
