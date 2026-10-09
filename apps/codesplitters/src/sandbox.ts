@@ -10,6 +10,15 @@ import { json, type Env } from "./env.ts";
 /** The CLIs' logins, passed into the container from the Worker's secrets when set. */
 export const LOGINS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"] as const;
 
+/** The logins each CLI may see. An agent can read its own env, so a run only gets its harness's keys. */
+const KEYS: Record<string, readonly (typeof LOGINS)[number][]> = {
+  claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+  codex: ["OPENAI_API_KEY", "CODEX_API_KEY"],
+  // pi and opencode take a provider/model, so they may need either provider's key.
+  pi: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
+  opencode: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
+};
+
 /** The slice of the Workers container API we use (`ctx.container` on a container-backed DO). */
 export interface ContainerApi {
   readonly running: boolean;
@@ -29,7 +38,9 @@ export class AgentSandbox {
     const body = await req.text();
     if (!c.running) {
       const env: Record<string, string> = {};
-      for (const k of LOGINS) if (this.env[k]) env[k] = this.env[k]!;
+      let bin = "";
+      try { bin = String(JSON.parse(body)?.cmd?.bin ?? ""); } catch {}
+      for (const k of KEYS[bin] ?? []) if (this.env[k]) env[k] = this.env[k]!;
       c.start({ env, enableInternet: true });
     }
     try {

@@ -5,8 +5,23 @@ export interface Listing { dir: string; name: string; files: string[]; boards: s
 export interface Status { native: boolean; platform: string; project: Listing | null; recent: string[]; home: string }
 export interface Timed { engine: string; ms: number; result: Analysis }
 
+// The host only answers file routes with this key, which it hands to a hidden
+// iframe and never to the board's worker (see /api/page-key in desktop/host.ts).
+const pageKey = new Promise<string>((ok) => {
+  const frame = document.createElement("iframe");
+  frame.hidden = true;
+  frame.src = "/api/page-key";
+  addEventListener("message", function got(e) {
+    if (e.origin !== location.origin || e.source !== frame.contentWindow || typeof e.data?.rbPageKey !== "string") return;
+    removeEventListener("message", got);
+    frame.remove();
+    ok(e.data.rbPageKey);
+  });
+  document.documentElement.append(frame);
+});
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(path, init);
+  const r = await fetch(path, { ...init, headers: { ...(init?.headers as Record<string, string>), "x-page-key": await pageKey } });
   const body = await r.json().catch(() => ({ error: `${r.status} ${r.statusText}` }));
   if (!r.ok) throw new Error(body.error ?? `${r.status}`);
   return body as T;

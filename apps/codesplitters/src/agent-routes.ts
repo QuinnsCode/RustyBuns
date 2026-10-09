@@ -15,7 +15,7 @@
 //   GET  /api/repos/:o/:r/agents?path=                   this file's runs, newest first
 
 import { json, type Env } from "./env.ts";
-import { accountsOn, actingAs } from "./identity.ts";
+import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, runAgent, type Conflict, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
@@ -68,6 +68,9 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (req.method !== "POST") return null;
   if (user !== owner) return json({ error: "only the repo's owner can start a coding agent" }, 403);
+  // Hosted runs bill the site's own API keys, and anyone can sign up and own a
+  // repo, so only the handles in ADMINS may start one.
+  if (env.AGENT_SANDBOX && !(env.ADMINS && isAdmin(env, user))) return json({ error: "hosted agents are limited to this site's admins (ADMINS)" }, 403);
   const why = unavailable(env);
   if (why) return json({ error: why }, 501);
   const { path, harness, task, model } = (await req.json()) as { path?: string; harness?: Harness; task?: string; model?: string };

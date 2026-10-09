@@ -257,6 +257,7 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).toContain("const guest = true;");
   expect(box).toContain("const id = boxIdentity(url);");
   expect(box).toContain('if (url.pathname === "/__rb/host") return reject(404, "not_on_box");');
+  expect(box).toContain('if (url.pathname === "/__rb/action") return reject(404, "not_on_box");');
   expect(box).not.toContain("version_mismatch");
   expect(box).toContain('if (url.pathname === "/__rb/info") return reject(404, "not_on_box");');
   expect(box).toContain("WORLD.idFromName(room)");
