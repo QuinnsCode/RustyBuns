@@ -16,6 +16,14 @@ describe("lines", () => {
     expect(text(doc)).toBe("top\na\nB\nc");
   });
 
+  test("ifRev pins a batch to the whole file", () => {
+    const doc = empty();
+    apply(doc, fromText("a\nb"), "me");
+    apply(doc, [{ kind: "set", line: "L2", base: 2, text: "B" }], "x");
+    expect(apply(doc, [{ kind: "set", line: "L1", base: 1, text: "A" }], "y", 0, 2).ok).toBe(false);
+    expect(apply(doc, [{ kind: "set", line: "L1", base: 1, text: "A" }], "y", 0, 3).ok).toBe(true);
+  });
+
   test("a stale base is a conflict and the batch is all-or-nothing", () => {
     const doc = empty();
     apply(doc, fromText("a\nb"), "me");
@@ -72,12 +80,20 @@ describe("app", () => {
     expect((await post(call, "bo", `/api/playlists/${pl.id}/tracks`, { owner: "ana", repo: "r", path: "a.js", from: 2, to: 3, note: "nice" })).status).toBe(201);
     const got = await (await call(null, `/api/playlists/${pl.id}`)).json() as any;
     expect(got.tracks[0].lines.map((l: any) => l.text)).toEqual(["2", "3"]);
+    // Two lines land above it: the track follows its lines, not the numbers.
+    await post(call, "ana", "/api/repos/ana/r/do/ops?path=a.js", { ops: [{ kind: "insert", after: null, text: "new" }, { kind: "insert", after: null, text: "newer" }] });
+    const moved = await (await call(null, `/api/playlists/${pl.id}`)).json() as any;
+    expect(moved.tracks[0].lines.map((l: any) => l.text)).toEqual(["2", "3"]);
+    expect([moved.tracks[0].from_line, moved.tracks[0].to_line]).toEqual([4, 5]);
   });
 
   test("three agents editing one file at once converge, and the commit indexes it", async () => {
     const { doc, stats, commit } = await run(await local(), { log: () => {} });
     const t = doc.lines.map((l: any) => l.text).join("\n");
     expect(t).not.toMatch(/\bfoo\b|^var /m);
+    // The linter's const-or-let needs the whole file to hold still (ifRev), so it's right.
+    expect(t).toContain("let total = 0");
+    expect(t).toContain('const label = "sum is"');
     expect(t.match(/^\/\*\*/gm)).toHaveLength(3);
     expect(commit.rev).toBe(doc.rev);
     expect(Object.values(stats).every((s) => s.edits > 0)).toBe(true);

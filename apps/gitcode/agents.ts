@@ -25,15 +25,20 @@ function show() {
   console.log(label, foo)
 }`;
 
-interface Agent { name: string; pick(lines: Line[]): { line: Line; op: Op } | null }
+interface Agent { name: string; whole?: boolean; pick(lines: Line[]): { line: Line; op: Op } | null }
 
 const agents: Agent[] = [
-  { // var -> let. (Picking const needs the whole file to hold still, and other
-    // agents are renaming it underneath us: line locks don't cover that.)
+  { // var -> const, or let if the name is ever reassigned. That answer depends on
+    // every line, so the edit is pinned to the whole file (ifRev): if another
+    // agent changed anything since we read it, we re-read and decide again.
     name: "agent-linter",
+    whole: true,
     pick: (lines) => {
       const line = lines.find((l) => l.text.startsWith("var "));
-      return line ? { line, op: { kind: "set", line: line.id, base: line.rev, text: line.text.replace(/^var /, "let ") } } : null;
+      if (!line) return null;
+      const v = line.text.split(" ")[1]!;
+      const kw = lines.some((l) => new RegExp(`^\\s*${v} =`).test(l.text)) ? "let" : "const";
+      return { line, op: { kind: "set", line: line.id, base: line.rev, text: line.text.replace(/^var /, kw + " ") } };
     },
   },
   { // foo is a bad name
@@ -76,8 +81,8 @@ export async function run(call: Call, opts: { owner?: string; repo?: string; del
       const move = a.pick(doc.lines);
       if (!move) return;
       await sleep(Math.random() * (opts.delay ?? 5)); // think
-      const res = await call(a.name, `${file}/ops${q}`, { method: "POST", body: JSON.stringify({ ops: [move.op] }) });
-      if (res.status === 409) { stats[a.name]!.conflicts++; log(`  ${a.name}: conflict on ${move.line.id}, re-reading`); continue; }
+      const res = await call(a.name, `${file}/ops${q}`, { method: "POST", body: JSON.stringify({ ops: [move.op], ifRev: a.whole ? doc.rev : undefined }) });
+      if (res.status === 409) { stats[a.name]!.conflicts++; log(`  ${a.name}: conflict on ${a.whole ? "the file" : move.line.id}, re-reading`); continue; }
       if (!res.ok) throw new Error(`${a.name}: ${res.status} ${await res.text()}`);
       stats[a.name]!.edits++;
       log(`  ${a.name}: ${move.op.kind} ${move.line.id}`);

@@ -2,11 +2,11 @@
 
 > **What it proves:** a code host where every file is a Durable Object runs unchanged on a laptop, with sqlite standing in for D1 and for each file's storage. Several agents can edit one file at once, line by line. Proof of concept.
 
-- **A file is a Durable Object.** It is the only writer for that file, so every edit from every agent lands in one order. Ops name lines by stable id, not index, so agents editing different lines never collide. Editing the same line is optimistic: an op carries the line's rev, and a stale one gets a 409 the agent retries.
+- **A file is a Durable Object.** It is the only writer for that file, so every edit from every agent lands in one order. Ops name lines by stable id, not index, so agents editing different lines never collide. Editing the same line is optimistic: an op carries the line's rev, and a stale one gets a 409 the agent retries. An edit that depends on other lines (is this variable ever reassigned?) sends `ifRev` and only lands if the whole file hasn't moved since it was read.
 - **Every line knows who wrote it and when.** The op log replays the file at any rev: blame and time travel come free.
 - **Cataloguing** (a commit) hashes the file with its parent, indexes it for search (D1 FTS5) and **pushes the repo to Cloudflare Artifacts** as a real git commit. Artifacts only takes writes as a git push, so `src/git.ts` builds the objects and the pack itself (Web Crypto and `CompressionStream`, no git library) and speaks smart HTTP. The repo page has a `git clone` line with an hour-long read token.
 - **Public or private repos.** A private repo you can't see answers 404, in search too.
-- **Your profile is your own HTML and CSS** (sandboxed, no scripts), plus **playlists**: line ranges from any file you can see, read live.
+- **Your profile is your own HTML and CSS** (sandboxed, no scripts), plus **playlists**: line ranges from any file you can see, read live. A track holds its lines by id, so it follows them as the file changes around them.
 
 Identity is a name in a cookie. That is not auth.
 

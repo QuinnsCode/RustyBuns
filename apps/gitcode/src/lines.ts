@@ -5,6 +5,8 @@
 // Ops name lines by id, never by index, so two agents editing different lines
 // never collide. Editing the same line is optimistic: `set` and `delete` carry
 // the line's `base` rev, and a stale base is a conflict the caller retries.
+// An edit that depends on other lines too (a rename, "is this ever
+// reassigned?") passes `ifRev`: the whole file must still be at that rev.
 
 export interface Line { id: string; text: string; by: string; rev: number }
 
@@ -22,7 +24,8 @@ export type Result = { ok: true; applied: Applied[] } | { ok: false; conflicts: 
 export const empty = (): Doc => ({ rev: 0, nextId: 1, lines: [] });
 
 /** Apply a batch all-or-nothing. On success `doc` is mutated; on conflict it is untouched. */
-export function apply(doc: Doc, ops: Op[], by: string, at = Date.now()): Result {
+export function apply(doc: Doc, ops: Op[], by: string, at = Date.now(), ifRev?: number): Result {
+  if (ifRev !== undefined && ifRev !== doc.rev) return { ok: false, conflicts: [{ index: -1, reason: `file is at rev ${doc.rev}, not ${ifRev}` }] };
   const draft: Doc = { rev: doc.rev, nextId: doc.nextId, lines: doc.lines.map((l) => ({ ...l })) };
   const applied: Applied[] = [];
   const conflicts: { index: number; reason: string }[] = [];
