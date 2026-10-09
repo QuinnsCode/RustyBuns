@@ -1,7 +1,7 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
 export default defineConfig({
-  name: "gitcode",
+  name: "codesplitters",
   worker: {
     main: "src/worker.ts",
     builtMain: "dist/worker/worker.js",
@@ -12,11 +12,11 @@ export default defineConfig({
   },
   bindings: {
     // Profiles, repos, playlists and the search index.
-    DB: { type: "d1", databaseName: "gitcode-db", migrationsDir: "migrations" },
+    DB: { type: "d1", databaseName: "codesplitters-db", migrationsDir: "migrations" },
     // One Durable Object per file.
     FILES: { type: "durable_object", className: "FileDurableObject" },
     // One git repo per excavation; cataloguing pushes to it.
-    ARTIFACTS: { type: "artifacts", namespace: "gitcode" },
+    ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
   },
   targets: {
     edge: { provider: "cloudflare" },

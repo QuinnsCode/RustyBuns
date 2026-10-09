@@ -105,7 +105,7 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
     const objs: Obj[] = [];
     const tree = await trees(snap.files, objs);
     const when = `${Math.floor((snap.at ?? Date.now()) / 1000)} +0000`;
-    const who = `${snap.author} <${snap.author}@gitcode.local> ${when}`;
+    const who = `${snap.author} <${snap.author}@codesplitters.local> ${when}`;
     const commit = await obj("commit", enc.encode(
       `tree ${tree.id}\n${old !== ZERO ? `parent ${old}\n` : ""}author ${who}\ncommitter ${who}\n\n${snap.message}\n`));
     objs.push(commit);

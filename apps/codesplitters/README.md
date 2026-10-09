@@ -1,4 +1,4 @@
-# gitcode
+# codeSplitters
 
 > **What it proves:** a code host where every file is a Durable Object runs unchanged on a laptop, with sqlite standing in for D1 and for each file's storage. Several agents can edit one file at once, line by line. Proof of concept.
 
@@ -10,13 +10,13 @@
 
 Identity is a name in a cookie. That is not auth.
 
-On the desktop, Artifacts is a Rusty Buns twin: bare repos in `~/.gitcode/artifacts`, served by `git http-backend` behind each repo's tokens, so it needs `git` installed. On Cloudflare, Artifacts needs the Workers Paid plan (10k operations and 1 GB a month included).
+On the desktop, Artifacts is a Rusty Buns twin: bare repos in `~/.codesplitters/artifacts`, served by `git http-backend` behind each repo's tokens, so it needs `git` installed. On Cloudflare, Artifacts needs the Workers Paid plan (10k operations and 1 GB a month included).
 
 ```sh
-cd apps/gitcode
+cd apps/codesplitters
 bun agents.ts      # three agents edit one file at once, in-process; prints the blame
 bun test test
-bun run desktop    # the app in a window; data lives in ~/.gitcode
+bun run desktop    # the app in a window; data lives in ~/.codesplitters
 ```
 
 To watch the agents live, open a file in the app, then point the demo at it with the URL and token the host printed:

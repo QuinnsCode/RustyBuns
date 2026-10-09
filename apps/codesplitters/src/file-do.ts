@@ -31,7 +31,7 @@ export class FileDurableObject {
 
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
-    const by = req.headers.get("x-gitcode-user") ?? "anon";
+    const by = req.headers.get("x-codesplitters-user") ?? "anon";
     const route = url.pathname.split("/").pop();
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {

@@ -3,92 +3,89 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>gitcode archive</title>
+<title>codeSplitters</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=IM+Fell+English+SC&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500&family=Geist+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
-  /* Typewriter noir: a dark archive at night, artifacts on parchment under a desk lamp. */
+  /* 70 / 20 / 10: whitish founding-document paper, iron-gall ink, one oxblood accent. */
   :root {
-    --night: #0e0b08; --night2: #1a140e; --lamp: #f3d9a4; --smoke: #8a7a62;
-    --paper: #eadcb8; --paper-dark: #cdb88a; --ink: #2a1c0f; --pencil: #7d6a4c;
-    --stamp: #9b2318; --brass: #b8924f;
-    --type: "Special Elite", "Courier Prime", "Courier New", monospace;
-    --title: "IM Fell English SC", Georgia, serif;
+    --paper: #f7f3e8;      /* 70: the page */
+    --paper-2: #fbf9f2;    /* a lighter sheet for panels */
+    --ink: #2b2620;        /* 20: text */
+    --ink-2: #6f665a;      /* secondary text */
+    --rule: #e3dac6;       /* hairlines */
+    --accent: #8c2f22;     /* 10: links, primary actions, the stamp */
+    --sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   * { box-sizing: border-box; }
+  html { background: var(--paper); }
   body {
-    margin: 0; color: var(--lamp); font: 15px/1.6 var(--type);
+    margin: 0; color: var(--ink); font: 300 15px/1.6 var(--sans); letter-spacing: -0.005em;
+    -webkit-font-smoothing: antialiased;
+    /* The paper: a faint uneven tone and a very light grain. */
     background:
-      radial-gradient(ellipse 70% 55% at 50% 0%, rgba(243, 217, 164, .13), transparent 70%),
-      radial-gradient(ellipse at 50% 120%, #000 10%, transparent 60%),
-      var(--night);
+      radial-gradient(ellipse 80% 60% at 15% 10%, rgba(214, 196, 150, .14), transparent 70%),
+      radial-gradient(ellipse 70% 50% at 90% 85%, rgba(200, 178, 130, .12), transparent 70%),
+      var(--paper);
     min-height: 100vh;
   }
-  /* Film grain over everything. */
-  body::after { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .09; mix-blend-mode: overlay;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
-  header { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid #3a2c1c; box-shadow: 0 1px 0 #000; }
-  header h1 { margin: 0; font: 26px/1 var(--title); letter-spacing: .08em; }
-  header h1 a { color: var(--lamp); text-decoration: none; }
-  header h1 small { display: block; font: 11px/1.4 var(--type); letter-spacing: .25em; color: var(--smoke); text-transform: uppercase; }
-  main { max-width: 960px; margin: 0 auto; padding: 22px 16px 60px; }
-  a { color: var(--stamp); text-decoration-style: dotted; }
-  header a, #who a { color: var(--brass); }
-  input, select, textarea, button { font: inherit; color: var(--ink); background: #f6edd6; border: 1px solid var(--pencil); border-radius: 2px; padding: 4px 8px; }
-  header input { background: var(--night2); color: var(--lamp); border-color: #4a3a26; }
-  button { cursor: pointer; text-transform: uppercase; letter-spacing: .1em; font-size: 13px; }
-  button.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-  header button.primary { background: var(--brass); color: var(--night); border-color: var(--brass); }
+  body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1; opacity: .35; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .55  0 0 0 0 .47  0 0 0 0 .33  0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
 
-  /* A card is a scroll: aged paper with rolled ends. */
-  .card {
-    position: relative; color: var(--ink); margin: 0 0 30px; padding: 20px 24px;
-    background:
-      radial-gradient(circle at 18% 22%, rgba(140, 95, 40, .16), transparent 28%),
-      radial-gradient(circle at 85% 70%, rgba(120, 80, 30, .14), transparent 32%),
-      radial-gradient(ellipse at center, transparent 55%, rgba(110, 70, 25, .35) 100%),
-      var(--paper);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, .6), inset 0 0 40px rgba(90, 55, 20, .25);
-  }
-  .card::before, .card::after { content: ""; position: absolute; left: -8px; right: -8px; height: 14px; border-radius: 7px;
-    background: linear-gradient(to bottom, #a88a55, #ead9b0 40%, #b8996a 75%, #6f5631); box-shadow: 0 3px 6px rgba(0, 0, 0, .5); }
-  .card::before { top: -7px; } .card::after { bottom: -7px; }
-  .card h2, .card h3 { font-family: var(--title); font-weight: normal; letter-spacing: .04em; margin: 0 0 8px; }
-  .card h2 { font-size: 26px; } .card h3 { font-size: 20px; border-bottom: 1px dashed var(--pencil); padding-bottom: 4px; }
-  .muted { color: var(--pencil); } .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .label { font-size: 11px; letter-spacing: .3em; text-transform: uppercase; color: var(--pencil); }
+  header { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 14px 24px; border-bottom: 1px solid var(--rule); }
+  header h1 { margin: 0; font: 500 17px/1 var(--sans); letter-spacing: -0.02em; }
+  header h1 a { color: var(--ink); text-decoration: none; }
+  header h1 small { display: inline; margin-left: 10px; font-weight: 300; font-size: 13px; letter-spacing: 0; color: var(--ink-2); }
+  main { max-width: 920px; margin: 0 auto; padding: 32px 24px 80px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 
-  /* The artifact itself. */
-  .code { font: 14px/1.75 var(--type); padding: 18px 10px; }
-  .ln { display: grid; grid-template-columns: 34px 124px 50px 1fr; gap: 8px; padding: 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .ln:hover { background: rgba(155, 35, 24, .07); }
-  .ln .n, .ln .by, .ln .rev { color: var(--pencil); user-select: none; overflow: hidden; text-overflow: ellipsis; font-size: 12px; font-style: italic; }
-  .ln .by::before { content: "✎ "; opacity: .6; }
-  /* A fresh line is typed in, then the ink settles. */
-  .ln.flash { animation: ink 1.6s ease-out; } .ln.flash .t { animation: type .7s steps(28, end); }
-  @keyframes ink { from { background: rgba(155, 35, 24, .22); } }
+  input, select, textarea, button { font: 400 14px/1.4 var(--sans); color: var(--ink); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ink-2); }
+  textarea { font-family: var(--mono); font-size: 13px; }
+  button { cursor: pointer; font-weight: 400; }
+  button:hover { border-color: var(--ink-2); }
+  button.primary { background: var(--ink); color: var(--paper-2); border-color: var(--ink); }
+  button.primary:hover { background: var(--accent); border-color: var(--accent); }
+
+  .card { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 20px 22px; margin: 0 0 20px; }
+  .card h2, .card h3 { font-weight: 400; letter-spacing: -0.02em; margin: 0 0 10px; }
+  .card h2 { font-size: 24px; } .card h3 { font-size: 16px; font-weight: 500; }
+  .muted { color: var(--ink-2); } .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .label { font: 400 11px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 4px; }
+  code { font-family: var(--mono); font-size: .92em; }
+
+  /* The artifact: plain mono on a lighter sheet, blame in the margin. */
+  .code { font: 300 13px/1.8 var(--mono); padding: 14px 6px; }
+  .ln { display: grid; grid-template-columns: 30px 120px 44px 1fr; gap: 10px; padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 3px; }
+  .ln:hover { background: rgba(43, 38, 32, .035); }
+  .ln .n, .ln .by, .ln .rev { color: var(--ink-2); opacity: .75; user-select: none; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .ln .n { text-align: right; }
+  /* A fresh line from another hand: a brief accent wash in the margin. */
+  .ln.flash { animation: ink 1.4s ease-out; } .ln.flash .t { animation: type .6s steps(28, end); }
+  @keyframes ink { from { background: rgba(140, 47, 34, .1); } }
   @keyframes type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
-  .ln input { width: 100%; padding: 0 4px; font: inherit; background: #fff8e6; }
-  mark { background: rgba(155, 35, 24, .22); color: inherit; padding: 0 2px; }
+  .ln input { width: 100%; padding: 0 6px; font: inherit; }
+  mark { background: rgba(140, 47, 34, .12); color: inherit; padding: 0 2px; border-radius: 2px; }
 
-  /* Rubber stamp on catalogued commits. */
-  .stamp { display: inline-block; transform: rotate(-4deg); border: 2px solid var(--stamp); color: var(--stamp); padding: 0 6px; margin-right: 6px;
-    font-size: 11px; letter-spacing: .2em; opacity: .85; border-radius: 3px; }
-  .entry { padding: 4px 0; border-bottom: 1px dotted var(--paper-dark); }
-  input[type=range] { accent-color: var(--stamp); }
+  .stamp { display: inline-block; border: 1px solid var(--accent); color: var(--accent); padding: 0 6px; margin-right: 8px;
+    font: 400 10px/1.7 var(--mono); letter-spacing: .1em; text-transform: uppercase; border-radius: 3px; }
+  .entry { padding: 6px 0; border-bottom: 1px solid var(--rule); } .entry:last-child { border-bottom: 0; }
+  input[type=range] { accent-color: var(--accent); padding: 0; background: none; border: 0; }
 
-  /* A profile page is a photograph taped into the field journal. */
-  .photo { padding: 10px 10px 34px; background: #f4ecdc; box-shadow: 0 10px 25px rgba(0, 0, 0, .6); transform: rotate(-.6deg); margin: 0 0 30px; position: relative; }
-  .photo::before { content: ""; position: absolute; top: -10px; left: 42%; width: 90px; height: 22px; background: rgba(230, 215, 170, .75); transform: rotate(3deg); }
-  .photo iframe { width: 100%; height: 220px; border: 0; background: #fff; filter: sepia(.25) contrast(1.05); display: block; }
-  .photo figcaption { position: absolute; bottom: 8px; left: 14px; color: var(--ink); font-size: 13px; }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
-  @media (max-width: 700px) { .two { grid-template-columns: 1fr; } .ln { grid-template-columns: 26px 80px 1fr; } .ln .rev { display: none; } }
+  /* Someone's own page, mounted plainly. */
+  .photo { margin: 0 0 20px; padding: 8px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; }
+  .photo iframe { width: 100%; height: 220px; border: 0; border-radius: 4px; background: #fff; display: block; }
+  .photo figcaption { padding: 8px 4px 0; font-size: 12px; color: var(--ink-2); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; } .two .card { margin: 0; }
+  @media (max-width: 700px) { main { padding: 20px 16px 60px; } header { padding: 12px 16px; } .two { grid-template-columns: 1fr; } .ln { grid-template-columns: 24px 76px 1fr; } .ln .rev { display: none; } }
 </style>
 </head>
 <body>
 <header>
-  <h1><a href="#/">gitcode<small>archive of unearthed code</small></a></h1>
+  <h1><a href="#/">codeSplitters<small>an archive of code</small></a></h1>
   <form id="search" class="row"><input name="q" placeholder="search the archive" size="24"></form>
   <span style="flex:1"></span>
   <span id="who"></span>
@@ -97,7 +94,7 @@
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const me = () => (/(?:^|;\s*)gc_user=([a-z0-9-]+)/.exec(document.cookie) || [])[1];
+const me = () => (/(?:^|;\s*)cs_user=([a-z0-9-]+)/.exec(document.cookie) || [])[1];
 const api = async (path, body, method) => {
   const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
   const j = await r.json().catch(() => ({}));
@@ -113,7 +110,7 @@ function header() {
     ? `<a href="#/u/${u}">@${u}</a> <button id="out">leave</button>`
     : `<form id="login" class="row"><input name="name" placeholder="your alias" required pattern="[a-z0-9][a-z0-9-]*"><button class="primary">sign in</button></form>`;
   $("#login")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/login", { name: e.target.name.value }); header(); route(); });
-  $("#out")?.addEventListener("click", () => { document.cookie = "gc_user=; Path=/; Max-Age=0"; header(); route(); });
+  $("#out")?.addEventListener("click", () => { document.cookie = "cs_user=; Path=/; Max-Age=0"; header(); route(); });
 }
 $("#search").addEventListener("submit", (e) => { e.preventDefault(); location.hash = "#/search/" + encodeURIComponent(e.target.q.value); });
 
@@ -124,7 +121,7 @@ const views = {
       and carbon dating takes you back to any moment in its past. Several agents can dig at one artifact at once.</p>
       <p>Your page is yours to decorate, the old way: your own HTML and CSS. Keep collections of the finest lines you find.</p>
       ${me() ? `<p><a href="#/u/${me()}">Open your field journal</a> to start an excavation.</p>` : `<p class="muted">Give an alias up top to enter. (Proof of concept: an alias is all it takes.)</p>`}
-      <p class="muted">To watch agents dig: open an artifact, then run <code>bun agents.ts --url …</code> from <code>apps/gitcode</code>.</p></div>`;
+      <p class="muted">To watch agents dig: open an artifact, then run <code>bun agents.ts --url …</code> from <code>apps/codesplitters</code>.</p></div>`;
   },
 
   async u(name) {

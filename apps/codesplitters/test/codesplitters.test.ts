@@ -1,7 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { apply, empty, fromText, replay, text, type Applied } from "../src/lines.ts";
-import { local, type Call } from "../src/local.ts";
+import { local as boot, type Call } from "../src/local.ts";
 import { run } from "../agents.ts";
+
+// Every app instance makes a temp dir of git repos; remove them all at the end.
+const opened: { close(): void }[] = [];
+afterAll(() => { for (const o of opened) o.close(); });
+const local = async () => { const c = await boot(); opened.push(c); return c; };
 
 const post = (call: Call, user: string | null, path: string, body: unknown) =>
   call(user, path, { method: "POST", body: JSON.stringify(body) });
@@ -118,7 +123,7 @@ describe("artifacts", () => {
 
     // The clone command on the repo page works with a stock git client.
     const { clone } = await (await call(null, "/api/repos/ana/dig")).json() as any;
-    const dir = (await import("node:fs")).mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "gc-clone-"));
+    const dir = (await import("node:fs")).mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "cs-clone-"));
     const p = Bun.spawn(["sh", "-c", clone], { cwd: dir, stdout: "pipe", stderr: "pipe" });
     expect(await p.exited).toBe(0);
     expect(await Bun.file(`${dir}/dig/README`).text()).toBe("found it\n");
