@@ -5,5 +5,5 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["bun", "vite/client"]
   },
-  "include": ["src", "packages/desktop", "test", "scripts", "bench", "rustybuns.config.ts"]
+  "include": ["src", "packages/desktop", "test", "scripts", "bench", "rustybuns.config.ts", "vite.desktop.config.ts"]
 }

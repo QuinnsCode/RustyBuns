@@ -3,4 +3,5 @@ dist
 native/target
 native/dist
 public/fm_daw.wasm
-.rustybuns
+.rustybuns/*
+!.rustybuns/vite.d.ts
