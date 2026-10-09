@@ -1,5 +1,7 @@
 # 🥐 Agent Office, Rusty Buns-ified
 
+> **What it proves:** someone else's Node server (PTYs, WebSockets, a 3D client) becomes one file for Mac and Linux, with nothing forked. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
+
 [Agent Office](https://github.com/AgentSystemLabs/agent-office) (MIT) is the cartoon 3D office where
 Claude Code workers sit at desks. Some of Rusty Buns was built in it. This example turns it around:
 the office itself, on Bun, as **one file** you can copy to any Mac or Linux box. No Node, no

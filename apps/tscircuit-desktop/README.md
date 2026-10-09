@@ -1,5 +1,7 @@
 # tscircuit desktop app
 
+> **What it proves:** a heavy, real-world Vite app as one file, with a Rust engine up to 22x faster and a TypeScript fallback. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
+
 [tscircuit](https://tscircuit.com) builds circuit boards with React, and its viewer and
 evaluator are plain web libraries, which means... we can build a desktop app out of it with RustyBuns!
 

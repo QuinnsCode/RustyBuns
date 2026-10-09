@@ -1,5 +1,7 @@
 # Motion MIDI
 
+> **What it proves:** the smallest Rust story: one synth in Rust and in TypeScript, checked sample by sample, with the TypeScript one as the fallback. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
+
 A synth written twice, once in Rust and once in TypeScript, inside one downloadable app.
 
 The main view is a player: hit **Render and play** and the best available engine computes the song from its notes, then plays it. Behind **Compare engines** the same song is rendered by each engine in turn, so you can see what the Rust build buys. The audio is identical whichever engine renders it; `test/golden.test.ts` checks that sample by sample.

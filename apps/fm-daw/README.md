@@ -1,6 +1,8 @@
 # FM DAW
 
-A small FM groovebox: five FM drums and three FM synths, a step sequencer and a piano roll, live recording from the computer keyboard or a MIDI keyboard, and quantize. The sound engine is written twice, once in Rust and once in TypeScript, and you can switch between them while the groove plays. Built with [Rusty Buns](../../README.md). More examples: [EXAMPLES.md](../../EXAMPLES.md).
+> **What it proves:** one Rust crate runs as wasm in the audio thread and over FFI on the host, bit for bit the same as the TypeScript engine, and one world class saves your groove on a laptop or on Cloudflare. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
+
+A small FM groovebox: five FM drums and three FM synths, a step sequencer and a piano roll, live recording from the computer keyboard or a MIDI keyboard, and quantize. The sound engine is written twice, once in Rust and once in TypeScript, and you can switch between them while the groove plays.
 
 ## Run it
 
