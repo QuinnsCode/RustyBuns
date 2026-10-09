@@ -1,0 +1,65 @@
+# Everyday app tests, on PRs only: one Linux job per app the PR touched (every app if
+# packages/ or the lockfile moved), plus the packages' own tests when packages/ moved.
+# No binaries here; those come from desktop-drop.yml when you ask for them.
+name: apps
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: apps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.p.outputs.apps }}
+      any: ${{ steps.p.outputs.any }}
+      packages: ${{ steps.p.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: "1.4.2" }
+      - id: p
+        # A manual run has no PR base: diff against the root commit, so every app runs.
+        run: bun scripts/ci-apps.ts test "${{ github.event.pull_request.base.sha || '$(git rev-list --max-parents=0 HEAD)' }}" >> "$GITHUB_OUTPUT"
+
+  packages:
+    needs: plan
+    if: needs.plan.outputs.packages == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: "1.4.2" }
+      - run: bun install
+      - run: bun test packages
+
+  test:
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.apps) }}
+    name: test ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: "1.4.2" }
+      - if: matrix.prep
+        uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-unknown-unknown }
+      - if: matrix.prep
+        uses: Swatinem/rust-cache@v2
+        with: { workspaces: "${{ matrix.cargo }}" }
+      - run: bun install
+        working-directory: .
+      - if: matrix.prep
+        run: ${{ matrix.prep }}
+      - run: ${{ matrix.test }}
