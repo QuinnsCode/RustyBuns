@@ -2,7 +2,7 @@
 // rustybuns: init | generate | deploy | dev | build desktop | eject
 
 import { $ } from "bun";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys } from "./wrangler.ts";
@@ -18,6 +18,7 @@ import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-sc
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { Profiler } from "./profile.ts";
 import { checkSpend, costReport } from "./costs.ts";
+import { ENV_SCHEMA, generateEnvSchema } from "./wheel.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -223,6 +224,9 @@ async function generate(opts: { adopt: boolean }) {
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
   console.log("wrote .rustybuns/alchemy.run.ts");
+  const schema = generateEnvSchema(cfg);
+  if (schema) { await Bun.write(ENV_SCHEMA, schema); console.log(`wrote ${ENV_SCHEMA} (experimental.wheel: "${cfg.experimental!.wheel}")`); }
+  else await rm(ENV_SCHEMA, { force: true });
   if (!cfg.worker) return;   // box-only: no wrangler.jsonc
   if (opts.adopt && !rest.includes("--force")) {
     const lost = wranglerLosses();
@@ -259,11 +263,35 @@ function alchemyCli(): string[] {
 /** Alchemy's provider names, for `rustybuns login <provider>`. */
 const PROVIDERS: Record<string, string> = { cloudflare: "Cloudflare", hetzner: "Hetzner", railway: "Railway" };
 
+/** varlock from the project, the workspace root, or PATH. */
+function varlockCli(): string {
+  const root = workspaceRoot(process.cwd());
+  const found = [join("node_modules", ".bin", "varlock"), root && join(root, "node_modules", ".bin", "varlock")]
+    .find((p) => p && existsSync(p)) || Bun.which("varlock");
+  if (!found) throw new Error("experimental.wheel: op secrets are fetched by varlock, which isn't installed. `bun add -d varlock`, or `brew install dmno-dev/tap/varlock`.");
+  return found;
+}
+
+/**
+ * experimental.wheel: run `cmd` under varlock so the op secrets arrive as env.
+ * "human" strips any 1Password token, so only the app on this machine can unlock.
+ */
+function underVarlock(cfg: RustyBunsConfig, cmd: string[], env: Record<string, string | undefined>): string[] {
+  if (cfg.experimental?.wheel === "human") {
+    delete env.OP_TOKEN; delete env.OP_SERVICE_ACCOUNT_TOKEN;
+    if (!Bun.which("op")) throw new Error(`experimental.wheel "human" unlocks 1Password through its CLI, \`op\`, which isn't on PATH. Install it and turn on "Integrate with 1Password CLI" in the 1Password app.`);
+  } else if (!env.OP_TOKEN) {
+    throw new Error(`experimental.wheel "agent" reads op secrets with a 1Password service account token. Set OP_TOKEN (scope the account to this stack's vault).`);
+  }
+  return [varlockCli(), "run", "--path", ENV_SCHEMA, "--", ...cmd];
+}
+
 /** Run the project-local alchemy with the terminal attached, so its prompts work. */
-async function runAlchemy(args: string[]): Promise<number> {
-  const cmd = [...alchemyCli(), ...args];
+async function runAlchemy(args: string[], cfg?: RustyBunsConfig): Promise<number> {
+  let cmd = [...alchemyCli(), ...args];
   // Secret values come from .dev.vars; anything already exported in the shell wins.
-  const env = { ...readDevVars(), ...process.env };
+  const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env };
+  if (cfg && generateEnvSchema(cfg)) cmd = underVarlock(cfg, cmd, env);
   const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"], env });
   return await p.exited;
 }
@@ -300,7 +328,7 @@ async function alchemy(sub: string, rawArgs: string[]) {
   const hash = await stackHash();
   const stampFile = ".rustybuns/planned";
   if (sub === "plan") {
-    const code = await prof.step("alchemy plan", () => runAlchemy(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args]));
+    const code = await prof.step("alchemy plan", () => runAlchemy(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args], cfg));
     await prof.finish();
     if (code !== 0) process.exit(code);
     await Bun.write(stampFile, hash);
@@ -318,7 +346,7 @@ async function alchemy(sub: string, rawArgs: string[]) {
     }
   }
   // --yes satisfies our plan check above AND is forwarded to alchemy's own prompt.
-  const code = await prof.step(`alchemy ${sub}`, () => runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]));
+  const code = await prof.step(`alchemy ${sub}`, () => runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args], cfg));
   if (profiled) await prof.finish();
   if (code !== 0) process.exit(code);
   if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"

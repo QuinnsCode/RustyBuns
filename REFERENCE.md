@@ -210,7 +210,8 @@ export default defineConfig({
 | Key | Values |
 |---|---|
 | `source` | `dir`, `aliases`, `ignore` (inferred from tsconfig paths) |
-| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `var`, `secret` |
+| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `var`, `secret` (+ `op`) |
+| `experimental` | `wheel` (`agent` \| `human`), see below |
 | `targets.edge` | `provider: "cloudflare"`, `domain` |
 | `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize` |
 | `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world` (or `false`), `worldPath`, `identity`, `listen` (`hostname`, `port`), `guests` (`join`, `max`, `version`), `host`, `headers`, `native`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define` |
@@ -222,6 +223,25 @@ Three desktop keys are for apps that aren't Workers apps at all, like [tscircuit
 - **`native`** names the Rust crates from `native/dist/` to embed. Leave it out to embed every built crate. Naming one that was never built is an error.
 
 The box host reads the same keys, so `host` routes and `headers` work on Hetzner too.
+
+### Who holds the keys (experimental)
+
+`experimental.wheel` decides who can unlock a stack's `secret` bindings. It may change or go away between releases.
+
+```ts
+experimental: { wheel: "agent" },   // or "human"
+bindings: {
+  SESSION_SECRET: { type: "secret" },                                     // agent: minted by the stack
+  STRIPE_KEY: { type: "secret", op: "op://my-app-test/stripe/credential" }, // from 1Password
+},
+```
+
+- **`"agent"` lets the agent take the wheel.** It's for stacks that come and go: tests, CI, previews. A secret without `op` is minted when the stack is created (`Alchemy.Random`), stays the same across deploys, and is gone on `destroy`. Create, test, destroy as often as you like; there's nothing to rotate. A secret with `op` is read from 1Password with a service account token in `OP_TOKEN`. Scope that account to one vault.
+- **`"human"` keeps a human in the loop.** It's for prod. A secret with `op` is read from 1Password by the app on your machine, behind your Touch ID or passkey. Any `OP_TOKEN` is ignored. A secret without `op` comes from the shell or `.dev.vars`, as it does without the flag.
+
+`op` secrets are fetched by [varlock](https://varlock.dev) at plan and deploy time, from a generated `.rustybuns/.env.schema`, so the values never sit in a file. Install it with `bun add -d varlock` or `brew install dmno-dev/tap/varlock`. `"human"` also needs the 1Password CLI, `op`, with "Integrate with 1Password CLI" turned on in the app.
+
+Two limits. Minted secrets live in Alchemy's state in `.alchemy/`, in plain text, like every other Alchemy output; a CI runner that throws its state away gets fresh ones next time. And minting doesn't work on a Hetzner box yet, because its env file can't take a generated value, so give those secrets an `op` reference or use Railway.
 
 ## The host
 

@@ -6,7 +6,15 @@ export type Binding =
   | { type: "r2"; bucketName: string }
   | { type: "durable_object"; className: string; scriptName?: string }
   | { type: "var"; value: string }
-  | { type: "secret" };
+  | {
+      type: "secret";
+      /**
+       * experimental.wheel only: a 1Password reference ("op://vault/item/field",
+       * from "Copy Secret Reference"). plan/deploy fetch it through varlock, so
+       * the value never sits on disk. Who unlocks 1Password is the wheel.
+       */
+      op?: string;
+    };
 
 export type DesktopOs = "darwin-arm64" | "darwin-x64" | "linux-x64" | "linux-arm64" | "windows-x64";
 
@@ -183,6 +191,27 @@ export interface RustyBunsConfig {
     edge?: { provider: "cloudflare"; domain?: string };
     box?: BoxTarget;
     desktop?: DesktopTarget;
+  };
+  /** Opt-in features that may change or go away between releases. */
+  experimental?: {
+    /**
+     * Who holds the keys to this stack's `secret` bindings.
+     *
+     * "agent": take the wheel. For stacks that come and go (tests, CI, previews).
+     *   A secret without `op` is minted on create (Alchemy.Random), kept in the
+     *   stack's state across deploys, and gone on destroy: create, test, destroy,
+     *   as often as you like, nothing to rotate. A secret with `op` is read from
+     *   1Password with a service account token in OP_TOKEN (scope it to one vault).
+     *
+     * "human": in the loop. For prod. A secret with `op` is read from 1Password
+     *   by the 1Password app on your machine, behind your Touch ID or passkey;
+     *   no token is accepted. A secret without `op` comes from the shell or
+     *   .dev.vars, as without this flag.
+     *
+     * `op` secrets need varlock (`bun add -d varlock`, or `brew install
+     * dmno-dev/tap/varlock`); "human" also needs the 1Password CLI, `op`.
+     */
+    wheel?: "agent" | "human";
   };
 }
 
