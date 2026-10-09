@@ -25,9 +25,39 @@ installs it with Bun, and patches the copy in `./office`. Every patch fails loud
 |---|---|
 | `@lydell/node-pty` → [`shim/node-pty`](shim/node-pty/index.js) | The native addon spawns under Bun but its shell is hung up at once. ~80 lines over `Bun.spawn({ terminal })` replace it: no node-gyp, no prebuilds, and it survives `--compile`. |
 | `@xterm/*` bundle their CJS `main` | Bun's bundler prefers `module`, whose ESM build has no default export. |
-| `http/static.js` reads `$AGENT_OFFICE_PUBLIC_DIR` | The 3D client is embedded and unpacked once to `~/.cache/agent-office-rustybuns/<tag>/`. |
+| `http/static.js` reads `$AGENT_OFFICE_PUBLIC_DIR` | The 3D client is embedded and unpacked once to `~/.cache/agent-office-rustybuns/<tag>-<content hash>/`. |
 | `ptys.js` falls back to `$HOME` as the pty host's cwd | Inside a binary the code dir is the virtual `/$bunfs`. |
 | `workers/process.js` points `office-workers` / `office-queue` at the binary | There's no `bin/` on disk to find. |
+
+## 🌴 The Druids Curse jungle
+
+The office is retold as a jungle council from our game, [Druids Curse](https://druids-curse-votv.notryanquinn.workers.dev).
+You (and everyone walking around) are **Qoa**; every worker is one of the game's **enemies** at a standing desk: the
+witch, goblins, ninjas, zombies, the Void Wolf, Voidmire, Toadmire, the Skeleton and Kaladen. Coding is spellcasting,
+tests are a sword slash, done is a victory, waiting on you is a jump, and a worker heading home carries their box.
+Palms, ivy and vines take every wall that isn't a board, the TV, a window or a door; the floor is moss and Druids Curse
+grass; agent desks are the game's Druid Panels (one per pod, laptops on top), the elevator is its scene-travel portal,
+loot is strewn everywhere, and the Council Chambers and a village stand outside. First person stays the default and
+the camera is Qoa's eyes: look down and you see his body. ⚙️ Settings switches to third person, where you see him run.
+
+| What | Where |
+|---|---|
+| Who's who, which clip | [`druids/cast.ts`](druids/cast.ts) (pure, tested in `test/druids.test.ts`) |
+| Workers → enemies | [`druids/skin.ts`](druids/skin.ts) |
+| People → Qoa, and your first-person body | [`druids/people.ts`](druids/people.ts) |
+| Druid Panels, the portal, loot, the village | [`druids/council.ts`](druids/council.ts) |
+| Palms, ivy, vines, grass | [`druids/jungle.ts`](druids/jungle.ts), all procedural and instanced (hippo-tycoon's palms, the game's grass blade) |
+| Colours, moss, fire, fireflies, the game's props | [`druids/forest.ts`](druids/forest.ts), [`druids/palette.ts`](druids/palette.ts) |
+| What's on the walls | [`druids/room.ts`](druids/room.ts), from Agent Office's `shared/layout.js` |
+| KTX2 textures | [`druids/loader.ts`](druids/loader.ts), with three's Basis transcoder at `/druids/basis/` |
+| The models | the live game's `/non_repo/models/`, fetched into `.cache/druids/`, never committed |
+
+Three one-line hooks go into the client bundle: the worker and person constructors push themselves onto
+`globalThis.__rbWorkers` / `__rbPeople`, and the per-frame update calls `__rbOfficeTick` once the sky has set the
+lights. The patched bundle gets a new name, since the original is served as immutable. If a model fails to load, that
+worker or person keeps the office's own look. In the browser console, `__rbDruids` and `__rbQoa` show who's who and
+what clip they're playing, and `__rbOffice` is the office itself. `AGENT_OFFICE_SKIN=office` builds the plain office; `DRUIDS_CURSE_URL` points at another
+build of the game.
 
 The binary has four jobs, picked by its first argument: the office, its pty host (the office re-runs
 itself for that, as it does under Node), and the two helper commands workers call.
