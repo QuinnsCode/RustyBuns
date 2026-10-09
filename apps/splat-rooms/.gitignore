@@ -1,3 +1,4 @@
 node_modules
 dist
-.rustybuns
+.rustybuns/*
+!.rustybuns/vite.d.ts

@@ -1,6 +1,7 @@
 node_modules
 dist
-.rustybuns
+.rustybuns/*
+!.rustybuns/vite.d.ts
 native/target
 native/dist
 *.sqlite*
