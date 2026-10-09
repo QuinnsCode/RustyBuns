@@ -7,7 +7,9 @@ import { fileStub, handleFor, access as artifactAccess, listDir, materialize, pu
 import { code, json, NAME, type Env } from "./env.ts";
 import { identityRoutes, identify, isAdmin } from "./identity.ts";
 import { levelRoutes } from "./levels.ts";
+import { gameRoutes } from "./game.ts";
 export { FileDurableObject } from "./file-do.ts";
+export { GameRoom } from "./game-do.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
@@ -33,6 +35,8 @@ export default {
 
     const levels = await levelRoutes(req, env, p, url, user, isAdmin(env, user));
     if (levels) return levels;
+    const game = await gameRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read);
+    if (game) return game;
 
     // GET|PUT /api/me
     if (p[1] === "me") {

@@ -15,6 +15,8 @@ export default defineConfig({
     DB: { type: "d1", databaseName: "codesplitters-db", migrationsDir: "migrations" },
     // One Durable Object per file.
     FILES: { type: "durable_object", className: "FileDurableObject" },
+    // One game room per level or repo: the lobby on its page, then the relay.
+    GAMES: { type: "durable_object", className: "GameRoom" },
     // One git repo per excavation; cataloguing pushes to it.
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
     // Accounts (Better Auth). Unset on the desktop: it uses aliases. GitHub and

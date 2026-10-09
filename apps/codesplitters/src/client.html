@@ -49,6 +49,9 @@
   button:hover { border-color: var(--ink-2); }
   button.primary { background: var(--ink); color: var(--paper-2); border-color: var(--ink); }
   button.primary:hover { background: var(--accent); border-color: var(--accent); }
+  a.button { display: inline-block; font: 500 14px/1.4 var(--sans); text-decoration: none; border-radius: 6px; padding: 8px 14px; border: 1px solid var(--accent); }
+  a.button.primary { background: var(--accent); color: var(--paper-2); }
+  a.button.primary:hover { background: var(--ink); border-color: var(--ink); }
 
   .card { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 20px 22px; margin: 0 0 20px; }
   .card h2, .card h3 { font-weight: 400; letter-spacing: -0.02em; margin: 0 0 10px; }
@@ -200,6 +203,14 @@ function listing(tree, href) {
   if (!tree.entries.length) return '<p class="muted">nothing unearthed yet</p>';
   return `<div class="tree">${tree.entries.map((e) => `<a class="entry-${e.type}" href="${href(e)}">${e.type === "dir" ? "▸ " : ""}${esc(e.name)}</a>`).join("")}</div>`;
 }
+// The game's door on a level or repo page, with whoever is already in there.
+function playBar(room) {
+  setTimeout(async () => {
+    const st = await api(`/game/${room}`).catch(() => null), el = $("#waiting");
+    if (st && el) el.textContent = st.players.length ? `${st.players.length} in there now${st.state === "playing" ? ", mid-round" : ", waiting"}: ${st.players.join(", ")}` : "nobody in there yet";
+  });
+  return `<div class="card row play"><a class="button primary" href="/play.html#${room}">play: enter the backrooms</a><span class="muted" id="waiting"></span></div>`;
+}
 function forkForm(slug) {
   if (!me()) return '<div class="card muted">Sign in to fork this level and dig into it.</div>';
   return `<form id="fork" class="card row"><span>Fork this level into your excavations as</span><input name="name" value="${slug}" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="primary">fork and dig</button><span class="muted" id="forkmsg"></span></form>`;
@@ -217,6 +228,7 @@ const views = {
         <ol class="phases" id="phases">
           <li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li>
         </ol>
+        <p class="row" style="margin-top:18px"><a class="button primary" href="/play.html#l/mitt">play: the lines are coming off the walls</a><span class="muted">a first-person game in the backrooms of a repo. Bring a bat.</span></p>
       </section>
       <section class="pillars">
         <div><h3>Connect all over</h3><p>Every file is live. Agents and people work in the same file at once, and each change streams to everyone watching, line by line.</p></div>
@@ -260,7 +272,7 @@ const views = {
 
   async r(owner, repo, dir = "") {
     const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(dir)}`)]);
-    app.innerHTML = `<div class="card"><div class="label">excavation · ${r.visibility === "private" ? "sealed" : "open to the public"}${r.level ? ` · forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>` : ""}</div>
+    app.innerHTML = playBar(`r/${owner}/${repo}`) + `<div class="card"><div class="label">excavation · ${r.visibility === "private" ? "sealed" : "open to the public"}${r.level ? ` · forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>` : ""}</div>
       <h2><a href="#/u/${owner}">${esc(owner)}</a> / <a href="#/r/${owner}/${repo}">${esc(repo)}</a>${crumbs(`#/r/${owner}/${repo}`, dir)}</h2>
       ${tree.forking ? '<p class="muted">Still copying this dig from its level. Give it a moment and reload.</p>' : listing(tree, (e) => e.type === "dir" ? `#/r/${owner}/${repo}/${encodeURIComponent(e.path)}` : `#/f/${owner}/${repo}/${encodeURIComponent(e.path)}`)}
       <p class="muted">crew: ${r.collaborators.map(esc).join(", ") || "none"}</p>
@@ -287,12 +299,12 @@ const views = {
     const file = path ? await api(`/levels/${slug}/file?path=${encodeURIComponent(path)}`).catch((e) => ({ error: e.message })) : null;
     const isFile = !!file && !file.error?.match(/no such file/);
     if (isFile) {
-      app.innerHTML = head + `</div>` + (file.error ? `<div class="card muted">${esc(file.error)}</div>`
+      app.innerHTML = head + `</div>` + playBar(`l/${slug}`) + (file.error ? `<div class="card muted">${esc(file.error)}</div>`
         : `<div class="code card">${file.text.replace(/\n$/, "").split("\n").map((t, i) => `<div class="ln" style="grid-template-columns:40px 1fr"><span class="n">${i + 1}</span><span class="t">${esc(t) || " "}</span></div>`).join("")}</div>`)
         + forkForm(slug);
     } else {
       const tree = await api(`/levels/${slug}/tree?path=${encodeURIComponent(path)}`);
-      app.innerHTML = head + (tree.commit ? `<p class="muted" style="font-size:13px">at <code>${tree.commit.hash.slice(0, 10)}</code> ${esc(tree.commit.message)}</p>` : "")
+      app.innerHTML = playBar(`l/${slug}`) + head + (tree.commit ? `<p class="muted" style="font-size:13px">at <code>${tree.commit.hash.slice(0, 10)}</code> ${esc(tree.commit.message)}</p>` : "")
         + listing(tree, (e) => `#/l/${slug}/${encodeURIComponent(e.path)}`) + `</div>` + forkForm(slug);
     }
     $("#fork")?.addEventListener("submit", async (e) => {
