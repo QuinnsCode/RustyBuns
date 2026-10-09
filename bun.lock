@@ -104,6 +104,7 @@
       "name": "park-hide-seek",
       "version": "0.0.1",
       "dependencies": {
+        "@fontsource/ultra": "^5.3.0",
         "@rustybuns/shell-bun": "workspace:*",
         "three": "^0.180.0",
       },
@@ -534,6 +535,8 @@
     "@fontsource/ibm-plex-mono": ["@fontsource/ibm-plex-mono@5.3.0", "", {}, "sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q=="],
 
     "@fontsource/ibm-plex-sans": ["@fontsource/ibm-plex-sans@5.3.0", "", {}, "sha512-CbE4CbbEEZJX860XyUiRpsksXIQR8Rp2XDva2VO53NJox9tVNtusrysd2x5YkUEY3ErQ66W1IiiQL8/wihhw5w=="],
+
+    "@fontsource/ultra": ["@fontsource/ultra@5.3.0", "", {}, "sha512-mV1do792j1WQTTNVpRiv0zaLhd4U6hLSKnYFKZJyoMVwGXy5QrU7EtjikO57Gm4guRB3UNi9wbJhKLuveUlomw=="],
 
     "@hono/node-server": ["@hono/node-server@1.19.9", "", { "peerDependencies": { "hono": "^4" } }, "sha512-vHL6w3ecZsky+8P5MD+eFfaGTyCeOHUIFYMGpQGbrBTSmNNoxv0if69rEZ5giu36weC5saFuznL411gRX7bJDw=="],
 

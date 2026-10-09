@@ -12,28 +12,33 @@
 
     <main id="menu" class="menu">
       <div class="menu-card">
-        <p class="eyebrow">A Rusty Buns example</p>
-        <h1>Park Hide <span>&amp;</span> Seek</h1>
-        <p class="lede">Campers drop into a real national park and hide. Park rangers come looking, with flashlights after dark. Bigfoot is hiding out there too, right where the search area closes in. Find him first, or just don't get caught for three minutes. Rangers are faster, so don't get spotted in the open.</p>
-        <label class="field">Your name <input id="name" maxlength="24" autocomplete="nickname" placeholder="Camper" /></label>
-        <div class="menu-actions">
-          <button id="solo" class="primary">Play vs AI</button>
-          <button id="host" data-desktop>Host a LAN game</button>
-          <button id="show-join" data-desktop>Join a LAN game</button>
-          <button id="online" data-online hidden>Create an online room</button>
-          <button id="show-room" data-online hidden>Join with a room code</button>
+        <div class="unigrid"><b>National Parks</b><span>Yosemite · Yellowstone</span></div>
+        <div class="stripes" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <div class="menu-body">
+          <h1>Park Hide <span>&amp;</span> Seek</h1>
+          <p class="lede">Hide from the rangers in real national park terrain. Find Bigfoot, or just don't get caught for three minutes.</p>
+          <label class="field">Your name <input id="name" maxlength="24" autocomplete="nickname" placeholder="Camper" /></label>
+          <button id="play" class="play">Play</button>
+          <p id="play-note" class="note">Straight into a game. AI fills the empty spots.</p>
+          <div class="more">
+            <button id="custom" class="link">Custom game</button>
+            <button id="online" class="link" data-online hidden>Play with friends</button>
+            <button id="show-room" class="link" data-online hidden>Join with a code</button>
+            <button id="host" class="link" data-desktop>Host a LAN game</button>
+            <button id="show-join" class="link" data-desktop>Join a LAN game</button>
+          </div>
+          <form id="room-join" class="join" hidden>
+            <label class="field">Room code <input id="room" maxlength="8" placeholder="PIKA" autocomplete="off" autocapitalize="characters" required /></label>
+            <button class="primary" type="submit">Join</button>
+          </form>
+          <form id="join" class="join" hidden>
+            <label class="field">Host address <input id="addr" placeholder="192.168.1.20:41234" autocomplete="off" required /></label>
+            <label class="field">Passphrase <input id="pass" placeholder="marmot-canyon" autocomplete="off" required /></label>
+            <button class="primary" type="submit">Join</button>
+          </form>
+          <p id="menu-error" class="error" role="alert"></p>
         </div>
-        <form id="room-join" class="join" hidden>
-          <label class="field">Room code <input id="room" maxlength="8" placeholder="PIKA" autocomplete="off" autocapitalize="characters" required /></label>
-          <button class="primary" type="submit">Join</button>
-        </form>
-        <form id="join" class="join" hidden>
-          <label class="field">Host address <input id="addr" placeholder="192.168.1.20:41234" autocomplete="off" required /></label>
-          <label class="field">Passphrase <input id="pass" placeholder="marmot-canyon" autocomplete="off" required /></label>
-          <button class="primary" type="submit">Join</button>
-        </form>
-        <p id="menu-note" class="note"></p>
-        <p id="menu-error" class="error" role="alert"></p>
+        <p class="credit">A Rusty Buns example</p>
       </div>
     </main>
 
