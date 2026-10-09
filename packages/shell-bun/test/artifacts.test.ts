@@ -95,6 +95,31 @@ test("import is shallow and in progress until it lands; forks are writable copie
   expect((await ns.list({ limit: 2 })).total).toBeGreaterThanOrEqual(4);
 });
 
+test("import reads a private source with a token, and keeps the token out of the repo", async () => {
+  await seeded("private-src", { "p.txt": "secret\n" });
+  const read = (await (await ns.get("private-src")).createToken("read", 60)).plaintext.split("?")[0]!;
+  // import() wants https; point an https URL at the local git server instead of the network.
+  const cfg = join(dir, "gitconfig");
+  await Bun.write(cfg, `[url "${ns.remoteBase}/"]\n\tinsteadOf = https://private.test/\n`);
+  const before = process.env.GIT_CONFIG_GLOBAL;
+  process.env.GIT_CONFIG_GLOBAL = cfg;
+  try {
+    const url = "https://private.test/__rb/git/default/private-src.git";
+    await ns.import({ source: { url }, target: { name: "no-token" } });
+    await ns.importing;
+    expect(ns.failed.has("no-token")).toBe(true);               // the source wants a token
+    await ns.import({ source: { url, token: read }, target: { name: "with-token" } });
+    await ns.importing;
+    const got = await ns.get("with-token");
+    expect(await (await got.readFile({ ref: "main", path: "p.txt" }))!.text()).toBe("secret\n");
+    const config = await Bun.file(join(ns.path("with-token"), "config")).text();
+    expect(config).not.toContain(read);
+    expect(config).not.toContain(btoa(`x-access-token:${read}`));
+  } finally {
+    if (before === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = before;
+  }
+});
+
 test("tokens are per repo", async () => {
   const a = await ns.create("a1");
   await ns.create("b1");

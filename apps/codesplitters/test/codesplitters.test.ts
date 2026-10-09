@@ -210,6 +210,7 @@ describe("github", () => {
       if (path === "/repos/ana-gh/Tiny.JS") return Response.json({ full_name: "ana-gh/Tiny.JS", private: false, default_branch: "trunk" });
       if (path === "/repos/ana-gh/secret") return Response.json({ full_name: "ana-gh/secret", private: true, default_branch: "main" });
       if (path === "/repos/ana-gh/Tiny.JS/commits/trunk") return Response.json({ sha: "a".repeat(40) });
+      if (path === "/repos/ana-gh/secret/commits/main") return Response.json({ sha: "b".repeat(40) });
       return new Response("{}", { status: 404 });
     }) as any;
     const imports: any[] = [];
@@ -217,12 +218,11 @@ describe("github", () => {
     try {
       await post(call, "ana", "/api/login", { name: "ana" });
       const list = await (await call("ana", "/api/github/repos")).json() as any;
-      expect([list.via, list.login, list.repos.map((r: any) => [r.repo, r.private])]).toEqual(["secret", "ana-gh", [["ana-gh/Tiny.JS", false], ["ana-gh/secret", true]]]);
+      expect([list.via, list.login, list.privateOk, list.repos.map((r: any) => [r.repo, r.private])]).toEqual(["secret", "ana-gh", true, [["ana-gh/Tiny.JS", false], ["ana-gh/secret", true]]]);
       expect(seen[0]).toEndWith("Bearer t0k");
 
       expect((await post(call, null, "/api/github/dig", { repo: "ana-gh/Tiny.JS" })).status).toBe(401);
       expect((await post(call, "ana", "/api/github/dig", { repo: "not a repo" })).status).toBe(400);
-      expect((await post(call, "ana", "/api/github/dig", { repo: "ana-gh/secret" })).status).toBe(422);
       expect((await post(call, "ana", "/api/github/dig", { repo: "ana-gh/nope" })).status).toBe(404);
       const dug = await post(call, "ana", "/api/github/dig", { repo: "https://github.com/ana-gh/Tiny.JS.git" });
       expect(dug.status).toBe(201);
@@ -232,6 +232,16 @@ describe("github", () => {
       const meta = await (await call("ana", "/api/repos/ana/tiny-js")).json() as any;
       expect([meta.upstream, meta.branch, meta.home, meta.canWrite]).toEqual(["github:ana-gh/Tiny.JS", "trunk", "local", true]);
       expect((await post(call, "ana", "/api/github/dig", { repo: "ana-gh/Tiny.JS" })).status).toBe(409);
+
+      // Private: local git clones it with the token; the public import never sees one.
+      expect(imports[0].source.token).toBeUndefined();
+      expect((await post(call, "ana", "/api/github/dig", { repo: "ana-gh/secret" })).status).toBe(201);
+      expect(imports[1].source).toEqual({ url: "https://github.com/ana-gh/secret.git", branch: "main", depth: 1, token: "t0k" });
+      // Cloudflare Artifacts imports public repos only: say so instead of failing later.
+      Object.defineProperty(call.artifacts, "privateImports", { value: false });
+      expect((await (await call("ana", "/api/github/repos")).json() as any).privateOk).toBe(false);
+      const edge = await post(call, "ana", "/api/github/dig", { repo: "ana-gh/secret", name: "secret-2" });
+      expect([edge.status, ((await edge.json()) as any).error]).toEqual([422, expect.stringContaining("desktop app")]);
     } finally { globalThis.fetch = real; }
   });
 });

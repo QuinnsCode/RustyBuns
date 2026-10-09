@@ -9,6 +9,12 @@ import { json, NAME, type Env } from "./env.ts";
 const API = "https://api.github.com";
 
 /**
+ * Can this host's Artifacts clone a private repo? The desktop's local git can,
+ * with the token. Cloudflare Artifacts imports public HTTPS remotes only.
+ */
+const privateDigs = (env: Env) => (env.ARTIFACTS as { privateImports?: boolean } | undefined)?.privateImports === true;
+
+/**
  * A GitHub token, and where it came from: a GITHUB_TOKEN secret, the caller's
  * GitHub sign-in (accounts on), or the GitHub CLI on this machine (the desktop,
  * which is one person's). Null means public repos only, at GitHub's lower rate limit.
@@ -45,11 +51,12 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
 
   // GET /api/github/repos  who GitHub thinks you are, and your repos, newest push first
   if (p[2] === "repos" && req.method === "GET") {
-    if (!t) return json({ via: null, login: null, repos: [] });
+    const privateOk = privateDigs(env);
+    if (!t) return json({ via: null, login: null, repos: [], privateOk });
     const [me, list] = await Promise.all([gh("/user", t.token), gh("/user/repos?per_page=100&sort=pushed", t.token)]);
-    if (!me.ok) return json({ via: t.via, login: null, repos: [], error: `GitHub said ${me.status}` });
+    if (!me.ok) return json({ via: t.via, login: null, repos: [], privateOk, error: `GitHub said ${me.status}` });
     const repos = list.ok ? ((await list.json()) as any[]).map((r) => ({ repo: r.full_name, private: r.private, branch: r.default_branch, description: r.description })) : [];
-    return json({ via: t.via, login: ((await me.json()) as any).login, repos });
+    return json({ via: t.via, login: ((await me.json()) as any).login, repos, privateOk });
   }
 
   // POST /api/github/dig {repo, name?, visibility?}  fork a GitHub repo into one you own here
@@ -69,14 +76,14 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     if (meta.status === 404) return json({ error: `GitHub has no ${full} you can see` }, 404);
     if (!meta.ok) return json({ error: `GitHub said ${meta.status}` }, 502);
     const info = (await meta.json()) as { full_name: string; default_branch: string; private: boolean };
-    // The clone is anonymous, so a private repo can be listed but not dug up yet.
-    if (info.private) return json({ error: `${full} is private on GitHub; only public repos can be dug up so far` }, 422);
+    // A private repo needs a clone that carries the token, which only local git does.
+    if (info.private && !privateDigs(env)) return json({ error: `${full} is private on GitHub. Cloudflare Artifacts can only import public repos, so dig it up in the desktop app instead` }, 422);
     const head = await gh(`/repos/${info.full_name}/commits/${info.default_branch}`, t?.token);
     const sha = head.ok ? ((await head.json()) as { sha: string }).sha : null;
 
     // Shallow, like the levels; writable, because it's yours now.
     const art = await env.ARTIFACTS.import({
-      source: { url: `https://github.com/${info.full_name}.git`, branch: info.default_branch, depth: 1 },
+      source: { url: `https://github.com/${info.full_name}.git`, branch: info.default_branch, depth: 1, ...(info.private ? { token: t!.token } : {}) },
       target: { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}` } },
     });
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
