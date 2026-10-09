@@ -6,43 +6,51 @@
 <title>codeSplitters: the backrooms</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;700&family=Geist+Mono:wght@400;500&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  /* Same system as the site: white paper, black ink, hairlines, one orange.
+     The backrooms are a clean grey office here, not yellow. */
   :root {
-    --paper: #f7f3e8; --paper-2: #fbf9f2; --ink: #2b2620; --ink-2: #6f665a; --rule: #e3dac6; --accent: #8c2f22;
+    --paper: #fcfbf8; --paper-2: #ffffff; --ink: #0a0a0a; --ink-2: #6b6b6b; --rule: #e6e6e6; --edge: #cfcfcf; --accent: #e8590c; --accent-soft: #fff4ec;
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .28 0 0 0 0 .2 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, Menlo, monospace;
-    /* The HUD: a compressed highway-sign face, the office-game kind. */
-    --display: "Barlow Condensed", "Interstate Compressed", "Arial Narrow", sans-serif;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #1c1915; color: var(--ink); font: 300 15px/1.5 var(--sans); }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #e9e9e7; color: var(--ink); font: 400 14px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
   canvas#c { display: block; width: 100vw; height: 100vh; }
-  .hud { position: fixed; pointer-events: none; font: 500 17px/1.2 var(--display); letter-spacing: .02em; color: var(--paper); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
-  #tl { top: 14px; left: 16px; }
-  #tl .big { font: 600 30px/1 var(--display); letter-spacing: .01em; text-transform: uppercase; }
-  #tr { top: 14px; right: 16px; text-align: right; }
-  #bl { bottom: 16px; left: 16px; width: 260px; }
-  #health { height: 10px; border: 1px solid rgba(247,243,232,.7); margin-top: 6px; }
-  #health i { display: block; height: 100%; background: var(--paper); transition: width .15s; }
-  #health.low i { background: #c0543f; }
-  #cross { top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--paper); opacity: .8; }
-  #banner { top: 30%; left: 0; right: 0; text-align: center; font: 600 84px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; color: var(--paper); opacity: 0; transition: opacity .25s; }
-  #banner small { display: block; font: 500 22px/1.5 var(--display); letter-spacing: .04em; text-transform: none; }
-  #hurt { inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(140,47,34,.55)); opacity: 0; transition: opacity .3s; }
-  .panel { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(28,25,21,.55); }
+  /* The HUD: small mono readouts in ink, like an instrument panel. */
+  .hud { position: fixed; pointer-events: none; font: 500 12px/1.5 var(--mono); letter-spacing: .02em; color: var(--ink); }
+  #tl, #tr, #bl { background: rgba(255,255,255,.82); backdrop-filter: blur(6px); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 12px; }
+  #tl { top: 14px; left: 14px; }
+  #tl .big, #tr .big { font: 600 20px/1.1 var(--sans); letter-spacing: -0.03em; }
+  #tr { top: 14px; right: 14px; text-align: right; } #tr .big { font-variant-numeric: tabular-nums; }
+  #bl { bottom: 14px; left: 14px; width: 240px; }
+  #health { height: 4px; background: var(--rule); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  #health i { display: block; height: 100%; background: var(--ink); transition: width .15s; }
+  #health.low i { background: var(--accent); }
+  #cross { top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(255,255,255,.8); }
+  #banner { top: 30%; left: 0; right: 0; text-align: center; font: 600 64px/1 var(--sans); letter-spacing: -0.05em; color: var(--ink); opacity: 0; transition: opacity .25s; text-shadow: 0 1px 0 #fff; }
+  #banner small { display: block; margin-top: 10px; font: 500 13px/1.5 var(--mono); letter-spacing: .04em; color: var(--ink-2); }
+  #hurt { inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(232,89,12,.45)); opacity: 0; transition: opacity .3s; }
+  .panel { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(250,250,250,.6); backdrop-filter: blur(4px); }
   .panel[hidden] { display: none; }
-  .card { width: min(520px, calc(100vw - 32px)); background: var(--paper); border: 1px solid var(--rule); padding: 26px 28px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
-  .card h1 { margin: 0 0 4px; font: 600 40px/1 var(--display); letter-spacing: .01em; text-transform: uppercase; }
-  .label { font: 400 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); margin-bottom: 10px; }
+  .card { width: min(520px, calc(100vw - 32px)); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 26px 28px; box-shadow: 0 24px 64px -16px rgba(0,0,0,.22); }
+  .card h1 { margin: 0 0 4px; font: 600 32px/1.05 var(--sans); letter-spacing: -0.045em; }
+  .label { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); margin-bottom: 12px; }
   .muted { color: var(--ink-2); }
-  .card ul { list-style: none; padding: 0; margin: 14px 0; border-top: 1px solid var(--rule); }
-  .card li { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--rule); font: 400 14px var(--mono); }
+  .card ul { list-style: none; padding: 0; margin: 16px 0; border-top: 1px solid var(--rule); }
+  .card li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--rule); font: 400 13px var(--mono); }
   .card li .ok { color: var(--accent); }
-  button { font: 500 14px var(--sans); padding: 9px 16px; border: 1px solid var(--ink); background: var(--paper-2); color: var(--ink); cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
-  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .keys { margin-top: 16px; font: 400 12px/1.7 var(--mono); color: var(--ink-2); }
-  a { color: var(--accent); }
+  /* Infinite Craft tiles in paper, same as the site. */
+  button { display: inline-flex; align-items: center; gap: 7px; font: 500 13px/1 var(--sans); padding: 9px 12px 8px; border: 1px solid var(--edge); border-radius: 5px; background: var(--grain), var(--paper); color: var(--ink); cursor: pointer; transition: border-color .12s, background .12s, transform .06s; }
+  button:hover { background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); border-color: #a8a8a8; }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--grain), var(--ink); border-color: var(--ink); color: #fff; }
+  button.primary:hover { background: var(--grain), linear-gradient(0deg, #2a2a2a, #0a0a0a 85%); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .keys { margin-top: 16px; font: 400 12px/1.8 var(--mono); color: var(--ink-2); }
+  kbd { font: 500 11px var(--mono); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--paper); color: var(--ink); }
+  a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; } a:hover { text-decoration-color: var(--accent); }
 </style>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
 </head>
@@ -61,7 +69,7 @@
   <p class="muted" style="margin:6px 0 0">Every folder is a room. The walls are the code. The code is restless. Grab the bat.</p>
   <ul id="lobby-players"></ul>
   <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><span class="muted" id="lobby-msg"></span></div>
-  <div class="keys">WASD move · mouse look · click swing · shift run<br>walk into a doorway to go into that folder · club other players too</div>
+  <div class="keys"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swing · <kbd>shift</kbd> run<br>walk into a doorway to go into that folder · club other players too</div>
   <p style="margin:14px 0 0;font-size:13px"><a id="back" href="/">← back to the site</a></p>
 </div></div>
 <div class="panel" id="lock" hidden style="background:transparent;place-items:end center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;padding:12px 18px"><b>Click to grab the bat</b> <span class="muted">· Esc lets go</span></div></div>
@@ -97,28 +105,28 @@ const pick = (a) => a[Math.floor(rng() * a.length)];
 const renderer = new THREE.WebGLRenderer({ canvas: $("#c"), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
-const FOG = new THREE.Color("#d9cfae");
+const FOG = new THREE.Color("#e9e9e7");
 scene.background = FOG;
 scene.fog = new THREE.Fog(FOG, 12, 48);
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 100);
 camera.rotation.order = "YXZ";
 scene.add(camera);
-const hemi = new THREE.HemisphereLight("#fffaea", "#b0a27a", 2.6);
+const hemi = new THREE.HemisphereLight("#ffffff", "#a9a9a6", 2.6);
 scene.add(hemi);
-const lamp = new THREE.PointLight("#fff3cf", 30, 16, 1.4);
+const lamp = new THREE.PointLight("#ffffff", 30, 16, 1.4);
 camera.add(lamp);
 function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener("resize", resize); resize();
 
 // ---- paper and code textures ---------------------------------------------------
 const canvasTex = (w, h, draw) => { const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
-const noise = (g, w, h, a, n = 4000) => { for (let i = 0; i < n; i++) { g.fillStyle = `rgba(80,60,30,${Math.random() * a})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2); } };
+const noise = (g, w, h, a, n = 4000) => { for (let i = 0; i < n; i++) { g.fillStyle = `rgba(40,40,40,${Math.random() * a})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2); } };
 // Backrooms wallpaper, but founding-document paper: faint stripes and grain.
-const wallpaper = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#efe7cf"; g.fillRect(0, 0, w, h); for (let x = 0; x < w; x += 16) { g.fillStyle = "rgba(150,125,70,.07)"; g.fillRect(x, 0, 6, h); } noise(g, w, h, .06); });
+const wallpaper = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#f4f4f2"; g.fillRect(0, 0, w, h); for (let x = 0; x < w; x += 16) { g.fillStyle = "rgba(0,0,0,.035)"; g.fillRect(x, 0, 6, h); } noise(g, w, h, .06); });
 wallpaper.wrapS = wallpaper.wrapT = THREE.RepeatWrapping;
-const carpet = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#b9a774"; g.fillRect(0, 0, w, h); noise(g, w, h, .25, 9000); });
+const carpet = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#9a9a97"; g.fillRect(0, 0, w, h); noise(g, w, h, .25, 9000); });
 carpet.wrapS = carpet.wrapT = THREE.RepeatWrapping;
-const tiles = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#e9e2cc"; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(90,75,45,.35)"; g.lineWidth = 3; g.strokeRect(0, 0, w, h); noise(g, w, h, .05, 1500); });
+const tiles = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#efefed"; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(0,0,0,.14)"; g.lineWidth = 3; g.strokeRect(0, 0, w, h); noise(g, w, h, .05, 1500); });
 tiles.wrapS = tiles.wrapT = THREE.RepeatWrapping;
 
 const ROWS = 30, ATLAS = 1024, ROW_PX = ATLAS / ROWS, LINE_H = 0.15, FONT_PX = 24;
@@ -139,15 +147,15 @@ function atlas(file) {
       const indent = t.length - t.trimStart().length;
       const x0 = 6 + indent * CHAR_PX, x1 = 6 + t.length * CHAR_PX + 8;
       // Each line on its own strip of paper: pasted on the wall, torn off when it comes for you.
-      g.fillStyle = "#fbf8ee"; g.fillRect(x0 - 4, i * ROW_PX + 2, x1 - x0 + 4, ROW_PX - 4);
-      g.fillStyle = "rgba(90,70,40,.25)"; g.fillRect(x0 - 4, (i + 1) * ROW_PX - 3, x1 - x0 + 4, 1.5);
-      g.fillStyle = /^\s*(\/\/|#|\*|\/\*)/.test(t) ? "#8a7f6c" : "#2b2620";
+      g.fillStyle = "#fcfbf8"; g.fillRect(x0 - 4, i * ROW_PX + 2, x1 - x0 + 4, ROW_PX - 4);
+      g.fillStyle = "rgba(0,0,0,.14)"; g.fillRect(x0 - 4, (i + 1) * ROW_PX - 3, x1 - x0 + 4, 1.5);
+      g.fillStyle = /^\s*(\/\/|#|\*|\/\*)/.test(t) ? "#8f8f8f" : "#0a0a0a";
       g.fillText(t, 6, (i + 0.5) * ROW_PX);
       lines.push({ i, text: t, indent, u0: (x0 - 4) / ATLAS, u1: Math.min(1, x1 / ATLAS), v0: 1 - ((i + 1) * ROW_PX - 2) / ATLAS, v1: 1 - (i * ROW_PX + 2) / ATLAS, w: (x1 - x0 + 4) / ROW_PX * LINE_H });
     });
   });
   const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.05 });
-  const angry = new THREE.MeshLambertMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.05, color: "#ffffff", emissive: "#5a160e", emissiveIntensity: 0.35 });
+  const angry = new THREE.MeshLambertMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.05, color: "#ffffff", emissive: "#7a2c05", emissiveIntensity: 0.35 });
   a = { tex, mat, angry, lines, name: file.name };
   atlases.set(file.path, a);
   return a;
@@ -160,7 +168,7 @@ function stripGeo(line, h, sx = 1) {
   g.userData.base = Float32Array.from(g.attributes.position.array);
   return g;
 }
-const labelTex = (text, color = "#2b2620", px = 64) => canvasTex(1024, 128, (g, w, h) => { g.font = `500 ${px}px "Geist", sans-serif`; g.fillStyle = color; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, w / 2, h / 2); });
+const labelTex = (text, color = "#0a0a0a", px = 64) => canvasTex(1024, 128, (g, w, h) => { g.font = `500 ${px}px "Geist", sans-serif`; g.fillStyle = color; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, w / 2, h / 2); });
 
 // ---- rooms ---------------------------------------------------------------------
 const H = 5.2, PANEL = 7, DOOR_W = 2.2, DOOR_H = 3.3;
@@ -182,9 +190,9 @@ const fromWall = (i, a, d, half) => [[a, -half + d], [half - d, a], [-a, half - 
 
 // ---- the lava lamps ---------------------------------------------------------------------
 const lava = [];   // {mesh, y0, speed, phase}
-const LAVA = [["#ff3a12", "#ffb08f"], ["#ff9d00", "#ffe08a"], ["#1f86ff", "#9fd0ff"], ["#8e3dff", "#d3b8ff"], ["#10b85e", "#9eeac0"], ["#ff2d8f", "#ffb0d6"]];
+const LAVA = [["#e8590c", "#ffd8bf"], ["#ff8a3d", "#ffe6d2"], ["#0a0a0a", "#e6e6e6"], ["#f2f2f0", "#cfcfcf"], ["#c2410c", "#fdba8c"], ["#6b6b6b", "#f4f4f2"]];
 const lampGeo = { glass: new THREE.CylinderGeometry(0.1, 0.15, 0.56, 14), base: new THREE.CylinderGeometry(0.15, 0.12, 0.22, 14), cap: new THREE.CylinderGeometry(0.06, 0.1, 0.1, 14), blob: new THREE.SphereGeometry(0.07, 12, 10), shelf: new THREE.BoxGeometry(PANEL - 0.5, 0.05, 0.42) };
-const lampMat = { metal: new THREE.MeshLambertMaterial({ color: "#7d838b" }), shelf: new THREE.MeshLambertMaterial({ color: "#c9b58c" }),
+const lampMat = { metal: new THREE.MeshLambertMaterial({ color: "#7d838b" }), shelf: new THREE.MeshLambertMaterial({ color: "#d6d6d3" }),
   glass: LAVA.map(([, light]) => new THREE.MeshBasicMaterial({ color: light, transparent: true, opacity: 0.5, depthWrite: false })), blob: LAVA.map(([deep]) => new THREE.MeshBasicMaterial({ color: deep })) };
 /** Four shelves of lamps across one wall panel centred at `c`, each lamp slowly rising and sinking. */
 function lavaWall(wall, c) {
@@ -204,7 +212,7 @@ function lavaWall(wall, c) {
       }
     }
   }
-  const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex("entropy wall", "#8c2f22", 54), transparent: true }));
+  const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex("entropy wall", "#e8590c", 54), transparent: true }));
   lab.position.set(c, H - 0.35, 0.02); wall.add(lab);
 }
 function updateLava(time) {
@@ -236,12 +244,12 @@ function buildRoom(path, w) {
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(L, L), new THREE.MeshLambertMaterial({ map: tiles }));
   ceil.rotation.x = Math.PI / 2; ceil.position.y = H; tiles.repeat.set(L / 2, L / 2); group.add(ceil);
   // Fluorescent panels.
-  const lightMat = new THREE.MeshBasicMaterial({ color: "#fffbe8" });
+  const lightMat = new THREE.MeshBasicMaterial({ color: "#ffffff" });
   for (let x = -half + 3; x < half; x += 6) for (let z = -half + 3; z < half; z += 6) {
     const p = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.6), lightMat); p.rotation.x = Math.PI / 2; p.position.set(x, H - 0.01, z); group.add(p);
   }
   const doors = [], lines = [];
-  const doorMat = new THREE.MeshBasicMaterial({ color: "#1d1a16" });
+  const doorMat = new THREE.MeshBasicMaterial({ color: "#0a0a0a" });
   panels.forEach((p, k) => {
     const wi = k % 4, slot = Math.floor(k / 4);
     let wall = group.getObjectByName("wall" + wi);
@@ -255,14 +263,14 @@ function buildRoom(path, w) {
     const c = -half + PANEL * (slot + 0.5);
     if (p.kind === "door") {
       const d = new THREE.Mesh(new THREE.PlaneGeometry(DOOR_W, DOOR_H), doorMat); d.position.set(c, DOOR_H / 2, 0.01); wall.add(d);
-      const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.name, p.name === "../" ? "#6f665a" : "#8c2f22"), transparent: true }));
+      const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.name, p.name === "../" ? "#6b6b6b" : "#0a0a0a"), transparent: true }));
       lab.position.set(c, DOOR_H + 0.45, 0.02); wall.add(lab);
       doors.push({ wall: wi, c, path: p.path, up: p.name === "../" });
     } else if (p.kind === "lava") {
       lavaWall(wall, c);
     } else if (p.kind === "file") {
       const a = atlas(p.file);
-      const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.file.name, "#8c2f22", 54), transparent: true }));
+      const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.file.name, "#e8590c", 54), transparent: true }));
       lab.position.set(c, H - 0.35, 0.02); wall.add(lab);
       const left = c - PANEL / 2 + 0.4;
       for (const line of a.lines) {
@@ -316,9 +324,9 @@ renderer.domElement.addEventListener("mousedown", () => { if (document.pointerLo
 
 // The bat: ash, with an oxblood grip.
 const bat = new THREE.Group();
-const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.025, 0.95, 12), new THREE.MeshBasicMaterial({ color: "#a9824d" }));
+const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.025, 0.95, 12), new THREE.MeshBasicMaterial({ color: "#e7e3d8" }));
 barrel.position.y = 0.42;
-const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.22, 8), new THREE.MeshBasicMaterial({ color: "#8c2f22" }));
+const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.22, 8), new THREE.MeshBasicMaterial({ color: "#e8590c" }));
 grip.position.y = -0.1;
 bat.add(barrel, grip);
 const batPivot = new THREE.Group(); batPivot.add(bat); camera.add(batPivot);
@@ -379,7 +387,7 @@ function burst(at) {
   const n = 18, pos = new Float32Array(n * 3), vel = [];
   for (let i = 0; i < n; i++) { pos.set([at.x, at.y, at.z], i * 3); vel.push(new THREE.Vector3(rng() - 0.5, rng() * 0.8, rng() - 0.5).multiplyScalar(6)); }
   const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  const p = new THREE.Points(g, new THREE.PointsMaterial({ color: "#2b2620", size: 0.07, transparent: true }));
+  const p = new THREE.Points(g, new THREE.PointsMaterial({ color: "#0a0a0a", size: 0.07, transparent: true }));
   scene.add(p); bursts.push({ p, vel, t: 0 });
 }
 function drop(e) { scene.remove(e.root); e.geo.dispose(); enemies.splice(enemies.indexOf(e), 1); }
@@ -549,11 +557,11 @@ function updateBat(dt) {
 const others = new Map();   // id -> {group, user, room, to, yaw}
 function avatar(user) {
   const g = new THREE.Group();
-  const ink = new THREE.MeshLambertMaterial({ color: "#2b2620" });
+  const ink = new THREE.MeshLambertMaterial({ color: "#0a0a0a" });
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 1.25, 12), ink); body.position.y = 0.75;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshLambertMaterial({ color: "#efe7cf" })); head.position.y = 1.6;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshLambertMaterial({ color: "#f4f4f2" })); head.position.y = 1.6;
   const b = bat.clone(); b.position.set(0.35, 1.0, -0.1); b.rotation.set(-0.4, 0, -0.5); b.name = "bat";
-  const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(user, "#8c2f22", 72), transparent: true, depthTest: false }));
+  const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(user, "#e8590c", 72), transparent: true, depthTest: false }));
   tag.scale.set(2.4, 0.3, 1); tag.position.y = 2.15;
   g.add(body, head, b, tag);
   scene.add(g);
