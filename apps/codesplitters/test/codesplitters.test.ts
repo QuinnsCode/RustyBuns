@@ -323,6 +323,25 @@ describe("rate limits", () => {
     expect((await repo(ana, "three")).status).toBe(201);
     expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
   });
+
+  test("preview and deploy runs count per handle", async () => {
+    const { ruleFor } = await import("../src/limits.ts");
+    const at = (path: string) => path.split("/").slice(1);
+    expect(ruleFor("POST", at("/api/repos/ana/one/preview"))).toBe("run");
+    expect(ruleFor("POST", at("/api/repos/ana/one/deploy"))).toBe("run");
+    expect(ruleFor("GET", at("/api/repos/ana/one/deploy"))).toBeNull();     // reading and settings don't start a run
+    expect(ruleFor("PUT", at("/api/repos/ana/one/deploy"))).toBeNull();
+
+    const { call, person } = await accounts({ ADMINS: "boss-person" });
+    const boss = await person("boss@example.com", "boss-person");
+    await call(null, "/api/admin/limits", { method: "PUT", headers: { cookie: boss }, body: JSON.stringify({ rules: [{ name: "run", max: 1, window_s: 86400, enabled: true }] }) });
+    const ana = await person("ana@example.com", "ana-lyst");
+    const run = (what: string) => call(null, `/api/repos/ana-lyst/one/${what}`, { method: "POST", headers: { cookie: ana, ...ip } });
+    expect((await run("preview")).status).not.toBe(429);
+    const over = await run("deploy");
+    expect(over.status).toBe(429);
+    expect(((await over.json()) as any).error).toMatch(/previews and deploys is limited to 1 per day/);
+  });
 });
 
 describe("github", () => {

@@ -1,8 +1,9 @@
 // Rate limits on what costs money or invites abuse: signing in and up, digging
 // up repos (Artifacts imports), the GitHub calls the site's token pays for,
-// commits (Artifacts pushes), and the things a spammer would make by the
-// thousand. Each rule counts per caller (their handle, else their IP) in fixed
-// windows, in D1. Admins tune them from the drawer (GET|PUT /api/admin/limits).
+// commits (Artifacts pushes), preview and deploy runs, and the things a
+// spammer would make by the thousand. Each rule counts per caller (their
+// handle, else their IP) in fixed windows, in D1. Admins tune them from the
+// drawer (GET|PUT /api/admin/limits).
 //
 // Only requests from the internet are counted: Cloudflare stamps those with
 // cf-connecting-ip. The desktop, the tests, and the Worker's own calls (hosted
@@ -25,6 +26,7 @@ export const RULES: Rule[] = [
   { name: "commit", label: "Commits", what: "pushes to Artifacts", per: "user", max: 60, window_s: HOUR },
   { name: "share", label: "Shares and collections", what: "share links, collections and tracks", per: "user", max: 60, window_s: HOUR },
   { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", per: "user", max: 20, window_s: DAY },
+  { name: "run", label: "Previews and deploys", what: "preview and deploy runs, on the site's cloud logins", per: "user", max: 20, window_s: DAY },
 ];
 
 /** Which rule a request counts against, if any. */
@@ -44,6 +46,7 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "repos" && p[4] === "files") return "file";
   if (p[1] === "repos" && p[4] === "shares") return "share";
   if (p[1] === "repos" && p[4] === "agents") return "agent";
+  if (p[1] === "repos" && (p[4] === "preview" || p[4] === "deploy") && !p[5]) return "run";
   if (p[1] === "repos" && p[4] === "do" && p[5] === "commit") return "commit";
   return null;
 }
