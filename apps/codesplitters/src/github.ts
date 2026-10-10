@@ -184,6 +184,9 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     // Shallow, like the levels; writable, because it's yours now.
     let art;
     try {
+      // No row owns this name (checked above), so an Artifact under it is an orphan: an import cut
+      // off halfway stays "being imported" on Cloudflare and would block the name for good (#348).
+      await env.ARTIFACTS.delete?.(`${user}--${name}`).catch(() => false);
       art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: t?.token, private: info.private },
         { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}` } });
     } catch (e) {

@@ -101,6 +101,9 @@ export async function importTarball(ns: Artifacts, p: {
 }): Promise<{ name: string; remote: string; defaultBranch: string }> {
   const ro = p.target.opts?.readOnly === true, name = ro ? `${p.target.name}-tip` : p.target.name;
   if (ro) await ns.delete?.(name).catch(() => false);   // a leftover from a try that died halfway
+  // On Cloudflare the import that just refused it leaves its half-made target behind for a while
+  // ("already exists", then "being imported"), so clear it before making ours (#348).
+  await ns.delete?.(p.target.name).catch(() => false);
   const made = await ns.create(name, { description: p.target.opts?.description, setDefaultBranch: p.branch });
   try {
     const res = await p.tarball();

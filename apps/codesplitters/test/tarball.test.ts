@@ -53,16 +53,22 @@ function fakeGitHub(sha: string, tgz: string) {
   return () => { globalThis.fetch = real; };
 }
 
-const tooBig = () => { throw Object.assign(new Error(`413 {"code":10402,"message":"Repository exceeded the 40MB import limit. Current depth is 1."}`), { code: "MEMORY_LIMIT" }); };
+/** As on Cloudflare: the refused import leaves its half-made target behind for a while (#348). */
+const tooBig = (ns: { create(name: string): Promise<unknown> }) => async (o: { target: { name: string } }) => {
+  await ns.create(o.target.name).catch(() => {});
+  return tooBigNow();
+};
+const tooBigNow = () => { throw Object.assign(new Error(`413 {"code":10402,"message":"Repository exceeded the 40MB import limit. Current depth is 1."}`), { code: "MEMORY_LIMIT" }); };
 
 describe("past the Artifacts import cap", () => {
   test("a dig comes in from GitHub's tarball, the same tree git has", async () => {
     const { sha, tree, tgz } = upstream();
     const call = await local({ GH_CLI: "off" });
-    call.artifacts.import = tooBig as any;
+    call.artifacts.import = tooBig(call.artifacts) as any;
     const restore = fakeGitHub(sha, tgz);
     try {
       await call("ana", "/api/login", { method: "POST", body: JSON.stringify({ name: "ana" }) });
+      await call.artifacts.create("ana--big");   // an orphan from a dig cut off halfway: no row owns it
       const res = await call("ana", "/api/github/dig", { method: "POST", body: JSON.stringify({ repo: "o/big" }) });
       expect(res.status).toBe(201);
       expect(((await res.json()) as any).commit).toBe(sha);
@@ -78,7 +84,7 @@ describe("past the Artifacts import cap", () => {
   test("a level does too, and stays read-only", async () => {
     const { sha, tree, tgz } = upstream();
     const call = await local({ GH_CLI: "off", ADMINS: "boss" });
-    call.artifacts.import = tooBig as any;
+    call.artifacts.import = tooBig(call.artifacts) as any;
     const restore = fakeGitHub(sha, tgz);
     // The level's repo, pointed at the fake.
     const { LEVELS } = await import("../src/levels.ts");
