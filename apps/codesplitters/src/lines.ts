@@ -85,8 +85,22 @@ export function replay(log: Applied[], rev = Infinity, from: Doc = empty()): Doc
   return doc;
 }
 
-/** A conflict, keyed by `line`: a base line (the first of a stretch both sides rewrote), or a new branch line main also added (`doubled`). */
-export interface Conflict { line: string; base: string; main: string | null; branch: string | null; doubled?: true }
+/**
+ * A conflict, keyed by `line`: a base line (the first of a stretch both sides
+ * rewrote), a new branch line main also added (`doubled`), `key:<path>` for a
+ * config key the merge would define twice, or `file` for a lockfile both
+ * changed (`whole`: keep one side, then regenerate it).
+ */
+export interface Conflict { line: string; base: string; main: string | null; branch: string | null; doubled?: true; whole?: true }
+
+/** How a file merges, by its path: lockfiles whole, config by key, prose loosely, code strictly. */
+export type Kind = "lock" | "keyed" | "prose" | "code";
+export function kindOf(path: string): Kind {
+  if (/(^|\/)(bun\.lockb?|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|Gemfile\.lock|poetry\.lock|uv\.lock|composer\.lock|go\.sum)$/.test(path)) return "lock";
+  if (/(^|\/)\.env|\.env$|\.(json|jsonc|ya?ml|toml)$/i.test(path)) return "keyed";
+  if (/\.(md|mdx|markdown|txt|rst|adoc)$/i.test(path)) return "prose";
+  return "code";
+}
 
 /**
  * A three-way merge by line id: what `branch` changed since it forked from
@@ -105,21 +119,33 @@ export interface Conflict { line: string; base: string; main: string | null; bra
  * - one line both rewrote in the same words.
  * - the same line added on both sides in different places (`doubled`): it
  *   would land twice.
+ * - by `path` (see `kindOf`): a lockfile both changed is one whole-file
+ *   conflict, since a line merge of one is never valid; a config key (.env,
+ *   JSON, YAML, TOML) the merge would define twice is a conflict; and in code,
+ *   lines added right next to lines the other side deleted are a conflict too
+ *   (the deleted lines may be what the new ones use). Prose is left loose.
  *
  * Other new lines never conflict: each goes after the nearest line before it
  * that main still has. Inserts are given the ids main will assign them, so
  * the batch must land on `main` exactly as passed. Deleted lines leave no
  * blame, so their ops are credited to `deleter`.
  */
-export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string, "branch" | "main"> = {}, deleter = "anon") {
+export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string, "branch" | "main"> = {}, deleter = "anon", path = "") {
+  const kind = kindOf(path);
+  if (kind === "lock") {
+    const [b, m, br] = [base, main, branch].map(text);
+    if (b !== m && b !== br && m !== br) return wholeFile(branch, main, resolve.file, deleter);
+  }
   const was = new Map(base.lines.map((l) => [l.id, l])), now = new Map(main.lines.map((l) => [l.id, l]));
   const at = new Map(main.lines.map((l, i) => [l.id, i]));
   const movedOnMain = moves(base, main, was), movedOnBranch = moves(base, branch, was);
   const moveOf = new Map([...movedOnBranch].map(([id, l]) => [l.id, id]));
   const mainPos = places(base, main), branchPos = places(base, branch);
-  const regions = clashes(hunks(base, main, mainPos, movedOnMain), hunks(base, branch, branchPos, movedOnBranch));
+  const regions = clashes(hunks(base, main, mainPos, movedOnMain), hunks(base, branch, branchPos, movedOnBranch), kind !== "prose");
   const inRegion = (p: number) => regions.some((g) => g.lo <= p && p <= g.hi);
-  const mainAdded = new Set(main.lines.filter((l) => !was.has(l.id)).map((l) => l.text));
+  // Lines main added that weren't in the file already: a line that already repeats (a test's setup call) is no sign of doubling.
+  const before = new Set(base.lines.map((l) => l.text));
+  const mainAdded = new Set(main.lines.filter((l) => !was.has(l.id) && !before.has(l.text)).map((l) => l.text));
   const ops: Op[] = [], by: string[] = [], conflicts: Conflict[] = [], taken = new Set<string>();
   let next = main.nextId, after: string | null = null;
   const push = (op: Op, who: string) => { ops.push(op); by.push(who); };
@@ -194,7 +220,79 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
     if (!pick) conflicts.push({ line: b.id, base: b.text, main: m.text, branch: null });
     else if (pick === "branch") push({ kind: "delete", line: m.id, base: m.rev }, deleter);
   }
+  if (kind === "keyed") twiceKeyed(main, branch, ops, by, conflicts, resolve, deleter, path);
   return { ops, by, conflicts };
+}
+
+/** Both changed a lockfile: keep main's, swap in the branch's whole, or report it. Either way it's regenerated after. */
+function wholeFile(branch: Doc, main: Doc, pick: "branch" | "main" | undefined, deleter: string) {
+  const ops: Op[] = [], by: string[] = [];
+  if (!pick) return { ops, by, conflicts: [{ line: "file", base: "", main: null, branch: null, whole: true as const }] };
+  if (pick === "branch") {
+    let after: string | null = null, next = main.nextId;
+    for (const m of main.lines) { ops.push({ kind: "delete", line: m.id, base: m.rev }); by.push(deleter); }
+    for (const l of branch.lines) { ops.push({ kind: "insert", after, text: l.text }); by.push(l.by); after = `L${next++}`; }
+  }
+  return { ops, by, conflicts: [] as Conflict[] };
+}
+
+/**
+ * Config keys the merge would define twice (more times than either side
+ * does): a conflict each, `key:<path>`. Settled as main, the merge's new
+ * copies are dropped; as the branch, main's are.
+ */
+function twiceKeyed(main: Doc, branch: Doc, ops: Op[], by: string[], conflicts: Conflict[], resolve: Record<string, "branch" | "main">, deleter: string, path: string) {
+  const d = structuredClone(main);
+  if (!apply(d, ops, by).ok) return;
+  const count = (doc: Doc) => { const c = new Map<string, number>(); for (const k of keys(doc.lines.map((l) => l.text), path)) if (k) c.set(k, (c.get(k) ?? 0) + 1); return c; };
+  const inMain = count(main), inBranch = count(branch), was = new Map(main.lines.map((l) => [l.id, l.text]));
+  const k = keys(d.lines.map((l) => l.text), path);
+  for (const [key, n] of count(d)) {
+    if (n <= Math.max(inMain.get(key) ?? 0, inBranch.get(key) ?? 0)) continue;
+    const lines = d.lines.filter((_, i) => k[i] === key), mains = lines.filter((l) => was.get(l.id) === l.text);
+    const pick = resolve[`key:${key}`];
+    if (!pick) {
+      const side = (doc: Doc) => doc.lines.filter((_, i) => keys(doc.lines.map((l) => l.text), path)[i] === key).map((l) => l.text).join("\n") || null;
+      conflicts.push({ line: `key:${key}`, base: "", main: side(main), branch: side(branch) });
+      continue;
+    }
+    const drop = pick === "main" ? lines.filter((l) => !mains.includes(l)) : mains;
+    for (const l of drop) {
+      // In JSON the line above may have gained a comma only for the line we drop: give it back main's text.
+      const above = d.lines[d.lines.indexOf(l) - 1], had = above && was.get(above.id);
+      if (pick === "main" && above && had !== undefined && above.text !== had && above.text.replace(/,\s*$/, "") === had.replace(/,\s*$/, "")) {
+        ops.push({ kind: "set", line: above.id, base: above.rev, text: had }); by.push(deleter);
+      }
+      ops.push({ kind: "delete", line: l.id, base: l.rev }); by.push(deleter);
+    }
+  }
+}
+
+/**
+ * Each line's config key, with its parents for nested formats (`a.b.c`), or
+ * null: `NAME=` in .env, `key =` under `[section]` in TOML, `"key":` or
+ * `key:` by indentation in JSON and YAML.
+ */
+function keys(lines: string[], path: string): (string | null)[] {
+  const env = /(^|\/)\.env|\.env$/i.test(path), toml = /\.toml$/i.test(path);
+  const stack: { indent: number; key: string }[] = [];
+  let section = "";
+  return lines.map((t) => {
+    if (env) return t.match(/^\s*(?:export\s+)?([A-Za-z_][\w.]*)\s*=/)?.[1] ?? null;
+    if (toml) {
+      const s = t.match(/^\s*\[\[?([^\]]+)\]\]?\s*$/);
+      if (s) { section = s[1]!.trim(); return null; }
+      const m = t.match(/^\s*("[^"]*"|[\w.-]+)\s*=/);
+      return m ? `${section}.${m[1]}` : null;
+    }
+    const m = t.match(/^(\s*)(?:-\s+)?(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([\w@./-]+))\s*:(?!\/)/);
+    if (!m) return null;
+    const indent = m[1]!.length, key = m[2] ?? m[3] ?? m[4]!;
+    while (stack.length && stack.at(-1)!.indent >= indent) stack.pop();
+    const full = [...stack.map((s) => s.key), key].join(".");
+    stack.push({ indent, key });
+    return full;
+  });
 }
 
 /**
@@ -217,7 +315,7 @@ function moves(base: Doc, side: Doc, was: Map<string, Line>) {
 
 // Positions against base: base line i at 2i + 1, the gap after it at 2i + 2, the top at 0.
 interface Region { lo: number; hi: number }
-interface Hunk extends Region { reshaped: boolean }
+interface Hunk extends Region { reshaped: boolean; deletes: boolean }
 
 /** Where each line of `side` sits against base: a base line at its own spot, a new line in the gap it was added to. */
 function places(base: Doc, side: Doc) {
@@ -241,15 +339,15 @@ function hunks(base: Doc, side: Doc, pos: Map<string, number>, moved: Map<string
   const ids = new Set(base.lines.map((l) => l.id)), items: Hunk[] = [];
   base.lines.forEach((b, i) => {
     const s = now.get(b.id);
-    if (!s) { if (!moved.has(b.id)) items.push({ lo: 2 * i, hi: 2 * i + 2, reshaped: true }); }
-    else if (s.text !== b.text) items.push({ lo: 2 * i + 1, hi: 2 * i + 1, reshaped: false });
+    if (!s) { if (!moved.has(b.id)) items.push({ lo: 2 * i, hi: 2 * i + 2, reshaped: true, deletes: true }); }
+    else if (s.text !== b.text) items.push({ lo: 2 * i + 1, hi: 2 * i + 1, reshaped: false, deletes: false });
   });
-  for (const l of side.lines) if (!ids.has(l.id) && !into.has(l.id)) items.push({ lo: pos.get(l.id)!, hi: pos.get(l.id)!, reshaped: true });
+  for (const l of side.lines) if (!ids.has(l.id) && !into.has(l.id)) items.push({ lo: pos.get(l.id)!, hi: pos.get(l.id)!, reshaped: true, deletes: false });
   items.sort((a, b) => a.lo - b.lo || a.hi - b.hi);
   const out: Hunk[] = [];
   for (const h of items) {
     const last = out.at(-1);
-    if (last && h.lo <= last.hi + 1) { last.hi = Math.max(last.hi, h.hi); last.reshaped ||= h.reshaped; }
+    if (last && h.lo <= last.hi + 1) { last.hi = Math.max(last.hi, h.hi); last.reshaped ||= h.reshaped; last.deletes ||= h.deletes; }
     else out.push({ ...h });
   }
   return out;
@@ -259,10 +357,12 @@ function hunks(base: Doc, side: Doc, pos: Map<string, number>, moved: Map<string
  * Stretches both sides reshaped: runs that share a line where either added or
  * deleted lines, or a line added inside a run the other side reshaped. Two
  * plain edits to one line are left to the word merge, and lines added at the
- * same spot on both sides just land in order. Sorted, and joined where they meet.
+ * same spot on both sides just land in order. `strict` (code) also counts
+ * lines added at either edge of a run the other side deleted lines in.
+ * Sorted, and joined where they meet.
  */
-function clashes(main: Hunk[], branch: Hunk[]): Region[] {
-  const inside = (p: Hunk, q: Hunk) => p.lo === p.hi && q.lo < p.lo && p.lo < q.hi;
+function clashes(main: Hunk[], branch: Hunk[], strict: boolean): Region[] {
+  const inside = (p: Hunk, q: Hunk) => p.lo === p.hi && (strict && q.deletes ? q.lo <= p.lo && p.lo <= q.hi : q.lo < p.lo && p.lo < q.hi);
   const found: Region[] = [];
   for (const x of main) for (const y of branch) {
     if (y.lo > x.hi + 1) break;

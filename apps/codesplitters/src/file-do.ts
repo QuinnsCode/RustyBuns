@@ -98,8 +98,8 @@ export class FileDurableObject {
     if (req.method === "POST" && route === "merge") {
       // Main's copy merges a branch into itself: computed and applied with no
       // await between, so nothing lands in the middle and the ids line up.
-      const { base, branch, resolve, dry, deleter } = (await req.json()) as { base: Doc; branch: Doc; resolve?: Record<string, "branch" | "main">; dry?: boolean; deleter?: string };
-      const m = merge(base, branch, this.doc, resolve, deleter);
+      const { base, branch, resolve, dry, deleter, path } = (await req.json()) as { base: Doc; branch: Doc; resolve?: Record<string, "branch" | "main">; dry?: boolean; deleter?: string; path?: string };
+      const m = merge(base, branch, this.doc, resolve, deleter, path);
       if (m.conflicts.length || dry || !m.ops.length) return json({ rev: this.doc.rev, ops: m.ops, conflicts: m.conflicts }, m.conflicts.length && !dry ? 409 : 200);
       const r = await this.edit(m.by, m.ops);
       return r.ok ? json({ rev: r.rev, ops: m.ops, applied: r.applied, conflicts: [] }) : json({ rev: r.rev, conflicts: r.conflicts }, 409);
