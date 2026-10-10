@@ -25,6 +25,7 @@
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { json, type Env } from "./env.ts";
 import { deployKeyRoutes, hostedWhy, keyInfo } from "./deploy-keys.ts";
+import { emit } from "./hooks.ts";
 import { preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 
 export interface Settings { stage: string; on_commit: boolean; production: boolean }
@@ -64,6 +65,12 @@ export async function finish(env: Env, run: Run) {
   const out = run.steps.filter((x) => x.out).map((x) => `── ${x.key} (${x.status})\n${x.out.slice(-2000)}`).join("\n").slice(-8000);
   await env.DB.prepare("UPDATE deploys SET status = ?, commit_hash = ?, url = ?, ms = ?, note = ?, out = ? WHERE id = ?")
     .bind(ok ? "done" : "failed", run.commit ?? null, run.url ?? null, Date.now() - run.at, run.note ?? null, out, run.id).run();
+  // Desktop or hosted, the repo's webhooks hear how it went.
+  const d = await env.DB.prepare("SELECT owner, repo, by, trigger FROM deploys WHERE id = ?").bind(run.id).first() as { owner: string; repo: string; by: string; trigger: string } | null;
+  if (d) await emit(env, d.owner, d.repo, "deploy.finished", d.by, {
+    deployment: { id: run.id, sha: run.commit ?? null, environment: run.stage, task: d.trigger, creator: { login: d.by } },
+    deployment_status: { state: ok ? "success" : "failure", environment: run.stage, environment_url: run.url ?? null, description: run.note ?? null },
+  });
 }
 
 const hostedStub = (env: Env, owner: string, repo: string) => env.DEPLOY_RUNNER!.get(env.DEPLOY_RUNNER!.idFromName(`${owner}/${repo}`));

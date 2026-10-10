@@ -1,6 +1,9 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
 import { bump, localFixer, outdated, scheduledDoctor, DEFAULTS, type Fixer, type Registry, type Tester } from "../src/deps.ts";
+import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
+// @ts-expect-error plain .mjs, no types: it is the server inside the container image
+import { depsTest as containerTest } from "../sandbox/server.mjs";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -242,4 +245,85 @@ test("the schedule runs repos that are on and due, and skips the rest", async ()
   expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).last_run).toBe(NOW);
   await scheduledDoctor(call.env, self, NOW + 25 * 3_600_000);
   expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).last_run).toBe(NOW + 25 * 3_600_000);
+});
+
+describe("on Cloudflare, tests run in an AGENT_SANDBOX container", () => {
+  /** The app with AGENT_SANDBOX bound to fake containers whose server answers /deps-test with `server`. */
+  async function hosted(server: (path: string, body: any) => { ok: boolean; out: string }) {
+    const { call, send } = await app();
+    call.env.ADMINS = "ryan";
+    const seen: { path: string; body: any; env?: Record<string, string> }[] = [];
+    call.env.ANTHROPIC_API_KEY = "sk-not-for-tests";
+    call.env.AGENT_SANDBOX = {
+      idFromName: (n: string) => n,
+      get: () => {
+        let running = false, started: Record<string, string> | undefined;
+        const c: ContainerApi = {
+          get running() { return running; },
+          start(o) { running = true; started = o?.env; },
+          async destroy() { running = false; },
+          getTcpPort: () => ({ async fetch(url, init) {
+            const body = JSON.parse(String(init!.body)), path = new URL(url).pathname;
+            seen.push({ path, body, env: started });
+            return Response.json(server(path, body));
+          } }),
+        };
+        return new AgentSandbox({ container: c }, call.env);
+      },
+    };
+    return { call, send, seen };
+  }
+
+  test("an admin's run: each try gets its own container with no logins, and the answer waits for it", async () => {
+    const { call, send, seen } = await hosted((_p, b) => JSON.parse(b.files["package.json"]).dependencies.kleur === "^4.1.5" ? { ok: false, out: "kleur broke" } : { ok: true, out: "pass" });
+    expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).can_test).toBe(true);
+    await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true }, "PUT");
+    const res = await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+    expect(res.status).toBe(200);
+    const report = await res.json();
+    expect(report.updates.map((u: any) => [u.name, u.status])).toEqual([["clsx", "kept"], ["hono", "kept"], ["kleur", "broke"]]);
+    expect(seen.length).toBe(5);
+    expect(seen.every((s) => s.path === "/deps-test" && s.body.remote.includes("://x:") && JSON.stringify(s.env) === "{}")).toBe(true);
+  });
+
+  test("an owner who isn't an admin gets no container: the updates go up untested", async () => {
+    const { call, send, seen } = await hosted(() => ({ ok: true, out: "" }));
+    call.env.ADMINS = "someone-else";
+    expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).can_test).toBe(false);
+    await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", run_tests: true }, "PUT");
+    const report = await (await send("ryan", "/api/repos/ryan/lab/deps/run", {})).json();
+    expect(report.updates.every((u: any) => u.status === "untested")).toBe(true);
+    expect(report.note).toContain("admins");
+    expect(seen.length).toBe(0);
+  });
+});
+
+describe("the container's /deps-test", () => {
+  /** A one-commit repo on disk whose package.json has this test script. */
+  async function repo(script: string) {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(`${tmpdir()}/deps-remote-`);
+    writeFileSync(`${dir}/package.json`, JSON.stringify({ name: "r", scripts: { test: script } }));
+    const git = (...a: string[]) => Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd: dir });
+    git("init", "-q"); git("add", "."); git("commit", "-qm", "init");
+    return dir;
+  }
+  const pkg = (test?: string) => ({ "package.json": JSON.stringify({ name: "r", ...(test ? { scripts: { test } } : {}) }) });
+
+  test("clones, swaps the files in, installs and runs the test script; the clone is gone after", async () => {
+    const remote = await repo("exit 1");
+    const passed = await containerTest({ remote, files: pkg("echo all-good") });
+    expect(passed.ok).toBe(true);
+    expect(passed.out).toContain("all-good");
+    expect(passed.out).not.toContain(remote);
+    expect((await containerTest({ remote, files: pkg("echo nope && exit 3") })).ok).toBe(false);
+    expect((await containerTest({ remote, files: pkg() })).out).toContain("(no test script)");
+  });
+
+  test("a bad remote or a path out of the clone fails cleanly", async () => {
+    expect((await containerTest({ remote: "/no/such/repo", files: {} })).ok).toBe(false);
+    const r = await containerTest({ remote: await repo("true"), files: { "../escape": "x" } });
+    expect(r).toEqual({ ok: false, out: "bad path: ../escape" });
+  });
 });

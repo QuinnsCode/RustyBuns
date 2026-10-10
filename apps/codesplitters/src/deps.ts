@@ -7,9 +7,11 @@
 // pulled within days), never past the level the owner allows, and never
 // anything on the ignore list.
 //
-// With tests on (desktop only, and the owner's choice, since it runs the
-// repo's own code), each update is tried in a throwaway clone first: install,
-// then the test script, then the clone is deleted. If the updates together
+// With tests on (the owner's choice, since it runs the repo's own code), each
+// update is tried in a throwaway clone first: install, then the test script,
+// then the clone is deleted. On the desktop that's a temp dir; on Cloudflare
+// it's a fresh AGENT_SANDBOX container per try, for the site's admins only,
+// like hosted agents, since it bills container time. If the updates together
 // break the tests, each is tried alone and only the ones that pass go on the
 // branch.
 //
@@ -26,7 +28,7 @@
 
 import type { Doc, Op } from "./lines.ts";
 import { access as artifactAccess, handleFor } from "./archive.ts";
-import { actingAs } from "./identity.ts";
+import { actingAs, isAdmin } from "./identity.ts";
 import { json, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { harnessCommand, HARNESSES, type Harness } from "./harness.ts";
@@ -239,13 +241,26 @@ export function fixPrompt(u: Update, out: string, ctx: { changelog: string; hist
   ].join("\n");
 }
 
-/** Where tests can run: the desktop, when the owner turned them on. */
-const testerFor = (env: Env, s: Settings): Tester | null =>
-  !s.run_tests ? null : (env.DEPS_TESTER as Tester | undefined) ?? (typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET ? localTester() : null);
+/** The same run in a container of its own (sandbox/server.mjs, POST /test), torn down after. */
+export const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester => async (remote, files) => {
+  const stub = ns.get(ns.idFromName(crypto.randomUUID()));
+  const res = await stub.fetch(new Request("http://sandbox/deps-test", { method: "POST", body: JSON.stringify({ remote, files }) }));
+  if (!res.ok) return { ok: false, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(remote, "<remote>")}` };
+  return (await res.json()) as { ok: boolean; out: string };
+};
 
-/** Who fixes a broken update: the agent the owner picked, wherever tests run. */
-const fixerFor = (env: Env, s: Settings): Fixer | null =>
-  !s.fix_with || !testerFor(env, s) ? null : (env.DEPS_FIXER as Fixer | undefined) ?? localFixer(env.AGENT_EXEC as Exec | undefined);
+/** Where this owner's tests can run: a container for the site's admins, else the desktop. */
+function testerAt(env: Env, owner: string): Tester | null {
+  if (env.DEPS_TESTER) return env.DEPS_TESTER as Tester;
+  if (env.AGENT_SANDBOX) return env.ADMINS && isAdmin(env, owner) ? containerTester(env.AGENT_SANDBOX) : null;
+  return typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET ? localTester() : null;
+}
+
+const testerFor = (env: Env, s: Settings, owner: string): Tester | null => s.run_tests ? testerAt(env, owner) : null;
+
+/** Who fixes a broken update: the agent the owner picked. It runs on this machine, so not on Cloudflare, even where tests run in a container. */
+const fixerFor = (env: Env, s: Settings, owner: string): Fixer | null =>
+  !s.fix_with || !testerFor(env, s, owner) ? null : (env.DEPS_FIXER as Fixer | undefined) ?? (env.AGENT_SANDBOX ? null : localFixer(env.AGENT_EXEC as Exec | undefined));
 
 // ---- a run ------------------------------------------------------------------
 
@@ -273,9 +288,9 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   if (!found.length) return { at: now, checked, updates: [], note: "everything is up to date" };
 
   // Try them together, and only one by one when that breaks.
-  const tester = testerFor(env, s);
+  const tester = testerFor(env, s, owner);
   let updates: Update[] = found.map((u) => ({ ...u, status: "untested" }));
-  let note = tester ? undefined : s.run_tests ? "tests only run on the desktop app" : undefined;
+  let note = tester ? undefined : s.run_tests ? (env.AGENT_SANDBOX ? "tests on Cloudflare are limited to this site's admins (ADMINS)" : "tests only run on the desktop app") : undefined;
   let edits: Edit[] = [];
   if (tester) {
     const h = await handleFor(env, owner, repo);
@@ -297,7 +312,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
         }
       }
       // An agent takes each broken update in turn, on top of what's kept and fixed so far.
-      const fixer = fixerFor(env, s);
+      const fixer = fixerFor(env, s, owner);
       for (const u of fixer ? updates.filter((u) => u.status === "broke") : []) {
         const taken = updates.filter((x) => x === u || x.status === "kept" || x.status === "fixed");
         const files = { ...Object.fromEntries(edits.map((e) => [e.path, e.after])), "package.json": bump(lines, taken).join("\n") + "\n" };
@@ -402,7 +417,7 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
 
   if (!p[5] && req.method === "GET") {
     const r = await env.DB.prepare("SELECT last_run, last_report, running_since FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-    const canTest = !!env.DEPS_TESTER || (typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET);
+    const canTest = !!testerAt(env, owner);
     return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: canTest });
   }
   if (!p[5] && req.method === "PUT") {
@@ -424,7 +439,8 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     if (!(await claim(env, owner, repo))) return json({ error: "already checking" }, 409);
     const done = runDoctor(env, caller(self, url.origin), owner, repo);
     // A run that installs and tests takes minutes: answer now, and the page polls.
-    if (testerFor(env, await settings(env, owner, repo))) { void done; return json({ running: true }, 202); }
+    // Not on Cloudflare, where work left after the response is cut off.
+    if (!env.AGENT_SANDBOX && testerFor(env, await settings(env, owner, repo), owner)) { void done; return json({ running: true }, 202); }
     return json(await done);
   }
   return null;

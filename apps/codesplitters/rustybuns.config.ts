@@ -26,8 +26,9 @@ export default defineConfig({
     compatibilityDate: "2026-06-01",
     compatibilityFlags: ["nodejs_compat"],   // Better Auth leans on Node APIs (AsyncLocalStorage)
     build: "bun run build.ts",
-    // Hourly: each repo's dependency doctor runs when its own schedule says it's due (src/deps.ts).
-    crons: ["0 * * * *"],
+    // Every five minutes: webhook retries (src/hooks.ts). Hourly: each repo's dependency
+    // doctor runs when its own schedule says it's due (src/deps.ts).
+    crons: ["*/5 * * * *", "0 * * * *"],
   },
   bindings: {
     // Profiles, repos, playlists and the search index.
@@ -53,8 +54,9 @@ export default defineConfig({
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitters.notryanquinn.workers.dev" },
     ...secrets(set("GITHUB_CLIENT_ID"), "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"),
     ...secrets(set("GOOGLE_CLIENT_ID"), "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
-    // Handles allowed to excavate levels once accounts are on.
-    ADMINS: { type: "var", value: "" },
+    // Handles allowed to excavate levels once accounts are on. "quinn" is short, so
+    // it's claimed through a handle_grants row for the owner's verified email (#214).
+    ADMINS: { type: "var", value: "quinn" },
   },
   targets: {
     // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler;

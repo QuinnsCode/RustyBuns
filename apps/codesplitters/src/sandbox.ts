@@ -57,7 +57,7 @@ export class AgentSandbox {
       c.start({ env, enableInternet: true });
     }
     try {
-      // /run: an agent on a file; /test: bun test on a cut's files (cuts.ts).
+      // /run: an agent on a file; /test: bun test on a cut's files (cuts.ts); /deps-test: the dependency doctor's run (deps.ts).
       return await portFetch(c, new URL(req.url).pathname, body);
     } finally {
       await c.destroy().catch(() => {});
