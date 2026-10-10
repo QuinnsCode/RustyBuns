@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +11,21 @@ import { exec } from "../deploy-sandbox/server.mjs";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
+
+// After a deploy the runner GETs the URL it printed until it answers. Here that's the fake
+// lab.ryan.workers.dev, so answer it locally: a real request waits on the network, and one that
+// fails retries every 2s, past the 5s test timeout.
+const checked: string[] = [];
+const realFetch = globalThis.fetch;
+beforeAll(() => {
+  globalThis.fetch = (async (u: string | URL | Request, init?: RequestInit) => {
+    const url = String(u instanceof Request ? u.url : u);
+    if (!url.startsWith("https://lab.ryan.workers.dev")) return realFetch(u, init);
+    checked.push(url);
+    return new Response("ok");
+  }) as typeof fetch;
+});
+afterAll(() => { globalThis.fetch = realFetch; });
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const TOKEN = "cf-scoped-token-0123456789abcdWXYZ";
@@ -180,6 +195,7 @@ describe("a hosted deploy", () => {
     expect(seen.destroyed).toBe(1);
     expect(seen.ran.find((l) => l.includes("rustybuns deploy"))).toContain("--stage prod");
     expect(d.run.steps.map((s: any) => s.status)).toEqual(["done", "done", "done", "done"]);
+    expect(checked).toContain("https://lab.ryan.workers.dev");
     expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "button", status: "done", runner: "hosted", key_last4: "WXYZ", commit_hash: SHA, url: "https://lab.ryan.workers.dev" });
     expect(JSON.stringify(d)).not.toContain(TOKEN);
     expect(d.history[0].out).toContain("<deploy key>");
