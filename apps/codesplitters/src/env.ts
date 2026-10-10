@@ -57,7 +57,7 @@ export interface Env {
   /** Cloudflare Artifacts (a bare-repo twin on the desktop). Optional: without it, nothing is pushed. */
   ARTIFACTS?: Artifacts;
   /**
-   * Levels too big for Artifacts (Bun, Alchemy), packed into chunks (chunks.ts).
+   * Levels too big for an Artifacts repo even from the tarball, packed into chunks (chunks.ts).
    * Without it, such a level stays failed with Artifacts' reason.
    */
   LEVEL_CHUNKS?: R2Like;

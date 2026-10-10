@@ -30,10 +30,10 @@ export default defineConfig({
     // Hourly: each repo's dependency doctor runs when its own schedule says it's due (src/deps.ts),
     // and rate limits are swept. Queued requests and webhook retries ride the JOBS and HOOKS queues.
     crons: ["0 * * * *"],
-    // A dig or level import over Artifacts' 40 MB cap rebuilds the repo from GitHub's tarball
-    // inside the request (src/tarball.ts). Measured live (#348): Alchemy's dig took 9.9 s of CPU,
-    // and Bun's level import to R2 8.9 s. That's under the default 30 s, but a bigger repo, or Bun
-    // dug in packs, has room to grow. This is a cap, billed per ms used.
+    // A dig over Artifacts' 40 MB import cap rebuilds the repo from GitHub's tarball inside the
+    // request (src/tarball.ts); level imports do the same off the LEVEL_DIGS queue. Measured live
+    // (#348): Alchemy's dig took 9.9 s of CPU, and Bun's level import to R2 8.9 s. That's under
+    // the default 30 s, but a bigger repo has room to grow. This is a cap, billed per ms used.
     cpuMs: 300_000,
   },
   bindings: {
@@ -54,9 +54,10 @@ export default defineConfig({
     LEVEL_DIGS: { type: "queue", queueName: "codesplitters-level-digs", consumer: { batchSize: 1, maxWaitTimeMs: 1000, maxRetries: 3, retryDelay: 20, maxConcurrency: 8 } },
     // One git repo per excavation; cataloguing pushes to it.
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
-    // Levels too big for Artifacts (Bun, Alchemy), as ~8 MB chunks of their text files
-    // (src/chunks.ts), read through the Cache API. Well under R2's free 10 GB. No desktop
-    // twin yet; the desktop's local git takes any size anyway.
+    // Levels too big for an Artifacts repo even from the tarball, as ~8 MB chunks of their text files
+    // (src/chunks.ts), read through the Cache API. None so far: Bun and Alchemy fit in Artifacts
+    // from the tarball (#356), so the bucket is empty. No desktop twin yet; the desktop's local
+    // git takes any size anyway.
     LEVEL_CHUNKS: { type: "r2", bucketName: "codesplitters-level-chunks" },
     // Hosted coding agents (super experimental): one container per run, each CLI
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
