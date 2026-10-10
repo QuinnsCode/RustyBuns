@@ -1260,6 +1260,18 @@ describe("shares", () => {
     expect([await read("ana--old--crew", "b.ts"), await read("ana--old", "a.ts"), await read("ana--old", "b.ts")]).toEqual(["b\nsecret = 1\n", "one\n", "b\n"]);
     const log = await (await call.artifacts.get("ana--old--crew")).log({ ref: "main", limit: 3 });
     expect(log.map((c: any) => c.message.trim())).toEqual(["b", "c", "Private lines' real text: a.ts"]);
+
+    // A crew remote made before the backfill existed: a bare fork, a.ts blank, nothing owed. The migration flags it.
+    call.artifacts.get = get;
+    await call.artifacts.delete!("ana--old--crew");
+    const fork = await (await get("ana--old")).fork("ana--old--crew", { defaultBranchOnly: true });
+    await call.env.DB.prepare("UPDATE repos SET crew_remote = ? WHERE owner = 'ana' AND name = 'old'").bind(fork.remote).run();
+    expect([await read("ana--old--crew", "a.ts"), await owed()]).toEqual(["one\n", null]);
+    const sql = await Bun.file(new URL("../migrations/0033_crew_backfill.sql", import.meta.url)).text();
+    await call.env.DB.prepare(sql.match(/^UPDATE .*;$/m)![0]).run();
+    await post(call, "ana", `${on}/ops?path=c.ts`, { ops: [{ kind: "insert", after: "L1", text: "d" }] });
+    await post(call, "ana", `${on}/commit?path=c.ts`, { message: "c2" });
+    expect([await read("ana--old--crew", "a.ts"), await read("ana--old--crew", "b.ts"), await owed()]).toEqual(["one\nkey = hunter2\n", "b\nsecret = 1\n", null]);
   });
 
   test("a branch that changes build or deploy files says so, and a merge that would ship waits for the owner to read it", async () => {
