@@ -23,6 +23,9 @@ export default defineConfig({
       world: "packages/desktop/world.ts",
       worldPath: "/ws",
       window: "app",
+      // native/ only builds to wasm (served from public/), so no cdylib rides in the binary
+      // and every OS cross-compiles from one machine.
+      native: false,
       // LAN party: the host's page opens the lobby at runtime. Three guests + the host = four seats.
       // Guests must speak the same wire protocol (a browser page cannot know the host's build string).
       guests: { max: 3, version: LAN_VERSION },

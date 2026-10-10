@@ -473,9 +473,12 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   const build = mode === "spa" ? d.clientBuild : c.worker!.build;
   // Before the client build: a target mistake shouldn't cost a full UI build first.
   const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}` as DesktopOs;
-  const targets: DesktopOs[] = opts.target ? [opts.target as DesktopOs]
-    : d.targets === "all" ? ALL_OS
-    : d.targets ?? [hostTag];
+  const want = opts.target ?? d.targets;
+  const targets: DesktopOs[] = want === "all" ? ALL_OS
+    : typeof want === "string" ? [want as DesktopOs]
+    : want ?? [hostTag];
+  const unknown = targets.filter((t) => !ALL_OS.includes(t));
+  if (unknown.length) throw new Error(`unknown desktop target ${unknown.join(", ")}: use all, or one of ${ALL_OS.join(", ")}`);
 
   // desktop.native: false keeps native/ out of the binary (a wasm-only crate, say).
   const hasRust = d.native !== false && await Bun.file("native/Cargo.toml").exists();
