@@ -21,6 +21,7 @@
 
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { json, type Env } from "./env.ts";
+import { emit } from "./hooks.ts";
 import { history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 
 export interface Settings { stage: string; on_commit: boolean; production: boolean }
@@ -60,6 +61,11 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(async () => {
       await logEnd(env, run);
+      const ok = run.steps.every((x) => x.status === "done");
+      await emit(env, owner, repo, "deploy.finished", by, {
+        deployment: { id, sha: run.commit ?? null, environment: s.stage, task: trigger, creator: { login: by } },
+        deployment_status: { state: ok ? "success" : "failure", environment: s.stage, environment_url: run.url ?? null, description: run.note ?? null },
+      });
       if (entry.again) void start(env, owner, repo, entry.again, "commit");
     });
   return { run };

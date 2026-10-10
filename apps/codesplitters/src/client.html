@@ -160,6 +160,8 @@
   .ln.sel { background: var(--select); } .ln.sel .n { color: var(--fg); box-shadow: inset 2px 0 0 var(--fg); }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   .ln.claim .t { box-shadow: inset 2px 0 0 var(--accent); }
+  .ln.priv .n { box-shadow: inset 2px 0 0 var(--faint); } .ln .ph { color: var(--faint); font-style: italic; }
+  .ln.priv .t::after { content: "private"; margin-left: 10px; padding: 0 6px; border: 1px solid var(--border-2); border-radius: 9px; font-size: 10.5px; color: var(--faint); }
   /* A cut's gutter: each test's line, and the lines a failure points at. */
   .ln.pass .n { color: #2f9e44; box-shadow: inset 3px 0 #2f9e44; } .ln.fail .n { color: #cf222e; box-shadow: inset 3px 0 #cf222e; }
   .runsum.pass { color: #2f9e44; } .runsum.fail { color: #cf222e; }
@@ -567,7 +569,8 @@ function table(tree, href) {
   return `<div class="table">${tree.entries.map((e) => `<a class="rowlink" href="${href(e)}">${e.type === "dir" ? icon("folder", "ic-dir") : icon("file", "ic-file")}<span>${esc(e.name)}</span></a>`).join("")}</div>`;
 }
 function codeRows(lines, { blame = true, start = 1 } = {}) {
-  return lines.map((l, i) => `<div class="ln" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${esc(l.text) || " "}</span></div>`).join("");
+  // A private line reaches people outside the crew blank: say so instead of showing nothing.
+  return lines.map((l, i) => `<div class="ln${l.private ? " priv" : ""}" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${l.private && !l.text ? '<span class="ph">private line: only the crew can read it</span>' : esc(l.text) || " "}</span></div>`).join("");
 }
 /** Cut lines out: the picked pieces, plus "path:from-to" lines from the "add these lines too" box. */
 function cutLines(owner, repo, pieces, more = "", note = "") {
@@ -765,7 +768,8 @@ const views = {
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<div id="deps"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("send", "Deploy", `<div id="deploy"><span class="muted">…</span></div>`) : "")
-      + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "");
+      + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "")
+      + (owner === me() ? sec("webhook", "Webhooks", `<div id="hooks"><span class="muted">…</span></div>`) : "");
   },
   /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
   async wireFit(owner, repo, dir = "") {
@@ -800,7 +804,7 @@ const views = {
           up to <select name="max_level">${opt("patch", "patch", s.max_level)}${opt("minor", "minor", s.max_level)}${opt("major", "major", s.max_level)}</select></div>
         <div class="row">releases at least <input name="min_age_days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
         <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
-        <label title="${d.can_test ? "" : "Tests run on the desktop app"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code on this machine)</span></label>
+        <label title="${d.can_test ? "" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code)</span></label>
         <div class="row">when one breaks them, <select name="fix_with"${d.can_test ? "" : " disabled"}>${opt("", "leave it out", s.fix_with ?? "")}${["claude", "codex", "pi", "opencode"].map((h) => opt(h, `have ${h} fix it`, s.fix_with ?? "")).join("")}</select>
           in up to <input name="fix_tries" type="number" min="1" max="5" value="${s.fix_tries}" style="width:3em"> tries</div>
         <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deps-run"${d.running ? " disabled" : ""}>${icon("refresh-cw")}${d.running ? "Checking…" : "Check now"}</button></div>
@@ -866,6 +870,48 @@ const views = {
       if (d.run && !d.run.done) timer = setTimeout(poll, 1000);
     };
     poll();
+  },
+  /** Outgoing webhooks: a URL per hook, the events it hears, each with its last delivery and its log. */
+  async wireHooks(owner, repo, secret) {
+    const el = $("#hooks"), base = `/repos/${owner}/${repo}/hooks`;
+    if (!el) return;
+    const d = await api(base).catch(() => null);
+    if (!d) { el.innerHTML = '<span class="muted">unavailable</span>'; return; }
+    const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const st = (x) => `<span class="st ${x.status === "failed" ? "failed" : x.status === "pending" ? "running" : ""}">${x.status}${x.code ? ` · ${x.code}` : ""}</span>`;
+    el.innerHTML = `${secret ? `<p style="font-size:12px">Its secret, shown this once: sign-check <code>X-CodeSplitters-Signature</code> with it.</p><div class="copyline"><input readonly value="${esc(secret)}"><button class="btn" id="hook-secret">${icon("copy")}</button></div>` : ""}
+      ${d.hooks.map((h) => `<div class="run"><span style="font-size:12px"><code>${esc(h.url)}</code> <button class="btn" data-hook-del="${h.id}" title="Delete">${icon("trash-2")}</button></span>
+        <span class="muted" style="font-size:12px">${h.events.map(esc).join(", ")}</span>
+        ${h.last ? `<span style="font-size:12px">${st(h.last)} ${esc(h.last.event)} · ${when(h.last.at)}</span>` : '<span class="muted" style="font-size:12px">nothing sent yet</span>'}
+        <details data-hook-log="${h.id}"><summary class="muted" style="font-size:12px;cursor:pointer">deliveries</summary><div></div></details></div>`).join("")}
+      <form id="hook-form" style="display:grid;gap:6px;font-size:13px;margin-top:6px">
+        <input name="url" type="url" placeholder="https://ci.example.com/codesplitters" required>
+        <div class="row" style="flex-wrap:wrap;gap:8px">${d.events.map((e) => `<label><input type="checkbox" name="ev" value="${e}" checked> <code>${e}</code></label>`).join("")}</div>
+        <div><button class="btn primary">${icon("plus")}Add webhook</button></div>
+      </form>
+      <p class="muted" style="font-size:12px;margin-top:4px">GitHub-shaped JSON, POSTed and signed with HMAC-SHA256. A failed delivery is tried again for about three hours.</p>`;
+    $("#hook-secret")?.addEventListener("click", () => copy(secret, "Secret copied"));
+    $("#hook-form").addEventListener("submit", async (e) => {
+      e.preventDefault(); const f = e.target;
+      const events = [...f.querySelectorAll("[name=ev]:checked")].map((x) => x.value);
+      try { const h = await api(base, { url: f.url.value, events }); views.wireHooks(owner, repo, h.secret); }
+      catch (err) { toast(err.message); }
+    });
+    el.querySelectorAll("[data-hook-del]").forEach((b) => b.addEventListener("click", async () => {
+      try { await api(`${base}/${b.dataset.hookDel}`, undefined, "DELETE"); views.wireHooks(owner, repo); } catch (err) { toast(err.message); }
+    }));
+    el.querySelectorAll("[data-hook-log]").forEach((det) => det.addEventListener("toggle", async () => {
+      if (!det.open) return;
+      const id = det.dataset.hookLog, log = await api(`${base}/${id}/deliveries`).catch(() => []);
+      det.lastElementChild.innerHTML = log.length ? log.map((x) => `<div style="font-size:12px;margin:4px 0">${st(x)} ${esc(x.event)} · ${when(x.at)} · ${x.attempts} ${x.attempts === 1 ? "try" : "tries"}
+        <button class="btn" data-redeliver="${x.id}" title="Send again">${icon("refresh-cw")}</button>
+        ${x.response ? `<pre>${esc(x.response)}</pre>` : ""}</div>`).join("") : '<span class="muted" style="font-size:12px">none yet</span>';
+      det.querySelectorAll("[data-redeliver]").forEach((b) => b.addEventListener("click", async () => {
+        try { await api(`${base}/${id}/deliveries/${b.dataset.redeliver}/redeliver`, {}); toast("Sent again"); } catch (err) { toast(err.message); }
+      }));
+      icons();
+    }));
+    icons();
   },
   /** A preview deploy: five steps that go green as the stack goes up and comes down. Click one for its log. */
   async wirePreview(owner, repo) {
@@ -955,6 +1001,7 @@ const views = {
     views.wireFit(owner, repo);
     views.wirePreview(owner, repo);
     views.wireDeploy(owner, repo);
+    views.wireHooks(owner, repo);
   },
   repoStatus(r, tree, extra = "") {
     return `<span>${icon("git-branch")}${esc(r.branch ?? "main")}</span>${tree?.commit ? `<span>${icon("git-commit-horizontal")}${tree.commit.hash.slice(0, 7)}</span>` : ""}<span>${icon(r.visibility === "private" ? "lock" : "globe")}${r.visibility}</span>${extra}`;
@@ -1039,6 +1086,7 @@ const views = {
         ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
         ${r.canWrite ? `<div class="pop"><button class="btn" id="cut" disabled title="select lines first: click a line number, shift-click another">${icon("scissors")}Cut</button><form class="panel" id="cut-form" hidden style="width:380px"><b>Cut <span id="cut-range"></span> out</b><span class="muted" style="font-size:13px">Just these lines and the imports they use, as a tiny repo on a branch of its own: run its tests, share it, merge a fix back.</span><textarea name="more" rows="3" placeholder="add these lines too, a range a line:&#10;test/sum.test.ts:10-24"></textarea><input name="note" placeholder="what it shows (optional)"><button class="btn primary">${icon("scissors")}Cut</button></form></div>` : ""}
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
+        ${r.canWrite ? `<button class="btn" id="lock" disabled title="select lines first. Only the crew reads a private line; everyone else, git and search get it blank">${icon("lock")}<span>Make private</span></button>` : ""}
         ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
         ${r.canWrite ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
       body: `<div class="code" id="lines"></div>`,
@@ -1077,10 +1125,13 @@ const views = {
     selectable(box, (range) => {
       sel = range;
       const label = range[0] === range[1] ? `line ${range[0]}` : `lines ${range[0]}–${range[1]}`;
-      for (const b of ["#share", "#collect", "#cut"]) if ($(b)) $(b).disabled = false;
+      for (const b of ["#share", "#collect", "#lock", "#cut"]) if ($(b)) $(b).disabled = false;
+      if ($("#lock")) $("#lock span").textContent = selPrivate() ? "Make public" : "Make private";
       for (const b of ["#share-range", "#cut-range"]) if ($(b)) $(b).textContent = label;
       $("#st-sel").textContent = range[0] === range[1] ? `Ln ${range[0]}` : `Ln ${range[0]}–${range[1]}`;
     });
+    const selLines = () => sel ? doc.lines.slice(sel[0] - 1, sel[1]) : [];
+    const selPrivate = () => selLines().length > 0 && selLines().every((l) => l.private);
     // The game's "smash the removed lines": a revision pair of this file.
     const smashHref = (from, to) => `/play.html#r/${owner}/${repo}?path=${encodeURIComponent(path)}&from=${from}&to=${to}`;
     // Newest first, so a commit's parent is the next one down.
@@ -1148,6 +1199,11 @@ const views = {
         finally { go.disabled = false; }
       });
     }
+    $("#lock")?.addEventListener("click", async () => {
+      const on = !selPrivate();
+      await api(`${base}/private${q}`, { lines: selLines().map((l) => l.id), private: on });
+      toast(on ? "Only the crew can read those lines now. Text already pushed stays in git's history" : "Those lines are public again");
+    });
     if ($("#share")) {
       popover($("#share"));
       $("#share-form").addEventListener("submit", async (e) => {
@@ -1191,7 +1247,7 @@ const views = {
     const applyLocal = (a) => {
       const i = doc.lines.findIndex((l) => l.id === (a.op.kind === "insert" ? a.op.after : a.line));
       if (a.op.kind === "insert") doc.lines.splice(a.op.after === null ? 0 : i + 1, 0, { id: a.line, text: a.op.text, by: a.by, rev: a.rev });
-      else if (a.op.kind === "set") doc.lines[i] = { id: a.line, text: a.op.text, by: a.by, rev: a.rev };
+      else if (a.op.kind === "set") doc.lines[i] = { ...doc.lines[i], id: a.line, text: a.op.text, by: a.by, rev: a.rev };
       else doc.lines.splice(i, 1);
       doc.rev = a.rev;
     };
@@ -1204,6 +1260,13 @@ const views = {
       }
       if (msg.type === "presence") return $("#who-here").textContent = msg.who.length > 1 ? msg.who.map((w) => "@" + w).join(", ") : "just you";
       if (msg.type === "commit") return drawCommits(await api(`${base}/commits${q}`));
+      // Lines went private or public: the server says what this reader may see.
+      if (msg.type === "private") {
+        doc = await api(`${base}/file${q}`);
+        if (sel && $("#lock")) $("#lock span").textContent = selPrivate() ? "Make public" : "Make private";
+        if (viewing === null && !box.querySelector(".ln input")) draw(doc);
+        return;
+      }
       if (msg.type !== "ops") return;
       // In order: apply in place. Missed something (a gap): fetch the whole file.
       if (msg.applied[0]?.rev === doc.rev + 1) msg.applied.forEach(applyLocal);
@@ -1319,6 +1382,7 @@ const HOME_CMDS = [
   ["share-2", "Share some lines", "A live link to a range, even from a private repo.", "POST /api/repos/:o/:r/shares"],
   ["user-plus", "Invite your crew", "People and agents, same door.", "POST /api/repos/:o/:r/collaborators"],
   ["lock", "Public or private", "Flip a repo either way.", "PUT /api/repos/:o/:r"],
+  ["eye-off", "Private lines", "Hide some lines of a public repo from everyone but the crew, git included.", "POST /api/repos/:o/:r/do/private"],
   ["git-commit-horizontal", "Commit to git", "Pushes a real commit to the repo's Artifact.", "POST /api/repos/:o/:r/do/commit"],
   ["terminal", "Clone with git", "A real remote, with a read token that lasts an hour.", "GET /api/repos/:o/:r"],
   ["history", "Time travel", "Replay a file to any edit, with blame per line.", "GET /api/repos/:o/:r/do/at?rev="],
@@ -1425,6 +1489,7 @@ async function commands() {
       const s = await api(`/repos/${c.owner}/${c.repo}/shares`, { path: c.path, from, to: to || from });
       copy(`${location.origin}/#/s/${s.id}`, `Link to lines ${s.from}–${s.to} copied`);
     }, c.sel ? null : "which lines, like 4-12");
+    if (c.canWrite && range) add("This file", "lock", `${$("#lock span")?.textContent ?? "Make private"}: ${range}`, `POST /api/repos/${c.owner}/${c.repo}/do/private`, async () => $("#lock").click());
     if (c.canWrite) add("This file", "scissors", range ? `Cut ${range} out` : "Cut lines out…", `POST /api/repos/${c.owner}/${c.repo}/cuts`, async (arg) => {
       const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
       location.hash = "#/c/" + (await cutLines(c.owner, c.repo, [{ path: c.path, from, to: to || from }])).id;
