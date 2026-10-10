@@ -21,6 +21,7 @@ import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
+import { REFERENCE } from "./api.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -48,6 +49,8 @@ const app = {
     const url = new URL(req.url);
     const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
     if (p[0] !== "api") return new Response("not found", { status: 404 });
+    // GET /api  the API reference (src/api.ts), for anyone building their own UI or agent
+    if (!p[1] && req.method === "GET") return json(REFERENCE);
 
     // Rules counted by IP (signing in, signing up, claiming a handle) go before
     // anyone is known; the rest count against the handle.
