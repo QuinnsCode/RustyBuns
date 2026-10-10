@@ -24,6 +24,7 @@ import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
 import { bearer, tokenRoutes } from "./tokens.ts";
 import { openapi } from "./openapi.ts";
 import { REFERENCE } from "./api.ts";
+import { kickMirror, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -44,7 +45,7 @@ const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws"
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
 const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
 
-const HOURLY = "0 * * * *";
+const HOURLY = "0 * * * *", MIRRORS = "*/5 * * * *";
 
 const app = {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -83,6 +84,8 @@ const app = {
 
     const levels = await levelRoutes(req, env, p, url, user, admin);
     if (levels) return levels;
+    const mirrors = await mirrorRoutes(req, env, p, user);
+    if (mirrors) return mirrors;
     const github = await githubRoutes(req, env, p, user);
     if (github) return github;
     const game = await gameRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read);
@@ -145,7 +148,7 @@ const app = {
 
       // GET /api/repos/:o/:r
       if (!p[4] && req.method === "GET") {
-        const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, created_at, expires_at FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+        const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, created_at, expires_at, mirror_url IS NOT NULL AS mirror FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
         // Anyone who can read the repo can clone its artifact, with an hour-long read token;
         // the crew also gets their own remote's, with private lines' real text, once there is one.
@@ -157,7 +160,7 @@ const app = {
         const crewClone = crewArt && `git clone ${crewArt.remote.replace("://", `://x:${crewArt.token.split("?")[0]}@`)} ${repo}`;
         // Where the fork's git lives: a bare repo on this machine, or Cloudflare Artifacts.
         const home = h ? (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(art?.remote ?? h.remote) ? "local" : "cloud") : null;
-        return json({ ...r, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home });
+        return json({ ...r, mirror: !!r?.mirror, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home });
       }
       // PUT /api/repos/:o/:r {visibility}  (owner only)
       if (!p[4] && req.method === "PUT") {
@@ -211,6 +214,8 @@ const app = {
         }
         return json({ commit, entries });
       }
+      // GET|POST /api/repos/:o/:r/mirror  where a mirror stands with upstream; sync it now (mirror.ts)
+      if (p[4] === "mirror" && !p[5]) return mirrorRepoRoute(req, env, owner, repo, user);
       const fresh = await freshRoutes(req, env, p, url, owner, repo, user);
       if (fresh) return fresh;
       const branches = await branchRoutes(req, env, p, owner, repo, user, a);
@@ -291,6 +296,8 @@ const app = {
               head_commit: { id: git.commit, message: commit.message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: git.parent ? [] : [path], modified: git.parent ? [path] : [], removed: [] },
             });
             await deployOnCommit(env, owner, repo, user);
+            // A mirror hands the commit upstream now, if upstream's there to take it.
+            await kickMirror(env, owner, repo);
           }
           return json({ ...commit, git });
         }
@@ -356,10 +363,12 @@ const app = {
     return json({ error: "not found" }, 404);
   },
 
-  // The Cron Trigger (rustybuns.config.ts crons), hourly: each repo's dependency doctor runs
+  // The Cron Triggers (rustybuns.config.ts crons). Hourly: each repo's dependency doctor runs
   // when it's due, each fresh start under way takes its steps, rate-limit windows that have ended are cleared out, and any queued request
   // whose message went missing runs if its line has room.
   async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    // Every five minutes on the desktop, mirrors whose turn has come sync with upstream (mirror.ts).
+    if (c.cron === MIRRORS) { if (mirrorsOn(env)) ctx.waitUntil(syncDue(env)); return; }
     if (c.cron !== HOURLY) return;
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(sweepLimits(env));

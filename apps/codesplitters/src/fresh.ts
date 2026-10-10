@@ -95,6 +95,9 @@ export async function startIfFull(env: Env, owner: string, repo: string) {
 }
 
 async function start(env: Env, owner: string, repo: string): Promise<Fresh | { error: string; status: number }> {
+  // A mirror's git builds on upstream's history (mirror.ts); one root commit would cut it off.
+  if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first())
+    return { error: "a mirror's git shares upstream's history, so it doesn't start fresh", status: 409 };
   const f = await row(env, owner, repo);
   if (running(f)) return f!;
   if (f?.state === "failed") {

@@ -107,6 +107,8 @@ export interface Snapshot {
   /** Paths to write (content) or remove (null). Everything else is kept from the parent commit. */
   changes: Record<string, string | null>;
   message: string; author: string; branch?: string; at?: number;
+  /** The author's email; `<author>@codesplitters.local` without it. */
+  email?: string;
   /** Reads the parent's trees. Without it, `changes` is the whole tree. */
   base?: TreeReader;
 }
@@ -131,7 +133,7 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
     const parentTree = old !== ZERO && snap.base ? (await snap.base.readCommit(old))?.treeHash ?? null : null;
     const tree = (await apply(snap.base, parentTree, snap.changes, objs)) ?? (objs.push(await obj("tree", new Uint8Array())), objs.at(-1)!);
     const when = `${Math.floor((snap.at ?? Date.now()) / 1000)} +0000`;
-    const who = `${snap.author} <${snap.author}@codesplitters.local> ${when}`;
+    const who = `${snap.author} <${snap.email ?? `${snap.author}@codesplitters.local`}> ${when}`;
     const commit = await obj("commit", enc.encode(
       `tree ${tree.id}\n${old !== ZERO ? `parent ${old}\n` : ""}author ${who}\ncommitter ${who}\n\n${snap.message}\n`));
     objs.push(commit);
