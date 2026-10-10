@@ -404,6 +404,20 @@ test("artifacts: wrangler, alchemy and the desktop host all get the binding", ()
   expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
 });
 
+test("images: wrangler, alchemy and the desktop host all get the binding; wrangler's carries over", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { IMAGES: { type: "images" } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, "")).images).toEqual({ binding: "IMAGES" });
+  const a = generateAlchemy(c);
+  expect(a).toContain(`export const IMAGES = Cloudflare.Images.Images("IMAGES");`);
+  expect(a).toContain(`IMAGES: IMAGES`);
+  expect(desktopEntry(c)).toContain(`IMAGES: local.images(),`);
+  expect(wranglerToConfig({ name: "g", images: { binding: "IMG" } }).bindings).toEqual({ IMG: { type: "images" } });
+});
+
 test("container: wrangler and alchemy bind the class and its image; the desktop host leaves it out", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },

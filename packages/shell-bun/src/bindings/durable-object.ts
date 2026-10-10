@@ -293,4 +293,9 @@ export function installCloudflareGlobals() {
   }
   (globalThis as any).Response = RBResponse;
   (globalThis as any).WebSocketPair = WebSocketPair;
+  // Workers' Cache API. Nothing is kept: every match misses, so callers fall through to the work.
+  if (!("caches" in globalThis)) {
+    const none = { match: async () => undefined, put: async () => {}, delete: async () => false };
+    (globalThis as any).caches = { default: none, open: async () => none };
+  }
 }

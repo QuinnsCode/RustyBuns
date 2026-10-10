@@ -162,6 +162,8 @@ async function init() {
     cfg.worker!.assets = "dist/client";
     const kv = inf.astro!.sessionKV;
     if (!cfg.bindings[kv]) { cfg.bindings[kv] = { type: "kv" }; console.log(`sessions: ${kv} (KV, the binding @astrojs/cloudflare keeps sessions in)`); }
+    const img = inf.astro!.images;
+    if (img && !Object.values(cfg.bindings).some((b) => b.type === "images")) { cfg.bindings[img] = { type: "images" }; console.log(`images:   ${img} (Cloudflare Images, for the adapter's /_image; a passthrough on the desktop)`); }
   }
   // Secrets: names only, from .dev.vars. Values are read from .dev.vars at deploy time.
   const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k]);

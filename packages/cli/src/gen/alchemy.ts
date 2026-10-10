@@ -29,6 +29,9 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
     case "artifacts":
       // A binding marker: namespaces appear with their first repo, nothing to provision.
       return `export const ${id} = Cloudflare.Artifacts.Namespace("${name}", { namespace: ${JSON.stringify(b.namespace)} });`;
+    case "images":
+      // A Worker-only binding: no resource behind it.
+      return `export const ${id} = Cloudflare.Images.Images("${name}");`;
     case "durable_object":
       // Async Workers bind a DO exported by `main` with Cloudflare.DurableObject
       // in `env` (src/Cloudflare/Workers/DurableObject.ts, "Async Workers").
