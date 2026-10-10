@@ -3,7 +3,8 @@
 // runs in a container (sandbox/Dockerfile: each CLI, plus a small server). The
 // AgentSandbox Durable Object owns one container. Each run gets its own
 // instance, which starts the container, hands it the file and the command, and
-// stops it when the agent is done, so nothing bills while idle.
+// stops it when the agent is done, so nothing bills while idle. The dependency
+// doctor borrows the same container to install and test a repo (POST /test).
 
 import type { Sandbox } from "./agent-run.ts";
 import { json, type Env } from "./env.ts";
@@ -48,7 +49,7 @@ export class AgentSandbox {
       // The server takes a moment to listen after the container boots.
       for (let i = 0; ; i++) {
         try {
-          return await c.getTcpPort(PORT).fetch("http://sandbox/run", { method: "POST", body, headers: { "content-type": "application/json" } });
+          return await c.getTcpPort(PORT).fetch(`http://sandbox${new URL(req.url).pathname}`, { method: "POST", body, headers: { "content-type": "application/json" } });
         } catch (e) {
           if (i >= 60) throw e;
           await new Promise((r) => setTimeout(r, 500));
