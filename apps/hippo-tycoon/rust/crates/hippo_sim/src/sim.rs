@@ -217,7 +217,7 @@ fn drive_hippo(h: &mut Hippo, inp: &Input, out: &mut Vec<Ev>) {
 }
 
 /// geom.ts hippoPoint.
-fn hippo_point(seat: usize, slide: f64, lunge: f64) -> (f64, f64) {
+pub(crate) fn hippo_point(seat: usize, slide: f64, lunge: f64) -> (f64, f64) {
     let (c, s) = cos_sin(seat_angle(seat));
     let (ax, ay, tx, ty) = (c, s, -s, c);
     let axial = A_REST - LUNGE * lunge;

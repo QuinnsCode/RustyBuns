@@ -40,16 +40,20 @@ bun bench/sim.ts       # the rules engine: TypeScript vs Rust/wasm, ticks per se
 
 Without them the game runs the TypeScript twins (same output). The corner of the game says which fluid is running (`fluid: Rust/wasm`). The wasms are build outputs and are not committed.
 
-The rules engine (`rust/crates/hippo_sim`, a port of `src/sim/step.ts` with spawn, physics, gulp and effects) is opt-in: add `?sim=rust` to the page and solo and couch rounds step in Rust (`sim: Rust/wasm` in the corner). It is not the default because the bots, the renderer and the room all read the TypeScript `State`, so each tick copies the state into the module and back, and that copy costs more than the step saves. `bun bench/sim.ts 200` on an M-series Mac, Bun 1.4.2 (200 scripted 90 s rounds):
+The rules engine (`rust/crates/hippo_sim`, a port of `src/sim/step.ts` with spawn, physics, gulp and effects, and of the bots in `src/sim/bots.ts`) runs solo and couch rounds whenever `public/hippo_sim.wasm` is there (`sim: Rust/wasm` in the corner; `?sim=ts` forces the TypeScript twin). The round and the bots stay inside the module: `Match.setEngine()` hands them over once, then each tick sends the human inputs in and reads back a compact view for the snapshot (positions, no velocities). Reading `match.sim` brings the round home (the next tick hands it back), so nothing outside `Match` changes. `bun bench/sim.ts 200` on an M-series Mac, Bun 1.4.2 (200 90 s rounds):
 
 | engine | ticks/s | µs/tick |
 |---|---|---|
+| `step()` alone, 4 scripted seats | | |
 | TypeScript, before (`Math.hypot`) | ~800k | 1.25 |
 | TypeScript, now (`sqrt(x² + y²)`) | ~1,350k | 0.74 |
-| Rust/wasm, state copied in and out each tick (`?sim=rust`) | ~780k | 1.28 |
+| Rust/wasm, state copied in and out each tick | ~780k | 1.28 |
 | Rust/wasm, state kept in the module | ~2,150k | 0.47 |
+| in play: `Match.tick()` + `snapshot()`, 4 bots | | |
+| TypeScript | ~410k | 2.45 |
+| Rust/wasm, round and bots kept in the module | ~630k | 1.60 |
 
-The wasm is 33 KB (13 KB gzipped) with 1.1 MiB of linear memory, and is only fetched with `?sim=rust`; the loader adds 3 KB (1.2 KB gzipped) to the client JS. At 30 Hz every row is far under 0.01% of a frame, so either engine is fine for play. To keep the two bit-identical, `src/sim` uses no libm: `cos`/`sin` are a series in `src/sim/trig.ts` and lengths are `Math.sqrt(x * x + y * y)` (sqrt is exactly rounded everywhere; `Math.hypot` and trig are not). `test/sim-native.test.ts` compares the state hash and the events every tick over four whole rounds, and a full bot match through `Match`.
+The wasm is 40 KB (15 KB gzipped) with 1.1 MiB of linear memory. At 30 Hz every row is far under 0.01% of a frame, so either engine is fine for play; Rust also leaves the JS heap alone (+0.4 MB over 200 bot matches against +4.4 MB). The in-play rows were measured on a busy machine: compare them with each other, not with the rows above. The online room (the Durable Object) and the desktop world still step in TypeScript: a Worker cannot compile wasm from bytes, so the module would have to be bundled with the Worker ([#180](https://github.com/QuinnsCode/RustyBuns/issues/180)). To keep the two bit-identical, `src/sim` uses no libm: `cos`/`sin` are a series in `src/sim/trig.ts` and lengths are `Math.sqrt(x * x + y * y)` (sqrt is exactly rounded everywhere; `Math.hypot` and trig are not). `test/sim-native.test.ts` compares the state hash and the events every tick over four whole rounds, and every snapshot of whole bot matches through `Match`, with a human joining and leaving, the state read back mid-round and the engine swapped out and in.
 
 ### The desktop app (solo, couch, and hosting a LAN game)
 
@@ -169,7 +173,7 @@ src/sim/       the game: pure, deterministic, 30 Hz. No DOM, no clock, no Math.r
 src/engine/    platform-free: Match (lobby > countdown > playing > podium, seats, bots), Room (sockets), tick loop, wire
 src/client/    React UI, three.js renderer, input, audio, LocalDriver and NetDriver
 src/client/render/fluid.ts   the geyser's fluid: the TypeScript twin + the wasm loader (rust/crates/hippo_fluid is the Rust)
-src/sim/native.ts            the Rust twin of step() as a drop-in (rust/crates/hippo_sim); src/client/driver.ts loads it with ?sim=rust
+src/sim/native.ts            the Rust twin of step() and the bots (rust/crates/hippo_sim); src/client/driver.ts loads it, Match keeps the round in it
 src/room-do.ts the one World class: the Cloudflare Durable Object and the in-process desktop world
 src/worker.ts  the Cloudflare entry: validates and vouches identity, routes rooms
 ```
