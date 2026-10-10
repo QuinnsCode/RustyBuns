@@ -108,6 +108,9 @@ async function init() {
   const later = unsupported(inf.stack);
   if (later && !force)
     throw new Error(`${later.name} isn't supported yet (${later.issue}). Pass --force to write a config anyway.`);
+  const astroAdapter = inf.framework === "astro" ? inf.astro?.adapter ?? null : null;
+  if (astroAdapter && astroAdapter !== "@astrojs/cloudflare" && !force)
+    throw new Error(`this Astro app uses ${astroAdapter}; Rusty Buns runs the Worker that @astrojs/cloudflare builds. Switch with \`${inf.execCmd("astro")} add cloudflare\`, or drop the adapter for a static site. Pass --force to write a static config anyway.`);
   if (inf.framework === "unknown" && !src && !force)
     throw new Error("no vite or rwsdk dependency in package.json, so this does not look like a web app Rusty Buns can box. Pass --force to write a config anyway.");
   console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}`);
@@ -118,17 +121,30 @@ async function init() {
       ? `          no src/, app/, lib/, client/ or web/ found, so the whole project root is treated as source.\n          set source: { dir, aliases } in rustybuns.config.ts before running add desktop`
       : `          not sure about that; set source: { dir, aliases } in rustybuns.config.ts if it's wrong`);
   }
-  if (!src || spa) {
+  // Astro with no Cloudflare adapter is a static site: its build is the whole UI.
+  const astroWorker = astroAdapter === "@astrojs/cloudflare" && !spa;
+  if (inf.framework === "astro" && !astroWorker) {
+    if (src) console.log(`ignoring ${src}: ${spa ? "--spa" : "no @astrojs/cloudflare adapter"}, so this is a static site with a desktop-only config.`);
+    await initSpa(inf, `${inf.execCmd("astro")} build --outDir dist/ui`); return;
+  }
+  if ((!src && !astroWorker) || spa) {
     if (src && spa) console.log(`ignoring ${src} (--spa): desktop-only config. Remove the flag to carry its bindings over.`);
     await initSpa(inf); return;
   }
-  const wsrc = await Bun.file(src).text();
-  const w = src.endsWith(".toml") ? parseWranglerToml(wsrc) : parseWrangler(wsrc);
+  const wsrc = src ? await Bun.file(src).text() : null;
+  // Astro's adapter makes a wrangler config of its own when the app has none.
+  const w = wsrc === null ? { name: inf.name.replace(/^@[^/]+\//, "") } : src!.endsWith(".toml") ? parseWranglerToml(wsrc) : parseWrangler(wsrc);
   const dropped = droppedWranglerKeys(w);
   if (dropped.length) console.log(`not carried over: ${dropped.join(", ")}\n          (bindings, routes and env.* are not in rustybuns.config.ts yet; keep them in ${src} and do NOT run \`rustybuns adopt\`)`);
   const cfg = wranglerToConfig(w, inf.scripts);
-  if (!existsSync(cfg.worker!.main)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
-  { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts); console.log(`build:    ${b.build}  (${b.from === "default" ? "no build/release/deploy script found; using the default" : `from "${b.from}" script`})`); }
+  // Astro: no worker source of its own unless the app set one. The adapter builds
+  // dist/server/entry.mjs and the client into dist/client, and keeps sessions in KV.
+  if (astroWorker) {
+    cfg.worker!.main = w.main ?? "@astrojs/cloudflare/entrypoints/server";
+    if (!inf.scripts["build"] && !inf.scripts["release"] && !inf.scripts["deploy"] && !inf.scripts["build:worker"]) cfg.worker!.build = "astro build";
+  }
+  if (!(astroWorker && !w.main) && !existsSync(cfg.worker!.main)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
+  { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts); console.log(`build:    ${cfg.worker!.build}  (${b.from === "default" ? "no build/release/deploy script found; using the default" : `from "${b.from}" script`})`); }
   // D1: wrangler's own default migrations dir is ./migrations when migrations_dir is unset.
   for (const b of Object.values(cfg.bindings)) {
     if (b.type === "d1" && !b.migrationsDir && existsSync("migrations")) b.migrationsDir = "migrations";
@@ -140,21 +156,31 @@ async function init() {
     const major = Number(rw.replace(/^[^0-9]*/, "").split(".")[0]);
     if (major >= 1) cfg.worker!.builtMain = "dist/worker/index.js";
   }
+  if (astroWorker) {
+    cfg.worker!.builtMain = "dist/server/entry.mjs";
+    cfg.worker!.assets = "dist/client";
+    const kv = inf.astro!.sessionKV;
+    if (!cfg.bindings[kv]) { cfg.bindings[kv] = { type: "kv" }; console.log(`sessions: ${kv} (KV, the binding @astrojs/cloudflare keeps sessions in)`); }
+  }
   // Secrets: names only, from .dev.vars. Values are read from .dev.vars at deploy time.
   const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k]);
   for (const k of secrets) cfg.bindings[k] = { type: "secret" };
   if (secrets.length) console.log(`secrets:  ${secrets.join(" ")}  (names from .dev.vars)`);
   // Desktop client build: always the vite.desktop.config.ts that `add desktop` generates.
   // Never the app's own scripts: they can point at files Rusty Buns doesn't own.
-  const d = cfg.targets.desktop!;
-  d.clientBuild = `${inf.execCmd("vite")} build --config vite.desktop.config.ts`;
   const host = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
-  d.targets = [host as any];
+  // Astro: the desktop runs the adapter's Worker build under Bun, same bundle as the edge.
+  if (astroWorker) cfg.targets.desktop = { mode: "worker", targets: [host as any] };
+  else {
+    const d = cfg.targets.desktop!;
+    d.clientBuild = `${inf.execCmd("vite")} build --config vite.desktop.config.ts`;
+    d.targets = [host as any];
+  }
   console.log(`desktop:  building for ${host} only; add other targets in rustybuns.config.ts`);
   cfg.source = { dir: inf.srcDir, aliases: inf.aliases };
   const body = `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`;
   await Bun.write("rustybuns.config.ts", body);
-  console.log(`wrote rustybuns.config.ts from ${src}`);
+  console.log(`wrote rustybuns.config.ts${src ? ` from ${src}` : ""}`);
   {
     const gi = Bun.file(".gitignore");
     const cur = (await gi.exists()) ? await gi.text() : "";
@@ -168,9 +194,11 @@ async function init() {
     }
   }
   await generate({ adopt: false });
-  const { modules } = await boundary();
-  console.log(report(modules));
-  console.log(`\nnext: rustybuns add desktop [--entry ./src/app/App.tsx#App]`);
+  // The boundary report is for `add desktop`'s spa split; a worker-mode desktop runs the whole Worker.
+  if (!astroWorker) { const { modules } = await boundary(); console.log(report(modules)); }
+  console.log(astroWorker
+    ? `\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}, or ${inf.execCmd("rustybuns plan")}`
+    : `\nnext: rustybuns add desktop [--entry ./src/app/App.tsx#App]`);
 }
 
 /**
@@ -178,7 +206,7 @@ async function init() {
  * your `vite build` output, served by the Bun host, plus an optional host
  * module for the backend routes the app needs (files, native, exports).
  */
-async function initSpa(inf: ReturnType<typeof infer>) {
+async function initSpa(inf: ReturnType<typeof infer>, clientBuild = `${inf.execCmd("vite")} build --outDir dist/ui --emptyOutDir`) {
   const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   const cfg = {
     name: inf.name.replace(/^@[^/]+\//, ""),
@@ -188,7 +216,7 @@ async function initSpa(inf: ReturnType<typeof infer>) {
       desktop: {
         mode: "spa",
         // dist/ holds the binaries; the UI gets its own folder inside it.
-        clientBuild: `${inf.execCmd("vite")} build --outDir dist/ui --emptyOutDir`,
+        clientBuild,
         clientDir: "dist/ui",
         world: false,
         host: "desktop/host.ts",
@@ -197,7 +225,7 @@ async function initSpa(inf: ReturnType<typeof infer>) {
     },
   };
   await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
-  console.log("wrote rustybuns.config.ts (desktop-only: no wrangler found)");
+  console.log(`wrote rustybuns.config.ts (desktop-only: ${inf.framework === "astro" ? "a static Astro site" : "no wrangler found"})`);
   if (!(await Bun.file("desktop/host.ts").exists())) {
     await Bun.write("desktop/host.ts", `// Your desktop backend. Runs in the Bun host next to your built SPA.
 // Return a Response for routes you own, null for everything else.
