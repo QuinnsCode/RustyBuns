@@ -9,8 +9,12 @@ import { defineConfig } from "@rustybuns/cli/config";
 //   CODESPLITTERS_AGENTS=1  hosted coding agents (super experimental, see README)
 //   CODESPLITTERS_DEPLOYS=1 hosted deploys with each repo's stored deploy key, sealed under
 //                           DEPLOY_SECRETS_KEY (1Password, like the rest)
+// Account email (verification and password reset) is opt-in the same way, once the
+// sender's domain is onboarded to Cloudflare Email Sending (Workers Paid):
+//   CODESPLITTERS_MAIL_FROM=accounts@your-domain  binds EMAIL and sends from it
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
 const deploys = process.env.CODESPLITTERS_DEPLOYS === "1";
+const mailFrom = process.env.CODESPLITTERS_MAIL_FROM?.trim();
 const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitters/${ref}`, optional });
 
 export default defineConfig({
@@ -65,6 +69,11 @@ export default defineConfig({
     // so nobody can pick it; it goes to whoever signs in with ADMIN_EMAIL, verified.
     ADMINS: { type: "var", value: "quinn" },
     ADMIN_EMAIL: op("admin/email"),
+    // Verification and reset links for email accounts (src/identity.ts).
+    ...(mailFrom ? {
+      EMAIL: { type: "send_email", allowedSenderAddresses: [mailFrom] } as const,
+      EMAIL_FROM: { type: "var", value: mailFrom } as const,
+    } : {}),
   },
   targets: {
     // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler;

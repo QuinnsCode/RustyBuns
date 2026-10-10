@@ -47,6 +47,13 @@ export interface Env {
   /** The owner's verified email; signing in with it claims the first ADMINS handle. */
   ADMIN_EMAIL?: string;
   BETTER_AUTH_SECRET?: string;
+  /**
+   * Cloudflare Email Sending, and the address it sends from (its domain onboarded
+   * to Email Sending). With both, email accounts get verification and password
+   * reset mail; without them, there's none (see identity.ts).
+   */
+  EMAIL?: { send(m: { from: string | { email: string; name?: string }; to: string; subject: string; text: string; html?: string }): Promise<unknown> };
+  EMAIL_FROM?: string;
   BETTER_AUTH_URL?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;

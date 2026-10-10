@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import worker, { FileDurableObject, GameRoom } from "./worker.ts";
 
-export async function local(extra: Record<string, string> = {}) {
+export async function local(extra: Record<string, unknown> = {}) {
   installCloudflareGlobals();
   const env: any = { DB: d1(":memory:"), ...extra };
   env.FILES = durableObject(FileDurableObject as any, env);

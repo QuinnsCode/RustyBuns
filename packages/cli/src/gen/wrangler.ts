@@ -55,7 +55,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   if (c.worker.assets) {
     w["assets"] = { binding: "ASSETS", directory: c.worker.assets, ...(c.worker.runWorkerFirst ? { run_worker_first: c.worker.runWorkerFirst } : {}) };
   }
-  const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [];
+  const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [], sendEmail: unknown[] = [];
   const vars: Record<string, string> = {};
   const sqliteClasses: string[] = [];
   // No database_id / KV id: local dev doesn't need them, and a placeholder makes
@@ -70,6 +70,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     if (b.type === "artifacts") artifacts.push({ binding: name, namespace: b.namespace });
     // Wrangler takes one Images binding, as an object.
     if (b.type === "images") w["images"] = { binding: name };
+    if (b.type === "send_email") sendEmail.push({ name, ...(b.allowedSenderAddresses ? { allowed_sender_addresses: b.allowedSenderAddresses } : {}) });
     if (b.type === "container") {
       dos.push({ name, class_name: b.className });
       sqliteClasses.push(b.className);
@@ -81,6 +82,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   if (kv.length) w["kv_namespaces"] = kv;
   if (r2.length) w["r2_buckets"] = r2;
   if (artifacts.length) w["artifacts"] = artifacts;
+  if (sendEmail.length) w["send_email"] = sendEmail;
   if (dos.length) w["durable_objects"] = { bindings: dos };
   const migrations = doMigrations(sqliteClasses, previousMigrations(previous), c.worker.migrations);
   if (migrations.length) w["migrations"] = migrations;
