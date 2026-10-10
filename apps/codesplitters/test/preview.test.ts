@@ -1,6 +1,10 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
 import { KEEP, logStart, urlIn, type Runner } from "../src/preview.ts";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -38,7 +42,7 @@ async function app(runner: Runner) {
 
 const finish = async (call: any) => {
   let d: any;
-  for (let i = 0; i < 200; i++) { d = await (await call("ryan", "/api/repos/ryan/lab/preview")).json(); if (d.run?.done) break; await Bun.sleep(10); }
+  for (const end = performance.now() + 15_000; performance.now() < end;) { d = await (await call("ryan", "/api/repos/ryan/lab/preview")).json(); if (d.run?.done) break; await Bun.sleep(10); }
   return d.run;
 };
 const statuses = (run: any) => Object.fromEntries(run.steps.map((s: any) => [s.key, s.status]));
@@ -59,7 +63,7 @@ test("a preview goes up on a stage of its own, answers, and comes down", async (
   expect(run.steps[0].out).not.toContain("://x:");
   // It's logged beside the real deploys, so it outlives this process, but not in their list.
   let d: any;
-  for (let i = 0; i < 100 && (d = await (await call("ryan", "/api/repos/ryan/lab/preview")).json()).history[0]?.status === "running"; i++) await Bun.sleep(10);
+  for (const end = performance.now() + 15_000; performance.now() < end && (d = await (await call("ryan", "/api/repos/ryan/lab/preview")).json()).history[0]?.status === "running";) await Bun.sleep(10);
   expect(d.history).toHaveLength(1);
   expect(d.history[0]).toMatchObject({ id: run.id, stage: run.stage, by: "ryan", trigger: "preview", status: "done", url: run.url });
   expect((await (await call("ryan", "/api/repos/ryan/lab/deploy")).json()).history).toEqual([]);

@@ -1,6 +1,10 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
 import type { Runner } from "../src/preview.ts";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -39,7 +43,7 @@ async function app(runner: Runner) {
 
 const settle = async (call: any, n = 1) => {
   let d: any;
-  for (let i = 0; i < 300; i++) {
+  for (const end = performance.now() + 15_000; performance.now() < end;) {
     d = await (await call("ryan", "/api/repos/ryan/lab/deploy")).json();
     if (d.history.length >= n && d.history.every((h: any) => h.status !== "running")) break;
     await Bun.sleep(10);
@@ -84,7 +88,7 @@ test("only the owner's own commit ships, and only when they turned it on", async
   const d = await settle(call);
   expect(d.history).toHaveLength(1);
   expect(d.history[0]).toMatchObject({ by: "ryan", trigger: "commit", status: "done" });
-}, 20_000);   // four real git pushes
+});
 
 test("a commit while a deploy runs ships once more afterwards; a second press is refused", async () => {
   const f = fake();

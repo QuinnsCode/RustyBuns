@@ -1,8 +1,12 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { local as boot } from "../src/local.ts";
 import type { Exec } from "../src/agent-run.ts";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -24,7 +28,7 @@ async function app() {
   return { call, post };
 }
 
-const until = async (f: () => Promise<boolean>) => { for (let i = 0; i < 100 && !(await f()); i++) await Bun.sleep(20); };
+const until = async (f: () => Promise<boolean>) => { for (const end = performance.now() + 15_000; performance.now() < end && !(await f());) await Bun.sleep(20); };
 
 test("the owner gives an agent a task; its edit lands on the file, blamed on the agent", async () => {
   const { call, post } = await app();

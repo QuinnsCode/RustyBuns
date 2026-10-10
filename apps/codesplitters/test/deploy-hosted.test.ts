@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,16 +9,33 @@ import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the deploy image
 import { exec } from "../deploy-sandbox/server.mjs";
 
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
+
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
+
+// After a deploy the runner GETs the URL it printed until it answers. Here that's the fake
+// lab.ryan.workers.dev, so answer it locally: a real request waits on the network, and one that
+// fails retries every 2s, past the 5s test timeout.
+const checked: string[] = [];
+const realFetch = globalThis.fetch;
+beforeAll(() => {
+  globalThis.fetch = (async (u: string | URL | Request, init?: RequestInit) => {
+    const url = String(u instanceof Request ? u.url : u);
+    if (!url.startsWith("https://lab.ryan.workers.dev")) return realFetch(u, init);
+    checked.push(url);
+    return new Response("ok");
+  }) as typeof fetch;
+});
+afterAll(() => { globalThis.fetch = realFetch; });
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const TOKEN = "cf-scoped-token-0123456789abcdWXYZ";
 const ACCOUNT = "0123456789abcdef0123456789abcdef";
 const SECRETS = btoa(String.fromCharCode(...new Uint8Array(32).map((_, i) => i * 7)));
 const origin = "http://codesplitters.local";
-// hosted() signs up three people (scrypt each) and pushes a commit: seconds under the full suite.
-const SIGNUPS = 20_000;
 
 /** A deploy container: its server answers each command like deploy.test.ts's fake machine, echoing the token once to check it's hidden. */
 function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
@@ -102,7 +119,7 @@ async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: boolean
 const K = "/api/repos/ryan-quinn/lab/deploy/key", D = "/api/repos/ryan-quinn/lab/deploy";
 const settle = async (call: Call, n = 1) => {
   let d: any;
-  for (let i = 0; i < 300; i++) {
+  for (const end = performance.now() + 15_000; performance.now() < end;) {
     d = await (await call("ryan-quinn", D)).json();
     if (d.history.length >= n && d.history.every((h: any) => h.status !== "running")) break;
     await Bun.sleep(10);
@@ -143,7 +160,7 @@ describe("the deploy key", () => {
     await send("ryan-quinn", K, { token: TOKEN.replace("WXYZ", "ABCD"), account_id: ACCOUNT }, "PUT");
     expect(await (await call("ryan-quinn", K)).json()).toMatchObject({ last4: "ABCD" });
     expect(await (await call("ryan-quinn", K, { method: "DELETE" })).json()).toEqual({ set: false });
-  }, SIGNUPS);
+  });
 
   test("an owner who isn't in ADMINS can't store one or deploy from the site", async () => {
     const { call, send } = await hosted();
@@ -152,7 +169,7 @@ describe("the deploy key", () => {
     expect((await res.json() as any).error).toContain("ADMINS");
     expect((await send("sam-sample", "/api/repos/sam-sample/lab/deploy", {})).status).toBe(403);
     expect(await (await call("sam-sample", "/api/repos/sam-sample/lab/deploy")).json()).toMatchObject({ can_run: false, hosted: true });
-  }, SIGNUPS);
+  });
 
   test("with accounts off, a key can't be stored: anyone could claim the owner's handle", async () => {
     const call = await boot({ GH_CLI: "off", ADMINS: "ryan", DEPLOY_SECRETS_KEY: SECRETS });
@@ -180,10 +197,11 @@ describe("a hosted deploy", () => {
     expect(seen.destroyed).toBe(1);
     expect(seen.ran.find((l) => l.includes("rustybuns deploy"))).toContain("--stage prod");
     expect(d.run.steps.map((s: any) => s.status)).toEqual(["done", "done", "done", "done"]);
+    expect(checked).toContain("https://lab.ryan.workers.dev");
     expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "button", status: "done", runner: "hosted", key_last4: "WXYZ", commit_hash: SHA, url: "https://lab.ryan.workers.dev" });
     expect(JSON.stringify(d)).not.toContain(TOKEN);
     expect(d.history[0].out).toContain("<deploy key>");
-  }, SIGNUPS);
+  });
 
   test("the owner's own commit ships when they turned it on; crew commits never do", async () => {
     const { call, send, seen } = await hosted();
@@ -196,7 +214,7 @@ describe("a hosted deploy", () => {
     const d = await settle(call);
     expect(d.history).toHaveLength(1);
     expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "commit", runner: "hosted", status: "done" });
-  }, SIGNUPS);
+  });
 
   test("a removed key fails the run instead of deploying", async () => {
     const { call, send, seen, env } = await hosted();
@@ -209,7 +227,7 @@ describe("a hosted deploy", () => {
     const d = await settle(call);
     expect(d.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("deploy key was removed") });
     expect(seen.env).toEqual([]);
-  }, SIGNUPS);
+  });
 });
 
 test("an agent container never gets the deploy secrets", async () => {
