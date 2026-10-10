@@ -8,6 +8,8 @@
 // An edit that depends on other lines too (a rename, "is this ever
 // reassigned?") passes `ifRev`: the whole file must still be at that rev.
 
+import { keptPairs } from "./sync.ts";
+
 export interface Line { id: string; text: string; by: string; rev: number }
 
 export type Op =
@@ -89,42 +91,123 @@ export interface Conflict { line: string; base: string; main: string | null; bra
  * A three-way merge by line id: what `branch` changed since it forked from
  * `base`, as one batch of ops against `main` as it is now. A line only one
  * side changed merges cleanly; the same change on both sides is no change.
- * A line both sides changed (or one changed and the other deleted) is a
- * conflict: `resolve` settles it by line id, keeping the branch's or main's
- * version, and an unsettled one is left out and reported. New lines never
- * conflict: each goes after the nearest line before it that main still has.
- * Inserts are given the ids main will assign them, so the batch must land
- * on `main` exactly as passed. Deleted lines leave no blame, so their ops are
- * credited to `deleter`.
+ * A line both sides changed merges word by word when the edits don't touch
+ * the same words (one re-indents, the other changes an argument). A moved
+ * line (deleted and the same text inserted elsewhere) keeps the other side's
+ * edit. The same new line added at the same spot on both sides lands once.
+ * Anything left (both rewrote the same words, or one changed a line the
+ * other deleted) is a conflict: `resolve` settles it by line id, keeping the
+ * branch's or main's version, and an unsettled one is left out and reported.
+ * Other new lines never conflict: each goes after the nearest line before it
+ * that main still has. Inserts are given the ids main will assign them, so
+ * the batch must land on `main` exactly as passed. Deleted lines leave no
+ * blame, so their ops are credited to `deleter`.
  */
 export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string, "branch" | "main"> = {}, deleter = "anon") {
   const was = new Map(base.lines.map((l) => [l.id, l])), now = new Map(main.lines.map((l) => [l.id, l]));
-  const ops: Op[] = [], by: string[] = [], conflicts: Conflict[] = [];
+  const at = new Map(main.lines.map((l, i) => [l.id, i]));
+  const movedOnMain = moves(base, main, was), movedOnBranch = moves(base, branch, was);
+  const moveOf = new Map([...movedOnBranch].map(([id, l]) => [l.id, id]));
+  const ops: Op[] = [], by: string[] = [], conflicts: Conflict[] = [], taken = new Set<string>();
   let next = main.nextId, after: string | null = null;
   const push = (op: Op, who: string) => { ops.push(op); by.push(who); };
   const insert = (t: string, who: string) => { push({ kind: "insert", after, text: t }, who); after = `L${next++}`; };
+  // A line main also added right here, among its new lines after the anchor.
+  const twin = (t: string) => {
+    for (let i = after === null ? 0 : (at.get(after) ?? Infinity) + 1; i < main.lines.length && !was.has(main.lines[i]!.id); i++) {
+      const m = main.lines[i]!;
+      if (m.text === t && !taken.has(m.id)) { taken.add(m.id); return m.id; }
+    }
+    return null;
+  };
   for (const l of branch.lines) {
-    const b = was.get(l.id), m = now.get(l.id);
-    if (!b) { insert(l.text, l.by); continue; }
+    const b = was.get(l.id);
+    if (!b) {
+      const from = moveOf.get(l.id), m = from && now.get(from);
+      // The branch moved a line: it carries main's edit, and a line both moved stays where main put it.
+      if (from && !m && movedOnMain.has(from)) continue;
+      if (m && m.text !== was.get(from)!.text) { insert(m.text, m.by); continue; }
+      const same = twin(l.text);
+      if (same) after = same;
+      else insert(l.text, l.by);
+      continue;
+    }
+    const moved = !now.has(l.id) && movedOnMain.get(l.id);
+    const m = now.get(l.id) ?? (moved || undefined);
     if (l.text !== b.text && m?.text !== l.text) {
       const pick = m?.text === b.text ? "branch" : resolve[l.id];
-      if (!pick) conflicts.push({ line: l.id, base: b.text, main: m?.text ?? null, branch: l.text });
+      const words = m && !pick ? mergeWords(b.text, m.text, l.text) : null;
+      if (words !== null) push({ kind: "set", line: m!.id, base: m!.rev, text: words }, l.by);
+      else if (!pick) conflicts.push({ line: l.id, base: b.text, main: m?.text ?? null, branch: l.text });
       else if (pick === "branch") {
         if (!m) { insert(l.text, l.by); continue; }
         push({ kind: "set", line: m.id, base: m.rev, text: l.text }, l.by);
       }
     }
-    if (m) after = m.id;
+    if (m && !moved) after = m.id;
   }
   const kept = new Set(branch.lines.map((l) => l.id));
   for (const b of base.lines) {
-    const m = now.get(b.id);
-    if (kept.has(b.id) || !m) continue;
-    const pick = m.text === b.text ? "branch" : resolve[b.id];
+    if (kept.has(b.id)) continue;
+    // Moved on both sides: main's copy stays.
+    const m = now.get(b.id) ?? (movedOnBranch.has(b.id) ? undefined : movedOnMain.get(b.id));
+    if (!m) continue;
+    const pick = m.text === b.text || movedOnBranch.has(b.id) ? "branch" : resolve[b.id];
     if (!pick) conflicts.push({ line: b.id, base: b.text, main: m.text, branch: null });
     else if (pick === "branch") push({ kind: "delete", line: m.id, base: m.rev }, deleter);
   }
   return { ops, by, conflicts };
+}
+
+/**
+ * Lines `side` moved since `base`: each base line it deleted whose exact text
+ * it inserted elsewhere, by base id. Only an unambiguous text counts (one
+ * deleted, one added), and never a blank line.
+ */
+function moves(base: Doc, side: Doc, was: Map<string, Line>) {
+  const has = new Set(side.lines.map((l) => l.id));
+  const gone = new Map<string, string[]>(), added = new Map<string, Line[]>();
+  for (const l of base.lines) if (!has.has(l.id) && l.text.trim()) gone.set(l.text, [...gone.get(l.text) ?? [], l.id]);
+  for (const l of side.lines) if (!was.has(l.id) && l.text.trim()) added.set(l.text, [...added.get(l.text) ?? [], l]);
+  const out = new Map<string, Line>();
+  for (const [t, ids] of gone) {
+    const to = added.get(t);
+    if (ids.length === 1 && to?.length === 1) out.set(ids[0]!, to[0]!);
+  }
+  return out;
+}
+
+const words = (s: string) => s.match(/\s+|\w+|[^\s\w]/g) ?? [];
+
+/**
+ * Two edits of one line, merged word by word: each side's changes to `base`
+ * as spans of words, applied together. Null when the spans overlap or touch
+ * (unless both made the very same change), which is a real conflict.
+ */
+export function mergeWords(base: string, a: string, b: string): string | null {
+  const o = words(base);
+  const spans = (x: string[]) => {
+    const out: { from: number; to: number; text: string }[] = [];
+    let i = -1, j = -1;
+    for (const p of [...keptPairs(o, x), { i: o.length, j: x.length }]) {
+      if (p.i > i + 1 || p.j > j + 1) out.push({ from: i + 1, to: p.i, text: x.slice(j + 1, p.j).join("") });
+      i = p.i;
+      j = p.j;
+    }
+    return out;
+  };
+  const all = [...spans(words(a)), ...spans(words(b))].sort((p, q) => p.from - q.from || p.to - q.to);
+  let out = "", i = 0, last: (typeof all)[number] | null = null;
+  for (const s of all) {
+    if (last && s.from <= last.to) {
+      if (s.from === last.from && s.to === last.to && s.text === last.text) continue;
+      return null;
+    }
+    out += o.slice(i, s.from).join("") + s.text;
+    i = s.to;
+    last = s;
+  }
+  return out + o.slice(i).join("");
 }
 
 export const text = (doc: Doc) => doc.lines.map((l) => l.text).join("\n");

@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { apply, empty, fromText, merge, replay, text, type Applied, type Doc } from "../src/lines.ts";
+import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc } from "../src/lines.ts";
+import { diffToOps } from "../src/sync.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
@@ -84,6 +85,43 @@ describe("merge", () => {
     const { base, main, branch } = fork("a\nb");
     for (const d of [main, branch]) apply(d, [{ kind: "set", line: "L1", base: 1, text: "A" }, { kind: "delete", line: "L2", base: 2 }], "x");
     expect(merge(base, branch, main)).toEqual({ ops: [], by: [], conflicts: [] });
+  });
+
+  // Each side edits as an agent would: plain text, diffed back to line ops.
+  const sides = (content: string, onMain: string, onBranch: string) => {
+    const f = fork(content);
+    apply(f.main, diffToOps(f.main.lines, onMain.split("\n")), "ana");
+    apply(f.branch, diffToOps(f.branch.lines, onBranch.split("\n")), "bot");
+    return f;
+  };
+  const clean = (content: string, onMain: string, onBranch: string) => {
+    const { base, main, branch } = sides(content, onMain, onBranch), m = merge(base, branch, main, {}, "bot");
+    expect(m.conflicts).toEqual([]);
+    return land(main, m);
+  };
+
+  test("a line moved on one side keeps the other side's edit", () => {
+    expect(clean("# T\na\nb\nc", "# T\nb\na\nc", "# T\nA\nb\nc")).toBe("# T\nb\nA\nc");
+    expect(clean("# T\na\nb\nc", "# T\nA\nb\nc", "# T\nb\na\nc")).toBe("# T\nb\nA\nc");
+    // Moved on main, deleted on the branch: it's gone.
+    expect(clean("# T\na\nb\nc", "# T\nb\na\nc", "# T\nb\nc")).toBe("# T\nb\nc");
+    // Moved on both: it lands once, where main put it.
+    expect(clean("# T\na\nb\nc", "# T\nb\nc\na", "# T\nb\na\nc")).toBe("# T\nb\nc\na");
+  });
+
+  test("the same new line added at the same spot on both sides lands once", () => {
+    expect(clean("# T\na", "# T\nimport y\nimport z\na", "# T\nimport z\na")).toBe("# T\nimport y\nimport z\na");
+    // Apart, they're two lines someone meant.
+    expect(clean("a\nb\nc", "z\na\nb\nc", "a\nb\nc\nz")).toBe("z\na\nb\nc\nz");
+  });
+
+  test("a line both sides changed merges word by word when the edits don't touch", () => {
+    expect(clean("x\n  foo(1, 2)\ny", "x\n    foo(1, 2)\ny", "x\n  foo(1, 3)\ny")).toBe("x\n    foo(1, 3)\ny");
+    expect(mergeWords("let a = 1;", "const a = 1;", "let a = 2;")).toBe("const a = 2;");
+    // The same words rewritten two ways is still a conflict.
+    expect(mergeWords("foo(1)", "foo(2)", "foo(3)")).toBeNull();
+    const { base, main, branch } = sides("x\nfoo(1)", "x\nfoo(2)", "x\nfoo(3)");
+    expect(merge(base, branch, main).conflicts).toEqual([{ line: "L2", base: "foo(1)", main: "foo(2)", branch: "foo(3)" }]);
   });
 });
 
