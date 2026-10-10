@@ -81,10 +81,14 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
   async function hosted(server: (body: any) => Promise<unknown>) {
     const booted = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "ryan-quinn" });
     opened.push(booted);
-    const runs: any[] = [];
+    const runs: any[] = [], containers: ReturnType<typeof fakeContainer>["seen"][] = [];
     booted.env.AGENT_SANDBOX = {
       idFromName: (n: string) => n,
-      get: () => new AgentSandbox({ container: fakeContainer(async (b) => { runs.push(b); return server(b); }).c }, booted.env),
+      get: () => {
+        const { c, seen } = fakeContainer(async (b) => { runs.push(b); return server(b); });
+        containers.push(seen);
+        return new AgentSandbox({ container: c }, booted.env);
+      },
     };
     // Each handle's session cookie, from signing up and claiming it.
     const cookies: Record<string, string> = {};
@@ -105,7 +109,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     await post("ryan-quinn", "/api/repos", { name: "r1", visibility: "public" });
     await post("ryan-quinn", "/api/repos/ryan-quinn/r1/collaborators", { name: "pat-person" });
     await post("ryan-quinn", "/api/repos/ryan-quinn/r1/files", { path: "src/a.js", content: "var x = 1\nf()" });
-    return { call, post, runs, env: booted.env };
+    return { call, post, runs, containers, env: booted.env };
   }
   const doc = async (call: Call) => await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/do/file?path=src/a.js")).json() as Doc;
 
@@ -155,6 +159,35 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     const res = await post("/api/repos/ryan/r1/agents", { harness: "claude", path: "a.js", task: "x" });
     expect(res.status).toBe(501);
     expect(((await res.json()) as any).error).toContain("BETTER_AUTH_SECRET");
+    expect(runs).toEqual([]);
+  });
+
+  test("an admin's cut runs bun test in its own container, marks the gutter, and the container stops", async () => {
+    const { call, post, runs, containers } = await hosted(testCut);
+    await post("ryan-quinn", "/api/repos/ryan-quinn/r1/files", { path: "src/sum.ts", content: "export const sum = (a: number, b: number) => a - b;" });
+    await post("ryan-quinn", "/api/repos/ryan-quinn/r1/files", { path: "test/sum.test.ts", content: ['import { expect, test } from "bun:test";', 'import { sum } from "../src/sum.ts";', "", 'test("adds", () => expect(sum(2, 2)).toBe(4));', 'test("zero", () => expect(sum(0, 0)).toBe(0));'].join("\n") });
+    const made = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/cuts", { path: "test/sum.test.ts", from: 4, to: 5 });
+    const { id } = (await made.json()) as { id: string };
+    const cut = (await (await call("ryan-quinn", `/api/cuts/${id}`)).json()) as any;
+    expect(cut.can_run).toBe(true);
+    const ran = (await (await post("ryan-quinn", `/api/cuts/${id}/run`, {})).json()) as any;
+    // The container got only the cut's files: no command, so no logins either.
+    expect(Object.keys(runs[0].files).sort()).toEqual(["src/sum.ts", "test/sum.test.ts"]);
+    expect(containers.map((s) => [s.started?.env, s.destroyed])).toEqual([[{}, 1]]);
+    expect([ran.code, ran.passed, ran.failed]).toEqual([1, 1, 1]);
+    const [adds, zero] = cut.files.find((f: any) => f.path === "test/sum.test.ts").lines.slice(-2).map((l: any) => l.id);
+    expect(ran.marks["test/sum.test.ts"]).toMatchObject({ [adds]: "fail", [zero]: "pass" });
+    expect(await (await call(null, `/api/cuts/${id}/share`)).text()).toContain("1 passed, 1 failed");
+  });
+
+  test("an owner who isn't in ADMINS can't run a cut in a container", async () => {
+    const { post, runs } = await hosted(testCut);
+    await post("sam-sample", "/api/repos", { name: "mine", visibility: "public" });
+    await post("sam-sample", "/api/repos/sam-sample/mine/files", { path: "a.test.ts", content: 'import { test } from "bun:test";\ntest("x", () => {});' });
+    const { id } = (await (await post("sam-sample", "/api/repos/sam-sample/mine/cuts", { path: "a.test.ts", from: 1, to: 2 })).json()) as { id: string };
+    const res = await post("sam-sample", `/api/cuts/${id}/run`, {});
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error).toContain("ADMINS");
     expect(runs).toEqual([]);
   });
 
