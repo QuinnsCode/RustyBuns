@@ -34,12 +34,13 @@
 //   POST /api/repos/:o/:r/mirror {resolve?, pushCrew?}
 //        (owner) sync now; settle a clash with "mine" or "upstream", rewritten history with
 //        "rebase" or "upstream"; pushCrew true sends the crew's copy upstream, false holds it
+//   GET|POST /api/repos/:o/:r/mirror/branches[/:b/push]  branches both ways (see "Branches" below)
 
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { toFile } from "./archive.ts";
-import { fromDisk } from "./agent-run.ts";
+import { fromDisk, toDisk } from "./agent-run.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { json, NAME, type Env } from "./env.ts";
@@ -422,6 +423,169 @@ export async function mirrorRepoRoute(req: Request, env: Env, owner: string, rep
   }
   const s = await mirrorStatus(env, owner, repo);
   return s ? json(s) : json({ error: "not a mirror" }, 404);
+}
+
+// Branches. The sync above keeps the default branch in step; codeSplitters
+// branches (agents', cuts, deps-*) aren't git branches but Durable Object copies
+// of the files they touch (branches.ts), so they go both ways on asking:
+//
+//   GET  /api/repos/:o/:r/mirror/branches            upstream's other branches, and which are open here
+//   POST /api/repos/:o/:r/mirror/branches {ref, name?}
+//        (owner) open upstream's branch `ref` here: a branch whose files are what `ref` changed
+//   POST /api/repos/:o/:r/mirror/branches/:b/push
+//        (owner) push branch :b upstream as a real git branch: one commit on main's tip with its
+//        files as they are now, on top of what went up last time. Never forced.
+//
+// Upstream's copy of a branch is fetched into refs/upstream-branches/<ref>, out of the
+// default branch's way (refs/upstream/main and refs/upstream/main/x can't both be).
+
+const tracking = (ref: string) => `refs/upstream-branches/${ref}`;
+const isText = (s: string) => !s.includes("\0");
+
+/** The repo, its synced git and how to reach upstream, or an error to send back. */
+async function branchSetup(env: Env, owner: string, repo: string) {
+  const r = await row(env, owner, repo), lg = localGit(env);
+  if (!r || !lg) return { error: json({ error: "not a mirror" }, 404) } as const;
+  return { r, dir: syncedDir(lg, r), main: r.branch ?? "main", net: await remoteEnv(env, owner, r.mirror_url) } as const;
+}
+
+/** Upstream's branches other than the default, each with its tip and the branch here that follows it, if any. */
+export async function upstreamBranches(env: Env, owner: string, repo: string) {
+  const s = await branchSetup(env, owner, repo);
+  if ("error" in s) return s.error;
+  const ls = await git(["ls-remote", "--heads", s.r.mirror_url], s.dir, s.net);
+  if (ls.code) return json({ error: `upstream didn't answer: ${ls.err}` }, 502);
+  const { results } = await env.DB.prepare("SELECT name, upstream_ref, status FROM branches WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const here = new Map((results as { name: string; upstream_ref: string | null; status: string }[]).filter((b) => b.upstream_ref).map((b) => [b.upstream_ref!, b]));
+  return json(ls.out.trim().split("\n").filter(Boolean).map((l) => {
+    const [commit, full] = l.split("\t") as [string, string];
+    const ref = full.replace(/^refs\/heads\//, ""), b = here.get(ref);
+    return { ref, commit, branch: b?.name ?? null, status: b?.status ?? null };
+  }).filter((b) => b.ref !== s.main));
+}
+
+/**
+ * Open upstream's branch `ref` here as a codeSplitters branch: each file it
+ * changed since it left main gets a copy on the branch with its text, merged
+ * into main's live lines where main moved on too (sync.ts merge3; where they
+ * touch the same lines, upstream's branch wins). New files are new on the branch.
+ * Files it deleted, and binary ones, can't be branch copies: they're listed as skipped.
+ */
+export async function openUpstreamBranch(env: Env, owner: string, repo: string, ref: string, user: string, name?: string) {
+  const s = await branchSetup(env, owner, repo);
+  if ("error" in s) return s.error;
+  const { r, dir, main, net } = s;
+  if (!ref || ref === main || (await git(["check-ref-format", "--branch", ref])).code) return json({ error: "bad upstream branch" }, 400);
+  const b = name ?? ref.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 39).replace(/-+$/, "");
+  if (!NAME.test(b) || b === "main") return json({ error: "bad branch name: give one with name" }, 400);
+  const f = await git(["fetch", "--quiet", "--no-tags", r.mirror_url, `+refs/heads/${ref}:${tracking(ref)}`], dir, net);
+  if (f.code) return /couldn't find remote ref/i.test(f.err) ? json({ error: `upstream has no branch ${ref}` }, 404) : json({ error: `upstream didn't answer: ${f.err}` }, 502);
+  const theirs = await must(["rev-parse", tracking(ref)], dir), ours = await must(["rev-parse", `refs/heads/${main}`], dir);
+  // Where it left main; a shallow clone may not reach that far, and then it's main as it is.
+  const mb = await git(["merge-base", ours, theirs], dir), base = mb.code ? ours : mb.out.trim();
+
+  const claim = await env.DB.prepare("INSERT OR IGNORE INTO branches (owner, repo, name, by, status, created_at, upstream_ref) VALUES (?, ?, ?, ?, 'open', ?, ?)").bind(owner, repo, b, user, Date.now(), ref).run();
+  if (!claim.meta?.changes) return json({ error: "branch exists" }, 409);
+  const { materializeOn, createOn } = await import("./branches.ts");
+  const files: string[] = [], skipped: string[] = [];
+  const changed = (await must(["diff", "--name-status", "-z", "--no-renames", base, theirs], dir)).split("\0").filter(Boolean);
+  for (let i = 0; i < changed.length; i += 2) {
+    const [kind, path] = [changed[i]!, changed[i + 1]!];
+    const text = kind === "D" ? null : await show(dir, theirs, path);
+    if (text === null || !isText(text)) { skipped.push(path); continue; }
+    const next = fromDisk(text);
+    const m = await materializeOn(env, owner, repo, b, path);
+    if ("error" in m) {
+      if (m.status !== 404) { skipped.push(path); continue; }
+      const made = await createOn(env, owner, repo, b, path, text.replace(/\n$/, ""), "upstream");
+      (made.ok ? files : skipped).push(path);
+      continue;
+    }
+    const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", b)).json()) as Doc;
+    const was = fromDisk((await show(dir, base, path)) ?? ""), lines = doc.lines.map((l) => l.text);
+    const ops = diffToOps(doc.lines, merge3(was, lines, next) ?? next);
+    if (ops.length) await toFile(env, owner, repo, path, "upstream", "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: doc.rev }) }, "", b);
+    files.push(path);
+  }
+  const { emit } = await import("./hooks.ts");
+  await emit(env, owner, repo, "branch.opened", user, { ref: b, ref_type: "branch", master_branch: "main" });
+  return json({ name: b, ref, commit: theirs, files, skipped }, 201);
+}
+
+/**
+ * Push branch `name` upstream, to the git branch it came from (or one of its
+ * own name): main's tip with the branch's files as they are now, as one commit.
+ * After the first push it builds on what's up there, merging main in when main
+ * moved, so upstream only ever fast-forwards. A repo whose git holds private
+ * lines blank (held) doesn't push branches either: their copies have the real text.
+ */
+export async function pushBranch(env: Env, owner: string, repo: string, name: string) {
+  const s = await branchSetup(env, owner, repo);
+  if ("error" in s) return s.error;
+  const { r, dir, main, net } = s;
+  if (r.crew_artifact && !r.mirror_push_crew) return json({ error: "this repo has private lines, and nothing goes upstream until you push the crew's copy" }, 409);
+  const br = await env.DB.prepare("SELECT name, by, status, upstream_ref FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first() as { name: string; by: string; status: string; upstream_ref: string | null } | null;
+  if (!br) return json({ error: "no such branch" }, 404);
+  if (br.status !== "open") return json({ error: `branch is ${br.status}` }, 409);
+  const ref = br.upstream_ref ?? br.name, track = tracking(ref), heads = `refs/heads/${ref}`;
+  if (ref === main) return json({ error: "that's the branch the mirror keeps in step" }, 409);
+
+  // What's up there now, if anything.
+  const f = await git(["fetch", "--quiet", "--no-tags", r.mirror_url, `+${heads}:${track}`], dir, net);
+  if (f.code && !/couldn't find remote ref/i.test(f.err)) return json({ error: `upstream didn't answer: ${f.err}` }, 502);
+  if (f.code) await git(["update-ref", "-d", track], dir);
+  const prev = f.code ? null : await must(["rev-parse", track], dir), tip = await must(["rev-parse", `refs/heads/${main}`], dir);
+  let parents = [tip], baseTree = `${tip}^{tree}`;
+  if (prev && await isAncestor(dir, tip, prev)) [parents, baseTree] = [[prev], `${prev}^{tree}`];
+  else if (prev) {
+    const m = await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", prev, tip], dir);
+    if (m.code) return json({ error: `upstream's ${ref} and main ${m.code === 1 ? "changed the same lines" : "share no history"}: settle it upstream, then push again`, clash: m.code === 1 ? m.out.trim().split("\n").slice(1).filter(Boolean) : [] }, 409);
+    [parents, baseTree] = [[prev, tip], m.out.trim().split("\n")[0]!];
+  }
+
+  // The branch's files, as they are, over that tree.
+  const { results } = await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all();
+  const idx = join(tmpdir(), `codesplitters-branch-${crypto.randomUUID()}.index`), e = { GIT_INDEX_FILE: idx };
+  let tree: string;
+  try {
+    await must(["read-tree", baseTree], dir, e);
+    for (const { path } of results as { path: string }[]) {
+      const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", name)).json()) as Doc;
+      const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(toDisk(doc.lines)), stdout: "pipe", stderr: "pipe" });
+      const [, hash] = await Promise.all([put.exited, new Response(put.stdout).text()]);
+      const mode = (await must(["ls-tree", baseTree, "--", path], dir)).split(" ")[0] || "100644";
+      await must(["update-index", "--add", "--cacheinfo", `${mode},${hash.trim()},${path}`], dir, e);
+    }
+    tree = await must(["write-tree"], dir, e);
+  } finally { rmSync(idx, { force: true }); }
+  if (parents.length === 1 && parents[0] === prev && tree === await must(["rev-parse", `${prev}^{tree}`], dir)) return json({ ref, commit: prev, pushed: false });
+
+  const message = `${name}, from codeSplitters${br.by === owner ? "" : `\n\nCo-authored-by: ${br.by} <${br.by}@codesplitters.local>`}`;
+  const c = await must(["commit-tree", tree, ...parents.flatMap((p) => ["-p", p]), "-m", message], dir, authorEnv());
+  const p = await git(["push", "--porcelain", r.mirror_url, `${c}:${heads}`], dir, net);
+  if (p.code) {
+    const said = [p.err, p.out].filter(Boolean).join("\n");
+    if (/\[rejected\]|non-fast-forward|fetch first/.test(said)) return json({ error: `upstream's ${ref} moved while pushing: push again` }, 409);
+    return json({ error: said || "upstream didn't take the push" }, /\b40[13]\b|denied|permission|not allowed|protected branch|authentication|forbidden/i.test(said) ? 403 : 502);
+  }
+  await must(["update-ref", track, c], dir);
+  if (!br.upstream_ref) await env.DB.prepare("UPDATE branches SET upstream_ref = ? WHERE owner = ? AND repo = ? AND name = ?").bind(ref, owner, repo, name).run();
+  return json({ ref, commit: c, pushed: true });
+}
+
+/** /api/repos/:o/:r/mirror/branches[/:b/push]: reading is for anyone who can read the repo, the rest for its owner. */
+export async function mirrorBranchRoute(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null) {
+  if (p[5] !== "branches") return null;
+  if (!p[6] && req.method === "GET") return upstreamBranches(env, owner, repo);
+  if (req.method !== "POST") return null;
+  if (user !== owner) return json({ error: "owner only" }, 403);
+  if (!p[6]) {
+    const b = (await req.json().catch(() => ({}))) as { ref?: unknown; name?: unknown };
+    if (typeof b.ref !== "string" || (b.name !== undefined && typeof b.name !== "string")) return json({ error: "give the upstream branch as ref" }, 400);
+    return openUpstreamBranch(env, owner, repo, b.ref, user, b.name as string | undefined);
+  }
+  if (p[7] === "push" && !p[8]) return pushBranch(env, owner, repo, p[6]);
+  return null;
 }
 
 /** A remote someone pasted: a GitHub repo in any of its forms, or any git URL. */
