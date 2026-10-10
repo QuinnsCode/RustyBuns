@@ -56,7 +56,7 @@ function hostParts(c: RustyBunsConfig, host: HostKind, desktopDataDir: string) {
       : `${JSON.stringify(desktopDataDir)}.replace(/^~/, homedir())`,
     token: box ? "undefined" : "mintToken()",
     listen: box ? `, hostname: "0.0.0.0", port: Number(process.env.PORT ?? 3000)` : `, hostname: listen.hostname, port: listen.port`,
-    launch: box ? "" : `await openBrowser({ url: shell.url, token, window: ${JSON.stringify(c.targets.desktop?.window ?? "app")} });\n`,
+    launch: box ? "" : `await openBrowser({ url: shell.url, token, code: shell.launchCode(), window: ${JSON.stringify(c.targets.desktop?.window ?? "app")} });\n`,
   };
 }
 

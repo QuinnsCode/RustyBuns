@@ -172,7 +172,7 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 | `dev` | `alchemy dev`: workerd and local simulators for the edge |
 | `eject` | copy `alchemy.run.ts` to the project root; from then on you own it |
 
-`--profile <name>` and `--stage <name>` pass through to Alchemy. `RB_NO_BROWSER=1` prints the desktop URL instead of opening a browser.
+`--profile <name>` and `--stage <name>` pass through to Alchemy. `RB_NO_BROWSER=1` prints the desktop token URL instead of opening a browser.
 
 ## Config
 
@@ -262,7 +262,7 @@ Two limits. Minted secrets live in Alchemy's state in `.alchemy/`, in plain text
 
 ## The host
 
-The desktop host listens on `127.0.0.1` on a random port by default (`listen` in the config, `--listen host:port` or `RB_LISTEN` at launch), and every request needs the per-launch token. It sets COOP/COEP so `SharedArrayBuffer` works. `/__rb/info` shows runtime info, and `/__rb/action` runs your `"use server"` functions against sqlite. `cloudflare:workers` and `rwsdk/worker` are shimmed. D1 migrations apply at boot and are tracked in `d1_migrations`. `RB_VERSION` is `<package version>+<git sha>`. Data lives in `~/.<app-name>/`.
+The desktop host listens on `127.0.0.1` on a random port by default (`listen` in the config, `--listen host:port` or `RB_LISTEN` at launch), and every request needs the per-launch token. The browser it opens gets a one-time launch code (`?rb_launch=`, good for one use within 60 seconds) rather than the token, so the token stays out of the terminal log and `ps`; it is printed only with `RB_NO_BROWSER=1` or when no browser could be started. It sets COOP/COEP so `SharedArrayBuffer` works. `/__rb/info` shows runtime info, and `/__rb/action` runs your `"use server"` functions against sqlite. `cloudflare:workers` and `rwsdk/worker` are shimmed. D1 migrations apply at boot and are tracked in `d1_migrations`. `RB_VERSION` is `<package version>+<git sha>`. Data lives in `~/.<app-name>/`.
 
 The box host is the same program, minus the token and the browser.
 
