@@ -16,6 +16,7 @@ import { depRoutes, scheduledDoctor } from "./deps.ts";
 import { previewRoutes } from "./preview.ts";
 import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { repoFit } from "./fit.ts";
+import { emit, hookRoutes, retryHooks, type Later } from "./hooks.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -35,8 +36,12 @@ const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws"
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
 const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
 
+const HOURLY = "0 * * * *";
+
 const app = {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx?: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
+    // Webhook deliveries finish after the response; without a ctx (an internal call) they just run on.
+    const later: Later = (p) => ctx?.waitUntil ? ctx.waitUntil(p) : void p;
     const url = new URL(req.url);
     const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
     if (p[0] !== "api") return new Response("not found", { status: 404 });
@@ -62,6 +67,8 @@ const app = {
     if (preview) return preview;
     const deploy = await deployRoutes(req, env, p, user);
     if (deploy) return deploy;
+    const hooks = await hookRoutes(req, env, p, user, later);
+    if (hooks) return hooks;
 
     // GET|PUT /api/me
     if (p[1] === "me") {
@@ -158,7 +165,7 @@ const app = {
         }
         return json({ commit, entries });
       }
-      const branches = await branchRoutes(req, env, p, owner, repo, user, a);
+      const branches = await branchRoutes(req, env, p, owner, repo, user, a, later);
       if (branches) return branches;
       // POST /api/repos/:o/:r/collaborators {name}  (owner only; this is how agents get in)
       if (p[4] === "collaborators" && req.method === "POST") {
@@ -212,7 +219,13 @@ const app = {
           // The catalogue entry stands even if the push fails; the next one carries it.
           const git = await pushCatalogue(env, owner, repo, path, content, user!, commit.message).catch((e: Error) => ({ error: e.message }));
           // The owner's own commit ships, when they turned that on (deploy.ts).
-          if (git && !("error" in git)) await deployOnCommit(env, owner, repo, user);
+          if (git && !("error" in git)) {
+            await emit(env, owner, repo, "commit", user!, {
+              ref: "refs/heads/main", before: git.parent ?? "0".repeat(40), after: git.commit, created: !git.parent, pusher: { name: user },
+              head_commit: { id: git.commit, message: commit.message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: git.parent ? [] : [path], modified: git.parent ? [path] : [], removed: [] },
+            }, later);
+            await deployOnCommit(env, owner, repo, user);
+          }
           return json({ ...commit, git });
         }
         return res;
@@ -276,9 +289,11 @@ const app = {
     return json({ error: "not found" }, 404);
   },
 
-  // Cron Triggers (rustybuns.config.ts crons): hourly, each repo's dependency doctor runs when it's due.
-  async scheduled(_c: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
-    ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
+  // Cron Triggers (rustybuns.config.ts crons): every five minutes, webhook retries;
+  // hourly, each repo's dependency doctor runs when it's due.
+  async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    ctx.waitUntil(retryHooks(env));
+    if (c.cron === HOURLY) ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
   },
 };
 

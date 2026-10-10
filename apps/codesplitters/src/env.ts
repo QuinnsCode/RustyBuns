@@ -59,6 +59,8 @@ export interface Env {
   DEPS_TESTER?: unknown;
   /** Tests only: stands in for the commands and the fetch a preview deploy runs (see preview.ts). */
   PREVIEW_RUNNER?: unknown;
+  /** Tests only: stands in for fetch when a webhook is delivered (see hooks.ts). */
+  HOOK_FETCH?: unknown;
 }
 
 export const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>

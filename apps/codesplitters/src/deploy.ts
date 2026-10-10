@@ -21,6 +21,7 @@
 
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { json, type Env } from "./env.ts";
+import { emit } from "./hooks.ts";
 import { preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 
 export interface Settings { stage: string; on_commit: boolean; production: boolean }
@@ -65,6 +66,10 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
       const out = run.steps.filter((x) => x.out).map((x) => `── ${x.key} (${x.status})\n${x.out.slice(-2000)}`).join("\n").slice(-8000);
       await env.DB.prepare("UPDATE deploys SET status = ?, commit_hash = ?, url = ?, ms = ?, note = ?, out = ? WHERE id = ?")
         .bind(ok ? "done" : "failed", run.commit ?? null, run.url ?? null, Date.now() - run.at, run.note ?? null, out, id).run();
+      await emit(env, owner, repo, "deploy.finished", by, {
+        deployment: { id, sha: run.commit ?? null, environment: s.stage, task: trigger, creator: { login: by } },
+        deployment_status: { state: ok ? "success" : "failure", environment: s.stage, environment_url: run.url ?? null, description: run.note ?? null },
+      });
       if (entry.again) void start(env, owner, repo, entry.again, "commit");
     });
   return { run };
