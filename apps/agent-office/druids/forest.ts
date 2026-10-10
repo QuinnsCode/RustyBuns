@@ -4,7 +4,8 @@
 // lights), `globalThis.__rbOfficeTick?.(app, stage, dt, t)`. From there this recolours the room (palette.ts),
 // lays moss on the floor and leaves overhead, grows the jungle up the walls (jungle.ts), scatters the game's
 // stumps, flowers and mushrooms, lights a council fire in the biggest clearing, and lets fireflies loose. Nothing the office does is changed:
-// colliders, desks and seats are all where they were, and it only ever adds or recolours.
+// desks and seats are all where they were, and it only ever adds or recolours, but for the desks' colliders, which
+// shrink to the Druid Panels drawn over them (council.ts).
 import {
   AdditiveBlending, BufferAttribute, BufferGeometry, CanvasTexture, Color, Group, Box3, Mesh,
   Object3D, PointLight, Points, PointsMaterial, RepeatWrapping, SRGBColorSpace, Vector3,
@@ -14,7 +15,7 @@ import { FOREST } from "./assets.ts";
 import { decoders, gltf } from "./loader.ts";
 import { forestColor } from "./palette.ts";
 import { jungle, outerJungle } from "./jungle.ts";
-import { council, turn, type Office } from "./council.ts";
+import { council, refit, turn, type Office } from "./council.ts";
 import { firstPerson, type Viewer } from "./people.ts";
 import { LOFT, ROAD, ROOM, STREET_Y, type Box } from "./room.ts";
 
@@ -55,6 +56,7 @@ const seen = new WeakSet<object>();
     // new desks, laptops and floors arrive while the office runs; recolour whatever's new now and then
     sweepAt = t + 2;
     recolour(app.office.group);
+    refit(app.office);
   }
   if (fire) fire.intensity = 14 + Math.sin(t * 11) * 2 + Math.sin(t * 3.7) * 3;
   if (fireflies) drift(fireflies, t);

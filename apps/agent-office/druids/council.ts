@@ -1,11 +1,11 @@
 // 🧙 The council's furniture: every agent desk becomes a Druid Panel, the elevator becomes the game's scene-travel
 // portal, the game's loot is strewn about like a gamer's den, and the Council Chambers and a village stand outside.
 // Everything the office does still works: the laptops stay where they were (on top of the panels now), the
-// elevator still opens and rides, and nothing here touches a collider.
+// elevator still opens and rides. The one collider it touches is each desk's, cut down to its panel (fitDesks).
 import { Box3, Color, Group, Mesh, MeshStandardMaterial, Object3D, Vector3, type Material } from "three";
 import { COUNCIL } from "./assets.ts";
 import { gltf } from "./loader.ts";
-import { ROOM, STREET_Y, type Box } from "./room.ts";
+import { ROOM, STREET_Y, fitDesks, type Box } from "./room.ts";
 
 interface Desk {
   def: { id: string; x: number; z: number; rotY: number };
@@ -47,10 +47,12 @@ async function copy(path: string, size: number, by: "height" | "longest" = "long
   return holder;
 }
 
-/** A Druid Panel sits over a pod of two back-to-back desks (2.2 m square, the colliders), 10% smaller so it
- *  doesn't crowd the room; its top is where the laptops sit, a bit under twice the office's desk height, for
+/** A Druid Panel sits over a pod of two back-to-back desks (2.2 m square), 10% smaller so it doesn't crowd the
+ *  room, and the desks' colliders are cut down to match; its top is where the laptops sit, a bit under twice the office's desk height, for
  *  agents twice the office's size. */
 const PANEL = { width: 1.98, top: 1.4 };
+/** Where each loaded panel stands, for fitDesks. */
+const footprints: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
 let swirl: Object3D | null = null;
 const axis = new Vector3(0, 0, 1);
 
@@ -71,6 +73,7 @@ export function council(into: Group, office: Office) {
   // agent desks (and the board agents' kiosks) → Druid Panels: one panel per pod of two back-to-back desks, as big
   // as the pod, and each laptop up on top of it
   const pods = new Set<string>();
+  footprints.length = 0;
   for (const d of office.desks.values()) {
     if (!/^(desk|station)-/.test(d.def.id)) continue;
     const keep = new Set([d.laptopAnchor, d.seatAnchor, d.stage, d.vacancy]);
@@ -89,6 +92,9 @@ export function council(into: Group, office: Office) {
         p.position.set(centre.x, 0, centre.z);
         p.rotation.y = d.def.rotY;
         into.add(p);
+        const b = new Box3().setFromObject(p);
+        footprints.push({ minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z });
+        fitDesks(office.colliders, footprints, PANEL.top);
       }).catch((e) => console.warn("[druids] the Druid Panel didn't load", e));
     }
 
@@ -157,6 +163,11 @@ export function council(into: Group, office: Office) {
   copy(COUNCIL.chambers, 22, "longest").then((o) => { o.position.set(ROOM.minX - 26, STREET_Y, -2); o.rotation.y = Math.PI / 2; into.add(o); });
   for (let i = 0; i < 6; i++)
     copy(COUNCIL.hut, 7 + r() * 3, "longest").then((o) => { o.position.set(-24 + i * 9 + r() * 3, STREET_Y, 38 + r() * 8); o.rotation.y = r() * 6.28; into.add(o); });
+}
+
+/** Now and then: the back office's desks, once their row is built, get cut down to their panels too. */
+export function refit(office: Office) {
+  fitDesks(office.colliders, footprints, PANEL.top);
 }
 
 /** Every frame: the swirl turns. */
