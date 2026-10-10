@@ -106,6 +106,23 @@ describe("merge", () => {
     expect(clean("# T\na\nb\nc", "# T\nb\nc\na", "# T\nb\na\nc")).toBe("# T\nb\nc\na");
   });
 
+  test("lines the branch added under a line main moved follow it", () => {
+    expect(clean("# T\na\nb\nc", "# T\nb\nc\na", "# T\na\nx\ny\nb\nc")).toBe("# T\nb\nc\na\nx\ny");
+    // Moved up, too.
+    expect(clean("# T\na\nb\nc", "# T\nc\na\nb", "# T\na\nb\nc\nz")).toBe("# T\nc\nz\na\nb");
+  });
+
+  test("a moved block of repeated lines is a move, not a rewrite", () => {
+    const f = (name: string) => `function ${name}() {\n  if (x) {\n    go();\n  }\n}`;
+    const rest = Array.from({ length: 12 }, (_, i) => `const v${i} = ${i};`).join("\n");
+    // Main moves two functions to the end: each `  if (x) {`, `    go();`, `  }` and `}` moved twice, so only the block around `function a() {` says which is which.
+    const was = `${f("a")}\n${f("c")}\n${rest}`, onMain = `${rest}\n${f("a")}\n${f("c")}`;
+    const goA = f("a").replace("go()", "go(1)");
+    expect(clean(was, onMain, `${goA}\n${f("c")}\n${rest}`)).toBe(`${rest}\n${goA}\n${f("c")}`);
+    // Lines added under the block follow it too.
+    expect(clean(was, onMain, `${f("a")}\n// a done\n${f("c")}\n${rest}`)).toBe(`${rest}\n${f("a")}\n// a done\n${f("c")}`);
+  });
+
   test("the same new line added at the same spot on both sides lands once", () => {
     expect(clean("# T\na", "# T\nimport y\nimport z\na", "# T\nimport z\na")).toBe("# T\nimport y\nimport z\na");
     // Apart, they're two lines someone meant.

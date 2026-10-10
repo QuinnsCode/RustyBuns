@@ -94,8 +94,9 @@ export interface Conflict { line: string; base: string; main: string | null; bra
  * side changed merges cleanly; the same change on both sides is no change.
  * A line both sides changed merges word by word when the edits don't touch
  * the same words (one re-indents, the other changes an argument). A moved
- * line (deleted and the same text inserted elsewhere) keeps the other side's
- * edit. The same new line added at the same spot on both sides lands once.
+ * line or block (deleted and the same text inserted elsewhere) keeps the
+ * other side's edit, and lines the branch added under a line main moved go
+ * under it where it is now. The same new line added at the same spot on both sides lands once.
  *
  * Conflicts, each settled by `resolve` (by its `line`, keeping the branch's
  * or main's version) or left out and reported:
@@ -181,7 +182,8 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
         push({ kind: "set", line: m.id, base: m.rev, text: l.text }, l.by);
       }
     }
-    if (m && !moved) after = m.id;
+    // Lines the branch added under a line main moved go under it where it is now.
+    if (m) after = m.id;
   }
   while (r < regions.length) settle(regions[r++]!);
   const kept = new Set(branch.lines.map((l) => l.id));
@@ -199,8 +201,9 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
 
 /**
  * Lines `side` moved since `base`: each base line it deleted whose exact text
- * it inserted elsewhere, by base id. Only an unambiguous text counts (one
- * deleted, one added), and never a blank line.
+ * it inserted elsewhere, by base id. An unambiguous text (one deleted, one
+ * added, not blank) is a move on its own; the deleted lines around a move
+ * that match the added lines around it, blank or repeated (`}`), moved with it.
  */
 function moves(base: Doc, side: Doc, was: Map<string, Line>) {
   const has = new Set(side.lines.map((l) => l.id));
@@ -211,6 +214,17 @@ function moves(base: Doc, side: Doc, was: Map<string, Line>) {
   for (const [t, ids] of gone) {
     const to = added.get(t);
     if (ids.length === 1 && to?.length === 1) out.set(ids[0]!, to[0]!);
+  }
+  // Grow each move into the block it came with, a line at a time either way.
+  const bi = new Map(base.lines.map((l, i) => [l.id, i])), si = new Map(side.lines.map((l, i) => [l.id, i]));
+  const into = new Set([...out.values()].map((l) => l.id)), todo = [...out];
+  while (todo.length) {
+    const [id, to] = todo.pop()!;
+    for (const d of [-1, 1]) {
+      const b = base.lines[bi.get(id)! + d], s = side.lines[si.get(to.id)! + d];
+      if (!b || !s || has.has(b.id) || out.has(b.id) || was.has(s.id) || into.has(s.id) || b.text !== s.text) continue;
+      out.set(b.id, s); into.add(s.id); todo.push([b.id, s]);
+    }
   }
   return out;
 }
