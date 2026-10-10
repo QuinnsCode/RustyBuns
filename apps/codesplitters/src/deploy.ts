@@ -17,8 +17,11 @@
 // resources under their real names, so it's refused unless the owner has
 // said this repo is production.
 //
+// `dir` is the app's folder in a monorepo ('' for the root): install, the config
+// read and rustybuns deploy run there. Previews use it too.
+//
 //   GET  /api/repos/:o/:r/deploy   settings, the run going now, the last 20 deploys (owner only)
-//   PUT  /api/repos/:o/:r/deploy   {stage, on_commit, production}
+//   PUT  /api/repos/:o/:r/deploy   {stage, dir, on_commit, production}
 //   POST /api/repos/:o/:r/deploy   ship it now
 //   .../deploy/key                 the stored deploy key (deploy-keys.ts)
 
@@ -28,17 +31,19 @@ import { deployKeyRoutes, hostedWhy, keyInfo } from "./deploy-keys.ts";
 import { emit } from "./hooks.ts";
 import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 
-export interface Settings { stage: string; on_commit: boolean; production: boolean }
-const DEFAULTS: Settings = { stage: "prod", on_commit: false, production: false };
+export interface Settings { stage: string; dir: string; on_commit: boolean; production: boolean }
+const DEFAULTS: Settings = { stage: "prod", dir: "", on_commit: false, production: false };
 const STAGE = /^[a-z0-9][a-z0-9-]{0,30}$/;
+/** A folder inside the repo: plain path segments, no `.` or `..`, no leading or trailing slash. */
+export const validDir = (d: string) => d === "" || (d.length <= 200 && d.split("/").every((x) => /^[\w@.-]+$/.test(x) && x !== "." && x !== ".."));
 const STEPS: StepKey[] = ["clone", "install", "deploy", "check"];
 
 /** The deploy going now per repo, and whether a commit landed while it ran. */
 const live = new Map<string, { run: Run; again?: string }>();
 
 export async function settings(env: Env, owner: string, repo: string): Promise<Settings> {
-  const r = await env.DB.prepare("SELECT stage, on_commit, production FROM deploy_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-  return r ? { stage: r.stage, on_commit: !!r.on_commit, production: !!r.production } : { ...DEFAULTS };
+  const r = await env.DB.prepare("SELECT stage, dir, on_commit, production FROM deploy_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
+  return r ? { stage: r.stage, dir: r.dir, on_commit: !!r.on_commit, production: !!r.production } : { ...DEFAULTS };
 }
 
 /** The repo's git remote with an hour-long read token in it, or null before its first commit. */
@@ -54,7 +59,7 @@ export async function begin(env: Env, owner: string, repo: string, by: string, t
   const id = crypto.randomUUID().slice(0, 8);
   const run: Run = { id, at: Date.now(), stage: s.stage, steps: STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
   await logStart(env, owner, repo, run, by, trigger, runner, keyLast4);
-  return { run, production: s.production };
+  return { run, production: s.production, dir: s.dir };
 }
 
 /** Log how a deploy ended. */
@@ -96,13 +101,13 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
   }
   const remote = await remoteFor(env, owner, repo);
   if (!remote) return { error: "this repo has no git remote yet: commit its files first", status: 400 };
-  const { run, production } = await begin(env, owner, repo, by, trigger, "desktop");
+  const { run, production, dir } = await begin(env, owner, repo, by, trigger, "desktop");
   const entry: { run: Run; again?: string } = { run };
   live.set(key, entry);
   // The clone is a temp dir; the stack's Alchemy state is kept beside the desktop's own data.
   const { homedir } = await import("node:os");
   const keeps = runner.state ? runner : { ...runner, state: dirState(`${env.DEPLOY_STATE_DIR ?? `${homedir()}/.codesplitters/alchemy`}/${owner}/${repo}`) };
-  void preview(keeps, remote, run, { keep: true, allowAdopt: production })
+  void preview(keeps, remote, run, { keep: true, allowAdopt: production, dir })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(async () => {
       await finish(env, run);
@@ -138,9 +143,11 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     const s = { ...(await settings(env, owner, repo)), ...((await req.json()) as Partial<Settings>) };
     if (!STAGE.test(String(s.stage))) return json({ error: "stage: lowercase letters, digits and dashes" }, 400);
     if (s.stage.startsWith("preview-")) return json({ error: "preview-* stages belong to preview deploys" }, 400);
-    await env.DB.prepare(`INSERT INTO deploy_settings (owner, repo, stage, on_commit, production) VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT (owner, repo) DO UPDATE SET stage = excluded.stage, on_commit = excluded.on_commit, production = excluded.production`)
-      .bind(owner, repo, s.stage, s.on_commit ? 1 : 0, s.production ? 1 : 0).run();
+    s.dir = String(s.dir ?? "").trim().replace(/^\/+|\/+$/g, "");
+    if (!validDir(s.dir)) return json({ error: "folder: a path inside the repo, like apps/web, without . or .." }, 400);
+    await env.DB.prepare(`INSERT INTO deploy_settings (owner, repo, stage, dir, on_commit, production) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (owner, repo) DO UPDATE SET stage = excluded.stage, dir = excluded.dir, on_commit = excluded.on_commit, production = excluded.production`)
+      .bind(owner, repo, s.stage, s.dir, s.on_commit ? 1 : 0, s.production ? 1 : 0).run();
     return json(await settings(env, owner, repo));
   }
   if (req.method === "POST") {

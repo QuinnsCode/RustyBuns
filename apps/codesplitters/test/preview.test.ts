@@ -69,6 +69,21 @@ test("a preview goes up on a stage of its own, answers, and comes down", async (
   expect((await (await call("ryan", "/api/repos/ryan/lab/deploy")).json()).history).toEqual([]);
 });
 
+test("a preview runs in the app's folder from the deploy settings", async () => {
+  const { runner, ran } = fake({ "bun -e": { out: CONFIG }, "rustybuns deploy": { out: 'url: "https://lab.ryan.workers.dev"\n' } });
+  const cwds: string[] = [];
+  const exec = runner.exec;
+  runner.exec = (cmd, cwd, out) => { if (cmd.join(" ").includes("bun x rustybuns")) cwds.push(cwd); return exec(cmd, cwd, out); };
+  const { call, send } = await app(runner);
+  await send("ryan", "/api/repos/ryan/lab/deploy", { dir: "apps/web" }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/preview", {});
+  const run = await finish(call);
+  expect(statuses(run).destroy).toBe("done");
+  expect(ran).toContain("test -d apps/web");
+  expect(cwds).toHaveLength(2);
+  for (const c of cwds) expect(c).toMatch(/\/repo\/apps\/web$/);
+});
+
 test("each repo keeps its last runs, previews and deploys counted apart", async () => {
   const { call } = await app(fake({}).runner);
   const log = (i: number, trigger: "preview" | "button") =>

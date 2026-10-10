@@ -30,7 +30,7 @@ import { json, type Env } from "./env.ts";
 import { preview, type Run, type Runner } from "./preview.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
 
-interface Job { owner: string; repo: string; run: Run; production: boolean; again?: string; started?: number }
+interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; again?: string; started?: number }
 
 /** A run's share of the alarm's 15 minutes, leaving room to clean up after it. */
 export const RUN_BUDGET_MS = 13 * 60_000;
@@ -62,8 +62,8 @@ export class DeployRunner {
 
   private async begin(owner: string, repo: string, by: string, trigger: "button" | "commit") {
     const key = await keyInfo(this.env, owner, repo);
-    const { run, production } = await begin(this.env, owner, repo, by, trigger, "hosted", key.last4 as string | undefined);
-    this.job = { owner, repo, run, production };
+    const { run, production, dir } = await begin(this.env, owner, repo, by, trigger, "hosted", key.last4 as string | undefined);
+    this.job = { owner, repo, run, production, dir };
     await this.save();
     await this.ctx.storage.setAlarm(Date.now());
     return run;
@@ -124,7 +124,7 @@ export class DeployRunner {
           },
         },
       };
-      await preview(runner, remote, run, { keep: true, allowAdopt: job.production });
+      await preview(runner, remote, run, { keep: true, allowAdopt: job.production, dir: job.dir });
     } catch (e) {
       run.note = `failed: ${(e as Error).message}`;
     } finally {
