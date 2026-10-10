@@ -60,6 +60,8 @@ export default defineConfig({
     ...(deploys ? {
       DEPLOY_RUNNER: { type: "container", className: "DeployRunner", dockerfile: "deploy-sandbox/Dockerfile", maxInstances: 1, instanceType: "basic" } as const,
       DEPLOY_SECRETS_KEY: op("DEPLOY_SECRETS_KEY/password"),
+      // Only while rotating it: the key before, so what it sealed opens until an admin re-seals (README).
+      DEPLOY_SECRETS_KEY_OLD: op("DEPLOY_SECRETS_KEY_OLD/password", true),
     } : {}),
     // Accounts (Better Auth), GitHub and Google sign-in.
     BETTER_AUTH_SECRET: op("better-auth/secret"),

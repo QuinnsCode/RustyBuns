@@ -35,6 +35,8 @@ export interface Env {
   DEPLOY_RUNNER?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** 32 random bytes in base64: seals each repo's stored deploy key (deploy-keys.ts). */
   DEPLOY_SECRETS_KEY?: string;
+  /** The DEPLOY_SECRETS_KEY before a rotation: what's sealed under it still opens until an admin re-seals it (deploy-keys.ts). */
+  DEPLOY_SECRETS_KEY_OLD?: string;
   /** Logins for the agent CLIs in the sandbox (see sandbox.ts). */
   ANTHROPIC_API_KEY?: string;
   CLAUDE_CODE_OAUTH_TOKEN?: string;
