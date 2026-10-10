@@ -87,9 +87,10 @@ export function missingScopes(need: string[], me: WhoAmI | null): string[] {
  * login (logging in first, one browser click, when there's no login or it
  * lacks a scope). {} when the shell already brings its own Cloudflare
  * credentials. null when wrangler can't help (not installed, login not
- * finished): the caller leaves Alchemy to its own profile.
+ * finished, or no terminal to finish one in): the caller leaves Alchemy to its own profile.
  */
-export async function cloudflareEnv(c: RustyBunsConfig, env: Record<string, string | undefined>, w: Wrangler | null, log: (s: string) => void = console.log): Promise<Record<string, string> | null> {
+export async function cloudflareEnv(c: RustyBunsConfig, env: Record<string, string | undefined>, w: Wrangler | null, log: (s: string) => void = console.log,
+  interactive = true): Promise<Record<string, string> | null> {
   if (env.CLOUDFLARE_API_TOKEN || env.CLOUDFLARE_API_KEY) return {};
   if (!w) {
     log("Cloudflare: no wrangler in this project or on PATH, so Alchemy's own profile logs in (`rustybuns login cloudflare`). `bun add -d wrangler` to log in through wrangler with only the scopes this app needs.\n");
@@ -99,6 +100,11 @@ export async function cloudflareEnv(c: RustyBunsConfig, env: Record<string, stri
   let me = await w.json<WhoAmI>(["whoami"]);
   let missing = missingScopes(need, me);
   if (!me?.loggedIn || missing.length > 0) {
+    // A browser login needs someone at a terminal; CI or a script would wait on it forever.
+    if (!interactive) {
+      log(`Cloudflare: wrangler ${me?.loggedIn ? `lacks ${missing.join(", ")}` : "isn't logged in"} and there's no terminal to log in from, so Alchemy's own profile is used. Set CLOUDFLARE_API_TOKEN (and CLOUDFLARE_ACCOUNT_ID), or run \`wrangler login --scopes ${need.join(" ")}\` once.\n`);
+      return null;
+    }
     log(me?.loggedIn
       ? `Cloudflare: your wrangler login lacks ${missing.join(", ")}. Logging in again with exactly what this app needs:`
       : "Cloudflare: logging in through wrangler with exactly the scopes this app needs:");

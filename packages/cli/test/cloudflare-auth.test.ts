@@ -74,6 +74,17 @@ test("cloudflareEnv: not logged in and the login doesn't finish: Alchemy's profi
   expect(lines.at(-1)).toContain("falling back to Alchemy's own profile");
 });
 
+test("cloudflareEnv: no terminal (CI, a script): no browser login, Alchemy's profile, and how to give it a token", async () => {
+  const { w, logins } = fake([{ loggedIn: false }]);
+  const lines: string[] = [];
+  expect(await cloudflareEnv(cfg({}), {}, w, (s) => lines.push(s), false)).toBeNull();
+  expect(logins).toEqual([]);
+  expect(lines.at(-1)).toContain("no terminal to log in from");
+  expect(lines.at(-1)).toContain("CLOUDFLARE_API_TOKEN");
+  // A login that already has every scope needs no terminal.
+  expect(await cloudflareEnv(cfg({}), {}, fake([me()]).w, quiet, false)).toEqual({ CLOUDFLARE_API_TOKEN: "tok", CLOUDFLARE_ACCOUNT_ID: "acct1" });
+});
+
 test("cloudflareEnv: no wrangler at all: Alchemy's profile, with the way to get wrangler's", async () => {
   const lines: string[] = [];
   expect(await cloudflareEnv(cfg({}), {}, null, (s) => lines.push(s))).toBeNull();

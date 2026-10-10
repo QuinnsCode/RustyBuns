@@ -354,7 +354,7 @@ async function runAlchemy(args: string[], cfg?: RustyBunsConfig): Promise<number
   // An edge stack logs in to Cloudflare through wrangler, with only the scopes it needs; Alchemy's profile otherwise.
   if (cfg?.targets.edge) {
     const w = wranglerCli();
-    Object.assign(env, (await cloudflareEnv(cfg, env, w && realWrangler(w))) ?? {});
+    Object.assign(env, (await cloudflareEnv(cfg, env, w && realWrangler(w), console.log, Boolean(process.stdin.isTTY && process.stdout.isTTY))) ?? {});
   }
   if (cfg?.experimental?.wheel && existsSync(ENV_SCHEMA)) cmd = underVarlock(cfg, cmd, env);
   const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"], env });
