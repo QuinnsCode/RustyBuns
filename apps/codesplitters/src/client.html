@@ -170,6 +170,10 @@
   .ln.add { background: var(--add); } .ln.add .n { color: var(--fg); box-shadow: inset 3px 0 var(--add-edge); }
   .ln.del .t::before, .ln.add .t::before { display: inline-block; width: 14px; margin-left: -14px; }
   .ln.del .t::before { content: "−"; } .ln.add .t::before { content: "+"; color: var(--muted); }
+  /* A branch's build and deploy files, spelled out in its review. */
+  .buildiff { grid-column: 2; min-width: 0; margin: 4px 0; font: 12px/1.5 var(--mono); border: 1px solid var(--border-2); border-radius: 4px; overflow-x: auto; }
+  .buildiff div { padding: 0 8px; white-space: pre; } .buildiff .d { background: var(--del); color: var(--del-fg); } .buildiff .a { background: var(--add); }
+  .buildiff .h { padding: 3px 8px; color: var(--muted); border-bottom: 1px solid var(--border-2); }
   .legend { display: inline-flex; gap: 10px; font: 500 11.5px var(--mono); color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .legend .d { background: var(--del); box-shadow: inset 0 0 0 1px var(--del-edge); } .legend .a { background: var(--add); box-shadow: inset 0 0 0 1px var(--add-edge); }
@@ -722,17 +726,27 @@ const views = {
     const reviews = await Promise.all(open.map((b) => api(`${base}/${b.name}`)));
     el.innerHTML = reviews.map((b) => {
       const files = b.files.filter((f) => !f.merged), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
-      const ops = files.reduce((n, f) => n + f.ops.length, 0);
+      const ops = files.reduce((n, f) => n + f.ops.length, 0), build = files.filter((f) => f.build);
+      // Build and deploy files run on the next deploy: show every changed line, and when the owner's
+      // commit after this merge would ship, ask them to say they've read it first.
+      const gate = build.length && b.deploys;
       return `<div class="commit"><code>${esc(b.name)}</code><span>@${esc(b.by)} · ${files.length} file${files.length === 1 ? "" : "s"}, ${ops} line op${ops === 1 ? "" : "s"}</span>
         ${clash.map((c) => `<span class="muted">${esc(c.path)} ${esc(c.line)}: main <code>${esc(c.main ?? "deleted")}</code>, branch <code>${esc(c.branch ?? "deleted")}</code></span>`).join("")}
+        ${build.length ? `<span class="muted">${icon("triangle-alert")} Changes what runs at build or deploy time${b.deploys ? ", and your next commit to main ships it" : ""}:</span>
+          ${build.map((f) => `<div class="buildiff"><div class="h">${esc(f.path)}</div>${(f.lines ?? []).map((l) => `<div class="${l[0] === "-" ? "d" : "a"}">${esc(l)}</div>`).join("")}</div>`).join("")}` : ""}
+        ${r.canWrite && gate ? `<span class="muted"><label><input type="checkbox" data-read="${esc(b.name)}"> I've read the build changes</label></span>` : ""}
         ${r.canWrite ? `<span class="muted">${clash.length
           ? `<button class="btn" data-merge="${esc(b.name)}" data-keep="branch">Merge, keep the branch's lines</button> <button class="btn" data-merge="${esc(b.name)}" data-keep="main">Merge, keep main's</button>`
           : `<button class="btn primary" data-merge="${esc(b.name)}">${icon("git-merge")}Merge</button>`}</span>` : ""}</div>`;
     }).join("");
+    const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`);
+    el.querySelectorAll("[data-merge]").forEach((btn) => { if (read(btn.dataset.merge)) btn.disabled = true; });
+    el.querySelectorAll("[data-read]").forEach((box) => box.addEventListener("change", () =>
+      el.querySelectorAll(`[data-merge="${CSS.escape(box.dataset.read)}"]`).forEach((btn) => { btn.disabled = !box.checked; })));
     el.querySelectorAll("[data-merge]").forEach((btn) => btn.addEventListener("click", async () => {
       const b = reviews.find((x) => x.name === btn.dataset.merge), resolve = {};
       if (btn.dataset.keep) for (const f of b.files) for (const c of f.conflicts) (resolve[f.path] ??= {})[c.line] = btn.dataset.keep;
-      try { await api(`${base}/${b.name}/merge`, { resolve }); toast(`Merged ${b.name}. Commit the files to push them to git.`); }
+      try { await api(`${base}/${b.name}/merge`, { resolve, build_ok: !!read(b.name)?.checked }); toast(`Merged ${b.name}. Commit the files to push them to git.`); }
       catch (e) { toast(`Not merged: ${e.message}`); }
       route();
     }));
