@@ -5,10 +5,9 @@
 //   bun scripts/ci-apps.ts drop <all|a,b,c>    the build matrix for desktop-drop.yml
 //
 // Prints `key=json` lines for $GITHUB_OUTPUT.
-import { existsSync } from "node:fs";
 type App = {
   test?: string;        // run in apps/<name>
-  prep?: string;        // before test and build: cargo for native/ (cdylib) or rust/ (wasm)
+  prep?: string;        // before test and build: cargo for native/ (cdylib or wasm)
   perOs?: boolean;      // Rust cdylibs don't cross-compile: one runner per OS
   build?: string;       // default: rustybuns build desktop --target <t>, for each target
   check?: boolean;      // typecheck before building (--check)
@@ -35,8 +34,8 @@ const RUNNERS = [
   { runner: "macos-15-intel", target: "darwin-x64" },
   { runner: "windows-latest", target: "windows-x64" },
 ];
-// The Cargo workspace rust-cache keys on: native/ (cdylib) or rust/ (wasm).
-const cargo = (app: string) => existsSync(`apps/${app}/native/Cargo.toml`) ? `apps/${app}/native` : `apps/${app}/rust`;
+// The Cargo workspace rust-cache keys on.
+const cargo = (app: string) => `apps/${app}/native`;
 const CLI = "bun ../../packages/cli/src/index.ts build desktop";
 
 function buildCmd(a: App, targets: string[]) {

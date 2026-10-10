@@ -115,7 +115,14 @@ Current limits on the box:
 - **A box plays like the edge, not like the desktop.** There's no local player: each WebSocket at `worldPath` is a guest with its own id (`?uid=&name=` when the client sends them, trust on first use as on the LAN, otherwise a fresh id per connection), and `?room=CODE` picks that room's world, as the edge Worker routes it (codes are 1-32 of `[A-Za-z0-9_-]`, at most 200 rooms per box; no `room` is one shared world). `/__rb/info` and `POST /__rb/host` answer 404, so pages take their online path, and nobody on the internet can close the world or rebind the server. There's no real login: put the box behind your own auth if identity matters.
 - **`/health` says where data lives.** Its `X-RB-Data` header is `volume` when the data dir is its own filesystem (an attached Volume) and `container` when a redeploy would throw it away. `X-RB-Boots` counts the starts recorded in the data dir, so it only grows across a redeploy when the data survived it.
 - **Secrets are plaintext at rest.** They go into `/opt/<unit>/env` on the server and into Alchemy's local state (`.alchemy/state`, see `state` under Config). Don't keep `HCLOUD_TOKEN` in `.dev.vars`, or `init` will treat it as an app secret.
-- **Rust crates build in Docker off Linux.** cdylibs don't cross-compile, so when `native/` has crates and the box's arch isn't this machine, `build box` builds them in `rust:<your rustc>-slim-bookworm` for `linux/amd64` (or `linux/arm64` on `cax`) into `native/dist/<crate>/linux-<arch>/` and embeds them as usual. Bookworm's glibc (2.36) is older than Ubuntu 24.04's (2.39), so the library loads on the server. Start Docker first; without it the build says so. On Linux of the same arch, nothing changes. The same goes for `build desktop` with Linux targets. Other cross targets (macOS, Windows) are refused only when a crate would be embedded: one named in `desktop.native`, or one already built into `native/dist`. A `native/` whose crates only build to wasm cross-compiles like pure TS; set `desktop.native: false` to keep it out of the binary (and the box image) altogether.
+- **Rust crates build in Docker off Linux.** cdylibs don't cross-compile, so when `native/` has crates and the box's arch isn't this machine, `build box` builds them in `rust:<your rustc>-slim-bookworm` for `linux/amd64` (or `linux/arm64` on `cax`) into `native/dist/<crate>/linux-<arch>/` and embeds them as usual. Bookworm's glibc (2.36) is older than Ubuntu 24.04's (2.39), so the library loads on the server. Start Docker first; without it the build says so. On Linux of the same arch, nothing changes. The same goes for `build desktop` with Linux targets. Other cross targets (macOS, Windows) are refused only when a crate would be embedded: one named in `desktop.native`, or one already built into `native/dist`. A crate that only builds to wasm says so in its own `Cargo.toml`:
+
+  ```toml
+  [package.metadata.rustybuns]
+  desktop = false
+  ```
+
+  The Docker build, the staging, the cross check and the box image all skip it, so an app whose crates all opt out cross-compiles like pure TS without Docker (hippo-tycoon's `native/` works this way). `desktop.native: false` still keeps all of `native/` out of the binary (and the box image) from the app config.
 
 ## Deploy to Railway
 
@@ -145,7 +152,7 @@ Railway's upload is a Docker context capped at 32 MiB, and a compiled Bun binary
 
 HTTPS comes with the Railway domain. Identity works the same as on Hetzner.
 
-Rust crates ride along as source. When `native/Cargo.toml` exists, the Dockerfile gets a first stage on the same `oven/bun` image (so the same glibc as the runtime) that installs your local `rustc` version with rustup, builds the workspace, and copies each crate in `desktop.native` (all of `native/crates` when unset) to `native/dist/<crate>/linux-<arch>/`, where `loadNative()` looks. A crate that needs system libraries beyond `build-essential` and `pkg-config` will fail that stage.
+Rust crates ride along as source. When `native/Cargo.toml` exists, the Dockerfile gets a first stage on the same `oven/bun` image (so the same glibc as the runtime) that installs your local `rustc` version with rustup, builds the workspace, and copies each crate in `desktop.native` (all of `native/crates` when unset, minus crates with `desktop = false`) to `native/dist/<crate>/linux-<arch>/`, where `loadNative()` looks. A crate that needs system libraries beyond `build-essential` and `pkg-config` will fail that stage.
 
 `login railway` takes `oauth` (a browser login) or `stored` with a pasted **account** token (railway.com → Account Settings → Tokens, with no workspace picked; a project token can't create projects). Press Enter at the API URL prompt. Set a hard usage limit in the Railway workspace before the first deploy ([COSTS.md](COSTS.md)).
 
