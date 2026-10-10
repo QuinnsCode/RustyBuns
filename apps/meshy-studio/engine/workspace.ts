@@ -19,7 +19,7 @@
 // never sends anything twice.
 
 import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { describeSize, IMAGE_EXT, parseLabel, TEXTURE_REF } from "./labels.ts";
 import { download, Meshy, MeshyError, type Kind, type Task } from "./meshy.ts";
 import {
@@ -152,6 +152,44 @@ const mime = (f: string) => /\.png$/i.test(f) ? "image/png" : /\.jpe?g$/i.test(f
 const dataUri = async (path: string) => `data:${mime(path)};base64,${Buffer.from(await Bun.file(path).bytes()).toString("base64")}`;
 const stemOf = (file: string) => file.replace(PROMPT_EXT, "").replace(IMAGE_EXT, "");
 const viewRank = (f: string) => { const v = (VIEW.exec(stemOf(f))?.[2] ?? "").toLowerCase(); const i = VIEW_ORDER.indexOf(v); return i >= 0 ? i : 10 + Number(v || 99); };
+/** A folder under 000: plain segments, nothing hidden, no climbing out. */
+export function cleanFolder(f: string): string | null {
+  const parts = f.split("/").filter(Boolean);
+  if (parts.some((p) => p === "." || p === ".." || p.startsWith(".") || /[\\:*?"<>|]/.test(p))) return null;
+  if (parts[0] === SENT) return null;
+  return parts.join("/");
+}
+/** A path as the ledger keeps it, under one stage folder: relative, "/"-separated, no climbing out. */
+const cleanRel = (p: unknown): p is string => typeof p === "string" && !/[\\:]/.test(p) && p.split("/").every((s) => s !== "" && s !== "." && s !== "..");
+const cleanName = (n: unknown): n is string => cleanRel(n) && !n.includes("/");
+const cleanList = (l: unknown) => l === undefined || (Array.isArray(l) && l.every(cleanRel));
+const isFolder = (f: unknown) => typeof f === "string" && cleanFolder(f) === f;
+const OUT_NAME = /^[^/\\:*?"<>|]+$/;
+const ID = /^[a-z0-9]+$/i;
+/** A ledger row's paths, checked before any of them is used: ledgers get shared and downloaded. */
+function validJob(j: Job): boolean {
+  return cleanRel(j.key) && isFolder(j.folder) && cleanName(j.file) && (j.views === undefined || (Array.isArray(j.views) && j.views.every(cleanName)))
+    && (j.where === "inbox" || j.where === "sent") && typeof j.outName === "string" && OUT_NAME.test(j.outName)
+    && (j.raw === undefined || cleanRel(j.raw)) && (j.ready === undefined || cleanRel(j.ready)) && cleanList(j.extras) && cleanList(j.readyExtras)
+    && (j.ops === undefined || (Array.isArray(j.ops) && j.ops.every((o) => ID.test(String(o.id)) && cleanList(o.files))));
+}
+function validConcept(c: Concept): boolean {
+  return ID.test(String(c.id)) && isFolder(c.folder) && cleanName(c.name) && (c.files === undefined || (Array.isArray(c.files) && c.files.every(cleanName)));
+}
+const validSize = (s: unknown): s is Size => {
+  if (!s || typeof s !== "object") return false;
+  const o = s as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (keys.length !== 1) return false;
+  return o.auto === true || ((keys[0] === "height" || keys[0] === "longest") && typeof o[keys[0]] === "number" && (o[keys[0]] as number) > 0);
+};
+const ENGINES: Engine[] = ["unity", "unreal", "blender", "folder"];
+/** root/rel, refusing anything that resolves outside root. */
+function inside(root: string, rel: string) {
+  const p = resolve(root, rel);
+  if (!p.startsWith(resolve(root) + sep)) throw new Error(`${rel} is outside ${root}`);
+  return p;
+}
 let seq = 0;
 const newId = () => `${Date.now().toString(36)}${(seq++).toString(36)}`;
 
@@ -164,6 +202,8 @@ export class Workspace {
   presets: Preset[] = STARTER_PRESETS;
   pause: Pause | null = null;
   sync: Sync | null = null;
+  /** A sync folder the workspace's config names but this computer hasn't confirmed: not used until it is. */
+  pendingSync: Sync | null = null;
   /** Bumped on every change; the UI polls it. */
   version = 0;
   private busy = false;
@@ -175,7 +215,8 @@ export class Workspace {
 
   path(...parts: string[]) { return join(this.dir, ...parts); }
 
-  async open() {
+  /** trustSync: whether the config's engine folder was confirmed on this computer before. */
+  async open(opts: { trustSync?: (s: Sync) => boolean } = {}) {
     for (const d of [INBOX, join(INBOX, SENT), RAW, READY]) mkdirSync(this.path(d), { recursive: true });
     const pf = Bun.file(this.path(PRESETS));
     if (await pf.exists()) {
@@ -185,7 +226,14 @@ export class Workspace {
       await Bun.write(pf, JSON.stringify(STARTER_PRESETS, null, 2) + "\n");
     }
     const cf = Bun.file(this.path(CONFIG));
-    if (await cf.exists()) this.sync = (await cf.json().catch(() => ({}))).sync ?? null;
+    if (await cf.exists()) {
+      const s = (await cf.json().catch(() => ({}))).sync;
+      if (s && typeof s.dir === "string" && ENGINES.includes(s.engine)) {
+        const sync: Sync = { dir: resolve(s.dir), engine: s.engine };
+        if (opts.trustSync?.(sync)) this.sync = sync;
+        else this.pendingSync = sync;
+      }
+    }
     const lf = Bun.file(this.path(LEDGER));
     if (await lf.exists()) {
       const l = await lf.json();
@@ -197,9 +245,14 @@ export class Workspace {
           delete j.texture;
         }
         if (j.taskId && !j.modelTask && j.state === "done") j.modelTask = { kind: this.shapeKind(j), id: j.taskId };
+        if (!validJob(j)) { console.warn(`[meshy-studio] ledger row ${JSON.stringify(j.key)} points outside the workspace; ignored`); continue; }
         this.jobs.set(j.key, j);
       }
-      this.concepts = l.concepts ?? [];
+      this.concepts = (Array.isArray(l.concepts) ? l.concepts : []).filter((c: Concept) => {
+        if (validConcept(c)) return true;
+        console.warn(`[meshy-studio] concept ${JSON.stringify(c?.name)} points outside the workspace; ignored`);
+        return false;
+      });
       this.origins = l.origins ?? {};
       // Unsent cards follow today's rules (models an endpoint dropped, prices that changed).
       for (const j of this.jobs.values()) if (this.unsent(j)) { this.fitModel(j); this.reprice(j); }
@@ -394,17 +447,23 @@ export class Workspace {
     model?: ModelId | "preset";
   }) {
     const j = this.get(key);
+    if (patch.origin !== undefined && patch.origin !== "bottom" && patch.origin !== "center") throw new Error("origin is bottom or center");
+    if (patch.size !== undefined && !validSize(patch.size)) throw new Error("size is a height or longest side in meters, or auto");
+    if (patch.texturePrompt !== undefined && typeof patch.texturePrompt !== "string") throw new Error("the texture prompt is text");
     const unsent = this.unsent(j);
     const shapeOnly = ["prefix", "texturePrompt", "draft", "textureModel", "overrides", "clear", "model"] as const;
     if (!unsent && shapeOnly.some((k) => patch[k] !== undefined) && !(j.source === "text" && patch.texturePrompt !== undefined && Object.keys(patch).length === 1)) {
       throw new Error("already sent to Meshy; only size, origin and name can change now");
     }
     if (!unsent && patch.size && "auto" in patch.size) throw new Error("Meshy's size guess is made when it's sent; pick meters now");
-    if (patch.outName !== undefined && !/^[^/\\:*?"<>|]+$/.test(patch.outName)) throw new Error("that name has characters a file can't have");
+    if (patch.outName !== undefined && (typeof patch.outName !== "string" || !OUT_NAME.test(patch.outName))) throw new Error("that name has characters a file can't have");
     if (patch.prefix !== undefined && !this.presets.some((p) => p.prefix === patch.prefix)) throw new Error(`no preset with prefix "${patch.prefix}"`);
     if (patch.textureModel && !TEXTURE_MODELS.some((m) => m.id === patch.textureModel)) throw new Error(`Retexture has no model "${patch.textureModel}"`);
-    const { overrides, clear, model, textureModel, ...rest } = patch;
-    if (rest.draft === false) rest.draft = undefined;
+    const { overrides, clear, model, textureModel } = patch;
+    // Only these fields: a patch never reaches the card's paths or state.
+    const rest: Partial<Job> = {};
+    for (const k of ["prefix", "size", "origin", "outName", "texturePrompt"] as const) if (patch[k] !== undefined) (rest as any)[k] = patch[k];
+    if (patch.draft !== undefined) rest.draft = patch.draft === true || undefined;
     let next: Overrides = { ...j.overrides };
     if (model === "preset") for (const k of ["model_type", "ai_model"] as const) delete next[k];
     else if (model) {
@@ -898,7 +957,7 @@ export class Workspace {
     const files: string[] = [];
     const get = async (rel: string, url: unknown) => {
       if (typeof url !== "string" || !url) return;
-      await Bun.write(this.path(RAW, rel), await download(url));
+      await Bun.write(inside(this.path(RAW), rel), await download(url));
       files.push(rel);
     };
     const toReady = (ready: string) => {
@@ -1005,7 +1064,7 @@ export class Workspace {
     const glb = t.model_urls?.glb;
     if (!glb) throw new Error("Meshy finished without a .glb.");
     const raw = j.raw ?? this.outPath(j, RAW);
-    try { await Bun.write(this.path(RAW, raw), await download(glb)); }
+    try { await Bun.write(inside(this.path(RAW), raw), await download(glb)); }
     catch (e) { throw new Error(`Download failed: ${(e as Error).message}`); }
     j.raw = raw;
     const base = raw.replace(/\.glb$/, "");
@@ -1021,7 +1080,7 @@ export class Workspace {
     if (t.alpha_thumbnail_url) files.push([`${base}.alpha.png`, t.alpha_thumbnail_url]);
     for (const [rel, url] of files) {
       if (!url) continue;
-      try { await Bun.write(this.path(RAW, rel), await download(url)); extras.add(rel); }
+      try { await Bun.write(inside(this.path(RAW), rel), await download(url)); extras.add(rel); }
       catch (e) { console.error(`[meshy-studio] extra file ${rel}`, e); }
     }
     j.extras = extras.size ? [...extras].sort() : undefined;
@@ -1045,10 +1104,10 @@ export class Workspace {
       const out = "auto" in j.size ? raw : (await fitGlb(raw, j.size, j.origin)).glb;
       const ready = this.outPath(j, READY);
       if (j.ready && j.ready !== ready) {
-        rmSync(this.path(READY, j.ready), { force: true });
-        if (this.sync) rmSync(join(this.sync.dir, j.ready), { force: true });
+        rmSync(inside(this.path(READY), j.ready), { force: true });
+        if (this.sync) rmSync(inside(this.sync.dir, j.ready), { force: true });
       }
-      await Bun.write(this.path(READY, ready), out);
+      await Bun.write(inside(this.path(READY), ready), out);
       this.touch(j, { state: "done", ready, error: undefined });
       this.copyOut(j, ready);
     } catch (e) {
@@ -1060,7 +1119,7 @@ export class Workspace {
   private copyOut(_j: Job, rel: string) {
     if (!this.sync) return;
     try {
-      const to = join(this.sync.dir, rel);
+      const to = inside(this.sync.dir, rel);
       mkdirSync(dirname(to), { recursive: true });
       copyFileSync(this.path(READY, rel), to);
     } catch (e) {
@@ -1076,6 +1135,7 @@ export class Workspace {
       mkdirSync(sync.dir, { recursive: true });
     }
     this.sync = sync;
+    this.pendingSync = null;
     await Bun.write(this.path(CONFIG), JSON.stringify({ sync }, null, 2) + "\n");
     for (const j of this.jobs.values()) {
       if (j.state !== "done") continue;
@@ -1141,7 +1201,7 @@ export class Workspace {
     const jobs = [...this.jobs.values()].sort((a, b) => a.folder.localeCompare(b.folder) || a.key.localeCompare(b.key));
     return {
       dir: this.dir, name: basename(this.dir), version: this.version, pause: this.pause, maxQueued: this.maxQueued,
-      folders: this.folders(), presets: this.presets, sync: this.sync,
+      folders: this.folders(), presets: this.presets, sync: this.sync, pendingSync: this.pendingSync,
       concepts: this.concepts,
       spent: jobs.reduce((n, j) => n + (j.credits ?? 0) + (j.ops ?? []).reduce((m, o) => m + (o.credits ?? 0), 0), 0)
         + this.concepts.reduce((n, c) => n + (c.credits ?? 0), 0),

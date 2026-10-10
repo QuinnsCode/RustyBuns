@@ -17,10 +17,10 @@
 //   GET  /api/animations?search=&category=   Meshy's animation library (free)
 //   GET  /api/usage?...                   billed tasks (Studio and Enterprise plans)
 //   POST /api/presets {presets}           save the preset editor
-//   POST /api/sync {dir, engine} | {off}  also copy finished models into a game engine's folder
+//   POST /api/sync {dir, engine} | {off}  also copy finished models into a game engine's folder (confirms it on this computer)
 //   POST /api/blender {keys?}             open finished models in Blender
 //   POST /api/folders {name}              new organizing folder in 000
-//   POST /api/upload?folder=&name=        an image dropped on the window
+//   POST /api/upload?folder=&name=        an image dropped on the window (50 MB at most)
 //   POST /api/reveal {stage}              open a stage folder in Finder / Explorer
 //   GET  /img/<key>                       a card's image
 
@@ -31,7 +31,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { Meshy, MeshyError } from "../engine/meshy.ts";
 import { IMAGE_EXT } from "../engine/labels.ts";
 import { findBlender, openInBlender } from "../engine/blender.ts";
-import { INBOX, PROMPT_EXT, RAW, READY, SENT, Workspace, type Engine } from "../engine/workspace.ts";
+import { cleanFolder, INBOX, PROMPT_EXT, RAW, READY, SENT, Workspace, type Engine } from "../engine/workspace.ts";
 import { estimateConcept, type OpKind } from "../engine/ops.ts";
 
 const OP_KINDS: OpKind[] = ["retexture", "refine", "remesh", "resize", "uv-unwrap", "convert", "rig", "motion", "animate"];
@@ -106,12 +106,31 @@ function reveal(path: string) {
   Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" });
 }
 
-/** A folder name under 000: plain segments, nothing hidden, no climbing out. */
-function cleanFolder(f: string): string | null {
-  const parts = f.split("/").filter(Boolean);
-  if (parts.some((p) => p === "." || p === ".." || p.startsWith(".") || /[\\:*?"<>|]/.test(p))) return null;
-  if (parts[0] === SENT) return null;
-  return parts.join("/");
+// The engine folders the user picked here, per workspace. A workspace's own config can't
+// add one: a shared or downloaded workspace's folder waits until it's confirmed in Settings.
+const trustFile = (ctx: HostContext) => join(ctx.dataDir, "sync-confirmed.json");
+async function confirmedSyncs(ctx: HostContext): Promise<Record<string, string>> {
+  try { return await Bun.file(trustFile(ctx)).json(); } catch { return {}; }
+}
+async function confirmSync(ctx: HostContext, workspace: string, dir: string | null) {
+  const all = await confirmedSyncs(ctx);
+  if (dir) all[workspace] = dir; else delete all[workspace];
+  await Bun.write(trustFile(ctx), JSON.stringify(all));
+}
+
+const MAX_UPLOAD = 50 * 1024 * 1024;
+/** The request body, or null past max bytes (read in chunks, so a huge upload is never held whole). */
+async function readCapped(req: Request, max: number): Promise<Uint8Array | null> {
+  if (Number(req.headers.get("content-length") ?? 0) > max) return null;
+  const chunks: Uint8Array[] = [];
+  let n = 0;
+  const reader = req.body?.getReader();
+  for (let r = await reader?.read(); r && !r.done; r = await reader!.read()) {
+    n += r.value.byteLength;
+    if (n > max) { await reader!.cancel(); return null; }
+    chunks.push(r.value);
+  }
+  return Buffer.concat(chunks);
 }
 
 const TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" };
@@ -201,7 +220,8 @@ export default {
         if (!existsSync(dir) || !statSync(dir).isDirectory()) return bad(`not a folder: ${dir}`, 404);
         ws?.stop();
         ws = new Workspace(dir, () => readKey(ctx), (await settings(ctx)).maxQueued);
-        await ws.open();
+        const confirmed = await confirmedSyncs(ctx);
+        await ws.open({ trustSync: (s) => confirmed[resolve(dir)] === s.dir });
         ws.start();
         await remember(ctx, ws.dir);
         return json({ dir: ws.dir, name: basename(ws.dir) });
@@ -317,13 +337,14 @@ export default {
       }
       if (path === "/api/sync" && req.method === "POST") {
         const b = await body(req);
-        if (b.off) await ws.setSync(null);
+        if (b.off) { await ws.setSync(null); await confirmSync(ctx, ws.dir, null); }
         else {
           const engine = String(b.engine ?? "folder") as Engine;
           if (!["unity", "unreal", "blender", "folder"].includes(engine)) return bad("unknown engine");
           const dir = String(b.dir ?? "");
           if (!dir) return bad("pick a folder");
           try { await ws.setSync({ dir: expand(dir), engine }); } catch (e) { return bad((e as Error).message); }
+          await confirmSync(ctx, ws.dir, ws.sync!.dir);
         }
         return json(ws.summary());
       }
@@ -345,8 +366,10 @@ export default {
         const f = cleanFolder(url.searchParams.get("folder") ?? "");
         const name = basename(url.searchParams.get("name") ?? "");
         if (f === null || !(IMAGE_EXT.test(name) || PROMPT_EXT.test(name)) || name.startsWith(".")) return bad("only .png and .jpg images, or .prompt.txt prompts");
+        const data = await readCapped(req, MAX_UPLOAD);
+        if (!data) return bad(`${name} is over ${MAX_UPLOAD / 1024 / 1024} MB`, 413);
         mkdirSync(ws.path(INBOX, f), { recursive: true });
-        await Bun.write(ws.path(INBOX, f, name), await req.arrayBuffer());
+        await Bun.write(ws.path(INBOX, f, name), data);
         await ws.scan();
         return json(ws.summary());
       }
