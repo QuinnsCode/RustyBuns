@@ -85,7 +85,8 @@ export function replay(log: Applied[], rev = Infinity, from: Doc = empty()): Doc
   return doc;
 }
 
-export interface Conflict { line: string; base: string; main: string | null; branch: string | null }
+/** A conflict, keyed by `line`: a base line (the first of a stretch both sides rewrote), or a new branch line main also added (`doubled`). */
+export interface Conflict { line: string; base: string; main: string | null; branch: string | null; doubled?: true }
 
 /**
  * A three-way merge by line id: what `branch` changed since it forked from
@@ -95,9 +96,16 @@ export interface Conflict { line: string; base: string; main: string | null; bra
  * the same words (one re-indents, the other changes an argument). A moved
  * line (deleted and the same text inserted elsewhere) keeps the other side's
  * edit. The same new line added at the same spot on both sides lands once.
- * Anything left (both rewrote the same words, or one changed a line the
- * other deleted) is a conflict: `resolve` settles it by line id, keeping the
- * branch's or main's version, and an unsettled one is left out and reported.
+ *
+ * Conflicts, each settled by `resolve` (by its `line`, keeping the branch's
+ * or main's version) or left out and reported:
+ * - a stretch both sides reshaped: lines added or deleted on one side where
+ *   the other changed a line too (one changed a line the other deleted, or
+ *   both rewrote a function). The whole stretch is one conflict, as in git.
+ * - one line both rewrote in the same words.
+ * - the same line added on both sides in different places (`doubled`): it
+ *   would land twice.
+ *
  * Other new lines never conflict: each goes after the nearest line before it
  * that main still has. Inserts are given the ids main will assign them, so
  * the batch must land on `main` exactly as passed. Deleted lines leave no
@@ -108,6 +116,10 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
   const at = new Map(main.lines.map((l, i) => [l.id, i]));
   const movedOnMain = moves(base, main, was), movedOnBranch = moves(base, branch, was);
   const moveOf = new Map([...movedOnBranch].map(([id, l]) => [l.id, id]));
+  const mainPos = places(base, main), branchPos = places(base, branch);
+  const regions = clashes(hunks(base, main, mainPos, movedOnMain), hunks(base, branch, branchPos, movedOnBranch));
+  const inRegion = (p: number) => regions.some((g) => g.lo <= p && p <= g.hi);
+  const mainAdded = new Set(main.lines.filter((l) => !was.has(l.id)).map((l) => l.text));
   const ops: Op[] = [], by: string[] = [], conflicts: Conflict[] = [], taken = new Set<string>();
   let next = main.nextId, after: string | null = null;
   const push = (op: Op, who: string) => { ops.push(op); by.push(who); };
@@ -120,7 +132,27 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
     }
     return null;
   };
+  // A stretch both reshaped: keep main's as is, or swap in the branch's whole.
+  const settle = (g: Region) => {
+    const within = (d: Doc, pos: Map<string, number>) => d.lines.filter((l) => g.lo <= pos.get(l.id)! && pos.get(l.id)! <= g.hi);
+    const ms = within(main, mainPos), bs = within(branch, branchPos), key = base.lines[Math.ceil((g.lo - 1) / 2)]!.id;
+    const join = (ls: Line[]) => ls.length ? ls.map((l) => l.text).join("\n") : null;
+    // Both reshaped it the same way: nothing to do.
+    const pick = join(ms) === join(bs) ? "main" : resolve[key];
+    if (pick === "branch") {
+      if (after === null || now.has(after)) after = main.lines.filter((l) => mainPos.get(l.id)! < g.lo).at(-1)?.id ?? null;
+      for (const m of ms) push({ kind: "delete", line: m.id, base: m.rev }, deleter);
+      for (const l of bs) insert(l.text, l.by);
+      return;
+    }
+    if (!pick) conflicts.push({ line: key, base: join(base.lines.filter((_, i) => g.lo <= 2 * i + 1 && 2 * i + 1 <= g.hi))!, main: join(ms), branch: join(bs) });
+    if (ms.length) after = ms.at(-1)!.id;
+  };
+  let r = 0;
   for (const l of branch.lines) {
+    const p = branchPos.get(l.id)!;
+    while (r < regions.length && regions[r]!.lo <= p) settle(regions[r++]!);
+    if (r && p <= regions[r - 1]!.hi) continue;
     const b = was.get(l.id);
     if (!b) {
       const from = moveOf.get(l.id), m = from && now.get(from);
@@ -128,8 +160,13 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
       if (from && !m && movedOnMain.has(from)) continue;
       if (m && m.text !== was.get(from)!.text) { insert(m.text, m.by); continue; }
       const same = twin(l.text);
-      if (same) after = same;
-      else insert(l.text, l.by);
+      if (same) { after = same; continue; }
+      // Main added this very line somewhere else: landing it too would double it.
+      if (mainAdded.has(l.text) && /[A-Za-z]{2}/.test(l.text) && l.text.trim().length >= 8 && resolve[l.id] !== "branch") {
+        if (!resolve[l.id]) conflicts.push({ line: l.id, base: "", main: l.text, branch: l.text, doubled: true });
+        continue;
+      }
+      insert(l.text, l.by);
       continue;
     }
     const moved = !now.has(l.id) && movedOnMain.get(l.id);
@@ -146,12 +183,13 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
     }
     if (m && !moved) after = m.id;
   }
+  while (r < regions.length) settle(regions[r++]!);
   const kept = new Set(branch.lines.map((l) => l.id));
   for (const b of base.lines) {
     if (kept.has(b.id)) continue;
     // Moved on both sides: main's copy stays.
     const m = now.get(b.id) ?? (movedOnBranch.has(b.id) ? undefined : movedOnMain.get(b.id));
-    if (!m) continue;
+    if (!m || inRegion(mainPos.get(m.id)!)) continue;
     const pick = m.text === b.text || movedOnBranch.has(b.id) ? "branch" : resolve[b.id];
     if (!pick) conflicts.push({ line: b.id, base: b.text, main: m.text, branch: null });
     else if (pick === "branch") push({ kind: "delete", line: m.id, base: m.rev }, deleter);
@@ -177,33 +215,104 @@ function moves(base: Doc, side: Doc, was: Map<string, Line>) {
   return out;
 }
 
+// Positions against base: base line i at 2i + 1, the gap after it at 2i + 2, the top at 0.
+interface Region { lo: number; hi: number }
+interface Hunk extends Region { reshaped: boolean }
+
+/** Where each line of `side` sits against base: a base line at its own spot, a new line in the gap it was added to. */
+function places(base: Doc, side: Doc) {
+  const at = new Map(base.lines.map((l, i) => [l.id, i])), pos = new Map<string, number>();
+  let gap = 0;
+  for (const l of side.lines) {
+    const i = at.get(l.id);
+    if (i === undefined) pos.set(l.id, gap);
+    else { pos.set(l.id, 2 * i + 1); gap = 2 * i + 2; }
+  }
+  return pos;
+}
+
+/**
+ * What `side` changed, as runs: a changed line on its own, and added and
+ * deleted lines joined with whatever they touch. Moves are left out (they
+ * merge on their own). `reshaped` marks a run with lines added or deleted.
+ */
+function hunks(base: Doc, side: Doc, pos: Map<string, number>, moved: Map<string, Line>) {
+  const now = new Map(side.lines.map((l) => [l.id, l])), into = new Set([...moved.values()].map((l) => l.id));
+  const ids = new Set(base.lines.map((l) => l.id)), items: Hunk[] = [];
+  base.lines.forEach((b, i) => {
+    const s = now.get(b.id);
+    if (!s) { if (!moved.has(b.id)) items.push({ lo: 2 * i, hi: 2 * i + 2, reshaped: true }); }
+    else if (s.text !== b.text) items.push({ lo: 2 * i + 1, hi: 2 * i + 1, reshaped: false });
+  });
+  for (const l of side.lines) if (!ids.has(l.id) && !into.has(l.id)) items.push({ lo: pos.get(l.id)!, hi: pos.get(l.id)!, reshaped: true });
+  items.sort((a, b) => a.lo - b.lo || a.hi - b.hi);
+  const out: Hunk[] = [];
+  for (const h of items) {
+    const last = out.at(-1);
+    if (last && h.lo <= last.hi + 1) { last.hi = Math.max(last.hi, h.hi); last.reshaped ||= h.reshaped; }
+    else out.push({ ...h });
+  }
+  return out;
+}
+
+/**
+ * Stretches both sides reshaped: runs that share a line where either added or
+ * deleted lines, or a line added inside a run the other side reshaped. Two
+ * plain edits to one line are left to the word merge, and lines added at the
+ * same spot on both sides just land in order. Sorted, and joined where they meet.
+ */
+function clashes(main: Hunk[], branch: Hunk[]): Region[] {
+  const inside = (p: Hunk, q: Hunk) => p.lo === p.hi && q.lo < p.lo && p.lo < q.hi;
+  const found: Region[] = [];
+  for (const x of main) for (const y of branch) {
+    if (y.lo > x.hi + 1) break;
+    const lo = Math.max(x.lo, y.lo), hi = Math.min(x.hi, y.hi), line = lo < hi || (lo === hi && lo % 2 === 1);
+    if ((line && (x.reshaped || y.reshaped)) || inside(x, y) || inside(y, x)) found.push({ lo: Math.min(x.lo, y.lo), hi: Math.max(x.hi, y.hi) });
+  }
+  found.sort((a, b) => a.lo - b.lo);
+  const out: Region[] = [];
+  for (const g of found) {
+    const last = out.at(-1);
+    if (last && g.lo <= last.hi) last.hi = Math.max(last.hi, g.hi);
+    else out.push({ ...g });
+  }
+  return out;
+}
+
 const words = (s: string) => s.match(/\s+|\w+|[^\s\w]/g) ?? [];
 
 /**
  * Two edits of one line, merged word by word: each side's changes to `base`
  * as spans of words, applied together. Null when the spans overlap or touch
- * (unless both made the very same change), which is a real conflict.
+ * (unless both made the very same change), or when a word one side replaced
+ * is one the other side adds (a rename on one side, a new use of the old
+ * name on the other): that's a real conflict.
  */
 export function mergeWords(base: string, a: string, b: string): string | null {
   const o = words(base);
   const spans = (x: string[]) => {
-    const out: { from: number; to: number; text: string }[] = [];
+    const out: { from: number; to: number; add: string[] }[] = [];
     let i = -1, j = -1;
     for (const p of [...keptPairs(o, x), { i: o.length, j: x.length }]) {
-      if (p.i > i + 1 || p.j > j + 1) out.push({ from: i + 1, to: p.i, text: x.slice(j + 1, p.j).join("") });
+      if (p.i > i + 1 || p.j > j + 1) out.push({ from: i + 1, to: p.i, add: x.slice(j + 1, p.j) });
       i = p.i;
       j = p.j;
     }
     return out;
   };
-  const all = [...spans(words(a)), ...spans(words(b))].sort((p, q) => p.from - q.from || p.to - q.to);
+  const sa = spans(words(a)), sb = spans(words(b));
+  const named = (ws: string[]) => new Set(ws.filter((w) => /\w/.test(w)));
+  const gone = (ss: typeof sa) => named(ss.flatMap((s) => o.slice(s.from, s.to))), added = (ss: typeof sa) => named(ss.flatMap((s) => s.add));
+  const clash = (x: Set<string>, y: Set<string>) => [...x].some((w) => y.has(w));
+  if (clash(gone(sa), added(sb)) || clash(gone(sb), added(sa))) return null;
+  const all = [...sa, ...sb].sort((p, q) => p.from - q.from || p.to - q.to);
   let out = "", i = 0, last: (typeof all)[number] | null = null;
   for (const s of all) {
     if (last && s.from <= last.to) {
-      if (s.from === last.from && s.to === last.to && s.text === last.text) continue;
+      if (s.from === last.from && s.to === last.to && s.add.join("") === last.add.join("")) continue;
       return null;
     }
-    out += o.slice(i, s.from).join("") + s.text;
+    out += o.slice(i, s.from).join("") + s.add.join("");
     i = s.to;
     last = s;
   }

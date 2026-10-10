@@ -123,7 +123,7 @@
   .flow .failed { color: var(--del-fg); } .flow .failed .dot { border-color: var(--del-fg); background: var(--del-fg); color: #fff; }
   .flow .skipped .dot { border-style: dashed; opacity: .5; }
   @keyframes pulse { 50% { box-shadow: 0 0 0 4px var(--accent-soft); } }
-  .sec .commit { display: grid; grid-template-columns: auto 1fr; gap: 0 6px; padding: 3px 0; } .sec .commit .muted { grid-column: 2; font-size: 12px; }
+  .sec .commit { display: grid; grid-template-columns: auto 1fr; gap: 0 6px; padding: 3px 0; } .sec .commit .muted { grid-column: 2; font-size: 12px; } .sec .commit code.pre { white-space: pre-wrap; display: inline-block; vertical-align: top; }
   .status { display: flex; align-items: center; gap: 14px; flex: none; height: 24px; padding: 0 12px; background: var(--fg); color: #e6e6e6; font: 400 12px var(--mono); white-space: nowrap; overflow: hidden; }
   .status span { display: inline-flex; align-items: center; gap: 4px; } .status svg.lucide { width: 13px; height: 13px; vertical-align: 0; }
   .status .grow { flex: 1; }
@@ -965,7 +965,9 @@ const views = {
       // commit after this merge would ship, ask them to say they've read it first.
       const gate = build.length && b.deploys;
       return `<div class="commit"><code>${esc(b.name)}</code><span>@${esc(b.by)} · ${files.length} file${files.length === 1 ? "" : "s"}, ${ops} line op${ops === 1 ? "" : "s"}</span>
-        ${clash.map((c) => `<span class="muted">${esc(c.path)} ${esc(c.line)}: main <code>${esc(c.main ?? "deleted")}</code>, branch <code>${esc(c.branch ?? "deleted")}</code></span>`).join("")}
+        ${clash.map((c) => `<span class="muted">${esc(c.path)} ${esc(c.line)}: ${c.doubled
+          ? `added on both sides, it would land twice: <code>${esc(c.branch)}</code>`
+          : `main <code class="pre">${esc(c.main ?? "deleted")}</code>, branch <code class="pre">${esc(c.branch ?? "deleted")}</code>`}</span>`).join("")}
         ${build.length ? `<span class="muted">${icon("triangle-alert")} Changes what runs at build or deploy time${b.deploys ? ", and your next commit to main ships it" : ""}:</span>
           ${build.map((f) => `<div class="buildiff"><div class="h">${esc(f.path)}</div>${(f.lines ?? []).map((l) => `<div class="${l[0] === "-" ? "d" : "a"}">${esc(l)}</div>`).join("")}</div>`).join("")}` : ""}
         ${r.canWrite && gate ? `<span class="muted"><label><input type="checkbox" data-read="${esc(b.name)}"> I've read the build changes</label></span>` : ""}
