@@ -1,4 +1,4 @@
-// The Rust twin of step() (rust/crates/hippo_sim) against the TypeScript one:
+// The Rust twin of step() (native/crates/hippo_sim) against the TypeScript one:
 // the same state hash on every tick of scripted rounds. Skips when the wasm is
 // not built, so contributors without Rust stay green.
 import { describe, expect, test } from "bun:test";

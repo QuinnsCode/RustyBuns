@@ -1,4 +1,4 @@
-// The Rust build of step() and the bots (rust/crates/hippo_sim, as WebAssembly).
+// The Rust build of step() and the bots (native/crates/hippo_sim, as WebAssembly).
 // Two ways to drive it:
 //  - step(): the TypeScript State stays the source of truth; each step copies it
 //    in, steps, and copies it back (a drop-in, but the copy costs more than the step saves).

@@ -15,9 +15,9 @@ if (process.argv.includes("--optional")) {
     process.exit(0);
   }
 }
-await $`cargo build --release --target wasm32-unknown-unknown --manifest-path rust/Cargo.toml`;
+await $`cargo build --release --target wasm32-unknown-unknown --manifest-path native/Cargo.toml`;
 await mkdir("public", { recursive: true });
 for (const crate of crates) {
-  await copyFile(join("rust", "target", "wasm32-unknown-unknown", "release", `${crate}.wasm`), join("public", `${crate}.wasm`));
+  await copyFile(join("native", "target", "wasm32-unknown-unknown", "release", `${crate}.wasm`), join("public", `${crate}.wasm`));
   console.log(join("public", `${crate}.wasm`));
 }
