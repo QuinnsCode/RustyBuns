@@ -32,7 +32,7 @@ test("a SvelteKit repo needs work and links its issue; a private one stays hidde
   const call = await repo("blog", "private", { "package.json": JSON.stringify({ name: "blog", devDependencies: { "@sveltejs/kit": "2.0.0", vite: "6.0.0" } }) });
   const f = await (await call("ryan", "/api/repos/ryan/blog/fit")).json();
   expect(f).toMatchObject({ verdict: "needs-work", stack: "sveltekit" });
-  expect(f.issue).toMatch(/issues\/201$/);
+  expect(f.issue).toMatch(/issues\/318$/);
   expect((await call("ana", "/api/repos/ryan/blog/fit")).status).toBe(404);
 });
 

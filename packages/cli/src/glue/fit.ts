@@ -16,8 +16,8 @@ const LABEL: Record<Stack, string> = {
   next: "Next.js", astro: "Astro", sveltekit: "SvelteKit", "react-router": "React Router / Remix", nuxt: "Nuxt", unknown: "no framework",
 };
 
-/** Frameworks with a Cloudflare adapter that `init` doesn't infer yet, and the issue tracking each. */
-const TRACKED: Partial<Record<Stack, number>> = { next: 199, sveltekit: 201, "react-router": 202, nuxt: 203 };
+/** Frameworks with a Cloudflare adapter that `init` doesn't infer yet. One issue tracks them all. */
+const TRACKED: Partial<Record<Stack, number>> = { next: 318, sveltekit: 318, "react-router": 318, nuxt: 318 };
 const ISSUES = "https://github.com/QuinnsCode/RustyBuns/issues/";
 
 /** A framework init doesn't support yet: its name and tracking issue. */

@@ -30,7 +30,7 @@ test("ready: supported frameworks, Workers and fetch-handler servers", () => {
 test("needs work: a framework init doesn't infer yet links its issue", () => {
   const f = fit({ pkg: pkg({ next: "15", react: "19" }), files: ["tsconfig.json"] });
   expect(f).toMatchObject({ verdict: "needs-work", stack: "next", label: "Next.js, TypeScript" });
-  expect(f.issue).toMatch(/issues\/199$/);
+  expect(f.issue).toMatch(/issues\/318$/);
 });
 
 test("likely: Bun or TypeScript apps with no framework", () => {
