@@ -14,6 +14,7 @@ import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
+import { advanceAll, freshRoutes, startIfFull } from "./fresh.ts";
 import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, runJobs, sweepLimits, type JobMessage } from "./limits.ts";
 import { previewRoutes } from "./preview.ts";
 import { deployOnCommit, deployRoutes } from "./deploy.ts";
@@ -196,6 +197,8 @@ const app = {
         }
         return json({ commit, entries });
       }
+      const fresh = await freshRoutes(req, env, p, url, owner, repo, user);
+      if (fresh) return fresh;
       const branches = await branchRoutes(req, env, p, owner, repo, user, a);
       if (branches) return branches;
       // POST /api/repos/:o/:r/collaborators {name}  (owner only; this is how agents get in)
@@ -263,8 +266,10 @@ const app = {
             env.DB.prepare("DELETE FROM file_search WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path),
             env.DB.prepare("INSERT INTO file_search (owner, repo, path, content) VALUES (?, ?, ?, ?)").bind(owner, repo, path, published),
           ]);
-          // The catalogue entry stands even if the push fails; the next one carries it.
+          // The catalogue entry stands even if the push fails; the next push that lands carries it,
+          // and if git is full, it starts fresh (fresh.ts) and the file lands there.
           const git = await pushCatalogue(env, owner, repo, path, { content, published }, user!, commit.message).catch((e: Error) => ({ error: e.message }));
+          await startIfFull(env, owner, repo).catch(() => null);
           // The owner's own commit ships, when they turned that on (deploy.ts).
           if (git && !("error" in git)) {
             await emit(env, owner, repo, "commit", user!, {
@@ -338,13 +343,14 @@ const app = {
   },
 
   // The Cron Trigger (rustybuns.config.ts crons), hourly: each repo's dependency doctor runs
-  // when it's due, rate-limit windows that have ended are cleared out, and any queued request
+  // when it's due, each fresh start under way takes its steps, rate-limit windows that have ended are cleared out, and any queued request
   // whose message went missing runs if its line has room.
   async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
     if (c.cron !== HOURLY) return;
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
+    ctx.waitUntil(advanceAll(env, Date.now() + 10 * 60_000));
   },
 
   // The queues (rustybuns.config.ts): JOBS runs queued requests whose turn has come;
