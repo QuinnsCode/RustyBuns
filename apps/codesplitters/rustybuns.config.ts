@@ -27,9 +27,9 @@ export default defineConfig({
     compatibilityDate: "2026-06-01",
     compatibilityFlags: ["nodejs_compat"],   // Better Auth leans on Node APIs (AsyncLocalStorage)
     build: "bun run build.ts",
-    // Every five minutes: queued digs (src/limits.ts). Webhooks retry on the HOOKS queue.
-    // Hourly: each repo's dependency doctor runs when its own schedule says it's due (src/deps.ts).
-    crons: ["*/5 * * * *", "0 * * * *"],
+    // Hourly: each repo's dependency doctor runs when its own schedule says it's due (src/deps.ts),
+    // and rate limits are swept. Queued requests and webhook retries ride the JOBS and HOOKS queues.
+    crons: ["0 * * * *"],
   },
   bindings: {
     // Profiles, repos, playlists and the search index.
@@ -41,6 +41,9 @@ export default defineConfig({
     // Webhook tries, one message each; this Worker's queue() sends them and books the
     // retries with a delay (src/hooks.ts). The desktop runs it in-process on sqlite.
     HOOKS: { type: "queue", queueName: "codesplitters-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
+    // Queued requests (digs, previews, dependency checks over a limit that queues): one
+    // message each, delayed until the caller's window has room (src/limits.ts).
+    JOBS: { type: "queue", queueName: "codesplitters-jobs", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
     // One git repo per excavation; cataloguing pushes to it.
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
     // Hosted coding agents (super experimental): one container per run, each CLI

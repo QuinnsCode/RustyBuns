@@ -13,7 +13,10 @@
 // A queued request answers 202 with its place in line. It waits in limit_jobs
 // and is replayed as the caller, not counted again but taking one of their
 // window's slots, when the page polls GET /api/jobs/:id (or the caller's list,
-// GET /api/jobs, which their profile shows) or on the five-minute cron. Digs,
+// GET /api/jobs, which their profile shows), or, for callers who closed the
+// page, when its message on the JOBS queue comes due: each queued request sends
+// one, delayed until its window ends, and books another if it still can't run
+// then. The hourly cron sweeps up any line a message missed. Digs,
 // preview deploys, hosted deploys and dependency-doctor runs can queue: each
 // answers the replay as it would the request (a deploy's or preview's {run}, a
 // doctor's report or {running}),
@@ -149,7 +152,22 @@ export async function limit(req: Request, env: Env, rule: string | null, user: s
   const url = new URL(req.url), body = req.method === "GET" ? null : await req.clone().text();
   const row = await env.DB.prepare("INSERT INTO limit_jobs (rule, who, user, method, path, body, state, at) VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?) RETURNING id")
     .bind(r.name, who, user, req.method, url.pathname + url.search, body, Date.now()).first();
-  return json({ queued: await place(env, row!.id as number) }, 202);
+  const queued = await place(env, row!.id as number);
+  await book(env, queued);
+  return json({ queued }, 202);
+}
+
+/** A queued request's message on the JOBS queue: run its caller's line. */
+export type JobMessage = { job: number };
+/** Cloudflare Queues holds a message back 12 hours at most; a longer wait books another when this one comes due. */
+const MAX_DELAY_S = 12 * 3600;
+
+/** Book a waiting job's message for when its turn comes. A lost one is picked up by the hourly sweep, so a failed send doesn't fail the request. */
+async function book(env: Env, pl: Awaited<ReturnType<typeof place>>) {
+  if (!pl || !("eta" in pl)) return;
+  // A second late, so the window has turned over when it lands.
+  const delaySeconds = Math.min(MAX_DELAY_S, Math.max(0, Math.ceil((pl.eta - Date.now()) / 1000) + 1));
+  try { await env.JOBS.send({ job: pl.id } satisfies JobMessage, { delaySeconds }); } catch {}
 }
 
 type Job = { id: number; rule: string; who: string; user: string; method: string; path: string; body: string | null; state: string; at: number; status: number | null; result: string | null };
@@ -191,7 +209,22 @@ async function drain(env: Env, rule: string, who: string, self: (r: Request) => 
   }
 }
 
-/** The five-minute cron: run every line that has room, for callers who closed the page. */
+/**
+ * The JOBS queue's consumer: each message runs its job's line, if the job is still waiting
+ * (the page may have run it already), and books the job again if there's still no room.
+ */
+export async function runJobs(batch: { messages: readonly { body: JobMessage; ack(): void }[] }, env: Env, self: (r: Request) => Promise<Response>) {
+  for (const m of batch.messages) {
+    const j = await env.DB.prepare("SELECT rule, who FROM limit_jobs WHERE id = ? AND state = 'waiting'").bind(m.body.job).first() as Pick<Job, "rule" | "who"> | null;
+    if (j) {
+      await drain(env, j.rule, j.who, self);
+      await book(env, await place(env, m.body.job));
+    }
+    m.ack();
+  }
+}
+
+/** The hourly cron's backstop: run every line that has room, in case a message went missing. */
 export async function drainJobs(env: Env, self: (r: Request) => Promise<Response>) {
   const { results } = await env.DB.prepare("SELECT DISTINCT rule, who FROM limit_jobs WHERE state = 'waiting'").all();
   for (const { rule, who } of results as { rule: string; who: string }[]) await drain(env, rule, who, self);

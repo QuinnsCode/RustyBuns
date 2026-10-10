@@ -44,11 +44,20 @@
       {
         "binding": "HOOKS",
         "queue": "codesplitters-hooks"
+      },
+      {
+        "binding": "JOBS",
+        "queue": "codesplitters-jobs"
       }
     ],
     "consumers": [
       {
         "queue": "codesplitters-hooks",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1
+      },
+      {
+        "queue": "codesplitters-jobs",
         "max_batch_size": 10,
         "max_batch_timeout": 1
       }
@@ -101,7 +110,6 @@
   },
   "triggers": {
     "crons": [
-      "*/5 * * * *",
       "0 * * * *"
     ]
   }

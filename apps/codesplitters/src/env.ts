@@ -77,6 +77,8 @@ export interface Env {
   PREVIEW_RUNNER?: unknown;
   /** Webhook tries, one message each (hooks.ts): a Cloudflare Queue whose consumer is this Worker's queue(). */
   HOOKS: { send(body: { id: string; n: number }, opts?: { delaySeconds?: number }): Promise<void>; sendBatch(messages: Iterable<{ body: { id: string; n: number }; delaySeconds?: number }>): Promise<void> };
+  /** Queued requests, one message each (limits.ts), delayed until the caller's window has room: the same Worker's queue() consumes it. */
+  JOBS: { send(body: { job: number }, opts?: { delaySeconds?: number }): Promise<void> };
   /** Tests only: stands in for fetch when a webhook is delivered (see hooks.ts). */
   HOOK_FETCH?: unknown;
   /** Tests only: stands in for running `bun test` on a cut (see cuts.ts). */
