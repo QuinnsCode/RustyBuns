@@ -12,12 +12,13 @@
 //
 // A queued request answers 202 with its place in line. It waits in limit_jobs
 // and is replayed as the caller, not counted again but taking one of their
-// window's slots, when the page polls GET /api/jobs/:id or on the five-minute
-// cron. Digs, preview deploys and dependency-doctor runs can queue: each
-// answers the replay as it would the request (a preview's {run}, a doctor's
-// report or {running}), and the page then polls the run itself. Line edits
-// can't: they're pinned to the file's rev, so a queued one would come back a
-// conflict. Sign-ins should stay rejected.
+// window's slots, when the page polls GET /api/jobs/:id (or the caller's list,
+// GET /api/jobs, which their profile shows) or on the five-minute cron. Digs,
+// preview deploys and dependency-doctor runs can queue: each answers the replay
+// as it would the request (a preview's {run}, a doctor's report or {running}),
+// and the page then polls the run itself. Line edits can't: they're pinned to
+// the file's rev, so a queued one would come back a conflict. Sign-ins should
+// stay rejected.
 //
 // Only requests from the internet are counted: Cloudflare stamps those with
 // cf-connecting-ip. The desktop, the tests, and the Worker's own calls (hosted
@@ -192,9 +193,46 @@ export async function drainJobs(env: Env, self: (r: Request) => Promise<Response
   for (const { rule, who } of results as { rule: string; who: string }[]) await drain(env, rule, who, self);
 }
 
-/** GET /api/jobs/:id  a queued request: its place in line, or, once it has run, the answer it would have had. Polling runs it when it's due. */
+/** The repo a queued preview or dependency check runs on, from its path. */
+const repoRun = (path: string) => /^\/api\/repos\/([^/?]+)\/([^/?]+)\/(preview|deps\/run)\b/.exec(path);
+
+/** What a queued job was for, in a few words: the GitHub repo a dig names, the level a fork copies, or the repo a preview or check runs on. */
+function what(j: Pick<Job, "path" | "body">) {
+  const fork = /^\/api\/levels\/([^/?]+)\/fork/.exec(j.path);
+  if (fork) return `fork of ${decodeURIComponent(fork[1])}`;
+  const run = repoRun(j.path);
+  if (run) return `${run[3] === "preview" ? "preview of" : "dependency check of"} ${decodeURIComponent(run[1])}/${decodeURIComponent(run[2])}`;
+  try { const b = JSON.parse(j.body ?? "{}"); if (typeof b.repo === "string") return b.repo; } catch {}
+  return j.path.replace(/^\/api/, "");
+}
+
+/**
+ * GET /api/jobs  the caller's own queued requests from the last week, newest first: waiting ones with their
+ * place in line, and finished ones with the repo they made ({owner, name}) or the error they hit. Like polling
+ * one job, it runs whatever is due first, so coming back to the page is enough to move the line along.
+ * GET /api/jobs/:id  a queued request: its place in line, or, once it has run, the answer it would have had. Polling runs it when it's due.
+ */
 export async function jobRoutes(req: Request, env: Env, p: string[], user: string | null, admin: boolean, self: (r: Request) => Promise<Response>): Promise<Response | null> {
-  if (p[1] !== "jobs" || !p[2] || p[3] || req.method !== "GET") return null;
+  if (p[1] !== "jobs" || p[3] || req.method !== "GET") return null;
+  if (!p[2]) {
+    if (!user) return json({ error: "sign in first" }, 401);
+    const { results: lines } = await env.DB.prepare("SELECT DISTINCT rule, who FROM limit_jobs WHERE user = ? AND state = 'waiting'").bind(user).all();
+    for (const { rule, who } of lines as { rule: string; who: string }[]) await drain(env, rule, who, self);
+    const { results } = await env.DB.prepare("SELECT id, path, body, at FROM limit_jobs WHERE user = ? ORDER BY id DESC LIMIT 50").bind(user).all();
+    const jobs = [];
+    for (const j of results as Pick<Job, "id" | "path" | "body" | "at">[]) {
+      const pl = await place(env, j.id);
+      if (!pl) continue;
+      // A finished job keeps only what the page links to, not the whole response.
+      if ("result" in pl) {
+        const r = (pl.result ?? {}) as { owner?: string; name?: string; error?: string; message?: string }, ok = pl.status! < 400;
+        // A preview or check links to its repo, whose page follows the run; a dig to the repo it made.
+        const run = repoRun(j.path), repo = run ? { owner: decodeURIComponent(run[1]!), name: decodeURIComponent(run[2]!) } : { owner: r.owner, name: r.name };
+        jobs.push({ ...pl, result: ok ? repo : { error: r.error || r.message || `failed (${pl.status})` }, what: what(j), at: j.at });
+      } else jobs.push({ ...pl, what: what(j), at: j.at });
+    }
+    return json({ jobs });
+  }
   const j = await env.DB.prepare("SELECT rule, who, user FROM limit_jobs WHERE id = ?").bind(Number(p[2])).first() as Pick<Job, "rule" | "who" | "user"> | null;
   if (!j || (j.user !== user && !admin)) return json({ error: "not found" }, 404);
   await drain(env, j.rule, j.who, self);

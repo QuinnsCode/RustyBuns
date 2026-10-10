@@ -1,8 +1,12 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
 import { retryHooks, sign } from "../src/hooks.ts";
 import worker from "../src/worker.ts";
 import type { Runner } from "../src/preview.ts";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -29,7 +33,7 @@ async function app() {
 
 /** Deliveries go out after the response: wait for `n` of them. */
 const arrived = async <T>(got: T[], n: number) => {
-  for (let i = 0; i < 200 && got.length < n; i++) await Bun.sleep(10);
+  for (const end = performance.now() + 15_000; performance.now() < end && got.length < n;) await Bun.sleep(10);
   return got;
 };
 
@@ -81,7 +85,7 @@ test("a commit sends a signed, push-shaped payload; branches open and merge", as
   const merged = got.slice(2).filter((g) => g.headers.get("x-codesplitters-event") === "branch.merged");
   expect(merged.map((g) => g.url).sort()).toEqual(["https://chat.example/hook", "https://ci.example/hook"]);
   expect(merged[0]!.body).toMatchObject({ pull_request: { merged: true, head: { ref: "tidy" }, base: { ref: "main" } }, files: ["a.ts"] });
-}, 20_000);
+});
 
 test("a failed delivery is logged and retried by the cron; redeliver starts over", async () => {
   const { call, send, got, answer } = await app();
@@ -90,7 +94,7 @@ test("a failed delivery is logged and retried by the cron; redeliver starts over
   await send("ryan", "/api/repos/ryan/lab/branches", { name: "one" });
   await arrived(got, 1);
   const log = async () => {
-    for (let i = 0; i < 100; i++) {
+    for (const end = performance.now() + 15_000; performance.now() < end;) {
       const d = await (await call("ryan", `/api/repos/ryan/lab/hooks/${hook.id}/deliveries`)).json();
       if (d[0]?.attempts) return d;
       await Bun.sleep(10);
@@ -107,7 +111,7 @@ test("a failed delivery is logged and retried by the cron; redeliver starts over
   answer(204);
   await worker.scheduled({ cron: "*/5 * * * *" }, call.env, { waitUntil: () => {} });
   await arrived(got, 2);
-  for (let i = 0; i < 100 && d.status !== "ok"; i++) { [d] = await log(); await Bun.sleep(10); }
+  for (const end = performance.now() + 15_000; performance.now() < end && d.status !== "ok";) { [d] = await log(); await Bun.sleep(10); }
   expect(d).toMatchObject({ status: "ok", attempts: 2, code: 204 });
   expect((await (await call("ryan", "/api/repos/ryan/lab/hooks")).json()).hooks[0].last).toMatchObject({ status: "ok", code: 204 });
 
@@ -137,4 +141,4 @@ test("a finished deploy is announced as a deployment status", async () => {
     deployment: { environment: "prod", task: "button", creator: { login: "ryan" } },
     deployment_status: { state: "success", environment_url: "https://lab.ryan.workers.dev" },
   });
-}, 20_000);
+});

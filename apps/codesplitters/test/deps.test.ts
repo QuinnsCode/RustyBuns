@@ -1,9 +1,13 @@
-import { afterAll, describe, expect, setSystemTime, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
 import { bump, localFixer, outdated, packageManager, parseNpmrc, registryUrl, scheduledDoctor, DEFAULTS, type Fixer, type Registry, type Tester } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { depsTest as containerTest } from "../sandbox/server.mjs";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -84,7 +88,7 @@ async function app(tester?: Tester, fixer?: Fixer, pkg = PKG, extra: Record<stri
   return { call, send };
 }
 
-const until = async (f: () => Promise<boolean>) => { for (let i = 0; i < 200 && !(await f()); i++) await Bun.sleep(20); };
+const until = async (f: () => Promise<boolean>) => { for (const end = performance.now() + 15_000; performance.now() < end && !(await f());) await Bun.sleep(20); };
 const settle = async (call: (u: string, p: string) => Promise<Response>) => {
   let got: any;
   await until(async () => !(got = await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).running);

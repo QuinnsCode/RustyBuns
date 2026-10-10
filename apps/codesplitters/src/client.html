@@ -290,10 +290,10 @@
   .limits .rgroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 0 16px; align-items: start; }
   .limits .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 0; margin-bottom: 16px; background: var(--bg); border-top: 1px solid var(--border); }
   .limits .ev .btn { margin-left: auto; }
-  .limits .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
-  .limits .ev:first-of-type { border-top: 0; }
-  .limits .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
-  .limits .tag.reject { color: var(--del-fg); } .limits .tag.flag, .limits .tag.queue { color: var(--accent); border-color: var(--accent); }
+  .limits .ev, .jobs .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
+  .limits .ev:first-of-type, .jobs .ev:first-of-type { border-top: 0; }
+  .limits .tag, .jobs .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
+  .limits .tag.reject, .jobs .tag.failed { color: var(--del-fg); } .limits .tag.flag, .limits .tag.queue, .jobs .tag.waiting, .jobs .tag.running { color: var(--accent); border-color: var(--accent); }
   .switch { position: relative; width: 30px; height: 18px; margin-left: auto; flex: none; }
   .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
   .switch i { position: absolute; inset: 0; border-radius: 9px; background: var(--border-2); transition: background .15s; pointer-events: none; }
@@ -353,6 +353,7 @@ const api = async (path, body, method) => {
 const nth = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
 async function inLine(job) {
   const t = document.createElement("div"); t.className = "toast"; document.body.append(t);
+  jobsBadge();
   try {
     for (;;) {
       if (job.state === "done") {
@@ -360,11 +361,30 @@ async function inLine(job) {
         return job.result;
       }
       const mins = Math.max(1, Math.round((job.eta - Date.now()) / 60000));
-      t.textContent = job.state === "running" ? "Your turn: running it now…" : `Over the limit for ${job.label.toLowerCase()}: you're ${nth(job.place)} in line, about ${mins} minute${mins === 1 ? "" : "s"}. Keep this page open, or come back later.`;
+      t.textContent = job.state === "running" ? "Your turn: running it now…" : `Over the limit for ${job.label.toLowerCase()}: you're ${nth(job.place)} in line, about ${mins} minute${mins === 1 ? "" : "s"}. Keep this page open, or find it on your profile later.`;
       await new Promise((ok) => setTimeout(ok, 5000));
       job = await api(`/jobs/${job.id}`);
     }
-  } finally { t.remove(); }
+  } finally { t.remove(); jobsBadge(); }
+}
+// Your queued requests (digs, previews, checks), for when you left the page while one waited (GET /api/jobs, which also runs any that are due):
+// a count in the top bar while any are unfinished, and the list on your profile.
+const jobState = (j) => j.state !== "done" ? j.state : j.status >= 400 ? "failed" : "done";
+function jobRow(j) {
+  const s = jobState(j);
+  const out = s === "waiting" ? `<span class="muted">${nth(j.place)} in line, about ${Math.max(1, Math.round((j.eta - Date.now()) / 60000))} min</span>`
+    : s === "running" ? '<span class="muted">running now…</span>'
+    : s === "failed" ? `<span>${esc(j.result.error)}</span>`
+    : `<a href="#/r/${esc(j.result.owner)}/${esc(j.result.name)}">${icon("book")}${esc(j.result.owner)}/${esc(j.result.name)}</a>`;
+  return `<div class="body ev"><span class="tag ${s}">${s}</span><b>${esc(j.what)}</b>${out}<span class="grow"></span><span class="muted">${ago(j.at)}</span></div>`;
+}
+async function jobsBadge() {
+  const el = $("#jobs");
+  if (!el) return;
+  const { jobs } = await api("/jobs").catch(() => ({ jobs: [] }));
+  const n = jobs.filter((j) => j.state !== "done").length;
+  el.hidden = !n;
+  el.querySelector("span").textContent = `${n} queued`;
 }
 const app = $("#app");
 let socket = null;
@@ -379,9 +399,10 @@ async function refreshSession() { session = await api("/session").catch(() => se
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#verify")?.addEventListener("click", sendVerification);
+    jobsBadge();
     return icons();
   }
   if (session.mode === "alias") {
@@ -833,8 +854,8 @@ const views = {
   },
 
   async u(name) {
-    const { user, repos, playlists } = await api("/users/" + name);
     const mine = name === me();
+    const [{ user, repos, playlists }, { jobs }] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }]);
     ctx = { view: "u", name };
     app.innerHTML = `<div class="repohead"><div class="wrap"><h1>${icon("user")}<b>@${esc(name)}</b></h1><div class="sub">${esc(user.bio) || "no notes yet"}</div></div></div>
       <div class="wrap cards">
@@ -846,6 +867,7 @@ const views = {
         <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
           ${mine ? `<form id="newpl" class="row" style="margin-top:10px"><input name="title" placeholder="regexes of the lost city" required><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
       </div>
+      ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">digs, previews and checks that waited in line this week, and how they came out</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       ${mine ? `<form id="theme" class="box"><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">any HTML and CSS, rendered in a sandbox (no scripts)</span></div><div class="body" style="display:grid;gap:8px">
         <input name="bio" placeholder="a line about you" value="${esc(user.bio)}">
         <textarea name="theme_html" rows="6" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>

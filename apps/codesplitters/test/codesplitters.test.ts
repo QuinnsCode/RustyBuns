@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { lintMerge, newProblems } from "../src/lint.ts";
@@ -9,6 +9,10 @@ import { noodles } from "../src/noodles.ts";
 import { isBuildFile } from "../src/buildfiles.ts";
 import worker from "../src/worker.ts";
 import { ruleFor } from "../src/limits.ts";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
 
 // Every app instance makes a temp dir of git repos; remove them all at the end.
 const opened: { close(): void }[] = [];
@@ -302,10 +306,6 @@ describe("app", () => {
   });
 });
 
-// Pushing and cloning spawn git a few dozen times (each request is a `git http-backend`):
-// a couple hundred ms alone, seconds under the full suite, so these tests get longer.
-const GIT = 20_000;
-
 describe("artifacts", () => {
   test("cataloguing pushes the repo's catalogued files as a git commit you can clone", async () => {
     const call = await local();
@@ -329,7 +329,7 @@ describe("artifacts", () => {
     expect(await p.exited).toBe(0);
     expect(await Bun.file(`${dir}/dig/README`).text()).toBe("found it\n");
     (await import("node:fs")).rmSync(dir, { recursive: true, force: true });
-  }, GIT);
+  });
 });
 
 describe("levels", () => {
@@ -375,12 +375,8 @@ describe("levels", () => {
     expect(await (await repo.readFile({ ref: "main", path: "README.md" }))!.text()).toBe("hono\n");
     // The level itself is untouched.
     expect((await (await ns.get("level-hono")).log()).length).toBe(1);
-  }, GIT);
+  });
 });
-
-// Every signup hashes a real password (scrypt), a few hundred ms per test alone and
-// several times that under the full suite, so tests that sign people up get longer.
-const SIGNUPS = 20_000;
 
 /** The app with accounts on, and helpers to sign up, pick a handle and ask who you are. */
 async function accounts(extra: Record<string, unknown> = {}) {
@@ -416,7 +412,7 @@ describe("accounts", () => {
     const me = await (await call(null, "/api/me", { headers: { cookie } })).json() as any;
     expect(me.name).toBe("analyst");
     expect((await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) })).status).toBe(201);
-  }, SIGNUPS);
+  });
 });
 
 describe("account email", () => {
@@ -548,7 +544,7 @@ describe("handles", () => {
 
     const alias = await local();
     expect((await post(alias, null, "/api/login", { name: "agent-codex" })).status).toBe(400);
-  }, SIGNUPS);
+  });
 });
 
 describe("rate limits", () => {
@@ -587,7 +583,7 @@ describe("rate limits", () => {
     await put(boss, [{ name: "repo", max: 1, window_s: 86400, enabled: false }]);
     expect((await repo(ana, "three")).status).toBe(201);
     expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
-  }, SIGNUPS);
+  });
 
   test("over a limit: reject, log, or flag; the log; and an admin's reset", async () => {
     const { call, person } = await accounts({ ADMINS: "boss-person" });
@@ -625,7 +621,7 @@ describe("rate limits", () => {
     // A save that leaves on_fail out keeps it.
     await put([{ name: "repo", max: 2, window_s: 86400, enabled: true }]);
     expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 2, on_fail: "flag" });
-  }, SIGNUPS);
+  });
   test("over a limit that queues: a place in line, then the dig runs once there's room", async () => {
     const call = await local({ GH_CLI: "off", ADMINS: "boss" });
     const real = globalThis.fetch;
@@ -677,38 +673,61 @@ describe("rate limits", () => {
       await worker.scheduled({ cron: "*/5 * * * *" }, call.env, { waitUntil: (w) => waits.push(w) });
       await Promise.all(waits);
       expect(await job(four.id, "boss")).toMatchObject({ state: "done", status: 201 });
+
+      // Back on the page later: her own jobs, newest first, with their place or the repo they made.
+      const list = async (user: string | null) => ((await (await call(user, "/api/jobs")).json()) as any).jobs;
+      expect((await call(null, "/api/jobs")).status).toBe(401);
+      await dig("o/five");
+      expect(await list("bo")).toEqual([]);
+      let jobs = await list("ana");
+      expect(jobs.map((j: any) => [j.what, j.state])).toEqual([["o/five", "waiting"], ["o/four", "done"], ["o/two", "done"]]);
+      expect(jobs[0]).toMatchObject({ place: 1, label: "Dig up a repo" });
+      expect(jobs[1]).toMatchObject({ status: 201, result: { owner: "ana", name: "four" } });
+      // Listing runs what's due, like polling one job does; a job that failed shows why.
+      await reset();
+      expect((await list("ana"))[0]).toMatchObject({ what: "o/five", state: "done", result: { owner: "ana", name: "five" } });
+      const fork = await call("ana", "/api/levels/no-such-level/fork", { method: "POST", headers: ip, body: JSON.stringify({ name: "x" }) });
+      expect(fork.status).toBe(202);
+      await reset();
+      jobs = await list("ana");
+      expect(jobs[0]).toMatchObject({ what: "fork of no-such-level", state: "done", result: { error: expect.any(String) } });
+      expect(jobs[0].status).toBeGreaterThanOrEqual(400);
     } finally { globalThis.fetch = real; }
-  }, SIGNUPS);
+  });
 
   test("live edits count against the edit limit, over the socket and POST alike", async () => {
-    const call = await local({ ADMINS: "boss" });
-    await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
-    await post(call, "ana", "/api/repos", { name: "r" });
-    await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
-    const open = async (headers: Record<string, string>) => {
-      const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...headers } })) as any).webSocket, got: any[] = [];
-      ws.toBrowser = (d: string) => got.push(JSON.parse(d));
-      ws.queue.splice(0);
-      let id = 0;
-      const edit = async (text: string) => {
-        ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
-        for (let i = 0; i < 200; i++) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+    // Windows start on the minute; stand the clock still at the start of one so no edit lands in the next.
+    setSystemTime(new Date(Math.ceil(Date.now() / 60_000) * 60_000));
+    try {
+      const call = await local({ ADMINS: "boss" });
+      await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
+      await post(call, "ana", "/api/repos", { name: "r" });
+      await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
+      const open = async (headers: Record<string, string>) => {
+        const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...headers } })) as any).webSocket, got: any[] = [];
+        ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+        ws.queue.splice(0);
+        let id = 0;
+        const edit = async (text: string) => {
+          ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
+          for (const end = performance.now() + 15_000; performance.now() < end;) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+        };
+        return { edit };
       };
-      return { edit };
-    };
-    const sock = await open(ip);
-    expect((await sock.edit("1")).type).toBe("ack");
-    expect((await sock.edit("2")).type).toBe("ack");
-    const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
-    expect((await ops("3")).status).toBe(200);
-    const over = await sock.edit("4");
-    expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
-    expect(over.retryAfter).toBeGreaterThan(0);
-    expect((await ops("5")).status).toBe(429);
-    // The desktop isn't counted, and a page can't name who its socket counts as.
-    const desk = await open({ "x-codesplitters-limit-as": "@someone-else" });
-    expect((await desk.edit("6")).type).toBe("ack");
-    expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
+      const sock = await open(ip);
+      expect((await sock.edit("1")).type).toBe("ack");
+      expect((await sock.edit("2")).type).toBe("ack");
+      const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
+      expect((await ops("3")).status).toBe(200);
+      const over = await sock.edit("4");
+      expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
+      expect(over.retryAfter).toBeGreaterThan(0);
+      expect((await ops("5")).status).toBe(429);
+      // The desktop isn't counted, and a page can't name who its socket counts as.
+      const desk = await open({ "x-codesplitters-limit-as": "@someone-else" });
+      expect((await desk.edit("6")).type).toBe("ack");
+      expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
+    } finally { setSystemTime(); }
   });
 });
 
