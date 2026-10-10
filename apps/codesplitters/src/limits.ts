@@ -13,8 +13,11 @@
 // A queued request answers 202 with its place in line. It waits in limit_jobs
 // and is replayed as the caller, not counted again but taking one of their
 // window's slots, when the page polls GET /api/jobs/:id or on the five-minute
-// cron. Only digs queue: line edits are pinned to the file's rev, so a queued
-// one would come back a conflict, and sign-ins should stay rejected.
+// cron. Digs, preview deploys and dependency-doctor runs can queue: each
+// answers the replay as it would the request (a preview's {run}, a doctor's
+// report or {running}), and the page then polls the run itself. Line edits
+// can't: they're pinned to the file's rev, so a queued one would come back a
+// conflict. Sign-ins should stay rejected.
 //
 // Only requests from the internet are counted: Cloudflare stamps those with
 // cf-connecting-ip. The desktop, the tests, and the Worker's own calls (hosted
@@ -46,6 +49,8 @@ export const RULES: Rule[] = [
   { name: "commit", label: "Commits", what: "pushes to Artifacts", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "share", label: "Shares and collections", what: "share links, collections and tracks", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", group: "Agents", per: "user", max: 20, window_s: DAY, on_fail: "reject" },
+  { name: "preview", label: "Preview deploys", what: "stacks stood up and torn down to try a repo", group: "Deploys and checks", per: "user", max: 6, window_s: HOUR, on_fail: "reject", queueable: true },
+  { name: "doctor", label: "Dependency checks", what: "dependency-doctor runs started by hand (registry lookups, installs and tests)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "reject", queueable: true },
 ];
 
 /** Which rule a request counts against, if any. */
@@ -66,6 +71,8 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "repos" && p[4] === "files") return "file";
   if (p[1] === "repos" && p[4] === "shares") return "share";
   if (p[1] === "repos" && p[4] === "agents") return "agent";
+  if (p[1] === "repos" && p[4] === "preview" && !p[5]) return "preview";
+  if (p[1] === "repos" && p[4] === "deps" && p[5] === "run") return "doctor";
   if (p[1] === "repos" && p[4] === "do" && p[5] === "commit") return "commit";
   if (p[1] === "repos" && p[4] === "do" && p[5] === "ops") return "edit";
   return null;

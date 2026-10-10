@@ -24,8 +24,8 @@ function fake(answers: Record<string, { out?: string; code?: number }>, status =
 
 const CONFIG = 'RB {"adopt":false,"edge":true,"box":false}\n';
 
-async function app(runner: Runner) {
-  const call = await boot({ GH_CLI: "off" });
+async function app(runner: Runner, extra: Record<string, unknown> = {}) {
+  const call = await boot({ GH_CLI: "off", ...extra });
   opened.push(call);
   call.env.PREVIEW_RUNNER = runner;
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
@@ -125,4 +125,22 @@ test("urlIn reads Alchemy's outputs", () => {
   expect(urlIn('Outputs: { url: "https://a.workers.dev", box: "https://b.up.railway.app" }')).toBe("https://b.up.railway.app");
   expect(urlIn("live at https://lab-x.ryan.workers.dev now")).toBe("https://lab-x.ryan.workers.dev");
   expect(urlIn("nothing here")).toBeUndefined();
+});
+
+test("over the preview limit, one queues: the replay starts the run, and the page polls it as before", async () => {
+  const { call } = await app(fake({ "bun -e": { out: CONFIG } }).runner, { ADMINS: "boss" });   // else everyone is an admin, and never limited
+  await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('preview', 1, 3600, 1, 'queue')").run();
+  const start = () => call("ryan", "/api/repos/ryan/lab/preview", { method: "POST", headers: { "cf-connecting-ip": "203.0.113.7" }, body: "{}" });
+  expect((await start()).status).toBe(202);
+  const first = await finish(call);
+  const over = await start();
+  expect(over.status).toBe(202);
+  const { queued } = (await over.json()) as any;
+  expect(queued).toMatchObject({ rule: "preview", state: "waiting", place: 1, label: "Preview deploys" });
+  // Room again: the next poll replays it, and it answers as the POST would have.
+  await call.env.DB.prepare("DELETE FROM limit_hits").run();
+  const job = (await (await call("ryan", `/api/jobs/${queued.id}`)).json()) as any;
+  expect(job).toMatchObject({ state: "done", status: 202 });
+  expect(job.result.run.id).not.toBe(first.id);
+  expect((await finish(call)).id).toBe(job.result.run.id);
 });
