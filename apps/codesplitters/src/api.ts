@@ -1,6 +1,6 @@
 // The API reference: every read and action the site's own page uses, so anyone can
 // build their own UI on it, or point an agent at it. The Worker serves it as JSON at
-// GET /api, and /api.html shows it. test/api.test.ts keeps it whole: every route
+// GET /api, and /reference shows it. test/api.test.ts keeps it whole: every route
 // comment in src/ and every call the command palette names must be in here.
 //
 // Paths: :o/:r is a repo's owner and name, :path a file's path in the repo (a query
@@ -26,7 +26,8 @@ export const GROUPS: Group[] = [
     endpoints: [
       { method: "GET", path: "/api", does: "this reference, as JSON" },
       { method: "GET", path: "/api/openapi.json", does: "the same API as an OpenAPI 3.1 spec, for agents and gateways outside the browser; calls that can't be undone or ship code carry x-codesplitters-risky: true" },
-      { method: "POST", path: "/api/mcp", body: "a JSON-RPC request", does: "a remote MCP server (Streamable HTTP, no sessions) whose tools are the spec's operations, one per operationId; send a personal API token (a read token lists only reads), and risky ones are marked destructive" },
+      { method: "POST", path: "/api/mcp", body: "a JSON-RPC request", does: "a remote MCP server (Streamable HTTP, no sessions) whose tools are the spec's operations, one per operationId; send a personal API token (a read token lists only reads), and risky ones are marked destructive; /mcp shows how to connect" },
+      { method: "GET", path: "/api/mcp/tools", does: "every MCP tool: name, description, inputs, scope and whether it's risky (no token needed)" },
     ],
   },
   {
