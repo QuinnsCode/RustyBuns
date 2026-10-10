@@ -576,19 +576,24 @@ const views = {
       + (owner === me() ? sec("send", "Deploy", `<div id="deploy"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "");
   },
-  /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? */
-  async wireFit(owner, repo) {
+  /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
+  async wireFit(owner, repo, dir = "") {
     const el = $("#fit");
     if (!el) return;
-    // The file pages share this panel: ask once per repo per visit.
-    const key = `${owner}/${repo}`;
-    const f = fits[key] ??= await api(`/repos/${key}/fit`).catch(() => null);
-    if (!f?.verdict) delete fits[key];
+    // The file pages share this panel: ask once per repo (and folder) per visit.
+    const key = `${owner}/${repo}`, at = dir ? `${key}?dir=${encodeURIComponent(dir)}` : key;
+    const f = fits[at] ??= await api(`/repos/${key}/fit${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`).catch(() => null);
+    if (!f?.verdict) delete fits[at];
     if (!f?.verdict) { el.innerHTML = '<span class="muted">not checked yet</span>'; return; }
     const say = { ready: "ready to ship", likely: "likely fits", "needs-work": "needs work", poor: "poor fit" };
-    el.innerHTML = `<p><span class="badge fit-${f.verdict}">${say[f.verdict]}</span> ${esc(f.label)}</p>
+    const ws = f.workspaces ?? [];
+    el.innerHTML = (dir ? `<p class="muted"><a href="#" data-fit-dir="">${esc(repo)}</a> / <code>${esc(dir)}</code></p>` : "")
+      + `<p><span class="badge fit-${f.verdict}">${say[f.verdict]}</span> ${esc(f.label)}</p>
       <ul class="fit-why">${f.reasons.map((r) => `<li>${esc(r).replace(/\x60([^\x60]+)\x60/g, "<code>$1</code>")}</li>`).join("")}</ul>
-      ${f.issue ? `<p class="muted">Support is tracked in <a href="${esc(f.issue)}" target="_blank" rel="noopener">#${esc(f.issue.split("/").pop())}</a>.</p>` : ""}`;
+      ${f.issue ? `<p class="muted">Support is tracked in <a href="${esc(f.issue)}" target="_blank" rel="noopener">#${esc(f.issue.split("/").pop())}</a>.</p>` : ""}`
+      + (ws.length ? `<p class="muted" style="margin-top:8px">Its apps:</p><ul class="fit-why" style="list-style:none;padding-left:0">${ws.map((w) =>
+          `<li><a href="#" data-fit-dir="${esc(w.dir)}" title="${esc(w.dir)}">${esc(w.name)}</a> <span class="badge fit-${w.verdict}">${say[w.verdict]}</span> ${esc(w.label)}</li>`).join("")}</ul>` : "");
+    el.querySelectorAll("[data-fit-dir]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); views.wireFit(owner, repo, a.dataset.fitDir); }));
   },
   /** The dependency doctor: when it checks, what it may propose, and what it found last. */
   async wireDeps(owner, repo) {
