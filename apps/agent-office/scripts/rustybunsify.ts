@@ -33,6 +33,8 @@ const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin}` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
+  // the skin is ours and changes far more often than the release, so it's rebuilt every start
+  if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
 } else {
   await prepare(tag);
 }
@@ -118,9 +120,7 @@ async function druids(cache: string) {
   // the KTX2 transcoder the game's textures need, from the same three as the bundle
   const three = path.dirname(Bun.resolveSync("three/package.json", root));
   cpSync(path.join(three, "examples/jsm/libs/basis"), path.join(dir, "basis"), { recursive: true });
-  const built = await Bun.build({ entrypoints: [path.join(root, "druids/index.ts")], minify: true, target: "browser" });
-  if (!built.success) throw new AggregateError(built.logs, "druids/index.ts failed to build");
-  await Bun.write(path.join(dir, "druids.js"), built.outputs[0]);
+  await buildSkin(dir);
 
   const [main, ...more] = [...new Bun.Glob("assets/main-*.js").scanSync({ cwd: pub })];
   if (!main || more.length) throw new Error(`Agent Office changed: expected one assets/main-*.js, found ${more.length + (main ? 1 : 0)}`);
@@ -138,6 +138,12 @@ async function druids(cache: string) {
   patch(path.join(pub, "index.html"), `<script type="module" crossorigin src="/${main}">`,
     `<script type="module" src="/druids/druids.js"></script>\n    <script type="module" crossorigin src="/${renamed}">`);
   console.log(`   ✓ Druids Curse office: ${MODELS.length} models`);
+}
+
+async function buildSkin(dir: string) {
+  const built = await Bun.build({ entrypoints: [path.join(root, "druids/index.ts")], minify: true, target: "browser" });
+  if (!built.success) throw new AggregateError(built.logs, "druids/index.ts failed to build");
+  await Bun.write(path.join(dir, "druids.js"), built.outputs[0]);
 }
 
 async function compile(tag: string) {

@@ -14,6 +14,7 @@ interface Desk {
   seatAnchor: Object3D;
   stage: Object3D;
   vacancy: Object3D;
+  vacancyY: number;
   chair: Object3D;
 }
 export interface Office {
@@ -46,9 +47,10 @@ async function copy(path: string, size: number, by: "height" | "longest" = "long
   return holder;
 }
 
-/** A Druid Panel covers a pod of two back-to-back desks (2.2 m square); its top is where the laptops sit, at
- *  twice the office's desk height, for agents twice the office's size. */
-const PANEL = { width: 2.2, top: 1.56 };
+/** A Druid Panel sits over a pod of two back-to-back desks (2.2 m square, the colliders), 10% smaller so it
+ *  doesn't crowd the room; its top is where the laptops sit, a bit under twice the office's desk height, for
+ *  agents twice the office's size. */
+const PANEL = { width: 1.98, top: 1.4 };
 let swirl: Object3D | null = null;
 const axis = new Vector3(0, 0, 1);
 
@@ -74,6 +76,8 @@ export function council(into: Group, office: Office) {
     const keep = new Set([d.laptopAnchor, d.seatAnchor, d.stage, d.vacancy]);
     for (const c of d.group.children) if (!keep.has(c)) c.visible = false;
     d.laptopAnchor.position.y = PANEL.top;
+    // the office bobs the vacancy plus at desk height + 0.55, which is inside the panel: lift it over the top
+    d.vacancyY = PANEL.top + 0.55;
 
     // the pod's middle: half a desk away from where this desk's agent stands
     const centre = d.group.localToWorld(new Vector3(0, 0, -Math.sign(d.seatAnchor.position.z || 1) * 0.55));
@@ -92,14 +96,14 @@ export function council(into: Group, office: Office) {
     for (let n = 0; n < 1 + Math.floor(r() * 3); n++) {
       const side = r() < 0.5 ? -1 : 1;
       copy(pick(loot.small), 0.2 + r() * 0.16).then((o) => {
-        o.position.set(d.laptopAnchor.position.x + side * (0.4 + r() * 0.3), PANEL.top, d.laptopAnchor.position.z + (r() - 0.5) * 0.4);
+        o.position.set(d.laptopAnchor.position.x + side * (0.36 + r() * 0.27), PANEL.top, d.laptopAnchor.position.z + (r() - 0.5) * 0.4);
         o.rotation.y = r() * 6.28;
         d.group.add(o);
       });
     }
-    if (r() < 0.35) copy(COUNCIL.staff, 2.2, "longest").then((o) => {
+    if (r() < 0.35) copy(COUNCIL.staff, 2, "longest").then((o) => {
       // leaning on the panel's corner
-      o.position.set(d.laptopAnchor.position.x + 1.05, 0, d.laptopAnchor.position.z + 0.2);
+      o.position.set(d.laptopAnchor.position.x + PANEL.width / 2 - 0.05, 0, d.laptopAnchor.position.z + 0.2);
       o.rotation.set(0.2, r() * 6.28, 0.15);
       d.group.add(o);
     });
