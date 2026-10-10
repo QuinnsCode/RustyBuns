@@ -90,6 +90,19 @@ export async function* tarFiles(stream: ReadableStream<Uint8Array>): AsyncGenera
   }
 }
 
+/** Is this Artifacts name still held, by a repo being deleted or a import being given up on? */
+const held = (e: unknown) => code(e) === "ALREADY_EXISTS" || /already exists|being imported/i.test(String((e as Error)?.message ?? e));
+
+/** Run `make` until the name it wants is free, for up to about `tries` seconds. */
+export async function whenFree<T>(make: () => Promise<T>, tries = 30, gapMs = 1000): Promise<T> {
+  for (let i = 1; ; i++) {
+    try { return await make(); } catch (e) {
+      if (!held(e) || i >= tries) throw e;
+      await new Promise((r) => setTimeout(r, gapMs));
+    }
+  }
+}
+
 /**
  * Make Artifact `target.name` hold `repo` at `sha`, from GitHub's tarball, as
  * one commit. A read-only target is filled through a writable one first,
@@ -101,10 +114,10 @@ export async function importTarball(ns: Artifacts, p: {
 }): Promise<{ name: string; remote: string; defaultBranch: string }> {
   const ro = p.target.opts?.readOnly === true, name = ro ? `${p.target.name}-tip` : p.target.name;
   if (ro) await ns.delete?.(name).catch(() => false);   // a leftover from a try that died halfway
-  // On Cloudflare the import that just refused it leaves its half-made target behind for a while
-  // ("already exists", then "being imported"), so clear it before making ours (#348).
+  // On Cloudflare the import that just refused it leaves its half-made target behind, and a delete
+  // takes a few seconds to free the name, so clear it and wait for the name (#348).
   await ns.delete?.(p.target.name).catch(() => false);
-  const made = await ns.create(name, { description: p.target.opts?.description, setDefaultBranch: p.branch });
+  const made = await whenFree(() => ns.create(name, { description: p.target.opts?.description, setDefaultBranch: p.branch }));
   try {
     const res = await p.tarball();
     if (!res.ok || !res.body) throw new Error(`GitHub said ${res.status} for ${p.repo}'s tarball`);
@@ -119,7 +132,7 @@ export async function importTarball(ns: Artifacts, p: {
       author: p.author, email: p.email, branch: p.branch, at: p.at, packBytes: p.packBytes ?? PACK_BYTES,
     });
     if (!ro) return made;
-    const art = await (await ns.get(name)).fork(p.target.name, { description: p.target.opts?.description, readOnly: true, defaultBranchOnly: true });
+    const art = await whenFree(async () => (await ns.get(name)).fork(p.target.name, { description: p.target.opts?.description, readOnly: true, defaultBranchOnly: true }));
     await ns.delete?.(name).catch(() => false);
     return art;
   } catch (e) {

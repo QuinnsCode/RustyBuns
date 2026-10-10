@@ -53,9 +53,19 @@ function fakeGitHub(sha: string, tgz: string) {
   return () => { globalThis.fetch = real; };
 }
 
-/** As on Cloudflare: the refused import leaves its half-made target behind for a while (#348). */
-const tooBig = (ns: { create(name: string): Promise<unknown> }) => async (o: { target: { name: string } }) => {
+/**
+ * As on Cloudflare: the refused import leaves its half-made target behind, and deleting it answers
+ * true but frees the name a moment later (#348).
+ */
+const tooBig = (ns: { create(name: string): Promise<unknown>; delete?(name: string): Promise<boolean> }) => async (o: { target: { name: string } }) => {
   await ns.create(o.target.name).catch(() => {});
+  const del = ns.delete!.bind(ns);
+  ns.delete = async (name) => {
+    if (name !== o.target.name) return del(name);
+    ns.delete = del;
+    setTimeout(() => void del(name), 1500);
+    return true;
+  };
   return tooBigNow();
 };
 const tooBigNow = () => { throw Object.assign(new Error(`413 {"code":10402,"message":"Repository exceeded the 40MB import limit. Current depth is 1."}`), { code: "MEMORY_LIMIT" }); };
