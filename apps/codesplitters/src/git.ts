@@ -149,3 +149,94 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
     throw new Error(`git: push rejected: ${report.join(" | ")}`);
   }
 }
+
+/** One file of a whole tree: its path, git mode (100644, 100755 or 120000 for a symlink) and bytes; or a submodule's commit (mode 160000). */
+export type TreeFile = { path: string; mode: string; data: Uint8Array } | { path: string; mode: "160000"; commit: string }
+
+interface Dir { files: Map<string, { mode: string; id: string }>; dirs: Map<string, Dir> }
+const newDir = (): Dir => ({ files: new Map(), dirs: new Map() });
+
+/**
+ * Push `files` as the one, root commit of an empty repo: a big tree that
+ * Artifacts won't import (see tarball.ts). Each object is deflated as it's
+ * read and only the compressed bytes are kept; the pack streams out from
+ * there, so the most this holds is about the size of the pack. Past
+ * `maxBytes` of it, it gives up rather than run the Worker out of memory.
+ */
+export async function pushTree(remote: string, token: string, files: AsyncIterable<TreeFile>, c: { message: string; author: string; email?: string; branch?: string; at?: number; maxBytes?: number }): Promise<{ commit: string; objects: number; bytes: number }> {
+  const { createHash } = await import("node:crypto");
+  const ref = `refs/heads/${c.branch ?? "main"}`, auth = { authorization: `Bearer ${token.split("?")[0]}` };
+  // The pack so far, copied into 1 MB slabs: thousands of small arrays cost more than their bytes.
+  const packed: Uint8Array[] = [], seen = new Set<string>();
+  let slab = new Uint8Array(2 ** 20), used = 0, bytes = 0, objects = 0;
+  const keep = (b: Uint8Array) => {
+    for (let o = 0; o < b.length;) {
+      if (used === slab.length) { packed.push(slab); slab = new Uint8Array(2 ** 20); used = 0; }
+      const n = Math.min(b.length - o, slab.length - used);
+      slab.set(b.subarray(o, o + n), used);
+      used += n; o += n;
+    }
+    bytes += b.length;
+  };
+  const add = async (type: Obj["type"], body: Uint8Array) => {
+    const id = createHash("sha1").update(`${type} ${body.length}\0`).update(body).digest("hex");
+    if (seen.has(id)) return id;
+    seen.add(id);
+    let n = body.length;
+    const head = [(TYPES[type] << 4) | (n & 15)];
+    n >>= 4;
+    while (n > 0) { head[head.length - 1]! |= 0x80; head.push(n & 0x7f); n >>= 7; }
+    keep(new Uint8Array(head));
+    keep(await deflate(body));
+    objects++;
+    if (c.maxBytes && bytes > c.maxBytes) throw new Error(`git: over ${Math.round(c.maxBytes / 2 ** 20)} MB packed, too big to push from here`);
+    return id;
+  };
+
+  const root = newDir();
+  for await (const f of files) {
+    const parts = f.path.split("/").filter(Boolean);
+    let d = root;
+    for (const p of parts.slice(0, -1)) { let next = d.dirs.get(p); if (!next) d.dirs.set(p, next = newDir()); d = next; }
+    d.files.set(parts.at(-1)!, { mode: f.mode, id: "commit" in f ? f.commit : await add("blob", f.data) });
+  }
+  const tree = async (d: Dir): Promise<string> => {
+    const entries: { name: string; mode: string; id: string; dir: boolean }[] = [...d.files].map(([name, f]) => ({ name, ...f, dir: false }));
+    for (const [name, sub] of d.dirs) entries.push({ name, mode: "40000", id: await tree(sub), dir: true });
+    const key = (e: { name: string; dir: boolean }) => e.name + (e.dir ? "/" : "");
+    entries.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+    return add("tree", concat(entries.flatMap((e) => [enc.encode(`${e.mode} ${e.name}\0`), unhex(e.id)])));
+  };
+  const when = `${Math.floor((c.at ?? Date.now()) / 1000)} +0000`, who = `${c.author} <${c.email ?? `${c.author}@codesplitters.local`}> ${when}`;
+  const commit = await add("commit", enc.encode(`tree ${await tree(root)}\nauthor ${who}\ncommitter ${who}\n\n${c.message}\n`));
+
+  const adv = await fetch(`${remote}/info/refs?service=git-receive-pack`, { headers: auth });
+  if (!adv.ok) throw new Error(`git: ${adv.status} reading refs from ${remote}`);
+  if (lines(new Uint8Array(await adv.arrayBuffer())).some((l) => l.split("\0")[0]!.split(" ")[1] === ref)) throw new Error(`git: ${ref} already exists on ${remote}`);
+
+  // The pack's trailer is the SHA-1 of everything before it, hashed as it goes out.
+  packed.push(slab.subarray(0, used));
+  const sum = createHash("sha1");
+  const count = new Uint8Array(4);
+  new DataView(count.buffer).setUint32(0, objects);
+  const chunks = [concat([enc.encode("PACK"), new Uint8Array([0, 0, 0, 2]), count]), ...packed];
+  packed.length = 0;
+  const command = concat([pkt(`${ZERO} ${commit} ${ref}\0report-status\n`), enc.encode("0000")]);
+  const body = new ReadableStream<Uint8Array>({
+    start(ctl) { ctl.enqueue(command); },
+    pull(ctl) {
+      const next = chunks.shift();
+      if (next) { sum.update(next); ctl.enqueue(next); return; }
+      ctl.enqueue(new Uint8Array(sum.digest()));
+      ctl.close();
+    },
+  });
+  const res = await fetch(`${remote}/git-receive-pack`, {
+    method: "POST", body, duplex: "half",
+    headers: { ...auth, "content-type": "application/x-git-receive-pack-request", accept: "application/x-git-receive-pack-result" },
+  } as RequestInit);
+  if (!res.ok) throw new Error(`git: ${res.status} pushing to ${remote}`);
+  const report = lines(new Uint8Array(await res.arrayBuffer()));
+  if (!report.includes(`ok ${ref}`)) throw new Error(`git: push rejected: ${report.join(" | ")}`);
+  return { commit, objects, bytes };
+}

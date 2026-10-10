@@ -6,6 +6,7 @@
 
 import { listDir, readText } from "./archive.ts";
 import { code, json, NAME, type Env } from "./env.ts";
+import { githubToken, importRepo } from "./github.ts";
 
 export interface Level { n: number; slug: string; title: string; repo: string; branch: string; blurb: string }
 
@@ -81,10 +82,9 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
     if (!admin) return json({ error: "admins only" }, 403);
     if (!env.ARTIFACTS) return json({ error: "no Artifacts binding" }, 501);
     try {
-      await env.ARTIFACTS.import({
-        source: { url: `https://github.com/${level.repo}.git`, branch: level.branch, depth: 1 },
-        target: { name: artifactName(slug), opts: { readOnly: true, description: `${level.title} (${level.repo}), a codeSplitters level` } },
-      });
+      // A big level (Alchemy, Bun...) is over the import cap and comes in from GitHub's tarball, here and now.
+      await importRepo(env, { repo: level.repo, branch: level.branch, token: (await githubToken(env, user))?.token },
+        { name: artifactName(slug), opts: { readOnly: true, description: `${level.title} (${level.repo}), a codeSplitters level` } });
     } catch (e) {
       if (code(e) !== "ALREADY_EXISTS") return json({ error: String((e as Error).message ?? e) }, 502);
     }
