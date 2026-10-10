@@ -8,6 +8,9 @@ import { defineConfig } from "@rustybuns/cli/config";
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
 const secrets = (on: boolean, ...names: string[]) => on ? Object.fromEntries(names.map((n) => [n, { type: "secret" as const }])) : {};
 const set = (name: string) => !!process.env[name];
+// Hosted agents bill the site's keys and are limited to ADMINS, which only means
+// something with accounts: with aliases anyone can claim an admin's handle.
+if (agents && !set("BETTER_AUTH_SECRET")) throw new Error("CODESPLITTERS_AGENTS=1 needs accounts on: set BETTER_AUTH_SECRET too");
 
 export default defineConfig({
   name: "codesplitters",

@@ -1,5 +1,7 @@
 // The Bun shell. One Bun.serve() that:
-//   1. gates every request on the per-launch token (cookie or ?token=)
+//   1. gates every request on the per-launch token (cookie, ?token=, or a
+//      one-time ?rb_launch= code from launchCode(), so the token itself
+//      never has to sit in a browser's argv)
 //   2. serves the embedded client build (assets first, like CF's asset layer)
 //   3. mounts a Workers-shaped fetch(request, env, ctx) for everything else
 //   4. routes WebSocket upgrades on registered paths to the app's handlers
@@ -82,6 +84,12 @@ export interface BunShell<Env> {
    * 0.0.0.0 still answers on loopback.
    */
   rebind(opts: { hostname?: string; port?: number }): { hostname: string; port: number };
+  /**
+   * A one-time code that trades for the token cookie via `?rb_launch=`. It
+   * works once, within `ttlMs`, so a copy seen in `ps` or a log is useless
+   * after the browser has used it. Undefined when there is no token gate.
+   */
+  launchCode(ttlMs?: number): string | undefined;
   stop(): Promise<void>;
 }
 
@@ -109,6 +117,23 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   // the port), so the name carries the port and they coexist.
   let port = 0;
   const cookieName = () => `rb_token_${port}`;
+  const login = (url: URL, param: string) => {
+    url.searchParams.delete(param);
+    return new Response(null, {
+      status: 302,
+      headers: { Location: url.pathname + url.search, "Set-Cookie": `${cookieName()}=${opts.token}; Path=/; HttpOnly; SameSite=Strict` },
+    });
+  };
+  // Launch codes -> expiry (ms since epoch). Each is deleted when used or found expired.
+  const codes = new Map<string, number>();
+  const redeem = (given: string) => {
+    const now = Date.now();
+    for (const [c, exp] of codes) {
+      if (exp <= now) { codes.delete(c); continue; }
+      if (same(given, c)) { codes.delete(c); return true; }
+    }
+    return false;
+  };
   const gate = (req: Request, url: URL): Response | Principal => {
     if (!opts.token) return "host";
     const cookie = req.headers.get("cookie") ?? "";
@@ -121,13 +146,9 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       return "host";
     }
     const q = url.searchParams.get("token");
-    if (q !== null && same(q, opts.token)) {
-      url.searchParams.delete("token");
-      return new Response(null, {
-        status: 302,
-        headers: { Location: url.pathname + url.search, "Set-Cookie": `${cookieName()}=${opts.token}; Path=/; HttpOnly; SameSite=Strict` },
-      });
-    }
+    if (q !== null && same(q, opts.token)) return login(url, "token");
+    const l = url.searchParams.get("rb_launch");
+    if (l !== null && redeem(l)) return login(url, "rb_launch");
     const g = opts.guest;
     if (g && g.paths.includes(url.pathname)) {
       const pass = typeof g.passphrase === "function" ? g.passphrase() : g.passphrase;
@@ -265,6 +286,12 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       server = listen(hostname, next);
       port = server.port!;
       return { hostname: server.hostname!, port };
+    },
+    launchCode(ttlMs = 60_000) {
+      if (!opts.token) return undefined;
+      const c = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString("base64url");
+      codes.set(c, Date.now() + ttlMs);
+      return c;
     },
     async stop() { await server.stop(true); },
   };

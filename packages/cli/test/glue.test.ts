@@ -428,3 +428,35 @@ test("desktopCrates: only crates that would be embedded count against cross targ
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("DO migrations: history is kept, a new class gets the next tag, a removed class needs a declared step", () => {
+  const cfg = (bindings: Record<string, unknown>, migrations?: unknown[]) => ({
+    name: "app", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], ...(migrations ? { migrations } : {}) },
+    bindings, targets: { edge: { provider: "cloudflare" } },
+  }) as any;
+  const read = (s: string) => JSON.parse(s.replace(/^\/\/.*\n/gm, "")).migrations;
+  const two = { FILES: { type: "durable_object", className: "FileDurableObject" }, GAMES: { type: "durable_object", className: "GameRoom" } };
+  const v1 = generateWrangler(cfg(two));
+  expect(read(v1)).toEqual([{ tag: "v1", new_sqlite_classes: ["FileDurableObject", "GameRoom"] }]);
+  // Same config again: unchanged.
+  expect(generateWrangler(cfg(two), v1)).toBe(v1);
+  // A class bound after deploy is appended, never folded into v1.
+  const three = { ...two, SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile" } };
+  const v2 = generateWrangler(cfg(three), v1);
+  expect(read(v2)).toEqual([
+    { tag: "v1", new_sqlite_classes: ["FileDurableObject", "GameRoom"] },
+    { tag: "v2", new_sqlite_classes: ["AgentSandbox"] },
+  ]);
+  // Unbinding it without saying what happened refuses, naming the step to add.
+  expect(() => generateWrangler(cfg(two), v2)).toThrow(/AgentSandbox.*tag: "v3", deleted_classes: \["AgentSandbox"\]/);
+  // Declared delete and rename steps are appended once.
+  const v3 = generateWrangler(cfg(two, [{ tag: "v3", deleted_classes: ["AgentSandbox"] }]), v2);
+  expect(read(v3).at(-1)).toEqual({ tag: "v3", deleted_classes: ["AgentSandbox"] });
+  const renamed = { ...two, GAMES: { type: "durable_object", className: "Room" } };
+  const v4 = generateWrangler(cfg(renamed, [{ tag: "v3", deleted_classes: ["AgentSandbox"] }, { tag: "v4", renamed_classes: [{ from: "GameRoom", to: "Room" }] }]), v3);
+  expect(read(v4).map((m: any) => m.tag)).toEqual(["v1", "v2", "v3", "v4"]);
+  expect(read(v4).at(-1)).toEqual({ tag: "v4", renamed_classes: [{ from: "GameRoom", to: "Room" }] });
+  // A hand-written history with its own tag names carries on from there.
+  const hand = `{ "migrations": [{ "tag": "v1", "new_classes": ["Old"] }, { "tag": "v2", "new_sqlite_classes": ["GameRoom"] }] }`;
+  expect(read(generateWrangler(cfg({ OLD: { type: "durable_object", className: "Old" }, ...two }), hand)).at(-1)).toEqual({ tag: "v3", new_sqlite_classes: ["FileDurableObject"] });
+});

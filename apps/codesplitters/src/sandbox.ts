@@ -1,4 +1,5 @@
-// Hosted agents: on Cloudflare there is no CLI and no filesystem, so the agent
+// Hosted agents: a Worker can't start the agents' CLIs (native programs that
+// run shell commands; an isolate has node:fs but no processes), so the agent
 // runs in a container (sandbox/Dockerfile: each CLI, plus a small server). The
 // AgentSandbox Durable Object owns one container. Each run gets its own
 // instance, which starts the container, hands it the file and the command, and

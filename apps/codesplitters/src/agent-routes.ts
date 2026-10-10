@@ -6,13 +6,14 @@
 //
 // On this machine: desktop only, since the CLI runs as the machine's user and can
 // run shell commands, so only the person whose machine it is may start one. In a
-// container it can't reach the host, so accounts may be on. Owner only either way.
+// container it can't reach the host, but it bills the site's keys, so accounts
+// must be on: with aliases anyone can claim an admin's handle. Owner only either way.
 // A container run answers when it is done (200), since an isolate's memory is
 // not where the next poll lands; a local one answers at once (202).
 //
 //   GET  /api/agents                                     which harnesses this machine can run
 //   POST /api/repos/:o/:r/agents {path, harness, task, model?}  start one; answers at once
-//   GET  /api/repos/:o/:r/agents?path=                   this file's runs, newest first
+//   GET  /api/repos/:o/:r/agents?path=                   this file's runs, newest first (owner only)
 
 import { json, type Env } from "./env.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
@@ -40,9 +41,9 @@ export interface Run {
 const runs: Run[] = [];
 let nextId = 1;
 
-/** Why agents can't run here, or null when they can. The agent signs in by alias, so accounts must be off. */
+/** Why agents can't run here, or null when they can. Hosted ones need accounts on; local ones off, since the agent signs in by alias. */
 function unavailable(env: Env): string | null {
-  if (env.AGENT_SANDBOX) return null;
+  if (env.AGENT_SANDBOX) return accountsOn(env) ? null : "Hosted agents need accounts on (BETTER_AUTH_SECRET): with aliases anyone can claim an admin's handle.";
   if (typeof Bun === "undefined") return "Coding agents run on the desktop app, where their CLIs are installed.";
   if (accountsOn(env)) return "Coding agents need the desktop app (accounts off).";
   return null;
@@ -63,16 +64,19 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!(await canRead(owner, repo))) return json({ error: "not found" }, 404);
 
   if (req.method === "GET") {
+    // A run's task and output can quote the repo's code and the agent's chatter,
+    // so only the owner, who started them, sees them.
+    if (user !== owner) return json({ error: "only the repo's owner can see its coding agents" }, 403);
     const path = url.searchParams.get("path");
     return json(runs.filter((r) => r.owner === owner && r.repo === repo && (!path || r.path === path)).reverse());
   }
   if (req.method !== "POST") return null;
+  const why = unavailable(env);
+  if (why) return json({ error: why }, 501);
   if (user !== owner) return json({ error: "only the repo's owner can start a coding agent" }, 403);
   // Hosted runs bill the site's own API keys, and anyone can sign up and own a
   // repo, so only the handles in ADMINS may start one.
   if (env.AGENT_SANDBOX && !(env.ADMINS && isAdmin(env, user))) return json({ error: "hosted agents are limited to this site's admins (ADMINS)" }, 403);
-  const why = unavailable(env);
-  if (why) return json({ error: why }, 501);
   const { path, harness, task, model } = (await req.json()) as { path?: string; harness?: Harness; task?: string; model?: string };
   if (!path) return json({ error: "path required" }, 400);
   if (!harness || !HARNESSES.includes(harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);

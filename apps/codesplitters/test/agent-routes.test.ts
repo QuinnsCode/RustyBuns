@@ -53,12 +53,14 @@ test("a file in a folder works too", async () => {
   expect(runs[0]).toMatchObject({ status: "done", applied: 1 });
 });
 
-test("only the owner may start one; readers see the runs, strangers to a private repo see nothing", async () => {
+test("only the owner may start one or see the runs; strangers to a private repo see nothing", async () => {
   const { call, post } = await app();
   await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
   expect((await post("sam", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "x" })).status).toBe(403);
   expect((await post(null, "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "x" })).status).toBe(403);
-  expect((await call("sam", "/api/repos/ryan/lab/agents?path=a.js")).status).toBe(200);
+  expect((await call("sam", "/api/repos/ryan/lab/agents?path=a.js")).status).toBe(403);
+  expect((await call(null, "/api/repos/ryan/lab/agents?path=a.js")).status).toBe(403);
+  expect((await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).status).toBe(200);
 
   await call("ryan", "/api/repos/ryan/lab", { method: "PUT", body: JSON.stringify({ visibility: "private" }) });
   expect((await call("eve", "/api/repos/ryan/lab/agents?path=a.js")).status).toBe(404);

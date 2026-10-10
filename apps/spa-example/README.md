@@ -16,4 +16,6 @@ It's never built, so it doesn't install rwsdk or the Workers runtime; `types/fix
 bun test packages/cli/test/glue.test.ts     # from the repo root
 ```
 
+The live game's only D1 database is `druids-curse-votv-db` (the `02a14450…` id in `wrangler.jsonc`). Any `druids-curse-votv-rb-DB-live-*` database on the account is a leftover from an Alchemy deploy that lost its state; four of them were checked for data and deleted in #142.
+
 To see a Workers app with a Durable Object world actually run on the desktop and on Cloudflare, use [hippo-tycoon](../hippo-tycoon/README.md) or [park-hide-seek](../park-hide-seek/README.md).
