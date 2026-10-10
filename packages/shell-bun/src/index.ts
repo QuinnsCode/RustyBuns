@@ -10,6 +10,7 @@ export { storage, type StorageOptions } from "./bindings/storage.ts";
 export { r2, R2Bucket } from "./bindings/r2.ts";
 export { LocalArtifacts, LocalArtifactsRepo, gitHttp } from "./bindings/artifacts.ts";
 export { images, LocalImages } from "./bindings/images.ts";
+export { queue, LocalQueue, type QueueBatch, type QueueMessage, type QueueConsumerSettings, type QueueSendOptions } from "./bindings/queue.ts";
 export { schedule, parseCron, cronMatches, type ScheduledController } from "./cron.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
@@ -21,6 +22,7 @@ import { storage, type StorageOptions } from "./bindings/storage.ts";
 import { r2 } from "./bindings/r2.ts";
 import { LocalArtifacts } from "./bindings/artifacts.ts";
 import { images } from "./bindings/images.ts";
+import { queue } from "./bindings/queue.ts";
 import { durableObject, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
 export const caps: MemoryPort["caps"] = { sab: true, ffi: true, fs: true, gpu: false };
@@ -72,6 +74,8 @@ export function localBindings(dataDir: string) {
     artifacts: (namespace: string) => new LocalArtifacts(`${dataDir}/artifacts/${namespace}`, namespace),
     /** Cloudflare Images as a passthrough: info() reads the header, output() returns the original. */
     images,
+    /** A Cloudflare Queue over sqlite. Its consumer is whoever calls `consume()`, in this process. */
+    queue: (name: string) => queue(`${dataDir}/queues.sqlite`, name),
     durableObject: <Env>(Ctor: DurableObjectCtor<Env>, env: Env, binding: string, opts?: { codec?: "json" | "v8" }) =>
       durableObject(Ctor, env, { storage: (id) => storage(`${dataDir}/do_${binding}_${id}.sqlite`, { codec: opts?.codec }) }),
   };

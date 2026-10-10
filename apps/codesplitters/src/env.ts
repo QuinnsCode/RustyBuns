@@ -75,6 +75,8 @@ export interface Env {
   DEPLOY_STATE_DIR?: string;
   /** Tests only: stands in for the commands and the fetch a preview deploy runs (see preview.ts). */
   PREVIEW_RUNNER?: unknown;
+  /** Webhook tries, one message each (hooks.ts): a Cloudflare Queue whose consumer is this Worker's queue(). */
+  HOOKS: { send(body: { id: string; n: number }, opts?: { delaySeconds?: number }): Promise<void>; sendBatch(messages: Iterable<{ body: { id: string; n: number }; delaySeconds?: number }>): Promise<void> };
   /** Tests only: stands in for fetch when a webhook is delivered (see hooks.ts). */
   HOOK_FETCH?: unknown;
   /** Tests only: stands in for running `bun test` on a cut (see cuts.ts). */

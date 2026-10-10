@@ -18,7 +18,7 @@ import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, swee
 import { previewRoutes } from "./preview.ts";
 import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { repoFit } from "./fit.ts";
-import { emit, hookRoutes, retryHooks, type Later } from "./hooks.ts";
+import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -42,9 +42,7 @@ const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.
 const HOURLY = "0 * * * *";
 
 const app = {
-  async fetch(req: Request, env: Env, ctx?: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
-    // Webhook deliveries finish after the response; without a ctx (an internal call) they just run on.
-    const later: Later = (p) => ctx?.waitUntil ? ctx.waitUntil(p) : void p;
+  async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
     if (p[0] !== "api") return new Response("not found", { status: 404 });
@@ -83,7 +81,7 @@ const app = {
     if (preview) return preview;
     const deploy = await deployRoutes(req, env, p, user);
     if (deploy) return deploy;
-    const hooks = await hookRoutes(req, env, p, user, later);
+    const hooks = await hookRoutes(req, env, p, user);
     if (hooks) return hooks;
 
     // GET|PUT /api/me
@@ -191,7 +189,7 @@ const app = {
         }
         return json({ commit, entries });
       }
-      const branches = await branchRoutes(req, env, p, owner, repo, user, a, later);
+      const branches = await branchRoutes(req, env, p, owner, repo, user, a);
       if (branches) return branches;
       // POST /api/repos/:o/:r/collaborators {name}  (owner only; this is how agents get in)
       if (p[4] === "collaborators" && req.method === "POST") {
@@ -262,7 +260,7 @@ const app = {
             await emit(env, owner, repo, "commit", user!, {
               ref: "refs/heads/main", before: git.parent ?? "0".repeat(40), after: git.commit, created: !git.parent, pusher: { name: user },
               head_commit: { id: git.commit, message: commit.message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: git.parent ? [] : [path], modified: git.parent ? [path] : [], removed: [] },
-            }, later);
+            });
             await deployOnCommit(env, owner, repo, user);
           }
           return json({ ...commit, git });
@@ -329,16 +327,20 @@ const app = {
     return json({ error: "not found" }, 404);
   },
 
-  // Cron Triggers (rustybuns.config.ts crons): every five minutes, webhook retries
-  // and queued requests whose turn has come; hourly, each repo's dependency doctor runs when it's due, and rate-limit
+  // Cron Triggers (rustybuns.config.ts crons): every five minutes, queued requests whose
+  // turn has come; hourly, each repo's dependency doctor runs when it's due, and rate-limit
   // windows that have ended are cleared out.
   async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
-    ctx.waitUntil(retryHooks(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
     if (c.cron === HOURLY) {
       ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
       ctx.waitUntil(sweepLimits(env));
     }
+  },
+
+  // The HOOKS queue (rustybuns.config.ts): one webhook try per message.
+  async queue(batch: { messages: readonly { body: HookMessage; ack(): void }[] }, env: Env) {
+    await deliverHooks(batch, env);
   },
 };
 

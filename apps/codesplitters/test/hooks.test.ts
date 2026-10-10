@@ -1,7 +1,6 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { retryHooks, sign } from "../src/hooks.ts";
-import worker from "../src/worker.ts";
+import { sign } from "../src/hooks.ts";
 import type { Runner } from "../src/preview.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
@@ -87,37 +86,55 @@ test("a commit sends a signed, push-shaped payload; branches open and merge", as
   expect(merged[0]!.body).toMatchObject({ pull_request: { merged: true, head: { ref: "tidy" }, base: { ref: "main" } }, files: ["a.ts"] });
 });
 
-test("a failed delivery is logged and retried by the cron; redeliver starts over", async () => {
+test("a failed delivery is logged and retried on the queue; redeliver starts over", async () => {
   const { call, send, got, answer } = await app();
   const hook = await (await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", events: ["branch.opened"] })).json();
   answer(500);
   await send("ryan", "/api/repos/ryan/lab/branches", { name: "one" });
   await arrived(got, 1);
-  const log = async () => {
+  const log = async (attempts: number) => {
     for (const end = performance.now() + 15_000; performance.now() < end;) {
       const d = await (await call("ryan", `/api/repos/ryan/lab/hooks/${hook.id}/deliveries`)).json();
-      if (d[0]?.attempts) return d;
+      if (d[0]?.attempts === attempts) return d[0];
       await Bun.sleep(10);
     }
   };
-  let [d] = await log();
+  let d = await log(1);
   expect(d).toMatchObject({ event: "branch.opened", status: "pending", attempts: 1, code: 500, response: "thanks" });
+  expect(d.next_at).toBeGreaterThan(Date.now() + 50_000);
 
-  // Not due yet: the sweep leaves it.
-  await retryHooks(call.env);
+  // Not due yet: the queue holds it.
+  await call.env.HOOKS.drain();
   expect(got).toHaveLength(1);
-  // Due: the cron's sweep tries again, and this time it lands.
-  await call.env.DB.prepare("UPDATE webhook_deliveries SET next_at = 0").run();
+  // A minute on, the queue hands it back, and this time it lands.
   answer(204);
-  await worker.scheduled({ cron: "*/5 * * * *" }, call.env, { waitUntil: () => {} });
-  await arrived(got, 2);
-  for (const end = performance.now() + 15_000; performance.now() < end && d.status !== "ok";) { [d] = await log(); await Bun.sleep(10); }
-  expect(d).toMatchObject({ status: "ok", attempts: 2, code: 204 });
+  await call.env.HOOKS.drain(Date.now() + 61_000);
+  expect(got).toHaveLength(2);
+  d = await log(2);
+  expect(d).toMatchObject({ status: "ok", attempts: 2, code: 204, next_at: null });
   expect((await (await call("ryan", "/api/repos/ryan/lab/hooks")).json()).hooks[0].last).toMatchObject({ status: "ok", code: 204 });
 
   expect((await call("ryan", `/api/repos/ryan/lab/hooks/${hook.id}/deliveries/${d.id}/redeliver`, { method: "POST" })).status).toBe(202);
   await arrived(got, 3);
   expect(got[2]!.headers.get("x-codesplitters-delivery")).toBe(d.id);
+});
+
+test("the queue sends a delivery once, however often it hands the message out", async () => {
+  const { call, send, got, answer } = await app();
+  await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", events: ["branch.opened"] });
+  answer(500);
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "one" });
+  await arrived(got, 1);
+  const [d] = (await call.env.DB.prepare("SELECT id FROM webhook_deliveries").all()).results;
+  // A duplicate of the first try, and one of the second sent twice: only the second lands, once.
+  await call.env.HOOKS.sendBatch([{ body: { id: d.id, n: 0 } }, { body: { id: d.id, n: 1 } }, { body: { id: d.id, n: 1 } }]);
+  await call.env.HOOKS.drain();
+  await Bun.sleep(50);
+  expect(got).toHaveLength(2);
+  // Left on the queue: the second try first booked (stale now) and the third, five minutes out.
+  expect(call.env.HOOKS.size()).toBe(2);
+  await call.env.HOOKS.drain(Date.now() + 61_000);
+  expect(got).toHaveLength(2);
 });
 
 test("a finished deploy is announced as a deployment status", async () => {

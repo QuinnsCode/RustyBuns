@@ -1,7 +1,7 @@
 // The whole app in-process with the local twins: what the tests and the agents
 // demo run against. The only server is the git one Artifacts remotes need. The desktop build wires the same pieces.
 
-import { LocalArtifacts, applyD1Migrations, d1, durableObject, gitHttp, installCloudflareGlobals } from "@rustybuns/shell-bun";
+import { LocalArtifacts, applyD1Migrations, d1, durableObject, gitHttp, installCloudflareGlobals, queue } from "@rustybuns/shell-bun";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +12,9 @@ export async function local(extra: Record<string, unknown> = {}) {
   const env: any = { DB: d1(":memory:"), ...extra };
   env.FILES = durableObject(FileDurableObject as any, env);
   env.GAMES = durableObject(GameRoom as any, env);
+  // Webhook tries, consumed in-process as the desktop host does.
+  env.HOOKS = queue(":memory:", "codesplitters-hooks");
+  const stopHooks = env.HOOKS.consume((batch: any) => worker.queue(batch, env));
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
   const dir = mkdtempSync(join(tmpdir(), "codesplitters-artifacts-"));
   env.ARTIFACTS = new LocalArtifacts(dir, "codesplitters");
@@ -27,8 +30,8 @@ export async function local(extra: Record<string, unknown> = {}) {
   }, {
     artifacts: env.ARTIFACTS as LocalArtifacts,
     env,
-    /** Stop the git server and delete the temp repos. */
-    close() { git.stop(true); rmSync(dir, { recursive: true, force: true }); },
+    /** Stop the hooks consumer and the git server, and delete the temp repos. */
+    close() { stopHooks(); git.stop(true); rmSync(dir, { recursive: true, force: true }); },
   });
 }
 

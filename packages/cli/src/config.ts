@@ -34,6 +34,19 @@ export type Binding =
       /** "lite" (1/16 vCPU, 256 MiB), "basic" (1/4 vCPU, 1 GiB), "standard-1" and up. @default "lite" */
       instanceType?: string;
     }
+  /**
+   * Cloudflare Queues: `env.NAME.send(body, { delaySeconds })` and `sendBatch`,
+   * and this Worker as the queue's consumer: its `queue(batch, env, ctx)` gets
+   * the messages in batches, and one it doesn't ack is retried. Off the edge it
+   * is a sqlite-backed queue in the host process, with the same retries and delays.
+   */
+  | {
+      type: "queue";
+      /** The queue's name on Cloudflare (with targets.edge.adopt; Alchemy names it otherwise). */
+      queueName: string;
+      /** How this Worker consumes it, or false to only send to it. @default {} */
+      consumer?: QueueConsumer | false;
+    }
   | { type: "var"; value: string }
   | {
       type: "secret";
@@ -49,6 +62,18 @@ export type Binding =
        */
       optional?: boolean;
     };
+
+/** A queue consumer's settings, as wrangler's `queues.consumers` has them. */
+export interface QueueConsumer {
+  /** Messages per batch (up to 100). @default 10 */
+  batchSize?: number;
+  /** How long a batch may wait to fill, in ms (up to 60000). On the desktop a send is delivered at once. @default 5000 */
+  maxWaitTimeMs?: number;
+  /** Retries after the first delivery before a message is dropped (up to 100). @default 3 */
+  maxRetries?: number;
+  /** Seconds before a retry when `retry()` doesn't say. @default 0 */
+  retryDelay?: number;
+}
 
 /**
  * One step of a Worker's Durable Object migration history, in wrangler's shape.
