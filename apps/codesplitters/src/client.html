@@ -215,6 +215,8 @@
   .level:hover { border-color: #a8a8a8; background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); }
   .level b { display: block; font-weight: 600; } .level .muted { font: 12px var(--mono); }
   .lvl-n { font: 500 12px var(--mono); color: var(--faint); }
+  .fit-ready, .fit-likely { color: var(--fg); } .fit-ready::before { content: "●"; color: var(--accent); } .fit-poor { color: var(--faint); }
+  .fit-why { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
   .lvl-st { font: 500 11px var(--mono); color: var(--muted); } .st-ready { color: var(--fg); } .st-ready::before { content: "● "; color: var(--accent); }
 
   /* Profiles, collections, search. */
@@ -371,6 +373,7 @@ function workbench(head, { tab, bar, body, details, status }) {
     <section class="editor">${tab ? `<div class="tabs"><span class="tab">${tab}</span></div>` : ""}<div class="crumbbar">${bar}</div><div class="scroll">${body}</div></section>
     <aside class="details">${details}</aside></div><footer class="status">${status}</footer>`;
 }
+const fits = {};
 const sec = (ic, title, html) => `<section class="sec"><h3>${icon(ic)}${title}</h3>${html}</section>`;
 const readmeOf = (tree) => tree.entries.find((e) => e.type === "file" && /^readme(\.|$)/i.test(e.name)) ?? tree.entries.find((e) => e.type === "file");
 function table(tree, href) {
@@ -553,8 +556,23 @@ const views = {
     return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p>`)
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<a href="#/u/${esc(c)}">@${esc(c)}</a>`).join(" ")}</p>`)
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
+      + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<div id="deps"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "");
+  },
+  /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? */
+  async wireFit(owner, repo) {
+    const el = $("#fit");
+    if (!el) return;
+    // The file pages share this panel: ask once per repo per visit.
+    const key = `${owner}/${repo}`;
+    const f = fits[key] ??= await api(`/repos/${key}/fit`).catch(() => null);
+    if (!f?.verdict) delete fits[key];
+    if (!f?.verdict) { el.innerHTML = '<span class="muted">not checked yet</span>'; return; }
+    const say = { ready: "ready to ship", likely: "likely fits", "needs-work": "needs work", poor: "poor fit" };
+    el.innerHTML = `<p><span class="badge fit-${f.verdict}">${say[f.verdict]}</span> ${esc(f.label)}</p>
+      <ul class="fit-why">${f.reasons.map((r) => `<li>${esc(r).replace(/\x60([^\x60]+)\x60/g, "<code>$1</code>")}</li>`).join("")}</ul>
+      ${f.issue ? `<p class="muted">Support is tracked in <a href="${esc(f.issue)}" target="_blank" rel="noopener">#${esc(f.issue.split("/").pop())}</a>.</p>` : ""}`;
   },
   /** The dependency doctor: when it checks, what it may propose, and what it found last. */
   async wireDeps(owner, repo) {
@@ -664,6 +682,7 @@ const views = {
     $("#flip")?.addEventListener("click", async () => { await api(`/repos/${owner}/${repo}`, { visibility: r.visibility === "private" ? "public" : "private" }, "PUT"); route(); });
     views.wireBranches(owner, repo, r);
     views.wireDeps(owner, repo);
+    views.wireFit(owner, repo);
     views.wirePreview(owner, repo);
   },
   repoStatus(r, tree, extra = "") {
