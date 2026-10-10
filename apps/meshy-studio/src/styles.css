@@ -332,3 +332,15 @@ textarea:focus { border-color: var(--patina); outline: none; box-shadow: 0 0 0 2
 .size { flex-wrap: nowrap; }
 .size select { width: auto; }
 .bill .n { white-space: nowrap; }
+
+/* The card's one choice: generate only, or generate and texture. The label keeps two lines' height so nothing below moves. */
+.toggle { display: flex; align-items: center; gap: .65rem; margin: .35rem 0; cursor: pointer; }
+.toggle input { appearance: none; flex: none; position: relative; width: 2.3rem; height: 1.25rem; margin: 0; padding: 0; border-radius: 999px; background: #171513; border: 1px solid var(--edge-hi); transition: background .15s, border-color .15s; cursor: pointer; }
+.toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(1.25rem - 6px); height: calc(1.25rem - 6px); border-radius: 50%; background: var(--dim); transition: transform .15s, background .15s; }
+.toggle input:checked { background: var(--rust); border-color: var(--rust-hi); }
+.toggle input:checked::after { transform: translateX(1.05rem); background: var(--rust-ink); }
+.toggle-text { display: flex; align-items: center; min-height: 2.5em; line-height: 1.25; font-weight: 600; }
+.picker { display: flex; align-items: center; gap: .4rem; flex: 1 1 100%; min-width: 0; }
+.picker > span { flex: none; width: 3.9rem; color: var(--dim); font-size: .75rem; }
+.picker select { flex: 1; min-width: 0; }
+.card-options .picker { margin: .5rem 0 .2rem; }

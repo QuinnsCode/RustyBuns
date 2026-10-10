@@ -66,6 +66,13 @@ export interface Preset {
   formats?: Format[];
 }
 
+/** The models Retexture takes, for texturing in a step of its own. */
+export const TEXTURE_MODELS = [
+  { id: "latest", label: "Latest" }, { id: "meshy-7", label: "Meshy 7" },
+  { id: "meshy-6", label: "Meshy 6" }, { id: "meshy-6-lite", label: "Meshy 6 Lite" },
+] as const satisfies readonly { id: NonNullable<RetextureOptions["ai_model"]>; label: string }[];
+export type TextureModel = (typeof TEXTURE_MODELS)[number]["id"];
+
 export const RETEXTURE_DEFAULTS: RetextureOptions = { ai_model: "latest", enable_original_uv: true, texture_resolution: "2k" };
 
 export const STARTER_PRESETS: Preset[] = [

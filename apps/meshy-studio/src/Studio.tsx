@@ -3,7 +3,7 @@
 // folder to move it. Tick cards to change many at once. Every spend goes through the cost
 // confirmation (unless turned off in Settings) and the host's spend guards.
 import { useEffect, useMemo, useState } from "react";
-import { MODEL_CHOICES, modelOf, type ModelId } from "../engine/presets.ts";
+import { MODEL_CHOICES, TEXTURE_MODELS, type ModelId, type TextureModel } from "../engine/presets.ts";
 import { api, imageUrl, type Card, type EditPatch, type Op, type Status, type Summary } from "./api.ts";
 import { Board } from "./Board.tsx";
 import { ConfirmSend, costOf, type SendAsk } from "./Confirm.tsx";
@@ -271,7 +271,7 @@ function BulkBar({ cards, sum, run, onClear, onSend, onTexture, onSteps, onVary,
             {ids.map((id) => <option key={id} value={id}>{modelLabel(id)} · ~{priceFor(id)} cr total{fitFor(id) < open.length ? ` (${fitFor(id)} of ${open.length} cards can use it)` : ""}</option>)}
           </select>
         </label>
-        <label className="check"><input type="checkbox" checked={allDraft} onChange={(e) => run(api.editMany(open.map((c) => c.key), { draft: e.target.checked }))} />Drafts (no texture yet)</label>
+        <label className="check"><input type="checkbox" checked={allDraft} onChange={(e) => run(api.editMany(open.map((c) => c.key), { draft: e.target.checked }))} />Generate only (texture later)</label>
         <label className="row">Preset
           <select value={"\u0000"} onChange={(e) => e.target.value !== "\u0000" && run(api.editMany(open.map((c) => c.key), { prefix: e.target.value }))}>
             <option value={"\u0000"}>choose…</option>
@@ -311,7 +311,10 @@ function CardView({ j, sum, run, showFolder, selected, onToggle, onSend, onRetry
   const cancellable = j.state === "queued" || (j.state === "running" && j.meshyStatus === "PENDING");
   const spent = (j.credits ?? 0) + ops.reduce((n, o) => n + (o.credits ?? 0), 0);
   const preset = sum.presets.find((p) => p.prefix === j.prefix);
-  const modelOverridden = !!j.overrides && ("ai_model" in j.overrides || "model_type" in j.overrides);
+  const texturing = !j.draft && j.options.should_texture !== false;
+  const setTexturing = (on: boolean) => run(api.edit(j.key, on
+    ? { draft: false, ...(j.options.should_texture === false ? { overrides: { should_texture: null } } : {}) }
+    : { draft: true }));
   const warnings = j.problems ?? [];
   const nViews = 1 + (j.views?.length ?? 0);
 
@@ -340,22 +343,14 @@ function CardView({ j, sum, run, showFolder, selected, onToggle, onSend, onRetry
             onBlur={(e) => e.target.value.trim() !== j.prompt && run(api.setPrompt(j.key, e.target.value))} />
         )}
 
+        {open && (
+          <label className="toggle" title="Generate only: the shape now, texture just the keepers later">
+            <input type="checkbox" role="switch" checked={texturing} onChange={(e) => setTexturing(e.target.checked)} />
+            <span className="toggle-text">{texturing ? <>Generate and<br />texture</> : "Generate"}</span>
+          </label>
+        )}
+
         <div className="fields">
-          <select value={j.prefix} disabled={!open} aria-label="Preset" onChange={(e) => run(api.edit(j.key, { prefix: e.target.value }))}>
-            {sum.presets.map((p) => <option key={p.prefix} value={p.prefix}>{p.label}</option>)}
-          </select>
-          {open && j.modelCosts ? (
-            <select className="model" value={modelOverridden ? j.model : "preset"} aria-label="Model"
-              onChange={(e) => run(api.edit(j.key, { model: e.target.value as ModelId | "preset" }))}>
-              <option value="preset">Preset's model: {modelLabel(preset ? modelOf(preset.options) : j.model)}</option>
-              {(Object.keys(j.modelCosts) as ModelId[]).map((id) => {
-                const c = j.modelCosts![id];
-                return <option key={id} value={id} disabled={c.problems.length > 0} title={c.problems[0]}>
-                  {modelLabel(id)} · ~{j.draft ? c.draft : c.full} cr{j.draft ? " draft" : ` (draft ${c.draft})`}{c.problems.length ? " ⚠" : ""}
-                </option>;
-              })}
-            </select>
-          ) : <span className="tag dim">{modelLabel(j.model)}</span>}
           <span className="size">
             <select value={sizeKind} disabled={!editable} aria-label="Size by" onChange={(e) => setSize(e.target.value, sizeVal)}>
               <option value="height">Height</option><option value="longest">Longest</option>
@@ -370,17 +365,34 @@ function CardView({ j, sum, run, showFolder, selected, onToggle, onSend, onRetry
           <select value={j.origin} disabled={!editable} aria-label="Origin" onChange={(e) => run(api.edit(j.key, { origin: e.target.value as Card["origin"] }))}>
             <option value="bottom">Origin bottom</option><option value="center">Origin center</option>
           </select>
+          {open && j.modelCosts ? (
+            <label className="picker"><span>Generate</span>
+              <select value={j.model} onChange={(e) => run(api.edit(j.key, { model: e.target.value as ModelId }))}>
+                {(Object.keys(j.modelCosts) as ModelId[]).map((id) => {
+                  const c = j.modelCosts![id];
+                  return <option key={id} value={id} disabled={c.problems.length > 0} title={c.problems[0]}>{modelLabel(id)} · {c.draft} cr{c.problems.length ? " ⚠" : ""}</option>;
+                })}
+              </select>
+            </label>
+          ) : <span className="tag dim">{modelLabel(j.model)}</span>}
+          {open && texturing && j.textureCosts && (
+            <label className="picker"><span>Texture</span>
+              <select value={j.textureModel ?? "same"} onChange={(e) => run(api.edit(j.key, { textureModel: e.target.value === "same" ? null : e.target.value as TextureModel }))}>
+                <option value="same">{j.source === "text" ? "Preset's model" : "Same as generate"} · +{j.textureCosts.same} cr</option>
+                {TEXTURE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · +{j.textureCosts![m.id]} cr</option>)}
+              </select>
+            </label>
+          )}
         </div>
 
-        {open && (
-          <label className="check small" title="Shape only now; texture just the keepers later">
-            <input type="checkbox" checked={!!j.draft} onChange={(e) => run(api.edit(j.key, { draft: e.target.checked }))} />
-            Draft, no texture yet: ~{j.draftEstimate} now, ~{j.textureEstimate} to texture later
-          </label>
-        )}
         {open && <button className="link small" onClick={() => setMore(!more)}>{more ? "Hide settings" : `All settings${j.overrides ? ` (${Object.keys(j.overrides).length} set on this card)` : ""}`}</button>}
         {open && more && preset && (
           <div className="card-options">
+            <label className="picker"><span>Preset</span>
+              <select value={j.prefix} aria-label="Preset" onChange={(e) => run(api.edit(j.key, { prefix: e.target.value }))}>
+                {sum.presets.map((p) => <option key={p.prefix} value={p.prefix}>{p.label}{p.prefix ? ` (${p.prefix}…)` : ""}</option>)}
+              </select>
+            </label>
             <OptionFields source={j.source} base={preset.options} value={j.overrides ?? {}} onSet={(patch) => run(api.edit(j.key, toEdit(patch)))} />
             {j.overrides && <button className="ghost small" onClick={() => run(api.edit(j.key, { clear: Object.keys(j.overrides!) as EditPatch["clear"] }))}>Reset to the preset</button>}
           </div>
@@ -407,7 +419,6 @@ function CardView({ j, sum, run, showFolder, selected, onToggle, onSend, onRetry
         {j.error && <p className="error small">{j.error}</p>}
         {ops.length > 0 && <ol className="ops">{ops.map((o) => <OpRow key={o.id} o={o} j={j} run={run} />)}</ol>}
         {j.state === "done" && <p className="ok small">002_ready/{j.ready}{j.readyExtras?.length ? ` +${j.readyExtras.length}` : ""}{j.extras?.length ? ` · ${j.extras.length} more in 001` : ""}</p>}
-        {j.prefix === "" && open && <p className="warn small">No known prefix; using Default.</p>}
       </div>
     </li>
   );
