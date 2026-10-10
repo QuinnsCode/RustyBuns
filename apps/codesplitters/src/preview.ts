@@ -35,6 +35,27 @@ export interface Runner {
   state?: { restore(app: string): Promise<void>; keep(app: string): Promise<void> };
 }
 
+/**
+ * Runner state for the desktop: a deploy's clone is a temp dir, so its Alchemy
+ * state is copied out to `dir` after the deploy and back in before the next one.
+ * It holds the app's secrets, as rustybuns' own state does, so `dir` is the
+ * owner's alone (0700).
+ */
+export const dirState = (dir: string): NonNullable<Runner["state"]> => ({
+  async restore(app) {
+    const fs = await import("node:fs");
+    if (fs.existsSync(dir)) fs.cpSync(dir, `${app}/.alchemy/state`, { recursive: true });
+  },
+  async keep(app) {
+    const fs = await import("node:fs");
+    const from = `${app}/.alchemy/state`;
+    if (!fs.existsSync(from)) return;
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.cpSync(fs.realpathSync(from), dir, { recursive: true });   // through rustybuns' shared-state symlink
+  },
+});
+
 export const STEPS: StepKey[] = ["clone", "install", "deploy", "check", "destroy"];
 const MAX_OUT = 60_000;
 

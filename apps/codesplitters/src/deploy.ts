@@ -26,7 +26,7 @@ import { access as artifactAccess, handleFor } from "./archive.ts";
 import { json, type Env } from "./env.ts";
 import { deployKeyRoutes, hostedWhy, keyInfo } from "./deploy-keys.ts";
 import { emit } from "./hooks.ts";
-import { history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
+import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 
 export interface Settings { stage: string; on_commit: boolean; production: boolean }
 const DEFAULTS: Settings = { stage: "prod", on_commit: false, production: false };
@@ -99,7 +99,10 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
   const { run, production } = await begin(env, owner, repo, by, trigger, "desktop");
   const entry: { run: Run; again?: string } = { run };
   live.set(key, entry);
-  void preview(runner, remote, run, { keep: true, allowAdopt: production })
+  // The clone is a temp dir; the stack's Alchemy state is kept beside the desktop's own data.
+  const { homedir } = await import("node:os");
+  const keeps = runner.state ? runner : { ...runner, state: dirState(`${env.DEPLOY_STATE_DIR ?? `${homedir()}/.codesplitters/alchemy`}/${owner}/${repo}`) };
+  void preview(keeps, remote, run, { keep: true, allowAdopt: production })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(async () => {
       await finish(env, run);
