@@ -302,8 +302,9 @@
   @keyframes m-b1 { 0% { left: 85%; top: 8%; transform: rotate(0); } 45% { left: 24%; top: 58%; transform: rotate(-8deg); border-color: var(--border-2); } 50% { left: 22%; top: 60%; border-color: var(--accent); background: var(--accent-soft); } 85%, 100% { left: 105%; top: -25%; transform: rotate(40deg); border-color: var(--accent); } }
   @keyframes m-b2 { from { left: 55%; top: 14%; transform: rotate(3deg); } to { left: 38%; top: 30%; transform: rotate(-4deg); } }
   @keyframes m-b3 { from { left: 45%; top: 62%; transform: rotate(-3deg); } to { left: 62%; top: 48%; transform: rotate(5deg); } }
-  .m-bat { position: absolute; left: 22px; bottom: 44px; width: 70px; height: 7px; border-radius: 4px; background: var(--fg); transform-origin: 4px 50%; transform: rotate(-55deg); animation: m-bat var(--d) ease-in infinite both; }
-  @keyframes m-bat { 0%, 40% { transform: rotate(-55deg); } 50% { transform: rotate(15deg); } 70%, 100% { transform: rotate(-55deg); } }
+  /* The swatter: a rolled-up README with an orange rubber band. */
+  .m-swat { position: absolute; left: 22px; bottom: 44px; width: 70px; height: 12px; border-radius: 6px; border: 1px solid var(--fg); background: linear-gradient(90deg, transparent 18px, var(--accent) 18px 22px, transparent 22px), repeating-linear-gradient(90deg, var(--paper) 0 5px, var(--border-2) 5px 6px); transform-origin: 4px 50%; transform: rotate(-55deg); animation: m-swat var(--d) ease-in infinite both; }
+  @keyframes m-swat { 0%, 40% { transform: rotate(-55deg); } 50% { transform: rotate(15deg); } 70%, 100% { transform: rotate(-55deg); } }
   @media (prefers-reduced-motion: reduce) { .mini, .mini *, .mini *::before, .mini *::after { animation: none !important; } }
   /* Levels scroll by slowly, top to bottom and round again; hover or focus holds them still. */
   .levels { height: 340px; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent); mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent); }
@@ -1000,7 +1001,7 @@ const views = {
       <h2>How it's built</h2>
       <p>Each file is a Cloudflare Durable Object, the only writer for that file. Repos, profiles and search live in D1, and git lives in Cloudflare Artifacts, pushed by a git implementation written from scratch for the Worker. It's built with <a href="https://github.com/QuinnsCode/RustyBuns" rel="noopener">Rusty Buns</a>, so the same app runs on a laptop as a desktop binary, with sqlite and git on disk standing in.</p>
       <h2>And the game</h2>
-      <p>Every repo is also a level of a first-person game: you're in the backrooms of the codebase, and its lines tear off the walls as paper birds. <a href="/play.html#l/mitt">Bring a bat.</a></p>
+      <p>Every repo is also a level of a first-person game: you're in the backrooms of the codebase, and its lines tear off the walls as paper birds. <a href="/play.html#l/mitt">Roll up the README. 🗞️</a></p>
       <h2>Who</h2>
       <p>Created by <b>QNTBR</b>. Every feature it has is on <a href="/features.html">one list</a>.</p>
       <p class="quiet">Some rooms aren't on the map. The birds know where.</p>
@@ -1831,7 +1832,7 @@ const HOME_CMDS = [
   ["scissors", "Cut some lines", "Just them and what they use from the repo, as a branch: run the tests, share a card, merge the fix back.", "POST /api/repos/:o/:r/cuts"],
   ["bookmark-plus", "Collect lines", "Playlists of code you love, on your profile.", "POST /api/playlists/:id/tracks"],
   ["search", "Search code", "Everything committed that you're allowed to see.", "GET /api/search?q="],
-  ["gamepad-2", "Play the backrooms", "Every repo is a level. The lines fight back.", "WS /api/game/:room/ws"],
+  ["gamepad-2", "Play the backrooms", "Every repo is a level. Swat the lines with its README.", "WS /api/game/:room/ws"],
 ];
 
 // The little loop each home command plays in its hover panel, keyed by title. Static markup, all CSS.
@@ -1855,7 +1856,7 @@ const CMD_MINIS = {
     <div class="r f">export const reset = …</div><div class="r"><span class="chip a3">branch cut/add · ✓ tests pass</span></div><span class="cap">just them and what they use</span>`,
   "Collect lines": `<div class="r f">♪ playlist · my taste in code</div><div class="m-pl"><span class="chip a1">mitt/index.ts:12   emit(type, evt)</span><span class="chip a2">zod/types.ts:40    .optional()</span><span class="chip a3">hono/router.ts:8   app.get("/")</span></div><span class="cap">on your profile</span>`,
   "Search code": `<div class="m-q"><span class="f" style="font-size:16px">⌕</span><span class="tp" style="--w:5ch;--n:5">total</span></div><div class="r a2">mitt/index.ts:4   let <mark>total</mark> = 0</div><div class="r a3">mitt/index.ts:7   <mark>total</mark> += n</div><div class="r a4">yours/sum.ts:2    return <mark>total</mark></div><span class="cap">only what you're allowed to see</span>`,
-  "Play the backrooms": `<span class="m-bird m-b1">return total</span><span class="m-bird m-b2">let foo = 0</span><span class="m-bird m-b3">}</span><span class="m-bat"></span><span class="chip a3 m-tag" style="top:18px">+1 · line batted</span><span class="cap">every repo is a level</span>`,
+  "Play the backrooms": `<span class="m-bird m-b1">return total</span><span class="m-bird m-b2">let foo = 0</span><span class="m-bird m-b3">}</span><span class="m-swat"></span><span class="chip a3 m-tag" style="top:18px">+1 · line swatted</span><span class="cap">every repo is a level</span>`,
 };
 
 // The landing intro, calm to swarm: a file sits still on clean paper; a slit

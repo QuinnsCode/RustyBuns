@@ -913,7 +913,7 @@ describe("game", () => {
     expect(bo.last("pos")).toMatchObject({ user: "ana", p: [1, 0, 2], room: "src", swing: true });
     expect(ana.last("pos")).toBeUndefined();                                   // not echoed back
     await ana.say({ t: "hit", target: boId, dir: [1, 0] });
-    expect(bo.last("clubbed")).toEqual({ t: "clubbed", by: "ana", dir: [1, 0] });
+    expect(bo.last("bopped")).toEqual({ t: "bopped", by: "ana", dir: [1, 0] });
 
     await ana.say({ t: "dead", score: 700 });
     expect(ana.last("over")).toBeUndefined();                                  // bo is still up
