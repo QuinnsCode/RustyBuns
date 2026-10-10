@@ -60,8 +60,12 @@ const make = (env: Env, origin: string) => betterAuth({
         mail(env, user.email, "Verify your codeSplitters email", ["Welcome to codeSplitters. To verify this email, open this link within the hour:"], url),
     },
   } : {}),
+  // GitHub tokens sit encrypted at rest (with the auth secret), and a person can link
+  // more than one GitHub, personal and work, under any email (github.ts picks which digs).
+  account: { encryptOAuthTokens: true, accountLinking: { enabled: true, allowDifferentEmails: true } },
   socialProviders: {
-    ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET } } : {}),
+    // select_account: GitHub asks which of your accounts, so linking a second one is a click, not a sign-out.
+    ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET, prompt: "select_account" as const } } : {}),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } } : {}),
   },
 });

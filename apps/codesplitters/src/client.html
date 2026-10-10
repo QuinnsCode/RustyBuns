@@ -120,6 +120,9 @@
   .sec .run pre { margin: 4px 0 0; max-height: 180px; overflow: auto; font: 400 11.5px/1.45 var(--mono); white-space: pre-wrap; color: var(--muted); }
   .ghwho { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 8px 10px; margin: 0 0 8px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--canvas); }
   .ghwho.on { border-color: var(--del-edge); background: var(--accent-soft); } .ghwho svg.lucide { margin-top: 2px; }
+  .ghwho { flex-wrap: wrap; } .ghaccts { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+  .ghacct { display: inline-flex; } .ghacct .btn:first-child { border-radius: 5px 0 0 5px; } .ghacct .btn:last-child { border-radius: 0 5px 5px 0; border-left: 0; padding-inline: 6px; }
+  .ghacct.on .btn:first-child { opacity: 1; font-weight: 600; }
   .flow { display: flex; align-items: center; margin: 6px 0 4px; }
   .flow .ln { flex: 1; height: 2px; background: var(--border-2); min-width: 6px; } .flow .ln.done { background: #2f9e44; }
   .flow button { display: grid; justify-items: center; gap: 3px; background: none; border: 0; padding: 2px; cursor: pointer; font: 500 10px/1 var(--mono); color: var(--faint); }
@@ -554,6 +557,30 @@ async function jobsBadge() {
   el.hidden = !n;
   el.querySelector("span").textContent = `${n} queued`;
 }
+// Your personal API tokens (GET|POST /api/tokens, DELETE /api/tokens/:id), on your profile. A new one's secret shows once.
+async function wireTokens(made) {
+  const el = $("#tokens .body");
+  if (!el) return;
+  const list = await api("/tokens").catch(() => []);
+  const when = (t) => t.expired ? "expired" : `expires ${new Date(t.expires_at).toLocaleDateString()}`;
+  el.innerHTML = (made ? `<div style="display:grid;gap:4px;margin-bottom:8px"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again. Send it as <code>Authorization: Bearer …</code>.</span>
+      <div class="copyline"><input readonly value="${esc(made.token)}"><button class="btn" id="token-copy">${icon("copy")}</button></div></div>` : "")
+    + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon(t.scope === "write" ? "pencil" : "eye")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· ${t.scope === "write" ? "read and write" : "read"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}</span></span>
+      <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("") || '<span class="muted">none yet</span>'}</div>
+    <form id="newtoken" class="row" style="margin:8px 0 4px;gap:6px"><input name="label" placeholder="what it's for, like executor" required style="flex:1;min-width:8em">
+      <select name="scope"><option value="read">Read</option><option value="write">Read and write</option></select>
+      <select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select>
+      <button class="btn">${icon("plus")}Make</button></form>`;
+  icons();
+  $("#token-copy")?.addEventListener("click", () => copy(made.token, "Token copied"));
+  $("#newtoken").addEventListener("submit", async (e) => {
+    e.preventDefault(); const f = e.target;
+    try { wireTokens(await api("/tokens", { label: f.elements.label.value, scope: f.elements.scope.value, days: Number(f.elements.days.value) })); } catch (err) { toast(err.message); }
+  });
+  el.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
+    await api(`/tokens/${b.dataset.revoke}`, undefined, "DELETE"); toast("Token revoked"); wireTokens();
+  }));
+}
 const app = $("#app");
 let socket = null;
 let agentTimer = null;
@@ -979,7 +1006,7 @@ function wireDig() {
     for (const b of list.querySelectorAll("button:not([disabled])")) b.addEventListener("click", () => { f.repo.value = b.dataset.repo; list.innerHTML = ""; msg.textContent = `Ready to dig up ${b.dataset.repo}. ${note}`; f.name.focus(); });
   };
   const showMine = () => show(mine.repos, (x) => x.private && !mine.privateOk);
-  api("/github/repos").then((g) => {
+  const loadGh = () => api("/github/repos").then((g) => {
     mine = g;
     note = g.temporary ? `Digs last ${g.ttlHours} hours here, and the oldest goes first when too many are live.` : "";
     // Say plainly whose GitHub this is and where the login came from, since that's why private repos show up.
@@ -990,7 +1017,18 @@ function wireDig() {
     who.innerHTML = g.login
       ? `${icon("github")}<span><b>Logged in to GitHub as <a href="https://github.com/${esc(g.login)}" rel="noopener">@${esc(g.login)}</a></b> through ${via}. That's why your ${g.repos.length} repo${g.repos.length === 1 ? "" : "s"}${priv ? ` (${priv} private)` : ""} show below. ${off}</span>`
       : g.error ? `${icon("github")}<span><b>GitHub login didn't work</b> (${esc(g.error)}). Only public repos can be searched.</span>`
-      : `${icon("github")}<span><b>Not logged in to GitHub.</b> Only public repos can be searched. ${g.privateOk ? "Run <code>gh auth login</code> on this machine to see your own." : "Sign in with GitHub to see your own."}</span>`;
+      : `${icon("github")}<span><b>Not logged in to GitHub.</b> Only public repos can be searched. ${g.privateOk ? "Run <code>gh auth login</code> on this machine to see your own." : g.accounts && session.providers.includes("github") ? "Connect your GitHub to see your own." : "Sign in with GitHub to see your own."}</span>`;
+    // Accounts mode: every GitHub linked to this sign-in, to switch between, plus one more to connect.
+    if (g.accounts && session.providers.includes("github")) {
+      const chips = g.accounts.map((a) => `<span class="ghacct${a.active ? " on" : ""}"><button type="button" class="btn" data-gh-use="${esc(a.id)}"${a.active ? " disabled" : ""} title="${a.active ? "digging as this one" : "dig as this one"}">${a.active ? icon("check") : ""}@${esc(a.login ?? "unknown")}</button><button type="button" class="btn" data-gh-unlink="${esc(a.id)}" title="unlink this GitHub">${icon("x")}</button></span>`).join("");
+      who.insertAdjacentHTML("beforeend", `<div class="ghaccts">${chips}<button type="button" class="btn" id="ghlink">${icon("plus")}${g.accounts.length ? "Connect another GitHub" : "Connect GitHub"}</button></div>`);
+      const act = (el, fn) => el.addEventListener("click", async () => { try { await fn(); loadGh(); } catch (e) { msg.textContent = e.message; } });
+      for (const b of who.querySelectorAll("[data-gh-use]")) act(b, () => api("/github/active", { id: b.dataset.ghUse }));
+      for (const b of who.querySelectorAll("[data-gh-unlink]")) act(b, () => api("/auth/unlink-account", { accountId: b.dataset.ghUnlink }));
+      $("#ghlink").addEventListener("click", async () => {
+        try { const r = await api("/auth/link-social", { provider: "github", callbackURL: location.href }); location.href = r.url; } catch (e) { msg.textContent = e.message; }
+      });
+    }
     who.classList.toggle("on", !!g.login);
     icons();
     msg.textContent = (g.login && g.repos.length ? "Pick one of yours, search, or paste anything from GitHub. " : "Search GitHub, or paste anything you copied there. ") + note;
@@ -998,6 +1036,7 @@ function wireDig() {
     // Mirrors need git on this machine: the desktop.
     if (g.mirrorsOk) $("#ghmirror").hidden = false;
   }).catch(() => {});
+  loadGh();
   f.repo.addEventListener("input", () => {
     clearTimeout(timer);
     const q = f.repo.value.trim();
@@ -1133,6 +1172,7 @@ const views = {
         ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
         <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
+        ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("key-round")}<b>API tokens</b><span class="muted">act as you from agents and scripts · <a href="/api/openapi.json">the API</a></span></div><div class="body"><span class="muted">…</span></div></div>` : ""}
       </aside></div></div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
@@ -1140,6 +1180,7 @@ const views = {
     wireDig();
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
+    if (mine) wireTokens();
     icons();
   },
   // #/me: your own page, where signing in lands (or home, signed out).

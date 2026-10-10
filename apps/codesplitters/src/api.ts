@@ -23,13 +23,16 @@ const OWNER = "the repo's owner", CREW = "the crew (owner and collaborators)", A
 export const GROUPS: Group[] = [
   {
     name: "This reference",
-    endpoints: [{ method: "GET", path: "/api", does: "this reference, as JSON" }],
+    endpoints: [
+      { method: "GET", path: "/api", does: "this reference, as JSON" },
+      { method: "GET", path: "/api/openapi.json", does: "the same API as an OpenAPI 3.1 spec, for agents and gateways outside the browser; calls that can't be undone or ship code carry x-codesplitters-risky: true" },
+    ],
   },
   {
     name: "Signing in",
-    about: "Accounts (Better Auth) are on when the site has BETTER_AUTH_SECRET; otherwise a name in the cs_user cookie is all it takes (alias mode). GET /api/session says which.",
+    about: "Accounts (Better Auth) are on when the site has BETTER_AUTH_SECRET; otherwise a name in the cs_user cookie is all it takes (alias mode). GET /api/session says which. An agent can send a personal API token instead (Authorization: Bearer cst_…): read tokens only GET, it's never an admin, and it can't open sockets.",
     endpoints: [
-      { method: "GET", path: "/api/session", does: "{mode: \"accounts\" | \"alias\", user, providers, admin?, pick?}: who you are, and how to sign in" },
+      { method: "GET", path: "/api/session", does: "{mode: \"accounts\" | \"alias\" | \"token\", user, providers, admin?, pick?, token?}: who you are, and how to sign in" },
       { method: "POST", path: "/api/login", body: "{name}", does: "alias mode: sign in as name (sets the cs_user cookie)" },
       { method: "POST", path: "/api/logout", does: "alias mode: sign out" },
       { method: "POST", path: "/api/auth/sign-in/email", body: "{email, password}", does: "accounts: sign in; the rest of /api/auth/* is Better Auth's (sign-up/email, sign-in/social, sign-out, …)" },
@@ -39,6 +42,9 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/me", who: SIGNED_IN, does: "your user row" },
       { method: "PUT", path: "/api/me", body: "{bio, theme_html}", who: SIGNED_IN, does: "your profile's text and HTML/CSS" },
       { method: "GET", path: "/api/users/:name", does: "a profile: {user, repos you may see, playlists}" },
+      { method: "GET", path: "/api/tokens", who: SIGNED_IN, does: "your personal API tokens, without their secrets (cookie only, never a token)" },
+      { method: "POST", path: "/api/tokens", body: "{label, scope: \"read\" | \"write\", days?}", who: SIGNED_IN, does: "a personal API token, 1 to 365 days (30 by default), sent as Authorization: Bearer cst_…; its secret is shown this once (cookie only)" },
+      { method: "DELETE", path: "/api/tokens/:id", who: SIGNED_IN, does: "revoke one (cookie only)" },
     ],
   },
   {
@@ -110,7 +116,8 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/levels/:slug/file?path=", does: "one file of a level, read-only" },
       { method: "POST", path: "/api/levels/:slug/fork", body: "{name}", who: SIGNED_IN, does: "dig it up: your own writable fork" },
       { method: "POST", path: "/api/levels/:slug/import", who: ADMINS, does: "import the level (off a queue: 202 while it digs)" },
-      { method: "GET", path: "/api/github/repos", does: "who GitHub thinks you are, and your repos, newest push first" },
+      { method: "GET", path: "/api/github/repos", does: "who GitHub thinks you are, your repos, newest push first, and every GitHub linked to your sign-in" },
+      { method: "POST", path: "/api/github/active", body: "{id}", who: SIGNED_IN, does: "dig and list as this one of your linked GitHubs" },
       { method: "GET", path: "/api/github/search?q=", does: "public repos on GitHub, best match first" },
       { method: "POST", path: "/api/github/dig", body: "{repo, name?, visibility?}", who: SIGNED_IN, does: "fork a GitHub repo into one you own here" },
       { method: "POST", path: "/api/mirrors", body: "{url, name?, visibility?}", who: SIGNED_IN, does: "desktop only: clone any git remote (GitHub, GitLab, an ssh or https URL) as a mirror that keeps in step with it, pulling its commits and pushing yours back" },

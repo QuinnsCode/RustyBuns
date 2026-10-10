@@ -848,6 +848,43 @@ describe("github", () => {
     } finally { globalThis.fetch = real; }
   });
 
+  test("a sign-in can link several GitHubs, encrypted at rest, and pick which one digs", async () => {
+    const { call, person } = await accounts({ GITHUB_CLIENT_ID: "id", GITHUB_CLIENT_SECRET: "s" });
+    const origin = "http://codesplitters.local", cookie = await person("ana@example.com", "ana-digger");
+    const { symmetricEncrypt } = await import("better-auth/crypto");
+    const authId = (await call.env.DB.prepare("SELECT auth_id FROM users WHERE name = 'ana-digger'").first())!.auth_id as string;
+    const link = (id: string, token: string, at: string) => call.env.DB.prepare(`INSERT INTO account (id, accountId, providerId, userId, accessToken, createdAt, updatedAt) VALUES (?, ?, 'github', ?, ?, ?, ?)`)
+      .bind(id, id + "-gh", authId, token, at, at).run();
+    await link("personal", "tok-personal", "2026-01-01");   // linked before tokens were encrypted
+    await link("work", await symmetricEncrypt({ key: "test-secret-".padEnd(40, "x"), data: "tok-work" }), "2026-02-01");
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (u: string, init?: RequestInit) => {
+      const token = new Headers(init?.headers).get("authorization")?.replace("Bearer ", "");
+      const path = new URL(u).pathname;
+      if (path === "/user") return Response.json({ login: { "tok-personal": "ana-gh", "tok-work": "ana-at-work" }[token!] });
+      if (path === "/user/repos") return Response.json([{ full_name: `${token}/r`, private: false, default_branch: "main" }]);
+      return new Response("{}", { status: 404 });
+    }) as any;
+    try {
+      const repos = async () => (await (await call(null, "/api/github/repos", { headers: { cookie } })).json()) as any;
+      // The one linked last digs until they pick.
+      let g = await repos();
+      expect([g.via, g.login, g.repos[0].repo]).toEqual(["account", "ana-at-work", "tok-work/r"]);
+      expect(g.accounts).toEqual([{ id: "personal", active: false, login: "ana-gh" }, { id: "work", active: true, login: "ana-at-work" }]);
+      const pick = (id: string) => call(null, "/api/github/active", { method: "POST", headers: { cookie }, body: JSON.stringify({ id }) });
+      expect((await pick("personal")).status).toBe(200);
+      g = await repos();
+      expect([g.login, g.accounts.map((a: any) => a.active)]).toEqual(["ana-gh", [true, false]]);
+      expect((await pick("someone-elses")).status).toBe(404);
+      expect((await call(null, "/api/github/active", { method: "POST", body: JSON.stringify({ id: "personal" }) })).status).toBe(401);
+      // Unlinking the picked one falls back to what's left.
+      const un = await call(null, "/api/auth/unlink-account", { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body: JSON.stringify({ accountId: "personal" }) });
+      expect(un.status).toBe(200);
+      g = await repos();
+      expect([g.login, g.accounts.map((a: any) => a.id)]).toEqual(["ana-at-work", ["work"]]);
+    } finally { globalThis.fetch = real; }
+  });
+
   test("dig up a GitHub repo: a fork you own, with where it came from", async () => {
     const call = await local({ GH_CLI: "off", GITHUB_TOKEN: "t0k" });
     // GitHub's API, faked; and the import, made local (a real one clones over the network).
