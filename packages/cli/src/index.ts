@@ -21,6 +21,7 @@ import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./gl
 import { Profiler } from "./profile.ts";
 import { adoptNote, alchemyStage, linkSharedState, lockState, unlinkSharedState } from "./state.ts";
 import { checkSpend, costReport } from "./costs.ts";
+import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
@@ -347,6 +348,11 @@ async function runAlchemy(args: string[], cfg?: RustyBunsConfig): Promise<number
   let cmd = [...alchemyCli(), ...args];
   // Secret values come from .dev.vars; anything already exported in the shell wins.
   const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env };
+  // An edge stack logs in to Cloudflare through wrangler, with only the scopes it needs; Alchemy's profile otherwise.
+  if (cfg?.targets.edge) {
+    const w = wranglerCli();
+    Object.assign(env, (await cloudflareEnv(cfg, env, w && realWrangler(w))) ?? {});
+  }
   if (cfg?.experimental?.wheel && existsSync(ENV_SCHEMA)) cmd = underVarlock(cfg, cmd, env);
   const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"], env });
   return await p.exited;
@@ -495,6 +501,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              (~/.alchemy: browser login or a pasted token; every app shares it)
   plan                       alchemy plan: shows what would be created, creates nothing
                              (targets.edge -> Cloudflare, targets.box -> Hetzner or Railway, or both)
+                             Cloudflare: wrangler's login, asked for only the scopes the bindings
+                             need, when wrangler is installed; the Alchemy profile otherwise
                              type checks the generated stack first (--no-check skips)
   deploy [--yes]             alchemy deploy; refuses unless plan ran for this exact config
                              plan and deploy list the stack's billable resources first, and
