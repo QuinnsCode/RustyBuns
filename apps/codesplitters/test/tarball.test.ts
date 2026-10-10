@@ -136,6 +136,23 @@ describe("past the Artifacts import cap", () => {
     } finally { restore(); bun.repo = was; }
   });
 
+  test("a repo too big for one pack goes in several, and lands as one commit", async () => {
+    const { sha, tree, tgz } = upstream();
+    const call = await local({ GH_CLI: "off" });
+    const { importTarball } = await import("../src/tarball.ts");
+    // A pack per file or so: as many as a big repo (Bun) could need.
+    await importTarball(call.artifacts as any, {
+      tarball: async () => new Response(Bun.file(tgz)), repo: "o/big", sha, branch: "main", message: "the tip", author: "Up Stream", packBytes: 1, target: { name: "split" },
+    });
+    const log = await (await call.artifacts.get("split")).log();
+    expect(log).toHaveLength(1);
+    expect(log[0]!.treeHash).toBe(tree);
+    // The side branch the parts went up on is gone, its last part left dangling, and nothing is missing.
+    const bare = call.artifacts.path("split");
+    expect(git(bare, "for-each-ref", "--format=%(refname)")).toBe("refs/heads/main");
+    expect(git(bare, "fsck", "--connectivity-only")).toMatch(/^dangling commit [0-9a-f]{40}$/);
+  });
+
   test("any other import error is still an error", async () => {
     const { tarFiles } = await import("../src/tarball.ts");
     const { tooBigToImport } = await import("../src/tarball.ts");
