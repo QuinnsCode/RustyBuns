@@ -29,6 +29,24 @@ async function editHere(call: Call, path: string, n: number, text: string, commi
   expect(r.status).toBe(200);
   if (commit) expect((await post(call, `/api/repos/ana/up/do/commit?path=${encodeURIComponent(path)}`, { message: `edit ${path}` })).status).toBe(200);
 }
+/** Upstream starts over: one new commit of `files`, force-pushed over its history. */
+async function upstreamRewrite(files: Record<string, string>, message: string) {
+  const work = mkdtempSync(join(root, "work-"));
+  await sh(`git init -q -b main . && git config user.name Bo && git config user.email bo@example.com`, work);
+  for (const [p, c] of Object.entries(files)) { await sh(`mkdir -p "$(dirname ${p})"`, work); writeFileSync(join(work, p), c); }
+  await sh(`git add -A && git commit -qm "${message}" && git push -qf ${up} main`, work);
+}
+/** A fresh upstream with a couple of files, and a signed-in desktop with a mirror of it. */
+async function mirrored(name: string) {
+  up = join(root, `${name}.git`);
+  const seed = mkdtempSync(join(root, "seed-"));
+  await sh(`git init -q --bare ${up} && git clone -q ${up} . 2>/dev/null; mkdir src && printf 'hello\\nworld\\n' > README && printf 'export const a = 1\\n' > src/a.ts && git add -A && git commit -qm init && git push -q origin main`, seed);
+  const call = await boot();
+  opened.push(call);
+  await post(call, "/api/login", { name: "ana" });
+  expect((await post(call, "/api/mirrors", { url: `file://${up}`, name: "up" })).status).toBe(201);
+  return call;
+}
 /** Somebody else pushes to upstream. */
 async function upstreamCommit(files: Record<string, string>, message: string) {
   const work = mkdtempSync(join(root, "work-"));
@@ -39,7 +57,7 @@ async function upstreamCommit(files: Record<string, string>, message: string) {
 const upLog = (fmt: string) => sh(`git --git-dir ${up} log -1 --format=${fmt} main`);
 const upShow = (path: string) => sh(`git --git-dir ${up} show main:${path}`);
 
-const up = join(root, "up.git");
+let up = join(root, "up.git");
 
 describe("mirrors", () => {
   test("keep in step with upstream, ride out an outage, and stop at a clash", async () => {
@@ -109,6 +127,67 @@ describe("mirrors", () => {
     expect(await sync(call)).toMatchObject({ state: "clash", clash: ["src/a.ts"] });
     expect(await sync(call, { resolve: "upstream" })).toMatchObject({ state: "ok" });
     expect((await file(call, "src/a.ts")).lines.map((l: any) => l.text)).toEqual(["export const a = 4"]);
+  });
+
+  test("upstream rewrites its history: re-base this copy's commits on it, or take upstream's", async () => {
+    const call = await mirrored("rewritten");
+    await editHere(call, "README", 1, "hello from here");
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
+
+    // Upstream squashes its history into one commit and force-pushes it, and a commit lands here meanwhile.
+    await upstreamRewrite({ "README": "hello from here\nworld\n", "src/a.ts": "export const a = 10\n" }, "start over");
+    const theirs = await upLog("%H");
+    await editHere(call, "README", 2, "world, from here");
+    const stuck = await sync(call);
+    expect(stuck).toMatchObject({ state: "rewritten" });
+    expect(stuck.error).toMatch(/rewritten/);
+    expect(await upLog("%H")).toBe(theirs);   // nothing pushed, nothing forced
+
+    // Re-base: this copy's commits go on top of upstream's new history, and up as a fast-forward.
+    expect(await sync(call, { resolve: "rebase" })).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect(await upShow("README")).toBe("hello from here\nworld, from here");
+    expect(await upShow("src/a.ts")).toBe("export const a = 10");
+    expect(await sh(`git --git-dir ${up} log --format=%s main`)).toBe("edit README\nstart over");
+    expect(await sh(`git --git-dir ${up} log -1 --format=%an main`)).toBe("Ana Real");
+
+    // Again, but this time take upstream's: this copy's commit is dropped, its open file follows.
+    await upstreamRewrite({ "README": "brand\nnew\n" }, "start over again");
+    await editHere(call, "README", 1, "mine, unpushed");
+    expect(await sync(call)).toMatchObject({ state: "rewritten" });
+    expect(await sync(call, { resolve: "upstream" })).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect(await sh(`git --git-dir ${up} log --format=%s main`)).toBe("start over again");
+    expect((await file(call, "README")).lines.map((l: any) => l.text)).toEqual(["brand", "new"]);
+    expect((await get(call, "/api/repos/ana/up/tree")).entries.map((e: any) => e.name)).toEqual(["README"]);
+  });
+
+  test("private lines: held, until the owner pushes the crew's copy", async () => {
+    const call = await mirrored("crew");
+    // A secret on line 2, made private, then committed: the repo's git has it blank.
+    await editHere(call, "README", 2, "token=s3cret", false);
+    const secret = (await file(call, "README")).lines[1];
+    expect((await post(call, "/api/repos/ana/up/do/private?path=README", { lines: [secret.id], private: true })).status).toBe(200);
+    await editHere(call, "README", 1, "hello from here");
+    const pub = call.artifacts.path("ana--up");
+    expect(await sh(`git --git-dir ${pub} show main:README`)).toBe("hello from here");
+    expect(await sync(call)).toMatchObject({ state: "held", private: true, pushCrew: false });
+    expect(await upShow("README")).toBe("hello\nworld");
+    expect((await post(call, "/api/repos/ana/up/mirror", { pushCrew: "yes" })).status).toBe(400);
+
+    // The owner says push the crew's copy: the real text goes up.
+    expect(await sync(call, { pushCrew: true })).toMatchObject({ state: "ok", ahead: 0, pushCrew: true });
+    expect(await upShow("README")).toBe("hello from here\ntoken=s3cret");
+    expect(await upLog("%an")).toBe("Ana Real");
+
+    // Upstream's next change reaches the repo's own git too, file by file: none of upstream's commits, the secret still blank.
+    await upstreamCommit({ "src/a.ts": "export const a = 2\n", "README": "hello from here\ntoken=s3cret\nmore\n" }, "bo's change");
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect(await sh(`git --git-dir ${pub} show main:src/a.ts`)).toBe("export const a = 2");
+    expect(await sh(`git --git-dir ${pub} show main:README`)).toBe("hello from here");
+    expect(await sh(`git --git-dir ${pub} cat-file -e ${await upLog("%H")} 2>&1 || echo missing`)).toBe("missing");
+    expect((await file(call, "README")).lines.map((l: any) => l.text)).toEqual(["hello from here", "token=s3cret", "more"]);
+
+    // And back to held.
+    expect(await sync(call, { pushCrew: false })).toMatchObject({ pushCrew: false });
   });
 
   test("takes any git URL on the desktop, and says what's wrong with a bad one", async () => {

@@ -10,6 +10,11 @@
 //      line into any live edits (sync.ts merge3).
 //   3. If we have commits upstream doesn't, push them to its branch. Never forced.
 //
+// If upstream rewrote its history (a force-push), the last commit both sides
+// agreed on isn't in it any more, so there's nothing to merge with: it stops at
+// "rewritten" until the owner picks: re-base this copy's own commits on top of
+// upstream's, or take upstream's and drop them.
+//
 // When upstream doesn't answer, the repo is "down" since then and everything
 // else carries on: edits, commits, branches, agents. The cron tries again,
 // backing off to every 15 minutes, and once upstream answers it catches up by
@@ -19,11 +24,16 @@
 // Commits that go upstream carry this machine's git identity (user.name and
 // user.email), with a Co-authored-by trailer when a handle like agent-claude made
 // them (archive.ts). A repo with private lines is "held": its git has them blank,
-// so it pulls but never pushes.
+// so it pulls but never pushes. Unless the owner says to push the crew's copy
+// (real text): then that's the git kept in step with upstream, and the repo's
+// own git follows it file by file, its private-lined files left as they are, so
+// none of upstream's objects (which hold the real text by then) land in it.
 //
 //   POST /api/mirrors {url, name?, visibility?}  clone any git remote as a mirror you own (desktop only)
 //   GET  /api/repos/:o/:r/mirror                 where it stands with upstream
-//   POST /api/repos/:o/:r/mirror {resolve?}      (owner) sync now; settle a clash with "mine" or "upstream"
+//   POST /api/repos/:o/:r/mirror {resolve?, pushCrew?}
+//        (owner) sync now; settle a clash with "mine" or "upstream", rewritten history with
+//        "rebase" or "upstream"; pushCrew true sends the crew's copy upstream, false holds it
 
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -106,11 +116,16 @@ export async function mirrorIdentity(env: Env, owner: string, repo: string) {
   return r?.mirror_url ? gitIdentity() : null;
 }
 
-interface Row { owner: string; name: string; artifact: string; branch: string | null; crew_artifact: string | null; mirror_url: string; mirror_fails: number | null; mirror_down_since: number | null }
+interface Row { owner: string; name: string; artifact: string; branch: string | null; crew_artifact: string | null; mirror_push_crew: number | null; mirror_url: string; mirror_fails: number | null; mirror_down_since: number | null; upstream_commit: string | null }
 const row = (env: Env, owner: string, repo: string) =>
-  env.DB.prepare("SELECT owner, name, artifact, branch, crew_artifact, mirror_url, mirror_fails, mirror_down_since FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first() as Promise<Row | null>;
+  env.DB.prepare("SELECT owner, name, artifact, branch, crew_artifact, mirror_push_crew, mirror_url, mirror_fails, mirror_down_since, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first() as Promise<Row | null>;
 
-type State = "ok" | "down" | "refused" | "clash" | "held";
+type State = "ok" | "down" | "refused" | "clash" | "held" | "rewritten";
+export type Resolve = "mine" | "upstream" | "rebase";
+
+/** The git that's kept in step with upstream: the crew's copy when the owner pushes it, else the repo's own. */
+const syncedDir = (lg: LocalGit, r: { artifact: string; crew_artifact: string | null; mirror_push_crew: number | null }) =>
+  lg.path(r.crew_artifact && r.mirror_push_crew ? r.crew_artifact : r.artifact);
 
 /** A try that didn't work: say why, and back off (1, 2, 4… minutes, up to MAX_WAIT). */
 async function failed(env: Env, r: Row, state: Exclude<State, "ok">, error: string, clash: string[] = []) {
@@ -138,7 +153,7 @@ async function again(env: Env, r: Row) {
 
 /** Each repo syncs one try at a time; a second ask waits for the first. */
 const running = new Map<string, Promise<unknown>>();
-export function syncMirror(env: Env, owner: string, repo: string, o: { resolve?: "mine" | "upstream" } = {}): Promise<State | null> {
+export function syncMirror(env: Env, owner: string, repo: string, o: { resolve?: Resolve } = {}): Promise<State | null> {
   const key = `${owner}/${repo}`;
   const next = (running.get(key) ?? Promise.resolve()).catch(() => {}).then(() => step(env, owner, repo, o));
   running.set(key, next);
@@ -158,44 +173,65 @@ export async function syncDue(env: Env, now = Date.now()) {
   for (const { owner, name } of results as { owner: string; name: string }[]) await syncMirror(env, owner, name).catch(() => null);
 }
 
-async function step(env: Env, owner: string, repo: string, o: { resolve?: "mine" | "upstream" }): Promise<State | null> {
+async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolve }): Promise<State | null> {
   const r = await row(env, owner, repo), lg = localGit(env);
   if (!r || !lg) return null;
-  const dir = lg.path(r.artifact), branch = r.branch ?? "main", heads = `refs/heads/${branch}`, up = `refs/upstream/${branch}`;
+  const crew = !!(r.crew_artifact && r.mirror_push_crew);
+  const dir = syncedDir(lg, r), branch = r.branch ?? "main", heads = `refs/heads/${branch}`, up = `refs/upstream/${branch}`;
   const net = await remoteEnv(env, owner, r.mirror_url);
   try {
     // 1. Hear from upstream.
     const f = await git(["fetch", "--quiet", "--no-tags", r.mirror_url, `+${heads}:${up}`], dir, net);
     if (f.code) return failed(env, r, "down", f.err || "upstream didn't answer");
     let theirs = await must(["rev-parse", up], dir), ours = await must(["rev-parse", heads], dir);
+    const before = ours;
+
+    // Upstream rewrote its history when the last commit both sides agreed on isn't in it any more.
+    const agreed = r.upstream_commit && (await git(["cat-file", "-e", `${r.upstream_commit}^{commit}`], dir)).code === 0 ? r.upstream_commit : null;
+    const rewritten = !!agreed && agreed !== theirs && !(await isAncestor(dir, agreed, theirs));
+    const whose = "upstream's history was rewritten (a force-push), so there's nothing to merge with";
 
     // 2. Take what upstream has that we don't.
-    if (ours !== theirs && !(await isAncestor(dir, theirs, ours))) {
-      let tip = theirs, clash: string[] = [];
-      if (!(await isAncestor(dir, ours, theirs))) {
-        const m = await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", ours, theirs], dir);
-        if (m.code > 1) return failed(env, r, "clash", `couldn't merge upstream in: ${m.err}`);
-        const [tree, ...files] = m.out.trim().split("\n");
-        let merged = tree!;
-        if (m.code === 1) {
-          clash = [...new Set(files.filter(Boolean))];
-          if (!o.resolve) return failed(env, r, "clash", "upstream and this copy changed the same lines", clash);
-          merged = await pick(dir, merged, clash, o.resolve === "mine" ? ours : theirs);
+    if (rewritten || (ours !== theirs && !(await isAncestor(dir, theirs, ours)))) {
+      let tip = theirs, clash: string[] = [], live: "mine" | "upstream" | undefined = o.resolve === "rebase" ? undefined : o.resolve;
+      if (rewritten) {
+        // Re-base: this copy's own commits, replayed on upstream's. Or take upstream's and let them go.
+        if (o.resolve !== "rebase" && o.resolve !== "upstream") return failed(env, r, "rewritten", whose);
+        if (o.resolve === "rebase") {
+          const re = await replay(dir, ours, [agreed, theirs], theirs);
+          if ("clash" in re) return failed(env, r, "rewritten", `${whose}, and replaying this copy's commits on it clashed`, re.clash);
+          [tip, live] = [re.tip, "mine"];
         }
-        tip = await must(["commit-tree", merged, "-p", ours, "-p", theirs, "-m", `Merge ${shownUrl(r.mirror_url)} ${branch}`], dir, authorEnv());
+      } else if (!(await isAncestor(dir, ours, theirs))) {
+        const m = await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", ours, theirs], dir);
+        if (m.code > 1) {
+          // No common history to merge on, and no agreed commit to tell which commits are ours: all that's left is upstream's.
+          if (o.resolve !== "upstream") return failed(env, r, "rewritten", `${whose}: ${m.err}`);
+        } else {
+          const [tree, ...files] = m.out.trim().split("\n");
+          let merged = tree!;
+          if (m.code === 1) {
+            clash = [...new Set(files.filter(Boolean))];
+            if (live !== "mine" && live !== "upstream") return failed(env, r, "clash", "upstream and this copy changed the same lines", clash);
+            merged = await pick(dir, merged, clash, live === "mine" ? ours : theirs);
+          }
+          tip = await must(["commit-tree", merged, "-p", ours, "-p", theirs, "-m", `Merge ${shownUrl(r.mirror_url)} ${branch}`], dir, authorEnv());
+        }
       }
       // Files open here get upstream's changes as line edits, before git moves, so a catalogue never undoes them.
-      const live = await liveChanges(env, owner, repo, dir, ours, tip, o.resolve);
-      if ("clash" in live) return failed(env, r, "clash", "edits here that aren't committed yet touch the same lines upstream changed", live.clash);
-      for (const p of live.plans) await land(env, owner, repo, p, tip);
+      const changes = await liveChanges(env, owner, repo, dir, ours, tip, live);
+      if ("clash" in changes) return failed(env, r, "clash", "edits here that aren't committed yet touch the same lines upstream changed", changes.clash);
+      for (const p of changes.plans) await land(env, owner, repo, p, tip);
       // A catalogue that landed meanwhile moved the branch: take it from the top next round.
       if ((await git(["update-ref", heads, tip, ours], dir)).code) return again(env, r);
       ours = tip;
     }
+    // The crew's copy moved: the repo's own git takes the same files, all but the private-lined ones.
+    if (crew && ours !== before) await follow(env, r, lg, dir, before, ours);
 
     // 3. Hand upstream what we have that it doesn't.
     if (ours !== theirs && !(await isAncestor(dir, ours, theirs))) {
-      if (r.crew_artifact) return settled(env, r, theirs, "held", "this repo has private lines, and its git holds them blank, so nothing goes upstream");
+      if (r.crew_artifact && !crew) return settled(env, r, theirs, "held", "this repo has private lines, and its git holds them blank, so nothing goes upstream");
       const p = await git(["push", "--porcelain", r.mirror_url, `${heads}:${heads}`], dir, net);
       if (p.code) {
         const said = [p.err, p.out].filter(Boolean).join("\n");
@@ -211,6 +247,81 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: "mine"
   } catch (e) {
     return failed(env, r, "clash", `sync stopped: ${String((e as Error).message ?? e)}`);
   }
+}
+
+/**
+ * Replay the commits in `ours` that aren't in any of `not`, oldest first, on
+ * top of `onto`: each one's diff applied three ways in a throwaway index, kept
+ * with its author and message. Merges are skipped (what they brought in is
+ * upstream's), and so is a commit upstream already has. A diff that won't apply
+ * is a clash, in that commit's files.
+ */
+async function replay(dir: string, ours: string, not: (string | null)[], onto: string): Promise<{ tip: string } | { clash: string[] }> {
+  const commits = (await must(["rev-list", "--reverse", "--no-merges", ours, ...not.filter(Boolean).map((c) => `^${c}`)], dir)).split("\n").filter(Boolean);
+  const tmp = join(tmpdir(), `codesplitters-replay-${crypto.randomUUID()}`), e = { GIT_INDEX_FILE: `${tmp}.index` };
+  let tip = onto;
+  try {
+    for (const c of commits) {
+      await Bun.write(`${tmp}.patch`, (await git(["diff-tree", "-p", "--binary", "--full-index", "--root", c], dir)).out.replace(/^[0-9a-f]{40}\n/, ""));
+      await must(["read-tree", tip], dir, e);
+      if ((await git(["apply", "--cached", "--3way", `${tmp}.patch`], dir, e)).code) return { clash: (await must(["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", c], dir)).split("\n").filter(Boolean) };
+      const tree = await must(["write-tree"], dir, e);
+      if (tree === await must(["rev-parse", `${tip}^{tree}`], dir)) continue;
+      const [name, email, date, message] = (await must(["log", "-1", "--format=%an%x00%ae%x00%aI%x00%B", c], dir)).split("\0");
+      const by = { ...authorEnv(), GIT_AUTHOR_NAME: name!, GIT_AUTHOR_EMAIL: email!, GIT_AUTHOR_DATE: date! };
+      tip = await must(["commit-tree", tree, "-p", tip, "-m", message!.trim() || "(no message)"], dir, by);
+    }
+    return { tip };
+  } finally { rmSync(`${tmp}.index`, { force: true }); rmSync(`${tmp}.patch`, { force: true }); }
+}
+
+/** The open files with private lines: their text in the repo's own git is blank where the crew's has it. */
+async function privatePaths(env: Env, owner: string, repo: string) {
+  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const out = new Set<string>();
+  for (const { path } of results as { path: string }[]) {
+    if (((await (await toFile(env, owner, repo, path, "upstream", "private")).json()) as string[]).length) out.add(path);
+  }
+  return out;
+}
+
+/**
+ * The crew's copy went from `from` to `to`: give the repo's own git the same
+ * files as one commit of its own, blob by blob, so none of upstream's history
+ * (which holds private lines' real text, now the crew's copy goes up) lands
+ * in it. Files with private lines stay as its git has them, blank lines and all,
+ * until they're next committed here. A catalogue that lands meanwhile: build on it.
+ */
+async function follow(env: Env, r: Row, lg: LocalGit, crewDir: string, from: string, to: string) {
+  const pub = lg.path(r.artifact), heads = `refs/heads/${r.branch ?? "main"}`, secret = await privatePaths(env, r.owner, r.name);
+  const paths = (await must(["diff", "--name-only", "-z", "--no-renames", from, to], crewDir)).split("\0").filter((p) => p && !secret.has(p));
+  if (!paths.length) return;
+  const files: { path: string; mode: string; hash: string }[] = [], gone: string[] = [];
+  for (const path of paths) {
+    const ls = await must(["ls-tree", to, "--", path], crewDir);
+    if (!ls) { gone.push(path); continue; }
+    const [mode, type, hash] = ls.split("\t")[0]!.split(" ");
+    if (type !== "blob") continue;
+    // The blob, copied across as bytes.
+    const cat = Bun.spawn(["git", "cat-file", "blob", hash!], { cwd: crewDir, stdout: "pipe", stderr: "ignore" });
+    const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: pub, stdin: cat.stdout, stdout: "pipe", stderr: "pipe" });
+    const [, made] = await Promise.all([put.exited, new Response(put.stdout).text()]);
+    if (made.trim() !== hash) throw new Error(`couldn't copy ${path} into the repo's own git`);
+    files.push({ path, mode: mode!, hash: hash! });
+  }
+  const idx = join(tmpdir(), `codesplitters-follow-${crypto.randomUUID()}.index`), e = { GIT_INDEX_FILE: idx };
+  try {
+    for (let tries = 0; tries < 3; tries++) {
+      const base = await must(["rev-parse", heads], pub);
+      await must(["read-tree", base], pub, e);
+      for (const f of files) await must(["update-index", "--add", "--cacheinfo", `${f.mode},${f.hash},${f.path}`], pub, e);
+      for (const path of gone) await must(["update-index", "--force-remove", "--", path], pub, e);
+      const tree = await must(["write-tree"], pub, e);
+      if (tree === await must(["rev-parse", `${base}^{tree}`], pub)) return;
+      const c = await must(["commit-tree", tree, "-p", base, "-m", `upstream ${to.slice(0, 7)}, from ${shownUrl(r.mirror_url)}`], pub, authorEnv());
+      if ((await git(["update-ref", heads, c, base], pub)).code === 0) return;
+    }
+  } finally { rmSync(idx, { force: true }); }
 }
 
 /** `tree` with each of `paths` as `side` has it (gone if it isn't there), through a throwaway index. */
@@ -283,17 +394,19 @@ async function land(env: Env, owner: string, repo: string, p: Plan, tip: string)
 
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
 export async function mirrorStatus(env: Env, owner: string, repo: string) {
-  const r = await env.DB.prepare("SELECT artifact, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first();
+  const r = await env.DB.prepare("SELECT artifact, crew_artifact, mirror_push_crew, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first();
   const lg = localGit(env);
   if (!r || !lg) return null;
   const branch = (r.branch ?? "main") as string;
-  const counts = await git(["rev-list", "--left-right", "--count", `refs/heads/${branch}...refs/upstream/${branch}`], lg.path(r.artifact as string));
+  const counts = await git(["rev-list", "--left-right", "--count", `refs/heads/${branch}...refs/upstream/${branch}`], syncedDir(lg, r as unknown as Row));
   const [ahead, behind] = counts.code ? [0, 0] : counts.out.trim().split(/\s+/).map(Number);
   return {
     url: shownUrl(r.mirror_url as string), branch, state: (r.mirror_state ?? "ok") as State, error: r.mirror_error ?? null,
     clash: r.mirror_clash ? JSON.parse(r.mirror_clash as string) as string[] : [], downSince: r.mirror_down_since ?? null,
     syncedAt: r.mirror_synced_at ?? null, nextAt: r.mirror_next_at ?? null, upstreamCommit: r.upstream_commit ?? null,
     ahead: ahead ?? 0, behind: behind ?? 0, identity: gitIdentity(),
+    // Private lines: whether it has any, and whether the crew's copy (real text) is the one that goes upstream.
+    private: !!r.crew_artifact, pushCrew: !!r.mirror_push_crew,
   };
 }
 
@@ -301,9 +414,11 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
 export async function mirrorRepoRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (req.method === "POST") {
     if (user !== owner) return json({ error: "owner only" }, 403);
-    const b = (await req.json().catch(() => ({}))) as { resolve?: string };
-    if (b.resolve !== undefined && b.resolve !== "mine" && b.resolve !== "upstream") return json({ error: "resolve: mine or upstream" }, 400);
-    await syncMirror(env, owner, repo, { resolve: b.resolve as "mine" | "upstream" | undefined });
+    const b = (await req.json().catch(() => ({}))) as { resolve?: string; pushCrew?: unknown };
+    if (b.resolve !== undefined && !["mine", "upstream", "rebase"].includes(b.resolve)) return json({ error: "resolve: mine, upstream or rebase" }, 400);
+    if (b.pushCrew !== undefined && typeof b.pushCrew !== "boolean") return json({ error: "pushCrew: true or false" }, 400);
+    if (b.pushCrew !== undefined) await env.DB.prepare("UPDATE repos SET mirror_push_crew = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pushCrew ? 1 : null, owner, repo).run();
+    await syncMirror(env, owner, repo, { resolve: b.resolve as Resolve | undefined });
   }
   const s = await mirrorStatus(env, owner, repo);
   return s ? json(s) : json({ error: "not a mirror" }, 404);

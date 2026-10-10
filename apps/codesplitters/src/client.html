@@ -1250,7 +1250,7 @@ const views = {
       + (owner === me() ? sec("trash-2", "Delete this repo", `<form id="delrepo" style="display:grid;gap:6px;font-size:13px"><span class="muted" style="font-size:12px">Gone for good here: its files, branches, cuts, shares, logs and git. GitHub never hears, and a stack it deployed stays up.</span>
         <input name="name" placeholder="type ${esc(repo)} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete ${esc(owner)}/${esc(repo)}</button></div></form>`) : "");
   },
-  /** A mirror's standing with upstream: in step, down (and since when), refused, or a clash to settle. */
+  /** A mirror's standing with upstream: in step, down (and since when), refused, held, a clash or rewritten history to settle. */
   async wireMirror(owner, repo, body) {
     const el = $("#mirror");
     if (!el) return;
@@ -1263,16 +1263,28 @@ const views = {
       ok: `<span class="tag ok">in step</span> with <code>${esc(m.url)}</code> ${esc(m.branch)}, checked ${m.syncedAt ? ago(m.syncedAt) : "never"}.`,
       down: `<span class="tag fail">upstream down</span> <code>${esc(m.url)}</code> hasn't answered since ${new Date(m.downSince).toLocaleString()}. Keep working: ${waiting}, ${retry}.`,
       refused: `<span class="tag fail">upstream said no</span> <code>${esc(m.url)}</code> answered but didn't take the push. Your work stays here: ${waiting}, ${retry}.`,
-      held: `<span class="tag">held</span> Pulling from <code>${esc(m.url)}</code>, but not pushing: this repo has private lines, which its git holds blank.`,
+      held: `<span class="tag">held</span> Pulling from <code>${esc(m.url)}</code>, but not pushing: this repo has private lines, which its git holds blank. Pushing the crew's copy sends their real text upstream instead.`,
+      rewritten: `<span class="tag fail">rewritten</span> Upstream's history was rewritten (a force-push), so there's nothing to merge with${m.clash.length ? `, and replaying this copy's commits clashed in ${m.clash.map((p) => `<code>${esc(p)}</code>`).join(", ")}` : ""}. Nothing moved on either side. Re-base puts this copy's own commits on top of upstream's; Take upstream's drops them.`,
       clash: `<span class="tag fail">clash</span> Upstream and this copy changed the same lines${m.clash.length ? ` in ${m.clash.map((p) => `<a href="#/f/${owner}/${repo}/${encodeURIComponent(p)}"><code>${esc(p)}</code></a>`).join(", ")}` : ""}. Nothing moved on either side. Pick whose lines win in those files; everything else merges as usual.`,
     }[m.state] ?? esc(m.state);
-    const pickSide = m.state === "clash" && m.clash.length ? `<div class="row" style="gap:6px"><button class="btn" data-resolve="mine">${icon("user")}Keep mine</button><button class="btn" data-resolve="upstream">${icon("download")}Take upstream's</button></div>` : "";
+    const pickSide = m.state === "clash" && m.clash.length ? `<div class="row" style="gap:6px"><button class="btn" data-resolve="mine">${icon("user")}Keep mine</button><button class="btn" data-resolve="upstream">${icon("download")}Take upstream's</button></div>`
+      : m.state === "rewritten" ? `<div class="row" style="gap:6px"><button class="btn" data-resolve="rebase">${icon("git-merge")}Re-base on upstream</button><button class="btn" data-resolve="upstream">${icon("download")}Take upstream's</button></div>` : "";
+    // Private lines: hold the repo back, or push the crew's copy (real text) upstream.
+    const crew = m.private ? (m.pushCrew
+      ? `<p class="muted" style="font-size:12px">${icon("lock")}The crew's copy goes upstream, private lines' real text and all. <a href="#" data-crew="0">Hold it back</a></p>`
+      : `<button class="btn" data-crew="1">${icon("lock")}Push the crew's copy</button>`) : "";
     const who = m.identity ? `Commits go up as <b>${esc(m.identity.name)}</b> &lt;${esc(m.identity.email)}&gt; (this machine's git config).` : `No git identity on this machine: set <code>git config --global user.name</code> and <code>user.email</code>.`;
     el.innerHTML = `<p>${head}</p>${m.state === "ok" && (m.ahead || m.behind) ? `<p class="muted">${waiting}; ${m.behind} to take.</p>` : ""}${m.state !== "ok" ? said : ""}${pickSide}
-      <div class="row" style="gap:6px;margin-top:6px"><button class="btn" id="mirror-sync">${icon("refresh-cw")}Sync now</button></div><p class="muted" style="font-size:12px">${who}</p>`;
+      <div class="row" style="gap:6px;margin-top:6px"><button class="btn" id="mirror-sync">${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}<p class="muted" style="font-size:12px">${who}</p>`;
     icons();
     $("#mirror-sync").addEventListener("click", () => { el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, {}); });
     el.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => { el.querySelector("p").textContent = "settling…"; views.wireMirror(owner, repo, { resolve: b.dataset.resolve }); }));
+    el.querySelectorAll("[data-crew]").forEach((b) => b.addEventListener("click", (e) => {
+      e.preventDefault();
+      // Once it's up it's up: the first click says so, the second does it.
+      if (b.dataset.crew === "1" && !b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Sure? Anyone who can read upstream sees the private lines"; return; }
+      el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, { pushCrew: b.dataset.crew === "1" });
+    }));
   },
   /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
   async wireFit(owner, repo, dir = "") {
