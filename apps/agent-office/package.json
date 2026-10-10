@@ -6,6 +6,7 @@
   "description": "Agent Office (the 3D office of Claude Code workers) Rusty Buns-ified: on Bun, as one self-contained binary",
   "scripts": {
     "office": "bun scripts/rustybunsify.ts && bun office/bin/agent-office.js",
+    "office:update": "bun scripts/update.ts",
     "desktop:build": "bun scripts/rustybunsify.ts compile",
     "desktop:build:all": "bun scripts/rustybunsify.ts compile --all",
     "test": "bun test test"

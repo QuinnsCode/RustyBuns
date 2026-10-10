@@ -10,6 +10,7 @@ the office itself, on Bun, as **one file** you can copy to any Mac or Linux box.
 ```sh
 cd apps/agent-office
 bun run office                 # fetch the pinned release, Bun-ify it, open the office
+bun run office:update          # git pull, rebuild, then start it (or reload the page if it's up)
 bun run desktop:build          # dist/agent-office-<os>-<arch>
 bun run desktop:build:all      # + darwin-x64, linux-x64, linux-arm64
 ```
