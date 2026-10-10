@@ -1,12 +1,16 @@
 // Rate limits on what costs money or invites abuse: signing in and up, digging
 // up repos (Artifacts imports), the GitHub calls the site's token pays for,
-// commits (Artifacts pushes), and the things a spammer would make by the
-// thousand. Each rule counts per caller (their handle, else their IP) in fixed
+// commits (Artifacts pushes), live line edits, and the things a spammer would
+// make by the thousand. Each rule counts per caller (their handle, else their IP) in fixed
 // windows, in D1. Admins tune them from the drawer (GET|PUT /api/admin/limits).
 //
 // Only requests from the internet are counted: Cloudflare stamps those with
 // cf-connecting-ip. The desktop, the tests, and the Worker's own calls (hosted
 // agents, the dependency doctor) carry none. Admins are never limited.
+//
+// Edits sent over a file's WebSocket skip the Worker, so the Worker works out
+// who a socket counts as when it opens (or that it isn't counted) and the
+// file's DO counts each edit with countHit.
 
 import { json, type Env } from "./env.ts";
 
@@ -22,6 +26,7 @@ export const RULES: Rule[] = [
   { name: "search", label: "Code search", what: "full-text search over committed code", per: "user", max: 30, window_s: MIN },
   { name: "repo", label: "New repos", what: "empty repos made here", per: "user", max: 10, window_s: DAY },
   { name: "file", label: "New files", what: "files added to a repo", per: "user", max: 120, window_s: HOUR },
+  { name: "edit", label: "Line edits", what: "live edits to a file's lines, over its socket or POST", per: "user", max: 300, window_s: MIN },
   { name: "commit", label: "Commits", what: "pushes to Artifacts", per: "user", max: 60, window_s: HOUR },
   { name: "share", label: "Shares and collections", what: "share links, collections and tracks", per: "user", max: 60, window_s: HOUR },
   { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", per: "user", max: 20, window_s: DAY },
@@ -45,6 +50,7 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "repos" && p[4] === "shares") return "share";
   if (p[1] === "repos" && p[4] === "agents") return "agent";
   if (p[1] === "repos" && p[4] === "do" && p[5] === "commit") return "commit";
+  if (p[1] === "repos" && p[4] === "do" && p[5] === "ops") return "edit";
   return null;
 }
 
@@ -64,20 +70,31 @@ async function rules(env: Env) {
 
 const ipOf = (req: Request) => req.headers.get("cf-connecting-ip");
 
-/** A 429 when this caller is over the rule's limit, else null (and the hit is counted). */
-export async function limit(req: Request, env: Env, rule: string | null, user: string | null, admin: boolean): Promise<Response | null> {
-  const ip = ipOf(req);
-  if (!rule || !ip || admin) return null;
+/** Who a request counts as under a rule, or null when it isn't counted (not from the internet, an admin, or no such rule). */
+export function counted(req: Request, rule: string | null, user: string | null, admin: boolean): string | null {
+  const ip = ipOf(req), r = RULES.find((d) => d.name === rule);
+  if (!r || !ip || admin) return null;
+  return r.per === "user" && user ? `@${user}` : ip;
+}
+
+/** Count one hit against the rule for `who`; when that's over the limit, why, and how many seconds to wait. */
+export async function countHit(env: Env, rule: string, who: string): Promise<{ error: string; wait: number } | null> {
   const r = (await rules(env)).get(rule);
   if (!r?.enabled) return null;
-  const who = r.per === "user" && user ? `@${user}` : ip;
   const span = r.window_s * 1000, win = Math.floor(Date.now() / span) * span;
   const row = await env.DB.prepare(
     "INSERT INTO limit_hits (rule, who, win, count) VALUES (?, ?, ?, 1) ON CONFLICT (rule, who, win) DO UPDATE SET count = count + 1 RETURNING count")
     .bind(rule, who, win).first();
   if ((row?.count as number) <= r.max) return null;
   const wait = Math.ceil((win + span - Date.now()) / 1000);
-  return json({ error: `Slow down: ${r.label.toLowerCase()} is limited to ${r.max} per ${every(r.window_s)}. Try again in ${every(wait)}.` }, 429, { "retry-after": String(wait) });
+  return { error: `Slow down: ${r.label.toLowerCase()} is limited to ${r.max} per ${every(r.window_s)}. Try again in ${every(wait)}.`, wait };
+}
+
+/** A 429 when this caller is over the rule's limit, else null (and the hit is counted). */
+export async function limit(req: Request, env: Env, rule: string | null, user: string | null, admin: boolean): Promise<Response | null> {
+  const who = counted(req, rule, user, admin);
+  const over = who ? await countHit(env, rule!, who) : null;
+  return over && json({ error: over.error }, 429, { "retry-after": String(over.wait) });
 }
 
 /** "10 minutes", "hour", "2 days". */

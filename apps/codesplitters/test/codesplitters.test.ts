@@ -384,6 +384,33 @@ describe("rate limits", () => {
     expect((await repo(ana, "three")).status).toBe(201);
     expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
   });
+  test("live edits count against the edit limit, over the socket and POST alike", async () => {
+    const call = await local({ ADMINS: "boss" });
+    await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
+    const open = async (headers: Record<string, string>) => {
+      const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...headers } })) as any).webSocket, got: any[] = [];
+      ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+      ws.queue.splice(0);
+      let id = 0;
+      const edit = async (text: string) => { ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] })); await Bun.sleep(5); return got.find((m) => m.id === id && m.type !== "ops"); };
+      return { edit };
+    };
+    const sock = await open(ip);
+    expect((await sock.edit("1")).type).toBe("ack");
+    expect((await sock.edit("2")).type).toBe("ack");
+    const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
+    expect((await ops("3")).status).toBe(200);
+    const over = await sock.edit("4");
+    expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
+    expect(over.retryAfter).toBeGreaterThan(0);
+    expect((await ops("5")).status).toBe(429);
+    // The desktop isn't counted, and a page can't name who its socket counts as.
+    const desk = await open({ "x-codesplitters-limit-as": "@someone-else" });
+    expect((await desk.edit("6")).type).toBe("ack");
+    expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
+  });
 });
 
 describe("github", () => {
