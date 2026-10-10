@@ -22,14 +22,27 @@
 
 On the desktop, Artifacts is a Rusty Buns twin: bare repos in `~/.codesplitters/artifacts`, served by `git http-backend` behind each repo's tokens, so it needs `git` installed. On Cloudflare, Artifacts needs the Workers Paid plan (10k operations and 1 GB a month included).
 
-### Turning on accounts (Cloudflare)
+### Deploying (Cloudflare)
+
+`rustybuns deploy` owns the live site: Alchemy took over the wrangler-made Worker `codesplitters` and D1 `codesplitters-db` on 2026-10-09 (`targets.edge.adopt`), Durable Object storage intact. Its state is local (`.alchemy/`, gitignored); with an empty state the next deploy adopts them again rather than making new ones.
 
 ```sh
-wrangler secret put BETTER_AUTH_SECRET     # any long random string: openssl rand -base64 32
-wrangler secret put GITHUB_CLIENT_ID       # optional, with its secret
-wrangler secret put GITHUB_CLIENT_SECRET
-wrangler secret put GOOGLE_CLIENT_ID       # optional, with its secret
-wrangler secret put GOOGLE_CLIENT_SECRET
+cd apps/codesplitters
+export CLOUDFLARE_ACCOUNT_ID=<your account id>        # wrangler can see more than one account
+export CLOUDFLARE_API_TOKEN=$(npx wrangler auth token | tail -1)   # reuse wrangler's login instead of Alchemy's OAuth link
+bun ../../packages/cli/src/index.ts plan              # expect no changes, or only updates
+bun ../../packages/cli/src/index.ts deploy --yes
+```
+
+### Turning on accounts (Cloudflare)
+
+A deploy replaces the Worker's bindings with the config's, so secrets set with `wrangler secret put` are dropped by the next one. Export them in the deploying shell instead; the config only declares the ones that are set:
+
+```sh
+export BETTER_AUTH_SECRET=...     # any long random string: openssl rand -base64 32
+export GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=...   # optional
+export GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=...   # optional
+bun ../../packages/cli/src/index.ts deploy --yes
 ```
 
 OAuth callback URLs to register: `https://<your host>/api/auth/callback/github` and `.../callback/google`. Set `BETTER_AUTH_URL` to the site's URL and `ADMINS` to the handles allowed to excavate levels. The agents demo signs in by alias, so it only runs where accounts are off.

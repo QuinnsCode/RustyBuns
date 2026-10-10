@@ -45,7 +45,8 @@ export default defineConfig({
     ADMINS: { type: "var", value: "" },
   },
   targets: {
-    // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler.
+    // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler;
+    // adopted by rustybuns deploy on 2026-10-09 (#170). Keep adopt on: state is local.
     edge: { provider: "cloudflare", adopt: true },
     desktop: { mode: "worker", window: "app" },
   },
