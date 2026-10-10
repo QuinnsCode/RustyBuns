@@ -471,7 +471,7 @@ test("crons: Cron Triggers on the edge, a minute timer on the desktop", () => {
 });
 
 test("desktopCrates: only crates that would be embedded count against cross targets", async () => {
-  const { desktopCrates } = await import("../src/build.ts");
+  const { desktopCrates, shippingCrates } = await import("../src/build.ts");
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");
   const { tmpdir } = require("node:os");
   const dir = mkdtempSync(tmpdir() + "/rb-crates-");
@@ -486,6 +486,14 @@ test("desktopCrates: only crates that would be embedded count against cross targ
     mkdirSync("native/dist/fluid/darwin-arm64", { recursive: true });
     expect(desktopCrates()).toEqual(["fluid"]);               // built cdylib
     expect(desktopCrates(false)).toEqual([]);                 // opted out
+    // The crate itself can opt out: built for wasm only, it never ships to desktop.
+    writeFileSync("native/crates/fluid/Cargo.toml", '[package]\nname = "fluid"\n\n[package.metadata.rustybuns]\ndesktop = false\n');
+    mkdirSync("native/crates/ffi");
+    writeFileSync("native/crates/ffi/Cargo.toml", '[package]\nname = "ffi"\n');
+    expect(shippingCrates()).toEqual(["ffi"]);
+    expect(desktopCrates()).toEqual([]);                      // fluid is built, but wasm-only
+    mkdirSync("native/dist/ffi/darwin-arm64", { recursive: true });
+    expect(desktopCrates()).toEqual(["ffi"]);
   } finally {
     process.chdir(cwd);
     rmSync(dir, { recursive: true, force: true });

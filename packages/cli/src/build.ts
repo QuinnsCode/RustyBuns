@@ -411,8 +411,9 @@ async function stageNative(targets: DesktopOs[], only?: string[]): Promise<strin
     return [];
   }
   const staged: string[] = [];
+  const ships = only?.length ? only : shippingCrates();
   for (const crate of await readdir("native/dist")) {
-    if (only?.length && !only.includes(crate)) continue;
+    if (!ships.includes(crate)) continue;
     for (const t of targets) {
       const nodeTag = t.replace(/^windows-/, "win32-");   // DesktopOs -> process.platform-arch
       const src = join("native/dist", crate, nodeTag);
@@ -473,12 +474,17 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   const build = mode === "spa" ? d.clientBuild : c.worker!.build;
   // Before the client build: a target mistake shouldn't cost a full UI build first.
   const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}` as DesktopOs;
-  const targets: DesktopOs[] = opts.target ? [opts.target as DesktopOs]
-    : d.targets === "all" ? ALL_OS
-    : d.targets ?? [hostTag];
+  const want = opts.target ?? d.targets;
+  const targets: DesktopOs[] = want === "all" ? ALL_OS
+    : typeof want === "string" ? [want as DesktopOs]
+    : want ?? [hostTag];
+  const unknown = targets.filter((t) => !ALL_OS.includes(t));
+  if (unknown.length) throw new Error(`unknown desktop target ${unknown.join(", ")}: use all, or one of ${ALL_OS.join(", ")}`);
 
-  // desktop.native: false keeps native/ out of the binary (a wasm-only crate, say).
-  const hasRust = d.native !== false && await Bun.file("native/Cargo.toml").exists();
+  // desktop.native: false keeps native/ out of the binary, and so does a crate's own
+  // [package.metadata.rustybuns] desktop = false (a wasm-only crate, say).
+  const hasRust = d.native !== false && await Bun.file("native/Cargo.toml").exists()
+    && (!!d.native?.length || shippingCrates().length > 0);
   const only = d.native || undefined;
   // cdylibs do not cross-compile, but Linux ones build in Docker on any machine.
   // Elsewhere, refuse only when a crate would be embedded: named, or built in native/dist.
@@ -594,15 +600,16 @@ const dockerUp = () => Bun.spawnSync(["docker", "info"], { stdout: "ignore", std
  */
 export async function buildLinuxNative(target: DesktopOs, only?: string[]): Promise<void> {
   const arch = target === "linux-arm64" ? "arm64" : "amd64";
-  const crates = (await import("node:fs")).readdirSync("native/crates", { withFileTypes: true })
-    .filter((e) => e.isDirectory() && (!only?.length || only.includes(e.name))).map((e) => e.name);
+  const crates = only?.length ? only : shippingCrates();
+  if (!crates.length) return;
   const rust = localRust();
   const image = `rust:${rust ? rust + "-" : ""}slim-bookworm`;
   const targetDir = `native/target-${target}`;
   console.log(`[native] building ${crates.join(", ")} for ${target} in ${image} (docker, linux/${arch})`);
   const p = Bun.spawn(["docker", "run", "--rm", "--platform", `linux/${arch}`,
     "-v", `${process.cwd()}/native:/src/native`, "-v", "rustybuns-cargo-registry:/usr/local/cargo/registry", "-w", "/src", image,
-    "cargo", "build", "--release", "--manifest-path", "native/Cargo.toml", "--target-dir", targetDir], { stdio: ["inherit", "inherit", "inherit"] });
+    "cargo", "build", "--release", "--manifest-path", "native/Cargo.toml", "--target-dir", targetDir,
+    ...crates.flatMap((c) => ["-p", c])], { stdio: ["inherit", "inherit", "inherit"] });
   if (await p.exited !== 0) throw new Error(`the Docker build of native/ for ${target} failed (see above)`);
   const { mkdir, copyFile } = await import("node:fs/promises");
   for (const c of crates) {
@@ -613,15 +620,33 @@ export async function buildLinuxNative(target: DesktopOs, only?: string[]): Prom
 }
 
 /**
+ * The crates in native/crates that ship to desktop: all of them, except those whose
+ * Cargo.toml says `[package.metadata.rustybuns] desktop = false` (wasm-only, say).
+ * The Linux Docker build, the staging, the cross check and the box image use this
+ * list when desktop.native doesn't name the crates.
+ */
+export function shippingCrates(): string[] {
+  if (!existsSync("native/crates")) return [];
+  return readdirSync("native/crates", { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
+    .filter((name) => {
+      const toml = join("native", "crates", name, "Cargo.toml");
+      if (!existsSync(toml)) return true;
+      const meta = (Bun.TOML.parse(readFileSync(toml, "utf8")) as any)?.package?.metadata?.rustybuns;
+      return meta?.desktop !== false;
+    });
+}
+
+/**
  * The crates a desktop binary would embed: desktop.native when it names some,
- * else every crate already built into native/dist. None without native/Cargo.toml,
- * or with desktop.native: false.
+ * else every shipping crate already built into native/dist. None without
+ * native/Cargo.toml, or with desktop.native: false.
  */
 export function desktopCrates(native?: string[] | false): string[] {
   if (native === false || !existsSync("native/Cargo.toml")) return [];
   if (native?.length) return native;
   if (!existsSync("native/dist")) return [];
-  return readdirSync("native/dist", { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+  const ships = shippingCrates();
+  return readdirSync("native/dist", { withFileTypes: true }).filter((e) => e.isDirectory() && ships.includes(e.name)).map((e) => e.name);
 }
 
 /** native/dist/<crate> for each embedded crate; loadNative() finds them at /$bunfs/root/<crate>/<os-arch>/. */

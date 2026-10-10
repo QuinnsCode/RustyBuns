@@ -19,7 +19,7 @@ import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { DesktopOs, HetznerBoxTarget, RailwayBoxTarget, RustyBunsConfig } from "./config.ts";
-import { buildDesktop, embeddedDirs, localRust } from "./build.ts";
+import { buildDesktop, embeddedDirs, localRust, shippingCrates } from "./build.ts";
 
 export const BOX_DIR = ".rustybuns/box";
 export const RAILWAY_DIR = ".rustybuns/railway";
@@ -49,7 +49,7 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-too
 ENV PATH=/root/.cargo/bin:$PATH
 WORKDIR /src
 COPY native /src/native
-RUN cargo build --release --manifest-path native/Cargo.toml \\
+RUN cargo build --release --manifest-path native/Cargo.toml ${native.crates.map((c) => `-p ${c}`).join(" ")} \\
  && arch=$(uname -m | sed -e s/x86_64/x64/ -e s/aarch64/arm64/) \\
  && for c in ${native.crates.join(" ")}; do mkdir -p /out/$c/linux-$arch && cp native/target/release/lib$c.so /out/$c/linux-$arch/; done
 
@@ -145,7 +145,7 @@ export async function buildRailway(c: RustyBunsConfig): Promise<string> {
   const wantNative = c.targets.desktop?.native;
   if (wantNative !== false && existsSync("native/Cargo.toml")) {
     const all = existsSync("native/crates") ? (await readdir("native/crates", { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name) : [];
-    const want = wantNative?.length ? wantNative : all;
+    const want = wantNative?.length ? wantNative : shippingCrates();
     const missing = want.filter((n) => !all.includes(n));
     if (missing.length) throw new Error(`desktop.native names crates that are not in native/crates: ${missing.join(", ")}`);
     if (want.length) {

@@ -1,0 +1,11 @@
+[package]
+name = "hippo_fluid"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# WebAssembly only (scripts/build-native.ts): never built or embedded as a desktop cdylib.
+[package.metadata.rustybuns]
+desktop = false

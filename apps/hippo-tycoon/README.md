@@ -40,7 +40,7 @@ bun bench/sim.ts       # the rules engine: TypeScript vs Rust/wasm, ticks per se
 
 Without them the game runs the TypeScript twins (same output). The corner of the game says which fluid is running (`fluid: Rust/wasm`). The wasms are build outputs and are not committed.
 
-The rules engine (`rust/crates/hippo_sim`, a port of `src/sim/step.ts` with spawn, physics, gulp and effects, and of the bots in `src/sim/bots.ts`) runs solo and couch rounds whenever `public/hippo_sim.wasm` is there, and online and desktop rooms when their build carries it (`sim: Rust/wasm` in the corner; `?sim=ts` forces the TypeScript twin). The round and the bots stay inside the module: `Match.setEngine()` hands them over once, then each tick sends the human inputs in and reads back a compact view for the snapshot (positions, no velocities). Reading `match.sim` brings the round home (the next tick hands it back), so nothing outside `Match` changes. `bun bench/sim.ts 200` on an M-series Mac, Bun 1.4.2 (200 90 s rounds):
+The rules engine (`native/crates/hippo_sim`, a port of `src/sim/step.ts` with spawn, physics, gulp and effects, and of the bots in `src/sim/bots.ts`) runs solo and couch rounds whenever `public/hippo_sim.wasm` is there, and online and desktop rooms when their build carries it (`sim: Rust/wasm` in the corner; `?sim=ts` forces the TypeScript twin). The round and the bots stay inside the module: `Match.setEngine()` hands them over once, then each tick sends the human inputs in and reads back a compact view for the snapshot (positions, no velocities). Reading `match.sim` brings the round home (the next tick hands it back), so nothing outside `Match` changes. `bun bench/sim.ts 200` on an M-series Mac, Bun 1.4.2 (200 90 s rounds):
 
 | engine | ticks/s | µs/tick |
 |---|---|---|
@@ -174,8 +174,8 @@ sim (rules, 30 Hz) ─▶ engine (Match: seats, phases, bots) ─▶ Driver seam
 src/sim/       the game: pure, deterministic, 30 Hz. No DOM, no clock, no Math.random (a test enforces it)
 src/engine/    platform-free: Match (lobby > countdown > playing > podium, seats, bots), Room (sockets), tick loop, wire
 src/client/    React UI, three.js renderer, input, audio, LocalDriver and NetDriver
-src/client/render/fluid.ts   the geyser's fluid: the TypeScript twin + the wasm loader (rust/crates/hippo_fluid is the Rust)
-src/sim/native.ts            the Rust twin of step() and the bots (rust/crates/hippo_sim); src/client/driver.ts loads it, Match keeps the round in it
+src/client/render/fluid.ts   the geyser's fluid: the TypeScript twin + the wasm loader (native/crates/hippo_fluid is the Rust)
+src/sim/native.ts            the Rust twin of step() and the bots (native/crates/hippo_sim); src/client/driver.ts loads it, Match keeps the round in it
 src/room-do.ts the one World class: the Cloudflare Durable Object and the in-process desktop world
 src/worker.ts  the Cloudflare entry: validates and vouches identity, routes rooms
 src/edge.ts    what Alchemy bundles: worker.ts with native/hippo_sim.wasm handed to the rooms
