@@ -8,6 +8,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, resolve, relative, sep } from "node:path";
 import { parseJsonc } from "./jsonc.ts";
 import { SUPPORTED, stackOf, vitePlugins, type Stack } from "./fit.ts";
+import { inferStaticBuild } from "./build-script.ts";
 
 export type Framework = "rwsdk" | "tanstack-start" | "astro" | "vite-react" | "vite" | "unknown";
 export type PackageManager = "bun" | "pnpm" | "npm" | "yarn";
@@ -29,8 +30,12 @@ export interface Inferred {
   /** Node server frameworks it depends on (express, socket.io, ...): its frontend alone isn't the app. */
   serverDeps: string[];
   scripts: Record<string, string>;
+  /** What the app's build runs before vite (prebuild, generators), to run before ours. */
+  prebuild: string[];
   vite: {
     configPath: string | null;
+    /** The `--config` the app's build passes to vite, as written; null for the default vite.config.*. */
+    buildConfig: string | null;
     plugins: string[];
     root: string | null;
     outDir: string | null;
@@ -128,18 +133,23 @@ export function viteRoot(src: string): string | null {
   return parts.length ? parts.join("/").replace(/^\.\/?/, "") || null : null;
 }
 
-export function inferVite(root: string) {
+/** `buildConfig`: the config the app's build names (vite.app.config.ts), read instead of vite.config.*. */
+export function inferVite(root: string, buildConfig: string | null = null) {
   const cands = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"];
-  const configPath = cands.map((c) => join(root, c)).find(existsSync) ?? null;
+  if (buildConfig && !existsSync(join(root, buildConfig))) buildConfig = null;
+  const configPath = buildConfig ? join(root, buildConfig) : cands.map((c) => join(root, c)).find(existsSync) ?? null;
   const desktopConfigPath = ["vite.desktop.config.ts", "vite.desktop.config.mts"].map((c) => join(root, c)).find(existsSync) ?? null;
-  const out = { configPath, plugins: [] as string[], root: null as string | null, outDir: null as string | null, aliases: {} as Record<string, string>, desktopConfigPath };
+  const out = { configPath, buildConfig, plugins: [] as string[], root: null as string | null, outDir: null as string | null, aliases: {} as Record<string, string>, desktopConfigPath };
   if (!configPath) return out;
   const src = readFileSync(configPath, "utf8");
   out.plugins = vitePlugins(src);
   out.root = viteRoot(src);
   out.outDir = src.match(/\boutDir:\s*["']([^"']+)["']/)?.[1] ?? null;
-  for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*(?:path\.)?resolve\([^,]+,\s*["']([^"']+)["']\)/g)) out.aliases[m[1]!] = m[2]!;
-  for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*["']([^"']+)["']/g)) out.aliases[m[1]!] ??= m[2]!;
+  const dir = (d: string) => d.replace(/^\.\//, "").replace(/\/$/, "") || ".";
+  for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*(?:path\.)?resolve\([^,]+,\s*["']([^"']+)["']\)/g)) out.aliases[m[1]!] = dir(m[2]!);
+  // "@": fileURLToPath(new URL("./src", import.meta.url))
+  for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*(?:\w+\.)?fileURLToPath\(\s*new\s+URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)\s*\)/g)) out.aliases[m[1]!] ??= dir(m[2]!);
+  for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*["']([^"']+)["']/g)) out.aliases[m[1]!] ??= dir(m[2]!);
   return out;
 }
 
@@ -187,7 +197,8 @@ const SERVER_DEPS = ["express", "fastify", "koa", "socket.io", "@hono/node-serve
 export function infer(root = process.cwd()): Inferred {
   const pkg = readPackageJson(root) ?? {};
   const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
-  const vite = inferVite(root);
+  const staticBuild = inferStaticBuild(pkg.scripts ?? {});
+  const vite = inferVite(root, staticBuild.config);
   const stack = stackOf(deps, vite.plugins);
   const framework = (SUPPORTED.includes(stack) ? stack : "unknown") as Framework;
   const pm = detectPm(root);
@@ -211,6 +222,7 @@ export function infer(root = process.cwd()): Inferred {
     hasBetterAuth: !!deps["better-auth"],
     serverDeps: SERVER_DEPS.filter((d) => deps[d]),
     scripts: pkg.scripts ?? {},
+    prebuild: staticBuild.pre,
     vite, astro: inferAstro(root), wranglerPath, srcDir, aliases, srcDirSource, workerEntry,
     isWorkspaceRoot: !!pkg.workspaces || existsSync(join(root, "pnpm-workspace.yaml")),
     hasPackageJson: existsSync(join(root, "package.json")),

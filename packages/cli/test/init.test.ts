@@ -300,3 +300,23 @@ test("init: a vite root of public/ builds into the app's dist, not public/dist",
   expect(c).toContain('"clientBuild": "bunx vite build --outDir ../dist/ui --emptyOutDir"');
   expect(c).toContain('"assets": "dist/web"');
 });
+
+test("init: a static build runs the app's prebuild steps, reads its non-default vite config and new URL aliases", () => {
+  const { inferStaticBuild } = require("../src/glue/build-script.ts");
+  expect(inferStaticBuild({ prebuild: "node gen.js", build: "npm run icons && rimraf dist && vite build -c vite.app.config.ts && zip -r out.zip dist", icons: "node icons.js" }))
+    .toEqual({ pre: ["node gen.js", "node icons.js"], config: "vite.app.config.ts" });
+  expect(inferStaticBuild({ build: "tsc -b && vite build --config=vite.web.config.mjs" })).toEqual({ pre: ["tsc -b"], config: "vite.web.config.mjs" });
+  expect(inferStaticBuild({ build: "webpack" })).toEqual({ pre: [], config: null });
+
+  const p = project({
+    "package.json": JSON.stringify({ name: "yacht", scripts: { prebuild: "node gen-config.js", build: "vite build --config vite.app.config.ts", test: "vitest" }, dependencies: { vite: "^5", vue: "^3" } }),
+    "bun.lock": "",
+    "vite.config.ts": "export default { root: 'wrong' };\n",
+    "vite.app.config.ts": 'import { fileURLToPath, URL } from "node:url";\nexport default { root: "web", resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } } };\n',
+  });
+  expect(p.run("init").code).toBe(0);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"build": "node gen-config.js && bunx vite build --config vite.app.config.ts --outDir ../dist/web --emptyOutDir"');
+  expect(c).toContain('"clientBuild": "node gen-config.js && bunx vite build --config vite.app.config.ts --outDir ../dist/ui --emptyOutDir"');
+  expect(c).toContain('"@": "src"');
+});

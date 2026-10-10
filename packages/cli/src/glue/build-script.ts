@@ -26,3 +26,30 @@ export function inferWorkerBuild<F extends string | null = string>(scripts: Reco
   }
   return { build: fallback, from: "default" };
 }
+
+// A static app's build is our own `vite build --outDir dist/web`, but whatever the app's
+// build ran before vite (config generators, codegen) has to run first, and a `--config`
+// it passes to vite is the config that build means.
+//   "prebuild": "node gen-config.js", "build": "npm run icons && vite build -c vite.app.config.ts"
+//   -> { pre: ["node gen-config.js", <icons script>], config: "vite.app.config.ts" }
+// Steps after vite (zipping, copying the output) are the app's own packaging and are left out.
+export function inferStaticBuild(scripts: Record<string, string>): { pre: string[]; config: string | null } {
+  const steps = (name: string, depth = 0): string[] => {
+    const out: string[] = [];
+    for (const p of (scripts[name] ?? "").split(/\s*&&\s*/).map((p) => p.trim()).filter(Boolean)) {
+      // inline "<pm> run x" so the command doesn't depend on a package manager
+      const ref = p.match(/^(?:pnpm|npm|bun|yarn)\s+(?:run\s+)?([\w:.-]+)$/)?.[1];
+      if (ref && scripts[ref] && ref !== name && depth < 3) { out.push(...steps(`pre${ref}`, depth + 1), ...steps(ref, depth + 1)); continue; }
+      out.push(p);
+    }
+    return out;
+  };
+  const build = steps("build");
+  const at = build.findIndex((p) => /(?:^|\s)vite\s+build\b/.test(p));
+  const vite = at >= 0 ? build[at]! : "";
+  const pre = [...steps("prebuild"), ...(at >= 0 ? build.slice(0, at) : [])]
+    // cleans are for the app's own dist; ours is emptied by --emptyOutDir
+    .filter((p) => !/^(?:rm\s+-r|rimraf\b)/.test(p) && !(/\bclean(:\w+)?\b/.test(p) && /^(pnpm|npm|bun|yarn)\b/.test(p)));
+  const config = vite.match(/\s(?:--config|-c)(?:=|\s+)(["']?)([^\s"']+)\1/)?.[2] ?? null;
+  return { pre, config };
+}
