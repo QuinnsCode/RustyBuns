@@ -121,7 +121,7 @@ async function init() {
   const wsrc = await Bun.file(src).text();
   const w = src.endsWith(".toml") ? parseWranglerToml(wsrc) : parseWrangler(wsrc);
   const dropped = droppedWranglerKeys(w);
-  if (dropped.length) console.log(`not carried over: ${dropped.join(", ")}\n          (bindings, triggers, routes and env.* are not in rustybuns.config.ts yet; keep them in ${src} and do NOT run \`rustybuns adopt\`)`);
+  if (dropped.length) console.log(`not carried over: ${dropped.join(", ")}\n          (bindings, routes and env.* are not in rustybuns.config.ts yet; keep them in ${src} and do NOT run \`rustybuns adopt\`)`);
   const cfg = wranglerToConfig(w, inf.scripts);
   if (!existsSync(cfg.worker!.main)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
   { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts); console.log(`build:    ${b.build}  (${b.from === "default" ? "no build/release/deploy script found; using the default" : `from "${b.from}" script`})`); }

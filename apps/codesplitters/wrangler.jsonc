@@ -49,5 +49,10 @@
   "vars": {
     "BETTER_AUTH_URL": "https://codesplitters.notryanquinn.workers.dev",
     "ADMINS": ""
+  },
+  "triggers": {
+    "crons": [
+      "0 * * * *"
+    ]
   }
 }

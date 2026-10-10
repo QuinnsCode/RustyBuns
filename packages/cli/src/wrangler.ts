@@ -18,6 +18,7 @@ export interface WranglerJson {
   durable_objects?: { bindings?: { name: string; class_name: string; script_name?: string }[] };
   migrations?: { tag: string; new_classes?: string[]; new_sqlite_classes?: string[]; renamed_classes?: { from: string; to: string }[]; deleted_classes?: string[] }[];
   vars?: Record<string, string>;
+  triggers?: { crons?: string[] };
   [k: string]: unknown;
 }
 
@@ -33,10 +34,10 @@ export function parseWranglerToml(src: string): WranglerJson {
 /** Top-level keys that Rusty Buns reads. Anything else in a wrangler file is not carried into the config. */
 const HANDLED = new Set([
   "$schema", "name", "main", "compatibility_date", "compatibility_flags", "assets",
-  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars",
+  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers",
 ]);
 
-/** Wrangler keys (bindings, triggers, routes, per-env overrides) that `init` cannot represent yet. */
+/** Wrangler keys (bindings, routes, per-env overrides) that `init` cannot represent yet. */
 export function droppedWranglerKeys(w: WranglerJson): string[] {
   return Object.keys(w).filter((k) => !HANDLED.has(k));
 }
@@ -59,6 +60,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
       compatibilityDate: w.compatibility_date ?? new Date().toISOString().slice(0, 10),
       compatibilityFlags: w.compatibility_flags ?? ["nodejs_compat"],
       build: inferWorkerBuild(scripts).build,
+      ...(w.triggers?.crons?.length ? { crons: w.triggers.crons } : {}),
     },
     bindings,
     targets: {

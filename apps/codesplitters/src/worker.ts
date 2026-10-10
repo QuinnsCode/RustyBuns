@@ -12,6 +12,7 @@ import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
+import { depRoutes, scheduledDoctor } from "./deps.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -52,6 +53,8 @@ const app = {
     if (share) return share;
     const agents = await agentRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read, (r) => app.fetch(r, env));
     if (agents) return agents;
+    const deps = await depRoutes(req, env, p, url, user, (r) => app.fetch(r, env));
+    if (deps) return deps;
 
     // GET|PUT /api/me
     if (p[1] === "me") {
@@ -260,6 +263,11 @@ const app = {
     }
 
     return json({ error: "not found" }, 404);
+  },
+
+  // Cron Triggers (rustybuns.config.ts crons): hourly, each repo's dependency doctor runs when it's due.
+  async scheduled(_c: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
   },
 };
 

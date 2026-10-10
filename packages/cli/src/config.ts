@@ -227,6 +227,13 @@ export interface RustyBunsConfig {
      * deployed Worker, and treats a binding whose class changed as a rename.
      */
     migrations?: DoMigration[];
+    /**
+     * Cron Triggers: when the Worker's `scheduled(controller, env, ctx)` runs,
+     * as five-field cron expressions in UTC ("0 * * * *" is hourly). On the edge
+     * they are the Worker's Cron Triggers; the desktop and box hosts run their
+     * own minute timer and call the same handler.
+     */
+    crons?: string[];
   };
   bindings: Record<string, Binding>;
   targets: {

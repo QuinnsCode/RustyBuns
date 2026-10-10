@@ -69,14 +69,15 @@ test("init: wrangler keys that cannot be carried over are reported, and adopt re
   });
   const r = p.run("init");
   expect(r.code).toBe(0);
-  expect(r.out).toMatch(/not carried over: ai, triggers, env/);
+  expect(r.out).toMatch(/not carried over: ai, env/);
   expect(r.out).toMatch(/adopt will refuse/);
   expect(p.read("wrangler.jsonc")).toContain('"ai"');
   const adopt = p.run("adopt");
   expect(adopt.code).toBe(1);
-  expect(adopt.out).toMatch(/adopt would delete from wrangler\.jsonc: ai, triggers, env/);
+  expect(adopt.out).toMatch(/adopt would delete from wrangler\.jsonc: ai, env/);
   expect(p.read("wrangler.jsonc")).toContain('"ai"');
   expect(p.run("adopt", "--force").code).toBe(0);
+  expect(p.read("rustybuns.config.ts")).toMatch(/"crons": \[\s*"\* \* \* \* \*"\s*\]/);   // Cron Triggers carry over
 });
 
 test("init: wrangler.toml is read, and a missing worker entry is flagged", () => {
@@ -126,7 +127,7 @@ test("package manager: lockfiles, then packageManager field", () => {
 
 test("wrangler toml parse and dropped keys", () => {
   const w = parseWranglerToml('name = "x"\n[ai]\nbinding = "AI"\n[triggers]\ncrons = ["* * * * *"]\n');
-  expect(droppedWranglerKeys(w)).toEqual(["ai", "triggers"]);
+  expect(droppedWranglerKeys(w)).toEqual(["ai"]);
 });
 
 test("add deploy writes overrides at the workspace root, where bun reads them", () => {

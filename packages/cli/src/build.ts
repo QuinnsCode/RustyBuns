@@ -335,9 +335,10 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
         break;
     }
   }
+  const crons = c.worker!.crons ?? [];
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
-import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations${artifacts.length ? ", gitHttp" : ""} } from "@rustybuns/shell-bun";
+import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + (c.worker!.builtMain ?? c.worker!.main))};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
@@ -383,7 +384,9 @@ ${artifacts.map((n) => `(env.${n} as any).remoteBase = shell.url;`).join("\n")}
 ${h.box
   ? `shell.mount({ fetch: (req: Request, e: any, ctx: any) => new URL(req.url).pathname === "/health" ? new Response("ok") : (worker as any).fetch(req, e, ctx) } as any, env);`
   : `shell.mount(worker as any, env);`}
-console.log(\`[${c.name}] serving \${shell.url}\`);
+console.log(\`[${c.name}] serving \${shell.url}\`);${crons.length ? `
+// Cron Triggers: the edge runs scheduled() on these; here a minute timer does.
+schedule(${JSON.stringify(crons)}, (controller) => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} }));` : ""}
 ${h.launch}`;
 }
 
