@@ -18,6 +18,7 @@ import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-sc
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { Profiler } from "./profile.ts";
 import { checkSpend, costReport } from "./costs.ts";
+import { cloudflareEnv } from "./cloudflare-auth.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
@@ -305,6 +306,8 @@ async function runAlchemy(args: string[], cfg?: RustyBunsConfig): Promise<number
   let cmd = [...alchemyCli(), ...args];
   // Secret values come from .dev.vars; anything already exported in the shell wins.
   const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env };
+  // An edge stack logs in to Cloudflare through wrangler, with only the scopes it needs.
+  if (cfg?.targets.edge) Object.assign(env, await cloudflareEnv(cfg, env));
   if (cfg?.experimental?.wheel && existsSync(ENV_SCHEMA)) cmd = underVarlock(cfg, cmd, env);
   const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"], env });
   return await p.exited;
