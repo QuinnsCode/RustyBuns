@@ -249,12 +249,14 @@ export interface RustyBunsConfig {
   source?: { dir?: string; aliases?: Record<string, string>; ignore?: string[] };
   /** The Workers side. Omitted for desktop-only apps (plain Vite, no Cloudflare). */
   worker?: {
-    /** Entry as wrangler sees it (RWSDK: src/worker.tsx). */
-    main: string;
+    /** Entry as wrangler sees it (RWSDK: src/worker.tsx). Omitted: an assets-only Worker, a static site with no code of its own. */
+    main?: string;
     /** Prebuilt worker bundle after `vite build`; deployed byte-for-byte. */
     builtMain?: string;
     /** Built client assets after `vite build`. */
     assets?: string;
+    /** A path no asset matches: index.html (an SPA's client-side routes), the nearest 404.html, or a plain 404. */
+    notFoundHandling?: "single-page-application" | "404-page" | "none";
     runWorkerFirst?: string[];
     compatibilityDate: string;
     compatibilityFlags: string[];

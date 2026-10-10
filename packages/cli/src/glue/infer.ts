@@ -26,6 +26,8 @@ export interface Inferred {
   hasThree: boolean;
   hasPrisma: boolean;
   hasBetterAuth: boolean;
+  /** Node server frameworks it depends on (express, socket.io, ...): its frontend alone isn't the app. */
+  serverDeps: string[];
   scripts: Record<string, string>;
   vite: {
     configPath: string | null;
@@ -163,6 +165,8 @@ export function inferAstro(root: string): AstroInfo | null {
   };
 }
 
+const SERVER_DEPS = ["express", "fastify", "koa", "socket.io", "@hono/node-server", "@nestjs/core", "@hapi/hapi"];
+
 export function infer(root = process.cwd()): Inferred {
   const pkg = readPackageJson(root) ?? {};
   const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
@@ -188,6 +192,7 @@ export function infer(root = process.cwd()): Inferred {
     hasThree: !!deps["three"],
     hasPrisma: !!deps["@prisma/client"] || !!deps["prisma"],
     hasBetterAuth: !!deps["better-auth"],
+    serverDeps: SERVER_DEPS.filter((d) => deps[d]),
     scripts: pkg.scripts ?? {},
     vite, astro: inferAstro(root), wranglerPath, srcDir, aliases, srcDirSource, workerEntry,
     isWorkspaceRoot: !!pkg.workspaces || existsSync(join(root, "pnpm-workspace.yaml")),

@@ -345,10 +345,12 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
     }
   }
   const crons = c.worker!.crons ?? [];
+  const entry = c.worker!.builtMain ?? c.worker!.main;
+  if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
-import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + (c.worker!.builtMain ?? c.worker!.main))};
+import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
 import { basename, join, isAbsolute } from "node:path";

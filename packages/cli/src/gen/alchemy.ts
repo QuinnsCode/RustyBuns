@@ -124,12 +124,14 @@ export function generateAlchemy(c: RustyBunsConfig): string {
 
     const wb: string[] = [];
     if (adopt) wb.push(`  name: ${JSON.stringify(c.name)},`);
-    wb.push(`  main: ${JSON.stringify(w.builtMain ?? w.main)},`);
+    // No main: assets-only, and Cloudflare's asset layer answers every request.
+    if (w.builtMain ?? w.main) wb.push(`  main: ${JSON.stringify(w.builtMain ?? w.main)},`);
     if (w.builtMain) wb.push(`  bundle: false,  // vite already produced a runtime-ready ESM bundle`);
     if (w.assets) {
       wb.push(`  assets: {`);
       wb.push(`    directory: ${JSON.stringify(w.assets)},`);
       if (w.runWorkerFirst) wb.push(`    runWorkerFirst: ${JSON.stringify(w.runWorkerFirst)},`);
+      if (w.notFoundHandling) wb.push(`    notFoundHandling: ${JSON.stringify(w.notFoundHandling)},`);
       wb.push(`  },`);
     }
     wb.push(`  compatibility: { date: ${JSON.stringify(w.compatibilityDate)}, flags: ${JSON.stringify(w.compatibilityFlags)} },`);

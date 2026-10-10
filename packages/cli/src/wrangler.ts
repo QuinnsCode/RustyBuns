@@ -11,7 +11,7 @@ export interface WranglerJson {
   main?: string;
   compatibility_date?: string;
   compatibility_flags?: string[];
-  assets?: { directory?: string; binding?: string; run_worker_first?: boolean | string[] };
+  assets?: { directory?: string; binding?: string; run_worker_first?: boolean | string[]; not_found_handling?: "single-page-application" | "404-page" | "none" };
   d1_databases?: { binding: string; database_name: string; database_id?: string; migrations_dir?: string }[];
   kv_namespaces?: { binding: string; id?: string }[];
   r2_buckets?: { binding: string; bucket_name: string }[];
@@ -49,7 +49,14 @@ export function droppedWranglerKeys(w: WranglerJson): string[] {
   return Object.keys(w).filter((k) => !HANDLED.has(k));
 }
 
-export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string> = {}): RustyBunsConfig {
+/**
+ * How the Worker is built, which decides where its bundle lands: RWSDK's vite build
+ * (dist/worker), the Cloudflare Vite plugin's (dist/<name, dashes as underscores>),
+ * or no build at all, a plain Worker that Alchemy bundles from its main.
+ */
+export type WorkerBuilt = "rwsdk" | "vite" | null;
+
+export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string> = {}, built: WorkerBuilt = "rwsdk"): RustyBunsConfig {
   const bindings: Record<string, Binding> = {};
   for (const d of w.d1_databases ?? []) bindings[d.binding] = { type: "d1", databaseName: d.database_name, migrationsDir: d.migrations_dir };
   for (const k of w.kv_namespaces ?? []) bindings[k.binding] = { type: "kv" };
@@ -69,12 +76,14 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
     name: w.name ?? "app",
     worker: {
       main: w.main ?? "src/worker.tsx",
-      builtMain: "dist/worker/worker.js",
-      assets: w.assets?.directory ?? "dist/client",
+      ...(built === "rwsdk" ? { builtMain: "dist/worker/worker.js" } : built === "vite" ? { builtMain: `dist/${(w.name ?? "app").replaceAll("-", "_")}/index.js` } : {}),
+      // The Vite plugin always writes the client to dist/client; a plain Worker serves only what wrangler named.
+      ...(() => { const a = built === "rwsdk" ? w.assets?.directory ?? "dist/client" : built === "vite" ? "dist/client" : w.assets?.directory; return a ? { assets: a } : {}; })(),
       runWorkerFirst: Array.isArray(rwf) ? rwf : rwf === true ? ["/*"] : undefined,
+      ...(w.assets?.not_found_handling ? { notFoundHandling: w.assets.not_found_handling } : {}),
       compatibilityDate: w.compatibility_date ?? new Date().toISOString().slice(0, 10),
       compatibilityFlags: w.compatibility_flags ?? ["nodejs_compat"],
-      build: inferWorkerBuild(scripts).build,
+      ...(() => { const b = inferWorkerBuild(scripts, built ? "vite build" : null).build; return b ? { build: b } : {}; })(),
       ...(w.triggers?.crons?.length ? { crons: w.triggers.crons } : {}),
       ...(w.limits?.cpu_ms ? { cpuMs: w.limits.cpu_ms } : {}),
     },
