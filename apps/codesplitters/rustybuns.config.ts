@@ -30,6 +30,10 @@ export default defineConfig({
     // Hourly: each repo's dependency doctor runs when its own schedule says it's due (src/deps.ts),
     // and rate limits are swept. Queued requests and webhook retries ride the JOBS and HOOKS queues.
     crons: ["0 * * * *"],
+    // A dig or level import over Artifacts' 40 MB cap rebuilds the repo from GitHub's
+    // tarball inside the request (src/tarball.ts): gunzip, SHA-1 and deflate over a few
+    // hundred MB of source, more than the default 30 s of CPU (#348). Billed per ms used.
+    cpuMs: 300_000,
   },
   bindings: {
     // Profiles, repos, playlists and the search index.

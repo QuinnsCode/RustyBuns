@@ -276,6 +276,12 @@ export interface RustyBunsConfig {
      * own minute timer and call the same handler.
      */
     crons?: string[];
+    /**
+     * CPU time one invocation may use, in ms (`limits.cpu_ms`). Workers Paid
+     * defaults to 30,000 and allows up to 300,000; the free plan is fixed at 10.
+     * Billed per CPU ms used, not per ms allowed. The desktop has no limit.
+     */
+    cpuMs?: number;
   };
   bindings: Record<string, Binding>;
   targets: {

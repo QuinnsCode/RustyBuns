@@ -262,6 +262,8 @@ async function generate(opts: { adopt: boolean }) {
     const { parseCron } = await import("@rustybuns/shell-bun");
     for (const c of cfg.worker.crons) parseCron(c);
   }
+  const cpu = cfg.worker?.cpuMs;
+  if (cpu !== undefined && !(Number.isInteger(cpu) && cpu >= 10 && cpu <= 300_000)) throw new Error(`worker.cpuMs: ${cpu} isn't a whole number of ms from 10 to 300000`);
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
   console.log("wrote .rustybuns/alchemy.run.ts");
