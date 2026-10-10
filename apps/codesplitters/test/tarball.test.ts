@@ -52,9 +52,10 @@ async function settled(call: (u: string | null, p: string) => Promise<Response>,
 /**
  * GitHub, faked: the repo, its tip, its tarball and any submodules (path to commit), and,
  * given its folder, its tree listing and raw files (each path fetched goes in `seen`).
+ * `limited` is the API without a token on a shared IP: every call 403s.
  */
-function fakeGitHub(sha: string, tgz: string, o: { subs?: Record<string, string>; dir?: string; seen?: string[] } = {}) {
-  const { subs = {}, dir, seen = [] } = o;
+function fakeGitHub(sha: string, tgz: string, o: { subs?: Record<string, string>; dir?: string; seen?: string[]; limited?: boolean } = {}) {
+  const { subs = {}, dir, seen = [], limited } = o;
   const real = globalThis.fetch;
   globalThis.fetch = (async (u: string | Request, init?: RequestInit) => {
     const url = new URL(typeof u === "string" ? u : u.url);
@@ -63,8 +64,13 @@ function fakeGitHub(sha: string, tgz: string, o: { subs?: Record<string, string>
       seen.push(path);
       return new Response(new Uint8Array(Bun.spawnSync(["git", "cat-file", "blob", `HEAD:${path}`], { cwd: dir }).stdout));
     }
-    if (url.hostname === "github.com" && url.pathname === "/o/big.git/info/refs") return new Response(`${sha} HEAD\0side-band symref=HEAD:refs/heads/main\n`);
+    if (url.hostname === "github.com" && url.pathname === "/o/big.git/info/refs")
+      return new Response(`001e# service=git-upload-pack\n0000${sha} HEAD\0side-band symref=HEAD:refs/heads/main\n003f${sha} refs/heads/main\n0000`);
+    if (url.hostname === "github.com" && url.pathname === `/o/big/commit/${sha}.patch`)
+      return new Response(`From ${sha} Mon Sep 17 00:00:00 2001\nFrom: Up Stream <up@stream.dev>\nDate: Thu, 1 Oct 2026 00:00:00 +0000\nSubject: [PATCH] the tip\n\n---\n README.md | 1 +\n`);
+    if (url.hostname === "codeload.github.com" && url.pathname === `/o/big/tar.gz/${sha}`) return new Response(Bun.file(tgz));
     if (url.hostname !== "api.github.com") return real(u, init);
+    if (limited && !new Headers(init?.headers).has("authorization")) return Response.json({ message: "API rate limit exceeded" }, { status: 403 });
     if (dir && url.pathname === `/repos/o/big/git/trees/${sha}`) {
       const tree = git(dir, "ls-tree", "-r", "-l", "--full-tree", "HEAD").split("\n").map((line) => {
         const [meta, path] = line.split("\t") as [string, string];
@@ -104,11 +110,12 @@ const tooBig = (ns: { create(name: string): Promise<unknown>; delete?(name: stri
 const tooBigNow = () => { throw Object.assign(new Error(`413 {"code":10402,"message":"Repository exceeded the 40MB import limit. Current depth is 1."}`), { code: "MEMORY_LIMIT" }); };
 
 describe("past the Artifacts import cap", () => {
-  test("a dig comes in from GitHub's tarball, the same tree git has", async () => {
+  // Without a token it never touches the API, which is usually spent on a shared IP (#386).
+  test.each([["without a token", { GH_CLI: "off" }], ["with one", { GH_CLI: "off", GITHUB_TOKEN: "t" }]])("a dig comes in from GitHub's tarball, the same tree git has, %s", async (_, env) => {
     const { sha, tree, tgz } = upstream();
-    const call = await local({ GH_CLI: "off" });
+    const call = await local(env);
     call.artifacts.import = tooBig(call.artifacts) as any;
-    const restore = fakeGitHub(sha, tgz);
+    const restore = fakeGitHub(sha, tgz, { limited: true });
     try {
       await call("ana", "/api/login", { method: "POST", body: JSON.stringify({ name: "ana" }) });
       await call.artifacts.create("ana--big");   // an orphan from a dig cut off halfway: no row owns it

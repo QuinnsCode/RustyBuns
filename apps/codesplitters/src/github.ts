@@ -111,29 +111,83 @@ export async function submodules(repo: string, sha: string, token?: string) {
   return found.filter((m) => m !== null);
 }
 
+/** git's ref list for a public repo on github.com, not the API (see gitRefs). Null when GitHub won't list it. */
+async function gitAdvert(repo: string) {
+  const res = await fetch(`https://github.com/${repo}.git/info/refs?service=git-upload-pack`, { headers: { "user-agent": "git/2.45 codesplitters" } });
+  return res.ok ? res.text() : null;
+}
+
 /**
  * A public repo's default branch and its tip, from git's own ref list on github.com rather than
  * the API: without a token, the API's 60-an-hour limit is per IP, and Cloudflare's are shared,
  * so it's usually spent. Null when GitHub won't list it (missing, or private).
  */
 export async function gitRefs(repo: string): Promise<{ branch: string; sha: string } | null> {
-  const res = await fetch(`https://github.com/${repo}.git/info/refs?service=git-upload-pack`, { headers: { "user-agent": "git/2.45 codesplitters" } });
-  if (!res.ok) return null;
-  const text = await res.text();
-  const m = /([0-9a-f]{40}) HEAD\0[^\n]*?symref=HEAD:refs\/heads\/(\S+)/.exec(text);
+  const m = /([0-9a-f]{40}) HEAD\0[^\n]*?symref=HEAD:refs\/heads\/(\S+)/.exec((await gitAdvert(repo)) ?? "");
   return m ? { sha: m[1]!, branch: m[2]! } : null;
 }
 
-/** The commit at the tip of `repo`'s `branch`. */
-export async function githubHead(repo: string, branch: string, token?: string) {
+/** A public repo's commit at the tip of `branch`, from git's ref list. */
+async function gitTip(repo: string, branch: string) {
+  const want = ` refs/heads/${branch}`;
+  for (const line of ((await gitAdvert(repo)) ?? "").split("\n")) {
+    const m = /([0-9a-f]{40})( [^\0]*)/.exec(line);
+    if (m?.[2] === want) return m[1]!;
+  }
+  return null;
+}
+
+/** RFC 2047's =?charset?B|Q?...?= words in a mail header, as text. */
+const unmime = (s: string) => s.replace(/=\?([^?]+)\?([bq])\?([^?]*)\?=\s*/gi, (_, cs: string, enc: string, t: string) => {
+  const bytes = enc.toLowerCase() === "b" ? Uint8Array.from(atob(t), (c) => c.charCodeAt(0))
+    : Uint8Array.from(t.replace(/_/g, " ").replace(/=([0-9a-f]{2})/gi, (_m, h: string) => String.fromCharCode(parseInt(h, 16))), (c) => c.charCodeAt(0));
+  try { return new TextDecoder(cs).decode(bytes); } catch { return t; }
+});
+
+/**
+ * A public commit's message and author from its .patch on github.com, which isn't the API: the
+ * mail header and message, read up to the diff and no further. Null when GitHub won't give one.
+ */
+async function gitCommit(repo: string, sha: string) {
+  const res = await fetch(`https://github.com/${repo}/commit/${sha}.patch`, { headers: { "user-agent": "codesplitters" } });
+  if (!res.ok || !res.body) return null;
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let text = "";
+  while (!/^---$/m.test(text) && text.length < 64 * 1024) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    text += value;
+  }
+  await reader.cancel().catch(() => {});
+  const blank = text.indexOf("\n\n");
+  if (!text.startsWith("From ") || blank < 0) return null;
+  const head = text.slice(0, blank).replace(/\n[ \t]+/g, " ");
+  const field = (k: string) => new RegExp(`^${k}: (.*)$`, "m").exec(head)?.[1];
+  const from = /^(.*?)\s*<([^>]*)>$/.exec(unmime(field("From") ?? "")), subject = unmime(field("Subject") ?? "").replace(/^\[PATCH[^\]]*\]\s*/, "");
+  const body = text.slice(blank + 2).split(/^---$/m)[0]!.trim();
+  if (!subject) return null;
+  return { message: body ? `${subject}\n\n${body}` : subject, author: { name: from?.[1]?.replace(/^"|"$/g, ""), email: from?.[2], date: field("Date") } };
+}
+
+/**
+ * The commit at the tip of `repo`'s `branch`. Without a token it asks github.com, not the
+ * API (#386): git for the tip, the commit's .patch for who and why.
+ */
+export async function githubHead(repo: string, branch: string, token?: string): Promise<{ sha: string; message: string; author?: { name?: string; email?: string; date?: string } }> {
+  if (!token) {
+    const sha = await gitTip(repo, branch);
+    if (!sha) throw new Error(`GitHub has no public ${repo} with a ${branch} branch`);
+    return { sha, ...((await gitCommit(repo, sha).catch(() => null)) ?? { message: `${branch} on GitHub` }) };
+  }
   const head = await gh(`/repos/${repo}/commits/${branch}`, token);
   if (!head.ok) throw new Error(`GitHub said ${head.status} for ${repo}'s ${branch}`);
   const c = (await head.json()) as { sha: string; commit: { message: string; author?: { name?: string; email?: string; date?: string } } };
   return { sha: c.sha, message: c.commit.message, author: c.commit.author };
 }
 
-/** GitHub's tarball of `repo` at `sha`. */
-export const githubTarball = (repo: string, sha: string, token?: string) => gh(`/repos/${repo}/tarball/${sha}`, token);
+/** GitHub's tarball of `repo` at `sha`: without a token, straight from codeload, where the API sends you anyway. */
+export const githubTarball = (repo: string, sha: string, token?: string) =>
+  token ? gh(`/repos/${repo}/tarball/${sha}`, token) : fetch(`https://codeload.github.com/${repo}/tar.gz/${sha}`, { headers: { "user-agent": "codesplitters" } });
 
 /**
  * Import `repo`'s `branch` at depth 1 into Artifact `target`. Past Cloudflare's
