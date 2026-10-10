@@ -111,6 +111,23 @@ export function detectPm(root: string): PackageManager {
   return "npm";
 }
 
+/**
+ * vite's `root`, which `--outDir` resolves against: "public", resolve(__dirname, "public"),
+ * or the shorthand `root,` after `const root = ...`. Null when unset or not read.
+ */
+export function viteRoot(src: string): string | null {
+  const EXPR = String.raw`((?:[\w.]*(?:resolve|join))\([^)]*\)|["'][^"']+["'])`;
+  let expr = src.match(new RegExp(String.raw`\broot:\s*` + EXPR))?.[1];
+  if (!expr && /^\s*root\s*,/m.test(src)) expr = src.match(new RegExp(String.raw`\bconst\s+root\s*=\s*` + EXPR))?.[1];
+  if (!expr) return null;
+  const literal = expr.trim().match(/^["']([^"']+)["']$/)?.[1];
+  if (literal) return literal.replace(/^\.\/?/, "") || null;
+  // resolve(__dirname, "public") / path.join(import.meta.dirname, "src", "app"): the literal parts.
+  const call = expr.match(/\b(?:resolve|join)\(([^)]*)\)/)?.[1];
+  const parts = call ? [...call.matchAll(/["']([^"']+)["']/g)].map((m) => m[1]!) : [];
+  return parts.length ? parts.join("/").replace(/^\.\/?/, "") || null : null;
+}
+
 export function inferVite(root: string) {
   const cands = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"];
   const configPath = cands.map((c) => join(root, c)).find(existsSync) ?? null;
@@ -119,7 +136,7 @@ export function inferVite(root: string) {
   if (!configPath) return out;
   const src = readFileSync(configPath, "utf8");
   out.plugins = vitePlugins(src);
-  out.root = src.match(/\broot:\s*["']([^"']+)["']/)?.[1] ?? null;
+  out.root = viteRoot(src);
   out.outDir = src.match(/\boutDir:\s*["']([^"']+)["']/)?.[1] ?? null;
   for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*(?:path\.)?resolve\([^,]+,\s*["']([^"']+)["']\)/g)) out.aliases[m[1]!] = m[2]!;
   for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*["']([^"']+)["']/g)) out.aliases[m[1]!] ??= m[2]!;

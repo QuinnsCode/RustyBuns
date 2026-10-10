@@ -4,7 +4,7 @@
 import { $ } from "bun";
 import { mkdir, rm } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys } from "./wrangler.ts";
 import { generateAlchemy } from "./gen/alchemy.ts";
@@ -218,16 +218,19 @@ async function init() {
  * your `vite build` output, served by the Bun host, plus an optional host
  * module for the backend routes the app needs (files, native, exports).
  */
-async function initSpa(inf: ReturnType<typeof infer>, clientBuild = `${inf.execCmd("vite")} build --outDir dist/ui --emptyOutDir`) {
+async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   const astro = inf.framework === "astro";
+  // vite resolves --outDir against its `root`, so a root of public/ would build into public/dist/ui.
+  const outDir = (d: string) => inf.vite.root ? relative(inf.vite.root, d).split("\\").join("/") : d;
+  clientBuild ??= `${inf.execCmd("vite")} build --outDir ${outDir("dist/ui")} --emptyOutDir`;
   // The same build, put on the web as an assets-only Worker: Cloudflare serves the files, no
   // code of ours runs. Not for an app with a Node server: its frontend alone wouldn't work.
   const web = inf.serverDeps.length ? null : {
     assets: "dist/web",
     compatibilityDate: new Date().toISOString().slice(0, 10),
     compatibilityFlags: [],
-    build: astro ? `${inf.execCmd("astro")} build --outDir dist/web` : `${inf.execCmd("vite")} build --outDir dist/web --emptyOutDir`,
+    build: astro ? `${inf.execCmd("astro")} build --outDir dist/web` : `${inf.execCmd("vite")} build --outDir ${outDir("dist/web")} --emptyOutDir`,
     notFoundHandling: astro ? "404-page" : "single-page-application",
   };
   const cfg = {
