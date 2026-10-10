@@ -82,8 +82,15 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       const build = isBuildFile(f.path);
       if (f.merged) return { path: f.path, merged: true, build, ops: [], conflicts: [] };
       const m = await mergeFile(env, owner, repo, branch, f.path, user ?? "anon", undefined, true);
-      const lines = build ? changedLines(await (await toFile(env, owner, repo, f.path, user ?? "anon", "file")).json() as Doc, m.ops ?? []) : undefined;
-      return { path: f.path, merged: false, build, ops: m.ops ?? [], conflicts: m.conflicts, ...(lines && { lines }) };
+      let ops = m.ops ?? [], conflicts = m.conflicts;
+      if (!a.write) {
+        // Outside the crew, main's private lines stay blank here too.
+        const secret = new Set(await (await toFile(env, owner, repo, f.path, "upstream", "private")).json() as string[]);
+        ops = ops.map((o: any) => o.kind === "set" && secret.has(o.line) ? { ...o, text: "" } : o);
+        conflicts = conflicts.map((c) => secret.has(c.line) ? { ...c, base: "", main: c.main === null ? null : "", branch: c.branch === null ? null : "" } : c);
+      }
+      const lines = build ? changedLines(await (await toFile(env, owner, repo, f.path, user ?? "anon", "file")).json() as Doc, ops) : undefined;
+      return { path: f.path, merged: false, build, ops, conflicts, ...(lines && { lines }) };
     }));
     return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, files: out });
   }

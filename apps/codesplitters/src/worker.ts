@@ -32,7 +32,7 @@ async function access(env: Env, owner: string, repo: string, user: string | null
 }
 
 // What a page or agent may ask a file's DO directly; forks and merges go through the branch routes.
-const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws"]);
+const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private"]);
 
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
 const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
@@ -204,28 +204,38 @@ const app = {
         if (branch && !(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
         // A branch catalogues when it merges into main, not before.
         if (branch && p[5] === "commit") return json({ error: "merge the branch, then commit main" }, 400);
+        if (branch && p[5] === "private") return json({ error: "mark lines private on main" }, 400);
         const m = branch ? await materializeOn(env, owner, repo, branch, path) : await materialize(env, owner, repo, path);
         if ("error" in m) return json({ error: m.error }, m.status);
-        const writes = p[5] === "ops" || p[5] === "commit";
+        const writes = p[5] === "ops" || p[5] === "commit" || (p[5] === "private" && req.method === "POST");
         if (writes && !a.write) return json({ error: "no write access" }, 403);
         if (p[5] === "ws") {
           // The DO learns who this socket is, and whether it may write, from us.
           const h = new Headers(req.headers);
           h.set("x-codesplitters-user", user ?? "anon");
           h.set("x-codesplitters-write", a.write ? "1" : "0");
+          h.set("x-codesplitters-crew", a.write ? "1" : "0");
           return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
         }
-        const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: writes ? await req.text() : undefined },
+        // Only the crew reads private lines; everyone else gets placeholders.
+        const sent = writes ? await req.text() : undefined;
+        const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitters-crew": a.write ? "1" : "0" } },
           url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "", branch);
+        if (p[5] === "private" && req.method === "POST" && res.ok) {
+          // Open branches' copies of the file hide the same lines.
+          const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all();
+          for (const { name } of results as { name: string }[]) await toFile(env, owner, repo, path, user!, "private", { method: "POST", body: sent }, "", name);
+          return res;
+        }
         if (p[5] === "commit" && res.ok) {
-          // Index what was committed, not every keystroke.
-          const { commit, content } = (await res.json()) as { commit: { message: string }; content: string };
+          // Index what was committed, not every keystroke; git and search get private lines blank.
+          const { commit, published } = (await res.json()) as { commit: { message: string }; published: string };
           await env.DB.batch([
             env.DB.prepare("DELETE FROM file_search WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path),
-            env.DB.prepare("INSERT INTO file_search (owner, repo, path, content) VALUES (?, ?, ?, ?)").bind(owner, repo, path, content),
+            env.DB.prepare("INSERT INTO file_search (owner, repo, path, content) VALUES (?, ?, ?, ?)").bind(owner, repo, path, published),
           ]);
           // The catalogue entry stands even if the push fails; the next one carries it.
-          const git = await pushCatalogue(env, owner, repo, path, content, user!, commit.message).catch((e: Error) => ({ error: e.message }));
+          const git = await pushCatalogue(env, owner, repo, path, published, user!, commit.message).catch((e: Error) => ({ error: e.message }));
           // The owner's own commit ships, when they turned that on (deploy.ts).
           if (git && !("error" in git)) await deployOnCommit(env, owner, repo, user);
           return json({ ...commit, git });
@@ -277,9 +287,10 @@ const app = {
       if (!pl) return json({ error: "not found" }, 404);
       const { results } = await env.DB.prepare("SELECT * FROM tracks WHERE playlist = ? ORDER BY id").bind(pl.id).all();
       const tracks = await Promise.all(results.map(async (t: any) => {
-        // A track pointing into a repo that went private just disappears for you.
-        if (!(await access(env, t.owner, t.repo, user)).read) return null;
-        const doc = await (await toFile(env, t.owner, t.repo, t.path, user ?? "anon", "file")).json() as { lines: { id: string; text: string; by: string }[] };
+        // A track pointing into a repo that went private just disappears for you; private lines are placeholders unless you're crew.
+        const can = await access(env, t.owner, t.repo, user);
+        if (!can.read) return null;
+        const doc = await (await toFile(env, t.owner, t.repo, t.path, user ?? "anon", "file", { headers: { "x-codesplitters-crew": can.write ? "1" : "0" } })).json() as { lines: { id: string; text: string; by: string }[] };
         // Follow the lines by id; if either end was deleted, fall back to the numbers.
         const i = doc.lines.findIndex((l) => l.id === t.from_id), j = doc.lines.findIndex((l) => l.id === t.to_id);
         const [a, b] = i >= 0 && j >= i ? [i, j + 1] : [t.from_line - 1, t.to_line];

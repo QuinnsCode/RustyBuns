@@ -160,6 +160,8 @@
   .ln.sel { background: var(--select); } .ln.sel .n { color: var(--fg); box-shadow: inset 2px 0 0 var(--fg); }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   .ln.claim .t { box-shadow: inset 2px 0 0 var(--accent); }
+  .ln.priv .n { box-shadow: inset 2px 0 0 var(--faint); } .ln .ph { color: var(--faint); font-style: italic; }
+  .ln.priv .t::after { content: "private"; margin-left: 10px; padding: 0 6px; border: 1px solid var(--border-2); border-radius: 9px; font-size: 10.5px; color: var(--faint); }
   /* A cut's gutter: each test's line, and the lines a failure points at. */
   .ln.pass .n { color: #2f9e44; box-shadow: inset 3px 0 #2f9e44; } .ln.fail .n { color: #cf222e; box-shadow: inset 3px 0 #cf222e; }
   .runsum.pass { color: #2f9e44; } .runsum.fail { color: #cf222e; }
@@ -561,7 +563,8 @@ function table(tree, href) {
   return `<div class="table">${tree.entries.map((e) => `<a class="rowlink" href="${href(e)}">${e.type === "dir" ? icon("folder", "ic-dir") : icon("file", "ic-file")}<span>${esc(e.name)}</span></a>`).join("")}</div>`;
 }
 function codeRows(lines, { blame = true, start = 1 } = {}) {
-  return lines.map((l, i) => `<div class="ln" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${esc(l.text) || " "}</span></div>`).join("");
+  // A private line reaches people outside the crew blank: say so instead of showing nothing.
+  return lines.map((l, i) => `<div class="ln${l.private ? " priv" : ""}" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${l.private && !l.text ? '<span class="ph">private line: only the crew can read it</span>' : esc(l.text) || " "}</span></div>`).join("");
 }
 /** Cut lines out: the picked pieces, plus "path:from-to" lines from the "add these lines too" box. */
 function cutLines(owner, repo, pieces, more = "", note = "") {
@@ -1036,6 +1039,7 @@ const views = {
         ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
         ${r.canWrite ? `<div class="pop"><button class="btn" id="cut" disabled title="select lines first: click a line number, shift-click another">${icon("scissors")}Cut</button><form class="panel" id="cut-form" hidden style="width:380px"><b>Cut <span id="cut-range"></span> out</b><span class="muted" style="font-size:13px">Just these lines and the imports they use, as a tiny repo on a branch of its own: run its tests, share it, merge a fix back.</span><textarea name="more" rows="3" placeholder="add these lines too, a range a line:&#10;test/sum.test.ts:10-24"></textarea><input name="note" placeholder="what it shows (optional)"><button class="btn primary">${icon("scissors")}Cut</button></form></div>` : ""}
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
+        ${r.canWrite ? `<button class="btn" id="lock" disabled title="select lines first. Only the crew reads a private line; everyone else, git and search get it blank">${icon("lock")}<span>Make private</span></button>` : ""}
         ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
         ${r.canWrite ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
       body: `<div class="code" id="lines"></div>`,
@@ -1074,10 +1078,13 @@ const views = {
     selectable(box, (range) => {
       sel = range;
       const label = range[0] === range[1] ? `line ${range[0]}` : `lines ${range[0]}–${range[1]}`;
-      for (const b of ["#share", "#collect", "#cut"]) if ($(b)) $(b).disabled = false;
+      for (const b of ["#share", "#collect", "#lock", "#cut"]) if ($(b)) $(b).disabled = false;
+      if ($("#lock")) $("#lock span").textContent = selPrivate() ? "Make public" : "Make private";
       for (const b of ["#share-range", "#cut-range"]) if ($(b)) $(b).textContent = label;
       $("#st-sel").textContent = range[0] === range[1] ? `Ln ${range[0]}` : `Ln ${range[0]}–${range[1]}`;
     });
+    const selLines = () => sel ? doc.lines.slice(sel[0] - 1, sel[1]) : [];
+    const selPrivate = () => selLines().length > 0 && selLines().every((l) => l.private);
     // The game's "smash the removed lines": a revision pair of this file.
     const smashHref = (from, to) => `/play.html#r/${owner}/${repo}?path=${encodeURIComponent(path)}&from=${from}&to=${to}`;
     // Newest first, so a commit's parent is the next one down.
@@ -1145,6 +1152,11 @@ const views = {
         finally { go.disabled = false; }
       });
     }
+    $("#lock")?.addEventListener("click", async () => {
+      const on = !selPrivate();
+      await api(`${base}/private${q}`, { lines: selLines().map((l) => l.id), private: on });
+      toast(on ? "Only the crew can read those lines now. Text already pushed stays in git's history" : "Those lines are public again");
+    });
     if ($("#share")) {
       popover($("#share"));
       $("#share-form").addEventListener("submit", async (e) => {
@@ -1188,7 +1200,7 @@ const views = {
     const applyLocal = (a) => {
       const i = doc.lines.findIndex((l) => l.id === (a.op.kind === "insert" ? a.op.after : a.line));
       if (a.op.kind === "insert") doc.lines.splice(a.op.after === null ? 0 : i + 1, 0, { id: a.line, text: a.op.text, by: a.by, rev: a.rev });
-      else if (a.op.kind === "set") doc.lines[i] = { id: a.line, text: a.op.text, by: a.by, rev: a.rev };
+      else if (a.op.kind === "set") doc.lines[i] = { ...doc.lines[i], id: a.line, text: a.op.text, by: a.by, rev: a.rev };
       else doc.lines.splice(i, 1);
       doc.rev = a.rev;
     };
@@ -1201,6 +1213,13 @@ const views = {
       }
       if (msg.type === "presence") return $("#who-here").textContent = msg.who.length > 1 ? msg.who.map((w) => "@" + w).join(", ") : "just you";
       if (msg.type === "commit") return drawCommits(await api(`${base}/commits${q}`));
+      // Lines went private or public: the server says what this reader may see.
+      if (msg.type === "private") {
+        doc = await api(`${base}/file${q}`);
+        if (sel && $("#lock")) $("#lock span").textContent = selPrivate() ? "Make public" : "Make private";
+        if (viewing === null && !box.querySelector(".ln input")) draw(doc);
+        return;
+      }
       if (msg.type !== "ops") return;
       // In order: apply in place. Missed something (a gap): fetch the whole file.
       if (msg.applied[0]?.rev === doc.rev + 1) msg.applied.forEach(applyLocal);
@@ -1316,6 +1335,7 @@ const HOME_CMDS = [
   ["share-2", "Share some lines", "A live link to a range, even from a private repo.", "POST /api/repos/:o/:r/shares"],
   ["user-plus", "Invite your crew", "People and agents, same door.", "POST /api/repos/:o/:r/collaborators"],
   ["lock", "Public or private", "Flip a repo either way.", "PUT /api/repos/:o/:r"],
+  ["eye-off", "Private lines", "Hide some lines of a public repo from everyone but the crew, git included.", "POST /api/repos/:o/:r/do/private"],
   ["git-commit-horizontal", "Commit to git", "Pushes a real commit to the repo's Artifact.", "POST /api/repos/:o/:r/do/commit"],
   ["terminal", "Clone with git", "A real remote, with a read token that lasts an hour.", "GET /api/repos/:o/:r"],
   ["history", "Time travel", "Replay a file to any edit, with blame per line.", "GET /api/repos/:o/:r/do/at?rev="],
@@ -1422,6 +1442,7 @@ async function commands() {
       const s = await api(`/repos/${c.owner}/${c.repo}/shares`, { path: c.path, from, to: to || from });
       copy(`${location.origin}/#/s/${s.id}`, `Link to lines ${s.from}–${s.to} copied`);
     }, c.sel ? null : "which lines, like 4-12");
+    if (c.canWrite && range) add("This file", "lock", `${$("#lock span")?.textContent ?? "Make private"}: ${range}`, `POST /api/repos/${c.owner}/${c.repo}/do/private`, async () => $("#lock").click());
     if (c.canWrite) add("This file", "scissors", range ? `Cut ${range} out` : "Cut lines out…", `POST /api/repos/${c.owner}/${c.repo}/cuts`, async (arg) => {
       const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
       location.hash = "#/c/" + (await cutLines(c.owner, c.repo, [{ path: c.path, from, to: to || from }])).id;
