@@ -20,6 +20,7 @@ import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-sc
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { Profiler } from "./profile.ts";
 import { adoptNote, alchemyStage, linkSharedState, lockState, unlinkSharedState } from "./state.ts";
+import { commitsBehindMain, statefulDeletes } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
@@ -376,12 +377,36 @@ async function checkStack(prof: Profiler, want: CheckerName | "auto") {
   }
 }
 
+/**
+ * GUARDRAIL (#363): worktrees share one Alchemy state, so a deploy from a stale
+ * branch undoes whatever main added since. A live deploy (targets.edge.adopt)
+ * from a HEAD behind origin/main is refused without --force; any deploy that
+ * deletes a data-holding resource is refused without --allow-delete. `plan`
+ * prints the same findings as warnings.
+ */
+function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { force: boolean; allowDelete: boolean }) {
+  const problems: string[] = [];
+  const behind = cfg.targets.edge?.adopt && !waive.force ? commitsBehindMain(process.cwd()) : null;
+  if (behind) problems.push(`HEAD is ${behind} commit${behind === 1 ? "" : "s"} behind origin/main, and this is a live site (targets.edge.adopt): ` +
+    `deploying would roll back what main shipped since. Rebase on origin/main first, or pass --force.`);
+  const deletes = waive.allowDelete ? [] : statefulDeletes(process.cwd(), cfg, stage, readFileSync(".rustybuns/alchemy.run.ts", "utf8"));
+  if (deletes.length) problems.push(`this deploy would delete ${deletes.join(", ")}, and the data in ${deletes.length === 1 ? "it" : "them"}. ` +
+    `If ${deletes.length === 1 ? "it was" : "they were"} added on a branch this one lacks, rebase first; to delete on purpose, pass --allow-delete.`);
+  if (!problems.length) return;
+  if (sub === "plan") { console.log(problems.map((p) => "warning: " + p).join("\n") + "\n"); return; }
+  console.error(problems.join("\n"));
+  process.exit(2);
+}
+
 async function alchemy(sub: string, rawArgs: string[]) {
   const cfg = await loadConfig();
   if (!cfg.worker && !cfg.targets.box) throw new Error("desktop-only app: no edge or box stack to plan or deploy");
   const profiled = sub === "plan" || sub === "deploy";
   if (profiled) { checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
-  const { on: check, checker, rest: args } = checkFlags(rawArgs, profiled);
+  const { on: check, checker, rest: flagged } = checkFlags(rawArgs, profiled);
+  // Ours, not Alchemy's: they waive the guards below.
+  const force = flagged.includes("--force"), allowDelete = flagged.includes("--allow-delete");
+  const args = flagged.filter((a) => a !== "--force" && a !== "--allow-delete");
   const prof = new Profiler(sub);
   await prof.step("generate", () => generate({ adopt: false }));
   if (cfg.state === "project") unlinkSharedState(process.cwd());
@@ -391,6 +416,7 @@ async function alchemy(sub: string, rawArgs: string[]) {
   }
   const note = profiled ? adoptNote(process.cwd(), cfg, alchemyStage(args)) : null;
   if (note) console.log(note + "\n");
+  if (profiled) guardDeploy(sub, cfg, alchemyStage(args), { force, allowDelete });
   // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
   if (profiled && cfg.targets.box) {
     console.log(`built ${await prof.step("build box", () => buildBox(cfg))}`);
@@ -507,6 +533,10 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              need, when wrangler is installed; the Alchemy profile otherwise
                              type checks the generated stack first (--no-check skips)
   deploy [--yes]             alchemy deploy; refuses unless plan ran for this exact config
+         [--force]           a live site (targets.edge.adopt) also refuses a HEAD behind
+                             origin/main unless --force
+         [--allow-delete]    and any deploy refuses to delete a D1, R2, KV, queue, container,
+                             volume or Durable Object class unless --allow-delete
                              plan and deploy list the stack's billable resources first, and
                              refuse a large Hetzner server without box.allowLargeServer (COSTS.md)
   destroy                    alchemy destroy: removes everything the stack created
