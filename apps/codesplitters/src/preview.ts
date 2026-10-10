@@ -26,8 +26,14 @@ export interface Run { id: string; at: number; stage: string; steps: Step[]; url
 
 /** Run a command, streaming its output; resolves to the exit code. */
 export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Promise<number>;
-/** Where a run's commands go. `workdir`: a fresh directory the runner owns and cleans up (a deploy container's), used in place of a temp dir here. */
-export interface Runner { exec: Exec; fetch: (url: string) => Promise<{ status: number }>; workdir?: string }
+/**
+ * Where a run's commands go. `workdir`: a fresh directory the runner owns and cleans up (a deploy container's), used in place of a temp dir here.
+ * `state`: for a runner whose machine forgets, put the app's Alchemy state back before deploy and keep it after, so the next deploy updates the same stack.
+ */
+export interface Runner {
+  exec: Exec; fetch: (url: string) => Promise<{ status: number }>; workdir?: string;
+  state?: { restore(app: string): Promise<void>; keep(app: string): Promise<void> };
+}
 
 export const STEPS: StepKey[] = ["clone", "install", "deploy", "check", "destroy"];
 const MAX_OUT = 60_000;
@@ -143,7 +149,10 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
     }
     deployed = true;   // from here a half-made stack may exist, so destroy always runs
     const rb = (sub: string) => ({ cmd: ["bun", "x", "rustybuns", sub, "--yes", "--stage", run.stage], cwd: app });
+    await runner.state?.restore(app);
     const ok = await go("deploy", [rb("deploy")]);
+    // Kept even when the deploy failed: a half-made stack is in it too.
+    await runner.state?.keep(app).catch((e: Error) => { step("deploy").out += `\ncouldn't keep the Alchemy state: ${e.message}\n`; });
     run.url = urlIn(step("deploy").out);
     if (!ok && LOGIN_HINT.test(step("deploy").out)) run.note = "the deploy wasn't logged in: run `rustybuns login cloudflare` (or railway, hetzner) on this machine";
     if (!ok) skip("check");

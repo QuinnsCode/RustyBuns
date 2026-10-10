@@ -31,7 +31,7 @@ export function hostedWhy(env: Env, user: string | null): string | null {
   return null;
 }
 
-const b64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
+const b64 = (b: Uint8Array) => { let s = ""; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
 async function aes(env: Env) {
@@ -40,21 +40,28 @@ async function aes(env: Env) {
   if (raw.length !== 32) throw new Error("DEPLOY_SECRETS_KEY must be 32 bytes in base64 (openssl rand -base64 32)");
   return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
-const aad = (owner: string, repo: string) => new TextEncoder().encode(`codesplitters deploy key ${owner}/${repo}`);
+/** Bound to what it is and whose: a sealed value opens only as that. */
+const aad = (what: string) => new TextEncoder().encode(`codesplitters ${what}`);
 
-export async function seal(env: Env, owner: string, repo: string, key: DeployKey): Promise<string> {
+async function sealText(env: Env, what: string, text: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad(owner, repo) }, await aes(env), new TextEncoder().encode(JSON.stringify(key))));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad(what) }, await aes(env), new TextEncoder().encode(text)));
   const out = new Uint8Array(12 + ct.length);
   out.set(iv); out.set(ct, 12);
   return b64(out);
 }
 
-export async function unseal(env: Env, owner: string, repo: string, sealed: string): Promise<DeployKey> {
+async function unsealText(env: Env, what: string, sealed: string): Promise<string> {
   const raw = unb64(sealed);
-  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: aad(owner, repo) }, await aes(env), raw.slice(12));
-  return JSON.parse(new TextDecoder().decode(pt));
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: aad(what) }, await aes(env), raw.slice(12)));
 }
+
+export const seal = (env: Env, owner: string, repo: string, key: DeployKey) => sealText(env, `deploy key ${owner}/${repo}`, JSON.stringify(key));
+export const unseal = async (env: Env, owner: string, repo: string, sealed: string): Promise<DeployKey> => JSON.parse(await unsealText(env, `deploy key ${owner}/${repo}`, sealed));
+
+/** A repo's Alchemy state between hosted deploys (deploy-runner.ts): it holds the app's secrets, so it's sealed too. */
+export const sealState = (env: Env, owner: string, repo: string, files: Record<string, string>) => sealText(env, `alchemy state ${owner}/${repo}`, JSON.stringify(files));
+export const unsealState = async (env: Env, owner: string, repo: string, sealed: string): Promise<Record<string, string>> => JSON.parse(await unsealText(env, `alchemy state ${owner}/${repo}`, sealed));
 
 /** The repo's key, unsealed: for a deploy run only. */
 export async function deployKey(env: Env, owner: string, repo: string): Promise<(DeployKey & { last4: string }) | null> {

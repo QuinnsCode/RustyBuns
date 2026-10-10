@@ -16,11 +16,16 @@
 // leaving time to destroy the container and log the result. If the alarm is cut
 // off anyway, its retry fails the run rather than deploying a second time.
 //
+// The container forgets, so the repo's Alchemy state is kept here between runs,
+// sealed under DEPLOY_SECRETS_KEY (it holds the app's secrets), and put back
+// before each deploy: the next deploy updates the same stack instead of making
+// a second one under a new name.
+//
 //   POST /start {owner, repo, by, trigger}   from deploy.ts, after its checks
 //   GET  /run                                the run going now, or the last one
 
 import { begin, finish, remoteFor } from "./deploy.ts";
-import { deployKey, keyInfo } from "./deploy-keys.ts";
+import { deployKey, keyInfo, sealState, unsealState } from "./deploy-keys.ts";
 import { json, type Env } from "./env.ts";
 import { preview, type Run, type Runner } from "./preview.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
@@ -29,6 +34,15 @@ interface Job { owner: string; repo: string; run: Run; production: boolean; agai
 
 /** A run's share of the alarm's 15 minutes, leaving room to clean up after it. */
 export const RUN_BUDGET_MS = 13 * 60_000;
+/** Under a Durable Object's 2 MB per stored value. */
+const STATE_MAX = 1_900_000;
+
+/** The deploy container's POST /state (deploy-sandbox/server.mjs). */
+async function call(c: ContainerApi, body: unknown) {
+  const res = await portFetch(c, "/state", JSON.stringify(body));
+  if (!res.ok) throw new Error(`the container's /state: ${res.status} ${await res.text()}`);
+  return (await res.json()) as unknown;
+}
 
 /** The slice of a Durable Object's state we use. */
 export interface RunnerState {
@@ -96,6 +110,19 @@ export class DeployRunner {
           return r.code ?? 1;
         },
         fetch: (u) => fetch(u, { redirect: "manual" }),
+        state: {
+          restore: async (app) => {
+            const sealed = await this.ctx.storage.get<string>("state");
+            if (sealed) await call(c, { cwd: app, files: await unsealState(this.env, owner, repo, sealed) });
+          },
+          keep: async (app) => {
+            const { files } = (await call(c, { cwd: app })) as { files: Record<string, string> };
+            if (!Object.keys(files).length) return;
+            const sealed = await sealState(this.env, owner, repo, files);
+            if (sealed.length > STATE_MAX) throw new Error(`${sealed.length} bytes sealed, over the ${STATE_MAX} this keeps`);
+            await this.ctx.storage.put("state", sealed);
+          },
+        },
       };
       await preview(runner, remote, run, { keep: true, allowAdopt: job.production });
     } catch (e) {
