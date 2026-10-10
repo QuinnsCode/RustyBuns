@@ -5,6 +5,10 @@
 //   alias     a name in a cookie, no password. The desktop app (one person on
 //             their own machine), tests and demos.
 // Either way the rest of the app sees one thing: a handle (users.name) or null.
+//
+// Email accounts get a verification link at signup and can reset a forgotten
+// password when the Worker can send mail (EMAIL and EMAIL_FROM). Verified, an
+// email account gets handle grants and ADMIN_EMAIL like GitHub and Google do.
 
 import { betterAuth } from "better-auth";
 import { json, NAME, type Env } from "./env.ts";
@@ -18,13 +22,44 @@ export function providers(env: Env) {
   return out;
 }
 
+/** EMAIL and EMAIL_FROM are both set: verification and reset links go out. */
+export const mailOn = (env: Env) => !!(env.EMAIL && env.EMAIL_FROM);
+
+/**
+ * One account email. A failure is logged, not thrown: a reset request answers the
+ * same whether the address has an account or not, so an error mustn't tell them apart.
+ */
+async function mail(env: Env, to: string, subject: string, lines: string[], link: string) {
+  const text = [...lines, "", link, "", "If this wasn't you, ignore this email."].join("\n");
+  const html = `${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}<p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p><p style="color:#57606a">If this wasn't you, ignore this email.</p>`;
+  try { await env.EMAIL!.send({ from: { email: env.EMAIL_FROM!, name: "codeSplitters" }, to, subject, text, html }); }
+  catch (e) { console.error("codeSplitters: account email failed", (e as { code?: string }).code ?? "", String((e as Error)?.message ?? e)); }
+}
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
 const make = (env: Env, origin: string) => betterAuth({
   database: env.DB,
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL ?? origin,
   basePath: "/api/auth",
   trustedOrigins: [env.BETTER_AUTH_URL ?? origin],
-  emailAndPassword: { enabled: true },
+  emailAndPassword: {
+    enabled: true,
+    ...(mailOn(env) ? {
+      sendResetPassword: ({ user, url }: { user: { email: string }; url: string }) =>
+        mail(env, user.email, "Reset your codeSplitters password", ["Someone asked to reset the password for this codeSplitters account. To pick a new one, open this link within the hour:"], url),
+      // A reset proves the inbox, so it signs every other session out.
+      revokeSessionsOnPasswordReset: true,
+    } : {}),
+  },
+  ...(mailOn(env) ? {
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: ({ user, url }: { user: { email: string }; url: string }) =>
+        mail(env, user.email, "Verify your codeSplitters email", ["Welcome to codeSplitters. To verify this email, open this link within the hour:"], url),
+    },
+  } : {}),
   socialProviders: {
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET } } : {}),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } } : {}),
@@ -64,7 +99,7 @@ type AuthUser = { id: string; name?: string; email?: string; emailVerified?: boo
 async function handleFor(env: Env, u: AuthUser) {
   const linked = await env.DB.prepare("SELECT name FROM users WHERE auth_id = ?").bind(u.id).first();
   if (linked) return linked.name as string;
-  // Anyone can type an email at signup, so a grant goes to a verified one (GitHub, Google).
+  // Anyone can type an email at signup, so a grant goes to a verified one (GitHub, Google, or a link we mailed).
   if (!u.email || !u.emailVerified) return null;
   const email = u.email.toLowerCase();
   // The site's owner (ADMIN_EMAIL) gets the first ADMINS handle, even a short one.
@@ -176,7 +211,10 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
     // Signed in but no handle yet: the page asks for one, with a free one to start from.
     const a = await account(req, env);
     const user = a?.handle ?? null;
+    // mail: the page offers a reset link. unverified: an email account that hasn't opened its link yet.
+    const unverified = mailOn(env) && a && a.user.email && !a.user.emailVerified ? { unverified: a.user.email } : {};
     return json({ mode: "accounts", user, providers: providers(env), ...(isAdmin(env, user) ? { admin: true } : {}),
+      ...(mailOn(env) ? { mail: true } : {}), ...unverified,
       ...(a && !a.handle ? { pick: { suggest: await suggest(env, a.user), email: a.user.email } } : {}) });
   }
   if (accountsOn(env) && p[1] === "handle") return handleRoutes(req, env, new URL(req.url));
