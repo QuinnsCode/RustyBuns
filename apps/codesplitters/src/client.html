@@ -330,6 +330,19 @@
 
   /* Profiles, collections, search. */
   .cards { display: grid; gap: 16px; padding-top: 20px; } .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  /* A profile: one header line, the repos and digging in the main column, collections and the page on the side. */
+  .prof { max-width: 1160px; padding-top: 16px; padding-bottom: 32px; }
+  .prof-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .prof-head h1 { margin: 0; font: 600 20px/1.2 var(--sans); letter-spacing: -0.02em; display: flex; align-items: center; gap: 6px; align-self: center; }
+  .prof-head .stat { font: 12px var(--mono); color: var(--faint); }
+  .prof-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+  .prof-grid .box > .body { padding: 8px 12px; }
+  .prof-grid .box > .body > p:first-child { margin-top: 0; }
+  .prof-grid aside .photo iframe { height: 160px; }
+  .list .when { margin-left: auto; font: 12px var(--mono); color: var(--faint); white-space: nowrap; }
+  .bar .barform { margin-left: auto; display: flex; gap: 6px; }
+  .bar .barform input, .bar .barform select { padding: 2px 8px; font-size: 12.5px; } .bar .barform input { width: 150px; } .bar .barform .btn { padding: 2px 8px; font-size: 12.5px; }
+  @media (max-width: 860px) { .prof-grid { grid-template-columns: 1fr; } .bar .barform { margin-left: 0; } }
   .photo iframe { width: 100%; height: 220px; border: 0; display: block; background: #fff; }
   .list a { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); text-decoration: none; } .list a:first-child { border-top: 0; }
   .list a:hover { color: var(--accent); }
@@ -548,6 +561,13 @@ function toast(msg) { const t = document.createElement("div"); t.className = "to
 async function copy(text, what = "Copied") { try { await navigator.clipboard.writeText(text); toast(what); } catch { prompt("Copy this:", text); } }
 
 async function refreshSession() { session = await api("/session").catch(() => session); }
+/** Just signed in: off to your own page (or wherever you are, while there's no handle yet). */
+function landHome() {
+  header();
+  if (!me()) return route();
+  const to = `#/u/${me()}`;
+  if (location.hash === to) route(); else location.hash = to;
+}
 
 function header() {
   const u = me();
@@ -560,7 +580,7 @@ function header() {
   }
   if (session.mode === "alias") {
     $("#who").innerHTML = `<form id="login"><input name="name" placeholder="your alias" required pattern="[a-z0-9]+(-[a-z0-9]+)*" size="12"><button class="btn primary">${icon("log-in")}Sign in</button></form>`;
-    $("#login").addEventListener("submit", async (e) => { e.preventDefault(); await api("/login", { name: e.target.name.value }); await refreshSession(); header(); route(); });
+    $("#login").addEventListener("submit", async (e) => { e.preventDefault(); await api("/login", { name: e.target.name.value }); await refreshSession(); landHome(); });
     return icons();
   }
   // Signed in, no handle yet (just back from GitHub or Google): pick one before anything else.
@@ -619,7 +639,7 @@ function signInDrawer(mode = "in") {
   for (const b of $("#drawer-body").querySelectorAll("[data-mode]")) b.addEventListener("click", () => signInDrawer(b.dataset.mode));
   for (const b of $("#drawer-body").querySelectorAll("[data-provider]"))
     b.addEventListener("click", async () => {
-      try { const r = await api("/auth/sign-in/social", { provider: b.dataset.provider, callbackURL: location.href }); location.href = r.url; }
+      try { const r = await api("/auth/sign-in/social", { provider: b.dataset.provider, callbackURL: location.origin + "/#/me" }); location.href = r.url; }
       catch (err) { $("#authmsg").textContent = String(err.message || err); }
     });
   $("#email").addEventListener("submit", async (e) => {
@@ -630,7 +650,7 @@ function signInDrawer(mode = "in") {
       // Better Auth wants a display name; the handle is picked next.
       await api(up ? "/auth/sign-up/email" : "/auth/sign-in/email",
         up ? { email: f.email.value, password: f.password.value, name: f.email.value.split("@")[0], callbackURL: "/?verified=1" } : { email: f.email.value, password: f.password.value });
-      await refreshSession(); header(); route();
+      await refreshSession(); landHome();
       if (!session.pick) drawer.close();
       if (up && session.mail) toast(`Check ${f.email.value} for a link to verify it`);
     } catch (err) { $("#authmsg").textContent = String(err.message || err); btn.disabled = false; }
@@ -726,7 +746,7 @@ function handleDrawer() {
     e.preventDefault();
     try {
       const r = await api("/handle", { name: input.value });
-      await refreshSession(); drawer.close(); header(); route(); toast(`Welcome, @${r.name}`);
+      await refreshSession(); drawer.close(); landHome(); toast(`Welcome, @${r.name}`);
     } catch (err) { $("#handlemsg").textContent = String(err.message || err); }
   });
   $("#notme").addEventListener("click", (e) => { e.preventDefault(); signOut(); });
@@ -1081,28 +1101,36 @@ const views = {
     const mine = name === me();
     const [{ user, repos, playlists }, { jobs }] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }]);
     ctx = { view: "u", name };
-    app.innerHTML = `<div class="repohead"><div class="wrap"><h1>${icon("user")}<b>@${esc(name)}</b></h1><div class="sub">${esc(user.bio) || "no notes yet"}</div></div></div>
-      <div class="wrap cards">
-      ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
-      <div class="two">
-        <div class="box"><div class="bar">${icon("book-marked")}<b>Repos</b></div><div class="body list">${repos.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}</a>`).join("") || '<span class="muted">no repos yet</span>'}
-          ${mine ? `<form id="newrepo" class="row" style="margin-top:10px"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn primary">${icon("plus")}Create</button></form>` : ""}</div></div>
-        ${mine ? digBox("Fork any public GitHub repo into a git repo you own here, then mod it line by line. Upstream never hears about it.") : ""}
-        <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
-          ${mine ? `<form id="newpl" class="row" style="margin-top:10px"><input name="title" placeholder="regexes of the lost city" required><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
-      </div>
-      ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">digs, previews and checks that waited in line this week, and how they came out</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
-      ${mine ? `<form id="theme" class="box"><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">any HTML and CSS, rendered in a sandbox (no scripts)</span></div><div class="body" style="display:grid;gap:8px">
+    const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
+    app.innerHTML = `<div class="wrap prof">
+      <div class="prof-head"><h1>${icon("user")}@${esc(name)}</h1><span class="muted">${esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
+        <span class="stat">${n(repos.length, "repo")} · ${n(playlists.length, "collection")}</span>
+        ${mine ? `<button class="btn ghost" id="editpage">${icon("palette")}Edit page</button>` : ""}</div>
+      ${mine ? `<form id="theme" class="box" hidden><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">any HTML and CSS, rendered in a sandbox (no scripts)</span></div><div class="body" style="display:grid;gap:8px">
         <input name="bio" placeholder="a line about you" value="${esc(user.bio)}">
-        <textarea name="theme_html" rows="6" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
-        <div><button class="btn primary">Save</button></div></div></form>` : ""}</div>`;
+        <textarea name="theme_html" rows="5" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
+        <div><button class="btn primary">Save</button></div></div></form>` : ""}
+      <div class="prof-grid"><div>
+        <div class="box"><div class="bar">${icon("book-marked")}<b>Repos</b>
+          ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn primary">${icon("plus")}Create</button></form>` : ""}</div>
+          <div class="body list">${repos.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet</span>'}</div></div>
+        ${mine ? digBox("Fork any public GitHub repo into one you own here, then mod it line by line. Upstream never hears about it.") : ""}
+        ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">this week's digs, previews and checks that waited in line</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
+      </div><aside>
+        ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
+        <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
+          ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
+      </aside></div></div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
+    $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
     $("#newrepo")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api("/repos", { name: f.name.value, visibility: f.visibility.value }); location.hash = `#/r/${me()}/${f.name.value}`; });
     wireDig();
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
     icons();
   },
+  // #/me: your own page, where signing in lands (or home, signed out).
+  me() { if (!me()) return views.home(); location.replace(`#/u/${me()}`); },
 
   /** The header every repo page shares: name, visibility, and its main actions. */
   repoHead(owner, repo, r) {
