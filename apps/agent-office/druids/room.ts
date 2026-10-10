@@ -31,6 +31,16 @@ export function fitDesks(colliders: Box[], panels: { minX: number; maxX: number;
   }
 }
 
+/**
+ * A board agent's kiosk keeps its own fence collider, from the wall to just in front of the kiosk, but its panel
+ * stands 0.4 m further into the room and 0.2 m wider either side: give the panel's footprint a collider of its own,
+ * `top` tall, once (the same footprint twice, as when the office rebuilds, adds nothing).
+ */
+export function fenceKiosk(colliders: Box[], panel: { minX: number; maxX: number; minZ: number; maxZ: number }, top: number) {
+  const same = (c: Box) => c.minX === panel.minX && c.maxX === panel.maxX && c.minZ === panel.minZ && c.maxZ === panel.maxZ;
+  if (!colliders.some(same)) colliders.push({ ...panel, bottom: 0, top });
+}
+
 /** Something on a wall: `u` is its centre along the wall (x on north/south, z on east/west). */
 export type Feature = { name: string; wall: Wall; u: number; width: number; y0: number; y1: number };
 
