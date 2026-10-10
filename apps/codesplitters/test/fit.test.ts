@@ -1,5 +1,9 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });

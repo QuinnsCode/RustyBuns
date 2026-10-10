@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,10 @@ import { DeployRunner } from "../src/deploy-runner.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the deploy image
 import { exec } from "../deploy-sandbox/server.mjs";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -100,7 +104,7 @@ async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: boolean
 const K = "/api/repos/ryan-quinn/lab/deploy/key", D = "/api/repos/ryan-quinn/lab/deploy";
 const settle = async (call: Call, n = 1) => {
   let d: any;
-  for (let i = 0; i < 300; i++) {
+  for (const end = performance.now() + 15_000; performance.now() < end;) {
     d = await (await call("ryan-quinn", D)).json();
     if (d.history.length >= n && d.history.every((h: any) => h.status !== "running")) break;
     await Bun.sleep(10);

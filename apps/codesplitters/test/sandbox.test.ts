@@ -1,9 +1,13 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { AgentSandbox, LOGINS, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { run, test as testCut } from "../sandbox/server.mjs";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });

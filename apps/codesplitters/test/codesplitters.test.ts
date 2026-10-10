@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { local as boot, type Call } from "../src/local.ts";
@@ -7,6 +7,10 @@ import { GameRoom } from "../src/game-do.ts";
 import { noodles } from "../src/noodles.ts";
 import { isBuildFile } from "../src/buildfiles.ts";
 import { ruleFor } from "../src/limits.ts";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
 
 // Every app instance makes a temp dir of git repos; remove them all at the end.
 const opened: { close(): void }[] = [];
@@ -342,10 +346,6 @@ describe("levels", () => {
   });
 });
 
-// Every signup hashes a real password (scrypt), a few hundred ms per test alone and
-// several times that under the full suite, so tests that sign people up get longer.
-const SIGNUPS = 20_000;
-
 /** The app with accounts on, and helpers to sign up, pick a handle and ask who you are. */
 async function accounts(extra: Record<string, unknown> = {}) {
   const origin = "http://codesplitters.local";
@@ -380,7 +380,7 @@ describe("accounts", () => {
     const me = await (await call(null, "/api/me", { headers: { cookie } })).json() as any;
     expect(me.name).toBe("analyst");
     expect((await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) })).status).toBe(201);
-  }, SIGNUPS);
+  });
 });
 
 describe("account email", () => {
@@ -505,7 +505,7 @@ describe("handles", () => {
 
     const alias = await local();
     expect((await post(alias, null, "/api/login", { name: "agent-codex" })).status).toBe(400);
-  }, SIGNUPS);
+  });
 });
 
 describe("rate limits", () => {
@@ -544,7 +544,7 @@ describe("rate limits", () => {
     await put(boss, [{ name: "repo", max: 1, window_s: 86400, enabled: false }]);
     expect((await repo(ana, "three")).status).toBe(201);
     expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
-  }, SIGNUPS);
+  });
 
   test("over a limit: reject, log, or flag; the log; and an admin's reset", async () => {
     const { call, person } = await accounts({ ADMINS: "boss-person" });
@@ -582,7 +582,7 @@ describe("rate limits", () => {
     // A save that leaves on_fail out keeps it.
     await put([{ name: "repo", max: 2, window_s: 86400, enabled: true }]);
     expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 2, on_fail: "flag" });
-  }, SIGNUPS);
+  });
   test("live edits count against the edit limit, over the socket and POST alike", async () => {
     const call = await local({ ADMINS: "boss" });
     await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
@@ -595,7 +595,7 @@ describe("rate limits", () => {
       let id = 0;
       const edit = async (text: string) => {
         ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
-        for (let i = 0; i < 200; i++) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+        for (const end = performance.now() + 15_000; performance.now() < end;) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
       };
       return { edit };
     };
