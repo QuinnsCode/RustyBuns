@@ -685,6 +685,7 @@ describe("rate limits", () => {
     const real = globalThis.fetch;
     globalThis.fetch = (async (u: string) => {
       const m = /^\/repos\/([^/]+\/[^/]+)(\/commits\/main)?$/.exec(new URL(u).pathname);
+      if (new URL(u).pathname.endsWith(".git/info/refs")) return new Response(`${"c".repeat(40)} HEAD\0side-band symref=HEAD:refs/heads/main\n`);
       if (m && m[2]) return Response.json({ sha: "c".repeat(40) });
       if (m) return Response.json({ full_name: m[1], private: false, default_branch: "main" });
       return new Response("{}", { status: 404 });
@@ -807,6 +808,7 @@ describe("github", () => {
     globalThis.fetch = (async (u: string) => {
       const url = new URL(u), m = /^\/repos\/([^/]+\/[^/]+)(\/commits\/main)?$/.exec(url.pathname);
       if (url.pathname === "/search/repositories") { searched.push(url.searchParams.get("q")!); return Response.json({ items: [{ full_name: "o/tiny", description: "d", stargazers_count: 5, language: "TS" }] }); }
+      if (new URL(u).pathname.endsWith(".git/info/refs")) return new Response(`${"c".repeat(40)} HEAD\0side-band symref=HEAD:refs/heads/main\n`);
       if (m && m[2]) return Response.json({ sha: "c".repeat(40) });
       if (m) return Response.json({ full_name: m[1], private: false, default_branch: "main" });
       return new Response("{}", { status: 404 });
