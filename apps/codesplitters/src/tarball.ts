@@ -1,9 +1,10 @@
 // A repo's tip out of GitHub's tarball, for the repos Cloudflare Artifacts
 // won't import: its import stops at 40 MB even at depth 1 (code 10402,
 // MEMORY_LIMIT; #334). So: make an empty Artifact, read the tarball, and push
-// its tree as one commit (git.ts). Same files, modes, symlinks and
-// submodules as the tip (a tarball leaves submodules out, so they're passed
-// in), less anything the repo marks export-ignore.
+// its tree as one commit (git.ts), in as many packs as that takes. Same
+// files, modes, symlinks and submodules as the tip (a tarball leaves
+// submodules out, so they're passed in), less anything the repo marks
+// export-ignore.
 
 import { pushTree, type TreeFile } from "./git.ts";
 import { code, type Artifacts } from "./env.ts";
@@ -11,8 +12,12 @@ import { code, type Artifacts } from "./env.ts";
 /** Did an Artifacts import refuse this repo for being over its 40 MB cap? */
 export const tooBigToImport = (e: unknown) => code(e) === "MEMORY_LIMIT" || /\b10402\b|import limit/.test(String((e as Error)?.message ?? e));
 
-/** Room to build a pack in a Worker's 128 MB, with the tarball streaming through beside it. */
-export const MAX_PACK = 64 * 2 ** 20;
+/**
+ * How big a pack gets before it goes out on its own: a big repo (Bun) goes
+ * in several, so one pack, the tarball streaming through and the tree all fit
+ * a Worker's 128 MB (#347).
+ */
+export const PACK_BYTES = 32 * 2 ** 20;
 
 /** Pulls exact byte counts off a stream. */
 function reader(stream: ReadableStream<Uint8Array>) {
@@ -91,7 +96,7 @@ export async function* tarFiles(stream: ReadableStream<Uint8Array>): AsyncGenera
  * since nobody can push to a read-only repo.
  */
 export async function importTarball(ns: Artifacts, p: {
-  tarball: () => Promise<Response>; submodules?: () => Promise<{ path: string; commit: string }[]>; repo: string; sha: string; branch: string; message: string; author: string; email?: string; at?: number;
+  tarball: () => Promise<Response>; submodules?: () => Promise<{ path: string; commit: string }[]>; repo: string; sha: string; branch: string; message: string; author: string; email?: string; at?: number; packBytes?: number;
   target: { name: string; opts?: { description?: string; readOnly?: boolean } };
 }): Promise<{ name: string; remote: string; defaultBranch: string }> {
   const ro = p.target.opts?.readOnly === true, name = ro ? `${p.target.name}-tip` : p.target.name;
@@ -108,7 +113,7 @@ export async function importTarball(ns: Artifacts, p: {
     }
     await pushTree(made.remote, token, files(), {
       message: `${p.message}\n\n${p.repo} at ${p.sha}, from GitHub's tarball: too big for an Artifacts import.`,
-      author: p.author, email: p.email, branch: p.branch, at: p.at, maxBytes: MAX_PACK,
+      author: p.author, email: p.email, branch: p.branch, at: p.at, packBytes: p.packBytes ?? PACK_BYTES,
     });
     if (!ro) return made;
     const art = await (await ns.get(name)).fork(p.target.name, { description: p.target.opts?.description, readOnly: true, defaultBranchOnly: true });

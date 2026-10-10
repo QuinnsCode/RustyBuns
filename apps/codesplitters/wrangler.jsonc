@@ -33,6 +33,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "LEVEL_CHUNKS",
+      "bucket_name": "codesplitters-level-chunks"
+    }
+  ],
   "artifacts": [
     {
       "binding": "ARTIFACTS",

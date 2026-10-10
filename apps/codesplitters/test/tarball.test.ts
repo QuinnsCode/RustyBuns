@@ -96,6 +96,63 @@ describe("past the Artifacts import cap", () => {
     } finally { restore(); alchemy.repo = was; }
   });
 
+  test("a level too big for Artifacts at all is kept in R2 as chunks: browse it, read it, play it, but no fork", async () => {
+    const { sha, tgz } = upstream();
+    const { R2Bucket } = await import("@rustybuns/shell-bun");
+    const bucketDir = mkdtempSync(join(tmpdir(), "cs-r2-"));
+    dirs.push(bucketDir);
+    const bucket = new R2Bucket(bucketDir);
+    const call = await local({ GH_CLI: "off", ADMINS: "boss", LEVEL_CHUNKS: bucket });
+    call.artifacts.import = (async () => { throw new Error("The repository exceeds the size limit."); }) as any;
+    const restore = fakeGitHub(sha, tgz);
+    const { LEVELS } = await import("../src/levels.ts");
+    const bun = LEVELS.find((l) => l.slug === "bun")!, was = bun.repo;
+    bun.repo = "o/big";
+    const get = async (path: string, user: string | null = null) => { const r = await call(user, path); return { status: r.status, body: (await r.json()) as any }; };
+    try {
+      await call("boss", "/api/login", { method: "POST", body: JSON.stringify({ name: "boss" }) });
+      const imp = await call("boss", "/api/levels/bun/import", { method: "POST", body: "{}" });
+      expect(imp.status).toBe(200);
+      expect(await imp.json()).toMatchObject({ status: "ready", store: "r2", chunks: 1 });
+      expect((await get("/api/levels")).body.find((l: any) => l.slug === "bun")).toMatchObject({ status: "ready", store: "r2", commit: sha });
+
+      const root = (await get("/api/levels/bun/tree")).body;
+      expect(root.commit).toEqual({ hash: sha, message: "the tip" });
+      expect(root.entries.map((e: any) => [e.path, e.type])).toEqual([["packages", "dir"], ["src", "dir"], ["empty", "file"], ["link.ts", "symlink"], ["logo.bin", "file"], ["README.md", "file"], ["run.sh", "file"]]);
+      expect((await get("/api/levels/bun/file?path=src/twin.ts")).body.text).toBe("export const a = 1\n");
+      expect((await get("/api/levels/bun/file?path=run.sh")).body.text).toBe("#!/bin/sh\necho hi\n");
+      expect((await get("/api/levels/bun/file?path=empty")).body.text).toBe("");
+      expect((await get(`/api/levels/bun/file?path=packages/${"very-long-directory-name/".repeat(5)}and-a-file-name-that-goes-on.ts`)).body.text).toBe("deep\n");
+      expect((await get("/api/levels/bun/file?path=logo.bin")).status).toBe(415);   // listed, not stored
+      expect((await get("/api/levels/bun/file?path=src/nope.ts")).status).toBe(404);
+      expect((await get("/api/game/l/bun/walls?path=src")).body.files.map((f: any) => [f.name, f.lines])).toEqual([["a.ts", ["export const a = 1", ""]], ["twin.ts", ["export const a = 1", ""]]]);
+      const fork = await call("boss", "/api/levels/bun/fork", { method: "POST", body: JSON.stringify({ name: "my-bun" }) });
+      expect(fork.status).toBe(409);
+      expect(((await fork.json()) as any).error).toContain("too big for Artifacts");
+
+      // Again: the old chunks go, the new ones come.
+      expect((await call("boss", "/api/levels/bun/import", { method: "POST", body: "{}" })).status).toBe(200);
+      expect((await bucket.list({ prefix: "levels/bun/" })).objects.map((o: any) => o.key)).toEqual([`levels/bun/${sha}/0`]);
+    } finally { restore(); bun.repo = was; }
+  });
+
+  test("a repo too big for one pack goes in several, and lands as one commit", async () => {
+    const { sha, tree, tgz } = upstream();
+    const call = await local({ GH_CLI: "off" });
+    const { importTarball } = await import("../src/tarball.ts");
+    // A pack per file or so: as many as a big repo (Bun) could need.
+    await importTarball(call.artifacts as any, {
+      tarball: async () => new Response(Bun.file(tgz)), repo: "o/big", sha, branch: "main", message: "the tip", author: "Up Stream", packBytes: 1, target: { name: "split" },
+    });
+    const log = await (await call.artifacts.get("split")).log();
+    expect(log).toHaveLength(1);
+    expect(log[0]!.treeHash).toBe(tree);
+    // The side branch the parts went up on is gone, its last part left dangling, and nothing is missing.
+    const bare = call.artifacts.path("split");
+    expect(git(bare, "for-each-ref", "--format=%(refname)")).toBe("refs/heads/main");
+    expect(git(bare, "fsck", "--connectivity-only")).toMatch(/^dangling commit [0-9a-f]{40}$/);
+  });
+
   test("any other import error is still an error", async () => {
     const { tarFiles } = await import("../src/tarball.ts");
     const { tooBigToImport } = await import("../src/tarball.ts");

@@ -1512,8 +1512,8 @@ const views = {
     if (!level) throw new Error("no such level");
     ctx = { view: "l", slug, path, level };
     const head = `<div class="repohead"><h1>${icon("landmark")}<span class="muted">level ${level.n} ·</span><b><a href="#/l/${slug}">${esc(level.title)}</a></b></h1>
-      <span class="badge">${icon("globe")}Public · read-only</span><span class="grow"></span>${level.status === "ready" ? playButton(`l/${slug}`) : ""}
-      ${me() && level.status === "ready" ? `<div class="pop"><button class="btn primary" id="forkbtn">${icon("git-fork")}Fork</button><form class="panel" id="fork" hidden><b>Dig it up: fork into your repos</b><span class="muted" style="font-size:13px">Your own writable copy, with the level's history, in a git repo you own. Change any line; upstream never hears about it.</span><div class="copyline"><input name="name" value="${slug}" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="btn primary">Fork</button></div><span class="muted" id="forkmsg"></span></form></div>` : ""}</div>`;
+      <span class="badge">${icon("globe")}Public · read-only</span>${level.store === "r2" ? `<span class="badge" title="Too big for an Artifacts git repo, so its text files are kept in R2: browse and play it, but there's no git to fork">${icon("package")}No git: too big for Artifacts</span>` : ""}<span class="grow"></span>${level.status === "ready" ? playButton(`l/${slug}`) : ""}
+      ${me() && level.status === "ready" && level.store !== "r2" ? `<div class="pop"><button class="btn primary" id="forkbtn">${icon("git-fork")}Fork</button><form class="panel" id="fork" hidden><b>Dig it up: fork into your repos</b><span class="muted" style="font-size:13px">Your own writable copy, with the level's history, in a git repo you own. Change any line; upstream never hears about it.</span><div class="copyline"><input name="name" value="${slug}" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="btn primary">Fork</button></div><span class="muted" id="forkmsg"></span></form></div>` : ""}</div>`;
     if (level.status !== "ready") {
       app.innerHTML = head + `<div class="wrap" style="padding-top:20px"><div class="box"><div class="body">${level.status === "importing" ? "Being dug up now. This takes a minute for the big ones." : level.status === "failed" ? `The dig failed: ${esc(level.error)}` : "Still buried."}
         ${me() ? `<p><button id="import" class="btn primary">${icon("shovel")}${level.status === "failed" ? "Try again" : "Dig it up"}</button> <span class="muted" id="impmsg"></span></p>` : ""}</div></div></div>`;
@@ -1880,16 +1880,17 @@ async function drawLevels() {
   const rows = (copy) => levels.map((l) => {
     const tab = copy ? ' tabindex="-1"' : "";
     const big = l.status === "failed" && /size limit/i.test(l.error ?? "");
-    const go = big ? "" : l.status === "ready" ? `<button class="btn" data-fork="${l.slug}"${tab}>${icon("git-fork")}Fork</button>`
+    // Too big for Artifacts: an admin can still try, which keeps it in R2 instead; one kept there can't be forked.
+    const go = (big && !session.admin) || l.store === "r2" ? "" : l.status === "ready" ? `<button class="btn" data-fork="${l.slug}"${tab}>${icon("git-fork")}Fork</button>`
       : session.admin && l.status !== "importing" ? `<button class="btn" data-import="${l.slug}"${tab}>${icon("shovel")}${l.status === "failed" ? "Try again" : "Import"}</button>`
       : l.status === "importing" ? "" : `<button class="btn" data-dig="${esc(l.repo)}"${tab}>${icon("git-fork")}Fork from GitHub</button>`;
     return `<div class="level"${copy ? ' aria-hidden="true"' : ""}><span class="lvl-n">${String(l.n).padStart(2, "0")}</span>
       <a href="#/l/${l.slug}"${tab}><b>${esc(l.title)}</b><span class="muted">${esc(l.repo)}</span> <span class="blurb">${esc(l.blurb)}</span></a>
-      <span class="lvl-acts"><span class="lvl-st st-${l.status}" ${l.error ? `title="${esc(l.error)}"` : ""}>${big ? "too big for Artifacts" : st[l.status] ?? l.status}</span>
+      <span class="lvl-acts"><span class="lvl-st st-${l.status}" ${l.error ? `title="${esc(l.error)}"` : ""}>${big ? "too big for Artifacts" : l.store === "r2" ? "open · read-only" : st[l.status] ?? l.status}</span>
         <button class="btn ghost" data-copy="${esc(l.repo)}" title="Copy https://github.com/${esc(l.repo)} and put it in the dig box"${tab}>${icon("copy")}</button>${go}</span></div>`;
   }).join("");
   el.innerHTML = `<div class="reel" style="--reel-s:${levels.length * 4}s">${rows(false)}${rows(true)}</div>`;
-  const buried = levels.filter((l) => l.status === "buried" || (l.status === "failed" && !/size limit/i.test(l.error ?? "")));
+  const buried = levels.filter((l) => l.status === "buried" || l.status === "failed");
   const bar = $("#lvl-admin");
   bar.hidden = !session.admin || !buried.length;
   bar.innerHTML = `<button class="btn primary" id="import-all">${icon("shovel")}Import the ${buried.length} buried level${buried.length === 1 ? "" : "s"}</button><span class="muted">admins only: a shallow, read-only copy of each into Artifacts</span>`;
