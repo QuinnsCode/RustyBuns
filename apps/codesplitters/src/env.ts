@@ -54,9 +54,10 @@ export interface Env {
   GH_CLI?: string;
   /** Tests only: stands in for running a coding agent's CLI (see agent-run.ts). */
   AGENT_EXEC?: unknown;
-  /** Tests only: stand in for npm and for the install-and-test run (see deps.ts). */
+  /** Tests only: stand in for npm, the install-and-test run and the fixer (see deps.ts). */
   DEPS_REGISTRY?: unknown;
   DEPS_TESTER?: unknown;
+  DEPS_FIXER?: unknown;
   /** Tests only: stands in for the commands and the fetch a preview deploy runs (see preview.ts). */
   PREVIEW_RUNNER?: unknown;
 }

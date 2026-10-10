@@ -592,15 +592,17 @@ const views = {
         <div class="row">releases at least <input name="min_age_days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
         <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
         <label title="${d.can_test ? "" : "Tests run on the desktop app"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code on this machine)</span></label>
+        <div class="row">when one breaks them, <select name="fix_with"${d.can_test ? "" : " disabled"}>${opt("", "leave it out", s.fix_with ?? "")}${["claude", "codex", "pi", "opencode"].map((h) => opt(h, `have ${h} fix it`, s.fix_with ?? "")).join("")}</select>
+          in up to <input name="fix_tries" type="number" min="1" max="5" value="${s.fix_tries}" style="width:3em"> tries</div>
         <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deps-run"${d.running ? " disabled" : ""}>${icon("refresh-cw")}${d.running ? "Checking…" : "Check now"}</button></div>
       </form>
       ${rep ? `<div class="run"><span class="st">last checked ${new Date(rep.at).toLocaleString()} · ${rep.checked} package${rep.checked === 1 ? "" : "s"}</span>
-        ${rep.updates.map((u) => `<span><code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level} · ${u.status === "broke" ? "broke the tests, left out" : u.status === "kept" ? "tests pass" : "untested"}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
+        ${rep.updates.map((u) => `<span><code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? "tests pass" : "untested"}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
         ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>, ready to review above.</span>` : ""}
         ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}`;
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target;
-      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked }, "PUT"); toast("Saved"); }
+      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value }, "PUT"); toast("Saved"); }
       catch (err) { toast(err.message); }
     });
     $("#deps-run").addEventListener("click", async () => {
