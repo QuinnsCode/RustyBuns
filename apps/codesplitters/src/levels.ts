@@ -5,8 +5,10 @@
 // built on (rwsdk, Effect, React, Alchemy, Bun), ending in the biggest digs.
 
 import { listDir, readText } from "./archive.ts";
-import { code, json, NAME, type Env } from "./env.ts";
-import { githubToken, importRepo } from "./github.ts";
+import { chunkRepo, importChunks } from "./chunks.ts";
+import { code, json, NAME, type ArtifactsRepo, type Env } from "./env.ts";
+import { githubHead, githubTarball, githubToken, importRepo } from "./github.ts";
+import { tooBigToImport } from "./tarball.ts";
 
 export interface Level { n: number; slug: string; title: string; repo: string; branch: string; blurb: string }
 
@@ -44,7 +46,7 @@ async function states(env: Env) {
   const rows = new Map<string, any>(results.map((r: any) => [r.slug, r]));
   return Promise.all(LEVELS.map(async (l) => {
     const row = rows.get(l.slug);
-    if (row?.status === "importing" && env.ARTIFACTS) {
+    if (row?.status === "importing" && row.store !== "r2" && env.ARTIFACTS) {
       try {
         const handle = await env.ARTIFACTS.get(artifactName(l.slug));
         const [tip] = await handle.log({ ref: l.branch, limit: 1 });
@@ -57,16 +59,28 @@ async function states(env: Env) {
         }
       }
     }
-    return { ...l, status: row?.status ?? "buried", error: row?.error ?? null, commit: row?.commit_hash ?? null };
+    return { ...l, status: row?.status ?? "buried", error: row?.error ?? null, commit: row?.commit_hash ?? null, store: row?.store === "r2" ? "r2" : "artifacts" };
   }));
 }
 
-async function ready(env: Env, slug: string) {
+/** Was this import refused for size, by Artifacts' import, its repo limit, or our own tarball push? */
+const tooBig = (e: unknown) => tooBigToImport(e) || /size limit|too big to push/i.test(String((e as Error)?.message ?? e));
+
+/**
+ * A ready level's repo: its Artifact, or, for one too big for Artifacts, its
+ * chunks in R2 (`r2`). Null until it's dug up.
+ */
+export async function levelSource(env: Env, slug: string): Promise<{ handle: ArtifactsRepo; ref: string; commit: string | null; r2: boolean } | null> {
   const level = LEVELS.find((l) => l.slug === slug);
-  if (!level || !env.ARTIFACTS) return null;
-  const row = await env.DB.prepare("SELECT status FROM levels WHERE slug = ?").bind(slug).first();
+  if (!level) return null;
+  const row = await env.DB.prepare("SELECT status, store, commit_hash, commit_message FROM levels WHERE slug = ?").bind(slug).first();
   if (row?.status !== "ready") return null;
-  return { level, handle: await env.ARTIFACTS.get(artifactName(slug)) };
+  if (row.store === "r2") {
+    if (!env.LEVEL_CHUNKS || !row.commit_hash) return null;
+    return { handle: chunkRepo(env, env.LEVEL_CHUNKS, slug, { sha: row.commit_hash, message: row.commit_message ?? "" }), ref: level.branch, commit: row.commit_hash, r2: true };
+  }
+  if (!env.ARTIFACTS) return null;
+  return { handle: await env.ARTIFACTS.get(artifactName(slug)), ref: level.branch, commit: row.commit_hash ?? null, r2: false };
 }
 
 /** /api/levels... ; `user` is the caller's handle, `admin` whether they may import. */
@@ -86,6 +100,16 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
       await importRepo(env, { repo: level.repo, branch: level.branch, token: (await githubToken(env, user))?.token },
         { name: artifactName(slug), opts: { readOnly: true, description: `${level.title} (${level.repo}), a codeSplitters level` } });
     } catch (e) {
+      // Too big for Artifacts at all (Bun, say): into R2 as chunks, here and now, read-only.
+      if (tooBig(e) && env.LEVEL_CHUNKS) {
+        try {
+          const token = (await githubToken(env, user))?.token, head = await githubHead(level.repo, level.branch, token);
+          const kept = await importChunks(env, env.LEVEL_CHUNKS, { slug, sha: head.sha, repo: level.repo, tarball: () => githubTarball(level.repo, head.sha, token) });
+          await env.DB.prepare("INSERT INTO levels (slug, status, store, commit_hash, commit_message, imported_at) VALUES (?, 'ready', 'r2', ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET status = 'ready', store = 'r2', error = NULL, commit_hash = excluded.commit_hash, commit_message = excluded.commit_message, imported_at = excluded.imported_at")
+            .bind(slug, head.sha, head.message, Date.now()).run();
+          return json({ slug, status: "ready", store: "r2", ...kept });
+        } catch (e2) { e = e2; }
+      }
       if (code(e) !== "ALREADY_EXISTS") {
         // Keep the reason, so the level says why (too big for Artifacts, say) instead of looking buried.
         const error = String((e as Error).message ?? e);
@@ -94,12 +118,12 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
         return json({ error }, 502);
       }
     }
-    await env.DB.prepare("INSERT INTO levels (slug, status, imported_at) VALUES (?, 'importing', ?) ON CONFLICT(slug) DO UPDATE SET status = 'importing', error = NULL")
+    await env.DB.prepare("INSERT INTO levels (slug, status, imported_at) VALUES (?, 'importing', ?) ON CONFLICT(slug) DO UPDATE SET status = 'importing', store = NULL, error = NULL")
       .bind(slug, Date.now()).run();
     return json({ slug, status: "importing" }, 202);
   }
 
-  const r = await ready(env, slug);
+  const r = await levelSource(env, slug);
   if (!r) return json({ error: "this level hasn't been excavated yet" }, 409);
 
   // GET /api/levels/:slug/tree?path=dir
@@ -116,6 +140,7 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
   // POST /api/levels/:slug/fork {name}  dig it up: your own fork, writable, with the level's history
   if (p[3] === "fork" && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
+    if (r.r2) return json({ error: `${level.title} is too big for Artifacts, so it has no git to fork here: browse it, play it, or clone ${level.repo} from GitHub` }, 409);
     const { name = slug } = (await req.json().catch(() => ({}))) as { name?: string };
     if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
     if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
