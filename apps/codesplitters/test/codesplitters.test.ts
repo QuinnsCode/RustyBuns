@@ -7,7 +7,6 @@ import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
 import { noodles } from "../src/noodles.ts";
 import { isBuildFile } from "../src/buildfiles.ts";
-import worker from "../src/worker.ts";
 import { ruleFor } from "../src/limits.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
@@ -687,13 +686,14 @@ describe("rate limits", () => {
       expect((await call("ana", "/api/repos/ana/two")).status).toBe(200);
       expect((await call.env.DB.prepare("SELECT count FROM limit_hits WHERE rule = 'dig' AND who = '@ana'").first() as any).count).toBe(1);
 
-      // Nobody polling: the five-minute cron runs it.
+      // Nobody polling: its message on the JOBS queue runs it when its window ends (held back 12 hours at most).
       const four = ((await (await dig("o/four")).json()) as any).queued;
+      await call.env.JOBS.drain();
+      expect(await job(four.id, "boss")).toMatchObject({ state: "waiting" });
       await reset();
-      const waits: Promise<unknown>[] = [];
-      await worker.scheduled({ cron: "*/5 * * * *" }, call.env, { waitUntil: (w) => waits.push(w) });
-      await Promise.all(waits);
+      await call.env.JOBS.drain(Date.now() + 12 * 3600_000 + 60_000);
       expect(await job(four.id, "boss")).toMatchObject({ state: "done", status: 201 });
+      expect(call.env.JOBS.size()).toBe(0);
 
       // Back on the page later: her own jobs, newest first, with their place or the repo they made.
       const list = async (user: string | null) => ((await (await call(user, "/api/jobs")).json()) as any).jobs;

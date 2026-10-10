@@ -15,6 +15,9 @@ export async function local(extra: Record<string, unknown> = {}) {
   // Webhook tries, consumed in-process as the desktop host does.
   env.HOOKS = queue(":memory:", "codesplitters-hooks");
   const stopHooks = env.HOOKS.consume((batch: any) => worker.queue(batch, env));
+  // Queued requests' messages, likewise.
+  env.JOBS = queue(":memory:", "codesplitters-jobs");
+  const stopJobs = env.JOBS.consume((batch: any) => worker.queue(batch, env));
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
   const dir = mkdtempSync(join(tmpdir(), "codesplitters-artifacts-"));
   env.ARTIFACTS = new LocalArtifacts(dir, "codesplitters");
@@ -30,8 +33,8 @@ export async function local(extra: Record<string, unknown> = {}) {
   }, {
     artifacts: env.ARTIFACTS as LocalArtifacts,
     env,
-    /** Stop the hooks consumer and the git server, and delete the temp repos. */
-    close() { stopHooks(); git.stop(true); rmSync(dir, { recursive: true, force: true }); },
+    /** Stop the queue consumers and the git server, and delete the temp repos. */
+    close() { stopHooks(); stopJobs(); git.stop(true); rmSync(dir, { recursive: true, force: true }); },
   });
 }
 

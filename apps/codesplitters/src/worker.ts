@@ -14,7 +14,7 @@ import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
-import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, sweepLimits } from "./limits.ts";
+import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, runJobs, sweepLimits, type JobMessage } from "./limits.ts";
 import { previewRoutes } from "./preview.ts";
 import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { repoFit } from "./fit.ts";
@@ -334,20 +334,22 @@ const app = {
     return json({ error: "not found" }, 404);
   },
 
-  // Cron Triggers (rustybuns.config.ts crons): every five minutes, queued requests whose
-  // turn has come; hourly, each repo's dependency doctor runs when it's due, and rate-limit
-  // windows that have ended are cleared out.
+  // The Cron Trigger (rustybuns.config.ts crons), hourly: each repo's dependency doctor runs
+  // when it's due, rate-limit windows that have ended are cleared out, and any queued request
+  // whose message went missing runs if its line has room.
   async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    if (c.cron !== HOURLY) return;
+    ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
+    ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
-    if (c.cron === HOURLY) {
-      ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
-      ctx.waitUntil(sweepLimits(env));
-    }
   },
 
-  // The HOOKS queue (rustybuns.config.ts): one webhook try per message.
-  async queue(batch: { messages: readonly { body: HookMessage; ack(): void }[] }, env: Env) {
-    await deliverHooks(batch, env);
+  // The queues (rustybuns.config.ts): JOBS runs queued requests whose turn has come;
+  // HOOKS is one webhook try per message. A batch is all one queue's, told apart by its
+  // messages, since a stage's queues may be named otherwise.
+  async queue(batch: { messages: readonly { body: unknown; ack(): void }[] }, env: Env) {
+    if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number")) await runJobs(batch as { messages: readonly { body: JobMessage; ack(): void }[] }, env, (r) => app.fetch(r, env));
+    else await deliverHooks(batch as { messages: readonly { body: HookMessage; ack(): void }[] }, env);
   },
 };
 
