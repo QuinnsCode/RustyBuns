@@ -32,7 +32,7 @@ export interface Summary {
   dir: string; name: string; version: number; maxQueued: number;
   pause: { reason: string; until?: number } | null;
   folders: string[]; presets: Preset[]; jobs: Card[];
-  sync: Sync | null; spent: number; concepts: Concept[];
+  sync: Sync | null; pendingSync: Sync | null; spent: number; concepts: Concept[];
 }
 
 async function call<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {

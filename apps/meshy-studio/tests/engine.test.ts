@@ -121,9 +121,13 @@ test("workspace: drop, send, poll, download, fit; ledger first, folders kept", a
 
   // A reopened workspace remembers everything.
   const again = new Workspace(dir, () => "msy_test");
-  await again.open();
+  await again.open({ trustSync: (sy) => sy.dir === unity });
   expect(again.get("forest/flora_oak_h12.png").state).toBe("done");
   expect(again.sync?.engine).toBe("unity");
+  // A folder this computer never confirmed waits.
+  const shared = new Workspace(dir, () => "msy_test");
+  await shared.open();
+  expect([shared.sync, shared.pendingSync?.dir]).toEqual([null, unity]);
 });
 
 test("workspace: Meshy failure, retry, 402 pauses, cancel while pending, move between folders", async () => {
@@ -296,4 +300,39 @@ test("presets: the editor's rules", async () => {
   await ws.setPresets(ws.presets.filter((p) => p.prefix !== "item_"));
   expect(ws.get("item_gem.png").prefix).toBe("");
   expect((await Bun.file(join(ws.dir, "meshy-presets.json")).json()).some((p: Preset) => p.prefix === "item_")).toBe(false);
+});
+
+test("a shared workspace's ledger and edits can't reach outside it", async () => {
+  const dir = join(root, "shared");
+  const victim = join(root, "victim.txt");
+  writeFileSync(victim, "keep me");
+  mkdirSync(join(dir, READY), { recursive: true });
+  const row = (key: string, extra: object) => ({
+    key, folder: "", file: key, where: "inbox", source: "image", prefix: "", outName: "x", size: { height: 1 }, origin: "bottom",
+    state: "done", progress: 100, estimate: 0, createdAt: 0, updatedAt: 0, ...extra,
+  });
+  writeFileSync(join(dir, "meshy-jobs.json"), JSON.stringify({ version: 2, jobs: {
+    "ok.png": row("ok.png", { raw: "ok.glb", ready: "ok.glb" }),
+    "bad.png": row("bad.png", { raw: "bad.glb", ready: "../../victim.txt" }),
+    "../up.png": row("../up.png", {}),
+    "abs.png": row("abs.png", { folder: "/etc" }),
+    "ops.png": row("ops.png", { ops: [{ id: "a/../../b", files: [] }] }),
+  }, concepts: [{ id: "c1", folder: "..", name: "x", files: [] }] }));
+  writeFileSync(join(dir, "meshy-studio.json"), JSON.stringify({ sync: { dir: root, engine: "unity" } }));
+  const ws = new Workspace(dir, () => "msy_test");
+  await ws.open();
+  expect([...ws.jobs.keys()]).toEqual(["ok.png"]);
+  expect(ws.concepts).toEqual([]);
+  expect(ws.sync).toBeNull();
+  expect(ws.pendingSync?.dir).toBe(root);
+
+  // Edits take only the card's own fields.
+  writeFileSync(join(dir, INBOX, "item_new.png"), PNG);
+  await ws.scan();
+  await ws.edit("item_new.png", { ready: "../../victim.txt", folder: "..", state: "done", outName: "fine" } as any);
+  const j = ws.get("item_new.png");
+  expect([j.ready, j.folder, j.state, j.outName]).toEqual([undefined, "", "new", "fine"]);
+  await expect(ws.edit("item_new.png", { size: { height: -1 } })).rejects.toThrow("size");
+  await expect(ws.edit("item_new.png", { origin: "side" as any })).rejects.toThrow("origin");
+  expect(await Bun.file(victim).text()).toBe("keep me");
 });

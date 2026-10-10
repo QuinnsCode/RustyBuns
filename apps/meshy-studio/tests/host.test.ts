@@ -96,7 +96,27 @@ test("engine sync: refuses a folder inside the workspace", async () => {
   const ok = await post("/api/sync", { dir: join(root, "UnityProject", "Assets", "Meshy"), engine: "unity" });
   expect((await ok.json()).sync.engine).toBe("unity");
   expect(existsSync(join(root, "UnityProject", "Assets", "Meshy"))).toBe(true);
+  // Picked here, so reopening keeps it; a folder only the workspace's config names waits.
+  expect((await (await post("/api/workspace/open", { dir })).status)).toBe(200);
+  expect((await (await call("/api/jobs")).json()).sync.engine).toBe("unity");
+  await Bun.write(join(dir, "meshy-studio.json"), JSON.stringify({ sync: { dir: join(root, "Elsewhere"), engine: "unity" } }));
+  await post("/api/workspace/open", { dir });
+  const sum = await (await call("/api/jobs")).json();
+  expect([sum.sync, sum.pendingSync.dir]).toEqual([null, join(root, "Elsewhere")]);
   expect((await (await post("/api/sync", { off: true })).json()).sync).toBeNull();
+  _reset();
+});
+
+test("uploads over 50 MB are refused", async () => {
+  const dir = join(root, "Uploads");
+  mkdirSync(dir);
+  await post("/api/workspace/open", { dir });
+  const big = await call("/api/upload?folder=&name=huge.png", { method: "POST", body: new Uint8Array(50 * 1024 * 1024 + 1) });
+  expect(big.status).toBe(413);
+  expect(existsSync(join(dir, "000_to_be_meshyd", "huge.png"))).toBe(false);
+  // No length header: still stopped while reading.
+  const stream = new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(8 * 1024 * 1024)); } });
+  expect((await call("/api/upload?folder=&name=endless.png", { method: "POST", body: stream, duplex: "half" } as RequestInit)).status).toBe(413);
   _reset();
 });
 

@@ -63,8 +63,8 @@ export function SettingsPanel({ status, sum, balance, onClose, onStatus, onSumma
   onStatus: () => void; onSummary: (s: Summary) => void; onBalance: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const [engine, setEngine] = useState<Engine>(sum.sync?.engine ?? "unity");
-  const [dir, setDir] = useState(sum.sync?.dir ?? "");
+  const [engine, setEngine] = useState<Engine>((sum.sync ?? sum.pendingSync)?.engine ?? "unity");
+  const [dir, setDir] = useState((sum.sync ?? sum.pendingSync)?.dir ?? "");
   const s = status.settings;
   const set = (patch: Partial<Settings>) => api.settings(patch).then(onStatus, (e) => setError(e.message));
   useEffect(() => {
@@ -140,6 +140,7 @@ export function SettingsPanel({ status, sum, balance, onClose, onStatus, onSumma
             <button className="primary" disabled={!dir} onClick={connect}>{sum.sync ? "Update" : "Connect"}</button>
             {sum.sync && <button className="ghost" onClick={() => api.syncOff().then(onSummary)}>Disconnect</button>}
           </div>
+          {sum.pendingSync && <p className="warn small" role="status">This workspace's settings copy finished models to <code>{sum.pendingSync.dir}</code>. That folder wasn't picked on this computer, so nothing is copied there until you Connect.</p>}
           {sum.sync && <p className="ok small">Copying to {ENGINES.find((e) => e.id === sum.sync!.engine)?.name}: <code>{sum.sync.dir}</code></p>}
           <p className="muted small">Blender: {status.blender ? "found on this computer." : "not found. Install it, or set BLENDER_PATH."}</p>
         </section>
