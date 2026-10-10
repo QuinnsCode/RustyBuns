@@ -148,14 +148,16 @@ async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: boolean
 }
 
 const K = "/api/repos/ryan-quinn/lab/deploy/key", D = "/api/repos/ryan-quinn/lab/deploy";
+// A run leaves "running" in the history only once finish() logs it, after the container is destroyed,
+// so a settled run has been torn down. Giving up says so, rather than failing a later expect on a half-done run (#287).
 const settle = async (call: Call, n = 1) => {
   let d: any;
   for (const end = performance.now() + 15_000; performance.now() < end;) {
     d = await (await call("ryan-quinn", D)).json();
-    if (d.history.length >= n && d.history.every((h: any) => h.status !== "running")) break;
+    if (d.history.length >= n && d.history.every((h: any) => h.status !== "running")) return d;
     await Bun.sleep(10);
   }
-  return d;
+  throw new Error(`deploys still running after 15s: ${JSON.stringify(d.history.map((h: any) => h.status))}`);
 };
 
 describe("sealing", () => {
