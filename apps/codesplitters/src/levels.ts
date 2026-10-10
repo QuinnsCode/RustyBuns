@@ -86,7 +86,13 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
         target: { name: artifactName(slug), opts: { readOnly: true, description: `${level.title} (${level.repo}), a codeSplitters level` } },
       });
     } catch (e) {
-      if (code(e) !== "ALREADY_EXISTS") return json({ error: String((e as Error).message ?? e) }, 502);
+      if (code(e) !== "ALREADY_EXISTS") {
+        // Keep the reason, so the level says why (too big for Artifacts, say) instead of looking buried.
+        const error = String((e as Error).message ?? e);
+        await env.DB.prepare("INSERT INTO levels (slug, status, error, imported_at) VALUES (?, 'failed', ?, ?) ON CONFLICT(slug) DO UPDATE SET status = 'failed', error = excluded.error")
+          .bind(slug, error, Date.now()).run();
+        return json({ error }, 502);
+      }
     }
     await env.DB.prepare("INSERT INTO levels (slug, status, imported_at) VALUES (?, 'importing', ?) ON CONFLICT(slug) DO UPDATE SET status = 'importing', error = NULL")
       .bind(slug, Date.now()).run();

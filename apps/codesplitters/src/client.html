@@ -410,6 +410,24 @@
   .feat b { font-weight: 600; line-height: 1.3; } .feat span { color: var(--muted); font-size: 13px; line-height: 1.45; }
   .feat.secret { border-color: var(--accent); background: var(--grain), var(--accent-soft); } .feat.secret .ico { color: var(--accent); border-color: var(--accent); }
 
+  /* Departures and arrivals, split-flap: who hands what to whom. Each character is a tile
+     that flips through a few letters before it lands. */
+  .flapboard { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+  .flap-side { background: #111; border-radius: 8px; padding: 14px 16px 16px; box-shadow: inset 0 0 0 1px #000, 0 24px 48px -28px rgba(0,0,0,.45); overflow: hidden; }
+  .flap-head { display: flex; align-items: center; gap: 8px; color: #f2f2f2; font: 600 13px var(--mono); letter-spacing: .14em; margin-bottom: 10px; }
+  .flap-head svg { width: 16px; height: 16px; color: var(--accent); }
+  .flap-cols, .flap-row { display: grid; grid-template-columns: var(--cols); gap: 14px; }
+  .flap-cols { color: #8a8a8a; font: 500 10px var(--mono); letter-spacing: .12em; padding: 0 0 6px; border-bottom: 1px solid #2a2a2a; margin-bottom: 6px; }
+  .flap-row { padding: 3px 0; }
+  .flap-cell { display: flex; gap: 2px; overflow: hidden; }
+  .flap-cell b { display: inline-grid; place-items: center; width: 1.05em; height: 1.5em; flex: none; background: linear-gradient(#1f1f1f 49%, #000 49% 51%, #191919 51%); color: #f5f5f5; font: 600 13px/1 var(--mono); border-radius: 2px; }
+  .flap-cell b.go { animation: flip .07s linear; }
+  .flap-cell.st b { color: var(--accent); }
+  @keyframes flip { 50% { transform: scaleY(.15); } }
+  @media (max-width: 860px) { .flapboard { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) { .flap-cell b { width: .95em; font-size: 11px; } .flap-cols, .flap-row { gap: 8px; } .flap-side { padding: 12px; } }
+  @media (prefers-reduced-motion: reduce) { .flap-cell b.go { animation: none; } }
+
   /* The site footer, on home and about. */
   .site-foot { margin-top: 64px; border-top: 1px solid var(--border); background: var(--canvas); }
   .site-foot .wrap { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; padding-top: 22px; padding-bottom: 28px; font-size: 13px; }
@@ -963,13 +981,18 @@ const views = {
     app.innerHTML = `
       <section class="hero"><div class="wrap">
         <div>
-          <div class="est">Est. 2026 · an archive of living code</div>
+          <div class="est">Est. 2026 · the agentic code host</div>
           <h1 class="headline">Git, <em>split apart</em>.<br>And put back together.</h1>
-          <p class="lede">Every file tears into lines, and every line keeps its own author and history. People and agents edit together, live, and it all closes back up as a real git commit.</p>
+          <p class="lede">Every file tears into lines, and every line keeps its own author and history. People and their agents work in the same code at the same moment, without stepping on each other, and it all closes back up as a real git commit.</p>
           <div class="row"><button class="btn primary" id="hero-cmd">${icon("command")}Open the command palette</button><a class="btn" href="/play.html#l/mitt">${icon("gamepad-2")}Play: lines off the walls</a></div>
         </div>
         <div><div class="stage" id="stage" aria-label="A file splitting into lines, being edited by agents, and rejoining as a git commit"></div>
           <ol class="phases" id="phases"><li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li></ol></div>
+      </div></section>
+      <section class="section"><div class="wrap">
+        <div class="label">the agentic code host</div><h2>Every direction, all at once</h2>
+        <p class="muted">Human to human, human to agent, agent to agent, and everyone to the computer. Your agents don't get a sandbox off to the side: they work in the same repo as you, live, line by line, each line signed by whoever wrote it, and nothing ships until a person says so.</p>
+        <div class="flapboard" id="flapboard" aria-label="Who's handing what to whom, on a departures and arrivals board"></div>
       </div></section>
       <section class="section"><div class="wrap">
         <div class="label">everything it does</div><h2>All of it, on one strip</h2>
@@ -992,6 +1015,7 @@ const views = {
     wireFoot();
     intro($("#stage"), $("#phases"));
     featureStrip($("#feats"));
+    flapBoard($("#flapboard"));
     wireLevels();
     await drawLevels();
   },
@@ -1759,16 +1783,17 @@ async function drawLevels() {
   // Two copies of the list back to back, so sliding up by half loops without a seam.
   const rows = (copy) => levels.map((l) => {
     const tab = copy ? ' tabindex="-1"' : "";
-    const go = l.status === "ready" ? `<button class="btn" data-fork="${l.slug}"${tab}>${icon("git-fork")}Fork</button>`
+    const big = l.status === "failed" && /size limit/i.test(l.error ?? "");
+    const go = big ? "" : l.status === "ready" ? `<button class="btn" data-fork="${l.slug}"${tab}>${icon("git-fork")}Fork</button>`
       : session.admin && l.status !== "importing" ? `<button class="btn" data-import="${l.slug}"${tab}>${icon("shovel")}${l.status === "failed" ? "Try again" : "Import"}</button>`
       : l.status === "importing" ? "" : `<button class="btn" data-dig="${esc(l.repo)}"${tab}>${icon("git-fork")}Fork from GitHub</button>`;
     return `<div class="level"${copy ? ' aria-hidden="true"' : ""}><span class="lvl-n">${String(l.n).padStart(2, "0")}</span>
       <a href="#/l/${l.slug}"${tab}><b>${esc(l.title)}</b><span class="muted">${esc(l.repo)}</span> <span class="blurb">${esc(l.blurb)}</span></a>
-      <span class="lvl-acts"><span class="lvl-st st-${l.status}" ${l.error ? `title="${esc(l.error)}"` : ""}>${st[l.status] ?? l.status}</span>
+      <span class="lvl-acts"><span class="lvl-st st-${l.status}" ${l.error ? `title="${esc(l.error)}"` : ""}>${big ? "too big for Artifacts" : st[l.status] ?? l.status}</span>
         <button class="btn ghost" data-copy="${esc(l.repo)}" title="Copy https://github.com/${esc(l.repo)} and put it in the dig box"${tab}>${icon("copy")}</button>${go}</span></div>`;
   }).join("");
   el.innerHTML = `<div class="reel" style="--reel-s:${levels.length * 4}s">${rows(false)}${rows(true)}</div>`;
-  const buried = levels.filter((l) => l.status === "buried" || l.status === "failed");
+  const buried = levels.filter((l) => l.status === "buried" || (l.status === "failed" && !/size limit/i.test(l.error ?? "")));
   const bar = $("#lvl-admin");
   bar.hidden = !session.admin || !buried.length;
   bar.innerHTML = `<button class="btn primary" id="import-all">${icon("shovel")}Import the ${buried.length} buried level${buried.length === 1 ? "" : "s"}</button><span class="muted">admins only: a shallow, read-only copy of each into Artifacts</span>`;
@@ -1812,6 +1837,74 @@ function wireLevels() {
       try { await api(`/levels/${b.dataset.import}/import`, {}); drawLevels(); } catch (err) { b.disabled = false; toast(err.message); }
     }
   });
+}
+
+// The departures and arrivals board on the home page. Each trip leaves one side and lands on
+// the other: who sent it and what it carries on the left, who gets it and how it went on the
+// right. One row flips every couple of seconds, each tile spinning through letters first.
+const TRIPS = [
+  ["HUMAN", "REVIEW LINE 42", "HUMAN", "ON TIME"],
+  ["HUMAN", "FIX FLAKY TEST", "AGENT", "BOARDING"],
+  ["AGENT", "BRANCH DEPS-1010", "HUMAN", "READY TO MERGE"],
+  ["AGENT", "RENAME USESTORE", "AGENT", "IN FLIGHT"],
+  ["HUMAN", "SHIP TO PROD", "COMPUTER", "LANDED"],
+  ["AGENT", "BUN TEST", "COMPUTER", "14 PASSED"],
+  ["HUMANS", "3 EDITS AT ONCE", "ONE FILE", "NO COLLISIONS"],
+  ["COMPUTER", "WEBHOOK COMMIT", "CI", "DELIVERED"],
+  ["HUMAN", "CUT LINES 8-30", "X", "SHARED"],
+  ["AGENT", "BUMP HONO MINOR", "DOCTOR", "TESTED"],
+  ["HUMAN", "PRIVATE LINES", "CREW ONLY", "SEALED"],
+  ["AGENT", "PROMPT INJECTION", "BRANCH", "HELD FOR HUMAN"],
+  ["HUMAN", "INVITE CREW", "AGENT", "ON BOARD"],
+  ["COMPUTER", "GIT PUSH", "ARTIFACTS", "LANDED"],
+];
+const FLAP = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
+let stopBoard = () => {};
+function flapBoard(el) {
+  if (!el) return;
+  const ROWS = 5, W = { who: 9, what: 16, st: 14 };
+  const sides = [
+    { title: "DEPARTING", ic: "plane-takeoff", cols: [["FROM", W.who], ["CARRYING", W.what]] },
+    { title: "ARRIVING", ic: "plane-landing", cols: [["TO", W.who], ["STATUS", W.st]] },
+  ];
+  const cell = (n, cls = "") => `<span class="flap-cell ${cls}">${"<b> </b>".repeat(n)}</span>`;
+  el.innerHTML = sides.map((sd, k) => `<div class="flap-side" style="--cols:${sd.cols.map(([, n]) => `${n * 1.05 + (n - 1) * 0.14}em`).join(" ")}">
+    <div class="flap-head">${icon(sd.ic)}${sd.title}</div>
+    <div class="flap-cols">${sd.cols.map(([h]) => `<span>${h}</span>`).join("")}</div>
+    ${Array.from({ length: ROWS }, () => `<div class="flap-row">${sd.cols.map(([, n], j) => cell(n, k === 1 && j === 1 ? "st" : "")).join("")}</div>`).join("")}</div>`).join("");
+  icons();
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const timers = new Set();
+  const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); };
+  // Flip one cell's tiles to `text`, each tile taking a few random letters on the way.
+  const flipTo = (cellEl, text, n) => {
+    const want = text.toUpperCase().padEnd(n).slice(0, n);
+    [...cellEl.children].forEach((b, i) => {
+      if (b.textContent === want[i]) return;
+      if (calm) return (b.textContent = want[i]);
+      const steps = 3 + Math.floor(Math.random() * 5);
+      for (let s = 0; s <= steps; s++) later(() => {
+        b.classList.remove("go"); void b.offsetWidth; b.classList.add("go");
+        b.textContent = s === steps ? want[i] : FLAP[Math.floor(Math.random() * FLAP.length)];
+      }, i * 18 + s * 70);
+    });
+  };
+  const rows = [...el.querySelectorAll(".flap-side")].map((side) => [...side.querySelectorAll(".flap-row")]);
+  const show = (r, trip) => {
+    const [from, what, to, st] = trip;
+    const [a, b] = [rows[0][r].children, rows[1][r].children];
+    flipTo(a[0], from, W.who); flipTo(a[1], what, W.what);
+    flipTo(b[0], to, W.who); flipTo(b[1], st, W.st);
+  };
+  let next = 0, row = 0, seen = true;
+  for (let r = 0; r < ROWS; r++) later(() => show(r, TRIPS[next++ % TRIPS.length]), r * 260);
+  const io = new IntersectionObserver(([e]) => (seen = e.isIntersecting)); io.observe(el);
+  const tick = setInterval(() => {
+    if (!seen || document.hidden) return;
+    show(row, TRIPS[next++ % TRIPS.length]);
+    row = (row + 1) % ROWS;
+  }, 2200);
+  stopBoard = () => { clearInterval(tick); timers.forEach(clearTimeout); timers.clear(); io.disconnect(); stopBoard = () => {}; };
 }
 
 // The site footer: our links, who made it, and a year that's always this year.
@@ -2148,6 +2241,7 @@ async function route() {
   clearTimeout(agentTimer);
   stopIntro();
   stopStrip();
+  stopBoard();
   clearTimeout(levelPoll);
   document.body.classList.remove("ide-mode");
   const [, view = "home", ...args] = location.hash.replace(/^#/, "").split("/");

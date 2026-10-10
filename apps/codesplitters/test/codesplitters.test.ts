@@ -332,6 +332,16 @@ describe("artifacts", () => {
 });
 
 describe("levels", () => {
+  test("an import Artifacts refuses is kept as failed, with its reason, not left looking buried", async () => {
+    const call = await local();
+    call.artifacts.import = async () => { throw new Error("The repository exceeds the size limit."); };
+    await post(call, "ana", "/api/login", { name: "ana" });
+    const r = await post(call, "ana", "/api/levels/bun/import", {});
+    expect(r.status).toBe(502);
+    const bun = (await (await call(null, "/api/levels")).json() as any[]).find((l) => l.slug === "bun");
+    expect([bun.status, bun.error]).toEqual(["failed", "The repository exceeds the size limit."]);
+  });
+
   test("browse a level, fork it, open a deep file, catalogue it: the push keeps every other file", async () => {
     const call = await local();
     // Stand in for an import (which needs the network): a repo with a few files, marked ready.
