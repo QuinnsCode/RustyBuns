@@ -1,4 +1,5 @@
-// Levels too big for Artifacts (Bun, Alchemy; #344): their tip from GitHub's
+// Levels too big for an Artifacts repo even from the tarball (#344; Bun and
+// Alchemy fit there after all, #356): their tip from GitHub's
 // tarball, kept as chunks in R2 instead of a git repo. Each chunk packs many
 // files end to end (about 8 MB, so a big level is tens of objects, not tens of
 // thousands); each folder's entries go in D1's tree_cache, as git trees do,
