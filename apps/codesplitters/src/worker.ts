@@ -14,6 +14,9 @@ import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
 import { limit, limitRoutes, ruleFor, RULES, sweepLimits } from "./limits.ts";
+import { previewRoutes } from "./preview.ts";
+import { deployOnCommit, deployRoutes } from "./deploy.ts";
+import { repoFit } from "./fit.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -65,6 +68,10 @@ const app = {
     if (agents) return agents;
     const deps = await depRoutes(req, env, p, url, user, (r) => app.fetch(r, env));
     if (deps) return deps;
+    const preview = await previewRoutes(req, env, p, user);
+    if (preview) return preview;
+    const deploy = await deployRoutes(req, env, p, user);
+    if (deploy) return deploy;
 
     // GET|PUT /api/me
     if (p[1] === "me") {
@@ -132,6 +139,8 @@ const app = {
         const v = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         return createShare(env, owner, repo, user, a, v?.visibility === "private", await body());
       }
+      // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
+      if (p[4] === "fit" && req.method === "GET") return repoFit((r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
       // GET /api/repos/:o/:r/tree?path=dir  the repo's git tree, plus files written here but not catalogued yet
       if (p[4] === "tree") {
         const dir = (url.searchParams.get("path") ?? "").replace(/^\/|\/$/g, "");
@@ -212,6 +221,8 @@ const app = {
           ]);
           // The catalogue entry stands even if the push fails; the next one carries it.
           const git = await pushCatalogue(env, owner, repo, path, content, user!, commit.message).catch((e: Error) => ({ error: e.message }));
+          // The owner's own commit ships, when they turned that on (deploy.ts).
+          if (git && !("error" in git)) await deployOnCommit(env, owner, repo, user);
           return json({ ...commit, git });
         }
         return res;

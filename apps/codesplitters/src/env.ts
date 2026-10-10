@@ -57,6 +57,8 @@ export interface Env {
   /** Tests only: stand in for npm and for the install-and-test run (see deps.ts). */
   DEPS_REGISTRY?: unknown;
   DEPS_TESTER?: unknown;
+  /** Tests only: stands in for the commands and the fetch a preview deploy runs (see preview.ts). */
+  PREVIEW_RUNNER?: unknown;
 }
 
 export const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>

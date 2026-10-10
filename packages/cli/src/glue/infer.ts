@@ -7,14 +7,17 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, resolve, relative, sep } from "node:path";
 import { parseJsonc } from "./jsonc.ts";
+import { SUPPORTED, stackOf, vitePlugins, type Stack } from "./fit.ts";
 
-export type Framework = "rwsdk" | "tanstack-start" | "vite-react" | "vite" | "unknown";
+export type Framework = "rwsdk" | "tanstack-start" | "astro" | "vite-react" | "vite" | "unknown";
 export type PackageManager = "bun" | "pnpm" | "npm" | "yarn";
 
 export interface Inferred {
   name: string;
   version: string;
   framework: Framework;
+  /** The framework even when init doesn't support it (next, astro, ...), for a better refusal. */
+  stack: Stack;
   pm: PackageManager;
   runCmd: (script: string) => string;
   /** Run a dependency's bin: bunx / pnpm exec / yarn / npx. */
@@ -32,6 +35,8 @@ export interface Inferred {
     aliases: Record<string, string>;
     desktopConfigPath: string | null;
   };
+  /** astro.config.*: its adapter by package name and its `output`. Null when there is no config. */
+  astro: AstroInfo | null;
   wranglerPath: string | null;
   /** Where app source lives. From tsconfig paths, then the vite "@" alias, then common names. */
   srcDir: string;
@@ -111,15 +116,7 @@ export function inferVite(root: string) {
   const out = { configPath, plugins: [] as string[], root: null as string | null, outDir: null as string | null, aliases: {} as Record<string, string>, desktopConfigPath };
   if (!configPath) return out;
   const src = readFileSync(configPath, "utf8");
-  // plugin imports, by package name
-  for (const m of src.matchAll(/from\s+["']([^"']+)["']/g)) {
-    const pkg = m[1]!;
-    if (/rwsdk\/vite|redwood/.test(pkg)) out.plugins.push("rwsdk");
-    else if (/@cloudflare\/vite-plugin/.test(pkg)) out.plugins.push("cloudflare");
-    else if (/@vitejs\/plugin-react/.test(pkg)) out.plugins.push("react");
-    else if (/@tanstack\/(react-)?start/.test(pkg)) out.plugins.push("tanstack-start");
-    else if (/@tailwindcss\/vite/.test(pkg)) out.plugins.push("tailwind");
-  }
+  out.plugins = vitePlugins(src);
   out.root = src.match(/\broot:\s*["']([^"']+)["']/)?.[1] ?? null;
   out.outDir = src.match(/\boutDir:\s*["']([^"']+)["']/)?.[1] ?? null;
   for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*(?:path\.)?resolve\([^,]+,\s*["']([^"']+)["']\)/g)) out.aliases[m[1]!] = m[2]!;
@@ -127,15 +124,35 @@ export function inferVite(root: string) {
   return out;
 }
 
+export interface AstroInfo {
+  configPath: string;
+  /** e.g. "@astrojs/cloudflare", "@astrojs/node"; null when the config sets none. */
+  adapter: string | null;
+  /** "static" when unset, as in Astro itself. */
+  output: "static" | "server";
+  /** The KV binding the Cloudflare adapter keeps sessions in. */
+  sessionKV: string;
+}
+
+export function inferAstro(root: string): AstroInfo | null {
+  const cands = ["astro.config.mjs", "astro.config.ts", "astro.config.mts", "astro.config.js", "astro.config.cjs"];
+  const configPath = cands.map((c) => join(root, c)).find(existsSync) ?? null;
+  if (!configPath) return null;
+  const src = readFileSync(configPath, "utf8");
+  const adapter = [...src.matchAll(/from\s+["'](@astrojs\/(?:cloudflare|node|vercel|netlify|deno)|[^"']*astro-adapter[^"']*)["']/g)][0]?.[1] ?? null;
+  return {
+    configPath, adapter,
+    output: /\boutput:\s*["']server["']/.test(src) ? "server" : "static",
+    sessionKV: src.match(/\bsessionKVBindingName:\s*["']([^"']+)["']/)?.[1] ?? "SESSION",
+  };
+}
+
 export function infer(root = process.cwd()): Inferred {
   const pkg = readPackageJson(root) ?? {};
   const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
   const vite = inferVite(root);
-  const framework: Framework =
-    deps["rwsdk"] || vite.plugins.includes("rwsdk") ? "rwsdk"
-    : deps["@tanstack/react-start"] || deps["@tanstack/start"] || vite.plugins.includes("tanstack-start") ? "tanstack-start"
-    : deps["vite"] && deps["react"] ? "vite-react"
-    : deps["vite"] ? "vite" : "unknown";
+  const stack = stackOf(deps, vite.plugins);
+  const framework = (SUPPORTED.includes(stack) ? stack : "unknown") as Framework;
   const pm = detectPm(root);
   const wranglerPath = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].map((c) => join(root, c)).find(existsSync) ?? null;
   const tsAliases = inferTsconfigAliases(root);
@@ -148,7 +165,7 @@ export function infer(root = process.cwd()): Inferred {
   return {
     name: pkg.name ?? "app",
     version: pkg.version ?? "0.0.0",
-    framework, pm,
+    framework, stack, pm,
     runCmd: (s) => pm === "npm" ? `npm run ${s}` : `${pm} ${s}`,
     execCmd: (b) => pm === "bun" ? `bunx ${b}` : pm === "pnpm" ? `pnpm exec ${b}` : pm === "yarn" ? `yarn ${b}` : `npx ${b}`,
     hasReact: !!deps["react"] || framework === "rwsdk",
@@ -156,7 +173,7 @@ export function infer(root = process.cwd()): Inferred {
     hasPrisma: !!deps["@prisma/client"] || !!deps["prisma"],
     hasBetterAuth: !!deps["better-auth"],
     scripts: pkg.scripts ?? {},
-    vite, wranglerPath, srcDir, aliases, srcDirSource, workerEntry,
+    vite, astro: inferAstro(root), wranglerPath, srcDir, aliases, srcDirSource, workerEntry,
     isWorkspaceRoot: !!pkg.workspaces || existsSync(join(root, "pnpm-workspace.yaml")),
     hasPackageJson: existsSync(join(root, "package.json")),
   };
