@@ -1115,6 +1115,14 @@ describe("shares", () => {
     expect((await post(call, "ana", `${on}/commit${q}`, { message: "c" })).status).toBe(200);
     const repo = await call.artifacts.get("ana--pub");
     expect(await (await repo.readFile({ ref: "main", path: "a.ts" }))!.text()).toBe("one\n\nthree\n");
+    // The crew's own remote has the real text, and only the crew is handed its clone line; deploys clone it.
+    const crew = await call.artifacts.get("ana--pub--crew");
+    expect(await (await crew.readFile({ ref: "main", path: "a.ts" }))!.text()).toBe("one\nkey = hunter3\nthree\n");
+    const info = async (who: string) => (await (await call(who, "/api/repos/ana/pub")).json()) as any;
+    expect((await info("agent-a")).crewClone).toContain("ana--pub--crew");
+    expect([(await info("bo")).crewClone, (await info("bo")).clone]).toEqual([null, expect.not.stringContaining("--crew")]);
+    const { remoteFor } = await import("../src/deploy.ts");
+    expect(await remoteFor(call.env as any, "ana", "pub")).toContain("ana--pub--crew");
     expect(await (await call("ana", "/api/search?q=hunter3")).json()).toEqual([]);
     expect((await (await call("ana", "/api/search?q=three")).json() as any[]).length).toBe(1);
 

@@ -225,7 +225,8 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   if (req.method !== "POST") return null;
   if (!runner) return json({ error: "preview deploys run on the desktop app, with your own logins" }, 400);
   if (runs.get(key) && !runs.get(key)!.done) return json({ error: "a preview is already running" }, 409);
-  const h = await handleFor(env, owner, repo);
+  // The crew's remote when there is one: a preview builds the real private lines.
+  const h = await handleFor(env, owner, repo, true);
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   if (!art) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
   const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);

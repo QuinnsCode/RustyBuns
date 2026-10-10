@@ -3,7 +3,7 @@
 // Cloudflare and in-process under Bun on the desktop.
 
 import { fromText } from "./lines.ts";
-import { fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
+import { ensureCrewRemote, fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
 import { code, json, NAME, type Env } from "./env.ts";
 import { identityRoutes, identify, isAdmin } from "./identity.ts";
 import { levelRoutes } from "./levels.ts";
@@ -129,13 +129,17 @@ const app = {
       if (!p[4] && req.method === "GET") {
         const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, created_at, expires_at FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-        // Anyone who can read the repo can clone its artifact, with an hour-long read token.
+        // Anyone who can read the repo can clone its artifact, with an hour-long read token;
+        // the crew also gets their own remote's, with private lines' real text, once there is one.
         const h = await handleFor(env, owner, repo).catch(() => null);
         const art = h && await artifactAccess(h.handle, h.remote, "read", 3600).catch(() => null);
         const clone = art && `git clone ${art.remote.replace("://", `://x:${art.token.split("?")[0]}@`)} ${repo}`;
+        const ch = a.write ? await handleFor(env, owner, repo, true).catch(() => null) : null;
+        const crewArt = ch?.crew ? await artifactAccess(ch.handle, ch.remote, "read", 3600).catch(() => null) : null;
+        const crewClone = crewArt && `git clone ${crewArt.remote.replace("://", `://x:${crewArt.token.split("?")[0]}@`)} ${repo}`;
         // Where the fork's git lives: a bare repo on this machine, or Cloudflare Artifacts.
         const home = h ? (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(art?.remote ?? h.remote) ? "local" : "cloud") : null;
-        return json({ ...r, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, home });
+        return json({ ...r, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home });
       }
       // PUT /api/repos/:o/:r {visibility}  (owner only)
       if (!p[4] && req.method === "PUT") {
@@ -241,20 +245,23 @@ const app = {
         const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitters-crew": a.write ? "1" : "0" } },
           url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "", branch);
         if (p[5] === "private" && req.method === "POST" && res.ok) {
+          // From the first private line on, the crew has a remote of its own to clone and deploy from.
+          if ((JSON.parse(sent!) as { private?: boolean }).private) await ensureCrewRemote(env, owner, repo).catch(() => null);
           // Open branches' copies of the file hide the same lines.
           const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all();
           for (const { name } of results as { name: string }[]) await toFile(env, owner, repo, path, user!, "private", { method: "POST", body: sent }, "", name);
           return res;
         }
         if (p[5] === "commit" && res.ok) {
-          // Index what was committed, not every keystroke; git and search get private lines blank.
-          const { commit, published } = (await res.json()) as { commit: { message: string }; published: string };
+          // Index what was committed, not every keystroke; git and search get private lines blank,
+          // the crew's remote the real text.
+          const { commit, content, published } = (await res.json()) as { commit: { message: string }; content: string; published: string };
           await env.DB.batch([
             env.DB.prepare("DELETE FROM file_search WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path),
             env.DB.prepare("INSERT INTO file_search (owner, repo, path, content) VALUES (?, ?, ?, ?)").bind(owner, repo, path, published),
           ]);
           // The catalogue entry stands even if the push fails; the next one carries it.
-          const git = await pushCatalogue(env, owner, repo, path, published, user!, commit.message).catch((e: Error) => ({ error: e.message }));
+          const git = await pushCatalogue(env, owner, repo, path, { content, published }, user!, commit.message).catch((e: Error) => ({ error: e.message }));
           // The owner's own commit ships, when they turned that on (deploy.ts).
           if (git && !("error" in git)) {
             await emit(env, owner, repo, "commit", user!, {
