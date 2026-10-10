@@ -32,6 +32,8 @@
 
 **A real Deploy from the desktop** (2026-10-10): `scripts/deploy-check.ts` makes a throwaway one-Worker app into a repo in the running desktop app, commits it, sets a stage and presses Deploy through the same API calls as the Deploy panel, with nothing faked. Clone, `bun install`, `rustybuns deploy` and the check went green in 20 s. A second Deploy updated the same Worker from the kept Alchemy state, then `--destroy` took it down. Run `bun run desktop` and then `bun scripts/deploy-check.ts --url … --cookie …` with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set (see the script's header).
 
+**The same check on the live site** (#309): `bun scripts/deploy-check.ts --hosted --url https://codesplitters.notryanquinn.workers.dev --cookie '<your session cookie>'`, with `CLOUDFLARE_API_TOKEN` (a token scoped to *Workers Scripts: Edit* only) and `CLOUDFLARE_ACCOUNT_ID` set. It signs in as an admin with that cookie, stores the token as the repo's deploy key, deploys twice in the site's `DeployRunner`, and fails unless both go green on the same Worker URL with the token never in the log. It also says whether the deploy step's log streamed and how long each run took. `--hosted --destroy` deletes that Worker and the stored key; delete the token in the dashboard after.
+
 On the desktop, Artifacts is a Rusty Buns twin: bare repos in `~/.codesplitters/artifacts`, served by `git http-backend` behind each repo's tokens, so it needs `git` installed. On Cloudflare, Artifacts needs the Workers Paid plan (10k operations and 1 GB a month included).
 
 ### Deploying (Cloudflare)
