@@ -21,8 +21,9 @@ export default defineConfig({
     compatibilityDate: "2026-06-01",
     compatibilityFlags: ["nodejs_compat"],   // Better Auth leans on Node APIs (AsyncLocalStorage)
     build: "bun run build.ts",
-    // Hourly: each repo's dependency doctor runs when its own schedule says it's due (src/deps.ts).
-    crons: ["0 * * * *"],
+    // Every five minutes: webhook retries (src/hooks.ts). Hourly: each repo's dependency
+    // doctor runs when its own schedule says it's due (src/deps.ts).
+    crons: ["*/5 * * * *", "0 * * * *"],
   },
   bindings: {
     // Profiles, repos, playlists and the search index.

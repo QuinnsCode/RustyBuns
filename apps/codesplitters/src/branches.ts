@@ -12,6 +12,7 @@ import { materialize, toFile } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { json, NAME, type Env } from "./env.ts";
+import { emit, type Later } from "./hooks.ts";
 
 type Pick = "branch" | "main";
 interface Access { read: boolean; write: boolean }
@@ -51,7 +52,7 @@ async function mergeFile(env: Env, owner: string, repo: string, branch: { name: 
   return { status: res.status, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[] }) };
 }
 
-export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
+export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access, later?: Later): Promise<Response | null> {
   if (p[4] !== "branches") return null;
   const name = p[5];
 
@@ -67,6 +68,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (!NAME.test(b ?? "") || b === "main") return json({ error: "bad branch name" }, 400);
     const r = await env.DB.prepare("INSERT OR IGNORE INTO branches (owner, repo, name, by, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)").bind(owner, repo, b, user, Date.now()).run();
     if (!r.meta?.changes) return json({ error: "branch exists" }, 409);
+    await emit(env, owner, repo, "branch.opened", user!, { ref: b, ref_type: "branch", master_branch: "main" }, later);
     return json({ name: b, by: user, status: "open" }, 201);
   }
 
@@ -123,7 +125,16 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       await env.DB.prepare("UPDATE branch_files SET merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, f.path).run();
       conflicts.push({ path: f.path, conflicts: m.conflicts });
     }
-    if (!conflicts.length) await env.DB.prepare("UPDATE branches SET status = 'merged', merged_by = ?, merged_at = ? WHERE owner = ? AND repo = ? AND name = ?").bind(user, Date.now(), owner, repo, name).run();
+    if (!conflicts.length) {
+      const at = Date.now();
+      await env.DB.prepare("UPDATE branches SET status = 'merged', merged_by = ?, merged_at = ? WHERE owner = ? AND repo = ? AND name = ?").bind(user, at, owner, repo, name).run();
+      // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
+      await emit(env, owner, repo, "branch.merged", user!, {
+        action: "closed",
+        pull_request: { merged: true, merged_at: new Date(at).toISOString(), merged_by: { login: user }, user: { login: branch.by }, head: { ref: name }, base: { ref: "main" } },
+        files: merged.map((m) => m.path),
+      }, later);
+    }
     return json({ status: conflicts.length ? "open" : "merged", merged, conflicts }, conflicts.length ? 409 : 200);
   }
   return null;
