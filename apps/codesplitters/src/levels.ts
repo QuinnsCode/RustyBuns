@@ -6,9 +6,10 @@
 
 import { listDir, readText } from "./archive.ts";
 import { chunkRepo, importChunks } from "./chunks.ts";
-import { code, json, NAME, type ArtifactsRepo, type Env } from "./env.ts";
+import { code, json, NAME, type ArtifactsRepo, type DigMessage, type Env } from "./env.ts";
 import { githubHead, githubTarball, githubToken, importRepo, submodules } from "./github.ts";
 import { tooBigToImport } from "./tarball.ts";
+import { digPart, Later, planSwarm, progress } from "./swarm.ts";
 
 export interface Level { n: number; slug: string; title: string; repo: string; branch: string; blurb: string }
 
@@ -46,7 +47,7 @@ async function states(env: Env) {
   const rows = new Map<string, any>(results.map((r: any) => [r.slug, r]));
   return Promise.all(LEVELS.map(async (l) => {
     const row = rows.get(l.slug);
-    if (row?.status === "importing" && row.store !== "r2" && env.ARTIFACTS) {
+    if (row?.status === "importing" && !row.store && env.ARTIFACTS) {
       try {
         const handle = await env.ARTIFACTS.get(artifactName(l.slug));
         const [tip] = await handle.log({ ref: l.branch, limit: 1 });
@@ -59,7 +60,9 @@ async function states(env: Env) {
         }
       }
     }
-    return { ...l, status: row?.status ?? "buried", error: row?.error ?? null, commit: row?.commit_hash ?? null, store: row?.store === "r2" ? "r2" : "artifacts" };
+    const digging = row?.status === "importing" || row?.status === "assembling";
+    return { ...l, status: digging ? "importing" : row?.status ?? "buried", error: row?.error ?? null, commit: row?.commit_hash ?? null, store: row?.store === "r2" ? "r2" : "artifacts",
+      ...(digging && row.store === "r2" && row.parts ? { progress: await progress(env, l.slug, row.commit_hash, row.parts) } : {}) };
   }));
 }
 
@@ -83,6 +86,79 @@ export async function levelSource(env: Env, slug: string): Promise<{ handle: Art
   return { handle: await env.ARTIFACTS.get(artifactName(slug)), ref: level.branch, commit: row.commit_hash ?? null, r2: false };
 }
 
+/** Keep the reason a dig failed, so the level says why (too big for Artifacts, say) instead of looking buried. */
+async function failed(env: Env, slug: string, e: unknown) {
+  const error = String((e as Error).message ?? e);
+  await env.DB.prepare("INSERT INTO levels (slug, status, error, imported_at) VALUES (?, 'failed', ?, ?) ON CONFLICT(slug) DO UPDATE SET status = 'failed', error = excluded.error")
+    .bind(slug, error, Date.now()).run();
+  return error;
+}
+
+/**
+ * Dig up `level`: into Artifacts (its import, or GitHub's tarball past the
+ * import cap), else, too big for Artifacts at all, into R2: by the swarm when
+ * there's a queue for it, else from the tarball in this one Worker. A retry
+ * (`attempt` > 1) whose first try never finished, a big level that ran out of
+ * time or memory pushing to git, goes straight to R2.
+ */
+async function dig(env: Env, level: Level, user: string | null, attempt: number) {
+  const slug = level.slug, token = (await githubToken(env, user))?.token;
+  if (attempt <= 1 || !env.LEVEL_CHUNKS) {
+    try {
+      await importRepo(env, { repo: level.repo, branch: level.branch, token },
+        { name: artifactName(slug), opts: { readOnly: true, description: `${level.title} (${level.repo}), a codeSplitters level` } });
+    } catch (e) {
+      if (!(tooBig(e) && env.LEVEL_CHUNKS) && code(e) !== "ALREADY_EXISTS") throw e;
+      if (code(e) === "ALREADY_EXISTS") return importing(env, slug);
+      return chunked(env, level, user, token);
+    }
+    return importing(env, slug);
+  }
+  return chunked(env, level, user, token);
+}
+
+/** In Artifacts, or on its way: states() opens it once its log answers. */
+async function importing(env: Env, slug: string) {
+  await env.DB.prepare("INSERT INTO levels (slug, status, imported_at) VALUES (?, 'importing', ?) ON CONFLICT(slug) DO UPDATE SET status = 'importing', store = NULL, error = NULL, parts = NULL")
+    .bind(slug, Date.now()).run();
+  return { slug, status: "importing" };
+}
+
+/** Too big for Artifacts: into R2 as chunks, read-only. */
+async function chunked(env: Env, level: Level, user: string | null, token?: string) {
+  const slug = level.slug, bucket = env.LEVEL_CHUNKS!, head = await githubHead(level.repo, level.branch, token);
+  if (env.LEVEL_DIGS) {
+    const parts = await planSwarm(env as Env & { LEVEL_DIGS: NonNullable<Env["LEVEL_DIGS"]> }, bucket, { slug, repo: level.repo, sha: head.sha, message: head.message, user, token });
+    if (parts !== null) return { slug, status: "importing", store: "r2", parts };
+  }
+  const kept = await importChunks(env, bucket, { slug, sha: head.sha, repo: level.repo, tarball: () => githubTarball(level.repo, head.sha, token), submodules: () => submodules(level.repo, head.sha, token) });
+  await env.DB.prepare("INSERT INTO levels (slug, status, store, commit_hash, commit_message, imported_at) VALUES (?, 'ready', 'r2', ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET status = 'ready', store = 'r2', error = NULL, parts = NULL, commit_hash = excluded.commit_hash, commit_message = excluded.commit_message, imported_at = excluded.imported_at")
+    .bind(slug, head.sha, head.message, Date.now()).run();
+  return { slug, status: "ready", store: "r2", ...kept };
+}
+
+/** Tries a dig message gets (the consumer's maxRetries, plus the first). A Worker that dies mid-dig (out of time or memory) is redelivered by the queue itself. */
+const TRIES = 4;
+
+/** LEVEL_DIGS' consumer: a level's first step, or one part of a big level's swarm. */
+export async function runDigs(batch: { messages: readonly { body: DigMessage; attempts: number; ack(): void; retry(o?: { delaySeconds?: number }): void }[] }, env: Env) {
+  for (const m of batch.messages) {
+    const level = LEVELS.find((l) => l.slug === m.body.dig);
+    if (!level) { m.ack(); continue; }
+    try {
+      if (m.body.part) {
+        if (env.LEVEL_CHUNKS) await digPart(env, env.LEVEL_CHUNKS, level.slug, level.repo, m.body.part);
+      } else await dig(env, level, m.body.user, m.attempts);
+      m.ack();
+    } catch (e) {
+      // Only GitHub turning us away for now is worth waiting out; anything else is the answer.
+      if (e instanceof Later && m.attempts < TRIES) { m.retry({ delaySeconds: 60 }); continue; }
+      await failed(env, level.slug, e);
+      m.ack();
+    }
+  }
+}
+
 /** /api/levels... ; `user` is the caller's handle, `admin` whether they may import. */
 export async function levelRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null, admin: boolean): Promise<Response | null> {
   if (p[1] !== "levels") return null;
@@ -95,32 +171,15 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
   if (p[3] === "import" && req.method === "POST") {
     if (!admin) return json({ error: "admins only" }, 403);
     if (!env.ARTIFACTS) return json({ error: "no Artifacts binding" }, 501);
-    try {
-      // A big level (Alchemy, Bun...) is over the import cap and comes in from GitHub's tarball, here and now.
-      await importRepo(env, { repo: level.repo, branch: level.branch, token: (await githubToken(env, user))?.token },
-        { name: artifactName(slug), opts: { readOnly: true, description: `${level.title} (${level.repo}), a codeSplitters level` } });
-    } catch (e) {
-      // Too big for Artifacts at all (Bun, say): into R2 as chunks, here and now, read-only.
-      if (tooBig(e) && env.LEVEL_CHUNKS) {
-        try {
-          const token = (await githubToken(env, user))?.token, head = await githubHead(level.repo, level.branch, token);
-          const kept = await importChunks(env, env.LEVEL_CHUNKS, { slug, sha: head.sha, repo: level.repo, tarball: () => githubTarball(level.repo, head.sha, token), submodules: () => submodules(level.repo, head.sha, token) });
-          await env.DB.prepare("INSERT INTO levels (slug, status, store, commit_hash, commit_message, imported_at) VALUES (?, 'ready', 'r2', ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET status = 'ready', store = 'r2', error = NULL, commit_hash = excluded.commit_hash, commit_message = excluded.commit_message, imported_at = excluded.imported_at")
-            .bind(slug, head.sha, head.message, Date.now()).run();
-          return json({ slug, status: "ready", store: "r2", ...kept });
-        } catch (e2) { e = e2; }
-      }
-      if (code(e) !== "ALREADY_EXISTS") {
-        // Keep the reason, so the level says why (too big for Artifacts, say) instead of looking buried.
-        const error = String((e as Error).message ?? e);
-        await env.DB.prepare("INSERT INTO levels (slug, status, error, imported_at) VALUES (?, 'failed', ?, ?) ON CONFLICT(slug) DO UPDATE SET status = 'failed', error = excluded.error")
-          .bind(slug, error, Date.now()).run();
-        return json({ error }, 502);
-      }
+    // With a queue, the dig runs off it, so it carries on when the page that asked goes away.
+    if (env.LEVEL_DIGS) {
+      await env.DB.prepare("INSERT INTO levels (slug, status, store, imported_at) VALUES (?, 'importing', 'queued', ?) ON CONFLICT(slug) DO UPDATE SET status = 'importing', store = 'queued', error = NULL, parts = NULL")
+        .bind(slug, Date.now()).run();
+      await env.LEVEL_DIGS.send({ dig: slug, user });
+      return json({ slug, status: "importing" }, 202);
     }
-    await env.DB.prepare("INSERT INTO levels (slug, status, imported_at) VALUES (?, 'importing', ?) ON CONFLICT(slug) DO UPDATE SET status = 'importing', store = NULL, error = NULL")
-      .bind(slug, Date.now()).run();
-    return json({ slug, status: "importing" }, 202);
+    try { return json(await dig(env, level, user, 1)); }
+    catch (e) { return json({ error: await failed(env, slug, e) }, 502); }
   }
 
   const r = await levelSource(env, slug);

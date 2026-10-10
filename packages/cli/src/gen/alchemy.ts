@@ -230,7 +230,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   for (const [name, b] of edge ? Object.entries(bindings) : []) {
     if (b.type !== "queue" || b.consumer === false) continue;
     const s = b.consumer ?? {};
-    const settings = Object.entries({ batchSize: s.batchSize, maxWaitTimeMs: s.maxWaitTimeMs, maxRetries: s.maxRetries, retryDelay: s.retryDelay })
+    const settings = Object.entries({ batchSize: s.batchSize, maxWaitTimeMs: s.maxWaitTimeMs, maxRetries: s.maxRetries, retryDelay: s.retryDelay, maxConcurrency: s.maxConcurrency })
       .filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${v}`);
     lines.push(`    yield* Cloudflare.Queues.Consumer(${JSON.stringify(`${name}Consumer`)}, { queueId: (yield* ${ident(name)}).queueId, scriptName: worker.workerName${settings.length ? `, settings: { ${settings.join(", ")} }` : ""} });`);
   }

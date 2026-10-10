@@ -18,6 +18,9 @@ export async function local(extra: Record<string, unknown> = {}) {
   // Queued requests' messages, likewise.
   env.JOBS = queue(":memory:", "codesplitters-jobs");
   const stopJobs = env.JOBS.consume((batch: any) => worker.queue(batch, env));
+  // Level digs, likewise: an import's first step, and a big level's parts.
+  env.LEVEL_DIGS = queue(":memory:", "codesplitters-level-digs");
+  const stopDigs = env.LEVEL_DIGS.consume((batch: any) => worker.queue(batch, env), { maxRetries: 3 });
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
   const dir = mkdtempSync(join(tmpdir(), "codesplitters-artifacts-"));
   // An `ARTIFACTS` passed in wins (scripts/fresh-check.ts brings Cloudflare's).
@@ -36,7 +39,7 @@ export async function local(extra: Record<string, unknown> = {}) {
     artifacts: env.ARTIFACTS as LocalArtifacts,
     env,
     /** Stop the queue consumers and the git server, and delete the temp repos. */
-    close() { stopHooks(); stopJobs(); git.stop(true); rmSync(dir, { recursive: true, force: true }); },
+    close() { stopHooks(); stopJobs(); stopDigs(); git.stop(true); rmSync(dir, { recursive: true, force: true }); },
   });
 }
 

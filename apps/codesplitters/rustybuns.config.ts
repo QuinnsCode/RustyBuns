@@ -49,6 +49,9 @@ export default defineConfig({
     // Queued requests (digs, previews, dependency checks over a limit that queues): one
     // message each, delayed until the caller's window has room (src/limits.ts).
     JOBS: { type: "queue", queueName: "codesplitters-jobs", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
+    // Level digs: an import's first step, then a big level's parts (src/swarm.ts), one
+    // message each, several at once. maxConcurrency caps how hard GitHub gets hit.
+    LEVEL_DIGS: { type: "queue", queueName: "codesplitters-level-digs", consumer: { batchSize: 1, maxWaitTimeMs: 1000, maxRetries: 3, retryDelay: 20, maxConcurrency: 8 } },
     // One git repo per excavation; cataloguing pushes to it.
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
     // Levels too big for Artifacts (Bun, Alchemy), as ~8 MB chunks of their text files

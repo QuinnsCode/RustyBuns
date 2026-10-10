@@ -24,7 +24,7 @@ export interface WranglerJson {
   send_email?: { name: string; allowed_sender_addresses?: string[] }[];
   queues?: {
     producers?: { binding: string; queue: string }[];
-    consumers?: { queue: string; max_batch_size?: number; max_batch_timeout?: number; max_retries?: number; retry_delay?: number }[];
+    consumers?: { queue: string; max_batch_size?: number; max_batch_timeout?: number; max_retries?: number; retry_delay?: number; max_concurrency?: number }[];
   };
   [k: string]: unknown;
 }
@@ -61,7 +61,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
     const c = w.queues?.consumers?.find((c) => c.queue === q.queue);
     bindings[q.binding] = { type: "queue", queueName: q.queue, ...(c ? { consumer: JSON.parse(JSON.stringify({
       batchSize: c.max_batch_size, maxWaitTimeMs: c.max_batch_timeout === undefined ? undefined : c.max_batch_timeout * 1000,
-      maxRetries: c.max_retries, retryDelay: c.retry_delay })) } : { consumer: false as const }) };
+      maxRetries: c.max_retries, retryDelay: c.retry_delay, maxConcurrency: c.max_concurrency })) } : { consumer: false as const }) };
   }
   for (const [k, v] of Object.entries(w.vars ?? {})) bindings[k] = { type: "var", value: String(v) };
   const rwf = w.assets?.run_worker_first;

@@ -44,6 +44,7 @@ function wranglerConsumer(queue: string, c: QueueConsumer) {
     ...(c.maxWaitTimeMs !== undefined ? { max_batch_timeout: c.maxWaitTimeMs / 1000 } : {}),
     ...(c.maxRetries !== undefined ? { max_retries: c.maxRetries } : {}),
     ...(c.retryDelay !== undefined ? { retry_delay: c.retryDelay } : {}),
+    ...(c.maxConcurrency !== undefined ? { max_concurrency: c.maxConcurrency } : {}),
   };
 }
 

@@ -1886,7 +1886,7 @@ async function drawLevels() {
       : l.status === "importing" ? "" : `<button class="btn" data-dig="${esc(l.repo)}"${tab}>${icon("git-fork")}Fork from GitHub</button>`;
     return `<div class="level"${copy ? ' aria-hidden="true"' : ""}><span class="lvl-n">${String(l.n).padStart(2, "0")}</span>
       <a href="#/l/${l.slug}"${tab}><b>${esc(l.title)}</b><span class="muted">${esc(l.repo)}</span> <span class="blurb">${esc(l.blurb)}</span></a>
-      <span class="lvl-acts"><span class="lvl-st st-${l.status}" ${l.error ? `title="${esc(l.error)}"` : ""}>${big ? "too big for Artifacts" : l.store === "r2" ? "open · read-only" : st[l.status] ?? l.status}</span>
+      <span class="lvl-acts"><span class="lvl-st st-${l.status}" ${l.error ? `title="${esc(l.error)}"` : ""}>${big ? "too big for Artifacts" : l.progress ? `digging ${l.progress.done}/${l.progress.of}` : l.store === "r2" && l.status === "ready" ? "open · read-only" : st[l.status] ?? l.status}</span>
         <button class="btn ghost" data-copy="${esc(l.repo)}" title="Copy https://github.com/${esc(l.repo)} and put it in the dig box"${tab}>${icon("copy")}</button>${go}</span></div>`;
   }).join("");
   el.innerHTML = `<div class="reel" style="--reel-s:${levels.length * 4}s">${rows(false)}${rows(true)}</div>`;
