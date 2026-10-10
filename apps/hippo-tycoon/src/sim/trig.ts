@@ -1,5 +1,5 @@
 // cos and sin with nothing but + - * / and floor, so the Rust twin
-// (rust/crates/hippo_sim) gets the same bits. Math.cos/sin/hypot are left to
+// (native/crates/hippo_sim) gets the same bits. Math.cos/sin/hypot are left to
 // each engine's libm, whose last bits differ.
 
 const HALF_PI = Math.PI / 2;

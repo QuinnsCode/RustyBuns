@@ -1,7 +1,7 @@
 // Bots are drivers: they read the state and produce the same Input a human
 // does. They never touch a hippo. Memory and randomness are the caller's, so
 // the same seed gives the same bots, and the spawn stream is never disturbed.
-// rust/crates/hippo_sim/src/bots.rs is the Rust twin, op for op.
+// native/crates/hippo_sim/src/bots.rs is the Rust twin, op for op.
 import { A_REST, DROP_R, GOLD, GULP_OUT, LUNGE, NAIL, OIL, POINTS, RAIL_HALF, SCOOP_R, SLIDE_SPEED, SLUDGE, SORE_FACTOR, WALL_R, WATER, type Personality } from "./rules.ts";
 import { hippoPoint, toFrame } from "./geom.ts";
 import { next, type Rng } from "./rng.ts";
