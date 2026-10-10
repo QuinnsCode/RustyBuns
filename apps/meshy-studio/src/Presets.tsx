@@ -1,8 +1,10 @@
 // The preset editor: every Image to 3D and Retexture option, with Meshy's rules and prices
 // checked as you go. Saves to the workspace's meshy-presets.json.
 import { useEffect, useState } from "react";
+import { scrimProps } from "./scrim.ts";
 import { checkPreset, estimateCredits, estimateRetexture, FORMATS, RETEXTURE_DEFAULTS, type Format, type MeshyOptions, type RetextureOptions } from "../engine/presets.ts";
 import { api, type Preset, type Summary } from "./api.ts";
+import { OptionFields } from "./OptionFields.tsx";
 
 type Opt = MeshyOptions;
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -44,8 +46,8 @@ export function PresetsPanel({ sum, onClose, onSaved }: { sum: Summary; onClose:
   const rt = { ...RETEXTURE_DEFAULTS, ...p.retexture };
 
   return (
-    <div className="scrim" onClick={onClose}>
-      <aside className="drawer wide plate" role="dialog" aria-label="Presets" onClick={(e) => e.stopPropagation()}>
+    <div className="scrim" {...scrimProps(onClose)}>
+      <aside className="drawer wide plate" role="dialog" aria-label="Presets">
         <header className="row">
           <h2>Presets</h2>
           <span className="grow" />
@@ -95,48 +97,11 @@ export function PresetsPanel({ sum, onClose, onSaved }: { sum: Summary; onClose:
               </Field>
             </Group>
 
-            <Group title="Model">
-              <Field label="Model type"><Pick value={p.options.model_type} def options={["standard", "smart-topology"]} onChange={(v) => o("model_type", v)} /></Field>
-              <Field label="AI model" hint="latest is Meshy 7.1. Smart topology always uses meshy-t2.">
-                <Pick value={p.options.ai_model} def options={t2 ? ["meshy-t2"] : ["latest", "meshy-7.1", "meshy-6", "meshy-6-lite"]} onChange={(v) => o("ai_model", v)} />
-              </Field>
-              <Field label="Geometry resolution" hint="Ultra geometry: meshy-7.1 only, +5 credits for 2k or 4k.">
-                <Pick value={p.options.geometry_resolution} def disabled={!m71} options={["standard", "2k", "4k"]} onChange={(v) => o("geometry_resolution", v)} />
-              </Field>
-            </Group>
-
-            <Group title="Texture">
-              <Field label="Texture" hint="Off makes an untextured shape, the same as a draft."><Bool value={p.options.should_texture} onChange={(v) => o("should_texture", v)} /></Field>
-              <Field label="PBR maps" hint="Metallic, roughness and normal maps."><Bool value={p.options.enable_pbr} onChange={(v) => o("enable_pbr", v)} /></Field>
-              <Field label="Texture resolution" hint="4k and 8k aren't available on meshy-6-lite. 8k costs +5.">
-                <Pick value={p.options.texture_resolution} def options={["2k", "4k", "8k"]} onChange={(v) => o("texture_resolution", v)} />
-              </Field>
-            </Group>
-
-            <Group title="Mesh">
-              <Field label="Remesh" hint="Meshy's default: off for Meshy 6 and 7, on for the others."><Bool value={p.options.should_remesh} onChange={(v) => o("should_remesh", v)} /></Field>
-              <Field label="Topology"><Pick value={p.options.topology} def options={["triangle", "quad"]} onChange={(v) => o("topology", v)} /></Field>
-              <Field label="Target polycount" hint={t2 ? "100 to 15,000 (default 4,000)." : "100 to 300,000 (default 30,000), with remesh on."}>
-                <input className="num" type="number" min={100} step={500} value={p.options.target_polycount ?? ""} placeholder="default"
-                  onChange={(e) => o("target_polycount", e.target.value === "" ? undefined : Number(e.target.value))} />
-              </Field>
-              <Field label="Adaptive decimation" hint="1 (ultra) to 4 (low). Overrides the polycount.">
-                <Pick value={p.options.decimation_mode?.toString()} def options={["1", "2", "3", "4"]} onChange={(v) => o("decimation_mode", v ? Number(v) : undefined)} />
-              </Field>
-              <Field label="Keep pre-remesh model" hint="Also downloads the model before remeshing."><Bool value={p.options.save_pre_remeshed_model} onChange={(v) => o("save_pre_remeshed_model", v)} /></Field>
-            </Group>
-
-            <Group title="Pose and cleanup">
-              <Field label="Pose"><Pick value={p.options.pose_mode || undefined} def labels={{ "a-pose": "A-pose", "t-pose": "T-pose" }} options={["a-pose", "t-pose"]} onChange={(v) => o("pose_mode", v)} /></Field>
-              <Field label="Image enhancement" hint="meshy-6 and meshy-7.1. Default on."><Bool value={p.options.image_enhancement} onChange={(v) => o("image_enhancement", v)} /></Field>
-              <Field label="Remove lighting" hint="meshy-6 only. Default on."><Bool value={p.options.remove_lighting} onChange={(v) => o("remove_lighting", v)} /></Field>
-            </Group>
-
-            <Group title="Previews and safety">
-              <Field label="Transparent thumbnail"><Bool value={p.options.alpha_thumbnail} onChange={(v) => o("alpha_thumbnail", v)} /></Field>
-              <Field label="Four-view thumbnails" hint="Front, right, back, left. About 3 s longer."><Bool value={p.options.multi_view_thumbnails} onChange={(v) => o("multi_view_thumbnails", v)} /></Field>
-              <Field label="Moderation" hint="Meshy screens the inputs for harmful content."><Bool value={p.options.moderation} onChange={(v) => o("moderation", v)} /></Field>
-            </Group>
+            <OptionFields source="image" value={p.options} onSet={(patch) => update((x) => {
+              for (const [k, v] of Object.entries(patch)) {
+                if (v === undefined || v === null || v === "") delete (x.options as any)[k]; else (x.options as any)[k] = v;
+              }
+            })} />
 
             <Group title="Files">
               <Field label="Also download" hint=".glb is always made (002 is built from it). Others land in 001, with texture maps beside them.">

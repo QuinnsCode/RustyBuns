@@ -6,43 +6,64 @@
 <title>codeSplitters: the backrooms</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;700&family=Geist+Mono:wght@400;500&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  /* Same system as the site: white paper, black ink, hairlines, one orange.
+     The backrooms are a clean white Kamino hall here: white panels, grey floor, black trim. */
   :root {
-    --paper: #f7f3e8; --paper-2: #fbf9f2; --ink: #2b2620; --ink-2: #6f665a; --rule: #e3dac6; --accent: #8c2f22;
+    --paper: #fcfbf8; --paper-2: #ffffff; --ink: #0a0a0a; --ink-2: #6b6b6b; --rule: #e6e6e6; --edge: #cfcfcf; --accent: #e8590c; --accent-soft: #fff4ec;
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .28 0 0 0 0 .2 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, Menlo, monospace;
-    /* The HUD: a compressed highway-sign face, the office-game kind. */
-    --display: "Barlow Condensed", "Interstate Compressed", "Arial Narrow", sans-serif;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #1c1915; color: var(--ink); font: 300 15px/1.5 var(--sans); }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #f2f4f5; color: var(--ink); font: 400 14px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
   canvas#c { display: block; width: 100vw; height: 100vh; }
-  .hud { position: fixed; pointer-events: none; font: 500 17px/1.2 var(--display); letter-spacing: .02em; color: var(--paper); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
-  #tl { top: 14px; left: 16px; }
-  #tl .big { font: 600 30px/1 var(--display); letter-spacing: .01em; text-transform: uppercase; }
-  #tr { top: 14px; right: 16px; text-align: right; }
-  #bl { bottom: 16px; left: 16px; width: 260px; }
-  #health { height: 10px; border: 1px solid rgba(247,243,232,.7); margin-top: 6px; }
-  #health i { display: block; height: 100%; background: var(--paper); transition: width .15s; }
-  #health.low i { background: #c0543f; }
-  #cross { top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--paper); opacity: .8; }
-  #banner { top: 30%; left: 0; right: 0; text-align: center; font: 600 84px/1 var(--display); letter-spacing: .02em; text-transform: uppercase; color: var(--paper); opacity: 0; transition: opacity .25s; }
-  #banner small { display: block; font: 500 22px/1.5 var(--display); letter-spacing: .04em; text-transform: none; }
-  #hurt { inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(140,47,34,.55)); opacity: 0; transition: opacity .3s; }
-  .panel { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(28,25,21,.55); }
+  /* The HUD: small mono readouts in ink, like an instrument panel. */
+  .hud { position: fixed; pointer-events: none; font: 500 12px/1.5 var(--mono); letter-spacing: .02em; color: var(--ink); }
+  #tl, #tr, #bl { background: rgba(255,255,255,.82); backdrop-filter: blur(6px); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 12px; }
+  #tl { top: 14px; left: 14px; }
+  #tl .big, #tr .big { font: 600 20px/1.1 var(--sans); letter-spacing: -0.03em; }
+  #tr { top: 14px; right: 14px; text-align: right; } #tr .big { font-variant-numeric: tabular-nums; }
+  #bl { bottom: 14px; left: 14px; width: 240px; }
+  #health { height: 4px; background: var(--rule); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  #health i { display: block; height: 100%; background: var(--ink); transition: width .15s; }
+  #health.low i { background: var(--accent); }
+  #cross { top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(255,255,255,.8); }
+  /* The press meter: how long the bat has been held against a line. The orange notch is the sweet spot. */
+  #press { top: 50%; left: 50%; width: 140px; margin: 22px 0 0 -70px; height: 6px; background: rgba(255,255,255,.85); border: 1px solid var(--edge); border-radius: 3px; overflow: hidden; opacity: 0; }
+  #press.on { opacity: 1; }
+  #press b { position: absolute; top: 0; bottom: 0; background: var(--accent-soft); border-left: 1px solid var(--accent); border-right: 1px solid var(--accent); }
+  #press i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink); }
+  #press.sweet i { background: var(--accent); }
+  #banner { top: 30%; left: 0; right: 0; text-align: center; font: 600 64px/1 var(--sans); letter-spacing: -0.05em; color: var(--ink); opacity: 0; transition: opacity .25s; text-shadow: 0 1px 0 #fff; }
+  #banner small { display: block; margin-top: 10px; font: 500 13px/1.5 var(--mono); letter-spacing: .04em; color: var(--ink-2); }
+  #hurt { inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(232,89,12,.45)); opacity: 0; transition: opacity .3s; }
+  .panel { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(250,250,250,.6); backdrop-filter: blur(4px); }
   .panel[hidden] { display: none; }
-  .card { width: min(520px, calc(100vw - 32px)); background: var(--paper); border: 1px solid var(--rule); padding: 26px 28px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
-  .card h1 { margin: 0 0 4px; font: 600 40px/1 var(--display); letter-spacing: .01em; text-transform: uppercase; }
-  .label { font: 400 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); margin-bottom: 10px; }
+  .card { width: min(520px, calc(100vw - 32px)); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 26px 28px; box-shadow: 0 24px 64px -16px rgba(0,0,0,.22); }
+  .card h1 { margin: 0 0 4px; font: 600 32px/1.05 var(--sans); letter-spacing: -0.045em; }
+  .label { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); margin-bottom: 12px; }
   .muted { color: var(--ink-2); }
-  .card ul { list-style: none; padding: 0; margin: 14px 0; border-top: 1px solid var(--rule); }
-  .card li { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--rule); font: 400 14px var(--mono); }
+  .card ul { list-style: none; padding: 0; margin: 16px 0; border-top: 1px solid var(--rule); }
+  .card li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--rule); font: 400 13px var(--mono); }
   .card li .ok { color: var(--accent); }
-  button { font: 500 14px var(--sans); padding: 9px 16px; border: 1px solid var(--ink); background: var(--paper-2); color: var(--ink); cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--paper); }
-  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .keys { margin-top: 16px; font: 400 12px/1.7 var(--mono); color: var(--ink-2); }
-  a { color: var(--accent); }
+  /* Infinite Craft tiles in paper, same as the site. */
+  button { display: inline-flex; align-items: center; gap: 7px; font: 500 13px/1 var(--sans); padding: 9px 12px 8px; border: 1px solid var(--edge); border-radius: 5px; background: var(--grain), var(--paper); color: var(--ink); cursor: pointer; transition: border-color .12s, background .12s, transform .06s; }
+  button:hover { background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); border-color: #a8a8a8; }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--grain), var(--ink); border-color: var(--ink); color: #fff; }
+  button.primary:hover { background: var(--grain), linear-gradient(0deg, #2a2a2a, #0a0a0a 85%); }
+  /* The mode picker: three paper tiles, the picked one inked orange. */
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0 0; }
+  .modes button { flex-direction: column; align-items: flex-start; gap: 5px; padding: 10px 11px 9px; text-align: left; line-height: 1.2; }
+  .modes button small { font: 400 11px/1.35 var(--mono); color: var(--ink-2); }
+  .modes button.on { border-color: var(--accent); background: var(--grain), var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
+  .modes button:disabled { opacity: .5; cursor: not-allowed; }
+  @media (max-width: 520px) { .modes { grid-template-columns: 1fr; } }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .keys { margin-top: 16px; font: 400 12px/1.8 var(--mono); color: var(--ink-2); }
+  kbd { font: 500 11px var(--mono); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--paper); color: var(--ink); }
+  a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; } a:hover { text-decoration-color: var(--accent); }
 </style>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
 </head>
@@ -52,16 +73,22 @@
 <div class="hud" id="tr"><div id="score" class="big">0</div><div id="combo"></div><div id="others"></div></div>
 <div class="hud" id="bl"><div id="hp">100</div><div id="health"><i style="width:100%"></i></div></div>
 <div class="hud" id="cross"></div>
+<div class="hud" id="press"><b></b><i></i></div>
 <div class="hud" id="banner"></div>
 <div class="hud" id="hurt"></div>
 
 <div class="panel" id="lobby"><div class="card">
   <div class="label" id="lobby-label">the backrooms</div>
   <h1 id="lobby-title">…</h1>
-  <p class="muted" style="margin:6px 0 0">Every folder is a room. The walls are the code. The code is restless. Grab the bat.</p>
+  <p class="muted" style="margin:6px 0 0" id="lobby-blurb">Every folder is a room. The walls are the code. The code is restless. Grab the bat.</p>
+  <div class="modes" id="modes">
+    <button data-mode="horde">horde<small>the lines come off the walls at you</small></button>
+    <button data-mode="wreck">wreck it<small>a panic room: smash the codebase together</small></button>
+    <button data-mode="removed">smash the removed<small id="diff-name">pick a diff in a file's History</small></button>
+  </div>
   <ul id="lobby-players"></ul>
   <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><span class="muted" id="lobby-msg"></span></div>
-  <div class="keys">WASD move · mouse look · click swing · shift run<br>walk into a doorway to go into that folder · club other players too</div>
+  <div class="keys"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swing · <kbd>hold</kbd> press the bat into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
   <p style="margin:14px 0 0;font-size:13px"><a id="back" href="/">← back to the site</a></p>
 </div></div>
 <div class="panel" id="lock" hidden style="background:transparent;place-items:end center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;padding:12px 18px"><b>Click to grab the bat</b> <span class="muted">· Esc lets go</span></div></div>
@@ -75,8 +102,11 @@
 import * as THREE from "three";
 
 // ---- where we are -------------------------------------------------------------
-// #l/<level> or #r/<owner>/<repo>
-const room = location.hash.slice(1) || "l/mitt";
+// #l/<level> or #r/<owner>/<repo>, and for a diff to smash ?path=&from=&to=
+const [hashRoom, hashQuery] = location.hash.slice(1).split("?");
+const room = hashRoom || "l/mitt";
+const hq = new URLSearchParams(hashQuery ?? "");
+const hashDiff = hq.has("path") ? { path: hq.get("path"), from: Number(hq.get("from")), to: Number(hq.get("to")) } : null;
 const API = `/api/game/${room}`;
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -97,28 +127,33 @@ const pick = (a) => a[Math.floor(rng() * a.length)];
 const renderer = new THREE.WebGLRenderer({ canvas: $("#c"), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
-const FOG = new THREE.Color("#d9cfae");
+const FOG = new THREE.Color("#f2f4f5");
 scene.background = FOG;
-scene.fog = new THREE.Fog(FOG, 12, 48);
+scene.fog = new THREE.Fog(FOG, 16, 60);
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 100);
 camera.rotation.order = "YXZ";
 scene.add(camera);
-const hemi = new THREE.HemisphereLight("#fffaea", "#b0a27a", 2.6);
+const hemi = new THREE.HemisphereLight("#ffffff", "#c9d0d4", 2.8);
 scene.add(hemi);
-const lamp = new THREE.PointLight("#fff3cf", 30, 16, 1.4);
+const lamp = new THREE.PointLight("#ffffff", 30, 16, 1.4);
 camera.add(lamp);
 function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener("resize", resize); resize();
 
 // ---- paper and code textures ---------------------------------------------------
 const canvasTex = (w, h, draw) => { const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
-const noise = (g, w, h, a, n = 4000) => { for (let i = 0; i < n; i++) { g.fillStyle = `rgba(80,60,30,${Math.random() * a})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2); } };
-// Backrooms wallpaper, but founding-document paper: faint stripes and grain.
-const wallpaper = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#efe7cf"; g.fillRect(0, 0, w, h); for (let x = 0; x < w; x += 16) { g.fillStyle = "rgba(150,125,70,.07)"; g.fillRect(x, 0, 6, h); } noise(g, w, h, .06); });
+const noise = (g, w, h, a, n = 4000) => { for (let i = 0; i < n; i++) { g.fillStyle = `rgba(40,40,40,${Math.random() * a})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2); } };
+// Kamino, not the backrooms: smooth white panels with soft seams, a pale polished floor, a white ceiling.
+const wallpaper = canvasTex(512, 512, (g, w, h) => {
+  const grad = g.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, "#fbfcfc"); grad.addColorStop(1, "#eef1f2");
+  g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  g.strokeStyle = "rgba(90,100,108,.16)"; g.lineWidth = 3; g.beginPath(); g.roundRect(10, 10, w - 20, h - 20, 40); g.stroke();
+  g.strokeStyle = "rgba(255,255,255,.9)"; g.lineWidth = 2; g.beginPath(); g.roundRect(13, 13, w - 26, h - 26, 37); g.stroke();
+});
 wallpaper.wrapS = wallpaper.wrapT = THREE.RepeatWrapping;
-const carpet = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#b9a774"; g.fillRect(0, 0, w, h); noise(g, w, h, .25, 9000); });
-carpet.wrapS = carpet.wrapT = THREE.RepeatWrapping;
-const tiles = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#e9e2cc"; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(90,75,45,.35)"; g.lineWidth = 3; g.strokeRect(0, 0, w, h); noise(g, w, h, .05, 1500); });
+const floorTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#c9cfd3"; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(60,70,78,.22)"; g.lineWidth = 2; g.strokeRect(0, 0, w, h); });
+floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+const tiles = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#f8f9fa"; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(90,100,108,.08)"; g.lineWidth = 2; g.strokeRect(0, 0, w, h); });
 tiles.wrapS = tiles.wrapT = THREE.RepeatWrapping;
 
 const ROWS = 30, ATLAS = 1024, ROW_PX = ATLAS / ROWS, LINE_H = 0.15, FONT_PX = 24;
@@ -139,15 +174,15 @@ function atlas(file) {
       const indent = t.length - t.trimStart().length;
       const x0 = 6 + indent * CHAR_PX, x1 = 6 + t.length * CHAR_PX + 8;
       // Each line on its own strip of paper: pasted on the wall, torn off when it comes for you.
-      g.fillStyle = "#fbf8ee"; g.fillRect(x0 - 4, i * ROW_PX + 2, x1 - x0 + 4, ROW_PX - 4);
-      g.fillStyle = "rgba(90,70,40,.25)"; g.fillRect(x0 - 4, (i + 1) * ROW_PX - 3, x1 - x0 + 4, 1.5);
-      g.fillStyle = /^\s*(\/\/|#|\*|\/\*)/.test(t) ? "#8a7f6c" : "#2b2620";
+      g.fillStyle = "#fcfbf8"; g.fillRect(x0 - 4, i * ROW_PX + 2, x1 - x0 + 4, ROW_PX - 4);
+      g.fillStyle = "rgba(0,0,0,.14)"; g.fillRect(x0 - 4, (i + 1) * ROW_PX - 3, x1 - x0 + 4, 1.5);
+      g.fillStyle = /^\s*(\/\/|#|\*|\/\*)/.test(t) ? "#8f8f8f" : "#0a0a0a";
       g.fillText(t, 6, (i + 0.5) * ROW_PX);
       lines.push({ i, text: t, indent, u0: (x0 - 4) / ATLAS, u1: Math.min(1, x1 / ATLAS), v0: 1 - ((i + 1) * ROW_PX - 2) / ATLAS, v1: 1 - (i * ROW_PX + 2) / ATLAS, w: (x1 - x0 + 4) / ROW_PX * LINE_H });
     });
   });
   const mat = new THREE.MeshLambertMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.05 });
-  const angry = new THREE.MeshLambertMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.05, color: "#ffffff", emissive: "#5a160e", emissiveIntensity: 0.35 });
+  const angry = new THREE.MeshLambertMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, alphaTest: 0.05, color: "#ffffff", emissive: "#7a2c05", emissiveIntensity: 0.35 });
   a = { tex, mat, angry, lines, name: file.name };
   atlases.set(file.path, a);
   return a;
@@ -160,7 +195,7 @@ function stripGeo(line, h, sx = 1) {
   g.userData.base = Float32Array.from(g.attributes.position.array);
   return g;
 }
-const labelTex = (text, color = "#2b2620", px = 64) => canvasTex(1024, 128, (g, w, h) => { g.font = `500 ${px}px "Geist", sans-serif`; g.fillStyle = color; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, w / 2, h / 2); });
+const labelTex = (text, color = "#0a0a0a", px = 64) => canvasTex(1024, 128, (g, w, h) => { g.font = `500 ${px}px "Geist", sans-serif`; g.fillStyle = color; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, w / 2, h / 2); });
 
 // ---- rooms ---------------------------------------------------------------------
 const H = 5.2, PANEL = 7, DOOR_W = 2.2, DOOR_H = 3.3;
@@ -182,29 +217,34 @@ const fromWall = (i, a, d, half) => [[a, -half + d], [half - d, a], [-a, half - 
 
 // ---- the lava lamps ---------------------------------------------------------------------
 const lava = [];   // {mesh, y0, speed, phase}
-const LAVA = [["#ff3a12", "#ffb08f"], ["#ff9d00", "#ffe08a"], ["#1f86ff", "#9fd0ff"], ["#8e3dff", "#d3b8ff"], ["#10b85e", "#9eeac0"], ["#ff2d8f", "#ffb0d6"]];
+const LAVA = [["#e8590c", "#ffd8bf"], ["#ff8a3d", "#ffe6d2"], ["#0a0a0a", "#e6e6e6"], ["#f2f2f0", "#cfcfcf"], ["#c2410c", "#fdba8c"], ["#6b6b6b", "#f4f4f2"]];
 const lampGeo = { glass: new THREE.CylinderGeometry(0.1, 0.15, 0.56, 14), base: new THREE.CylinderGeometry(0.15, 0.12, 0.22, 14), cap: new THREE.CylinderGeometry(0.06, 0.1, 0.1, 14), blob: new THREE.SphereGeometry(0.07, 12, 10), shelf: new THREE.BoxGeometry(PANEL - 0.5, 0.05, 0.42) };
-const lampMat = { metal: new THREE.MeshLambertMaterial({ color: "#7d838b" }), shelf: new THREE.MeshLambertMaterial({ color: "#c9b58c" }),
+const lampMat = { metal: new THREE.MeshLambertMaterial({ color: "#7d838b" }), shelf: new THREE.MeshLambertMaterial({ color: "#d6d6d3" }),
   glass: LAVA.map(([, light]) => new THREE.MeshBasicMaterial({ color: light, transparent: true, opacity: 0.5, depthWrite: false })), blob: LAVA.map(([deep]) => new THREE.MeshBasicMaterial({ color: deep })) };
 /** Four shelves of lamps across one wall panel centred at `c`, each lamp slowly rising and sinking. */
-function lavaWall(wall, c) {
+function lavaWall(wall, c, id) {
   const k0 = Math.floor(c * 7);
   for (let row = 0; row < 4; row++) {
     const y = 0.55 + row * 1.08;
     const shelf = new THREE.Mesh(lampGeo.shelf, lampMat.shelf); shelf.position.set(c, y - 0.025, 0.24); wall.add(shelf);
     for (let col = 0; col < 8; col++) {
       const x = c - PANEL / 2 + 0.6 + col * ((PANEL - 1.2) / 7), k = Math.abs(k0 + row * 5 + col * 7) % LAVA.length;
-      const base = new THREE.Mesh(lampGeo.base, lampMat.metal); base.position.set(x, y + 0.11, 0.24);
-      const glass = new THREE.Mesh(lampGeo.glass, lampMat.glass[k]); glass.position.set(x, y + 0.5, 0.24);
-      const cap = new THREE.Mesh(lampGeo.cap, lampMat.metal); cap.position.set(x, y + 0.83, 0.24);
-      wall.add(base, glass, cap);
+      // Each lamp is its own group, so a wreck can smash them one at a time.
+      const lampId = `${id}|${row}|${col}`;
+      if (mode === "wreck" && broken.has(lampId)) continue;
+      const one = new THREE.Group(); one.position.set(x, y, 0.24); wall.add(one);
+      const base = new THREE.Mesh(lampGeo.base, lampMat.metal); base.position.y = 0.11;
+      const glass = new THREE.Mesh(lampGeo.glass, lampMat.glass[k]); glass.position.y = 0.5;
+      const cap = new THREE.Mesh(lampGeo.cap, lampMat.metal); cap.position.y = 0.83;
+      one.add(base, glass, cap);
+      if (mode === "wreck") breakables.push({ id: lampId, obj: one, kind: "glass", hp: 1, r: 0.35, lines: 0, wall: true });
       for (let b = 0; b < 2; b++) {
-        const blob = new THREE.Mesh(lampGeo.blob, lampMat.blob[k]); blob.position.set(x + (b - 0.5) * 0.04, y + 0.5, 0.24); wall.add(blob);
-        lava.push({ mesh: blob, y0: y + 0.5, speed: 0.35 + Math.random() * 0.4, phase: Math.random() * 6.3 });
+        const blob = new THREE.Mesh(lampGeo.blob, lampMat.blob[k]); blob.position.set((b - 0.5) * 0.04, 0.5, 0); one.add(blob);
+        lava.push({ mesh: blob, y0: 0.5, speed: 0.35 + Math.random() * 0.4, phase: Math.random() * 6.3 });
       }
     }
   }
-  const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex("entropy wall", "#8c2f22", 54), transparent: true }));
+  const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex("entropy wall", "#e8590c", 54), transparent: true }));
   lab.position.set(c, H - 0.35, 0.02); wall.add(lab);
 }
 function updateLava(time) {
@@ -215,8 +255,95 @@ function updateLava(time) {
   }
 }
 
-function buildRoom(path, w) {
-  if (here) { scene.remove(here.group); here.group.traverse((o) => { if (!Object.values(lampGeo).includes(o.geometry)) o.geometry?.dispose(); }); }
+// ---- panic rooms: furniture made of lines, and everything you can break ----------------
+// Low-poly shapes of our own (a desk, a chair, a shelf, a lamp, a cabinet, a stack of
+// paper), each slab clad in strips of real lines. A part is [w, h, d, x, y, z, material, hp];
+// slabs carry lines, thin legs and poles are plain paper.
+const FURNITURE = {
+  desk: { r: 0.85, parts: [[1.6, 0.06, 0.8, 0, 0.74, 0, "wood", 2], [0.45, 0.42, 0.7, 0.52, 0.48, 0, "wood"], ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => [0.06, 0.71, 0.06, sx * 0.74, 0.355, sz * 0.34, "leg"]))] },
+  chair: { r: 0.4, parts: [[0.5, 0.07, 0.5, 0, 0.46, 0, "soft"], [0.5, 0.55, 0.06, 0, 0.77, -0.22, "soft"], ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => [0.05, 0.43, 0.05, sx * 0.21, 0.215, sz * 0.21, "leg"]))] },
+  shelf: { r: 0.65, parts: [[0.04, 1.9, 0.4, -0.6, 0.95, 0, "leg"], [0.04, 1.9, 0.4, 0.6, 0.95, 0, "leg"], ...[0, 1, 2, 3, 4].map((i) => [1.16, 0.04, 0.38, 0, 0.05 + i * 0.45, 0, "wood"]), ...[0, 1, 2, 3].map((i) => [0.95, 0.3, 0.28, (i % 2 ? 0.05 : -0.05), 0.22 + i * 0.45, 0, "stack"])] },
+  lamp: { r: 0.3, parts: [[0.3, 0.05, 0.3, 0, 0.025, 0, "leg"], [0.04, 1.3, 0.04, 0, 0.7, 0, "leg"], [0.45, 0.35, 0.45, 0, 1.47, 0, "glass"]] },
+  cabinet: { r: 0.55, parts: [[0.8, 0.9, 0.6, 0, 0.45, 0, "stack", 2], [0.8, 0.9, 0.6, 0, 1.36, 0, "stack", 2], [0.5, 0.3, 0.3, 0.1, 1.97, 0, "glass"]] },
+  stack: { r: 0.5, parts: [0, 1, 2, 3, 4, 5].map((i) => [0.7 - (i % 3) * 0.06, 0.24, 0.5, (i % 2 ? 0.05 : -0.04), 0.12 + i * 0.25, 0, "stack"]) },
+  // Lines a diff put in: they stand, in ink, and can't be touched.
+  pillar: { r: 0.35, parts: [[0.5, 2.3, 0.5, 0, 1.15, 0, "new"]] },
+};
+const SOUND_OF = { wood: "splinter", leg: "splinter", soft: "thud", paper: "thud", stack: "crash", glass: "shatter", new: "thud" };
+const plainMat = new THREE.MeshLambertMaterial({ map: canvasTex(64, 64, (g, w, h) => { g.fillStyle = "#e4e3df"; g.fillRect(0, 0, w, h); noise(g, w, h, .08, 300); }) });
+/** A slab's skin: its lines as strips of paper (or, for lines a diff added, paper on ink). */
+function cladMat(lines, kind) {
+  const ink = kind === "new", glass = kind === "glass";
+  const map = canvasTex(256, 128, (g, w, h) => {
+    g.fillStyle = ink ? "#0a0a0a" : glass ? "#fff8f1" : "#e9e8e4"; g.fillRect(0, 0, w, h);
+    g.font = `500 13px "Geist Mono", monospace`; g.textBaseline = "middle";
+    const rows = 7, rh = h / rows;
+    for (let i = 0; i < rows; i++) {
+      const t = (lines.length ? lines[i % lines.length] : "").trim().slice(0, 34);
+      if (!t) continue;
+      const tw = Math.min(w - 8, g.measureText(t).width + 10), x = 4 + ((i * 37) % 9);
+      g.fillStyle = ink ? "#1f1f1f" : "#fcfbf8"; g.fillRect(x, i * rh + 2, tw, rh - 4);
+      g.fillStyle = ink ? "#e6e6e6" : "#0a0a0a"; g.fillText(t, x + 5, (i + 0.5) * rh);
+    }
+    if (!ink) noise(g, w, h, .05, 500);
+  });
+  const mat = glass ? new THREE.MeshLambertMaterial({ map, transparent: true, opacity: 0.88, emissive: "#ffd8bf", emissiveIntensity: 0.35 }) : new THREE.MeshLambertMaterial({ map });
+  mat.userData.own = true;
+  return mat;
+}
+
+let mode = "horde", diff = null, diffData = null;
+const broken = new Set();       // ids broken this round, from everyone
+const breakables = [];          // {id, obj, kind, hp, r, lines, furn, wall?}
+const debris = [];              // {obj, vel, spin, rest}
+/** What the next round's wreckage is made of: one piece per file in a wreck, the diff's lines in a smash. */
+function furnitureFor(path, w) {
+  if (mode === "wreck") return w.files.filter((f) => f.lines.some((l) => l.trim())).slice(0, 12).map((f) => {
+    const lines = f.lines.filter((l) => l.trim()).slice(0, 40), h = [...f.name].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 3) >>> 0;
+    const kinds = lines.length > 24 ? ["shelf", "cabinet", "desk"] : lines.length > 10 ? ["desk", "cabinet", "stack"] : ["chair", "lamp", "stack"];
+    return { kind: kinds[h % kinds.length], lines };
+  });
+  if (mode !== "removed" || !w.diff) return [];
+  const out = [], sizes = { shelf: 14, desk: 9, cabinet: 7, stack: 6, chair: 5, lamp: 3 }, order = Object.keys(sizes);
+  const rm = w.diff.removed;
+  for (let i = 0, k = 0; i < rm.length; k++) { const kind = order[(k * 5 + (rm.length % 7)) % order.length]; out.push({ kind, lines: rm.slice(i, i + sizes[kind]) }); i += sizes[kind]; }
+  for (let i = 0; i < w.diff.added.length && i < 6 * 16; i += 6) out.push({ kind: "pillar", lines: w.diff.added.slice(i, i + 6), locked: true });
+  return out;
+}
+/** Set the room's furniture out on a grid, the same way for everyone (seeded by the room). */
+function layFurniture(path, w, half, group) {
+  const list = furnitureFor(path, w), placed = Object.assign([], { total: 0 });
+  if (!list.length) return placed;
+  const r = mulberry([...("furn" + path)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 11)), cell = 2.4;
+  const n = Math.max(1, Math.floor((2 * half - 4) / cell)), cells = [];
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) cells.push([-half + 2 + cell * (i + 0.5), -half + 2 + cell * (j + 0.5)]);
+  cells.sort(() => r() - 0.5);
+  list.slice(0, cells.length).forEach((f, fi) => {
+    const spec = FURNITURE[f.kind], g = new THREE.Group(), [x, z] = cells[fi];
+    g.position.set(x + (r() - 0.5) * 0.5, 0, z + (r() - 0.5) * 0.5); g.rotation.y = Math.floor(r() * 4) * Math.PI / 2 + (r() - 0.5) * 0.4;
+    const slabs = spec.parts.filter((p) => p[6] !== "leg").length, per = Math.ceil(f.lines.length / Math.max(1, slabs));
+    const item = { x: g.position.x, z: g.position.z, r: spec.r, left: 0, kind: f.kind, locked: !!f.locked };
+    let s = 0;
+    spec.parts.forEach(([pw, ph, pd, px, py, pz, kind, hp = 1], pi) => {
+      const id = `${mode === "removed" ? "diff" : path}|${fi}|${pi}`;
+      // A slab's own lines; slabs past the end of the text wear the start again, but don't count twice.
+      const own = kind === "leg" ? [] : f.lines.slice(s * per, s * per + per);
+      const skin = kind === "leg" ? [] : own.length ? own : f.lines;
+      if (kind !== "leg") s++;
+      if (!item.locked) placed.total += own.length;
+      if (broken.has(id)) return;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(pw, ph, pd), kind === "leg" ? plainMat : cladMat(skin, kind));
+      m.position.set(px, py, pz); g.add(m);
+      item.left++;
+      breakables.push({ id, obj: m, kind, hp, r: Math.max(pw, ph, pd) / 2, lines: own.length, furn: item, locked: item.locked });
+    });
+    group.add(g); placed.push(item);
+  });
+  return placed;
+}
+
+function buildRoom(path, w, minPanels = 8) {
+  if (here) { scene.remove(here.group); here.group.traverse((o) => { if (!Object.values(lampGeo).includes(o.geometry)) o.geometry?.dispose(); if (o.material?.userData.own) { o.material.map?.dispose(); o.material.dispose(); } }); }
   const panels = [
     ...w.files.filter((f) => f.lines.some((l) => l.trim())).map((f) => ({ kind: "file", file: f })),
     ...w.doors.map((d) => ({ kind: "door", name: d.name + "/", path: d.path })),
@@ -224,24 +351,26 @@ function buildRoom(path, w) {
   ];
   // The lobby: a wall of lava lamps, the kind that keeps a certain San Francisco office's randomness honest.
   if (!path) panels.push({ kind: "lava" }, { kind: "lava" });
-  while (panels.length < 8) panels.push({ kind: "blank" });
-  lava.length = 0;
+  while (panels.length < minPanels) panels.push({ kind: "blank" });
+  lava.length = 0; breakables.length = 0; debris.length = 0;
   // Shuffle so doors and files mix around the room, the same way every visit.
   const order = mulberry([...path].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7));
   panels.sort(() => order() - 0.5);
   const per = Math.ceil(panels.length / 4), L = per * PANEL, half = L / 2;
   const group = new THREE.Group();
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(L, L), new THREE.MeshLambertMaterial({ map: carpet }));
-  floor.rotation.x = -Math.PI / 2; carpet.repeat.set(L / 3, L / 3); group.add(floor);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(L, L), new THREE.MeshPhongMaterial({ map: floorTex, specular: "#7c848a", shininess: 60 }));
+  floor.rotation.x = -Math.PI / 2; floorTex.repeat.set(L / 3.5, L / 3.5); group.add(floor);
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(L, L), new THREE.MeshLambertMaterial({ map: tiles }));
-  ceil.rotation.x = Math.PI / 2; ceil.position.y = H; tiles.repeat.set(L / 2, L / 2); group.add(ceil);
-  // Fluorescent panels.
-  const lightMat = new THREE.MeshBasicMaterial({ color: "#fffbe8" });
-  for (let x = -half + 3; x < half; x += 6) for (let z = -half + 3; z < half; z += 6) {
-    const p = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.6), lightMat); p.rotation.x = Math.PI / 2; p.position.set(x, H - 0.01, z); group.add(p);
+  ceil.rotation.x = Math.PI / 2; ceil.position.y = H; tiles.repeat.set(L / 4, L / 4); group.add(ceil);
+  // Round lights set in the ceiling, each in a thin grey ring.
+  const lightMat = new THREE.MeshBasicMaterial({ color: "#ffffff" }), ringMat = new THREE.MeshBasicMaterial({ color: "#c3cacf" });
+  for (let x = -half + 3.5; x < half; x += 7) for (let z = -half + 3.5; z < half; z += 7) {
+    const ring = new THREE.Mesh(new THREE.CircleGeometry(1.05, 40), ringMat); ring.rotation.x = Math.PI / 2; ring.position.set(x, H - 0.005, z); group.add(ring);
+    const p = new THREE.Mesh(new THREE.CircleGeometry(0.95, 40), lightMat); p.rotation.x = Math.PI / 2; p.position.set(x, H - 0.01, z); group.add(p);
   }
-  const doors = [], lines = [];
-  const doorMat = new THREE.MeshBasicMaterial({ color: "#1d1a16" });
+  const trimMat = new THREE.MeshBasicMaterial({ color: "#16181a" });
+  const doors = [], lines = [], files = [];
+  const doorMat = new THREE.MeshBasicMaterial({ color: "#0a0a0a" });
   panels.forEach((p, k) => {
     const wi = k % 4, slot = Math.floor(k / 4);
     let wall = group.getObjectByName("wall" + wi);
@@ -249,47 +378,57 @@ function buildRoom(path, w) {
       wall = new THREE.Group(); wall.name = "wall" + wi; wall.rotation.y = WALL_ROT[wi];
       const [x, z] = fromWall(wi, 0, 0, half); wall.position.set(x, 0, z);
       const paper = new THREE.Mesh(new THREE.PlaneGeometry(L, H), new THREE.MeshLambertMaterial({ map: wallpaper }));
-      wallpaper.repeat.set(L / 2, H / 2); paper.position.y = H / 2; wall.add(paper);
+      wallpaper.repeat.set(L / 3.5, 1); paper.position.y = H / 2; wall.add(paper);
+      // Black trim: a skirting band at the floor and a thin line where the wall meets the ceiling.
+      for (const [y, t] of [[0.09, 0.18], [H - 0.04, 0.08]]) { const b = new THREE.Mesh(new THREE.PlaneGeometry(L, t), trimMat); b.position.set(0, y, 0.005); wall.add(b); }
       group.add(wall);
     }
     const c = -half + PANEL * (slot + 0.5);
     if (p.kind === "door") {
       const d = new THREE.Mesh(new THREE.PlaneGeometry(DOOR_W, DOOR_H), doorMat); d.position.set(c, DOOR_H / 2, 0.01); wall.add(d);
-      const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.name, p.name === "../" ? "#6f665a" : "#8c2f22"), transparent: true }));
+      const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.name, p.name === "../" ? "#6b6b6b" : "#0a0a0a"), transparent: true }));
       lab.position.set(c, DOOR_H + 0.45, 0.02); wall.add(lab);
       doors.push({ wall: wi, c, path: p.path, up: p.name === "../" });
     } else if (p.kind === "lava") {
-      lavaWall(wall, c);
+      lavaWall(wall, c, `${path}|lava|${k}`);
     } else if (p.kind === "file") {
       const a = atlas(p.file);
-      const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.file.name, "#8c2f22", 54), transparent: true }));
+      files.push({ file: p.file, wall: wi, c, atlas: a });
+      const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.file.name, "#e8590c", 54), transparent: true }));
       lab.position.set(c, H - 0.35, 0.02); wall.add(lab);
       const left = c - PANEL / 2 + 0.4;
       for (const line of a.lines) {
         const m = new THREE.Mesh(stripGeo(line, LINE_H), a.mat);
         m.position.set(left + line.indent * CHAR_PX / ROW_PX * LINE_H + line.w / 2, H - 0.75 - line.i * LINE_H, 0.015);
+        // In a wreck, the walls come down too, a line at a time.
+        const id = `${path}|w|${p.file.path}|${line.i}`;
+        if (mode === "wreck" && broken.has(id)) continue;
         wall.add(m);
         lines.push({ mesh: m, atlas: a, line, wall });
+        if (mode === "wreck") breakables.push({ id, obj: m, kind: "paper", hp: 1, r: Math.max(0.3, line.w / 2), lines: 1, wall: true });
       }
     }
   });
+  const furn = layFurniture(path, w, half, group);
   scene.add(group);
-  here = { path, half, group, doors, lines };
-  $("#where").textContent = (path ? path + "/" : "/") + `  ·  ${w.files.length} files, ${w.doors.length} doors`;
+  here = { path, half, group, doors, lines, files, furn };
+  const lurking = files.reduce((n, f) => n + (f.file.noodles?.length ?? 0), 0);
+  $("#where").textContent = (path ? path + "/" : "/") + `  ·  ${w.files.length} files, ${w.doors.length} doors` + (lurking ? `  ·  ${lurking} noodle${lurking > 1 ? "s" : ""} lurking` : "");
 }
 
-async function enter(path, from) {
-  const w = await fetchRoom(path).catch((e) => { banner("locked", e.message); return null; });
+async function enter(path, from, built) {
+  const w = built ?? await fetchRoom(path).catch((e) => { banner("locked", e.message); return null; });
   if (!w) return false;
-  buildRoom(path, w);
+  buildRoom(path, w, w.minPanels);
   // Come in through the door you used: going down, the "../" door; going up, the folder you left.
   const door = here.doors.find((d) => !d.up && d.path === from) ?? here.doors.find((d) => d.up);
   if (door) {
     const [x, z] = fromWall(door.wall, door.c, 1.6, here.half);
-    player.pos.set(x, 1.6, z);
+    player.pos.set(x, EYE, z);
     const [nx, nz] = NORMAL[door.wall];
     player.yaw = Math.atan2(-nx, -nz);
-  } else { player.pos.set(0, 1.6, here.half - 2); player.yaw = 0; }
+  } else { player.pos.set(0, EYE, here.half - 2); player.yaw = 0; }
+  if (pin) letGo(true);
   // Whatever was chasing you follows you through the door.
   for (const e of enemies) if (e.state !== "smacked") {
     const d = door ?? { wall: 2, c: 0 };
@@ -297,13 +436,24 @@ async function enter(path, from) {
     e.root.position.set(x, e.kind === "tube" ? 0 : 2 + rng(), z);
     e.wait = 0.6 + rng() * 1.2;
   }
+  // So do the noodle monsters, but they take their time.
+  for (const b of bosses) {
+    const d = door ?? { wall: 2, c: 0 };
+    const [x, z] = fromWall(d.wall, d.c + (rng() - 0.5) * 1.2, -1.5, here.half);
+    b.root.position.set(x, 1.9, z);
+    b.wait = 2.5 + rng() * 2;
+  }
   return true;
 }
 
 // ---- the player ------------------------------------------------------------------
-const player = { pos: new THREE.Vector3(0, 1.6, 0), vel: new THREE.Vector3(), yaw: 0, pitch: 0, hp: 100, score: 0, combo: 1, comboT: 0, alive: false };
+const EYE = 1.6;
+const player = { pos: new THREE.Vector3(0, EYE, 0), vel: new THREE.Vector3(), vy: 0, yaw: 0, pitch: 0, hp: 100, score: 0, combo: 1, comboT: 0, alive: false };
 const keys = new Set();
-addEventListener("keydown", (e) => keys.add(e.code));
+addEventListener("keydown", (e) => {
+  keys.add(e.code);
+  if (e.code === "Space" && playing) { e.preventDefault(); if (player.alive && player.pos.y <= EYE + 0.01) player.vy = 5.8; }
+});
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("mousemove", (e) => {
   if (document.pointerLockElement !== renderer.domElement) return;
@@ -312,24 +462,86 @@ addEventListener("mousemove", (e) => {
 });
 document.addEventListener("pointerlockchange", () => { $("#lock").hidden = !playing || document.pointerLockElement === renderer.domElement; });
 $("#lock").addEventListener("click", () => renderer.domElement.requestPointerLock());
-renderer.domElement.addEventListener("mousedown", () => { if (document.pointerLockElement === renderer.domElement) swing(); });
+let held = false;
+renderer.domElement.addEventListener("mousedown", () => { if (document.pointerLockElement === renderer.domElement) { held = true; swing(); } });
+addEventListener("mouseup", () => { held = false; if (pin) letGo(); });
 
 // The bat: ash, with an oxblood grip.
 const bat = new THREE.Group();
-const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.025, 0.95, 12), new THREE.MeshBasicMaterial({ color: "#a9824d" }));
+const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.025, 0.95, 12), new THREE.MeshBasicMaterial({ color: "#e7e3d8" }));
 barrel.position.y = 0.42;
-const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.22, 8), new THREE.MeshBasicMaterial({ color: "#8c2f22" }));
+const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.22, 8), new THREE.MeshBasicMaterial({ color: "#e8590c" }));
 grip.position.y = -0.1;
 bat.add(barrel, grip);
 const batPivot = new THREE.Group(); batPivot.add(bat); camera.add(batPivot);
 batPivot.position.set(0.46, -0.52, -0.55);
 // Overhead: cocked back over the shoulder, then chopped straight down in front.
 const REST = new THREE.Euler(0.65, 0, -0.12), FOLLOW = new THREE.Euler(-1.8, 0.2, 0.25);
-let swingT = -1, swingHit = new Set();
+let swingT = -1, swingHit = new Set(), hitStop = 0;
 
 function swing() {
   if (!player.alive || swingT >= 0) return;
   swingT = 0; swingHit = new Set(); sound.whoosh();
+}
+
+// Hitboxes are segments: the bat, each line (its length, as it flies), and you (feet to head).
+// The bat's hitbox swings through the crosshair, not off to the right where the bat is drawn.
+const BAT_R = 0.22, BAT_REACH = 2.3, LINE_R = 0.1, BODY_R = 0.3;
+const batHit = new THREE.Object3D(); batHit.position.set(0, -0.25, -0.1); camera.add(batHit);
+function batSeg(a, b) { batHit.updateMatrixWorld(true); batHit.localToWorld(a.set(0, 0.15, 0)); batHit.localToWorld(b.set(0, BAT_REACH, 0)); }
+function lineSeg(e, a, b) {
+  if (e.kind === "tube" && e.state !== "peel") { a.copy(e.root.position); b.copy(a); b.y += Math.min(e.w, 3.2); return; }
+  const ax = tmpV.set(1, 0, 0).applyQuaternion(e.root.quaternion).multiplyScalar(e.w / 2);
+  a.copy(e.root.position).sub(ax); b.copy(e.root.position).add(ax);
+}
+function bodySeg(a, b) { a.set(player.pos.x, player.pos.y - EYE + 0.12, player.pos.z); b.set(player.pos.x, player.pos.y + 0.12, player.pos.z); }
+// Closest distance between segments p1q1 and p2q2; `at` gets the closest point on p1q1.
+const sd1 = new THREE.Vector3(), sd2 = new THREE.Vector3(), sr = new THREE.Vector3(), sc = new THREE.Vector3();
+function segDist(p1, q1, p2, q2, at) {
+  sd1.subVectors(q1, p1); sd2.subVectors(q2, p2); sr.subVectors(p1, p2);
+  const a = sd1.dot(sd1), e = sd2.dot(sd2), f = sd2.dot(sr), c = sd1.dot(sr), b = sd1.dot(sd2), den = a * e - b * b;
+  let s, t;
+  if (e <= 1e-9) { t = 0; s = a > 1e-9 ? Math.min(1, Math.max(0, -c / a)) : 0; }   // the second "segment" is a point
+  else { s = den > 1e-9 ? Math.min(1, Math.max(0, (b * f - c * e) / den)) : 0; t = (b * s + f) / e; }
+  if (t < 0) { t = 0; s = a > 1e-9 ? Math.min(1, Math.max(0, -c / a)) : 0; }
+  else if (t > 1) { t = 1; s = a > 1e-9 ? Math.min(1, Math.max(0, (b - c) / a)) : 0; }
+  const p = sc.copy(p1).addScaledVector(sd1, s);
+  if (at) at.copy(p);
+  return p.distanceTo(sd2.multiplyScalar(t).add(p2));
+}
+
+// The press: keep the button down when the bat lands and it grinds into the line.
+// Let go in the sweet spot and the line splits clean; too soon is a dent, too long and the bat jams.
+// While you're pressing, the rest of the horde keeps coming.
+const SWEET = [0.55, 0.85], JAM = 1.5;
+let pin = null;   // {e, at (camera-space contact), off (center minus root), c}
+function pressDamage(c) {
+  if (c < SWEET[0]) return 1 + Math.floor(2.99 * c / SWEET[0]);
+  if (c <= SWEET[1]) return Infinity;
+  return Math.max(1, Math.round(3 - 2 * (c - SWEET[1]) / (JAM - SWEET[1])));
+}
+function pressOn(e, at) {
+  pin = { e, at: camera.worldToLocal(at.clone()), off: at.clone().sub(e.root.position), c: 0, grind: 0, rang: false };
+  e.state = "pinned"; e.vel.set(0, 0, 0);
+}
+function letGo(slipped) {
+  const { e, c } = pin; pin = null;
+  if (!enemies.includes(e)) return;
+  camera.getWorldDirection(fwd);
+  const sweet = !slipped && c >= SWEET[0] && c <= SWEET[1];
+  e.state = "fly";
+  damage(e, slipped ? 1 : pressDamage(c), fwd, sweet ? 1.6 : 1.1);
+  if (sweet) { player.score += 200 * player.combo; banner("SPLIT", "sweet spot", 0.8); sound.ding(); }
+  else if (slipped) banner("", c >= JAM ? "the bat jammed" : "knocked off the line", 0.7);
+}
+// Every hit chips a line; the one that empties it sends it flying.
+function damage(e, n, dir, power = 1) {
+  e.hp -= n;
+  if (e.hp <= 0) return smack(e, dir.clone().setY(Math.max(0.2, dir.y)), power);
+  player.score += 10 * n;
+  e.mesh.scale.y = 0.45 + 0.55 * e.hp / e.maxHp;
+  e.vel.copy(dir).setY(0).normalize().multiplyScalar(9).setY(2.5); e.stun = 0.45; e.t = 0;
+  sound.thwack(0.5);
 }
 
 // ---- enemies: lines off the wall -------------------------------------------------
@@ -357,8 +569,9 @@ function spawn() {
   const geo = stripGeo(line, tube ? LINE_H * 2.6 : LINE_H * 2.2, 14);
   mesh = new THREE.Mesh(geo, a.angry);
   root.add(mesh); scene.add(root);
+  const hp = (tube ? 5 : 3) + Math.floor(wave / 3);
   enemies.push({ kind: tube ? "tube" : "bird", root, mesh, geo, w: Math.max(line.w, 0.2), state: src ? "peel" : "fly", t: 0, wait: 0, phase: rng() * 6,
-    vel: new THREE.Vector3(), circle: 1 + rng() * 2.5, orbit: rng() * Math.PI * 2, spin: new THREE.Vector3() });
+    hp, maxHp: hp, stun: 0, vel: new THREE.Vector3(), circle: 1 + rng() * 2.5, orbit: rng() * Math.PI * 2, spin: new THREE.Vector3() });
   return true;
 }
 
@@ -375,11 +588,11 @@ function smack(e, dir, power = 1) {
 }
 
 const bursts = [];
-function burst(at) {
-  const n = 18, pos = new Float32Array(n * 3), vel = [];
+function burst(at, color = "#0a0a0a", n = 18) {
+  const pos = new Float32Array(n * 3), vel = [];
   for (let i = 0; i < n; i++) { pos.set([at.x, at.y, at.z], i * 3); vel.push(new THREE.Vector3(rng() - 0.5, rng() * 0.8, rng() - 0.5).multiplyScalar(6)); }
   const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  const p = new THREE.Points(g, new THREE.PointsMaterial({ color: "#2b2620", size: 0.07, transparent: true }));
+  const p = new THREE.Points(g, new THREE.PointsMaterial({ color, size: 0.07, transparent: true }));
   scene.add(p); bursts.push({ p, vel, t: 0 });
 }
 function drop(e) { scene.remove(e.root); e.geo.dispose(); enemies.splice(enemies.indexOf(e), 1); }
@@ -397,6 +610,7 @@ function bend(e, time) {
   pos.needsUpdate = true;
 }
 
+const ea = new THREE.Vector3(), eb = new THREE.Vector3(), ba = new THREE.Vector3(), bb = new THREE.Vector3();
 function updateEnemies(dt, time) {
   const eye = player.pos;
   for (const e of [...enemies]) {
@@ -407,18 +621,34 @@ function updateEnemies(dt, time) {
         e.state = "fly"; e.t = 0;
         if (e.kind === "tube") { e.root.position.y = 0; const n = tmpV.set(0, 0, 1).applyQuaternion(e.root.quaternion); e.root.position.addScaledVector(n, 0.8); }
       }
+    } else if (e.state === "pinned") {
+      // Ground into the bat: it rides the bat wherever you look.
+      e.root.position.copy(camera.localToWorld(tmpV.copy(pin.at))).sub(pin.off);
+      e.mesh.position.z = (Math.random() - 0.5) * 0.04;
+    } else if (e.state === "fly" && e.stun > 0) {
+      // Knocked back but not out: it tumbles off, then comes again.
+      e.stun -= dt;
+      e.vel.multiplyScalar(Math.max(0, 1 - dt * 3)); if (e.kind === "bird") e.vel.y -= 6 * dt;
+      e.root.position.addScaledVector(e.vel, dt);
+      e.root.position.x = Math.max(-here.half + 0.3, Math.min(here.half - 0.3, e.root.position.x));
+      e.root.position.z = Math.max(-here.half + 0.3, Math.min(here.half - 0.3, e.root.position.z));
+      e.root.position.y = e.kind === "tube" ? 0 : Math.max(0.3, Math.min(H - 0.4, e.root.position.y));
     } else if (e.state === "fly") {
       if (e.kind === "bird") {
-        // Circle overhead, then dive at your head; after a hit, back up to circle again.
+        // Circle overhead, then dive: at your head, or skimming the floor at your legs (jump it).
+        // After a hit, back up to circle again.
         e.orbit += dt * (1.4 + wave * 0.08);
         const diving = (e.t % (e.circle + 1.6)) > e.circle;
-        const target = diving ? tmpV.copy(eye) : tmpV.set(eye.x + Math.cos(e.orbit) * 4.5, 3.4 + Math.sin(e.orbit * 2) * 0.5, eye.z + Math.sin(e.orbit) * 4.5);
+        if (diving && !e.diving) { e.low = rng() < 0.4; if (e.low) sound.swoop(); }
+        e.diving = diving;
+        const target = !diving ? tmpV.set(eye.x + Math.cos(e.orbit) * 4.5, 3.4 + Math.sin(e.orbit * 2) * 0.5, eye.z + Math.sin(e.orbit) * 4.5)
+          : e.low ? tmpV.set(eye.x, 0.35, eye.z) : tmpV.copy(eye);
         const speed = diving ? 8 + wave * 0.6 : 4.5 + wave * 0.35;
         const want = target.sub(e.root.position).normalize().multiplyScalar(speed);
         e.vel.lerp(want, Math.min(1, dt * 3));
         for (const o of enemies) if (o !== e && o.state === "fly" && o.root.position.distanceTo(e.root.position) < 1.1) e.vel.add(tmpV.copy(e.root.position).sub(o.root.position).multiplyScalar(dt * 6));
         e.root.position.addScaledVector(e.vel, dt);
-        e.root.position.y = Math.max(0.6, Math.min(H - 0.4, e.root.position.y));
+        e.root.position.y = Math.max(diving && e.low ? 0.3 : 0.6, Math.min(H - 0.4, e.root.position.y));
         // Wings across the way it's going: the line spans the wingspan.
         tmpQ.copy(e.root.quaternion);
         e.root.lookAt(tmpV.copy(e.root.position).add(e.vel));
@@ -436,13 +666,13 @@ function updateEnemies(dt, time) {
         e.mesh.scale.x = Math.min(1, 3.2 / e.w);
         if (d < 0.1) e.root.position.x += 0.1;
       }
-      const c = center(e, new THREE.Vector3());
-      const reach = e.kind === "bird" ? c.distanceTo(eye) : Math.hypot(c.x - eye.x, c.z - eye.z);
-      if (reach < (e.kind === "bird" ? 0.85 : 0.7) && player.alive) {
-        hurt(e.kind === "bird" ? 8 : 12);
-        e.vel.copy(c).sub(eye).normalize().multiplyScalar(9); e.vel.y = 4;
+      lineSeg(e, ea, eb); bodySeg(ba, bb);
+      if (player.alive && segDist(ea, eb, ba, bb) < LINE_R + BODY_R) {
+        const c = center(e, new THREE.Vector3());
+        hurt(e.kind === "bird" ? 8 : 12, null, e.low && e.diving ? "it took your legs out" : "");
+        e.vel.copy(c).sub(eye).setY(0).normalize().multiplyScalar(9); e.vel.y = 4;
         e.root.position.addScaledVector(e.vel, 0.08);
-        e.t = 0; e.circle = 1.5 + rng() * 2;
+        e.stun = 0.35; e.t = 0; e.circle = 1.5 + rng() * 2;
       }
     } else if (e.state === "smacked") {
       e.vel.y -= 14 * dt;
@@ -464,6 +694,205 @@ function updateEnemies(dt, time) {
   }
 }
 
+// ---- breaking things (wreck it, smash the removed) ------------------------------------
+const tmpW = new THREE.Vector3();
+/** The bat lands on a piece. Big ones take two hits; lines a diff added don't break at all. */
+function strike(b, dir) {
+  if (b.locked) { sound.impact("thud", 0.6); banner("", "that line is new: it stays", 0.9); b.wobble = 0.3; return false; }
+  if (--b.hp > 0) { sound.impact(SOUND_OF[b.kind] === "shatter" ? "shatter" : "thud", 0.7); b.wobble = 0.3; burst(b.obj.getWorldPosition(tmpW), "#e8590c", 8); return false; }
+  breakPiece(b, dir, true);
+  return true;
+}
+/** Break a piece for good: yours (scored, told to the room) or someone else's (`mine` false). */
+function breakPiece(b, dir, mine) {
+  const i = breakables.indexOf(b);
+  if (i < 0) return;
+  breakables.splice(i, 1); broken.add(b.id);
+  const at = b.obj.getWorldPosition(new THREE.Vector3()), pieces = [], p = b.obj.geometry?.parameters;
+  b.obj.updateWorldMatrix(true, false);
+  if (p?.depth !== undefined) {
+    // A slab splits into shards along its longest side.
+    const dims = [p.width, p.height, p.depth], ax = dims.indexOf(Math.max(...dims)), n = Math.min(4, Math.max(1, Math.round(dims[ax] / 0.35))), d = [...dims];
+    d[ax] /= n;
+    for (let k = 0; k < n; k++) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(...d), b.obj.material), off = new THREE.Vector3();
+      off.setComponent(ax, (k + 0.5) * d[ax] - dims[ax] / 2);
+      new THREE.Matrix4().copy(b.obj.matrixWorld).multiply(new THREE.Matrix4().makeTranslation(off.x, off.y, off.z)).decompose(m.position, m.quaternion, m.scale);
+      pieces.push(m);
+    }
+    b.obj.removeFromParent(); b.obj.geometry.dispose();
+  } else {
+    // A line off the wall, or a lava lamp, goes whole.
+    b.obj.matrixWorld.decompose(b.obj.position, b.obj.quaternion, b.obj.scale);
+    b.obj.removeFromParent(); pieces.push(b.obj);
+  }
+  for (const m of pieces) {
+    here.group.add(m);
+    const vel = dir.clone().multiplyScalar((mine ? 7 : 4) + Math.random() * 3).add(new THREE.Vector3((Math.random() - 0.5) * 3, 2.5 + Math.random() * 3, (Math.random() - 0.5) * 3));
+    debris.push({ obj: m, vel, spin: new THREE.Vector3().randomDirection().multiplyScalar(4 + Math.random() * 6), rest: false });
+  }
+  // The floor keeps the wreckage, up to a point.
+  while (debris.length > 260) { const d = debris.shift(); d.obj.removeFromParent(); if (d.obj.isMesh && !Object.values(lampGeo).includes(d.obj.geometry)) d.obj.geometry.dispose(); }
+  burst(at, "#e8590c");
+  const sfx = SOUND_OF[b.kind], loud = mine ? 1 : 0.45;
+  sound.impact(sfx, loud);
+  if (pieces.length >= 3) sound.settle(loud);
+  const done = b.furn && --b.furn.left === 0;
+  if (done) { sound.impact("crash", loud); sound.settle(loud); }
+  if (!mine) return;
+  send({ t: "break", id: b.id });
+  player.score += (mode === "removed" ? 40 + 20 * b.lines : b.wall && b.kind === "paper" ? 10 : 25) * player.combo;
+  player.combo = Math.min(8, player.combo + 1); player.comboT = 2.5;
+  if (done) { player.score += 250; banner("", `${b.furn.kind} wrecked`, 0.9); }
+}
+/** Lines the diff took out that are still standing. */
+const removedLeft = () => breakables.reduce((n, b) => n + (b.furn && !b.locked ? b.lines : 0), 0);
+function updateBreaking(dt) {
+  for (const b of breakables) if (b.wobble > 0) {
+    b.wobble = Math.max(0, b.wobble - dt);
+    b.obj.scale.setScalar(1 + Math.sin(b.wobble * 40) * 0.2 * b.wobble);
+  }
+  const lim = here.half - 0.15;
+  for (const d of debris) {
+    if (d.rest) continue;
+    const o = d.obj.position;
+    d.vel.y -= 14 * dt; o.addScaledVector(d.vel, dt);
+    d.obj.rotation.x += d.spin.x * dt; d.obj.rotation.y += d.spin.y * dt; d.obj.rotation.z += d.spin.z * dt;
+    if (Math.abs(o.x) > lim) { o.x = Math.sign(o.x) * lim; d.vel.x *= -0.4; }
+    if (Math.abs(o.z) > lim) { o.z = Math.sign(o.z) * lim; d.vel.z *= -0.4; }
+    if (o.y < 0.06) {
+      o.y = 0.06; d.vel.y *= -0.3; d.vel.x *= 0.6; d.vel.z *= 0.6; d.spin.multiplyScalar(0.5);
+      if (d.vel.lengthSq() < 0.3) d.rest = true;
+    }
+  }
+}
+
+// ---- the noodle monsters: a file's type guards, come for you ------------------------
+// Each guard the server found (`isRecord` biggest) crawls off its wall once a round
+// as a knot of long bendy strands, one per line, around its signature line. Slow,
+// but it follows you from room to room. Every bat hit snaps off a strand; down to
+// the signature, it dies.
+const bosses = [];
+const awoken = new Set();   // "path:start" of every guard that has come for you this round
+const MAX_BOSSES = 2;
+
+/** The signature, then a strand per line; a short guard is torn into strands of its own code. */
+function noodleLines(n) {
+  let rest = n.lines.slice(1).filter((l) => l.trim());
+  if (rest.length < 3) {
+    rest = [];
+    for (const w of n.lines.join(" ").split(/\s+/).filter(Boolean)) {
+      if (rest.length && (rest.at(-1) + " " + w).length <= 22) rest[rest.length - 1] += " " + w; else rest.push(w);
+    }
+  }
+  return [n.lines[0].trim(), ...rest.slice(0, ROWS - 1)];
+}
+
+function awaken(f, n) {
+  awoken.add(`${f.file.path}:${n.start}`);
+  const a = atlas({ path: `noodle:${f.file.path}:${n.start}`, name: n.name, lines: noodleLines(n) });
+  const [sig, ...strandLines] = a.lines;
+  if (!sig) return;
+  const size = n.record ? 1 : 0.7, root = new THREE.Group();
+  root.scale.setScalar(size);
+  // Guards from the same file crawl off it side by side.
+  const [x, z] = fromWall(f.wall, f.c + (bosses.length % 2 ? 1.6 : -1.6) * (f.file.noodles.length > 1), 0.8, here.half);
+  root.position.set(x, 1.9, z);
+  const core = new THREE.Mesh(stripGeo(sig, LINE_H * 3, 1), a.mat);
+  root.add(core);
+  // Strands all round, more of them hanging down than reaching up.
+  const strands = strandLines.map((line, k) => {
+    const y = (1 - 2 * (k + 0.5) / strandLines.length) * 0.8 - 0.2, r = Math.sqrt(1 - y * y), th = k * 2.39996;
+    const pivot = new THREE.Group();
+    pivot.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), new THREE.Vector3(Math.cos(th) * r, y, Math.sin(th) * r));
+    const w = Math.min(Math.max(line.w, 0.2), 4.5 / size), geo = stripGeo({ ...line, w }, LINE_H * 2.2, 24);
+    const mesh = new THREE.Mesh(geo, a.mat);
+    mesh.position.x = w / 2;
+    pivot.add(mesh); root.add(pivot);
+    return { pivot, mesh, geo, w, phase: Math.random() * 6.3 };
+  });
+  scene.add(root);
+  // The lines it's made of come off the wall with it.
+  for (const l of here.lines) if (l.atlas === f.atlas && l.line.i >= n.start - 1 && l.line.i < n.end) l.wall.remove(l.mesh);
+  bosses.push({ root, core, strands, a, name: n.name, where: `${f.file.path}:${n.start}–${n.end}`, record: n.record, size,
+    speed: (n.record ? 1.3 : 1.6) + wave * 0.05, wait: 1.5, hurtT: 0, phase: Math.random() * 6.3 });
+  banner(n.record ? "NOODLE MONSTER" : "a noodle", `${n.name} crawls off ${f.file.name}`, 2);
+  sound.groan();
+}
+
+function unboss(b) {
+  scene.remove(b.root);
+  b.core.geometry.dispose();
+  for (const s of b.strands) s.geo.dispose();
+  bosses.splice(bosses.indexOf(b), 1);
+}
+
+/** A bat hit: the nearest strand snaps off and flies; with none left, the guard dies. */
+function snap(b, dir) {
+  b.hurtT = 0.3; b.wait = Math.max(b.wait, 0.4); b.core.material = b.a.angry;
+  player.score += 150 * player.combo; player.combo = Math.min(8, player.combo + 1); player.comboT = 2.5;
+  sound.snap();
+  const near = b.strands.reduce((best, s) => {
+    const d = s.mesh.getWorldPosition(tmpV).distanceTo(player.pos);
+    return !best || d < best.d ? { s, d } : best;
+  }, null);
+  if (near) {
+    const s = near.s, root = new THREE.Group();
+    s.mesh.getWorldPosition(root.position); s.mesh.getWorldQuaternion(root.quaternion);
+    root.scale.setScalar(b.size);
+    s.mesh.position.set(0, 0, 0); s.mesh.material = b.a.angry; root.add(s.mesh); scene.add(root);
+    b.strands.splice(b.strands.indexOf(s), 1);
+    // It flies like a smacked line, then crumbles.
+    enemies.push({ kind: "bird", root, mesh: s.mesh, geo: s.geo, w: s.w, state: "smacked", t: 0, wait: 0, phase: 0,
+      vel: dir.clone().multiplyScalar(10).add(new THREE.Vector3(0, 5, 0)), spin: new THREE.Vector3(rng() * 10 - 5, rng() * 10 - 5, rng() * 10 - 5) });
+  }
+  if (!b.strands.length) {
+    for (let i = 0; i < 3; i++) burst(b.root.position.clone().add(new THREE.Vector3(rng() - 0.5, rng() - 0.5, rng() - 0.5)));
+    player.score += b.record ? 2000 : 800;
+    banner("NOODLED", `${b.name} · ${b.where}`, 2);
+    unboss(b);
+  }
+}
+
+function updateBosses(dt, time) {
+  // Walk into a room whose files hold guards and they wake, a couple at a time. Not in a panic room.
+  if (mode === "horde" && player.alive && here && bosses.length < MAX_BOSSES)
+    for (const f of here.files) for (const n of f.file.noodles ?? [])
+      if (bosses.length < MAX_BOSSES && !awoken.has(`${f.file.path}:${n.start}`)) awaken(f, n);
+  let nearest = Infinity;
+  for (const b of bosses) {
+    b.hurtT -= dt;
+    const to = tmpV.set(player.pos.x - b.root.position.x, 0, player.pos.z - b.root.position.z), d = to.length();
+    nearest = Math.min(nearest, d);
+    if (b.wait > 0) b.wait -= dt;
+    else if (player.alive) {
+      // A slow lurch, never quite steady.
+      b.root.position.addScaledVector(to.normalize(), dt * b.speed * (0.6 + 0.4 * Math.abs(Math.sin(time * 1.3 + b.phase))));
+      const lim = here.half - 0.8;
+      b.root.position.x = Math.max(-lim, Math.min(lim, b.root.position.x)); b.root.position.z = Math.max(-lim, Math.min(lim, b.root.position.z));
+      if (d < 1.4 + b.size) {
+        hurt(b.record ? 14 : 9);
+        player.vel.copy(to).setY(0).multiplyScalar(10);
+        b.wait = 1.2;
+      }
+    }
+    b.root.position.y = 1.9 + Math.sin(time * 0.9 + b.phase) * 0.25;
+    b.root.lookAt(player.pos.x, b.root.position.y, player.pos.z);
+    for (const s of b.strands) {
+      s.mesh.material = b.hurtT > 0 ? b.a.angry : b.a.mat;
+      // Waves run out along each strand: the farther from the knot, the more it sways and reaches.
+      const pos = s.geo.attributes.position, base = s.geo.userData.base, hw = s.w / 2, reach = 1 + Math.sin(time * 0.8 + s.phase) * 0.12;
+      for (let k = 0; k < pos.count; k++) {
+        const x = base[k * 3], u = Math.max(0, (x / hw + 1) / 2);
+        pos.setXYZ(k, x * reach, base[k * 3 + 1] + Math.sin(time * 2.2 + s.phase - u * 5) * Math.pow(u, 1.4) * 0.5, Math.cos(time * 1.7 + s.phase - u * 3.5) * u * 0.45);
+      }
+      pos.needsUpdate = true;
+      s.mesh.position.x = s.w * reach / 2;
+    }
+  }
+  sound.drone(bosses.length && player.alive ? Math.max(0, 1 - nearest / 20) : 0, time);
+}
+
 // ---- waves -----------------------------------------------------------------------
 function startWave(n) {
   wave = n; toSpawn = 5 + 4 * (n - 1); spawnT = 1.2;
@@ -472,7 +901,7 @@ function startWave(n) {
   if (n > 1) for (const l of here.lines) if (!l.mesh.parent) l.wall.add(l.mesh);
 }
 function updateWaves(dt) {
-  if (!player.alive) return;
+  if (!player.alive || mode !== "horde") return;
   if (breakT > 0) { breakT -= dt; if (breakT <= 0) startWave(wave + 1); return; }
   spawnT -= dt;
   const alive = enemies.filter((e) => e.state !== "smacked").length;
@@ -485,9 +914,13 @@ function updateWaves(dt) {
 
 // ---- you -------------------------------------------------------------------------
 let shake = 0;
-function hurt(n, by) {
+function hurt(n, by, why) {
   if (!player.alive) return;
+  // In a panic room nobody gets hurt: a club only shoves you.
+  if (mode !== "horde") { shake = 0.25; sound.impact("thud", 0.8); if (by) banner("", `shoved by ${by}`, 1.2); return; }
   player.hp -= n; shake = 0.25; sound.hurt();
+  if (pin) letGo(true);
+  if (why) banner("", why, 0.8);
   $("#hurt").style.opacity = 1; setTimeout(() => ($("#hurt").style.opacity = 0), 160);
   if (by) banner("", `clubbed by ${by}`, 1.2);
   if (player.hp <= 0) die();
@@ -496,12 +929,15 @@ function hurt(n, by) {
 let transit = false;
 function updatePlayer(dt) {
   const f = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0), s = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
-  const speed = keys.has("ShiftLeft") || keys.has("ShiftRight") ? 8 : 4.8;
+  // Pressing the bat into a line pins you down to a shuffle.
+  const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 8 : 4.8) * (pin ? 0.45 : 1);
   const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
   const move = new THREE.Vector3(-sin * f + cos * s, 0, -cos * f - sin * s);
   if (move.lengthSq() > 1) move.normalize();
   player.pos.addScaledVector(move, speed * dt).addScaledVector(player.vel, dt);
   player.vel.multiplyScalar(Math.max(0, 1 - dt * 5));
+  player.vy -= 16 * dt; player.pos.y += player.vy * dt;
+  if (player.pos.y <= EYE) { player.pos.y = EYE; player.vy = 0; }
   // Walls stop you, except a doorway, which takes you into that folder.
   const m = 0.35;
   for (let i = 0; i < 4 && here; i++) {
@@ -511,49 +947,105 @@ function updatePlayer(dt) {
     if (door) { if (d < -0.3 && !transit) { transit = true; const from = here.path; enter(door.path, from).finally(() => (transit = false)); return; } continue; }
     const [x, z] = fromWall(i, a, m, here.half); player.pos.x = x; player.pos.z = z;
   }
-  const bob = move.lengthSq() ? Math.sin(performance.now() / (speed > 6 ? 90 : 130)) * 0.04 : 0;
-  camera.position.set(player.pos.x + (Math.random() - 0.5) * shake * 0.3, 1.6 + bob, player.pos.z + (Math.random() - 0.5) * shake * 0.3);
+  // Furniture stands in your way until it's smashed.
+  for (const f of here?.furn ?? []) if (f.left > 0) {
+    const dx = player.pos.x - f.x, dz = player.pos.z - f.z, d = Math.hypot(dx, dz), r = f.r + 0.3;
+    if (d < r && d > 1e-4) { player.pos.x = f.x + dx / d * r; player.pos.z = f.z + dz / d * r; }
+  }
+  const bob = move.lengthSq() && player.pos.y <= EYE ? Math.sin(performance.now() / (speed > 6 ? 90 : 130)) * 0.04 : 0;
+  camera.position.set(player.pos.x + (Math.random() - 0.5) * shake * 0.3, player.pos.y + bob, player.pos.z + (Math.random() - 0.5) * shake * 0.3);
   camera.rotation.set(player.pitch, player.yaw, 0);
   shake = Math.max(0, shake - dt);
 }
 
-function updateBat(dt) {
-  if (swingT < 0) { batPivot.rotation.copy(REST); return; }
-  swingT += dt / 0.3;
-  const k = Math.min(1, swingT), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+const pa = new THREE.Vector3(), pb = new THREE.Vector3(), hitAt = new THREE.Vector3();
+function setBat(k) {
+  const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
   batPivot.rotation.set(REST.x + (FOLLOW.x - REST.x) * e, REST.y + (FOLLOW.y - REST.y) * e, REST.z + (FOLLOW.z - REST.z) * e);
-  if (k > 0.3 && k < 0.85) {
-    camera.getWorldDirection(fwd);
-    let hits = 0;
-    for (const e2 of enemies) {
-      if (e2.state === "smacked" || swingHit.has(e2)) continue;
-      const c = center(e2, tmpV), to = c.clone().sub(player.pos), d = to.length();
-      // The tube men are tall: hit them anywhere along their height.
-      const near = e2.kind === "tube" ? Math.hypot(to.x, to.z) < 2.6 : d < 2.9;
-      if (near && to.normalize().dot(fwd) > (e2.kind === "tube" ? 0.2 : 0.45)) { swingHit.add(e2); smack(e2, fwd.clone().setY(Math.max(0.2, fwd.y))); hits++; }
-    }
-    for (const [id, o] of others) {
-      if (swingHit.has(id) || o.room !== here?.path) continue;
-      const to = o.group.position.clone().setY(1.2).sub(player.pos), d = to.length();
-      if (d < 2.6 && to.normalize().dot(fwd) > 0.4) {
-        swingHit.add(id); send({ t: "hit", target: id, dir: [fwd.x, fwd.z] });
-        player.score += 50; sound.thwack(); banner("", `you clubbed ${o.user}`, 1);
+  batHit.rotation.copy(batPivot.rotation);
+}
+function updateBat(dt) {
+  if (pin) {
+    // Held against the line: the bat shudders, the meter fills.
+    pin.c += dt; pin.grind -= dt;
+    batPivot.rotation.z += (Math.random() - 0.5) * 0.03;
+    if (pin.grind <= 0) { pin.grind = 0.07; sound.grind(pin.c / JAM); }
+    if (!pin.rang && pin.c >= SWEET[0]) { pin.rang = true; sound.ding(); }
+    if (pin.c >= JAM) letGo(true);
+    else if (!held) letGo();
+    return;
+  }
+  if (swingT < 0) { setBat(0); return; }
+  if (hitStop > 0) { hitStop -= dt; return; }
+  const k0 = Math.min(1, swingT);
+  swingT += dt / 0.3;
+  const k = Math.min(1, swingT);
+  camera.updateMatrixWorld(true);
+  camera.getWorldDirection(fwd);
+  // Sweep the bat from where it was to where it is, in steps, so a fast swing can't pass through a line.
+  let hits = 0;
+  if (k > 0.22 && k0 < 0.95) {
+    for (let step = 1; step <= 3 && !pin; step++) {
+      setBat(Math.max(0.22, Math.min(0.95, k0 + (k - k0) * step / 3)));
+      batSeg(pa, pb);
+      let best = null, bestD = Infinity;
+      for (const e2 of enemies) {
+        if ((e2.state !== "fly" && e2.state !== "peel") || swingHit.has(e2)) continue;
+        lineSeg(e2, ea, eb);
+        if (segDist(pa, pb, ea, eb, hitAt) > BAT_R + LINE_R) continue;
+        swingHit.add(e2); hits++;
+        const d = hitAt.distanceTo(pa);
+        if (d < bestD) { bestD = d; best = { e: e2, at: hitAt.clone() }; }
+        else damage(e2, 1, fwd);
+      }
+      if (best) {
+        hitStop = 0.05;
+        // Still holding the button when it lands: press into it. Otherwise a quick chip.
+        if (held && best.e.state === "fly") { pressOn(best.e, best.at); sound.thwack(0.6); }
+        else damage(best.e, 1, fwd);
+      }
+      // A noodle monster is a knot with strands all round: a ball the bat has to reach.
+      for (const bo of bosses) {
+        if (swingHit.has(bo)) continue;
+        if (segDist(pa, pb, bo.root.position, bo.root.position) < BAT_R + 0.9 * bo.size) { swingHit.add(bo); hitStop = 0.05; snap(bo, fwd); }
+      }
+      for (const [id, o] of others) {
+        if (swingHit.has(id) || o.room !== here?.path) continue;
+        ea.copy(o.group.position); eb.copy(ea); eb.y += 1.8;
+        if (segDist(pa, pb, ea, eb) < BAT_R + BODY_R) {
+          swingHit.add(id); send({ t: "hit", target: id, dir: [fwd.x, fwd.z] });
+          player.score += 50; sound.thwack(); banner("", `you clubbed ${o.user}`, 1);
+        }
       }
     }
     if (hits >= 3) { player.score += 500; banner("HOME RUN", `${hits} lines in one swing`, 1.2); }
+    // Furniture, walls, lamps: the nearest few in the arc, once a swing.
+    if (mode !== "horde" && !swingHit.has("pieces")) {
+      const near = [];
+      for (const b of breakables) {
+        const to = b.obj.getWorldPosition(tmpW).sub(player.pos), d = to.length() - b.r;
+        if (d < 2.2 && to.normalize().dot(fwd) > 0.35) near.push([d, b]);
+      }
+      if (near.length) {
+        swingHit.add("pieces");
+        const dir = fwd.clone().setY(Math.max(0.15, fwd.y)).normalize();
+        const n = near.sort((a, b) => a[0] - b[0]).slice(0, 4).filter(([, b]) => strike(b, dir)).length;
+        if (n >= 3) { player.score += 300; banner("", `${n} in one swing`, 0.9); }
+      }
+    }
   }
+  if (!pin) setBat(k);
   if (k >= 1) swingT = -1;
 }
-
 // ---- other players ----------------------------------------------------------------
 const others = new Map();   // id -> {group, user, room, to, yaw}
 function avatar(user) {
   const g = new THREE.Group();
-  const ink = new THREE.MeshLambertMaterial({ color: "#2b2620" });
+  const ink = new THREE.MeshLambertMaterial({ color: "#0a0a0a" });
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 1.25, 12), ink); body.position.y = 0.75;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshLambertMaterial({ color: "#efe7cf" })); head.position.y = 1.6;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshLambertMaterial({ color: "#f4f4f2" })); head.position.y = 1.6;
   const b = bat.clone(); b.position.set(0.35, 1.0, -0.1); b.rotation.set(-0.4, 0, -0.5); b.name = "bat";
-  const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(user, "#8c2f22", 72), transparent: true, depthTest: false }));
+  const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(user, "#e8590c", 72), transparent: true, depthTest: false }));
   tag.scale.set(2.4, 0.3, 1); tag.position.y = 2.15;
   g.add(body, head, b, tag);
   scene.add(g);
@@ -570,7 +1062,7 @@ function updateOthers(dt) {
 }
 
 // ---- multiplayer --------------------------------------------------------------------
-let ws = null, me = null, playing = false, lobbyState = null, lastScore = -1, roundSeed = null;
+let ws = null, me = null, playing = false, lobbyState = null, lastScore = -1, roundSeed = null, sentDiff = false;
 const send = (m) => { try { if (ws?.readyState === 1) ws.send(JSON.stringify(m)); } catch {} };
 function connect() {
   ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${API}/ws`);
@@ -578,28 +1070,60 @@ function connect() {
     const m = JSON.parse(ev.data);
     if (m.t === "lobby") {
       me = m.you; lobbyState = m;
+      mode = m.mode ?? "horde"; diff = m.diff ?? null;
+      // Came from a file's History: put its diff up in the lobby, once.
+      if (hashDiff && !sentDiff && m.state === "waiting") { sentDiff = true; send({ t: "mode", mode: "removed", diff: hashDiff }); }
       renderLobby();
       for (const id of others.keys()) if (!m.players.some((p) => p.id === id)) { scene.remove(others.get(id).group); others.delete(id); }
       // Walked in on a round in progress: you're in it.
-      if (m.state === "playing" && !playing && m.seed !== roundSeed) begin(m.seed, m.startAt);
-    } else if (m.t === "start") begin(m.seed, m.startAt);
+      if (m.state === "playing" && !playing && m.seed !== roundSeed) { broken.clear(); for (const id of m.broken ?? []) broken.add(id); begin(m.seed, m.startAt); }
+    } else if (m.t === "start") { if (m.seed !== roundSeed) playing = false; mode = m.mode ?? "horde"; diff = m.diff ?? null; broken.clear(); begin(m.seed, m.startAt); }
+    else if (m.t === "broke") {
+      broken.add(m.id);
+      const b = breakables.find((x) => x.id === m.id);
+      if (b) breakPiece(b, new THREE.Vector3().randomDirection().setY(0.3), false);
+    }
+    else if (m.t === "note") $("#lobby-msg").textContent = m.text;
     else if (m.t === "pos") {
       let o = others.get(m.id);
       if (!o) { o = { group: avatar(m.user), user: m.user, to: new THREE.Vector3() }; others.set(m.id, o); }
-      o.to.set(m.p[0], 0, m.p[2]); o.yaw = m.yaw; o.room = m.room; o.swing = m.swing;
+      o.to.set(m.p[0], m.p[1] || 0, m.p[2]); o.yaw = m.yaw; o.room = m.room; o.swing = m.swing;
     } else if (m.t === "clubbed") {
       player.vel.set(m.dir[0], 0, m.dir[1]).multiplyScalar(14);
       hurt(6, m.by);
     } else if (m.t === "over") showOver(m.players);
   };
-  ws.onclose = () => { ws = null; $("#lobby-msg").textContent = "playing solo (couldn't reach the room)"; };
+  ws.onclose = () => { ws = null; if (hashDiff && !playing) { mode = "removed"; diff = hashDiff; renderModes(); } $("#lobby-msg").textContent = "playing solo (couldn't reach the room)"; };
 }
 function renderLobby() {
   const ps = lobbyState?.players ?? [];
-  $("#lobby-players").innerHTML = ps.map((p) => `<li><span>${esc(p.user)}${p.id === me ? " (you)" : ""}</span><span class="${p.ready ? "ok" : "muted"}">${lobbyState.state === "playing" ? (p.alive ? `wave ${p.wave} · ${p.score}` : `out · ${p.score}`) : p.ready ? "ready" : "waiting"}</span></li>`).join("");
-  $("#ready").textContent = ps.find((p) => p.id === me)?.ready ? "not ready" : "ready";
+  $("#lobby-players").innerHTML = ps.map((p) => `<li><span>${esc(p.user)}${p.id === me ? " (you)" : ""}</span><span class="${p.ready ? "ok" : "muted"}">${lobbyState.state === "playing" ? (p.alive ? (mode === "horde" ? `wave ${p.wave} · ${p.score}` : `${p.score}`) : `out · ${p.score}`) : p.ready ? "ready" : "waiting"}</span></li>`).join("");
+  renderModes();
+  const mine = ps.find((p) => p.id === me);
+  $("#ready").textContent = mine?.ready ? "not ready" : "ready";
+  if (ws && lobbyState?.state === "playing" && mine && !mine.alive) $("#lobby-msg").textContent = "You're out. The round ends when everyone is.";
+  else if (ws && lobbyState?.state === "waiting") $("#lobby-msg").textContent = "";
   $("#others").innerHTML = lobbyState?.state === "playing" ? ps.filter((p) => p.id !== me).map((p) => `${esc(p.user)} ${p.alive ? p.score : "out"}`).join("<br>") : "";
 }
+const BLURB = {
+  horde: "Every folder is a room. The walls are the code. The code is restless. Grab the bat.",
+  wreck: "A panic room. Everyone in here breaks this codebase together: walls, lines, furniture. Score is what you wreck. Nothing in the real repo is touched.",
+  removed: "Every line the diff took out is furniture now. Smash it all: a victory lap for a cleanup. The lines it put in stand around, untouchable.",
+};
+function renderModes() {
+  for (const b of document.querySelectorAll("#modes button")) {
+    b.classList.toggle("on", b.dataset.mode === mode);
+    if (b.dataset.mode === "removed") b.disabled = !diff;
+  }
+  $("#diff-name").textContent = diff ? `${diff.path.split("/").pop()} · r${diff.from} → r${diff.to}` : room.startsWith("r/") ? "pick a diff in a file's History" : "levels are read-only: fork one to diff it";
+  $("#lobby-blurb").textContent = BLURB[mode] ?? BLURB.horde;
+}
+$("#modes").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || b.disabled) return;
+  if (ws) return send({ t: "mode", mode: b.dataset.mode, diff });
+  mode = b.dataset.mode; renderModes();
+});
 $("#start").addEventListener("click", () => { sound.init(); ws ? send({ t: "start" }) : begin(Math.floor(Math.random() * 2 ** 31), Date.now() + 3000); });
 $("#ready").addEventListener("click", () => { sound.init(); send({ t: "ready" }); });
 $("#again").addEventListener("click", () => { $("#over").hidden = true; $("#lobby").hidden = false; });
@@ -609,25 +1133,66 @@ async function begin(seed, startAt) {
   playing = true; roundSeed = seed;
   rng = mulberry(seed);
   $("#lobby").hidden = true; $("#over").hidden = true;
+  $("#bl").hidden = mode !== "horde";
+  pin = null;
   for (const e of [...enemies]) drop(e);
-  Object.assign(player, { hp: 100, score: 0, combo: 1, alive: false });
+  for (const b of [...bosses]) unboss(b);
+  awoken.clear();
+  Object.assign(player, { hp: 100, vy: 0, score: 0, combo: 1, alive: false });
   wave = 0; toSpawn = 0; breakT = 0;
-  if (!here || here.path !== "") await enter("");
+  // Every round rebuilds the room: a wreck fills it with furniture, a smash is the diff's own room.
+  const built = mode === "removed" ? await diffRoom().catch((e) => { banner("no diff", e.message, 3); return null; }) : null;
+  if ((mode === "removed" && !built) || !(await enter("", undefined, built ?? undefined))) {
+    playing = false; $("#lobby").hidden = false; send({ t: "dead", score: 0 });
+    return;
+  }
   for (const l of here.lines) if (!l.mesh.parent) l.wall.add(l.mesh);
   renderer.domElement.requestPointerLock?.()?.catch?.(() => {});
   $("#lock").hidden = document.pointerLockElement === renderer.domElement;
   const tick = () => {
     const left = Math.ceil((startAt - Date.now()) / 1000);
     if (left > 0) { banner(String(left), "grab the bat"); setTimeout(tick, 250); return; }
-    player.alive = true; startWave(1);
+    player.alive = true;
+    if (mode === "horde") return startWave(1);
+    endsAt = startAt + ROUND_MS[mode];
+    banner(mode === "wreck" ? "WRECK IT" : "SMASH IT", mode === "wreck" ? "everything breaks" : `${here.furn.total} lines it took out`);
   };
   tick();
 }
-function die() {
+// The panic rooms run on a clock; a smash also ends when the diff's lines are all gone.
+const ROUND_MS = { wreck: 120_000, removed: 180_000 };
+let endsAt = 0;
+function updateMode() {
+  if (mode === "horde" || !player.alive) return;
+  if (mode === "removed" && removedLeft() === 0) return die("CLEAN", here.furn.total ? `every line it took out is gone · ${player.score} points` : "it took nothing out");
+  if (Date.now() >= endsAt) die("TIME", `${player.score} points · ${broken.size} smashed`);
+}
+/** The diff's room: the file as it is now on the walls, and what the diff took out as furniture. */
+async function diffRoom() {
+  if (!room.startsWith("r/") || !diff) throw new Error("pick a diff in a file's History first");
+  const [owner, repo] = room.slice(2).split("/");
+  const at = async (rev) => {
+    const r = await fetch(`/api/repos/${owner}/${repo}/do/at?path=${encodeURIComponent(diff.path)}&rev=${rev}`);
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "can't read that file");
+    return r.json();
+  };
+  const [then, now] = await Promise.all([at(diff.from), at(diff.to)]);
+  const d = diffLines(then.lines, now.lines);
+  d.removed = d.removed.slice(0, 300);
+  // A grid cell for every piece, 2 m clear of the walls.
+  const n = Math.ceil(Math.sqrt(Math.ceil(d.removed.length / 3) + Math.ceil(Math.min(d.added.length, 96) / 6))), L = 4 + 2.4 * Math.max(3, n + 1);
+  return { files: [{ name: diff.path.split("/").pop(), path: `diff:${diff.path}@${diff.from}..${diff.to}`, lines: now.lines.map((l) => l.text) }], doors: [], diff: d, minPanels: 4 * Math.ceil(L / PANEL) };
+}
+/** By line id, like the History view: a line gone, or its old text when it changed, was taken out. */
+function diffLines(then, now) {
+  const a = new Map(then.map((l) => [l.id, l.text])), b = new Map(now.map((l) => [l.id, l.text]));
+  return { removed: then.filter((l) => b.get(l.id) !== l.text && l.text.trim()).map((l) => l.text), added: now.filter((l) => a.get(l.id) !== l.text && l.text.trim()).map((l) => l.text) };
+}
+function die(big = "OUT", small = `${player.score} points · wave ${wave}`) {
   player.alive = false; playing = false;
   document.exitPointerLock?.();
   send({ t: "dead", score: player.score });
-  banner("OUT", `${player.score} points · wave ${wave}`, 2.5);
+  banner(big, small, 2.5);
   if (!ws) showOver([{ user: "you", score: player.score, wave }]);
   else { $("#lobby").hidden = false; renderLobby(); }
 }
@@ -638,7 +1203,7 @@ function showOver(players) {
   $("#lobby").hidden = true; $("#lock").hidden = true; $("#over").hidden = false;
   const best = [...players].sort((a, b) => b.score - a.score);
   $("#over-title").textContent = best[0] ? `${best[0].user} takes it.` : "Smacked flat.";
-  $("#over-players").innerHTML = best.map((p) => `<li><span>${esc(p.user)}</span><span>${p.score} · wave ${p.wave}</span></li>`).join("");
+  $("#over-players").innerHTML = best.map((p) => `<li><span>${esc(p.user)}</span><span>${p.score}${mode === "horde" ? ` · wave ${p.wave}` : ""}</span></li>`).join("");
 }
 
 // ---- sound: a little Web Audio, made on the spot ----------------------------------
@@ -653,24 +1218,85 @@ const sound = {
       for (const f of [60, 120, 180]) { const o = this.ctx.createOscillator(); o.frequency.value = f; o.connect(g); o.start(); }
     } catch {}
   },
-  noise(len, freq, q, vol) {
+  noise(len, freq, q, vol, type = "bandpass", delay = 0) {
     if (!this.ctx) return;
     const c = this.ctx, b = c.createBuffer(1, c.sampleRate * len, c.sampleRate), d = b.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 2;
     const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
-    s.buffer = b; f.type = "bandpass"; f.frequency.value = freq; f.Q.value = q; g.gain.value = vol;
-    s.connect(f).connect(g).connect(c.destination); s.start();
+    s.buffer = b; f.type = type; f.frequency.value = freq; f.Q.value = q; g.gain.value = vol;
+    s.connect(f).connect(g).connect(c.destination); s.start(c.currentTime + delay);
     return { f, c };
   },
-  thwack() {
-    this.noise(0.12, 1600, 1.2, 0.9);
+  /** A pitch sweep from f0 to f1, fading out; `delay` seconds from now. */
+  sweep(f0, f1, len, type, vol, delay = 0) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime + delay, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + len);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + len);
+    o.connect(g).connect(c.destination); o.start(t); o.stop(t + len + 0.01);
+  },
+  /** What a hit sounds like, by what it hit: a thud (soft things, one line), a crash (stacks,
+   *  shelves), a shatter (glass, lamps, the entropy wall), a splinter (wood). */
+  impact(kind, v = 1) {
+    const r = Math.random;
+    if (kind === "thud") { this.sweep(110, 45, 0.18, "sine", 0.55 * v); this.noise(0.12, 260, 0.8, 0.5 * v, "lowpass"); }
+    else if (kind === "crash") { this.noise(0.5, 900, 0.6, 0.5 * v); this.noise(0.35, 2200, 0.8, 0.35 * v, "bandpass", 0.03); this.noise(0.3, 500, 0.7, 0.4 * v, "bandpass", 0.07); this.sweep(90, 40, 0.3, "sine", 0.4 * v); }
+    else if (kind === "shatter") { this.noise(0.45, 5000, 0.5, 0.45 * v, "highpass"); for (let i = 0; i < 7; i++) { const f = 2500 + r() * 4000; this.sweep(f, f * 0.97, 0.1 + r() * 0.2, "sine", 0.07 * v, r() * 0.25); } }
+    else if (kind === "splinter") { for (let i = 0; i < 9; i++) this.noise(0.03, 1500 + r() * 1500, 4, 0.5 * v, "bandpass", i * 0.012 + r() * 0.01); this.sweep(160, 60, 0.12, "triangle", 0.35 * v); }
+  },
+  /** Debris settling after a big smash: little knocks trailing off. */
+  settle(v = 1) { for (let i = 0; i < 6; i++) this.noise(0.05, 600 + Math.random() * 900, 2, (0.14 - i * 0.015) * v, "bandpass", 0.35 + i * 0.13 + Math.random() * 0.08); },
+  thwack(v = 1) {
+    this.noise(0.12, 1600, 1.2, 0.9 * v);
     if (!this.ctx) return;
     const c = this.ctx, o = c.createOscillator(), g = c.createGain();
     o.frequency.setValueAtTime(180, c.currentTime); o.frequency.exponentialRampToValueAtTime(60, c.currentTime + 0.12);
-    g.gain.setValueAtTime(0.5, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.15);
+    g.gain.setValueAtTime(0.5 * v, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.15);
     o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 0.16);
   },
+  // The bat grinding into a line, rising as the press goes on.
+  grind(k) { this.noise(0.06, 300 + 900 * k, 3, 0.18); },
+  ding() { this.tone("sine", 1320, 0.25, 0.12); },
+  // A low bird's whistle as it drops for your legs.
+  swoop() { const o = this.tone("triangle", 900, 0.5, 0.05); o?.frequency.exponentialRampToValueAtTime(220, this.ctx.currentTime + 0.5); },
+  tone(type, f, len, vol) {
+    if (!this.ctx) return;
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.value = f; g.gain.setValueAtTime(vol, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + len);
+    o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + len);
+    return o;
+  },
   whoosh() { const n = this.noise(0.22, 500, 0.7, 0.25); n?.f.frequency.exponentialRampToValueAtTime(2500, n.c.currentTime + 0.2); },
+  // The noodle monsters: a low, wobbling drone that swells as one gets close.
+  droneGain: null, droneFilter: null,
+  drone(level, time) {
+    if (!this.ctx) return;
+    if (!this.droneGain) {
+      const c = this.ctx;
+      this.droneGain = c.createGain(); this.droneGain.gain.value = 0;
+      this.droneFilter = c.createBiquadFilter(); this.droneFilter.type = "lowpass"; this.droneFilter.frequency.value = 120;
+      this.droneFilter.connect(this.droneGain).connect(c.destination);
+      for (const f of [41, 43.7, 82.6]) { const o = c.createOscillator(); o.type = "sawtooth"; o.frequency.value = f; o.connect(this.droneFilter); o.start(); }
+    }
+    this.droneGain.gain.setTargetAtTime(level * 0.09, this.ctx.currentTime, 0.3);
+    this.droneFilter.frequency.value = 90 + level * 160 + Math.sin(time * 0.7) * 40;
+  },
+  groan() {
+    if (!this.ctx) return;
+    const c = this.ctx, o = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+    o.type = "sawtooth"; o.frequency.setValueAtTime(70, c.currentTime); o.frequency.exponentialRampToValueAtTime(32, c.currentTime + 1.4);
+    f.type = "lowpass"; f.frequency.value = 260;
+    g.gain.setValueAtTime(0.001, c.currentTime); g.gain.exponentialRampToValueAtTime(0.35, c.currentTime + 0.3); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 1.5);
+    o.connect(f).connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 1.6);
+  },
+  snap() {
+    this.noise(0.16, 320, 2.5, 0.9);
+    if (!this.ctx) return;
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.frequency.setValueAtTime(220, c.currentTime); o.frequency.exponentialRampToValueAtTime(40, c.currentTime + 0.25);
+    g.gain.setValueAtTime(0.4, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.28);
+    o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 0.3);
+  },
   hurt() {
     if (!this.ctx) return;
     const c = this.ctx, o = c.createOscillator(), g = c.createGain();
@@ -680,6 +1306,7 @@ const sound = {
 };
 
 // ---- HUD ----------------------------------------------------------------------------
+Object.assign($("#press b").style, { left: SWEET[0] / JAM * 100 + "%", width: (SWEET[1] - SWEET[0]) / JAM * 100 + "%" });
 let bannerTimer = 0;
 function banner(big, small = "", secs = 1.8) {
   $("#banner").innerHTML = `${esc(big)}${small ? `<small>${esc(small)}</small>` : ""}`;
@@ -689,26 +1316,30 @@ function banner(big, small = "", secs = 1.8) {
 function hud() {
   $("#score").textContent = player.score;
   $("#combo").textContent = player.combo > 1 ? `x${player.combo} combo` : "";
-  $("#wave").textContent = wave ? `wave ${wave}` + (toSpawn ? ` · ${toSpawn + enemies.length} lines left` : enemies.length ? ` · ${enemies.length} left` : "") : "";
+  const secs = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000)), clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  $("#wave").textContent = mode !== "horde" ? (player.alive ? (mode === "wreck" ? `${clock} left · ${broken.size} smashed` : `${removedLeft()} of ${here.furn.total} removed lines left · ${clock}`) : "") : wave ? `wave ${wave}` + (toSpawn ? ` · ${toSpawn + enemies.length} lines left` : enemies.length ? ` · ${enemies.length} left` : "") : "";
   const hp = Math.max(0, player.hp);
   $("#hp").textContent = `${Math.ceil(hp)} health`;
   $("#health i").style.width = hp + "%";
   $("#health").classList.toggle("low", hp < 30);
+  $("#press").classList.toggle("on", !!pin);
+  if (pin) {
+    $("#press i").style.width = Math.min(100, pin.c / JAM * 100) + "%";
+    $("#press").classList.toggle("sweet", pin.c >= SWEET[0] && pin.c <= SWEET[1]);
+  }
 }
 
 // ---- loop ---------------------------------------------------------------------------
-let last = performance.now(), sent = 0, flicker = 0;
+let last = performance.now(), sent = 0;
 function frame(now, manual) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const time = now / 1000;
   if (here) {
-    updatePlayer(dt); updateBat(dt); updateEnemies(dt, time); updateWaves(dt); updateOthers(dt); updateLava(time);
+    updatePlayer(dt); updateBat(dt); updateEnemies(dt, time); updateBosses(dt, time); updateWaves(dt); updateBreaking(dt); updateMode(); updateOthers(dt); updateLava(time);
     player.comboT -= dt; if (player.comboT <= 0) player.combo = 1;
-    // The lights flicker now and then.
-    flicker -= dt; if (flicker < 0) { hemi.intensity = rng() < 0.06 ? 1.3 : 2.6; flicker = 0.08 + Math.random() * 0.5; }
     if (now - sent > 100 && playing) {
       sent = now;
-      send({ t: "pos", p: [player.pos.x, 0, player.pos.z], yaw: player.yaw, room: here.path, swing: swingT >= 0 });
+      send({ t: "pos", p: [player.pos.x, player.pos.y - EYE, player.pos.z], yaw: player.yaw, room: here.path, swing: swingT >= 0 });
       if (player.score !== lastScore) { lastScore = player.score; send({ t: "score", score: player.score, wave }); }
     }
   }
@@ -720,11 +1351,13 @@ function frame(now, manual) {
 // Fonts first, so the atlases draw in Geist Mono; then the root room and the lobby.
 await document.fonts.load(`500 ${FONT_PX}px "Geist Mono"`).catch(() => {});
 await document.fonts.load(`500 54px "Geist"`).catch(() => {});
+if (hashDiff) { mode = "removed"; diff = hashDiff; }
+renderModes();
 if (!(await enter(""))) $("#lobby-msg").textContent = "this room isn't dug up yet; import the level first";
 connect();
 requestAnimationFrame(frame);
 // For poking at it from the console.
-window.game = { player, enemies, others, get here() { return here; }, get wave() { return wave; }, get toSpawn() { return toSpawn; }, spawn, swing, lava, step: (ms = 16) => frame(last + ms, true) };
+window.game = { player, enemies, bosses, others, breakables, broken, debris, strike, get mode() { return mode; }, get here() { return here; }, get wave() { return wave; }, get toSpawn() { return toSpawn; }, spawn, swing, lava, get pin() { return pin; }, set held(v) { held = v; if (!v && pin) letGo(); }, step: (ms = 16) => frame(last + ms, true) };
 </script>
 </body>
 </html>

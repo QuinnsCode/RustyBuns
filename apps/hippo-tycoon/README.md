@@ -4,7 +4,7 @@
 
 Four angry, greedy oil-baron hippos around a lost oil geyser deep in the jungle (misty fluted peaks, lush ferns and palms, a rusted wellhead and a fallen derrick half swallowed by vines), each trying to chomp the most oil the geyser fires into the basin. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode.
 
-The oil geyser's gush is a particle fluid simulation written in **Rust** (compiled to WebAssembly) with a TypeScript twin as the fallback; a test holds the two to bit-identical output.
+The oil geyser's gush is a particle fluid simulation written in **Rust** (compiled to WebAssembly) with a TypeScript twin as the fallback; a test holds the two to bit-identical output. The game's rules (`step()`) have a Rust twin too, held to the same state hash on every tick.
 
 The four bosses dress like guerrilla warlords at a Miami sunset: berets, bandoliers of oil vials, gold epaulettes and medals, mirrored shades, chains and cigars. (Vibe only; nothing from any film or show.)
 
@@ -31,13 +31,29 @@ Run every command from the folder named in its step.
 bun run dev            # vite, hot reload: http://localhost:5173
 ```
 
-### The Rust fluid (optional)
+### The Rust twins (optional)
 
 ```
-bun run build:native   # cargo + the wasm32 target -> public/hippo_fluid.wasm (needs rustup)
+bun run build:native   # cargo + the wasm32 target -> public/hippo_fluid.wasm and public/hippo_sim.wasm (needs rustup)
+bun bench/sim.ts       # the rules engine: TypeScript vs Rust/wasm, ticks per second, heap, wasm size
 ```
 
-Without it the geyser runs the TypeScript twin (same output, a bit slower). The corner of the game says which one is running (`fluid: Rust/wasm`). The wasm is a build output and is not committed.
+Without them the game runs the TypeScript twins (same output). The corner of the game says which fluid is running (`fluid: Rust/wasm`). The wasms are build outputs and are not committed.
+
+The rules engine (`rust/crates/hippo_sim`, a port of `src/sim/step.ts` with spawn, physics, gulp and effects, and of the bots in `src/sim/bots.ts`) runs solo and couch rounds whenever `public/hippo_sim.wasm` is there (`sim: Rust/wasm` in the corner; `?sim=ts` forces the TypeScript twin). The round and the bots stay inside the module: `Match.setEngine()` hands them over once, then each tick sends the human inputs in and reads back a compact view for the snapshot (positions, no velocities). Reading `match.sim` brings the round home (the next tick hands it back), so nothing outside `Match` changes. `bun bench/sim.ts 200` on an M-series Mac, Bun 1.4.2 (200 90 s rounds):
+
+| engine | ticks/s | µs/tick |
+|---|---|---|
+| `step()` alone, 4 scripted seats | | |
+| TypeScript, before (`Math.hypot`) | ~800k | 1.25 |
+| TypeScript, now (`sqrt(x² + y²)`) | ~1,350k | 0.74 |
+| Rust/wasm, state copied in and out each tick | ~780k | 1.28 |
+| Rust/wasm, state kept in the module | ~2,150k | 0.47 |
+| in play: `Match.tick()` + `snapshot()`, 4 bots | | |
+| TypeScript | ~410k | 2.45 |
+| Rust/wasm, round and bots kept in the module | ~630k | 1.60 |
+
+The wasm is 40 KB (15 KB gzipped) with 1.1 MiB of linear memory. At 30 Hz every row is far under 0.01% of a frame, so either engine is fine for play; Rust also leaves the JS heap alone (+0.4 MB over 200 bot matches against +4.4 MB). The in-play rows were measured on a busy machine: compare them with each other, not with the rows above. The online room (the Durable Object) and the desktop world still step in TypeScript: a Worker cannot compile wasm from bytes, so the module would have to be bundled with the Worker ([#180](https://github.com/QuinnsCode/RustyBuns/issues/180)). To keep the two bit-identical, `src/sim` uses no libm: `cos`/`sin` are a series in `src/sim/trig.ts` and lengths are `Math.sqrt(x * x + y * y)` (sqrt is exactly rounded everywhere; `Math.hypot` and trig are not). `test/sim-native.test.ts` compares the state hash and the events every tick over four whole rounds, and every snapshot of whole bot matches through `Match`, with a human joining and leaving, the state read back mid-round and the engine swapped out and in.
 
 ### The desktop app (solo, couch, and hosting a LAN game)
 
@@ -70,9 +86,23 @@ bunx wrangler dev --local --port 8787      # the Worker + Durable Object
 bun scripts/smoke-online.ts http://127.0.0.1:8787     # a scripted two-player round
 ```
 
+To check that a room survives losing its Durable Object mid-round, `scripts/smoke-evict.ts` plays a round through the client's own reconnecting socket, evicts the room, and checks that both players reconnect to the seats they held and the round restarts from its countdown. Locally, eviction means restarting `wrangler dev`, which keeps the room's storage. On Cloudflare, it means a deploy that changes the code (a new var alone does not evict). A deploy reaches each object eventually, not all at once (about five minutes when this was tried), so give it a long `--wait`:
+
+```
+bun scripts/smoke-evict.ts http://127.0.0.1:8787                 # restart wrangler dev when it says EVICT NOW
+bun scripts/smoke-evict.ts https://<your-worker> --evict "bunx wrangler deploy --minify" --wait 1200
+```
+
 Open `http://127.0.0.1:8787` in two tabs, choose **Online room**, make a room in one, and type its code in the other.
 
-Deploying is yours to run: `bunx rustybuns plan` (creates nothing), then `bunx rustybuns deploy`. `plan` needs a live Cloudflare login (`alchemy profile refresh`). The Alchemy and Effect versions Alchemy needs are pinned in the **repo root** `package.json` (`overrides`), because Bun ignores overrides inside a workspace member.
+`wrangler dev` bundles the Worker with wrangler's own bundler, but a deploy ships Alchemy's bundle. To run Alchemy's bundle in workerd before deploying (no login needed, nothing created in the cloud):
+
+```
+bun run build
+bun scripts/check-alchemy-bundle.ts        # Alchemy's rolldown bundle -> workerd -> the smoke round
+```
+
+Deploying is yours to run: `bunx rustybuns plan` (creates nothing; it lists `[Build]`, `[Worker]` and `[Worker/WORLD]` to create), then `bunx rustybuns deploy`, then `bun scripts/smoke-online.ts https://<the deployed url>`. Both need a live Cloudflare login: `bunx alchemy profile refresh --profile default --provider Cloudflare` (Alchemy is a project dependency, not on your PATH), or `bunx rustybuns login cloudflare`. In CI, set `CI=true`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` instead. Even `rustybuns dev` needs the login. The deploy's build step (`worker.build`) compiles the wasm fluid when cargo and the `wasm32-unknown-unknown` target are installed, and the TypeScript twin ships otherwise. The Alchemy and Effect versions Alchemy needs are pinned in the **repo root** `package.json` (`overrides`), because Bun ignores overrides inside a workspace member.
 
 ## Play
 
@@ -143,6 +173,7 @@ src/sim/       the game: pure, deterministic, 30 Hz. No DOM, no clock, no Math.r
 src/engine/    platform-free: Match (lobby > countdown > playing > podium, seats, bots), Room (sockets), tick loop, wire
 src/client/    React UI, three.js renderer, input, audio, LocalDriver and NetDriver
 src/client/render/fluid.ts   the geyser's fluid: the TypeScript twin + the wasm loader (rust/crates/hippo_fluid is the Rust)
+src/sim/native.ts            the Rust twin of step() and the bots (rust/crates/hippo_sim); src/client/driver.ts loads it, Match keeps the round in it
 src/room-do.ts the one World class: the Cloudflare Durable Object and the in-process desktop world
 src/worker.ts  the Cloudflare entry: validates and vouches identity, routes rooms
 ```
@@ -151,13 +182,13 @@ src/worker.ts  the Cloudflare entry: validates and vouches identity, routes room
 - **Server-authoritative.** Clients send inputs; the room steps at 30 Hz and sends snapshots at 15 Hz; the client draws two snapshots about 100 ms behind. Your own chomp animates the moment you press it, and the server still decides what was eaten.
 - **The same match everywhere.** Solo and couch use the same `Match` the room runs, through `LocalDriver`, so a round plays the same wherever it runs. Bots are input-only drivers with their own seeded randomness, so who is a bot never changes which drops drip.
 - **Persistence is deliberately small.** A room saves its phase, seats, scores and round seed when the phase or seats change, not as scores tick: a mid-round score means nothing without the drops and positions it came from. If the Durable Object is evicted mid-round, the round restarts from its countdown with the same seed and scores reset; the players still connected go back to the seats they held. Podium scores are saved at the podium. A storage alarm checks the tick loop every 10 s while anyone is seated and restarts it if it has stopped.
-- **Abuse limits.** Each connection has a message budget (60 a second per seat it drives); a flood is closed (`4008`) and its seats go to bots. The Worker refuses a WebSocket upgrade from another site's page (`Origin`; localhost and LAN addresses are allowed for dev) and limits how many distinct rooms one address opens a minute (per Worker isolate).
+- **Abuse limits.** Each connection has a message budget (60 a second per seat it drives); a flood is closed (`4008`) and its seats go to bots. A room accepts at most one socket per seat and gallery place (12), plus a player's own reconnect, and a socket gets nothing until it says hello. The Worker refuses a WebSocket upgrade from another site's page (`Origin`; localhost and LAN addresses are allowed for dev) and limits how many distinct rooms one address opens a minute (per Worker isolate).
 - **Identity.** Online, the Worker validates the player id and name from the query, strips any client-sent `X-*` header and vouches its own. On a LAN, the Rusty Buns host vouches the identity. The world never trusts a message body.
 
 ## Tests
 
 ```
-bun test test          # sim, bots, match, wire, room (fake ports), worker, input, the fluid (Rust == TypeScript), a real LAN party,
+bun test test          # sim, bots, match, wire, room (fake ports), worker, input, the fluid and the rules (Rust == TypeScript), a real LAN party,
                        # the finale, settings and cues, contrast, and that a production build leaves the preview page out
 ```
 
@@ -176,4 +207,4 @@ profile: build desktop  (bun 1.4.2)
   total                   3.09s
 ```
 
-`build desktop --dev --check`: typecheck 2.70 s, client build 1.54 s, bundle dev host 12 ms, total 4.28 s. `rustybuns plan`: the generated stack type-checks in 3.09 s with tsc.
+`build desktop --dev --check`: typecheck 2.70 s, client build 1.54 s, bundle dev host 12 ms, total 4.28 s. `rustybuns plan`: the generated stack type-checks in 3.90 s with tsc, and the Alchemy plan takes 1.42 s.

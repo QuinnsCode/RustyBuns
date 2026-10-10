@@ -10,3 +10,7 @@ wrangler.generated.jsonc
 .e2e-*
 .alchemy/
 **/native/target-*/
+.env
+.env.*
+!.env.example
+.dev.vars

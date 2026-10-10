@@ -44,6 +44,21 @@ test("wrangler round trip keeps every binding and generates both files", async (
   const g = JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, ""));
   expect(g.durable_objects.bindings.length).toBe(3);
   expect(g.r2_buckets[0].bucket_name).toBe("druids-curse-assets");
+  // No placeholder ids: wrangler would send them to the API on --remote (#177).
+  expect(g.d1_databases[0]).toEqual({ binding: "DB", database_name: (c.bindings.DB as any).databaseName, ...(g.d1_databases[0].migrations_dir ? { migrations_dir: g.d1_databases[0].migrations_dir } : {}) });
+  expect(g.kv_namespaces[0]).toEqual({ binding: "PRESENCE_KV" });
+});
+
+test("targets.edge.adopt names resources as the config does and takes over the Worker", async () => {
+  const c = wranglerToConfig(parseWrangler(await Bun.file(root + "/wrangler.jsonc").text()));
+  const off = generateAlchemy(c);
+  expect(off).not.toContain("AdoptPolicy");
+  expect(off).not.toMatch(/D1\.Database\("DB", \{ name:/);
+  const on = generateAlchemy({ ...c, targets: { ...c.targets, edge: { provider: "cloudflare", adopt: true } } });
+  expect(on).toContain(`Cloudflare.D1.Database("DB", { name: ${JSON.stringify((c.bindings.DB as any).databaseName)}`);
+  expect(on).toContain('Cloudflare.R2.Bucket("ASSETS_BUCKET", { name: "druids-curse-assets" })');
+  expect(on).toContain(`  name: ${JSON.stringify(c.name)},`);
+  expect(on).toContain("}).pipe(Alchemy.AdoptPolicy.adopt(true));");
 });
 
 test("layout: app/ with ~ and #lib from tsconfig paths, no src/", () => {
@@ -257,6 +272,7 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).toContain("const guest = true;");
   expect(box).toContain("const id = boxIdentity(url);");
   expect(box).toContain('if (url.pathname === "/__rb/host") return reject(404, "not_on_box");');
+  expect(box).toContain('if (url.pathname === "/__rb/action") return reject(404, "not_on_box");');
   expect(box).not.toContain("version_mismatch");
   expect(box).toContain('if (url.pathname === "/__rb/info") return reject(404, "not_on_box");');
   expect(box).toContain("WORLD.idFromName(room)");
@@ -388,6 +404,24 @@ test("artifacts: wrangler, alchemy and the desktop host all get the binding", ()
   expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
 });
 
+test("container: wrangler and alchemy bind the class and its image; the desktop host leaves it out", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  const w = JSON.parse(generateWrangler(c).replace(/^\/\/.*\n/gm, ""));
+  expect(w.containers).toEqual([{ class_name: "AgentSandbox", image: "sandbox/Dockerfile", max_instances: 2, instance_type: "basic" }]);
+  expect(w.durable_objects.bindings).toEqual([{ name: "SANDBOX", class_name: "AgentSandbox" }]);
+  expect(w.migrations[0].new_sqlite_classes).toEqual(["AgentSandbox"]);
+  const a = generateAlchemy(c);
+  expect(a).toContain(`export const SANDBOX = Cloudflare.Container("SANDBOX", { className: "AgentSandbox", context: "sandbox", dockerfile: "Dockerfile", maxInstances: 2, instanceType: "basic" });`);
+  expect(a).toContain(`SANDBOX: SANDBOX`);
+  const host = desktopEntry(c);
+  expect(host).toContain(`// SANDBOX: Cloudflare Container (AgentSandbox) has no local twin`);
+  expect(host).not.toContain(`SANDBOX: local`);
+});
+
 test("desktopCrates: only crates that would be embedded count against cross targets", async () => {
   const { desktopCrates } = await import("../src/build.ts");
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");
@@ -408,4 +442,36 @@ test("desktopCrates: only crates that would be embedded count against cross targ
     process.chdir(cwd);
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("DO migrations: history is kept, a new class gets the next tag, a removed class needs a declared step", () => {
+  const cfg = (bindings: Record<string, unknown>, migrations?: unknown[]) => ({
+    name: "app", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], ...(migrations ? { migrations } : {}) },
+    bindings, targets: { edge: { provider: "cloudflare" } },
+  }) as any;
+  const read = (s: string) => JSON.parse(s.replace(/^\/\/.*\n/gm, "")).migrations;
+  const two = { FILES: { type: "durable_object", className: "FileDurableObject" }, GAMES: { type: "durable_object", className: "GameRoom" } };
+  const v1 = generateWrangler(cfg(two));
+  expect(read(v1)).toEqual([{ tag: "v1", new_sqlite_classes: ["FileDurableObject", "GameRoom"] }]);
+  // Same config again: unchanged.
+  expect(generateWrangler(cfg(two), v1)).toBe(v1);
+  // A class bound after deploy is appended, never folded into v1.
+  const three = { ...two, SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile" } };
+  const v2 = generateWrangler(cfg(three), v1);
+  expect(read(v2)).toEqual([
+    { tag: "v1", new_sqlite_classes: ["FileDurableObject", "GameRoom"] },
+    { tag: "v2", new_sqlite_classes: ["AgentSandbox"] },
+  ]);
+  // Unbinding it without saying what happened refuses, naming the step to add.
+  expect(() => generateWrangler(cfg(two), v2)).toThrow(/AgentSandbox.*tag: "v3", deleted_classes: \["AgentSandbox"\]/);
+  // Declared delete and rename steps are appended once.
+  const v3 = generateWrangler(cfg(two, [{ tag: "v3", deleted_classes: ["AgentSandbox"] }]), v2);
+  expect(read(v3).at(-1)).toEqual({ tag: "v3", deleted_classes: ["AgentSandbox"] });
+  const renamed = { ...two, GAMES: { type: "durable_object", className: "Room" } };
+  const v4 = generateWrangler(cfg(renamed, [{ tag: "v3", deleted_classes: ["AgentSandbox"] }, { tag: "v4", renamed_classes: [{ from: "GameRoom", to: "Room" }] }]), v3);
+  expect(read(v4).map((m: any) => m.tag)).toEqual(["v1", "v2", "v3", "v4"]);
+  expect(read(v4).at(-1)).toEqual({ tag: "v4", renamed_classes: [{ from: "GameRoom", to: "Room" }] });
+  // A hand-written history with its own tag names carries on from there.
+  const hand = `{ "migrations": [{ "tag": "v1", "new_classes": ["Old"] }, { "tag": "v2", "new_sqlite_classes": ["GameRoom"] }] }`;
+  expect(read(generateWrangler(cfg({ OLD: { type: "durable_object", className: "Old" }, ...two }), hand)).at(-1)).toEqual({ tag: "v3", new_sqlite_classes: ["FileDurableObject"] });
 });

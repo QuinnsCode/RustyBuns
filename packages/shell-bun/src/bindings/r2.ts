@@ -4,7 +4,7 @@
 // Keys map to files; a sidecar .meta.json carries metadata when set.
 
 import { mkdirSync, readdirSync, statSync, existsSync, rmSync, readFileSync, writeFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, sep } from "node:path";
 
 export interface R2ObjectLike {
   key: string; size: number; etag: string; httpEtag: string; uploaded: Date;
@@ -25,7 +25,7 @@ export class R2Bucket {
 
   private within(root: string, key: string) {
     const p = join(root, key);
-    if (!p.startsWith(root)) throw new Error("bad key");
+    if (p !== root && !p.startsWith(root.endsWith(sep) ? root : root + sep)) throw new Error("bad key");
     return p;
   }
   /** Resolve a key for reading: overlay wins, then base. Tombstones hide base keys. */

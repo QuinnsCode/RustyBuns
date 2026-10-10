@@ -418,6 +418,9 @@ export function analyze(pos: Float32Array, idx: Uint32Array, opts: Partial<RigOp
   o.bands = Math.min(Math.max(Math.floor(o.bands), 4), 256);
   o.maxBonesPerChain = Math.min(Math.max(Math.floor(o.maxBonesPerChain), 1), 8);
   if (pos.length < 9 || idx.length < 3) throw new Error("mesh has no triangles");
+  const nv = Math.floor(pos.length / 3);
+  for (let i = 0; i < idx.length; i++) if (idx[i] >= nv) throw new Error("index out of range");
+  for (let i = 0; i < pos.length; i++) if (!Number.isFinite(pos[i])) throw new Error("vertex position is not finite");
 
   const t0 = performance.now();
   const g = makeGrid(pos, o);

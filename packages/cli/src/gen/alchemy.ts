@@ -10,23 +10,39 @@ import { checkWheel, mintedSecrets } from "../wheel.ts";
 
 const ident = (s: string) => s.replace(/[^A-Za-z0-9_]/g, "_");
 
-function resource(name: string, b: Binding): string | null {
+/** `, { ... }` from the props that are set, or nothing. */
+const propsArg = (props: Record<string, string | undefined>) => {
+  const set = Object.entries(props).filter(([, v]) => v !== undefined);
+  return set.length ? `, { ${set.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ")} }` : "";
+};
+
+/** `adopt`: name D1 and R2 as the config does, so existing ones are found by name. */
+function resource(name: string, b: Binding, adopt: boolean): string | null {
   const id = ident(name);
   switch (b.type) {
     case "d1":
-      return `export const ${id} = Cloudflare.D1.Database("${name}"${b.migrationsDir ? `, { migrations: "${b.migrationsDir}" }` : ""});`;
+      return `export const ${id} = Cloudflare.D1.Database("${name}"${propsArg({ name: adopt ? b.databaseName : undefined, migrations: b.migrationsDir })});`;
     case "kv":
       return `export const ${id} = Cloudflare.KV.Namespace("${name}");`;
     case "r2":
-      return `export const ${id} = Cloudflare.R2.Bucket("${name}");`;
+      return `export const ${id} = Cloudflare.R2.Bucket("${name}"${propsArg({ name: adopt ? b.bucketName : undefined })});`;
     case "artifacts":
       // A binding marker: namespaces appear with their first repo, nothing to provision.
       return `export const ${id} = Cloudflare.Artifacts.Namespace("${name}", { namespace: ${JSON.stringify(b.namespace)} });`;
     case "durable_object":
       // Async Workers bind a DO exported by `main` with Cloudflare.DurableObject
       // in `env` (src/Cloudflare/Workers/DurableObject.ts, "Async Workers").
-      // Not a top-level resource: it is created inline in env below.
+      // Not a top-level resource: it is created inline in env below. Its
+      // migrations need no history here: Alchemy diffs the deployed Worker's
+      // tags, appends the next tag, and treats a changed class as a rename.
       return null;
+    case "container": {
+      // The Container is the DO binding and its ContainerApplication together;
+      // the image builds from the Dockerfile's directory at deploy.
+      const at = b.dockerfile.lastIndexOf("/");
+      const [context, dockerfile] = at < 0 ? [".", b.dockerfile] : [b.dockerfile.slice(0, at), b.dockerfile.slice(at + 1)];
+      return `export const ${id} = Cloudflare.Container("${name}", { className: ${JSON.stringify(b.className)}, context: ${JSON.stringify(context)}, dockerfile: ${JSON.stringify(dockerfile)}, maxInstances: ${b.maxInstances ?? 1}, instanceType: ${JSON.stringify(b.instanceType ?? "lite")} });`;
+    }
     case "var":
     case "secret":
       return null;
@@ -40,6 +56,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   const box = c.targets.box?.provider === "hetzner" ? boxDefaults(c.targets.box) : null;
   const rail = c.targets.box?.provider === "railway" ? railwayDefaults(c.targets.box) : null;
   const w = c.worker!;   // only read when edge is on, which requires it
+  const adopt = edge && !!c.targets.edge?.adopt;
   const bindings = c.bindings ?? {};
   checkWheel(c);
   // experimental.wheel "agent": these secrets are minted by the stack itself.
@@ -47,15 +64,15 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   if (box && minted.size)
     throw new Error(`experimental.wheel "agent" can't mint secrets on a Hetzner box yet (${[...minted].join(", ")}). Give them an op reference or a value, or use the railway box.`);
   /** `export const Name = <ctor>(...)`, built inside an Effect when it needs minted secrets. */
-  const withMinted = (name: string, ctor: string, body: string[]) => {
-    if (!minted.size) return [`export const ${name} = ${ctor}(${JSON.stringify(name)}, {`, ...body, `});`];
+  const withMinted = (name: string, ctor: string, body: string[], pipe = "") => {
+    if (!minted.size) return [`export const ${name} = ${ctor}(${JSON.stringify(name)}, {`, ...body, `})${pipe};`];
     return [
       `export const ${name} = Effect.gen(function* () {`,
       `  // experimental.wheel "agent": minted on create, kept in stack state, gone on destroy.`,
       ...[...minted].map((n) => `  const ${ident(n)} = yield* Alchemy.makeRandom(${JSON.stringify(n)});`),
       `  return yield* ${ctor}(${JSON.stringify(name)}, {`,
       ...body.map((l) => "  " + l),
-      `  });`,
+      `  })${pipe};`,
       `});`,
     ];
   };
@@ -77,7 +94,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   if (edge) {
     const envEntries: string[] = [];
     for (const [name, b] of Object.entries(bindings)) {
-      const r = resource(name, b);
+      const r = resource(name, b, adopt);
       if (r) { lines.push(r); envEntries.push(`${name}: ${ident(name)}`); }
       else if (b.type === "durable_object")
         envEntries.push(`${name}: Cloudflare.DurableObject("${name}", { className: "${b.className}"${b.scriptName ? `, scriptName: "${b.scriptName}"` : ""} })`);
@@ -93,6 +110,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     }
 
     const wb: string[] = [];
+    if (adopt) wb.push(`  name: ${JSON.stringify(c.name)},`);
     wb.push(`  main: ${JSON.stringify(w.builtMain ?? w.main)},`);
     if (w.builtMain) wb.push(`  bundle: false,  // vite already produced a runtime-ready ESM bundle`);
     if (w.assets) {
@@ -104,7 +122,10 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     wb.push(`  compatibility: { date: ${JSON.stringify(w.compatibilityDate)}, flags: ${JSON.stringify(w.compatibilityFlags)} },`);
     if (c.targets.edge?.domain) wb.push(`  domain: ${JSON.stringify(c.targets.edge.domain)},`);
     wb.push(`  env: { ${envEntries.join(", ")} },`);
-    lines.push(...withMinted("Worker", "Cloudflare.Worker", wb));
+    // A wrangler-made Worker has no Alchemy tags, so plan and deploy refuse it as
+    // someone else's unless this Worker opts in to taking it over.
+    if (adopt) lines.push(`// targets.edge.adopt: an existing Worker named ${JSON.stringify(c.name)} is taken over, not duplicated.`);
+    lines.push(...withMinted("Worker", "Cloudflare.Worker", wb, adopt ? ".pipe(Alchemy.AdoptPolicy.adopt(true))" : ""));
     lines.push(``);
     lines.push(`/** The typed env the Worker AND the desktop shell compile against. */`);
     lines.push(`export type WorkerEnv = Cloudflare.InferEnv<typeof Worker>;`);

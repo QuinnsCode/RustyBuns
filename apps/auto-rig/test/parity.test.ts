@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { analyze, type RigResult } from "../src/rig/analyze.ts";
-import { analyzeNative } from "../src/rig/native.ts";
+import { analyzeNative, nativeLib } from "../src/rig/native.ts";
 import { gingerbread, lizard, GINGERBREAD_TIPS, LIZARD_TIPS, type Mesh } from "../src/rig/samples.ts";
 
 const models: [string, () => Mesh, number[][]][] = [
@@ -66,4 +66,20 @@ describe.each(models)("%s", (_name, make, expected) => {
 
 test("a mesh with no triangles is refused", () => {
   expect(() => analyze(new Float32Array(3), new Uint32Array(0))).toThrow();
+});
+
+describe("a crafted mesh is refused by both riggers, not crashed on", () => {
+  const { positions, indices } = gingerbread();
+  const nan = positions.slice(); nan[4] = NaN;
+  const inf = positions.slice(); inf[0] = Infinity;
+  const far = indices.slice(); far[2] = positions.length / 3;
+  test.each([["NaN position", nan, indices], ["Infinity position", inf, indices], ["index past the vertices", positions, far]] as const)(
+    "%s",
+    async (_name, pos, idx) => {
+      expect(() => analyze(pos, idx)).toThrow();
+      if (!(await nativeLib())) return;
+      // Before #154 the NaN/Infinity cases panicked in Rust and aborted the process.
+      await expect(analyzeNative(pos, idx)).rejects.toThrow("rejected");
+    },
+  );
 });

@@ -7,7 +7,7 @@ import { spaEntry } from "../src/build.ts";
 const root = mkdtempSync(join(import.meta.dir, ".e2e-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
-async function launch(extraEnv: Record<string, string> = {}, args: string[] = []) {
+async function launch(extraEnv: Record<string, string> = {}, args: string[] = [], host: "desktop" | "box" = "desktop") {
   mkdirSync(join(root, "packages/desktop"), { recursive: true });
   mkdirSync(join(root, "dist/ui"), { recursive: true });
   mkdirSync(join(root, ".rustybuns"), { recursive: true });
@@ -24,14 +24,15 @@ export default class World {
   webSocketMessage(ws: any, m: any) { if (m === "bye") ws.close(4000, "bye"); else ws.send("echo:" + m); }
 }`);
   writeFileSync(join(root, ".rustybuns/actions.ts"), `export const actions: Record<string, Record<string, Function>> = { m: { f: async () => 42 } };`);
-  const entry = spaEntry({ name: "e2e", bindings: {}, targets: { desktop: { mode: "spa", clientDir: "dist/ui", dataDir: join(root, "data"), guests: { max: 2, version: "v1" } } } } as any);
+  const entry = spaEntry({ name: "e2e", bindings: {}, targets: { desktop: { mode: "spa", clientDir: "dist/ui", dataDir: join(root, "data"), guests: { max: 2, version: "v1" } } } } as any, host);
   writeFileSync(join(root, ".rustybuns/desktop.ts"), entry);
   const p = Bun.spawn(["bun", ".rustybuns/desktop.ts", ...args], { cwd: root, env: { ...process.env, RB_NO_BROWSER: "1", ...extraEnv }, stdout: "pipe", stderr: "pipe" });
   let out = "";
   const reader = p.stdout.getReader();
   const deadline = Date.now() + 15000;
-  while (!/open http/.test(out) && Date.now() < deadline) { const { value, done } = await reader.read(); if (done) break; out += new TextDecoder().decode(value); }
-  const m = out.match(/open (http:\/\/[^/]+)\/\?token=(\S+)/);
+  const ready = host === "box" ? /serving (http:\/\/\S+)/ : /open http/;
+  while (!ready.test(out) && Date.now() < deadline) { const { value, done } = await reader.read(); if (done) break; out += new TextDecoder().decode(value); }
+  const m = host === "box" ? out.match(/serving (http:\/\/[^/\s]+)()/) : out.match(/open (http:\/\/[^/]+)\/\?token=(\S+)/);
   if (!m) throw new Error("host did not start:\n" + out + (await new Response(p.stderr).text()));
   return { p, url: m[1]!, token: m[2]! };
 }
@@ -126,3 +127,32 @@ test("generated host: a guest the world closes frees exactly one slot", async ()
     expect(await status("join=pw&uid=d&v=v1")).toBe(503);   // full: a and c
   } finally { p.kill(); }
 });
+
+test("box: a room leaves when its last socket closes, and /ws is rate limited per X-Real-IP", async () => {
+  const { p, url } = await launch({ PORT: "0", DATA_DIR: join(root, "boxdata") }, [], "box");
+  try {
+    const status = async (q: string, ip?: string) => (await fetch(`${url}/ws?${q}`, { headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "x", "sec-websocket-version": "13", ...(ip ? { "X-Real-IP": ip } : {}) } })).status;
+    // no X-Real-IP (no proxy in front): no gate, so one test can fill all 200 rooms
+    const open: WebSocket[] = [];
+    for (let i = 0; i < 200; i++) {
+      const c = await connect(`${url}/ws?room=r${i}`);
+      expect("hello" in c).toBe(true);
+      open.push((c as any).ws);
+    }
+    expect(await status("room=extra")).toBe(400);              // full
+    const twin = await connect(`${url}/ws?room=r0`);           // a room in use still takes more sockets
+    expect("hello" in twin).toBe(true);
+    open[0]!.close(); await Bun.sleep(50);
+    expect(await status("room=extra")).toBe(400);              // r0 still has its twin
+    (twin as any).ws.close(); await Bun.sleep(50);
+    const fresh = await connect(`${url}/ws?room=extra`);       // r0 emptied, so its slot is free
+    expect("hello" in fresh).toBe(true);
+    expect(await status("room=another")).toBe(400);            // and only that one slot
+    for (const ws of open) ws.close();
+    (fresh as any).ws.close();
+
+    for (let i = 0; i < 30; i++) expect(await status("room=lobby", "203.0.113.7")).not.toBe(429);
+    expect(await status("room=lobby", "203.0.113.7")).toBe(429);
+    expect(await status("room=lobby", "203.0.113.8")).not.toBe(429);  // another address has its own minute
+  } finally { p.kill(); }
+}, 30000);

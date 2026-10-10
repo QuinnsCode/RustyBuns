@@ -1,12 +1,14 @@
 #!/usr/bin/env bun
 // 🥐 Rusty Buns-ify Agent Office (https://github.com/AgentSystemLabs/agent-office, MIT).
 //
-//   bun scripts/rustybunsify.ts                  fetch the latest release into ./office, swap node-pty for the Bun shim
+//   bun scripts/rustybunsify.ts                  fetch the pinned release into ./office, swap node-pty for the Bun shim
 //   bun scripts/rustybunsify.ts compile          ...then build ./dist/agent-office-<os>-<arch>, one self-contained file
 //   bun scripts/rustybunsify.ts compile --all    ...for darwin-arm64, darwin-x64, linux-x64 and linux-arm64
 //
-// AGENT_OFFICE_TAG=v0.1.206 pins a release. Nothing upstream is forked: every run starts from the release
-// tarball and applies the same few patches, each of which fails loudly if its target moves.
+// The release is pinned below, with its tarball's sha256, since it's compiled into the binary we hand out.
+// AGENT_OFFICE_TAG=v0.1.212 AGENT_OFFICE_SHA256=<its agent-office.tgz digest> tries another; bump PINNED once it works.
+// Nothing upstream is forked: every run starts from the release tarball and applies the same few patches,
+// each of which fails loudly if its target moves.
 //
 // The office is retold as the Druids Curse forest (druids/), with models fetched from the live game
 // (DRUIDS_CURSE_URL overrides it). AGENT_OFFICE_SKIN=office keeps Agent Office as it ships.
@@ -14,40 +16,47 @@ import { $ } from "bun";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+const PINNED = { tag: "v0.1.211", sha256: "d9b3af07a55005239550ca0cec9c0f1f86aee409d8122b12d99794ee0f18231a" };
+
 const REPO = "AgentSystemLabs/agent-office";
 const root = path.dirname(import.meta.dir);
 const office = path.join(root, "office");
 const srv = path.join(office, "dist/server/server");
 
-const tag = process.env.AGENT_OFFICE_TAG ?? (await latestTag());
+const tag = process.env.AGENT_OFFICE_TAG ?? PINNED.tag;
+const sha256 = process.env.AGENT_OFFICE_SHA256 ?? (tag === PINNED.tag ? PINNED.sha256 : undefined);
+if (!sha256) {
+  throw new Error(`AGENT_OFFICE_TAG=${tag} needs AGENT_OFFICE_SHA256 too: ` +
+    `gh release view ${tag} -R ${REPO} --json assets --jq '.assets[]|select(.name=="agent-office.tgz").digest'`);
+}
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin}` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
+  // the skin is ours and changes far more often than the release, so it's rebuilt every start
+  if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
 } else {
   await prepare(tag);
 }
 if (process.argv[2] === "compile") await compile(tag);
 
-async function latestTag(): Promise<string> {
-  const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-    headers: { accept: "application/vnd.github+json" },
-  });
-  if (!res.ok) throw new Error(`couldn't look up the latest Agent Office release (${res.status}); set AGENT_OFFICE_TAG`);
-  return ((await res.json()) as { tag_name: string }).tag_name;
-}
-
 async function prepare(tag: string) {
   console.log(`🥐 Rusty Buns-ifying Agent Office ${tag}`);
 
-  // 1. the release tarball, cached
+  // 1. the release tarball, cached, and checked against its sha256 every time
   const cache = path.join(root, ".cache");
   const tgz = path.join(cache, `agent-office-${tag}.tgz`);
   if (!existsSync(tgz)) {
     mkdirSync(cache, { recursive: true });
     const res = await fetch(`https://github.com/${REPO}/releases/download/${tag}/agent-office.tgz`);
     if (!res.ok) throw new Error(`download of ${tag} failed (${res.status})`);
-    await Bun.write(tgz, res);
+    await Bun.write(`${tgz}.part`, res);
+    renameSync(`${tgz}.part`, tgz);
+  }
+  const got = new Bun.CryptoHasher("sha256").update(readFileSync(tgz)).digest("hex");
+  if (got !== sha256!.replace(/^sha256:/, "").toLowerCase()) {
+    rmSync(tgz, { force: true });
+    throw new Error(`Agent Office ${tag} tarball has sha256 ${got}, expected ${sha256}; refusing to build from it`);
   }
   rmSync(office, { recursive: true, force: true });
   const tmp = `${office}.tmp`;
@@ -111,9 +120,7 @@ async function druids(cache: string) {
   // the KTX2 transcoder the game's textures need, from the same three as the bundle
   const three = path.dirname(Bun.resolveSync("three/package.json", root));
   cpSync(path.join(three, "examples/jsm/libs/basis"), path.join(dir, "basis"), { recursive: true });
-  const built = await Bun.build({ entrypoints: [path.join(root, "druids/index.ts")], minify: true, target: "browser" });
-  if (!built.success) throw new AggregateError(built.logs, "druids/index.ts failed to build");
-  await Bun.write(path.join(dir, "druids.js"), built.outputs[0]);
+  await buildSkin(dir);
 
   const [main, ...more] = [...new Bun.Glob("assets/main-*.js").scanSync({ cwd: pub })];
   if (!main || more.length) throw new Error(`Agent Office changed: expected one assets/main-*.js, found ${more.length + (main ? 1 : 0)}`);
@@ -131,6 +138,12 @@ async function druids(cache: string) {
   patch(path.join(pub, "index.html"), `<script type="module" crossorigin src="/${main}">`,
     `<script type="module" src="/druids/druids.js"></script>\n    <script type="module" crossorigin src="/${renamed}">`);
   console.log(`   ✓ Druids Curse office: ${MODELS.length} models`);
+}
+
+async function buildSkin(dir: string) {
+  const built = await Bun.build({ entrypoints: [path.join(root, "druids/index.ts")], minify: true, target: "browser" });
+  if (!built.success) throw new AggregateError(built.logs, "druids/index.ts failed to build");
+  await Bun.write(path.join(dir, "druids.js"), built.outputs[0]);
 }
 
 async function compile(tag: string) {

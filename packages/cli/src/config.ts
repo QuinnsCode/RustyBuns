@@ -7,6 +7,22 @@ export type Binding =
   | { type: "durable_object"; className: string; scriptName?: string }
   /** Cloudflare Artifacts: git repos created at runtime. Locally, bare repos served over git HTTP. */
   | { type: "artifacts"; namespace: string }
+  /**
+   * Cloudflare Containers: a Durable Object class exported by `main` with a
+   * container image behind it (the class reaches it through `ctx.container`).
+   * Edge only: the desktop has no twin, so the binding is left out there and
+   * the app falls back to running on the machine itself.
+   */
+  | {
+      type: "container";
+      className: string;
+      /** Path to the Dockerfile, relative to the app. Its directory is the build context. */
+      dockerfile: string;
+      /** Cap on instances running at once. @default 1 */
+      maxInstances?: number;
+      /** "lite" (1/16 vCPU, 256 MiB), "basic" (1/4 vCPU, 1 GiB), "standard-1" and up. @default "lite" */
+      instanceType?: string;
+    }
   | { type: "var"; value: string }
   | {
       type: "secret";
@@ -17,6 +33,18 @@ export type Binding =
        */
       op?: string;
     };
+
+/**
+ * One step of a Worker's Durable Object migration history, in wrangler's shape.
+ * Cloudflare applies each tag once, in order, so a deployed tag never changes.
+ */
+export interface DoMigration {
+  tag: string;
+  new_classes?: string[];
+  new_sqlite_classes?: string[];
+  renamed_classes?: { from: string; to: string }[];
+  deleted_classes?: string[];
+}
 
 export type DesktopOs = "darwin-arm64" | "darwin-x64" | "linux-x64" | "linux-arm64" | "windows-x64";
 
@@ -188,13 +216,43 @@ export interface RustyBunsConfig {
     compatibilityFlags: string[];
     /** Command that produces builtMain + assets. */
     build?: string;
+    /**
+     * Durable Object migration steps that can't be inferred: removing a class
+     * (`deleted_classes`, which deletes its data) or renaming one
+     * (`renamed_classes`). The history already in wrangler.jsonc is kept, steps
+     * here with a tag it lacks are appended, and a newly bound class gets its
+     * own `v<n+1>` tag on its own. Use a tag after the last one in wrangler.jsonc:
+     *   migrations: [{ tag: "v3", deleted_classes: ["OldRoom"] }]
+     * Only wrangler.jsonc reads this. Alchemy works its migrations out from the
+     * deployed Worker, and treats a binding whose class changed as a rename.
+     */
+    migrations?: DoMigration[];
   };
   bindings: Record<string, Binding>;
   targets: {
-    edge?: { provider: "cloudflare"; domain?: string };
+    edge?: {
+      provider: "cloudflare";
+      domain?: string;
+      /**
+       * Give the Worker the config's `name`, D1 its `databaseName` and R2 its
+       * `bucketName`, and take over ones that already exist under those names
+       * (made with wrangler, or left behind by a lost Alchemy state).
+       * Off, Alchemy names them `<app>-<id>-<stage>-<random>` itself. Don't turn
+       * it on for a stack Alchemy already deployed: the names change, so those
+       * resources are replaced.
+       */
+      adopt?: boolean;
+    };
     box?: BoxTarget;
     desktop?: DesktopTarget;
   };
+  /**
+   * Where Alchemy keeps this app's deploy state. "shared" (the default) links
+   * `.alchemy/state` into the repo's git dir, so every worktree and the main
+   * checkout share it and deleting a worktree doesn't lose it; one deploy at a
+   * time holds it. "project" keeps it in this directory's `.alchemy/state`.
+   */
+  state?: "shared" | "project";
   /** Opt-in features that may change or go away between releases. */
   experimental?: {
     /**

@@ -9,19 +9,22 @@ the office itself, on Bun, as **one file** you can copy to any Mac or Linux box.
 
 ```sh
 cd apps/agent-office
-bun run office                 # fetch the latest release, Bun-ify it, open the office
+bun run office                 # fetch the pinned release, Bun-ify it, open the office
 bun run desktop:build          # dist/agent-office-<os>-<arch>
 bun run desktop:build:all      # + darwin-x64, linux-x64, linux-arm64
 ```
 
-Then `./dist/agent-office-linux-x64 --host 0.0.0.0` on a server, with all of Agent Office's own flags.
-For HTTPS, voice and teams, follow its README; its `deploy/` scripts install Node and `npm ci`, and this
-binary can stand in for that step.
+Then copy `./dist/agent-office-linux-x64` to a server and run it there, with all of Agent Office's own flags.
+Like upstream, it listens on `127.0.0.1` behind the office password, so reach it with
+`ssh -L 4600:localhost:4600 <server>` and open http://localhost:4600. Don't hand it `--host 0.0.0.0` on a
+network you don't trust: the office runs shells and agents as you, and over plain http its password and session
+cookie cross the wire in the clear. For HTTPS, voice and teams, follow its README; its `deploy/` scripts
+install Node and `npm ci`, and this binary can stand in for that step.
 
 ## How
 
-Nothing is forked. `scripts/rustybunsify.ts` downloads the release tarball (`AGENT_OFFICE_TAG` pins one),
-installs it with Bun, and patches the copy in `./office`. Every patch fails loudly if its target moves.
+Nothing is forked. `scripts/rustybunsify.ts` downloads a pinned release tarball and checks its sha256
+(`PINNED` in the script; `AGENT_OFFICE_TAG` with `AGENT_OFFICE_SHA256` tries another), installs it with Bun, and patches the copy in `./office`. Every patch fails loudly if its target moves.
 
 | What | Why |
 |---|---|

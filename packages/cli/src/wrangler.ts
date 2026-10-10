@@ -16,7 +16,7 @@ export interface WranglerJson {
   kv_namespaces?: { binding: string; id?: string }[];
   r2_buckets?: { binding: string; bucket_name: string }[];
   durable_objects?: { bindings?: { name: string; class_name: string; script_name?: string }[] };
-  migrations?: { tag: string; new_classes?: string[]; new_sqlite_classes?: string[] }[];
+  migrations?: { tag: string; new_classes?: string[]; new_sqlite_classes?: string[]; renamed_classes?: { from: string; to: string }[]; deleted_classes?: string[] }[];
   vars?: Record<string, string>;
   [k: string]: unknown;
 }

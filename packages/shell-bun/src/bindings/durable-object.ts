@@ -185,7 +185,11 @@ export class LocalDurableObjectNamespace<Env> {
   constructor(private Ctor: DurableObjectCtor<Env>, private env: Env, private opts: NamespaceOptions = {}) {}
 
   idFromName(name: string) { return new DurableObjectId(name, Bun.hash(name).toString(16).padStart(16, "0")); }
-  idFromString(hex: string) { return new DurableObjectId(null, hex); }
+  idFromString(hex: string) {
+    // The id becomes part of a sqlite file name, so only hex gets through (Cloudflare rejects anything else too).
+    if (!/^[0-9a-f]{16,64}$/i.test(hex)) throw new TypeError("Invalid Durable Object ID: must be a hex string");
+    return new DurableObjectId(null, hex);
+  }
   newUniqueId() { return new DurableObjectId(null, crypto.randomUUID().replace(/-/g, "")); }
 
   /** The live instance for `id`, constructed (or reconstructed after eviction) on demand. */

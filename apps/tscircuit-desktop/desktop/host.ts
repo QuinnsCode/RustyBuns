@@ -30,6 +30,15 @@ const MAX_FILES = 500;
 
 let project: string | null = null;
 
+// A board's code runs in the evaluator worker on this page's origin
+// (src/evalWorker.ts), so its fetches carry the launch cookie and could open
+// ~/.claude and write to it. So every route that touches files also needs this
+// key, and only a framed page can get it: /api/page-key answers an iframe
+// navigation (Sec-Fetch-Dest, which no script can set), and a worker can't open
+// one. The EasyEDA proxy and the change stream stay open to the worker.
+const PAGE_KEY = crypto.randomUUID();
+const KEYLESS = (path: string) => path.startsWith("/api/proxy/") || path === "/api/project/events";
+
 /**
  * Hosts the evaluator may reach through the host. EasyEDA's API refuses
  * browser requests from anywhere but tscircuit.com (CORS), so the part
@@ -225,6 +234,12 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname;
     if (!path.startsWith("/api/")) return null;
+    if (path === "/api/page-key") {
+      if (req.headers.get("sec-fetch-dest") !== "iframe") return bad("only a framed page gets the key", 403);
+      return new Response(`<script>parent.postMessage({ rbPageKey: ${JSON.stringify(PAGE_KEY)} }, location.origin)</script>`,
+        { headers: { "content-type": "text/html", "cache-control": "no-store" } });
+    }
+    if (!KEYLESS(path) && req.headers.get("x-page-key") !== PAGE_KEY) return bad("page key required", 403);
     try {
       if (path === "/api/status") {
         return json({ native: nativeAvailable, platform: `${process.platform}-${process.arch}`, project: project && listing(project), recent: await recent(ctx), home: homedir() });

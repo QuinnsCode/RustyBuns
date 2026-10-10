@@ -1,9 +1,11 @@
 // Bots are drivers: they read the state and produce the same Input a human
 // does. They never touch a hippo. Memory and randomness are the caller's, so
 // the same seed gives the same bots, and the spawn stream is never disturbed.
+// rust/crates/hippo_sim/src/bots.rs is the Rust twin, op for op.
 import { A_REST, DROP_R, GOLD, GULP_OUT, LUNGE, NAIL, OIL, POINTS, RAIL_HALF, SCOOP_R, SLIDE_SPEED, SLUDGE, SORE_FACTOR, WALL_R, WATER, type Personality } from "./rules.ts";
 import { hippoPoint, toFrame } from "./geom.ts";
 import { next, type Rng } from "./rng.ts";
+import { len } from "./trig.ts";
 import type { Input, State } from "./types.ts";
 
 export interface BotMem {
@@ -30,7 +32,7 @@ function intercept(s: State, seat: number, id: number, slide: number, speed: num
   let best: { k: number; aim: number; off: number } | null = null;
   for (let k = FIRST_K; k <= HORIZON; k++) {
     const x = d.x + d.vx * k, y = d.y + d.vy * k;
-    if (Math.hypot(x, y) > WALL_R - DROP_R) break;       // it would bounce; do not trust the line past here
+    if (len(x, y) > WALL_R - DROP_R) break;       // it would bounce; do not trust the line past here
     const { axial, lateral } = toFrame(seat, x, y);
     const aim = lateral / RAIL_HALF;
     if (Math.abs(aim) > 1) continue;
@@ -55,8 +57,8 @@ function biteValue(s: State, seat: number, slide: number, k: number, p: Personal
   const j = hippoPoint(seat, slide, 1);
   let v = 0;
   for (const d of s.drops) {
-    const x = d.x + d.vx * k, y = d.y + d.vy * k;
-    if ((x - j.x) ** 2 + (y - j.y) ** 2 > SCOOP_R * SCOOP_R) continue;
+    const dx = d.x + d.vx * k - j.x, dy = d.y + d.vy * k - j.y;
+    if (dx * dx + dy * dy > SCOOP_R * SCOOP_R) continue;
     v += knows(d, p, mem, rng) ? Math.min(POINTS[d.kind]!, -0.5) : d.kind === GOLD ? 1 + 2 * p.greed : 1;
   }
   return v;

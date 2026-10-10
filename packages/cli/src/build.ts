@@ -56,7 +56,7 @@ function hostParts(c: RustyBunsConfig, host: HostKind, desktopDataDir: string) {
       : `${JSON.stringify(desktopDataDir)}.replace(/^~/, homedir())`,
     token: box ? "undefined" : "mintToken()",
     listen: box ? `, hostname: "0.0.0.0", port: Number(process.env.PORT ?? 3000)` : `, hostname: listen.hostname, port: listen.port`,
-    launch: box ? "" : `await openBrowser({ url: shell.url, token, window: ${JSON.stringify(c.targets.desktop?.window ?? "app")} });\n`,
+    launch: box ? "" : `await openBrowser({ url: shell.url, token, code: shell.launchCode(), window: ${JSON.stringify(c.targets.desktop?.window ?? "app")} });\n`,
   };
 }
 
@@ -189,13 +189,34 @@ ${h.box ? `
 // the one shared world. The world itself says when a room is full. The page
 // comes from this box, so no version check.
 const ROOM = /^[A-Za-z0-9_-]{1,32}$/, MAX_ROOMS = 200;
-const rooms = new Set<string>();
+// Open sockets per named room. A room leaves when its last socket closes, so
+// the cap counts rooms in use, not every name ever tried since boot.
+const rooms = new Map<string, number>();
 function boxRoom(url: URL): string | null {
   const room = url.searchParams.get("room");
   if (room === null) return "local";
   if (!ROOM.test(room)) return null;
-  if (!rooms.has(room)) { if (rooms.size >= MAX_ROOMS) return null; rooms.add(room); }
+  if (!rooms.has("room:" + room) && rooms.size >= MAX_ROOMS) return null;
   return "room:" + room;
+}
+function roomSockets(room: string, d: 1 | -1) {
+  if (room === "local") return;
+  const n = (rooms.get(room) ?? 0) + d;
+  if (n > 0) rooms.set(room, n); else rooms.delete(room);
+}
+// Railway's proxy sets X-Real-IP. One address gets WS_PER_MIN upgrades a
+// minute, then 429 until its minute is up. No header (no proxy), no gate.
+const WS_PER_MIN = 30;
+const wsHits = new Map<string, { at: number; n: number }>();
+function wsAllowed(ip: string | null, now: number): boolean {
+  if (!ip) return true;
+  let hit = wsHits.get(ip);
+  if (!hit || now - hit.at >= 60_000) {
+    wsHits.delete(ip);                             // re-insert: the map's order is oldest window first
+    wsHits.set(ip, hit = { at: now, n: 0 });
+    if (wsHits.size > 10_000) wsHits.delete(wsHits.keys().next().value!);
+  }
+  return ++hit.n <= WS_PER_MIN;
 }
 function boxIdentity(url: URL): Record<string, string> | string {
   const uid = url.searchParams.get("uid");
@@ -213,7 +234,8 @@ shell.mount({
     const url = new URL(req.url);
     const guest = ${h.box ? "true" : `req.headers.get("x-rb-principal") === "guest"`};
 ${h.box ? `    if (url.pathname === "/health") return new Response("ok", { headers: { "X-RB-Data": dataMount, "X-RB-Boots": String(boots) } });\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
-      const h = new Headers(req.headers);
+${h.box ? `      if (!wsAllowed(req.headers.get("X-Real-IP"), Date.now())) return reject(429, "too_many", { detail: "at most " + WS_PER_MIN + " connections a minute from one address" });
+` : ""}      const h = new Headers(req.headers);
       let who = identity;
       if (guest) {
 ${h.box ? `        const id = boxIdentity(url);` : `        if (guests.version !== undefined && url.searchParams.get("v") !== guests.version) return reject(409, "version_mismatch", { expected: guests.version, got: url.searchParams.get("v") });
@@ -226,13 +248,17 @@ ${h.box ? `        const id = boxIdentity(url);` : `        if (guests.version !
       h.set("X-RB-Principal", guest ? "guest" : "host");
 ${h.box ? `      const room = boxRoom(url);
       if (room === null) return reject(400, "bad_room", { detail: "1-32 of [A-Za-z0-9_-], and at most " + MAX_ROOMS + " rooms" });
-` : ""}      const res = await WORLD.get(WORLD.idFromName(${h.box ? "room" : `"local"`})).fetch(new Request(req.url, { headers: h }));
-      const sock = (res as any).webSocket;
+      roomSockets(room, 1);                       // held while the world answers, so racing upgrades cannot overfill
+      let res: Response;
+      try { res = await WORLD.get(WORLD.idFromName(room)).fetch(new Request(req.url, { headers: h })); }
+      catch (err) { roomSockets(room, -1); throw err; }
+` : `      const res = await WORLD.get(WORLD.idFromName("local")).fetch(new Request(req.url, { headers: h }));
+`}      const sock = (res as any).webSocket;
       if (guest && res.status === 101 && sock) {
         guestCount++;
         const prev = sock.onClose;
-        sock.onClose = (code: number, reason: string, clean: boolean) => { guestCount--; prev?.(code, reason, clean); };
-      }
+        sock.onClose = (code: number, reason: string, clean: boolean) => { guestCount--;${h.box ? " roomSockets(room, -1);" : ""} prev?.(code, reason, clean); };
+      }${h.box ? ` else roomSockets(room, -1);` : ""}
       return res;
     }
 ${h.box ? `    // Pages read /__rb/info to tell the desktop from the web. A box is the web:
@@ -257,7 +283,10 @@ ${h.box ? `    // Hosting controls are the desktop owner's; on a public box anyo
       if (b.listen) shell.rebind(b.listen);
       return Response.json({ listen: { hostname: shell.hostname, port: shell.port }, guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null } });
     }
-    if (url.pathname === "/__rb/action" && req.method === "POST") {
+${h.box ? `    // Actions run as the desktop's one host identity. A box has no token, so
+    // anyone on the internet would be that user: actions stay off there.
+    if (url.pathname === "/__rb/action") return reject(404, "not_on_box");
+` : ""}    if (url.pathname === "/__rb/action" && req.method === "POST") {
       // "use server" runs here, for real, against sqlite. Same code as the edge.
       const { module, fn, args } = await req.json() as { module: string; fn: string; args: unknown[] };
       const f = actions[module]?.[fn];
@@ -299,6 +328,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
         bind.push(`  ${name}: local.artifacts(${JSON.stringify(b.namespace)}),`);
         artifacts.push(name);
         break;
+      case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;
       case "durable_object":
         if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);
         else dos.push({ name, className: b.className });
