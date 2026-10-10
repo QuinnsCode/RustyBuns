@@ -261,6 +261,26 @@ describe("handles", () => {
     expect(await handle(typed)).toBe("zed-digger");
     expect(await handle(verified)).toBe("zed");
   });
+
+  test("agent- handles are only for coding agents", async () => {
+    const origin = "http://codesplitters.local";
+    const call = await local({ BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "boss-person" });
+    const signup = async (email: string, name: string) => {
+      const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({ email, password: "correct horse battery", name }) });
+      return (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
+    };
+    const handle = async (cookie: string) => ((await (await call(null, "/api/session", { headers: { cookie } })).json()) as any).user;
+    expect(await handle(await signup("codex@example.com", "Agent Codex"))).toBe("agentcodex");
+    expect(await handle(await signup("x@example.com", "Agent"))).toBe("agentdigger");
+    expect(await handle(await signup("agent-claude@example.com", ""))).toBe("agentclaude");
+    const boss = await signup("boss@example.com", "Boss Person");
+    const grant = await call(null, "/api/admin/handles", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ handle: "agent-codex", email: "y@example.com" }) });
+    expect(grant.status).toBe(400);
+
+    const alias = await local();
+    expect((await post(alias, null, "/api/login", { name: "agent-codex" })).status).toBe(400);
+  });
 });
 
 describe("github", () => {
