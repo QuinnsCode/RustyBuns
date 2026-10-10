@@ -766,6 +766,29 @@ async function limitsPage() {
     catch (err) { $("#limits-msg").textContent = String(err.message || err); }
   });
   icons();
+  sealBox();
+}
+// Hosted deploys' sealing key (src/deploy-keys.ts): after a rotation, seal what the old key sealed under the new one.
+async function sealBox() {
+  const k = await api("/admin/deploy-keys").catch(() => null);
+  if (!k?.hosted || !$(".wrap.limits")) return;
+  const box = document.createElement("div");
+  box.className = "box";
+  box.innerHTML = `<div class="bar">${icon("key")}<b>Deploy keys</b><span class="muted">${k.keys} stored, sealed under <code>DEPLOY_SECRETS_KEY</code></span></div>
+    <div class="body" style="display:grid;gap:8px;font-size:13px">${k.rotating
+      ? `<span><code>DEPLOY_SECRETS_KEY_OLD</code> is set, so what it sealed still opens. Re-seal every key and every repo's Alchemy state under the new key, then remove it and deploy again.</span><div><button class="btn primary" id="reseal">${icon("refresh-cw")}Re-seal</button></div>`
+      : `<span class="muted">To rotate it: deploy with the new key as <code>DEPLOY_SECRETS_KEY</code> and the old one as <code>DEPLOY_SECRETS_KEY_OLD</code>, then re-seal here.</span>`}</div>`;
+  $(".wrap.limits").append(box);
+  const b = $("#reseal");
+  b?.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      const r = await api("/admin/deploy-keys/reseal", {});
+      toast(`Re-sealed ${r.keys} key${r.keys === 1 ? "" : "s"} and ${r.states} state${r.states === 1 ? "" : "s"}${r.failed.length ? `; opened under neither key: ${r.failed.join(", ")}` : ""}`);
+    } catch (err) { toast(String(err.message || err)); }
+    b.disabled = false;
+  });
+  icons();
 }
 async function signOut() {
   await (session.mode === "accounts" ? api("/auth/sign-out", {}) : api("/logout", {})).catch(() => {});
@@ -820,9 +843,11 @@ function workbench(head, { tab, bar, body, details, status }) {
 const fits = {};
 /** A run's steps as a row of icons that go orange, then green or red; click one for its log. */
 const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+/** Which deploy keys a hosted deploy used: `…WXYZ, railway …1234`, or a bare `WXYZ` logged before there were providers. */
+const keysUsed = (k) => !k ? "no key" : `key${k.includes(",") ? "s" : ""} <code>${esc(k.includes("…") ? k : `…${k}`)}</code>`;
 /** The logged runs under a deploy or preview panel: who, which commit, the result, and the log of a failed one. */
 const runLog = (history) => history.length ? `<div style="margin-top:6px">${history.map((h) => `<div class="run"><span class="st ${h.status === "failed" || h.status === "interrupted" ? "failed" : h.status === "running" ? "running" : ""}">${h.status} · ${esc(h.stage)} · ${when(h.at)}${h.ms ? ` · ${Math.round(h.ms / 1000)}s` : ""}</span>
-  <span style="font-size:12px">@${esc(h.by)} ${h.trigger === "commit" ? "committed" : h.trigger === "preview" ? "ran a preview" : "pressed deploy"}${h.runner === "hosted" ? ` · from the site, key <code>…${esc(h.key_last4 || "")}</code>` : ""}${h.commit_hash ? ` · <code>${esc(h.commit_hash.slice(0, 7))}</code>` : ""}${h.url ? ` · <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url.replace(/^https?:\/\//, ""))}</a>` : ""}</span>
+  <span style="font-size:12px">@${esc(h.by)} ${h.trigger === "commit" ? "committed" : h.trigger === "preview" ? "ran a preview" : "pressed deploy"}${h.runner === "hosted" ? ` · from the site, ${keysUsed(h.key_last4)}` : ""}${h.commit_hash ? ` · <code>${esc(h.commit_hash.slice(0, 7))}</code>` : ""}${h.url ? ` · <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url.replace(/^https?:\/\//, ""))}</a>` : ""}</span>
   ${h.note ? `<span class="muted" style="font-size:12px">${esc(h.note)}</span>` : ""}
   ${h.status === "failed" && h.out ? `<details><summary class="muted" style="font-size:12px;cursor:pointer">log</summary><pre>${esc(h.out)}</pre></details>` : ""}</div>`).join("")}</div>` : "";
 const flowRow = (steps, by, sel) => `<div class="flow">${steps.map(([k, ic, label], i) => `${i ? `<span class="ln${by[steps[i - 1][0]]?.status === "done" ? " done" : ""}"></span>` : ""}<button type="button" data-step="${k}" class="${by[k]?.status ?? "waiting"}${sel === k ? " sel" : ""}" title="${by[k]?.status ?? "waiting"}${by[k]?.ms ? ` · ${(by[k].ms / 1000).toFixed(1)}s` : ""}"><span class="dot">${icon(by[k]?.status === "done" ? "check" : by[k]?.status === "failed" ? "x" : ic)}</span>${label}</button>`).join("")}</div>`;
@@ -1138,7 +1163,7 @@ const views = {
     const el = $("#deploy"), base = `/repos/${owner}/${repo}/deploy`;
     if (!el) return;
     const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
-    let sel = null, timer = null, picked = false, editKey = false;
+    let sel = null, timer = null, picked = false, editKey = null;
     // A monorepo's apps, from the fit check, offered as the folder once it answers.
     let apps = [];
     const fill = () => { const l = $("#deploy-dirs"); if (l) l.innerHTML = apps.map((w) => `<option value="${esc(w.dir)}">${esc(w.name)}</option>`).join(""); };
@@ -1148,66 +1173,96 @@ const views = {
       apps = f?.workspaces ?? [];
       fill();
     })();
-    // Hosted deploys use a key the owner stores here. It's write-only: the site shows who set it, when, and its last 4 characters.
-    const keyBlock = (d) => d.why ? `<p class="muted" style="font-size:12px">${esc(d.why)}</p>`
-      : d.key.set && !editKey ? `<div style="display:grid;gap:6px;font-size:12px"><span>${icon("key")} Deploy key <code>…${esc(d.key.last4)}</code> <span class="muted">set by @${esc(d.key.by)} on ${when(d.key.at)}</span></span>
-          <div><button class="btn" type="button" id="key-edit">Replace</button> <button class="btn" type="button" id="key-remove">Remove</button></div></div>`
-      : `<form id="key-form" style="display:grid;gap:6px;font-size:12px">
-          <span>${icon("key")} Deploy key <span class="muted">(the site deploys with it; it is sealed and never shown again)</span></span>
-          <input name="token" type="password" autocomplete="off" placeholder="Cloudflare API token" required style="font:12px var(--mono)">
-          <input name="account_id" autocomplete="off" placeholder="Cloudflare account ID" required pattern="[0-9a-fA-F]{32}" style="font:12px var(--mono)">
-          <span class="muted">Make a scoped token, not a global key: <b>Workers Scripts: Edit</b> on one account, plus D1 and R2 edit if the app binds them.</span>
-          <div><button class="btn">Save key</button>${d.key.set ? ' <button class="btn" type="button" id="key-cancel">Cancel</button>' : ""}</div>
+    // The panel redraws every second while a deploy runs: a form someone is in, or has typed into, is left as it is.
+    const busy = (f) => !!f && (f.contains(document.activeElement) || [...f.elements].some((x) => x.name && (x.type === "checkbox" ? x.checked !== x.defaultChecked : x.value !== x.defaultValue)));
+    el.innerHTML = '<div id="dp-settings"></div><div id="dp-keys"></div><div id="dp-run"></div>';
+    // Hosted deploys use keys the owner stores here, one per provider. Write-only: the site shows who set each, when, and its last 4 characters.
+    const PROVIDERS = [["cloudflare", "Cloudflare", "Cloudflare API token", "<b>Workers Scripts: Edit</b> on one account, plus D1 and R2 edit if the app binds them"],
+      ["railway", "Railway", "Railway team token", "a team token, for a <code>box</code> target on Railway"],
+      ["hetzner", "Hetzner", "Hetzner Cloud API token", "read &amp; write, made in the one project a <code>box</code> target on Hetzner deploys to"]];
+    const keyRow = (d, [p, name, holder, scope]) => {
+      const k = d.keys?.[p] ?? { set: false };
+      if (editKey === p || (editKey === null && p === "cloudflare" && !k.set)) return `<form id="key-form" data-provider="${p}" style="display:grid;gap:6px">
+          <span>${icon("key")} ${name} key <span class="muted">(the site deploys with it; it is sealed and never shown again)</span></span>
+          <input name="token" type="password" autocomplete="off" placeholder="${holder}" required style="font:12px var(--mono)">
+          ${p === "cloudflare" ? '<input name="account_id" autocomplete="off" placeholder="Cloudflare account ID" required pattern="[0-9a-fA-F]{32}" style="font:12px var(--mono)">' : ""}
+          <span class="muted">Make a scoped token, not a global key: ${scope}.</span>
+          <div><button class="btn">Save key</button>${k.set || p !== "cloudflare" ? ' <button class="btn" type="button" id="key-cancel">Cancel</button>' : ""}</div>
         </form>`;
-    const draw = (d) => {
-      const s = d.settings, run = d.run, by = Object.fromEntries((run?.steps ?? []).map((x) => [x.key, x]));
-      const shown = sel && by[sel];
-      el.innerHTML = `<form id="deploy-form" style="display:grid;gap:6px;font-size:13px">
+      return k.set ? `<span>${icon("key")} ${name} key <code>…${esc(k.last4)}</code> <span class="muted">set by @${esc(k.by)} on ${when(k.at)}</span>
+          <button class="btn" type="button" data-key-edit="${p}">Replace</button> <button class="btn" type="button" data-key-remove="${p}">Remove</button></span>`
+        : `<span class="muted">${icon("key")} No ${name} key <button class="btn" type="button" data-key-edit="${p}">Add</button></span>`;
+    };
+    const drawKeys = (d) => {
+      const box = $("#dp-keys");
+      box.innerHTML = !d.hosted ? "" : d.why ? `<p class="muted" style="font-size:12px">${esc(d.why)}</p>`
+        : `<div style="display:grid;gap:6px;font-size:12px;margin-top:6px">${PROVIDERS.map((x) => keyRow(d, x)).join("")}</div>`;
+      $("#key-form")?.addEventListener("submit", async (e) => {
+        e.preventDefault(); const f = e.target, p = f.dataset.provider;
+        try { await api(`${base}/key/${p}`, { token: f.token.value.trim(), ...(f.account_id ? { account_id: f.account_id.value.trim() } : {}) }, "PUT"); editKey = null; toast("Deploy key saved"); poll(true); }
+        catch (err) { toast(err.message); }
+      });
+      $("#key-cancel")?.addEventListener("click", () => { editKey = ""; drawKeys(d); icons(); });
+      box.querySelectorAll("[data-key-edit]").forEach((b) => b.addEventListener("click", () => { editKey = b.dataset.keyEdit; drawKeys(d); icons(); $("#key-form [name=token]")?.focus(); }));
+      box.querySelectorAll("[data-key-remove]").forEach((b) => b.addEventListener("click", async () => {
+        try { await api(`${base}/key/${b.dataset.keyRemove}`, undefined, "DELETE"); toast("Deploy key removed"); poll(true); } catch (err) { toast(err.message); }
+      }));
+    };
+    const runButton = (d) => {
+      const b = $("#deploy-run"), s = d.settings, run = d.run;
+      b.disabled = !d.can_run || !!(run && !run.done);
+      b.title = d.can_run ? "" : d.hosted ? d.why || "Set a deploy key first" : "Runs on the desktop app, with your own logins";
+      b.innerHTML = `${icon("rocket")}${run && !run.done ? "Shipping…" : `Deploy to ${esc(s.stage)}`}`;
+    };
+    const drawSettings = (d) => {
+      const s = d.settings;
+      $("#dp-settings").innerHTML = `<form id="deploy-form" style="display:grid;gap:6px;font-size:13px">
           <div class="row">stage <input name="stage" value="${esc(s.stage)}" style="width:8em;font:12px var(--mono)" pattern="[a-z0-9][a-z0-9-]*" required>
             folder <input name="dir" value="${esc(s.dir ?? "")}" placeholder="(repo root)" list="deploy-dirs" title="Where the app's rustybuns.config.ts is, in a monorepo" style="width:12em;font:12px var(--mono)">
             <datalist id="deploy-dirs"></datalist></div>
           <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits; crew and agents never start a deploy)</span></label>
           <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This is production <span class="muted">(lets a stack with <code>adopt</code> take over the live resources)</span></label>
-          <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : d.hosted ? esc(d.why || "Set a deploy key first") : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Shipping…" : `Deploy to ${esc(s.stage)}`}</button></div>
-        </form>
-        ${d.hosted ? keyBlock(d) : ""}
-        ${run ? flowRow(STEPS, by, sel) : ""}
-        ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a></p>` : ""}
-        ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
-        ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
-        ${runLog(d.history)}`;
+          <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"></button></div>
+        </form>`;
       fill();
-      el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { picked = true; sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
       $("#deploy-form").addEventListener("submit", async (e) => {
         e.preventDefault(); const f = e.target;
-        try { await api(base, { stage: f.stage.value, dir: f.dir.value.trim(), on_commit: f.on_commit.checked, production: f.production.checked }, "PUT"); toast("Saved"); poll(); }
+        try { await api(base, { stage: f.stage.value, dir: f.dir.value.trim(), on_commit: f.on_commit.checked, production: f.production.checked }, "PUT"); toast("Saved"); poll(true); }
         catch (err) { toast(err.message); }
-      });
-      $("#key-form")?.addEventListener("submit", async (e) => {
-        e.preventDefault(); const f = e.target;
-        try { await api(base + "/key", { token: f.token.value.trim(), account_id: f.account_id.value.trim() }, "PUT"); editKey = false; toast("Deploy key saved"); poll(); }
-        catch (err) { toast(err.message); }
-      });
-      $("#key-edit")?.addEventListener("click", () => { editKey = true; draw(d); });
-      $("#key-cancel")?.addEventListener("click", () => { editKey = false; draw(d); });
-      $("#key-remove")?.addEventListener("click", async () => {
-        try { await api(base + "/key", undefined, "DELETE"); toast("Deploy key removed"); poll(); } catch (err) { toast(err.message); }
       });
       $("#deploy-run").addEventListener("click", async () => {
         sel = null; picked = false;
         try { await api(base, {}); } catch (err) { toast(err.message); }
         poll();
       });
+    };
+    /** `force`: after a save, redraw the forms too, with what was saved. */
+    const draw = (d, force) => {
+      const run = d.run, by = Object.fromEntries((run?.steps ?? []).map((x) => [x.key, x]));
+      const shown = sel && by[sel];
+      if (force || !busy($("#deploy-form"))) drawSettings(d);
+      runButton(d);
+      if (force || !busy($("#key-form"))) drawKeys(d);
+      const out = $("#dp-run pre"), stick = !out || out.scrollTop + out.clientHeight >= out.scrollHeight - 4;
+      $("#dp-run").innerHTML = `${run ? flowRow(STEPS, by, sel) : ""}
+        ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a></p>` : ""}
+        ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
+        ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
+        ${runLog(d.history)}`;
+      // The live log follows its output, unless it's been scrolled up to read.
+      const pre = $("#dp-run pre");
+      if (pre) pre.scrollTop = stick ? pre.scrollHeight : out.scrollTop;
+      $("#dp-run").querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { picked = true; sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
       icons();
     };
-    const poll = async () => {
+    const poll = async (force) => {
       clearTimeout(timer);
       if (!document.body.contains(el)) return;
       const d = await api(base).catch(() => null);
       if (!d) { el.innerHTML = '<span class="muted">unavailable</span>'; return; }
       const running = d.run?.steps.find((x) => x.status === "running")?.key;
       if (running && !picked) sel = running;
-      draw(d);
+      draw(d, force);
       if (d.run && !d.run.done) timer = setTimeout(poll, 1000);
     };
     poll();

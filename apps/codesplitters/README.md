@@ -97,7 +97,13 @@ On Cloudflare a Worker is a V8 isolate: it has `node:fs` now, but it can't start
 
 ### Hosted deploys
 
-Off by default. Deploy the site with `CODESPLITTERS_DEPLOYS=1` and accounts on (`BETTER_AUTH_SECRET`), and an owner listed in `ADMINS` can store a deploy key in the repo's Deploy panel: a Cloudflare API token scoped to Workers Scripts edit on one account (plus D1 and R2 edit if the app binds them), not a global key, and its account ID. Then Deploy, and their own commits to main if they turned that on, ship from the site instead of their machine.
+Off by default. Deploy the site with `CODESPLITTERS_DEPLOYS=1` and accounts on (`BETTER_AUTH_SECRET`), and an owner listed in `ADMINS` can store deploy keys in the repo's Deploy panel, one per provider the stack's targets use, each scoped rather than global:
+
+- **Cloudflare** (`targets.edge`): an API token with Workers Scripts edit on one account (plus D1 and R2 edit if the app binds them), and its account ID.
+- **Railway** (`targets.box` on Railway): a team token, scoped to one team.
+- **Hetzner** (`targets.box` on Hetzner): a Cloud API token, read & write, made in the one project it deploys to.
+
+Then Deploy, and their own commits to main if they turned that on, ship from the site instead of their machine. Each step's output streams into the panel as it runs. A box whose `native/` crates need the Docker cross-build (see REFERENCE.md) can't build in the deploy container, which has no Docker: deploy that one from the desktop.
 
 **The sealing key comes from 1Password, never your shell.** With `CODESPLITTERS_DEPLOYS=1` the config turns on `experimental.wheel: "human"`, and `DEPLOY_SECRETS_KEY` is read from 1Password at deploy time through [varlock](https://varlock.dev) (a dev dependency here), behind your Touch ID, straight into the Worker's secret. Once:
 
@@ -105,12 +111,17 @@ Off by default. Deploy the site with `CODESPLITTERS_DEPLOYS=1` and accounts on (
 2. In a vault named `codesplitters`, make a Password item named `DEPLOY_SECRETS_KEY` whose password is 32 random bytes in base64 (`openssl rand -base64 32`). Elsewhere? Point `DEPLOY_SECRETS_KEY_OP` at its reference (1Password's "Copy Secret Reference").
 3. `rustybuns generate` writes `.env.schema` (names and the reference, no values). Commit it.
 
-Keep the item: changing it orphans every stored deploy key, and owners would have to set theirs again.
+**Rotating it.** Changing the item alone would orphan every stored key (and each repo's kept Alchemy state). Instead:
 
-- **Write-only.** Only the owner sets, replaces or removes the key (`PUT|DELETE /api/repos/:o/:r/deploy/key`). The API never returns it: it shows who set it, when, and its last 4 characters. It's sealed with AES-GCM under `DEPLOY_SECRETS_KEY`, bound to its repo, in D1.
-- **Unsealed into one run.** Each repo has a `DeployRunner` Durable Object, so one deploy at a time; each run starts its own container (`deploy-sandbox/Dockerfile`: git, bun, node and a small server) with the key in its env as `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`, then destroys it. A run gets 13 minutes, inside the 15 a Durable Object alarm may take. It's a separate image and binding from `AGENT_SANDBOX`: agent containers never see a deploy key. The key is scrubbed from the run's output.
+1. Make a Password item `DEPLOY_SECRETS_KEY_OLD` holding the current key, then put a new one (`openssl rand -base64 32`) in `DEPLOY_SECRETS_KEY`.
+2. Deploy. Everything sealed still opens, under either key.
+3. On the admin page (the gauge in the header), press **Re-seal** under Deploy keys: every key and every repo's state is sealed under the new key. Anything that opened under neither is named, not dropped.
+4. Delete the `DEPLOY_SECRETS_KEY_OLD` item and deploy again.
+
+- **Write-only.** Only the owner sets, replaces or removes a key (`PUT|DELETE /api/repos/:o/:r/deploy/key/:provider`, `cloudflare`, `railway` or `hetzner`; Cloudflare's without one). The API never returns it: it shows who set it, when, and its last 4 characters. It's sealed with AES-GCM under `DEPLOY_SECRETS_KEY`, bound to its repo and provider, in D1.
+- **Unsealed into one run.** Each repo has a `DeployRunner` Durable Object, so one deploy at a time; each run starts its own container (`deploy-sandbox/Dockerfile`: git, bun, node and a small server) with the keys in its env (`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`, `RAILWAY_API_TOKEN`, `HCLOUD_TOKEN`, whichever are stored), then destroys it. A run gets 13 minutes, inside the 15 a Durable Object alarm may take. It's a separate image and binding from `AGENT_SANDBOX`: agent containers never see a deploy key. The keys are scrubbed from the run's output, even split across two pieces of a stream.
 - **The same stack each time.** The container forgets, so the repo's Alchemy state is kept by its `DeployRunner` between runs, sealed under `DEPLOY_SECRETS_KEY` (it holds the app's secrets), and put back before the next deploy. Without it each deploy would make a new Worker under a new name.
-- **Only a person ships.** The owner's button or the owner's own commit; never an `agent-*` handle. Refused in alias mode, where anyone can claim a handle. Every hosted deploy is in the log with the key's last 4.
+- **Only a person ships.** The owner's button or the owner's own commit; never an `agent-*` handle. Refused in alias mode, where anyone can claim a handle. Every hosted deploy is in the log with its keys' last 4.
 
 What it protects against: crew can change code but can't see keys or deploy targets, and their code only reaches a key once the owner merges and commits it. Agents have no keys; code a prompt injection plants waits on a branch for a person. Agents are on separate branches, containers and CLI keys, and no agent commit deploys.
 

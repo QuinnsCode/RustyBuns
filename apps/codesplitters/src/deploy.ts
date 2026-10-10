@@ -11,7 +11,7 @@
 //
 // On the desktop it runs the repo's code and deploys with the logins on this
 // machine. On the site it can run hosted instead (deploy-runner.ts), with a
-// deploy key the owner stores (deploy-keys.ts); that's off by default. Each
+// deploy keys the owner stores (deploy-keys.ts); that's off by default. Each
 // deploy is logged in D1: who, which commit, which stage, where it ran (and
 // which key), the result; each repo keeps its last 50. A stack with `adopt: true` takes over live
 // resources under their real names, so it's refused unless the owner has
@@ -23,11 +23,11 @@
 //   GET  /api/repos/:o/:r/deploy   settings, the run going now, the last 20 deploys (owner only)
 //   PUT  /api/repos/:o/:r/deploy   {stage, dir, on_commit, production}
 //   POST /api/repos/:o/:r/deploy   ship it now
-//   .../deploy/key                 the stored deploy key (deploy-keys.ts)
+//   .../deploy/key[/:provider]     the stored deploy keys (deploy-keys.ts)
 
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { json, type Env } from "./env.ts";
-import { deployKeyRoutes, hostedWhy, keyInfo } from "./deploy-keys.ts";
+import { deployKeyRoutes, hostedWhy, keysInfo } from "./deploy-keys.ts";
 import { emit } from "./hooks.ts";
 import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 
@@ -92,7 +92,7 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
     if (!env.DEPLOY_RUNNER) return { error: "deploys run on the desktop app, with your own logins", status: 400 };
     const why = hostedWhy(env, by);
     if (why) return { error: why, status: 403 };
-    if (!(await keyInfo(env, owner, repo)).set) return { error: "set a deploy key first", status: 400 };
+    if (!Object.values(await keysInfo(env, owner, repo)).some((k) => k.set)) return { error: "set a deploy key first", status: 400 };
     const res = await hostedStub(env, owner, repo).fetch(new Request("http://deploy/start", { method: "POST", body: JSON.stringify({ owner, repo, by, trigger }) }));
     return (await res.json()) as Started;
   }
@@ -128,7 +128,7 @@ export async function deployOnCommit(env: Env, owner: string, repo: string, user
 
 export async function deployRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "deploy")) return null;
-  if (p[5] === "key" && !p[6]) return deployKeyRoutes(req, env, p, user);
+  if (p[5] === "key" && !p[7]) return deployKeyRoutes(req, env, p, user);
   if (p[5]) return null;
   const [owner, repo] = [p[2], p[3]];
   // It ships with this machine's logins and shows the repo's output: the owner's alone.
@@ -139,8 +139,8 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     const desktop = !!runnerFor(env), why = desktop ? null : hostedWhy(env, user);
     const run = async () => desktop ? live.get(`${owner}/${repo}`)?.run ?? null
       : env.DEPLOY_RUNNER ? ((await (await hostedStub(env, owner, repo).fetch(new Request("http://deploy/run"))).json()) as { run: Run | null }).run : null;
-    const key = await keyInfo(env, owner, repo);
-    return json({ settings: await settings(env, owner, repo), can_run: desktop || (!why && key.set), hosted: !desktop && !!env.DEPLOY_RUNNER, why, key, ...(await history(env, owner, repo, false, run)) });
+    const keys = await keysInfo(env, owner, repo);
+    return json({ settings: await settings(env, owner, repo), can_run: desktop || (!why && Object.values(keys).some((k) => k.set)), hosted: !desktop && !!env.DEPLOY_RUNNER, why, keys, ...(await history(env, owner, repo, false, run)) });
   }
   if (req.method === "PUT") {
     const s = { ...(await settings(env, owner, repo)), ...((await req.json()) as Partial<Settings>) };

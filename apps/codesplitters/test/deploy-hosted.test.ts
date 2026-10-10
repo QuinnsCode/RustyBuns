@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { local as boot, type Call } from "../src/local.ts";
-import { seal, unseal, unsealState } from "../src/deploy-keys.ts";
-import { DeployRunner } from "../src/deploy-runner.ts";
+import { seal, sealState, unseal, unsealState } from "../src/deploy-keys.ts";
+import { DeployRunner, hider, readExec } from "../src/deploy-runner.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the deploy image
 import { exec, state } from "../deploy-sandbox/server.mjs";
@@ -39,7 +39,9 @@ const origin = "http://codesplitters.local";
 
 /** A deploy container: its server answers each command like deploy.test.ts's fake machine, echoing the token once to check it's hidden. */
 function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
-  const seen = { env: [] as Record<string, string>[], ran: [] as string[], limits: [] as number[], destroyed: 0, stacks: [] as string[] };
+  const seen = { env: [] as Record<string, string>[], ran: [] as string[], limits: [] as number[], destroyed: 0, stacks: [] as string[],
+    /** Set, the deploy streams its output in two pieces with this between them, as a real one does. */
+    gate: null as Promise<void> | null };
   const make = (): ContainerApi => {
     let running = false;
     // Its disk: .alchemy/state, gone when it's destroyed.
@@ -66,7 +68,22 @@ function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
             // Like Alchemy: with no state, a new stack under a new name; with it, the same one.
             files["lab/prod/Worker.json"] ??= JSON.stringify({ name: `lab-${seen.stacks.length}`, secret: "app-secret-value" });
             seen.stacks.push(JSON.parse(files["lab/prod/Worker.json"]!).name);
-            out = `using token ${seen.env.at(-1)?.CLOUDFLARE_API_TOKEN}\nurl: "https://lab.ryan.workers.dev"\n`;
+            const env = seen.env.at(-1) ?? {};
+            out = `using token ${env.CLOUDFLARE_API_TOKEN}\n${env.RAILWAY_API_TOKEN ? `railway ${env.RAILWAY_API_TOKEN}\n` : ""}${env.HCLOUD_TOKEN ? `hetzner ${env.HCLOUD_TOKEN}\n` : ""}url: "https://lab.ryan.workers.dev"\n`;
+            const gate = seen.gate;
+            if (gate) {
+              // Streamed like the real server: the token split across two pieces, the URL after the gate.
+              const tok = String(env.CLOUDFLARE_API_TOKEN), e = new TextEncoder();
+              return new Response(new ReadableStream({
+                async start(c) {
+                  c.enqueue(e.encode(JSON.stringify({ out: `building\nusing token ${tok.slice(0, 10)}` }) + "\n"));
+                  c.enqueue(e.encode(JSON.stringify({ out: `${tok.slice(10)}\n` }) + "\n"));
+                  await gate;
+                  c.enqueue(e.encode(JSON.stringify({ out: `url: "https://lab.ryan.workers.dev"\n` }) + "\n" + JSON.stringify({ code: 0 })));
+                  c.close();
+                },
+              }));
+            }
           }
           return Response.json({ code: 0, out });
         },
@@ -89,6 +106,7 @@ function runnerNamespace(env: any, make: () => ContainerApi, budgetMs?: number) 
           storage: {
             get: async (k: string) => structuredClone(data.get(k)) as any,
             put: async (k: string, v: unknown) => { data.set(k, structuredClone(v)); },
+            list: async (o: { prefix: string }) => new Map([...data].filter(([k]) => k.startsWith(o.prefix))) as any,
             setAlarm: async () => { setTimeout(() => void obj.alarm(), 0); },
           },
         };
@@ -211,7 +229,7 @@ describe("a hosted deploy", () => {
     expect(seen.ran.find((l) => l.includes("rustybuns deploy"))).toContain("--stage prod");
     expect(d.run.steps.map((s: any) => s.status)).toEqual(["done", "done", "done", "done"]);
     expect(checked).toContain("https://lab.ryan.workers.dev");
-    expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "button", status: "done", runner: "hosted", key_last4: "WXYZ", commit_hash: SHA, url: "https://lab.ryan.workers.dev" });
+    expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "button", status: "done", runner: "hosted", key_last4: "…WXYZ", commit_hash: SHA, url: "https://lab.ryan.workers.dev" });
     expect(JSON.stringify(d)).not.toContain(TOKEN);
     expect(d.history[0].out).toContain("<deploy key>");
   });
@@ -291,6 +309,134 @@ describe("a hosted deploy", () => {
   });
 });
 
+describe("more providers", () => {
+  const RAIL = "railway-team-token-0123456789-RAIL", HET = "hetzner0123456789hetzner0123456789HETZ";
+  test("Railway and Hetzner keys go into the container's env for a box target, hidden from the log like Cloudflare's", async () => {
+    const { call, send, seen } = await hosted({}, { adopt: false, edge: true, box: true });
+    expect((await send("ryan-quinn", `${K}/fly`, { token: RAIL }, "PUT")).status).toBe(404);
+    expect((await send("pat-person", `${K}/railway`, { token: RAIL }, "PUT")).status).toBe(403);
+    expect((await send("ryan-quinn", `${K}/railway`, { token: "short" }, "PUT")).status).toBe(400);
+    // Its own key alone is enough to deploy: a box-only stack needs no Cloudflare key.
+    expect(await (await send("ryan-quinn", `${K}/railway`, { token: RAIL }, "PUT")).json()).toMatchObject({ set: true, last4: "RAIL" });
+    expect(await (await call("ryan-quinn", D)).json()).toMatchObject({ can_run: true, keys: { cloudflare: { set: false }, railway: { set: true, last4: "RAIL" }, hetzner: { set: false } } });
+    await send("ryan-quinn", `${K}/hetzner`, { token: HET }, "PUT");
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+
+    await send("ryan-quinn", D, {});
+    const d = await settle(call);
+    expect(seen.env).toEqual([{ CLOUDFLARE_API_TOKEN: TOKEN, CLOUDFLARE_ACCOUNT_ID: ACCOUNT, RAILWAY_API_TOKEN: RAIL, HCLOUD_TOKEN: HET, CI: "1" }]);
+    expect(d.history[0]).toMatchObject({ status: "done", key_last4: "…WXYZ, railway …RAIL, hetzner …HETZ" });
+    const all = JSON.stringify(d);
+    for (const t of [TOKEN, RAIL, HET]) expect(all).not.toContain(t);
+    expect(d.history[0].out).toContain("railway <deploy key>");
+
+    // Removing one leaves the others.
+    expect(await (await call("ryan-quinn", `${K}/railway`, { method: "DELETE" })).json()).toEqual({ set: false });
+    expect(await (await call("ryan-quinn", K)).json()).toMatchObject({ set: true });
+  });
+
+  test("a key sealed for one provider doesn't open as another's", async () => {
+    const env: any = { DEPLOY_SECRETS_KEY: SECRETS };
+    const a = await seal(env, "ryan", "lab", { token: RAIL }, "railway");
+    expect(await unseal(env, "ryan", "lab", a, "railway")).toEqual({ token: RAIL });
+    await expect(unseal(env, "ryan", "lab", a, "hetzner")).rejects.toThrow();
+    await expect(unseal(env, "ryan", "lab", a)).rejects.toThrow();
+  });
+});
+
+describe("live output", () => {
+  test("a step's output shows while it runs, with a key split across two pieces still hidden", async () => {
+    const { call, send, seen } = await hosted();
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    let open!: () => void;
+    seen.gate = new Promise((r) => { open = r; });
+    await send("ryan-quinn", D, {});
+    let mid: any;
+    for (const end = performance.now() + 10_000; performance.now() < end; await Bun.sleep(10)) {
+      mid = await (await call("ryan-quinn", D)).json();
+      if (mid.run?.steps.find((x: any) => x.key === "deploy")?.out.includes("using token")) break;
+    }
+    const step = mid.run.steps.find((x: any) => x.key === "deploy");
+    expect(step).toMatchObject({ status: "running" });
+    expect(step.out).toContain("building\nusing token <deploy key>\n");
+    expect(step.out).not.toContain("workers.dev");
+    expect(JSON.stringify(mid)).not.toContain(TOKEN.slice(0, 10));
+    open();
+    const d = await settle(call);
+    expect(d.history[0]).toMatchObject({ status: "done", url: "https://lab.ryan.workers.dev" });
+  });
+
+  test("readExec reads the stream's lines, and fails a command whose answer ends early", async () => {
+    const stream = (...parts: string[]) => new Response(new ReadableStream({ start(c) { for (const p of parts) c.enqueue(new TextEncoder().encode(p)); c.close(); } }));
+    const got: string[] = [];
+    expect(await readExec(stream('{"out":"a', '"}\n{"out":"b\\n"}\n', '{"code":3}'), (s) => got.push(s))).toBe(3);
+    expect(got).toEqual(["a", "b\n"]);
+    const cut: string[] = [];
+    expect(await readExec(stream('{"out":"half"}\n'), (s) => cut.push(s))).toBe(1);
+    expect(cut.join("")).toContain("ended before the command did");
+    // The old one-shot answer reads the same.
+    expect(await readExec(Response.json({ code: 0, out: "x" }), () => {})).toBe(0);
+  });
+
+  test("the hider holds a line's tail until the line ends, and a long line's all but a key's length", () => {
+    const out: string[] = [];
+    const h = hider(["SECRETSECRET"], (s) => out.push(s));
+    h.push("one\ntwo SECR"); h.push("ETSECRET three\nfour");
+    expect(out).toEqual(["one\n", "two <deploy key> three\n"]);
+    h.push("x".repeat(100));
+    expect(out.at(-1)).toBe("four" + "x".repeat(100 - 12));
+    h.flush();
+    expect(out.join("")).toBe("one\ntwo <deploy key> three\nfour" + "x".repeat(100));
+  });
+});
+
+describe("rotating DEPLOY_SECRETS_KEY", () => {
+  const NEW = btoa(String.fromCharCode(...new Uint8Array(32).map((_, i) => i * 11 + 1)));
+  test("what the old key sealed opens while it's DEPLOY_SECRETS_KEY_OLD, and an admin's re-seal moves keys and state onto the new one", async () => {
+    const { call, send, env } = await hosted();
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    await send("ryan-quinn", `${K}/hetzner`, { token: "h".repeat(40) }, "PUT");
+    await send("ryan-quinn", D, {});
+    await settle(call);
+    const runner = env.DEPLOY_RUNNER.get("ryan-quinn/lab") as any;
+    // A monorepo folder's state too.
+    await runner.ctx.storage.put("state~apps~web", await sealState(env, "ryan-quinn", "lab", { "web/prod/Worker.json": "{}" }));
+    const before = (await env.DB.prepare("SELECT sealed FROM deploy_keys ORDER BY provider").all()).results.map((r: any) => r.sealed);
+
+    // Rotated: the new key, and the old one beside it.
+    Object.assign(env, { DEPLOY_SECRETS_KEY: NEW, DEPLOY_SECRETS_KEY_OLD: SECRETS });
+    expect((await (await call("pat-person", "/api/admin/deploy-keys/reseal", { method: "POST" })).status)).toBe(403);
+    expect(await (await call("ryan-quinn", "/api/admin/deploy-keys")).json()).toEqual({ hosted: true, rotating: true, keys: 2 });
+    // Still deploys before the re-seal.
+    await send("ryan-quinn", D, {});
+    expect((await settle(call, 2)).history[0]).toMatchObject({ status: "done" });
+
+    const r = await (await call("ryan-quinn", "/api/admin/deploy-keys/reseal", { method: "POST" })).json();
+    // The deploy since kept the root's state under the new key already.
+    expect(r).toEqual({ keys: 2, states: 1, failed: [] });
+    const after = (await env.DB.prepare("SELECT sealed FROM deploy_keys ORDER BY provider").all()).results.map((x: any) => x.sealed);
+    expect(after.every((x: string, i: number) => x !== before[i])).toBe(true);
+    expect(await (await call("ryan-quinn", "/api/admin/deploy-keys/reseal", { method: "POST" })).json()).toEqual({ keys: 0, states: 0, failed: [] });
+
+    // The old key gone, everything opens under the new one.
+    delete env.DEPLOY_SECRETS_KEY_OLD;
+    expect(await unseal(env, "ryan-quinn", "lab", after[0])).toEqual({ token: TOKEN, account_id: ACCOUNT });
+    expect(await unsealState(env, "ryan-quinn", "lab", await runner.ctx.storage.get("state~apps~web"))).toEqual({ "web/prod/Worker.json": "{}" });
+    expect(await unsealState(env, "ryan-quinn", "lab", await runner.ctx.storage.get("state"))).toMatchObject({ "lab/prod/Worker.json": expect.any(String) });
+    await send("ryan-quinn", D, {});
+    expect((await settle(call, 3)).history[0]).toMatchObject({ status: "done" });
+  });
+
+  test("something sealed under neither key is reported, not dropped", async () => {
+    const { call, send, env } = await hosted();
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    Object.assign(env, { DEPLOY_SECRETS_KEY: NEW, DEPLOY_SECRETS_KEY_OLD: NEW });
+    const r = await (await call("ryan-quinn", "/api/admin/deploy-keys/reseal", { method: "POST" })).json();
+    expect(r).toMatchObject({ keys: 0, failed: ["ryan-quinn/lab cloudflare key"] });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM deploy_keys").first()).toEqual({ n: 1 });
+  });
+});
+
 test("an agent container never gets the deploy secrets", async () => {
   let started: Record<string, string> | undefined;
   const c: ContainerApi = { running: false, start(o) { started = o?.env; }, async destroy() {}, getTcpPort: () => ({ fetch: async () => Response.json({ code: 0, out: "", text: "" }) }) };
@@ -306,6 +452,20 @@ describe("the deploy container's server", () => {
       expect(await exec({ cmd: ["sh", "-c", "pwd && echo hi"], cwd: "run/repo" }, root)).toEqual({ code: 0, out: `${realpathSync(root)}/run/repo\nhi\n` });
       expect((await exec({ cmd: ["true"], cwd: "../etc" }, root)).code).toBe(2);
       expect((await exec({ cmd: ["no-such-command-here"], cwd: "run" }, root)).code).toBe(127);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("hands each piece of output on as it comes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "codesplitters-deploy-"));
+    try {
+      const pieces: [string, number][] = [];
+      const t = Date.now();
+      const r = await exec({ cmd: ["sh", "-c", "echo one; sleep 0.3; echo two"], cwd: "run" }, root, undefined, (s: string) => pieces.push([s, Date.now() - t]));
+      expect(r).toEqual({ code: 0, out: "one\ntwo\n" });
+      expect(pieces.map(([s]) => s).join("")).toBe("one\ntwo\n");
+      // "one" arrived before the command finished.
+      expect(pieces[0]![0]).toBe("one\n");
+      expect(pieces[0]![1]).toBeLessThan(r.code === 0 ? pieces.at(-1)![1] - 200 : 0);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 

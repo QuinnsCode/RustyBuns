@@ -17,6 +17,7 @@ import { depRoutes, scheduledDoctor } from "./deps.ts";
 import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, runJobs, sweepLimits, type JobMessage } from "./limits.ts";
 import { previewRoutes } from "./preview.ts";
 import { deployOnCommit, deployRoutes } from "./deploy.ts";
+import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
 export { FileDurableObject } from "./file-do.ts";
@@ -59,6 +60,8 @@ const app = {
     if (slow) return slow;
     const limits = await limitRoutes(req, env, p, isAdmin(env, user));
     if (limits) return limits;
+    const reseal = await resealRoutes(req, env, p, isAdmin(env, user));
+    if (reseal) return reseal;
     const job = await jobRoutes(req, env, p, user, isAdmin(env, user), (r) => app.fetch(r, env));
     if (job) return job;
     const body = async <T>() => (await req.json()) as T;
