@@ -18,8 +18,9 @@
 // answers the replay as it would the request (a deploy's or preview's {run}, a
 // doctor's report or {running}),
 // and the page then polls the run itself. Line edits can't: they're pinned to
-// the file's rev, so a queued one would come back a conflict. Sign-ins should
-// stay rejected.
+// the file's rev, so a queued one would come back a conflict. Neither can hosted
+// deploys: one replayed while another runs would only get a 409, so by default
+// they go through and flag the caller instead. Sign-ins should stay rejected.
 //
 // Only requests from the internet are counted: Cloudflare stamps those with
 // cf-connecting-ip. The desktop, the tests, and the Worker's own calls (hosted
@@ -52,7 +53,7 @@ export const RULES: Rule[] = [
   { name: "share", label: "Shares and collections", what: "share links, collections and tracks", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", group: "Agents", per: "user", max: 20, window_s: DAY, on_fail: "reject" },
   { name: "preview", label: "Preview deploys", what: "stacks stood up and torn down to try a repo", group: "Deploys and checks", per: "user", max: 6, window_s: HOUR, on_fail: "reject", queueable: true },
-  { name: "deploy", label: "Deploys", what: "deploys started with the Deploy button (hosted, on the owner's deploy key)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "reject", queueable: true },
+  { name: "deploy", label: "Deploys", what: "deploys started with the Deploy button (hosted, on the owner's deploy key)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "flag" },
   { name: "doctor", label: "Dependency checks", what: "dependency-doctor runs started by hand (registry lookups, installs and tests)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "reject", queueable: true },
 ];
 
@@ -196,16 +197,15 @@ export async function drainJobs(env: Env, self: (r: Request) => Promise<Response
   for (const { rule, who } of results as { rule: string; who: string }[]) await drain(env, rule, who, self);
 }
 
-/** The repo a queued preview, deploy or dependency check runs on, from its path. */
-const repoRun = (path: string) => /^\/api\/repos\/([^/?]+)\/([^/?]+)\/(preview|deploy|deps\/run)(?:$|\?)/.exec(path);
-const RUN_WHAT: Record<string, string> = { preview: "preview of", deploy: "deploy of", "deps/run": "dependency check of" };
+/** The repo a queued preview or dependency check runs on, from its path. */
+const repoRun = (path: string) => /^\/api\/repos\/([^/?]+)\/([^/?]+)\/(preview|deps\/run)\b/.exec(path);
 
-/** What a queued job was for, in a few words: the GitHub repo a dig names, the level a fork copies, or the repo a preview, deploy or check runs on. */
+/** What a queued job was for, in a few words: the GitHub repo a dig names, the level a fork copies, or the repo a preview or check runs on. */
 function what(j: Pick<Job, "path" | "body">) {
   const fork = /^\/api\/levels\/([^/?]+)\/fork/.exec(j.path);
   if (fork) return `fork of ${decodeURIComponent(fork[1])}`;
   const run = repoRun(j.path);
-  if (run) return `${RUN_WHAT[run[3]!]} ${decodeURIComponent(run[1])}/${decodeURIComponent(run[2])}`;
+  if (run) return `${run[3] === "preview" ? "preview of" : "dependency check of"} ${decodeURIComponent(run[1])}/${decodeURIComponent(run[2])}`;
   try { const b = JSON.parse(j.body ?? "{}"); if (typeof b.repo === "string") return b.repo; } catch {}
   return j.path.replace(/^\/api/, "");
 }
@@ -230,7 +230,7 @@ export async function jobRoutes(req: Request, env: Env, p: string[], user: strin
       // A finished job keeps only what the page links to, not the whole response.
       if ("result" in pl) {
         const r = (pl.result ?? {}) as { owner?: string; name?: string; error?: string; message?: string }, ok = pl.status! < 400;
-        // A preview, deploy or check links to its repo, whose page follows the run; a dig to the repo it made.
+        // A preview or check links to its repo, whose page follows the run; a dig to the repo it made.
         const run = repoRun(j.path), repo = run ? { owner: decodeURIComponent(run[1]!), name: decodeURIComponent(run[2]!) } : { owner: r.owner, name: r.name };
         jobs.push({ ...pl, result: ok ? repo : { error: r.error || r.message || `failed (${pl.status})` }, what: what(j), at: j.at });
       } else jobs.push({ ...pl, what: what(j), at: j.at });
