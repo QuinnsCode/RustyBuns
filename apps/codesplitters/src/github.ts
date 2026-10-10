@@ -10,7 +10,7 @@ import { importTarball, tooBigToImport } from "./tarball.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
 export const DIG_TTL = 24 * 3600_000;
-const digCap = (env: Env) => Math.max(1, Number(env.DIG_CAP) || 20);
+export const digCap = (env: Env) => Math.max(1, Number(env.DIG_CAP) || 20);
 
 const API = "https://api.github.com";
 
@@ -61,7 +61,7 @@ export function parseRepo(s: string): string | null {
 
 /** Forget a repo: its rows, its files' Durable Objects, and its git. An expired dig goes this way, and so does a repo its owner deletes. */
 export async function evict(env: Env, owner: string, name: string) {
-  const r = await env.DB.prepare("SELECT artifact, crew_artifact FROM repos WHERE owner = ? AND name = ?").bind(owner, name).first();
+  const r = await env.DB.prepare("SELECT artifact, crew_artifact, old_artifacts FROM repos WHERE owner = ? AND name = ?").bind(owner, name).first();
   const { results: files } = await env.DB.prepare("SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ? UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?")
     .bind(owner, name, owner, name).all();
   await Promise.all((files as { path: string; branch: string | null }[]).map((f) =>
@@ -71,7 +71,11 @@ export async function evict(env: Env, owner: string, name: string) {
     const [table, where = "owner = ? AND repo = ?"] = t.split("|");
     return env.DB.prepare(`DELETE FROM ${table} WHERE ${where}`).bind(owner, name);
   }));
-  for (const a of [r?.artifact, r?.crew_artifact]) if (a) await env.ARTIFACTS?.delete?.(a as string).catch(() => false);
+  // Its git, the crew's copy, any it moved off with a fresh start, and one still being copied.
+  const fresh = await env.DB.prepare("SELECT artifact, state FROM fresh_starts WHERE owner = ? AND repo = ?").bind(owner, name).first();
+  await env.DB.batch(["fresh_starts", "fresh_objects", "git_pending"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE owner = ? AND repo = ?`).bind(owner, name)));
+  const arts = [r?.artifact, r?.crew_artifact, ...JSON.parse((r?.old_artifacts as string) ?? "[]"), fresh && fresh.state !== "done" ? fresh.artifact : null];
+  for (const a of arts) if (a) await env.ARTIFACTS?.delete?.(a as string).catch(() => false);
 }
 
 /** The submodules at `sha` and the commit each points at: in .gitmodules, then one contents call each. */
