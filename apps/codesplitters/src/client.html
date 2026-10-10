@@ -283,12 +283,13 @@
   .rule .ctl input { width: 76px; font-family: var(--mono); text-align: right; }
   .rule .ctl select { padding: 5px 6px; }
   .rule.off .ctl, .rule.off .use { opacity: .4; }
-  .rule .use { display: flex; gap: 6px; align-items: center; font: 400 11.5px var(--mono); color: var(--faint); }
+  .rule .use { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; font: 400 11.5px var(--mono); color: var(--faint); }
   .rule .use .hot { color: var(--accent); }
   .rule .use a { color: var(--muted); }
   /* The rate limits page: rule groups two-up on wide screens, a save bar that sticks, the log as rows. */
   .limits .rgroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 0 16px; align-items: start; }
   .limits .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 0; margin-bottom: 16px; background: var(--bg); border-top: 1px solid var(--border); }
+  .limits .ev .btn { margin-left: auto; }
   .limits .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
   .limits .ev:first-of-type { border-top: 0; }
   .limits .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
@@ -305,6 +306,11 @@
     .hero .wrap, .two, .wb { grid-template-columns: 1fr; } .explorer { max-height: 220px; grid-row: auto; } .details { grid-column: auto; }
     .jump { min-width: 0; flex: 1; } .jump span { display: none; } .ln { grid-template-columns: 44px minmax(0, 1fr); } .ln .by { display: none; }
     .wrap { padding: 0 16px; } .top { padding: 10px 16px; } .hero .wrap { padding-top: 40px; }
+  }
+  /* Phones: the header keeps its icons and the handle, and drops the ⌘K hint and Play's label. */
+  @media (max-width: 480px) {
+    .top { gap: 6px; } #who { gap: 2px; } .top .btn.ghost { padding: 7px 6px 6px; }
+    .jump { flex: none; padding: 6px 7px; } .jump kbd { display: none; } #topplay { font-size: 0; gap: 0; }
   }
 </style>
 </head>
@@ -501,11 +507,11 @@ async function limitsPage() {
     <h2 style="margin:0 0 6px;font-weight:600">${icon("gauge")} Rate limits</h2>
     <p class="muted" style="margin:0 0 18px">Behind the curtain: everything that costs money or invites abuse, and what happens when someone goes over. Counted per handle, or per IP before sign-in. Admins and the desktop app aren't counted.</p>
     ${flagged.length ? `<div class="box"><div class="bar">${icon("flag")}<b>Flagged</b><span class="muted">went over a rule set to flag, this week</span></div>
-      ${flagged.map((f) => `<div class="body ev"><b>${esc(f.who)}</b><span class="muted">${f.rules.map(label).map(esc).join(", ")} · ${f.times}× · ${ago(f.last)}</span><span class="grow"></span>${reset(f.who)}</div>`).join("")}</div>` : ""}
+      ${flagged.map((f) => `<div class="body ev"><b>${esc(f.who)}</b><span class="muted">${f.rules.map(label).map(esc).join(", ")} · ${f.times}× · ${ago(f.last)}</span>${reset(f.who)}</div>`).join("")}</div>` : ""}
     <form id="limits-form" class="rgroups">${groups.map((g) => `<div class="box"><div class="bar"><b>${esc(g)}</b></div><div class="body">${rules.filter((r) => r.group === g).map(row).join("")}</div></div>`).join("")}</form>
     <div class="savebar"><span class="muted small" id="limits-msg"></span><span class="grow"></span><button class="btn primary" id="limits-save">${icon("save")}Save</button></div>
     <div class="box"><div class="bar">${icon("history")}<b>Over the cap</b><span class="muted">the first time each caller went over, per window, this week</span></div>
-      ${events.map((e) => `<div class="body ev"><span class="muted">${ago(e.at)}</span><b>${esc(e.who)}</b><span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${e.action === "reject" ? "rejected" : e.action === "log" ? "logged" : "flagged"}</span><span class="grow"></span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="body muted">Nobody has gone over a limit this week.</div>'}</div>
+      ${events.map((e) => `<div class="body ev"><span class="muted">${ago(e.at)}</span><b>${esc(e.who)}</b><span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${e.action === "reject" ? "rejected" : e.action === "log" ? "logged" : "flagged"}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="body muted">Nobody has gone over a limit this week.</div>'}</div>
   </div>`;
   const form = $("#limits-form");
   form.addEventListener("change", (e) => { const r = e.target.closest(".rule"); r?.classList.toggle("off", !r.querySelector("[name=enabled]").checked); $("#limits-msg").textContent = "Unsaved changes"; });
