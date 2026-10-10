@@ -7,6 +7,7 @@ import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
 import { noodles } from "../src/noodles.ts";
 import { isBuildFile } from "../src/buildfiles.ts";
+import worker from "../src/worker.ts";
 import { ruleFor } from "../src/limits.ts";
 
 // Every app instance makes a temp dir of git repos; remove them all at the end.
@@ -618,6 +619,60 @@ describe("rate limits", () => {
     await put([{ name: "repo", max: 2, window_s: 86400, enabled: true }]);
     expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 2, on_fail: "flag" });
   }, SIGNUPS);
+  test("over a limit that queues: a place in line, then the dig runs once there's room", async () => {
+    const call = await local({ GH_CLI: "off", ADMINS: "boss" });
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (u: string) => {
+      const m = /^\/repos\/([^/]+\/[^/]+)(\/commits\/main)?$/.exec(new URL(u).pathname);
+      if (m && m[2]) return Response.json({ sha: "c".repeat(40) });
+      if (m) return Response.json({ full_name: m[1], private: false, default_branch: "main" });
+      return new Response("{}", { status: 404 });
+    }) as any;
+    call.artifacts.import = (async (params: any) => call.artifacts.create(params.target.name, { setDefaultBranch: "main" })) as any;
+    try {
+      for (const u of ["ana", "bo", "boss"]) await post(call, u, "/api/login", { name: u });
+      const put = (rules: unknown) => call("boss", "/api/admin/limits", { method: "PUT", body: JSON.stringify({ rules }) });
+      const dig = (repo: string) => call("ana", "/api/github/dig", { method: "POST", headers: ip, body: JSON.stringify({ repo }) });
+      const job = async (id: number, user = "ana") => (await (await call(user, `/api/jobs/${id}`)).json()) as any;
+      const reset = () => call("boss", "/api/admin/limits/reset", { method: "POST", body: JSON.stringify({ who: "@ana", rule: "dig" }) });
+
+      // Only slow, costly jobs can queue.
+      expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "queue" }])).status).toBe(400);
+      const { rules } = (await (await call("boss", "/api/admin/limits")).json()) as any;
+      expect(rules.filter((r: any) => r.queueable).map((r: any) => r.name)).toEqual(["dig"]);
+      expect((await put([{ name: "dig", max: 1, window_s: 86400, enabled: true, on_fail: "queue" }])).status).toBe(200);
+
+      // Over the cap: a 202 and a place in line, which holds one window's worth.
+      expect((await dig("o/one")).status).toBe(201);
+      const second = await dig("o/two");
+      expect(second.status).toBe(202);
+      const { queued } = (await second.json()) as any;
+      expect(queued).toMatchObject({ state: "waiting", place: 1, label: "Dig up a repo" });
+      expect(queued.eta).toBeGreaterThan(Date.now());
+      expect((await dig("o/three")).status).toBe(429);
+      expect((await (await call("boss", "/api/admin/limits")).json() as any).events.map((e: any) => e.action)).toEqual(["queue"]);
+
+      // Polling with no room leaves it waiting; it's hers alone to see.
+      expect(await job(queued.id)).toMatchObject({ state: "waiting", place: 1 });
+      expect((await call("bo", `/api/jobs/${queued.id}`)).status).toBe(404);
+      expect((await call("ana", "/api/repos/ana/two")).status).toBe(404);
+
+      // Room again (an admin's reset, or the window ending): the next poll runs it, as her, taking a slot.
+      await reset();
+      expect(await job(queued.id)).toMatchObject({ state: "done", status: 201, result: { owner: "ana", name: "two" } });
+      expect((await call("ana", "/api/repos/ana/two")).status).toBe(200);
+      expect((await call.env.DB.prepare("SELECT count FROM limit_hits WHERE rule = 'dig' AND who = '@ana'").first() as any).count).toBe(1);
+
+      // Nobody polling: the five-minute cron runs it.
+      const four = ((await (await dig("o/four")).json()) as any).queued;
+      await reset();
+      const waits: Promise<unknown>[] = [];
+      await worker.scheduled({ cron: "*/5 * * * *" }, call.env, { waitUntil: (w) => waits.push(w) });
+      await Promise.all(waits);
+      expect(await job(four.id, "boss")).toMatchObject({ state: "done", status: 201 });
+    } finally { globalThis.fetch = real; }
+  }, SIGNUPS);
+
   test("live edits count against the edit limit, over the socket and POST alike", async () => {
     const call = await local({ ADMINS: "boss" });
     await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
