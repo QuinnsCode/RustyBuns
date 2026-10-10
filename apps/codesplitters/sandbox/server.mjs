@@ -1,10 +1,13 @@
 // The server inside the agent container. One request runs one coding agent on
 // one file: POST /run {cmd: {bin, args, env?}, path, text} writes the file into a
 // fresh directory, runs the CLI there, and answers {code, out, text} with what
-// it left (text: null if it removed the file). POST /test {remote, files} is the
+// it left (text: null if it removed the file). POST /test {files: {path: text}}
+// writes a cut's files (src/cuts.ts) and runs `bun test` there: {code, out,
+// report} (report: its JUnit XML). POST /deps-test {remote, files} is the
 // dependency doctor's run: a shallow clone of `remote` with `files` swapped in,
 // `bun install`, the test script if there is one, then the clone is deleted
-// (answers {ok, out}). Plain Node, no dependencies.
+// (answers {ok, out}).
+// Plain Node, no dependencies.
 
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -43,7 +46,8 @@ function exec(bin, args, cwd, env = {}) {
   });
 }
 
-export async function test({ remote, files }) {
+/** The dependency doctor's run (src/deps.ts): a clone with an update swapped in, installed and tested. */
+export async function depsTest({ remote, files }) {
   const dir = await mkdtemp(join(tmpdir(), "deps-"));
   const run = async (bin, args, cwd) => {
     const r = await exec(bin, args, cwd, { CI: "1" });
@@ -69,7 +73,32 @@ export async function test({ remote, files }) {
   }
 }
 
-const ROUTES = { "/run": run, "/test": test };
+/** A cut's files in a fresh directory, and `bun test` over them. */
+export async function test({ files }) {
+  const dir = await mkdtemp(join(tmpdir(), "cut-"));
+  try {
+    for (const [path, text] of Object.entries(files ?? {})) {
+      const at = join(dir, path);
+      if (relative(dir, at).startsWith("..")) return { code: 2, out: `bad path: ${path}` };
+      await mkdir(dirname(at), { recursive: true });
+      await writeFile(at, text);
+    }
+    const ran = await new Promise((done) => {
+      const p = spawn("bun", ["test", "--reporter=junit", "--reporter-outfile=.cut-report.xml"], { cwd: dir, env: { ...process.env, CI: "1", PWD: dir }, stdio: ["ignore", "pipe", "pipe"] });
+      let out = "";
+      p.stdout.on("data", (b) => { out += b; });
+      p.stderr.on("data", (b) => { out += b; });
+      const timer = setTimeout(() => { out += `\nkilled after ${LIMIT_MS} ms`; p.kill("SIGKILL"); }, LIMIT_MS);
+      p.on("error", (e) => { clearTimeout(timer); done({ code: 127, out: String(e) }); });
+      p.on("close", (code) => { clearTimeout(timer); done({ code: code ?? 1, out }); });
+    });
+    return { ...ran, report: await readFile(join(dir, ".cut-report.xml"), "utf8").catch(() => "") };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+const ROUTES = { "/run": run, "/test": test, "/deps-test": depsTest };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   createServer(async (req, res) => {
