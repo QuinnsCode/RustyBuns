@@ -72,8 +72,8 @@ const kleurTester = (seen: string[][] = []): Tester => async (remote, files) => 
   return pkg.dependencies.kleur === "^4.1.5" ? { ok: false, out: "TypeError: kleur.red is not a function" } : { ok: true, out: "3 pass" };
 };
 
-async function app(tester?: Tester, fixer?: Fixer, pkg = PKG) {
-  const call = await boot({ GH_CLI: "off" });
+async function app(tester?: Tester, fixer?: Fixer, pkg = PKG, extra: Record<string, unknown> = {}) {
+  const call = await boot({ GH_CLI: "off", ...extra });
   opened.push(call);
   call.env.DEPS_REGISTRY = NPM;
   if (tester) call.env.DEPS_TESTER = tester;
@@ -406,4 +406,20 @@ describe("the container's /deps-test", () => {
     const r = await containerTest({ remote: await repo("true"), files: { "../escape": "x" } });
     expect(r).toEqual({ ok: false, out: "bad path: ../escape" });
   });
+});
+
+test("over the doctor's limit, a run queues: the replay answers with the report, or running for the page to poll", async () => {
+  const { call } = await app(undefined, undefined, PKG, { ADMINS: "boss" });   // else everyone is an admin, and never limited
+  await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('doctor', 1, 3600, 1, 'queue')").run();
+  const run = () => call("ryan", "/api/repos/ryan/lab/deps/run", { method: "POST", headers: { "cf-connecting-ip": "203.0.113.7" }, body: "{}" });
+  expect((await run()).status).toBe(200);
+  const over = await run();
+  expect(over.status).toBe(202);
+  const { queued } = (await over.json()) as any;
+  expect(queued).toMatchObject({ rule: "doctor", state: "waiting", place: 1, label: "Dependency checks" });
+  await call.env.DB.prepare("DELETE FROM limit_hits").run();
+  const job = (await (await call("ryan", `/api/jobs/${queued.id}`)).json()) as any;
+  // No tests to run, so it's quick: the report itself (a run that tests answers {running: true}, and the page polls).
+  expect(job).toMatchObject({ state: "done", status: 200, result: { updates: expect.any(Array) } });
+  expect((await settle(call)).running).toBe(false);
 });

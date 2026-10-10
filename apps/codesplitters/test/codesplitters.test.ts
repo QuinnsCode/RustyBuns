@@ -491,6 +491,13 @@ describe("account email", () => {
     expect(ruleFor("POST", ["", "auth", "reset-password"])).toBeNull();
   });
 
+  test("preview deploys and doctor runs started by hand have rules; reading them doesn't count", () => {
+    expect(ruleFor("POST", ["", "repos", "o", "r", "preview"])).toBe("preview");
+    expect(ruleFor("POST", ["", "repos", "o", "r", "deps", "run"])).toBe("doctor");
+    expect(ruleFor("GET", ["", "repos", "o", "r", "preview"])).toBeNull();
+    expect(ruleFor("PUT", ["", "repos", "o", "r", "deps"])).toBeNull();
+  });
+
   test("a failed send is logged, not shown: the reset answer stays the same", async () => {
     const { call } = await accounts({ EMAIL: { send: async () => { throw Object.assign(new Error("no"), { code: "E_SENDER_NOT_VERIFIED" }); } }, EMAIL_FROM: "accounts@example.com" });
     const err = console.error; console.error = () => {};
@@ -635,7 +642,7 @@ describe("rate limits", () => {
       // Only slow, costly jobs can queue.
       expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "queue" }])).status).toBe(400);
       const { rules } = (await (await call("boss", "/api/admin/limits")).json()) as any;
-      expect(rules.filter((r: any) => r.queueable).map((r: any) => r.name)).toEqual(["dig"]);
+      expect(rules.filter((r: any) => r.queueable).map((r: any) => r.name)).toEqual(["dig", "preview", "doctor"]);
       expect((await put([{ name: "dig", max: 1, window_s: 86400, enabled: true, on_fail: "queue" }])).status).toBe(200);
 
       // Over the cap: a 202 and a place in line, which holds one window's worth.

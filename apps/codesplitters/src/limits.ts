@@ -13,9 +13,12 @@
 // A queued request answers 202 with its place in line. It waits in limit_jobs
 // and is replayed as the caller, not counted again but taking one of their
 // window's slots, when the page polls GET /api/jobs/:id (or the caller's list,
-// GET /api/jobs, which their profile shows) or on the five-minute cron. Only
-// digs queue: line edits are pinned to the file's rev, so a queued one would
-// come back a conflict, and sign-ins should stay rejected.
+// GET /api/jobs, which their profile shows) or on the five-minute cron. Digs,
+// preview deploys and dependency-doctor runs can queue: each answers the replay
+// as it would the request (a preview's {run}, a doctor's report or {running}),
+// and the page then polls the run itself. Line edits can't: they're pinned to
+// the file's rev, so a queued one would come back a conflict. Sign-ins should
+// stay rejected.
 //
 // Only requests from the internet are counted: Cloudflare stamps those with
 // cf-connecting-ip. The desktop, the tests, and the Worker's own calls (hosted
@@ -47,6 +50,8 @@ export const RULES: Rule[] = [
   { name: "commit", label: "Commits", what: "pushes to Artifacts", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "share", label: "Shares and collections", what: "share links, collections and tracks", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", group: "Agents", per: "user", max: 20, window_s: DAY, on_fail: "reject" },
+  { name: "preview", label: "Preview deploys", what: "stacks stood up and torn down to try a repo", group: "Deploys and checks", per: "user", max: 6, window_s: HOUR, on_fail: "reject", queueable: true },
+  { name: "doctor", label: "Dependency checks", what: "dependency-doctor runs started by hand (registry lookups, installs and tests)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "reject", queueable: true },
 ];
 
 /** Which rule a request counts against, if any. */
@@ -67,6 +72,8 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "repos" && p[4] === "files") return "file";
   if (p[1] === "repos" && p[4] === "shares") return "share";
   if (p[1] === "repos" && p[4] === "agents") return "agent";
+  if (p[1] === "repos" && p[4] === "preview" && !p[5]) return "preview";
+  if (p[1] === "repos" && p[4] === "deps" && p[5] === "run") return "doctor";
   if (p[1] === "repos" && p[4] === "do" && p[5] === "commit") return "commit";
   if (p[1] === "repos" && p[4] === "do" && p[5] === "ops") return "edit";
   return null;
@@ -186,10 +193,15 @@ export async function drainJobs(env: Env, self: (r: Request) => Promise<Response
   for (const { rule, who } of results as { rule: string; who: string }[]) await drain(env, rule, who, self);
 }
 
-/** What a queued job was for, in a few words: the GitHub repo a dig names, or the level a fork copies. */
+/** The repo a queued preview or dependency check runs on, from its path. */
+const repoRun = (path: string) => /^\/api\/repos\/([^/?]+)\/([^/?]+)\/(preview|deps\/run)\b/.exec(path);
+
+/** What a queued job was for, in a few words: the GitHub repo a dig names, the level a fork copies, or the repo a preview or check runs on. */
 function what(j: Pick<Job, "path" | "body">) {
   const fork = /^\/api\/levels\/([^/?]+)\/fork/.exec(j.path);
   if (fork) return `fork of ${decodeURIComponent(fork[1])}`;
+  const run = repoRun(j.path);
+  if (run) return `${run[3] === "preview" ? "preview of" : "dependency check of"} ${decodeURIComponent(run[1])}/${decodeURIComponent(run[2])}`;
   try { const b = JSON.parse(j.body ?? "{}"); if (typeof b.repo === "string") return b.repo; } catch {}
   return j.path.replace(/^\/api/, "");
 }
@@ -214,7 +226,9 @@ export async function jobRoutes(req: Request, env: Env, p: string[], user: strin
       // A finished job keeps only what the page links to, not the whole response.
       if ("result" in pl) {
         const r = (pl.result ?? {}) as { owner?: string; name?: string; error?: string; message?: string }, ok = pl.status! < 400;
-        jobs.push({ ...pl, result: ok ? { owner: r.owner, name: r.name } : { error: r.error || r.message || `failed (${pl.status})` }, what: what(j), at: j.at });
+        // A preview or check links to its repo, whose page follows the run; a dig to the repo it made.
+        const run = repoRun(j.path), repo = run ? { owner: decodeURIComponent(run[1]!), name: decodeURIComponent(run[2]!) } : { owner: r.owner, name: r.name };
+        jobs.push({ ...pl, result: ok ? repo : { error: r.error || r.message || `failed (${pl.status})` }, what: what(j), at: j.at });
       } else jobs.push({ ...pl, what: what(j), at: j.at });
     }
     return json({ jobs });

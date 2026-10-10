@@ -367,7 +367,7 @@ async function inLine(job) {
     }
   } finally { t.remove(); jobsBadge(); }
 }
-// Your queued digs, for when you left the page while one waited (GET /api/jobs, which also runs any that are due):
+// Your queued requests (digs, previews, checks), for when you left the page while one waited (GET /api/jobs, which also runs any that are due):
 // a count in the top bar while any are unfinished, and the list on your profile.
 const jobState = (j) => j.state !== "done" ? j.state : j.status >= 400 ? "failed" : "done";
 function jobRow(j) {
@@ -399,7 +399,7 @@ async function refreshSession() { session = await api("/session").catch(() => se
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued digs" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#verify")?.addEventListener("click", sendVerification);
     jobsBadge();
@@ -867,7 +867,7 @@ const views = {
         <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
           ${mine ? `<form id="newpl" class="row" style="margin-top:10px"><input name="title" placeholder="regexes of the lost city" required><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
       </div>
-      ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued digs</b><span class="muted">digs that waited in line this week, and how they came out</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
+      ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">digs, previews and checks that waited in line this week, and how they came out</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       ${mine ? `<form id="theme" class="box"><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">any HTML and CSS, rendered in a sandbox (no scripts)</span></div><div class="body" style="display:grid;gap:8px">
         <input name="bio" placeholder="a line about you" value="${esc(user.bio)}">
         <textarea name="theme_html" rows="6" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
