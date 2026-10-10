@@ -114,6 +114,6 @@ export function chunkRepo(env: Env, bucket: R2Like, slug: string, tip: { sha: st
       const got = await piece(bucket, chunkKey(slug, tip.sha, n), offset, size);
       return got && new Blob([got]);
     },
-    info: refuse, createToken: refuse, fork: refuse,
+    readBlob: refuse, info: refuse, createToken: refuse, fork: refuse,
   };
 }
