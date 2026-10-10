@@ -149,3 +149,54 @@ test("add deploy writes overrides at the workspace root, where bun reads them", 
     rmSync(lone, { recursive: true, force: true });
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+const ASTRO_CF = `import { defineConfig } from "astro/config";\nimport cloudflare from "@astrojs/cloudflare";\nexport default defineConfig({ output: "server", adapter: cloudflare() });\n`;
+
+test("init: Astro with @astrojs/cloudflare runs the adapter's Worker, on the desktop too", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "@me/site", scripts: { build: "astro build" }, dependencies: { astro: "^7", "@astrojs/cloudflare": "^14" } }),
+    "astro.config.mjs": ASTRO_CF,
+    "src/pages/index.astro": "",
+    "wrangler.jsonc": '{ "name": "site", "compatibility_date": "2026-09-01", "kv_namespaces": [{ "binding": "COUNTER" }] }',
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: astro/);
+  expect(r.out).not.toMatch(/does not exist/);
+  const cfg = p.read("rustybuns.config.ts");
+  expect(cfg).toContain('"main": "@astrojs/cloudflare/entrypoints/server"');
+  expect(cfg).toContain('"builtMain": "dist/server/entry.mjs"');
+  expect(cfg).toContain('"assets": "dist/client"');
+  expect(cfg).toContain('"build": "astro build"');
+  expect(cfg).toContain('"mode": "worker"');
+  expect(cfg).toMatch(/"COUNTER"[\s\S]*"SESSION"/);
+  expect(cfg).not.toContain("clientBuild");
+
+  // No wrangler file: the package name, the default session binding, and a build with no script.
+  const bare = project({
+    "package.json": JSON.stringify({ name: "@me/bare", dependencies: { astro: "^7", "@astrojs/cloudflare": "^14" } }),
+    "astro.config.ts": ASTRO_CF.replace("adapter: cloudflare()", 'adapter: cloudflare({ sessionKVBindingName: "SESS" })'),
+  });
+  expect(bare.run("init").code).toBe(0);
+  const b = bare.read("rustybuns.config.ts");
+  expect(b).toContain('"name": "bare"');
+  expect(b).toContain('"SESS"');
+  expect(b).toContain('"build": "astro build"');
+});
+
+test("init: static Astro is a desktop-only site; another adapter is refused", () => {
+  const s = project({ "package.json": JSON.stringify({ name: "s", dependencies: { astro: "^7" } }), "astro.config.mjs": "export default {};\n", "bun.lock": "" });
+  const r = s.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/a static Astro site/);
+  expect(s.read("rustybuns.config.ts")).toContain('"clientBuild": "bunx astro build --outDir dist/ui"');
+
+  const node = project({
+    "package.json": JSON.stringify({ name: "n", dependencies: { astro: "^7", "@astrojs/node": "^9" } }),
+    "astro.config.mjs": 'import node from "@astrojs/node";\nexport default { output: "server", adapter: node({ mode: "standalone" }) };\n',
+  });
+  const n = node.run("init");
+  expect(n.code).toBe(1);
+  expect(n.out).toMatch(/uses @astrojs\/node.*astro add cloudflare/);
+  expect(existsSync(join(node.dir, "rustybuns.config.ts"))).toBe(false);
+});

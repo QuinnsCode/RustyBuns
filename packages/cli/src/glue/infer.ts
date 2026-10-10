@@ -9,7 +9,7 @@ import { join, dirname, resolve, relative, sep } from "node:path";
 import { parseJsonc } from "./jsonc.ts";
 import { SUPPORTED, stackOf, vitePlugins, type Stack } from "./fit.ts";
 
-export type Framework = "rwsdk" | "tanstack-start" | "vite-react" | "vite" | "unknown";
+export type Framework = "rwsdk" | "tanstack-start" | "astro" | "vite-react" | "vite" | "unknown";
 export type PackageManager = "bun" | "pnpm" | "npm" | "yarn";
 
 export interface Inferred {
@@ -35,6 +35,8 @@ export interface Inferred {
     aliases: Record<string, string>;
     desktopConfigPath: string | null;
   };
+  /** astro.config.*: its adapter by package name and its `output`. Null when there is no config. */
+  astro: AstroInfo | null;
   wranglerPath: string | null;
   /** Where app source lives. From tsconfig paths, then the vite "@" alias, then common names. */
   srcDir: string;
@@ -122,6 +124,29 @@ export function inferVite(root: string) {
   return out;
 }
 
+export interface AstroInfo {
+  configPath: string;
+  /** e.g. "@astrojs/cloudflare", "@astrojs/node"; null when the config sets none. */
+  adapter: string | null;
+  /** "static" when unset, as in Astro itself. */
+  output: "static" | "server";
+  /** The KV binding the Cloudflare adapter keeps sessions in. */
+  sessionKV: string;
+}
+
+export function inferAstro(root: string): AstroInfo | null {
+  const cands = ["astro.config.mjs", "astro.config.ts", "astro.config.mts", "astro.config.js", "astro.config.cjs"];
+  const configPath = cands.map((c) => join(root, c)).find(existsSync) ?? null;
+  if (!configPath) return null;
+  const src = readFileSync(configPath, "utf8");
+  const adapter = [...src.matchAll(/from\s+["'](@astrojs\/(?:cloudflare|node|vercel|netlify|deno)|[^"']*astro-adapter[^"']*)["']/g)][0]?.[1] ?? null;
+  return {
+    configPath, adapter,
+    output: /\boutput:\s*["']server["']/.test(src) ? "server" : "static",
+    sessionKV: src.match(/\bsessionKVBindingName:\s*["']([^"']+)["']/)?.[1] ?? "SESSION",
+  };
+}
+
 export function infer(root = process.cwd()): Inferred {
   const pkg = readPackageJson(root) ?? {};
   const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
@@ -148,7 +173,7 @@ export function infer(root = process.cwd()): Inferred {
     hasPrisma: !!deps["@prisma/client"] || !!deps["prisma"],
     hasBetterAuth: !!deps["better-auth"],
     scripts: pkg.scripts ?? {},
-    vite, wranglerPath, srcDir, aliases, srcDirSource, workerEntry,
+    vite, astro: inferAstro(root), wranglerPath, srcDir, aliases, srcDirSource, workerEntry,
     isWorkspaceRoot: !!pkg.workspaces || existsSync(join(root, "pnpm-workspace.yaml")),
     hasPackageJson: existsSync(join(root, "package.json")),
   };
