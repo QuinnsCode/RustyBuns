@@ -49,9 +49,9 @@ export async function settings(env: Env, owner: string, repo: string): Promise<S
   return r ? { stage: r.stage, dir: r.dir, on_commit: !!r.on_commit, production: !!r.production } : { ...DEFAULTS };
 }
 
-/** The repo's git remote with an hour-long read token in it, or null before its first commit. */
+/** The repo's git remote (the crew's, with private lines in it, when it has one) with an hour-long read token in it, or null before its first commit. */
 export async function remoteFor(env: Env, owner: string, repo: string): Promise<string | null> {
-  const h = await handleFor(env, owner, repo);
+  const h = await handleFor(env, owner, repo, true);
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   return art ? art.remote.replace("://", `://x:${art.token.split("?")[0]}@`) : null;
 }

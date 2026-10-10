@@ -463,7 +463,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   let remote: string | null | undefined;
   const remoteFor = async () => {
     if (remote !== undefined) return remote;
-    const h = await handleFor(env, owner, repo);
+    const h = await handleFor(env, owner, repo, true);
     const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
     return remote = art ? art.remote.replace("://", `://x:${art.token.split("?")[0]}@`) : null;
   };

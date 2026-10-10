@@ -60,7 +60,7 @@ export function parseRepo(s: string): string | null {
 
 /** Forget a repo: its rows, its files' Durable Objects, and its git. An expired dig goes this way, and so does a repo its owner deletes. */
 export async function evict(env: Env, owner: string, name: string) {
-  const r = await env.DB.prepare("SELECT artifact FROM repos WHERE owner = ? AND name = ?").bind(owner, name).first();
+  const r = await env.DB.prepare("SELECT artifact, crew_artifact FROM repos WHERE owner = ? AND name = ?").bind(owner, name).first();
   const { results: files } = await env.DB.prepare("SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ? UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?")
     .bind(owner, name, owner, name).all();
   await Promise.all((files as { path: string; branch: string | null }[]).map((f) =>
@@ -70,7 +70,7 @@ export async function evict(env: Env, owner: string, name: string) {
     const [table, where = "owner = ? AND repo = ?"] = t.split("|");
     return env.DB.prepare(`DELETE FROM ${table} WHERE ${where}`).bind(owner, name);
   }));
-  if (r?.artifact) await env.ARTIFACTS?.delete?.(r.artifact as string).catch(() => false);
+  for (const a of [r?.artifact, r?.crew_artifact]) if (a) await env.ARTIFACTS?.delete?.(a as string).catch(() => false);
 }
 
 /** Drop the expired digs, then, to make room for `more`, the oldest past the cap. */

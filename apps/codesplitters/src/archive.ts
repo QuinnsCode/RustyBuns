@@ -23,11 +23,38 @@ export function toFile(env: Env, owner: string, repo: string, path: string, user
   return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 
-/** The repo row's artifact handle and branch, or null when it has none. */
-export async function handleFor(env: Env, owner: string, repo: string) {
-  const r = await env.DB.prepare("SELECT artifact, artifact_remote, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+/**
+ * The repo row's artifact handle and branch, or null when it has none. With
+ * `crew`, the crew's remote when the repo has one (it holds private lines'
+ * real text): what previews, deploys and the crew's own clone use.
+ */
+export async function handleFor(env: Env, owner: string, repo: string, crew = false) {
+  const r = await env.DB.prepare("SELECT artifact, artifact_remote, crew_artifact, crew_remote, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
   if (!env.ARTIFACTS || !r?.artifact) return null;
-  return { handle: await env.ARTIFACTS.get(r.artifact), branch: (r.branch ?? "main") as string, remote: r.artifact_remote as string };
+  const [name, remote] = crew && r.crew_artifact ? [r.crew_artifact, r.crew_remote] : [r.artifact, r.artifact_remote];
+  return { handle: await env.ARTIFACTS.get(name), branch: (r.branch ?? "main") as string, remote: remote as string, crew: name !== r.artifact };
+}
+
+/**
+ * Give the repo its crew remote, once: a fork of its remote ("--crew" can't end
+ * a two-part "owner--repo" name, so it can't collide), or a new repo before the
+ * first commit. Commits push the real text there from then on.
+ */
+export async function ensureCrewRemote(env: Env, owner: string, repo: string) {
+  const r = await env.DB.prepare("SELECT artifact, crew_artifact, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  if (!env.ARTIFACTS || !r?.artifact || r.crew_artifact) return;
+  const name = `${r.artifact}--crew`, branch = (r.branch ?? "main") as string, description = `codeSplitters ${owner}/${repo}, the crew's copy`;
+  const pub = await env.ARTIFACTS.get(r.artifact);
+  const made = await (async () => {
+    const [tip] = await pub.log({ ref: branch, limit: 1 }).catch(() => []);
+    return tip ? pub.fork(name, { description, defaultBranchOnly: true }) : env.ARTIFACTS!.create(name, { description, setDefaultBranch: branch });
+  })().catch(async (e: Error) => {
+    // Someone else made it a moment ago.
+    const info = await (await env.ARTIFACTS!.get(name)).info().catch(() => null);
+    if (!info) throw e;
+    return info;
+  });
+  await env.DB.prepare("UPDATE repos SET crew_artifact = ?, crew_remote = ? WHERE owner = ? AND name = ?").bind(made.name, made.remote, owner, repo).run();
 }
 
 /** A remote and a fresh token for it. */
@@ -92,13 +119,24 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
   return { ok: true };
 }
 
-/** Push one catalogued file as a commit on top of the repo's branch; everything else stays. */
-export async function pushCatalogue(env: Env, owner: string, repo: string, path: string, content: string, author: string, message: string) {
-  const h = await handleFor(env, owner, repo);
+/**
+ * Push one catalogued file as a commit on top of the repo's branch; everything
+ * else stays. The remote gets `published` (private lines blank); the crew
+ * remote, when the file has private lines or the repo already has one, gets
+ * `content`. The result is the remote's push; a crew push that failed is in `crewError`.
+ */
+export async function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string) {
+  if (files.content !== files.published) await ensureCrewRemote(env, owner, repo);
+  const [h, crew] = await Promise.all([handleFor(env, owner, repo), handleFor(env, owner, repo, true)]);
   if (!h) return null;
-  const a = await access(h.handle, h.remote, "write", 300);
-  const text = content.endsWith("\n") ? content : content + "\n";
-  return { remote: a.remote, ...(await push(a.remote, a.token, { changes: { [path]: text }, message, author, branch: h.branch, base: h.handle })) };
+  const one = async (to: NonNullable<typeof h>, content: string) => {
+    const a = await access(to.handle, to.remote, "write", 300);
+    const text = content.endsWith("\n") ? content : content + "\n";
+    return { remote: a.remote, ...(await push(a.remote, a.token, { changes: { [path]: text }, message, author, branch: to.branch, base: to.handle })) };
+  };
+  const [pub, crewPush] = await Promise.allSettled([one(h, files.published), crew?.crew ? one(crew, files.content) : null]);
+  if (pub.status === "rejected") throw pub.reason;
+  return crewPush.status === "rejected" ? { ...pub.value, crewError: (crewPush.reason as Error).message } : pub.value;
 }
 
 export interface Walls { commit: string | null; doors: { name: string; path: string }[]; files: { name: string; path: string; lines: string[]; noodles?: Noodle[] }[] }
