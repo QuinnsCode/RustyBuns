@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setSystemTime, test } from "bun:test";
 import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { local as boot, type Call } from "../src/local.ts";
@@ -584,34 +584,38 @@ describe("rate limits", () => {
     expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 2, on_fail: "flag" });
   }, SIGNUPS);
   test("live edits count against the edit limit, over the socket and POST alike", async () => {
-    const call = await local({ ADMINS: "boss" });
-    await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
-    await post(call, "ana", "/api/repos", { name: "r" });
-    await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
-    const open = async (headers: Record<string, string>) => {
-      const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...headers } })) as any).webSocket, got: any[] = [];
-      ws.toBrowser = (d: string) => got.push(JSON.parse(d));
-      ws.queue.splice(0);
-      let id = 0;
-      const edit = async (text: string) => {
-        ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
-        for (let i = 0; i < 200; i++) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+    // Windows start on the minute; stand the clock still at the start of one so no edit lands in the next.
+    setSystemTime(new Date(Math.ceil(Date.now() / 60_000) * 60_000));
+    try {
+      const call = await local({ ADMINS: "boss" });
+      await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
+      await post(call, "ana", "/api/repos", { name: "r" });
+      await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
+      const open = async (headers: Record<string, string>) => {
+        const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...headers } })) as any).webSocket, got: any[] = [];
+        ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+        ws.queue.splice(0);
+        let id = 0;
+        const edit = async (text: string) => {
+          ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
+          for (let i = 0; i < 200; i++) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+        };
+        return { edit };
       };
-      return { edit };
-    };
-    const sock = await open(ip);
-    expect((await sock.edit("1")).type).toBe("ack");
-    expect((await sock.edit("2")).type).toBe("ack");
-    const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
-    expect((await ops("3")).status).toBe(200);
-    const over = await sock.edit("4");
-    expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
-    expect(over.retryAfter).toBeGreaterThan(0);
-    expect((await ops("5")).status).toBe(429);
-    // The desktop isn't counted, and a page can't name who its socket counts as.
-    const desk = await open({ "x-codesplitters-limit-as": "@someone-else" });
-    expect((await desk.edit("6")).type).toBe("ack");
-    expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
+      const sock = await open(ip);
+      expect((await sock.edit("1")).type).toBe("ack");
+      expect((await sock.edit("2")).type).toBe("ack");
+      const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
+      expect((await ops("3")).status).toBe(200);
+      const over = await sock.edit("4");
+      expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
+      expect(over.retryAfter).toBeGreaterThan(0);
+      expect((await ops("5")).status).toBe(429);
+      // The desktop isn't counted, and a page can't name who its socket counts as.
+      const desk = await open({ "x-codesplitters-limit-as": "@someone-else" });
+      expect((await desk.edit("6")).type).toBe("ack");
+      expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
+    } finally { setSystemTime(); }
   });
 });
 
