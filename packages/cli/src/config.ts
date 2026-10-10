@@ -37,6 +37,11 @@ export type Binding =
        * the value never sits on disk. Who unlocks 1Password is the wheel.
        */
       op?: string;
+      /**
+       * Bound only when it has a value. With `op`, a missing 1Password item
+       * resolves to nothing instead of failing plan/deploy. For keys you may not use.
+       */
+      optional?: boolean;
     };
 
 /**

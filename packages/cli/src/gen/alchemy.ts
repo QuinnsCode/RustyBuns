@@ -102,7 +102,9 @@ export function generateAlchemy(c: RustyBunsConfig): string {
       else if (b.type === "durable_object")
         envEntries.push(`${name}: Cloudflare.DurableObject("${name}", { className: "${b.className}"${b.scriptName ? `, scriptName: "${b.scriptName}"` : ""} })`);
       else if (b.type === "var") envEntries.push(`${name}: ${JSON.stringify(b.value)}`);
-      else if (b.type === "secret") envEntries.push(minted.has(name) ? `${name}: ${ident(name)}` : `${name}: Config.redacted("${name}")`);
+      else if (b.type === "secret") envEntries.push(minted.has(name) ? `${name}: ${ident(name)}`
+        : b.optional ? `...(process.env.${name} ? { ${name}: Config.redacted("${name}") } : {})`
+        : `${name}: Config.redacted("${name}")`);
     }
     lines.push(``);
 
@@ -198,9 +200,10 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     lines.push(``);
   }
 
-  // Box secrets are read from the deploying shell. The stack is checked with
-  // types: [], so declare the one piece of node it touches.
-  if ((box || rail) && secrets.length)
+  // Box secrets and optional Worker secrets are read from the deploying shell. The
+  // stack is checked with types: [], so declare the one piece of node it touches.
+  const optional = edge && Object.values(bindings).some((b) => b.type === "secret" && b.optional);
+  if (((box || rail) && secrets.length) || optional)
     lines.splice(lines.findIndex((l) => l === ""), 0, `declare const process: { env: Record<string, string | undefined> };`);
 
   const other = box ? "Hetzner.providers()" : rail ? "Railway.providers()" : null;
