@@ -342,7 +342,9 @@ describe("levels", () => {
     await call.env.DB.prepare("INSERT INTO levels (slug, status) VALUES ('hono', 'ready')").run();
 
     const levels = await (await call(null, "/api/levels")).json() as any[];
-    expect(levels.map((l) => l.slug)).toEqual(["mitt", "clsx", "ky", "zustand", "hono", "express", "preact"]);
+    expect(levels.map((l) => l.slug).slice(0, 7)).toEqual(["mitt", "clsx", "ky", "zustand", "hono", "express", "preact"]);
+    expect(levels.map((l) => l.slug)).toContain("workerd");
+    expect(levels.at(-1).slug).toBe("bun");
     expect(levels[4].status).toBe("ready");
     expect(levels[6].status).toBe("buried");
     const root = await (await call(null, "/api/levels/hono/tree")).json() as any;
