@@ -15,7 +15,7 @@ import { FOREST } from "./assets.ts";
 import { decoders, gltf } from "./loader.ts";
 import { forestColor } from "./palette.ts";
 import { jungle, outerJungle } from "./jungle.ts";
-import { council, refit, turn, type Office } from "./council.ts";
+import { council, refit, type Office } from "./council.ts";
 import { firstPerson, type Viewer } from "./people.ts";
 import { LOFT, ROAD, ROOM, STREET_Y, type Box } from "./room.ts";
 
@@ -61,7 +61,6 @@ const seen = new WeakSet<object>();
   if (fire) fire.intensity = 14 + Math.sin(t * 11) * 2 + Math.sin(t * 3.7) * 3;
   if (fireflies) drift(fireflies, t);
   for (const g of growing) g.update(t);
-  turn(dt);
   firstPerson(app, stage.scene);
 };
 

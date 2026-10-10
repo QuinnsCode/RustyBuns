@@ -24,7 +24,6 @@ export const FOREST = {
 /** The council's furniture and loot (council.ts). */
 export const COUNCIL = {
   panel: "landmark/interact_DruidPanel001_512",
-  portal: "props/DruidPortal001",
   staff: "props/DruidStaff001",
   chambers: "landmark/structure_DruidCouncilChambers001_1024",
   hut: "landmark/structure_HumanHut001_1024",
@@ -40,7 +39,7 @@ export const COUNCIL = {
 export const MODELS: string[] = [...new Set([
   ...Object.values(CAST).map((c) => c.file),
   ...FOREST.wood, ...FOREST.ground, ...FOREST.edge, FOREST.hearth, FOREST.beacon,
-  COUNCIL.panel, COUNCIL.portal, COUNCIL.staff, COUNCIL.chambers, COUNCIL.hut, ...COUNCIL.loot.small, ...COUNCIL.loot.big,
+  COUNCIL.panel, COUNCIL.staff, COUNCIL.chambers, COUNCIL.hut, ...COUNCIL.loot.small, ...COUNCIL.loot.big,
 ])];
 
 export const modelUrl = (path: string) => `/druids/models/${path}.glb`;
