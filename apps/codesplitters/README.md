@@ -32,7 +32,13 @@ On the desktop, Artifacts is a Rusty Buns twin: bare repos in `~/.codesplitters/
 
 ### Deploying (Cloudflare)
 
-`rustybuns deploy` owns the live site: Alchemy took over the wrangler-made Worker `codesplitters` and D1 `codesplitters-db` on 2026-10-09 (`targets.edge.adopt`), Durable Object storage intact. Its state is local (`.alchemy/`, gitignored); with an empty state the next deploy adopts them again rather than making new ones.
+`rustybuns deploy` owns the live site: Alchemy took over the wrangler-made Worker `codesplitters` and D1 `codesplitters-db` on 2026-10-09 (`targets.edge.adopt`), Durable Object storage intact. Its state is shared by every worktree of a clone (`.alchemy/state` links into the clone's `.git/rustybuns/alchemy/`), so deleting a worktree doesn't lose it, but a different clone, or a new stage (`--stage`, `$ALCHEMY_STAGE`; the default is `live_$USER`), starts empty. With an empty state, `plan` says `create` for the Worker and D1, and says first that those creates are adopts: the deploy takes over the live ones by name rather than making new ones. Anything else it marks `create` is really new.
+
+**D1 has two migration ledgers, and only Alchemy's counts.** Wrangler applied 0001–0009 and recorded them in `d1_migrations`; on adoption Alchemy copied that history into its own `__alchemy_migrations` and has applied every migration since, leaving `d1_migrations` frozen at 0009. So `wrangler d1 migrations list codesplitters-db --remote` shows everything after 0009 as pending though it's all applied. Never run `wrangler d1 migrations apply --remote`: it would run those again and fail partway. New migrations go in `migrations/` and the next `rustybuns deploy` applies them. To see what's applied:
+
+```sh
+npx wrangler d1 execute codesplitters-db --remote --command "select name, applied_at from __alchemy_migrations order by id"
+```
 
 ```sh
 cd apps/codesplitters

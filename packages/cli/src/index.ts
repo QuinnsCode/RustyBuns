@@ -19,7 +19,7 @@ import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { Profiler } from "./profile.ts";
-import { linkSharedState, lockState, unlinkSharedState } from "./state.ts";
+import { adoptNote, alchemyStage, linkSharedState, lockState, unlinkSharedState } from "./state.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
@@ -381,6 +381,8 @@ async function alchemy(sub: string, rawArgs: string[]) {
     const base = linkSharedState(process.cwd());
     if (base) lockState(base, sub);
   }
+  const note = profiled ? adoptNote(process.cwd(), cfg, alchemyStage(args)) : null;
+  if (note) console.log(note + "\n");
   // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
   if (profiled && cfg.targets.box) {
     console.log(`built ${await prof.step("build box", () => buildBox(cfg))}`);
