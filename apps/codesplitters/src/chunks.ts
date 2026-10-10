@@ -15,9 +15,37 @@ import type { ArtifactsRepo, CommitMeta, Env, R2Like, TreeEntry } from "./env.ts
 export const CHUNK = 8 * 2 ** 20;
 
 const prefix = (slug: string) => `levels/${slug}/`;
-const chunkKey = (slug: string, sha: string, n: number) => `${prefix(slug)}${sha}/${n}`;
+export const chunkKey = (slug: string, sha: string, n: number) => `${prefix(slug)}${sha}/${n}`;
 /** A folder's tree_cache key: a git hash can't start with "r2:". */
 const treeKey = (slug: string, sha: string, dir: string) => `r2:${slug}:${sha}:${dir}`;
+
+/** A file's place in the chunks: `chunk:offset:size`, or `skip:size:binary` for one that isn't stored. */
+export type ChunkFile = [path: string, entry: Omit<TreeEntry, "name">];
+
+/** Whether a file is kept, and how its entry says so when it isn't (too big, or binary). */
+export const keep = (data: Uint8Array) => data.length <= MAX_BYTES && !data.includes(0);
+export const skipped = (size: number, binary: boolean): string => `skip:${size}:${binary ? 1 : 0}`;
+export const fileType = (mode: string): TreeEntry["type"] => (mode === "120000" ? "symlink" : mode === "100755" ? "exec" : "blob");
+
+/** Write level `slug`'s folders at `sha` into tree_cache, from every file's entry, and drop any other commit's. */
+export async function writeTrees(env: Env, slug: string, sha: string, files: Iterable<ChunkFile>) {
+  const dirs = new Map<string, TreeEntry[]>([["", []]]);
+  for (const [path, entry] of files) {
+    const segs = path.split("/");
+    for (let i = 1; i < segs.length; i++) {
+      const dir = segs.slice(0, i).join("/");
+      if (dirs.has(dir)) continue;
+      dirs.set(dir, []);
+      dirs.get(segs.slice(0, i - 1).join("/"))!.push({ name: segs[i - 1]!, mode: "40000", type: "tree", hash: treeKey(slug, sha, dir) });
+    }
+    dirs.get(segs.slice(0, -1).join("/"))!.push({ name: segs.at(-1)!, ...entry });
+  }
+  const rows = [...dirs].map(([dir, entries]) => env.DB.prepare("INSERT OR REPLACE INTO tree_cache (hash, entries) VALUES (?, ?)").bind(treeKey(slug, sha, dir), JSON.stringify(entries)));
+  for (let i = 0; i < rows.length; i += 100) await env.DB.batch(rows.slice(i, i + 100));
+  // The folders of any other commit: its chunks are gone. (";" comes just after ":".)
+  await env.DB.prepare("DELETE FROM tree_cache WHERE hash >= ? AND hash < ? AND NOT (hash >= ? AND hash < ?)")
+    .bind(`r2:${slug}:`, `r2:${slug};`, `r2:${slug}:${sha}:`, `r2:${slug}:${sha};`).run();
+}
 
 /**
  * Read `repo`'s tarball into level `slug`'s chunks, with its submodules
@@ -31,17 +59,8 @@ export async function importChunks(env: Env, bucket: R2Like, p: {
   if (!res.ok || !res.body) throw new Error(`GitHub said ${res.status} for ${p.repo}'s tarball`);
   await dropChunks(bucket, p.slug);
 
-  const dirs = new Map<string, TreeEntry[]>([["", []]]);
-  const add = (path: string, entry: Omit<TreeEntry, "name">) => {
-    const segs = path.split("/");
-    for (let i = 1; i < segs.length; i++) {
-      const dir = segs.slice(0, i).join("/");
-      if (dirs.has(dir)) continue;
-      dirs.set(dir, []);
-      dirs.get(segs.slice(0, i - 1).join("/"))!.push({ name: segs[i - 1]!, mode: "40000", type: "tree", hash: treeKey(p.slug, p.sha, dir) });
-    }
-    dirs.get(segs.slice(0, -1).join("/"))!.push({ name: segs.at(-1)!, ...entry });
-  };
+  const listed: ChunkFile[] = [];
+  const add = (path: string, entry: Omit<TreeEntry, "name">) => listed.push([path, entry]);
 
   let n = 0, parts: Uint8Array[] = [], have = 0, files = 0, kept = 0, bytes = 0;
   const flush = async () => {
@@ -52,21 +71,16 @@ export async function importChunks(env: Env, bucket: R2Like, p: {
   for await (const f of tarFiles(res.body.pipeThrough(new DecompressionStream("gzip")))) {
     if (!("data" in f)) continue;
     files++;
-    const type = f.mode === "120000" ? "symlink" : f.mode === "100755" ? "exec" : "blob";
+    const type = fileType(f.mode);
     // Not stored: nobody can dig it. Its size (and whether it's binary) says why.
-    if (f.data.length > MAX_BYTES || f.data.includes(0)) { add(f.path, { mode: f.mode, type, hash: `skip:${f.data.length}:${f.data.includes(0) ? 1 : 0}` }); continue; }
+    if (!keep(f.data)) { add(f.path, { mode: f.mode, type, hash: skipped(f.data.length, f.data.includes(0)) }); continue; }
     if (have + f.data.length > CHUNK) await flush();
     add(f.path, { mode: f.mode, type, hash: `${n}:${have}:${f.data.length}` });
     parts.push(f.data), have += f.data.length, kept++, bytes += f.data.length;
   }
   await flush();
   for (const m of (await p.submodules?.()) ?? []) add(m.path, { mode: "160000", type: "gitlink", hash: m.commit });
-
-  const rows = [...dirs].map(([dir, entries]) => env.DB.prepare("INSERT OR REPLACE INTO tree_cache (hash, entries) VALUES (?, ?)").bind(treeKey(p.slug, p.sha, dir), JSON.stringify(entries)));
-  for (let i = 0; i < rows.length; i += 100) await env.DB.batch(rows.slice(i, i + 100));
-  // The folders of any other commit: its chunks went above. (";" comes just after ":".)
-  await env.DB.prepare("DELETE FROM tree_cache WHERE hash >= ? AND hash < ? AND NOT (hash >= ? AND hash < ?)")
-    .bind(`r2:${p.slug}:`, `r2:${p.slug};`, `r2:${p.slug}:${p.sha}:`, `r2:${p.slug}:${p.sha};`).run();
+  await writeTrees(env, p.slug, p.sha, listed);
   return { files, kept, bytes, chunks: n };
 }
 

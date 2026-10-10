@@ -73,6 +73,8 @@ export interface QueueConsumer {
   maxRetries?: number;
   /** Seconds before a retry when `retry()` doesn't say. @default 0 */
   retryDelay?: number;
+  /** Most batches the edge runs at once (up to 250); unset, it scales with the backlog. The desktop runs one at a time. */
+  maxConcurrency?: number;
 }
 
 /**

@@ -26,6 +26,9 @@ export interface Artifacts {
 }
 
 /** The slice of an R2 bucket that chunks.ts uses. */
+/** A LEVEL_DIGS message: a level's first step, or one part of a big level's swarm (swarm.ts). */
+export interface DigMessage { dig: string; user: string | null; part?: { sha: string; n: number; files: [string, string, number][] } }
+
 export interface R2Like {
   put(key: string, value: Blob | Uint8Array): Promise<unknown>;
   get(key: string, opts?: { range?: { offset: number; length: number } }): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
@@ -93,6 +96,8 @@ export interface Env {
   PREVIEW_RUNNER?: unknown;
   /** Webhook tries, one message each (hooks.ts): a Cloudflare Queue whose consumer is this Worker's queue(). */
   HOOKS: { send(body: { id: string; n: number }, opts?: { delaySeconds?: number }): Promise<void>; sendBatch(messages: Iterable<{ body: { id: string; n: number }; delaySeconds?: number }>): Promise<void> };
+  /** Level digs (levels.ts, swarm.ts): a dig's first step, then a big level's parts, side by side. Unset, an import runs in its request. */
+  LEVEL_DIGS?: { send(body: DigMessage): Promise<void>; sendBatch(messages: Iterable<{ body: DigMessage; delaySeconds?: number }>): Promise<void> };
   /** Queued requests, one message each (limits.ts), delayed until the caller's window has room: the same Worker's queue() consumes it. */
   JOBS: { send(body: { job: number }, opts?: { delaySeconds?: number }): Promise<void> };
   /** Tests only: stands in for fetch when a webhook is delivered (see hooks.ts). */

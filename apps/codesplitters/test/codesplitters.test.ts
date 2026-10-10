@@ -336,9 +336,10 @@ describe("levels", () => {
     const call = await local();
     call.artifacts.import = async () => { throw new Error("The repository exceeds the size limit."); };
     await post(call, "ana", "/api/login", { name: "ana" });
-    const r = await post(call, "ana", "/api/levels/bun/import", {});
-    expect(r.status).toBe(502);
-    const bun = (await (await call(null, "/api/levels")).json() as any[]).find((l) => l.slug === "bun");
+    // It's dug off the queue: the answer comes at once, the reason once the dig gives up.
+    expect((await post(call, "ana", "/api/levels/bun/import", {})).status).toBe(202);
+    let bun: any;
+    for (let i = 0; i < 200 && bun?.status !== "failed"; i++, await Bun.sleep(25)) bun = (await (await call(null, "/api/levels")).json() as any[]).find((l) => l.slug === "bun");
     expect([bun.status, bun.error]).toEqual(["failed", "The repository exceeds the size limit."]);
   });
 

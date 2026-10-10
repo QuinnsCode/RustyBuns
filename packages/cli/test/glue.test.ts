@@ -442,7 +442,7 @@ test("queue: wrangler and alchemy bind the producer and the consumer; the deskto
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
     bindings: {
-      JOBS: { type: "queue", queueName: "g-jobs", consumer: { batchSize: 5, maxWaitTimeMs: 2000, maxRetries: 6 } },
+      JOBS: { type: "queue", queueName: "g-jobs", consumer: { batchSize: 5, maxWaitTimeMs: 2000, maxRetries: 6, maxConcurrency: 4 } },
       OUTBOX: { type: "queue", queueName: "elsewhere", consumer: false },
     },
     targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
@@ -450,12 +450,12 @@ test("queue: wrangler and alchemy bind the producer and the consumer; the deskto
   const w = JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, ""));
   expect(w.queues).toEqual({
     producers: [{ binding: "JOBS", queue: "g-jobs" }, { binding: "OUTBOX", queue: "elsewhere" }],
-    consumers: [{ queue: "g-jobs", max_batch_size: 5, max_batch_timeout: 2, max_retries: 6 }],
+    consumers: [{ queue: "g-jobs", max_batch_size: 5, max_batch_timeout: 2, max_retries: 6, max_concurrency: 4 }],
   });
   const a = generateAlchemy(c);
   expect(a).toContain(`export const JOBS = Cloudflare.Queues.Queue("JOBS");`);
   expect(a).toContain(`JOBS: JOBS, OUTBOX: OUTBOX`);
-  expect(a).toContain(`yield* Cloudflare.Queues.Consumer("JOBSConsumer", { queueId: (yield* JOBS).queueId, scriptName: worker.workerName, settings: { batchSize: 5, maxWaitTimeMs: 2000, maxRetries: 6 } });`);
+  expect(a).toContain(`yield* Cloudflare.Queues.Consumer("JOBSConsumer", { queueId: (yield* JOBS).queueId, scriptName: worker.workerName, settings: { batchSize: 5, maxWaitTimeMs: 2000, maxRetries: 6, maxConcurrency: 4 } });`);
   expect(a).not.toContain(`OUTBOXConsumer`);
   // adopt names the queue as the config does.
   expect(generateAlchemy({ ...c, targets: { edge: { provider: "cloudflare", adopt: true } } })).toContain(`Cloudflare.Queues.Queue("JOBS", { name: "g-jobs" });`);

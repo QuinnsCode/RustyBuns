@@ -4,9 +4,9 @@
 
 import { fromText } from "./lines.ts";
 import { ensureCrewRemote, fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
-import { code, json, NAME, type Env } from "./env.ts";
+import { code, json, NAME, type DigMessage, type Env } from "./env.ts";
 import { identityRoutes, identify, isAdmin } from "./identity.ts";
-import { levelRoutes } from "./levels.ts";
+import { levelRoutes, runDigs } from "./levels.ts";
 import { evict, githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
@@ -357,7 +357,8 @@ const app = {
   // HOOKS is one webhook try per message. A batch is all one queue's, told apart by its
   // messages, since a stage's queues may be named otherwise.
   async queue(batch: { messages: readonly { body: unknown; ack(): void }[] }, env: Env) {
-    if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number")) await runJobs(batch as { messages: readonly { body: JobMessage; ack(): void }[] }, env, (r) => app.fetch(r, env));
+    if (batch.messages.some((m) => typeof (m.body as DigMessage)?.dig === "string")) await runDigs(batch as Parameters<typeof runDigs>[0], env);
+    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number")) await runJobs(batch as { messages: readonly { body: JobMessage; ack(): void }[] }, env, (r) => app.fetch(r, env));
     else await deliverHooks(batch as { messages: readonly { body: HookMessage; ack(): void }[] }, env);
   },
 };

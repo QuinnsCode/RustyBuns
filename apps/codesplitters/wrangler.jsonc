@@ -54,6 +54,10 @@
       {
         "binding": "JOBS",
         "queue": "codesplitters-jobs"
+      },
+      {
+        "binding": "LEVEL_DIGS",
+        "queue": "codesplitters-level-digs"
       }
     ],
     "consumers": [
@@ -66,6 +70,14 @@
         "queue": "codesplitters-jobs",
         "max_batch_size": 10,
         "max_batch_timeout": 1
+      },
+      {
+        "queue": "codesplitters-level-digs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 3,
+        "retry_delay": 20,
+        "max_concurrency": 8
       }
     ]
   },
