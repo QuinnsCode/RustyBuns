@@ -37,7 +37,7 @@ export async function access(handle: ArtifactsRepo, fallbackRemote: string, scop
 }
 
 /** A tree is named by its hash and never changes, so D1 keeps every one we read forever. */
-async function readTree(env: Env, handle: ArtifactsRepo, hash: string): Promise<TreeEntry[] | null> {
+export async function readTree(env: Env, handle: ArtifactsRepo, hash: string): Promise<TreeEntry[] | null> {
   const hit = await env.DB.prepare("SELECT entries FROM tree_cache WHERE hash = ?").bind(hash).first();
   if (hit) return JSON.parse(hit.entries);
   const entries = await handle.readTree(hash);
@@ -92,13 +92,60 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
   return { ok: true };
 }
 
-/** Push one catalogued file as a commit on top of the repo's branch; everything else stays. */
+/**
+ * Push one catalogued file as a commit on top of the repo's branch; everything else stays.
+ * Files whose push didn't land before ride along. One that doesn't land now
+ * waits in git_pending, and so does every commit while git moves to a fresh start.
+ */
 export async function pushCatalogue(env: Env, owner: string, repo: string, path: string, content: string, author: string, message: string) {
   const h = await handleFor(env, owner, repo);
   if (!h) return null;
-  const a = await access(h.handle, h.remote, "write", 300);
+  if (await env.DB.prepare("SELECT 1 FROM fresh_starts WHERE owner = ? AND repo = ? AND state IN ('walking', 'copying')").bind(owner, repo).first()) {
+    await pend(env, owner, repo, [path]);
+    throw new Error("git is moving to a fresh start; this commit lands when it's done");
+  }
   const text = content.endsWith("\n") ? content : content + "\n";
-  return { remote: a.remote, ...(await push(a.remote, a.token, { changes: { [path]: text }, message, author, branch: h.branch, base: h.handle })) };
+  return pushChanges(env, owner, repo, h, { ...(await pendingChanges(env, owner, repo)), [path]: text }, author, message);
+}
+
+/** Push the files still waiting, if any, as one commit. */
+export async function flushPending(env: Env, owner: string, repo: string) {
+  const h = await handleFor(env, owner, repo), changes = await pendingChanges(env, owner, repo);
+  if (!h || !Object.keys(changes).length) return null;
+  return pushChanges(env, owner, repo, h, changes, "codesplitters", `Catalogued while git was away: ${Object.keys(changes).join(", ")}`);
+}
+
+type Handle = NonNullable<Awaited<ReturnType<typeof handleFor>>>;
+async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, string>, author: string, message: string) {
+  try {
+    const a = await access(h.handle, h.remote, "write", 300);
+    const r = await push(a.remote, a.token, { changes, message, author, branch: h.branch, base: h.handle });
+    await env.DB.batch([
+      env.DB.prepare("UPDATE repos SET git_error = NULL, git_bytes = COALESCE(git_bytes, 0) + ? WHERE owner = ? AND name = ?").bind(r.bytes, owner, repo),
+      ...Object.keys(changes).map((p) => env.DB.prepare("DELETE FROM git_pending WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, p)),
+    ]);
+    return { remote: a.remote, ...r };
+  } catch (e) {
+    await pend(env, owner, repo, Object.keys(changes));
+    await env.DB.prepare("UPDATE repos SET git_error = ? WHERE owner = ? AND name = ?").bind(String((e as Error).message ?? e), owner, repo).run();
+    throw e;
+  }
+}
+
+const pend = (env: Env, owner: string, repo: string, paths: string[]) =>
+  env.DB.batch(paths.map((p) => env.DB.prepare("INSERT OR IGNORE INTO git_pending (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, p)));
+
+/** Each waiting file as it was last catalogued, private lines blank, as git gets it. */
+async function pendingChanges(env: Env, owner: string, repo: string): Promise<Record<string, string>> {
+  const { results } = await env.DB.prepare("SELECT path FROM git_pending WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const out: Record<string, string> = {};
+  for (const { path } of results as { path: string }[]) {
+    const [last] = (await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json()) as { rev: number }[];
+    if (!last) continue;
+    const doc = (await (await toFile(env, owner, repo, path, "codesplitters", "at", { headers: { "x-codesplitters-crew": "0" } }, `?rev=${last.rev}`)).json()) as { lines: { text: string }[] };
+    out[path] = doc.lines.map((l) => l.text).join("\n") + "\n";
+  }
+  return out;
 }
 
 export interface Walls { commit: string | null; doors: { name: string; path: string }[]; files: { name: string; path: string; lines: string[]; noodles?: Noodle[] }[] }

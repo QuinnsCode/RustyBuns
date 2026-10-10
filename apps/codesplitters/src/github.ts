@@ -9,7 +9,7 @@ import { json, NAME, type Env } from "./env.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
 export const DIG_TTL = 24 * 3600_000;
-const digCap = (env: Env) => Math.max(1, Number(env.DIG_CAP) || 20);
+export const digCap = (env: Env) => Math.max(1, Number(env.DIG_CAP) || 20);
 
 const API = "https://api.github.com";
 
@@ -60,7 +60,7 @@ export function parseRepo(s: string): string | null {
 
 /** Forget a repo: its rows, its files' Durable Objects, and its git. */
 export async function evict(env: Env, owner: string, name: string) {
-  const r = await env.DB.prepare("SELECT artifact FROM repos WHERE owner = ? AND name = ?").bind(owner, name).first();
+  const r = await env.DB.prepare("SELECT artifact, old_artifacts FROM repos WHERE owner = ? AND name = ?").bind(owner, name).first();
   const { results: files } = await env.DB.prepare("SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ? UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?")
     .bind(owner, name, owner, name).all();
   await Promise.all((files as { path: string; branch: string | null }[]).map((f) =>
@@ -69,7 +69,11 @@ export async function evict(env: Env, owner: string, name: string) {
     const [table, where = "owner = ? AND repo = ?"] = t.split("|");
     return env.DB.prepare(`DELETE FROM ${table} WHERE ${where}`).bind(owner, name);
   }));
-  if (r?.artifact) await env.ARTIFACTS?.delete?.(r.artifact as string).catch(() => false);
+  // Its git, any it moved off with a fresh start, and one still being copied.
+  const fresh = await env.DB.prepare("SELECT artifact, state FROM fresh_starts WHERE owner = ? AND repo = ?").bind(owner, name).first();
+  await env.DB.batch(["fresh_starts", "fresh_objects", "git_pending"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE owner = ? AND repo = ?`).bind(owner, name)));
+  const arts = [r?.artifact, ...JSON.parse((r?.old_artifacts as string) ?? "[]"), fresh && fresh.state !== "done" ? fresh.artifact : null];
+  for (const a of arts) if (a) await env.ARTIFACTS?.delete?.(a as string).catch(() => false);
 }
 
 /** Drop the expired digs, then, to make room for `more`, the oldest past the cap. */

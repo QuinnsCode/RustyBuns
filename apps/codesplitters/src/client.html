@@ -234,6 +234,9 @@
   .lvl-n { font: 500 12px var(--mono); color: var(--faint); }
   .fit-ready, .fit-likely { color: var(--fg); } .fit-ready::before { content: "●"; color: var(--accent); } .fit-poor { color: var(--faint); }
   .fit-why { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+  /* The limits panel: a thin meter per cap. */
+  .meter { height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; } .meter i { display: block; height: 100%; background: var(--fg); } .meter.hot i { background: var(--accent); }
+  .lim { display: grid; gap: 3px; font-size: 13px; } .lim .row { justify-content: space-between; } .lim code { font-size: 11.5px; }
   .lvl-st { font: 500 11px var(--mono); color: var(--muted); } .st-ready { color: var(--fg); } .st-ready::before { content: "● "; color: var(--accent); }
 
   /* Profiles, collections, search. */
@@ -898,8 +901,45 @@ const views = {
       <span class="grow"></span>
       ${playButton(`r/${owner}/${repo}`)}
       ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. Agents join the same way.</span><div class="copyline"><input name="name" placeholder="agent-linter or a person's handle" required><button class="btn primary">Invite</button></div></form></div>` : ""}
+      ${me() ? `<div class="pop"><button class="btn" id="limits" title="what this repo and you may do, and how close you are">${icon("gauge")}Limits</button><div class="panel" id="limits-panel" hidden style="width:380px;max-height:70vh;overflow:auto"><span class="muted">…</span></div></div>` : ""}
       ${r.clone ? `<div class="pop"><button class="btn primary" id="clone">${icon("code")}Clone</button><div class="panel" hidden><b>${icon("terminal")} Clone with git</b><span class="muted" style="font-size:13px">A real git remote in Cloudflare Artifacts. The token in it is read-only and lasts an hour.</span><div class="copyline"><input readonly value="${esc(r.clone)}"><button class="btn" id="clone-copy">${icon("copy")}</button></div></div></div>` : ""}
     </div>`;
+  },
+  /** Every cap on this repo and on you, and how close each is; the owner can start git fresh from here. */
+  async wireLimits(owner, repo, poll) {
+    const el = $("#limits-panel");
+    if (!el || el.hidden) return;
+    const L = await api(`/repos/${owner}/${repo}/limits`).catch((e) => ({ error: e.message }));
+    if (L.error) { el.innerHTML = `<span class="muted">${esc(L.error)}</span>`; return; }
+    const mb = (n) => n >= 1024 ** 3 ? `${+(n / 1024 ** 3).toFixed(2)} GB` : n >= 1024 ** 2 ? `${+(n / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+    const meter = (used, max) => `<div class="meter${used / max >= 0.8 ? " hot" : ""}"><i style="width:${Math.min(100, (used / max) * 100).toFixed(1)}%"></i></div>`;
+    const g = L.git, f = L.fresh, isOwner = owner === me(), moving = f && (f.state === "walking" || f.state === "copying");
+    const gitLine = g.bytes == null ? "not measured yet: a fresh start measures it" : `${g.measured ? "" : "at least "}${mb(g.bytes)} of ${mb(g.cap)}`;
+    el.innerHTML = `<b>${icon("gauge")} Limits</b>
+      <div class="lim"><div class="row"><span>Git in Artifacts</span><span class="muted">${gitLine}</span></div>${meter(g.bytes ?? 0, g.cap)}
+        <span class="muted">Each repo's git holds up to ${mb(g.cap)}, and no file over ${mb(g.fileCap)}. Every commit adds to it.${g.measured ? "" : " Counted: what was pushed from here."}</span></div>
+      ${g.error ? `<div class="lim"><span>${icon("triangle-alert")} The last push didn't land</span><code>${esc(g.error)}</code></div>` : ""}
+      ${g.pending.length ? `<div class="lim"><span>Waiting for git: ${g.pending.map((p) => `<code>${esc(p)}</code>`).join(" ")}</span><span class="muted">They're committed here, and land with the next push that does.</span></div>` : ""}
+      ${moving ? `<div class="lim"><div class="row"><span>Starting fresh</span><span class="muted">${f.state === "walking" ? "reading the tree" : `${f.done} of ${f.total} objects`}</span></div>${meter(f.done, f.total || 1)}</div>`
+        : f?.state === "failed" ? `<div class="lim"><span>The fresh start stopped</span><code>${esc(f.error)}</code></div>`
+        : f?.state === "done" ? `<div class="lim muted">Started fresh ${new Date(f.finished_at).toLocaleDateString()}: ${mb(f.bytes)} copied.</div>` : ""}
+      ${isOwner && !moving ? `<div class="lim"><button class="btn${g.full ? " primary" : ""}" id="fresh-go">${icon("sparkles")}${f?.state === "failed" ? "Carry on with the fresh start" : "Start git fresh"}</button>
+        <span class="muted">Moves git to a new Artifact holding just the current files, as one commit. Every line keeps its authors and history here; only git's own log starts over. The old Artifact is kept until you delete it.${g.full ? " Git is nearly full, so this starts by itself on the next commit." : ""}</span></div>` : ""}
+      ${isOwner && g.old.length ? `<div class="lim"><span>Old git, kept</span>${g.old.map((a) => `<div class="row"><code>${esc(a)}</code><button class="btn" data-old="${esc(a)}">${icon("trash-2")}Delete</button></div>`).join("")}</div>` : ""}
+      <div class="lim"><div class="row"><span>Opening a file</span><span class="muted">${mb(L.files.maxBytes)}, ${L.files.maxLines.toLocaleString()} lines</span></div><span class="muted">Bigger files stay in git but can't be opened as lines.</span></div>
+      ${L.dig.expires_at ? `<div class="lim"><div class="row"><span>Temporary dig</span><span class="muted">gone ${new Date(L.dig.expires_at).toLocaleString()}</span></div><span class="muted">Visitors' digs last a day; the oldest goes once ${L.dig.cap} are live.</span></div>` : ""}
+      ${L.you.length ? `<div class="lim"><span>You, right now</span>${L.you.filter((u) => u.on).map((u) => `<div class="row"><span>${esc(u.label)}</span><span class="muted">${u.used} of ${u.max} per ${every(u.window_s)}</span></div>${meter(u.used, u.max)}`).join("")}</div>` : ""}`;
+    icons();
+    $("#fresh-go")?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try { await api(`/repos/${owner}/${repo}/fresh`, {}); } catch (err) { toast(err.message); }
+      views.wireLimits(owner, repo, true);
+    });
+    el.querySelectorAll("[data-old]").forEach((b) => b.addEventListener("click", async () => {
+      await api(`/repos/${owner}/${repo}/fresh?artifact=${encodeURIComponent(b.dataset.old)}`, undefined, "DELETE"); toast(`Deleted ${b.dataset.old}`); views.wireLimits(owner, repo);
+    }));
+    // While it runs, each look takes it a step further.
+    if (moving) setTimeout(async () => { await api(`/repos/${owner}/${repo}/fresh`).catch(() => null); views.wireLimits(owner, repo, true); }, poll ? 300 : 1200);
   },
   /** The right-hand panel every repo page shares: where it came from, and who's in it. */
   repoDetails(owner, repo, r) {
@@ -1164,6 +1204,7 @@ const views = {
       popover($("#invite"));
       $("#invite-form").addEventListener("submit", async (e) => { e.preventDefault(); await api(`/repos/${owner}/${repo}/collaborators`, { name: e.target.name.value }); toast(`${e.target.name.value} joined the crew`); route(); });
     }
+    if ($("#limits")) { popover($("#limits")); $("#limits").addEventListener("click", () => { if (!$("#limits-panel").hidden) views.wireLimits(owner, repo); }); }
     if ($("#clone")) { popover($("#clone")); $("#clone-copy").addEventListener("click", () => copy(r.clone, "Clone command copied")); }
     $("#flip")?.addEventListener("click", async () => { await api(`/repos/${owner}/${repo}`, { visibility: r.visibility === "private" ? "public" : "private" }, "PUT"); route(); });
     views.wireBranches(owner, repo, r);
@@ -1702,6 +1743,7 @@ async function commands() {
       try { await api(`/repos/${c.owner}/${c.repo}/branches/${encodeURIComponent(name)}/merge`, {}); toast(`Merged ${name}`); } catch (e) { toast(`Not merged: ${e.message}`); }
       route();
     }, "branch name");
+    if (u) add("This repo", "gauge", "Show this repo's limits", `GET /api/repos/${c.owner}/${c.repo}/limits`, () => { const b = $("#limits"); if (b) { b.click(); } });
     if (c.clone) add("This repo", "terminal", "Copy the git clone command", `GET /api/repos/${c.owner}/${c.repo}`, () => copy(c.clone, "Clone command copied"));
     add("This repo", "gamepad-2", "Play this repo's backrooms", `WS /api/game/r/${c.owner}/${c.repo}/ws`, () => (location.href = `/play.html#r/${c.owner}/${c.repo}`));
   }
