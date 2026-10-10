@@ -45,7 +45,8 @@ export default defineConfig({
     ADMINS: { type: "var", value: "" },
   },
   targets: {
-    edge: { provider: "cloudflare" },
+    // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler.
+    edge: { provider: "cloudflare", adopt: true },
     desktop: { mode: "worker", window: "app" },
   },
 });
