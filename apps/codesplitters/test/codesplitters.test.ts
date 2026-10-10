@@ -401,6 +401,74 @@ describe("rate limits", () => {
     expect((await repo(ana, "three")).status).toBe(201);
     expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
   });
+
+  test("over a limit: reject, log, or flag; the log; and an admin's reset", async () => {
+    const { call, person } = await accounts({ ADMINS: "boss-person" });
+    const boss = await person("boss@example.com", "boss-person"), ana = await person("ana@example.com", "ana-lyst");
+    const put = (rules: unknown) => call(null, "/api/admin/limits", { method: "PUT", headers: { cookie: boss }, body: JSON.stringify({ rules }) });
+    const get = async () => (await (await call(null, "/api/admin/limits", { headers: { cookie: boss } })).json()) as any;
+    const repo = (name: string) => call(null, "/api/repos", { method: "POST", headers: { cookie: ana, ...ip }, body: JSON.stringify({ name }) });
+    expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "shrug" }])).status).toBe(400);
+
+    // Rejected: a 429, and one log entry for the window however many times she tries.
+    expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ on_fail: "reject", group: "Repos", defaults: { on_fail: "reject" } });
+    expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true }])).status).toBe(200);
+    expect((await repo("a")).status).toBe(201);
+    expect((await repo("b")).status).toBe(429);
+    expect((await repo("c")).status).toBe(429);
+    expect((await get()).events.map((e: any) => [e.rule, e.who, e.action])).toEqual([["repo", "@ana-lyst", "reject"]]);
+
+    // An admin resets her: she's back under the cap, and out of the log.
+    expect((await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: ana }, body: JSON.stringify({ who: "@ana-lyst" }) })).status).toBe(403);
+    expect((await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ who: "@ana-lyst", rule: "repo" }) })).status).toBe(200);
+    expect((await get()).events).toEqual([]);
+    expect((await repo("d")).status).toBe(201);
+
+    // Logged: let through, noted. Flagged: let through, and listed.
+    await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "log" }]);
+    expect((await repo("e")).status).toBe(201);
+    expect((await get()).flagged).toEqual([]);
+    await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ who: "@ana-lyst" }) });
+    await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "flag" }]);
+    expect((await repo("f")).status).toBe(201);
+    expect((await repo("g")).status).toBe(201);
+    const { events, flagged } = await get();
+    expect(events.map((e: any) => e.action)).toEqual(["flag"]);
+    expect(flagged).toMatchObject([{ who: "@ana-lyst", rules: ["repo"], times: 1 }]);
+    // A save that leaves on_fail out keeps it.
+    await put([{ name: "repo", max: 2, window_s: 86400, enabled: true }]);
+    expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 2, on_fail: "flag" });
+  });
+  test("live edits count against the edit limit, over the socket and POST alike", async () => {
+    const call = await local({ ADMINS: "boss" });
+    await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
+    const open = async (headers: Record<string, string>) => {
+      const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...headers } })) as any).webSocket, got: any[] = [];
+      ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+      ws.queue.splice(0);
+      let id = 0;
+      const edit = async (text: string) => {
+        ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
+        for (let i = 0; i < 200; i++) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+      };
+      return { edit };
+    };
+    const sock = await open(ip);
+    expect((await sock.edit("1")).type).toBe("ack");
+    expect((await sock.edit("2")).type).toBe("ack");
+    const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
+    expect((await ops("3")).status).toBe(200);
+    const over = await sock.edit("4");
+    expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
+    expect(over.retryAfter).toBeGreaterThan(0);
+    expect((await ops("5")).status).toBe(429);
+    // The desktop isn't counted, and a page can't name who its socket counts as.
+    const desk = await open({ "x-codesplitters-limit-as": "@someone-else" });
+    expect((await desk.edit("6")).type).toBe("ack");
+    expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
+  });
 });
 
 describe("github", () => {

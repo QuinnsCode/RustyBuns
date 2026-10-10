@@ -249,7 +249,7 @@
   .palette li.on { background: var(--canvas); box-shadow: inset 2px 0 0 var(--accent); }
   .palette .group { padding: 10px 10px 3px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--faint); cursor: default; }
   .palette .foot { padding: 8px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); background: var(--canvas); }
-  /* The drawer: a sheet that slides in from the right (sign in, your handle, rate limits). */
+  /* The drawer: a sheet that slides in from the right (sign in, your handle). */
   .drawer { position: fixed; inset: 0; z-index: 55; }
   .drawer .scrim { position: absolute; inset: 0; background: rgba(255,255,255,.55); backdrop-filter: blur(2px); opacity: 0; transition: opacity .18s; }
   .drawer .sheet { position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--border-2); box-shadow: -24px 0 64px -24px rgba(0,0,0,.22); transform: translateX(24px); opacity: 0; transition: transform .22s cubic-bezier(.2, .8, .2, 1), opacity .18s; }
@@ -283,9 +283,17 @@
   .rule .ctl input { width: 76px; font-family: var(--mono); text-align: right; }
   .rule .ctl select { padding: 5px 6px; }
   .rule.off .ctl, .rule.off .use { opacity: .4; }
-  .rule .use { display: flex; gap: 6px; align-items: center; font: 400 11.5px var(--mono); color: var(--faint); }
+  .rule .use { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; font: 400 11.5px var(--mono); color: var(--faint); }
   .rule .use .hot { color: var(--accent); }
   .rule .use a { color: var(--muted); }
+  /* The rate limits page: rule groups two-up on wide screens, a save bar that sticks, the log as rows. */
+  .limits .rgroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 0 16px; align-items: start; }
+  .limits .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 0; margin-bottom: 16px; background: var(--bg); border-top: 1px solid var(--border); }
+  .limits .ev .btn { margin-left: auto; }
+  .limits .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
+  .limits .ev:first-of-type { border-top: 0; }
+  .limits .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
+  .limits .tag.reject { color: var(--del-fg); } .limits .tag.flag { color: var(--accent); border-color: var(--accent); }
   .switch { position: relative; width: 30px; height: 18px; margin-left: auto; flex: none; }
   .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
   .switch i { position: absolute; inset: 0; border-radius: 9px; background: var(--border-2); transition: background .15s; pointer-events: none; }
@@ -298,6 +306,11 @@
     .hero .wrap, .two, .wb { grid-template-columns: 1fr; } .explorer { max-height: 220px; grid-row: auto; } .details { grid-column: auto; }
     .jump { min-width: 0; flex: 1; } .jump span { display: none; } .ln { grid-template-columns: 44px minmax(0, 1fr); } .ln .by { display: none; }
     .wrap { padding: 0 16px; } .top { padding: 10px 16px; } .hero .wrap { padding-top: 40px; }
+  }
+  /* Phones: the header keeps its icons and the handle, and drops the ⌘K hint and Play's label. */
+  @media (max-width: 480px) {
+    .top { gap: 6px; } #who { gap: 2px; } .top .btn.ghost { padding: 7px 6px 6px; }
+    .jump { flex: none; padding: 6px 7px; } .jump kbd { display: none; } #topplay { font-size: 0; gap: 0; }
   }
 </style>
 </head>
@@ -349,9 +362,8 @@ async function refreshSession() { session = await api("/session").catch(() => se
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.admin ? `<button class="btn ghost" id="limits" title="rate limits">${icon("gauge")}</button>` : ""}<a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.admin ? `<a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
-    $("#limits")?.addEventListener("click", limitsDrawer);
     return icons();
   }
   if (session.mode === "alias") {
@@ -466,42 +478,60 @@ function handleDrawer() {
   $("#notme").addEventListener("click", (e) => { e.preventDefault(); signOut(); });
 }
 
-// Rate limits (admins): each rule's cap, its window, and this window's traffic.
+// Rate limits (admins): each rule's cap, its window, what happens to a caller
+// over it, and this window's traffic, grouped by what they protect; then who's
+// flagged and the last week's log of callers going over, each with a reset.
 const WINDOWS = [[60, "minute"], [600, "10 minutes"], [3600, "hour"], [86400, "day"], [604800, "week"]];
 const every = (s) => (WINDOWS.find(([w]) => w === s)?.[1]) ?? `${s} seconds`;
-async function limitsDrawer() {
-  const { rules } = await api("/admin/limits");
+const ON_FAIL = [["reject", "Reject (429)"], ["log", "Let through, log it"], ["flag", "Let through, flag the caller"]];
+const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
+async function limitsPage() {
+  const { rules, events, flagged } = await api("/admin/limits");
+  const label = (name) => rules.find((r) => r.name === name)?.label ?? name;
   const row = (r) => {
-    const d = r.defaults, changed = d && (d.max !== r.max || d.window_s !== r.window_s || !r.enabled);
+    const d = r.defaults, changed = d && (d.max !== r.max || d.window_s !== r.window_s || d.on_fail !== r.on_fail || !r.enabled);
     const opts = (WINDOWS.some(([w]) => w === r.window_s) ? WINDOWS : [...WINDOWS, [r.window_s, every(r.window_s)]])
       .map(([w, l]) => `<option value="${w}"${w === r.window_s ? " selected" : ""}>${l}</option>`).join("");
     return `<div class="rule${r.enabled ? "" : " off"}" data-name="${r.name}">
       <label class="rhead"><b>${esc(r.label)}</b><span class="switch"><input type="checkbox" name="enabled"${r.enabled ? " checked" : ""} aria-label="limit ${esc(r.label)}"><i></i></span></label>
       <span class="muted small">${esc(r.what)}, per ${r.per === "ip" ? "IP" : "handle"}</span>
       <div class="ctl"><input name="max" type="number" min="1" max="100000" value="${r.max}" aria-label="most allowed"><span>per</span><select name="window_s" aria-label="window">${opts}</select></div>
-      <div class="use"><span>this ${every(r.window_s)}: ${r.now.hits} from ${r.now.callers} caller${r.now.callers === 1 ? "" : "s"}</span>${r.now.blocked ? `<span class="hot">· ${r.now.blocked} blocked</span>` : ""}
-        <span class="grow"></span>${changed ? `<a href="#" data-reset title="default: ${d.max} per ${every(d.window_s)}">reset</a>` : ""}</div>
+      <div class="ctl"><span>over it:</span><select name="on_fail" aria-label="when a caller goes over">${ON_FAIL.map(([v, l]) => `<option value="${v}"${v === r.on_fail ? " selected" : ""}>${l}</option>`).join("")}</select></div>
+      <div class="use"><span>this ${every(r.window_s)}: ${r.now.hits} from ${r.now.callers} caller${r.now.callers === 1 ? "" : "s"}</span>${r.now.blocked ? `<span class="hot">· ${r.now.blocked} over</span>` : ""}
+        <span class="grow"></span>${changed ? `<a href="#" data-default title="default: ${d.max} per ${every(d.window_s)}, ${d.on_fail}">defaults</a>` : ""}</div>
     </div>`;
   };
-  drawer.open("Admin", `
-    <h2 id="drawer-title">Rate limits</h2>
-    <p class="muted lede">What costs money or invites abuse. Counted per handle, or per IP before sign-in. Admins and the desktop app aren't counted.</p>
-    <form id="limits-form">${rules.map(row).join("")}</form>`,
-    `<span class="muted small" id="limits-msg"></span><span class="grow"></span><button class="btn" id="limits-close">Close</button><button class="btn primary" id="limits-save">${icon("save")}Save</button>`);
+  const groups = [...new Set(rules.map((r) => r.group))];
+  const reset = (who, rule) => `<button class="btn small" data-reset="${esc(who)}"${rule ? ` data-rule="${rule}"` : ""} title="clear ${rule ? "this rule's" : "every"} count for ${esc(who)}">${icon("rotate-ccw")}Reset</button>`;
+  app.innerHTML = `<div class="wrap limits" style="padding-top:24px">
+    <h2 style="margin:0 0 6px;font-weight:600">${icon("gauge")} Rate limits</h2>
+    <p class="muted" style="margin:0 0 18px">Behind the curtain: everything that costs money or invites abuse, and what happens when someone goes over. Counted per handle, or per IP before sign-in. Admins and the desktop app aren't counted.</p>
+    ${flagged.length ? `<div class="box"><div class="bar">${icon("flag")}<b>Flagged</b><span class="muted">went over a rule set to flag, this week</span></div>
+      ${flagged.map((f) => `<div class="body ev"><b>${esc(f.who)}</b><span class="muted">${f.rules.map(label).map(esc).join(", ")} · ${f.times}× · ${ago(f.last)}</span>${reset(f.who)}</div>`).join("")}</div>` : ""}
+    <form id="limits-form" class="rgroups">${groups.map((g) => `<div class="box"><div class="bar"><b>${esc(g)}</b></div><div class="body">${rules.filter((r) => r.group === g).map(row).join("")}</div></div>`).join("")}</form>
+    <div class="savebar"><span class="muted small" id="limits-msg"></span><span class="grow"></span><button class="btn primary" id="limits-save">${icon("save")}Save</button></div>
+    <div class="box"><div class="bar">${icon("history")}<b>Over the cap</b><span class="muted">the first time each caller went over, per window, this week</span></div>
+      ${events.map((e) => `<div class="body ev"><span class="muted">${ago(e.at)}</span><b>${esc(e.who)}</b><span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${e.action === "reject" ? "rejected" : e.action === "log" ? "logged" : "flagged"}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="body muted">Nobody has gone over a limit this week.</div>'}</div>
+  </div>`;
   const form = $("#limits-form");
   form.addEventListener("change", (e) => { const r = e.target.closest(".rule"); r?.classList.toggle("off", !r.querySelector("[name=enabled]").checked); $("#limits-msg").textContent = "Unsaved changes"; });
-  for (const a of form.querySelectorAll("[data-reset]")) a.addEventListener("click", (e) => {
+  for (const a of form.querySelectorAll("[data-default]")) a.addEventListener("click", (e) => {
     e.preventDefault();
     const el = a.closest(".rule"), d = rules.find((r) => r.name === el.dataset.name).defaults;
-    el.querySelector("[name=max]").value = d.max; el.querySelector("[name=window_s]").value = d.window_s; el.querySelector("[name=enabled]").checked = true;
+    el.querySelector("[name=max]").value = d.max; el.querySelector("[name=window_s]").value = d.window_s; el.querySelector("[name=on_fail]").value = d.on_fail; el.querySelector("[name=enabled]").checked = true;
     form.dispatchEvent(new Event("change"));
   });
-  $("#limits-close").addEventListener("click", () => drawer.close());
+  for (const b of app.querySelectorAll("[data-reset]")) b.addEventListener("click", async () => {
+    try { await api("/admin/limits/reset", { who: b.dataset.reset, rule: b.dataset.rule }); toast(`Reset ${b.dataset.reset}`); limitsPage(); }
+    catch (err) { toast(String(err.message || err)); }
+  });
   $("#limits-save").addEventListener("click", async () => {
-    const out = [...form.querySelectorAll(".rule")].map((el) => ({ name: el.dataset.name, max: Number(el.querySelector("[name=max]").value), window_s: Number(el.querySelector("[name=window_s]").value), enabled: el.querySelector("[name=enabled]").checked }));
-    try { await api("/admin/limits", { rules: out }, "PUT"); toast("Rate limits saved"); limitsDrawer(); }
+    const out = [...form.querySelectorAll(".rule")].map((el) => ({ name: el.dataset.name, max: Number(el.querySelector("[name=max]").value), window_s: Number(el.querySelector("[name=window_s]").value),
+      on_fail: el.querySelector("[name=on_fail]").value, enabled: el.querySelector("[name=enabled]").checked }));
+    try { await api("/admin/limits", { rules: out }, "PUT"); toast("Rate limits saved"); limitsPage(); }
     catch (err) { $("#limits-msg").textContent = String(err.message || err); }
   });
+  icons();
 }
 async function signOut() {
   await (session.mode === "accounts" ? api("/auth/sign-out", {}) : api("/logout", {})).catch(() => {});
@@ -1146,7 +1176,7 @@ const views = {
           : inp.value === "" ? [{ kind: "delete", line: line.id, base: line.rev }]
           : [{ kind: "set", line: line.id, base: line.rev, text: inp.value }];
         // The broadcast has already updated `doc`; close the editor and show it.
-        try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
+        try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = /^Slow down/.test(err.message) ? err.message : "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
       });
     };
     draw(doc); drawCommits(commits);
@@ -1363,6 +1393,12 @@ const views = {
     icons();
   },
 
+  async admin(section) {
+    ctx = { view: "admin" };
+    if (!session.admin) throw new Error("Admins only.");
+    if (section === "limits") return limitsPage();
+    location.hash = "#/admin/limits";
+  },
   async search(q) {
     q = decodeURIComponent(q || "");
     ctx = { view: "search", q };
@@ -1531,7 +1567,7 @@ async function commands() {
   if (u) add("Anywhere", "user", "Your profile", `GET /api/users/${u}`, () => (location.hash = `#/u/${u}`));
   for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
-  if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", limitsDrawer);
+  if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
   return out;
