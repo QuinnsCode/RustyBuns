@@ -17,6 +17,8 @@ const TOKEN = "cf-scoped-token-0123456789abcdWXYZ";
 const ACCOUNT = "0123456789abcdef0123456789abcdef";
 const SECRETS = btoa(String.fromCharCode(...new Uint8Array(32).map((_, i) => i * 7)));
 const origin = "http://codesplitters.local";
+// hosted() signs up three people (scrypt each) and pushes a commit: seconds under the full suite.
+const SIGNUPS = 20_000;
 
 /** A deploy container: its server answers each command like deploy.test.ts's fake machine, echoing the token once to check it's hidden. */
 function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
@@ -141,7 +143,7 @@ describe("the deploy key", () => {
     await send("ryan-quinn", K, { token: TOKEN.replace("WXYZ", "ABCD"), account_id: ACCOUNT }, "PUT");
     expect(await (await call("ryan-quinn", K)).json()).toMatchObject({ last4: "ABCD" });
     expect(await (await call("ryan-quinn", K, { method: "DELETE" })).json()).toEqual({ set: false });
-  });
+  }, SIGNUPS);
 
   test("an owner who isn't in ADMINS can't store one or deploy from the site", async () => {
     const { call, send } = await hosted();
@@ -150,7 +152,7 @@ describe("the deploy key", () => {
     expect((await res.json() as any).error).toContain("ADMINS");
     expect((await send("sam-sample", "/api/repos/sam-sample/lab/deploy", {})).status).toBe(403);
     expect(await (await call("sam-sample", "/api/repos/sam-sample/lab/deploy")).json()).toMatchObject({ can_run: false, hosted: true });
-  });
+  }, SIGNUPS);
 
   test("with accounts off, a key can't be stored: anyone could claim the owner's handle", async () => {
     const call = await boot({ GH_CLI: "off", ADMINS: "ryan", DEPLOY_SECRETS_KEY: SECRETS });
@@ -181,7 +183,7 @@ describe("a hosted deploy", () => {
     expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "button", status: "done", runner: "hosted", key_last4: "WXYZ", commit_hash: SHA, url: "https://lab.ryan.workers.dev" });
     expect(JSON.stringify(d)).not.toContain(TOKEN);
     expect(d.history[0].out).toContain("<deploy key>");
-  });
+  }, SIGNUPS);
 
   test("the owner's own commit ships when they turned it on; crew commits never do", async () => {
     const { call, send, seen } = await hosted();
@@ -194,7 +196,7 @@ describe("a hosted deploy", () => {
     const d = await settle(call);
     expect(d.history).toHaveLength(1);
     expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "commit", runner: "hosted", status: "done" });
-  });
+  }, SIGNUPS);
 
   test("a removed key fails the run instead of deploying", async () => {
     const { call, send, seen, env } = await hosted();
@@ -207,7 +209,7 @@ describe("a hosted deploy", () => {
     const d = await settle(call);
     expect(d.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("deploy key was removed") });
     expect(seen.env).toEqual([]);
-  });
+  }, SIGNUPS);
 });
 
 test("an agent container never gets the deploy secrets", async () => {

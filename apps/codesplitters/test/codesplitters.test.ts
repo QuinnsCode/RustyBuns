@@ -270,6 +270,10 @@ describe("app", () => {
   });
 });
 
+// Pushing and cloning spawn git a few dozen times (each request is a `git http-backend`):
+// a couple hundred ms alone, seconds under the full suite, so these tests get longer.
+const GIT = 20_000;
+
 describe("artifacts", () => {
   test("cataloguing pushes the repo's catalogued files as a git commit you can clone", async () => {
     const call = await local();
@@ -293,7 +297,7 @@ describe("artifacts", () => {
     expect(await p.exited).toBe(0);
     expect(await Bun.file(`${dir}/dig/README`).text()).toBe("found it\n");
     (await import("node:fs")).rmSync(dir, { recursive: true, force: true });
-  });
+  }, GIT);
 });
 
 describe("levels", () => {
@@ -339,7 +343,7 @@ describe("levels", () => {
     expect(await (await repo.readFile({ ref: "main", path: "README.md" }))!.text()).toBe("hono\n");
     // The level itself is untouched.
     expect((await (await ns.get("level-hono")).log()).length).toBe(1);
-  });
+  }, GIT);
 });
 
 // Every signup hashes a real password (scrypt), a few hundred ms per test alone and
