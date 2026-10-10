@@ -379,7 +379,7 @@ test("experimental.wheel: agent mints secrets in the stack, op secrets go throug
   expect(() => generateAlchemy({ ...human, bindings: { X: { type: "secret", op: "vault/item" } } })).toThrow(/1Password reference/);
   // Optional: a missing item resolves to nothing, and the Worker binds it only when set.
   const opt = { ...human, bindings: { ...c.bindings, AI_KEY: { type: "secret" as const, op: "op://rb-test/ai/key", optional: true } } };
-  expect(generateEnvSchema(opt)).toContain("# @sensitive\nAI_KEY=op(op://rb-test/ai/key, allowMissing=true)\n");
+  expect(generateEnvSchema(opt)).toContain("# @sensitive @optional\nAI_KEY=op(op://rb-test/ai/key, allowMissing=true)\n");
   const optStack = generateAlchemy(opt);
   expect(optStack).toContain('...(process.env.AI_KEY ? { AI_KEY: Config.redacted("AI_KEY") } : {})');
   expect(optStack).toContain("declare const process");

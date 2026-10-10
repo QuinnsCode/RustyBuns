@@ -57,7 +57,7 @@ export function generateEnvSchema(c: RustyBunsConfig): string | null {
   if (vaulted.length && wheel === "agent") lines.push(``, `# A 1Password service account token scoped to this stack's vault.`, `# @type=opServiceAccountToken @sensitive @internal @required`, `OP_TOKEN=`);
   for (const s of all) {
     lines.push(``);
-    if (s.op && s.optional) lines.push(`# Optional: unset when the item is missing.`, `# @sensitive`, `${s.name}=op(${s.op}, allowMissing=true)`);
+    if (s.op && s.optional) lines.push(`# Optional: unset when the item is missing.`, `# @sensitive @optional`, `${s.name}=op(${s.op}, allowMissing=true)`);
     else if (s.op) lines.push(`# @sensitive @required`, `${s.name}=op(${s.op})`);
     else if (minted.has(s.name)) lines.push(`# ${s.name}: minted by the stack on create, gone on destroy (not resolved here).`);
     else lines.push(`# From the shell or .dev.vars.`, `# @sensitive`, `${s.name}=`);
