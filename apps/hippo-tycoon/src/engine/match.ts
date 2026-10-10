@@ -5,7 +5,7 @@
 import { bot, newBotMem, type BotMem } from "../sim/bots.ts";
 import { seedOf } from "../sim/rng.ts";
 import { COUNTDOWN_TICKS, DEFAULT_ROUND_SECS, PERSONALITIES, SEATS, SEAT_NAMES, type Difficulty } from "../sim/rules.ts";
-import type { StepFn } from "../sim/native.ts";
+import type { NativeSim } from "../sim/native.ts";
 import { newState, step } from "../sim/step.ts";
 import { NO_INPUT, type Event, type Hippo, type Input, type State } from "../sim/types.ts";
 
@@ -69,9 +69,11 @@ export class Match {
   cfg: Cfg;
   seats: Seat[];
   round = 0;
-  sim: State;
-  /** The rules engine: TypeScript step(), or the Rust twin's drop-in (src/sim/native.ts). Same results either way. */
-  stepper: StepFn = step;
+  private state!: State;
+  /** The Rust engine (src/sim/native.ts), or null for TypeScript. Same results either way. */
+  private native: NativeSim | null = null;
+  /** The Rust engine holds the round and the bots; `state`, `mem` and `botRng` are behind it until home(). */
+  private held = false;
   private countdown = 0;
   private latch: Latch[] = Array.from({ length: SEATS }, () => ({ move: 0, gulp: false, bellow: false }));
   private mem: BotMem[] = [];
@@ -86,6 +88,37 @@ export class Match {
     this.sim = newState(mixSeed(baseSeed, 0), this.cfg.secs);
     this.resetBots();
   }
+
+  /** The round's state. While the Rust engine holds it, reading this brings it home first. */
+  get sim(): State { this.home(); return this.state; }
+  set sim(s: State) { this.state = s; this.held = false; }
+
+  // ---- engine ------------------------------------------------------------
+  /**
+   * Step the rules and the bots in Rust, with the round kept inside the
+   * module, or (null) in TypeScript. Same results either way, so it may
+   * change at any tick.
+   */
+  setEngine(n: NativeSim | null) { this.home(); this.native = n; }
+  get engine(): "rust" | "ts" { return this.native ? "rust" : "ts"; }
+
+  /** Hand the round and the bots to the Rust engine. */
+  private hold(n: NativeSim) {
+    n.load(this.state);
+    for (let i = 0; i < SEATS; i++) n.loadBot(i, this.seats[i]!.uid === null ? this.personality(i) : null, this.mem[i]!, this.botRng[i]!);
+    this.held = true;
+  }
+
+  /** Bring them back: TypeScript is the authority again until the next tick. */
+  private home() {
+    if (!this.held) return;
+    const n = this.native!;
+    n.save(this.state);
+    for (let i = 0; i < SEATS; i++) n.saveBot(i, this.mem[i]!, this.botRng[i]!);
+    this.held = false;
+  }
+
+  private personality(seat: number) { return PERSONALITIES[this.cfg.bots[seat] ?? this.cfg.difficulty]; }
 
   // ---- seats -------------------------------------------------------------
   seatOf(uid: string): number { return this.seats.findIndex((s) => s.uid === uid); }
@@ -107,6 +140,7 @@ export class Match {
       : back >= 0 && free(back) ? back
       : [...this.seats.keys()].find((i) => free(i) && this.away[i] === null) ?? this.seats.findIndex((_, i) => free(i));
     if (seat < 0) return -1;
+    this.home();
     this.claim(seat, uid);
     this.seats[seat] = { uid, name, ready: false };
     this.mem[seat] = newBotMem();
@@ -118,6 +152,7 @@ export class Match {
   leave(uid: string): number {
     const seat = this.seatOf(uid);
     if (seat < 0) return -1;
+    this.home();
     this.claim(-1, uid);
     this.away[seat] = uid;
     this.seats[seat] = { uid: null, name: SEAT_NAMES[seat]!, ready: false };
@@ -131,6 +166,7 @@ export class Match {
   moveSeat(uid: string, to: number): boolean {
     const from = this.seatOf(uid);
     if (this.phase !== "lobby" || from < 0 || to < 0 || to >= SEATS || this.seats[to]!.uid !== null) return false;
+    this.home();
     this.claim(to, uid);
     this.seats[to] = { ...this.seats[from]!, ready: false };
     this.seats[from] = { uid: null, name: SEAT_NAMES[from]!, ready: false };
@@ -196,15 +232,21 @@ export class Match {
     if (this.phase === "lobby" && this.allReady()) this.start();
     if (this.phase === "countdown") {
       if (--this.countdown <= 0) this.phase = "playing";
+    } else if (this.phase === "playing" && this.native) {
+      const n = this.native;
+      if (!this.held) this.hold(n);
+      for (let i = 0; i < SEATS; i++) if (this.seats[i]!.uid !== null) n.input(i, this.latch[i]!);
+      evs = n.tick();
+      if (n.over) this.phase = "podium";
     } else if (this.phase === "playing") {
       const inputs: Input[] = [];
       for (let i = 0; i < SEATS; i++) {
         const l = this.latch[i]!;
-        if (this.seats[i]!.uid === null) inputs.push(bot(this.sim, i, PERSONALITIES[this.cfg.bots[i] ?? this.cfg.difficulty], this.mem[i]!, this.botRng[i]!));
+        if (this.seats[i]!.uid === null) inputs.push(bot(this.state, i, this.personality(i), this.mem[i]!, this.botRng[i]!));
         else inputs.push({ move: l.move, gulp: l.gulp, bellow: l.bellow });
       }
-      evs = this.stepper(this.sim, inputs);
-      if (this.sim.over) this.phase = "podium";
+      evs = step(this.state, inputs);
+      if (this.state.over) this.phase = "podium";
     } else {
       // lobby/countdown/podium bellows still roar
       for (let i = 0; i < SEATS; i++) if (this.latch[i]!.bellow) evs.push({ t: "bellow", seat: i });
@@ -216,8 +258,13 @@ export class Match {
 
   // ---- views and persistence ---------------------------------------------
   snapshot(): Snapshot {
-    const s = this.sim;
     const events = this.pending; this.pending = [];
+    if (this.held) {
+      const v = this.native!.view();
+      return { tick: v.tick, round: this.round, phase: this.phase, countdown: this.countdown, left: v.roundTicks - v.tick,
+        hippos: v.hippos, drops: v.drops, slicks: v.slicks, events };
+    }
+    const s = this.state;
     return {
       tick: s.tick, round: this.round, phase: this.phase, countdown: this.countdown, left: s.roundTicks - s.tick,
       hippos: s.hippos.map((h) => ({ ...h })),

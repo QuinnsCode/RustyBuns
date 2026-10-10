@@ -2,7 +2,7 @@
 // whether it came from a local Match or from a server's snapshots.
 import { Match, type Cfg, type Phase, type Snapshot } from "../engine/match.ts";
 import { TICK_HZ, type Difficulty } from "../sim/rules.ts";
-import { simFromWasm, type StepFn } from "../sim/native.ts";
+import { compileSim, instantiateSim } from "../sim/native.ts";
 import type { Event } from "../sim/types.ts";
 
 export interface SeatView { name: string; human: boolean; ready: boolean; mine: boolean }
@@ -44,7 +44,7 @@ export interface Driver {
   input(seat: number, move: number, gulp: boolean, bellow: boolean): void;
   command(c: Command): void;
   dispose(): void;
-  /** Local only: which engine steps the rules ("rust" once the opt-in wasm has loaded). */
+  /** Local only: which engine steps the rules and the bots ("rust" once the wasm has loaded). */
   readonly simEngine?: "rust" | "ts";
 }
 
@@ -53,16 +53,20 @@ export interface LocalSeat { name: string; human: boolean }
 const TICK_MS = 1000 / TICK_HZ;
 
 /**
- * The Rust twin of step() from public/hippo_sim.wasm, or null. Opt-in with
- * `?sim=rust`: the round's State is copied in and out every tick, which makes it
- * slower than the TypeScript step() (bench/sim.ts), so it is a demo, not a default.
+ * The Rust twin of the rules and the bots, compiled from public/hippo_sim.wasm,
+ * or null: not built, not a browser, or `?sim=ts`. The round stays inside the
+ * module (Match.setEngine), so it is the faster engine (bench/sim.ts).
  */
-export async function loadSim(url = "/hippo_sim.wasm"): Promise<StepFn | null> {
-  if (typeof location === "undefined" || new URLSearchParams(location.search).get("sim") !== "rust") return null;
+export function loadSim(url = "/hippo_sim.wasm"): Promise<WebAssembly.Module | null> {
+  return (compiled ??= fetchSim(url));
+}
+let compiled: Promise<WebAssembly.Module | null> | undefined;
+async function fetchSim(url: string): Promise<WebAssembly.Module | null> {
+  if (typeof location === "undefined" || typeof fetch === "undefined" || new URLSearchParams(location.search).get("sim") === "ts") return null;
   try {
     const r = await fetch(url);
     if (!r.ok || !(r.headers.get("content-type") ?? "").includes("wasm")) return null;
-    return (await simFromWasm(await r.arrayBuffer())).step;
+    return await compileSim(await r.arrayBuffer());
   } catch { return null; }
 }
 
@@ -80,7 +84,7 @@ export class LocalDriver implements Driver {
   constructor(seats: LocalSeat[], cfg: Partial<Cfg>, seed: number) {
     this.match = new Match(seed, cfg);
     // same results either way, so swapping engines mid-round is safe
-    void loadSim().then((s) => { if (s) { this.match.stepper = s; this.simEngine = "rust"; } });
+    void loadSim().then((mod) => { if (mod) { this.match.setEngine(instantiateSim(mod)); this.simEngine = "rust"; } }).catch(() => {});   // else TypeScript stays
     seats.forEach((s, i) => { if (s.human) { this.match.join(`local:${i}`, s.name, i); this.mine_.push(i); } });
     this.match.start();
     this.prev = this.cur = this.match.snapshot();

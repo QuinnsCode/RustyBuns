@@ -6,7 +6,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Match } from "../src/engine/match.ts";
 import { hashState } from "../src/sim/hash.ts";
-import { simFromWasm } from "../src/sim/native.ts";
+import { bot, newBotMem } from "../src/sim/bots.ts";
+import { compileSim, instantiateSim, simFromWasm } from "../src/sim/native.ts";
+import { seedOf } from "../src/sim/rng.ts";
+import { PERSONALITIES } from "../src/sim/rules.ts";
 import { newState, step } from "../src/sim/step.ts";
 import { cosSin } from "../src/sim/trig.ts";
 import type { Input } from "../src/sim/types.ts";
@@ -53,15 +56,60 @@ describe.skipIf(!existsSync(WASM))("the Rust twin (run `bun run build:native`)",
   test("as a drop-in step(), a whole match with bots ends in the same state", async () => {
     const rs = await simFromWasm(readFileSync(WASM));
     const play = (useRust: boolean) => {
-      const m = new Match(1234, { secs: 60, difficulty: "hard" });
-      if (useRust) m.stepper = rs.step;
-      m.start();
-      while (m.phase !== "podium") m.tick();
-      return m.sim;
+      const s = newState(1234, 60), mem = [0, 1, 2, 3].map(() => newBotMem()), rngs = [0, 1, 2, 3].map((i) => ({ rng: seedOf(i + 9) }));
+      while (!s.over) (useRust ? rs.step : step)(s, [0, 1, 2, 3].map((i) => bot(s, i, PERSONALITIES.hard, mem[i]!, rngs[i]!)));
+      return s;
     };
-    const a = play(false), b = play(true);
-    expect(JSON.stringify(b)).toBe(JSON.stringify(a));
-    expect(a.hippos.some((h) => h.score > 0)).toBe(true);
+    expect(JSON.stringify(play(true))).toBe(JSON.stringify(play(false)));
+  });
+
+  // Match with the Rust engine: the round and the bots stay in the module, Match only reads a view.
+  const playMatch = (mod: WebAssembly.Module | null, opts: { secs: number; seed: number; poke?: (m: Match, t: number) => void }) => {
+    const m = new Match(opts.seed, { secs: opts.secs, bots: ["hard", "normal", "easy", "hard"] });
+    if (mod) m.setEngine(instantiateSim(mod));
+    m.start();
+    const snaps: string[] = [];
+    for (let t = 0; m.phase !== "podium" && t < 10_000; t++) { opts.poke?.(m, t); m.tick(); snaps.push(JSON.stringify(m.snapshot())); }
+    return { m, snaps };
+  };
+
+  test("resident: bots and rules in Rust give the same snapshots, every tick, and the same end state", async () => {
+    const mod = await compileSim(readFileSync(WASM));
+    for (const seed of [1234, 5, 0xbeef]) {
+      const ts = playMatch(null, { secs: 60, seed }), rs = playMatch(mod, { secs: 60, seed });
+      expect(rs.m.engine).toBe("rust");
+      expect(rs.snaps.length).toBe(ts.snaps.length);
+      for (let i = 0; i < ts.snaps.length; i++) if (rs.snaps[i] !== ts.snaps[i]) expect(rs.snaps[i]).toBe(ts.snaps[i]!);
+      expect(JSON.stringify(rs.m.sim)).toBe(JSON.stringify(ts.m.sim));
+      expect(ts.m.sim.hippos.filter((h) => h.score > 0).length).toBeGreaterThanOrEqual(3);    // the bots played
+    }
+  });
+
+  test("resident: a human joining and leaving, reads of the state, and an engine swap mid-round change nothing", async () => {
+    const mod = await compileSim(readFileSync(WASM));
+    const poke = (rust: boolean) => (m: Match, t: number) => {
+      if (t === 300) m.join("u0", "Bo", 0);                // stays seated (an idle hippo), so the room never empties
+      if (t === 400) m.join("u1", "Ann", 1);
+      if (t > 400 && t < 900) m.input(1, Math.sin(t / 20), t % 9 === 0, false);
+      if (t === 900) m.leave("u1");
+      if (t % 97 === 0) void m.sim.drops.length;          // brings the round home; the next tick hands it back
+      if (rust && t === 1300) m.setEngine(null);
+      if (rust && t === 1500) m.setEngine(instantiateSim(mod));
+    };
+    const ts = playMatch(null, { secs: 60, seed: 77, poke: poke(false) }), rs = playMatch(mod, { secs: 60, seed: 77, poke: poke(true) });
+    expect(rs.m.phase).toBe("podium");
+    expect(rs.snaps).toEqual(ts.snaps);
+    expect(JSON.stringify(rs.m.sim)).toBe(JSON.stringify(ts.m.sim));
+  });
+
+  test("resident: a bot's memory and RNG survive a round trip through the module", async () => {
+    const rs = await simFromWasm(readFileSync(WASM));
+    const mem = { target: 12, err: -0.125, nextPlan: 340, known: new Set([3, 9, 27]) }, rng = { rng: 0xfedcba98 };
+    rs.loadBot(2, PERSONALITIES.normal, mem, rng);
+    const back = newBotMem(), r = { rng: 0 };
+    rs.saveBot(2, back, r);
+    expect(back).toEqual(mem);
+    expect(r.rng).toBe(rng.rng);
   });
 
   test("a malformed module or state is refused", async () => {
