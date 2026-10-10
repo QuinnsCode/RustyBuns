@@ -180,14 +180,20 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
   const dir = syncedDir(lg, r), branch = r.branch ?? "main", heads = `refs/heads/${branch}`, up = `refs/upstream/${branch}`;
   const net = await remoteEnv(env, owner, r.mirror_url);
   try {
-    // 1. Hear from upstream.
-    const f = await git(["fetch", "--quiet", "--no-tags", r.mirror_url, `+${heads}:${up}`], dir, net);
+    // 1. Hear from upstream. Only what's newer than the last commit both sides agreed on (a week's
+    // slack, for clocks): a force-pushed history shares nothing with this copy, and fetched in full
+    // it's all of upstream's past, when re-basing needs only its new tip. A fast-forward stops at
+    // the agreed commit all the same. Upstream wound back past that is fetched the plain way.
+    const agreed = r.upstream_commit && (await git(["cat-file", "-e", `${r.upstream_commit}^{commit}`], dir)).code === 0 ? r.upstream_commit : null;
+    const since = agreed && Number(await must(["log", "-1", "--format=%ct", agreed], dir)) - 7 * 86_400;
+    const fetch = (limit: string[]) => git(["fetch", "--quiet", "--no-tags", ...limit, r.mirror_url, `+${heads}:${up}`], dir, net);
+    let f = await fetch(since ? [`--shallow-since=${since}`] : []);
+    if (since && f.code && /shallow/i.test(f.err)) f = await fetch([]);
     if (f.code) return failed(env, r, "down", f.err || "upstream didn't answer");
     let theirs = await must(["rev-parse", up], dir), ours = await must(["rev-parse", heads], dir);
     const before = ours;
 
     // Upstream rewrote its history when the last commit both sides agreed on isn't in it any more.
-    const agreed = r.upstream_commit && (await git(["cat-file", "-e", `${r.upstream_commit}^{commit}`], dir)).code === 0 ? r.upstream_commit : null;
     const rewritten = !!agreed && agreed !== theirs && !(await isAncestor(dir, agreed, theirs));
     const whose = "upstream's history was rewritten (a force-push), so there's nothing to merge with";
 
