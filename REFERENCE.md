@@ -251,7 +251,7 @@ With the flag on, `generate` writes `.env.schema` at the app root: every secret 
 
 **Why [varlock](https://varlock.dev)?** It turns a `.env` file into a schema: every variable gets a type, a description and a `@sensitive` flag, and its value is a *reference* (`op(op://…)`) instead of the secret itself. You get the "what does this app need" story in one committed file that agents can read safely, plus pluggable stores (1Password, AWS, Vault, or any CLI), validation before anything runs, redaction of sensitive values in its output, and `varlock scan` to catch a secret someone pasted into code. It's MIT-licensed and works with any language, so the schema isn't tied to Rusty Buns.
 
-At plan and deploy time, varlock resolves the schema and the values reach Alchemy as env, so they go straight into Cloudflare or Railway secrets and never sit in a file. Install it with `bun add -d varlock` or `brew install dmno-dev/tap/varlock`. `"human"` also needs the 1Password CLI, `op`, with "Integrate with 1Password CLI" turned on in the app.
+At plan and deploy time, varlock resolves the schema and the values reach Alchemy as env, so they go straight into Cloudflare or Railway secrets and never sit in a file. It ships with the CLI, so there's nothing to install; a varlock in your project or on PATH wins if you have one. `"human"` also needs the 1Password CLI, `op`, with "Integrate with 1Password CLI" turned on in the app.
 
 **Why this is safe:**
 
