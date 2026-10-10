@@ -5,7 +5,7 @@
 import { Box3, Color, Group, Mesh, MeshStandardMaterial, Object3D, Raycaster, Vector3, type Material } from "three";
 import { COUNCIL } from "./assets.ts";
 import { gltf } from "./loader.ts";
-import { ROOM, STREET_Y, fitDesks, type Box } from "./room.ts";
+import { ROOM, STREET_Y, byKiosk, fitDesks, type Box } from "./room.ts";
 
 interface Desk {
   def: { id: string; x: number; z: number; rotY: number };
@@ -14,7 +14,6 @@ interface Desk {
   seatAnchor: Object3D;
   stage: Object3D;
   vacancy: Object3D;
-  vacancyY: number;
   chair: Object3D;
 }
 export interface Office {
@@ -48,10 +47,10 @@ async function copy(path: string, size: number, by: "height" | "longest" = "long
 }
 
 /** A Druid Panel is a lectern: a tilted slab on a pillar, low edge towards whoever reads it. Every agent gets its
- *  own, turned to face them, with the back-to-back pair's lecterns standing in their pod; its top is about twice the
- *  office's desk height, for agents twice the office's size. The laptop lies on the slab like a book on a lectern,
- *  tilted with it and half sunk into the wood. */
-const PANEL = { width: 1.2, top: 1.4, z: -0.05, sink: 0.06 };
+ *  own, turned to face them, with the back-to-back pair's lecterns standing in their pod. It's as tall as the office's
+ *  desk where it counts: the slab's middle, where the laptop lies, is at the office's 0.78 m desk top. The laptop lies
+ *  on the slab like a book on a lectern, tilted with it and half sunk into the wood. */
+const PANEL = { width: 1.2, top: 0.95, z: -0.05, sink: 0.06 };
 const down = new Vector3(0, -1, 0), ray = new Raycaster();
 /** Where each loaded lectern stands, for fitDesks: the desk's collider is cut down to it. */
 const footprints: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
@@ -90,8 +89,6 @@ export function council(into: Group, office: Office) {
     if (!/^(desk|station)-/.test(d.def.id)) continue;
     const keep = new Set([d.laptopAnchor, d.seatAnchor, d.stage, d.vacancy]);
     for (const c of d.group.children) if (!keep.has(c)) c.visible = false;
-    // the office bobs the vacancy plus at desk height + 0.55, which is inside the panel: lift it over the top
-    d.vacancyY = PANEL.top + 0.55;
 
     // the agent stands on this side of the desk; the slab's low edge (the model's +z) faces them
     const toward = Math.sign(d.seatAnchor.position.z || 1);
@@ -165,7 +162,7 @@ export function council(into: Group, office: Office) {
     !solid.some((c) => x > c.minX - rad && x < c.maxX + rad && z > c.minZ - rad && z < c.maxZ + rad);
   for (let n = 0, tries = 0; n < 110 && tries < 4000; tries++) {
     const x = ROOM.minX + 1 + r() * 34, z = ROOM.minZ + 1 + r() * 24;
-    if (!clear(x, z, 0.3)) continue;
+    if (!clear(x, z, 0.3) || byKiosk(office.colliders, x, z)) continue;
     const big = r() < 0.2;
     copy(big ? pick(loot.big) : pick(loot.small), big ? 0.7 + r() * 0.5 : 0.2 + r() * 0.2).then((o) => {
       o.position.set(x, 0, z);

@@ -4,15 +4,16 @@
 // Everything else is read from the worker's own public fields (status, action, walking, ...), so the office's
 // logic is untouched. Until a model loads, or if it fails to, the blob stays as it was.
 import {
-  AnimationMixer, LoopOnce, LoopRepeat, Mesh, Object3D, type AnimationAction, type AnimationClip,
+  AnimationMixer, CylinderGeometry, LoopOnce, LoopRepeat, Mesh, MeshBasicMaterial, Object3D, type AnimationAction,
+  type AnimationClip,
 } from "three";
 import { clone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { CAST, bareClip, clipName, raceFor, roleFor, type Pose, type Race } from "./cast.ts";
 import { heightOf, rigged } from "./loader.ts";
 
-/** Twice the office's own workers, to stand at the Druid Panels; the bulb, name tag and bubble go up by the
- *  difference. */
-const HEIGHT = 2.2;
+/** The office's own workers are 1.1 m; a little taller reads better on a person-shaped model, and the bulb, name
+ *  tag and bubble go up by the difference. */
+const HEIGHT = 1.25;
 const LIFT = HEIGHT - 1.1;
 const FADE = 0.25;
 
@@ -95,9 +96,22 @@ function attach(w: Worker) {
     blob = [];
     w.body.traverse((o) => { if ((o as Mesh).isMesh && !keep.has(o)) blob.push(o); });
     w.root.add(a);
+    w.root.add(hitBox());
     w.bulbMesh.position.y += LIFT;
     avatar = entry.avatar = a;
   }).catch((e) => console.warn(`[druids] ${race} failed to load; keeping the blob`, e));
+}
+
+/** The office finds the desk you're aiming at by raycasting its worker's round blob, which the skin hides; a slim
+ *  enemy is a far smaller target. This stands in for the blob: never drawn (the material is invisible, the mesh
+ *  isn't, so the office's raycast still counts it), as wide as the blob and as tall as the enemy. */
+const proxy = new CylinderGeometry(0.4, 0.4, HEIGHT, 10).translate(0, HEIGHT / 2, 0);
+const unseen = new MeshBasicMaterial({ visible: false });
+unseen.userData.outlineParameters = { visible: false };
+function hitBox() {
+  const m = new Mesh(proxy, unseen);
+  m.userData.rbForest = "skip";
+  return m;
 }
 
 const g = globalThis as { __rbWorkers?: { push(w: Worker): number } & Iterable<Worker> };
