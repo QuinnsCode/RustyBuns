@@ -3,7 +3,7 @@ import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { AgentSandbox, LOGINS, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
-import { run } from "../sandbox/server.mjs";
+import { run, test as testCut } from "../sandbox/server.mjs";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -19,6 +19,12 @@ describe("the container's server", () => {
   });
   test("a path that climbs out of the directory is refused", async () => {
     expect((await run({ cmd: { bin: "true", args: [] }, path: "../escape.js", text: "" })).code).toBe(2);
+    expect((await testCut({ files: { "../escape.test.ts": "" } })).code).toBe(2);
+  });
+  test("runs bun test over a cut's files, with a JUnit report", async () => {
+    const r = await testCut({ files: { "a.test.ts": 'import { expect, test } from "bun:test";\ntest("one", () => expect(1).toBe(1));\n' } });
+    expect(r.code).toBe(0);
+    expect(r.report).toContain('<testcase name="one"');
   });
 });
 
@@ -76,12 +82,14 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
       idFromName: (n: string) => n,
       get: () => new AgentSandbox({ container: fakeContainer(async (b) => { runs.push(b); return server(b); }).c }, booted.env),
     };
-    // Each handle's session cookie, from signing up with a name that makes it.
+    // Each handle's session cookie, from signing up and claiming it.
     const cookies: Record<string, string> = {};
     const signup = async (name: string) => {
       const res = await booted(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
         body: JSON.stringify({ email: `${name.replace(" ", ".")}@example.com`.toLowerCase(), password: "correct horse battery", name }) });
-      cookies[name.toLowerCase().replace(" ", "-")] = (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
+      const handle = name.toLowerCase().replace(" ", "-");
+      cookies[handle] = (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
+      await booted(null, "/api/handle", { method: "POST", headers: { cookie: cookies[handle]! }, body: JSON.stringify({ name: handle }) });
     };
     for (const name of ["Ryan Quinn", "Pat Person", "Sam Sample"]) await signup(name);
     const call: Call = (user, url, init = {}) => {

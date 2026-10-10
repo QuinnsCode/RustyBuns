@@ -10,9 +10,11 @@ import { levelRoutes } from "./levels.ts";
 import { githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
+import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
+import { limit, limitRoutes, ruleFor, RULES, sweepLimits } from "./limits.ts";
 import { previewRoutes } from "./preview.ts";
 import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { repoFit } from "./fit.ts";
@@ -46,9 +48,18 @@ const app = {
     const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
     if (p[0] !== "api") return new Response("not found", { status: 404 });
 
+    // Rules counted by IP (signing in, signing up, claiming a handle) go before
+    // anyone is known; the rest count against the handle.
+    const rule = ruleFor(req.method, p), byIp = RULES.find((r) => r.name === rule)?.per === "ip";
+    const early = byIp ? await limit(req, env, rule, null, false) : null;
+    if (early) return early;
     const ident = await identityRoutes(req, env, p);
     if (ident) return ident;
     const user = await identify(req, env);
+    const slow = byIp ? null : await limit(req, env, rule, user, isAdmin(env, user));
+    if (slow) return slow;
+    const limits = await limitRoutes(req, env, p, isAdmin(env, user));
+    if (limits) return limits;
     const body = async <T>() => (await req.json()) as T;
 
     const levels = await levelRoutes(req, env, p, url, user, isAdmin(env, user));
@@ -59,6 +70,8 @@ const app = {
     if (game) return game;
     const share = await shareRoutes(req, env, p, user);
     if (share) return share;
+    const cut = await cutRoutes(req, env, p, url, user);
+    if (cut) return cut;
     const agents = await agentRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read, (r) => app.fetch(r, env));
     if (agents) return agents;
     const deps = await depRoutes(req, env, p, url, user, (r) => app.fetch(r, env));
@@ -136,6 +149,8 @@ const app = {
         const v = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         return createShare(env, owner, repo, user, a, v?.visibility === "private", await body());
       }
+      // POST /api/repos/:o/:r/cuts {pieces: [{path, from, to}], note}  some lines and their imports, as a branch to run and merge back
+      if (p[4] === "cuts" && req.method === "POST") return createCut(env, owner, repo, user, a.write, await body());
       // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
       if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
       // GET /api/repos/:o/:r/tree?path=dir  the repo's git tree, plus files written here but not catalogued yet
@@ -290,10 +305,14 @@ const app = {
   },
 
   // Cron Triggers (rustybuns.config.ts crons): every five minutes, webhook retries;
-  // hourly, each repo's dependency doctor runs when it's due.
+  // hourly, each repo's dependency doctor runs when it's due, and rate-limit
+  // windows that have ended are cleared out.
   async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
     ctx.waitUntil(retryHooks(env));
-    if (c.cron === HOURLY) ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
+    if (c.cron === HOURLY) {
+      ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
+      ctx.waitUntil(sweepLimits(env));
+    }
   },
 };
 
