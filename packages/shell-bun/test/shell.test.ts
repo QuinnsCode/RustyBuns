@@ -214,3 +214,35 @@ test("serve: a launch code trades for the cookie once, and expires", async () =>
   await shell.stop();
   expect(serve({}).launchCode()).toBeUndefined();
 });
+
+test("serve: _headers and .assetsignore stay unserved, and _headers rules apply to assets", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync("/tmp/rb-assets-");
+  mkdirSync(join(dir, "_astro"));
+  writeFileSync(join(dir, "_astro", "app.abc123.js"), "x");
+  writeFileSync(join(dir, "index.html"), "<p>hi</p>");
+  writeFileSync(join(dir, ".assetsignore"), "_worker.js\n");
+  writeFileSync(join(dir, "_headers"), [
+    "# Astro",
+    "/_astro/*",
+    "  Cache-Control: public, max-age=31536000, immutable",
+    "/:page.html",
+    "  X-Page: yes",
+    "  ! Cross-Origin-Embedder-Policy",
+    "https://example.com/*",
+    "  X-Never: 1",
+  ].join("\n"));
+  const shell = serve({ assets: dir });
+  shell.mount({ async fetch() { return new Response("worker", { status: 404 }); } }, {});
+  for (const p of ["/_headers", "/.assetsignore"]) expect(await (await fetch(shell.url + p)).text()).toBe("worker");
+  const js = await fetch(shell.url + "/_astro/app.abc123.js");
+  expect(js.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  expect(js.headers.get("content-type")).toContain("javascript");
+  expect(js.headers.get("x-never")).toBeNull();
+  const page = await fetch(shell.url + "/index.html");
+  expect(page.headers.get("x-page")).toBe("yes");
+  expect(page.headers.get("cache-control")).toBeNull();
+  expect((await fetch(shell.url + "/")).headers.get("x-page")).toBeNull();
+  await shell.stop();
+});

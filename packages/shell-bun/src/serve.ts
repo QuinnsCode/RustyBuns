@@ -17,7 +17,7 @@
 import type { Server, ServerWebSocket } from "bun";
 import type { CommsPort, ExecutionContext, FetchHandler, Reporter, Socket, SocketHandlers } from "@rustybuns/ports";
 import { join, normalize, sep } from "node:path";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 
 /** fs.statSync works inside /$bunfs (embedded assets); Bun.file().stat() does not always. */
@@ -25,6 +25,51 @@ function kind(p: string): "file" | "dir" | null {
   try { const st = statSync(p); return st.isDirectory() ? "dir" : st.isFile() ? "file" : null; } catch { return null; }
 }
 import { installCloudflareGlobals, type LocalWebSocket } from "./bindings/durable-object.ts";
+
+/** Files at the asset root that Cloudflare's asset server reads as config (or skips at upload) and never serves. */
+const CONFIG_FILES = new Set(["/_headers", "/_redirects", "/.assetsignore"]);
+
+interface HeaderRule { match: RegExp; set: [string, string][]; unset: string[] }
+
+/**
+ * Parses a Cloudflare `_headers` file: an unindented URL pattern, then indented
+ * `Name: value` lines (or `! Name` to drop one). `*` is a splat and `:name` a
+ * placeholder; patterns with a host are skipped, since the shell has one host.
+ */
+function parseHeaders(text: string): HeaderRule[] {
+  const rules: HeaderRule[] = [];
+  let cur: HeaderRule | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    if (!/^\s/.test(line)) {
+      cur = null;
+      if (!t.startsWith("/")) continue;
+      const re = t.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/:[A-Za-z]\w*/g, "[^/]+");
+      cur = { match: new RegExp(`^${re}$`), set: [], unset: [] };
+      rules.push(cur);
+    } else if (cur) {
+      if (t.startsWith("!")) { cur.unset.push(t.slice(1).trim()); continue; }
+      const i = t.indexOf(":");
+      if (i > 0) cur.set.push([t.slice(0, i).trim(), t.slice(i + 1).trim()]);
+    }
+  }
+  return rules;
+}
+
+/** Every matching rule applies; a header set by several rules joins with ", " as Cloudflare does. */
+function applyHeaders(rules: HeaderRule[], pathname: string, res: Response): Response {
+  const hit = rules.filter((r) => r.match.test(pathname));
+  if (!hit.length) return res;
+  const h = new Headers(res.headers);
+  const seen = new Set<string>();
+  for (const r of hit) for (const [k, v] of r.set) {
+    const key = k.toLowerCase();
+    if (seen.has(key)) h.append(k, v); else { h.set(k, v); seen.add(key); }
+  }
+  for (const r of hit) for (const k of r.unset) h.delete(k);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
 
 export interface ServeOptions<Env> {
   /** Directory of built client assets (Vite dist). Served before fetch(). */
@@ -158,6 +203,9 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     return new Response("forbidden", { status: 403 });
   };
 
+  let headerRules: HeaderRule[] = [];
+  if (opts.assets) { try { headerRules = parseHeaders(readFileSync(join(opts.assets, "_headers"), "utf8")); } catch {} }
+
   const asset = async (url: URL): Promise<Response | null> => {
     for (const [route, dir] of Object.entries(opts.mounts ?? {})) {
       if (url.pathname !== route && !url.pathname.startsWith(route.replace(/\/$/, "") + "/")) continue;
@@ -168,13 +216,14 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       return new Response("not found", { status: 404 });
     }
     if (!opts.assets) return null;
+    if (CONFIG_FILES.has(url.pathname)) return null;
     const root = normalize(opts.assets);
     let p = normalize(join(root, decodeURIComponent(url.pathname)));
     if (!inside(root, p)) return null;
     let k = kind(p);
     if (k === "dir") { p = join(p, "index.html"); k = kind(p); }
     if (k !== "file") return null;
-    return new Response(Bun.file(p));
+    return applyHeaders(headerRules, url.pathname, new Response(Bun.file(p)));
   };
 
   const wrap = (ws: ServerWebSocket<WsData>): Socket => ({

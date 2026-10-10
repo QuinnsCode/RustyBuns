@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { bump, outdated, scheduledDoctor, DEFAULTS, type Registry, type Tester } from "../src/deps.ts";
+import { bump, localFixer, outdated, scheduledDoctor, DEFAULTS, type Fixer, type Registry, type Tester } from "../src/deps.ts";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -55,21 +55,38 @@ test("bump edits only the version strings, keeping the file as written", () => {
   expect(out.join("\n")).toBe(PKG.replace(`"kleur": "^3.0.0"`, `"kleur": "^4.1.5"`));
 });
 
-async function app(tester?: Tester) {
+const COLOR = `import kleur from "kleur";\nexport const warn = (s: string) => kleur.red(s);\nexport const ok = (s: string) => kleur.green(s);\n`;
+
+/** The fake test run: kleur 4 breaks the build. */
+const kleurTester = (seen: string[][] = []): Tester => async (remote, files) => {
+  expect(remote).toContain("://x:");
+  const pkg = JSON.parse(files["package.json"]!);
+  seen.push(Object.entries({ ...pkg.dependencies, ...pkg.devDependencies }).map(([k, v]) => `${k}@${v}`).filter((s) => /kleur|clsx|hono/.test(s)));
+  return pkg.dependencies.kleur === "^4.1.5" ? { ok: false, out: "TypeError: kleur.red is not a function" } : { ok: true, out: "3 pass" };
+};
+
+async function app(tester?: Tester, fixer?: Fixer) {
   const call = await boot({ GH_CLI: "off" });
   opened.push(call);
   call.env.DEPS_REGISTRY = NPM;
   if (tester) call.env.DEPS_TESTER = tester;
+  if (fixer) call.env.DEPS_FIXER = fixer;
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   await send("ryan", "/api/repos", { name: "lab", visibility: "public" });
   await send("ryan", "/api/repos/ryan/lab/files", { path: "package.json", content: PKG });
-  // Catalogue it, so the clone a test run takes has it.
-  await send("ryan", "/api/repos/ryan/lab/do/commit?path=package.json", { message: "package.json" });
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "src/paint.ts", content: COLOR.replace(/\n$/, "") });
+  // Catalogue them, so the clone a test run takes has them.
+  for (const path of ["package.json", "src/paint.ts"]) await send("ryan", `/api/repos/ryan/lab/do/commit?path=${path}`, { message: path });
   return { call, send };
 }
 
 const until = async (f: () => Promise<boolean>) => { for (let i = 0; i < 200 && !(await f()); i++) await Bun.sleep(20); };
+const settle = async (call: (u: string, p: string) => Promise<Response>) => {
+  let got: any;
+  await until(async () => !(got = await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).running);
+  return got;
+};
 
 test("the owner tunes it and checks now: the updates land on a branch as agent-deps", async () => {
   const { call, send } = await app();
@@ -100,14 +117,7 @@ test("the owner tunes it and checks now: the updates land on a branch as agent-d
 
 test("with tests on, updates that break them are tried alone and left out", async () => {
   const seen: string[][] = [];
-  // The fake test run: kleur 4 breaks the build.
-  const tester: Tester = async (remote, files) => {
-    expect(remote).toContain("://x:");
-    const pkg = JSON.parse(files["package.json"]!);
-    seen.push(Object.entries({ ...pkg.dependencies, ...pkg.devDependencies }).map(([k, v]) => `${k}@${v}`).filter((s) => /kleur|clsx|hono/.test(s)));
-    return pkg.dependencies.kleur === "^4.1.5" ? { ok: false, out: "TypeError: kleur.red is not a function" } : { ok: true, out: "3 pass" };
-  };
-  const { call, send } = await app(tester);
+  const { call, send } = await app(kleurTester(seen));
   await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true }, "PUT");
   const started = await send("ryan", "/api/repos/ryan/lab/deps/run", {});
   expect(started.status).toBe(202);
@@ -121,6 +131,104 @@ test("with tests on, updates that break them are tried alone and left out", asyn
   const doc = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=package.json&branch=${got.report.branch}`)).json();
   expect(doc.lines.map((l: any) => l.text).filter((t: string) => /clsx|hono|kleur/.test(t))).toEqual([`    "kleur": "^3.0.0",`, `    "clsx": "~2.0.0",`, `    "hono": "4.6.0",`]);
 });
+
+test("with a fixer on, an agent patches the call sites the update broke, on the same branch", async () => {
+  const jobs: any[] = [];
+  const fixer: Fixer = async (job) => {
+    jobs.push(job);
+    return { ok: true, tries: 2, out: "3 pass", edits: [
+      { path: "src/paint.ts", before: COLOR, after: COLOR.replace(`import kleur from "kleur"`, `import { red, green } from "kleur/colors"`).replaceAll("kleur.", "") },
+      { path: "src/colors.d.ts", before: null, after: `declare module "kleur/colors";\n` },
+    ] };
+  };
+  const { call, send } = await app(kleurTester(), fixer);
+  expect((await send("ryan", "/api/repos/ryan/lab/deps", { fix_with: "gpt" }, "PUT")).status).toBe(400);
+  expect((await send("ryan", "/api/repos/ryan/lab/deps", { fix_with: "claude", fix_tries: 9 }, "PUT")).status).toBe(400);
+  const s = await (await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true, fix_with: "claude", fix_tries: 2 }, "PUT")).json();
+  expect(s).toMatchObject({ fix_with: "claude", fix_tries: 2 });
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const got = await settle(call);
+
+  // The agent got the broken update on top of the kept ones, and the failing output.
+  expect(jobs.length).toBe(1);
+  expect(jobs[0]).toMatchObject({ harness: "claude", tries: 2, out: expect.stringContaining("kleur.red"), update: { name: "kleur" } });
+  expect(JSON.parse(jobs[0].files["package.json"]).dependencies).toMatchObject({ kleur: "^4.1.5", clsx: "~2.0.0" });
+  const kleur = got.report.updates.find((u: any) => u.name === "kleur");
+  expect(kleur).toMatchObject({ status: "fixed", fix: { by: "agent-claude", tries: 2, files: ["src/paint.ts", "src/colors.d.ts"] } });
+  expect(kleur.out).toBeUndefined();
+
+  const branch = got.report.branch;
+  const pkg = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=package.json&branch=${branch}`)).json();
+  expect(pkg.lines.find((l: any) => l.text.includes("kleur")).text).toBe(`    "kleur": "^4.1.5",`);
+  const paint = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=src/paint.ts&branch=${branch}`)).json();
+  expect(paint.lines.map((l: any) => [l.text, l.by])).toEqual([
+    [`import { red, green } from "kleur/colors";`, "agent-claude"],
+    ["export const warn = (s: string) => red(s);", "agent-claude"],
+    ["export const ok = (s: string) => green(s);", "agent-claude"],
+  ]);
+  const dts = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=src/colors.d.ts&branch=${branch}`)).json();
+  expect(dts.lines.map((l: any) => l.text)).toEqual([`declare module "kleur/colors";`]);
+  // Main is untouched until someone merges.
+  const main = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=src/paint.ts")).json();
+  expect(main.lines[0].text).toBe(`import kleur from "kleur";`);
+});
+
+test("a fixer that gives up leaves the update out, with its last output", async () => {
+  const fixer: Fixer = async () => ({ ok: false, tries: 3, out: "TypeError: red is not a function", edits: [] });
+  const { call, send } = await app(kleurTester(), fixer);
+  await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true, fix_with: "pi" }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const got = await settle(call);
+  const kleur = got.report.updates.find((u: any) => u.name === "kleur");
+  expect(kleur).toMatchObject({ status: "broke", out: "TypeError: red is not a function", fix: { by: "agent-pi", tries: 3, files: [] } });
+  const paint = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=src/paint.ts&branch=${got.report.branch}`)).json();
+  expect(paint.lines[0].text).toBe(`import kleur from "kleur";`);
+});
+
+test("localFixer: the agent edits a real clone, the tests decide, and only its edits come back", async () => {
+  const { mkdtempSync, rmSync, writeFileSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "deps-fixer-test-"));
+  try {
+    const sh = (...cmd: string[]) => Bun.spawnSync(cmd, { cwd: dir, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    const pkg = `{ "name": "lab", "scripts": { "test": "bun test" } }\n`;
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "package.json"), pkg);
+    writeFileSync(join(dir, "src/paint.ts"), `export const paint = (s: string) => "old:" + s; // kleur\n`);
+    writeFileSync(join(dir, "src/gone.ts"), "export {};\n");
+    writeFileSync(join(dir, "paint.test.ts"), `import { expect, test } from "bun:test";\nimport { paint } from "./src/paint.ts";\ntest("paints", () => expect(paint("x")).toBe("new:x"));\n`);
+    sh("git", "init", "-q", "-b", "main"); sh("git", "add", "."); sh("git", "commit", "-qm", "use kleur");
+
+    const prompts: string[] = [];
+    // The fake agent: wrong on its first try, right on its second. It also adds a
+    // file, deletes one and touches package.json, which the doctor owns.
+    const exec = async (cmd: { args: string[] }, cwd: string) => {
+      prompts.push(cmd.args[1]!);
+      writeFileSync(join(cwd, "src/paint.ts"), `export const paint = (s: string) => "${prompts.length === 1 ? "nope" : "new"}:" + s; // kleur\n`);
+      writeFileSync(join(cwd, "src/extra.ts"), "export const extra = 1;\n");
+      writeFileSync(join(cwd, "package.json"), "{}");
+      rmSync(join(cwd, "src/gone.ts"), { force: true });
+      return { code: 0, out: "done" };
+    };
+    const update = { name: "kleur", from: "^3.0.0", to: "^4.1.5", level: "major" as const, status: "broke" as const };
+    const r = await localFixer(exec)({ remote: dir, files: { "package.json": pkg }, update, out: "expected new:x", harness: "claude", tries: 3 });
+    expect(r.ok).toBe(true);
+    expect(r.tries).toBe(2);
+    expect(prompts[0]).toContain("expected new:x");
+    expect(prompts[0]).toContain("use kleur");          // the repo's history of the package
+    expect(prompts[0]).toContain("src/paint.ts:1");     // where it's used
+    expect(prompts[1]).toContain(`"new:x"`);            // the second try sees the first try's failure
+    expect(r.edits.sort((a, b) => a.path.localeCompare(b.path))).toEqual([
+      { path: "src/extra.ts", before: null, after: "export const extra = 1;\n" },
+      { path: "src/paint.ts", before: `export const paint = (s: string) => "old:" + s; // kleur\n`, after: `export const paint = (s: string) => "new:" + s; // kleur\n` },
+    ]);
+    const gaveUp = await localFixer(async () => ({ code: 0, out: "" }))({ remote: dir, files: { "package.json": pkg }, update, out: "", harness: "pi", tries: 2 });
+    expect(gaveUp).toMatchObject({ ok: false, tries: 2, edits: [] });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 60_000);
 
 test("the schedule runs repos that are on and due, and skips the rest", async () => {
   const { call, send } = await app();
