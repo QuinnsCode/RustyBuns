@@ -77,7 +77,10 @@ async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: boolean
   for (const name of ["Ryan Quinn", "Pat Person", "Sam Sample"]) {
     const res = await booted(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
       body: JSON.stringify({ email: `${name.replace(" ", ".")}@example.com`.toLowerCase(), password: "correct horse battery", name }) });
-    cookies[name.toLowerCase().replace(" ", "-")] = (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((x) => x.split(";")[0]).join("; ");
+    const handle = name.toLowerCase().replace(" ", "-");
+    cookies[handle] = (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((x) => x.split(";")[0]).join("; ");
+    // Signed up, then picks the handle the app sees.
+    await booted(null, "/api/handle", { method: "POST", headers: { cookie: cookies[handle]! }, body: JSON.stringify({ name: handle }) });
   }
   const call: Call = (user, url, init = {}) => {
     const headers = new Headers(init.headers);
