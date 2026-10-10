@@ -3,7 +3,12 @@
 // is one shared groove. Visitors are anonymous: the Worker vouches a random id,
 // the way the desktop host vouches its one local user.
 import World from "../packages/desktop/world.ts";
+import { RoomMintGate } from "./limits.ts";
 export { World };
+
+// A room nobody has opened for this long is deleted, groove and all.
+const IDLE_MS = 30 * 24 * 60 * 60 * 1000;
+const mintGate = new RoomMintGate();
 
 interface Env {
   ASSETS: { fetch(r: Request): Promise<Response> };
@@ -15,8 +20,11 @@ export default {
     const url = new URL(req.url);
     if (url.pathname === "/ws") {
       const room = (url.searchParams.get("room") ?? "lobby").slice(0, 64);
+      const ip = req.headers.get("CF-Connecting-IP");
+      if (ip && !mintGate.allow(ip, room, Date.now())) return new Response("too many new rooms, try again in a minute", { status: 429, headers: { "Retry-After": "60" } });
       const headers = new Headers(req.headers);
       headers.set("X-User-Id", crypto.randomUUID());
+      headers.set("X-Room-Idle-Ms", String(IDLE_MS));
       return env.WORLD.get(env.WORLD.idFromName(room)).fetch(new Request(req, { headers }));
     }
     return env.ASSETS.fetch(req);

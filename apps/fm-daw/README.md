@@ -101,7 +101,7 @@ The golden tests render 8 seconds of the demo groove with each engine. Both the 
 
 ## On Cloudflare
 
-`src/worker.ts` serves the page and routes `/ws?room=<name>` to a `World` Durable Object, the same class the desktop runs. Open the same room in two browsers and edits show up in both; the status bar counts who's jamming. Visitors are anonymous: the Worker vouches a random id. This is written and typechecked but **not deployed yet**. The `rustybuns plan` / `deploy` flow from the top-level README applies.
+`src/worker.ts` serves the page and routes `/ws?room=<name>` to a `World` Durable Object, the same class the desktop runs. Open the same room in two browsers and edits show up in both; the status bar counts who's jamming. Visitors are anonymous: the Worker vouches a random id. One address can open only so many new rooms a minute (per Worker isolate), a room holds 32 sockets, and a socket sending more than its budget (120 messages a second, big ones cost more) is closed and reconnects to the snapshot. A room nobody opens for 30 days is deleted; the desktop's own groove never is. This is written and typechecked but **not deployed yet**. The `rustybuns plan` / `deploy` flow from the top-level README applies.
 
 ## Known limits
 

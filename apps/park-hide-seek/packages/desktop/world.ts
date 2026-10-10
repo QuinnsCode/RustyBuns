@@ -21,6 +21,8 @@ const SEND_MS = 66;
 const MAX_MESSAGE = 4096;
 // Positions come in about 20 a second; anything past this is dropped.
 const MSG_RATE = 40, MSG_BURST = 80;
+// The same player from another tab or a reconnect: the older socket is closed with this.
+export const CLOSE_REPLACED = 4001;
 
 /** The id a player is known by in the game and in every view: a one-way hash of their secret uid. */
 export async function publicId(uid: string): Promise<string> {
@@ -57,6 +59,9 @@ export default class World {
     const [client, server] = Object.values(pair) as any[];
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ id });
+    // one socket per player: a reconnect or second tab replaces the older one (after
+    // the new one is in, so the old one's close does not take the player out)
+    for (const old of this.open()) if (old !== server && (old.deserializeAttachment() as any)?.id === id) try { old.close(CLOSE_REPLACED, "replaced"); } catch {}
     this.flush(true);
     this.send(server, id, now);
     if (!this.timer) this.timer = setInterval(() => this.tick(), TICK_MS);

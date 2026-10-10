@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MAX_WATCHERS, MSG_BURST, Room, WATCHDOG_MS } from "../src/engine/room.ts";
+import { MAX_SOCKETS, MAX_WATCHERS, MSG_BURST, Room, WATCHDOG_MS } from "../src/engine/room.ts";
 import { TickLoop, TICK_MS, MAX_CATCHUP } from "../src/engine/tickLoop.ts";
 import { CLOSE_FLOOD, CLOSE_FULL, CLOSE_REPLACED, CLOSE_VERSION, PROTO_VERSION } from "../src/engine/wire.ts";
 import { COUNTDOWN_TICKS } from "../src/sim/rules.ts";
@@ -93,6 +93,22 @@ test("a fifth human watches, can sit when a seat frees, and the gallery has a li
   const late = join("late");
   expect(late.closed?.code).toBe(CLOSE_FULL);
   expect(late.last("err")!.msg).toMatch(/full/);
+});
+
+test("sockets that never say hello get nothing, count against the room, and only a uid's newest waits", () => {
+  const { room, ctx, say, join, clock } = setup();
+  const a = join("a");
+  const quiet = Array.from({ length: MAX_SOCKETS - 1 }, (_, i) => { const ws = new FakeSocket(); ctx.sockets.push(ws); room.onConnect(ws, `q${i}`, "Q"); return ws; });
+  say(a, { t: "start" });
+  clock.advance(1000 * 4);
+  expect(a.of("snap").length).toBeGreaterThan(0);
+  expect(quiet.every((q) => q.sent.length === 0)).toBe(true);   // no snapshots nor room frames before a hello
+  expect(room.admits("stranger")).toBe(false);                  // every seat and the gallery's worth of sockets
+  expect(room.admits("a")).toBe(true);                          // a player coming back always has a door
+  const again = new FakeSocket(); ctx.sockets.push(again); room.onConnect(again, "q0", "Q");
+  expect(quiet[0]!.closed?.code).toBe(CLOSE_REPLACED);          // the older try of the same uid is closed
+  expect(again.closed).toBeNull();
+  expect(room.admits("stranger")).toBe(false);
 });
 
 test("couch over the network: one socket, two seats, each driven by its own input", () => {
