@@ -1164,4 +1164,35 @@ describe("shares", () => {
     expect((await put("ana", "public")).status).toBe(200);
     expect((await call("bo", "/api/repos/ana/dig")).status).toBe(200);
   });
+
+  test("the owner deletes a repo, once its name is typed back: rows, files, branches, cuts, shares and git", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "gone" });
+    await post(call, "ana", "/api/repos/ana/gone/collaborators", { name: "agent-a" });
+    await post(call, "ana", "/api/repos/ana/gone/files", { path: "a.ts", content: "export const one = 1;\nexport const two = one + 1;\n" });
+    await post(call, "ana", "/api/repos/ana/gone/do/commit?path=a.ts", { message: "first" });
+    await post(call, "ana", "/api/repos/ana/gone/branches", { name: "tidy" });
+    const share = (await (await post(call, "ana", "/api/repos/ana/gone/shares", { path: "a.ts", from: 1, to: 2 })).json()) as any;
+    const cut = await post(call, "ana", "/api/repos/ana/gone/cuts", { pieces: [{ path: "a.ts", from: 2, to: 2 }] });
+    expect(cut.status).toBe(201);
+    const { artifact } = (await call.env.DB.prepare("SELECT artifact FROM repos WHERE owner = 'ana' AND name = 'gone'").first()) as any;
+    expect(artifact).toBeTruthy();
+
+    const del = (who: string, q = "?confirm=gone") => call(who, `/api/repos/ana/gone${q}`, { method: "DELETE" });
+    expect((await del("agent-a")).status).toBe(403);   // crew can't
+    expect((await del("bo")).status).toBe(403);
+    expect((await del("ana", "")).status).toBe(400);   // not without its name
+    expect((await del("ana", "?confirm=other")).status).toBe(400);
+    expect(await (await del("ana")).json()).toEqual({ deleted: "ana/gone" });
+
+    expect((await call("ana", "/api/repos/ana/gone")).status).toBe(404);
+    expect((await call(null, `/api/shares/${share.id}`)).status).toBe(404);
+    for (const t of ["files", "branches", "branch_files", "collaborators", "shares", "cuts", "file_search"]) {
+      expect(await call.env.DB.prepare(`SELECT count(*) AS n FROM ${t} WHERE owner = 'ana' AND repo = 'gone'`).first()).toEqual({ n: 0 });
+    }
+    // The name is free again, and starts empty: the file's Durable Object was wiped, and the git went too.
+    expect((await post(call, "ana", "/api/repos", { name: "gone" })).status).toBe(201);
+    expect(((await (await call("ana", "/api/repos/ana/gone/do/file?path=a.ts")).json()) as any).lines ?? []).toEqual([]);
+    expect(((await (await call("ana", "/api/repos/ana/gone/tree")).json()) as any).entries).toEqual([]);
+  });
 });

@@ -58,14 +58,15 @@ export function parseRepo(s: string): string | null {
   return null;
 }
 
-/** Forget a repo: its rows, its files' Durable Objects, and its git. */
+/** Forget a repo: its rows, its files' Durable Objects, and its git. An expired dig goes this way, and so does a repo its owner deletes. */
 export async function evict(env: Env, owner: string, name: string) {
   const r = await env.DB.prepare("SELECT artifact FROM repos WHERE owner = ? AND name = ?").bind(owner, name).first();
   const { results: files } = await env.DB.prepare("SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ? UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?")
     .bind(owner, name, owner, name).all();
   await Promise.all((files as { path: string; branch: string | null }[]).map((f) =>
     fileStub(env, owner, name, f.path, f.branch ?? undefined).fetch(new Request("https://file/wipe", { method: "POST" })).catch(() => null)));
-  await env.DB.batch(["repos|owner = ? AND name = ?", "collaborators", "files", "file_search", "branches", "branch_files", "shares", "tracks", "webhooks", "webhook_deliveries"].map((t) => {
+  await env.DB.batch(["repos|owner = ? AND name = ?", "collaborators", "files", "file_search", "branches", "branch_files", "shares", "tracks", "webhooks", "webhook_deliveries",
+    "cuts", "deploys", "deploy_settings", "deploy_keys", "dep_watches", "fit_cache"].map((t) => {
     const [table, where = "owner = ? AND repo = ?"] = t.split("|");
     return env.DB.prepare(`DELETE FROM ${table} WHERE ${where}`).bind(owner, name);
   }));

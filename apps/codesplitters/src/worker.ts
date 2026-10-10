@@ -7,7 +7,7 @@ import { fileStub, handleFor, access as artifactAccess, listDir, materialize, pu
 import { code, json, NAME, type Env } from "./env.ts";
 import { identityRoutes, identify, isAdmin } from "./identity.ts";
 import { levelRoutes } from "./levels.ts";
-import { githubRoutes } from "./github.ts";
+import { evict, githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
 import { createCut, cutRoutes } from "./cuts.ts";
@@ -146,6 +146,14 @@ const app = {
         if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
         await env.DB.prepare("UPDATE repos SET visibility = ? WHERE owner = ? AND name = ?").bind(visibility, owner, repo).run();
         return json({ visibility });
+      }
+      // DELETE /api/repos/:o/:r?confirm=:r  (owner only) the repo and everything of it here: rows, file DOs, git.
+      // GitHub never hears, and a stack it deployed stays up.
+      if (!p[4] && req.method === "DELETE") {
+        if (user !== owner) return json({ error: "owner only" }, 403);
+        if (url.searchParams.get("confirm") !== repo) return json({ error: `to delete it, confirm with its name: ?confirm=${repo}` }, 400);
+        await evict(env, owner, repo);
+        return json({ deleted: `${owner}/${repo}` });
       }
       // POST /api/repos/:o/:r/shares {path, from, to, note}  a live link to some lines
       if (p[4] === "shares" && req.method === "POST") {
