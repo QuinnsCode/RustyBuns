@@ -31,6 +31,10 @@ export interface Env {
   GAMES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** Containers that run hosted coding agents (Cloudflare only; the desktop runs the CLIs itself). */
   AGENT_SANDBOX?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** One Durable Object per repo that runs hosted deploys, each in its own container (deploy-runner.ts). Bound only with CODESPLITTERS_DEPLOYS=1. */
+  DEPLOY_RUNNER?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** 32 random bytes in base64: seals each repo's stored deploy key (deploy-keys.ts). */
+  DEPLOY_SECRETS_KEY?: string;
   /** Logins for the agent CLIs in the sandbox (see sandbox.ts). */
   ANTHROPIC_API_KEY?: string;
   CLAUDE_CODE_OAUTH_TOKEN?: string;
@@ -43,6 +47,13 @@ export interface Env {
   /** The owner's verified email; signing in with it claims the first ADMINS handle. */
   ADMIN_EMAIL?: string;
   BETTER_AUTH_SECRET?: string;
+  /**
+   * Cloudflare Email Sending, and the address it sends from (its domain onboarded
+   * to Email Sending). With both, email accounts get verification and password
+   * reset mail; without them, there's none (see identity.ts).
+   */
+  EMAIL?: { send(m: { from: string | { email: string; name?: string }; to: string; subject: string; text: string; html?: string }): Promise<unknown> };
+  EMAIL_FROM?: string;
   BETTER_AUTH_URL?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
