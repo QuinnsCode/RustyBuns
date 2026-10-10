@@ -195,3 +195,22 @@ test("paths stay inside their root, not just under a name that starts the same",
   for (const p of ["/asset/", "/"]) expect(await (await fetch(shell.url + p + encodeURIComponent(escape))).text()).not.toBe("s");
   await shell.stop();
 });
+
+test("serve: a launch code trades for the cookie once, and expires", async () => {
+  const shell = serve({ token: "t0k" });
+  shell.mount({ async fetch() { return new Response("in"); } }, {});
+  const code = shell.launchCode()!;
+  const r = await fetch(shell.url + "/x?rb_launch=" + code + "&a=1", { redirect: "manual" });
+  expect(r.status).toBe(302);
+  expect(r.headers.get("location")).toBe("/x?a=1");
+  const cookie = r.headers.get("set-cookie")!;
+  expect(cookie).toContain("=t0k;");
+  expect(await (await fetch(shell.url + "/x", { headers: { cookie } })).text()).toBe("in");
+  expect((await fetch(shell.url + "/x?rb_launch=" + code, { redirect: "manual" })).status).toBe(403);   // used up
+  const stale = shell.launchCode(1)!;
+  await Bun.sleep(5);
+  expect((await fetch(shell.url + "/x?rb_launch=" + stale, { redirect: "manual" })).status).toBe(403);
+  expect((await fetch(shell.url + "/x?rb_launch=nope", { redirect: "manual" })).status).toBe(403);
+  await shell.stop();
+  expect(serve({}).launchCode()).toBeUndefined();
+});
