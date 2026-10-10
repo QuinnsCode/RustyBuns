@@ -3,7 +3,7 @@ import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { AgentSandbox, LOGINS, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
-import { run } from "../sandbox/server.mjs";
+import { run, test as testCut } from "../sandbox/server.mjs";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -19,6 +19,12 @@ describe("the container's server", () => {
   });
   test("a path that climbs out of the directory is refused", async () => {
     expect((await run({ cmd: { bin: "true", args: [] }, path: "../escape.js", text: "" })).code).toBe(2);
+    expect((await testCut({ files: { "../escape.test.ts": "" } })).code).toBe(2);
+  });
+  test("runs bun test over a cut's files, with a JUnit report", async () => {
+    const r = await testCut({ files: { "a.test.ts": 'import { expect, test } from "bun:test";\ntest("one", () => expect(1).toBe(1));\n' } });
+    expect(r.code).toBe(0);
+    expect(r.report).toContain('<testcase name="one"');
   });
 });
 

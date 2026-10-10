@@ -160,6 +160,9 @@
   .ln.sel { background: var(--select); } .ln.sel .n { color: var(--fg); box-shadow: inset 2px 0 0 var(--fg); }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   .ln.claim .t { box-shadow: inset 2px 0 0 var(--accent); }
+  /* A cut's gutter: each test's line, and the lines a failure points at. */
+  .ln.pass .n { color: #2f9e44; box-shadow: inset 3px 0 #2f9e44; } .ln.fail .n { color: #cf222e; box-shadow: inset 3px 0 #cf222e; }
+  .runsum.pass { color: #2f9e44; } .runsum.fail { color: #cf222e; }
   .ln input { width: 100%; font: inherit; padding: 0 4px; border-radius: 3px; }
   .ln:first-child { padding-top: 6px; } .ln:last-child { padding-bottom: 6px; }
   mark { background: var(--accent-soft); color: inherit; border-radius: 2px; box-shadow: inset 0 -1px var(--accent); }
@@ -555,6 +558,15 @@ function table(tree, href) {
 }
 function codeRows(lines, { blame = true, start = 1 } = {}) {
   return lines.map((l, i) => `<div class="ln" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${esc(l.text) || " "}</span></div>`).join("");
+}
+/** Cut lines out: the picked pieces, plus "path:from-to" lines from the "add these lines too" box. */
+function cutLines(owner, repo, pieces, more = "", note = "") {
+  for (const s of more.split("\n").map((x) => x.trim()).filter(Boolean)) {
+    const m = /^(.+?):(\d+)(?:\s*[-–]\s*(\d+))?$/.exec(s);
+    if (!m) throw new Error(`can't read "${s}": write path:from-to`);
+    pieces.push({ path: m[1], from: +m[2], to: +(m[3] ?? m[2]) });
+  }
+  return api(`/repos/${owner}/${repo}/cuts`, { pieces, note });
 }
 /** Then against now, by line id: orange rows were taken out, grey rows were put in. */
 function diffRows(then, now) {
@@ -1006,6 +1018,7 @@ const views = {
       bar: `${crumbs(`#/r/${owner}/${repo}`, repo, path)}<span class="grow"></span>
         <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit. Older revisions show as a diff against now.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"><span class="legend"><span><i class="d"></i>taken out</span><span><i class="a"></i>put in</span></span><a class="btn" id="smash" hidden title="the lines this took out, as furniture in the backrooms">${icon("hammer")}Smash what it took out</a></div></div>
         ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
+        ${r.canWrite ? `<div class="pop"><button class="btn" id="cut" disabled title="select lines first: click a line number, shift-click another">${icon("scissors")}Cut</button><form class="panel" id="cut-form" hidden style="width:380px"><b>Cut <span id="cut-range"></span> out</b><span class="muted" style="font-size:13px">Just these lines and the imports they use, as a tiny repo on a branch of its own: run its tests, share it, merge a fix back.</span><textarea name="more" rows="3" placeholder="add these lines too, a range a line:&#10;test/sum.test.ts:10-24"></textarea><input name="note" placeholder="what it shows (optional)"><button class="btn primary">${icon("scissors")}Cut</button></form></div>` : ""}
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
         ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
         ${r.canWrite ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
@@ -1045,8 +1058,8 @@ const views = {
     selectable(box, (range) => {
       sel = range;
       const label = range[0] === range[1] ? `line ${range[0]}` : `lines ${range[0]}–${range[1]}`;
-      for (const b of ["#share", "#collect"]) if ($(b)) $(b).disabled = false;
-      if ($("#share-range")) $("#share-range").textContent = label;
+      for (const b of ["#share", "#collect", "#cut"]) if ($(b)) $(b).disabled = false;
+      for (const b of ["#share-range", "#cut-range"]) if ($(b)) $(b).textContent = label;
       $("#st-sel").textContent = range[0] === range[1] ? `Ln ${range[0]}` : `Ln ${range[0]}–${range[1]}`;
     });
     // The game's "smash the removed lines": a revision pair of this file.
@@ -1126,6 +1139,15 @@ const views = {
       });
       $("#share-copy").addEventListener("click", () => copy($("#share-out input").value, "Link copied"));
     }
+    if ($("#cut")) {
+      popover($("#cut"));
+      $("#cut-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        try { location.hash = "#/c/" + (await cutLines(owner, repo, [{ path, from: sel[0], to: sel[1] }], f.more.value, f.note.value)).id; }
+        catch (err) { toast(err.message); }
+      });
+    }
     if ($("#collect")) {
       popover($("#collect"));
       const { playlists } = await api("/users/" + me());
@@ -1193,6 +1215,64 @@ const views = {
     timer = setInterval(() => { if (location.hash !== "#/s/" + id) return clearInterval(timer); if (!document.hidden) load().catch(() => {}); }, 6000);
   },
 
+  // A cut: some lines cut out as a tiny repo on a branch, its tests' result in the gutter.
+  async c(id) {
+    ctx = { view: "c", id };
+    const load = async () => {
+      const c = await api("/cuts/" + id);
+      const r = await api(`/repos/${c.owner}/${c.repo}`).catch(() => null);
+      const write = !!r?.canWrite && c.status === "open", run = c.run;
+      const summary = !run ? "not run yet" : run.note ?? `${run.passed} passed, ${run.failed} failed`;
+      const share = `${location.origin}/api/cuts/${id}/share`;
+      const post = `https://x.com/intent/post?text=${encodeURIComponent(`Cut out of ${c.owner}/${c.repo}, ${summary}${c.note ? ": " + c.note : ""}`)}&url=${encodeURIComponent(share)}`;
+      app.innerHTML = `<div class="wrap" style="max-width:980px;padding-top:28px">
+        <div class="box"><div class="bar">${icon("scissors")}<b>A cut of <a href="#/r/${c.owner}/${c.repo}">${esc(c.owner)}/${esc(c.repo)}</a></b><span class="muted">· <code>${esc(c.branch)}</code> · ${c.status}</span><span class="grow"></span>
+          ${c.can_run ? `<button class="btn" id="cut-run">${icon("play")}Run tests</button>` : ""}
+          <div class="pop"><button class="btn" id="cut-share">${icon("share-2")}Share</button><div class="panel" hidden style="width:380px"><b>Share this cut</b><span class="muted" style="font-size:13px">The link unfurls as a card of the code and its test result.</span><div class="copyline"><input readonly value="${esc(share)}"><button class="btn" type="button" id="cut-copy">${icon("copy")}</button></div><a class="btn" target="_blank" rel="noopener" href="${esc(post)}">${icon("send")}Post to X</a><img src="/api/cuts/${id}/card.png?at=${run?.at ?? 0}" alt="the card a link to this cut unfurls as" style="width:100%;border:1px solid var(--border);border-radius:5px"></div></div>
+          ${write ? `<button class="btn primary" id="cut-merge">${icon("git-merge")}Merge into main</button>` : ""}</div>
+          ${c.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">${esc(c.note)} <span class="muted">· cut by ${esc(c.by)}</span></div>` : ""}
+          ${c.files.map((f) => `<div class="bar">${icon("file")}<a href="#/f/${c.owner}/${c.repo}/${encodeURIComponent(f.path)}">${esc(f.path)}</a></div><div class="code" data-path="${esc(f.path)}">${codeRows(f.lines.map((l) => ({ ...l, n: l.n ?? "+" })))}</div>`).join("")}
+          <div class="body"><b class="runsum ${!run || run.note ? "" : run.code === 0 ? "pass" : "fail"}">${esc(summary)}</b>${run?.out ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(run.out)}</pre></details>` : ""}</div></div>
+        <p class="muted" style="font-size:12px">Line numbers are where each line is on main now; + is new in the cut.${write ? " Double-click a line to edit the cut: Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it." : ""}</p></div>`;
+      for (const f of c.files) {
+        const box = app.querySelector(`.code[data-path="${CSS.escape(f.path)}"]`);
+        for (const el of box.querySelectorAll(".ln")) {
+          const mark = run?.marks?.[f.path]?.[el.dataset.id];
+          if (mark) el.classList.add(mark);
+          if (write) el.addEventListener("dblclick", () => edit(c, f, el));
+        }
+      }
+      popover($("#cut-share"));
+      $("#cut-copy").addEventListener("click", () => copy(share, "Link copied"));
+      $("#cut-run")?.addEventListener("click", async (e) => {
+        e.currentTarget.disabled = true; e.currentTarget.lastChild.textContent = "Running…";
+        try { await api(`/cuts/${id}/run`, {}); } catch (err) { toast(err.message); }
+        load();
+      });
+      $("#cut-merge")?.addEventListener("click", async () => {
+        try { await api(`/repos/${c.owner}/${c.repo}/branches/${c.branch}/merge`, {}); toast("Merged into main"); }
+        catch (err) { toast(err.message === "conflicts" ? "Main changed these lines too: settle it under Branches on the repo page" : err.message); }
+        load();
+      });
+      icons();
+    };
+    const edit = (c, f, el) => {
+      const line = f.lines.find((l) => l.id === el.dataset.id);
+      const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}">`;
+      const inp = $("input", t); inp.focus();
+      inp.addEventListener("keydown", async (e) => {
+        if (e.key === "Escape") return load();
+        if (e.key !== "Enter") return;
+        const ops = e.shiftKey ? [{ kind: "insert", after: line.id, text: "" }]
+          : inp.value === "" ? [{ kind: "delete", line: line.id, base: line.rev }]
+          : [{ kind: "set", line: line.id, base: line.rev, text: inp.value }];
+        try { await api(`/repos/${c.owner}/${c.repo}/do/ops?path=${encodeURIComponent(f.path)}&branch=${c.branch}`, { ops }); } catch (err) { toast(err.message); }
+        load();
+      });
+    };
+    await load();
+  },
+
   async p(id) {
     const pl = await api("/playlists/" + id);
     ctx = { view: "p", id };
@@ -1223,6 +1303,7 @@ const HOME_CMDS = [
   ["git-commit-horizontal", "Commit to git", "Pushes a real commit to the repo's Artifact.", "POST /api/repos/:o/:r/do/commit"],
   ["terminal", "Clone with git", "A real remote, with a read token that lasts an hour.", "GET /api/repos/:o/:r"],
   ["history", "Time travel", "Replay a file to any edit, with blame per line.", "GET /api/repos/:o/:r/do/at?rev="],
+  ["scissors", "Cut some lines", "Just them and their imports, as a branch: run the tests, share a card, merge the fix back.", "POST /api/repos/:o/:r/cuts"],
   ["bookmark-plus", "Collect lines", "Playlists of code you love, on your profile.", "POST /api/playlists/:id/tracks"],
   ["search", "Search code", "Everything committed that you're allowed to see.", "GET /api/search?q="],
   ["gamepad-2", "Play the backrooms", "Every repo is a level. The lines fight back.", "WS /api/game/:room/ws"],
@@ -1324,6 +1405,10 @@ async function commands() {
       const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
       const s = await api(`/repos/${c.owner}/${c.repo}/shares`, { path: c.path, from, to: to || from });
       copy(`${location.origin}/#/s/${s.id}`, `Link to lines ${s.from}–${s.to} copied`);
+    }, c.sel ? null : "which lines, like 4-12");
+    if (c.canWrite) add("This file", "scissors", range ? `Cut ${range} out` : "Cut lines out…", `POST /api/repos/${c.owner}/${c.repo}/cuts`, async (arg) => {
+      const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
+      location.hash = "#/c/" + (await cutLines(c.owner, c.repo, [{ path: c.path, from, to: to || from }])).id;
     }, c.sel ? null : "which lines, like 4-12");
     if (c.canWrite) add("This file", "git-commit-horizontal", "Commit this file", `POST /api/repos/${c.owner}/${c.repo}/do/commit`, async (msg) => {
       const r = await api(`${c.base}/commit${c.q}`, { message: msg }); toast(r.git?.commit ? `Pushed ${r.git.commit.slice(0, 7)}` : "Committed");

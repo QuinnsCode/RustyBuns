@@ -59,6 +59,8 @@ export interface Env {
   DEPS_TESTER?: unknown;
   /** Tests only: stands in for the commands and the fetch a preview deploy runs (see preview.ts). */
   PREVIEW_RUNNER?: unknown;
+  /** Tests only: stands in for running `bun test` on a cut (see cuts.ts). */
+  CUT_TESTER?: unknown;
 }
 
 export const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>
