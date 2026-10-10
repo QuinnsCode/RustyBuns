@@ -48,6 +48,35 @@ export function rebase(ops: Op[], doc: Doc): { ops: Op[]; skipped: Op[] } {
 }
 
 /**
+ * `theirs`' changes to `base`, made on `ours` instead: a three-way merge by
+ * lines. Each change lands where the lines it replaces (and their neighbours)
+ * are still as `base` had them in `ours`. A change that touches a line `ours`
+ * changed is a clash, and then nothing is merged: null.
+ */
+export function merge3(base: string[], ours: string[], theirs: string[]): string[] | null {
+  const kept = new Map(keptPairs(base, ours).map(({ i, j }) => [i, j]));
+  // Where base line k sits in ours; before the start and past the end always line up.
+  const at = (k: number) => k < 0 ? -1 : k >= base.length ? ours.length : kept.get(k);
+  const hunks: { from: number; to: number; lines: string[] }[] = [];
+  let i = 0, j = 0;
+  for (const p of [...keptPairs(base, theirs), { i: base.length, j: theirs.length }]) {
+    if (p.i > i || p.j > j) {
+      // base[i..p.i) became theirs[j..p.j): it, and the line either side, must be untouched in ours.
+      for (let k = i - 1; k < p.i; k++) {
+        const x = at(k), y = at(k + 1);
+        if (x === undefined || y === undefined || y !== x + 1) return null;
+      }
+      hunks.push({ from: at(i - 1)! + 1, to: at(p.i)!, lines: theirs.slice(j, p.j) });
+    }
+    i = p.i + 1;
+    j = p.j + 1;
+  }
+  const out = [...ours];
+  for (const h of hunks.reverse()) out.splice(h.from, h.to - h.from, ...h.lines);
+  return out;
+}
+
+/**
  * Pairs of (base index, next index) for lines the two texts share, in order: a
  * longest common subsequence, found with Myers' linear-space diff. Memory is
  * O(n + m) and time O((n + m) * d) for d changed lines, so a big file with a
