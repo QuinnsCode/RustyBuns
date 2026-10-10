@@ -77,7 +77,9 @@ export default defineConfig({
   },
   targets: {
     // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler;
-    // adopted by rustybuns deploy on 2026-10-09 (#170). Keep adopt on: state is local.
+    // adopted by rustybuns deploy on 2026-10-09 (#170). Keep adopt on: a new clone or stage
+    // starts with empty state, and adopt takes these over instead of duplicating them.
+    // D1 migrations are Alchemy's (__alchemy_migrations); never apply them with wrangler (README).
     edge: { provider: "cloudflare", adopt: true },
     desktop: { mode: "worker", window: "app" },
   },

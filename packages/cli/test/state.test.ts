@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { linkSharedState, lockState, sharedStateBase, unlinkSharedState } from "../src/state.ts";
+import { adoptNote, alchemyStage, linkSharedState, lockState, sharedStateBase, unlinkSharedState } from "../src/state.ts";
 
 function repoWithWorktree() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-state-")));
@@ -67,4 +67,28 @@ test("state lock: held by a live process, taken over from a dead one", () => {
   expect(JSON.parse(readFileSync(join(base, "lock"), "utf8")).pid).toBe(process.pid);
   release();
   expect(existsSync(join(base, "lock"))).toBe(false);
+});
+
+test("adopt note: names what a `create` takes over until the stage has state", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "rb-adopt-")));
+  const cfg = {
+    name: "game",
+    bindings: { DB: { type: "d1" as const, databaseName: "game-db" }, BUCKET: { type: "r2" as const, bucketName: "game-files" } },
+    targets: { edge: { provider: "cloudflare" as const, adopt: true } },
+  };
+  const note = adoptNote(dir, cfg, "live_me")!;
+  expect(note).toContain("stage live_me");
+  expect(note).toContain("Worker game, D1 game-db, R2 game-files");
+  expect(adoptNote(dir, { ...cfg, targets: { edge: { provider: "cloudflare" } } }, "live_me")).toBeNull();
+  mkdirSync(join(dir, ".alchemy", "state", "game", "live_me"), { recursive: true });
+  writeFileSync(join(dir, ".alchemy", "state", "game", "live_me", "Worker.json"), "{}");
+  expect(adoptNote(dir, cfg, "live_me")).toBeNull();
+  expect(adoptNote(dir, cfg, "pr_1")).not.toBeNull();
+});
+
+test("alchemy stage: --stage, then $ALCHEMY_STAGE, then live_$USER", () => {
+  expect(alchemyStage(["--stage", "pr_1"], { USER: "me" })).toBe("pr_1");
+  expect(alchemyStage(["--yes", "--stage=pr_2"], { USER: "me" })).toBe("pr_2");
+  expect(alchemyStage([], { ALCHEMY_STAGE: "prod", USER: "me" })).toBe("prod");
+  expect(alchemyStage([], { USER: "me" })).toBe("live_me");
 });
