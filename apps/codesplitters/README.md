@@ -90,7 +90,15 @@ On Cloudflare a Worker is a V8 isolate: it has `node:fs` now, but it can't start
 
 ### Hosted deploys
 
-Off by default. Deploy the site with `CODESPLITTERS_DEPLOYS=1`, accounts on (`BETTER_AUTH_SECRET`) and `DEPLOY_SECRETS_KEY` (`openssl rand -base64 32`), and an owner listed in `ADMINS` can store a deploy key in the repo's Deploy panel: a Cloudflare API token scoped to Workers Scripts edit on one account (plus D1 and R2 edit if the app binds them), not a global key, and its account ID. Then Deploy, and their own commits to main if they turned that on, ship from the site instead of their machine.
+Off by default. Deploy the site with `CODESPLITTERS_DEPLOYS=1` and accounts on (`BETTER_AUTH_SECRET`), and an owner listed in `ADMINS` can store a deploy key in the repo's Deploy panel: a Cloudflare API token scoped to Workers Scripts edit on one account (plus D1 and R2 edit if the app binds them), not a global key, and its account ID. Then Deploy, and their own commits to main if they turned that on, ship from the site instead of their machine.
+
+**The sealing key comes from 1Password, never your shell.** With `CODESPLITTERS_DEPLOYS=1` the config turns on `experimental.wheel: "human"`, and `DEPLOY_SECRETS_KEY` is read from 1Password at deploy time through [varlock](https://varlock.dev) (a dev dependency here), behind your Touch ID, straight into the Worker's secret. Once:
+
+1. Install the 1Password CLI (`brew install 1password-cli`) and turn on Settings → Developer → "Integrate with 1Password CLI" in the 1Password app.
+2. In a vault named `codesplitters`, make a Password item named `DEPLOY_SECRETS_KEY` whose password is 32 random bytes in base64 (`openssl rand -base64 32`). Elsewhere? Point `DEPLOY_SECRETS_KEY_OP` at its reference (1Password's "Copy Secret Reference").
+3. `rustybuns generate` writes `.env.schema` (names and the reference, no values). Commit it.
+
+Keep the item: changing it orphans every stored deploy key, and owners would have to set theirs again.
 
 - **Write-only.** Only the owner sets, replaces or removes the key (`PUT|DELETE /api/repos/:o/:r/deploy/key`). The API never returns it: it shows who set it, when, and its last 4 characters. It's sealed with AES-GCM under `DEPLOY_SECRETS_KEY`, bound to its repo, in D1.
 - **Unsealed into one run.** Each repo has a `DeployRunner` Durable Object, so one deploy at a time; each run starts its own container (`deploy-sandbox/Dockerfile`: git, bun and a small server) with the key in its env as `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`, then destroys it. It's a separate image and binding from `AGENT_SANDBOX`: agent containers never see a deploy key. The key is scrubbed from the run's output.

@@ -13,4 +13,5 @@ wrangler.generated.jsonc
 .env
 .env.*
 !.env.example
+!.env.schema
 .dev.vars
