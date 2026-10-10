@@ -26,7 +26,8 @@ export interface Run { id: string; at: number; stage: string; steps: Step[]; url
 
 /** Run a command, streaming its output; resolves to the exit code. */
 export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Promise<number>;
-export interface Runner { exec: Exec; fetch: (url: string) => Promise<{ status: number }> }
+/** Where a run's commands go. `workdir`: a fresh directory the runner owns and cleans up (a deploy container's), used in place of a temp dir here. */
+export interface Runner { exec: Exec; fetch: (url: string) => Promise<{ status: number }>; workdir?: string }
 
 export const STEPS: StepKey[] = ["clone", "install", "deploy", "check", "destroy"];
 const MAX_OUT = 60_000;
@@ -55,11 +56,11 @@ export type Trigger = "button" | "commit" | "preview";
 export const KEEP = 50;
 
 /** Log a run as it starts, and let the oldest go past KEEP. */
-export async function logStart(env: Env, owner: string, repo: string, run: Run, by: string, trigger: Trigger) {
+export async function logStart(env: Env, owner: string, repo: string, run: Run, by: string, trigger: Trigger, runner: "desktop" | "hosted" = "desktop", keyLast4?: string) {
   const kind = trigger === "preview" ? "= 'preview'" : "!= 'preview'";
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO deploys (id, owner, repo, stage, by, trigger, status, at) VALUES (?, ?, ?, ?, ?, ?, 'running', ?)")
-      .bind(run.id, owner, repo, run.stage, by, trigger, run.at),
+    env.DB.prepare("INSERT INTO deploys (id, owner, repo, stage, by, trigger, status, at, runner, key_last4) VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)")
+      .bind(run.id, owner, repo, run.stage, by, trigger, run.at, runner, keyLast4 ?? null),
     env.DB.prepare(`DELETE FROM deploys WHERE owner = ? AND repo = ? AND trigger ${kind} AND id NOT IN
       (SELECT id FROM deploys WHERE owner = ? AND repo = ? AND trigger ${kind} ORDER BY at DESC LIMIT ?)`).bind(owner, repo, owner, repo, KEEP),
   ]);
@@ -75,7 +76,7 @@ export async function logEnd(env: Env, run: Run) {
 
 /** The last 20 logged runs of one kind. One still "running" but not in this process died with an earlier one. */
 export async function history(env: Env, owner: string, repo: string, previews: boolean, live: Run | null) {
-  const { results } = await env.DB.prepare(`SELECT id, stage, by, trigger, status, commit_hash, url, at, ms, note, out FROM deploys
+  const { results } = await env.DB.prepare(`SELECT id, stage, by, trigger, status, commit_hash, url, at, ms, note, out, runner, key_last4 FROM deploys
     WHERE owner = ? AND repo = ? AND trigger ${previews ? "= 'preview'" : "!= 'preview'"} ORDER BY at DESC LIMIT 20`).bind(owner, repo).all();
   return (results as any[]).map((d) => d.status === "running" && live?.id !== d.id ? { ...d, status: "interrupted" } : d);
 }
@@ -95,11 +96,9 @@ const LOGIN_HINT = /unauthori[sz]ed|authentication|not logged in|no credentials|
  * deploy may take over live resources (`adopt`) when the owner said so.
  */
 export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean } = {}) {
-  const { mkdtempSync, rmSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const dir = mkdtempSync(join(tmpdir(), "codesplitters-preview-"));
-  const app = join(dir, "repo");
+  const fs = runner.workdir ? null : await import("node:fs");
+  const dir = runner.workdir ?? fs!.mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "codesplitters-preview-"));
+  const app = `${dir}/repo`;
   const step = (k: StepKey) => run.steps.find((s) => s.key === k)!;
   const scrub = (s: string) => s.split(remote).join("<remote>");
   /** Run one step's commands; false when one fails. */
@@ -153,7 +152,7 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
         last = await runner.fetch(url).then((r) => String(r.status), (e: Error) => e.message);
         c.out += `GET ${url} → ${last}\n`;
         if (+last > 0 && +last < 500) break;
-        await Bun.sleep(2000);
+        await (typeof Bun !== "undefined" ? Bun.sleep(2000) : new Promise((r) => setTimeout(r, 2000)));   // a hosted deploy runs in a Worker
       }
       c.status = +last > 0 && +last < 500 ? "done" : "failed";
       c.ms = Date.now() - t;
@@ -164,7 +163,7 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
       run.note = `destroy failed; the clone and its Alchemy state are kept in ${app}. Finish with: cd ${app} && bun x rustybuns destroy --yes --stage ${run.stage}`;
     }
   } finally {
-    if (!(deployed && run.kept)) rmSync(dir, { recursive: true, force: true });
+    if (fs && !(deployed && run.kept)) fs.rmSync(dir, { recursive: true, force: true });
     run.done = true;
   }
 }
