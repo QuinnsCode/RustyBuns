@@ -98,18 +98,99 @@ export async function evict(env: Env, owner: string, name: string) {
   for (const a of arts) if (a) await env.ARTIFACTS?.delete?.(a as string).catch(() => false);
 }
 
-/** The submodules at `sha` and the commit each points at: in .gitmodules, then one contents call each. */
+/**
+ * The submodules at `sha` and the commit each points at: in .gitmodules, then one contents call
+ * each. Without a token that's github.com instead of the API (#394): .gitmodules raw, and each
+ * gitlink from the trees down to it, fetched with git's own protocol.
+ */
 export async function submodules(repo: string, sha: string, token?: string) {
-  const res = await gh(`/repos/${repo}/contents/.gitmodules?ref=${sha}`, token);
-  if (!res.ok) return [];
-  const { content = "" } = (await res.json()) as { content?: string };
-  const paths = [...atob(content.replace(/\s/g, "")).matchAll(/^\s*path\s*=\s*(.+?)\s*$/gm)].map((m) => m[1]!).slice(0, 50);
-  const found = await Promise.all(paths.map(async (path) => {
+  let text: string;
+  if (token) {
+    const res = await gh(`/repos/${repo}/contents/.gitmodules?ref=${sha}`, token);
+    if (!res.ok) return [];
+    text = atob(((await res.json()) as { content?: string }).content?.replace(/\s/g, "") ?? "");
+  } else {
+    const res = await fetch(`https://raw.githubusercontent.com/${repo}/${sha}/.gitmodules`, { headers: { "user-agent": "codesplitters" } });
+    if (!res.ok) return [];
+    text = await res.text();
+  }
+  const paths = [...text.matchAll(/^\s*path\s*=\s*(.+?)\s*$/gm)].map((m) => m[1]!).slice(0, 50);
+  if (!paths.length) return [];
+  const gitlink = token ? async (path: string) => {
     const r = await gh(`/repos/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${sha}`, token);
     const j = r.ok ? ((await r.json()) as { type?: string; sha?: string }) : null;
-    return j?.type === "submodule" && j.sha ? { path, commit: j.sha } : null;
+    return j?.type === "submodule" && j.sha ? j.sha : null;
+  } : gitWalker(repo, sha);
+  const found = await Promise.all(paths.map(async (path) => {
+    const commit = await gitlink(path).catch(() => null);
+    return commit ? { path, commit } : null;
   }));
   return found.filter((m) => m !== null);
+}
+
+/**
+ * One object from a public repo on github.com, by git's protocol v2 rather than the API: a fetch
+ * that wants just it (a commit without its parents or tree, a tree without what's in it), which
+ * comes back as a pack of that one object, whole. Null when GitHub won't give it.
+ */
+async function gitObject(repo: string, sha: string, commit: boolean) {
+  const pkt = (s: string) => (s.length + 4).toString(16).padStart(4, "0") + s;
+  const res = await fetch(`https://github.com/${repo}.git/git-upload-pack`, {
+    method: "POST",
+    headers: { "git-protocol": "version=2", "content-type": "application/x-git-upload-pack-request", "user-agent": "git/2.45 codesplitters" },
+    body: pkt("command=fetch\n") + "0001" + pkt("no-progress\n") + pkt(`want ${sha}\n`) + (commit ? pkt("deepen 1\n") : "") + pkt("filter tree:0\n") + pkt("done\n") + "0000",
+  });
+  if (!res.ok) return null;
+  // pkt-lines: section headers, then the packfile section's lines on band 1.
+  const buf = new Uint8Array(await res.arrayBuffer()), parts: Uint8Array<ArrayBuffer>[] = [], ascii = new TextDecoder();
+  let inPack = false;
+  for (let i = 0; i + 4 <= buf.length;) {
+    const n = parseInt(ascii.decode(buf.subarray(i, i + 4)), 16);
+    if (!(n >= 4)) { i += 4; continue; }   // flush or delimiter
+    const line = buf.subarray(i + 4, i + n);
+    i += n;
+    if (inPack) { if (line[0] === 1) parts.push(line.subarray(1)); }
+    else if (ascii.decode(line) === "packfile\n") inPack = true;
+  }
+  const pack = new Uint8Array(await new Blob(parts).arrayBuffer());
+  if (pack.length < 32 || ascii.decode(pack.subarray(0, 4)) !== "PACK" || new DataView(pack.buffer).getUint32(8) !== 1) return null;
+  let j = 12, c = pack[j++]!;
+  if (((c >> 4) & 7) !== (commit ? 1 : 2)) return null;
+  while (c & 0x80) c = pack[j++]!;
+  // The object's zlib stream runs up to the pack's 20-byte checksum.
+  const body = new Blob([pack.subarray(j, pack.length - 20)]).stream().pipeThrough(new DecompressionStream("deflate"));
+  return new Uint8Array(await new Response(body).arrayBuffer());
+}
+
+/** Gitlinks at `sha` by path, from github.com's git: the commit, then each tree down, each fetched once. */
+function gitWalker(repo: string, sha: string) {
+  const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  const trees = new Map<string, Promise<Map<string, { mode: string; sha: string }>>>();
+  const tree = (id: string) => {
+    if (!trees.has(id)) trees.set(id, gitObject(repo, id, false).then((b) => {
+      const entries = new Map<string, { mode: string; sha: string }>(), utf8 = new TextDecoder();
+      for (let i = 0; b && i < b.length;) {   // "<mode> <name>\0<20-byte id>", over and over
+        const sp = b.indexOf(32, i), nul = b.indexOf(0, sp);
+        entries.set(utf8.decode(b.subarray(sp + 1, nul)), { mode: utf8.decode(b.subarray(i, sp)), sha: hex(b.subarray(nul + 1, nul + 21)) });
+        i = nul + 21;
+      }
+      return entries;
+    }));
+    return trees.get(id)!;
+  };
+  const root = gitObject(repo, sha, true).then((b) => /^tree ([0-9a-f]{40})/.exec(b ? new TextDecoder().decode(b) : "")?.[1] ?? null);
+  return async (path: string) => {
+    let id = await root;
+    const names = path.split("/").filter(Boolean);
+    for (const [k, name] of names.entries()) {
+      const e = id ? (await tree(id)).get(name) : undefined;
+      if (!e) return null;
+      if (k === names.length - 1) return e.mode === "160000" ? e.sha : null;
+      if (e.mode !== "40000") return null;
+      id = e.sha;
+    }
+    return null;
+  };
 }
 
 /** git's ref list for a public repo on github.com, not the API (see gitRefs). Null when GitHub won't list it. */
