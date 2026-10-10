@@ -128,25 +128,20 @@ test("a failed deploy keeps the end of its output in the log", async () => {
   expect(d.history[0].out).toContain("Unauthorized");
 });
 
-test("over the deploy limit, a press queues: the replay ships it, and the page follows the run as before", async () => {
+test("over the deploy limit, a press still ships, and the caller is flagged for an admin to look at", async () => {
   const { runner } = fake();
   const { call } = await app(runner, { ADMINS: "boss" });   // else everyone is an admin, and never limited
-  await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('deploy', 1, 3600, 1, 'queue')").run();
+  await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('deploy', 1, 3600, 1, 'flag')").run();
   const press = () => call("ryan", "/api/repos/ryan/lab/deploy", { method: "POST", headers: { "cf-connecting-ip": "203.0.113.7" }, body: "{}" });
-  const first = await press();
-  expect(first.status).toBe(202);
-  expect((await first.json()) as any).toHaveProperty("run.id");
+  expect((await press()).status).toBe(202);
   await settle(call);
   const over = await press();
   expect(over.status).toBe(202);
-  const { queued } = (await over.json()) as any;
-  expect(queued).toMatchObject({ rule: "deploy", state: "waiting", place: 1, label: "Deploys" });
-  // Room again: the next poll replays it, and it answers as the press would have.
-  await call.env.DB.prepare("DELETE FROM limit_hits").run();
-  const job = (await (await call("ryan", `/api/jobs/${queued.id}`)).json()) as any;
-  expect(job).toMatchObject({ state: "done", status: 202, result: { run: { id: expect.any(String) } } });
-  const d = await settle(call, 2);
-  expect(d.history.map((h: any) => h.status)).toEqual(["done", "done"]);
-  const { jobs } = (await (await call("ryan", "/api/jobs")).json()) as any;
-  expect(jobs[0]).toMatchObject({ what: "deploy of ryan/lab", result: { owner: "ryan", name: "lab" } });
+  expect((await over.json()) as any).toHaveProperty("run.id");
+  expect((await settle(call, 2)).history.map((h: any) => h.status)).toEqual(["done", "done"]);
+  const { flagged } = (await (await call("boss", "/api/admin/limits")).json()) as any;
+  expect(flagged).toEqual([expect.objectContaining({ who: "@ryan", rules: ["deploy"] })]);
+  // It can't be set to queue.
+  const put = await call("boss", "/api/admin/limits", { method: "PUT", body: JSON.stringify({ rules: [{ name: "deploy", max: 10, window_s: 3600, enabled: true, on_fail: "queue" }] }) });
+  expect(put.status).toBe(400);
 });

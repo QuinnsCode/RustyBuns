@@ -645,7 +645,7 @@ describe("rate limits", () => {
       // Only slow, costly jobs can queue.
       expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "queue" }])).status).toBe(400);
       const { rules } = (await (await call("boss", "/api/admin/limits")).json()) as any;
-      expect(rules.filter((r: any) => r.queueable).map((r: any) => r.name)).toEqual(["dig", "preview", "deploy", "doctor"]);
+      expect(rules.filter((r: any) => r.queueable).map((r: any) => r.name)).toEqual(["dig", "preview", "doctor"]);
       expect((await put([{ name: "dig", max: 1, window_s: 86400, enabled: true, on_fail: "queue" }])).status).toBe(200);
 
       // Over the cap: a 202 and a place in line, which holds one window's worth.

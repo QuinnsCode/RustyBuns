@@ -350,7 +350,7 @@ const api = async (path, body, method) => {
   // A place in a limit's line is an object; a deploy's own {queued: true} (a commit landing mid-run) isn't one.
   return r.status === 202 && typeof j.queued === "object" && j.queued ? inLine(j.queued) : j;
 };
-// Over a limit that queues (a dig, preview, deploy or check): wait in line, polling (which runs it when it's due), then answer as the request would have.
+// Over a limit that queues (a dig, preview or check): wait in line, polling (which runs it when it's due), then answer as the request would have.
 const nth = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
 async function inLine(job) {
   const t = document.createElement("div"); t.className = "toast"; document.body.append(t);
@@ -368,7 +368,7 @@ async function inLine(job) {
     }
   } finally { t.remove(); jobsBadge(); }
 }
-// Your queued requests (digs, previews, deploys, checks), for when you left the page while one waited (GET /api/jobs, which also runs any that are due):
+// Your queued requests (digs, previews, checks), for when you left the page while one waited (GET /api/jobs, which also runs any that are due):
 // a count in the top bar while any are unfinished, and the list on your profile.
 const jobState = (j) => j.state !== "done" ? j.state : j.status >= 400 ? "failed" : "done";
 function jobRow(j) {
@@ -868,7 +868,7 @@ const views = {
         <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
           ${mine ? `<form id="newpl" class="row" style="margin-top:10px"><input name="title" placeholder="regexes of the lost city" required><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
       </div>
-      ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">digs, previews, deploys and checks that waited in line this week, and how they came out</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
+      ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">digs, previews and checks that waited in line this week, and how they came out</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       ${mine ? `<form id="theme" class="box"><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">any HTML and CSS, rendered in a sandbox (no scripts)</span></div><div class="body" style="display:grid;gap:8px">
         <input name="bio" placeholder="a line about you" value="${esc(user.bio)}">
         <textarea name="theme_html" rows="6" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
