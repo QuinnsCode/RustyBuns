@@ -313,3 +313,25 @@ test("init: a workspace member that gets vite from the root package.json is a vi
   expect(out).toMatch(/detected: vite-react app "app"/);
   expect(w.read("app/rustybuns.config.ts")).toContain('"assets": "dist/web"');
 });
+
+test("init: a vite config's own outDir is kept, so plugins that write there still find it", () => {
+  const p = project({ "package.json": VITE, "bun.lock": "", "vite.config.ts": 'export default { build: { outDir: "build" }, plugins: [] };\n' });
+  expect(p.run("init").code).toBe(0);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"assets": "build"');
+  expect(c).toContain('"build": "bunx vite build"');
+});
+
+test("init: an older Astro adapter's wrangler paths (dist/_worker.js, dist) are used as built", () => {
+  const a = project({
+    "package.json": JSON.stringify({ name: "blog", scripts: { build: "astro build" }, dependencies: { astro: "^5", "@astrojs/cloudflare": "12.6.12" } }),
+    "astro.config.mjs": 'import cloudflare from "@astrojs/cloudflare";\nexport default { output: "server", adapter: cloudflare() };\n',
+    "wrangler.json": JSON.stringify({ name: "blog", main: "./dist/_worker.js/index.js", compatibility_date: "2025-10-08", assets: { directory: "./dist", binding: "ASSETS" } }), "bun.lock": "",
+  });
+  const r = a.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).not.toMatch(/does not exist/);
+  const c = a.read("rustybuns.config.ts");
+  expect(c).toContain('"builtMain": "dist/_worker.js/index.js"');
+  expect(c).toContain('"assets": "dist"');
+});

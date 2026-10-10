@@ -92,6 +92,9 @@ async function one(e: Entry) {
   mkdirSync(join(app, "node_modules/@rustybuns"), { recursive: true });
   rmSync(join(app, "node_modules/@rustybuns/cli"), { recursive: true, force: true });
   symlinkSync(CLI, join(app, "node_modules/@rustybuns/cli"));
+  // and its dependency the desktop host imports, which a real install brings along
+  rmSync(join(app, "node_modules/@rustybuns/shell-bun"), { recursive: true, force: true });
+  symlinkSync(join(CLI, "../shell-bun"), join(app, "node_modules/@rustybuns/shell-bun"));
   const rb = (sub: string, ...a: string[]) => ["bun", join(CLI, "src/index.ts"), sub, ...a];
   if (!(await step("init", rb("init"), app)).ok) return r;
   if (STOP_AT === "init") return r;
