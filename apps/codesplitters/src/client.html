@@ -221,7 +221,13 @@
   .cmd { display: grid; grid-template-columns: 30px 1fr; gap: 3px 12px; padding: 16px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--bg); }
   .cmd .ico { grid-row: span 3; width: 30px; height: 30px; border-radius: 5px; background: var(--grain), var(--paper); border: 1px solid var(--border-2); display: grid; place-items: center; color: var(--fg); }
   .cmd b { font-weight: 600; } .cmd span { color: var(--muted); font-size: 13px; } .cmd code { color: var(--faint); font-size: 11.5px; }
-  .levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  /* Levels scroll by slowly, top to bottom and round again; hover or focus holds them still. */
+  .levels { height: 340px; overflow: hidden; -webkit-mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent); mask-image: linear-gradient(transparent, #000 14%, #000 86%, transparent); }
+  .levels .reel { display: grid; gap: 10px; padding-bottom: 10px; animation: reel var(--reel-s, 60s) linear infinite; }
+  .levels:hover .reel, .levels:focus-within .reel { animation-play-state: paused; }
+  @keyframes reel { to { transform: translateY(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .levels { overflow: auto; } .levels .reel { animation: none; } .levels .reel [aria-hidden] { display: none; } }
+  .level .blurb { color: var(--muted); font: 13px var(--sans); }
   .level { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center; padding: 12px 14px; color: var(--fg); border: 1px solid var(--border-2); border-radius: 5px; background: var(--grain), var(--paper); text-decoration: none; transition: border-color .12s, background .12s; }
   .level:hover { border-color: #a8a8a8; background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); }
   .level b { display: block; font-weight: 600; } .level .muted { font: 12px var(--mono); }
@@ -849,8 +855,10 @@ const views = {
     intro($("#stage"), $("#phases"));
     const levels = await api("/levels").catch(() => []);
     const st = { ready: "open", importing: "digging…", failed: "dig failed", buried: "buried" };
-    $("#levels").innerHTML = levels.map((l) => `<a class="level" href="#/l/${l.slug}"><span class="lvl-n">${String(l.n).padStart(2, "0")}</span>
-      <span><b>${esc(l.title)}</b><span class="muted">${esc(l.repo)}</span></span><span class="lvl-st st-${l.status}">${st[l.status] ?? l.status}</span></a>`).join("");
+    // Two copies of the list back to back, so sliding up by half loops without a seam.
+    const rows = (copy) => levels.map((l) => `<a class="level" href="#/l/${l.slug}"${copy ? ' aria-hidden="true" tabindex="-1"' : ""}><span class="lvl-n">${String(l.n).padStart(2, "0")}</span>
+      <span><b>${esc(l.title)}</b><span class="muted">${esc(l.repo)}</span> <span class="blurb">${esc(l.blurb)}</span></span><span class="lvl-st st-${l.status}">${st[l.status] ?? l.status}</span></a>`).join("");
+    $("#levels").innerHTML = `<div class="reel" style="--reel-s:${levels.length * 4}s">${rows(false)}${rows(true)}</div>`;
     icons();
   },
 
