@@ -29,7 +29,7 @@
   #health i { display: block; height: 100%; background: var(--ink); transition: width .15s; }
   #health.low i { background: var(--accent); }
   #cross { top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(255,255,255,.8); }
-  /* The press meter: how long the bat has been held against a line. The orange notch is the sweet spot. */
+  /* The press meter: how long the README has been held against a line. The orange notch is the sweet spot. */
   #press { top: 50%; left: 50%; width: 140px; margin: 22px 0 0 -70px; height: 6px; background: rgba(255,255,255,.85); border: 1px solid var(--edge); border-radius: 3px; overflow: hidden; opacity: 0; }
   #press.on { opacity: 1; }
   #press b { position: absolute; top: 0; bottom: 0; background: var(--accent-soft); border-left: 1px solid var(--accent); border-right: 1px solid var(--accent); }
@@ -82,7 +82,7 @@
 <div class="panel" id="lobby"><div class="card">
   <div class="label" id="lobby-label">the backrooms</div>
   <h1 id="lobby-title">…</h1>
-  <p class="muted" style="margin:6px 0 0" id="lobby-blurb">Every folder is a room. The walls are the code. The code is restless. Grab the bat.</p>
+  <p class="muted" style="margin:6px 0 0" id="lobby-blurb">Every folder is a room. The walls are the code. The code is restless. Roll up the README. 🗞️</p>
   <div class="modes" id="modes">
     <button data-mode="horde">horde<small>the lines come off the walls at you</small></button>
     <button data-mode="wreck">wreck it<small>a panic room: smash the codebase together</small></button>
@@ -90,12 +90,12 @@
   </div>
   <ul id="lobby-players"></ul>
   <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><span class="muted" id="lobby-msg"></span></div>
-  <div class="keys"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swing · <kbd>hold</kbd> press the bat into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
+  <div class="keys"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swat · <kbd>hold</kbd> press the README into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
   <p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p>
 </div></div>
-<div class="panel" id="lock" hidden style="background:transparent;place-items:end center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;padding:12px 18px"><b>Click to grab the bat</b> <span class="muted">· Esc lets go</span><p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p></div></div>
+<div class="panel" id="lock" hidden style="background:transparent;place-items:end center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;padding:12px 18px"><b>Click to roll up the README</b> <span class="muted">· Esc lets go</span><p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p></div></div>
 <div class="panel" id="over" hidden><div class="card">
-  <div class="label">the round is over</div><h1 id="over-title">Smacked flat.</h1>
+  <div class="label">the round is over</div><h1 id="over-title">Swatted flat.</h1>
   <ul id="over-players"></ul>
   <div class="row"><button class="primary" id="again">back to the lobby</button></div>
   <p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p>
@@ -439,7 +439,7 @@ async function enter(path, from, built) {
   } else { player.pos.set(0, EYE, here.half - 2); player.yaw = 0; }
   if (pin) letGo(true);
   // Whatever was chasing you follows you through the door.
-  for (const e of enemies) if (e.state !== "smacked") {
+  for (const e of enemies) if (e.state !== "swatted") {
     const d = door ?? { wall: 2, c: 0 };
     const [x, z] = fromWall(d.wall, d.c + (rng() - 0.5) * 1.6, -0.6 - rng() * 2, here.half);
     e.root.position.set(x, e.kind === "tube" ? 0 : 2 + rng(), z);
@@ -475,15 +475,21 @@ let held = false;
 renderer.domElement.addEventListener("mousedown", () => { if (document.pointerLockElement === renderer.domElement) { held = true; swing(); } });
 addEventListener("mouseup", () => { held = false; if (pin) letGo(); });
 
-// The bat: ash, with an oxblood grip.
-const bat = new THREE.Group();
-const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.025, 0.95, 12), new THREE.MeshBasicMaterial({ color: "#e7e3d8" }));
-barrel.position.y = 0.42;
-const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.22, 8), new THREE.MeshBasicMaterial({ color: "#e8590c" }));
-grip.position.y = -0.1;
-bat.add(barrel, grip);
-const batPivot = new THREE.Group(); batPivot.add(bat); camera.add(batPivot);
-batPivot.position.set(0.46, -0.52, -0.55);
+// The swatter: the repo's README, torn off the wall and rolled up tight, with an orange rubber band.
+// Nobody gets hurt by a README; it just stings a bit.
+const readmeTex = canvasTex(256, 512, (g, w, h) => {
+  g.fillStyle = "#fbfaf6"; g.fillRect(0, 0, w, h);
+  g.fillStyle = "#0a0a0a"; g.font = '600 34px "Geist Mono", monospace'; g.fillText("# README", 14, 52);
+  g.fillStyle = "#9a9a9a"; for (let y = 90; y < h - 20; y += 26) g.fillRect(14, y, 40 + ((y * 37) % 170), 8);
+});
+const swatter = new THREE.Group();
+const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.06, 0.95, 14, 1, true), new THREE.MeshBasicMaterial({ map: readmeTex, side: THREE.DoubleSide }));
+roll.position.y = 0.32;
+const band = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.012, 6, 16), new THREE.MeshBasicMaterial({ color: "#e8590c" }));
+band.rotation.x = Math.PI / 2; band.position.y = 0.05;
+swatter.add(roll, band);
+const swatPivot = new THREE.Group(); swatPivot.add(swatter); camera.add(swatPivot);
+swatPivot.position.set(0.46, -0.52, -0.55);
 // Overhead: cocked back over the shoulder, then chopped straight down in front.
 const REST = new THREE.Euler(0.65, 0, -0.12), FOLLOW = new THREE.Euler(-1.8, 0.2, 0.25);
 let swingT = -1, swingHit = new Set(), hitStop = 0;
@@ -493,11 +499,11 @@ function swing() {
   swingT = 0; swingHit = new Set(); sound.whoosh();
 }
 
-// Hitboxes are segments: the bat, each line (its length, as it flies), and you (feet to head).
-// The bat's hitbox swings through the crosshair, not off to the right where the bat is drawn.
-const BAT_R = 0.22, BAT_REACH = 2.3, LINE_R = 0.1, BODY_R = 0.3;
-const batHit = new THREE.Object3D(); batHit.position.set(0, -0.25, -0.1); camera.add(batHit);
-function batSeg(a, b) { batHit.updateMatrixWorld(true); batHit.localToWorld(a.set(0, 0.15, 0)); batHit.localToWorld(b.set(0, BAT_REACH, 0)); }
+// Hitboxes are segments: the README, each line (its length, as it flies), and you (feet to head).
+// The README's hitbox swings through the crosshair, not off to the right where it's drawn.
+const SWAT_R = 0.22, SWAT_REACH = 2.3, LINE_R = 0.1, BODY_R = 0.3;
+const swatHit = new THREE.Object3D(); swatHit.position.set(0, -0.25, -0.1); camera.add(swatHit);
+function swatSeg(a, b) { swatHit.updateMatrixWorld(true); swatHit.localToWorld(a.set(0, 0.15, 0)); swatHit.localToWorld(b.set(0, SWAT_REACH, 0)); }
 function lineSeg(e, a, b) {
   if (e.kind === "tube" && e.state !== "peel") { a.copy(e.root.position); b.copy(a); b.y += Math.min(e.w, 3.2); return; }
   const ax = tmpV.set(1, 0, 0).applyQuaternion(e.root.quaternion).multiplyScalar(e.w / 2);
@@ -519,8 +525,8 @@ function segDist(p1, q1, p2, q2, at) {
   return p.distanceTo(sd2.multiplyScalar(t).add(p2));
 }
 
-// The press: keep the button down when the bat lands and it grinds into the line.
-// Let go in the sweet spot and the line splits clean; too soon is a dent, too long and the bat jams.
+// The press: keep the button down when the README lands and it grinds into the line.
+// Let go in the sweet spot and the line splits clean; too soon is a dent, too long and the README crumples.
 // While you're pressing, the rest of the horde keeps coming.
 const SWEET = [0.55, 0.85], JAM = 1.5;
 let pin = null;   // {e, at (camera-space contact), off (center minus root), c}
@@ -541,12 +547,12 @@ function letGo(slipped) {
   e.state = "fly";
   damage(e, slipped ? 1 : pressDamage(c), fwd, sweet ? 1.6 : 1.1);
   if (sweet) { player.score += 200 * player.combo; banner("SPLIT", "sweet spot", 0.8); sound.ding(); }
-  else if (slipped) banner("", c >= JAM ? "the bat jammed" : "knocked off the line", 0.7);
+  else if (slipped) banner("", c >= JAM ? "the README crumpled" : "knocked off the line", 0.7);
 }
 // Every hit chips a line; the one that empties it sends it flying.
 function damage(e, n, dir, power = 1) {
   e.hp -= n;
-  if (e.hp <= 0) return smack(e, dir.clone().setY(Math.max(0.2, dir.y)), power);
+  if (e.hp <= 0) return swat(e, dir.clone().setY(Math.max(0.2, dir.y)), power);
   player.score += 10 * n;
   e.mesh.scale.y = 0.45 + 0.55 * e.hp / e.maxHp;
   e.vel.copy(dir).setY(0).normalize().multiplyScalar(9).setY(2.5); e.stun = 0.45; e.t = 0;
@@ -586,9 +592,9 @@ function spawn() {
 
 function center(e, out) { out.copy(e.root.position); if (e.kind === "tube" && e.state === "fly") out.y += Math.min(e.w, 3.2) / 2; return out; }
 
-function smack(e, dir, power = 1) {
-  if (e.state === "smacked") return;
-  e.state = "smacked"; e.t = 0;
+function swat(e, dir, power = 1) {
+  if (e.state === "swatted") return;
+  e.state = "swatted"; e.t = 0;
   e.vel.copy(dir).multiplyScalar(16 * power).add(new THREE.Vector3((rng() - 0.5) * 4, 6 + rng() * 4, (rng() - 0.5) * 4));
   e.spin.set(rng() * 14 - 7, rng() * 14 - 7, rng() * 14 - 7);
   player.score += 100 * player.combo;
@@ -631,7 +637,7 @@ function updateEnemies(dt, time) {
         if (e.kind === "tube") { e.root.position.y = 0; const n = tmpV.set(0, 0, 1).applyQuaternion(e.root.quaternion); e.root.position.addScaledVector(n, 0.8); }
       }
     } else if (e.state === "pinned") {
-      // Ground into the bat: it rides the bat wherever you look.
+      // Ground into the README: it rides the README wherever you look.
       e.root.position.copy(camera.localToWorld(tmpV.copy(pin.at))).sub(pin.off);
       e.mesh.position.z = (Math.random() - 0.5) * 0.04;
     } else if (e.state === "fly" && e.stun > 0) {
@@ -683,16 +689,16 @@ function updateEnemies(dt, time) {
         e.root.position.addScaledVector(e.vel, 0.08);
         e.stun = 0.35; e.t = 0; e.circle = 1.5 + rng() * 2;
       }
-    } else if (e.state === "smacked") {
+    } else if (e.state === "swatted") {
       e.vel.y -= 14 * dt;
       e.root.position.addScaledVector(e.vel, dt);
       e.root.rotation.x += e.spin.x * dt; e.root.rotation.y += e.spin.y * dt; e.root.rotation.z += e.spin.z * dt;
-      // Smacked lines take others down with them.
-      for (const o of enemies) if (o !== e && o.state === "fly" && center(o, tmpV).distanceTo(e.root.position) < 1.2) { smack(o, e.vel.clone().normalize(), 0.8); banner("", "chain!", 0.6); }
+      // Swatted lines take others down with them.
+      for (const o of enemies) if (o !== e && o.state === "fly" && center(o, tmpV).distanceTo(e.root.position) < 1.2) { swat(o, e.vel.clone().normalize(), 0.8); banner("", "chain!", 0.6); }
       const p = e.root.position, out = Math.abs(p.x) > here.half || Math.abs(p.z) > here.half || p.y < 0 || p.y > H;
       if (out || e.t > 1.6) { burst(p.clone().clampScalar(-here.half + 0.2, here.half - 0.2)); drop(e); }
     }
-    if (enemies.includes(e) && e.state !== "smacked") bend(e, time);
+    if (enemies.includes(e) && e.state !== "swatted") bend(e, time);
   }
   for (const b of [...bursts]) {
     b.t += dt;
@@ -705,7 +711,7 @@ function updateEnemies(dt, time) {
 
 // ---- breaking things (wreck it, smash the removed) ------------------------------------
 const tmpW = new THREE.Vector3();
-/** The bat lands on a piece. Big ones take two hits; lines a diff added don't break at all. */
+/** The README lands on a piece. Big ones take two hits; lines a diff added don't break at all. */
 function strike(b, dir) {
   if (b.locked) { sound.impact("thud", 0.6); banner("", "that line is new: it stays", 0.9); b.wobble = 0.3; return false; }
   if (--b.hp > 0) { sound.impact(SOUND_OF[b.kind] === "shatter" ? "shatter" : "thud", 0.7); b.wobble = 0.3; burst(b.obj.getWorldPosition(tmpW), "#e8590c", 8); return false; }
@@ -779,8 +785,8 @@ function updateBreaking(dt) {
 // ---- the noodle monsters: a file's type guards, come for you ------------------------
 // Each guard the server found (`isRecord` biggest) crawls off its wall once a round
 // as a knot of long bendy strands, one per line, around its signature line. Slow,
-// but it follows you from room to room. Every bat hit snaps off a strand; down to
-// the signature, it dies.
+// but it follows you from room to room. Every swat snaps off a strand; down to
+// the signature, it unravels.
 const bosses = [];
 const awoken = new Set();   // "path:start" of every guard that has come for you this round
 const MAX_BOSSES = 2;
@@ -836,7 +842,7 @@ function unboss(b) {
   bosses.splice(bosses.indexOf(b), 1);
 }
 
-/** A bat hit: the nearest strand snaps off and flies; with none left, the guard dies. */
+/** A swat: the nearest strand snaps off and flies; with none left, the guard unravels. */
 function snap(b, dir) {
   b.hurtT = 0.3; b.wait = Math.max(b.wait, 0.4); b.core.material = b.a.angry;
   player.score += 150 * player.combo; player.combo = Math.min(8, player.combo + 1); player.comboT = 2.5;
@@ -851,8 +857,8 @@ function snap(b, dir) {
     root.scale.setScalar(b.size);
     s.mesh.position.set(0, 0, 0); s.mesh.material = b.a.angry; root.add(s.mesh); scene.add(root);
     b.strands.splice(b.strands.indexOf(s), 1);
-    // It flies like a smacked line, then crumbles.
-    enemies.push({ kind: "bird", root, mesh: s.mesh, geo: s.geo, w: s.w, state: "smacked", t: 0, wait: 0, phase: 0,
+    // It flies like a swatted line, then crumbles.
+    enemies.push({ kind: "bird", root, mesh: s.mesh, geo: s.geo, w: s.w, state: "swatted", t: 0, wait: 0, phase: 0,
       vel: dir.clone().multiplyScalar(10).add(new THREE.Vector3(0, 5, 0)), spin: new THREE.Vector3(rng() * 10 - 5, rng() * 10 - 5, rng() * 10 - 5) });
   }
   if (!b.strands.length) {
@@ -913,7 +919,7 @@ function updateWaves(dt) {
   if (!player.alive || mode !== "horde") return;
   if (breakT > 0) { breakT -= dt; if (breakT <= 0) startWave(wave + 1); return; }
   spawnT -= dt;
-  const alive = enemies.filter((e) => e.state !== "smacked").length;
+  const alive = enemies.filter((e) => e.state !== "swatted").length;
   if (toSpawn > 0 && spawnT <= 0 && alive < 6 + 2 * wave) { if (spawn()) toSpawn--; spawnT = Math.max(0.3, 1.5 - wave * 0.12) * (0.5 + rng()); }
   if (toSpawn === 0 && alive === 0 && !enemies.length) {
     breakT = 3.5; player.hp = Math.min(100, player.hp + 15);
@@ -925,20 +931,20 @@ function updateWaves(dt) {
 let shake = 0;
 function hurt(n, by, why) {
   if (!player.alive) return;
-  // In a panic room nobody gets hurt: a club only shoves you.
+  // In a panic room nobody gets hurt: a bop only shoves you.
   if (mode !== "horde") { shake = 0.25; sound.impact("thud", 0.8); if (by) banner("", `shoved by ${by}`, 1.2); return; }
   player.hp -= n; shake = 0.25; sound.hurt();
   if (pin) letGo(true);
   if (why) banner("", why, 0.8);
   $("#hurt").style.opacity = 1; setTimeout(() => ($("#hurt").style.opacity = 0), 160);
-  if (by) banner("", `clubbed by ${by}`, 1.2);
+  if (by) banner("", `bopped by ${by}`, 1.2);
   if (player.hp <= 0) die();
 }
 
 let transit = false;
 function updatePlayer(dt) {
   const f = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0), s = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
-  // Pressing the bat into a line pins you down to a shuffle.
+  // Pressing the README into a line pins you down to a shuffle.
   const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 8 : 4.8) * (pin ? 0.45 : 1);
   const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
   const move = new THREE.Vector3(-sin * f + cos * s, 0, -cos * f - sin * s);
@@ -968,40 +974,40 @@ function updatePlayer(dt) {
 }
 
 const pa = new THREE.Vector3(), pb = new THREE.Vector3(), hitAt = new THREE.Vector3();
-function setBat(k) {
+function setSwatter(k) {
   const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-  batPivot.rotation.set(REST.x + (FOLLOW.x - REST.x) * e, REST.y + (FOLLOW.y - REST.y) * e, REST.z + (FOLLOW.z - REST.z) * e);
-  batHit.rotation.copy(batPivot.rotation);
+  swatPivot.rotation.set(REST.x + (FOLLOW.x - REST.x) * e, REST.y + (FOLLOW.y - REST.y) * e, REST.z + (FOLLOW.z - REST.z) * e);
+  swatHit.rotation.copy(swatPivot.rotation);
 }
-function updateBat(dt) {
+function updateSwatter(dt) {
   if (pin) {
-    // Held against the line: the bat shudders, the meter fills.
+    // Held against the line: the README shudders, the meter fills.
     pin.c += dt; pin.grind -= dt;
-    batPivot.rotation.z += (Math.random() - 0.5) * 0.03;
+    swatPivot.rotation.z += (Math.random() - 0.5) * 0.03;
     if (pin.grind <= 0) { pin.grind = 0.07; sound.grind(pin.c / JAM); }
     if (!pin.rang && pin.c >= SWEET[0]) { pin.rang = true; sound.ding(); }
     if (pin.c >= JAM) letGo(true);
     else if (!held) letGo();
     return;
   }
-  if (swingT < 0) { setBat(0); return; }
+  if (swingT < 0) { setSwatter(0); return; }
   if (hitStop > 0) { hitStop -= dt; return; }
   const k0 = Math.min(1, swingT);
   swingT += dt / 0.3;
   const k = Math.min(1, swingT);
   camera.updateMatrixWorld(true);
   camera.getWorldDirection(fwd);
-  // Sweep the bat from where it was to where it is, in steps, so a fast swing can't pass through a line.
+  // Sweep the README from where it was to where it is, in steps, so a fast swing can't pass through a line.
   let hits = 0;
   if (k > 0.22 && k0 < 0.95) {
     for (let step = 1; step <= 3 && !pin; step++) {
-      setBat(Math.max(0.22, Math.min(0.95, k0 + (k - k0) * step / 3)));
-      batSeg(pa, pb);
+      setSwatter(Math.max(0.22, Math.min(0.95, k0 + (k - k0) * step / 3)));
+      swatSeg(pa, pb);
       let best = null, bestD = Infinity;
       for (const e2 of enemies) {
         if ((e2.state !== "fly" && e2.state !== "peel") || swingHit.has(e2)) continue;
         lineSeg(e2, ea, eb);
-        if (segDist(pa, pb, ea, eb, hitAt) > BAT_R + LINE_R) continue;
+        if (segDist(pa, pb, ea, eb, hitAt) > SWAT_R + LINE_R) continue;
         swingHit.add(e2); hits++;
         const d = hitAt.distanceTo(pa);
         if (d < bestD) { bestD = d; best = { e: e2, at: hitAt.clone() }; }
@@ -1013,21 +1019,21 @@ function updateBat(dt) {
         if (held && best.e.state === "fly") { pressOn(best.e, best.at); sound.thwack(0.6); }
         else damage(best.e, 1, fwd);
       }
-      // A noodle monster is a knot with strands all round: a ball the bat has to reach.
+      // A noodle monster is a knot with strands all round: a ball the README has to reach.
       for (const bo of bosses) {
         if (swingHit.has(bo)) continue;
-        if (segDist(pa, pb, bo.root.position, bo.root.position) < BAT_R + 0.9 * bo.size) { swingHit.add(bo); hitStop = 0.05; snap(bo, fwd); }
+        if (segDist(pa, pb, bo.root.position, bo.root.position) < SWAT_R + 0.9 * bo.size) { swingHit.add(bo); hitStop = 0.05; snap(bo, fwd); }
       }
       for (const [id, o] of others) {
         if (swingHit.has(id) || o.room !== here?.path) continue;
         ea.copy(o.group.position); eb.copy(ea); eb.y += 1.8;
-        if (segDist(pa, pb, ea, eb) < BAT_R + BODY_R) {
+        if (segDist(pa, pb, ea, eb) < SWAT_R + BODY_R) {
           swingHit.add(id); send({ t: "hit", target: id, dir: [fwd.x, fwd.z] });
-          player.score += 50; sound.thwack(); banner("", `you clubbed ${o.user}`, 1);
+          player.score += 50; sound.thwack(); banner("", `you bopped ${o.user}`, 1);
         }
       }
     }
-    if (hits >= 3) { player.score += 500; banner("HOME RUN", `${hits} lines in one swing`, 1.2); }
+    if (hits >= 3) { player.score += 500; banner("HAT TRICK", `${hits} lines in one swat`, 1.2); }
     // Furniture, walls, lamps: the nearest few in the arc, once a swing.
     if (mode !== "horde" && !swingHit.has("pieces")) {
       const near = [];
@@ -1039,11 +1045,11 @@ function updateBat(dt) {
         swingHit.add("pieces");
         const dir = fwd.clone().setY(Math.max(0.15, fwd.y)).normalize();
         const n = near.sort((a, b) => a[0] - b[0]).slice(0, 4).filter(([, b]) => strike(b, dir)).length;
-        if (n >= 3) { player.score += 300; banner("", `${n} in one swing`, 0.9); }
+        if (n >= 3) { player.score += 300; banner("", `${n} in one swat`, 0.9); }
       }
     }
   }
-  if (!pin) setBat(k);
+  if (!pin) setSwatter(k);
   if (k >= 1) swingT = -1;
 }
 // ---- other players ----------------------------------------------------------------
@@ -1053,7 +1059,7 @@ function avatar(user) {
   const ink = new THREE.MeshLambertMaterial({ color: "#0a0a0a" });
   const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 1.25, 12), ink); body.position.y = 0.75;
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), new THREE.MeshLambertMaterial({ color: "#f4f4f2" })); head.position.y = 1.6;
-  const b = bat.clone(); b.position.set(0.35, 1.0, -0.1); b.rotation.set(-0.4, 0, -0.5); b.name = "bat";
+  const b = swatter.clone(); b.position.set(0.35, 1.0, -0.1); b.rotation.set(-0.4, 0, -0.5); b.name = "swatter";
   const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(user, "#e8590c", 72), transparent: true, depthTest: false }));
   tag.scale.set(2.4, 0.3, 1); tag.position.y = 2.15;
   g.add(body, head, b, tag);
@@ -1065,7 +1071,7 @@ function updateOthers(dt) {
     o.group.visible = o.room === here?.path;
     o.group.position.lerp(o.to, Math.min(1, dt * 10));
     o.group.rotation.y = o.yaw;
-    const b = o.group.getObjectByName("bat");
+    const b = o.group.getObjectByName("swatter");
     b.rotation.z = o.swing ? 1.4 : -0.5;
   }
 }
@@ -1097,7 +1103,7 @@ function connect() {
       let o = others.get(m.id);
       if (!o) { o = { group: avatar(m.user), user: m.user, to: new THREE.Vector3() }; others.set(m.id, o); }
       o.to.set(m.p[0], m.p[1] || 0, m.p[2]); o.yaw = m.yaw; o.room = m.room; o.swing = m.swing;
-    } else if (m.t === "clubbed") {
+    } else if (m.t === "bopped") {
       player.vel.set(m.dir[0], 0, m.dir[1]).multiplyScalar(14);
       hurt(6, m.by);
     } else if (m.t === "over") showOver(m.players);
@@ -1115,7 +1121,7 @@ function renderLobby() {
   $("#others").innerHTML = lobbyState?.state === "playing" ? ps.filter((p) => p.id !== me).map((p) => `${esc(p.user)} ${p.alive ? p.score : "out"}`).join("<br>") : "";
 }
 const BLURB = {
-  horde: "Every folder is a room. The walls are the code. The code is restless. Grab the bat.",
+  horde: "Every folder is a room. The walls are the code. The code is restless. Roll up the README. 🗞️",
   wreck: "A panic room. Everyone in here breaks this codebase together: walls, lines, furniture. Score is what you wreck. Nothing in the real repo is touched.",
   removed: "Every line the diff took out is furniture now. Smash it all: a victory lap for a cleanup. The lines it put in stand around, untouchable.",
 };
@@ -1160,7 +1166,7 @@ async function begin(seed, startAt) {
   $("#lock").hidden = document.pointerLockElement === renderer.domElement;
   const tick = () => {
     const left = Math.ceil((startAt - Date.now()) / 1000);
-    if (left > 0) { banner(String(left), "grab the bat"); setTimeout(tick, 250); return; }
+    if (left > 0) { banner(String(left), "roll up the README"); setTimeout(tick, 250); return; }
     player.alive = true;
     if (mode === "horde") return startWave(1);
     endsAt = startAt + ROUND_MS[mode];
@@ -1211,7 +1217,7 @@ function showOver(players) {
   document.exitPointerLock?.();
   $("#lobby").hidden = true; $("#lock").hidden = true; $("#over").hidden = false;
   const best = [...players].sort((a, b) => b.score - a.score);
-  $("#over-title").textContent = best[0] ? `${best[0].user} takes it.` : "Smacked flat.";
+  $("#over-title").textContent = best[0] ? `${best[0].user} takes it.` : "Swatted flat.";
   $("#over-players").innerHTML = best.map((p) => `<li><span>${esc(p.user)}</span><span>${p.score}${mode === "horde" ? ` · wave ${p.wave}` : ""}</span></li>`).join("");
 }
 
@@ -1263,7 +1269,7 @@ const sound = {
     g.gain.setValueAtTime(0.5 * v, c.currentTime); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.15);
     o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + 0.16);
   },
-  // The bat grinding into a line, rising as the press goes on.
+  // The README grinding into a line, rising as the press goes on.
   grind(k) { this.noise(0.06, 300 + 900 * k, 3, 0.18); },
   ding() { this.tone("sine", 1320, 0.25, 0.12); },
   // A low bird's whistle as it drops for your legs.
@@ -1344,7 +1350,7 @@ function frame(now, manual) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const time = now / 1000;
   if (here) {
-    updatePlayer(dt); updateBat(dt); updateEnemies(dt, time); updateBosses(dt, time); updateWaves(dt); updateBreaking(dt); updateMode(); updateOthers(dt); updateLava(time);
+    updatePlayer(dt); updateSwatter(dt); updateEnemies(dt, time); updateBosses(dt, time); updateWaves(dt); updateBreaking(dt); updateMode(); updateOthers(dt); updateLava(time);
     player.comboT -= dt; if (player.comboT <= 0) player.combo = 1;
     if (now - sent > 100 && playing) {
       sent = now;

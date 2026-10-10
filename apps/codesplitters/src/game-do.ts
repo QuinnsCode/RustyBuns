@@ -1,7 +1,7 @@
 // One Durable Object per game room: a level ("l/mitt") or a repo ("r/ana/dig").
 // It is the lobby people wait in on that page, and the relay once the round
-// starts. Each player fights the lines in their own room of the backrooms; the
-// room only carries where everyone is, who clubbed whom, and the scores.
+// starts. Each player swats the lines in their own room of the backrooms; the
+// room only carries where everyone is, who bopped whom, and the scores.
 //
 // A round is one of three modes, picked in the lobby by anyone while it waits:
 //   horde    the lines come off the walls at you (the default)
@@ -17,12 +17,12 @@
 //   {t:"start"}                      start now with whoever is here; mid-round, only
 //                                    once everyone still "alive" has gone quiet
 //   {t:"pos", p:[x,y,z], yaw, room, swing}   ~10 a second, relayed to the others
-//   {t:"hit", target, dir:[x,z]}     you clubbed someone
+//   {t:"hit", target, dir:[x,z]}     you bopped someone (with a rolled-up README)
 //   {t:"score", score, wave}         your running score
 //   {t:"dead"}                       out; when everyone is, the round is over
 // room -> client:
 //   {t:"lobby", you, state, mode, diff?, players:[{id,user,ready,alive,score,wave}], seed?, startAt?, broken?}
-//   {t:"start", seed, startAt, mode, diff?}  {t:"broke", id, by}  {t:"pos", id, ...}  {t:"clubbed", by, dir}  {t:"over", players}
+//   {t:"start", seed, startAt, mode, diff?}  {t:"broke", id, by}  {t:"pos", id, ...}  {t:"bopped", by, dir}  {t:"over", players}
 //   {t:"note", text}                 why a start or ready did nothing
 // Players live on their sockets (attachments survive hibernation); the stored keys are the round and the setup.
 
@@ -106,7 +106,7 @@ export class GameRoom {
     }
     if (m.t === "hit" && typeof m.target === "string") {
       const target = this.sockets().find((o) => this.me(o).id === m.target);
-      if (target) this.send(target, { t: "clubbed", by: p.user, dir: m.dir });
+      if (target) this.send(target, { t: "bopped", by: p.user, dir: m.dir });
       return;
     }
     const r = await this.round();
