@@ -63,6 +63,7 @@ function fakeGitHub(sha: string, tgz: string, o: { subs?: Record<string, string>
       seen.push(path);
       return new Response(new Uint8Array(Bun.spawnSync(["git", "cat-file", "blob", `HEAD:${path}`], { cwd: dir }).stdout));
     }
+    if (url.hostname === "github.com" && url.pathname === "/o/big.git/info/refs") return new Response(`${sha} HEAD\0side-band symref=HEAD:refs/heads/main\n`);
     if (url.hostname !== "api.github.com") return real(u, init);
     if (dir && url.pathname === `/repos/o/big/git/trees/${sha}`) {
       const tree = git(dir, "ls-tree", "-r", "-l", "--full-tree", "HEAD").split("\n").map((line) => {
