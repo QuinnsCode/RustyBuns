@@ -7,7 +7,7 @@
 import { listDir, readText } from "./archive.ts";
 import { chunkRepo, importChunks } from "./chunks.ts";
 import { code, json, NAME, type ArtifactsRepo, type Env } from "./env.ts";
-import { githubHead, githubTarball, githubToken, importRepo } from "./github.ts";
+import { githubHead, githubTarball, githubToken, importRepo, submodules } from "./github.ts";
 import { tooBigToImport } from "./tarball.ts";
 
 export interface Level { n: number; slug: string; title: string; repo: string; branch: string; blurb: string }
@@ -104,7 +104,7 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
       if (tooBig(e) && env.LEVEL_CHUNKS) {
         try {
           const token = (await githubToken(env, user))?.token, head = await githubHead(level.repo, level.branch, token);
-          const kept = await importChunks(env, env.LEVEL_CHUNKS, { slug, sha: head.sha, repo: level.repo, tarball: () => githubTarball(level.repo, head.sha, token) });
+          const kept = await importChunks(env, env.LEVEL_CHUNKS, { slug, sha: head.sha, repo: level.repo, tarball: () => githubTarball(level.repo, head.sha, token), submodules: () => submodules(level.repo, head.sha, token) });
           await env.DB.prepare("INSERT INTO levels (slug, status, store, commit_hash, commit_message, imported_at) VALUES (?, 'ready', 'r2', ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET status = 'ready', store = 'r2', error = NULL, commit_hash = excluded.commit_hash, commit_message = excluded.commit_message, imported_at = excluded.imported_at")
             .bind(slug, head.sha, head.message, Date.now()).run();
           return json({ slug, status: "ready", store: "r2", ...kept });
