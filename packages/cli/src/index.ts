@@ -162,6 +162,8 @@ async function init() {
     cfg.worker!.assets = "dist/client";
     const kv = inf.astro!.sessionKV;
     if (!cfg.bindings[kv]) { cfg.bindings[kv] = { type: "kv" }; console.log(`sessions: ${kv} (KV, the binding @astrojs/cloudflare keeps sessions in)`); }
+    const img = inf.astro!.images;
+    if (img && !Object.values(cfg.bindings).some((b) => b.type === "images")) { cfg.bindings[img] = { type: "images" }; console.log(`images:   ${img} (Cloudflare Images, for the adapter's /_image; a passthrough on the desktop)`); }
   }
   // Secrets: names only, from .dev.vars. Values are read from .dev.vars at deploy time.
   const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k]);
@@ -255,6 +257,11 @@ function wranglerLosses(): string[] {
 async function generate(opts: { adopt: boolean }) {
   const cfg = await loadConfig();
   if (!cfg.worker && !cfg.targets.box) { console.log("desktop-only config: nothing to generate for the edge"); return; }
+  // A bad cron fails here, not on Cloudflare's side halfway into a deploy.
+  if (cfg.worker?.crons?.length) {
+    const { parseCron } = await import("@rustybuns/shell-bun");
+    for (const c of cfg.worker.crons) parseCron(c);
+  }
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
   console.log("wrote .rustybuns/alchemy.run.ts");

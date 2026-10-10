@@ -1,15 +1,21 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
-// Accounts and admin secrets live in 1Password (vault "codesplitters") and reach
-// the deploy through varlock: experimental.wheel "human" unlocks them with your
-// Touch ID, so there's nothing to export and BETTER_AUTH_SECRET never drifts.
+// Accounts, admin and hosted-agent secrets live in 1Password (vault "codesplitters")
+// and reach the deploy through varlock: experimental.wheel "human" unlocks them with
+// your Touch ID, so there's nothing to export and BETTER_AUTH_SECRET never drifts.
 // See .env.schema for the full list. The desktop has none of them: it uses aliases.
 //
-// Hosted coding agents are still opt-in from the deploying shell:
+// Hosted coding agents are opt-in from the deploying shell; their keys come from 1Password too:
 //   CODESPLITTERS_AGENTS=1  hosted coding agents (super experimental, see README)
+//   CODESPLITTERS_DEPLOYS=1 hosted deploys with each repo's stored deploy key, sealed under
+//                           DEPLOY_SECRETS_KEY (1Password, like the rest)
+// Account email (verification and password reset) is opt-in the same way, once the
+// sender's domain is onboarded to Cloudflare Email Sending (Workers Paid):
+//   CODESPLITTERS_MAIL_FROM=accounts@your-domain  binds EMAIL and sends from it
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
-const secrets = (on: boolean, ...names: string[]) => on ? Object.fromEntries(names.map((n) => [n, { type: "secret" as const }])) : {};
-const op = (ref: string) => ({ type: "secret" as const, op: `op://codesplitters/${ref}` });
+const deploys = process.env.CODESPLITTERS_DEPLOYS === "1";
+const mailFrom = process.env.CODESPLITTERS_MAIL_FROM?.trim();
+const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitters/${ref}`, optional });
 
 export default defineConfig({
   name: "codesplitters",
@@ -38,7 +44,20 @@ export default defineConfig({
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
     // The desktop has no twin and runs the CLIs on the machine instead.
     ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
-    ...secrets(agents, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"),
+    // Optional: only the items you've made in 1Password are bound.
+    ...(agents ? {
+      ANTHROPIC_API_KEY: op("anthropic/api-key", true),
+      CLAUDE_CODE_OAUTH_TOKEN: op("claude-code/oauth-token", true),
+      OPENAI_API_KEY: op("openai/api-key", true),
+      CODEX_API_KEY: op("codex/api-key", true),
+    } : {}),
+    // Hosted deploys: one Durable Object per repo, each run in its own container
+    // (deploy-sandbox/Dockerfile), separate from the agents' so no agent sees a
+    // deploy key. Keys are sealed in D1 under DEPLOY_SECRETS_KEY.
+    ...(deploys ? {
+      DEPLOY_RUNNER: { type: "container", className: "DeployRunner", dockerfile: "deploy-sandbox/Dockerfile", maxInstances: 1, instanceType: "basic" } as const,
+      DEPLOY_SECRETS_KEY: op("DEPLOY_SECRETS_KEY/password"),
+    } : {}),
     // Accounts (Better Auth), GitHub and Google sign-in.
     BETTER_AUTH_SECRET: op("better-auth/secret"),
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitters.notryanquinn.workers.dev" },
@@ -50,6 +69,11 @@ export default defineConfig({
     // so nobody can pick it; it goes to whoever signs in with ADMIN_EMAIL, verified.
     ADMINS: { type: "var", value: "quinn" },
     ADMIN_EMAIL: op("admin/email"),
+    // Verification and reset links for email accounts (src/identity.ts).
+    ...(mailFrom ? {
+      EMAIL: { type: "send_email", allowedSenderAddresses: [mailFrom] } as const,
+      EMAIL_FROM: { type: "var", value: mailFrom } as const,
+    } : {}),
   },
   targets: {
     // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler;

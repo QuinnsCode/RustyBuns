@@ -8,6 +8,17 @@ export type Binding =
   /** Cloudflare Artifacts: git repos created at runtime. Locally, bare repos served over git HTTP. */
   | { type: "artifacts"; namespace: string }
   /**
+   * Cloudflare Images: transform and convert images inside the Worker.
+   * Off the edge it is a passthrough: the original image, header-read info().
+   */
+  | { type: "images" }
+  /**
+   * Cloudflare Email Sending: `env.NAME.send({ from, to, subject, text, html })`.
+   * The `from` domain has to be onboarded to Email Sending first. Edge only:
+   * the desktop has no twin, so the binding is left out there.
+   */
+  | { type: "send_email"; allowedSenderAddresses?: string[] }
+  /**
    * Cloudflare Containers: a Durable Object class exported by `main` with a
    * container image behind it (the class reaches it through `ctx.container`).
    * Edge only: the desktop has no twin, so the binding is left out there and
@@ -32,6 +43,11 @@ export type Binding =
        * the value never sits on disk. Who unlocks 1Password is the wheel.
        */
       op?: string;
+      /**
+       * Bound only when it has a value. With `op`, a missing 1Password item
+       * resolves to nothing instead of failing plan/deploy. For keys you may not use.
+       */
+      optional?: boolean;
     };
 
 /**

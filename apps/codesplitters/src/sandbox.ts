@@ -30,6 +30,18 @@ export interface ContainerApi {
 
 const PORT = 8080;
 
+/** POST `body` to the container's server, waiting for it to listen: it takes a moment after the container boots. */
+export async function portFetch(c: ContainerApi, path: string, body: string): Promise<Response> {
+  for (let i = 0; ; i++) {
+    try {
+      return await c.getTcpPort(PORT).fetch(`http://sandbox${path}`, { method: "POST", body, headers: { "content-type": "application/json" } });
+    } catch (e) {
+      if (i >= 60) throw e;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+}
+
 export class AgentSandbox {
   constructor(private ctx: { container?: ContainerApi }, private env: Env) {}
 
@@ -45,16 +57,8 @@ export class AgentSandbox {
       c.start({ env, enableInternet: true });
     }
     try {
-      // The server takes a moment to listen after the container boots.
-      for (let i = 0; ; i++) {
-        try {
-          // /run: an agent on a file; /test: bun test on a cut's files (cuts.ts); /deps-test: the dependency doctor's run (deps.ts).
-          return await c.getTcpPort(PORT).fetch("http://sandbox" + new URL(req.url).pathname, { method: "POST", body, headers: { "content-type": "application/json" } });
-        } catch (e) {
-          if (i >= 60) throw e;
-          await new Promise((r) => setTimeout(r, 500));
-        }
-      }
+      // /run: an agent on a file; /test: bun test on a cut's files (cuts.ts); /deps-test: the dependency doctor's run (deps.ts).
+      return await portFetch(c, new URL(req.url).pathname, body);
     } finally {
       await c.destroy().catch(() => {});
     }

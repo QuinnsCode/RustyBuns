@@ -3,9 +3,9 @@
 // fresh directory, runs the CLI there, and answers {code, out, text} with what
 // it left (text: null if it removed the file). POST /test {files: {path: text}}
 // writes a cut's files (src/cuts.ts) and runs `bun test` there: {code, out,
-// report} (report: its JUnit XML). POST /deps-test {remote, files} is the
+// report} (report: its JUnit XML). POST /deps-test {remote, files, pm, lock} is the
 // dependency doctor's run: a shallow clone of `remote` with `files` swapped in,
-// `bun install`, the test script if there is one, then the clone is deleted
+// an install with the repo's package manager, the test script if there is one, then the clone is deleted
 // (answers {ok, out}).
 // Plain Node, no dependencies.
 
@@ -47,7 +47,9 @@ function exec(bin, args, cwd, env = {}) {
 }
 
 /** The dependency doctor's run (src/deps.ts): a clone with an update swapped in, installed and tested. */
-export async function depsTest({ remote, files }) {
+const INSTALL = { bun: ["bun", "install"], npm: ["npm", "install"], pnpm: ["corepack", "pnpm", "install", "--no-frozen-lockfile"], yarn: ["corepack", "yarn", "install"] };
+
+export async function depsTest({ remote, files, pm = "bun", lock = null }) {
   const dir = await mkdtemp(join(tmpdir(), "deps-"));
   const run = async (bin, args, cwd) => {
     const r = await exec(bin, args, cwd, { CI: "1" });
@@ -60,14 +62,18 @@ export async function depsTest({ remote, files }) {
     for (const [path, text] of Object.entries(files ?? {})) {
       const at = join(repo, path);
       if (relative(repo, at).startsWith("..")) return { ok: false, out: `bad path: ${path}` };
+      await mkdir(dirname(at), { recursive: true });
       await writeFile(at, text);
     }
-    const install = await run("bun", ["install"], repo);
+    const [bin, ...args] = INSTALL[pm] ?? INSTALL.bun;
+    const install = await run(bin, args, repo);
     if (install.code !== 0) return { ok: false, out: install.out };
+    // The lockfile that install wrote, for the branch (bun.lockb is binary, so not that one).
+    const locked = lock && lock !== "bun.lockb" ? await readFile(join(repo, lock), "utf8").then((l) => ({ lock: l }), () => ({})) : {};
     const pkg = JSON.parse(await readFile(join(repo, "package.json"), "utf8").catch(() => "{}"));
-    if (!pkg.scripts?.test) return { ok: true, out: install.out + "\n(no test script)" };
-    const t = await run("bun", ["run", "test"], repo);
-    return { ok: t.code === 0, out: t.out };
+    if (!pkg.scripts?.test) return { ok: true, out: install.out + "\n(no test script)", ...locked };
+    const t = await (pm === "bun" ? run("bun", ["run", "test"], repo) : run(...(pm === "npm" ? ["npm", ["run", "test"]] : ["corepack", [pm, "run", "test"]]), repo));
+    return { ok: t.code === 0, out: t.out, ...locked };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

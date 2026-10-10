@@ -16,11 +16,11 @@
 //   POST /api/repos/:o/:r/cuts      {pieces: [{path, from, to}], note?}  the crew; from/to are line numbers now
 //   GET  /api/cuts/:id              its files, each line with where it came from on main, and the last run
 //   POST /api/cuts/:id/run          bun test on the cut (the owner: on the desktop, or a container for admins)
-//   GET  /api/cuts/:id/card.png     the social card: the code and its test result
+//   GET  /api/cuts/:id/card.png     the social card: the code and its test result (?font=geist for Geist Mono)
 //   GET  /api/cuts/:id/share        a page for link previews (og:image), sending people on to the cut
 
 import { materialize, toFile } from "./archive.ts";
-import { renderCard, type CardLine } from "./card.ts";
+import { cardFont, renderCard, type CardLine } from "./card.ts";
 import { json, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import type { Doc, Line } from "./lines.ts";
@@ -397,7 +397,7 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
       ...(files.length > 1 ? [{ n: null, text: `// ${f.path}` }] : []),
       ...f.lines.map((l) => ({ n: l.n, text: l.text, mark: run?.marks[f.path]?.[l.id] })),
     ]);
-    const png = await renderCard({ title: `${c.owner}/${c.repo}  ${files.length === 1 ? files[0]!.path : `${files.length} files`}`, lines, status: summary(run), ok: run && !run.note ? run.code === 0 : null });
+    const png = await renderCard({ title: `${c.owner}/${c.repo}  ${files.length === 1 ? files[0]!.path : `${files.length} files`}`, lines, status: summary(run), ok: run && !run.note ? run.code === 0 : null, font: cardFont(url.searchParams.get("font")) });
     return new Response(png, { headers: { "content-type": "image/png", "cache-control": "public, max-age=60" } });
   }
 
@@ -405,7 +405,8 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
   if (p[3] === "share" && req.method === "GET") {
     const title = `${c.owner}/${c.repo}: a cut of ${(JSON.parse(c.paths) as string[]).join(", ")}`;
     const desc = `${c.note ? c.note + " · " : ""}${summary(run)}. Cut out of the repo on codeSplitters: run it, fix it, merge it back.`;
-    const page = `#/c/${c.id}`, image = `${url.origin}/api/cuts/${c.id}/card.png?at=${run?.at ?? 0}`;
+    const page = `#/c/${c.id}`, font = cardFont(url.searchParams.get("font"));
+    const image = `${url.origin}/api/cuts/${c.id}/card.png?at=${run?.at ?? 0}${font === "dejavu" ? "" : `&font=${font}`}`;
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
 <meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
 <meta property="og:image" content="${esc(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">

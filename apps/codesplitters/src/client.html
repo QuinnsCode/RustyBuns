@@ -249,7 +249,7 @@
   .palette li.on { background: var(--canvas); box-shadow: inset 2px 0 0 var(--accent); }
   .palette .group { padding: 10px 10px 3px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--faint); cursor: default; }
   .palette .foot { padding: 8px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); background: var(--canvas); }
-  /* The drawer: a sheet that slides in from the right (sign in, your handle, rate limits). */
+  /* The drawer: a sheet that slides in from the right (sign in, your handle). */
   .drawer { position: fixed; inset: 0; z-index: 55; }
   .drawer .scrim { position: absolute; inset: 0; background: rgba(255,255,255,.55); backdrop-filter: blur(2px); opacity: 0; transition: opacity .18s; }
   .drawer .sheet { position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--border-2); box-shadow: -24px 0 64px -24px rgba(0,0,0,.22); transform: translateX(24px); opacity: 0; transition: transform .22s cubic-bezier(.2, .8, .2, 1), opacity .18s; }
@@ -283,9 +283,17 @@
   .rule .ctl input { width: 76px; font-family: var(--mono); text-align: right; }
   .rule .ctl select { padding: 5px 6px; }
   .rule.off .ctl, .rule.off .use { opacity: .4; }
-  .rule .use { display: flex; gap: 6px; align-items: center; font: 400 11.5px var(--mono); color: var(--faint); }
+  .rule .use { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; font: 400 11.5px var(--mono); color: var(--faint); }
   .rule .use .hot { color: var(--accent); }
   .rule .use a { color: var(--muted); }
+  /* The rate limits page: rule groups two-up on wide screens, a save bar that sticks, the log as rows. */
+  .limits .rgroups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 0 16px; align-items: start; }
+  .limits .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 0; margin-bottom: 16px; background: var(--bg); border-top: 1px solid var(--border); }
+  .limits .ev .btn { margin-left: auto; }
+  .limits .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
+  .limits .ev:first-of-type { border-top: 0; }
+  .limits .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
+  .limits .tag.reject { color: var(--del-fg); } .limits .tag.flag { color: var(--accent); border-color: var(--accent); }
   .switch { position: relative; width: 30px; height: 18px; margin-left: auto; flex: none; }
   .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
   .switch i { position: absolute; inset: 0; border-radius: 9px; background: var(--border-2); transition: background .15s; pointer-events: none; }
@@ -298,6 +306,11 @@
     .hero .wrap, .two, .wb { grid-template-columns: 1fr; } .explorer { max-height: 220px; grid-row: auto; } .details { grid-column: auto; }
     .jump { min-width: 0; flex: 1; } .jump span { display: none; } .ln { grid-template-columns: 44px minmax(0, 1fr); } .ln .by { display: none; }
     .wrap { padding: 0 16px; } .top { padding: 10px 16px; } .hero .wrap { padding-top: 40px; }
+  }
+  /* Phones: the header keeps its icons and the handle, and drops the ⌘K hint and Play's label. */
+  @media (max-width: 480px) {
+    .top { gap: 6px; } #who { gap: 2px; } .top .btn.ghost { padding: 7px 6px 6px; }
+    .jump { flex: none; padding: 6px 7px; } .jump kbd { display: none; } #topplay { font-size: 0; gap: 0; }
   }
 </style>
 </head>
@@ -349,9 +362,9 @@ async function refreshSession() { session = await api("/session").catch(() => se
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.admin ? `<button class="btn ghost" id="limits" title="rate limits">${icon("gauge")}</button>` : ""}<a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
-    $("#limits")?.addEventListener("click", limitsDrawer);
+    $("#verify")?.addEventListener("click", sendVerification);
     return icons();
   }
   if (session.mode === "alias") {
@@ -409,7 +422,9 @@ function signInDrawer(mode = "in") {
       <label class="field"><span>Password${up ? " · 8 or more characters" : ""}</span><input name="password" type="password" required minlength="8" autocomplete="${up ? "new-password" : "current-password"}"></label>
       <p class="formmsg" id="authmsg"></p>
       <button class="btn primary wide">${up ? "Create account" : "Sign in"}</button>
-    </form>`);
+    </form>
+    ${!up && session.mail ? `<p class="muted small" style="margin:0"><a href="#" id="forgot">Forgot your password?</a></p>` : ""}`);
+  $("#forgot")?.addEventListener("click", (e) => { e.preventDefault(); forgotDrawer($("#email").email.value); });
   for (const b of $("#drawer-body").querySelectorAll("[data-mode]")) b.addEventListener("click", () => signInDrawer(b.dataset.mode));
   for (const b of $("#drawer-body").querySelectorAll("[data-provider]"))
     b.addEventListener("click", async () => {
@@ -423,11 +438,70 @@ function signInDrawer(mode = "in") {
     try {
       // Better Auth wants a display name; the handle is picked next.
       await api(up ? "/auth/sign-up/email" : "/auth/sign-in/email",
-        up ? { email: f.email.value, password: f.password.value, name: f.email.value.split("@")[0] } : { email: f.email.value, password: f.password.value });
+        up ? { email: f.email.value, password: f.password.value, name: f.email.value.split("@")[0], callbackURL: "/?verified=1" } : { email: f.email.value, password: f.password.value });
       await refreshSession(); header(); route();
       if (!session.pick) drawer.close();
+      if (up && session.mail) toast(`Check ${f.email.value} for a link to verify it`);
     } catch (err) { $("#authmsg").textContent = String(err.message || err); btn.disabled = false; }
   });
+}
+
+/** A reset link by email (only when the Worker can send mail). */
+function forgotDrawer(email = "") {
+  drawer.open("Account", `
+    <h2 id="drawer-title">Reset your password</h2>
+    <p class="muted lede">We'll email a link to pick a new one. It works for an hour.</p>
+    <form id="forgotform">
+      <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email" value="${esc(email)}" autofocus></label>
+      <p class="formmsg" id="forgotmsg"></p>
+      <button class="btn primary wide">${icon("mail")}Send the link</button>
+    </form>
+    <p class="muted small" style="margin:0"><a href="#" id="backin">Back to sign in</a></p>`);
+  $("#backin").addEventListener("click", (e) => { e.preventDefault(); signInDrawer(); });
+  $("#forgotform").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target, btn = f.querySelector("button.primary");
+    btn.disabled = true;
+    try {
+      await api("/auth/request-password-reset", { email: f.email.value, redirectTo: "/?reset=1" });
+      // The same answer whether or not the address has an account.
+      $("#forgotmsg").textContent = `If ${f.email.value} has an account here, a link is on its way.`;
+    } catch (err) { $("#forgotmsg").textContent = String(err.message || err); btn.disabled = false; }
+  });
+}
+
+/** Back from a reset link: pick the new password. */
+function resetDrawer(token) {
+  drawer.open("Account", `
+    <h2 id="drawer-title">Pick a new password</h2>
+    <form id="resetform">
+      <label class="field"><span>New password · 8 or more characters</span><input name="password" type="password" required minlength="8" autocomplete="new-password" autofocus></label>
+      <p class="formmsg" id="resetmsg"></p>
+      <button class="btn primary wide">${icon("check")}Set it</button>
+    </form>`);
+  $("#resetform").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector("button.primary");
+    btn.disabled = true;
+    try { await api("/auth/reset-password", { newPassword: e.target.password.value, token }); toast("Password changed. Sign in with it."); signInDrawer(); }
+    catch (err) { $("#resetmsg").textContent = String(err.message || err); btn.disabled = false; }
+  });
+}
+
+async function sendVerification() {
+  try { await api("/auth/send-verification-email", { email: session.unverified, callbackURL: "/?verified=1" }); toast(`Sent a link to ${session.unverified}`); }
+  catch (err) { toast(String(err.message || err)); }
+}
+
+/** Where a mailed link lands: /?verified=1 or /?reset=1&token=…, with ?error=… when it had expired. */
+function mailedLink() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has("verified") && !q.has("reset")) return;
+  history.replaceState(null, "", location.pathname + location.hash);
+  const err = q.get("error");
+  if (q.has("verified")) return toast(err ? "That link has expired. Sign in and send a new one." : "Email verified");
+  if (err || !q.get("token")) return toast("That reset link has expired. Ask for a new one.");
+  resetDrawer(q.get("token"));
 }
 
 function handleDrawer() {
@@ -442,7 +516,8 @@ function handleDrawer() {
       <p class="formmsg" id="handlemsg"></p>
       <button class="btn primary wide">${icon("check")}Claim it</button>
     </form>
-    <p class="muted small" style="margin:0">Signed in as ${esc(email)}. <a href="#" id="notme">Not you?</a></p>`);
+    <p class="muted small" style="margin:0">Signed in as ${esc(email)}${session.unverified ? ` (not verified yet: <a href="#" id="resend">send the link again</a>)` : ""}. <a href="#" id="notme">Not you?</a></p>`);
+  $("#resend")?.addEventListener("click", (e) => { e.preventDefault(); sendVerification(); });
   const input = $("#handle").name, check = $("#check");
   let seq = 0;
   const test = async () => {
@@ -466,42 +541,60 @@ function handleDrawer() {
   $("#notme").addEventListener("click", (e) => { e.preventDefault(); signOut(); });
 }
 
-// Rate limits (admins): each rule's cap, its window, and this window's traffic.
+// Rate limits (admins): each rule's cap, its window, what happens to a caller
+// over it, and this window's traffic, grouped by what they protect; then who's
+// flagged and the last week's log of callers going over, each with a reset.
 const WINDOWS = [[60, "minute"], [600, "10 minutes"], [3600, "hour"], [86400, "day"], [604800, "week"]];
 const every = (s) => (WINDOWS.find(([w]) => w === s)?.[1]) ?? `${s} seconds`;
-async function limitsDrawer() {
-  const { rules } = await api("/admin/limits");
+const ON_FAIL = [["reject", "Reject (429)"], ["log", "Let through, log it"], ["flag", "Let through, flag the caller"]];
+const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
+async function limitsPage() {
+  const { rules, events, flagged } = await api("/admin/limits");
+  const label = (name) => rules.find((r) => r.name === name)?.label ?? name;
   const row = (r) => {
-    const d = r.defaults, changed = d && (d.max !== r.max || d.window_s !== r.window_s || !r.enabled);
+    const d = r.defaults, changed = d && (d.max !== r.max || d.window_s !== r.window_s || d.on_fail !== r.on_fail || !r.enabled);
     const opts = (WINDOWS.some(([w]) => w === r.window_s) ? WINDOWS : [...WINDOWS, [r.window_s, every(r.window_s)]])
       .map(([w, l]) => `<option value="${w}"${w === r.window_s ? " selected" : ""}>${l}</option>`).join("");
     return `<div class="rule${r.enabled ? "" : " off"}" data-name="${r.name}">
       <label class="rhead"><b>${esc(r.label)}</b><span class="switch"><input type="checkbox" name="enabled"${r.enabled ? " checked" : ""} aria-label="limit ${esc(r.label)}"><i></i></span></label>
       <span class="muted small">${esc(r.what)}, per ${r.per === "ip" ? "IP" : "handle"}</span>
       <div class="ctl"><input name="max" type="number" min="1" max="100000" value="${r.max}" aria-label="most allowed"><span>per</span><select name="window_s" aria-label="window">${opts}</select></div>
-      <div class="use"><span>this ${every(r.window_s)}: ${r.now.hits} from ${r.now.callers} caller${r.now.callers === 1 ? "" : "s"}</span>${r.now.blocked ? `<span class="hot">· ${r.now.blocked} blocked</span>` : ""}
-        <span class="grow"></span>${changed ? `<a href="#" data-reset title="default: ${d.max} per ${every(d.window_s)}">reset</a>` : ""}</div>
+      <div class="ctl"><span>over it:</span><select name="on_fail" aria-label="when a caller goes over">${ON_FAIL.map(([v, l]) => `<option value="${v}"${v === r.on_fail ? " selected" : ""}>${l}</option>`).join("")}</select></div>
+      <div class="use"><span>this ${every(r.window_s)}: ${r.now.hits} from ${r.now.callers} caller${r.now.callers === 1 ? "" : "s"}</span>${r.now.blocked ? `<span class="hot">· ${r.now.blocked} over</span>` : ""}
+        <span class="grow"></span>${changed ? `<a href="#" data-default title="default: ${d.max} per ${every(d.window_s)}, ${d.on_fail}">defaults</a>` : ""}</div>
     </div>`;
   };
-  drawer.open("Admin", `
-    <h2 id="drawer-title">Rate limits</h2>
-    <p class="muted lede">What costs money or invites abuse. Counted per handle, or per IP before sign-in. Admins and the desktop app aren't counted.</p>
-    <form id="limits-form">${rules.map(row).join("")}</form>`,
-    `<span class="muted small" id="limits-msg"></span><span class="grow"></span><button class="btn" id="limits-close">Close</button><button class="btn primary" id="limits-save">${icon("save")}Save</button>`);
+  const groups = [...new Set(rules.map((r) => r.group))];
+  const reset = (who, rule) => `<button class="btn small" data-reset="${esc(who)}"${rule ? ` data-rule="${rule}"` : ""} title="clear ${rule ? "this rule's" : "every"} count for ${esc(who)}">${icon("rotate-ccw")}Reset</button>`;
+  app.innerHTML = `<div class="wrap limits" style="padding-top:24px">
+    <h2 style="margin:0 0 6px;font-weight:600">${icon("gauge")} Rate limits</h2>
+    <p class="muted" style="margin:0 0 18px">Behind the curtain: everything that costs money or invites abuse, and what happens when someone goes over. Counted per handle, or per IP before sign-in. Admins and the desktop app aren't counted.</p>
+    ${flagged.length ? `<div class="box"><div class="bar">${icon("flag")}<b>Flagged</b><span class="muted">went over a rule set to flag, this week</span></div>
+      ${flagged.map((f) => `<div class="body ev"><b>${esc(f.who)}</b><span class="muted">${f.rules.map(label).map(esc).join(", ")} · ${f.times}× · ${ago(f.last)}</span>${reset(f.who)}</div>`).join("")}</div>` : ""}
+    <form id="limits-form" class="rgroups">${groups.map((g) => `<div class="box"><div class="bar"><b>${esc(g)}</b></div><div class="body">${rules.filter((r) => r.group === g).map(row).join("")}</div></div>`).join("")}</form>
+    <div class="savebar"><span class="muted small" id="limits-msg"></span><span class="grow"></span><button class="btn primary" id="limits-save">${icon("save")}Save</button></div>
+    <div class="box"><div class="bar">${icon("history")}<b>Over the cap</b><span class="muted">the first time each caller went over, per window, this week</span></div>
+      ${events.map((e) => `<div class="body ev"><span class="muted">${ago(e.at)}</span><b>${esc(e.who)}</b><span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${e.action === "reject" ? "rejected" : e.action === "log" ? "logged" : "flagged"}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="body muted">Nobody has gone over a limit this week.</div>'}</div>
+  </div>`;
   const form = $("#limits-form");
   form.addEventListener("change", (e) => { const r = e.target.closest(".rule"); r?.classList.toggle("off", !r.querySelector("[name=enabled]").checked); $("#limits-msg").textContent = "Unsaved changes"; });
-  for (const a of form.querySelectorAll("[data-reset]")) a.addEventListener("click", (e) => {
+  for (const a of form.querySelectorAll("[data-default]")) a.addEventListener("click", (e) => {
     e.preventDefault();
     const el = a.closest(".rule"), d = rules.find((r) => r.name === el.dataset.name).defaults;
-    el.querySelector("[name=max]").value = d.max; el.querySelector("[name=window_s]").value = d.window_s; el.querySelector("[name=enabled]").checked = true;
+    el.querySelector("[name=max]").value = d.max; el.querySelector("[name=window_s]").value = d.window_s; el.querySelector("[name=on_fail]").value = d.on_fail; el.querySelector("[name=enabled]").checked = true;
     form.dispatchEvent(new Event("change"));
   });
-  $("#limits-close").addEventListener("click", () => drawer.close());
+  for (const b of app.querySelectorAll("[data-reset]")) b.addEventListener("click", async () => {
+    try { await api("/admin/limits/reset", { who: b.dataset.reset, rule: b.dataset.rule }); toast(`Reset ${b.dataset.reset}`); limitsPage(); }
+    catch (err) { toast(String(err.message || err)); }
+  });
   $("#limits-save").addEventListener("click", async () => {
-    const out = [...form.querySelectorAll(".rule")].map((el) => ({ name: el.dataset.name, max: Number(el.querySelector("[name=max]").value), window_s: Number(el.querySelector("[name=window_s]").value), enabled: el.querySelector("[name=enabled]").checked }));
-    try { await api("/admin/limits", { rules: out }, "PUT"); toast("Rate limits saved"); limitsDrawer(); }
+    const out = [...form.querySelectorAll(".rule")].map((el) => ({ name: el.dataset.name, max: Number(el.querySelector("[name=max]").value), window_s: Number(el.querySelector("[name=window_s]").value),
+      on_fail: el.querySelector("[name=on_fail]").value, enabled: el.querySelector("[name=enabled]").checked }));
+    try { await api("/admin/limits", { rules: out }, "PUT"); toast("Rate limits saved"); limitsPage(); }
     catch (err) { $("#limits-msg").textContent = String(err.message || err); }
   });
+  icons();
 }
 async function signOut() {
   await (session.mode === "accounts" ? api("/auth/sign-out", {}) : api("/logout", {})).catch(() => {});
@@ -555,6 +648,12 @@ function workbench(head, { tab, bar, body, details, status }) {
 }
 const fits = {};
 /** A run's steps as a row of icons that go orange, then green or red; click one for its log. */
+const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+/** The logged runs under a deploy or preview panel: who, which commit, the result, and the log of a failed one. */
+const runLog = (history) => history.length ? `<div style="margin-top:6px">${history.map((h) => `<div class="run"><span class="st ${h.status === "failed" || h.status === "interrupted" ? "failed" : h.status === "running" ? "running" : ""}">${h.status} · ${esc(h.stage)} · ${when(h.at)}${h.ms ? ` · ${Math.round(h.ms / 1000)}s` : ""}</span>
+  <span style="font-size:12px">@${esc(h.by)} ${h.trigger === "commit" ? "committed" : h.trigger === "preview" ? "ran a preview" : "pressed deploy"}${h.runner === "hosted" ? ` · from the site, key <code>…${esc(h.key_last4 || "")}</code>` : ""}${h.commit_hash ? ` · <code>${esc(h.commit_hash.slice(0, 7))}</code>` : ""}${h.url ? ` · <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url.replace(/^https?:\/\//, ""))}</a>` : ""}</span>
+  ${h.note ? `<span class="muted" style="font-size:12px">${esc(h.note)}</span>` : ""}
+  ${h.status === "failed" && h.out ? `<details><summary class="muted" style="font-size:12px;cursor:pointer">log</summary><pre>${esc(h.out)}</pre></details>` : ""}</div>`).join("")}</div>` : "";
 const flowRow = (steps, by, sel) => `<div class="flow">${steps.map(([k, ic, label], i) => `${i ? `<span class="ln${by[steps[i - 1][0]]?.status === "done" ? " done" : ""}"></span>` : ""}<button type="button" data-step="${k}" class="${by[k]?.status ?? "waiting"}${sel === k ? " sel" : ""}" title="${by[k]?.status ?? "waiting"}${by[k]?.ms ? ` · ${(by[k].ms / 1000).toFixed(1)}s` : ""}"><span class="dot">${icon(by[k]?.status === "done" ? "check" : by[k]?.status === "failed" ? "x" : ic)}</span>${label}</button>`).join("")}</div>`;
 const sec = (ic, title, html) => `<section class="sec"><h3>${icon(ic)}${title}</h3>${html}</section>`;
 const readmeOf = (tree) => tree.entries.find((e) => e.type === "file" && /^readme(\.|$)/i.test(e.name)) ?? tree.entries.find((e) => e.type === "file");
@@ -804,8 +903,8 @@ const views = {
         <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deps-run"${d.running ? " disabled" : ""}>${icon("refresh-cw")}${d.running ? "Checking…" : "Check now"}</button></div>
       </form>
       ${rep ? `<div class="run"><span class="st">last checked ${new Date(rep.at).toLocaleString()} · ${rep.checked} package${rep.checked === 1 ? "" : "s"}</span>
-        ${rep.updates.map((u) => `<span><code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? "tests pass" : "untested"}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
-        ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>, ready to review above.</span>` : ""}
+        ${rep.updates.map((u) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? "tests pass" : "untested"}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
+        ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>${rep.lock ? `, with <code>${esc(rep.lock)}</code> to match` : ""}, ready to review above.</span>` : ""}
         ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}`;
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target;
@@ -825,8 +924,18 @@ const views = {
     const el = $("#deploy"), base = `/repos/${owner}/${repo}/deploy`;
     if (!el) return;
     const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
-    let sel = null, timer = null, picked = false;
-    const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    let sel = null, timer = null, picked = false, editKey = false;
+    // Hosted deploys use a key the owner stores here. It's write-only: the site shows who set it, when, and its last 4 characters.
+    const keyBlock = (d) => d.why ? `<p class="muted" style="font-size:12px">${esc(d.why)}</p>`
+      : d.key.set && !editKey ? `<div style="display:grid;gap:6px;font-size:12px"><span>${icon("key")} Deploy key <code>…${esc(d.key.last4)}</code> <span class="muted">set by @${esc(d.key.by)} on ${when(d.key.at)}</span></span>
+          <div><button class="btn" type="button" id="key-edit">Replace</button> <button class="btn" type="button" id="key-remove">Remove</button></div></div>`
+      : `<form id="key-form" style="display:grid;gap:6px;font-size:12px">
+          <span>${icon("key")} Deploy key <span class="muted">(the site deploys with it; it is sealed and never shown again)</span></span>
+          <input name="token" type="password" autocomplete="off" placeholder="Cloudflare API token" required style="font:12px var(--mono)">
+          <input name="account_id" autocomplete="off" placeholder="Cloudflare account ID" required pattern="[0-9a-fA-F]{32}" style="font:12px var(--mono)">
+          <span class="muted">Make a scoped token, not a global key: <b>Workers Scripts: Edit</b> on one account, plus D1 and R2 edit if the app binds them.</span>
+          <div><button class="btn">Save key</button>${d.key.set ? ' <button class="btn" type="button" id="key-cancel">Cancel</button>' : ""}</div>
+        </form>`;
     const draw = (d) => {
       const s = d.settings, run = d.run, by = Object.fromEntries((run?.steps ?? []).map((x) => [x.key, x]));
       const shown = sel && by[sel];
@@ -834,21 +943,29 @@ const views = {
           <div class="row">stage <input name="stage" value="${esc(s.stage)}" style="width:8em;font:12px var(--mono)" pattern="[a-z0-9][a-z0-9-]*" required></div>
           <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits; crew and agents never start a deploy)</span></label>
           <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This is production <span class="muted">(lets a stack with <code>adopt</code> take over the live resources)</span></label>
-          <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Shipping…" : `Deploy to ${esc(s.stage)}`}</button></div>
+          <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : d.hosted ? esc(d.why || "Set a deploy key first") : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Shipping…" : `Deploy to ${esc(s.stage)}`}</button></div>
         </form>
+        ${d.hosted ? keyBlock(d) : ""}
         ${run ? flowRow(STEPS, by, sel) : ""}
         ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a></p>` : ""}
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
-        ${d.history.length ? `<div style="margin-top:6px">${d.history.map((h) => `<div class="run"><span class="st ${h.status === "failed" || h.status === "interrupted" ? "failed" : h.status === "running" ? "running" : ""}">${h.status} · ${esc(h.stage)} · ${when(h.at)}${h.ms ? ` · ${Math.round(h.ms / 1000)}s` : ""}</span>
-          <span style="font-size:12px">@${esc(h.by)} ${h.trigger === "commit" ? "committed" : "pressed deploy"}${h.commit_hash ? ` · <code>${esc(h.commit_hash.slice(0, 7))}</code>` : ""}${h.url ? ` · <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url.replace(/^https?:\/\//, ""))}</a>` : ""}</span>
-          ${h.note ? `<span class="muted" style="font-size:12px">${esc(h.note)}</span>` : ""}
-          ${h.status === "failed" && h.out ? `<details><summary class="muted" style="font-size:12px;cursor:pointer">log</summary><pre>${esc(h.out)}</pre></details>` : ""}</div>`).join("")}</div>` : ""}`;
+        ${runLog(d.history)}`;
       el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { picked = true; sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
       $("#deploy-form").addEventListener("submit", async (e) => {
         e.preventDefault(); const f = e.target;
         try { await api(base, { stage: f.stage.value, on_commit: f.on_commit.checked, production: f.production.checked }, "PUT"); toast("Saved"); poll(); }
         catch (err) { toast(err.message); }
+      });
+      $("#key-form")?.addEventListener("submit", async (e) => {
+        e.preventDefault(); const f = e.target;
+        try { await api(base + "/key", { token: f.token.value.trim(), account_id: f.account_id.value.trim() }, "PUT"); editKey = false; toast("Deploy key saved"); poll(); }
+        catch (err) { toast(err.message); }
+      });
+      $("#key-edit")?.addEventListener("click", () => { editKey = true; draw(d); });
+      $("#key-cancel")?.addEventListener("click", () => { editKey = false; draw(d); });
+      $("#key-remove")?.addEventListener("click", async () => {
+        try { await api(base + "/key", undefined, "DELETE"); toast("Deploy key removed"); poll(); } catch (err) { toast(err.message); }
       });
       $("#deploy-run").addEventListener("click", async () => {
         sel = null; picked = false;
@@ -927,7 +1044,8 @@ const views = {
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
         <button class="btn primary" id="preview-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Running…" : "Deploy a preview"}</button>
-        <p class="muted" style="font-size:12px;margin-top:4px">Deploys this repo's <code>rustybuns.config.ts</code> to its targets as a throwaway stage, with the logins on this machine, checks it answers, then destroys it.</p>`;
+        <p class="muted" style="font-size:12px;margin-top:4px">Deploys this repo's <code>rustybuns.config.ts</code> to its targets as a throwaway stage, with the logins on this machine, checks it answers, then destroys it.</p>
+        ${runLog((d.history ?? []).filter((h) => h.id !== run?.id))}`;
       const np = el.querySelector("pre");
       if (np && stick) np.scrollTop = np.scrollHeight;
       el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
@@ -967,6 +1085,8 @@ const views = {
       return `<div class="commit"><code>${esc(b.name)}</code><span>@${esc(b.by)} · ${files.length} file${files.length === 1 ? "" : "s"}, ${ops} line op${ops === 1 ? "" : "s"}</span>
         ${clash.map((c) => `<span class="muted">${esc(c.path)} ${esc(c.line)}: ${c.lint
           ? `merged, it wouldn't build: ${esc(c.lint)}`
+          : c.whole
+          ? `a lockfile both sides changed: keep one, then regenerate it`
           : c.doubled
           ? `added on both sides, it would land twice: <code>${esc(c.branch)}</code>`
           : `main <code class="pre">${esc(c.main ?? "deleted")}</code>, branch <code class="pre">${esc(c.branch ?? "deleted")}</code>`}</span>`).join("")}
@@ -1148,7 +1268,7 @@ const views = {
           : inp.value === "" ? [{ kind: "delete", line: line.id, base: line.rev }]
           : [{ kind: "set", line: line.id, base: line.rev, text: inp.value }];
         // The broadcast has already updated `doc`; close the editor and show it.
-        try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
+        try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = /^Slow down/.test(err.message) ? err.message : "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
       });
     };
     draw(doc); drawCommits(commits);
@@ -1306,12 +1426,13 @@ const views = {
       const r = await api(`/repos/${c.owner}/${c.repo}`).catch(() => null);
       const write = !!r?.canWrite && c.status === "open", run = c.run;
       const summary = !run ? "not run yet" : run.note ?? `${run.passed} passed, ${run.failed} failed`;
-      const share = `${location.origin}/api/cuts/${id}/share`;
-      const post = `https://x.com/intent/post?text=${encodeURIComponent(`Cut out of ${c.owner}/${c.repo}, ${summary}${c.note ? ": " + c.note : ""}`)}&url=${encodeURIComponent(share)}`;
+      // The card's font: DejaVu Sans Mono unless the sharer picks Geist Mono, the app's own.
+      let share = `${location.origin}/api/cuts/${id}/share`;
+      const postFor = (url) => `https://x.com/intent/post?text=${encodeURIComponent(`Cut out of ${c.owner}/${c.repo}, ${summary}${c.note ? ": " + c.note : ""}`)}&url=${encodeURIComponent(url)}`, post = postFor(share);
       app.innerHTML = `<div class="wrap" style="max-width:980px;padding-top:28px">
         <div class="box"><div class="bar">${icon("scissors")}<b>A cut of <a href="#/r/${c.owner}/${c.repo}">${esc(c.owner)}/${esc(c.repo)}</a></b><span class="muted">· <code>${esc(c.branch)}</code> · ${c.status}</span><span class="grow"></span>
           ${c.can_run ? `<button class="btn" id="cut-run">${icon("play")}Run tests</button>` : ""}
-          <div class="pop"><button class="btn" id="cut-share">${icon("share-2")}Share</button><div class="panel" hidden style="width:380px"><b>Share this cut</b><span class="muted" style="font-size:13px">The link unfurls as a card of the code and its test result.</span><div class="copyline"><input readonly value="${esc(share)}"><button class="btn" type="button" id="cut-copy">${icon("copy")}</button></div><a class="btn" target="_blank" rel="noopener" href="${esc(post)}">${icon("send")}Post to X</a><img src="/api/cuts/${id}/card.png?at=${run?.at ?? 0}" alt="the card a link to this cut unfurls as" style="width:100%;border:1px solid var(--border);border-radius:5px"></div></div>
+          <div class="pop"><button class="btn" id="cut-share">${icon("share-2")}Share</button><div class="panel" hidden style="width:380px"><b>Share this cut</b><span class="muted" style="font-size:13px">The link unfurls as a card of the code and its test result.</span><div class="copyline"><input readonly id="cut-link" value="${esc(share)}"><button class="btn" type="button" id="cut-copy">${icon("copy")}</button></div><label class="row muted" style="font-size:13px">Card font <select id="cut-font"><option value="dejavu">DejaVu Sans Mono</option><option value="geist">Geist Mono</option></select></label><a class="btn" target="_blank" rel="noopener" id="cut-post" href="${esc(post)}">${icon("send")}Post to X</a><img id="cut-card" src="/api/cuts/${id}/card.png?at=${run?.at ?? 0}" alt="the card a link to this cut unfurls as" style="width:100%;border:1px solid var(--border);border-radius:5px"></div></div>
           ${write ? `<button class="btn primary" id="cut-merge">${icon("git-merge")}Merge into main</button>` : ""}</div>
           ${c.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">${esc(c.note)} <span class="muted">· cut by ${esc(c.by)}</span></div>` : ""}
           ${c.files.map((f) => `<div class="bar">${icon("file")}<a href="#/f/${c.owner}/${c.repo}/${encodeURIComponent(f.path)}">${esc(f.path)}</a></div><div class="code" data-path="${esc(f.path)}">${codeRows(f.lines.map((l) => ({ ...l, n: l.n ?? "+" })))}</div>`).join("")}
@@ -1327,6 +1448,13 @@ const views = {
       }
       popover($("#cut-share"));
       $("#cut-copy").addEventListener("click", () => copy(share, "Link copied"));
+      $("#cut-font").addEventListener("change", (e) => {
+        const q = e.target.value === "dejavu" ? "" : `font=${e.target.value}`;
+        share = `${location.origin}/api/cuts/${id}/share${q ? "?" + q : ""}`;
+        $("#cut-link").value = share;
+        $("#cut-post").href = postFor(share);
+        $("#cut-card").src = `/api/cuts/${id}/card.png?at=${run?.at ?? 0}${q ? "&" + q : ""}`;
+      });
       $("#cut-run")?.addEventListener("click", async (e) => {
         e.currentTarget.disabled = true; e.currentTarget.lastChild.textContent = "Running…";
         try { await api(`/cuts/${id}/run`, {}); } catch (err) { toast(err.message); }
@@ -1365,6 +1493,12 @@ const views = {
     icons();
   },
 
+  async admin(section) {
+    ctx = { view: "admin" };
+    if (!session.admin) throw new Error("Admins only.");
+    if (section === "limits") return limitsPage();
+    location.hash = "#/admin/limits";
+  },
   async search(q) {
     q = decodeURIComponent(q || "");
     ctx = { view: "search", q };
@@ -1533,7 +1667,7 @@ async function commands() {
   if (u) add("Anywhere", "user", "Your profile", `GET /api/users/${u}`, () => (location.hash = `#/u/${u}`));
   for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
-  if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", limitsDrawer);
+  if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
   return out;
@@ -1599,7 +1733,7 @@ async function route() {
   window.scrollTo(0, 0);
 }
 addEventListener("hashchange", route);
-refreshSession().then(() => { header(); route(); });
+refreshSession().then(() => { header(); route(); mailedLink(); });
 icons();
 </script>
 </body>
