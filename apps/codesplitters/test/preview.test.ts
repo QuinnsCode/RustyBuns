@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { urlIn, type Runner } from "../src/preview.ts";
+import { KEEP, logStart, urlIn, type Runner } from "../src/preview.ts";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -57,6 +57,25 @@ test("a preview goes up on a stage of its own, answers, and comes down", async (
   // The clone's token never reaches the log.
   expect(run.steps[0].out).toContain("<remote>");
   expect(run.steps[0].out).not.toContain("://x:");
+  // It's logged beside the real deploys, so it outlives this process, but not in their list.
+  let d: any;
+  for (let i = 0; i < 100 && (d = await (await call("ryan", "/api/repos/ryan/lab/preview")).json()).history[0]?.status === "running"; i++) await Bun.sleep(10);
+  expect(d.history).toHaveLength(1);
+  expect(d.history[0]).toMatchObject({ id: run.id, stage: run.stage, by: "ryan", trigger: "preview", status: "done", url: run.url });
+  expect((await (await call("ryan", "/api/repos/ryan/lab/deploy")).json()).history).toEqual([]);
+});
+
+test("each repo keeps its last runs, previews and deploys counted apart", async () => {
+  const { call } = await app(fake({}).runner);
+  const log = (i: number, trigger: "preview" | "button") =>
+    logStart(call.env, "ryan", "lab", { id: `${trigger}-${i}`, at: i, stage: "s", steps: [], done: true }, "ryan", trigger);
+  for (let i = 0; i < KEEP + 3; i++) await log(i, "preview");
+  await log(0, "button");
+  const ids = (sql: string) => call.env.DB.prepare(sql).all().then((r: any) => r.results.map((x: any) => x.id));
+  const previews = await ids("SELECT id FROM deploys WHERE trigger = 'preview' ORDER BY at");
+  expect(previews).toHaveLength(KEEP);
+  expect(previews[0]).toBe("preview-3");   // the three oldest went
+  expect(await ids("SELECT id FROM deploys WHERE trigger = 'button'")).toEqual(["button-0"]);
 });
 
 test("a failed check still tears the stack down", async () => {

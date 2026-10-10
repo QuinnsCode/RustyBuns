@@ -12,9 +12,9 @@
 // `adopt: true` is refused, since adopting takes the real resources' names and
 // destroy would then delete production. Once deploy has started, destroy always
 // runs; if it fails, the clone (and its Alchemy state) is kept so it can be
-// finished by hand.
+// finished by hand. Each run is logged in D1 beside the real deploys.
 //
-//   GET  /api/repos/:o/:r/preview     the current or last run (owner only)
+//   GET  /api/repos/:o/:r/preview     the current or last run, and the last 20 logged (owner only)
 //   POST /api/repos/:o/:r/preview     start one
 
 import { access as artifactAccess, handleFor } from "./archive.ts";
@@ -46,6 +46,39 @@ export const runnerFor = (env: Env): Runner | null => {
 
 /** One run per repo, in this process: the desktop app is one process. */
 const runs = new Map<string, Run>();
+
+// ---- the log: deploys and previews alike, in D1's `deploys` table ------------
+
+export type Trigger = "button" | "commit" | "preview";
+
+/** How many logged runs each repo keeps, previews and deploys counted apart. */
+export const KEEP = 50;
+
+/** Log a run as it starts, and let the oldest go past KEEP. */
+export async function logStart(env: Env, owner: string, repo: string, run: Run, by: string, trigger: Trigger) {
+  const kind = trigger === "preview" ? "= 'preview'" : "!= 'preview'";
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO deploys (id, owner, repo, stage, by, trigger, status, at) VALUES (?, ?, ?, ?, ?, ?, 'running', ?)")
+      .bind(run.id, owner, repo, run.stage, by, trigger, run.at),
+    env.DB.prepare(`DELETE FROM deploys WHERE owner = ? AND repo = ? AND trigger ${kind} AND id NOT IN
+      (SELECT id FROM deploys WHERE owner = ? AND repo = ? AND trigger ${kind} ORDER BY at DESC LIMIT ?)`).bind(owner, repo, owner, repo, KEEP),
+  ]);
+}
+
+/** Log how a run ended. The log keeps the end of each step's output, enough to see why one failed. */
+export async function logEnd(env: Env, run: Run) {
+  const ok = run.steps.every((x) => x.status === "done");
+  const out = run.steps.filter((x) => x.out).map((x) => `── ${x.key} (${x.status})\n${x.out.slice(-2000)}`).join("\n").slice(-8000);
+  await env.DB.prepare("UPDATE deploys SET status = ?, commit_hash = ?, url = ?, ms = ?, note = ?, out = ? WHERE id = ?")
+    .bind(ok ? "done" : "failed", run.commit ?? null, run.url ?? null, Date.now() - run.at, run.note ?? null, out, run.id).run();
+}
+
+/** The last 20 logged runs of one kind. One still "running" but not in this process died with an earlier one. */
+export async function history(env: Env, owner: string, repo: string, previews: boolean, live: Run | null) {
+  const { results } = await env.DB.prepare(`SELECT id, stage, by, trigger, status, commit_hash, url, at, ms, note, out FROM deploys
+    WHERE owner = ? AND repo = ? AND trigger ${previews ? "= 'preview'" : "!= 'preview'"} ORDER BY at DESC LIMIT 20`).bind(owner, repo).all();
+  return (results as any[]).map((d) => d.status === "running" && live?.id !== d.id ? { ...d, status: "interrupted" } : d);
+}
 
 /** The deployed URL from Alchemy's printed outputs: `url: "https://..."`, else the last workers.dev or railway one. */
 export function urlIn(out: string): string | undefined {
@@ -143,7 +176,10 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   if (user !== owner) return json({ error: "only the repo's owner can run a preview deploy" }, 403);
   if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
   const runner = runnerFor(env);
-  if (req.method === "GET") return json({ can_run: !!runner, run: runs.get(key) ?? null });
+  if (req.method === "GET") {
+    const run = runs.get(key) ?? null;
+    return json({ can_run: !!runner, run, history: await history(env, owner, repo, true, run) });
+  }
   if (req.method !== "POST") return null;
   if (!runner) return json({ error: "preview deploys run on the desktop app, with your own logins" }, 400);
   if (runs.get(key) && !runs.get(key)!.done) return json({ error: "a preview is already running" }, 409);
@@ -154,6 +190,9 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   const id = crypto.randomUUID().slice(0, 8);
   const run: Run = { id, at: Date.now(), stage: `preview-${id}`, steps: STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
   runs.set(key, run);
-  void preview(runner, remote, run).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
+  await logStart(env, owner, repo, run, user, "preview");
+  void preview(runner, remote, run)
+    .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
+    .then(() => logEnd(env, run));
   return json({ run }, 202);
 }
