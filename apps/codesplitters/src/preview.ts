@@ -26,7 +26,8 @@ export interface Run { id: string; at: number; stage: string; steps: Step[]; url
 
 /** Run a command, streaming its output; resolves to the exit code. */
 export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Promise<number>;
-export interface Runner { exec: Exec; fetch: (url: string) => Promise<{ status: number }> }
+/** Where a run's commands go. `workdir`: a fresh directory the runner owns and cleans up (a deploy container's), used in place of a temp dir here. */
+export interface Runner { exec: Exec; fetch: (url: string) => Promise<{ status: number }>; workdir?: string }
 
 export const STEPS: StepKey[] = ["clone", "install", "deploy", "check", "destroy"];
 const MAX_OUT = 60_000;
@@ -62,11 +63,9 @@ const LOGIN_HINT = /unauthori[sz]ed|authentication|not logged in|no credentials|
  * deploy may take over live resources (`adopt`) when the owner said so.
  */
 export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean } = {}) {
-  const { mkdtempSync, rmSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const dir = mkdtempSync(join(tmpdir(), "codesplitters-preview-"));
-  const app = join(dir, "repo");
+  const fs = runner.workdir ? null : await import("node:fs");
+  const dir = runner.workdir ?? fs!.mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "codesplitters-preview-"));
+  const app = `${dir}/repo`;
   const step = (k: StepKey) => run.steps.find((s) => s.key === k)!;
   const scrub = (s: string) => s.split(remote).join("<remote>");
   /** Run one step's commands; false when one fails. */
@@ -120,7 +119,7 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
         last = await runner.fetch(url).then((r) => String(r.status), (e: Error) => e.message);
         c.out += `GET ${url} → ${last}\n`;
         if (+last > 0 && +last < 500) break;
-        await Bun.sleep(2000);
+        await (typeof Bun !== "undefined" ? Bun.sleep(2000) : new Promise((r) => setTimeout(r, 2000)));   // a hosted deploy runs in a Worker
       }
       c.status = +last > 0 && +last < 500 ? "done" : "failed";
       c.ms = Date.now() - t;
@@ -131,7 +130,7 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
       run.note = `destroy failed; the clone and its Alchemy state are kept in ${app}. Finish with: cd ${app} && bun x rustybuns destroy --yes --stage ${run.stage}`;
     }
   } finally {
-    if (!(deployed && run.kept)) rmSync(dir, { recursive: true, force: true });
+    if (fs && !(deployed && run.kept)) fs.rmSync(dir, { recursive: true, force: true });
     run.done = true;
   }
 }

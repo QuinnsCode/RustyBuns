@@ -3,14 +3,19 @@ import { defineConfig } from "@rustybuns/cli/config";
 // A deploy needs every declared secret, so the optional ones are only declared
 // when they're switched on in the deploying shell:
 //   CODESPLITTERS_AGENTS=1  hosted coding agents (super experimental, see README)
+//   CODESPLITTERS_DEPLOYS=1 hosted deploys with each repo's stored deploy key (needs DEPLOY_SECRETS_KEY)
 //   BETTER_AUTH_SECRET      accounts; without it the site uses aliases
 //   GITHUB_/GOOGLE_CLIENT_ID  that sign-in, with its _SECRET
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
+const deploys = process.env.CODESPLITTERS_DEPLOYS === "1";
 const secrets = (on: boolean, ...names: string[]) => on ? Object.fromEntries(names.map((n) => [n, { type: "secret" as const }])) : {};
 const set = (name: string) => !!process.env[name];
 // Hosted agents bill the site's keys and are limited to ADMINS, which only means
 // something with accounts: with aliases anyone can claim an admin's handle.
 if (agents && !set("BETTER_AUTH_SECRET")) throw new Error("CODESPLITTERS_AGENTS=1 needs accounts on: set BETTER_AUTH_SECRET too");
+// Hosted deploys likewise: a deploy key in an alias-mode site is anyone's to use.
+if (deploys && !set("BETTER_AUTH_SECRET")) throw new Error("CODESPLITTERS_DEPLOYS=1 needs accounts on: set BETTER_AUTH_SECRET too");
+if (deploys && !set("DEPLOY_SECRETS_KEY")) throw new Error("CODESPLITTERS_DEPLOYS=1 needs DEPLOY_SECRETS_KEY (openssl rand -base64 32) to seal deploy keys");
 
 export default defineConfig({
   name: "codesplitters",
@@ -38,6 +43,11 @@ export default defineConfig({
     // The desktop has no twin and runs the CLIs on the machine instead.
     ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
     ...secrets(agents, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"),
+    // Hosted deploys: one Durable Object per repo, each run in its own container
+    // (deploy-sandbox/Dockerfile), separate from the agents' so no agent sees a
+    // deploy key. Keys are sealed in D1 under DEPLOY_SECRETS_KEY.
+    ...(deploys ? { DEPLOY_RUNNER: { type: "container", className: "DeployRunner", dockerfile: "deploy-sandbox/Dockerfile", maxInstances: 1, instanceType: "basic" } as const } : {}),
+    ...secrets(deploys, "DEPLOY_SECRETS_KEY"),
     // Accounts (Better Auth). Unset on the desktop: it uses aliases.
     ...secrets(set("BETTER_AUTH_SECRET"), "BETTER_AUTH_SECRET"),
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitters.notryanquinn.workers.dev" },

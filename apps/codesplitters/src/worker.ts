@@ -19,6 +19,7 @@ import { repoFit } from "./fit.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
+export { DeployRunner } from "./deploy-runner.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   // A visitor's dig that has expired is gone, swept or not.

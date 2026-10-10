@@ -634,8 +634,19 @@ const views = {
     const el = $("#deploy"), base = `/repos/${owner}/${repo}/deploy`;
     if (!el) return;
     const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
-    let sel = null, timer = null, picked = false;
+    let sel = null, timer = null, picked = false, editKey = false;
     const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    // Hosted deploys use a key the owner stores here. It's write-only: the site shows who set it, when, and its last 4 characters.
+    const keyBlock = (d) => d.why ? `<p class="muted" style="font-size:12px">${esc(d.why)}</p>`
+      : d.key.set && !editKey ? `<div style="display:grid;gap:6px;font-size:12px"><span>${icon("key")} Deploy key <code>…${esc(d.key.last4)}</code> <span class="muted">set by @${esc(d.key.by)} on ${when(d.key.at)}</span></span>
+          <div><button class="btn" type="button" id="key-edit">Replace</button> <button class="btn" type="button" id="key-remove">Remove</button></div></div>`
+      : `<form id="key-form" style="display:grid;gap:6px;font-size:12px">
+          <span>${icon("key")} Deploy key <span class="muted">(the site deploys with it; it is sealed and never shown again)</span></span>
+          <input name="token" type="password" autocomplete="off" placeholder="Cloudflare API token" required style="font:12px var(--mono)">
+          <input name="account_id" autocomplete="off" placeholder="Cloudflare account ID" required pattern="[0-9a-fA-F]{32}" style="font:12px var(--mono)">
+          <span class="muted">Make a scoped token, not a global key: <b>Workers Scripts: Edit</b> on one account, plus D1 and R2 edit if the app binds them.</span>
+          <div><button class="btn">Save key</button>${d.key.set ? ' <button class="btn" type="button" id="key-cancel">Cancel</button>' : ""}</div>
+        </form>`;
     const draw = (d) => {
       const s = d.settings, run = d.run, by = Object.fromEntries((run?.steps ?? []).map((x) => [x.key, x]));
       const shown = sel && by[sel];
@@ -643,14 +654,15 @@ const views = {
           <div class="row">stage <input name="stage" value="${esc(s.stage)}" style="width:8em;font:12px var(--mono)" pattern="[a-z0-9][a-z0-9-]*" required></div>
           <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits; crew and agents never start a deploy)</span></label>
           <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This is production <span class="muted">(lets a stack with <code>adopt</code> take over the live resources)</span></label>
-          <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Shipping…" : `Deploy to ${esc(s.stage)}`}</button></div>
+          <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : d.hosted ? esc(d.why || "Set a deploy key first") : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Shipping…" : `Deploy to ${esc(s.stage)}`}</button></div>
         </form>
+        ${d.hosted ? keyBlock(d) : ""}
         ${run ? flowRow(STEPS, by, sel) : ""}
         ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a></p>` : ""}
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
         ${d.history.length ? `<div style="margin-top:6px">${d.history.map((h) => `<div class="run"><span class="st ${h.status === "failed" || h.status === "interrupted" ? "failed" : h.status === "running" ? "running" : ""}">${h.status} · ${esc(h.stage)} · ${when(h.at)}${h.ms ? ` · ${Math.round(h.ms / 1000)}s` : ""}</span>
-          <span style="font-size:12px">@${esc(h.by)} ${h.trigger === "commit" ? "committed" : "pressed deploy"}${h.commit_hash ? ` · <code>${esc(h.commit_hash.slice(0, 7))}</code>` : ""}${h.url ? ` · <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url.replace(/^https?:\/\//, ""))}</a>` : ""}</span>
+          <span style="font-size:12px">@${esc(h.by)} ${h.trigger === "commit" ? "committed" : "pressed deploy"}${h.runner === "hosted" ? ` · from the site, key <code>…${esc(h.key_last4 || "")}</code>` : ""}${h.commit_hash ? ` · <code>${esc(h.commit_hash.slice(0, 7))}</code>` : ""}${h.url ? ` · <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url.replace(/^https?:\/\//, ""))}</a>` : ""}</span>
           ${h.note ? `<span class="muted" style="font-size:12px">${esc(h.note)}</span>` : ""}
           ${h.status === "failed" && h.out ? `<details><summary class="muted" style="font-size:12px;cursor:pointer">log</summary><pre>${esc(h.out)}</pre></details>` : ""}</div>`).join("")}</div>` : ""}`;
       el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { picked = true; sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
@@ -658,6 +670,16 @@ const views = {
         e.preventDefault(); const f = e.target;
         try { await api(base, { stage: f.stage.value, on_commit: f.on_commit.checked, production: f.production.checked }, "PUT"); toast("Saved"); poll(); }
         catch (err) { toast(err.message); }
+      });
+      $("#key-form")?.addEventListener("submit", async (e) => {
+        e.preventDefault(); const f = e.target;
+        try { await api(base + "/key", { token: f.token.value.trim(), account_id: f.account_id.value.trim() }, "PUT"); editKey = false; toast("Deploy key saved"); poll(); }
+        catch (err) { toast(err.message); }
+      });
+      $("#key-edit")?.addEventListener("click", () => { editKey = true; draw(d); });
+      $("#key-cancel")?.addEventListener("click", () => { editKey = false; draw(d); });
+      $("#key-remove")?.addEventListener("click", async () => {
+        try { await api(base + "/key", undefined, "DELETE"); toast("Deploy key removed"); poll(); } catch (err) { toast(err.message); }
       });
       $("#deploy-run").addEventListener("click", async () => {
         sel = null; picked = false;
