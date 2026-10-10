@@ -29,8 +29,8 @@ function fake(cfg = { adopt: false, edge: true, box: false }, deploy: { out?: st
   return { runner, ran, hold() { held = true; gate = new Promise((r) => { open = r; }); }, release() { if (held) open(); } };
 }
 
-async function app(runner: Runner) {
-  const call = await boot({ GH_CLI: "off" });
+async function app(runner: Runner, extra: Record<string, unknown> = {}) {
+  const call = await boot({ GH_CLI: "off", ...extra });
   opened.push(call);
   call.env.PREVIEW_RUNNER = runner;
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
@@ -126,4 +126,27 @@ test("a failed deploy keeps the end of its output in the log", async () => {
   const d = await settle(call);
   expect(d.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("rustybuns login cloudflare") });
   expect(d.history[0].out).toContain("Unauthorized");
+});
+
+test("over the deploy limit, a press queues: the replay ships it, and the page follows the run as before", async () => {
+  const { runner } = fake();
+  const { call } = await app(runner, { ADMINS: "boss" });   // else everyone is an admin, and never limited
+  await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('deploy', 1, 3600, 1, 'queue')").run();
+  const press = () => call("ryan", "/api/repos/ryan/lab/deploy", { method: "POST", headers: { "cf-connecting-ip": "203.0.113.7" }, body: "{}" });
+  const first = await press();
+  expect(first.status).toBe(202);
+  expect((await first.json()) as any).toHaveProperty("run.id");
+  await settle(call);
+  const over = await press();
+  expect(over.status).toBe(202);
+  const { queued } = (await over.json()) as any;
+  expect(queued).toMatchObject({ rule: "deploy", state: "waiting", place: 1, label: "Deploys" });
+  // Room again: the next poll replays it, and it answers as the press would have.
+  await call.env.DB.prepare("DELETE FROM limit_hits").run();
+  const job = (await (await call("ryan", `/api/jobs/${queued.id}`)).json()) as any;
+  expect(job).toMatchObject({ state: "done", status: 202, result: { run: { id: expect.any(String) } } });
+  const d = await settle(call, 2);
+  expect(d.history.map((h: any) => h.status)).toEqual(["done", "done"]);
+  const { jobs } = (await (await call("ryan", "/api/jobs")).json()) as any;
+  expect(jobs[0]).toMatchObject({ what: "deploy of ryan/lab", result: { owner: "ryan", name: "lab" } });
 });
