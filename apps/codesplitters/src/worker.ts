@@ -10,6 +10,7 @@ import { levelRoutes } from "./levels.ts";
 import { githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
+import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
@@ -53,6 +54,8 @@ const app = {
     if (game) return game;
     const share = await shareRoutes(req, env, p, user);
     if (share) return share;
+    const cut = await cutRoutes(req, env, p, url, user);
+    if (cut) return cut;
     const agents = await agentRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read, (r) => app.fetch(r, env));
     if (agents) return agents;
     const deps = await depRoutes(req, env, p, url, user, (r) => app.fetch(r, env));
@@ -126,6 +129,8 @@ const app = {
         const v = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         return createShare(env, owner, repo, user, a, v?.visibility === "private", await body());
       }
+      // POST /api/repos/:o/:r/cuts {pieces: [{path, from, to}], note}  some lines and their imports, as a branch to run and merge back
+      if (p[4] === "cuts" && req.method === "POST") return createCut(env, owner, repo, user, a.write, await body());
       // GET /api/repos/:o/:r/fit  how easily Rusty Buns could box it
       if (p[4] === "fit" && req.method === "GET") return repoFit((r) => app.fetch(r, env), url.origin, owner, repo, user);
       // GET /api/repos/:o/:r/tree?path=dir  the repo's git tree, plus files written here but not catalogued yet
