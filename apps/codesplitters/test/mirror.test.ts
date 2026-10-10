@@ -13,7 +13,7 @@ const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); rmSync(root, { recursive: true, force: true }); });
 
 const sh = async (cmd: string, cwd = root) => {
-  const p = Bun.spawn(["sh", "-c", cmd], { cwd, stdout: "pipe", stderr: "pipe" });
+  const p = Bun.spawn(["sh", "-c", cmd], { cwd, stdout: "pipe", stderr: "pipe", env: process.env });
   const [code, out, err] = await Promise.all([p.exited, new Response(p.stdout).text(), new Response(p.stderr).text()]);
   if (code) throw new Error(`${cmd}: ${err}`);
   return out.trim();
