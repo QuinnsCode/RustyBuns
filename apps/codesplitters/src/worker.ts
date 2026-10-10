@@ -14,6 +14,7 @@ import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
+import { advanceAll, freshRoutes, startIfFull } from "./fresh.ts";
 import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, sweepLimits } from "./limits.ts";
 import { previewRoutes } from "./preview.ts";
 import { deployOnCommit, deployRoutes } from "./deploy.ts";
@@ -183,6 +184,8 @@ const app = {
         }
         return json({ commit, entries });
       }
+      const fresh = await freshRoutes(req, env, p, url, owner, repo, user);
+      if (fresh) return fresh;
       const branches = await branchRoutes(req, env, p, owner, repo, user, a, later);
       if (branches) return branches;
       // POST /api/repos/:o/:r/collaborators {name}  (owner only; this is how agents get in)
@@ -247,8 +250,10 @@ const app = {
             env.DB.prepare("DELETE FROM file_search WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path),
             env.DB.prepare("INSERT INTO file_search (owner, repo, path, content) VALUES (?, ?, ?, ?)").bind(owner, repo, path, published),
           ]);
-          // The catalogue entry stands even if the push fails; the next one carries it.
+          // The catalogue entry stands even if the push fails; the next push that lands carries it,
+          // and if git is full, it starts fresh (fresh.ts) and the file lands there.
           const git = await pushCatalogue(env, owner, repo, path, published, user!, commit.message).catch((e: Error) => ({ error: e.message }));
+          later(startIfFull(env, owner, repo).catch(() => null));
           // The owner's own commit ships, when they turned that on (deploy.ts).
           if (git && !("error" in git)) {
             await emit(env, owner, repo, "commit", user!, {
@@ -321,12 +326,13 @@ const app = {
     return json({ error: "not found" }, 404);
   },
 
-  // Cron Triggers (rustybuns.config.ts crons): every five minutes, webhook retries
-  // and queued requests whose turn has come; hourly, each repo's dependency doctor runs when it's due, and rate-limit
+  // Cron Triggers (rustybuns.config.ts crons): every five minutes, webhook retries,
+  // queued requests whose turn has come and a step of each fresh start; hourly, each repo's dependency doctor runs when it's due, and rate-limit
   // windows that have ended are cleared out.
   async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
     ctx.waitUntil(retryHooks(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
+    ctx.waitUntil(advanceAll(env));
     if (c.cron === HOURLY) {
       ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
       ctx.waitUntil(sweepLimits(env));

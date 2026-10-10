@@ -11,6 +11,7 @@ export interface ArtifactsRepo {
   readCommit(hash: string): Promise<CommitMeta | null>;
   readTree(hash: string): Promise<TreeEntry[] | null>;
   readFile(args: { ref: string; path: string }): Promise<Blob | null>;
+  readBlob(hash: string): Promise<Blob | null>;
   fork(name: string, opts?: { description?: string; readOnly?: boolean; defaultBranchOnly?: boolean }): Promise<{ name: string; remote: string; defaultBranch: string }>;
 }
 

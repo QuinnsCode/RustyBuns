@@ -98,6 +98,16 @@ async function rules(env: Env) {
   return out;
 }
 
+/** Where `user` stands under each per-person rule in its current window. */
+export async function usage(env: Env, user: string) {
+  const now = Date.now();
+  return Promise.all([...(await rules(env)).values()].filter((r) => r.per === "user").map(async (r) => {
+    const span = r.window_s * 1000, win = Math.floor(now / span) * span;
+    const row = await env.DB.prepare("SELECT count FROM limit_hits WHERE rule = ? AND who = ? AND win = ?").bind(r.name, `@${user}`, win).first();
+    return { name: r.name, label: r.label, what: r.what, max: r.max, window_s: r.window_s, on: r.enabled, used: (row?.count as number) ?? 0, resets_at: win + span };
+  }));
+}
+
 const ipOf = (req: Request) => req.headers.get("cf-connecting-ip");
 
 /** Who a request counts as under a rule, or null when it isn't counted (not from the internet, an admin, or no such rule). */
