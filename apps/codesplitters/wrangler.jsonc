@@ -12,6 +12,14 @@
     "binding": "ASSETS",
     "directory": "dist/client"
   },
+  "containers": [
+    {
+      "class_name": "DeployRunner",
+      "image": "deploy-sandbox/Dockerfile",
+      "max_instances": 1,
+      "instance_type": "basic"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
@@ -34,6 +42,10 @@
       {
         "name": "GAMES",
         "class_name": "GameRoom"
+      },
+      {
+        "name": "DEPLOY_RUNNER",
+        "class_name": "DeployRunner"
       }
     ]
   },
@@ -43,6 +55,12 @@
       "new_sqlite_classes": [
         "FileDurableObject",
         "GameRoom"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "DeployRunner"
       ]
     }
   ],

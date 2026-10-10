@@ -1,8 +1,9 @@
-// The server inside the deploy container. POST /exec {cmd: [bin, ...args], cwd}
+// The server inside the deploy container. POST /exec {cmd: [bin, ...args], cwd, limit_ms?}
 // runs one command of a deploy (git clone, bun install, rustybuns deploy) in a
-// directory under /work and answers {code, out}. The deploy key is already in
+// directory under /work and answers {code, out}. limit_ms is what's left of the
+// run's time; the command is killed when it's up. The deploy key is already in
 // this container's env (see DeployRunner in src/deploy-runner.ts), so the
-// commands inherit it. Runs under Bun; plain Node APIs, no dependencies.
+// commands inherit it. Runs under Node (see the Dockerfile); plain Node APIs, no dependencies.
 
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -14,7 +15,8 @@ const ROOT = process.env.WORK_ROOT ?? "/work";
 const LIMIT_MS = Number(process.env.DEPLOY_TIMEOUT_MS ?? 15 * 60_000);
 const MAX_OUT = 60_000;
 
-export async function exec({ cmd, cwd }, root = ROOT) {
+export async function exec({ cmd, cwd, limit_ms }, root = ROOT, max = LIMIT_MS) {
+  const limitMs = Number(limit_ms) > 0 ? Math.min(Number(limit_ms), max) : max;
   const at = resolve(root, cwd ?? ".");
   if (!Array.isArray(cmd) || !cmd.length || relative(root, at).startsWith("..")) return { code: 2, out: `bad command or directory: ${cwd}\n` };
   await mkdir(at, { recursive: true });
@@ -24,7 +26,13 @@ export async function exec({ cmd, cwd }, root = ROOT) {
     const add = (b) => { out = (out + b).slice(-MAX_OUT); };
     p.stdout.on("data", add);
     p.stderr.on("data", add);
-    const timer = setTimeout(() => { add(`\nkilled after ${LIMIT_MS} ms\n`); p.kill("SIGKILL"); }, LIMIT_MS);
+    // Killed, it answers on exit: what it started may still hold the output open
+    // (alchemy under rustybuns), and goes when the run destroys the container.
+    const timer = setTimeout(() => {
+      add(`\nkilled after ${limitMs} ms\n`);
+      p.on("exit", () => done({ code: 124, out }));
+      p.kill("SIGKILL");
+    }, limitMs);
     p.on("error", (e) => { clearTimeout(timer); done({ code: 127, out: String(e) + "\n" }); });
     p.on("close", (code) => { clearTimeout(timer); done({ code: code ?? 1, out }); });
   });

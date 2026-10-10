@@ -61,7 +61,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   // No database_id / KV id: local dev doesn't need them, and a placeholder makes
   // `wrangler d1 ... --remote` in the app dir send it to the API (code 7400).
   // Without one, wrangler resolves the database by name.
-  for (const [name, b] of Object.entries(c.bindings)) {
+  for (const [name, b] of Object.entries(c.bindings ?? {})) {
     if (b.type === "d1") d1.push({ binding: name, database_name: b.databaseName, ...(b.migrationsDir ? { migrations_dir: b.migrationsDir } : {}) });
     if (b.type === "kv") kv.push({ binding: name });
     if (b.type === "r2") r2.push({ binding: name, bucket_name: b.bucketName });

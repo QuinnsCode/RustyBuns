@@ -11,6 +11,11 @@
 // agent containers never see a deploy key. The run happens in an alarm, so it
 // outlives the request that started it; every use is in the deploy log.
 //
+// An alarm gets 15 minutes of wall time, so a run gets RUN_BUDGET_MS: each
+// command is sent the time left and the container kills it when that's up,
+// leaving time to destroy the container and log the result. If the alarm is cut
+// off anyway, its retry fails the run rather than deploying a second time.
+//
 //   POST /start {owner, repo, by, trigger}   from deploy.ts, after its checks
 //   GET  /run                                the run going now, or the last one
 
@@ -20,7 +25,10 @@ import { json, type Env } from "./env.ts";
 import { preview, type Run, type Runner } from "./preview.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
 
-interface Job { owner: string; repo: string; run: Run; production: boolean; again?: string }
+interface Job { owner: string; repo: string; run: Run; production: boolean; again?: string; started?: number }
+
+/** A run's share of the alarm's 15 minutes, leaving room to clean up after it. */
+export const RUN_BUDGET_MS = 13 * 60_000;
 
 /** The slice of a Durable Object's state we use. */
 export interface RunnerState {
@@ -30,7 +38,7 @@ export interface RunnerState {
 
 export class DeployRunner {
   private job: Job | null | undefined;
-  constructor(private ctx: RunnerState, private env: Env) {}
+  constructor(private ctx: RunnerState, private env: Env, private budgetMs = RUN_BUDGET_MS) {}
 
   private async load() {
     if (this.job === undefined) this.job = (await this.ctx.storage.get<Job>("job")) ?? null;
@@ -65,6 +73,10 @@ export class DeployRunner {
     if (!job || job.run.done) return;
     const { owner, repo, run } = job, c = this.ctx.container;
     try {
+      if (job.started) throw new Error("the run was cut off before it finished (an alarm gets 15 minutes)");
+      job.started = Date.now();
+      await this.save();
+      const deadline = job.started + this.budgetMs;
       if (!c) throw new Error("this Durable Object has no container");
       const key = await deployKey(this.env, owner, repo);
       if (!key) throw new Error("the deploy key was removed");
@@ -75,7 +87,9 @@ export class DeployRunner {
       const runner: Runner = {
         workdir: `/work/${run.id}`,
         exec: async (cmd, cwd, out) => {
-          const res = await portFetch(c, "/exec", JSON.stringify({ cmd, cwd }));
+          const left = deadline - Date.now();
+          if (left <= 0) throw new Error(`out of time: a hosted deploy gets ${Math.round(this.budgetMs / 60_000)} minutes`);
+          const res = await portFetch(c, "/exec", JSON.stringify({ cmd, cwd, limit_ms: left }));
           const r = (await res.json()) as { code: number; out: string };
           out(hide(r.out ?? ""));
           await this.save();   // so a GET from a fresh instance sees the steps so far
