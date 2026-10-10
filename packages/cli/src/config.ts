@@ -236,7 +236,7 @@ export interface RustyBunsConfig {
       /**
        * Give the Worker the config's `name`, D1 its `databaseName` and R2 its
        * `bucketName`, and take over ones that already exist under those names
-       * (made with wrangler, or lost with a deleted worktree's .alchemy/ state).
+       * (made with wrangler, or left behind by a lost Alchemy state).
        * Off, Alchemy names them `<app>-<id>-<stage>-<random>` itself. Don't turn
        * it on for a stack Alchemy already deployed: the names change, so those
        * resources are replaced.
@@ -246,6 +246,13 @@ export interface RustyBunsConfig {
     box?: BoxTarget;
     desktop?: DesktopTarget;
   };
+  /**
+   * Where Alchemy keeps this app's deploy state. "shared" (the default) links
+   * `.alchemy/state` into the repo's git dir, so every worktree and the main
+   * checkout share it and deleting a worktree doesn't lose it; one deploy at a
+   * time holds it. "project" keeps it in this directory's `.alchemy/state`.
+   */
+  state?: "shared" | "project";
   /** Opt-in features that may change or go away between releases. */
   experimental?: {
     /**
