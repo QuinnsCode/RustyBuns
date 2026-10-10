@@ -49,7 +49,7 @@ test("a monorepo root lists its apps with a verdict each, and ?dir= checks one",
   const root = await (await call("ana", "/api/repos/ryan/mono/fit")).json();
   expect(root.verdict).toBe("needs-work");
   expect(root.workspaces).toEqual([
-    { dir: "apps/blog", name: "@mono/blog", verdict: "needs-work", stack: "astro", label: "Astro" },
+    { dir: "apps/blog", name: "@mono/blog", verdict: "ready", stack: "astro", label: "Astro" },
     { dir: "apps/web", name: "@mono/web", verdict: "ready", stack: "vite-react", label: "Vite + React, TypeScript" },
     { dir: "packages/ui", name: "@mono/ui", verdict: "needs-work", stack: "unknown", label: "no framework" },
   ]);

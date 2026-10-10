@@ -1,17 +1,24 @@
 // The dependency doctor. On a schedule each repo's owner tunes, it reads the
-// repo's package.json, asks npm what's newer, and puts the updates worth
-// taking on a branch as `agent-deps`, ready to review and merge like any
-// other branch. To keep updates from piling up it only proposes a version the
+// repo's package.json (and each workspace's), asks the registry what's newer,
+// and puts the updates worth taking on a branch as `agent-deps`, ready to
+// review and merge like any other branch. The registry is npm's unless the
+// repo's .npmrc names another, per scope or for everything; on the desktop the
+// owner's own ~/.npmrc lends its tokens, each only to its own host. To keep updates from piling up it only proposes a version the
 // current range doesn't already allow (the lockfile covers the rest), never
 // one younger than the minimum age (a bad or hijacked release usually gets
 // pulled within days), never past the level the owner allows, and never
 // anything on the ignore list.
 //
+// The repo's lockfile says which package manager it uses (bun, npm, pnpm or
+// yarn), and the lockfile goes on the branch too, regenerated in a throwaway
+// clone on the desktop with install scripts off, so nothing of the repo's runs.
+//
 // With tests on (desktop only, and the owner's choice, since it runs the
 // repo's own code), each update is tried in a throwaway clone first: install,
 // then the test script, then the clone is deleted. If the updates together
 // break the tests, each is tried alone and only the ones that pass go on the
-// branch.
+// branch. A run that installs takes minutes, so the desktop answers "running"
+// and the page polls.
 //
 //   GET  /api/repos/:o/:r/deps        settings and the last report (owner only)
 //   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests}
@@ -20,6 +27,8 @@
 import type { Doc, Op } from "./lines.ts";
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { actingAs } from "./identity.ts";
+import { workspaceDirs, workspaceGlobs } from "./fit.ts";
+import { diffToOps } from "./sync.ts";
 import { json, type Env } from "./env.ts";
 
 export type Level = "patch" | "minor" | "major";
@@ -28,24 +37,79 @@ const LEVELS: Level[] = ["patch", "minor", "major"];
 export interface Settings { on: boolean; every_hours: number; max_level: Level; min_age_days: number; ignore: string[]; run_tests: boolean }
 export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false };
 
-export interface Update { name: string; from: string; to: string; level: Level; status: "kept" | "broke" | "untested"; out?: string }
-export interface Report { at: number; checked: number; updates: Update[]; branch?: string; note?: string }
+/** One dependency to move, in the package.json at `path` (the top one, or a workspace's). */
+export interface Update { name: string; from: string; to: string; level: Level; status: "kept" | "broke" | "untested"; out?: string; path?: string }
+export interface Report { at: number; checked: number; updates: Update[]; branch?: string; lock?: string; note?: string }
 
 /** What npm says about a package: its versions and when each was published. */
 export type Registry = (name: string) => Promise<{ versions: string[]; time: Record<string, string> } | null>;
 
-export const npmRegistry: Registry = async (name) => {
-  const res = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2f")}`);
+/** What an .npmrc says about registries: the default, one per scope, and a token per host. */
+export interface Npmrc { registry?: string; scopes: Record<string, string>; tokens: Record<string, string> }
+
+/** Read an .npmrc. `${VAR}`s come from `vars`, so only the owner's own file gets any. */
+export function parseNpmrc(text: string, vars: Record<string, string | undefined> = {}): Npmrc {
+  const rc: Npmrc = { scopes: {}, tokens: {} };
+  for (const raw of text.split("\n")) {
+    const line = raw.trim(), eq = line.indexOf("=");
+    if (!line || line.startsWith("#") || line.startsWith(";") || eq < 0) continue;
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1).trim().replace(/^(["'])(.*)\1$/, "$2").replace(/\$\{(\w+)\}/g, (_, v) => vars[v] ?? "");
+    if (key === "registry") rc.registry = value;
+    else if (/^@[^:/]+:registry$/.test(key)) rc.scopes[key.split(":")[0]!] = value;
+    else if (key.startsWith("//") && key.endsWith(":_authToken") && value) rc.tokens[key.slice(2, -":_authToken".length).replace(/\/?$/, "/")] = value;
+  }
+  return rc;
+}
+
+/** Where a package's metadata lives, and the token for that host if there is one. Later .npmrc files win. */
+export function registryUrl(rcs: Npmrc[], name: string): { url: string; token?: string } {
+  const scope = name.startsWith("@") ? name.split("/")[0]! : "";
+  let base = "https://registry.npmjs.org/";
+  const tokens: Record<string, string> = {};
+  for (const rc of rcs) { base = (scope && rc.scopes[scope]) || rc.registry || base; Object.assign(tokens, rc.tokens); }
+  base = base.replace(/\/?$/, "/");
+  const bare = base.replace(/^https?:\/\//, "");
+  const host = Object.keys(tokens).filter((k) => bare.startsWith(k)).sort((a, b) => b.length - a.length)[0];
+  return { url: base + name.replace("/", "%2f"), ...(host ? { token: tokens[host] } : {}) };
+}
+
+export const npmrcRegistry = (rcs: Npmrc[]): Registry => async (name) => {
+  const { url, token } = registryUrl(rcs, name);
+  const res = await fetch(url, { headers: { accept: "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
   if (!res.ok) return null;
   const doc = (await res.json()) as { versions?: Record<string, unknown>; time?: Record<string, string> };
   return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {} };
 };
 
+export const npmRegistry: Registry = npmrcRegistry([]);
+
+/** The owner's ~/.npmrc, on the desktop only: its tokens are theirs, and only ever go to their own hosts. */
+async function homeNpmrc(env: Env): Promise<Npmrc | null> {
+  if (!onDesktop(env)) return null;
+  const { readFile } = await import("node:fs/promises");
+  const { homedir } = await import("node:os");
+  const text = await readFile(`${homedir()}/.npmrc`, "utf8").catch(() => "");
+  return text ? parseNpmrc(text, process.env) : null;
+}
+
+export type PM = "bun" | "npm" | "pnpm" | "yarn";
+const LOCKS: Record<string, PM> = { "bun.lock": "bun", "bun.lockb": "bun", "pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn", "package-lock.json": "npm" };
+
+/** The repo's package manager, from package.json's packageManager or its lockfile; bun when there's neither. */
+export function packageManager(top: string[], pkg: Record<string, any>): { pm: PM; lock: string | null } {
+  const named = /^(bun|npm|pnpm|yarn)@/.exec(String(pkg.packageManager ?? ""))?.[1] as PM | undefined;
+  const lock = Object.keys(LOCKS).find((f) => top.includes(f) && (!named || LOCKS[f] === named)) ?? null;
+  return { pm: named ?? (lock ? LOCKS[lock]! : "bun"), lock };
+}
+
 /**
- * Install and test the repo with these files swapped in. `remote` clones it.
- * ok: install and tests passed (or there is no test script).
+ * Install the repo with these files swapped in, in a clone of `remote`. With
+ * `test`, a full install and then the test script; without, only the lockfile
+ * is regenerated, install scripts off. ok: it all passed (or there is no test
+ * script). `lock` is the lockfile afterwards, when it's text.
  */
-export type Tester = (remote: string, files: Record<string, string>) => Promise<{ ok: boolean; out: string }>;
+export type Tester = (remote: string, files: Record<string, string>, opts: { pm: PM; lock: string | null; test: boolean }) => Promise<{ ok: boolean; out: string; lock?: string }>;
 
 // ---- versions ---------------------------------------------------------------
 
@@ -73,7 +137,7 @@ function allows(r: { prefix: string; v: V }, v: V): boolean {
 
 const levelOf = (from: V, to: V): Level => to[0] !== from[0] ? "major" : to[1] !== from[1] ? "minor" : "patch";
 
-/** The updates worth proposing for one package.json, newest allowed version each. */
+/** The updates worth proposing for one package.json, newest allowed version each. Paths are the caller's to add. */
 export async function outdated(pkg: Record<string, any>, s: Settings, registry: Registry, now = Date.now()) {
   const deps: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
   const found: Omit<Update, "status">[] = [];
@@ -115,14 +179,26 @@ export function bump(lines: string[], updates: { name: string; from: string; to:
 
 // ---- testing in a throwaway clone --------------------------------------------
 
-/** A clone in a temp dir, `bun install`, the test script if there is one, then the clone is deleted. Desktop only. */
-export const localTester = (timeoutMs = 10 * 60_000): Tester => async (remote, files) => {
-  const { mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+/** A full install. In CI, pnpm and yarn freeze the lockfile unless told not to. */
+const INSTALL: Record<PM, string[]> = { bun: ["bun", "install"], npm: ["npm", "install"], pnpm: ["pnpm", "install", "--no-frozen-lockfile"], yarn: ["yarn", "install"] };
+/** Only the lockfile, with no install scripts, so none of the repo's code runs. Yarn 2+ (a .yarnrc.yml) has its own flag. */
+const LOCK_ONLY: Record<PM, string[]> = {
+  bun: ["bun", "install", "--lockfile-only", "--ignore-scripts"],
+  npm: ["npm", "install", "--package-lock-only", "--ignore-scripts"],
+  pnpm: ["pnpm", "install", "--lockfile-only", "--ignore-scripts", "--no-frozen-lockfile"],
+  yarn: ["yarn", "install", "--ignore-scripts"],
+};
+
+/** A clone in a temp dir, an install, the test script if asked and there is one, then the clone is deleted. Desktop only. */
+export const localTester = (timeoutMs = 10 * 60_000): Tester => async (remote, files, { pm, lock, test }) => {
+  const { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const dir = mkdtempSync(join(tmpdir(), "codesplitters-deps-"));
+  // A lockfile-only pass gets a bare environment: the repo's .npmrc can't spend the owner's $NPM_TOKEN on a host it picks.
+  const env = test ? { ...process.env } : { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR };
   const run = async (cmd: string[], cwd = dir) => {
-    const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: { ...process.env, CI: "1" } });
+    const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: { ...env, CI: "1", YARN_ENABLE_IMMUTABLE_INSTALLS: "false" } });
     const [o, e] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
     return { code: await p.exited, out: `$ ${cmd.join(" ")}\n${o}${e}` };
   };
@@ -131,20 +207,24 @@ export const localTester = (timeoutMs = 10 * 60_000): Tester => async (remote, f
     if (clone.code !== 0) return { ok: false, out: clone.out.replace(remote, "<remote>") };
     const repo = join(dir, "repo");
     for (const [path, text] of Object.entries(files)) writeFileSync(join(repo, path), text);
-    const install = await run(["bun", "install"], repo);
+    const cmd = test ? INSTALL[pm] : pm === "yarn" && existsSync(join(repo, ".yarnrc.yml")) ? ["yarn", "install", "--mode=update-lockfile"] : LOCK_ONLY[pm];
+    const install = await run(cmd, repo);
     if (install.code !== 0) return { ok: false, out: install.out };
-    const pkg = JSON.parse(files["package.json"] ?? "{}");
-    if (!pkg.scripts?.test) return { ok: true, out: install.out + "\n(no test script)" };
-    const t = await run(["bun", "run", "test"], repo);
-    return { ok: t.code === 0, out: t.out };
+    const locked = lock && lock !== "bun.lockb" && existsSync(join(repo, lock)) ? { lock: readFileSync(join(repo, lock), "utf8") } : {};
+    if (!test) return { ok: true, out: install.out, ...locked };
+    const pkg = JSON.parse(files["package.json"] ?? readFileSync(join(repo, "package.json"), "utf8"));
+    if (!pkg.scripts?.test) return { ok: true, out: install.out + "\n(no test script)", ...locked };
+    const t = await run([pm, "run", "test"], repo);
+    return { ok: t.code === 0, out: t.out, ...locked };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 };
 
-/** Where tests can run: the desktop, when the owner turned them on. */
-const testerFor = (env: Env, s: Settings): Tester | null =>
-  !s.run_tests ? null : (env.DEPS_TESTER as Tester | undefined) ?? (typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET ? localTester() : null);
+const onDesktop = (env: Env) => typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET;
+
+/** Where installs can run: the desktop. Tests too, when the owner turned them on. */
+const installerFor = (env: Env): Tester | null => (env.DEPS_TESTER as Tester | undefined) ?? (onDesktop(env) ? localTester() : null);
 
 // ---- a run ------------------------------------------------------------------
 
@@ -161,32 +241,77 @@ export async function runDoctor(env: Env, call: Call, owner: string, repo: strin
 }
 
 async function check(env: Env, call: Call, owner: string, repo: string, s: Settings, registry: Registry, now: number): Promise<Report> {
-  const base = `/api/repos/${owner}/${repo}`, q = "?path=package.json";
-  const res = await call(owner, `${base}/do/file${q}`);
+  const base = `/api/repos/${owner}/${repo}`;
+  const fileQ = (path: string, branch?: string) => `?path=${encodeURIComponent(path)}${branch ? `&branch=${branch}` : ""}`;
+  const read = async (path: string) => { const r = await call(owner, `${base}/do/file${fileQ(path)}`); return r.ok ? (await r.json()) as Doc : null; };
+  const list = async (dir: string) => {
+    const r = await call(owner, `${base}/tree?path=${encodeURIComponent(dir)}`);
+    return r.status === 200 ? ((await r.json()) as { entries: { path: string; type: string }[] }).entries : null;
+  };
+
+  const res = await call(owner, `${base}/do/file${fileQ("package.json")}`);
   if (!res.ok) return { at: now, checked: 0, updates: [], note: res.status === 404 ? "no package.json at the top of this repo" : `reading package.json: ${res.status}` };
-  const doc = (await res.json()) as Doc;
-  const lines = doc.lines.map((l) => l.text);
-  let pkg: Record<string, any>;
-  try { pkg = JSON.parse(lines.join("\n")); } catch { return { at: now, checked: 0, updates: [], note: "package.json isn't valid JSON" }; }
-  const { checked, updates: found } = await outdated(pkg, s, registry, now);
+  const top = ((await list("")) ?? []).map((e) => e.path);
+  // Every package.json: the top one, and each workspace's.
+  const manifests = new Map<string, { lines: string[]; pkg: Record<string, any> }>();
+  const add = (path: string, doc: Doc) => {
+    const lines = doc.lines.map((l) => l.text);
+    try { manifests.set(path, { lines, pkg: JSON.parse(lines.join("\n")) }); return true; } catch { return false; }
+  };
+  if (!add("package.json", (await res.json()) as Doc)) return { at: now, checked: 0, updates: [], note: "package.json isn't valid JSON" };
+  const root = manifests.get("package.json")!.pkg;
+  const pnpmYaml = top.includes("pnpm-workspace.yaml") ? (await read("pnpm-workspace.yaml"))?.lines.map((l) => l.text).join("\n") ?? null : null;
+  for (const dir of await workspaceDirs(workspaceGlobs(root, pnpmYaml), list)) {
+    const doc = await read(`${dir}/package.json`);
+    if (doc) add(`${dir}/package.json`, doc);
+  }
+
+  // The registry the repo's .npmrc names, with the owner's tokens on the desktop. A test's fake registry wins.
+  if (registry === npmRegistry) {
+    const rcs = [await homeNpmrc(env), top.includes(".npmrc") ? parseNpmrc((await read(".npmrc"))?.lines.map((l) => l.text).join("\n") ?? "") : null];
+    registry = npmrcRegistry(rcs.filter((x): x is Npmrc => !!x));
+  }
+  const asked = new Map<string, ReturnType<Registry>>();
+  const once: Registry = (name) => { if (!asked.has(name)) asked.set(name, registry(name)); return asked.get(name)!; };
+  // A workspace's own packages are the repo's, not the registry's.
+  const own = new Set([...manifests.values()].map((m) => m.pkg.name).filter(Boolean));
+  let checked = 0;
+  const found: (Omit<Update, "status"> & { path: string })[] = [];
+  for (const [path, m] of manifests) {
+    const r = await outdated(m.pkg, { ...s, ignore: [...s.ignore, ...own] }, once, now);
+    checked += r.checked;
+    found.push(...r.updates.map((u) => ({ ...u, path })));
+  }
   if (!found.length) return { at: now, checked, updates: [], note: "everything is up to date" };
 
+  const { pm, lock } = packageManager(top, root);
+  const filesFor = (us: Update[]) => Object.fromEntries([...manifests].filter(([path]) => us.some((u) => (u.path ?? "package.json") === path))
+    .map(([path, m]) => [path, bump(m.lines, us.filter((u) => (u.path ?? "package.json") === path)).join("\n") + "\n"]));
+  let remote: string | null | undefined;
+  const remoteFor = async () => {
+    if (remote !== undefined) return remote;
+    const h = await handleFor(env, owner, repo);
+    const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
+    return remote = art ? art.remote.replace("://", `://x:${art.token.split("?")[0]}@`) : null;
+  };
+  const installer = installerFor(env);
+  const key = (us: Update[]) => us.map((u) => `${u.path}:${u.name}`).join(",");
+  const tried = new Map<string, Awaited<ReturnType<Tester>>>();
+
   // Try them together, and only one by one when that breaks.
-  const tester = testerFor(env, s);
+  const tester = s.run_tests ? installer : null;
   let updates: Update[] = found.map((u) => ({ ...u, status: "untested" }));
   let note = tester ? undefined : s.run_tests ? "tests only run on the desktop app" : undefined;
   if (tester) {
-    const h = await handleFor(env, owner, repo);
-    const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
-    if (!art) note = "no git remote to test against";
+    const r = await remoteFor();
+    if (!r) note = "no git remote to test against";
     else {
-      const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
-      const tryWith = (us: Update[]) => tester(remote, { "package.json": bump(lines, us).join("\n") + "\n" });
+      const tryWith = async (us: Update[]) => { const t = await tester(r, filesFor(us), { pm, lock, test: true }); tried.set(key(us), t); return t; };
       const all = await tryWith(updates);
       if (all.ok) updates = updates.map((u) => ({ ...u, status: "kept" }));
       else if (updates.length === 1) updates = [{ ...updates[0]!, status: "broke", out: tail(all.out) }];
       else {
-        for (const u of updates) { const r = await tryWith([u]); Object.assign(u, r.ok ? { status: "kept" } : { status: "broke", out: tail(r.out) }); }
+        for (const u of updates) { const t = await tryWith([u]); Object.assign(u, t.ok ? { status: "kept" } : { status: "broke", out: tail(t.out) }); }
         const kept = updates.filter((u) => u.status === "kept");
         if (kept.length > 1 && !(await tryWith(kept)).ok) {
           for (const u of kept) u.status = "untested";
@@ -199,10 +324,22 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   const take = updates.filter((u) => u.status !== "broke");
   if (!take.length) return { at: now, checked, updates, note: note ?? "every update broke the tests; nothing was put on a branch" };
 
+  // The lockfile to match, from the install that passed, else one made for it.
+  let locked: string | undefined;
+  const lockNote = (why: string) => { note = [note, `${lock} ${why}`].filter(Boolean).join("; "); };
+  if (lock === "bun.lockb") lockNote("is binary, so it isn't updated here: run `bun install --save-text-lockfile` to switch to bun.lock");
+  else if (lock && !installer) lockNote(`isn't updated here: run \`${pm} install\` on the branch, or check from the desktop app`);
+  else if (lock) {
+    const r = await remoteFor();
+    const t = tried.get(key(take)) ?? (r ? await installer!(r, filesFor(take), { pm, lock, test: false }) : null);
+    if (t?.ok && t.lock !== undefined) locked = t.lock;
+    else lockNote(`couldn't be regenerated${t ? `: ${tail(t.out).slice(-300)}` : ": no git remote"}`);
+  }
+
   // The branch: agent-deps opens it and makes the edits, so blame says who.
   const agent = "agent-deps";
-  const add = await call(owner, `${base}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
-  if (!add.ok) throw new Error(`adding ${agent}: ${add.status}`);
+  const added = await call(owner, `${base}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
+  if (!added.ok) throw new Error(`adding ${agent}: ${added.status}`);
   const day = new Date(now).toISOString().slice(0, 10);
   let branch = "";
   for (let n = 1; n < 20 && !branch; n++) {
@@ -212,13 +349,20 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
     else if (r.status !== 409) throw new Error(`opening a branch: ${r.status} ${await r.text()}`);
   }
   if (!branch) throw new Error("no free branch name today");
-  const onBranch = `${base}/do/file${q}&branch=${branch}`;
-  const copy = (await (await call(agent, onBranch)).json()) as Doc;
-  const next = bump(copy.lines.map((l) => l.text), take);
-  const ops: Op[] = copy.lines.flatMap((l, i) => next[i] !== l.text ? [{ kind: "set" as const, line: l.id, text: next[i]!, base: l.rev }] : []);
-  const posted = await call(agent, `${base}/do/ops${q}&branch=${branch}`, { method: "POST", body: JSON.stringify({ ops }) });
-  if (!posted.ok) throw new Error(`editing package.json on ${branch}: ${posted.status}`);
-  return { at: now, checked, updates, branch, ...(note ? { note } : {}) };
+  /** Turn a file on the branch into `next`, line by line, so untouched lines keep their authors. */
+  const write = async (path: string, next: (lines: string[]) => string[]) => {
+    const copy = (await (await call(agent, `${base}/do/file${fileQ(path, branch)}`)).json()) as Doc;
+    const ops = diffToOps(copy.lines, next(copy.lines.map((l) => l.text)));
+    if (!ops.length) return;
+    const posted = await call(agent, `${base}/do/ops${fileQ(path, branch)}`, { method: "POST", body: JSON.stringify({ ops }) });
+    if (!posted.ok) throw new Error(`editing ${path} on ${branch}: ${posted.status}`);
+  };
+  for (const path of manifests.keys()) {
+    const mine = take.filter((u) => (u.path ?? "package.json") === path);
+    if (mine.length) await write(path, (lines) => bump(lines, mine));
+  }
+  if (locked !== undefined) await write(lock!, () => locked!.split("\n"));
+  return { at: now, checked, updates, branch, ...(locked !== undefined ? { lock: lock! } : {}), ...(note ? { note } : {}) };
 }
 
 const tail = (s: string) => s.trim().slice(-1500);
@@ -257,8 +401,7 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
 
   if (!p[5] && req.method === "GET") {
     const r = await env.DB.prepare("SELECT last_run, last_report, running_since FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-    const canTest = !!env.DEPS_TESTER || (typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET);
-    return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: canTest });
+    return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!installerFor(env) });
   }
   if (!p[5] && req.method === "PUT") {
     const b = (await req.json()) as Partial<Settings>;
@@ -276,8 +419,12 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     if (!(await claim(env, owner, repo))) return json({ error: "already checking" }, 409);
     const done = runDoctor(env, caller(self, url.origin), owner, repo);
     // A run that installs and tests takes minutes: answer now, and the page polls.
-    if (testerFor(env, await settings(env, owner, repo))) { void done; return json({ running: true }, 202); }
-    return json(await done);
+    if ((await settings(env, owner, repo)).run_tests && installerFor(env)) { void done; return json({ running: true }, 202); }
+    // One that only reads the registry is quick, unless it regenerates a lockfile.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const report = await Promise.race([done, new Promise<null>((r) => { timer = setTimeout(() => r(null), 15_000); })]);
+    clearTimeout(timer);
+    return report ? json(report) : json({ running: true }, 202);
   }
   return null;
 }

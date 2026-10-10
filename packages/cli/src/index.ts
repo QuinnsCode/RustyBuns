@@ -254,6 +254,11 @@ function wranglerLosses(): string[] {
 async function generate(opts: { adopt: boolean }) {
   const cfg = await loadConfig();
   if (!cfg.worker && !cfg.targets.box) { console.log("desktop-only config: nothing to generate for the edge"); return; }
+  // A bad cron fails here, not on Cloudflare's side halfway into a deploy.
+  if (cfg.worker?.crons?.length) {
+    const { parseCron } = await import("@rustybuns/shell-bun");
+    for (const c of cfg.worker.crons) parseCron(c);
+  }
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
   console.log("wrote .rustybuns/alchemy.run.ts");
