@@ -13,7 +13,8 @@
 //            After the last one, their version is kept and the conflicts are listed.
 // --hosted:  the app runs the agent, not this machine (POST /api/repos/:o/:r/agents):
 //            in a container on Cloudflare, so the CLI need not be installed here.
-//            --as is then the repo's owner; the edit is blamed on agent-<harness>.
+//            --as is then the repo's owner and --cookie their session cookie (hosted
+//            agents need accounts on); the edit is blamed on agent-<harness>.
 
 import { remote } from "./src/local.ts";
 import { HARNESSES, type Harness } from "./src/harness.ts";
