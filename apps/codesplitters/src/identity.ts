@@ -65,11 +65,13 @@ const make = (env: Env, origin: string) => betterAuth({
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } } : {}),
   },
 });
-// One instance per env (per isolate on Cloudflare), made on first use.
-const auths = new WeakMap<object, ReturnType<typeof make>>();
-function authFor(env: Env, origin: string) {
-  let auth = auths.get(env);
-  if (!auth) { auth = make(env, origin); auths.set(env, auth); }
+// One instance per request, never per isolate: Better Auth's D1 queries go through one
+// Kysely connection mutex (SQLite "supports one connection"), and on Workers a request that
+// is cancelled while holding it never lets go, so every later sign-in in that isolate hung (#333).
+const auths = new WeakMap<Request, ReturnType<typeof make>>();
+function authFor(req: Request, env: Env) {
+  let auth = auths.get(req);
+  if (!auth) { auth = make(env, new URL(req.url).origin); auths.set(req, auth); }
   return auth;
 }
 
@@ -136,7 +138,7 @@ async function suggest(env: Env, u: AuthUser) {
 
 /** The signed-in account behind a request (accounts mode), with its handle if it has one. */
 async function account(req: Request, env: Env) {
-  const session = await authFor(env, new URL(req.url).origin).api.getSession({ headers: req.headers });
+  const session = await authFor(req, env).api.getSession({ headers: req.headers });
   return session ? { user: session.user as AuthUser, handle: await handleFor(env, session.user) } : null;
 }
 
@@ -205,7 +207,7 @@ async function handleRoutes(req: Request, env: Env, url: URL) {
 export async function identityRoutes(req: Request, env: Env, p: string[]): Promise<Response | null> {
   const grants = await grantRoutes(req, env, p);
   if (grants) return grants;
-  if (p[1] === "auth") return accountsOn(env) ? authFor(env, new URL(req.url).origin).handler(req) : json({ error: "accounts are off; this app uses aliases" }, 404);
+  if (p[1] === "auth") return accountsOn(env) ? authFor(req, env).handler(req) : json({ error: "accounts are off; this app uses aliases" }, 404);
   if (p[1] === "session") {
     if (!accountsOn(env)) return json({ mode: "alias", user: aliasOf(req), providers: [] });
     // Signed in but no handle yet: the page asks for one, with a free one to start from.
