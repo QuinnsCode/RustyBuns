@@ -71,6 +71,43 @@ function applyHeaders(rules: HeaderRule[], pathname: string, res: Response): Res
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
 }
 
+interface RedirectRule { match: RegExp; names: string[]; to: string; status: number }
+const REDIRECT_STATUS = new Set([200, 301, 302, 303, 307, 308]);
+
+/**
+ * Parses a Cloudflare `_redirects` file: `source destination [status]` per
+ * line, status 302 by default. One `*` splat in the source fills `:splat` in
+ * the destination, and `:name` placeholders match a path segment. Sources with
+ * a host, and lines with an unknown status, are skipped.
+ */
+function parseRedirects(text: string): RedirectRule[] {
+  const rules: RedirectRule[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const [from, to, code] = t.split(/\s+/);
+    if (!from?.startsWith("/") || !to) continue;
+    const status = code ? Number(code) : 302;
+    if (!REDIRECT_STATUS.has(status)) continue;
+    const names: string[] = [];
+    const re = from.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/:([A-Za-z]\w*)|\*/g, (m, name) => { names.push(name ?? "splat"); return name ? "([^/]+)" : "(.*)"; });
+    rules.push({ match: new RegExp(`^${re}$`), names, to, status });
+  }
+  return rules;
+}
+
+/** The first rule that matches wins; its destination gets the placeholders filled in. */
+function findRedirect(rules: RedirectRule[], pathname: string): { to: string; status: number } | null {
+  for (const r of rules) {
+    const m = r.match.exec(pathname);
+    if (!m) continue;
+    const vals = new Map(r.names.map((n, i) => [n, m[i + 1]!]));
+    return { to: r.to.replace(/:([A-Za-z]\w*)/g, (s, n) => vals.get(n) ?? s), status: r.status };
+  }
+  return null;
+}
+
 export interface ServeOptions<Env> {
   /** Directory of built client assets (Vite dist). Served before fetch(). */
   assets?: string;
@@ -206,7 +243,11 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   };
 
   let headerRules: HeaderRule[] = [];
-  if (opts.assets) { try { headerRules = parseHeaders(readFileSync(join(opts.assets, "_headers"), "utf8")); } catch {} }
+  let redirectRules: RedirectRule[] = [];
+  if (opts.assets) {
+    try { headerRules = parseHeaders(readFileSync(join(opts.assets, "_headers"), "utf8")); } catch {}
+    try { redirectRules = parseRedirects(readFileSync(join(opts.assets, "_redirects"), "utf8")); } catch {}
+  }
 
   const asset = async (url: URL): Promise<Response | null> => {
     for (const [route, dir] of Object.entries(opts.mounts ?? {})) {
@@ -219,8 +260,18 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     }
     if (!opts.assets) return null;
     if (CONFIG_FILES.has(url.pathname)) return null;
+    // Like Cloudflare, a matching redirect wins even when a file sits at the path.
+    let path = url.pathname;
+    const r = findRedirect(redirectRules, path);
+    if (r) {
+      const to = r.to.includes("?") || !url.search ? r.to : r.to.replace(/(?=#|$)/, url.search);
+      // 200 is a rewrite: serve the destination's file under the requested URL.
+      if (r.status !== 200) return new Response(null, { status: r.status, headers: { Location: to } });
+      if (!to.startsWith("/")) return null;
+      path = new URL(to, url).pathname;
+    }
     const root = normalize(opts.assets);
-    let p = normalize(join(root, decodeURIComponent(url.pathname)));
+    let p = normalize(join(root, decodeURIComponent(path)));
     if (!inside(root, p)) return null;
     let k = kind(p);
     if (k === "dir") { p = join(p, "index.html"); k = kind(p); }

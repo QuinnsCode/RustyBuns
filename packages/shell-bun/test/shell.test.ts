@@ -246,3 +246,42 @@ test("serve: _headers and .assetsignore stay unserved, and _headers rules apply 
   expect((await fetch(shell.url + "/")).headers.get("x-page")).toBeNull();
   await shell.stop();
 });
+
+test("serve: _redirects rules apply before assets, first match wins", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync("/tmp/rb-assets-");
+  mkdirSync(join(dir, "docs"));
+  writeFileSync(join(dir, "docs", "index.html"), "<p>docs</p>");
+  writeFileSync(join(dir, "old.html"), "<p>old</p>");
+  writeFileSync(join(dir, "app.html"), "<p>app</p>");
+  writeFileSync(join(dir, "_redirects"), [
+    "# moved",
+    "/old.html /new 301",
+    "/blog/:year/:slug /posts/:slug?y=:year",
+    "/guide/* /docs/:splat 308",
+    "/app/* /app.html 200",
+    "/out https://example.com/x#top",
+    "/blog/* /never",
+    "/bad /x 404",
+    "https://example.com/* /y",
+  ].join("\n"));
+  const shell = serve({ assets: dir });
+  shell.mount({ async fetch() { return new Response("worker", { status: 404 }); } }, {});
+  const get = (p: string) => fetch(shell.url + p, { redirect: "manual" });
+  let r = await get("/old.html");
+  expect([r.status, r.headers.get("location")]).toEqual([301, "/new"]);
+  r = await get("/blog/2024/hello");
+  expect([r.status, r.headers.get("location")]).toEqual([302, "/posts/hello?y=2024"]);
+  r = await get("/guide/a/b?q=1");
+  expect([r.status, r.headers.get("location")]).toEqual([308, "/docs/a/b?q=1"]);
+  r = await get("/out?q=1");
+  expect(r.headers.get("location")).toBe("https://example.com/x?q=1#top");
+  r = await get("/app/settings/me");
+  expect([r.status, await r.text()]).toEqual([200, "<p>app</p>"]);
+  expect((await get("/bad")).status).toBe(404);
+  expect(await (await get("/bad")).text()).toBe("worker");
+  expect(await (await get("/docs/")).text()).toBe("<p>docs</p>");
+  expect(await (await get("/_redirects")).text()).toBe("worker");
+  await shell.stop();
+});
