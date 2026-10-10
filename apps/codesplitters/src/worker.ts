@@ -14,7 +14,7 @@ import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
-import { limit, limitRoutes, ruleFor, RULES, sweepLimits } from "./limits.ts";
+import { counted, limit, limitRoutes, ruleFor, RULES, sweepLimits } from "./limits.ts";
 import { previewRoutes } from "./preview.ts";
 import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { repoFit } from "./fit.ts";
@@ -223,6 +223,9 @@ const app = {
           h.set("x-codesplitters-user", user ?? "anon");
           h.set("x-codesplitters-write", a.write ? "1" : "0");
           h.set("x-codesplitters-crew", a.write ? "1" : "0");
+          // Its edits count against the edit limit, as the HTTP ones do (the DO counts them).
+          const as = a.write ? counted(req, "edit", user, isAdmin(env, user)) : null;
+          as ? h.set("x-codesplitters-limit-as", as) : h.delete("x-codesplitters-limit-as");
           return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
         }
         // Only the crew reads private lines; everyone else gets placeholders.

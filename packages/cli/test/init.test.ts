@@ -170,6 +170,7 @@ test("init: Astro with @astrojs/cloudflare runs the adapter's Worker, on the des
   expect(cfg).toContain('"build": "astro build"');
   expect(cfg).toContain('"mode": "worker"');
   expect(cfg).toMatch(/"COUNTER"[\s\S]*"SESSION"/);
+  expect(cfg).toMatch(/"IMAGES": \{\s*"type": "images"/);
   expect(cfg).not.toContain("clientBuild");
 
   // No wrangler file: the package name, the default session binding, and a build with no script.
@@ -181,6 +182,23 @@ test("init: Astro with @astrojs/cloudflare runs the adapter's Worker, on the des
   const b = bare.read("rustybuns.config.ts");
   expect(b).toContain('"name": "bare"');
   expect(b).toContain('"SESS"');
+  expect(b).toContain('"IMAGES"');
+
+  // Images: a renamed binding is followed; compile and passthrough need none.
+  const imageCfg = (opts: string) => {
+    const q = project({
+      "package.json": JSON.stringify({ name: "q", dependencies: { astro: "^7", "@astrojs/cloudflare": "^14" } }),
+      "astro.config.mjs": ASTRO_CF.replace("adapter: cloudflare()", `adapter: cloudflare(${opts})`),
+    });
+    expect(q.run("init").code).toBe(0);
+    return q.read("rustybuns.config.ts");
+  };
+  expect(imageCfg('{ imagesBindingName: "PICS" }')).toMatch(/"PICS": \{\s*"type": "images"/);
+  expect(imageCfg('{ imageService: "cloudflare-binding" }')).toContain('"type": "images"');
+  expect(imageCfg('{ imageService: "compile" }')).not.toContain('"type": "images"');
+  expect(imageCfg('{ imageService: "passthrough" }')).not.toContain('"type": "images"');
+  expect(imageCfg('{ imageService: { build: "compile", runtime: "cloudflare-binding" } }')).toContain('"type": "images"');
+  expect(imageCfg('{ imageService: { build: "compile" } }')).not.toContain('"type": "images"');
   expect(b).toContain('"build": "astro build"');
 });
 

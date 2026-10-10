@@ -48,7 +48,7 @@
   ],
   "vars": {
     "BETTER_AUTH_URL": "https://codesplitters.notryanquinn.workers.dev",
-    "ADMINS": ""
+    "ADMINS": "quinn"
   },
   "triggers": {
     "crons": [

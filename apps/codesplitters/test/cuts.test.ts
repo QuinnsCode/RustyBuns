@@ -157,6 +157,13 @@ test("cut lines out, run them, fix the cut, and merge the fix back", async () =>
   expect(page).toContain(`og:image" content="http://codesplitters.local/api/cuts/${id}/card.png`);
   expect(page).toContain("1 passed, 0 failed");
   expect(page).toContain('name="twitter:card" content="summary_large_image"');
+  expect(page).not.toContain("font=");
+  // Geist Mono on request: the share page passes it on to its card, which draws different pixels.
+  expect(await (await call(null, `/api/cuts/${id}/share?font=geist`)).text()).toMatch(/card\.png\?at=\d+&#38;font=geist/);
+  const png = async (q: string) => Buffer.from(await (await call(null, `/api/cuts/${id}/card.png${q}`)).arrayBuffer());
+  const dejavu = await png("");
+  expect((await png("?font=geist")).equals(dejavu)).toBe(false);
+  expect((await png("?font=nope")).equals(dejavu)).toBe(true);   // an unknown font falls back to DejaVu
 
   // Merge back: the fix lands on main; lines that were never in the cut stay put.
   const review = (await (await call("ryan", `/api/repos/ryan/lab/branches/${branch}`)).json()) as any;

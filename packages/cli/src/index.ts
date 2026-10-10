@@ -5,6 +5,7 @@ import { $ } from "bun";
 import { mkdir, rm } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys } from "./wrangler.ts";
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
@@ -161,6 +162,8 @@ async function init() {
     cfg.worker!.assets = "dist/client";
     const kv = inf.astro!.sessionKV;
     if (!cfg.bindings[kv]) { cfg.bindings[kv] = { type: "kv" }; console.log(`sessions: ${kv} (KV, the binding @astrojs/cloudflare keeps sessions in)`); }
+    const img = inf.astro!.images;
+    if (img && !Object.values(cfg.bindings).some((b) => b.type === "images")) { cfg.bindings[img] = { type: "images" }; console.log(`images:   ${img} (Cloudflare Images, for the adapter's /_image; a passthrough on the desktop)`); }
   }
   // Secrets: names only, from .dev.vars. Values are read from .dev.vars at deploy time.
   const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k]);
@@ -254,6 +257,11 @@ function wranglerLosses(): string[] {
 async function generate(opts: { adopt: boolean }) {
   const cfg = await loadConfig();
   if (!cfg.worker && !cfg.targets.box) { console.log("desktop-only config: nothing to generate for the edge"); return; }
+  // A bad cron fails here, not on Cloudflare's side halfway into a deploy.
+  if (cfg.worker?.crons?.length) {
+    const { parseCron } = await import("@rustybuns/shell-bun");
+    for (const c of cfg.worker.crons) parseCron(c);
+  }
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
   console.log("wrote .rustybuns/alchemy.run.ts");
@@ -309,13 +317,14 @@ function alchemyCli(): string[] {
 /** Alchemy's provider names, for `rustybuns login <provider>`. */
 const PROVIDERS: Record<string, string> = { cloudflare: "Cloudflare", hetzner: "Hetzner", railway: "Railway" };
 
-/** varlock from the project, the workspace root, or PATH. */
-function varlockCli(): string {
+/** varlock from the project, the workspace root, PATH, or the copy the CLI ships with. */
+function varlockCli(): string[] {
   const root = workspaceRoot(process.cwd());
   const found = [join("node_modules", ".bin", "varlock"), root && join(root, "node_modules", ".bin", "varlock")]
     .find((p) => p && existsSync(p)) || Bun.which("varlock");
-  if (!found) throw new Error("experimental.wheel: op secrets are fetched by varlock, which isn't installed. `bun add -d varlock`, or `brew install dmno-dev/tap/varlock`.");
-  return found;
+  if (found) return [found];
+  // A dependency of the CLI, so every install has it; its bin isn't always linked.
+  return [process.execPath, join(dirname(fileURLToPath(import.meta.resolve("varlock/package.json"))), "bin", "cli.js")];
 }
 
 /**
@@ -330,7 +339,7 @@ function underVarlock(cfg: RustyBunsConfig, cmd: string[], env: Record<string, s
   } else if (needs.opToken && !env.OP_TOKEN) {
     throw new Error(`experimental.wheel "agent" reads op secrets with a 1Password service account token. Set OP_TOKEN (scope the account to this stack's vault).`);
   }
-  return [varlockCli(), "run", "--path", ENV_SCHEMA, "--", ...cmd];
+  return [...varlockCli(), "run", "--path", ENV_SCHEMA, "--", ...cmd];
 }
 
 /** Run the project-local alchemy with the terminal attached, so its prompts work. */

@@ -8,6 +8,11 @@ export type Binding =
   /** Cloudflare Artifacts: git repos created at runtime. Locally, bare repos served over git HTTP. */
   | { type: "artifacts"; namespace: string }
   /**
+   * Cloudflare Images: transform and convert images inside the Worker.
+   * Off the edge it is a passthrough: the original image, header-read info().
+   */
+  | { type: "images" }
+  /**
    * Cloudflare Containers: a Durable Object class exported by `main` with a
    * container image behind it (the class reaches it through `ctx.container`).
    * Edge only: the desktop has no twin, so the binding is left out there and
@@ -32,6 +37,11 @@ export type Binding =
        * the value never sits on disk. Who unlocks 1Password is the wheel.
        */
       op?: string;
+      /**
+       * Bound only when it has a value. With `op`, a missing 1Password item
+       * resolves to nothing instead of failing plan/deploy. For keys you may not use.
+       */
+      optional?: boolean;
     };
 
 /**
@@ -281,8 +291,8 @@ export interface RustyBunsConfig {
      * any machine, CI job or agent, each behind its own wheel. Remove its
      * "# GENERATED" header to own it.
      *
-     * `op` secrets need varlock (`bun add -d varlock`, or `brew install
-     * dmno-dev/tap/varlock`); "human" also needs the 1Password CLI, `op`.
+     * `op` secrets are fetched by varlock, which ships with the CLI; "human"
+     * also needs the 1Password CLI, `op`.
      */
     wheel?: "agent" | "human";
   };

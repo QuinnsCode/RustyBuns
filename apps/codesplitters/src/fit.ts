@@ -40,6 +40,18 @@ export function workspaceGlobs(pkg: Record<string, any> | null, pnpmYaml: string
   return [...new Set(out.filter((g) => !g.startsWith("!")).map((g) => g.replace(/^\.\//, "").replace(/\/+$/, "")).filter(Boolean))];
 }
 
+/** Each glob one level deep: `apps/*` (or `apps/**`) is every folder in apps/, anything else is a folder itself. At most MAX_WORKSPACES. */
+export async function workspaceDirs(globs: string[], list: (dir: string) => Promise<Entry[] | null>): Promise<string[]> {
+  const dirs: string[] = [];
+  for (const g of globs) {
+    const star = g.match(/^(.*?)\/\*{1,2}$/);
+    if (!star) { dirs.push(g); continue; }
+    if (star[1]!.includes("*")) continue;
+    for (const e of (await list(star[1]!)) ?? []) if (e.type === "dir") dirs.push(e.path);
+  }
+  return [...new Set(dirs)].sort().slice(0, MAX_WORKSPACES);
+}
+
 export async function repoFit(env: Env, self: Self, origin: string, owner: string, repo: string, user: string | null, dir = ""): Promise<Response> {
   dir = dir.replace(/^\/+|\/+$/g, "");
   if (dir.split("/").some((s) => s === ".." || s === ".")) return json({ error: "dir: a folder in the repo" }, 400);
@@ -91,16 +103,8 @@ export async function repoFit(env: Env, self: Self, origin: string, owner: strin
     const globs = workspaceGlobs(pkg, files.includes("pnpm-workspace.yaml") ? await read("pnpm-workspace.yaml") : null);
     if (!globs.length) return f;
 
-    // Expand each glob one level: `apps/*` (or `apps/**`) is every folder in apps/, anything else is a folder itself.
-    const dirs: string[] = [];
-    for (const g of globs) {
-      const star = g.match(/^(.*?)\/\*{1,2}$/);
-      if (!star) { dirs.push(g); continue; }
-      if (star[1]!.includes("*")) continue;
-      for (const e of (await list(star[1]!)) ?? []) if (e.type === "dir") dirs.push(e.path);
-    }
     const workspaces = [];
-    for (const d of [...new Set(dirs)].sort().slice(0, MAX_WORKSPACES)) {
+    for (const d of await workspaceDirs(globs, list)) {
       const entries = await list(d);
       if (!entries?.some((e) => e.type === "file" && e.path === join(d, "package.json"))) continue;
       const w = await fitAt(d, entries);

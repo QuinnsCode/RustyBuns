@@ -1,6 +1,6 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setSystemTime, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { bump, localFixer, outdated, scheduledDoctor, DEFAULTS, type Fixer, type Registry, type Tester } from "../src/deps.ts";
+import { bump, localFixer, outdated, packageManager, parseNpmrc, registryUrl, scheduledDoctor, DEFAULTS, type Fixer, type Registry, type Tester } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { depsTest as containerTest } from "../sandbox/server.mjs";
@@ -68,7 +68,7 @@ const kleurTester = (seen: string[][] = []): Tester => async (remote, files) => 
   return pkg.dependencies.kleur === "^4.1.5" ? { ok: false, out: "TypeError: kleur.red is not a function" } : { ok: true, out: "3 pass" };
 };
 
-async function app(tester?: Tester, fixer?: Fixer) {
+async function app(tester?: Tester, fixer?: Fixer, pkg = PKG) {
   const call = await boot({ GH_CLI: "off" });
   opened.push(call);
   call.env.DEPS_REGISTRY = NPM;
@@ -77,7 +77,7 @@ async function app(tester?: Tester, fixer?: Fixer) {
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   await send("ryan", "/api/repos", { name: "lab", visibility: "public" });
-  await send("ryan", "/api/repos/ryan/lab/files", { path: "package.json", content: PKG });
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "package.json", content: pkg });
   await send("ryan", "/api/repos/ryan/lab/files", { path: "src/paint.ts", content: COLOR.replace(/\n$/, "") });
   // Catalogue them, so the clone a test run takes has them.
   for (const path of ["package.json", "src/paint.ts"]) await send("ryan", `/api/repos/ryan/lab/do/commit?path=${path}`, { message: path });
@@ -215,7 +215,7 @@ test("localFixer: the agent edits a real clone, the tests decide, and only its e
       return { code: 0, out: "done" };
     };
     const update = { name: "kleur", from: "^3.0.0", to: "^4.1.5", level: "major" as const, status: "broke" as const };
-    const r = await localFixer(exec)({ remote: dir, files: { "package.json": pkg }, update, out: "expected new:x", harness: "claude", tries: 3 });
+    const r = await localFixer(exec)({ remote: dir, files: { "package.json": pkg }, pm: "bun", update, out: "expected new:x", harness: "claude", tries: 3 });
     expect(r.ok).toBe(true);
     expect(r.tries).toBe(2);
     expect(prompts[0]).toContain("expected new:x");
@@ -226,7 +226,7 @@ test("localFixer: the agent edits a real clone, the tests decide, and only its e
       { path: "src/extra.ts", before: null, after: "export const extra = 1;\n" },
       { path: "src/paint.ts", before: `export const paint = (s: string) => "old:" + s; // kleur\n`, after: `export const paint = (s: string) => "new:" + s; // kleur\n` },
     ]);
-    const gaveUp = await localFixer(async () => ({ code: 0, out: "" }))({ remote: dir, files: { "package.json": pkg }, update, out: "", harness: "pi", tries: 2 });
+    const gaveUp = await localFixer(async () => ({ code: 0, out: "" }))({ remote: dir, files: { "package.json": pkg }, pm: "bun", update, out: "", harness: "pi", tries: 2 });
     expect(gaveUp).toMatchObject({ ok: false, tries: 2, edits: [] });
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -247,26 +247,80 @@ test("the schedule runs repos that are on and due, and skips the rest", async ()
   expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).last_run).toBe(NOW + 25 * 3_600_000);
 });
 
-test("a scheduled run that runs out of time tests no further and branches only what passed", async () => {
-  // Each fake test run takes 200ms, and kleur 4 breaks the build.
-  const tester: Tester = async (_remote, files) => {
-    await Bun.sleep(200);
-    const pkg = JSON.parse(files["package.json"]!);
-    return pkg.dependencies.kleur === "^4.1.5" ? { ok: false, out: "TypeError: kleur.red is not a function" } : { ok: true, out: "3 pass" };
+test("an .npmrc picks the registry per scope, and a token only goes to its own host", () => {
+  const repo = parseNpmrc(`# the company's packages
+@acme:registry=https://npm.acme.dev/api/
+registry = "https://mirror.example/"
+//npm.acme.dev/:_authToken=\${ACME_TOKEN}`);
+  expect(repo).toEqual({ registry: "https://mirror.example/", scopes: { "@acme": "https://npm.acme.dev/api/" }, tokens: {} });   // no vars: the repo's file gets none
+  const home = parseNpmrc("//npm.acme.dev/api/:_authToken=${ACME_TOKEN}\n//registry.npmjs.org/:_authToken=npm_x", { ACME_TOKEN: "s3cret" });
+  expect(registryUrl([home, repo], "@acme/ui")).toEqual({ url: "https://npm.acme.dev/api/@acme%2fui", token: "s3cret" });
+  expect(registryUrl([home, repo], "mitt")).toEqual({ url: "https://mirror.example/mitt" });
+  expect(registryUrl([home], "mitt")).toEqual({ url: "https://registry.npmjs.org/mitt", token: "npm_x" });
+});
+
+test("the lockfile says which package manager, unless packageManager does", () => {
+  expect(packageManager(["package.json", "pnpm-lock.yaml"], {})).toEqual({ pm: "pnpm", lock: "pnpm-lock.yaml" });
+  expect(packageManager(["package-lock.json", "yarn.lock"], { packageManager: "yarn@4.5.0" })).toEqual({ pm: "yarn", lock: "yarn.lock" });
+  expect(packageManager(["package.json"], {})).toEqual({ pm: "bun", lock: null });
+});
+
+test("workspaces are checked too, and the lockfile goes on the branch with them", async () => {
+  const runs: { files: string[]; opts: any }[] = [];
+  // The fake install: regenerates the lockfile from whatever package.jsons it was handed.
+  const tester: Tester = async (_remote, files, opts) => {
+    runs.push({ files: Object.keys(files).sort(), opts });
+    return { ok: true, out: "", lock: `lockfileVersion: '9.0'\n${Object.entries(files).map(([p, t]) => `${p}: ${JSON.stringify(JSON.parse(t).dependencies ?? {})}`).sort().join("\n")}\n` };
   };
-  const { call, send } = await app(tester);
-  await send("ryan", "/api/repos/ryan/lab/deps", { on: true, max_level: "major", ignore: "ky", run_tests: true }, "PUT");
-  const self = (r: Request) => (async () => (await import("../src/worker.ts")).default.fetch(r, call.env))();
-  await scheduledDoctor(call.env, self, NOW, 0);   // no time at all: not even started
-  expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).last_run).toBeNull();
-  // Time for together and clsx alone, but not a third try.
-  await scheduledDoctor(call.env, self, NOW, 500);
-  const got = await (await call("ryan", "/api/repos/ryan/lab/deps")).json();
-  expect(got.running).toBe(false);
-  expect(got.report.updates.map((u: any) => [u.name, u.status])).toEqual([["clsx", "kept"], ["hono", "untested"], ["kleur", "untested"]]);
-  expect(got.report.note).toContain("ran out of time");
-  const doc = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=package.json&branch=${got.report.branch}`)).json();
-  expect(doc.lines.map((l: any) => l.text).filter((t: string) => /clsx|hono|kleur/.test(t))).toEqual([`    "kleur": "^3.0.0",`, `    "clsx": "~2.0.0",`, `    "hono": "4.0.0",`]);
+  const { call, send } = await app(tester, undefined, `{\n  "name": "lab",\n  "workspaces": ["apps/*"],\n  "dependencies": { "mitt": "^3.0.0" }\n}`);
+  const files = {
+    "apps/web/package.json": `{\n  "name": "@lab/web",\n  "dependencies": {\n    "kleur": "^3.0.0",\n    "lab": "^1.0.0"\n  }\n}`,
+    "pnpm-lock.yaml": "lockfileVersion: '9.0'\nold: true\n",
+  };
+  for (const [path, content] of Object.entries(files)) {
+    await send("ryan", "/api/repos/ryan/lab/files", { path, content });
+    await send("ryan", `/api/repos/ryan/lab/do/commit?path=${path}`, { message: path });
+  }
+  await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major" }, "PUT");
+  const report = await (await send("ryan", "/api/repos/ryan/lab/deps/run", {})).json();
+  // mitt's update is in range; kleur's isn't; `lab` is the repo's own package, never the registry's.
+  expect(report.updates.map((u: any) => [u.path, u.name, u.to])).toEqual([["apps/web/package.json", "kleur", "^4.1.5"]]);
+  expect(report.lock).toBe("pnpm-lock.yaml");
+  expect(runs).toEqual([{ files: ["apps/web/package.json"], opts: { pm: "pnpm", lock: "pnpm-lock.yaml", test: false } }]);
+  const lock = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=pnpm-lock.yaml&branch=${report.branch}`)).json();
+  expect(lock.lines.map((l: any) => l.text)).toEqual(["lockfileVersion: '9.0'", `apps/web/package.json: {"kleur":"^4.1.5","lab":"^1.0.0"}`, ""]);
+  expect(lock.lines[0].by).toBe("ryan");   // an unchanged line keeps its author
+  expect(lock.lines[1].by).toBe("agent-deps");
+  const web = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=apps/web/package.json&branch=${report.branch}`)).json();
+  expect(web.lines.find((l: any) => l.text.includes("kleur")).text).toBe(`    "kleur": "^4.1.5",`);
+});
+
+test("a scheduled run that runs out of time tests no further and branches only what passed", async () => {
+  try {
+    // Each fake test run takes 200ms, and kleur 4 breaks the build. The clock stands still
+    // except for those runs, so how slow the machine is doesn't change what fits.
+    setSystemTime(new Date());
+    const tester: Tester = async (_remote, files) => {
+      setSystemTime(new Date(Date.now() + 200));
+      const pkg = JSON.parse(files["package.json"]!);
+      return pkg.dependencies.kleur === "^4.1.5" ? { ok: false, out: "TypeError: kleur.red is not a function" } : { ok: true, out: "3 pass" };
+    };
+    const { call, send } = await app(tester);
+    await send("ryan", "/api/repos/ryan/lab/deps", { on: true, max_level: "major", ignore: "ky", run_tests: true }, "PUT");
+    const self = (r: Request) => (async () => (await import("../src/worker.ts")).default.fetch(r, call.env))();
+    await scheduledDoctor(call.env, self, NOW, 0);   // no time at all: not even started
+    expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).last_run).toBeNull();
+    // Time for together and clsx alone, but not a third try.
+    await scheduledDoctor(call.env, self, NOW, 500);
+    const got = await (await call("ryan", "/api/repos/ryan/lab/deps")).json();
+    expect(got.running).toBe(false);
+    expect(got.report.updates.map((u: any) => [u.name, u.status])).toEqual([["clsx", "kept"], ["hono", "untested"], ["kleur", "untested"]]);
+    expect(got.report.note).toContain("ran out of time");
+    const doc = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=package.json&branch=${got.report.branch}`)).json();
+    expect(doc.lines.map((l: any) => l.text).filter((t: string) => /clsx|hono|kleur/.test(t))).toEqual([`    "kleur": "^3.0.0",`, `    "clsx": "~2.0.0",`, `    "hono": "4.0.0",`]);
+  } finally {
+    setSystemTime();
+  }
 });
 
 describe("on Cloudflare, tests run in an AGENT_SANDBOX container", () => {

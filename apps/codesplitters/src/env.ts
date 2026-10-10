@@ -44,6 +44,8 @@ export interface Env {
   ARTIFACTS?: Artifacts;
   /** Handles allowed to import levels when accounts are on (comma separated). */
   ADMINS?: string;
+  /** The owner's verified email; signing in with it claims the first ADMINS handle. */
+  ADMIN_EMAIL?: string;
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_URL?: string;
   GITHUB_CLIENT_ID?: string;

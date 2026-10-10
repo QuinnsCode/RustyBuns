@@ -66,6 +66,7 @@ The desktop and box hosts are the same generated program. The desktop build bind
 | KV | KV | sqlite table | sqlite table | sqlite table |
 | blob | R2 | directory on a Volume | directory on a Volume | embedded directory |
 | git repos | Artifacts | untested | untested | bare repos over git HTTP (worker mode; needs `git`) |
+| image transforms | Images | passthrough | passthrough | passthrough: the original image, `info()` from its header (worker mode) |
 | secrets | Worker secrets | env file on the server | service variables | n/a |
 | native (FFI, `SharedArrayBuffer`) | no | yes | yes (crates built in the image) | yes |
 
@@ -211,7 +212,7 @@ export default defineConfig({
 | Key | Values |
 |---|---|
 | `source` | `dir`, `aliases`, `ignore` (inferred from tsconfig paths) |
-| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `var`, `secret` (+ `op`) |
+| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `var`, `secret` (+ `op`) |
 | `state` | `shared` (default) \| `project`, see below |
 | `experimental` | `wheel` (`agent` \| `human`), see below |
 | `targets.edge` | `provider: "cloudflare"`, `domain`, `adopt` |
@@ -241,17 +242,19 @@ experimental: { wheel: "agent" },   // or "human"
 bindings: {
   SESSION_SECRET: { type: "secret" },                                     // agent: minted by the stack
   STRIPE_KEY: { type: "secret", op: "op://my-app-test/stripe/credential" }, // from 1Password
+  AI_KEY: { type: "secret", op: "op://my-app-test/ai/key", optional: true }, // bound only if the item exists
 },
 ```
 
 - **`"agent"` lets the agent take the wheel.** It's for stacks that come and go: tests, CI, previews. A secret without `op` is minted when the stack is created (`Alchemy.Random`), stays the same across deploys, and is gone on `destroy`. Create, test, destroy as often as you like; there's nothing to rotate. A secret with `op` is read from 1Password with a service account token in `OP_TOKEN`. Scope that account to one vault.
 - **`"human"` keeps a human in the loop.** It's for prod. A secret with `op` is read from 1Password by the app on your machine, behind your Touch ID or passkey. Any `OP_TOKEN` is ignored. A secret without `op` comes from the shell or `.dev.vars`, as it does without the flag.
+- **`optional: true`** is for keys you may not use. A missing 1Password item resolves to nothing instead of failing the deploy, and the Worker gets the secret only when it has a value.
 
 With the flag on, `generate` writes `.env.schema` at the app root: every secret by name and where it comes from, never a value. Commit it. It's the portable half: any laptop, CI job or agent that clones the repo resolves the same typed secrets from it, each behind its own wheel, and it works with [varlock](https://varlock.dev) outside Rusty Buns too. (If your `.gitignore` has `.env*`, add `!.env.schema`; `generate` reminds you.) Delete its `# GENERATED` header and it's yours: Rusty Buns stops rewriting it and uses it as-is.
 
 **Why [varlock](https://varlock.dev)?** It turns a `.env` file into a schema: every variable gets a type, a description and a `@sensitive` flag, and its value is a *reference* (`op(op://…)`) instead of the secret itself. You get the "what does this app need" story in one committed file that agents can read safely, plus pluggable stores (1Password, AWS, Vault, or any CLI), validation before anything runs, redaction of sensitive values in its output, and `varlock scan` to catch a secret someone pasted into code. It's MIT-licensed and works with any language, so the schema isn't tied to Rusty Buns.
 
-At plan and deploy time, varlock resolves the schema and the values reach Alchemy as env, so they go straight into Cloudflare or Railway secrets and never sit in a file. Install it with `bun add -d varlock` or `brew install dmno-dev/tap/varlock`. `"human"` also needs the 1Password CLI, `op`, with "Integrate with 1Password CLI" turned on in the app.
+At plan and deploy time, varlock resolves the schema and the values reach Alchemy as env, so they go straight into Cloudflare or Railway secrets and never sit in a file. It ships with the CLI, so there's nothing to install; a varlock in your project or on PATH wins if you have one. `"human"` also needs the 1Password CLI, `op`, with "Integrate with 1Password CLI" turned on in the app.
 
 **Why this is safe:**
 

@@ -12,6 +12,7 @@ wrangler.generated.jsonc
 **/native/target-*/
 .env
 .env.*
+!.env.schema
 !.env.example
 !.env.schema
 .dev.vars

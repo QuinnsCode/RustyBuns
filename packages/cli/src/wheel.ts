@@ -12,8 +12,8 @@ export const ENV_SCHEMA = ".env.schema";
 /** Pinned: varlock's standalone binary only loads plugins at a fixed version. */
 export const OP_PLUGIN = "@varlock/1password-plugin@2.0.4";
 
-function secrets(c: RustyBunsConfig): { name: string; op?: string }[] {
-  return Object.entries(c.bindings ?? {}).flatMap(([name, b]) => b.type === "secret" ? [{ name, op: b.op }] : []);
+function secrets(c: RustyBunsConfig): { name: string; op?: string; optional?: boolean }[] {
+  return Object.entries(c.bindings ?? {}).flatMap(([name, b]) => b.type === "secret" ? [{ name, op: b.op, optional: b.optional }] : []);
 }
 
 /** Refuse half-set configs before anything is generated. */
@@ -57,7 +57,8 @@ export function generateEnvSchema(c: RustyBunsConfig): string | null {
   if (vaulted.length && wheel === "agent") lines.push(``, `# A 1Password service account token scoped to this stack's vault.`, `# @type=opServiceAccountToken @sensitive @internal @required`, `OP_TOKEN=`);
   for (const s of all) {
     lines.push(``);
-    if (s.op) lines.push(`# @sensitive @required`, `${s.name}=op(${s.op})`);
+    if (s.op && s.optional) lines.push(`# Optional: unset when the item is missing.`, `# @sensitive @optional`, `${s.name}=op(${s.op}, allowMissing=true)`);
+    else if (s.op) lines.push(`# @sensitive @required`, `${s.name}=op(${s.op})`);
     else if (minted.has(s.name)) lines.push(`# ${s.name}: minted by the stack on create, gone on destroy (not resolved here).`);
     else lines.push(`# From the shell or .dev.vars.`, `# @sensitive`, `${s.name}=`);
   }

@@ -68,6 +68,8 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     if (b.type === "durable_object") { dos.push({ name, class_name: b.className, ...(b.scriptName ? { script_name: b.scriptName } : {}) }); if (!b.scriptName) sqliteClasses.push(b.className); }
     if (b.type === "var") vars[name] = b.value;
     if (b.type === "artifacts") artifacts.push({ binding: name, namespace: b.namespace });
+    // Wrangler takes one Images binding, as an object.
+    if (b.type === "images") w["images"] = { binding: name };
     if (b.type === "container") {
       dos.push({ name, class_name: b.className });
       sqliteClasses.push(b.className);

@@ -1,28 +1,21 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
-// A deploy needs every declared secret, so the optional ones are only declared
-// when they're switched on in the deploying shell:
+// Accounts, admin and hosted-agent secrets live in 1Password (vault "codesplitters")
+// and reach the deploy through varlock: experimental.wheel "human" unlocks them with
+// your Touch ID, so there's nothing to export and BETTER_AUTH_SECRET never drifts.
+// See .env.schema for the full list. The desktop has none of them: it uses aliases.
+//
+// Hosted coding agents are opt-in from the deploying shell; their keys come from 1Password too:
 //   CODESPLITTERS_AGENTS=1  hosted coding agents (super experimental, see README)
-//   CODESPLITTERS_DEPLOYS=1 hosted deploys with each repo's stored deploy key; DEPLOY_SECRETS_KEY
-//                           comes from 1Password through varlock (experimental.wheel "human")
-//   BETTER_AUTH_SECRET      accounts; without it the site uses aliases
-//   GITHUB_/GOOGLE_CLIENT_ID  that sign-in, with its _SECRET
+//   CODESPLITTERS_DEPLOYS=1 hosted deploys with each repo's stored deploy key, sealed under
+//                           DEPLOY_SECRETS_KEY (1Password, like the rest)
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
 const deploys = process.env.CODESPLITTERS_DEPLOYS === "1";
-const secrets = (on: boolean, ...names: string[]) => on ? Object.fromEntries(names.map((n) => [n, { type: "secret" as const }])) : {};
-const set = (name: string) => !!process.env[name];
-// Hosted agents bill the site's keys and are limited to ADMINS, which only means
-// something with accounts: with aliases anyone can claim an admin's handle.
-if (agents && !set("BETTER_AUTH_SECRET")) throw new Error("CODESPLITTERS_AGENTS=1 needs accounts on: set BETTER_AUTH_SECRET too");
-// Hosted deploys likewise: a deploy key in an alias-mode site is anyone's to use.
-if (deploys && !set("BETTER_AUTH_SECRET")) throw new Error("CODESPLITTERS_DEPLOYS=1 needs accounts on: set BETTER_AUTH_SECRET too");
-// The key that seals every repo's deploy key lives in 1Password, never in a shell:
-// varlock fetches it at deploy, behind your Touch ID, straight into the Worker's secret.
-// Override the reference with DEPLOY_SECRETS_KEY_OP if your item lives elsewhere.
-const deploySecretsKey = process.env.DEPLOY_SECRETS_KEY_OP ?? "op://codesplitters/DEPLOY_SECRETS_KEY/password";
+const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitters/${ref}`, optional });
 
 export default defineConfig({
   name: "codesplitters",
+  experimental: { wheel: "human" },
   worker: {
     main: "src/worker.ts",
     builtMain: "dist/worker/worker.js",
@@ -47,25 +40,32 @@ export default defineConfig({
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
     // The desktop has no twin and runs the CLIs on the machine instead.
     ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
-    ...secrets(agents, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"),
+    // Optional: only the items you've made in 1Password are bound.
+    ...(agents ? {
+      ANTHROPIC_API_KEY: op("anthropic/api-key", true),
+      CLAUDE_CODE_OAUTH_TOKEN: op("claude-code/oauth-token", true),
+      OPENAI_API_KEY: op("openai/api-key", true),
+      CODEX_API_KEY: op("codex/api-key", true),
+    } : {}),
     // Hosted deploys: one Durable Object per repo, each run in its own container
     // (deploy-sandbox/Dockerfile), separate from the agents' so no agent sees a
     // deploy key. Keys are sealed in D1 under DEPLOY_SECRETS_KEY.
-    ...(deploys ? { DEPLOY_RUNNER: { type: "container", className: "DeployRunner", dockerfile: "deploy-sandbox/Dockerfile", maxInstances: 1, instanceType: "basic" } as const } : {}),
-    ...(deploys ? { DEPLOY_SECRETS_KEY: { type: "secret", op: deploySecretsKey } as const } : {}),
-    // Accounts (Better Auth). Unset on the desktop: it uses aliases.
-    ...secrets(set("BETTER_AUTH_SECRET"), "BETTER_AUTH_SECRET"),
+    ...(deploys ? {
+      DEPLOY_RUNNER: { type: "container", className: "DeployRunner", dockerfile: "deploy-sandbox/Dockerfile", maxInstances: 1, instanceType: "basic" } as const,
+      DEPLOY_SECRETS_KEY: op("DEPLOY_SECRETS_KEY/password"),
+    } : {}),
+    // Accounts (Better Auth), GitHub and Google sign-in.
+    BETTER_AUTH_SECRET: op("better-auth/secret"),
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitters.notryanquinn.workers.dev" },
-    ...secrets(set("GITHUB_CLIENT_ID"), "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"),
-    ...secrets(set("GOOGLE_CLIENT_ID"), "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
-    // Handles allowed to excavate levels once accounts are on. "quinn" is short, so
-    // it's claimed through a handle_grants row for the owner's verified email (#214).
+    GITHUB_CLIENT_ID: op("github-oauth/client-id"),
+    GITHUB_CLIENT_SECRET: op("github-oauth/client-secret"),
+    GOOGLE_CLIENT_ID: op("google-oauth/client-id"),
+    GOOGLE_CLIENT_SECRET: op("google-oauth/client-secret"),
+    // Handles allowed to excavate levels once accounts are on. "quinn" is short,
+    // so nobody can pick it; it goes to whoever signs in with ADMIN_EMAIL, verified.
     ADMINS: { type: "var", value: "quinn" },
+    ADMIN_EMAIL: op("admin/email"),
   },
-  // Only with hosted deploys on, so a deploy without them doesn't need varlock or 1Password.
-  // "human": only the 1Password app on the deploying machine can unlock; other secrets
-  // still come from the shell or .dev.vars.
-  ...(deploys ? { experimental: { wheel: "human" as const } } : {}),
   targets: {
     // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler;
     // adopted by rustybuns deploy on 2026-10-09 (#170). Keep adopt on: state is local.

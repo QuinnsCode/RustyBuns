@@ -13,7 +13,7 @@
 // machine. On the site it can run hosted instead (deploy-runner.ts), with a
 // deploy key the owner stores (deploy-keys.ts); that's off by default. Each
 // deploy is logged in D1: who, which commit, which stage, where it ran (and
-// which key), the result. A stack with `adopt: true` takes over live
+// which key), the result; each repo keeps its last 50. A stack with `adopt: true` takes over live
 // resources under their real names, so it's refused unless the owner has
 // said this repo is production.
 //
@@ -26,7 +26,7 @@ import { access as artifactAccess, handleFor } from "./archive.ts";
 import { json, type Env } from "./env.ts";
 import { deployKeyRoutes, hostedWhy, keyInfo } from "./deploy-keys.ts";
 import { emit } from "./hooks.ts";
-import { preview, runnerFor, type Run, type StepKey } from "./preview.ts";
+import { history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 
 export interface Settings { stage: string; on_commit: boolean; production: boolean }
 const DEFAULTS: Settings = { stage: "prod", on_commit: false, production: false };
@@ -53,18 +53,14 @@ export async function begin(env: Env, owner: string, repo: string, by: string, t
   const s = await settings(env, owner, repo);
   const id = crypto.randomUUID().slice(0, 8);
   const run: Run = { id, at: Date.now(), stage: s.stage, steps: STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
-  await env.DB.prepare("INSERT INTO deploys (id, owner, repo, stage, by, trigger, status, at, runner, key_last4) VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)")
-    .bind(id, owner, repo, s.stage, by, trigger, run.at, runner, keyLast4 ?? null).run();
+  await logStart(env, owner, repo, run, by, trigger, runner, keyLast4);
   return { run, production: s.production };
 }
 
 /** Log how a deploy ended. */
 export async function finish(env: Env, run: Run) {
+  await logEnd(env, run);
   const ok = run.steps.every((x) => x.status === "done");
-  // The log keeps the end of each step's output, enough to see why one failed.
-  const out = run.steps.filter((x) => x.out).map((x) => `── ${x.key} (${x.status})\n${x.out.slice(-2000)}`).join("\n").slice(-8000);
-  await env.DB.prepare("UPDATE deploys SET status = ?, commit_hash = ?, url = ?, ms = ?, note = ?, out = ? WHERE id = ?")
-    .bind(ok ? "done" : "failed", run.commit ?? null, run.url ?? null, Date.now() - run.at, run.note ?? null, out, run.id).run();
   // Desktop or hosted, the repo's webhooks hear how it went.
   const d = await env.DB.prepare("SELECT owner, repo, by, trigger FROM deploys WHERE id = ?").bind(run.id).first() as { owner: string; repo: string; by: string; trigger: string } | null;
   if (d) await emit(env, d.owner, d.repo, "deploy.finished", d.by, {
@@ -129,14 +125,11 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
   if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
 
   if (req.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT id, stage, by, trigger, status, commit_hash, url, at, ms, note, out, runner, key_last4 FROM deploys WHERE owner = ? AND repo = ? ORDER BY at DESC LIMIT 20").bind(owner, repo).all();
     const desktop = !!runnerFor(env), why = desktop ? null : hostedWhy(env, user);
     const run = desktop ? live.get(`${owner}/${repo}`)?.run ?? null
       : env.DEPLOY_RUNNER ? ((await (await hostedStub(env, owner, repo).fetch(new Request("http://deploy/run"))).json()) as { run: Run | null }).run : null;
-    // A deploy still "running" in the log but not in this process died with an earlier one.
-    const history = (results as any[]).map((d) => d.status === "running" && run?.id !== d.id ? { ...d, status: "interrupted" } : d);
     const key = await keyInfo(env, owner, repo);
-    return json({ settings: await settings(env, owner, repo), can_run: desktop || (!why && key.set), hosted: !desktop && !!env.DEPLOY_RUNNER, why, key, run, history });
+    return json({ settings: await settings(env, owner, repo), can_run: desktop || (!why && key.set), hosted: !desktop && !!env.DEPLOY_RUNNER, why, key, run, history: await history(env, owner, repo, false, run) });
   }
   if (req.method === "PUT") {
     const s = { ...(await settings(env, owner, repo)), ...((await req.json()) as Partial<Settings>) };
