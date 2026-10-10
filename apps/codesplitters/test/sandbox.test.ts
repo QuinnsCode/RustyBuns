@@ -76,12 +76,14 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
       idFromName: (n: string) => n,
       get: () => new AgentSandbox({ container: fakeContainer(async (b) => { runs.push(b); return server(b); }).c }, booted.env),
     };
-    // Each handle's session cookie, from signing up with a name that makes it.
+    // Each handle's session cookie, from signing up and claiming it.
     const cookies: Record<string, string> = {};
     const signup = async (name: string) => {
       const res = await booted(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
         body: JSON.stringify({ email: `${name.replace(" ", ".")}@example.com`.toLowerCase(), password: "correct horse battery", name }) });
-      cookies[name.toLowerCase().replace(" ", "-")] = (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
+      const handle = name.toLowerCase().replace(" ", "-");
+      cookies[handle] = (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
+      await booted(null, "/api/handle", { method: "POST", headers: { cookie: cookies[handle]! }, body: JSON.stringify({ name: handle }) });
     };
     for (const name of ["Ryan Quinn", "Pat Person", "Sam Sample"]) await signup(name);
     const call: Call = (user, url, init = {}) => {
