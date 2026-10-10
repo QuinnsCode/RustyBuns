@@ -670,6 +670,25 @@ describe("rate limits", () => {
       await worker.scheduled({ cron: "*/5 * * * *" }, call.env, { waitUntil: (w) => waits.push(w) });
       await Promise.all(waits);
       expect(await job(four.id, "boss")).toMatchObject({ state: "done", status: 201 });
+
+      // Back on the page later: her own jobs, newest first, with their place or the repo they made.
+      const list = async (user: string | null) => ((await (await call(user, "/api/jobs")).json()) as any).jobs;
+      expect((await call(null, "/api/jobs")).status).toBe(401);
+      await dig("o/five");
+      expect(await list("bo")).toEqual([]);
+      let jobs = await list("ana");
+      expect(jobs.map((j: any) => [j.what, j.state])).toEqual([["o/five", "waiting"], ["o/four", "done"], ["o/two", "done"]]);
+      expect(jobs[0]).toMatchObject({ place: 1, label: "Dig up a repo" });
+      expect(jobs[1]).toMatchObject({ status: 201, result: { owner: "ana", name: "four" } });
+      // Listing runs what's due, like polling one job does; a job that failed shows why.
+      await reset();
+      expect((await list("ana"))[0]).toMatchObject({ what: "o/five", state: "done", result: { owner: "ana", name: "five" } });
+      const fork = await call("ana", "/api/levels/no-such-level/fork", { method: "POST", headers: ip, body: JSON.stringify({ name: "x" }) });
+      expect(fork.status).toBe(202);
+      await reset();
+      jobs = await list("ana");
+      expect(jobs[0]).toMatchObject({ what: "fork of no-such-level", state: "done", result: { error: expect.any(String) } });
+      expect(jobs[0].status).toBeGreaterThanOrEqual(400);
     } finally { globalThis.fetch = real; }
   }, SIGNUPS);
 
