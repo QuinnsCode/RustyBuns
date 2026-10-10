@@ -1,8 +1,8 @@
 // 🧙 The council's furniture: every agent desk becomes a Druid Panel, the elevator becomes the game's scene-travel
 // portal, the game's loot is strewn about like a gamer's den, and the Council Chambers and a village stand outside.
-// Everything the office does still works: the laptops stay where they were (on top of the panels now), the
+// Everything the office does still works: the laptops ride on the panels (each tilted with its slab), the
 // elevator still opens and rides, and nothing here touches a collider.
-import { Box3, Color, Group, Mesh, MeshStandardMaterial, Object3D, Vector3, type Material } from "three";
+import { Box3, Color, Group, Mesh, MeshStandardMaterial, Object3D, Raycaster, Vector3, type Material } from "three";
 import { COUNCIL } from "./assets.ts";
 import { gltf } from "./loader.ts";
 import { ROOM, STREET_Y, type Box } from "./room.ts";
@@ -47,10 +47,24 @@ async function copy(path: string, size: number, by: "height" | "longest" = "long
   return holder;
 }
 
-/** A Druid Panel sits over a pod of two back-to-back desks (2.2 m square, the colliders), 10% smaller so it
- *  doesn't crowd the room; its top is where the laptops sit, a bit under twice the office's desk height, for
- *  agents twice the office's size. */
-const PANEL = { width: 1.98, top: 1.4 };
+/** A Druid Panel is a lectern: a tilted slab on a pillar, low edge towards whoever reads it. Every agent gets its
+ *  own, turned to face them, with the back-to-back pair's lecterns standing in their pod; its top is about twice the
+ *  office's desk height, for agents twice the office's size. The laptop lies on the slab like a book on a lectern,
+ *  tilted with it and half sunk into the wood. */
+const PANEL = { width: 1.2, top: 1.4, z: -0.05, sink: 0.06 };
+const down = new Vector3(0, -1, 0), ray = new Raycaster();
+
+/** How high the panel's top is under (x, z) in `space`: the median of five rays `spread` apart, so a carved notch
+ *  under one corner doesn't drop what sits there (the panel's full height if they all miss). */
+function on(panel: Object3D, space: Object3D, x: number, z: number, spread = 0) {
+  panel.updateMatrixWorld(true);
+  const ys = [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]].map(([dx, dz]) => {
+    ray.set(space.localToWorld(new Vector3(x + dx! * spread, 10, z + dz! * spread)), down);
+    const hit = ray.intersectObject(panel, true)[0];
+    return hit ? space.worldToLocal(hit.point).y : PANEL.top;
+  }).sort((a, b) => a - b);
+  return ys[2]!;
+}
 let swirl: Object3D | null = null;
 const axis = new Vector3(0, 0, 1);
 
@@ -68,39 +82,40 @@ export function council(into: Group, office: Office) {
   const loot = COUNCIL.loot;
   const pick = <T,>(xs: readonly T[]) => xs[Math.floor(r() * xs.length)]!;
 
-  // agent desks (and the board agents' kiosks) → Druid Panels: one panel per pod of two back-to-back desks, as big
-  // as the pod, and each laptop up on top of it
-  const pods = new Set<string>();
+  // agent desks (and the board agents' kiosks) → Druid Panels, a lectern each, and each laptop on its slab
   for (const d of office.desks.values()) {
     if (!/^(desk|station)-/.test(d.def.id)) continue;
     const keep = new Set([d.laptopAnchor, d.seatAnchor, d.stage, d.vacancy]);
     for (const c of d.group.children) if (!keep.has(c)) c.visible = false;
-    d.laptopAnchor.position.y = PANEL.top;
     // the office bobs the vacancy plus at desk height + 0.55, which is inside the panel: lift it over the top
     d.vacancyY = PANEL.top + 0.55;
 
-    // the pod's middle: half a desk away from where this desk's agent stands
-    const centre = d.group.localToWorld(new Vector3(0, 0, -Math.sign(d.seatAnchor.position.z || 1) * 0.55));
-    const key = `${centre.x.toFixed(1)},${centre.z.toFixed(1)}`;
-    if (!pods.has(key)) {
-      pods.add(key);
-      copy(COUNCIL.panel, PANEL.width).then((p) => {
-        p.scale.y *= PANEL.top / (new Box3().setFromObject(p).getSize(new Vector3()).y || 1);
-        p.position.set(centre.x, 0, centre.z);
-        p.rotation.y = d.def.rotY;
-        into.add(p);
-      }).catch((e) => console.warn("[druids] the Druid Panel didn't load", e));
-    }
+    // the agent stands on this side of the desk; the slab's low edge (the model's +z) faces them
+    const toward = Math.sign(d.seatAnchor.position.z || 1);
+    const laptop = d.laptopAnchor;
+    laptop.position.set(laptop.position.x, PANEL.top, toward * PANEL.z);
+    const spots = Array.from({ length: 1 + Math.floor(r() * 3) }, () =>
+      ({ path: pick(loot.small), size: 0.2 + r() * 0.16, x: (r() < 0.5 ? -1 : 1) * (0.32 + r() * 0.2), z: toward * (PANEL.z + (r() - 0.5) * 0.3), turn: r() * 6.28 }));
+    copy(COUNCIL.panel, PANEL.width).then(async (p) => {
+      p.scale.y *= PANEL.top / (new Box3().setFromObject(p).getSize(new Vector3()).y || 1);
+      p.position.set(0, 0, toward * PANEL.z);
+      p.rotation.y = toward > 0 ? 0 : Math.PI;
+      d.group.add(p);
 
-    // and some loot on it, either side of the laptop
-    for (let n = 0; n < 1 + Math.floor(r() * 3); n++) {
-      const side = r() < 0.5 ? -1 : 1;
-      copy(pick(loot.small), 0.2 + r() * 0.16).then((o) => {
-        o.position.set(d.laptopAnchor.position.x + side * (0.36 + r() * 0.27), PANEL.top, d.laptopAnchor.position.z + (r() - 0.5) * 0.4);
-        o.rotation.y = r() * 6.28;
+      // lie the laptop along the slab: its pitch from the slab's height a little behind and in front of it
+      const { x, z } = laptop.position, step = 0.12;
+      const back = on(p, d.group, x, z - toward * step, 0.08), front = on(p, d.group, x, z + toward * step, 0.08);
+      laptop.rotation.x = toward * Math.atan2(back - front, 2 * step);
+      laptop.position.y = (back + front) / 2 - PANEL.sink;
+
+      // and some loot either side of it, wherever the panel is under them
+      for (const s of spots) {
+        const o = await copy(s.path, s.size);
+        o.position.set(laptop.position.x + s.x, on(p, d.group, laptop.position.x + s.x, s.z), s.z);
+        o.rotation.y = s.turn;
         d.group.add(o);
-      });
-    }
+      }
+    }).catch((e) => console.warn("[druids] the Druid Panel didn't load", e));
     if (r() < 0.35) copy(COUNCIL.staff, 2, "longest").then((o) => {
       // leaning on the panel's corner
       o.position.set(d.laptopAnchor.position.x + PANEL.width / 2 - 0.05, 0, d.laptopAnchor.position.z + 0.2);
