@@ -1281,7 +1281,7 @@ const views = {
       : `<button class="btn" data-crew="1">${icon("lock")}Push the crew's copy</button>`) : "";
     const who = m.identity ? `Commits go up as <b>${esc(m.identity.name)}</b> &lt;${esc(m.identity.email)}&gt; (this machine's git config).` : `No git identity on this machine: set <code>git config --global user.name</code> and <code>user.email</code>.`;
     el.innerHTML = `<p>${head}</p>${m.state === "ok" && (m.ahead || m.behind) ? `<p class="muted">${waiting}; ${m.behind} to take.</p>` : ""}${m.state !== "ok" && m.state !== "held" && !(m.state === "rewritten" && !m.error?.includes(": ")) ? said : ""}${pickSide}
-      <div class="row" style="gap:6px;margin-top:6px"><button class="btn" id="mirror-sync">${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}<p class="muted" style="font-size:12px">${who}</p>`;
+      <div class="row" style="gap:6px;margin-top:6px"><button class="btn" id="mirror-sync">${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}<p class="muted" style="font-size:12px">${who}</p><div id="mirror-branches"></div>`;
     icons();
     $("#mirror-sync").addEventListener("click", () => { el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, {}); });
     el.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => { el.querySelector("p").textContent = "settling…"; views.wireMirror(owner, repo, { resolve: b.dataset.resolve }); }));
@@ -1290,6 +1290,23 @@ const views = {
       // Once it's up it's up: the first click says so, the second does it.
       if (b.dataset.crew === "1" && !b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Sure? Upstream will see them"; return; }
       el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, { pushCrew: b.dataset.crew === "1" });
+    }));
+    views.wireMirrorBranches(owner, repo);
+  },
+  /** Upstream's other branches: open one here as a branch, or go to the one that already follows it. */
+  async wireMirrorBranches(owner, repo) {
+    const el = $("#mirror-branches");
+    const list = await api(`/repos/${owner}/${repo}/mirror/branches`).catch(() => []);
+    if (!el || !list.length) return;
+    el.innerHTML = `<p class="muted" style="font-size:12px;margin-bottom:4px">Upstream's branches</p>` + list.map((b) => `<div class="row" style="gap:6px;font-size:13px"><code>${esc(b.ref)}</code>${b.branch
+      ? `<span class="muted">${b.status === "open" ? `open here as <code>${esc(b.branch)}</code>` : `${esc(b.status)} here`}</span>`
+      : `<button class="btn" data-open-ref="${esc(b.ref)}">${icon("download")}Open here</button>`}</div>`).join("");
+    icons();
+    el.querySelectorAll("[data-open-ref]").forEach((btn) => btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try { const r = await api(`/repos/${owner}/${repo}/mirror/branches`, { ref: btn.dataset.openRef }); toast(`Opened ${r.name}: ${r.files.length} file${r.files.length === 1 ? "" : "s"}${r.skipped.length ? `, skipped ${r.skipped.join(", ")}` : ""}`); }
+      catch (e) { toast(`Not opened: ${e.message}`); }
+      route();
     }));
   },
   /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
@@ -1568,7 +1585,7 @@ const views = {
         ${r.canWrite && broken ? `<span class="muted"><label><input type="checkbox" data-anyway="${esc(b.name)}"> Land it anyway, though it won't build</label></span>` : ""}
         ${r.canWrite ? `<span class="muted">${clash.some((c) => !c.lint)
           ? `<button class="btn" data-merge="${esc(b.name)}" data-keep="branch">Merge, keep the branch's lines</button> <button class="btn" data-merge="${esc(b.name)}" data-keep="main">Merge, keep main's</button>`
-          : `<button class="btn primary" data-merge="${esc(b.name)}">${icon("git-merge")}Merge</button>`}</span>` : ""}</div>`;
+          : `<button class="btn primary" data-merge="${esc(b.name)}">${icon("git-merge")}Merge</button>`}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}">${icon("upload")}Push upstream</button>` : ""}</span>` : ""}</div>`;
     }).join("");
     const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`), anyway = (name) => el.querySelector(`[data-anyway="${CSS.escape(name)}"]`);
     // A merge button waits on every box its branch shows.
@@ -1584,6 +1601,13 @@ const views = {
       try { await api(`${base}/${b.name}/merge`, { resolve, build_ok: !!read(b.name)?.checked }); toast(`Merged ${b.name}. Commit the files to push them to git.`); }
       catch (e) { toast(`Not merged: ${e.message}`); }
       route();
+    }));
+    // A mirror's branch goes upstream as a real git branch, the one it came from or one of its name.
+    el.querySelectorAll("[data-push]").forEach((btn) => btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try { const p = await api(`/repos/${owner}/${repo}/mirror/branches/${btn.dataset.push}/push`, {}); toast(p.pushed ? `Pushed ${btn.dataset.push} to upstream's ${p.ref}` : `Upstream's ${p.ref} already has it`); }
+      catch (e) { toast(`Not pushed: ${e.message}`); }
+      btn.disabled = false;
     }));
     icons();
   },

@@ -25,7 +25,7 @@ import { bearer, tokenRoutes } from "./tokens.ts";
 import { openapi } from "./openapi.ts";
 import { catalogue, mcp } from "./mcp.ts";
 import { REFERENCE } from "./api.ts";
-import { kickMirror, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
+import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -221,6 +221,8 @@ const app = {
       }
       // GET|POST /api/repos/:o/:r/mirror  where a mirror stands with upstream; sync it now (mirror.ts)
       if (p[4] === "mirror" && !p[5]) return mirrorRepoRoute(req, env, owner, repo, user);
+      // GET|POST /api/repos/:o/:r/mirror/branches[/:b/push]  upstream's branches, opened here; ours, pushed there
+      if (p[4] === "mirror") { const r = await mirrorBranchRoute(req, env, p, owner, repo, user); if (r) return r; }
       const fresh = await freshRoutes(req, env, p, url, owner, repo, user);
       if (fresh) return fresh;
       const branches = await branchRoutes(req, env, p, owner, repo, user, a);
