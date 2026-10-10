@@ -26,6 +26,7 @@ export const GROUPS: Group[] = [
     endpoints: [
       { method: "GET", path: "/api", does: "this reference, as JSON" },
       { method: "GET", path: "/api/openapi.json", does: "the same API as an OpenAPI 3.1 spec, for agents and gateways outside the browser; calls that can't be undone or ship code carry x-codesplitters-risky: true" },
+      { method: "POST", path: "/api/mcp", body: "a JSON-RPC request", does: "a remote MCP server (Streamable HTTP, no sessions) whose tools are the spec's operations, one per operationId; send a personal API token (a read token lists only reads), and risky ones are marked destructive" },
     ],
   },
   {

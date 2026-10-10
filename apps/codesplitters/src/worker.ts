@@ -23,6 +23,7 @@ import { repoFit } from "./fit.ts";
 import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
 import { bearer, tokenRoutes } from "./tokens.ts";
 import { openapi } from "./openapi.ts";
+import { mcp } from "./mcp.ts";
 import { REFERENCE } from "./api.ts";
 import { kickMirror, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
@@ -62,6 +63,8 @@ const app = {
     if (early) return early;
     // GET /api/openapi.json  this API, for agents and their gateways (openapi.ts)
     if (p[1] === "openapi.json" && !p[2] && req.method === "GET") return json(openapi(url.origin));
+    // POST /api/mcp  the same operations as an MCP server's tools, for a personal API token (mcp.ts)
+    if (p[1] === "mcp" && !p[2]) return mcp(req, url.origin, (r) => app.fetch(r, env));
     // A personal API token (tokens.ts) stands in for the cookie, and is never an admin.
     const token = await bearer(req, env, p);
     if (token instanceof Response) return token;
