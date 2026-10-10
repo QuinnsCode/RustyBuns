@@ -558,21 +558,27 @@ async function jobsBadge() {
   el.querySelector("span").textContent = `${n} queued`;
 }
 // Your personal API tokens (GET|POST /api/tokens, DELETE /api/tokens/:id), on your profile. A new one's secret shows once.
+// A new token's secret never goes in the page: the box shows it masked, and only the copy buttons use it.
+const masked = (token) => `${token.slice(0, 4)}${"•".repeat(12)}${token.slice(-4)}`;
+const mcpAdd = (token) => `claude mcp add --scope user --transport http codesplitters ${location.origin}/api/mcp --header "Authorization: Bearer ${token}"`;
 async function wireTokens(made) {
   const el = $("#tokens .body");
   if (!el) return;
   const list = await api("/tokens").catch(() => []);
   const when = (t) => t.expired ? "expired" : `expires ${new Date(t.expires_at).toLocaleDateString()}`;
-  el.innerHTML = (made ? `<div style="display:grid;gap:4px;margin-bottom:8px"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again. Send it as <code>Authorization: Bearer …</code>.</span>
-      <div class="copyline"><input readonly value="${esc(made.token)}"><button class="btn" id="token-copy">${icon("copy")}</button></div></div>` : "")
+  el.innerHTML = (made ? `<div style="display:grid;gap:4px;margin-bottom:8px"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again.</span>
+      <div class="copyline"><input readonly value="${esc(masked(made.token))}" title="hidden: copy it with the button"><button class="btn" id="token-copy" title="copy the token">${icon("copy")}</button></div>
+      <span class="muted" style="font-size:12px">Add it to Claude Code as an MCP server:</span>
+      <div class="copyline"><input readonly value="${esc(mcpAdd(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-mcp" title="copy the command">${icon("copy")}</button></div></div>` : "")
     + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon(t.scope === "write" ? "pencil" : "eye")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· ${t.scope === "write" ? "read and write" : "read"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}</span></span>
-      <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("") || '<span class="muted">none yet</span>'}</div>
-    <form id="newtoken" class="row" style="margin:8px 0 4px;gap:6px"><input name="label" placeholder="what it's for, like executor" required style="flex:1;min-width:8em">
-      <select name="scope"><option value="read">Read</option><option value="write">Read and write</option></select>
+      <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("") || '<span class="muted" style="font-size:13px">Lets Claude Code, scripts and MCP clients act as you, until it expires.</span>'}</div>
+    <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for, like claude code" required>
+      <div style="display:flex;gap:6px"><select name="scope" style="flex:1;min-width:0"><option value="read">Read only</option><option value="write">Read and write</option></select>
       <select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select>
-      <button class="btn">${icon("plus")}Make</button></form>`;
+      <button class="btn primary">${icon("plus")}Make</button></div></form>`;
   icons();
   $("#token-copy")?.addEventListener("click", () => copy(made.token, "Token copied"));
+  $("#token-mcp")?.addEventListener("click", () => copy(mcpAdd(made.token), "Command copied"));
   $("#newtoken").addEventListener("submit", async (e) => {
     e.preventDefault(); const f = e.target;
     try { wireTokens(await api("/tokens", { label: f.elements.label.value, scope: f.elements.scope.value, days: Number(f.elements.days.value) })); } catch (err) { toast(err.message); }
@@ -1172,7 +1178,7 @@ const views = {
         ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
         <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
-        ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("key-round")}<b>API tokens</b><span class="muted">act as you from agents and scripts · <a href="/api/openapi.json">the API</a></span></div><div class="body"><span class="muted">…</span></div></div>` : ""}
+        ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("key-round")}<b>API tokens</b><a class="muted" style="margin-left:auto;font-size:12px" href="/api.html">the API</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
       </aside></div></div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
