@@ -293,7 +293,7 @@
   .limits .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
   .limits .ev:first-of-type { border-top: 0; }
   .limits .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
-  .limits .tag.reject { color: var(--del-fg); } .limits .tag.flag { color: var(--accent); border-color: var(--accent); }
+  .limits .tag.reject { color: var(--del-fg); } .limits .tag.flag, .limits .tag.queue { color: var(--accent); border-color: var(--accent); }
   .switch { position: relative; width: 30px; height: 18px; margin-left: auto; flex: none; }
   .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
   .switch i { position: absolute; inset: 0; border-radius: 9px; background: var(--border-2); transition: background .15s; pointer-events: none; }
@@ -347,8 +347,25 @@ const api = async (path, body, method) => {
   const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || j.message || r.status);
-  return j;
+  return r.status === 202 && j.queued ? inLine(j.queued) : j;
 };
+// Over a limit that queues (a dig): wait in line, polling (which runs it when it's due), then answer as the request would have.
+const nth = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+async function inLine(job) {
+  const t = document.createElement("div"); t.className = "toast"; document.body.append(t);
+  try {
+    for (;;) {
+      if (job.state === "done") {
+        if (job.status >= 400) throw new Error(job.result?.error || job.status);
+        return job.result;
+      }
+      const mins = Math.max(1, Math.round((job.eta - Date.now()) / 60000));
+      t.textContent = job.state === "running" ? "Your turn: running it now…" : `Over the limit for ${job.label.toLowerCase()}: you're ${nth(job.place)} in line, about ${mins} minute${mins === 1 ? "" : "s"}. Keep this page open, or come back later.`;
+      await new Promise((ok) => setTimeout(ok, 5000));
+      job = await api(`/jobs/${job.id}`);
+    }
+  } finally { t.remove(); }
+}
 const app = $("#app");
 let socket = null;
 let agentTimer = null;
@@ -546,7 +563,8 @@ function handleDrawer() {
 // flagged and the last week's log of callers going over, each with a reset.
 const WINDOWS = [[60, "minute"], [600, "10 minutes"], [3600, "hour"], [86400, "day"], [604800, "week"]];
 const every = (s) => (WINDOWS.find(([w]) => w === s)?.[1]) ?? `${s} seconds`;
-const ON_FAIL = [["reject", "Reject (429)"], ["log", "Let through, log it"], ["flag", "Let through, flag the caller"]];
+const ON_FAIL = [["reject", "Reject (429)"], ["log", "Let through, log it"], ["flag", "Let through, flag the caller"], ["queue", "Queue it, run it when there's room"]];
+const DID = { reject: "rejected", log: "logged", flag: "flagged", queue: "queued" };
 const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
 async function limitsPage() {
   const { rules, events, flagged } = await api("/admin/limits");
@@ -559,7 +577,7 @@ async function limitsPage() {
       <label class="rhead"><b>${esc(r.label)}</b><span class="switch"><input type="checkbox" name="enabled"${r.enabled ? " checked" : ""} aria-label="limit ${esc(r.label)}"><i></i></span></label>
       <span class="muted small">${esc(r.what)}, per ${r.per === "ip" ? "IP" : "handle"}</span>
       <div class="ctl"><input name="max" type="number" min="1" max="100000" value="${r.max}" aria-label="most allowed"><span>per</span><select name="window_s" aria-label="window">${opts}</select></div>
-      <div class="ctl"><span>over it:</span><select name="on_fail" aria-label="when a caller goes over">${ON_FAIL.map(([v, l]) => `<option value="${v}"${v === r.on_fail ? " selected" : ""}>${l}</option>`).join("")}</select></div>
+      <div class="ctl"><span>over it:</span><select name="on_fail" aria-label="when a caller goes over">${ON_FAIL.filter(([v]) => v !== "queue" || r.queueable).map(([v, l]) => `<option value="${v}"${v === r.on_fail ? " selected" : ""}>${l}</option>`).join("")}</select></div>
       <div class="use"><span>this ${every(r.window_s)}: ${r.now.hits} from ${r.now.callers} caller${r.now.callers === 1 ? "" : "s"}</span>${r.now.blocked ? `<span class="hot">· ${r.now.blocked} over</span>` : ""}
         <span class="grow"></span>${changed ? `<a href="#" data-default title="default: ${d.max} per ${every(d.window_s)}, ${d.on_fail}">defaults</a>` : ""}</div>
     </div>`;
@@ -574,7 +592,7 @@ async function limitsPage() {
     <form id="limits-form" class="rgroups">${groups.map((g) => `<div class="box"><div class="bar"><b>${esc(g)}</b></div><div class="body">${rules.filter((r) => r.group === g).map(row).join("")}</div></div>`).join("")}</form>
     <div class="savebar"><span class="muted small" id="limits-msg"></span><span class="grow"></span><button class="btn primary" id="limits-save">${icon("save")}Save</button></div>
     <div class="box"><div class="bar">${icon("history")}<b>Over the cap</b><span class="muted">the first time each caller went over, per window, this week</span></div>
-      ${events.map((e) => `<div class="body ev"><span class="muted">${ago(e.at)}</span><b>${esc(e.who)}</b><span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${e.action === "reject" ? "rejected" : e.action === "log" ? "logged" : "flagged"}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="body muted">Nobody has gone over a limit this week.</div>'}</div>
+      ${events.map((e) => `<div class="body ev"><span class="muted">${ago(e.at)}</span><b>${esc(e.who)}</b><span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${DID[e.action] ?? e.action}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="body muted">Nobody has gone over a limit this week.</div>'}</div>
   </div>`;
   const form = $("#limits-form");
   form.addEventListener("change", (e) => { const r = e.target.closest(".rule"); r?.classList.toggle("off", !r.querySelector("[name=enabled]").checked); $("#limits-msg").textContent = "Unsaved changes"; });
