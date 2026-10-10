@@ -499,6 +499,17 @@ test("crons: Cron Triggers on the edge, a minute timer on the desktop", () => {
   expect(wranglerToConfig({ name: "g", triggers: { crons: ["*/5 * * * *"] } }).worker!.crons).toEqual(["*/5 * * * *"]);
 });
 
+test("cpuMs: limits.cpu_ms on the edge, both ways through wrangler.jsonc", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], cpuMs: 300_000 },
+    bindings: {}, targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*\n/gm, "")).limits).toEqual({ cpu_ms: 300_000 });
+  expect(generateAlchemy(c)).toContain(`  limits: { cpuMs: 300000 },`);
+  expect(generateAlchemy({ ...c, worker: { ...c.worker, cpuMs: undefined } })).not.toContain("limits");
+  expect(wranglerToConfig({ name: "g", limits: { cpu_ms: 60_000 } }).worker!.cpuMs).toBe(60_000);
+});
+
 test("desktopCrates: only crates that would be embedded count against cross targets", async () => {
   const { desktopCrates, shippingCrates } = await import("../src/build.ts");
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");

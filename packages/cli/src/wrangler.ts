@@ -19,6 +19,7 @@ export interface WranglerJson {
   migrations?: { tag: string; new_classes?: string[]; new_sqlite_classes?: string[]; renamed_classes?: { from: string; to: string }[]; deleted_classes?: string[] }[];
   vars?: Record<string, string>;
   triggers?: { crons?: string[] };
+  limits?: { cpu_ms?: number };
   images?: { binding: string };
   send_email?: { name: string; allowed_sender_addresses?: string[] }[];
   queues?: {
@@ -75,6 +76,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
       compatibilityFlags: w.compatibility_flags ?? ["nodejs_compat"],
       build: inferWorkerBuild(scripts).build,
       ...(w.triggers?.crons?.length ? { crons: w.triggers.crons } : {}),
+      ...(w.limits?.cpu_ms ? { cpuMs: w.limits.cpu_ms } : {}),
     },
     bindings,
     targets: {

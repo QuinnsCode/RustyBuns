@@ -114,6 +114,9 @@
     "BETTER_AUTH_URL": "https://codesplitters.notryanquinn.workers.dev",
     "ADMINS": "quinn"
   },
+  "limits": {
+    "cpu_ms": 300000
+  },
   "triggers": {
     "crons": [
       "0 * * * *"

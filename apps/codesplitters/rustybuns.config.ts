@@ -30,6 +30,11 @@ export default defineConfig({
     // Hourly: each repo's dependency doctor runs when its own schedule says it's due (src/deps.ts),
     // and rate limits are swept. Queued requests and webhook retries ride the JOBS and HOOKS queues.
     crons: ["0 * * * *"],
+    // A dig or level import over Artifacts' 40 MB cap rebuilds the repo from GitHub's tarball
+    // inside the request (src/tarball.ts). Measured live (#348): Alchemy's dig took 9.9 s of CPU,
+    // and Bun's level import to R2 8.9 s. That's under the default 30 s, but a bigger repo, or Bun
+    // dug in packs, has room to grow. This is a cap, billed per ms used.
+    cpuMs: 300_000,
   },
   bindings: {
     // Profiles, repos, playlists and the search index.
