@@ -2,6 +2,7 @@ import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deflateSync } from "node:zlib";
 import { local as boot } from "../src/local.ts";
 
 setDefaultTimeout(20_000);
@@ -17,8 +18,11 @@ const git = (cwd: string, ...args: string[]) => {
   return r.stdout.toString().trim();
 };
 
-/** A repo with the awkward bits (an exec bit, a symlink, binary, a path past tar's 100 chars, twin files), and GitHub's tarball of it. */
-function upstream() {
+/**
+ * A repo with the awkward bits (an exec bit, a symlink, binary, a path past tar's 100 chars, twin files), and GitHub's
+ * tarball of it. `subs` (path to commit) go in as gitlinks, with a .gitmodules.
+ */
+function upstream(subs: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "cs-tar-"));
   dirs.push(dir);
   const long = "packages/" + "very-long-directory-name/".repeat(5) + "and-a-file-name-that-goes-on.ts";
@@ -30,7 +34,9 @@ function upstream() {
   writeFileSync(join(dir, "logo.bin"), Uint8Array.from({ length: 3000 }, (_, i) => (i * 7) % 256));
   symlinkSync("src/a.ts", join(dir, "link.ts"));
   git(dir, "init", "-q", "-b", "main");
+  if (Object.keys(subs).length) writeFileSync(join(dir, ".gitmodules"), Object.keys(subs).map((p) => `[submodule "${p}"]\n\tpath = ${p}\n\turl = https://github.com/o/${p}\n`).join(""));
   git(dir, "add", "-A");
+  for (const [p, commit] of Object.entries(subs)) git(dir, "update-index", "--add", "--cacheinfo", `160000,${commit},${p}`);
   git(dir, "commit", "-q", "-m", "the tip");
   const sha = git(dir, "rev-parse", "HEAD");
   const tgz = join(dir, "..", `${sha}.tgz`);
@@ -52,7 +58,8 @@ async function settled(call: (u: string | null, p: string) => Promise<Response>,
 /**
  * GitHub, faked: the repo, its tip, its tarball and any submodules (path to commit), and,
  * given its folder, its tree listing and raw files (each path fetched goes in `seen`).
- * `limited` is the API without a token on a shared IP: every call 403s.
+ * `limited` is the API without a token on a shared IP: every call 403s. Given its folder, github.com's git hands out its
+ * objects one to a pack, as it does for a fetch that wants one with `filter tree:0`.
  */
 function fakeGitHub(sha: string, tgz: string, o: { subs?: Record<string, string>; dir?: string; seen?: string[]; limited?: boolean } = {}) {
   const { subs = {}, dir, seen = [], limited } = o;
@@ -68,6 +75,16 @@ function fakeGitHub(sha: string, tgz: string, o: { subs?: Record<string, string>
       return new Response(`001e# service=git-upload-pack\n0000${sha} HEAD\0side-band symref=HEAD:refs/heads/main\n003f${sha} refs/heads/main\n0000`);
     if (url.hostname === "github.com" && url.pathname === `/o/big/commit/${sha}.patch`)
       return new Response(`From ${sha} Mon Sep 17 00:00:00 2001\nFrom: Up Stream <up@stream.dev>\nDate: Thu, 1 Oct 2026 00:00:00 +0000\nSubject: [PATCH] the tip\n\n---\n README.md | 1 +\n`);
+    if (dir && url.hostname === "github.com" && url.pathname === "/o/big.git/git-upload-pack") {
+      const want = /want ([0-9a-f]{40})/.exec(String(init?.body))![1]!;
+      const type = git(dir, "cat-file", "-t", want), raw = Bun.spawnSync(["git", "cat-file", type, want], { cwd: dir }).stdout;
+      const head = [((type === "commit" ? 1 : 2) << 4) | (raw.length & 15) | (raw.length > 15 ? 0x80 : 0)];
+      for (let n = raw.length >> 4; n; n >>= 7) head.push((n & 0x7f) | (n > 0x7f ? 0x80 : 0));
+      const pack = Buffer.concat([Buffer.from("PACK\0\0\0\x02\0\0\0\x01", "latin1"), Buffer.from(head), deflateSync(raw)]);
+      const body = Buffer.concat([pack, new Bun.CryptoHasher("sha1").update(pack).digest()]);
+      const line = (b: Buffer) => Buffer.concat([Buffer.from((b.length + 4).toString(16).padStart(4, "0")), b]);
+      return new Response(Buffer.concat([line(Buffer.from("packfile\n")), line(Buffer.concat([Buffer.from([1]), body])), Buffer.from("0000")]));
+    }
     if (url.hostname === "codeload.github.com" && url.pathname === `/o/big/tar.gz/${sha}`) return new Response(Bun.file(tgz));
     if (url.hostname !== "api.github.com") return real(u, init);
     if (limited && !new Headers(init?.headers).has("authorization")) return Response.json({ message: "API rate limit exceeded" }, { status: 403 });
@@ -128,6 +145,20 @@ describe("past the Artifacts import cap", () => {
       expect(tip!.author).toEqual({ name: "Up Stream", email: "up@stream.dev" });
       const repo = await call.artifacts.get("ana--big");
       expect(await (await repo.readFile({ ref: "main", path: "link.ts" }))!.text()).toBe("src/a.ts");
+    } finally { restore(); }
+  });
+
+  test("without a token, its submodules come from github.com too (#394)", async () => {
+    const subs = { "vendor/zig": "a".repeat(40), "deps/sub": "b".repeat(40) };
+    const { sha, tree, tgz, dir } = upstream(subs);
+    const call = await local({ GH_CLI: "off" });
+    call.artifacts.import = tooBig(call.artifacts) as any;
+    const restore = fakeGitHub(sha, tgz, { dir, limited: true });
+    try {
+      await call("ana", "/api/login", { method: "POST", body: JSON.stringify({ name: "ana" }) });
+      expect((await call("ana", "/api/github/dig", { method: "POST", body: JSON.stringify({ repo: "o/big" }) })).status).toBe(201);
+      // The same tree as git's, gitlinks and all.
+      expect((await (await call.artifacts.get("ana--big")).log())[0]!.treeHash).toBe(tree);
     } finally { restore(); }
   });
 
