@@ -66,24 +66,36 @@ describe("AgentSandbox", () => {
 });
 
 describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
-  /** The app with AGENT_SANDBOX bound to containers that run `server`. */
+  const origin = "http://codesplitters.local";
+  /** The app with accounts on and AGENT_SANDBOX bound to containers that run `server`. */
   async function hosted(server: (body: any) => Promise<unknown>) {
-    const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
-    call.env.ADMINS = "ryan";
+    const booted = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "ryan-quinn" });
+    opened.push(booted);
     const runs: any[] = [];
-    call.env.AGENT_SANDBOX = {
+    booted.env.AGENT_SANDBOX = {
       idFromName: (n: string) => n,
-      get: () => new AgentSandbox({ container: fakeContainer(async (b) => { runs.push(b); return server(b); }).c }, call.env),
+      get: () => new AgentSandbox({ container: fakeContainer(async (b) => { runs.push(b); return server(b); }).c }, booted.env),
+    };
+    // Each handle's session cookie, from signing up with a name that makes it.
+    const cookies: Record<string, string> = {};
+    const signup = async (name: string) => {
+      const res = await booted(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({ email: `${name.replace(" ", ".")}@example.com`.toLowerCase(), password: "correct horse battery", name }) });
+      cookies[name.toLowerCase().replace(" ", "-")] = (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
+    };
+    for (const name of ["Ryan Quinn", "Pat Person", "Sam Sample"]) await signup(name);
+    const call: Call = (user, url, init = {}) => {
+      const headers = new Headers(init.headers);
+      if (user) headers.set("cookie", cookies[user]!);
+      return booted(null, url, { ...init, headers });
     };
     const post = (user: string, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
-    await post("ryan", "/api/login", { name: "ryan" });
-    await post("ryan", "/api/repos", { name: "r1", visibility: "public" });
-    await post("ryan", "/api/repos/ryan/r1/collaborators", { name: "pat" });
-    await post("ryan", "/api/repos/ryan/r1/files", { path: "src/a.js", content: "var x = 1\nf()" });
-    return { call, post, runs };
+    await post("ryan-quinn", "/api/repos", { name: "r1", visibility: "public" });
+    await post("ryan-quinn", "/api/repos/ryan-quinn/r1/collaborators", { name: "pat-person" });
+    await post("ryan-quinn", "/api/repos/ryan-quinn/r1/files", { path: "src/a.js", content: "var x = 1\nf()" });
+    return { call, post, runs, env: booted.env };
   }
-  const doc = async (call: Call) => await (await call("ryan", "/api/repos/ryan/r1/do/file?path=src/a.js")).json() as Doc;
+  const doc = async (call: Call) => await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/do/file?path=src/a.js")).json() as Doc;
 
   test("every harness is offered, even where Bun can't run CLIs", async () => {
     const { call } = await hosted(async (b) => b);
@@ -92,7 +104,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
 
   test("the owner gives an agent a task; it runs in a container, answers when done, and its lines are blamed on it", async () => {
     const { call, post, runs } = await hosted(async (b) => ({ code: 0, out: "ok", text: b.text.replace("var", "let") }));
-    const res = await post("ryan", "/api/repos/ryan/r1/agents", { harness: "opencode", path: "src/a.js", task: "use let" });
+    const res = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "opencode", path: "src/a.js", task: "use let" });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ agent: "agent-opencode", status: "done", applied: 1, conflicts: [] });
     expect(runs[0].cmd.bin).toBe("opencode");
@@ -100,28 +112,43 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     expect(runs[0].text).toBe("var x = 1\nf()\n");
     const d = await doc(call);
     expect(text(d)).toBe("let x = 1\nf()");
-    expect(d.lines.map((l) => l.by)).toEqual(["agent-opencode", "ryan"]);
+    expect(d.lines.map((l) => l.by)).toEqual(["agent-opencode", "ryan-quinn"]);
   });
 
   test("only the owner starts one", async () => {
     const { post } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
-    expect((await post("pat", "/api/repos/ryan/r1/agents", { harness: "pi", path: "src/a.js", task: "x" })).status).toBe(403);
+    expect((await post("pat-person", "/api/repos/ryan-quinn/r1/agents", { harness: "pi", path: "src/a.js", task: "x" })).status).toBe(403);
   });
 
   test("an owner who isn't in ADMINS can't start one: it bills the site's keys", async () => {
-    const { call, post } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
-    await post("sam", "/api/login", { name: "sam" });
-    await post("sam", "/api/repos", { name: "mine", visibility: "public" });
-    await post("sam", "/api/repos/sam/mine/files", { path: "a.js", content: "x" });
-    const res = await post("sam", "/api/repos/sam/mine/agents", { harness: "claude", path: "a.js", task: "x" });
+    const { post, env } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
+    await post("sam-sample", "/api/repos", { name: "mine", visibility: "public" });
+    await post("sam-sample", "/api/repos/sam-sample/mine/files", { path: "a.js", content: "x" });
+    const res = await post("sam-sample", "/api/repos/sam-sample/mine/agents", { harness: "claude", path: "a.js", task: "x" });
     expect(res.status).toBe(403);
-    call.env.ADMINS = undefined;
-    expect((await post("ryan", "/api/repos/ryan/r1/agents", { harness: "claude", path: "src/a.js", task: "x" })).status).toBe(403);
+    env.ADMINS = undefined;
+    expect((await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "claude", path: "src/a.js", task: "x" })).status).toBe(403);
+  });
+
+  test("with accounts off, nothing runs: anyone could claim an admin's handle by alias", async () => {
+    const call = await boot({ GH_CLI: "off", ADMINS: "ryan" });
+    opened.push(call);
+    const runs: any[] = [];
+    call.env.AGENT_SANDBOX = { idFromName: (n: string) => n, get: () => ({ fetch: async (r: Request) => { runs.push(r); return Response.json({}); } }) };
+    const post = (url: string, body: unknown) => call("ryan", url, { method: "POST", body: JSON.stringify(body) });
+    await post("/api/login", { name: "ryan" });
+    await post("/api/repos", { name: "r1", visibility: "public" });
+    await post("/api/repos/ryan/r1/files", { path: "a.js", content: "x" });
+    expect(await (await call(null, "/api/agents")).json()).toMatchObject({ available: false, harnesses: [] });
+    const res = await post("/api/repos/ryan/r1/agents", { harness: "claude", path: "a.js", task: "x" });
+    expect(res.status).toBe(501);
+    expect(((await res.json()) as any).error).toContain("BETTER_AUTH_SECRET");
+    expect(runs).toEqual([]);
   });
 
   test("a CLI that fails in the container comes back as a failed run, and nothing lands", async () => {
     const { call, post } = await hosted(async () => ({ code: 1, out: "not logged in", text: "junk" }));
-    const res = await post("ryan", "/api/repos/ryan/r1/agents", { harness: "codex", path: "src/a.js", task: "x" });
+    const res = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "codex", path: "src/a.js", task: "x" });
     expect(await res.json()).toMatchObject({ status: "failed" });
     expect(text(await doc(call))).toBe("var x = 1\nf()");
   });
