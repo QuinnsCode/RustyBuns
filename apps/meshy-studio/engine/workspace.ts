@@ -25,7 +25,7 @@ import { download, Meshy, MeshyError, type Kind, type Task } from "./meshy.ts";
 import {
   checkOptions, checkPreset, createBody, estimateCredits, estimateRetexture, isWarning, mergeOptions, MODEL_CHOICES, modelOf, modelPatch, modelsFor,
   multiBody, presetFor, retextureBody, STARTER_PRESETS, textPreviewBody, textRefineBody,
-  type CardInput, type MeshyOptions, type ModelId, type Origin, type Preset, type RetextureOptions, type Size, type Source,
+  type CardInput, type MeshyOptions, type ModelId, type Origin, type Preset, type RetextureOptions, type Size, type Source, type TextureModel, TEXTURE_MODELS,
 } from "./presets.ts";
 import {
   ACCEPTS, checkConcept, checkOp, texturedAfter, conceptBody, estimateConcept, estimateOp, MAKES_MODEL, OP_KIND, OP_LABEL, opBody,
@@ -99,6 +99,8 @@ export interface Job {
   textureImage?: boolean;
   /** Shape only; texture later. */
   draft?: boolean;
+  /** Texture with this Retexture model as a step after the shape, instead of in the same job. */
+  textureModel?: TextureModel;
   /** Whether the model in 001 has a texture on it. */
   textured?: boolean;
   state: JobState;
@@ -227,9 +229,21 @@ export class Workspace {
     const p = this.preset(j);
     return { ...p, options: mergeOptions(p.options, j.overrides), size: j.size, origin: j.origin };
   }
-  private card(j: Job): CardInput { return { texturePrompt: j.texturePrompt, textureImage: j.textureImage ? "yes" : undefined, draft: j.draft }; }
+  /** The shape goes to Meshy untextured: a draft, or textured by a Retexture step after it. */
+  private shapeFirst(j: Job) { return !!j.draft || (j.source !== "text" && !!j.textureModel); }
+  private card(j: Job): CardInput { return { texturePrompt: j.texturePrompt, textureImage: j.textureImage ? "yes" : undefined, draft: this.shapeFirst(j) }; }
+  /** The texture step's options: the preset's, with the card's texture model (6 Lite is 2k only). */
+  private textureOptions(j: Job): RetextureOptions {
+    const r = { ...this.preset(j).retexture };
+    if (j.textureModel) r.ai_model = j.textureModel;
+    if (r.ai_model === "meshy-6-lite" && r.texture_resolution && r.texture_resolution !== "2k") r.texture_resolution = "2k";
+    return r;
+  }
   private price(j: Job, options: MeshyOptions, draft = j.draft) {
-    return estimateCredits(options, { ...this.card(j), draft }, j.source, this.preset(j).retexture);
+    if (!draft && j.source !== "text" && j.textureModel) {
+      return estimateCredits(options, { ...this.card(j), draft: true }, j.source) + estimateRetexture(this.textureOptions(j));
+    }
+    return estimateCredits(options, { ...this.card(j), draft }, j.source, this.textureOptions(j));
   }
   private reprice(j: Job) { j.estimate = this.price(j, this.spec(j).options); }
 
@@ -370,6 +384,8 @@ export class Workspace {
   /** Change a card. Before sending: anything. After the model is down: size, origin and name re-fit for free. */
   async edit(key: string, patch: {
     prefix?: string; size?: Size; origin?: Origin; outName?: string; texturePrompt?: string; draft?: boolean;
+    /** Texture in a Retexture step with this model; null textures in the same job again. */
+    textureModel?: TextureModel | null;
     /** Values to set (null = Meshy's default), on top of the preset. */
     overrides?: Overrides;
     /** Override keys to drop, back to the preset's value. */
@@ -379,14 +395,15 @@ export class Workspace {
   }) {
     const j = this.get(key);
     const unsent = this.unsent(j);
-    const shapeOnly = ["prefix", "texturePrompt", "draft", "overrides", "clear", "model"] as const;
+    const shapeOnly = ["prefix", "texturePrompt", "draft", "textureModel", "overrides", "clear", "model"] as const;
     if (!unsent && shapeOnly.some((k) => patch[k] !== undefined) && !(j.source === "text" && patch.texturePrompt !== undefined && Object.keys(patch).length === 1)) {
       throw new Error("already sent to Meshy; only size, origin and name can change now");
     }
     if (!unsent && patch.size && "auto" in patch.size) throw new Error("Meshy's size guess is made when it's sent; pick meters now");
     if (patch.outName !== undefined && !/^[^/\\:*?"<>|]+$/.test(patch.outName)) throw new Error("that name has characters a file can't have");
     if (patch.prefix !== undefined && !this.presets.some((p) => p.prefix === patch.prefix)) throw new Error(`no preset with prefix "${patch.prefix}"`);
-    const { overrides, clear, model, ...rest } = patch;
+    if (patch.textureModel && !TEXTURE_MODELS.some((m) => m.id === patch.textureModel)) throw new Error(`Retexture has no model "${patch.textureModel}"`);
+    const { overrides, clear, model, textureModel, ...rest } = patch;
     if (rest.draft === false) rest.draft = undefined;
     let next: Overrides = { ...j.overrides };
     if (model === "preset") for (const k of ["model_type", "ai_model"] as const) delete next[k];
@@ -398,7 +415,7 @@ export class Workspace {
     for (const k of clear ?? []) delete next[k];
     const problems = checkOptions(mergeOptions(this.preset(j).options, next), j.source).filter((m) => !isWarning(m));
     if ((overrides || model) && problems.length) throw new Error(problems[0]);
-    this.touch(j, { ...rest, overrides: Object.keys(next).length ? next : undefined });
+    this.touch(j, { ...rest, ...(textureModel !== undefined ? { textureModel: textureModel ?? undefined } : {}), overrides: Object.keys(next).length ? next : undefined });
     if (unsent) { this.fitModel(j); this.reprice(j); }
     if (j.raw && (patch.size || patch.origin || patch.outName)) await this.fit(j);
     await this.save();
@@ -493,7 +510,8 @@ export class Workspace {
     return j.state === "done" && !j.textured && !!j.modelTask && !(j.ops ?? []).some((o) => (o.kind === "retexture" || o.kind === "refine") && o.state !== "done" && o.state !== "failed");
   }
   private textureOp(j: Job): { kind: "retexture" | "refine"; params: OpParams["retexture"] & OpParams["refine"] } {
-    return j.source === "text" && j.modelTask?.kind === "text-to-3d" ? { kind: "refine", params: {} } : { kind: "retexture", params: {} };
+    const params = j.textureModel ? { options: { ai_model: j.textureModel, ...(j.textureModel === "meshy-6-lite" ? { texture_resolution: "2k" as const } : {}) } } : {};
+    return j.source === "text" && j.modelTask?.kind === "text-to-3d" ? { kind: "refine", params } : { kind: "retexture", params };
   }
 
   /** Queue the texture step on finished drafts: the given ones, or all of them. */
@@ -772,10 +790,11 @@ export class Workspace {
     } else if (t.status === "SUCCEEDED") {
       try {
         await this.saveModels(j, t);
-        const textured = j.source !== "text" && !j.draft && this.spec(j).options.should_texture !== false;
+        const textured = j.source !== "text" && !this.shapeFirst(j) && this.spec(j).options.should_texture !== false;
         this.touch(j, { state: "downloaded", textured, modelTask: { kind: this.shapeKind(j), id: j.taskId! } });
-        // Text to 3D makes the shape first; the texture is its refine step.
-        if (j.source === "text" && !j.draft) this.addOpTo(j, "refine", {});
+        // Text to 3D makes the shape first; the texture is its refine step. A card with its own
+        // texture model gets a Retexture step the same way.
+        if (!j.draft && (j.source === "text" || j.textureModel)) { const t = this.textureOp(j); this.addOpTo(j, t.kind, t.params); }
         await this.save();
         await this.fit(j);
       } catch (e) {
@@ -1109,6 +1128,15 @@ export class Workspace {
     })) as Record<ModelId, { full: number; draft: number; problems: string[] }>;
   }
 
+  /** What texturing would add on this card: in the same job, or as a Retexture step with each model. */
+  private textureCosts(j: Job) {
+    const o = this.spec(j).options;
+    const shape = estimateCredits(o, { ...this.card(j), draft: true }, j.source);
+    const same = j.source === "text" ? estimateRetexture(this.textureOptions({ ...j, textureModel: undefined }))
+      : estimateCredits(o, { ...this.card(j), draft: false }, j.source) - shape;
+    return { same, ...Object.fromEntries(TEXTURE_MODELS.map((m) => [m.id, estimateRetexture(this.textureOptions({ ...j, textureModel: m.id }))])) } as Record<"same" | TextureModel, number>;
+  }
+
   summary() {
     const jobs = [...this.jobs.values()].sort((a, b) => a.folder.localeCompare(b.folder) || a.key.localeCompare(b.key));
     return {
@@ -1123,8 +1151,9 @@ export class Workspace {
           ...j, sizeText: describeSize(j.size), presetLabel: this.preset(j).label,
           options: spec.options, model: (MODEL_CHOICES.find((c) => c.id === modelOf(spec.options)) ?? MODEL_CHOICES[0]).id,
           modelCosts: this.unsent(j) ? this.modelCosts(j) : undefined,
+          textureCosts: this.unsent(j) ? this.textureCosts(j) : undefined,
           draftEstimate: this.price(j, spec.options, true),
-          textureEstimate: estimateRetexture(this.preset(j).retexture),
+          textureEstimate: estimateRetexture(this.textureOptions(j)),
           problems: this.unsent(j) ? checkOptions(spec.options, j.source) : [],
           canTexture: this.canTexture(j),
         };

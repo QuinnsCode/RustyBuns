@@ -53,6 +53,36 @@ test("per card: pick any model, see what each costs, override any option", async
   await expect(ws.edit("flora_fern.png", { model: "meshy-t2" })).rejects.toThrow("already sent");
 });
 
+test("generate only, or generate then texture with a model of its own", async () => {
+  const ws = await open("texture-model");
+  writeFileSync(join(ws.dir, INBOX, "rock.png"), PNG);
+  writeFileSync(join(ws.dir, INBOX, "stump.png"), PNG);
+  await ws.scan();
+  const card = () => ws.summary().jobs.find((j) => j.key === "rock.png")!;
+  expect([card().estimate, card().draftEstimate, card().textureCosts]).toEqual([15, 5, { same: 10, latest: 10, "meshy-7": 10, "meshy-6": 10, "meshy-6-lite": 10 }]);
+
+  // Generate only: 5 now.
+  await ws.edit("stump.png", { draft: true });
+  expect(ws.get("stump.png").estimate).toBe(5);
+
+  // Generate and texture with Meshy 6: the shape untextured, then a Retexture step on it, same 15 in all.
+  await ws.edit("rock.png", { textureModel: "meshy-6" });
+  expect(card().estimate).toBe(15);
+  await expect(ws.edit("rock.png", { textureModel: "meshy-9" as never })).rejects.toThrow("no model");
+  await ws.send();
+  await run(ws, 8);
+  const rock = ws.get("rock.png");
+  const shape = fake.created.find((c) => c.id === rock.taskId);
+  expect(shape.should_texture).toBe(false);
+  expect(fake.retextured.at(-1)).toMatchObject({ input_task_id: rock.taskId, ai_model: "meshy-6" });
+  expect([rock.textured, rock.ops?.map((o) => `${o.kind}:${o.state}`)]).toEqual([true, ["retexture:done"]]);
+
+  // The generate-only card waits, untextured, for Texture.
+  const stump = ws.get("stump.png");
+  expect([stump.textured, stump.ops ?? []]).toEqual([false, []]);
+  expect(fake.created.find((c) => c.id === stump.taskId).should_texture).toBe(false);
+});
+
 test("multi-image: __front/__back views are one card, sent together; combine and split", async () => {
   const ws = await open("multi");
   for (const f of ["environ_rock__back.png", "environ_rock__front.png", "environ_rock__front.texture.png", "item_a.png", "item_b.png"]) writeFileSync(join(ws.dir, INBOX, f), PNG);

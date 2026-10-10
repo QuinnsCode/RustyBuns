@@ -1,6 +1,6 @@
 // Thin client for desktop/host.ts. The Meshy key never reaches this side.
 import type { Concept, Engine, Job, Op, Overrides, Sync } from "../engine/workspace.ts";
-import type { MeshyOptions, ModelId, Origin, Preset, Size } from "../engine/presets.ts";
+import type { MeshyOptions, ModelId, Origin, Preset, Size, TextureModel } from "../engine/presets.ts";
 import type { ConceptParams, OpKind, OpParams } from "../engine/ops.ts";
 import type { LibraryAction, UsageRecord } from "../engine/meshy.ts";
 
@@ -12,10 +12,14 @@ export type Card = Job & {
   options: MeshyOptions; model: ModelId;
   /** Unsent cards: what each model would cost here, and what Meshy would refuse. */
   modelCosts?: Record<ModelId, { full: number; draft: number; problems: string[] }>;
+  /** Unsent cards: what texturing adds, in the same job or as a Retexture step with each model. */
+  textureCosts?: Record<"same" | TextureModel, number>;
   problems: string[]; canTexture: boolean;
 };
 export type EditPatch = Partial<Pick<Job, "prefix" | "size" | "origin" | "outName" | "texturePrompt" | "draft">> & {
   overrides?: Overrides; clear?: (keyof MeshyOptions)[]; model?: ModelId | "preset";
+  /** Texture as a Retexture step with this model; null textures in the same job. */
+  textureModel?: TextureModel | null;
 };
 
 export interface Status {

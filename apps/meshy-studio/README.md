@@ -45,22 +45,26 @@ Drop images on the app window, or put them straight into `000` in Finder. Drag a
 - **Folders:** a card per input with its preset, model, size and origin, grouped by the organizing folders.
 - **Pipeline:** a board with Inbox → Queue → With Meshy → Ready, plus Failed. Drag Inbox → Queue to send, Queue → Inbox to pull a card back (or cancel it while Meshy still has it waiting), and Failed → Queue to retry.
 
-## Per card: the model, and every option
+## Per card: generate, or generate and texture
 
-Each card has a model picker listing every model its endpoint takes, each with what it would cost on that card, textured and as a draft:
+Each card has one switch and three choices:
 
 ```
-Preset's model: Meshy 6 Lite
-Meshy 7.1 · ~30 cr (draft 20)
-Meshy 6 · ~30 cr (draft 20)
-Meshy 6 Lite · ~15 cr (draft 5)
-Smart topology (T2) · ~15 cr (draft 5)
-Low poly (retires 2026-10-30) · ~30 cr (draft 20)
+(●  ) Generate          (  ●) Generate and
+                              texture
+Height [1] m   Origin bottom
+Generate  Meshy 6 Lite · 5 cr
+Texture   Same as generate · +10     ← only when texturing
 ```
+
+- **Generate** makes the shape only: 5 credits on Meshy 6 Lite or smart topology, 20 on Meshy 7.1 or 6. Texture the keepers later with **Texture** on the card.
+- **Generate and texture** shows a second picker. **Same as generate** textures in the same Meshy job, as before. Picking a Retexture model (Latest, Meshy 7, Meshy 6, Meshy 6 Lite) makes the shape untextured, then queues a Retexture step with that model by itself. It costs the same: 5 + 10 = 15 on Lite.
+- The generate picker lists every model the card's endpoint takes, with the shape's price on that card. The label doesn't change height when the switch flips, so nothing on the card moves.
+- The preset (from the filename prefix) is under **All settings**.
 
 **All settings** on a card overrides any option for that card alone (each field shows the preset's value until you change it; "Reset to the preset" undoes it). Picking a model adapts what the new model can't take instead of refusing: a polycount over smart topology's 15,000 goes back to Meshy's default, a 4k or 8k texture on meshy-6-lite becomes 2k. A multi-image card whose preset uses smart topology or low poly (which that endpoint doesn't have) uses meshy-6-lite.
 
-**Tick cards** to change many at once: one model for all of them (with the batch's total for each model), drafts on or off, a preset, Send, Texture, Steps, Combine as one multi-image model, or Vary (Image to Image).
+**Tick cards** to change many at once: one model for all of them (with the batch's total for each model), generate only on or off, a preset, Send, Texture, Steps, Combine as one multi-image model, or Vary (Image to Image).
 
 ## Steps after the shape
 
@@ -100,7 +104,7 @@ Each card can change its preset, size and origin before you press Send. After a 
 
 Generating untextured costs 5 credits on meshy-6-lite or smart topology (20 on meshy-6 or 7.1). Texturing a finished draft with Meshy's [Retexture](https://docs.meshy.ai/en/api/retexture) costs 10 more (15 at 8k). So you can try a whole folder of ideas at 5 each and pay for texture only on the keepers.
 
-- Tick **Draft** on a card, name the image `…_draft.png`, use the `draft_` preset, or tick **Untextured drafts** in the send confirmation (it re-prices the batch).
+- Switch a card to **Generate**, name the image `…_draft.png`, use the `draft_` preset, or tick **Untextured drafts** in the send confirmation (it re-prices the batch).
 - A finished draft says **Untextured**. Press **Texture** on the card, **Texture N drafts** in the bar, or drag it Ready → Queue on the board. The cost is confirmed first.
 - The texture is styled from the card's text prompt, else its `.texture.png`, else the concept image itself. Meshy keeps the UVs it made. The textured model replaces the draft in `001` and `002`.
 - A draft that's textured later costs the same in total as texturing up front (5 + 10 = 15 on meshy-6-lite): the saving is everything you don't texture.
@@ -164,7 +168,7 @@ MESHY_API_KEY=msy_... bun engine/cli.ts ~/MyGame/meshes --send     # send everyt
 
 ## What was checked
 
-- `bun test`: 27 tests. They cover label parsing, the price table, the scale and origin math on a real `.glb`, and the whole send → poll → download → fit loop against a fake Meshy. They also cover a 402 pause and resume, cancel-while-pending with a refund, a Meshy failure then retry, a free re-fit, moving between folders, the key file's `0600` mode and refusing paths that escape the workspace. Also: the key never comes back out of the status route, the spend guards (confirmed amount, batch limit, balance) refusing sends in the backend, the engine folder copy (renames included), and the Blender import script with awkward paths. Also: draft and texture-later pricing, every option reaching the request body (and the ones that don't apply being dropped), the preset checks, the preset editor's save rules, extra formats and texture maps downloading into `001`, and a draft batch where only one model gets the texture step. And for the whole API: per-card models with each model's cost, overrides, bulk edits and model picks that adapt; multi-image grouping, combine and split; Text to 3D preview then refine; a step chain on one model (remesh → UV unwrap → convert → texture → rig → animate with post-processing → text to motion → animate from the clip), with each step's input checked the way Meshy checks it; a failed step holding the rest until retried; concept images from Text to Image (multi-view landing as one card, sent on by `input_task_id`) and Image to Image; and the host routes for steps, concepts, text cards, the animation library and usage (403 on plans without it).
+- `bun test`: 28 tests. They cover label parsing, the price table, the scale and origin math on a real `.glb`, and the whole send → poll → download → fit loop against a fake Meshy. They also cover a 402 pause and resume, cancel-while-pending with a refund, a Meshy failure then retry, a free re-fit, moving between folders, the key file's `0600` mode and refusing paths that escape the workspace. Also: the key never comes back out of the status route, the spend guards (confirmed amount, batch limit, balance) refusing sends in the backend, the engine folder copy (renames included), and the Blender import script with awkward paths. Also: draft and texture-later pricing, every option reaching the request body (and the ones that don't apply being dropped), the preset checks, the preset editor's save rules, extra formats and texture maps downloading into `001`, and a draft batch where only one model gets the texture step, and a card textured by a Retexture step with its own model after an untextured shape. And for the whole API: per-card models with each model's cost, overrides, bulk edits and model picks that adapt; multi-image grouping, combine and split; Text to 3D preview then refine; a step chain on one model (remesh → UV unwrap → convert → texture → rig → animate with post-processing → text to motion → animate from the clip), with each step's input checked the way Meshy checks it; a failed step holding the rest until retried; concept images from Text to Image (multi-view landing as one card, sent on by `input_task_id`) and Image to Image; and the host routes for steps, concepts, text cards, the animation library and usage (403 on plans without it).
 - The Blender import, run in real Blender (headless): two finished models came in at the right sizes (12 m tall becomes 12 on Blender's Z-up axis).
 - The built binary, clicked through in Chrome against the fake Meshy: a wrong key refused, a right key saved, images dropped in Finder showing up with parsed labels, a preset changed on a card, four sent, all four landing in `002_ready` (including `forest/`) at exactly the labelled sizes, a height changed afterwards with no new Meshy job, and everything still there after a restart. And after the redesign: the key masked while typing and only dots once saved, a 105-credit batch refused by a 50-credit limit in the confirmation, a card dragged Inbox → Queue, confirmed and walked through to Ready, and its model copied byte for byte into a Unity `Assets/Meshy` folder.
 - The draft flow in the app against the fake Meshy: three images sent as untextured drafts (60 credits re-priced to 30), one textured with a confirmed 10 credits, its card going Untextured → Texturing → Ready, and a preset edited (meshy-7.1 → meshy-6-lite, prices updating live) and saved to `meshy-presets.json`.
