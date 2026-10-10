@@ -74,11 +74,16 @@ export async function logEnd(env: Env, run: Run) {
     .bind(ok ? "done" : "failed", run.commit ?? null, run.url ?? null, Date.now() - run.at, run.note ?? null, out, run.id).run();
 }
 
-/** The last 20 logged runs of one kind. One still "running" but not in this process died with an earlier one. */
-export async function history(env: Env, owner: string, repo: string, previews: boolean, live: Run | null) {
+/**
+ * The last 20 logged runs of one kind, and the run going now. One still "running" but not in this
+ * process died with an earlier one. `live` is read after the query: a run that started while it
+ * ran is already in the log, and isn't one that died.
+ */
+export async function history(env: Env, owner: string, repo: string, previews: boolean, live: () => Run | null | Promise<Run | null>) {
   const { results } = await env.DB.prepare(`SELECT id, stage, by, trigger, status, commit_hash, url, at, ms, note, out, runner, key_last4 FROM deploys
     WHERE owner = ? AND repo = ? AND trigger ${previews ? "= 'preview'" : "!= 'preview'"} ORDER BY at DESC LIMIT 20`).bind(owner, repo).all();
-  return (results as any[]).map((d) => d.status === "running" && live?.id !== d.id ? { ...d, status: "interrupted" } : d);
+  const run = await live();
+  return { run, history: (results as any[]).map((d) => d.status === "running" && run?.id !== d.id ? { ...d, status: "interrupted" } : d) };
 }
 
 /** The deployed URL from Alchemy's printed outputs: `url: "https://..."`, else the last workers.dev or railway one. */
@@ -176,8 +181,7 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
   const runner = runnerFor(env);
   if (req.method === "GET") {
-    const run = runs.get(key) ?? null;
-    return json({ can_run: !!runner, run, history: await history(env, owner, repo, true, run) });
+    return json({ can_run: !!runner, ...(await history(env, owner, repo, true, () => runs.get(key) ?? null)) });
   }
   if (req.method !== "POST") return null;
   if (!runner) return json({ error: "preview deploys run on the desktop app, with your own logins" }, 400);
