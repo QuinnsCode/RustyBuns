@@ -21,6 +21,8 @@ import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
+import { bearer, tokenRoutes } from "./tokens.ts";
+import { openapi } from "./openapi.ts";
 import { REFERENCE } from "./api.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -57,20 +59,29 @@ const app = {
     const rule = ruleFor(req.method, p), byIp = RULES.find((r) => r.name === rule)?.per === "ip";
     const early = byIp ? await limit(req, env, rule, null, false) : null;
     if (early) return early;
-    const ident = await identityRoutes(req, env, p);
+    // GET /api/openapi.json  this API, for agents and their gateways (openapi.ts)
+    if (p[1] === "openapi.json" && !p[2] && req.method === "GET") return json(openapi(url.origin));
+    // A personal API token (tokens.ts) stands in for the cookie, and is never an admin.
+    const token = await bearer(req, env, p);
+    if (token instanceof Response) return token;
+    const ident = token ? null : await identityRoutes(req, env, p);
     if (ident) return ident;
-    const user = await identify(req, env);
-    const slow = byIp ? null : await limit(req, env, rule, user, isAdmin(env, user));
+    const user = token ? token.user : await identify(req, env);
+    const admin = !token && isAdmin(env, user);
+    if (token && p[1] === "session") return json({ mode: "token", user, token: { id: token.id, label: token.label, scope: token.scope, expires_at: token.expires_at } });
+    const slow = byIp ? null : await limit(req, env, rule, user, admin);
     if (slow) return slow;
-    const limits = await limitRoutes(req, env, p, isAdmin(env, user));
+    const tokens = await tokenRoutes(req, env, p, user);
+    if (tokens) return tokens;
+    const limits = await limitRoutes(req, env, p, admin);
     if (limits) return limits;
-    const reseal = await resealRoutes(req, env, p, isAdmin(env, user));
+    const reseal = await resealRoutes(req, env, p, admin);
     if (reseal) return reseal;
-    const job = await jobRoutes(req, env, p, user, isAdmin(env, user), (r) => app.fetch(r, env));
+    const job = await jobRoutes(req, env, p, user, admin, (r) => app.fetch(r, env));
     if (job) return job;
     const body = async <T>() => (await req.json()) as T;
 
-    const levels = await levelRoutes(req, env, p, url, user, isAdmin(env, user));
+    const levels = await levelRoutes(req, env, p, url, user, admin);
     if (levels) return levels;
     const github = await githubRoutes(req, env, p, user);
     if (github) return github;
@@ -245,7 +256,7 @@ const app = {
           h.set("x-codesplitters-write", a.write ? "1" : "0");
           h.set("x-codesplitters-crew", a.write ? "1" : "0");
           // Its edits count against the edit limit, as the HTTP ones do (the DO counts them).
-          const as = a.write ? counted(req, "edit", user, isAdmin(env, user)) : null;
+          const as = a.write ? counted(req, "edit", user, admin) : null;
           as ? h.set("x-codesplitters-limit-as", as) : h.delete("x-codesplitters-limit-as");
           return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
         }
