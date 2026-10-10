@@ -89,9 +89,10 @@ export function replay(log: Applied[], rev = Infinity, from: Doc = empty()): Doc
  * A conflict, keyed by `line`: a base line (the first of a stretch both sides
  * rewrote), a new branch line main also added (`doubled`), `key:<path>` for a
  * config key the merge would define twice, or `file` for a lockfile both
- * changed (`whole`: keep one side, then regenerate it).
+ * changed (`whole`: keep one side, then regenerate it), or `lint:<problem>`
+ * for merged code that would no longer build (`lint`, from lint.ts).
  */
-export interface Conflict { line: string; base: string; main: string | null; branch: string | null; doubled?: true; whole?: true }
+export interface Conflict { line: string; base: string; main: string | null; branch: string | null; doubled?: true; whole?: true; lint?: string }
 
 /** How a file merges, by its path: lockfiles whole, config by key, prose loosely, code strictly. */
 export type Kind = "lock" | "keyed" | "prose" | "code";

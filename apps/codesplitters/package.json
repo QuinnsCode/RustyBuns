@@ -9,6 +9,7 @@
     "desktop": "bun ../../packages/cli/src/index.ts build desktop --dev && bun ../../packages/cli/src/index.ts run desktop"
   },
   "dependencies": {
+    "@babel/parser": "7.28.5",
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
     "better-auth": "1.7.7"

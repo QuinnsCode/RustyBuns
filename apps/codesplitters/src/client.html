@@ -1083,7 +1083,9 @@ const views = {
       // commit after this merge would ship, ask them to say they've read it first.
       const gate = build.length && b.deploys;
       return `<div class="commit"><code>${esc(b.name)}</code><span>@${esc(b.by)} · ${files.length} file${files.length === 1 ? "" : "s"}, ${ops} line op${ops === 1 ? "" : "s"}</span>
-        ${clash.map((c) => `<span class="muted">${esc(c.path)} ${esc(c.line)}: ${c.whole
+        ${clash.map((c) => `<span class="muted">${esc(c.path)} ${esc(c.line)}: ${c.lint
+          ? `merged, it wouldn't build: ${esc(c.lint)}`
+          : c.whole
           ? `a lockfile both sides changed: keep one, then regenerate it`
           : c.doubled
           ? `added on both sides, it would land twice: <code>${esc(c.branch)}</code>`
