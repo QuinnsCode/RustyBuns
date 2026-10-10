@@ -71,6 +71,8 @@ export interface Env {
   DEPS_REGISTRY?: unknown;
   DEPS_TESTER?: unknown;
   DEPS_FIXER?: unknown;
+  /** Where desktop deploys keep each repo's Alchemy state (deploy.ts); ~/.codesplitters/alchemy if unset. */
+  DEPLOY_STATE_DIR?: string;
   /** Tests only: stands in for the commands and the fetch a preview deploy runs (see preview.ts). */
   PREVIEW_RUNNER?: unknown;
   /** Tests only: stands in for fetch when a webhook is delivered (see hooks.ts). */

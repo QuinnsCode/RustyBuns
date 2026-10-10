@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { local as boot, type Call } from "../src/local.ts";
-import { seal, unseal } from "../src/deploy-keys.ts";
+import { seal, unseal, unsealState } from "../src/deploy-keys.ts";
 import { DeployRunner } from "../src/deploy-runner.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the deploy image
-import { exec } from "../deploy-sandbox/server.mjs";
+import { exec, state } from "../deploy-sandbox/server.mjs";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -39,22 +39,35 @@ const origin = "http://codesplitters.local";
 
 /** A deploy container: its server answers each command like deploy.test.ts's fake machine, echoing the token once to check it's hidden. */
 function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
-  const seen = { env: [] as Record<string, string>[], ran: [] as string[], destroyed: 0 };
+  const seen = { env: [] as Record<string, string>[], ran: [] as string[], limits: [] as number[], destroyed: 0, stacks: [] as string[] };
   const make = (): ContainerApi => {
     let running = false;
+    // Its disk: .alchemy/state, gone when it's destroyed.
+    let files: Record<string, string> = {};
     return {
       get running() { return running; },
       start(o) { running = true; seen.env.push(o?.env ?? {}); },
-      async destroy() { running = false; seen.destroyed++; },
+      async destroy() { running = false; seen.destroyed++; files = {}; },
       getTcpPort: () => ({
-        async fetch(_u, init) {
-          const { cmd } = JSON.parse(String(init!.body)) as { cmd: string[] };
+        async fetch(u, init) {
+          if (String(u).endsWith("/state")) {
+            const b = JSON.parse(String(init!.body)) as { files?: Record<string, string> };
+            if (b.files) { files = { ...b.files }; return Response.json({ files: Object.keys(files).length }); }
+            return Response.json({ files });
+          }
+          const { cmd, limit_ms } = JSON.parse(String(init!.body)) as { cmd: string[]; limit_ms: number };
           const line = cmd.join(" ");
           seen.ran.push(line);
+          seen.limits.push(limit_ms);
           let out = "";
           if (line.includes("rev-parse")) out = SHA + "\n";
           if (line.includes("bun -e")) out = `RB ${JSON.stringify(cfg)}\n`;
-          if (line.includes("rustybuns deploy")) out = `using token ${seen.env.at(-1)?.CLOUDFLARE_API_TOKEN}\nurl: "https://lab.ryan.workers.dev"\n`;
+          if (line.includes("rustybuns deploy")) {
+            // Like Alchemy: with no state, a new stack under a new name; with it, the same one.
+            files["lab/prod/Worker.json"] ??= JSON.stringify({ name: `lab-${seen.stacks.length}`, secret: "app-secret-value" });
+            seen.stacks.push(JSON.parse(files["lab/prod/Worker.json"]!).name);
+            out = `using token ${seen.env.at(-1)?.CLOUDFLARE_API_TOKEN}\nurl: "https://lab.ryan.workers.dev"\n`;
+          }
           return Response.json({ code: 0, out });
         },
       }),
@@ -64,7 +77,7 @@ function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
 }
 
 /** A DeployRunner per repo with in-memory storage; its alarm fires on the next tick. */
-function runnerNamespace(env: any, make: () => ContainerApi) {
+function runnerNamespace(env: any, make: () => ContainerApi, budgetMs?: number) {
   const objects = new Map<string, DeployRunner>();
   return {
     idFromName: (n: string) => n,
@@ -79,7 +92,7 @@ function runnerNamespace(env: any, make: () => ContainerApi) {
             setAlarm: async () => { setTimeout(() => void obj.alarm(), 0); },
           },
         };
-        const obj = new DeployRunner(ctx, env);
+        const obj = new DeployRunner(ctx, env, budgetMs);
         objects.set(id, obj);
       }
       return objects.get(id)!;
@@ -87,11 +100,11 @@ function runnerNamespace(env: any, make: () => ContainerApi) {
   };
 }
 
-async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: boolean; edge: boolean; box: boolean }) {
+async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: boolean; edge: boolean; box: boolean }, budgetMs?: number) {
   const booted = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "ryan-quinn", DEPLOY_SECRETS_KEY: SECRETS, ...extra });
   opened.push(booted);
   const c = fakeContainers(cfg);
-  booted.env.DEPLOY_RUNNER = runnerNamespace(booted.env, c.make);
+  booted.env.DEPLOY_RUNNER = runnerNamespace(booted.env, c.make, budgetMs);
   const cookies: Record<string, string> = {};
   for (const name of ["Ryan Quinn", "Pat Person", "Sam Sample"]) {
     const res = await booted(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
@@ -228,6 +241,54 @@ describe("a hosted deploy", () => {
     expect(d.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("deploy key was removed") });
     expect(seen.env).toEqual([]);
   });
+
+  test("each command gets what's left of the run's time; a run out of time fails and still cleans up", async () => {
+    const ok = await hosted();
+    await ok.send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    await ok.send("ryan-quinn", D, {});
+    await settle(ok.call);
+    expect(ok.seen.limits.every((l) => l > 12 * 60_000 && l <= 13 * 60_000)).toBe(true);
+
+    const { call, send, seen } = await hosted({}, undefined, 0);
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    await send("ryan-quinn", D, {});
+    const d = await settle(call);
+    expect(d.history[0]).toMatchObject({ status: "failed" });
+    expect(d.history[0].out).toContain("out of time");
+    expect(seen.ran).toEqual([]);
+    expect(seen.destroyed).toBe(1);
+  });
+
+  test("the next deploy updates the same stack: its Alchemy state is kept, sealed, between containers", async () => {
+    const { call, send, seen, env } = await hosted();
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    await send("ryan-quinn", D, {});
+    await settle(call, 1);
+    await send("ryan-quinn", D, {});
+    await settle(call, 2);
+    expect(seen.destroyed).toBe(2);
+    expect(seen.stacks).toEqual(["lab-0", "lab-0"]);
+    const kept = await (env.DEPLOY_RUNNER.get("ryan-quinn/lab") as any).ctx.storage.get("state");
+    expect(kept).not.toContain("app-secret-value");
+    expect(atob(kept)).not.toContain("app-secret-value");
+    // Sealed to this repo: it doesn't open as another's.
+    expect(await unsealState(env, "ryan-quinn", "lab", kept)).toMatchObject({ "lab/prod/Worker.json": expect.stringContaining("lab-0") });
+    await expect(unsealState(env, "sam-sample", "lab", kept)).rejects.toThrow();
+  });
+
+  test("an alarm retried after a cut-off run fails it instead of deploying again", async () => {
+    const { call, send, seen, env } = await hosted();
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    const stub = env.DEPLOY_RUNNER.get("ryan-quinn/lab");
+    const alarm = stub.alarm.bind(stub);
+    // As if an earlier attempt of this alarm started the run and was killed.
+    stub.alarm = async () => { (await stub.load()).started = Date.now() - 15 * 60_000; return alarm(); };
+    await send("ryan-quinn", D, {});
+    const d = await settle(call);
+    expect(d.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("cut off") });
+    expect(seen.env).toEqual([]);
+    expect(seen.destroyed).toBe(1);
+  });
 });
 
 test("an agent container never gets the deploy secrets", async () => {
@@ -245,6 +306,36 @@ describe("the deploy container's server", () => {
       expect(await exec({ cmd: ["sh", "-c", "pwd && echo hi"], cwd: "run/repo" }, root)).toEqual({ code: 0, out: `${realpathSync(root)}/run/repo\nhi\n` });
       expect((await exec({ cmd: ["true"], cwd: "../etc" }, root)).code).toBe(2);
       expect((await exec({ cmd: ["no-such-command-here"], cwd: "run" }, root)).code).toBe(127);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("carries the Alchemy state in and out, through rustybuns' shared-state symlink, and only under it", async () => {
+    const root = mkdtempSync(join(tmpdir(), "codesplitters-deploy-"));
+    try {
+      expect(await state({ cwd: "run/repo", files: { "app/prod/Worker.json": "{}" } }, root)).toEqual({ files: 1 });
+      // rustybuns deploy moves it into the git dir and links it back.
+      renameSync(join(root, "run/repo/.alchemy/state"), join(root, "shared"));
+      symlinkSync(join(root, "shared"), join(root, "run/repo/.alchemy/state"), "dir");
+      writeFileSync(join(root, "shared/app/prod/DB.json"), "[]");
+      expect(await state({ cwd: "run/repo" }, root)).toEqual({ files: { "app/prod/Worker.json": "{}", "app/prod/DB.json": "[]" } });
+      expect(await state({ cwd: "elsewhere" }, root)).toEqual({ files: {} });
+      await expect(state({ cwd: "run/repo", files: { "../../../../x": "" } }, root)).rejects.toThrow("bad state file");
+      await expect(state({ cwd: "../.." }, root)).rejects.toThrow("bad directory");
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("a command over its time limit is killed, and answers even if what it started holds the output open", async () => {
+    const root = mkdtempSync(join(tmpdir(), "codesplitters-deploy-"));
+    try {
+      // The child holds the output pipe open, as alchemy does under rustybuns deploy.
+      const t = Date.now();
+      const r = await exec({ cmd: ["sh", "-c", "sleep 30 & echo $! > child.pid; wait"], cwd: "run" }, root, 300);
+      expect(Date.now() - t).toBeLessThan(3000);
+      expect(r.code).toBe(124);
+      expect(r.out).toContain("killed after 300 ms");
+      process.kill(Number(readFileSync(join(root, "run", "child.pid"), "utf8")), "SIGKILL");
+      // The run's time left, when it's shorter, is the limit.
+      expect((await exec({ cmd: ["sleep", "5"], cwd: "run", limit_ms: 200 }, root)).out).toContain("killed after 200 ms");
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });

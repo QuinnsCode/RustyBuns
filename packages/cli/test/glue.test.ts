@@ -449,7 +449,7 @@ test("container: wrangler and alchemy bind the class and its image; the desktop 
   expect(w.durable_objects.bindings).toEqual([{ name: "SANDBOX", class_name: "AgentSandbox" }]);
   expect(w.migrations[0].new_sqlite_classes).toEqual(["AgentSandbox"]);
   const a = generateAlchemy(c);
-  expect(a).toContain(`export const SANDBOX = Cloudflare.Container("SANDBOX", { className: "AgentSandbox", context: "sandbox", dockerfile: "Dockerfile", maxInstances: 2, instanceType: "basic" });`);
+  expect(a).toContain(`export const SANDBOX = Cloudflare.Container("SANDBOX", { className: "AgentSandbox", context: "sandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" });`);
   expect(a).toContain(`SANDBOX: SANDBOX`);
   const host = desktopEntry(c);
   expect(host).toContain(`// SANDBOX: Cloudflare Container (AgentSandbox) has no local twin`);
@@ -522,4 +522,10 @@ test("DO migrations: history is kept, a new class gets the next tag, a removed c
   // A hand-written history with its own tag names carries on from there.
   const hand = `{ "migrations": [{ "tag": "v1", "new_classes": ["Old"] }, { "tag": "v2", "new_sqlite_classes": ["GameRoom"] }] }`;
   expect(read(generateWrangler(cfg({ OLD: { type: "durable_object", className: "Old" }, ...two }), hand)).at(-1)).toEqual({ tag: "v3", new_sqlite_classes: ["FileDurableObject"] });
+});
+
+test("a Worker with no bindings key generates instead of crashing (#247)", () => {
+  const c = { name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01" }, targets: { edge: { provider: "cloudflare" } } } as any;
+  expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, "")).main).toBe("src/worker.ts");
+  expect(generateAlchemy(c)).toContain(`Cloudflare.Worker("Worker"`);
 });

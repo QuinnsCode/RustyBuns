@@ -145,3 +145,30 @@ test("over the deploy limit, a press still ships, and the caller is flagged for 
   const put = await call("boss", "/api/admin/limits", { method: "PUT", body: JSON.stringify({ rules: [{ name: "deploy", max: 10, window_s: 3600, enabled: true, on_fail: "queue" }] }) });
   expect(put.status).toBe(400);
 });
+
+test("the next desktop deploy updates the same stack: its Alchemy state is kept outside the temp clone", async () => {
+  const { mkdtempSync, existsSync, mkdirSync, readFileSync, writeFileSync, statSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const keep = mkdtempSync(`${tmpdir()}/codesplitters-state-`);
+  const stacks: string[] = [], clones: string[] = [];
+  const { runner } = fake();
+  const exec = runner.exec;
+  // Like Alchemy: with no state, a new stack under a new name; with it, the same one.
+  runner.exec = async (cmd, cwd, out) => {
+    if (cmd.join(" ").includes("rustybuns deploy")) {
+      clones.push(cwd);
+      const f = `${cwd}/.alchemy/state/lab/prod/Worker.json`;
+      if (!existsSync(f)) { mkdirSync(`${cwd}/.alchemy/state/lab/prod`, { recursive: true }); writeFileSync(f, JSON.stringify({ name: `lab-${stacks.length}` })); }
+      stacks.push(JSON.parse(readFileSync(f, "utf8")).name);
+    }
+    return exec(cmd, cwd, out);
+  };
+  const { call, send } = await app(runner, { DEPLOY_STATE_DIR: keep });
+  await send("ryan", "/api/repos/ryan/lab/deploy", {});
+  await settle(call, 1);
+  await send("ryan", "/api/repos/ryan/lab/deploy", {});
+  await settle(call, 2);
+  expect(clones[0]).not.toBe(clones[1]);
+  expect(stacks).toEqual(["lab-0", "lab-0"]);
+  expect(statSync(`${keep}/ryan/lab`).mode & 0o777).toBe(0o700);
+});
