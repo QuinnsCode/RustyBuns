@@ -19,12 +19,12 @@
 // The container forgets, so the repo's Alchemy state is kept here between runs,
 // sealed under DEPLOY_SECRETS_KEY (it holds the app's secrets), and put back
 // before each deploy: the next deploy updates the same stack instead of making
-// a second one under a new name.
+// a second one under a new name. Each app folder of a monorepo keeps its own.
 //
 //   POST /start {owner, repo, by, trigger}   from deploy.ts, after its checks
 //   GET  /run                                the run going now, or the last one
 
-import { begin, finish, remoteFor } from "./deploy.ts";
+import { begin, finish, remoteFor, stateSuffix } from "./deploy.ts";
 import { deployKey, keyInfo, sealState, unsealState } from "./deploy-keys.ts";
 import { json, type Env } from "./env.ts";
 import { preview, type Run, type Runner } from "./preview.ts";
@@ -112,7 +112,7 @@ export class DeployRunner {
         fetch: (u) => fetch(u, { redirect: "manual" }),
         state: {
           restore: async (app) => {
-            const sealed = await this.ctx.storage.get<string>("state");
+            const sealed = await this.ctx.storage.get<string>(`state${stateSuffix(job.dir)}`);
             if (sealed) await call(c, { cwd: app, files: await unsealState(this.env, owner, repo, sealed) });
           },
           keep: async (app) => {
@@ -120,7 +120,7 @@ export class DeployRunner {
             if (!Object.keys(files).length) return;
             const sealed = await sealState(this.env, owner, repo, files);
             if (sealed.length > STATE_MAX) throw new Error(`${sealed.length} bytes sealed, over the ${STATE_MAX} this keeps`);
-            await this.ctx.storage.put("state", sealed);
+            await this.ctx.storage.put(`state${stateSuffix(job.dir)}`, sealed);
           },
         },
       };

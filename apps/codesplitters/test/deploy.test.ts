@@ -171,6 +171,12 @@ test("the next desktop deploy updates the same stack: its Alchemy state is kept 
   expect(clones[0]).not.toBe(clones[1]);
   expect(stacks).toEqual(["lab-0", "lab-0"]);
   expect(statSync(`${keep}/ryan/lab`).mode & 0o777).toBe(0o700);
+  // Another app in the same repo starts a stack of its own, and keeps its state apart.
+  await send("ryan", "/api/repos/ryan/lab/deploy", { dir: "apps/web" }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/deploy", {});
+  await settle(call, 3);
+  expect(stacks).toEqual(["lab-0", "lab-0", "lab-2"]);
+  expect(existsSync(`${keep}/ryan/lab~apps~web`)).toBe(true);
 });
 
 test("in a monorepo, the app's folder is where install and deploy run", async () => {

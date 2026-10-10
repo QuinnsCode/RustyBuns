@@ -38,6 +38,9 @@ const STAGE = /^[a-z0-9][a-z0-9-]{0,30}$/;
 export const validDir = (d: string) => d === "" || (d.length <= 200 && d.split("/").every((x) => /^[\w@.-]+$/.test(x) && x !== "." && x !== ".."));
 const STEPS: StepKey[] = ["clone", "install", "deploy", "check"];
 
+/** Each folder's Alchemy state is kept apart from the others': '' for the root, `~apps~web` for apps/web. */
+export const stateSuffix = (dir: string | undefined) => dir ? `~${dir.replaceAll("/", "~")}` : "";
+
 /** The deploy going now per repo, and whether a commit landed while it ran. */
 const live = new Map<string, { run: Run; again?: string }>();
 
@@ -106,7 +109,7 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
   live.set(key, entry);
   // The clone is a temp dir; the stack's Alchemy state is kept beside the desktop's own data.
   const { homedir } = await import("node:os");
-  const keeps = runner.state ? runner : { ...runner, state: dirState(`${env.DEPLOY_STATE_DIR ?? `${homedir()}/.codesplitters/alchemy`}/${owner}/${repo}`) };
+  const keeps = runner.state ? runner : { ...runner, state: dirState(`${env.DEPLOY_STATE_DIR ?? `${homedir()}/.codesplitters/alchemy`}/${owner}/${repo}${stateSuffix(dir)}`) };
   void preview(keeps, remote, run, { keep: true, allowAdopt: production, dir })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(async () => {
