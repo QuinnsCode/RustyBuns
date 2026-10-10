@@ -22,23 +22,23 @@ import { json, type Env } from "./env.ts";
 
 export type StepKey = "clone" | "install" | "deploy" | "check" | "destroy";
 export interface Step { key: StepKey; status: "waiting" | "running" | "done" | "failed" | "skipped"; out: string; ms?: number }
-export interface Run { id: string; at: number; stage: string; steps: Step[]; url?: string; done: boolean; kept?: string; note?: string }
+export interface Run { id: string; at: number; stage: string; steps: Step[]; url?: string; done: boolean; kept?: string; note?: string; commit?: string }
 
 /** Run a command, streaming its output; resolves to the exit code. */
 export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Promise<number>;
 export interface Runner { exec: Exec; fetch: (url: string) => Promise<{ status: number }> }
 
-const STEPS: StepKey[] = ["clone", "install", "deploy", "check", "destroy"];
+export const STEPS: StepKey[] = ["clone", "install", "deploy", "check", "destroy"];
 const MAX_OUT = 60_000;
 
-const spawnExec = (timeoutMs = 15 * 60_000): Exec => async (cmd, cwd, out) => {
+export const spawnExec = (timeoutMs = 15 * 60_000): Exec => async (cmd, cwd, out) => {
   const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: { ...process.env, CI: "1" } });
   const pump = async (s: ReadableStream<Uint8Array>) => { const d = new TextDecoder(); for await (const c of s) out(d.decode(c, { stream: true })); };
   await Promise.all([pump(p.stdout), pump(p.stderr)]);
   return await p.exited;
 };
 
-const runnerFor = (env: Env): Runner | null => {
+export const runnerFor = (env: Env): Runner | null => {
   const fake = env.PREVIEW_RUNNER as Runner | undefined;
   if (fake) return fake;
   return typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET ? { exec: spawnExec(), fetch: (u) => fetch(u, { redirect: "manual" }) } : null;
@@ -56,7 +56,12 @@ export function urlIn(out: string): string | undefined {
 
 const LOGIN_HINT = /unauthori[sz]ed|authentication|not logged in|no credentials|api token|CLOUDFLARE_API_TOKEN|RAILWAY_TOKEN|HCLOUD_TOKEN|profile/i;
 
-export async function preview(runner: Runner, remote: string, run: Run) {
+/**
+ * Clone, install, deploy and check `run.stage`; then destroy it, unless this is
+ * a real deploy (`keep`, see deploy.ts), whose run has no destroy step. A real
+ * deploy may take over live resources (`adopt`) when the owner said so.
+ */
+export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean } = {}) {
   const { mkdtempSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -77,10 +82,12 @@ export async function preview(runner: Runner, remote: string, run: Run) {
     s.status = "done"; s.ms = Date.now() - t;
     return true;
   };
-  const skip = (...ks: StepKey[]) => { for (const k of ks) step(k).status = "skipped"; };
+  // A real deploy's run has no destroy step.
+  const skip = (...ks: StepKey[]) => { for (const k of ks) { const s = run.steps.find((x) => x.key === k); if (s) s.status = "skipped"; } };
   let deployed = false;
   try {
-    if (!(await go("clone", [{ cmd: ["git", "clone", "--depth", "1", "--quiet", remote, "repo"], cwd: dir }]))) return skip("install", "deploy", "check", "destroy");
+    if (!(await go("clone", [{ cmd: ["git", "clone", "--depth", "1", "--quiet", remote, "repo"], cwd: dir }, { cmd: ["git", "-C", "repo", "rev-parse", "HEAD"], cwd: dir }]))) return skip("install", "deploy", "check", "destroy");
+    run.commit = /\b[0-9a-f]{40}\b/.exec(step("clone").out)?.[0];
     // Read the config with the repo's own @rustybuns/cli, so it is what deploy will see.
     const read = `const c = (await import("./rustybuns.config.ts")).default; console.log("RB " + JSON.stringify({ adopt: !!c.targets?.edge?.adopt, edge: !!c.targets?.edge, box: !!c.targets?.box }))`;
     if (!(await go("install", [{ cmd: ["bun", "install"], cwd: app }, { cmd: ["bun", "-e", read], cwd: app }]))) {
@@ -89,10 +96,12 @@ export async function preview(runner: Runner, remote: string, run: Run) {
     }
     const cfg = JSON.parse(/RB (\{.*\})/.exec(step("install").out)?.[1] ?? "{}");
     if (!cfg.edge && !cfg.box) { run.note = "no edge or box target to deploy to"; return skip("deploy", "check", "destroy"); }
-    if (cfg.adopt) {
+    if (cfg.adopt && !opts.allowAdopt) {
       const d = step("deploy");
       d.status = "failed";
-      d.out = "refused: targets.edge.adopt is on, so this stack would take over the live Worker and its data under their real names, and destroy would delete them.\nTurn adopt off on a branch to preview it.\n";
+      d.out = opts.keep
+        ? "refused: targets.edge.adopt is on, so this deploy would take over the live Worker and its data under their real names.\nIf this repo is production, say so in the deploy settings.\n"
+        : "refused: targets.edge.adopt is on, so this stack would take over the live Worker and its data under their real names, and destroy would delete them.\nTurn adopt off on a branch to preview it.\n";
       return skip("check", "destroy");
     }
     deployed = true;   // from here a half-made stack may exist, so destroy always runs
@@ -116,6 +125,7 @@ export async function preview(runner: Runner, remote: string, run: Run) {
       c.status = +last > 0 && +last < 500 ? "done" : "failed";
       c.ms = Date.now() - t;
     }
+    if (opts.keep) return;
     if (!(await go("destroy", [rb("destroy")]))) {
       run.kept = app;
       run.note = `destroy failed; the clone and its Alchemy state are kept in ${app}. Finish with: cd ${app} && bun x rustybuns destroy --yes --stage ${run.stage}`;

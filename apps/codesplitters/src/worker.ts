@@ -14,6 +14,7 @@ import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
 import { previewRoutes } from "./preview.ts";
+import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { repoFit } from "./fit.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -59,6 +60,8 @@ const app = {
     if (deps) return deps;
     const preview = await previewRoutes(req, env, p, user);
     if (preview) return preview;
+    const deploy = await deployRoutes(req, env, p, user);
+    if (deploy) return deploy;
 
     // GET|PUT /api/me
     if (p[1] === "me") {
@@ -208,6 +211,8 @@ const app = {
           ]);
           // The catalogue entry stands even if the push fails; the next one carries it.
           const git = await pushCatalogue(env, owner, repo, path, content, user!, commit.message).catch((e: Error) => ({ error: e.message }));
+          // The owner's own commit ships, when they turned that on (deploy.ts).
+          if (git && !("error" in git)) await deployOnCommit(env, owner, repo, user);
           return json({ ...commit, git });
         }
         return res;
