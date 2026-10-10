@@ -505,7 +505,7 @@ test("cpuMs: limits.cpu_ms on the edge, both ways through wrangler.jsonc", () =>
     bindings: {}, targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
   } as any;
   expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*\n/gm, "")).limits).toEqual({ cpu_ms: 300_000 });
-  expect(generateAlchemy(c)).toContain(`  limits: { cpu_ms: 300000 },`);
+  expect(generateAlchemy(c)).toContain(`  limits: { cpuMs: 300000 },`);
   expect(generateAlchemy({ ...c, worker: { ...c.worker, cpuMs: undefined } })).not.toContain("limits");
   expect(wranglerToConfig({ name: "g", limits: { cpu_ms: 60_000 } }).worker!.cpuMs).toBe(60_000);
 });
