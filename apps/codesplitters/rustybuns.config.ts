@@ -1,5 +1,14 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
+// A deploy needs every declared secret, so the optional ones are only declared
+// when they're switched on in the deploying shell:
+//   CODESPLITTERS_AGENTS=1  hosted coding agents (super experimental, see README)
+//   BETTER_AUTH_SECRET      accounts; without it the site uses aliases
+//   GITHUB_/GOOGLE_CLIENT_ID  that sign-in, with its _SECRET
+const agents = process.env.CODESPLITTERS_AGENTS === "1";
+const secrets = (on: boolean, ...names: string[]) => on ? Object.fromEntries(names.map((n) => [n, { type: "secret" as const }])) : {};
+const set = (name: string) => !!process.env[name];
+
 export default defineConfig({
   name: "codesplitters",
   worker: {
@@ -19,22 +28,16 @@ export default defineConfig({
     GAMES: { type: "durable_object", className: "GameRoom" },
     // One git repo per excavation; cataloguing pushes to it.
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
-    // Hosted coding agents: one container per run, each CLI installed (sandbox/Dockerfile).
+    // Hosted coding agents (super experimental): one container per run, each CLI
+    // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
     // The desktop has no twin and runs the CLIs on the machine instead.
-    AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" },
-    // The CLIs' logins inside the container. Set the ones for the harnesses you use.
-    ANTHROPIC_API_KEY: { type: "secret" },        // claude, pi, opencode
-    CLAUDE_CODE_OAUTH_TOKEN: { type: "secret" },  // claude, from `claude setup-token`
-    OPENAI_API_KEY: { type: "secret" },           // codex, pi, opencode
-    CODEX_API_KEY: { type: "secret" },            // codex exec
-    // Accounts (Better Auth). Unset on the desktop: it uses aliases. GitHub and
-    // Google sign-in appear only when their pair is set.
-    BETTER_AUTH_SECRET: { type: "secret" },
+    ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
+    ...secrets(agents, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"),
+    // Accounts (Better Auth). Unset on the desktop: it uses aliases.
+    ...secrets(set("BETTER_AUTH_SECRET"), "BETTER_AUTH_SECRET"),
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitters.notryanquinn.workers.dev" },
-    GITHUB_CLIENT_ID: { type: "secret" },
-    GITHUB_CLIENT_SECRET: { type: "secret" },
-    GOOGLE_CLIENT_ID: { type: "secret" },
-    GOOGLE_CLIENT_SECRET: { type: "secret" },
+    ...secrets(set("GITHUB_CLIENT_ID"), "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"),
+    ...secrets(set("GOOGLE_CLIENT_ID"), "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
     // Handles allowed to excavate levels once accounts are on.
     ADMINS: { type: "var", value: "" },
   },
