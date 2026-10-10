@@ -38,6 +38,8 @@ export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Pro
 export interface Runner {
   exec: Exec; fetch: (url: string) => Promise<{ status: number }>; workdir?: string;
   state?: { restore(app: string): Promise<void>; keep(app: string): Promise<void> };
+  /** The machine can't compile Rust (a hosted deploy container: no Docker, no cargo), so a box whose crates would need it is refused up front. */
+  noRust?: boolean;
 }
 
 /**
@@ -128,6 +130,28 @@ export function urlIn(out: string): string | undefined {
 const LOGIN_HINT = /unauthori[sz]ed|authentication|not logged in|no credentials|api token|CLOUDFLARE_API_TOKEN|RAILWAY_TOKEN|HCLOUD_TOKEN|profile/i;
 
 /**
+ * The config read, run with the repo's own install so it is what deploy will see:
+ * `RB {adopt, edge, box, native}`. `native` is set when a Hetzner box would have
+ * to compile native/ crates: `rustybuns build box` builds a cax (arm64) box's in
+ * Docker every time, and an x86 one's only take the Rust path when
+ * native/dist/<crate>/linux-x64/ is already there. It mirrors the CLI's
+ * shippingCrates(): desktop.native names them, or every crate under
+ * native/crates without `[package.metadata.rustybuns] desktop = false`.
+ * Railway boxes build theirs in Railway's own image, so they need nothing here.
+ */
+export const CONFIG_READ = `const c = (await import("./rustybuns.config.ts")).default;
+const fs = await import("node:fs"), b = c.targets?.box, n = c.targets?.desktop?.native;
+let native = null;
+if (b && b.provider !== "railway" && n !== false && fs.existsSync("native/Cargo.toml")) {
+  const ships = (x) => { const t = "native/crates/" + x + "/Cargo.toml"; return !fs.existsSync(t) || Bun.TOML.parse(fs.readFileSync(t, "utf8"))?.package?.metadata?.rustybuns?.desktop !== false; };
+  const all = n?.length ? n : fs.existsSync("native/crates") ? fs.readdirSync("native/crates", { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).filter(ships) : [];
+  const arch = /^cax/i.test(b.serverType ?? "") ? "linux-arm64" : "linux-x64";
+  const crates = arch === "linux-arm64" ? all : all.filter((x) => !fs.existsSync("native/dist/" + x + "/" + arch));
+  if (crates.length) native = { arch, crates };
+}
+console.log("RB " + JSON.stringify({ adopt: !!c.targets?.edge?.adopt, edge: !!c.targets?.edge, box: !!b, native }));`;
+
+/**
  * Clone, install, deploy and check `run.stage`; then destroy it, unless this is
  * a real deploy (`keep`, see deploy.ts), whose run has no destroy step. A real
  * deploy may take over live resources (`adopt`) when the owner said so.
@@ -157,11 +181,9 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
   try {
     if (!(await go("clone", [{ cmd: ["git", "clone", "--depth", "1", "--quiet", remote, "repo"], cwd: dir }, { cmd: ["git", "-C", "repo", "rev-parse", "HEAD"], cwd: dir }]))) return skip("install", "deploy", "check", "destroy");
     run.commit = /\b[0-9a-f]{40}\b/.exec(step("clone").out)?.[0];
-    // Read the config with the repo's own @rustybuns/cli, so it is what deploy will see.
-    const read = `const c = (await import("./rustybuns.config.ts")).default; console.log("RB " + JSON.stringify({ adopt: !!c.targets?.edge?.adopt, edge: !!c.targets?.edge, box: !!c.targets?.box }))`;
     // A folder that isn't there says so, rather than failing to start bun in it.
     const has = opts.dir ? [{ cmd: ["test", "-d", opts.dir], cwd: `${dir}/repo` }] : [];
-    if (!(await go("install", [...has, { cmd: ["bun", "install"], cwd: app }, { cmd: ["bun", "-e", read], cwd: app }]))) {
+    if (!(await go("install", [...has, { cmd: ["bun", "install"], cwd: app }, { cmd: ["bun", "-e", CONFIG_READ], cwd: app }]))) {
       const where = opts.dir ? `${opts.dir} in this repo` : "this repo";
       if (opts.dir && !step("install").out.includes("bun install")) run.note = `this repo has no folder ${opts.dir}: fix the folder in the deploy settings`;
       else if (/rustybuns\.config\.ts/.test(step("install").out)) run.note = `${where} has no rustybuns.config.ts: run \`rustybuns init\` in it first`;
@@ -175,6 +197,14 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
       d.out = opts.keep
         ? "refused: targets.edge.adopt is on, so this deploy would take over the live Worker and its data under their real names.\nIf this repo is production, say so in the deploy settings.\n"
         : "refused: targets.edge.adopt is on, so this stack would take over the live Worker and its data under their real names, and destroy would delete them.\nTurn adopt off on a branch to preview it.\n";
+      return skip("check", "destroy");
+    }
+    if (cfg.native && runner.noRust) {
+      const { arch, crates } = cfg.native as { arch: string; crates: string[] };
+      step("deploy").status = "failed";
+      step("deploy").out = `refused: targets.box would compile native/ crates (${crates.join(", ")}) for ${arch}, and the hosted deploy container has no Docker or Rust to build them.\n`
+        + (arch === "linux-x64" ? `Commit their native/dist/<crate>/linux-x64/ builds, or deploy` : "Deploy") + " this one from the desktop app.\n";
+      run.note = "this box's Rust crates need building: deploy it from the desktop app";
       return skip("check", "destroy");
     }
     deployed = true;   // from here a half-made stack may exist, so destroy always runs

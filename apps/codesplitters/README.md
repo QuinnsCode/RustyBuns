@@ -106,7 +106,7 @@ Off by default. Deploy the site with `CODESPLITTERS_DEPLOYS=1` and accounts on (
 - **Railway** (`targets.box` on Railway): a team token, scoped to one team.
 - **Hetzner** (`targets.box` on Hetzner): a Cloud API token, read & write, made in the one project it deploys to.
 
-Then Deploy, and their own commits to main if they turned that on, ship from the site instead of their machine. Each step's output streams into the panel as it runs. A box whose `native/` crates need the Docker cross-build (see REFERENCE.md) can't build in the deploy container, which has no Docker: deploy that one from the desktop.
+Then Deploy, and their own commits to main if they turned that on, ship from the site instead of their machine. Each step's output streams into the panel as it runs. A Hetzner box whose `native/` crates would have to compile (always on `cax`, and on x86 unless `native/dist/<crate>/linux-x64/` is committed; see REFERENCE.md) can't build in the deploy container, which has no Docker or Rust: the run reads the config and refuses before it deploys anything, saying to deploy that one from the desktop. Railway boxes build their crates in Railway's own image, so they deploy from the site as usual.
 
 **The sealing key comes from 1Password, never your shell.** With `CODESPLITTERS_DEPLOYS=1` the config turns on `experimental.wheel: "human"`, and `DEPLOY_SECRETS_KEY` is read from 1Password at deploy time through [varlock](https://varlock.dev) (a dev dependency here), behind your Touch ID, straight into the Worker's secret. Once:
 

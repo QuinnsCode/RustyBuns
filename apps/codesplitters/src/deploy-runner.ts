@@ -172,6 +172,7 @@ export class DeployRunner {
       const secrets = Object.values(keys).map((k) => k.token);
       const runner: Runner = {
         workdir: `/work/${run.id}`,
+        noRust: true,
         exec: async (cmd, cwd, out) => {
           const left = deadline - Date.now();
           if (left <= 0) throw new Error(`out of time: a hosted deploy gets ${Math.round(this.budgetMs / 60_000)} minutes`);

@@ -1,6 +1,6 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { KEEP, logStart, urlIn, type Runner } from "../src/preview.ts";
+import { CONFIG_READ, KEEP, logStart, preview, urlIn, type Run, type Runner } from "../src/preview.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -127,6 +127,55 @@ test("an adopting stack is refused before anything is created", async () => {
   expect(statuses(run)).toEqual({ clone: "done", install: "done", deploy: "failed", check: "skipped", destroy: "skipped" });
   expect(run.steps[2].out).toContain("adopt");
   expect(ran.some((l) => l.includes("rustybuns deploy"))).toBe(false);
+});
+
+/** Run the config read in a folder laid out from `files`; its RB line, parsed. */
+async function readConfig(files: Record<string, string>) {
+  const { mkdtempSync, rmSync } = await import("node:fs"), { join } = await import("node:path"), { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(join(tmpdir(), "codesplitters-read-"));
+  try {
+    for (const [f, text] of Object.entries(files)) await Bun.write(join(dir, f), text);
+    const p = Bun.spawnSync([process.execPath, "-e", CONFIG_READ], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    expect(p.stderr.toString()).toBe("");
+    return JSON.parse(/RB (\{.*\})/.exec(p.stdout.toString())![1]!);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+test("the config read says which of a Hetzner box's crates would have to compile", async () => {
+  const crates = { "native/Cargo.toml": "[workspace]\n", "native/crates/fast/Cargo.toml": "[package]\nname = \"fast\"\n",
+    "native/crates/wasm/Cargo.toml": "[package]\nname = \"wasm\"\n[package.metadata.rustybuns]\ndesktop = false\n" };
+  const config = (box: object, desktop: object = {}) => ({ "rustybuns.config.ts": `export default ${JSON.stringify({ name: "lab", targets: { box, desktop } })}` });
+  // An arm box builds its crates in Docker every time; the wasm-only one opts out.
+  expect((await readConfig({ ...crates, ...config({ provider: "hetzner", serverType: "cax11" }) })).native).toEqual({ arch: "linux-arm64", crates: ["fast"] });
+  // An x86 one (the default cpx12) only has to when its build isn't committed.
+  expect((await readConfig({ ...crates, ...config({ provider: "hetzner" }) })).native).toEqual({ arch: "linux-x64", crates: ["fast"] });
+  expect((await readConfig({ ...crates, ...config({ provider: "hetzner" }), "native/dist/fast/linux-x64/libfast.so": "" })).native).toBeNull();
+  // Railway builds them in its own image; desktop.native: false keeps them out.
+  expect((await readConfig({ ...crates, ...config({ provider: "railway" }) })).native).toBeNull();
+  expect((await readConfig({ ...crates, ...config({ provider: "hetzner" }, { native: false }) })).native).toBeNull();
+  const plain = await readConfig(config({ provider: "hetzner" }));
+  expect(plain).toEqual({ adopt: false, edge: false, box: true, native: null });
+});
+
+test("a hosted deploy refuses a box whose crates need compiling, before anything is created", async () => {
+  const native = 'RB {"adopt":false,"edge":true,"box":true,"native":{"arch":"linux-arm64","crates":["fast"]}}\n';
+  const steps = () => (["clone", "install", "deploy", "check"] as const).map((key) => ({ key, status: "waiting" as const, out: "" }));
+  const { mkdtempSync, rmSync } = await import("node:fs"), { join } = await import("node:path"), { tmpdir } = await import("node:os");
+  const work = mkdtempSync(join(tmpdir(), "codesplitters-hosted-"));
+  try {
+    const hosted = fake({ "bun -e": { out: native } });
+    const run: Run = { id: "a", at: Date.now(), stage: "prod", steps: steps(), done: false };
+    await preview({ ...hosted.runner, noRust: true, workdir: work }, "https://git.example/r.git", run, { keep: true });
+    expect(Object.fromEntries(run.steps.map((s) => [s.key, s.status]))).toEqual({ clone: "done", install: "done", deploy: "failed", check: "skipped" });
+    expect(run.steps[2]!.out).toContain("fast");
+    expect(run.note).toContain("desktop");
+    expect(hosted.ran.some((l) => l.includes("rustybuns deploy"))).toBe(false);
+    // The desktop has Docker (or says to start it), so it goes ahead.
+    const desk = fake({ "bun -e": { out: native }, "rustybuns deploy": { out: 'url: "https://x.workers.dev"' } });
+    const run2: Run = { id: "b", at: Date.now(), stage: "prod", steps: steps(), done: false };
+    await preview({ ...desk.runner, workdir: work }, "https://git.example/r.git", run2, { keep: true });
+    expect(desk.ran.some((l) => l.includes("rustybuns deploy"))).toBe(true);
+  } finally { rmSync(work, { recursive: true, force: true }); }
 });
 
 test("a failed destroy keeps the clone and says how to finish", async () => {
