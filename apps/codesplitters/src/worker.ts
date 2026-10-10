@@ -129,8 +129,8 @@ const app = {
         const v = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         return createShare(env, owner, repo, user, a, v?.visibility === "private", await body());
       }
-      // GET /api/repos/:o/:r/fit  how easily Rusty Buns could box it
-      if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user);
+      // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
+      if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
       // GET /api/repos/:o/:r/tree?path=dir  the repo's git tree, plus files written here but not catalogued yet
       if (p[4] === "tree") {
         const dir = (url.searchParams.get("path") ?? "").replace(/^\/|\/$/g, "");
