@@ -44,6 +44,9 @@ test("wrangler round trip keeps every binding and generates both files", async (
   const g = JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, ""));
   expect(g.durable_objects.bindings.length).toBe(3);
   expect(g.r2_buckets[0].bucket_name).toBe("druids-curse-assets");
+  // No placeholder ids: wrangler would send them to the API on --remote (#177).
+  expect(g.d1_databases[0]).toEqual({ binding: "DB", database_name: (c.bindings.DB as any).databaseName, ...(g.d1_databases[0].migrations_dir ? { migrations_dir: g.d1_databases[0].migrations_dir } : {}) });
+  expect(g.kv_namespaces[0]).toEqual({ binding: "PRESENCE_KV" });
 });
 
 test("targets.edge.adopt names resources as the config does and takes over the Worker", async () => {
