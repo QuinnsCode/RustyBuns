@@ -285,3 +285,18 @@ test("init: an Astro adapter entry that's a package isn't reported missing", () 
   expect(r.code).toBe(0);
   expect(r.out).not.toMatch(/does not exist/);
 });
+
+test("init: a vite root of public/ builds into the app's dist, not public/dist", () => {
+  const { viteRoot } = require("../src/glue/infer.ts");
+  expect(viteRoot('export default { root: "public" }')).toBe("public");
+  expect(viteRoot("export default { root: './src/app', plugins: [] }")).toBe("src/app");
+  expect(viteRoot("export default defineConfig({ root: resolve(__dirname, 'public'), base: './' })")).toBe("public");
+  expect(viteRoot("const root = path.join(import.meta.dirname, 'web', 'ui');\nexport default defineConfig({\n  root,\n})")).toBe("web/ui");
+  expect(viteRoot("export default { plugins: [react()] }")).toBeNull();
+  const p = project({ "package.json": VITE, "bun.lock": "", "vite.config.ts": "import { resolve } from 'node:path';\nexport default { root: resolve(import.meta.dirname, 'public') };\n" });
+  expect(p.run("init").code).toBe(0);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"build": "bunx vite build --outDir ../dist/web --emptyOutDir"');
+  expect(c).toContain('"clientBuild": "bunx vite build --outDir ../dist/ui --emptyOutDir"');
+  expect(c).toContain('"assets": "dist/web"');
+});
