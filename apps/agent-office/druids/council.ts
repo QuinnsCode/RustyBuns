@@ -1,11 +1,11 @@
 // 🧙 The council's furniture: every agent desk becomes a Druid Panel, the elevator becomes the game's scene-travel
 // portal, the game's loot is strewn about like a gamer's den, and the Council Chambers and a village stand outside.
 // Everything the office does still works: the laptops ride on the panels (each tilted with its slab), the
-// elevator still opens and rides, and nothing here touches a collider.
+// elevator still opens and rides. The one collider it touches is each desk's, cut down to its lectern (fitDesks).
 import { Box3, Color, Group, Mesh, MeshStandardMaterial, Object3D, Raycaster, Vector3, type Material } from "three";
 import { COUNCIL } from "./assets.ts";
 import { gltf } from "./loader.ts";
-import { ROOM, STREET_Y, type Box } from "./room.ts";
+import { ROOM, STREET_Y, fitDesks, type Box } from "./room.ts";
 
 interface Desk {
   def: { id: string; x: number; z: number; rotY: number };
@@ -53,6 +53,8 @@ async function copy(path: string, size: number, by: "height" | "longest" = "long
  *  tilted with it and half sunk into the wood. */
 const PANEL = { width: 1.2, top: 1.4, z: -0.05, sink: 0.06 };
 const down = new Vector3(0, -1, 0), ray = new Raycaster();
+/** Where each loaded lectern stands, for fitDesks: the desk's collider is cut down to it. */
+const footprints: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
 
 /** How high the panel's top is under (x, z) in `space`: the median of five rays `spread` apart, so a carved notch
  *  under one corner doesn't drop what sits there (the panel's full height if they all miss). */
@@ -83,6 +85,7 @@ export function council(into: Group, office: Office) {
   const pick = <T,>(xs: readonly T[]) => xs[Math.floor(r() * xs.length)]!;
 
   // agent desks (and the board agents' kiosks) → Druid Panels, a lectern each, and each laptop on its slab
+  footprints.length = 0;
   for (const d of office.desks.values()) {
     if (!/^(desk|station)-/.test(d.def.id)) continue;
     const keep = new Set([d.laptopAnchor, d.seatAnchor, d.stage, d.vacancy]);
@@ -101,6 +104,10 @@ export function council(into: Group, office: Office) {
       p.position.set(0, 0, toward * PANEL.z);
       p.rotation.y = toward > 0 ? 0 : Math.PI;
       d.group.add(p);
+      p.updateWorldMatrix(true, true);
+      const b = new Box3().setFromObject(p);
+      footprints.push({ minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z });
+      fitDesks(office.colliders, footprints, PANEL.top);
 
       // lie the laptop along the slab: its pitch from the slab's height a little behind and in front of it
       const { x, z } = laptop.position, step = 0.12;
@@ -172,6 +179,11 @@ export function council(into: Group, office: Office) {
   copy(COUNCIL.chambers, 22, "longest").then((o) => { o.position.set(ROOM.minX - 26, STREET_Y, -2); o.rotation.y = Math.PI / 2; into.add(o); });
   for (let i = 0; i < 6; i++)
     copy(COUNCIL.hut, 7 + r() * 3, "longest").then((o) => { o.position.set(-24 + i * 9 + r() * 3, STREET_Y, 38 + r() * 8); o.rotation.y = r() * 6.28; into.add(o); });
+}
+
+/** Now and then: the back office's desks, once their row is built, get cut down to their lecterns too. */
+export function refit(office: Office) {
+  fitDesks(office.colliders, footprints, PANEL.top);
 }
 
 /** Every frame: the swirl turns. */

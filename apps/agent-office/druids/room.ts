@@ -9,6 +9,28 @@ export const ROAD = { minZ: 22, maxZ: 32 };
 
 export type Wall = "north" | "south" | "east" | "west";
 export type Box = { minX: number; maxX: number; minZ: number; maxZ: number; bottom: number; top: number };
+/** How tall the office's desks are (DESK_SIZE.height): each agent desk is a collider this tall. */
+export const DESK_TOP = 0.78;
+
+/**
+ * Clip every desk collider (a box DESK_TOP tall, not a fence) whose middle is under a panel down to that panel's
+ * footprint, and as tall as it. Clipped ones are `top` tall, so running this again leaves them be: the back
+ * office's desks only push their colliders once their row is built, so this runs now and then.
+ */
+export function fitDesks(colliders: Box[], panels: { minX: number; maxX: number; minZ: number; maxZ: number }[], top: number) {
+  for (const c of colliders) {
+    if ((c as { fence?: boolean }).fence || Math.abs(c.top - DESK_TOP) > 0.01) continue;
+    const x = (c.minX + c.maxX) / 2, z = (c.minZ + c.maxZ) / 2;
+    const p = panels.find((p) => x > p.minX && x < p.maxX && z > p.minZ && z < p.maxZ);
+    if (!p) continue;
+    c.minX = Math.max(c.minX, p.minX);
+    c.maxX = Math.min(c.maxX, p.maxX);
+    c.minZ = Math.max(c.minZ, p.minZ);
+    c.maxZ = Math.min(c.maxZ, p.maxZ);
+    c.top = top;
+  }
+}
+
 /** Something on a wall: `u` is its centre along the wall (x on north/south, z on east/west). */
 export type Feature = { name: string; wall: Wall; u: number; width: number; y0: number; y1: number };
 
