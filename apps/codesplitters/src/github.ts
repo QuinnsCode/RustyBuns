@@ -79,7 +79,7 @@ export async function evict(env: Env, owner: string, name: string) {
 }
 
 /** The submodules at `sha` and the commit each points at: in .gitmodules, then one contents call each. */
-async function submodules(repo: string, sha: string, token?: string) {
+export async function submodules(repo: string, sha: string, token?: string) {
   const res = await gh(`/repos/${repo}/contents/.gitmodules?ref=${sha}`, token);
   if (!res.ok) return [];
   const { content = "" } = (await res.json()) as { content?: string };

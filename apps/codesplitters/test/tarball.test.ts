@@ -39,8 +39,8 @@ function upstream() {
   return { sha, tree: git(dir, "rev-parse", "HEAD^{tree}"), tgz };
 }
 
-/** GitHub, faked: the repo, its tip and its tarball. */
-function fakeGitHub(sha: string, tgz: string) {
+/** GitHub, faked: the repo, its tip, its tarball and any submodules (path to commit). */
+function fakeGitHub(sha: string, tgz: string, subs: Record<string, string> = {}) {
   const real = globalThis.fetch;
   globalThis.fetch = (async (u: string | Request, init?: RequestInit) => {
     const url = new URL(typeof u === "string" ? u : u.url);
@@ -48,6 +48,10 @@ function fakeGitHub(sha: string, tgz: string) {
     if (url.pathname === "/repos/o/big") return Response.json({ full_name: "o/big", private: false, default_branch: "main" });
     if (url.pathname === "/repos/o/big/commits/main") return Response.json({ sha, commit: { message: "the tip", author: { name: "Up Stream", email: "up@stream.dev", date: "2026-10-01T00:00:00Z" } } });
     if (url.pathname === `/repos/o/big/tarball/${sha}`) return new Response(Bun.file(tgz));
+    if (url.pathname === "/repos/o/big/contents/.gitmodules" && Object.keys(subs).length)
+      return Response.json({ content: btoa(Object.keys(subs).map((p) => `[submodule "${p}"]\n\tpath = ${p}\n\turl = https://github.com/o/${p}\n`).join("")) });
+    const sub = Object.entries(subs).find(([p]) => url.pathname === `/repos/o/big/contents/${p}`);
+    if (sub) return Response.json({ type: "submodule", sha: sub[1] });
     return new Response("{}", { status: 404 });
   }) as typeof fetch;
   return () => { globalThis.fetch = real; };
@@ -120,7 +124,7 @@ describe("past the Artifacts import cap", () => {
     const bucket = new R2Bucket(bucketDir);
     const call = await local({ GH_CLI: "off", ADMINS: "boss", LEVEL_CHUNKS: bucket });
     call.artifacts.import = (async () => { throw new Error("The repository exceeds the size limit."); }) as any;
-    const restore = fakeGitHub(sha, tgz);
+    const restore = fakeGitHub(sha, tgz, { "vendor/zig": "a".repeat(40) });
     const { LEVELS } = await import("../src/levels.ts");
     const bun = LEVELS.find((l) => l.slug === "bun")!, was = bun.repo;
     bun.repo = "o/big";
@@ -134,7 +138,9 @@ describe("past the Artifacts import cap", () => {
 
       const root = (await get("/api/levels/bun/tree")).body;
       expect(root.commit).toEqual({ hash: sha, message: "the tip" });
-      expect(root.entries.map((e: any) => [e.path, e.type])).toEqual([["packages", "dir"], ["src", "dir"], ["empty", "file"], ["link.ts", "symlink"], ["logo.bin", "file"], ["README.md", "file"], ["run.sh", "file"]]);
+      expect(root.entries.map((e: any) => [e.path, e.type])).toEqual([["packages", "dir"], ["src", "dir"], ["vendor", "dir"], ["empty", "file"], ["link.ts", "symlink"], ["logo.bin", "file"], ["README.md", "file"], ["run.sh", "file"]]);
+      // The tarball leaves submodules out; they're listed from .gitmodules, as a dig's are.
+      expect((await get("/api/levels/bun/tree?path=vendor")).body.entries).toEqual([{ name: "zig", path: "vendor/zig", type: "gitlink" }]);
       expect((await get("/api/levels/bun/file?path=src/twin.ts")).body.text).toBe("export const a = 1\n");
       expect((await get("/api/levels/bun/file?path=run.sh")).body.text).toBe("#!/bin/sh\necho hi\n");
       expect((await get("/api/levels/bun/file?path=empty")).body.text).toBe("");
@@ -146,9 +152,13 @@ describe("past the Artifacts import cap", () => {
       expect(fork.status).toBe(409);
       expect(((await fork.json()) as any).error).toContain("too big for Artifacts");
 
-      // Again: the old chunks go, the new ones come.
+      // Again: the old chunks go, the new ones come, and so do an old commit's folders. Other levels' stay.
+      const rows = async () => ((await call.env.DB.prepare("SELECT hash FROM tree_cache WHERE hash LIKE 'r2:%' ORDER BY hash").all()).results as { hash: string }[]).map((r) => r.hash);
+      const ours = await rows();
+      await call.env.DB.batch(["r2:bun:old:", "r2:bun:old:src", "r2:bunny:old:"].map((h) => call.env.DB.prepare("INSERT INTO tree_cache (hash, entries) VALUES (?, '[]')").bind(h)));
       expect((await call("boss", "/api/levels/bun/import", { method: "POST", body: "{}" })).status).toBe(200);
       expect((await bucket.list({ prefix: "levels/bun/" })).objects.map((o: any) => o.key)).toEqual([`levels/bun/${sha}/0`]);
+      expect(await rows()).toEqual([...ours, "r2:bunny:old:"].sort());
     } finally { restore(); bun.repo = was; }
   });
 

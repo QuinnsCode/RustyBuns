@@ -20,10 +20,13 @@ const chunkKey = (slug: string, sha: string, n: number) => `${prefix(slug)}${sha
 const treeKey = (slug: string, sha: string, dir: string) => `r2:${slug}:${sha}:${dir}`;
 
 /**
- * Read `repo`'s tarball into level `slug`'s chunks. Chunks from an earlier
- * import go first. Returns how much was kept.
+ * Read `repo`'s tarball into level `slug`'s chunks, with its submodules
+ * listed as gitlinks (the tarball leaves them out). Chunks and folders from an
+ * earlier import go. Returns how much was kept.
  */
-export async function importChunks(env: Env, bucket: R2Like, p: { slug: string; sha: string; tarball: () => Promise<Response>; repo: string }) {
+export async function importChunks(env: Env, bucket: R2Like, p: {
+  slug: string; sha: string; tarball: () => Promise<Response>; submodules?: () => Promise<{ path: string; commit: string }[]>; repo: string;
+}) {
   const res = await p.tarball();
   if (!res.ok || !res.body) throw new Error(`GitHub said ${res.status} for ${p.repo}'s tarball`);
   await dropChunks(bucket, p.slug);
@@ -57,9 +60,13 @@ export async function importChunks(env: Env, bucket: R2Like, p: { slug: string; 
     parts.push(f.data), have += f.data.length, kept++, bytes += f.data.length;
   }
   await flush();
+  for (const m of (await p.submodules?.()) ?? []) add(m.path, { mode: "160000", type: "gitlink", hash: m.commit });
 
   const rows = [...dirs].map(([dir, entries]) => env.DB.prepare("INSERT OR REPLACE INTO tree_cache (hash, entries) VALUES (?, ?)").bind(treeKey(p.slug, p.sha, dir), JSON.stringify(entries)));
   for (let i = 0; i < rows.length; i += 100) await env.DB.batch(rows.slice(i, i + 100));
+  // The folders of any other commit: its chunks went above. (";" comes just after ":".)
+  await env.DB.prepare("DELETE FROM tree_cache WHERE hash >= ? AND hash < ? AND NOT (hash >= ? AND hash < ?)")
+    .bind(`r2:${p.slug}:`, `r2:${p.slug};`, `r2:${p.slug}:${p.sha}:`, `r2:${p.slug}:${p.sha};`).run();
   return { files, kept, bytes, chunks: n };
 }
 
