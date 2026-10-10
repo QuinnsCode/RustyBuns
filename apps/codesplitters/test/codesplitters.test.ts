@@ -398,6 +398,22 @@ async function accounts(extra: Record<string, unknown> = {}) {
 }
 
 describe("accounts", () => {
+  test("a request stuck on D1 inside Better Auth doesn't hold up the next one (#333)", async () => {
+    const { call, person, session } = await accounts();
+    const cookie = await person("stuck@example.com", "stuckone");
+    // The next session lookup never comes back, like a request cancelled mid-query on Workers.
+    const db = call.env.DB, prepare = db.prepare.bind(db);
+    let armed = true;
+    db.prepare = (sql: string) => {
+      if (!armed || !/"session"/.test(sql)) return prepare(sql);
+      armed = false;
+      return { bind: () => ({ all: () => new Promise(() => {}) }) };
+    };
+    void session(cookie);
+    const next = await Promise.race([session(cookie), Bun.sleep(3000).then(() => "hung")]);
+    expect(next).toMatchObject({ user: "stuckone" });
+  });
+
   test("with a secret set, Better Auth signs people up, then they pick the handle the app sees", async () => {
     const { call, signup, session, claim } = await accounts();
     expect(await session()).toEqual({ mode: "accounts", user: null, providers: ["email"] });
