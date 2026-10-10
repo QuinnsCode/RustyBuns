@@ -1225,6 +1225,29 @@ describe("shares", () => {
     expect((await read("bo")).lines.map((l: any) => l.text)).toEqual(["one", "key = hunter3", "three"]);
   });
 
+  test("a crew remote made after private lines were pushed blank gets their real text (#341)", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "old" });
+    const on = "/api/repos/ana/old/do";
+    await post(call, "ana", "/api/repos/ana/old/files", { path: "a.ts", content: "one\nkey = hunter2" });
+    await post(call, "ana", "/api/repos/ana/old/files", { path: "b.ts", content: "b\nsecret = 1" });
+    await post(call, "ana", `${on}/private?path=a.ts`, { lines: ["L2"], private: true });
+    await post(call, "ana", `${on}/commit?path=a.ts`, { message: "a" });
+    // A repo from before the crew remote: its git has a.ts blank, and no crew remote.
+    await call.artifacts.delete!("ana--old--crew");
+    await call.env.DB.prepare("UPDATE repos SET crew_artifact = NULL, crew_remote = NULL WHERE owner = 'ana' AND name = 'old'").run();
+    const read = async (name: string, path: string) => (await (await call.artifacts.get(name)).readFile({ ref: "main", path }))!.text();
+    expect(await read("ana--old", "a.ts")).toBe("one\n");
+
+    await post(call, "ana", `${on}/private?path=b.ts`, { lines: ["L2"], private: true });
+    await post(call, "ana", `${on}/commit?path=b.ts`, { message: "b" });
+    expect([await read("ana--old--crew", "a.ts"), await read("ana--old--crew", "b.ts")]).toEqual(["one\nkey = hunter2\n", "b\nsecret = 1\n"]);
+    expect([await read("ana--old", "a.ts"), await read("ana--old", "b.ts")]).toEqual(["one\n", "b\n"]);
+    // One backfill commit, then b.ts's own.
+    const log = await (await call.artifacts.get("ana--old--crew")).log({ ref: "main", limit: 2 });
+    expect(log.map((c: any) => c.message.trim())).toEqual(["b", "Private lines' real text: a.ts"]);
+  });
+
   test("a branch that changes build or deploy files says so, and a merge that would ship waits for the owner to read it", async () => {
     const call = await local();
     await post(call, "ana", "/api/login", { name: "ana" });
