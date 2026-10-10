@@ -7,6 +7,10 @@
 //   check    the deployed URL answers without a 5xx
 //   destroy  rustybuns destroy on that stage, then the clone is deleted
 //
+// In a monorepo the app's folder (the deploy settings' `dir`) is where install,
+// the config read, deploy and destroy run; bun install there still installs
+// the whole workspace.
+//
 // Desktop only: it runs the repo's code and deploys with the logins on this
 // machine (rustybuns login cloudflare, railway login, ...). A stack with
 // `adopt: true` is refused, since adopting takes the real resources' names and
@@ -18,6 +22,7 @@
 //   POST /api/repos/:o/:r/preview     start one
 
 import { access as artifactAccess, handleFor } from "./archive.ts";
+import { settings } from "./deploy.ts";
 import { json, type Env } from "./env.ts";
 
 export type StepKey = "clone" | "install" | "deploy" | "check" | "destroy";
@@ -127,10 +132,10 @@ const LOGIN_HINT = /unauthori[sz]ed|authentication|not logged in|no credentials|
  * a real deploy (`keep`, see deploy.ts), whose run has no destroy step. A real
  * deploy may take over live resources (`adopt`) when the owner said so.
  */
-export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean } = {}) {
+export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean; dir?: string } = {}) {
   const fs = runner.workdir ? null : await import("node:fs");
   const dir = runner.workdir ?? fs!.mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "codesplitters-preview-"));
-  const app = `${dir}/repo`;
+  const app = opts.dir ? `${dir}/repo/${opts.dir}` : `${dir}/repo`;
   const step = (k: StepKey) => run.steps.find((s) => s.key === k)!;
   const scrub = (s: string) => s.split(remote).join("<remote>");
   /** Run one step's commands; false when one fails. */
@@ -154,8 +159,12 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
     run.commit = /\b[0-9a-f]{40}\b/.exec(step("clone").out)?.[0];
     // Read the config with the repo's own @rustybuns/cli, so it is what deploy will see.
     const read = `const c = (await import("./rustybuns.config.ts")).default; console.log("RB " + JSON.stringify({ adopt: !!c.targets?.edge?.adopt, edge: !!c.targets?.edge, box: !!c.targets?.box }))`;
-    if (!(await go("install", [{ cmd: ["bun", "install"], cwd: app }, { cmd: ["bun", "-e", read], cwd: app }]))) {
-      if (/rustybuns\.config\.ts/.test(step("install").out)) run.note = "this repo has no rustybuns.config.ts: run `rustybuns init` in it first";
+    // A folder that isn't there says so, rather than failing to start bun in it.
+    const has = opts.dir ? [{ cmd: ["test", "-d", opts.dir], cwd: `${dir}/repo` }] : [];
+    if (!(await go("install", [...has, { cmd: ["bun", "install"], cwd: app }, { cmd: ["bun", "-e", read], cwd: app }]))) {
+      const where = opts.dir ? `${opts.dir} in this repo` : "this repo";
+      if (opts.dir && !step("install").out.includes("bun install")) run.note = `this repo has no folder ${opts.dir}: fix the folder in the deploy settings`;
+      else if (/rustybuns\.config\.ts/.test(step("install").out)) run.note = `${where} has no rustybuns.config.ts: run \`rustybuns init\` in it first`;
       return skip("deploy", "check", "destroy");
     }
     const cfg = JSON.parse(/RB (\{.*\})/.exec(step("install").out)?.[1] ?? "{}");
@@ -220,11 +229,12 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   if (!art) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
   const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
+  const { dir } = await settings(env, owner, repo);
   const id = crypto.randomUUID().slice(0, 8);
   const run: Run = { id, at: Date.now(), stage: `preview-${id}`, steps: STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
   runs.set(key, run);
   await logStart(env, owner, repo, run, user, "preview");
-  void preview(runner, remote, run)
+  void preview(runner, remote, run, { dir })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(() => logEnd(env, run));
   return json({ run }, 202);

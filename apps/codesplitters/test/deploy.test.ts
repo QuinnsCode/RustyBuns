@@ -57,7 +57,7 @@ test("the owner ships to their stage; it stays up and goes in the log", async ()
   expect((await call("ana", "/api/repos/ryan/lab/deploy")).status).toBe(403);
   expect((await send("ryan", "/api/repos/ryan/lab/deploy", { stage: "Prod!" }, "PUT")).status).toBe(400);
   expect((await send("ryan", "/api/repos/ryan/lab/deploy", { stage: "preview-x" }, "PUT")).status).toBe(400);
-  expect(await (await send("ryan", "/api/repos/ryan/lab/deploy", { stage: "live" }, "PUT")).json()).toEqual({ stage: "live", on_commit: false, production: false });
+  expect(await (await send("ryan", "/api/repos/ryan/lab/deploy", { stage: "live" }, "PUT")).json()).toEqual({ stage: "live", dir: "", on_commit: false, production: false });
 
   expect((await send("ryan", "/api/repos/ryan/lab/deploy", {})).status).toBe(202);
   const d = await settle(call);
@@ -171,4 +171,31 @@ test("the next desktop deploy updates the same stack: its Alchemy state is kept 
   expect(clones[0]).not.toBe(clones[1]);
   expect(stacks).toEqual(["lab-0", "lab-0"]);
   expect(statSync(`${keep}/ryan/lab`).mode & 0o777).toBe(0o700);
+});
+
+test("in a monorepo, the app's folder is where install and deploy run", async () => {
+  const f = fake(), cwds: Record<string, string> = {};
+  const exec = f.runner.exec;
+  f.runner.exec = (cmd, cwd, out) => { cwds[cmd.slice(0, 2).join(" ")] = cwd; return exec(cmd, cwd, out); };
+  const { call, send } = await app(f.runner);
+  for (const dir of ["../x", "apps/../x", "apps/./web", "a b", "apps//web"]) expect((await send("ryan", "/api/repos/ryan/lab/deploy", { dir }, "PUT")).status).toBe(400);
+  expect(await (await send("ryan", "/api/repos/ryan/lab/deploy", { dir: "/apps/web/" }, "PUT")).json()).toMatchObject({ dir: "apps/web" });
+  await send("ryan", "/api/repos/ryan/lab/deploy", {});
+  const d = await settle(call);
+  expect(d.history[0].status).toBe("done");
+  expect(f.ran).toContain("test -d apps/web");
+  expect(cwds["test -d"]).toMatch(/\/repo$/);
+  for (const c of ["bun install", "bun -e", "bun x"]) expect(cwds[c]).toMatch(/\/repo\/apps\/web$/);
+});
+
+test("a folder that isn't in the repo says so", async () => {
+  const f = fake();
+  const exec = f.runner.exec;
+  f.runner.exec = (cmd, cwd, out) => cmd[0] === "test" ? Promise.resolve(1) : exec(cmd, cwd, out);
+  const { call, send } = await app(f.runner);
+  await send("ryan", "/api/repos/ryan/lab/deploy", { dir: "apps/gone" }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/deploy", {});
+  const d = await settle(call);
+  expect(d.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("no folder apps/gone") });
+  expect(f.ran.some((l) => l.includes("bun install"))).toBe(false);
 });

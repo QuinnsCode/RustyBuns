@@ -1130,6 +1130,15 @@ const views = {
     if (!el) return;
     const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
     let sel = null, timer = null, picked = false, editKey = false;
+    // A monorepo's apps, from the fit check, offered as the folder once it answers.
+    let apps = [];
+    const fill = () => { const l = $("#deploy-dirs"); if (l) l.innerHTML = apps.map((w) => `<option value="${esc(w.dir)}">${esc(w.name)}</option>`).join(""); };
+    (async () => {
+      const key = `${owner}/${repo}`, f = fits[key] ??= await api(`/repos/${key}/fit`).catch(() => null);
+      if (!f?.verdict) delete fits[key];
+      apps = f?.workspaces ?? [];
+      fill();
+    })();
     // Hosted deploys use a key the owner stores here. It's write-only: the site shows who set it, when, and its last 4 characters.
     const keyBlock = (d) => d.why ? `<p class="muted" style="font-size:12px">${esc(d.why)}</p>`
       : d.key.set && !editKey ? `<div style="display:grid;gap:6px;font-size:12px"><span>${icon("key")} Deploy key <code>…${esc(d.key.last4)}</code> <span class="muted">set by @${esc(d.key.by)} on ${when(d.key.at)}</span></span>
@@ -1145,7 +1154,9 @@ const views = {
       const s = d.settings, run = d.run, by = Object.fromEntries((run?.steps ?? []).map((x) => [x.key, x]));
       const shown = sel && by[sel];
       el.innerHTML = `<form id="deploy-form" style="display:grid;gap:6px;font-size:13px">
-          <div class="row">stage <input name="stage" value="${esc(s.stage)}" style="width:8em;font:12px var(--mono)" pattern="[a-z0-9][a-z0-9-]*" required></div>
+          <div class="row">stage <input name="stage" value="${esc(s.stage)}" style="width:8em;font:12px var(--mono)" pattern="[a-z0-9][a-z0-9-]*" required>
+            folder <input name="dir" value="${esc(s.dir ?? "")}" placeholder="(repo root)" list="deploy-dirs" title="Where the app's rustybuns.config.ts is, in a monorepo" style="width:12em;font:12px var(--mono)">
+            <datalist id="deploy-dirs"></datalist></div>
           <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits; crew and agents never start a deploy)</span></label>
           <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This is production <span class="muted">(lets a stack with <code>adopt</code> take over the live resources)</span></label>
           <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : d.hosted ? esc(d.why || "Set a deploy key first") : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Shipping…" : `Deploy to ${esc(s.stage)}`}</button></div>
@@ -1156,10 +1167,11 @@ const views = {
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
         ${runLog(d.history)}`;
+      fill();
       el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { picked = true; sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
       $("#deploy-form").addEventListener("submit", async (e) => {
         e.preventDefault(); const f = e.target;
-        try { await api(base, { stage: f.stage.value, on_commit: f.on_commit.checked, production: f.production.checked }, "PUT"); toast("Saved"); poll(); }
+        try { await api(base, { stage: f.stage.value, dir: f.dir.value.trim(), on_commit: f.on_commit.checked, production: f.production.checked }, "PUT"); toast("Saved"); poll(); }
         catch (err) { toast(err.message); }
       });
       $("#key-form")?.addEventListener("submit", async (e) => {
@@ -1249,7 +1261,7 @@ const views = {
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
         <button class="btn primary" id="preview-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Running…" : "Deploy a preview"}</button>
-        <p class="muted" style="font-size:12px;margin-top:4px">Deploys this repo's <code>rustybuns.config.ts</code> to its targets as a throwaway stage, with the logins on this machine, checks it answers, then destroys it.</p>
+        <p class="muted" style="font-size:12px;margin-top:4px">Deploys this repo's <code>rustybuns.config.ts</code> (in the folder set under Deploy, for a monorepo) to its targets as a throwaway stage, with the logins on this machine, checks it answers, then destroys it.</p>
         ${runLog((d.history ?? []).filter((h) => h.id !== run?.id))}`;
       const np = el.querySelector("pre");
       if (np && stick) np.scrollTop = np.scrollHeight;
