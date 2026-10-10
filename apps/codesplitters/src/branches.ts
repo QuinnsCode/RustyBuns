@@ -7,8 +7,10 @@
 // side changed never conflict; a line both changed is settled per line,
 // keeping the branch's or main's. Git hears about it when main is catalogued.
 
-import { empty, fromText, type Conflict, type Doc } from "./lines.ts";
+import { empty, fromText, type Conflict, type Doc, type Op } from "./lines.ts";
 import { materialize, toFile } from "./archive.ts";
+import { changedLines, isBuildFile } from "./buildfiles.ts";
+import { settings as deploySettings } from "./deploy.ts";
 import { json, NAME, type Env } from "./env.ts";
 
 type Pick = "branch" | "main";
@@ -46,7 +48,7 @@ export async function createOn(env: Env, owner: string, repo: string, branch: st
 async function mergeFile(env: Env, owner: string, repo: string, branch: { name: string; by: string }, path: string, user: string, resolve: Record<string, Pick> | undefined, dry: boolean) {
   const [base, doc] = await Promise.all(["base", "file"].map(async (op) => (await toFile(env, owner, repo, path, user, op, {}, "", branch.name)).json() as Promise<Doc>));
   const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by }) });
-  return { status: res.status, ...(await res.json() as { rev: number; ops?: unknown[]; conflicts: Conflict[] }) };
+  return { status: res.status, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[] }) };
 }
 
 export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
@@ -72,27 +74,36 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   if (!branch) return json({ error: "no such branch" }, 404);
   const files = async () => ((await env.DB.prepare("SELECT path, merged FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as { path: string; merged: number }[]);
 
-  // GET /api/repos/:o/:r/branches/:b  the review: each file's ops against main now, and its conflicts
+  // GET /api/repos/:o/:r/branches/:b  the review: each file's ops against main now, and its conflicts.
+  // A file that runs at build or deploy time says so, with its changed lines spelled out,
+  // and `deploys` says whether the owner's commit after this merge would ship.
   if (!p[6] && req.method === "GET") {
     const out = await Promise.all((await files()).map(async (f) => {
-      if (f.merged) return { path: f.path, merged: true, ops: [], conflicts: [] };
+      const build = isBuildFile(f.path);
+      if (f.merged) return { path: f.path, merged: true, build, ops: [], conflicts: [] };
       const m = await mergeFile(env, owner, repo, branch, f.path, user ?? "anon", undefined, true);
-      if (a.write) return { path: f.path, merged: false, ops: m.ops ?? [], conflicts: m.conflicts };
-      // Outside the crew, main's private lines stay blank here too.
-      const secret = new Set(await (await toFile(env, owner, repo, f.path, "upstream", "private")).json() as string[]);
-      const ops = (m.ops ?? []).map((o: any) => o.kind === "set" && secret.has(o.line) ? { ...o, text: "" } : o);
-      const conflicts = m.conflicts.map((c) => secret.has(c.line) ? { ...c, base: "", main: c.main === null ? null : "", branch: c.branch === null ? null : "" } : c);
-      return { path: f.path, merged: false, ops, conflicts };
+      let ops = m.ops ?? [], conflicts = m.conflicts;
+      if (!a.write) {
+        // Outside the crew, main's private lines stay blank here too.
+        const secret = new Set(await (await toFile(env, owner, repo, f.path, "upstream", "private")).json() as string[]);
+        ops = ops.map((o: any) => o.kind === "set" && secret.has(o.line) ? { ...o, text: "" } : o);
+        conflicts = conflicts.map((c) => secret.has(c.line) ? { ...c, base: "", main: c.main === null ? null : "", branch: c.branch === null ? null : "" } : c);
+      }
+      const lines = build ? changedLines(await (await toFile(env, owner, repo, f.path, user ?? "anon", "file")).json() as Doc, ops) : undefined;
+      return { path: f.path, merged: false, build, ops, conflicts, ...(lines && { lines }) };
     }));
-    return json({ ...branch, files: out });
+    return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, files: out });
   }
 
   // POST /api/repos/:o/:r/branches/:b/merge {resolve?: {path: {lineId: "branch"|"main"}}}
   if (p[6] === "merge" && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
-    const { resolve = {} } = (await req.json().catch(() => ({}))) as { resolve?: Record<string, Record<string, Pick>> };
+    const { resolve = {}, build_ok } = (await req.json().catch(() => ({}))) as { resolve?: Record<string, Record<string, Pick>>; build_ok?: boolean };
     const todo = (await files()).filter((f) => !f.merged);
+    // Build or deploy files on a merge the owner's next commit would ship: read them first.
+    const build = todo.map((f) => f.path).filter(isBuildFile);
+    if (build.length && !build_ok && (await deploySettings(env, owner, repo)).on_commit) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok", build }, 409);
     // A dry run first, so a conflict anywhere merges nothing.
     const dry = await Promise.all(todo.map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user!, resolve[f.path], true)) })));
     const blocked = dry.filter((d) => d.conflicts.length).map(({ path, conflicts }) => ({ path, conflicts }));
