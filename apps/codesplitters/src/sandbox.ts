@@ -48,7 +48,7 @@ export class AgentSandbox {
       // The server takes a moment to listen after the container boots.
       for (let i = 0; ; i++) {
         try {
-          // /run: an agent on a file; /test: bun test on a cut's files (cuts.ts).
+          // /run: an agent on a file; /test: bun test on a cut's files (cuts.ts); /deps-test: the dependency doctor's run (deps.ts).
           return await c.getTcpPort(PORT).fetch("http://sandbox" + new URL(req.url).pathname, { method: "POST", body, headers: { "content-type": "application/json" } });
         } catch (e) {
           if (i >= 60) throw e;

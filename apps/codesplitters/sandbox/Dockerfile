@@ -6,7 +6,7 @@ FROM node:22-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git ripgrep \
   && rm -rf /var/lib/apt/lists/*
-# bun runs a cut's tests (POST /test).
+# bun runs a cut's tests (POST /test) and the dependency doctor's (POST /deps-test, src/deps.ts).
 RUN npm install -g @anthropic-ai/claude-code @openai/codex @earendil-works/pi-coding-agent opencode-ai bun \
   && npm cache clean --force
 

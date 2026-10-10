@@ -644,6 +644,56 @@ describe("shares", () => {
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=b.js")).json() as Doc)).toBe("Z");
   });
 
+  test("private lines in a public repo: the crew reads them, everyone else, git and search get them blank", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "pub" });
+    await post(call, "ana", "/api/repos/ana/pub/collaborators", { name: "agent-a" });
+    await post(call, "ana", "/api/repos/ana/pub/files", { path: "a.ts", content: "one\nkey = hunter2\nthree" });
+    const on = "/api/repos/ana/pub/do", q = "?path=a.ts";
+    const read = async (who: string | null, route = "file", query = q) => (await (await call(who, `${on}/${route}${query}`)).json()) as any;
+    const mark = (who: string, lines: string[], private_ = true) => post(call, who, `${on}/private${q}`, { lines, private: private_ });
+
+    expect((await mark("bo", ["L2"])).status).toBe(403);
+    expect((await post(call, "ana", `${on}/private${q}&branch=x`, { lines: ["L2"], private: true })).status).toBe(404);
+    expect((await mark("ana", ["L2"])).status).toBe(200);
+    // Outside the crew: a placeholder, in its place.
+    expect((await read("bo")).lines.map((l: any) => [l.id, l.text, !!l.private])).toEqual([["L1", "one", false], ["L2", "", true], ["L3", "three", false]]);
+    expect((await read(null)).lines[1].text).toBe("");
+    expect((await read("agent-a")).lines[1]).toMatchObject({ text: "key = hunter2", private: true });
+
+    // Edited, it stays private, and blame and time travel don't give it away.
+    await post(call, "ana", `${on}/ops${q}`, { ops: [{ kind: "set", line: "L2", base: 2, text: "key = hunter3" }] });
+    expect((await read("ana")).lines[1]).toMatchObject({ text: "key = hunter3", private: true });
+    expect(JSON.stringify([await read("bo", "log"), await read("bo", "at", q + "&rev=3")])).not.toContain("hunter");
+
+    // Git and search get the blank line; the crew still reads the real one.
+    expect((await post(call, "ana", `${on}/commit${q}`, { message: "c" })).status).toBe(200);
+    const repo = await call.artifacts.get("ana--pub");
+    expect(await (await repo.readFile({ ref: "main", path: "a.ts" }))!.text()).toBe("one\n\nthree\n");
+    expect(await (await call("ana", "/api/search?q=hunter3")).json()).toEqual([]);
+    expect((await (await call("ana", "/api/search?q=three")).json() as any[]).length).toBe(1);
+
+    // Shares and playlists read it as their reader may.
+    const { id } = await (await post(call, "ana", "/api/repos/ana/pub/shares", { path: "a.ts", from: 1, to: 3 })).json() as any;
+    expect((await (await call(null, `/api/shares/${id}`)).json() as any).lines.map((l: any) => l.text)).toEqual(["one", "", "three"]);
+    const pl = await (await post(call, "bo", "/api/playlists", { title: "mine" })).json() as any;
+    await post(call, "bo", `/api/playlists/${pl.id}/tracks`, { owner: "ana", repo: "pub", path: "a.ts", from: 1, to: 3 });
+    expect((await (await call("bo", `/api/playlists/${pl.id}`)).json() as any).tracks[0].lines.map((l: any) => l.text)).toEqual(["one", "", "three"]);
+
+    // A branch's copy hides the same lines, and lines marked after it forked.
+    await post(call, "agent-a", "/api/repos/ana/pub/branches", { name: "b" });
+    await post(call, "agent-a", `${on}/ops${q}&branch=b`, { ops: [{ kind: "set", line: "L2", base: 4, text: "key = hunter4" }] });
+    await mark("ana", ["L1"]);
+    expect((await read("bo", "file", q + "&branch=b")).lines.map((l: any) => l.text)).toEqual(["", "", "three"]);
+    const review = await (await call("bo", "/api/repos/ana/pub/branches/b")).json() as any;
+    expect(JSON.stringify(review)).not.toContain("hunter");
+    expect(JSON.stringify(await (await call("ana", "/api/repos/ana/pub/branches/b")).json())).toContain("hunter4");
+
+    // Public again.
+    await mark("ana", ["L1", "L2"], false);
+    expect((await read("bo")).lines.map((l: any) => l.text)).toEqual(["one", "key = hunter3", "three"]);
+  });
+
   test("a branch that changes build or deploy files says so, and a merge that would ship waits for the owner to read it", async () => {
     const call = await local();
     await post(call, "ana", "/api/login", { name: "ana" });
