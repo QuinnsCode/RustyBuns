@@ -3,13 +3,13 @@
 // elsewhere (codeSplitters keeps them in Durable Objects) can ask too.
 // infer() uses the same framework detection, so there is one detector.
 
-/** Every stack we can name. Only the first four are ones `init` supports today. */
+/** Every stack we can name. SUPPORTED lists the ones `init` reads today. */
 export type Stack =
   | "rwsdk" | "tanstack-start" | "vite-react" | "vite"
   | "next" | "astro" | "sveltekit" | "react-router" | "nuxt"
   | "unknown";
 
-export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "vite-react", "vite"];
+export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "vite-react", "vite"];
 
 const LABEL: Record<Stack, string> = {
   rwsdk: "RedwoodSDK", "tanstack-start": "TanStack Start", "vite-react": "Vite + React", vite: "Vite",
@@ -17,7 +17,7 @@ const LABEL: Record<Stack, string> = {
 };
 
 /** Frameworks with a Cloudflare adapter that `init` doesn't infer yet, and the issue tracking each. */
-const TRACKED: Partial<Record<Stack, number>> = { next: 199, astro: 200, sveltekit: 201, "react-router": 202, nuxt: 203 };
+const TRACKED: Partial<Record<Stack, number>> = { next: 199, sveltekit: 201, "react-router": 202, nuxt: 203 };
 const ISSUES = "https://github.com/QuinnsCode/RustyBuns/issues/";
 
 /** A framework init doesn't support yet: its name and tracking issue. */

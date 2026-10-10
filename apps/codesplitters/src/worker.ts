@@ -15,6 +15,7 @@ import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
 import { previewRoutes } from "./preview.ts";
+import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { repoFit } from "./fit.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -62,6 +63,8 @@ const app = {
     if (deps) return deps;
     const preview = await previewRoutes(req, env, p, user);
     if (preview) return preview;
+    const deploy = await deployRoutes(req, env, p, user);
+    if (deploy) return deploy;
 
     // GET|PUT /api/me
     if (p[1] === "me") {
@@ -131,8 +134,8 @@ const app = {
       }
       // POST /api/repos/:o/:r/cuts {pieces: [{path, from, to}], note}  some lines and their imports, as a branch to run and merge back
       if (p[4] === "cuts" && req.method === "POST") return createCut(env, owner, repo, user, a.write, await body());
-      // GET /api/repos/:o/:r/fit  how easily Rusty Buns could box it
-      if (p[4] === "fit" && req.method === "GET") return repoFit((r) => app.fetch(r, env), url.origin, owner, repo, user);
+      // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
+      if (p[4] === "fit" && req.method === "GET") return repoFit((r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
       // GET /api/repos/:o/:r/tree?path=dir  the repo's git tree, plus files written here but not catalogued yet
       if (p[4] === "tree") {
         const dir = (url.searchParams.get("path") ?? "").replace(/^\/|\/$/g, "");
@@ -213,6 +216,8 @@ const app = {
           ]);
           // The catalogue entry stands even if the push fails; the next one carries it.
           const git = await pushCatalogue(env, owner, repo, path, content, user!, commit.message).catch((e: Error) => ({ error: e.message }));
+          // The owner's own commit ships, when they turned that on (deploy.ts).
+          if (git && !("error" in git)) await deployOnCommit(env, owner, repo, user);
           return json({ ...commit, git });
         }
         return res;

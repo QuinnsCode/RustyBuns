@@ -110,6 +110,8 @@
   .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
   .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent); } .sec .run .st.failed { color: var(--del-fg); }
   .sec .run pre { margin: 4px 0 0; max-height: 180px; overflow: auto; font: 400 11.5px/1.45 var(--mono); white-space: pre-wrap; color: var(--muted); }
+  .ghwho { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 8px 10px; margin: 0 0 8px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--canvas); }
+  .ghwho.on { border-color: var(--del-edge); background: var(--accent-soft); } .ghwho svg.lucide { margin-top: 2px; }
   .flow { display: flex; align-items: center; margin: 6px 0 4px; }
   .flow .ln { flex: 1; height: 2px; background: var(--border-2); min-width: 6px; } .flow .ln.done { background: #2f9e44; }
   .flow button { display: grid; justify-items: center; gap: 3px; background: none; border: 0; padding: 2px; cursor: pointer; font: 500 10px/1 var(--mono); color: var(--faint); }
@@ -377,6 +379,8 @@ function workbench(head, { tab, bar, body, details, status }) {
     <aside class="details">${details}</aside></div><footer class="status">${status}</footer>`;
 }
 const fits = {};
+/** A run's steps as a row of icons that go orange, then green or red; click one for its log. */
+const flowRow = (steps, by, sel) => `<div class="flow">${steps.map(([k, ic, label], i) => `${i ? `<span class="ln${by[steps[i - 1][0]]?.status === "done" ? " done" : ""}"></span>` : ""}<button type="button" data-step="${k}" class="${by[k]?.status ?? "waiting"}${sel === k ? " sel" : ""}" title="${by[k]?.status ?? "waiting"}${by[k]?.ms ? ` · ${(by[k].ms / 1000).toFixed(1)}s` : ""}"><span class="dot">${icon(by[k]?.status === "done" ? "check" : by[k]?.status === "failed" ? "x" : ic)}</span>${label}</button>`).join("")}</div>`;
 const sec = (ic, title, html) => `<section class="sec"><h3>${icon(ic)}${title}</h3>${html}</section>`;
 const readmeOf = (tree) => tree.entries.find((e) => e.type === "file" && /^readme(\.|$)/i.test(e.name)) ?? tree.entries.find((e) => e.type === "file");
 function table(tree, href) {
@@ -436,6 +440,7 @@ function visBadge(v, canFlip) {
 // Dig up anything on GitHub: search words, or paste whatever you copied there
 // (owner/name, a page URL, a remote, a git clone line). The server reads the repo out of it.
 const digBox = (why) => `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div><div class="body"><p class="muted" style="margin-top:0">${why}</p>
+  <div class="ghwho" id="ghwho" hidden></div>
   <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up (fork)</button></div>
   <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form>`;
 const looksPasted = (v) => /[\/:]/.test(v.trim());
@@ -452,8 +457,18 @@ function wireDig() {
   api("/github/repos").then((g) => {
     mine = g;
     note = g.temporary ? `Digs last ${g.ttlHours} hours here, and the oldest goes first when too many are live.` : "";
-    const via = { gh: "the GitHub CLI on this machine", account: "your GitHub sign-in", secret: "this host's GitHub token" }[g.via];
-    msg.textContent = (g.login && g.repos.length ? `Signed in to GitHub as @${g.login}, through ${via}. Pick one of yours, search, or paste anything from GitHub. ` : "Search GitHub, or paste anything you copied there. ") + note;
+    // Say plainly whose GitHub this is and where the login came from, since that's why private repos show up.
+    const via = { gh: "the GitHub CLI on this machine (<code>gh auth token</code>)", account: "your GitHub sign-in", secret: "this host's GitHub token" }[g.via];
+    const off = { gh: "To stop, run <code>gh auth logout</code> or start the app with <code>GH_CLI=off</code>.", account: "", secret: "" }[g.via] ?? "";
+    const who = $("#ghwho"), priv = g.repos.filter((x) => x.private).length;
+    who.hidden = false;
+    who.innerHTML = g.login
+      ? `${icon("github")}<span><b>Logged in to GitHub as <a href="https://github.com/${esc(g.login)}" rel="noopener">@${esc(g.login)}</a></b> through ${via}. That's why your ${g.repos.length} repo${g.repos.length === 1 ? "" : "s"}${priv ? ` (${priv} private)` : ""} show below. ${off}</span>`
+      : g.error ? `${icon("github")}<span><b>GitHub login didn't work</b> (${esc(g.error)}). Only public repos can be searched.</span>`
+      : `${icon("github")}<span><b>Not logged in to GitHub.</b> Only public repos can be searched. ${g.privateOk ? "Run <code>gh auth login</code> on this machine to see your own." : "Sign in with GitHub to see your own."}</span>`;
+    who.classList.toggle("on", !!g.login);
+    icons();
+    msg.textContent = (g.login && g.repos.length ? "Pick one of yours, search, or paste anything from GitHub. " : "Search GitHub, or paste anything you copied there. ") + note;
     if (!f.repo.value) showMine();
   }).catch(() => {});
   f.repo.addEventListener("input", () => {
@@ -570,21 +585,27 @@ const views = {
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<div id="deps"><span class="muted">…</span></div>`) : "")
+      + (owner === me() ? sec("send", "Deploy", `<div id="deploy"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "");
   },
-  /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? */
-  async wireFit(owner, repo) {
+  /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
+  async wireFit(owner, repo, dir = "") {
     const el = $("#fit");
     if (!el) return;
-    // The file pages share this panel: ask once per repo per visit.
-    const key = `${owner}/${repo}`;
-    const f = fits[key] ??= await api(`/repos/${key}/fit`).catch(() => null);
-    if (!f?.verdict) delete fits[key];
+    // The file pages share this panel: ask once per repo (and folder) per visit.
+    const key = `${owner}/${repo}`, at = dir ? `${key}?dir=${encodeURIComponent(dir)}` : key;
+    const f = fits[at] ??= await api(`/repos/${key}/fit${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`).catch(() => null);
+    if (!f?.verdict) delete fits[at];
     if (!f?.verdict) { el.innerHTML = '<span class="muted">not checked yet</span>'; return; }
     const say = { ready: "ready to ship", likely: "likely fits", "needs-work": "needs work", poor: "poor fit" };
-    el.innerHTML = `<p><span class="badge fit-${f.verdict}">${say[f.verdict]}</span> ${esc(f.label)}</p>
+    const ws = f.workspaces ?? [];
+    el.innerHTML = (dir ? `<p class="muted"><a href="#" data-fit-dir="">${esc(repo)}</a> / <code>${esc(dir)}</code></p>` : "")
+      + `<p><span class="badge fit-${f.verdict}">${say[f.verdict]}</span> ${esc(f.label)}</p>
       <ul class="fit-why">${f.reasons.map((r) => `<li>${esc(r).replace(/\x60([^\x60]+)\x60/g, "<code>$1</code>")}</li>`).join("")}</ul>
-      ${f.issue ? `<p class="muted">Support is tracked in <a href="${esc(f.issue)}" target="_blank" rel="noopener">#${esc(f.issue.split("/").pop())}</a>.</p>` : ""}`;
+      ${f.issue ? `<p class="muted">Support is tracked in <a href="${esc(f.issue)}" target="_blank" rel="noopener">#${esc(f.issue.split("/").pop())}</a>.</p>` : ""}`
+      + (ws.length ? `<p class="muted" style="margin-top:8px">Its apps:</p><ul class="fit-why" style="list-style:none;padding-left:0">${ws.map((w) =>
+          `<li><a href="#" data-fit-dir="${esc(w.dir)}" title="${esc(w.dir)}">${esc(w.name)}</a> <span class="badge fit-${w.verdict}">${say[w.verdict]}</span> ${esc(w.label)}</li>`).join("")}</ul>` : "");
+    el.querySelectorAll("[data-fit-dir]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); views.wireFit(owner, repo, a.dataset.fitDir); }));
   },
   /** The dependency doctor: when it checks, what it may propose, and what it found last. */
   async wireDeps(owner, repo) {
@@ -620,6 +641,55 @@ const views = {
     });
     icons();
   },
+  /** Deploy for real: the same steps as a preview, minus the teardown, to the stage the owner picks. And the log of every deploy. */
+  async wireDeploy(owner, repo) {
+    const el = $("#deploy"), base = `/repos/${owner}/${repo}/deploy`;
+    if (!el) return;
+    const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
+    let sel = null, timer = null, picked = false;
+    const when = (t) => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const draw = (d) => {
+      const s = d.settings, run = d.run, by = Object.fromEntries((run?.steps ?? []).map((x) => [x.key, x]));
+      const shown = sel && by[sel];
+      el.innerHTML = `<form id="deploy-form" style="display:grid;gap:6px;font-size:13px">
+          <div class="row">stage <input name="stage" value="${esc(s.stage)}" style="width:8em;font:12px var(--mono)" pattern="[a-z0-9][a-z0-9-]*" required></div>
+          <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits; crew and agents never start a deploy)</span></label>
+          <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This is production <span class="muted">(lets a stack with <code>adopt</code> take over the live resources)</span></label>
+          <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Shipping…" : `Deploy to ${esc(s.stage)}`}</button></div>
+        </form>
+        ${run ? flowRow(STEPS, by, sel) : ""}
+        ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a></p>` : ""}
+        ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
+        ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
+        ${d.history.length ? `<div style="margin-top:6px">${d.history.map((h) => `<div class="run"><span class="st ${h.status === "failed" || h.status === "interrupted" ? "failed" : h.status === "running" ? "running" : ""}">${h.status} · ${esc(h.stage)} · ${when(h.at)}${h.ms ? ` · ${Math.round(h.ms / 1000)}s` : ""}</span>
+          <span style="font-size:12px">@${esc(h.by)} ${h.trigger === "commit" ? "committed" : "pressed deploy"}${h.commit_hash ? ` · <code>${esc(h.commit_hash.slice(0, 7))}</code>` : ""}${h.url ? ` · <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url.replace(/^https?:\/\//, ""))}</a>` : ""}</span>
+          ${h.note ? `<span class="muted" style="font-size:12px">${esc(h.note)}</span>` : ""}
+          ${h.status === "failed" && h.out ? `<details><summary class="muted" style="font-size:12px;cursor:pointer">log</summary><pre>${esc(h.out)}</pre></details>` : ""}</div>`).join("")}</div>` : ""}`;
+      el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { picked = true; sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
+      $("#deploy-form").addEventListener("submit", async (e) => {
+        e.preventDefault(); const f = e.target;
+        try { await api(base, { stage: f.stage.value, on_commit: f.on_commit.checked, production: f.production.checked }, "PUT"); toast("Saved"); poll(); }
+        catch (err) { toast(err.message); }
+      });
+      $("#deploy-run").addEventListener("click", async () => {
+        sel = null; picked = false;
+        try { await api(base, {}); } catch (err) { toast(err.message); }
+        poll();
+      });
+      icons();
+    };
+    const poll = async () => {
+      clearTimeout(timer);
+      if (!document.body.contains(el)) return;
+      const d = await api(base).catch(() => null);
+      if (!d) { el.innerHTML = '<span class="muted">unavailable</span>'; return; }
+      const running = d.run?.steps.find((x) => x.status === "running")?.key;
+      if (running && !picked) sel = running;
+      draw(d);
+      if (d.run && !d.run.done) timer = setTimeout(poll, 1000);
+    };
+    poll();
+  },
   /** A preview deploy: five steps that go green as the stack goes up and comes down. Click one for its log. */
   async wirePreview(owner, repo) {
     const el = $("#preview"), base = `/repos/${owner}/${repo}/preview`;
@@ -631,7 +701,7 @@ const views = {
       sel ??= run?.steps.find((s) => s.status === "running")?.key ?? null;
       const shown = sel && by[sel];
       const pre = el.querySelector("pre"), stick = !pre || pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
-      el.innerHTML = `<div class="flow">${STEPS.map(([k, ic, label], i) => `${i ? `<span class="ln${by[STEPS[i - 1][0]]?.status === "done" ? " done" : ""}"></span>` : ""}<button type="button" data-step="${k}" class="${by[k]?.status ?? "waiting"}${sel === k ? " sel" : ""}" title="${by[k]?.status ?? "waiting"}${by[k]?.ms ? ` · ${(by[k].ms / 1000).toFixed(1)}s` : ""}"><span class="dot">${icon(by[k]?.status === "done" ? "check" : by[k]?.status === "failed" ? "x" : ic)}</span>${label}</button>`).join("")}</div>
+      el.innerHTML = `${flowRow(STEPS, by, sel)}
         ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a>${run.done ? ' <span class="muted">(torn down)</span>' : ""}</p>` : ""}
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
@@ -696,6 +766,7 @@ const views = {
     views.wireDeps(owner, repo);
     views.wireFit(owner, repo);
     views.wirePreview(owner, repo);
+    views.wireDeploy(owner, repo);
   },
   repoStatus(r, tree, extra = "") {
     return `<span>${icon("git-branch")}${esc(r.branch ?? "main")}</span>${tree?.commit ? `<span>${icon("git-commit-horizontal")}${tree.commit.hash.slice(0, 7)}</span>` : ""}<span>${icon(r.visibility === "private" ? "lock" : "globe")}${r.visibility}</span>${extra}`;
