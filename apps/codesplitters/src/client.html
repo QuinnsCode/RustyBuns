@@ -110,6 +110,8 @@
   .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
   .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent); } .sec .run .st.failed { color: var(--del-fg); }
   .sec .run pre { margin: 4px 0 0; max-height: 180px; overflow: auto; font: 400 11.5px/1.45 var(--mono); white-space: pre-wrap; color: var(--muted); }
+  .ghwho { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 8px 10px; margin: 0 0 8px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--canvas); }
+  .ghwho.on { border-color: var(--del-edge); background: var(--accent-soft); } .ghwho svg.lucide { margin-top: 2px; }
   .flow { display: flex; align-items: center; margin: 6px 0 4px; }
   .flow .ln { flex: 1; height: 2px; background: var(--border-2); min-width: 6px; } .flow .ln.done { background: #2f9e44; }
   .flow button { display: grid; justify-items: center; gap: 3px; background: none; border: 0; padding: 2px; cursor: pointer; font: 500 10px/1 var(--mono); color: var(--faint); }
@@ -426,6 +428,7 @@ function visBadge(v, canFlip) {
 // Dig up anything on GitHub: search words, or paste whatever you copied there
 // (owner/name, a page URL, a remote, a git clone line). The server reads the repo out of it.
 const digBox = (why) => `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div><div class="body"><p class="muted" style="margin-top:0">${why}</p>
+  <div class="ghwho" id="ghwho" hidden></div>
   <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up (fork)</button></div>
   <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form>`;
 const looksPasted = (v) => /[\/:]/.test(v.trim());
@@ -442,8 +445,18 @@ function wireDig() {
   api("/github/repos").then((g) => {
     mine = g;
     note = g.temporary ? `Digs last ${g.ttlHours} hours here, and the oldest goes first when too many are live.` : "";
-    const via = { gh: "the GitHub CLI on this machine", account: "your GitHub sign-in", secret: "this host's GitHub token" }[g.via];
-    msg.textContent = (g.login && g.repos.length ? `Signed in to GitHub as @${g.login}, through ${via}. Pick one of yours, search, or paste anything from GitHub. ` : "Search GitHub, or paste anything you copied there. ") + note;
+    // Say plainly whose GitHub this is and where the login came from, since that's why private repos show up.
+    const via = { gh: "the GitHub CLI on this machine (<code>gh auth token</code>)", account: "your GitHub sign-in", secret: "this host's GitHub token" }[g.via];
+    const off = { gh: "To stop, run <code>gh auth logout</code> or start the app with <code>GH_CLI=off</code>.", account: "", secret: "" }[g.via] ?? "";
+    const who = $("#ghwho"), priv = g.repos.filter((x) => x.private).length;
+    who.hidden = false;
+    who.innerHTML = g.login
+      ? `${icon("github")}<span><b>Logged in to GitHub as <a href="https://github.com/${esc(g.login)}" rel="noopener">@${esc(g.login)}</a></b> through ${via}. That's why your ${g.repos.length} repo${g.repos.length === 1 ? "" : "s"}${priv ? ` (${priv} private)` : ""} show below. ${off}</span>`
+      : g.error ? `${icon("github")}<span><b>GitHub login didn't work</b> (${esc(g.error)}). Only public repos can be searched.</span>`
+      : `${icon("github")}<span><b>Not logged in to GitHub.</b> Only public repos can be searched. ${g.privateOk ? "Run <code>gh auth login</code> on this machine to see your own." : "Sign in with GitHub to see your own."}</span>`;
+    who.classList.toggle("on", !!g.login);
+    icons();
+    msg.textContent = (g.login && g.repos.length ? "Pick one of yours, search, or paste anything from GitHub. " : "Search GitHub, or paste anything you copied there. ") + note;
     if (!f.repo.value) showMine();
   }).catch(() => {});
   f.repo.addEventListener("input", () => {
