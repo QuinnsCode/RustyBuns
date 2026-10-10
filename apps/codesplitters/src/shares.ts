@@ -31,7 +31,7 @@ export async function createShare(env: Env, owner: string, repo: string, user: s
 
 export async function shareRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] !== "shares" || !p[2]) return null;
-  const s = await env.DB.prepare("SELECT * FROM shares WHERE id = ?").bind(p[2]).first();
+  const s = await env.DB.prepare("SELECT s.* FROM shares s JOIN repos r ON r.owner = s.owner AND r.name = s.repo WHERE s.id = ? AND (r.expires_at IS NULL OR r.expires_at > ?)").bind(p[2], Date.now()).first();
   if (!s) return json({ error: "this share was revoked, or never was" }, 404);
   if (req.method === "DELETE") {
     if (user !== s.by && user !== s.owner) return json({ error: "only whoever shared it, or the repo's owner" }, 403);
