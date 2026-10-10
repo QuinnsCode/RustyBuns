@@ -202,12 +202,15 @@ test("init: Astro with @astrojs/cloudflare runs the adapter's Worker, on the des
   expect(b).toContain('"build": "astro build"');
 });
 
-test("init: static Astro is a desktop-only site; another adapter is refused", () => {
+test("init: static Astro is the desktop and a static site on the web; another adapter is refused", () => {
   const s = project({ "package.json": JSON.stringify({ name: "s", dependencies: { astro: "^7" } }), "astro.config.mjs": "export default {};\n", "bun.lock": "" });
   const r = s.run("init");
   expect(r.code).toBe(0);
-  expect(r.out).toMatch(/a static Astro site/);
-  expect(s.read("rustybuns.config.ts")).toContain('"clientBuild": "bunx astro build --outDir dist/ui"');
+  expect(r.out).toMatch(/a static Astro site: the desktop, and the web/);
+  const c = s.read("rustybuns.config.ts");
+  expect(c).toContain('"clientBuild": "bunx astro build --outDir dist/ui"');
+  expect(c).toContain('"build": "bunx astro build --outDir dist/web"');
+  expect(c).toContain('"notFoundHandling": "404-page"');
 
   const node = project({
     "package.json": JSON.stringify({ name: "n", dependencies: { astro: "^7", "@astrojs/node": "^9" } }),
@@ -217,4 +220,83 @@ test("init: static Astro is a desktop-only site; another adapter is refused", ()
   expect(n.code).toBe(1);
   expect(n.out).toMatch(/uses @astrojs\/node.*astro add cloudflare/);
   expect(existsSync(join(node.dir, "rustybuns.config.ts"))).toBe(false);
+});
+
+test("init: a plain Vite SPA goes on the web as an assets-only Worker; one with a Node server stays desktop-only", () => {
+  const p = project({ "package.json": VITE, "bun.lock": "", "src/main.tsx": "" });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/the desktop, and the web as static files on Workers/);
+  expect(r.out).toMatch(/rustybuns plan/);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"edge": {\n      "provider": "cloudflare"');
+  expect(c).toContain('"assets": "dist/web"');
+  expect(c).toContain('"build": "bunx vite build --outDir dist/web --emptyOutDir"');
+  expect(c).toContain('"notFoundHandling": "single-page-application"');
+  expect(c).not.toContain('"main"');
+  // plan's generate step: a Worker with no main line, Cloudflare serving the files itself.
+  expect(p.run("generate").code).toBe(0);
+  const a = p.read(".rustybuns/alchemy.run.ts");
+  expect(a).not.toMatch(/^\s*main:/m);
+  expect(a).toContain('directory: "dist/web"');
+  expect(a).toContain('notFoundHandling: "single-page-application"');
+
+  const k = project({ "package.json": JSON.stringify({ name: "kuma", dependencies: { vite: "^5", express: "^4", "socket.io": "^4" } }), "bun.lock": "" });
+  const kr = k.run("init");
+  expect(kr.code).toBe(0);
+  expect(kr.out).toMatch(/desktop-only: it runs a Node server \(express, socket\.io\)/);
+  expect(k.read("rustybuns.config.ts")).not.toContain('"edge"');
+});
+
+test("init: a plain Worker from wrangler gets no RWSDK build; a Vite-plugin one builds where the plugin writes", () => {
+  const w = project({
+    "package.json": JSON.stringify({ name: "d1-app", scripts: { deploy: "wrangler deploy", predeploy: "wrangler d1 migrations apply DB --remote" }, devDependencies: { wrangler: "^4" } }),
+    "wrangler.json": JSON.stringify({ name: "d1-app", main: "src/index.ts", compatibility_date: "2025-10-08", d1_databases: [{ binding: "DB", database_name: "d1-app-db", database_id: "x" }] }),
+    "src/index.ts": "export default { fetch: () => new Response('hi') };\n", "bun.lock": "",
+  });
+  const r = w.run("init", "--force");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/build:    none \(a plain Worker: Alchemy bundles src\/index\.ts\)/);
+  const c = w.read("rustybuns.config.ts");
+  for (const k of ['"builtMain"', '"assets"', '"build"']) expect(c).not.toContain(k);
+  expect(w.read(".rustybuns/alchemy.run.ts")).toContain('main: "src/index.ts"');
+
+  const v = project({
+    "package.json": JSON.stringify({ name: "vite-react-template", scripts: { build: "tsc -b && vite build", deploy: "wrangler deploy" }, dependencies: { react: "^19" }, devDependencies: { vite: "^7", "@cloudflare/vite-plugin": "^1" } }),
+    "vite.config.ts": 'import { cloudflare } from "@cloudflare/vite-plugin";\nexport default { plugins: [cloudflare()] };\n',
+    "wrangler.json": JSON.stringify({ name: "vite-react-template", main: "./src/worker/index.ts", compatibility_date: "2025-10-08", assets: { directory: "./dist/client", not_found_handling: "single-page-application" } }),
+    "src/worker/index.ts": "export default {};\n", "bun.lock": "",
+  });
+  const vr = v.run("init");
+  expect(vr.code).toBe(0);
+  const vc = v.read("rustybuns.config.ts");
+  expect(vc).toContain('"builtMain": "dist/vite_react_template/index.js"');
+  expect(vc).toContain('"build": "tsc -b && vite build"');   // the build script, not the deploy-only one
+  expect(vc).toContain('"notFoundHandling": "single-page-application"');
+});
+
+test("init: an Astro adapter entry that's a package isn't reported missing", () => {
+  const a = project({
+    "package.json": JSON.stringify({ name: "bc", scripts: { build: "astro build" }, dependencies: { astro: "^5", "@astrojs/cloudflare": "^12" } }),
+    "astro.config.mjs": 'import cloudflare from "@astrojs/cloudflare";\nexport default { output: "server", adapter: cloudflare() };\n',
+    "wrangler.jsonc": JSON.stringify({ name: "bc", main: "@astrojs/cloudflare/entrypoints/server", compatibility_date: "2025-10-08" }), "bun.lock": "",
+  });
+  const r = a.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).not.toMatch(/does not exist/);
+});
+
+test("init: a vite root of public/ builds into the app's dist, not public/dist", () => {
+  const { viteRoot } = require("../src/glue/infer.ts");
+  expect(viteRoot('export default { root: "public" }')).toBe("public");
+  expect(viteRoot("export default { root: './src/app', plugins: [] }")).toBe("src/app");
+  expect(viteRoot("export default defineConfig({ root: resolve(__dirname, 'public'), base: './' })")).toBe("public");
+  expect(viteRoot("const root = path.join(import.meta.dirname, 'web', 'ui');\nexport default defineConfig({\n  root,\n})")).toBe("web/ui");
+  expect(viteRoot("export default { plugins: [react()] }")).toBeNull();
+  const p = project({ "package.json": VITE, "bun.lock": "", "vite.config.ts": "import { resolve } from 'node:path';\nexport default { root: resolve(import.meta.dirname, 'public') };\n" });
+  expect(p.run("init").code).toBe(0);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"build": "bunx vite build --outDir ../dist/web --emptyOutDir"');
+  expect(c).toContain('"clientBuild": "bunx vite build --outDir ../dist/ui --emptyOutDir"');
+  expect(c).toContain('"assets": "dist/web"');
 });

@@ -4,7 +4,7 @@
 import { $ } from "bun";
 import { mkdir, rm } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys } from "./wrangler.ts";
 import { generateAlchemy } from "./gen/alchemy.ts";
@@ -139,15 +139,22 @@ async function init() {
   const w = wsrc === null ? { name: inf.name.replace(/^@[^/]+\//, "") } : src!.endsWith(".toml") ? parseWranglerToml(wsrc) : parseWrangler(wsrc);
   const dropped = droppedWranglerKeys(w);
   if (dropped.length) console.log(`not carried over: ${dropped.join(", ")}\n          (bindings, routes and env.* are not in rustybuns.config.ts yet; keep them in ${src} and do NOT run \`rustybuns adopt\`)`);
-  const cfg = wranglerToConfig(w, inf.scripts);
+  // Where the Worker's bundle comes from: RWSDK's or the Cloudflare Vite plugin's build, else
+  // none (a plain Worker; Alchemy bundles its main). Astro's adapter is set up below.
+  const built = inf.framework === "rwsdk" ? "rwsdk" : !astroWorker && inf.vite.plugins.includes("cloudflare") ? "vite" : null;
+  const cfg = wranglerToConfig(w, inf.scripts, built);
   // Astro: no worker source of its own unless the app set one. The adapter builds
   // dist/server/entry.mjs and the client into dist/client, and keeps sessions in KV.
   if (astroWorker) {
     cfg.worker!.main = w.main ?? "@astrojs/cloudflare/entrypoints/server";
-    if (!inf.scripts["build"] && !inf.scripts["release"] && !inf.scripts["deploy"] && !inf.scripts["build:worker"]) cfg.worker!.build = "astro build";
+    if (!cfg.worker!.build) cfg.worker!.build = "astro build";
   }
-  if (!(astroWorker && !w.main) && !existsSync(cfg.worker!.main)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
-  { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts); console.log(`build:    ${cfg.worker!.build}  (${b.from === "default" ? "no build/release/deploy script found; using the default" : `from "${b.from}" script`})`); }
+  // A package entry (@astrojs/cloudflare/entrypoints/server) resolves through node_modules, not a file here.
+  const isFile = (m: string) => m.startsWith(".") || m.startsWith("/") || /\.[mc]?[jt]sx?$/.test(m);
+  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
+  { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts, null);
+    console.log(!cfg.worker!.build ? `build:    none (a plain Worker: Alchemy bundles ${cfg.worker!.main})`
+      : `build:    ${cfg.worker!.build}  (${b.from === "default" || b.build !== cfg.worker!.build ? "no build script found; using the default" : `from "${b.from}" script`})`); }
   // D1: wrangler's own default migrations dir is ./migrations when migrations_dir is unset.
   for (const b of Object.values(cfg.bindings)) {
     if (b.type === "d1" && !b.migrationsDir && existsSync("migrations")) b.migrationsDir = "migrations";
@@ -211,13 +218,28 @@ async function init() {
  * your `vite build` output, served by the Bun host, plus an optional host
  * module for the backend routes the app needs (files, native, exports).
  */
-async function initSpa(inf: ReturnType<typeof infer>, clientBuild = `${inf.execCmd("vite")} build --outDir dist/ui --emptyOutDir`) {
+async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
+  const astro = inf.framework === "astro";
+  // vite resolves --outDir against its `root`, so a root of public/ would build into public/dist/ui.
+  const outDir = (d: string) => inf.vite.root ? relative(inf.vite.root, d).split("\\").join("/") : d;
+  clientBuild ??= `${inf.execCmd("vite")} build --outDir ${outDir("dist/ui")} --emptyOutDir`;
+  // The same build, put on the web as an assets-only Worker: Cloudflare serves the files, no
+  // code of ours runs. Not for an app with a Node server: its frontend alone wouldn't work.
+  const web = inf.serverDeps.length ? null : {
+    assets: "dist/web",
+    compatibilityDate: new Date().toISOString().slice(0, 10),
+    compatibilityFlags: [],
+    build: astro ? `${inf.execCmd("astro")} build --outDir dist/web` : `${inf.execCmd("vite")} build --outDir ${outDir("dist/web")} --emptyOutDir`,
+    notFoundHandling: astro ? "404-page" : "single-page-application",
+  };
   const cfg = {
     name: inf.name.replace(/^@[^/]+\//, ""),
     source: { dir: inf.srcDir, aliases: inf.aliases },
+    ...(web ? { worker: web } : {}),
     bindings: {},
     targets: {
+      ...(web ? { edge: { provider: "cloudflare" } } : {}),
       desktop: {
         mode: "spa",
         // dist/ holds the binaries; the UI gets its own folder inside it.
@@ -230,7 +252,9 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild = `${inf.execC
     },
   };
   await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
-  console.log(`wrote rustybuns.config.ts (desktop-only: ${inf.framework === "astro" ? "a static Astro site" : "no wrangler found"})`);
+  const what = astro ? "a static Astro site" : "no wrangler found";
+  console.log(web ? `wrote rustybuns.config.ts (${what}: the desktop, and the web as static files on Workers, from dist/web)`
+    : `wrote rustybuns.config.ts (desktop-only: it runs a Node server (${inf.serverDeps.join(", ")}), so its frontend alone can't go on the web)`);
   if (!(await Bun.file("desktop/host.ts").exists())) {
     await Bun.write("desktop/host.ts", `// Your desktop backend. Runs in the Bun host next to your built SPA.
 // Return a Response for routes you own, null for everything else.
@@ -246,7 +270,7 @@ export default {
 `);
     console.log("wrote desktop/host.ts");
   }
-  console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}`);
+  console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}${web ? `, or ${inf.execCmd("rustybuns plan")}` : ""}`);
 }
 
 /** Keys in a hand-written wrangler file that the generated one cannot reproduce. */

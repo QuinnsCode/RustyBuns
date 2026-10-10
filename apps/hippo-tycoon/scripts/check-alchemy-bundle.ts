@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 import config from "../rustybuns.config.ts";
 
 const worker = config.worker!;
+if (!worker.main) throw new Error("rustybuns.config.ts has no worker.main to bundle");
 const outDir = resolve(".alchemy/bundle-check");
 const req = createRequire(import.meta.resolve("alchemy/package.json"));
 const { rolldown } = await import(req.resolve("rolldown"));
