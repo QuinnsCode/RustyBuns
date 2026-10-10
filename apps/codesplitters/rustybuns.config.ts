@@ -43,8 +43,9 @@ export default defineConfig({
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitters.notryanquinn.workers.dev" },
     ...secrets(set("GITHUB_CLIENT_ID"), "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"),
     ...secrets(set("GOOGLE_CLIENT_ID"), "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
-    // Handles allowed to excavate levels once accounts are on.
-    ADMINS: { type: "var", value: "" },
+    // Handles allowed to excavate levels once accounts are on. "quinn" is short, so
+    // it's claimed through a handle_grants row for the owner's verified email (#214).
+    ADMINS: { type: "var", value: "quinn" },
   },
   targets: {
     // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler;
