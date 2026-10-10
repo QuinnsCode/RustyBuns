@@ -13,6 +13,12 @@ export type Binding =
    */
   | { type: "images" }
   /**
+   * Cloudflare Email Sending: `env.NAME.send({ from, to, subject, text, html })`.
+   * The `from` domain has to be onboarded to Email Sending first. Edge only:
+   * the desktop has no twin, so the binding is left out there.
+   */
+  | { type: "send_email"; allowedSenderAddresses?: string[] }
+  /**
    * Cloudflare Containers: a Durable Object class exported by `main` with a
    * container image behind it (the class reaches it through `ctx.container`).
    * Edge only: the desktop has no twin, so the binding is left out there and
