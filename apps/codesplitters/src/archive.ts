@@ -169,7 +169,7 @@ export async function pushCatalogue(env: Env, owner: string, repo: string, path:
   const text = (c: string) => c.endsWith("\n") ? c : c + "\n";
   const crewPush = async (to: Handle) => {
     const a = await access(to.handle, to.remote, "write", 300);
-    return push(a.remote, a.token, { changes: { [path]: text(files.content) }, message, author, branch: to.branch, base: to.handle });
+    return push(a.remote, a.token, { changes: { [path]: text(files.content) }, ...(await byline(env, owner, repo, author, message)), branch: to.branch, base: to.handle });
   };
   const [pub, crewed] = await Promise.allSettled([
     (async () => pushChanges(env, owner, repo, h, { ...(await pendingChanges(env, owner, repo)), [path]: text(files.published) }, author, message))(),
@@ -186,14 +186,17 @@ export async function flushPending(env: Env, owner: string, repo: string) {
   return pushChanges(env, owner, repo, h, changes, "codesplitters", `Catalogued while git was away: ${Object.keys(changes).join(", ")}`);
 }
 
+/** A mirror's commits go upstream (the crew's copy's too, when it's the one pushed), so they're this machine's git identity's, crediting the handle that made them. */
+async function byline(env: Env, owner: string, repo: string, author: string, message: string): Promise<{ author: string; email?: string; message: string }> {
+  const id = await mirrorIdentity(env, owner, repo);
+  return id ? { author: id.name, email: id.email, message: author === owner || author === "codesplitters" ? message : `${message}\n\nCo-authored-by: ${author} <${author}@codesplitters.local>` } : { author, message };
+}
+
 type Handle = NonNullable<Awaited<ReturnType<typeof handleFor>>>;
 async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, string>, author: string, message: string) {
   try {
     const a = await access(h.handle, h.remote, "write", 300);
-    // A mirror's commits go upstream, so they're this machine's git identity's, crediting the handle that made them.
-    const id = await mirrorIdentity(env, owner, repo);
-    const by = id ? { author: id.name, email: id.email, message: author === owner || author === "codesplitters" ? message : `${message}\n\nCo-authored-by: ${author} <${author}@codesplitters.local>` } : { author, message };
-    const r = await push(a.remote, a.token, { changes, ...by, branch: h.branch, base: h.handle });
+    const r = await push(a.remote, a.token, { changes, ...(await byline(env, owner, repo, author, message)), branch: h.branch, base: h.handle });
     await env.DB.batch([
       env.DB.prepare("UPDATE repos SET git_error = NULL, git_bytes = COALESCE(git_bytes, 0) + ? WHERE owner = ? AND name = ?").bind(r.bytes, owner, repo),
       ...Object.keys(changes).map((p) => env.DB.prepare("DELETE FROM git_pending WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, p)),
