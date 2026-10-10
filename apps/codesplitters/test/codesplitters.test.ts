@@ -1239,13 +1239,27 @@ describe("shares", () => {
     const read = async (name: string, path: string) => (await (await call.artifacts.get(name)).readFile({ ref: "main", path }))!.text();
     expect(await read("ana--old", "a.ts")).toBe("one\n");
 
+    // Marking a line private makes the crew remote and tries the backfill; git fails it once.
+    const get = call.artifacts.get.bind(call.artifacts);
+    let fail = true;
+    call.artifacts.get = async (name: string) => {
+      const h = await get(name);
+      if (name !== "ana--old--crew") return h;
+      const createToken = h.createToken.bind(h);
+      return Object.assign(h, { createToken: async (...a: Parameters<typeof createToken>) => { if (fail) { fail = false; throw new Error("git is away"); } return createToken(...a); } });
+    };
     await post(call, "ana", `${on}/private?path=b.ts`, { lines: ["L2"], private: true });
+    const owed = async () => (await call.env.DB.prepare("SELECT crew_backfill FROM repos WHERE owner = 'ana' AND name = 'old'").first() as any).crew_backfill;
+    expect([await read("ana--old--crew", "a.ts"), await owed()]).toEqual(["one\n", 1]);
+
+    // The next commit, of any file, pays it: one commit of the real text, then its own.
+    await post(call, "ana", "/api/repos/ana/old/files", { path: "c.ts", content: "c" });
+    await post(call, "ana", `${on}/commit?path=c.ts`, { message: "c" });
+    expect([await read("ana--old--crew", "a.ts"), await owed()]).toEqual(["one\nkey = hunter2\n", null]);
     await post(call, "ana", `${on}/commit?path=b.ts`, { message: "b" });
-    expect([await read("ana--old--crew", "a.ts"), await read("ana--old--crew", "b.ts")]).toEqual(["one\nkey = hunter2\n", "b\nsecret = 1\n"]);
-    expect([await read("ana--old", "a.ts"), await read("ana--old", "b.ts")]).toEqual(["one\n", "b\n"]);
-    // One backfill commit, then b.ts's own.
-    const log = await (await call.artifacts.get("ana--old--crew")).log({ ref: "main", limit: 2 });
-    expect(log.map((c: any) => c.message.trim())).toEqual(["b", "Private lines' real text: a.ts"]);
+    expect([await read("ana--old--crew", "b.ts"), await read("ana--old", "a.ts"), await read("ana--old", "b.ts")]).toEqual(["b\nsecret = 1\n", "one\n", "b\n"]);
+    const log = await (await call.artifacts.get("ana--old--crew")).log({ ref: "main", limit: 3 });
+    expect(log.map((c: any) => c.message.trim())).toEqual(["b", "c", "Private lines' real text: a.ts"]);
   });
 
   test("a branch that changes build or deploy files says so, and a merge that would ship waits for the owner to read it", async () => {

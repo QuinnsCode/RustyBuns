@@ -40,12 +40,13 @@ export async function handleFor(env: Env, owner: string, repo: string, crew = fa
  * Give the repo its crew remote, once: a fork of its remote ("--crew" can't end
  * a two-part "owner--repo" name, so it can't collide), or a new repo before the
  * first commit. Commits push the real text there from then on, and the one
- * that makes it backfills the files already pushed blank (all but `except`,
- * which its caller is about to push).
+ * that makes it owes the files already pushed blank a backfill (all but
+ * `except`, which its caller is about to push), tried again until it lands.
  */
 export async function ensureCrewRemote(env: Env, owner: string, repo: string, except?: string) {
-  const r = await env.DB.prepare("SELECT artifact, crew_artifact, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
-  if (!env.ARTIFACTS || !r?.artifact || r.crew_artifact) return;
+  const r = await env.DB.prepare("SELECT artifact, crew_artifact, crew_backfill, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  if (!env.ARTIFACTS || !r?.artifact) return;
+  if (r.crew_artifact) return r.crew_backfill ? payBackfill(env, owner, repo, except) : undefined;
   const name = `${r.artifact}--crew`, branch = (r.branch ?? "main") as string, description = `codeSplitters ${owner}/${repo}, the crew's copy`;
   const pub = await env.ARTIFACTS.get(r.artifact);
   let mine = true;
@@ -59,9 +60,20 @@ export async function ensureCrewRemote(env: Env, owner: string, repo: string, ex
     mine = false;
     return info;
   });
-  await env.DB.prepare("UPDATE repos SET crew_artifact = ?, crew_remote = ? WHERE owner = ? AND name = ?").bind(made.name, made.remote, owner, repo).run();
-  // A missed backfill leaves those files blank until they're committed again, as before; it doesn't stop the commit.
-  if (mine) await backfillCrew(env, owner, repo, except).catch((e: Error) => console.warn(`codesplitters: crew backfill for ${owner}/${repo}: ${e.message}`));
+  await env.DB.prepare("UPDATE repos SET crew_artifact = ?, crew_remote = ?, crew_backfill = CASE WHEN ? THEN 1 ELSE crew_backfill END WHERE owner = ? AND name = ?")
+    .bind(made.name, made.remote, mine ? 1 : 0, owner, repo).run();
+  if (mine) await payBackfill(env, owner, repo, except);
+}
+
+/** Run the crew remote's backfill, if it's still owed. One that fails doesn't stop the commit; the next one tries again. */
+export async function payBackfill(env: Env, owner: string, repo: string, except?: string) {
+  if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ? AND crew_backfill = 1").bind(owner, repo).first())) return;
+  try {
+    await backfillCrew(env, owner, repo, except);
+    await env.DB.prepare("UPDATE repos SET crew_backfill = NULL WHERE owner = ? AND name = ?").bind(owner, repo).run();
+  } catch (e) {
+    console.warn(`codesplitters: crew backfill for ${owner}/${repo}: ${(e as Error).message}`);
+  }
 }
 
 /**
@@ -159,7 +171,7 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
  * land now waits in git_pending, and so does every commit while git moves to a fresh start.
  */
 export async function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string) {
-  if (files.content !== files.published) await ensureCrewRemote(env, owner, repo, path);
+  await (files.content !== files.published ? ensureCrewRemote(env, owner, repo, path) : payBackfill(env, owner, repo, path));
   const [h, crew] = await Promise.all([handleFor(env, owner, repo), handleFor(env, owner, repo, true)]);
   if (!h) return null;
   if (await env.DB.prepare("SELECT 1 FROM fresh_starts WHERE owner = ? AND repo = ? AND state IN ('walking', 'copying')").bind(owner, repo).first()) {
