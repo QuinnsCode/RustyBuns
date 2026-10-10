@@ -79,6 +79,13 @@ export function council(into: Group, office: Office) {
     const keep = new Set([d.laptopAnchor, d.seatAnchor, d.stage, d.vacancy]);
     for (const c of d.group.children) if (!keep.has(c)) c.visible = false;
 
+    // the office seats a 0.82-scale worker on a 0.4 m chair; the chair is gone, so the enemy stands on the moss at
+    // full size (the office walks workers in at the seat's scale and hops them to it, so both follow)
+    if (d.def.id.startsWith("desk-")) {
+      d.seatAnchor.position.y = 0;
+      d.seatAnchor.scale.setScalar(1);
+    }
+
     // the agent stands on this side of the desk; the slab's low edge (the model's +z) faces them
     const toward = Math.sign(d.seatAnchor.position.z || 1);
     const laptop = d.laptopAnchor;

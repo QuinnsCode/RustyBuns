@@ -135,7 +135,7 @@ const app = {
       // POST /api/repos/:o/:r/cuts {pieces: [{path, from, to}], note}  some lines and their imports, as a branch to run and merge back
       if (p[4] === "cuts" && req.method === "POST") return createCut(env, owner, repo, user, a.write, await body());
       // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
-      if (p[4] === "fit" && req.method === "GET") return repoFit((r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
+      if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
       // GET /api/repos/:o/:r/tree?path=dir  the repo's git tree, plus files written here but not catalogued yet
       if (p[4] === "tree") {
         const dir = (url.searchParams.get("path") ?? "").replace(/^\/|\/$/g, "");
