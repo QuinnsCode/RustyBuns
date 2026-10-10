@@ -113,6 +113,7 @@ export function Game({ driver, ctls, settings, onSettings, onExit, lobby }: Prop
       {frame && frame.phase === "podium" && <Podium frame={frame} canAct={hostIsMe} finale={finale} onSkip={() => { renderer.current?.skipFinale(); setFinale(false); }} onRematch={() => driver.command({ t: "rematch" })} onExit={onExit} />}
       {frame && lobby?.(frame)}
       <nav className="corner" aria-label="Game">
+        {driver.simEngine === "rust" && <span className="pill static" title="the game's rules (step), opted in with ?sim=rust">sim: Rust/wasm</span>}
         <span className="pill static" title="the oil geyser's fluid simulation">{fluid === "rust" ? "fluid: Rust/wasm" : "fluid: TypeScript"}</span>
         <button className="pill" aria-pressed={!!(hint ?? autoHint)} onClick={() => setHint(!(hint ?? autoHint))}>Controls <kbd>H</kbd></button>
         <button className="pill" onClick={() => setOptions(true)}>Options</button>

@@ -2,7 +2,7 @@
 
 A small, original arcade game that ships as a Rusty Buns example: **four angry, greedy tycoon hippos around a pan of oil, each trying to chomp the most oil drops.** The hippos got hooked on the lifestyle oil money bought them, and they are absolutely not cute about it. It exists to show people the whole Rusty Buns story (Cloudflare-first app, same code as a desktop binary, LAN party mode, deploy anywhere) without any of the owner's private game content.
 
-Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (its geyser fluid has a Rust/wasm build and a TypeScript twin).
+Lives at `apps/hippo-tycoon/` in the RustyBuns repo. Pure TypeScript (its geyser fluid and its rules engine each have a Rust/wasm twin).
 
 (Concept history: this started as "Drip Derby", cartoon cars eating oil drops. The mechanic, architecture, modes and milestones are unchanged; the cast and the look are new.)
 
@@ -151,7 +151,7 @@ From **RustyBuns** (this repo):
 4. **LAN party.** `guests: { max: 4 }`; Lobby gets "Host LAN game" (shows IP:port + join code) and "Join LAN game". Test two desktop instances on one machine (docs say this works). Fix any Rusty Buns guest bugs in `packages/` with tests.
 5. **Online.** `src/worker.ts` + `room-do.ts`, room codes, `wrangler dev`/`rustybuns dev` locally, then `rustybuns plan` (must type-check the stack and plan cleanly). **Do not run `rustybuns deploy`. The owner deploys.**
 6. **Polish + docs.** Juice (screen shake on gold, snarls, bellow chords), difficulty select, round length select. Add the app to `README.md` Examples table, `EXAMPLES.md` (row + section), `DEMO.md` (cheat sheet, per-app notes, demo order, app count), `apps/hippo-tycoon/README.md` "Run it". Optional CI workflow: one Linux job, `bun test`, `build desktop --target all` (pure TS cross-compiles).
-7. **(Stretch) Rust sim twin.** Port `step()` to a Rust crate, `loadNative` with TS fallback, golden test "Rust state hash == TS state hash per tick" like `apps/motion-midi/test/golden.test.ts`. Only if 1–6 are solid.
+7. **(Stretch, done) Rust sim twin.** Port `step()` to a Rust crate, `loadNative` with TS fallback, golden test "Rust state hash == TS state hash per tick" like `apps/motion-midi/test/golden.test.ts`. Only if 1–6 are solid.
 
 ## 6. Done means
 

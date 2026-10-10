@@ -1,11 +1,12 @@
+import { cosSin } from "./trig.ts";
 import { A_REST, GULP_BACK, GULP_OUT, LUNGE, RAIL_HALF, SEATS, seatAngle } from "./rules.ts";
 
 /** Seat frame: `a` points out from the centre, `t` is the driver's right. */
 export interface Axis { ax: number; ay: number; tx: number; ty: number }
 
 export const AXES: readonly Axis[] = Array.from({ length: SEATS }, (_, i) => {
-  const a = seatAngle(i);
-  return { ax: Math.cos(a), ay: Math.sin(a), tx: -Math.sin(a), ty: Math.cos(a) };
+  const [c, s] = cosSin(seatAngle(i));
+  return { ax: c, ay: s, tx: -s, ty: c };
 });
 
 /** 0 = resting, 1 = jaws at full reach. */

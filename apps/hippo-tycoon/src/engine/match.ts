@@ -5,6 +5,7 @@
 import { bot, newBotMem, type BotMem } from "../sim/bots.ts";
 import { seedOf } from "../sim/rng.ts";
 import { COUNTDOWN_TICKS, DEFAULT_ROUND_SECS, PERSONALITIES, SEATS, SEAT_NAMES, type Difficulty } from "../sim/rules.ts";
+import type { StepFn } from "../sim/native.ts";
 import { newState, step } from "../sim/step.ts";
 import { NO_INPUT, type Event, type Hippo, type Input, type State } from "../sim/types.ts";
 
@@ -69,6 +70,8 @@ export class Match {
   seats: Seat[];
   round = 0;
   sim: State;
+  /** The rules engine: TypeScript step(), or the Rust twin's drop-in (src/sim/native.ts). Same results either way. */
+  stepper: StepFn = step;
   private countdown = 0;
   private latch: Latch[] = Array.from({ length: SEATS }, () => ({ move: 0, gulp: false, bellow: false }));
   private mem: BotMem[] = [];
@@ -200,7 +203,7 @@ export class Match {
         if (this.seats[i]!.uid === null) inputs.push(bot(this.sim, i, PERSONALITIES[this.cfg.bots[i] ?? this.cfg.difficulty], this.mem[i]!, this.botRng[i]!));
         else inputs.push({ move: l.move, gulp: l.gulp, bellow: l.bellow });
       }
-      evs = step(this.sim, inputs);
+      evs = this.stepper(this.sim, inputs);
       if (this.sim.over) this.phase = "podium";
     } else {
       // lobby/countdown/podium bellows still roar

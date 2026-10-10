@@ -4,7 +4,7 @@
 
 Four angry, greedy oil-baron hippos around a lost oil geyser deep in the jungle (misty fluted peaks, lush ferns and palms, a rusted wellhead and a fallen derrick half swallowed by vines), each trying to chomp the most oil the geyser fires into the basin. Slide along your lip, time your chomp, and avoid the sludge. It plays solo against bots, on one couch, over a LAN, and online in a room code, and it is the example that shows the whole Rusty Buns story: one Cloudflare-first codebase that is also a desktop binary, with a LAN party mode.
 
-The oil geyser's gush is a particle fluid simulation written in **Rust** (compiled to WebAssembly) with a TypeScript twin as the fallback; a test holds the two to bit-identical output.
+The oil geyser's gush is a particle fluid simulation written in **Rust** (compiled to WebAssembly) with a TypeScript twin as the fallback; a test holds the two to bit-identical output. The game's rules (`step()`) have a Rust twin too, held to the same state hash on every tick.
 
 The four bosses dress like guerrilla warlords at a Miami sunset: berets, bandoliers of oil vials, gold epaulettes and medals, mirrored shades, chains and cigars. (Vibe only; nothing from any film or show.)
 
@@ -31,13 +31,25 @@ Run every command from the folder named in its step.
 bun run dev            # vite, hot reload: http://localhost:5173
 ```
 
-### The Rust fluid (optional)
+### The Rust twins (optional)
 
 ```
-bun run build:native   # cargo + the wasm32 target -> public/hippo_fluid.wasm (needs rustup)
+bun run build:native   # cargo + the wasm32 target -> public/hippo_fluid.wasm and public/hippo_sim.wasm (needs rustup)
+bun bench/sim.ts       # the rules engine: TypeScript vs Rust/wasm, ticks per second, heap, wasm size
 ```
 
-Without it the geyser runs the TypeScript twin (same output, a bit slower). The corner of the game says which one is running (`fluid: Rust/wasm`). The wasm is a build output and is not committed.
+Without them the game runs the TypeScript twins (same output). The corner of the game says which fluid is running (`fluid: Rust/wasm`). The wasms are build outputs and are not committed.
+
+The rules engine (`rust/crates/hippo_sim`, a port of `src/sim/step.ts` with spawn, physics, gulp and effects) is opt-in: add `?sim=rust` to the page and solo and couch rounds step in Rust (`sim: Rust/wasm` in the corner). It is not the default because the bots, the renderer and the room all read the TypeScript `State`, so each tick copies the state into the module and back, and that copy costs more than the step saves. `bun bench/sim.ts 200` on an M-series Mac, Bun 1.4.2 (200 scripted 90 s rounds):
+
+| engine | ticks/s | µs/tick |
+|---|---|---|
+| TypeScript, before (`Math.hypot`) | ~800k | 1.25 |
+| TypeScript, now (`sqrt(x² + y²)`) | ~1,350k | 0.74 |
+| Rust/wasm, state copied in and out each tick (`?sim=rust`) | ~780k | 1.28 |
+| Rust/wasm, state kept in the module | ~2,150k | 0.47 |
+
+The wasm is 33 KB (13 KB gzipped) with 1.1 MiB of linear memory, and is only fetched with `?sim=rust`; the loader adds 3 KB (1.2 KB gzipped) to the client JS. At 30 Hz every row is far under 0.01% of a frame, so either engine is fine for play. To keep the two bit-identical, `src/sim` uses no libm: `cos`/`sin` are a series in `src/sim/trig.ts` and lengths are `Math.sqrt(x * x + y * y)` (sqrt is exactly rounded everywhere; `Math.hypot` and trig are not). `test/sim-native.test.ts` compares the state hash and the events every tick over four whole rounds, and a full bot match through `Match`.
 
 ### The desktop app (solo, couch, and hosting a LAN game)
 
@@ -157,6 +169,7 @@ src/sim/       the game: pure, deterministic, 30 Hz. No DOM, no clock, no Math.r
 src/engine/    platform-free: Match (lobby > countdown > playing > podium, seats, bots), Room (sockets), tick loop, wire
 src/client/    React UI, three.js renderer, input, audio, LocalDriver and NetDriver
 src/client/render/fluid.ts   the geyser's fluid: the TypeScript twin + the wasm loader (rust/crates/hippo_fluid is the Rust)
+src/sim/native.ts            the Rust twin of step() as a drop-in (rust/crates/hippo_sim); src/client/driver.ts loads it with ?sim=rust
 src/room-do.ts the one World class: the Cloudflare Durable Object and the in-process desktop world
 src/worker.ts  the Cloudflare entry: validates and vouches identity, routes rooms
 ```
@@ -171,7 +184,7 @@ src/worker.ts  the Cloudflare entry: validates and vouches identity, routes room
 ## Tests
 
 ```
-bun test test          # sim, bots, match, wire, room (fake ports), worker, input, the fluid (Rust == TypeScript), a real LAN party,
+bun test test          # sim, bots, match, wire, room (fake ports), worker, input, the fluid and the rules (Rust == TypeScript), a real LAN party,
                        # the finale, settings and cues, contrast, and that a production build leaves the preview page out
 ```
 
