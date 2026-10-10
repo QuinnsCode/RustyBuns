@@ -558,6 +558,8 @@ async function jobsBadge() {
   el.querySelector("span").textContent = `${n} queued`;
 }
 // Your personal API tokens (GET|POST /api/tokens, DELETE /api/tokens/:id), on your profile. A new one's secret shows once.
+// A new token's secret never goes in the page: the box shows it masked, and only the copy buttons use it.
+const masked = (token) => `${token.slice(0, 4)}${"•".repeat(12)}${token.slice(-4)}`;
 const mcpAdd = (token) => `claude mcp add --scope user --transport http codesplitters ${location.origin}/api/mcp --header "Authorization: Bearer ${token}"`;
 async function wireTokens(made) {
   const el = $("#tokens .body");
@@ -565,9 +567,9 @@ async function wireTokens(made) {
   const list = await api("/tokens").catch(() => []);
   const when = (t) => t.expired ? "expired" : `expires ${new Date(t.expires_at).toLocaleDateString()}`;
   el.innerHTML = (made ? `<div style="display:grid;gap:4px;margin-bottom:8px"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again.</span>
-      <div class="copyline"><input readonly value="${esc(made.token)}"><button class="btn" id="token-copy" title="copy the token">${icon("copy")}</button></div>
+      <div class="copyline"><input readonly value="${esc(masked(made.token))}" title="hidden: copy it with the button"><button class="btn" id="token-copy" title="copy the token">${icon("copy")}</button></div>
       <span class="muted" style="font-size:12px">Add it to Claude Code as an MCP server:</span>
-      <div class="copyline"><input readonly value="${esc(mcpAdd(made.token))}"><button class="btn" id="token-mcp" title="copy the command">${icon("copy")}</button></div></div>` : "")
+      <div class="copyline"><input readonly value="${esc(mcpAdd(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-mcp" title="copy the command">${icon("copy")}</button></div></div>` : "")
     + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon(t.scope === "write" ? "pencil" : "eye")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· ${t.scope === "write" ? "read and write" : "read"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}</span></span>
       <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("") || '<span class="muted" style="font-size:13px">Lets Claude Code, scripts and MCP clients act as you, until it expires.</span>'}</div>
     <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for, like claude code" required>
