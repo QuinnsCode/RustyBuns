@@ -65,7 +65,9 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     compatibility_flags: c.worker.compatibilityFlags,
   };
   if (c.worker.assets) {
-    w["assets"] = { binding: "ASSETS", directory: c.worker.assets, ...(c.worker.runWorkerFirst ? { run_worker_first: c.worker.runWorkerFirst } : {}) };
+    // An assets-only Worker (no main) has no code to hand an ASSETS binding to, and wrangler refuses one.
+    w["assets"] = { ...(c.worker.main ? { binding: "ASSETS" } : {}), directory: c.worker.assets, ...(c.worker.runWorkerFirst ? { run_worker_first: c.worker.runWorkerFirst } : {}),
+      ...(c.worker.notFoundHandling ? { not_found_handling: c.worker.notFoundHandling } : {}) };
   }
   const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [], sendEmail: unknown[] = [];
   const producers: unknown[] = [], consumers: unknown[] = [];

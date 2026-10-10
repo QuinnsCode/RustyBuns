@@ -164,6 +164,9 @@ test("infer worker build from the release script", async () => {
   expect(inferWorkerBuild({ build: "vite build" })).toEqual({ build: "vite build", from: "build" });
   expect(inferWorkerBuild({ deploy: "npm run build && wrangler deploy", build: "tsc && vite build" })).toEqual({ build: "tsc && vite build", from: "deploy" });
   expect(inferWorkerBuild({})).toEqual({ build: "vite build", from: "default" });
+  // A deploy script that is only the deploy says nothing: the build script is read next, else the fallback.
+  expect(inferWorkerBuild({ deploy: "wrangler deploy", build: "tsc -b && vite build" })).toEqual({ build: "tsc -b && vite build", from: "build" });
+  expect(inferWorkerBuild({ deploy: "wrangler deploy" }, null)).toEqual({ build: null, from: "default" });
 });
 
 import { entryImport, entryName } from "../src/glue/desktop-scaffold.ts";
