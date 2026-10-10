@@ -120,6 +120,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
       wb.push(`  },`);
     }
     wb.push(`  compatibility: { date: ${JSON.stringify(w.compatibilityDate)}, flags: ${JSON.stringify(w.compatibilityFlags)} },`);
+    if (w.crons?.length) wb.push(`  crons: ${JSON.stringify(w.crons)},  // Cron Triggers: the Worker exports scheduled()`);
     if (c.targets.edge?.domain) wb.push(`  domain: ${JSON.stringify(c.targets.edge.domain)},`);
     wb.push(`  env: { ${envEntries.join(", ")} },`);
     // A wrangler-made Worker has no Alchemy tags, so plan and deploy refuse it as

@@ -422,6 +422,20 @@ test("container: wrangler and alchemy bind the class and its image; the desktop 
   expect(host).not.toContain(`SANDBOX: local`);
 });
 
+test("crons: Cron Triggers on the edge, a minute timer on the desktop", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], crons: ["0 * * * *"] },
+    bindings: {}, targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*\n/gm, "")).triggers).toEqual({ crons: ["0 * * * *"] });
+  expect(generateAlchemy(c)).toContain(`  crons: ["0 * * * *"],`);
+  const host = desktopEntry(c);
+  expect(host).toContain(`schedule(["0 * * * *"], (controller) => (worker as any).scheduled?.(controller, env,`);
+  const none = desktopEntry({ ...c, worker: { ...c.worker, crons: undefined } });
+  expect(none).not.toContain("schedule");
+  expect(wranglerToConfig({ name: "g", triggers: { crons: ["*/5 * * * *"] } }).worker!.crons).toEqual(["*/5 * * * *"]);
+});
+
 test("desktopCrates: only crates that would be embedded count against cross targets", async () => {
   const { desktopCrates } = await import("../src/build.ts");
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");

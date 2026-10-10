@@ -54,6 +54,9 @@ export interface Env {
   GH_CLI?: string;
   /** Tests only: stands in for running a coding agent's CLI (see agent-run.ts). */
   AGENT_EXEC?: unknown;
+  /** Tests only: stand in for npm and for the install-and-test run (see deps.ts). */
+  DEPS_REGISTRY?: unknown;
+  DEPS_TESTER?: unknown;
 }
 
 export const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>

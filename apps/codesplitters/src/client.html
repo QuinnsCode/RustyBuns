@@ -541,7 +541,42 @@ const views = {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
     return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p>`)
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<a href="#/u/${esc(c)}">@${esc(c)}</a>`).join(" ")}</p>`)
-      + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`);
+      + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
+      + (owner === me() ? sec("package", "Dependencies", `<div id="deps"><span class="muted">…</span></div>`) : "");
+  },
+  /** The dependency doctor: when it checks, what it may propose, and what it found last. */
+  async wireDeps(owner, repo) {
+    const el = $("#deps"), base = `/repos/${owner}/${repo}/deps`;
+    if (!el) return;
+    const d = await api(base).catch(() => null);
+    if (!d) { el.innerHTML = '<span class="muted">unavailable</span>'; return; }
+    const s = d.settings, rep = d.report;
+    const opt = (v, label, cur) => `<option value="${v}"${String(cur) === String(v) ? " selected" : ""}>${label}</option>`;
+    el.innerHTML = `<form id="deps-form" style="display:grid;gap:6px;font-size:13px">
+        <label><input type="checkbox" name="on"${s.on ? " checked" : ""}> Check on a schedule, and open a branch as <code>agent-deps</code></label>
+        <div class="row">every <select name="every_hours">${opt(6, "6 hours", s.every_hours)}${opt(24, "day", s.every_hours)}${opt(168, "week", s.every_hours)}${opt(720, "month", s.every_hours)}</select>
+          up to <select name="max_level">${opt("patch", "patch", s.max_level)}${opt("minor", "minor", s.max_level)}${opt("major", "major", s.max_level)}</select></div>
+        <div class="row">releases at least <input name="min_age_days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
+        <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
+        <label title="${d.can_test ? "" : "Tests run on the desktop app"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code on this machine)</span></label>
+        <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deps-run"${d.running ? " disabled" : ""}>${icon("refresh-cw")}${d.running ? "Checking…" : "Check now"}</button></div>
+      </form>
+      ${rep ? `<div class="run"><span class="st">last checked ${new Date(rep.at).toLocaleString()} · ${rep.checked} package${rep.checked === 1 ? "" : "s"}</span>
+        ${rep.updates.map((u) => `<span><code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level} · ${u.status === "broke" ? "broke the tests, left out" : u.status === "kept" ? "tests pass" : "untested"}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
+        ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>, ready to review above.</span>` : ""}
+        ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}`;
+    $("#deps-form").addEventListener("submit", async (e) => {
+      e.preventDefault(); const f = e.target;
+      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked }, "PUT"); toast("Saved"); }
+      catch (err) { toast(err.message); }
+    });
+    $("#deps-run").addEventListener("click", async () => {
+      $("#deps-run").disabled = true; $("#deps-run").textContent = "Checking…";
+      try { await api(`${base}/run`, {}); } catch (err) { toast(err.message); }
+      for (let i = 0; i < 1200 && (await api(base).catch(() => ({}))).running; i++) await new Promise((r) => setTimeout(r, 1000));
+      route();
+    });
+    icons();
   },
   /** Open branches, each reviewed against main as it is now, with a merge button. */
   async wireBranches(owner, repo, r) {
@@ -575,6 +610,7 @@ const views = {
     if ($("#clone")) { popover($("#clone")); $("#clone-copy").addEventListener("click", () => copy(r.clone, "Clone command copied")); }
     $("#flip")?.addEventListener("click", async () => { await api(`/repos/${owner}/${repo}`, { visibility: r.visibility === "private" ? "public" : "private" }, "PUT"); route(); });
     views.wireBranches(owner, repo, r);
+    views.wireDeps(owner, repo);
   },
   repoStatus(r, tree, extra = "") {
     return `<span>${icon("git-branch")}${esc(r.branch ?? "main")}</span>${tree?.commit ? `<span>${icon("git-commit-horizontal")}${tree.commit.hash.slice(0, 7)}</span>` : ""}<span>${icon(r.visibility === "private" ? "lock" : "globe")}${r.visibility}</span>${extra}`;

@@ -9,6 +9,7 @@ export { kv, KVNamespace } from "./bindings/kv.ts";
 export { storage, type StorageOptions } from "./bindings/storage.ts";
 export { r2, R2Bucket } from "./bindings/r2.ts";
 export { LocalArtifacts, LocalArtifactsRepo, gitHttp } from "./bindings/artifacts.ts";
+export { schedule, parseCron, cronMatches, type ScheduledController } from "./cron.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
 import type { MemoryPort, Reporter } from "@rustybuns/ports";
