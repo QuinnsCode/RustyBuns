@@ -1,0 +1,110 @@
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { local as boot } from "../src/local.ts";
+
+setDefaultTimeout(20_000);
+
+const opened: { close(): void }[] = [];
+const dirs: string[] = [];
+afterAll(() => { for (const o of opened) o.close(); for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
+const local = async (extra?: Record<string, unknown>) => { const c = await boot(extra); opened.push(c); return c; };
+
+const git = (cwd: string, ...args: string[]) => {
+  const r = Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd });
+  if (!r.success) throw new Error(r.stderr.toString());
+  return r.stdout.toString().trim();
+};
+
+/** A repo with the awkward bits (an exec bit, a symlink, binary, a path past tar's 100 chars, twin files), and GitHub's tarball of it. */
+function upstream() {
+  const dir = mkdtempSync(join(tmpdir(), "cs-tar-"));
+  dirs.push(dir);
+  const long = "packages/" + "very-long-directory-name/".repeat(5) + "and-a-file-name-that-goes-on.ts";
+  for (const [p, c] of Object.entries({ "README.md": "big\n", "src/a.ts": "export const a = 1\n", "src/twin.ts": "export const a = 1\n", [long]: "deep\n", "empty": "" })) {
+    mkdirSync(join(dir, p, ".."), { recursive: true });
+    writeFileSync(join(dir, p), c);
+  }
+  writeFileSync(join(dir, "run.sh"), "#!/bin/sh\necho hi\n", { mode: 0o755 });
+  writeFileSync(join(dir, "logo.bin"), Uint8Array.from({ length: 3000 }, (_, i) => (i * 7) % 256));
+  symlinkSync("src/a.ts", join(dir, "link.ts"));
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", "the tip");
+  const sha = git(dir, "rev-parse", "HEAD");
+  const tgz = join(dir, "..", `${sha}.tgz`);
+  dirs.push(tgz);
+  git(dir, "archive", "--format=tar.gz", `--prefix=o-big-${sha.slice(0, 7)}/`, "-o", tgz, "HEAD");
+  return { sha, tree: git(dir, "rev-parse", "HEAD^{tree}"), tgz };
+}
+
+/** GitHub, faked: the repo, its tip and its tarball. */
+function fakeGitHub(sha: string, tgz: string) {
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (u: string | Request, init?: RequestInit) => {
+    const url = new URL(typeof u === "string" ? u : u.url);
+    if (url.hostname !== "api.github.com") return real(u, init);
+    if (url.pathname === "/repos/o/big") return Response.json({ full_name: "o/big", private: false, default_branch: "main" });
+    if (url.pathname === "/repos/o/big/commits/main") return Response.json({ sha, commit: { message: "the tip", author: { name: "Up Stream", email: "up@stream.dev", date: "2026-10-01T00:00:00Z" } } });
+    if (url.pathname === `/repos/o/big/tarball/${sha}`) return new Response(Bun.file(tgz));
+    return new Response("{}", { status: 404 });
+  }) as typeof fetch;
+  return () => { globalThis.fetch = real; };
+}
+
+const tooBig = () => { throw Object.assign(new Error(`413 {"code":10402,"message":"Repository exceeded the 40MB import limit. Current depth is 1."}`), { code: "MEMORY_LIMIT" }); };
+
+describe("past the Artifacts import cap", () => {
+  test("a dig comes in from GitHub's tarball, the same tree git has", async () => {
+    const { sha, tree, tgz } = upstream();
+    const call = await local({ GH_CLI: "off" });
+    call.artifacts.import = tooBig as any;
+    const restore = fakeGitHub(sha, tgz);
+    try {
+      await call("ana", "/api/login", { method: "POST", body: JSON.stringify({ name: "ana" }) });
+      const res = await call("ana", "/api/github/dig", { method: "POST", body: JSON.stringify({ repo: "o/big" }) });
+      expect(res.status).toBe(201);
+      expect(((await res.json()) as any).commit).toBe(sha);
+      const [tip] = await (await call.artifacts.get("ana--big")).log();
+      expect(tip!.treeHash).toBe(tree);
+      expect(tip!.message).toStartWith("the tip");
+      expect(tip!.author).toEqual({ name: "Up Stream", email: "up@stream.dev" });
+      const repo = await call.artifacts.get("ana--big");
+      expect(await (await repo.readFile({ ref: "main", path: "link.ts" }))!.text()).toBe("src/a.ts");
+    } finally { restore(); }
+  });
+
+  test("a level does too, and stays read-only", async () => {
+    const { sha, tree, tgz } = upstream();
+    const call = await local({ GH_CLI: "off", ADMINS: "boss" });
+    call.artifacts.import = tooBig as any;
+    const restore = fakeGitHub(sha, tgz);
+    // The level's repo, pointed at the fake.
+    const { LEVELS } = await import("../src/levels.ts");
+    const alchemy = LEVELS.find((l) => l.slug === "alchemy")!, was = alchemy.repo;
+    alchemy.repo = "o/big";
+    try {
+      await call("boss", "/api/login", { method: "POST", body: JSON.stringify({ name: "boss" }) });
+      expect((await call("boss", "/api/levels/alchemy/import", { method: "POST", body: "{}" })).status).toBe(202);
+      const levels = (await (await call(null, "/api/levels")).json()) as any[];
+      expect(levels.find((l) => l.slug === "alchemy").status).toBe("ready");
+      const handle = await call.artifacts.get("level-alchemy");
+      expect((await handle.info()).readOnly).toBe(true);
+      expect((await handle.log())[0]!.treeHash).toBe(tree);
+      expect(await call.artifacts.get("level-alchemy-tip").then(() => "kept", () => "gone")).toBe("gone");
+    } finally { restore(); alchemy.repo = was; }
+  });
+
+  test("any other import error is still an error", async () => {
+    const { tarFiles } = await import("../src/tarball.ts");
+    const { tooBigToImport } = await import("../src/tarball.ts");
+    expect(tooBigToImport(new Error("ALREADY_EXISTS: nope"))).toBe(false);
+    expect(tooBigToImport({ code: "MEMORY_LIMIT" })).toBe(true);
+    // A tarball cut off mid-file says so.
+    const { tgz } = upstream();
+    const raw = new Uint8Array(await new Response(Bun.file(tgz).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer());
+    const cut = new Blob([raw.subarray(0, 1100)]).stream();
+    await expect((async () => { for await (const _ of tarFiles(cut)) { /* read on */ } })()).rejects.toThrow("tar: cut short");
+  });
+});

@@ -6,6 +6,7 @@
 import { accountsOn, isAdmin } from "./identity.ts";
 import { fileStub } from "./archive.ts";
 import { json, NAME, type Env } from "./env.ts";
+import { importTarball, tooBigToImport } from "./tarball.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
 export const DIG_TTL = 24 * 3600_000;
@@ -73,6 +74,43 @@ export async function evict(env: Env, owner: string, name: string) {
   for (const a of [r?.artifact, r?.crew_artifact]) if (a) await env.ARTIFACTS?.delete?.(a as string).catch(() => false);
 }
 
+/** The submodules at `sha` and the commit each points at: in .gitmodules, then one contents call each. */
+async function submodules(repo: string, sha: string, token?: string) {
+  const res = await gh(`/repos/${repo}/contents/.gitmodules?ref=${sha}`, token);
+  if (!res.ok) return [];
+  const { content = "" } = (await res.json()) as { content?: string };
+  const paths = [...atob(content.replace(/\s/g, "")).matchAll(/^\s*path\s*=\s*(.+?)\s*$/gm)].map((m) => m[1]!).slice(0, 50);
+  const found = await Promise.all(paths.map(async (path) => {
+    const r = await gh(`/repos/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${sha}`, token);
+    const j = r.ok ? ((await r.json()) as { type?: string; sha?: string }) : null;
+    return j?.type === "submodule" && j.sha ? { path, commit: j.sha } : null;
+  }));
+  return found.filter((m) => m !== null);
+}
+
+/**
+ * Import `repo`'s `branch` at depth 1 into Artifact `target`. Past Cloudflare's
+ * 40 MB import cap, which depth 1 can't get under, it comes from GitHub's
+ * tarball instead, as one commit (tarball.ts).
+ */
+export async function importRepo(env: Env, src: { repo: string; branch: string; token?: string; private?: boolean },
+  target: { name: string; opts?: { description?: string; readOnly?: boolean } }) {
+  const ns = env.ARTIFACTS!;
+  try {
+    return await ns.import({ source: { url: `https://github.com/${src.repo}.git`, branch: src.branch, depth: 1, ...(src.private ? { token: src.token } : {}) }, target });
+  } catch (e) {
+    if (!tooBigToImport(e)) throw e;
+    const head = await gh(`/repos/${src.repo}/commits/${src.branch}`, src.token);
+    if (!head.ok) throw new Error(`GitHub said ${head.status} for ${src.repo}'s ${src.branch}`);
+    const c = (await head.json()) as { sha: string; commit: { message: string; author?: { name?: string; email?: string; date?: string } } };
+    return importTarball(ns, {
+      tarball: () => gh(`/repos/${src.repo}/tarball/${c.sha}`, src.token), submodules: () => submodules(src.repo, c.sha, src.token), repo: src.repo, sha: c.sha, branch: src.branch, target,
+      message: c.commit.message, author: (c.commit.author?.name ?? src.repo.split("/")[0]!).replace(/[<>\n]/g, ""),
+      email: c.commit.author?.email?.replace(/[<>\n\s]/g, "") || undefined, at: Date.parse(c.commit.author?.date ?? "") || undefined,
+    });
+  }
+}
+
 /** Drop the expired digs, then, to make room for `more`, the oldest past the cap. */
 async function makeRoom(env: Env, more: number) {
   const { results } = await env.DB.prepare("SELECT owner, name, expires_at FROM repos WHERE expires_at IS NOT NULL ORDER BY expires_at").all();
@@ -135,10 +173,13 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     if (expires) await makeRoom(env, 1);
 
     // Shallow, like the levels; writable, because it's yours now.
-    const art = await env.ARTIFACTS.import({
-      source: { url: `https://github.com/${info.full_name}.git`, branch: info.default_branch, depth: 1, ...(info.private ? { token: t!.token } : {}) },
-      target: { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}` } },
-    });
+    let art;
+    try {
+      art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: t?.token, private: info.private },
+        { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}` } });
+    } catch (e) {
+      return json({ error: `couldn't dig up ${info.full_name}: ${String((e as Error).message ?? e)}` }, 502);
+    }
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, `github:${info.full_name}`, sha, expires).run();
     return json({ owner: user, name, upstream: `github:${info.full_name}`, commit: sha, ...(expires ? { expires_at: expires } : {}) }, 201);
