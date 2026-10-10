@@ -24,6 +24,7 @@ import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
 import { bearer, tokenRoutes } from "./tokens.ts";
 import { openapi } from "./openapi.ts";
 import { catalogue, mcp } from "./mcp.ts";
+import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
 import { kickMirror, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
@@ -52,6 +53,9 @@ const app = {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    // GET /.well-known/oauth-*  where apps and MCP clients find OAuth sign-in (oauth.ts)
+    const known = wellKnown(req, p, url.origin);
+    if (known) return known;
     if (p[0] !== "api") return new Response("not found", { status: 404 });
     // GET /api  the API reference (src/api.ts), for anyone building their own UI or agent
     if (!p[1] && req.method === "GET") return json(REFERENCE);
@@ -67,6 +71,9 @@ const app = {
     // GET /api/mcp/tools  every MCP tool, in words, for the /mcp page
     if (p[1] === "mcp" && p[2] === "tools" && !p[3] && req.method === "GET") return json(catalogue());
     if (p[1] === "mcp" && !p[2]) return mcp(req, url.origin, (r) => app.fetch(r, env));
+    // /api/oauth/*  an app signs in as you, and gets tokens like the ones below (oauth.ts)
+    const oauth = await oauthRoutes(req, env, p, url);
+    if (oauth) return oauth;
     // A personal API token (tokens.ts) stands in for the cookie, and is never an admin.
     const token = await bearer(req, env, p);
     if (token instanceof Response) return token;
@@ -377,6 +384,7 @@ const app = {
     if (c.cron !== HOURLY) return;
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(sweepLimits(env));
+    ctx.waitUntil(sweepOAuth(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(advanceAll(env, Date.now() + 10 * 60_000));
   },

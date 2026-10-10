@@ -3,10 +3,13 @@
 // codeSplitters with a personal API token (tokens.ts). It covers every ⌘K palette
 // command (client.html commands()) and the reads each view makes. Operations that
 // can't be undone, or ship code, carry `x-codesplitters-risky: true`: a gateway's
-// policy should ask a person before it calls them.
+// policy should ask a person before it calls them. An agent can sign in with OAuth
+// instead of a copied token (the `oauth` scheme, oauth.ts).
 //
 // Written by hand, next to the routes: a route that changes shape changes here too
 // (test/tokens.test.ts checks each operation answers).
+
+import { OAUTH_SCOPES } from "./oauth.ts";
 
 type Schema = Record<string, unknown>;
 const ref = (name: string): Schema => ({ $ref: `#/components/schemas/${name}` });
@@ -176,7 +179,7 @@ export function openapi(origin: string) {
         parameters: params(path, o.query),
         ...(o.body && { requestBody: { required: true, content: { "application/json": { schema: o.body } } } }),
         // Public reads answer without a token too; a token still sees what its owner may.
-        security: o.open ? [{}, { token: [] }] : [{ token: [] }],
+        security: [...(o.open ? [{}] : []), { token: [] }, { oauth: [method === "get" ? "read" : "write"] }],
         "x-codesplitters-scope": method === "get" ? "read" : "write",
         ...(o.risky && { "x-codesplitters-risky": true }),
         responses: {
@@ -194,11 +197,21 @@ export function openapi(origin: string) {
       version: "1",
       description: "A code host where every line is its own record. Make a personal API token on your profile page and send it as `Authorization: Bearer cst_…`: "
         + "it acts as you, counts against your rate limits, and expires. read tokens make GET requests only. Tokens never reach admin routes, sign-in, or token management. "
+        + "Or sign in with OAuth (authorization code with PKCE; public clients, so no secret): an app on your own computer may use any client_id with a http://127.0.0.1 or localhost redirect, anything else registers at /api/oauth/register first. "
         + "Operations marked `x-codesplitters-risky` can't be undone or ship code: ask a person before calling them.",
     },
     servers: [{ url: `${origin}/api` }],
-    components: { schemas: SCHEMAS, securitySchemes: { token: { type: "http", scheme: "bearer", description: "a personal API token from your profile page (cst_…)" } } },
-    security: [{ token: [] }],
+    components: {
+      schemas: SCHEMAS,
+      securitySchemes: {
+        token: { type: "http", scheme: "bearer", description: "a personal API token from your profile page (cst_…)" },
+        oauth: {
+          type: "oauth2", description: "sign in on codeSplitters; access tokens last an hour, refresh tokens rotate, and you can revoke the app from your profile page",
+          flows: { authorizationCode: { authorizationUrl: `${origin}/api/oauth/authorize`, tokenUrl: `${origin}/api/oauth/token`, refreshUrl: `${origin}/api/oauth/token`, scopes: OAUTH_SCOPES } },
+        },
+      },
+    },
+    security: [{ token: [] }, { oauth: ["read"] }],
     paths,
   };
 }

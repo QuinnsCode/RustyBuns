@@ -7,6 +7,9 @@
 //   claude mcp add --transport http codesplitters https://<site>/api/mcp \
 //     --header "Authorization: Bearer cst_…"
 //
+// Or sign in with OAuth (oauth.ts): with no header, the 401 points the client at
+// /.well-known/oauth-protected-resource/api/mcp, and it opens a sign-in page.
+//
 // A read token lists only the reads. Risky operations (openapi.ts `risky`) are marked
 // destructive, so a client asks a person before it calls them. No sessions and no
 // server-sent stream: each POST is one JSON-RPC request, answered as JSON.
@@ -75,7 +78,8 @@ const listed = (t: Tool) => ({ name: t.name, title: t.title, description: t.desc
 
 const rpc = (id: unknown, result: unknown) => json({ jsonrpc: "2.0", id, result });
 const rpcError = (id: unknown, code: number, message: string, status = 200) => json({ jsonrpc: "2.0", id: id ?? null, error: { code, message } }, status);
-const unauthorized = (why: string) => json({ error: why }, 401, { "www-authenticate": 'Bearer realm="codeSplitters", error="invalid_token"' });
+const unauthorized = (why: string, origin: string) => json({ error: why }, 401,
+  { "www-authenticate": `Bearer realm="codeSplitters", error="invalid_token", resource_metadata="${origin}/.well-known/oauth-protected-resource/api/mcp"` });
 
 /** One tool call: the HTTP call it stands for, as the token that made it. */
 async function call(t: Tool, args: Record<string, unknown>, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>) {
@@ -94,7 +98,7 @@ async function call(t: Tool, args: Record<string, unknown>, origin: string, auth
 export async function mcp(req: Request, origin: string, dispatch: (r: Request) => Promise<Response>): Promise<Response> {
   if (req.method !== "POST") return json({ error: "POST JSON-RPC here; this server keeps no sessions or streams" }, 405, { allow: "POST" });
   const auth = req.headers.get("authorization");
-  if (!auth || !/^Bearer\s+cst_\S+$/i.test(auth)) return unauthorized("send a personal API token from your profile page: Authorization: Bearer cst_…");
+  if (!auth || !/^Bearer\s+cst_\S+$/i.test(auth)) return unauthorized("sign in with OAuth, or send a personal API token from your profile page: Authorization: Bearer cst_…", origin);
 
   let msg: any;
   try { msg = await req.json(); } catch { return rpcError(null, -32700, "parse error", 400); }
@@ -104,7 +108,7 @@ export async function mcp(req: Request, origin: string, dispatch: (r: Request) =
 
   // Who the token is, and its scope; tool calls check it again on the way through.
   const who = await dispatch(new Request(`${origin}/api/session`, { headers: { authorization: auth } }));
-  if (who.status === 401) return unauthorized(((await who.json().catch(() => ({}))) as { error?: string }).error ?? "bad token");
+  if (who.status === 401) return unauthorized(((await who.json().catch(() => ({}))) as { error?: string }).error ?? "bad token", origin);
   const scope = ((await who.json().catch(() => ({}))) as { token?: { scope?: string } }).token?.scope;
   const mine = all().filter((t) => scope === "write" || t.method === "GET");
 
