@@ -39,9 +39,15 @@ function authFor(env: Env, origin: string) {
 
 const aliasOf = (req: Request) => /(?:^|;\s*)cs_user=([a-z0-9-]+)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? null;
 
-/** A handle from a display name or email: "Ryan Quinn" -> "ryan-quinn". */
+/**
+ * agent-<harness> is the collaborator a coding agent edits as (agent-routes.ts),
+ * so no person may hold one, or they'd join every repo that runs that agent.
+ */
+export const isAgentHandle = (name: string) => name.startsWith("agent-");
+
+/** A handle from a display name or email: "Ryan Quinn" -> "ryan-quinn", "Agent Codex" -> "agentcodex". */
 export function slug(s: string) {
-  const out = s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30).replace(/-+$/, "");
+  const out = s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30).replace(/-+$/, "").replace(/^agent-/, "agent");
   return NAME.test(out) ? out : "digger";
 }
 
@@ -63,7 +69,7 @@ async function handleFor(env: Env, u: { id: string; name?: string; email?: strin
     if (r.meta?.changes) return granted.handle as string;
   }
   let base = slug(u.name?.trim() || u.email?.split("@")[0] || "digger");
-  if (base.length <= SHORT) base = `${base}-digger`;
+  if (base.length <= SHORT) base = slug(`${base}-digger`);   // "agent" -> "agentdigger"
   for (let n = 1; n < 1000; n++) {
     const name = n === 1 ? base : `${base.slice(0, 35)}-${n}`;
     if (await env.DB.prepare("SELECT 1 FROM handle_grants WHERE handle = ?").bind(name).first()) continue;   // promised to someone
@@ -109,6 +115,7 @@ async function grantRoutes(req: Request, env: Env, p: string[]): Promise<Respons
   const b = (await req.json().catch(() => ({}))) as { handle?: string; email?: string };
   const email = String(b.email ?? "").trim().toLowerCase();
   if (!NAME.test(b.handle ?? "")) return json({ error: "handle: lowercase letters and digits, single dashes between" }, 400);
+  if (isAgentHandle(b.handle!)) return json({ error: "agent- handles are for coding agents" }, 400);
   if (!/^[^@\s]+@[^@\s]+$/.test(email)) return json({ error: "give an email" }, 400);
   if (await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(b.handle).first()) return json({ error: `${b.handle} is taken` }, 409);
   await env.DB.prepare("INSERT OR REPLACE INTO handle_grants (handle, email) VALUES (?, ?)").bind(b.handle, email).run();
@@ -125,6 +132,7 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
   if (p[1] === "login" && req.method === "POST") {
     const { name } = (await req.json()) as { name: string };
     if (!NAME.test(name ?? "")) return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
+    if (isAgentHandle(name)) return json({ error: "agent- handles are for coding agents" }, 400);
     await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
     return json({ name }, 200, { "set-cookie": `cs_user=${name}; Path=/; SameSite=Lax` });
   }
