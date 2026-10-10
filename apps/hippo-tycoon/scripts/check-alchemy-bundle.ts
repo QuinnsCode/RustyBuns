@@ -28,14 +28,15 @@ const bundle = await rolldown({
   checks: { unresolvedImport: false, ineffectiveDynamicImport: false },
 });
 const { output } = await bundle.write({ format: "esm", sourcemap: "hidden", minify: true, keepNames: true, strictExecutionOrder: true, dir: outDir });
-for (const c of output) if (c.type === "chunk") console.log(`bundled ${c.fileName} (${(c.code.length / 1024).toFixed(1)} KB), exports: ${c.exports.join(", ")}`);
+for (const c of output) console.log(c.type === "chunk" ? `bundled ${c.fileName} (${(c.code.length / 1024).toFixed(1)} KB), exports: ${c.exports.join(", ")}` : `bundled ${c.fileName} (${(c.source.length / 1024).toFixed(1)} KB)`);
 
 // workerd runs the bundle as-is (no_bundle), with the same bindings the stack declares.
 const doBindings = Object.entries(config.bindings ?? {}).filter(([, b]) => b.type === "durable_object") as [string, { className: string }][];
 await Bun.write(`${outDir}/wrangler.json`, JSON.stringify({
   name: `${config.name}-bundle-check`,
-  main: "worker.js",
+  main: output.find((c: any) => c.type === "chunk" && c.isEntry)!.fileName,
   no_bundle: true,
+  find_additional_modules: true,   // the bundled hippo_sim.wasm, as its own module
   compatibility_date: worker.compatibilityDate,
   compatibility_flags: worker.compatibilityFlags ?? [],
   assets: { binding: "ASSETS", directory: resolve(worker.assets!) },

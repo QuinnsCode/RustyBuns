@@ -5,14 +5,17 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Match } from "../src/engine/match.ts";
+import { Room } from "../src/engine/room.ts";
+import { PROTO_VERSION } from "../src/engine/wire.ts";
 import { hashState } from "../src/sim/hash.ts";
 import { bot, newBotMem } from "../src/sim/bots.ts";
-import { compileSim, instantiateSim, simFromWasm } from "../src/sim/native.ts";
+import { compileSim, instantiateSim, simFromWasm, simModule } from "../src/sim/native.ts";
 import { seedOf } from "../src/sim/rng.ts";
 import { PERSONALITIES } from "../src/sim/rules.ts";
 import { newState, step } from "../src/sim/step.ts";
 import { cosSin } from "../src/sim/trig.ts";
 import type { Input } from "../src/sim/types.ts";
+import { FakeCtx, FakeSocket, ManualClock } from "./fakes.ts";
 
 const WASM = join(import.meta.dir, "../public/hippo_sim.wasm");
 
@@ -29,6 +32,29 @@ test("cosSin matches Math.cos/sin to within 1e-15 over the sim's range", () => {
     expect(Math.abs(s - Math.sin(a))).toBeLessThan(1e-15);
   }
   expect(cosSin(-Math.PI / 2)).toEqual([0, -1]);              // the seat axes come out exact
+});
+
+/** A room with one human, played for `secs` of clock with scripted inputs; its Match at the end. */
+function playRoom(sim: WebAssembly.Module | null, secs: number) {
+  const ctx = new FakeCtx(), clock = new ManualClock(), errors: unknown[] = [];
+  const room = new Room(ctx, { clock, seed: 77, sim, report: (_w, e) => errors.push(e) });
+  const ws = new FakeSocket(); ctx.sockets.push(ws);
+  room.onConnect(ws, "player-1", "Ada");
+  const say = (m: object) => room.webSocketMessage(ws, JSON.stringify(m));
+  say({ t: "hello", v: PROTO_VERSION });
+  say({ t: "start" });
+  for (let i = 0; i < 30 * secs; i++) { say({ t: "in", m: (i * 37) % 200 - 100, g: i % 9 === 0 ? 1 : 0, h: 0 }); clock.advance(1000 / 30); }
+  expect(errors).toEqual([]);
+  return room.match;
+}
+
+test("the empty module a build without cargo bundles is not a sim: the room stays in TypeScript", async () => {
+  const empty = await compileSim(new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
+  expect(simModule(empty)).toBeNull();
+  expect(simModule(null)).toBeNull();
+  const ctx = new FakeCtx(), errors: unknown[] = [];
+  expect(new Room(ctx, { clock: new ManualClock(), sim: empty, report: (_w, e) => errors.push(e) }).match.engine).toBe("ts");
+  expect(String(errors[0])).toContain("not the hippo_sim module");   // said, not thrown
 });
 
 describe.skipIf(!existsSync(WASM))("the Rust twin (run `bun run build:native`)", () => {
@@ -117,5 +143,16 @@ describe.skipIf(!existsSync(WASM))("the Rust twin (run `bun run build:native`)",
     const rs = await simFromWasm(readFileSync(WASM));
     const s = newState(1); s.hippos.pop();
     expect(() => rs.step(s, [])).toThrow("rejected");
+  });
+
+  test("a room given the module steps its round in Rust, tick for tick with a TypeScript room", async () => {
+    const mod = simModule(await compileSim(readFileSync(WASM)));
+    expect(mod).not.toBeNull();
+    const rust = playRoom(mod, 12), ts = playRoom(null, 12);
+    expect(rust.engine).toBe("rust");
+    expect(ts.engine).toBe("ts");
+    expect(rust.sim.tick).toBeGreaterThan(200);                 // past the countdown, well into the round
+    expect(hashState(rust.sim)).toBe(hashState(ts.sim));
+    expect(JSON.stringify(rust.persisted())).toBe(JSON.stringify(ts.persisted()));
   });
 });

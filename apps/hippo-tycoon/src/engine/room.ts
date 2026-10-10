@@ -24,6 +24,7 @@
 // anyone is seated it fires every WATCHDOG_MS and restarts a loop that has
 // stopped beating, and on Cloudflare it also wakes an evicted room.
 import { SEATS, SEAT_NAMES } from "../sim/rules.ts";
+import { instantiateSim } from "../sim/native.ts";
 import { Match, type Persisted } from "./match.ts";
 import { TokenBucket } from "./limits.ts";
 import { realClock, type Clock, type EngineCtx, type EngineSocket } from "./ports.ts";
@@ -54,6 +55,11 @@ export interface RoomOpts {
   seed?: number;
   /** Where errors go (the tick loop swallows throws; this is how you hear them). */
   report?: (where: string, err: unknown) => void;
+  /**
+   * The compiled hippo_sim module: the Match steps its rounds and bots in Rust
+   * (Match.setEngine), or in TypeScript without one. Same results either way.
+   */
+  sim?: WebAssembly.Module | null;
 }
 
 const attach = (ws: EngineSocket): Attachment | null => {
@@ -79,6 +85,9 @@ export class Room {
   constructor(private ctx: EngineCtx, private opts: RoomOpts = {}) {
     this.clock = opts.clock ?? realClock;
     this.match = new Match(opts.seed ?? (this.clock.now() & 0x7fffffff));
+    if (opts.sim) {
+      try { this.match.setEngine(instantiateSim(opts.sim)); } catch (err) { opts.report?.("sim", err); }   // TypeScript stays
+    }
     this.loop = new TickLoop(this.clock, {
       step: () => this.onTick(),
       wakeEnd: () => {},

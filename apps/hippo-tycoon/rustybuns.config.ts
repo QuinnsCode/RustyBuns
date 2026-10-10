@@ -4,7 +4,7 @@ import { LAN_VERSION } from "./src/engine/wire.ts";
 export default defineConfig({
   name: "hippo-tycoon",
   worker: {
-    main: "src/worker.ts",           // alchemy bundles this itself: pure TS, no node deps
+    main: "src/edge.ts",             // alchemy bundles this itself (worker.ts + the bundled hippo_sim.wasm), no node deps
     assets: "dist/client",
     compatibilityDate: "2026-09-01",
     compatibilityFlags: [],
