@@ -173,9 +173,10 @@ describe("past the Artifacts import cap", () => {
     const log = await (await call.artifacts.get("split")).log();
     expect(log).toHaveLength(1);
     expect(log[0]!.treeHash).toBe(tree);
-    // The side branch the parts went up on is gone, its last part left dangling, and nothing is missing.
+    // The parts went up on main itself (HEAD is the first branch pushed, #355); the last is left dangling and nothing is missing.
     const bare = call.artifacts.path("split");
     expect(git(bare, "for-each-ref", "--format=%(refname)")).toBe("refs/heads/main");
+    expect(git(bare, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
     expect(git(bare, "fsck", "--connectivity-only")).toMatch(/^dangling commit [0-9a-f]{40}$/);
   });
 

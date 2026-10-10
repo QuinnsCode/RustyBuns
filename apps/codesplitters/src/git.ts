@@ -151,17 +151,16 @@ export type TreeFile = { path: string; mode: string; data: Uint8Array } | { path
 interface Dir { files: Map<string, { mode: string; id: string }>; dirs: Map<string, Dir> }
 const newDir = (): Dir => ({ files: new Map(), dirs: new Map() });
 
-/** Where a big push parks its packs on the way (see pushTree), dropped once the branch is up. */
-const PARTS = "refs/heads/codesplitters-parts";
-
 /**
  * Push `files` as the one, root commit of an empty repo: a big tree that
  * Artifacts won't import (see tarball.ts). Each object is deflated as it's
  * read and only the compressed bytes are kept, so the most this holds is
  * about one pack. Once a pack passes `packBytes`, it goes out on its own: a
- * commit of the files so far, on a side branch, each building on the last
- * (#347). The branch then gets one root commit of the whole tree, whose
- * objects the remote mostly has by then, and the side branch goes.
+ * commit of the files so far, on the branch itself, each building on the last
+ * (#347). The branch then moves to one root commit of the whole tree, whose
+ * objects the remote mostly has by then, and the parts fall away. Not a side
+ * branch: an Artifact's HEAD is the first branch pushed to it, and forks keep
+ * it, so HEAD would name a branch that's gone and a clone checks nothing out (#355).
  */
 export async function pushTree(remote: string, token: string, files: AsyncIterable<TreeFile>, c: { message: string; author: string; email?: string; branch?: string; at?: number; packBytes?: number }): Promise<{ commit: string; objects: number; bytes: number; packs: number }> {
   const { createHash } = await import("node:crypto");
@@ -249,20 +248,12 @@ export async function pushTree(remote: string, token: string, files: AsyncIterab
     d.files.set(parts.at(-1)!, { mode: f.mode, id: "commit" in f ? f.commit : await add("blob", f.data) });
     if (c.packBytes && packBytes > c.packBytes) {
       const to = await commit(`part ${packs + 1}`, part === ZERO ? undefined : part);
-      await send(PARTS, part, to);
+      await send(ref, part, to);
       part = to;
     }
   }
   const tip = await commit(c.message);
-  await send(ref, ZERO, tip);
-  // The side branch has done its job; a remote that won't drop it just keeps it.
-  if (part !== ZERO) {
-    const res = await fetch(`${remote}/git-receive-pack`, {
-      method: "POST", body: concat([pkt(`${part} ${ZERO} ${PARTS}\0report-status delete-refs\n`), enc.encode("0000")]),
-      headers: { ...auth, "content-type": "application/x-git-receive-pack-request", accept: "application/x-git-receive-pack-result" },
-    }).catch(() => null);
-    await res?.arrayBuffer().catch(() => null);
-  }
+  await send(ref, part, tip);
   return { commit: tip, objects, bytes, packs };
 }
 
