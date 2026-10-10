@@ -4,6 +4,7 @@
 
 import { fromText } from "./lines.ts";
 import { push } from "./git.ts";
+import { mirrorIdentity } from "./mirror.ts";
 import { noodles, type Noodle } from "./noodles.ts";
 import type { ArtifactsRepo, Env, TreeEntry } from "./env.ts";
 
@@ -159,7 +160,10 @@ type Handle = NonNullable<Awaited<ReturnType<typeof handleFor>>>;
 async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, string>, author: string, message: string) {
   try {
     const a = await access(h.handle, h.remote, "write", 300);
-    const r = await push(a.remote, a.token, { changes, message, author, branch: h.branch, base: h.handle });
+    // A mirror's commits go upstream, so they're this machine's git identity's, crediting the handle that made them.
+    const id = await mirrorIdentity(env, owner, repo);
+    const by = id ? { author: id.name, email: id.email, message: author === owner || author === "codesplitters" ? message : `${message}\n\nCo-authored-by: ${author} <${author}@codesplitters.local>` } : { author, message };
+    const r = await push(a.remote, a.token, { changes, ...by, branch: h.branch, base: h.handle });
     await env.DB.batch([
       env.DB.prepare("UPDATE repos SET git_error = NULL, git_bytes = COALESCE(git_bytes, 0) + ? WHERE owner = ? AND name = ?").bind(r.bytes, owner, repo),
       ...Object.keys(changes).map((p) => env.DB.prepare("DELETE FROM git_pending WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, p)),

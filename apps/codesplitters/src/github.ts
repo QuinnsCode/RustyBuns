@@ -7,6 +7,7 @@ import { accountsOn, isAdmin } from "./identity.ts";
 import { fileStub } from "./archive.ts";
 import { json, NAME, type Env } from "./env.ts";
 import { importTarball, tooBigToImport } from "./tarball.ts";
+import { mirrorsOn } from "./mirror.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
 export const DIG_TTL = 24 * 3600_000;
@@ -154,7 +155,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   // GET /api/github/repos  who GitHub thinks you are, and your repos, newest push first
   if (p[2] === "repos" && req.method === "GET") {
     const privateOk = privateDigs(env);
-    const temp = { temporary: !isAdmin(env, user), ttlHours: DIG_TTL / 3600_000 };
+    const temp = { temporary: !isAdmin(env, user), ttlHours: DIG_TTL / 3600_000, mirrorsOk: mirrorsOn(env) };
     if (!t) return json({ via: null, login: null, repos: [], privateOk, ...temp });
     const [me, list] = await Promise.all([gh("/user", t.token), gh("/user/repos?per_page=100&sort=pushed", t.token)]);
     if (!me.ok) return json({ via: t.via, login: null, repos: [], privateOk, ...temp, error: `GitHub said ${me.status}` });

@@ -404,6 +404,8 @@
   .limits .ev, .jobs .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
   .limits .ev:first-of-type, .jobs .ev:first-of-type { border-top: 0; }
   .limits .tag, .jobs .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
+  #mirror .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
+  #mirror .tag.ok { color: var(--accent); border-color: var(--accent); } #mirror .tag.fail { color: var(--del-fg); border-color: var(--del-fg); }
   .limits .tag.reject, .jobs .tag.failed { color: var(--del-fg); } .limits .tag.flag, .limits .tag.queue, .jobs .tag.waiting, .jobs .tag.running { color: var(--accent); border-color: var(--accent); }
   .switch { position: relative; width: 30px; height: 18px; margin-left: auto; flex: none; }
   .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
@@ -964,6 +966,7 @@ function visBadge(v, canFlip) {
 const digBox = (why) => `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div><div class="body"><p class="muted" style="margin-top:0">${why}</p>
   <div class="ghwho" id="ghwho" hidden></div>
   <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up (fork)</button></div>
+  <label class="muted" id="ghmirror" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:8px"><input type="checkbox" name="mirror">Keep it in sync with upstream (a mirror): its commits come here, yours go back, and if it goes down you keep working until it's back. Takes any git URL, GitHub or not.</label>
   <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form>`;
 const looksPasted = (v) => /[\/:]/.test(v.trim());
 function wireDig() {
@@ -992,6 +995,8 @@ function wireDig() {
     icons();
     msg.textContent = (g.login && g.repos.length ? "Pick one of yours, search, or paste anything from GitHub. " : "Search GitHub, or paste anything you copied there. ") + note;
     if (!f.repo.value) showMine();
+    // Mirrors need git on this machine: the desktop.
+    if (g.mirrorsOk) $("#ghmirror").hidden = false;
   }).catch(() => {});
   f.repo.addEventListener("input", () => {
     clearTimeout(timer);
@@ -1011,7 +1016,9 @@ function wireDig() {
     e.preventDefault();
     if (!me()) { msg.textContent = "Sign in first (top right), then dig it up."; return; }
     msg.textContent = "cloning…";
-    try { const r = await api("/github/dig", { repo: f.repo.value, name: f.name.value || undefined }); location.hash = `#/r/${r.owner}/${r.name}`; }
+    const mirror = f.mirror.checked;
+    if (mirror) msg.textContent = "cloning, to keep in sync…";
+    try { const r = await api(mirror ? "/mirrors" : "/github/dig", mirror ? { url: f.repo.value, name: f.name.value || undefined } : { repo: f.repo.value, name: f.name.value || undefined }); location.hash = `#/r/${r.owner}/${r.name}`; }
     catch (err) { msg.textContent = err.message; }
   });
 }
@@ -1019,11 +1026,13 @@ function wireDig() {
 // Where a fork came from, where its git lives, and who owns it.
 function forkNote(r, owner) {
   if (!r.upstream) return "";
-  const gh = r.upstream.replace(/^github:/, "");
+  const gh = r.upstream.startsWith("github:") ? r.upstream.slice(7) : null;
+  const link = gh ? `<a href="https://github.com/${esc(gh)}" rel="noopener">github.com/${esc(gh)}</a>` : `<code>${esc(r.upstream)}</code>`;
   const at = r.upstream_commit ? ` at <code>${esc(r.upstream_commit.slice(0, 7))}</code>` : "";
   const where = r.home === "local" ? "a local git repo on this machine" : r.home === "cloud" ? "Cloudflare Artifacts" : "its own git repo";
+  if (r.mirror) return `A mirror of ${link}, in ${where}. It keeps in step with upstream: upstream's commits come here, ${esc(owner)}'s go back, and work carries on here while upstream is down.`;
   const left = r.expires_at ? ` It's temporary: it goes in ${Math.max(1, Math.round((r.expires_at - Date.now()) / 3600_000))}h, sooner if lots of people dig.` : "";
-  return `A fork of <a href="https://github.com/${esc(gh)}" rel="noopener">github.com/${esc(gh)}</a>${at}, cloned into ${where}. ${esc(owner)} owns this copy: edits and catalogues land here, never upstream.${left}`;
+  return `A fork of ${link}${at}, cloned into ${where}. ${esc(owner)} owns this copy: edits and catalogues land here, never upstream.${left}`;
 }
 
 // ---- views ---------------------------------------------------------------------------
@@ -1189,6 +1198,7 @@ const views = {
   repoDetails(owner, repo, r) {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
     return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p>`)
+      + (owner === me() && r.mirror ? sec("refresh-cw", "Upstream", `<div id="mirror"><span class="muted">…</span></div>`) : "")
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<a href="#/u/${esc(c)}">@${esc(c)}</a>`).join(" ")}</p>`)
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
@@ -1198,6 +1208,30 @@ const views = {
       + (owner === me() ? sec("webhook", "Webhooks", `<div id="hooks"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("trash-2", "Delete this repo", `<form id="delrepo" style="display:grid;gap:6px;font-size:13px"><span class="muted" style="font-size:12px">Gone for good here: its files, branches, cuts, shares, logs and git. GitHub never hears, and a stack it deployed stays up.</span>
         <input name="name" placeholder="type ${esc(repo)} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete ${esc(owner)}/${esc(repo)}</button></div></form>`) : "");
+  },
+  /** A mirror's standing with upstream: in step, down (and since when), refused, or a clash to settle. */
+  async wireMirror(owner, repo, body) {
+    const el = $("#mirror");
+    if (!el) return;
+    const m = await api(`/repos/${owner}/${repo}/mirror`, body).catch((e) => ({ failed: e.message }));
+    if (m.failed) { el.innerHTML = `<span class="muted">${esc(m.failed)}</span>`; return; }
+    const waiting = m.ahead ? `${m.ahead} commit${m.ahead === 1 ? "" : "s"} waiting to go up` : "nothing waiting to go up";
+    const retry = m.nextAt ? (m.nextAt <= Date.now() ? "trying again in a moment" : `trying again in ${Math.max(1, Math.round((m.nextAt - Date.now()) / 60_000))}m`) : "";
+    const said = m.error ? `<pre class="muted" style="white-space:pre-wrap;font-size:12px;margin:4px 0">${esc(m.error)}</pre>` : "";
+    const head = {
+      ok: `<span class="tag ok">in step</span> with <code>${esc(m.url)}</code> ${esc(m.branch)}, checked ${m.syncedAt ? ago(m.syncedAt) : "never"}.`,
+      down: `<span class="tag fail">upstream down</span> <code>${esc(m.url)}</code> hasn't answered since ${new Date(m.downSince).toLocaleString()}. Keep working: ${waiting}, ${retry}.`,
+      refused: `<span class="tag fail">upstream said no</span> <code>${esc(m.url)}</code> answered but didn't take the push. Your work stays here: ${waiting}, ${retry}.`,
+      held: `<span class="tag">held</span> Pulling from <code>${esc(m.url)}</code>, but not pushing: this repo has private lines, which its git holds blank.`,
+      clash: `<span class="tag fail">clash</span> Upstream and this copy changed the same lines${m.clash.length ? ` in ${m.clash.map((p) => `<a href="#/f/${owner}/${repo}/${encodeURIComponent(p)}"><code>${esc(p)}</code></a>`).join(", ")}` : ""}. Nothing moved on either side. Pick whose lines win in those files; everything else merges as usual.`,
+    }[m.state] ?? esc(m.state);
+    const pickSide = m.state === "clash" && m.clash.length ? `<div class="row" style="gap:6px"><button class="btn" data-resolve="mine">${icon("user")}Keep mine</button><button class="btn" data-resolve="upstream">${icon("download")}Take upstream's</button></div>` : "";
+    const who = m.identity ? `Commits go up as <b>${esc(m.identity.name)}</b> &lt;${esc(m.identity.email)}&gt; (this machine's git config).` : `No git identity on this machine: set <code>git config --global user.name</code> and <code>user.email</code>.`;
+    el.innerHTML = `<p>${head}</p>${m.state === "ok" && (m.ahead || m.behind) ? `<p class="muted">${waiting}; ${m.behind} to take.</p>` : ""}${m.state !== "ok" ? said : ""}${pickSide}
+      <div class="row" style="gap:6px;margin-top:6px"><button class="btn" id="mirror-sync">${icon("refresh-cw")}Sync now</button></div><p class="muted" style="font-size:12px">${who}</p>`;
+    icons();
+    $("#mirror-sync").addEventListener("click", () => { el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, {}); });
+    el.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => { el.querySelector("p").textContent = "settling…"; views.wireMirror(owner, repo, { resolve: b.dataset.resolve }); }));
   },
   /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
   async wireFit(owner, repo, dir = "") {
@@ -1505,6 +1539,7 @@ const views = {
     views.wireBranches(owner, repo, r);
     views.wireDeps(owner, repo);
     views.wireFit(owner, repo);
+    views.wireMirror(owner, repo);
     views.wirePreview(owner, repo);
     views.wireDeploy(owner, repo);
     views.wireHooks(owner, repo);
