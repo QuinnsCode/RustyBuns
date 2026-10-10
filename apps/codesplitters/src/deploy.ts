@@ -86,8 +86,7 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
   if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
 
   if (req.method === "GET") {
-    const run = live.get(`${owner}/${repo}`)?.run ?? null;
-    return json({ settings: await settings(env, owner, repo), can_run: !!runnerFor(env), run, history: await history(env, owner, repo, false, run) });
+    return json({ settings: await settings(env, owner, repo), can_run: !!runnerFor(env), ...(await history(env, owner, repo, false, () => live.get(`${owner}/${repo}`)?.run ?? null)) });
   }
   if (req.method === "PUT") {
     const s = { ...(await settings(env, owner, repo)), ...((await req.json()) as Partial<Settings>) };
