@@ -142,7 +142,7 @@ async function gitObject(repo: string, sha: string, commit: boolean) {
   });
   if (!res.ok) return null;
   // pkt-lines: section headers, then the packfile section's lines on band 1.
-  const buf = new Uint8Array(await res.arrayBuffer()), parts: Uint8Array[] = [], ascii = new TextDecoder();
+  const buf = new Uint8Array(await res.arrayBuffer()), parts: Uint8Array<ArrayBuffer>[] = [], ascii = new TextDecoder();
   let inPack = false;
   for (let i = 0; i + 4 <= buf.length;) {
     const n = parseInt(ascii.decode(buf.subarray(i, i + 4)), 16);
