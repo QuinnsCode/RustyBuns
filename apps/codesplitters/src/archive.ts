@@ -39,13 +39,16 @@ export async function handleFor(env: Env, owner: string, repo: string, crew = fa
 /**
  * Give the repo its crew remote, once: a fork of its remote ("--crew" can't end
  * a two-part "owner--repo" name, so it can't collide), or a new repo before the
- * first commit. Commits push the real text there from then on.
+ * first commit. Commits push the real text there from then on, and the one
+ * that makes it backfills the files already pushed blank (all but `except`,
+ * which its caller is about to push).
  */
-export async function ensureCrewRemote(env: Env, owner: string, repo: string) {
+export async function ensureCrewRemote(env: Env, owner: string, repo: string, except?: string) {
   const r = await env.DB.prepare("SELECT artifact, crew_artifact, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
   if (!env.ARTIFACTS || !r?.artifact || r.crew_artifact) return;
   const name = `${r.artifact}--crew`, branch = (r.branch ?? "main") as string, description = `codeSplitters ${owner}/${repo}, the crew's copy`;
   const pub = await env.ARTIFACTS.get(r.artifact);
+  let mine = true;
   const made = await (async () => {
     const [tip] = await pub.log({ ref: branch, limit: 1 }).catch(() => []);
     return tip ? pub.fork(name, { description, defaultBranchOnly: true }) : env.ARTIFACTS!.create(name, { description, setDefaultBranch: branch });
@@ -53,9 +56,36 @@ export async function ensureCrewRemote(env: Env, owner: string, repo: string) {
     // Someone else made it a moment ago.
     const info = await (await env.ARTIFACTS!.get(name)).info().catch(() => null);
     if (!info) throw e;
+    mine = false;
     return info;
   });
   await env.DB.prepare("UPDATE repos SET crew_artifact = ?, crew_remote = ? WHERE owner = ? AND name = ?").bind(made.name, made.remote, owner, repo).run();
+  // A missed backfill leaves those files blank until they're committed again, as before; it doesn't stop the commit.
+  if (mine) await backfillCrew(env, owner, repo, except).catch((e: Error) => console.warn(`codesplitters: crew backfill for ${owner}/${repo}: ${e.message}`));
+}
+
+/**
+ * A fork of the remote holds private lines blank where they were committed
+ * before the crew remote was there (#341). Each such file's real text, as last
+ * committed, goes to the crew remote in one commit; files it already has right are left out.
+ */
+async function backfillCrew(env: Env, owner: string, repo: string, except?: string) {
+  const crew = await handleFor(env, owner, repo, true);
+  if (!crew?.crew) return;
+  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const changes: Record<string, string> = {};
+  for (const { path } of results as { path: string }[]) {
+    if (path === except) continue;
+    if (!((await (await toFile(env, owner, repo, path, "codesplitters", "private")).json()) as string[]).length) continue;
+    const [last] = (await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json()) as { rev: number }[];
+    if (!last) continue;
+    const doc = (await (await toFile(env, owner, repo, path, "codesplitters", "at", {}, `?rev=${last.rev}`)).json()) as { lines: { text: string }[] };
+    const real = (t => t.endsWith("\n") ? t : t + "\n")(doc.lines.map((l) => l.text).join("\n"));
+    if ((await (await crew.handle.readFile({ ref: crew.branch, path }).catch(() => null))?.text()) !== real) changes[path] = real;
+  }
+  if (!Object.keys(changes).length) return;
+  const a = await access(crew.handle, crew.remote, "write", 300);
+  await push(a.remote, a.token, { changes, message: `Private lines' real text: ${Object.keys(changes).join(", ")}`, author: "codesplitters", branch: crew.branch, base: crew.handle });
 }
 
 /** A remote and a fresh token for it. */
@@ -129,7 +159,7 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
  * land now waits in git_pending, and so does every commit while git moves to a fresh start.
  */
 export async function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string) {
-  if (files.content !== files.published) await ensureCrewRemote(env, owner, repo);
+  if (files.content !== files.published) await ensureCrewRemote(env, owner, repo, path);
   const [h, crew] = await Promise.all([handleFor(env, owner, repo), handleFor(env, owner, repo, true)]);
   if (!h) return null;
   if (await env.DB.prepare("SELECT 1 FROM fresh_starts WHERE owner = ? AND repo = ? AND state IN ('walking', 'copying')").bind(owner, repo).first()) {
