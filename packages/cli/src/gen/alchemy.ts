@@ -25,7 +25,9 @@ function resource(name: string, b: Binding): string | null {
     case "durable_object":
       // Async Workers bind a DO exported by `main` with Cloudflare.DurableObject
       // in `env` (src/Cloudflare/Workers/DurableObject.ts, "Async Workers").
-      // Not a top-level resource: it is created inline in env below.
+      // Not a top-level resource: it is created inline in env below. Its
+      // migrations need no history here: Alchemy diffs the deployed Worker's
+      // tags, appends the next tag, and treats a changed class as a rename.
       return null;
     case "container": {
       // The Container is the DO binding and its ContainerApplication together;
