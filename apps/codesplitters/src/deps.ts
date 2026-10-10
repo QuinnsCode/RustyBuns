@@ -20,8 +20,15 @@
 // branch. A run that installs takes minutes, so the desktop answers "running"
 // and the page polls.
 //
+// With a fixer on too, an update that broke the tests isn't simply dropped: a
+// coding agent gets the failing output, the package's changelog and the
+// repo's history of the affected API, patches the call sites across as many
+// files as it needs in the same throwaway clone, and the tests run again,
+// until they pass or it runs out of tries. A fix that passes lands on the
+// same branch, blamed on agent-<harness>.
+//
 //   GET  /api/repos/:o/:r/deps        settings and the last report (owner only)
-//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests}
+//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries}
 //   POST /api/repos/:o/:r/deps/run    check now
 
 import type { Doc, Op } from "./lines.ts";
@@ -30,15 +37,25 @@ import { actingAs } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps } from "./sync.ts";
 import { json, type Env } from "./env.ts";
+import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
+import { harnessCommand, HARNESSES, type Harness } from "./harness.ts";
 
 export type Level = "patch" | "minor" | "major";
 const LEVELS: Level[] = ["patch", "minor", "major"];
 
-export interface Settings { on: boolean; every_hours: number; max_level: Level; min_age_days: number; ignore: string[]; run_tests: boolean }
-export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false };
+export interface Settings { on: boolean; every_hours: number; max_level: Level; min_age_days: number; ignore: string[]; run_tests: boolean; fix_with: Harness | null; fix_tries: number }
+export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false, fix_with: null, fix_tries: 3 };
 
 /** One dependency to move, in the package.json at `path` (the top one, or a workspace's). */
-export interface Update { name: string; from: string; to: string; level: Level; status: "kept" | "broke" | "untested"; out?: string; path?: string }
+export interface Update {
+  name: string; from: string; to: string; level: Level;
+  status: "kept" | "fixed" | "broke" | "untested";
+  /** The last failing test output. */
+  out?: string;
+  /** A fixer's go at it: who, how many tries, and the files its passing fix changed (none if it gave up). */
+  fix?: { by: string; tries: number; files: string[] };
+  path?: string;
+}
 export interface Report { at: number; checked: number; updates: Update[]; branch?: string; lock?: string; note?: string }
 
 /** What npm says about a package: its versions and when each was published. */
@@ -110,6 +127,15 @@ export function packageManager(top: string[], pkg: Record<string, any>): { pm: P
  * script). `lock` is the lockfile afterwards, when it's text.
  */
 export type Tester = (remote: string, files: Record<string, string>, opts: { pm: PM; lock: string | null; test: boolean }) => Promise<{ ok: boolean; out: string; lock?: string }>;
+
+/** One update for a coding agent to make work: the clone has `files` swapped in and fails its tests with `out`. */
+export interface FixJob { remote: string; files: Record<string, string>; pm: PM; update: Update; out: string; harness: Harness; tries: number }
+
+/** A file the fix changed: its text at the commit cloned (null: new) and after. */
+export interface Edit { path: string; before: string | null; after: string }
+
+/** Patch the call sites until the tests pass. ok: they do, and `edits` is the fix. */
+export type Fixer = (job: FixJob) => Promise<{ ok: boolean; tries: number; out: string; edits: Edit[] }>;
 
 // ---- versions ---------------------------------------------------------------
 
@@ -189,42 +215,131 @@ const LOCK_ONLY: Record<PM, string[]> = {
   yarn: ["yarn", "install", "--ignore-scripts"],
 };
 
-/** A clone in a temp dir, an install, the test script if asked and there is one, then the clone is deleted. Desktop only. */
-export const localTester = (timeoutMs = 10 * 60_000): Tester => async (remote, files, { pm, lock, test }) => {
-  const { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = await import("node:fs");
+type Run = (cmd: string[]) => Promise<{ code: number; out: string }>;
+
+/**
+ * A clone of `remote` in a temp dir with `files` swapped in, handed to `work`,
+ * then deleted. `depth` 0 keeps the whole history. `bare` runs it with only
+ * PATH, HOME and TMPDIR, so the repo's .npmrc can't spend the owner's
+ * $NPM_TOKEN on a host it picks. Desktop only.
+ */
+async function inClone<T>(remote: string, files: Record<string, string>, depth: number, timeoutMs: number, bare: boolean,
+  work: (repo: string, run: Run) => Promise<T>, failed: (out: string) => T): Promise<T> {
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
+  const { dirname, join } = await import("node:path");
   const dir = mkdtempSync(join(tmpdir(), "codesplitters-deps-"));
-  // A lockfile-only pass gets a bare environment: the repo's .npmrc can't spend the owner's $NPM_TOKEN on a host it picks.
-  const env = test ? { ...process.env } : { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR };
-  const run = async (cmd: string[], cwd = dir) => {
+  const env = bare ? { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR } : { ...process.env };
+  const run = (cwd: string): Run => async (cmd) => {
     const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: { ...env, CI: "1", YARN_ENABLE_IMMUTABLE_INSTALLS: "false" } });
     const [o, e] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
     return { code: await p.exited, out: `$ ${cmd.join(" ")}\n${o}${e}` };
   };
   try {
-    const clone = await run(["git", "clone", "--depth", "1", "--quiet", remote, "repo"]);
-    if (clone.code !== 0) return { ok: false, out: clone.out.replace(remote, "<remote>") };
+    const clone = await run(dir)(["git", "clone", ...(depth ? ["--depth", String(depth)] : []), "--quiet", remote, "repo"]);
+    if (clone.code !== 0) return failed(clone.out.replace(remote, "<remote>"));
     const repo = join(dir, "repo");
-    for (const [path, text] of Object.entries(files)) writeFileSync(join(repo, path), text);
-    const cmd = test ? INSTALL[pm] : pm === "yarn" && existsSync(join(repo, ".yarnrc.yml")) ? ["yarn", "install", "--mode=update-lockfile"] : LOCK_ONLY[pm];
-    const install = await run(cmd, repo);
-    if (install.code !== 0) return { ok: false, out: install.out };
-    const locked = lock && lock !== "bun.lockb" && existsSync(join(repo, lock)) ? { lock: readFileSync(join(repo, lock), "utf8") } : {};
-    if (!test) return { ok: true, out: install.out, ...locked };
-    const pkg = JSON.parse(files["package.json"] ?? readFileSync(join(repo, "package.json"), "utf8"));
-    if (!pkg.scripts?.test) return { ok: true, out: install.out + "\n(no test script)", ...locked };
-    const t = await run([pm, "run", "test"], repo);
-    return { ok: t.code === 0, out: t.out, ...locked };
+    for (const [path, text] of Object.entries(files)) { mkdirSync(dirname(join(repo, path)), { recursive: true }); writeFileSync(join(repo, path), text); }
+    return await work(repo, run(repo));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-};
+}
+
+/** The test script, if there is one, after an install. */
+async function runTests(run: Run, repo: string, files: Record<string, string>, pm: PM, installed: string) {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const pkg = JSON.parse(files["package.json"] ?? readFileSync(join(repo, "package.json"), "utf8"));
+  if (!pkg.scripts?.test) return { ok: true, out: installed + "\n(no test script)" };
+  const t = await run([pm, "run", "test"]);
+  return { ok: t.code === 0, out: t.out };
+}
+
+/** A full install, then the test script if there is one. */
+async function installAndTest(run: Run, repo: string, files: Record<string, string>, pm: PM) {
+  const install = await run(INSTALL[pm]);
+  if (install.code !== 0) return { ok: false, out: install.out };
+  return runTests(run, repo, files, pm, install.out);
+}
+
+/** A clone in a temp dir, an install, the test script if asked and there is one, then the clone is deleted. Desktop only. */
+export const localTester = (timeoutMs = 10 * 60_000): Tester => (remote, files, { pm, lock, test }) =>
+  inClone(remote, files, 1, timeoutMs, !test, async (repo, run) => {
+    const { existsSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const cmd = test ? INSTALL[pm] : pm === "yarn" && existsSync(join(repo, ".yarnrc.yml")) ? ["yarn", "install", "--mode=update-lockfile"] : LOCK_ONLY[pm];
+    const install = await run(cmd);
+    if (install.code !== 0) return { ok: false, out: install.out };
+    const locked = lock && lock !== "bun.lockb" && existsSync(join(repo, lock)) ? { lock: readFileSync(join(repo, lock), "utf8") } : {};
+    if (!test) return { ok: true, out: install.out, ...locked };
+    return { ...(await runTests(run, repo, files, pm, install.out)), ...locked };
+  }, (out) => ({ ok: false, out }));
+
+const LOCKFILES = /(^|\/)(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/;
+
+/**
+ * The coding agent runs in a full clone (it needs the history), with the
+ * update installed. After each try the files the doctor owns are put back,
+ * deleted files restored, and the tests run again.
+ */
+export const localFixer = (exec: Exec = execCommand, timeoutMs = 10 * 60_000): Fixer => (job) =>
+  inClone(job.remote, job.files, 0, timeoutMs, false, async (repo, run) => {
+    const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const install = await run(INSTALL[job.pm]);
+    const name = job.update.name;
+    const changelog = ["CHANGELOG.md", "HISTORY.md", "History.md", "CHANGES.md"].map((f) => join(repo, "node_modules", name, f)).find(existsSync);
+    const context = {
+      changelog: changelog ? readFileSync(changelog, "utf8").slice(0, 6000) : "",
+      history: (await run(["git", "log", "-n", "15", "--format=%h %an, %ar: %s", "-S", name])).out,
+      sites: (await run(["git", "grep", "-n", "-F", name, "--", ".", ":!package.json", ":!*.lock", ":!*.lockb"])).out.slice(0, 6000),
+    };
+    let out = job.out, tries = 0, ok = false;
+    while (tries < job.tries && !ok && install.code === 0) {
+      tries++;
+      const ran = await exec(harnessCommand(job.harness, fixPrompt(job.update, out, context, tries, job.tries)), repo);
+      for (const [path, text] of Object.entries(job.files)) writeFileSync(join(repo, path), text);
+      const gone = (await run(["git", "ls-files", "--deleted"])).out.split("\n").slice(1).filter(Boolean);
+      if (gone.length) await run(["git", "checkout", "--", ...gone]);
+      const t = ran.code !== 0 ? { ok: false, out: `${job.harness} exited ${ran.code}:\n${ran.out.slice(-2000)}` } : await installAndTest(run, repo, job.files, job.pm);
+      ({ ok, out } = t);
+    }
+    if (install.code !== 0) out = install.out;
+    if (!ok) return { ok, tries, out, edits: [] };
+    const status = (await run(["git", "status", "--porcelain", "--untracked-files=all"])).out.split("\n").slice(1);
+    const edits: Edit[] = [];
+    for (const line of status) {
+      const path = line.slice(3).trim();
+      if (!path || line.startsWith(" D") || path in job.files || LOCKFILES.test(path) || path.startsWith("node_modules/")) continue;
+      const before = line.startsWith("??") ? null : (await run(["git", "show", `HEAD:${path}`])).out.replace(/^.*\n/, "");
+      edits.push({ path, before, after: readFileSync(join(repo, path), "utf8") });
+    }
+    return { ok, tries, out, edits };
+  }, (out) => ({ ok: false, tries: 0, out, edits: [] }));
+
+/** What the fixer is told on each try. */
+export function fixPrompt(u: Update, out: string, ctx: { changelog: string; history: string; sites: string }, attempt: number, of: number): string {
+  return [
+    `This repository's tests fail after updating the dependency ${u.name} from ${u.from} to ${u.to} (a ${u.level} update). The new version is installed.`,
+    `Change the repository's code so it works with ${u.name} ${u.to} and the tests pass. Try ${attempt} of ${of}.`,
+    ``, `The failing test output${attempt > 1 ? " after your last try" : ""}:`, tail(out),
+    ...(ctx.changelog ? [``, `The start of ${u.name}'s changelog:`, ctx.changelog] : [``, `${u.name} ships no changelog; read its code and types in node_modules/${u.name}.`]),
+    ``, `Commits in this repo that added or removed mentions of ${u.name}:`, ctx.history.trim() || "(none)",
+    ``, `Where the repo mentions ${u.name}:`, ctx.sites.trim() || "(nowhere)",
+    ``, `Edit as many files as the fix needs, and keep every other line as it is. Do not edit package.json or the lockfile, do not delete files, and do not run git commands.`,
+    `The tests run again after you stop.`,
+  ].join("\n");
+}
 
 const onDesktop = (env: Env) => typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET;
 
 /** Where installs can run: the desktop. Tests too, when the owner turned them on. */
 const installerFor = (env: Env): Tester | null => (env.DEPS_TESTER as Tester | undefined) ?? (onDesktop(env) ? localTester() : null);
+
+/** Who fixes a broken update: the agent the owner picked, wherever tests run. */
+const fixerFor = (env: Env, s: Settings): Fixer | null =>
+  !s.fix_with || !s.run_tests || !installerFor(env) ? null : (env.DEPS_FIXER as Fixer | undefined) ?? localFixer(env.AGENT_EXEC as Exec | undefined);
 
 // ---- a run ------------------------------------------------------------------
 
@@ -302,6 +417,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   const tester = s.run_tests ? installer : null;
   let updates: Update[] = found.map((u) => ({ ...u, status: "untested" }));
   let note = tester ? undefined : s.run_tests ? "tests only run on the desktop app" : undefined;
+  let edits: Edit[] = [];
   if (tester) {
     const r = await remoteFor();
     if (!r) note = "no git remote to test against";
@@ -318,6 +434,21 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
           note = "each of these passes alone but not together; nothing was put on a branch";
           return { at: now, checked, updates, note };
         }
+      }
+      // An agent takes each broken update in turn, on top of what's kept and fixed so far.
+      const fixer = fixerFor(env, s);
+      for (const u of fixer ? updates.filter((u) => u.status === "broke") : []) {
+        const taken = updates.filter((x) => x === u || x.status === "kept" || x.status === "fixed");
+        const files = { ...Object.fromEntries(edits.map((e) => [e.path, e.after])), ...filesFor(taken) };
+        const f = await fixer!({ remote: r, files, pm, update: u, out: u.out ?? "", harness: s.fix_with!, tries: s.fix_tries });
+        const by = `agent-${s.fix_with}`;
+        if (f.ok) {
+          for (const e of f.edits) {
+            const had = edits.find((x) => x.path === e.path);
+            if (had) had.after = e.after; else edits.push(e);
+          }
+          Object.assign(u, { status: "fixed", out: undefined, fix: { by, tries: f.tries, files: f.edits.map((e) => e.path) } });
+        } else Object.assign(u, { out: tail(f.out), fix: { by, tries: f.tries, files: [] } });
       }
     }
   }
@@ -362,7 +493,35 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
     if (mine.length) await write(path, (lines) => bump(lines, mine));
   }
   if (locked !== undefined) await write(lock!, () => locked!.split("\n"));
+  if (edits.length) {
+    const skipped = await landFix(call, owner, base, branch, `agent-${s.fix_with}`, edits);
+    if (skipped.length) note = [note, `left out of the fix, changed since the last commit: ${skipped.join(", ")}`].filter(Boolean).join("; ");
+  }
   return { at: now, checked, updates, branch, ...(locked !== undefined ? { lock: lock! } : {}), ...(note ? { note } : {}) };
+}
+
+/**
+ * The fixer's edits, on the branch as its agent. The agent worked on the last
+ * commit; a file that has changed since keeps its own lines and comes back here.
+ */
+async function landFix(call: Call, owner: string, base: string, branch: string, agent: string, edits: Edit[]): Promise<string[]> {
+  const add = await call(owner, `${base}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
+  if (!add.ok && add.status !== 409) throw new Error(`adding ${agent}: ${add.status}`);
+  const skipped: string[] = [];
+  for (const e of edits) {
+    const q = `?path=${encodeURIComponent(e.path)}&branch=${branch}`;
+    if (e.before === null) {
+      const r = await call(agent, `${base}/files`, { method: "POST", body: JSON.stringify({ path: e.path, content: e.after.replace(/\n$/, ""), branch }) });
+      if (!r.ok) skipped.push(e.path);
+      continue;
+    }
+    const doc = (await (await call(agent, `${base}/do/file${q}`)).json()) as Doc;
+    if (toDisk(doc.lines) !== e.before) { skipped.push(e.path); continue; }
+    const ops = diffToOps(doc.lines, fromDisk(e.after));
+    const r = ops.length && await call(agent, `${base}/do/ops${q}`, { method: "POST", body: JSON.stringify({ ops }) });
+    if (r && !r.ok) throw new Error(`editing ${e.path} on ${branch}: ${r.status}`);
+  }
+  return skipped;
 }
 
 const tail = (s: string) => s.trim().slice(-1500);
@@ -372,7 +531,7 @@ const tail = (s: string) => s.trim().slice(-1500);
 export async function settings(env: Env, owner: string, repo: string): Promise<Settings> {
   const r = await env.DB.prepare("SELECT * FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
   if (!r) return { ...DEFAULTS };
-  return { on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: r.ignore ? String(r.ignore).split(",") : [], run_tests: !!r.run_tests };
+  return { on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: r.ignore ? String(r.ignore).split(",") : [], run_tests: !!r.run_tests, fix_with: r.fix_with ?? null, fix_tries: r.fix_tries };
 }
 
 /** A run that hasn't reported in an hour died with its process; the next one may go. */
@@ -410,9 +569,12 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     const every = Math.round(Number(s.every_hours)), age = Math.round(Number(s.min_age_days));
     if (!(every >= 1 && every <= 24 * 30)) return json({ error: "every_hours: 1 to 720" }, 400);
     if (!(age >= 0 && age <= 90)) return json({ error: "min_age_days: 0 to 90" }, 400);
+    const fixWith = s.fix_with || null, tries = Math.round(Number(s.fix_tries));
+    if (fixWith && !HARNESSES.includes(fixWith)) return json({ error: `fix_with: ${HARNESSES.join(", ")} or null` }, 400);
+    if (!(tries >= 1 && tries <= 5)) return json({ error: "fix_tries: 1 to 5" }, 400);
     const ignore = (Array.isArray(s.ignore) ? s.ignore : String(s.ignore).split(",")).map((x) => x.trim()).filter(Boolean).join(",");
-    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ? WHERE owner = ? AND repo = ?")
-      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, owner, repo).run();
+    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ? WHERE owner = ? AND repo = ?")
+      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, owner, repo).run();
     return json(await settings(env, owner, repo));
   }
   if (p[5] === "run" && req.method === "POST") {

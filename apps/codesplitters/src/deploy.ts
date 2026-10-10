@@ -31,7 +31,7 @@ const STEPS: StepKey[] = ["clone", "install", "deploy", "check"];
 /** The deploy going now per repo, and whether a commit landed while it ran. */
 const live = new Map<string, { run: Run; again?: string }>();
 
-async function settings(env: Env, owner: string, repo: string): Promise<Settings> {
+export async function settings(env: Env, owner: string, repo: string): Promise<Settings> {
   const r = await env.DB.prepare("SELECT stage, on_commit, production FROM deploy_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
   return r ? { stage: r.stage, on_commit: !!r.on_commit, production: !!r.production } : { ...DEFAULTS };
 }

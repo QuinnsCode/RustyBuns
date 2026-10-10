@@ -1,6 +1,7 @@
 // Who is asking. Two modes:
 //   accounts  Better Auth (email and password, plus GitHub and Google when their
-//             keys are set). On whenever BETTER_AUTH_SECRET is set.
+//             keys are set). On whenever BETTER_AUTH_SECRET is set. After signing
+//             in, everyone picks a handle of six or more characters, for good.
 //   alias     a name in a cookie, no password. The desktop app (one person on
 //             their own machine), tests and demos.
 // Either way the rest of the app sees one thing: a handle (users.name) or null.
@@ -51,15 +52,16 @@ export function slug(s: string) {
   return NAME.test(out) ? out : "digger";
 }
 
-/** Handles this short are an admin's to give out (handle_grants), never made at signup. */
+/** Handles this short are an admin's to give out (handle_grants); everyone else picks one of six or more. */
 export const SHORT = 5;
 
+type AuthUser = { id: string; name?: string; email?: string; emailVerified?: boolean };
+
 /**
- * The handle linked to this account, made on first sight: one granted to its
- * (verified) email, else its name, else its email, lengthened if short and
- * numbered if taken.
+ * The handle linked to this account, or null until its owner picks one. An
+ * account whose (verified) email an admin granted a handle gets it on first sight.
  */
-async function handleFor(env: Env, u: { id: string; name?: string; email?: string; emailVerified?: boolean }) {
+async function handleFor(env: Env, u: AuthUser) {
   const linked = await env.DB.prepare("SELECT name FROM users WHERE auth_id = ?").bind(u.id).first();
   if (linked) return linked.name as string;
   // Anyone can type an email at signup, so a grant goes to a verified one (GitHub, Google).
@@ -68,18 +70,34 @@ async function handleFor(env: Env, u: { id: string; name?: string; email?: strin
     const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, auth_id) VALUES (?, ?)").bind(granted.handle, u.id).run();
     if (r.meta?.changes) return granted.handle as string;
   }
+  return null;
+}
+
+/** Why `name` can't be someone's new handle, or null when it's free. */
+async function unclaimable(env: Env, name: string) {
+  if (!NAME.test(name)) return "lowercase letters and digits, single dashes between";
+  if (name.length <= SHORT) return `at least ${SHORT + 1} characters`;
+  if (isAgentHandle(name)) return "agent- handles are for coding agents";
+  if (await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(name).first()) return "taken";
+  if (await env.DB.prepare("SELECT 1 FROM handle_grants WHERE handle = ?").bind(name).first()) return "taken";
+  return null;
+}
+
+/** A free handle to offer, from the account's name or email. */
+async function suggest(env: Env, u: AuthUser) {
   let base = slug(u.name?.trim() || u.email?.split("@")[0] || "digger");
   if (base.length <= SHORT) base = slug(`${base}-digger`);   // "agent" -> "agentdigger"
-  for (let n = 1; n < 1000; n++) {
+  for (let n = 1; n < 50; n++) {
     const name = n === 1 ? base : `${base.slice(0, 35)}-${n}`;
-    if (await env.DB.prepare("SELECT 1 FROM handle_grants WHERE handle = ?").bind(name).first()) continue;   // promised to someone
-    const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, auth_id) VALUES (?, ?)").bind(name, u.id).run();
-    if (r.meta?.changes) return name;
-    // Lost a race to our own other request? Then the link exists now.
-    const again = await env.DB.prepare("SELECT name FROM users WHERE auth_id = ?").bind(u.id).first();
-    if (again) return again.name as string;
+    if (!(await unclaimable(env, name))) return name;
   }
-  throw new Error("no free handle");
+  return "";
+}
+
+/** The signed-in account behind a request (accounts mode), with its handle if it has one. */
+async function account(req: Request, env: Env) {
+  const session = await authFor(env, new URL(req.url).origin).api.getSession({ headers: req.headers });
+  return session ? { user: session.user as AuthUser, handle: await handleFor(env, session.user) } : null;
 }
 
 /**
@@ -92,8 +110,7 @@ export async function identify(req: Request, env: Env): Promise<string | null> {
   const inner = actingAs.get(req);
   if (inner !== undefined) return inner;
   if (!accountsOn(env)) return aliasOf(req);
-  const session = await authFor(env, new URL(req.url).origin).api.getSession({ headers: req.headers });
-  return session ? handleFor(env, session.user) : null;
+  return (await account(req, env))?.handle ?? null;
 }
 
 /** Admins import levels: ADMINS when set, else anyone in alias mode (your own desktop). */
@@ -122,12 +139,42 @@ async function grantRoutes(req: Request, env: Env, p: string[]): Promise<Respons
   return json({ handle: b.handle, email }, 201);
 }
 
+/**
+ * GET  /api/handle?name=  is it free? {name, ok, why}
+ * POST /api/handle {name}  claim it: once per account, six or more characters, for good.
+ */
+async function handleRoutes(req: Request, env: Env, url: URL) {
+  if (req.method === "GET") {
+    const name = url.searchParams.get("name") ?? "";
+    const why = await unclaimable(env, name);
+    return json({ name, ok: !why, why });
+  }
+  if (req.method !== "POST") return null;
+  const a = await account(req, env);
+  if (!a) return json({ error: "sign in first" }, 401);
+  if (a.handle) return json({ error: `you're already @${a.handle}` }, 409);
+  const { name = "" } = (await req.json().catch(() => ({}))) as { name?: string };
+  const why = await unclaimable(env, name);
+  if (why) return json({ error: `@${name}: ${why}` }, why === "taken" ? 409 : 400);
+  const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, auth_id) VALUES (?, ?)").bind(name, a.user.id).run();
+  if (!r.meta?.changes) return json({ error: `@${name}: taken` }, 409);
+  return json({ name }, 201);
+}
+
 /** /api/session, /api/login and /api/logout (alias mode), and /api/auth/* (Better Auth). */
 export async function identityRoutes(req: Request, env: Env, p: string[]): Promise<Response | null> {
   const grants = await grantRoutes(req, env, p);
   if (grants) return grants;
   if (p[1] === "auth") return accountsOn(env) ? authFor(env, new URL(req.url).origin).handler(req) : json({ error: "accounts are off; this app uses aliases" }, 404);
-  if (p[1] === "session") return json({ mode: accountsOn(env) ? "accounts" : "alias", user: await identify(req, env), providers: accountsOn(env) ? providers(env) : [] });
+  if (p[1] === "session") {
+    if (!accountsOn(env)) return json({ mode: "alias", user: aliasOf(req), providers: [] });
+    // Signed in but no handle yet: the page asks for one, with a free one to start from.
+    const a = await account(req, env);
+    const user = a?.handle ?? null;
+    return json({ mode: "accounts", user, providers: providers(env), ...(isAdmin(env, user) ? { admin: true } : {}),
+      ...(a && !a.handle ? { pick: { suggest: await suggest(env, a.user), email: a.user.email } } : {}) });
+  }
+  if (accountsOn(env) && p[1] === "handle") return handleRoutes(req, env, new URL(req.url));
   if (accountsOn(env)) return p[1] === "login" ? json({ error: "sign in with an account" }, 404) : null;
   if (p[1] === "login" && req.method === "POST") {
     const { name } = (await req.json()) as { name: string };

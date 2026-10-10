@@ -160,6 +160,9 @@
   .ln.sel { background: var(--select); } .ln.sel .n { color: var(--fg); box-shadow: inset 2px 0 0 var(--fg); }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   .ln.claim .t { box-shadow: inset 2px 0 0 var(--accent); }
+  /* A cut's gutter: each test's line, and the lines a failure points at. */
+  .ln.pass .n { color: #2f9e44; box-shadow: inset 3px 0 #2f9e44; } .ln.fail .n { color: #cf222e; box-shadow: inset 3px 0 #cf222e; }
+  .runsum.pass { color: #2f9e44; } .runsum.fail { color: #cf222e; }
   .ln input { width: 100%; font: inherit; padding: 0 4px; border-radius: 3px; }
   .ln:first-child { padding-top: 6px; } .ln:last-child { padding-bottom: 6px; }
   mark { background: var(--accent-soft); color: inherit; border-radius: 2px; box-shadow: inset 0 -1px var(--accent); }
@@ -170,6 +173,10 @@
   .ln.add { background: var(--add); } .ln.add .n { color: var(--fg); box-shadow: inset 3px 0 var(--add-edge); }
   .ln.del .t::before, .ln.add .t::before { display: inline-block; width: 14px; margin-left: -14px; }
   .ln.del .t::before { content: "−"; } .ln.add .t::before { content: "+"; color: var(--muted); }
+  /* A branch's build and deploy files, spelled out in its review. */
+  .buildiff { grid-column: 2; min-width: 0; margin: 4px 0; font: 12px/1.5 var(--mono); border: 1px solid var(--border-2); border-radius: 4px; overflow-x: auto; }
+  .buildiff div { padding: 0 8px; white-space: pre; } .buildiff .d { background: var(--del); color: var(--del-fg); } .buildiff .a { background: var(--add); }
+  .buildiff .h { padding: 3px 8px; color: var(--muted); border-bottom: 1px solid var(--border-2); }
   .legend { display: inline-flex; gap: 10px; font: 500 11.5px var(--mono); color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .legend .d { background: var(--del); box-shadow: inset 0 0 0 1px var(--del-edge); } .legend .a { background: var(--add); box-shadow: inset 0 0 0 1px var(--add-edge); }
@@ -240,6 +247,49 @@
   .palette li.on { background: var(--canvas); box-shadow: inset 2px 0 0 var(--accent); }
   .palette .group { padding: 10px 10px 3px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--faint); cursor: default; }
   .palette .foot { padding: 8px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); background: var(--canvas); }
+  /* The drawer: a sheet that slides in from the right (sign in, your handle, rate limits). */
+  .drawer { position: fixed; inset: 0; z-index: 55; }
+  .drawer .scrim { position: absolute; inset: 0; background: rgba(255,255,255,.55); backdrop-filter: blur(2px); opacity: 0; transition: opacity .18s; }
+  .drawer .sheet { position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--border-2); box-shadow: -24px 0 64px -24px rgba(0,0,0,.22); transform: translateX(24px); opacity: 0; transition: transform .22s cubic-bezier(.2, .8, .2, 1), opacity .18s; }
+  .drawer.on .scrim { opacity: 1; } .drawer.on .sheet { transform: none; opacity: 1; }
+  .drawer .dhead { display: flex; align-items: center; gap: 8px; padding: 12px 14px 12px 20px; border-bottom: 1px solid var(--border); }
+  .drawer .dbody { flex: 1; overflow: auto; padding: 24px 20px; display: grid; align-content: start; gap: 14px; }
+  .drawer .dfoot { display: flex; gap: 8px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--border); background: var(--canvas); }
+  .drawer h2 { font: 600 20px/1.2 var(--sans); letter-spacing: -0.03em; margin: 0; }
+  .drawer .lede { font-size: 14px; margin: -6px 0 4px; }
+  .drawer form { display: grid; gap: 10px; }
+  .drawer .btn.wide { width: 100%; justify-content: center; padding: 10px 12px 9px; }
+  .or { display: flex; align-items: center; gap: 10px; font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+  .or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; padding: 2px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--canvas); }
+  .seg button { font: 500 13px var(--sans); color: var(--muted); background: transparent; border: 0; border-radius: 4px; padding: 6px; cursor: pointer; }
+  .seg button.on { color: var(--fg); background: var(--grain), var(--paper); box-shadow: 0 0 0 1px var(--border-2); }
+  .field { display: grid; gap: 5px; } .field > span { font: 500 12px var(--sans); color: var(--muted); }
+  .at { display: flex; align-items: center; border: 1px solid var(--border-2); border-radius: 5px; background: var(--bg); }
+  .at:focus-within { border-color: var(--fg); box-shadow: 0 0 0 3px rgba(10,10,10,.06); }
+  .at b { padding: 0 2px 0 10px; font: 500 15px var(--mono); color: var(--accent); }
+  .at input { flex: 1; border: 0; box-shadow: none !important; font: 500 15px var(--mono); padding: 8px 10px 8px 0; min-width: 0; }
+  .check { font-size: 12.5px; color: var(--muted); min-height: 19px; margin: 0; }
+  .check.ok::before { content: "● "; color: var(--accent); } .check.no { color: var(--del-fg); }
+  .formmsg { font-size: 12.5px; color: var(--del-fg); margin: 0; min-height: 0; }
+  .small { font-size: 12.5px; }
+  .rule { display: grid; gap: 8px; padding: 14px 0; border-top: 1px solid var(--border); }
+  .rule:first-of-type { border-top: 0; padding-top: 0; }
+  .rule .rhead { display: flex; align-items: center; gap: 8px; }
+  .rule .rhead b { font-weight: 600; }
+  .rule .ctl { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .rule .ctl input { width: 76px; font-family: var(--mono); text-align: right; }
+  .rule .ctl select { padding: 5px 6px; }
+  .rule.off .ctl, .rule.off .use { opacity: .4; }
+  .rule .use { display: flex; gap: 6px; align-items: center; font: 400 11.5px var(--mono); color: var(--faint); }
+  .rule .use .hot { color: var(--accent); }
+  .rule .use a { color: var(--muted); }
+  .switch { position: relative; width: 30px; height: 18px; margin-left: auto; flex: none; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .switch i { position: absolute; inset: 0; border-radius: 9px; background: var(--border-2); transition: background .15s; pointer-events: none; }
+  .switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s; }
+  .switch input:checked + i { background: var(--fg); } .switch input:checked + i::after { transform: translateX(12px); }
+  .switch input:focus-visible + i { box-shadow: 0 0 0 3px rgba(10,10,10,.12); }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--fg); color: #fff; padding: 9px 14px; border-radius: 6px; font-size: 13px; z-index: 60; box-shadow: 0 12px 32px -8px rgba(0,0,0,.3); }
 
   @media (max-width: 860px) {
@@ -261,6 +311,10 @@
   <span id="who"></span>
 </header>
 <main id="app"></main>
+<div class="drawer" id="drawer" hidden><div class="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+  <div class="dhead"><span class="label" id="drawer-kicker"></span><span class="grow"></span><button class="btn ghost" id="drawer-x" title="close (esc)"><i data-lucide="x"></i></button></div>
+  <div class="dbody" id="drawer-body"></div><div class="dfoot" id="drawer-foot" hidden></div>
+</div></div>
 <div class="palette" id="palette" hidden><div class="sheet" role="dialog" aria-label="Commands">
   <div class="q"><i data-lucide="command"></i><span class="ask" id="pal-ask" hidden></span><input id="pal-q" placeholder="Type a command, or search code" autocomplete="off"><kbd>esc</kbd></div>
   <ul id="pal-list"></ul>
@@ -293,8 +347,9 @@ async function refreshSession() { session = await api("/session").catch(() => se
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `<a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.admin ? `<button class="btn ghost" id="limits" title="rate limits">${icon("gauge")}</button>` : ""}<a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
+    $("#limits")?.addEventListener("click", limitsDrawer);
     return icons();
   }
   if (session.mode === "alias") {
@@ -302,32 +357,153 @@ function header() {
     $("#login").addEventListener("submit", async (e) => { e.preventDefault(); await api("/login", { name: e.target.name.value }); await refreshSession(); header(); route(); });
     return icons();
   }
-  // Accounts: a small panel with the configured providers and email.
-  const label = { github: "GitHub", google: "Google" };
-  $("#who").innerHTML = `<div class="pop"><button class="btn primary" id="signin">${icon("log-in")}Sign in</button><div class="panel" hidden>
-      ${session.providers.filter((p) => p !== "email").map((p) => `<button class="btn" data-provider="${p}">Continue with ${label[p] ?? p}</button>`).join("")}
-      <form id="email" style="display:grid;gap:8px"><input name="email" type="email" placeholder="email" required autocomplete="email">
-        <input name="password" type="password" placeholder="password (8+ characters)" required minlength="8" autocomplete="current-password">
-        <input name="name" placeholder="your name (new accounts)" autocomplete="name">
-        <div class="row"><button class="btn primary" name="in">Sign in</button><button class="btn" name="up">Create account</button></div>
-        <p class="muted" id="authmsg" style="margin:0;font-size:12px"></p></form></div></div>`;
-  popover($("#signin"));
-  for (const b of $("#who").querySelectorAll("[data-provider]"))
-    b.addEventListener("click", async () => { const r = await api("/auth/sign-in/social", { provider: b.dataset.provider, callbackURL: location.href }); location.href = r.url; });
+  // Signed in, no handle yet (just back from GitHub or Google): pick one before anything else.
+  if (session.pick) {
+    $("#who").innerHTML = `<button class="btn primary" id="pick">${icon("at-sign")}Pick your handle</button>`;
+    $("#pick").addEventListener("click", handleDrawer);
+    icons();
+    return handleDrawer();
+  }
+  $("#who").innerHTML = `<button class="btn primary" id="signin">${icon("log-in")}Sign in</button>`;
+  $("#signin").addEventListener("click", () => signInDrawer());
+  icons();
+}
+
+/** The sheet on the right. `body` is HTML; `foot`, if any, is a bar along the bottom. */
+const drawer = {
+  el: $("#drawer"),
+  open(kicker, body, foot = "") {
+    $("#drawer-kicker").textContent = kicker;
+    $("#drawer-body").innerHTML = body;
+    $("#drawer-foot").innerHTML = foot; $("#drawer-foot").hidden = !foot;
+    if (this.el.hidden) { this.el.hidden = false; requestAnimationFrame(() => this.el.classList.add("on")); }
+    icons();
+    setTimeout(() => this.el.querySelector("[autofocus], .dbody input")?.focus(), 60);
+  },
+  close() {
+    if (this.el.hidden || session.pick) return;   // no handle, no leaving: everything you make carries it
+    this.el.classList.remove("on");
+    setTimeout(() => (this.el.hidden = true), 200);
+  },
+};
+$("#drawer-x").addEventListener("click", () => drawer.close());
+drawer.el.querySelector(".scrim").addEventListener("click", () => drawer.close());
+addEventListener("keydown", (e) => { if (e.key === "Escape" && !drawer.el.hidden) drawer.close(); });
+
+const GOOGLE = `<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M21.6 12.23c0-.71-.06-1.4-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.24c1.9-1.75 2.98-4.32 2.98-7.35Z"/><path fill="currentColor" opacity=".75" d="M12 22c2.7 0 4.97-.9 6.62-2.42l-3.24-2.5c-.9.6-2.04.95-3.38.95-2.6 0-4.8-1.75-5.59-4.11H3.07v2.58A10 10 0 0 0 12 22Z"/><path fill="currentColor" opacity=".55" d="M6.41 13.92a6 6 0 0 1 0-3.84V7.5H3.07a10 10 0 0 0 0 9l3.34-2.58Z"/><path fill="currentColor" opacity=".9" d="M12 5.98c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.62 9.62 0 0 0 12 2 10 10 0 0 0 3.07 7.5l3.34 2.58C7.2 7.73 9.4 5.98 12 5.98Z"/></svg>`;
+
+function signInDrawer(mode = "in") {
+  const up = mode === "up";
+  const social = { github: `${icon("github")}Continue with GitHub`, google: `${GOOGLE}Continue with Google` };
+  const providers = session.providers.filter((p) => social[p]);
+  drawer.open("Account", `
+    <h2 id="drawer-title">${up ? "Make an account" : "Welcome back"}</h2>
+    <p class="muted lede">${up ? "Then pick the @handle that goes on everything you dig up, edit and collect." : "Sign in to dig up repos, edit with your crew and keep collections."}</p>
+    ${providers.map((p) => `<button class="btn wide" data-provider="${p}">${social[p]}</button>`).join("")}
+    ${providers.length ? `<div class="or">or with email</div>` : ""}
+    <div class="seg" role="tablist"><button type="button" class="${up ? "" : "on"}" data-mode="in">Sign in</button><button type="button" class="${up ? "on" : ""}" data-mode="up">Create account</button></div>
+    <form id="email">
+      <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+      <label class="field"><span>Password${up ? " · 8 or more characters" : ""}</span><input name="password" type="password" required minlength="8" autocomplete="${up ? "new-password" : "current-password"}"></label>
+      <p class="formmsg" id="authmsg"></p>
+      <button class="btn primary wide">${up ? "Create account" : "Sign in"}</button>
+    </form>`);
+  for (const b of $("#drawer-body").querySelectorAll("[data-mode]")) b.addEventListener("click", () => signInDrawer(b.dataset.mode));
+  for (const b of $("#drawer-body").querySelectorAll("[data-provider]"))
+    b.addEventListener("click", async () => {
+      try { const r = await api("/auth/sign-in/social", { provider: b.dataset.provider, callbackURL: location.href }); location.href = r.url; }
+      catch (err) { $("#authmsg").textContent = String(err.message || err); }
+    });
   $("#email").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const f = e.target, up = e.submitter?.name === "up";
+    const f = e.target, btn = f.querySelector("button.primary");
+    btn.disabled = true; $("#authmsg").textContent = "";
     try {
+      // Better Auth wants a display name; the handle is picked next.
       await api(up ? "/auth/sign-up/email" : "/auth/sign-in/email",
-        up ? { email: f.email.value, password: f.password.value, name: f.name.value || f.email.value.split("@")[0] } : { email: f.email.value, password: f.password.value });
+        up ? { email: f.email.value, password: f.password.value, name: f.email.value.split("@")[0] } : { email: f.email.value, password: f.password.value });
       await refreshSession(); header(); route();
-    } catch (err) { $("#authmsg").textContent = String(err.message || err); }
+      if (!session.pick) drawer.close();
+    } catch (err) { $("#authmsg").textContent = String(err.message || err); btn.disabled = false; }
   });
-  icons();
+}
+
+function handleDrawer() {
+  const { suggest = "", email = "" } = session.pick ?? {};
+  drawer.open("Your handle", `
+    <h2 id="drawer-title">Pick your handle</h2>
+    <p class="muted lede">It's on everything you make here: your repos, your lines' blame, your collections. It can't change later.</p>
+    <form id="handle">
+      <label class="field"><span>Handle</span><span class="at"><b>@</b><input name="name" value="${esc(suggest)}" required minlength="6" maxlength="39" autocomplete="username" spellcheck="false" autocapitalize="none" autofocus></span></label>
+      <p class="check" id="check"></p>
+      <p class="muted small" style="margin:0">Six or more characters: lowercase letters and digits, with single dashes between.</p>
+      <p class="formmsg" id="handlemsg"></p>
+      <button class="btn primary wide">${icon("check")}Claim it</button>
+    </form>
+    <p class="muted small" style="margin:0">Signed in as ${esc(email)}. <a href="#" id="notme">Not you?</a></p>`);
+  const input = $("#handle").name, check = $("#check");
+  let seq = 0;
+  const test = async () => {
+    const name = input.value = input.value.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    const n = ++seq;
+    if (!name) return (check.className = "check", check.textContent = "");
+    const r = await api("/handle?name=" + encodeURIComponent(name)).catch(() => null);
+    if (n !== seq || !r) return;
+    check.className = "check " + (r.ok ? "ok" : "no");
+    check.textContent = r.ok ? `@${name} is yours if you want it` : `@${name}: ${r.why}`;
+  };
+  let t; input.addEventListener("input", () => { clearTimeout(t); t = setTimeout(test, 180); });
+  test();
+  $("#handle").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api("/handle", { name: input.value });
+      await refreshSession(); drawer.close(); header(); route(); toast(`Welcome, @${r.name}`);
+    } catch (err) { $("#handlemsg").textContent = String(err.message || err); }
+  });
+  $("#notme").addEventListener("click", (e) => { e.preventDefault(); signOut(); });
+}
+
+// Rate limits (admins): each rule's cap, its window, and this window's traffic.
+const WINDOWS = [[60, "minute"], [600, "10 minutes"], [3600, "hour"], [86400, "day"], [604800, "week"]];
+const every = (s) => (WINDOWS.find(([w]) => w === s)?.[1]) ?? `${s} seconds`;
+async function limitsDrawer() {
+  const { rules } = await api("/admin/limits");
+  const row = (r) => {
+    const d = r.defaults, changed = d && (d.max !== r.max || d.window_s !== r.window_s || !r.enabled);
+    const opts = (WINDOWS.some(([w]) => w === r.window_s) ? WINDOWS : [...WINDOWS, [r.window_s, every(r.window_s)]])
+      .map(([w, l]) => `<option value="${w}"${w === r.window_s ? " selected" : ""}>${l}</option>`).join("");
+    return `<div class="rule${r.enabled ? "" : " off"}" data-name="${r.name}">
+      <label class="rhead"><b>${esc(r.label)}</b><span class="switch"><input type="checkbox" name="enabled"${r.enabled ? " checked" : ""} aria-label="limit ${esc(r.label)}"><i></i></span></label>
+      <span class="muted small">${esc(r.what)}, per ${r.per === "ip" ? "IP" : "handle"}</span>
+      <div class="ctl"><input name="max" type="number" min="1" max="100000" value="${r.max}" aria-label="most allowed"><span>per</span><select name="window_s" aria-label="window">${opts}</select></div>
+      <div class="use"><span>this ${every(r.window_s)}: ${r.now.hits} from ${r.now.callers} caller${r.now.callers === 1 ? "" : "s"}</span>${r.now.blocked ? `<span class="hot">· ${r.now.blocked} blocked</span>` : ""}
+        <span class="grow"></span>${changed ? `<a href="#" data-reset title="default: ${d.max} per ${every(d.window_s)}">reset</a>` : ""}</div>
+    </div>`;
+  };
+  drawer.open("Admin", `
+    <h2 id="drawer-title">Rate limits</h2>
+    <p class="muted lede">What costs money or invites abuse. Counted per handle, or per IP before sign-in. Admins and the desktop app aren't counted.</p>
+    <form id="limits-form">${rules.map(row).join("")}</form>`,
+    `<span class="muted small" id="limits-msg"></span><span class="grow"></span><button class="btn" id="limits-close">Close</button><button class="btn primary" id="limits-save">${icon("save")}Save</button>`);
+  const form = $("#limits-form");
+  form.addEventListener("change", (e) => { const r = e.target.closest(".rule"); r?.classList.toggle("off", !r.querySelector("[name=enabled]").checked); $("#limits-msg").textContent = "Unsaved changes"; });
+  for (const a of form.querySelectorAll("[data-reset]")) a.addEventListener("click", (e) => {
+    e.preventDefault();
+    const el = a.closest(".rule"), d = rules.find((r) => r.name === el.dataset.name).defaults;
+    el.querySelector("[name=max]").value = d.max; el.querySelector("[name=window_s]").value = d.window_s; el.querySelector("[name=enabled]").checked = true;
+    form.dispatchEvent(new Event("change"));
+  });
+  $("#limits-close").addEventListener("click", () => drawer.close());
+  $("#limits-save").addEventListener("click", async () => {
+    const out = [...form.querySelectorAll(".rule")].map((el) => ({ name: el.dataset.name, max: Number(el.querySelector("[name=max]").value), window_s: Number(el.querySelector("[name=window_s]").value), enabled: el.querySelector("[name=enabled]").checked }));
+    try { await api("/admin/limits", { rules: out }, "PUT"); toast("Rate limits saved"); limitsDrawer(); }
+    catch (err) { $("#limits-msg").textContent = String(err.message || err); }
+  });
 }
 async function signOut() {
   await (session.mode === "accounts" ? api("/auth/sign-out", {}) : api("/logout", {})).catch(() => {});
-  await refreshSession(); header(); route();
+  await refreshSession(); drawer.close(); header(); route();
 }
 /** A button that opens the panel next to it; a click elsewhere closes it. */
 function popover(btn) {
@@ -392,6 +568,15 @@ function table(tree, href) {
 }
 function codeRows(lines, { blame = true, start = 1 } = {}) {
   return lines.map((l, i) => `<div class="ln" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${esc(l.text) || " "}</span></div>`).join("");
+}
+/** Cut lines out: the picked pieces, plus "path:from-to" lines from the "add these lines too" box. */
+function cutLines(owner, repo, pieces, more = "", note = "") {
+  for (const s of more.split("\n").map((x) => x.trim()).filter(Boolean)) {
+    const m = /^(.+?):(\d+)(?:\s*[-–]\s*(\d+))?$/.exec(s);
+    if (!m) throw new Error(`can't read "${s}": write path:from-to`);
+    pieces.push({ path: m[1], from: +m[2], to: +(m[3] ?? m[2]) });
+  }
+  return api(`/repos/${owner}/${repo}/cuts`, { pieces, note });
 }
 /** Then against now, by line id: orange rows were taken out, grey rows were put in. */
 function diffRows(then, now) {
@@ -537,7 +722,7 @@ const views = {
     const { user, repos, playlists } = await api("/users/" + name);
     const mine = name === me();
     ctx = { view: "u", name };
-    app.innerHTML = `<div class="repohead"><div class="wrap"><h1>${icon("user")}<b>${esc(name)}</b></h1><div class="sub">${esc(user.bio) || "no notes yet"}</div></div></div>
+    app.innerHTML = `<div class="repohead"><div class="wrap"><h1>${icon("user")}<b>@${esc(name)}</b></h1><div class="sub">${esc(user.bio) || "no notes yet"}</div></div></div>
       <div class="wrap cards">
       ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
       <div class="two">
@@ -616,15 +801,17 @@ const views = {
         <div class="row">releases at least <input name="min_age_days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
         <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
         <label title="${d.can_test ? "" : "Tests run on the desktop app"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code on this machine)</span></label>
+        <div class="row">when one breaks them, <select name="fix_with"${d.can_test ? "" : " disabled"}>${opt("", "leave it out", s.fix_with ?? "")}${["claude", "codex", "pi", "opencode"].map((h) => opt(h, `have ${h} fix it`, s.fix_with ?? "")).join("")}</select>
+          in up to <input name="fix_tries" type="number" min="1" max="5" value="${s.fix_tries}" style="width:3em"> tries</div>
         <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deps-run"${d.running ? " disabled" : ""}>${icon("refresh-cw")}${d.running ? "Checking…" : "Check now"}</button></div>
       </form>
       ${rep ? `<div class="run"><span class="st">last checked ${new Date(rep.at).toLocaleString()} · ${rep.checked} package${rep.checked === 1 ? "" : "s"}</span>
-        ${rep.updates.map((u) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level} · ${u.status === "broke" ? "broke the tests, left out" : u.status === "kept" ? "tests pass" : "untested"}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
+        ${rep.updates.map((u) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? "tests pass" : "untested"}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
         ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>${rep.lock ? `, with <code>${esc(rep.lock)}</code> to match` : ""}, ready to review above.</span>` : ""}
         ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}`;
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target;
-      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked }, "PUT"); toast("Saved"); }
+      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value }, "PUT"); toast("Saved"); }
       catch (err) { toast(err.message); }
     });
     $("#deps-run").addEventListener("click", async () => {
@@ -730,17 +917,27 @@ const views = {
     const reviews = await Promise.all(open.map((b) => api(`${base}/${b.name}`)));
     el.innerHTML = reviews.map((b) => {
       const files = b.files.filter((f) => !f.merged), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
-      const ops = files.reduce((n, f) => n + f.ops.length, 0);
+      const ops = files.reduce((n, f) => n + f.ops.length, 0), build = files.filter((f) => f.build);
+      // Build and deploy files run on the next deploy: show every changed line, and when the owner's
+      // commit after this merge would ship, ask them to say they've read it first.
+      const gate = build.length && b.deploys;
       return `<div class="commit"><code>${esc(b.name)}</code><span>@${esc(b.by)} · ${files.length} file${files.length === 1 ? "" : "s"}, ${ops} line op${ops === 1 ? "" : "s"}</span>
         ${clash.map((c) => `<span class="muted">${esc(c.path)} ${esc(c.line)}: main <code>${esc(c.main ?? "deleted")}</code>, branch <code>${esc(c.branch ?? "deleted")}</code></span>`).join("")}
+        ${build.length ? `<span class="muted">${icon("triangle-alert")} Changes what runs at build or deploy time${b.deploys ? ", and your next commit to main ships it" : ""}:</span>
+          ${build.map((f) => `<div class="buildiff"><div class="h">${esc(f.path)}</div>${(f.lines ?? []).map((l) => `<div class="${l[0] === "-" ? "d" : "a"}">${esc(l)}</div>`).join("")}</div>`).join("")}` : ""}
+        ${r.canWrite && gate ? `<span class="muted"><label><input type="checkbox" data-read="${esc(b.name)}"> I've read the build changes</label></span>` : ""}
         ${r.canWrite ? `<span class="muted">${clash.length
           ? `<button class="btn" data-merge="${esc(b.name)}" data-keep="branch">Merge, keep the branch's lines</button> <button class="btn" data-merge="${esc(b.name)}" data-keep="main">Merge, keep main's</button>`
           : `<button class="btn primary" data-merge="${esc(b.name)}">${icon("git-merge")}Merge</button>`}</span>` : ""}</div>`;
     }).join("");
+    const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`);
+    el.querySelectorAll("[data-merge]").forEach((btn) => { if (read(btn.dataset.merge)) btn.disabled = true; });
+    el.querySelectorAll("[data-read]").forEach((box) => box.addEventListener("change", () =>
+      el.querySelectorAll(`[data-merge="${CSS.escape(box.dataset.read)}"]`).forEach((btn) => { btn.disabled = !box.checked; })));
     el.querySelectorAll("[data-merge]").forEach((btn) => btn.addEventListener("click", async () => {
       const b = reviews.find((x) => x.name === btn.dataset.merge), resolve = {};
       if (btn.dataset.keep) for (const f of b.files) for (const c of f.conflicts) (resolve[f.path] ??= {})[c.line] = btn.dataset.keep;
-      try { await api(`${base}/${b.name}/merge`, { resolve }); toast(`Merged ${b.name}. Commit the files to push them to git.`); }
+      try { await api(`${base}/${b.name}/merge`, { resolve, build_ok: !!read(b.name)?.checked }); toast(`Merged ${b.name}. Commit the files to push them to git.`); }
       catch (e) { toast(`Not merged: ${e.message}`); }
       route();
     }));
@@ -840,6 +1037,7 @@ const views = {
       bar: `${crumbs(`#/r/${owner}/${repo}`, repo, path)}<span class="grow"></span>
         <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit. Older revisions show as a diff against now.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"><span class="legend"><span><i class="d"></i>taken out</span><span><i class="a"></i>put in</span></span><a class="btn" id="smash" hidden title="the lines this took out, as furniture in the backrooms">${icon("hammer")}Smash what it took out</a></div></div>
         ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
+        ${r.canWrite ? `<div class="pop"><button class="btn" id="cut" disabled title="select lines first: click a line number, shift-click another">${icon("scissors")}Cut</button><form class="panel" id="cut-form" hidden style="width:380px"><b>Cut <span id="cut-range"></span> out</b><span class="muted" style="font-size:13px">Just these lines and the imports they use, as a tiny repo on a branch of its own: run its tests, share it, merge a fix back.</span><textarea name="more" rows="3" placeholder="add these lines too, a range a line:&#10;test/sum.test.ts:10-24"></textarea><input name="note" placeholder="what it shows (optional)"><button class="btn primary">${icon("scissors")}Cut</button></form></div>` : ""}
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
         ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
         ${r.canWrite ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
@@ -879,14 +1077,14 @@ const views = {
     selectable(box, (range) => {
       sel = range;
       const label = range[0] === range[1] ? `line ${range[0]}` : `lines ${range[0]}–${range[1]}`;
-      for (const b of ["#share", "#collect"]) if ($(b)) $(b).disabled = false;
-      if ($("#share-range")) $("#share-range").textContent = label;
+      for (const b of ["#share", "#collect", "#cut"]) if ($(b)) $(b).disabled = false;
+      for (const b of ["#share-range", "#cut-range"]) if ($(b)) $(b).textContent = label;
       $("#st-sel").textContent = range[0] === range[1] ? `Ln ${range[0]}` : `Ln ${range[0]}–${range[1]}`;
     });
     // The game's "smash the removed lines": a revision pair of this file.
     const smashHref = (from, to) => `/play.html#r/${owner}/${repo}?path=${encodeURIComponent(path)}&from=${from}&to=${to}`;
     // Newest first, so a commit's parent is the next one down.
-    const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c, i) => `<div class="commit"><code>${c.sha.slice(0, 7)}</code><span>${esc(c.message)}</span><span class="muted">${esc(c.by)} · r${c.rev}${c.rev > (cs[i + 1]?.rev ?? 0) ? ` · <a href="${smashHref(cs[i + 1]?.rev ?? 0, c.rev)}" title="smash the lines this commit took out">smash</a>` : ""}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
+    const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c, i) => `<div class="commit"><code>${c.sha.slice(0, 7)}</code><span>${esc(c.message)}</span><span class="muted">@${esc(c.by)} · r${c.rev}${c.rev > (cs[i + 1]?.rev ?? 0) ? ` · <a href="${smashHref(cs[i + 1]?.rev ?? 0, c.rev)}" title="smash the lines this commit took out">smash</a>` : ""}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
     const edit = (el) => {
       const line = doc.lines.find((l) => l.id === el.dataset.id);
       const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}">`;
@@ -960,6 +1158,15 @@ const views = {
       });
       $("#share-copy").addEventListener("click", () => copy($("#share-out input").value, "Link copied"));
     }
+    if ($("#cut")) {
+      popover($("#cut"));
+      $("#cut-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        try { location.hash = "#/c/" + (await cutLines(owner, repo, [{ path, from: sel[0], to: sel[1] }], f.more.value, f.note.value)).id; }
+        catch (err) { toast(err.message); }
+      });
+    }
     if ($("#collect")) {
       popover($("#collect"));
       const { playlists } = await api("/users/" + me());
@@ -995,7 +1202,7 @@ const views = {
         const p = pending.get(msg.id); pending.delete(msg.id);
         return msg.type === "ack" ? p?.ok(msg) : p?.fail(new Error(msg.error || msg.conflicts?.[0]?.reason || "conflict"));
       }
-      if (msg.type === "presence") return $("#who-here").textContent = msg.who.length > 1 ? msg.who.join(", ") : "just you";
+      if (msg.type === "presence") return $("#who-here").textContent = msg.who.length > 1 ? msg.who.map((w) => "@" + w).join(", ") : "just you";
       if (msg.type === "commit") return drawCommits(await api(`${base}/commits${q}`));
       if (msg.type !== "ops") return;
       // In order: apply in place. Missed something (a gap): fetch the whole file.
@@ -1017,7 +1224,7 @@ const views = {
         <div class="box"><div class="bar">${icon("share-2")}<b>${where}</b>${s.gone ? "" : `<span class="muted">· lines ${s.from}–${s.to}</span>`}<span class="grow"></span>
           <span class="badge" title="refreshes every few seconds">${icon("radio")}live</span>${s.visibility === "private" ? `<span class="badge">${icon("lock")}from a private repo</span>` : `<a class="btn" href="#/f/${s.owner}/${s.repo}/${encodeURIComponent(s.path)}">${icon("file-code")}Open the file</a>`}
           ${s.by === me() || s.owner === me() ? `<button class="btn" id="revoke">${icon("link-2-off")}Revoke</button>` : ""}</div>
-          ${s.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">${esc(s.note)} <span class="muted">· shared by ${esc(s.by)}</span></div>` : ""}
+          ${s.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">${esc(s.note)} <span class="muted">· shared by @${esc(s.by)}</span></div>` : ""}
           ${s.gone ? '<div class="body muted">These lines are gone: every one of them was deleted.</div>' : `<div class="code">${codeRows(s.lines)}</div>`}</div>
         <p class="muted" style="font-size:12px">${s.visibility === "private" ? "Only these lines are shared. The rest of the repo stays private." : "A live share: it follows these lines as they change."}</p></div>`;
       $("#revoke")?.addEventListener("click", async () => { await api("/shares/" + id, undefined, "DELETE"); clearInterval(timer); toast("Link revoked"); location.hash = "#/"; });
@@ -1025,6 +1232,64 @@ const views = {
     };
     await load();
     timer = setInterval(() => { if (location.hash !== "#/s/" + id) return clearInterval(timer); if (!document.hidden) load().catch(() => {}); }, 6000);
+  },
+
+  // A cut: some lines cut out as a tiny repo on a branch, its tests' result in the gutter.
+  async c(id) {
+    ctx = { view: "c", id };
+    const load = async () => {
+      const c = await api("/cuts/" + id);
+      const r = await api(`/repos/${c.owner}/${c.repo}`).catch(() => null);
+      const write = !!r?.canWrite && c.status === "open", run = c.run;
+      const summary = !run ? "not run yet" : run.note ?? `${run.passed} passed, ${run.failed} failed`;
+      const share = `${location.origin}/api/cuts/${id}/share`;
+      const post = `https://x.com/intent/post?text=${encodeURIComponent(`Cut out of ${c.owner}/${c.repo}, ${summary}${c.note ? ": " + c.note : ""}`)}&url=${encodeURIComponent(share)}`;
+      app.innerHTML = `<div class="wrap" style="max-width:980px;padding-top:28px">
+        <div class="box"><div class="bar">${icon("scissors")}<b>A cut of <a href="#/r/${c.owner}/${c.repo}">${esc(c.owner)}/${esc(c.repo)}</a></b><span class="muted">· <code>${esc(c.branch)}</code> · ${c.status}</span><span class="grow"></span>
+          ${c.can_run ? `<button class="btn" id="cut-run">${icon("play")}Run tests</button>` : ""}
+          <div class="pop"><button class="btn" id="cut-share">${icon("share-2")}Share</button><div class="panel" hidden style="width:380px"><b>Share this cut</b><span class="muted" style="font-size:13px">The link unfurls as a card of the code and its test result.</span><div class="copyline"><input readonly value="${esc(share)}"><button class="btn" type="button" id="cut-copy">${icon("copy")}</button></div><a class="btn" target="_blank" rel="noopener" href="${esc(post)}">${icon("send")}Post to X</a><img src="/api/cuts/${id}/card.png?at=${run?.at ?? 0}" alt="the card a link to this cut unfurls as" style="width:100%;border:1px solid var(--border);border-radius:5px"></div></div>
+          ${write ? `<button class="btn primary" id="cut-merge">${icon("git-merge")}Merge into main</button>` : ""}</div>
+          ${c.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">${esc(c.note)} <span class="muted">· cut by ${esc(c.by)}</span></div>` : ""}
+          ${c.files.map((f) => `<div class="bar">${icon("file")}<a href="#/f/${c.owner}/${c.repo}/${encodeURIComponent(f.path)}">${esc(f.path)}</a></div><div class="code" data-path="${esc(f.path)}">${codeRows(f.lines.map((l) => ({ ...l, n: l.n ?? "+" })))}</div>`).join("")}
+          <div class="body"><b class="runsum ${!run || run.note ? "" : run.code === 0 ? "pass" : "fail"}">${esc(summary)}</b>${run?.out ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(run.out)}</pre></details>` : ""}</div></div>
+        <p class="muted" style="font-size:12px">Line numbers are where each line is on main now; + is new in the cut.${write ? " Double-click a line to edit the cut: Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it." : ""}</p></div>`;
+      for (const f of c.files) {
+        const box = app.querySelector(`.code[data-path="${CSS.escape(f.path)}"]`);
+        for (const el of box.querySelectorAll(".ln")) {
+          const mark = run?.marks?.[f.path]?.[el.dataset.id];
+          if (mark) el.classList.add(mark);
+          if (write) el.addEventListener("dblclick", () => edit(c, f, el));
+        }
+      }
+      popover($("#cut-share"));
+      $("#cut-copy").addEventListener("click", () => copy(share, "Link copied"));
+      $("#cut-run")?.addEventListener("click", async (e) => {
+        e.currentTarget.disabled = true; e.currentTarget.lastChild.textContent = "Running…";
+        try { await api(`/cuts/${id}/run`, {}); } catch (err) { toast(err.message); }
+        load();
+      });
+      $("#cut-merge")?.addEventListener("click", async () => {
+        try { await api(`/repos/${c.owner}/${c.repo}/branches/${c.branch}/merge`, {}); toast("Merged into main"); }
+        catch (err) { toast(err.message === "conflicts" ? "Main changed these lines too: settle it under Branches on the repo page" : err.message); }
+        load();
+      });
+      icons();
+    };
+    const edit = (c, f, el) => {
+      const line = f.lines.find((l) => l.id === el.dataset.id);
+      const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}">`;
+      const inp = $("input", t); inp.focus();
+      inp.addEventListener("keydown", async (e) => {
+        if (e.key === "Escape") return load();
+        if (e.key !== "Enter") return;
+        const ops = e.shiftKey ? [{ kind: "insert", after: line.id, text: "" }]
+          : inp.value === "" ? [{ kind: "delete", line: line.id, base: line.rev }]
+          : [{ kind: "set", line: line.id, base: line.rev, text: inp.value }];
+        try { await api(`/repos/${c.owner}/${c.repo}/do/ops?path=${encodeURIComponent(f.path)}&branch=${c.branch}`, { ops }); } catch (err) { toast(err.message); }
+        load();
+      });
+    };
+    await load();
   },
 
   async p(id) {
@@ -1057,6 +1322,7 @@ const HOME_CMDS = [
   ["git-commit-horizontal", "Commit to git", "Pushes a real commit to the repo's Artifact.", "POST /api/repos/:o/:r/do/commit"],
   ["terminal", "Clone with git", "A real remote, with a read token that lasts an hour.", "GET /api/repos/:o/:r"],
   ["history", "Time travel", "Replay a file to any edit, with blame per line.", "GET /api/repos/:o/:r/do/at?rev="],
+  ["scissors", "Cut some lines", "Just them and their imports, as a branch: run the tests, share a card, merge the fix back.", "POST /api/repos/:o/:r/cuts"],
   ["bookmark-plus", "Collect lines", "Playlists of code you love, on your profile.", "POST /api/playlists/:id/tracks"],
   ["search", "Search code", "Everything committed that you're allowed to see.", "GET /api/search?q="],
   ["gamepad-2", "Play the backrooms", "Every repo is a level. The lines fight back.", "WS /api/game/:room/ws"],
@@ -1159,6 +1425,10 @@ async function commands() {
       const s = await api(`/repos/${c.owner}/${c.repo}/shares`, { path: c.path, from, to: to || from });
       copy(`${location.origin}/#/s/${s.id}`, `Link to lines ${s.from}–${s.to} copied`);
     }, c.sel ? null : "which lines, like 4-12");
+    if (c.canWrite) add("This file", "scissors", range ? `Cut ${range} out` : "Cut lines out…", `POST /api/repos/${c.owner}/${c.repo}/cuts`, async (arg) => {
+      const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
+      location.hash = "#/c/" + (await cutLines(c.owner, c.repo, [{ path: c.path, from, to: to || from }])).id;
+    }, c.sel ? null : "which lines, like 4-12");
     if (c.canWrite) add("This file", "git-commit-horizontal", "Commit this file", `POST /api/repos/${c.owner}/${c.repo}/do/commit`, async (msg) => {
       const r = await api(`${c.base}/commit${c.q}`, { message: msg }); toast(r.git?.commit ? `Pushed ${r.git.commit.slice(0, 7)}` : "Committed");
     }, "commit message");
@@ -1197,6 +1467,8 @@ async function commands() {
   if (u) add("Anywhere", "user", "Your profile", `GET /api/users/${u}`, () => (location.hash = `#/u/${u}`));
   for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
+  if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", limitsDrawer);
+  if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
   return out;
 }
