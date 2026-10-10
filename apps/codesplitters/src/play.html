@@ -63,6 +63,8 @@
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .keys { margin-top: 16px; font: 400 12px/1.8 var(--mono); color: var(--ink-2); }
   kbd { font: 500 11px var(--mono); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--paper); color: var(--ink); }
+  /* Ways out of the game: back to the repo it came from, or to your profile. On every panel. */
+  .exits { display: flex; gap: 16px; flex-wrap: wrap; margin: 14px 0 0; font-size: 13px; }
   a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; } a:hover { text-decoration-color: var(--accent); }
 </style>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }</script>
@@ -89,13 +91,14 @@
   <ul id="lobby-players"></ul>
   <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><span class="muted" id="lobby-msg"></span></div>
   <div class="keys"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swing · <kbd>hold</kbd> press the bat into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
-  <p style="margin:14px 0 0;font-size:13px"><a id="back" href="/">← back to the site</a></p>
+  <p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p>
 </div></div>
-<div class="panel" id="lock" hidden style="background:transparent;place-items:end center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;padding:12px 18px"><b>Click to grab the bat</b> <span class="muted">· Esc lets go</span></div></div>
+<div class="panel" id="lock" hidden style="background:transparent;place-items:end center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;padding:12px 18px"><b>Click to grab the bat</b> <span class="muted">· Esc lets go</span><p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p></div></div>
 <div class="panel" id="over" hidden><div class="card">
   <div class="label">the round is over</div><h1 id="over-title">Smacked flat.</h1>
   <ul id="over-players"></ul>
   <div class="row"><button class="primary" id="again">back to the lobby</button></div>
+  <p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p>
 </div></div>
 
 <script type="module">
@@ -111,7 +114,13 @@ const API = `/api/game/${room}`;
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 let roomTitle = room.slice(2);
-$("#back").href = room.startsWith("l/") ? `/#/l/${room.slice(2)}` : `/#/r/${room.slice(2)}`;
+for (const a of document.querySelectorAll(".to-repo")) {
+  a.href = room.startsWith("l/") ? `/#/l/${room.slice(2)}` : `/#/r/${room.slice(2)}`;
+  a.textContent = room.startsWith("l/") ? "← back to the level" : `← back to ${room.slice(2)}`;
+}
+fetch("/api/session").then((r) => r.json()).then(({ user }) => {
+  if (user) for (const a of document.querySelectorAll(".to-me")) { a.href = `/#/u/${encodeURIComponent(user)}`; a.textContent = `@${user}'s profile`; a.hidden = false; }
+}).catch(() => {});
 if (room.startsWith("l/")) fetch("/api/levels").then((r) => r.json()).then((ls) => {
   const l = ls.find((x) => x.slug === room.slice(2));
   if (l) { roomTitle = l.title; $("#lobby-label").textContent = `level ${l.n} · ${l.repo}`; $("#lobby-title").textContent = l.title; $("#title").textContent = l.title; }
@@ -461,7 +470,7 @@ addEventListener("mousemove", (e) => {
   player.pitch = Math.max(-1.4, Math.min(1.4, player.pitch - e.movementY * 0.0022));
 });
 document.addEventListener("pointerlockchange", () => { $("#lock").hidden = !playing || document.pointerLockElement === renderer.domElement; });
-$("#lock").addEventListener("click", () => renderer.domElement.requestPointerLock());
+$("#lock").addEventListener("click", (e) => { if (!e.target.closest("a")) renderer.domElement.requestPointerLock(); });
 let held = false;
 renderer.domElement.addEventListener("mousedown", () => { if (document.pointerLockElement === renderer.domElement) { held = true; swing(); } });
 addEventListener("mouseup", () => { held = false; if (pin) letGo(); });
