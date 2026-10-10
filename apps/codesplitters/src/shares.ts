@@ -8,9 +8,10 @@
 import { materialize, toFile } from "./archive.ts";
 import { json, type Env } from "./env.ts";
 
-interface Line { id: string; text: string; by: string; rev: number }
+interface Line { id: string; text: string; by: string; rev: number; private?: true }
+// Anyone with the link reads it, so private lines come as placeholders.
 const fileLines = async (env: Env, owner: string, repo: string, path: string) =>
-  ((await (await toFile(env, owner, repo, path, "share", "file")).json()) as { lines: Line[] }).lines;
+  ((await (await toFile(env, owner, repo, path, "share", "file", { headers: { "x-codesplitters-crew": "0" } })).json()) as { lines: Line[] }).lines;
 
 /** Who may share from a repo: anyone who can read a public one; only its crew for a private one. */
 export async function createShare(env: Env, owner: string, repo: string, user: string | null, access: { read: boolean; write: boolean }, private_: boolean, body: any) {
@@ -46,5 +47,5 @@ export async function shareRoutes(req: Request, env: Env, p: string[], user: str
   const out = { id: s.id, owner: s.owner, repo: s.repo, path: s.path, by: s.by, note: s.note, created_at: s.created_at, visibility: repo?.visibility ?? "public" };
   if (!hit.length) return json({ ...out, lines: [], gone: true });
   const a = hit[0]!, b = hit[hit.length - 1]!;
-  return json({ ...out, from: a + 1, to: b + 1, lines: lines.slice(a, b + 1).map((l, k) => ({ n: a + k + 1, text: l.text, by: l.by, rev: l.rev })) });
+  return json({ ...out, from: a + 1, to: b + 1, lines: lines.slice(a, b + 1).map((l, k) => ({ n: a + k + 1, text: l.text, by: l.by, rev: l.rev, ...(l.private && { private: true }) })) });
 }
