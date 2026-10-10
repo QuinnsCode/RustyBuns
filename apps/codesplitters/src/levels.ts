@@ -1,6 +1,8 @@
 // Levels: famous open-source repos, imported into Artifacts as shallow,
 // read-only digs. Browse any of them; fork one into your own excavation to
-// edit it. Ordered roughly by how deep the dig goes.
+// edit it. Ordered roughly by how deep the dig goes: small, well-loved
+// libraries, then Cloudflare's own open source, then the stack this app is
+// built on (rwsdk, Effect, React, Alchemy, Bun), ending in the biggest digs.
 
 import { listDir, readText } from "./archive.ts";
 import { code, json, NAME, type Env } from "./env.ts";
@@ -14,7 +16,23 @@ export const LEVELS: Level[] = [
   { n: 4, slug: "zustand", title: "Zustand", repo: "pmndrs/zustand", branch: "main", blurb: "React state in a hook, and not much else." },
   { n: 5, slug: "hono", title: "Hono", repo: "honojs/hono", branch: "main", blurb: "A web framework that runs on every edge." },
   { n: 6, slug: "express", title: "Express", repo: "expressjs/express", branch: "master", blurb: "The Node web framework, the original." },
-  { n: 7, slug: "preact", title: "Preact", repo: "preactjs/preact", branch: "main", blurb: "React's API in 3 KB. The boss level." },
+  { n: 7, slug: "preact", title: "Preact", repo: "preactjs/preact", branch: "main", blurb: "React's API in 3 KB." },
+  { n: 8, slug: "actors", title: "Actors", repo: "cloudflare/actors", branch: "main", blurb: "Durable Objects, with less ceremony." },
+  { n: 9, slug: "containers", title: "Containers", repo: "cloudflare/containers", branch: "main", blurb: "A container behind a Durable Object." },
+  { n: 10, slug: "workers-oauth-provider", title: "Workers OAuth Provider", repo: "cloudflare/workers-oauth-provider", branch: "main", blurb: "A whole OAuth 2.1 server in one Worker." },
+  { n: 11, slug: "partykit", title: "PartyKit", repo: "cloudflare/partykit", branch: "main", blurb: "Realtime rooms on Durable Objects." },
+  { n: 12, slug: "capnweb", title: "Cap'n Web", repo: "cloudflare/capnweb", branch: "main", blurb: "Object-capability RPC over HTTP and WebSockets." },
+  { n: 13, slug: "workers-rs", title: "workers-rs", repo: "cloudflare/workers-rs", branch: "main", blurb: "Workers in Rust, by way of Wasm." },
+  { n: 14, slug: "chanfana", title: "chanfana", repo: "cloudflare/chanfana", branch: "main", blurb: "OpenAPI schemas from your Hono routes." },
+  { n: 15, slug: "sandbox-sdk", title: "Sandbox SDK", repo: "cloudflare/sandbox-sdk", branch: "main", blurb: "Run untrusted code in a container. Our Cut runs on it." },
+  { n: 16, slug: "pingora", title: "Pingora", repo: "cloudflare/pingora", branch: "main", blurb: "The Rust proxy that replaced nginx at Cloudflare." },
+  { n: 17, slug: "agents", title: "Agents", repo: "cloudflare/agents", branch: "main", blurb: "AI agents that live in Durable Objects." },
+  { n: 18, slug: "workerd", title: "workerd", repo: "cloudflare/workerd", branch: "main", blurb: "The runtime under every Worker, this one included." },
+  { n: 19, slug: "rwsdk", title: "RedwoodSDK", repo: "redwoodjs/sdk", branch: "main", blurb: "Server-first React, born on Workers." },
+  { n: 20, slug: "effect", title: "Effect", repo: "Effect-TS/effect-smol", branch: "main", blurb: "Effect v4, the one this app runs on." },
+  { n: 21, slug: "react", title: "React", repo: "react/react", branch: "main", blurb: "The library for web and native UIs." },
+  { n: 22, slug: "alchemy", title: "Alchemy", repo: "alchemy-run/alchemy", branch: "main", blurb: "Infrastructure as Effects. It deploys this site." },
+  { n: 23, slug: "bun", title: "Bun", repo: "oven-sh/bun", branch: "main", blurb: "The runtime, bundler and test runner. The boss level." },
 ];
 
 const artifactName = (slug: string) => `level-${slug}`;

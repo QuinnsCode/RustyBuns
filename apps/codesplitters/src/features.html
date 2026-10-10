@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codeSplitters features</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+  /* Every feature on one page, in the order the home page's strip shows them.
+     Drag a card (or use its arrows) to reorder, then copy the result over
+     src/features.json. The order lives only in this browser until you do. */
+  :root { --bg: #fff; --canvas: #fafafa; --border: #e6e6e6; --border-2: #cfcfcf; --fg: #0a0a0a; --muted: #6b6b6b; --faint: #a3a3a3; --accent: #e8590c; --accent-soft: #fff4ec; --paper: #fcfbf8;
+    --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+  a { color: var(--fg); } a:hover { color: var(--accent); }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 24px 64px; }
+  .label { font: 500 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  h1 { font: 600 30px/1.1 var(--sans); letter-spacing: -0.04em; margin: 8px 0 6px; } h1 em { font-style: normal; color: var(--accent); }
+  p { color: var(--muted); margin: 0 0 18px; max-width: 620px; }
+  .bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 10px 0; background: rgba(255,255,255,.9); backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .grow { flex: 1; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; font: 500 13px var(--sans); color: var(--fg); padding: 6px 11px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--paper); cursor: pointer; box-shadow: 0 1px 0 rgba(0,0,0,.04); text-decoration: none; }
+  .btn:hover { border-color: #a8a8a8; color: var(--fg); } .btn.primary { background: var(--fg); color: #fff; border-color: var(--fg); }
+  .btn svg { width: 15px; height: 15px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  ol { list-style: none; margin: 0; padding: 0; counter-reset: n; display: grid; gap: 8px; }
+  li { counter-increment: n; display: grid; grid-template-columns: 34px 34px 1fr auto; gap: 4px 12px; align-items: center; padding: 12px 12px 12px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--paper); cursor: grab; user-select: none; transition: border-color .12s, box-shadow .12s; }
+  li::before { content: counter(n, decimal-leading-zero); font: 500 12px var(--mono); color: var(--faint); text-align: right; }
+  li:hover { border-color: #a8a8a8; }
+  li.drag { opacity: .45; } li.over { box-shadow: 0 -3px 0 var(--accent); }
+  li .ico { width: 34px; height: 34px; border: 1px solid var(--border-2); border-radius: 5px; background: #fff; display: grid; place-items: center; }
+  li .ico svg { width: 17px; height: 17px; }
+  li b { display: block; font-weight: 600; } li span { color: var(--muted); font-size: 13px; }
+  li code { font: 11px var(--mono); color: var(--faint); white-space: nowrap; }
+  .arrows { display: flex; flex-direction: column; gap: 2px; }
+  .arrows button { border: 1px solid transparent; background: none; border-radius: 4px; padding: 1px 4px; cursor: pointer; color: var(--muted); line-height: 0; }
+  .arrows button:hover { border-color: var(--border-2); color: var(--fg); }
+  .arrows svg { width: 14px; height: 14px; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--fg); color: #fff; padding: 9px 14px; border-radius: 6px; font-size: 13px; }
+  @media (max-width: 560px) { .wrap { padding: 20px 16px 48px; } li { grid-template-columns: 34px 1fr auto; } li::before { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="label" href="/">← codeSplitters</a>
+  <h1>Every feature, <em>in order</em>.</h1>
+  <p>This is the order the strip on the home page shows them. Drag a card, or use its arrows, to move it. When it reads right, press “Copy features.json” and paste it over <code>src/features.json</code>.</p>
+  <div class="bar">
+    <span class="muted" id="state"></span><span class="grow"></span>
+    <button class="btn" id="reset" type="button"><i data-lucide="rotate-ccw"></i>Back to the shipped order</button>
+    <button class="btn primary" id="copy" type="button"><i data-lucide="clipboard-copy"></i>Copy features.json</button>
+  </div>
+  <ol id="list"></ol>
+</div>
+<script>
+const KEY = "codesplitters.features.order";
+const list = document.getElementById("list");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+let shipped = [], items = [];
+
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(items.map((f) => f.id))); } catch {} };
+const saved = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } };
+const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 2200); };
+
+function draw() {
+  list.innerHTML = items.map((f, i) => `<li draggable="true" data-i="${i}">
+    <span class="ico"><i data-lucide="${esc(f.icon)}"></i></span>
+    <div><b>${esc(f.title)}</b><span>${esc(f.what)}</span> <code>${esc(f.id)}</code></div>
+    <div class="arrows"><button type="button" data-move="-1" title="move up" aria-label="move ${esc(f.title)} up"><i data-lucide="chevron-up"></i></button><button type="button" data-move="1" title="move down" aria-label="move ${esc(f.title)} down"><i data-lucide="chevron-down"></i></button></div>
+  </li>`).join("");
+  const moved = items.some((f, i) => f.id !== shipped[i]?.id);
+  document.getElementById("state").textContent = `${items.length} features${moved ? " · reordered, not shipped yet" : " · the shipped order"}`;
+  try { lucide.createIcons(); } catch {}
+}
+function move(from, to) {
+  if (to < 0 || to >= items.length || from === to) return;
+  const [f] = items.splice(from, 1); items.splice(to, 0, f); save(); draw();
+}
+
+let dragged = null;
+list.addEventListener("dragstart", (e) => { const li = e.target.closest("li"); dragged = Number(li.dataset.i); li.classList.add("drag"); e.dataTransfer.effectAllowed = "move"; });
+list.addEventListener("dragend", () => { dragged = null; list.querySelectorAll(".drag, .over").forEach((el) => el.classList.remove("drag", "over")); });
+list.addEventListener("dragover", (e) => { const li = e.target.closest("li"); if (!li || dragged === null) return; e.preventDefault(); list.querySelectorAll(".over").forEach((el) => el.classList.remove("over")); li.classList.add("over"); });
+list.addEventListener("drop", (e) => { const li = e.target.closest("li"); if (!li || dragged === null) return; e.preventDefault(); const to = Number(li.dataset.i); move(dragged, dragged < to ? to - 1 : to); });
+list.addEventListener("click", (e) => { const b = e.target.closest("button[data-move]"); if (!b) return; const i = Number(b.closest("li").dataset.i); move(i, i + Number(b.dataset.move)); list.querySelectorAll("li")[Math.max(0, Math.min(items.length - 1, i + Number(b.dataset.move)))]?.querySelector(`button[data-move="${b.dataset.move}"]`)?.focus(); });
+
+document.getElementById("reset").addEventListener("click", () => { items = [...shipped]; try { localStorage.removeItem(KEY); } catch {} draw(); });
+document.getElementById("copy").addEventListener("click", async () => {
+  const json = "[\n" + items.map((f) => "  " + JSON.stringify(f).replace(/":/g, '": ').replace(/,"/g, ', "').replace(/^\{/, "{ ").replace(/\}$/, " }")).join(",\n") + "\n]\n";
+  try { await navigator.clipboard.writeText(json); toast("Copied. Paste it over src/features.json"); }
+  catch { toast("Couldn't reach the clipboard"); }
+});
+
+fetch("/features.json").then((r) => r.json()).then((fs) => {
+  shipped = fs;
+  const order = saved();
+  const byId = new Map(fs.map((f) => [f.id, f]));
+  // A saved order keeps what it knew about; features added since go at the end.
+  items = order ? [...order.filter((id) => byId.has(id)).map((id) => byId.get(id)), ...fs.filter((f) => !order.includes(f.id))] : [...fs];
+  draw();
+});
+</script>
+</body>
+</html>
