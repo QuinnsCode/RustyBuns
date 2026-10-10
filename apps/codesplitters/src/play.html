@@ -9,14 +9,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   /* Same system as the site: white paper, black ink, hairlines, one orange.
-     The backrooms are a clean grey office here, not yellow. */
+     The backrooms are a clean white Kamino hall here: white panels, grey floor, black trim. */
   :root {
     --paper: #fcfbf8; --paper-2: #ffffff; --ink: #0a0a0a; --ink-2: #6b6b6b; --rule: #e6e6e6; --edge: #cfcfcf; --accent: #e8590c; --accent-soft: #fff4ec;
     --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .28 0 0 0 0 .2 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, Menlo, monospace;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #e9e9e7; color: var(--ink); font: 400 14px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #f2f4f5; color: var(--ink); font: 400 14px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
   canvas#c { display: block; width: 100vw; height: 100vh; }
   /* The HUD: small mono readouts in ink, like an instrument panel. */
   .hud { position: fixed; pointer-events: none; font: 500 12px/1.5 var(--mono); letter-spacing: .02em; color: var(--ink); }
@@ -127,13 +127,13 @@ const pick = (a) => a[Math.floor(rng() * a.length)];
 const renderer = new THREE.WebGLRenderer({ canvas: $("#c"), antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
-const FOG = new THREE.Color("#e9e9e7");
+const FOG = new THREE.Color("#f2f4f5");
 scene.background = FOG;
-scene.fog = new THREE.Fog(FOG, 12, 48);
+scene.fog = new THREE.Fog(FOG, 16, 60);
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 100);
 camera.rotation.order = "YXZ";
 scene.add(camera);
-const hemi = new THREE.HemisphereLight("#ffffff", "#a9a9a6", 2.6);
+const hemi = new THREE.HemisphereLight("#ffffff", "#c9d0d4", 2.8);
 scene.add(hemi);
 const lamp = new THREE.PointLight("#ffffff", 30, 16, 1.4);
 camera.add(lamp);
@@ -143,12 +143,17 @@ addEventListener("resize", resize); resize();
 // ---- paper and code textures ---------------------------------------------------
 const canvasTex = (w, h, draw) => { const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
 const noise = (g, w, h, a, n = 4000) => { for (let i = 0; i < n; i++) { g.fillStyle = `rgba(40,40,40,${Math.random() * a})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2); } };
-// Backrooms wallpaper, but founding-document paper: faint stripes and grain.
-const wallpaper = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#f4f4f2"; g.fillRect(0, 0, w, h); for (let x = 0; x < w; x += 16) { g.fillStyle = "rgba(0,0,0,.035)"; g.fillRect(x, 0, 6, h); } noise(g, w, h, .06); });
+// Kamino, not the backrooms: smooth white panels with soft seams, a pale polished floor, a white ceiling.
+const wallpaper = canvasTex(512, 512, (g, w, h) => {
+  const grad = g.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, "#fbfcfc"); grad.addColorStop(1, "#eef1f2");
+  g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  g.strokeStyle = "rgba(90,100,108,.16)"; g.lineWidth = 3; g.beginPath(); g.roundRect(10, 10, w - 20, h - 20, 40); g.stroke();
+  g.strokeStyle = "rgba(255,255,255,.9)"; g.lineWidth = 2; g.beginPath(); g.roundRect(13, 13, w - 26, h - 26, 37); g.stroke();
+});
 wallpaper.wrapS = wallpaper.wrapT = THREE.RepeatWrapping;
-const carpet = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#9a9a97"; g.fillRect(0, 0, w, h); noise(g, w, h, .25, 9000); });
-carpet.wrapS = carpet.wrapT = THREE.RepeatWrapping;
-const tiles = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#efefed"; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(0,0,0,.14)"; g.lineWidth = 3; g.strokeRect(0, 0, w, h); noise(g, w, h, .05, 1500); });
+const floorTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#c9cfd3"; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(60,70,78,.22)"; g.lineWidth = 2; g.strokeRect(0, 0, w, h); });
+floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+const tiles = canvasTex(256, 256, (g, w, h) => { g.fillStyle = "#f8f9fa"; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(90,100,108,.08)"; g.lineWidth = 2; g.strokeRect(0, 0, w, h); });
 tiles.wrapS = tiles.wrapT = THREE.RepeatWrapping;
 
 const ROWS = 30, ATLAS = 1024, ROW_PX = ATLAS / ROWS, LINE_H = 0.15, FONT_PX = 24;
@@ -353,15 +358,17 @@ function buildRoom(path, w, minPanels = 8) {
   panels.sort(() => order() - 0.5);
   const per = Math.ceil(panels.length / 4), L = per * PANEL, half = L / 2;
   const group = new THREE.Group();
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(L, L), new THREE.MeshLambertMaterial({ map: carpet }));
-  floor.rotation.x = -Math.PI / 2; carpet.repeat.set(L / 3, L / 3); group.add(floor);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(L, L), new THREE.MeshPhongMaterial({ map: floorTex, specular: "#7c848a", shininess: 60 }));
+  floor.rotation.x = -Math.PI / 2; floorTex.repeat.set(L / 3.5, L / 3.5); group.add(floor);
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(L, L), new THREE.MeshLambertMaterial({ map: tiles }));
-  ceil.rotation.x = Math.PI / 2; ceil.position.y = H; tiles.repeat.set(L / 2, L / 2); group.add(ceil);
-  // Fluorescent panels.
-  const lightMat = new THREE.MeshBasicMaterial({ color: "#ffffff" });
-  for (let x = -half + 3; x < half; x += 6) for (let z = -half + 3; z < half; z += 6) {
-    const p = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.6), lightMat); p.rotation.x = Math.PI / 2; p.position.set(x, H - 0.01, z); group.add(p);
+  ceil.rotation.x = Math.PI / 2; ceil.position.y = H; tiles.repeat.set(L / 4, L / 4); group.add(ceil);
+  // Round lights set in the ceiling, each in a thin grey ring.
+  const lightMat = new THREE.MeshBasicMaterial({ color: "#ffffff" }), ringMat = new THREE.MeshBasicMaterial({ color: "#c3cacf" });
+  for (let x = -half + 3.5; x < half; x += 7) for (let z = -half + 3.5; z < half; z += 7) {
+    const ring = new THREE.Mesh(new THREE.CircleGeometry(1.05, 40), ringMat); ring.rotation.x = Math.PI / 2; ring.position.set(x, H - 0.005, z); group.add(ring);
+    const p = new THREE.Mesh(new THREE.CircleGeometry(0.95, 40), lightMat); p.rotation.x = Math.PI / 2; p.position.set(x, H - 0.01, z); group.add(p);
   }
+  const trimMat = new THREE.MeshBasicMaterial({ color: "#16181a" });
   const doors = [], lines = [], files = [];
   const doorMat = new THREE.MeshBasicMaterial({ color: "#0a0a0a" });
   panels.forEach((p, k) => {
@@ -371,7 +378,9 @@ function buildRoom(path, w, minPanels = 8) {
       wall = new THREE.Group(); wall.name = "wall" + wi; wall.rotation.y = WALL_ROT[wi];
       const [x, z] = fromWall(wi, 0, 0, half); wall.position.set(x, 0, z);
       const paper = new THREE.Mesh(new THREE.PlaneGeometry(L, H), new THREE.MeshLambertMaterial({ map: wallpaper }));
-      wallpaper.repeat.set(L / 2, H / 2); paper.position.y = H / 2; wall.add(paper);
+      wallpaper.repeat.set(L / 3.5, 1); paper.position.y = H / 2; wall.add(paper);
+      // Black trim: a skirting band at the floor and a thin line where the wall meets the ceiling.
+      for (const [y, t] of [[0.09, 0.18], [H - 0.04, 0.08]]) { const b = new THREE.Mesh(new THREE.PlaneGeometry(L, t), trimMat); b.position.set(0, y, 0.005); wall.add(b); }
       group.add(wall);
     }
     const c = -half + PANEL * (slot + 0.5);
@@ -626,7 +635,7 @@ function updateEnemies(dt, time) {
       e.root.position.y = e.kind === "tube" ? 0 : Math.max(0.3, Math.min(H - 0.4, e.root.position.y));
     } else if (e.state === "fly") {
       if (e.kind === "bird") {
-        // Circle overhead, then dive: at your head, or skimming the carpet at your legs (jump it).
+        // Circle overhead, then dive: at your head, or skimming the floor at your legs (jump it).
         // After a hit, back up to circle again.
         e.orbit += dt * (1.4 + wave * 0.08);
         const diving = (e.t % (e.circle + 1.6)) > e.circle;
@@ -1321,15 +1330,13 @@ function hud() {
 }
 
 // ---- loop ---------------------------------------------------------------------------
-let last = performance.now(), sent = 0, flicker = 0;
+let last = performance.now(), sent = 0;
 function frame(now, manual) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const time = now / 1000;
   if (here) {
     updatePlayer(dt); updateBat(dt); updateEnemies(dt, time); updateBosses(dt, time); updateWaves(dt); updateBreaking(dt); updateMode(); updateOthers(dt); updateLava(time);
     player.comboT -= dt; if (player.comboT <= 0) player.combo = 1;
-    // The lights flicker now and then.
-    flicker -= dt; if (flicker < 0) { hemi.intensity = rng() < 0.06 ? 1.3 : 2.6; flicker = 0.08 + Math.random() * 0.5; }
     if (now - sent > 100 && playing) {
       sent = now;
       send({ t: "pos", p: [player.pos.x, player.pos.y - EYE, player.pos.z], yaw: player.yaw, room: here.path, swing: swingT >= 0 });
