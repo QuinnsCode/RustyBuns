@@ -53,5 +53,6 @@
   { "id": "every-os", "icon": "monitor-smartphone", "title": "A binary for every desktop", "what": "macOS (arm64 and x64), Linux (x64 and arm64) and Windows, cross-compiled from one machine." },
   { "id": "varlock", "icon": "fingerprint", "title": "Secrets from 1Password, behind Touch ID", "what": "Deploy secrets come through varlock straight into the Worker. The repo commits names and references, never values." },
   { "id": "plan-first", "icon": "clipboard-list", "title": "Plan first, always", "what": "A deploy refuses unless you planned this exact config, lists every billable resource first, and won't start a big server unless you allow it." },
-  { "id": "adopt-live", "icon": "link", "title": "Takes over what's already live", "what": "Adopts an existing Worker and D1 by name, storage intact, instead of making new ones." }
+  { "id": "adopt-live", "icon": "link", "title": "Takes over what's already live", "what": "Adopts an existing Worker and D1 by name, storage intact, instead of making new ones." },
+  { "id": "api-tokens", "icon": "key-round", "title": "An API for outside agents", "what": "An OpenAPI spec of every command, and personal API tokens that act as you, read-only or not, always expiring, never an admin." }
 ]
