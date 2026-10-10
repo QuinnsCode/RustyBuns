@@ -34,13 +34,13 @@ bun run dev            # vite, hot reload: http://localhost:5173
 ### The Rust twins (optional)
 
 ```
-bun run build:native   # cargo + the wasm32 target -> public/hippo_fluid.wasm and public/hippo_sim.wasm (needs rustup)
+bun run build:native   # cargo + the wasm32 target -> public/hippo_fluid.wasm, public/hippo_sim.wasm and native/hippo_sim.wasm (needs rustup)
 bun bench/sim.ts       # the rules engine: TypeScript vs Rust/wasm, ticks per second, heap, wasm size
 ```
 
 Without them the game runs the TypeScript twins (same output). The corner of the game says which fluid is running (`fluid: Rust/wasm`). The wasms are build outputs and are not committed.
 
-The rules engine (`native/crates/hippo_sim`, a port of `src/sim/step.ts` with spawn, physics, gulp and effects, and of the bots in `src/sim/bots.ts`) runs solo and couch rounds whenever `public/hippo_sim.wasm` is there (`sim: Rust/wasm` in the corner; `?sim=ts` forces the TypeScript twin). The round and the bots stay inside the module: `Match.setEngine()` hands them over once, then each tick sends the human inputs in and reads back a compact view for the snapshot (positions, no velocities). Reading `match.sim` brings the round home (the next tick hands it back), so nothing outside `Match` changes. `bun bench/sim.ts 200` on an M-series Mac, Bun 1.4.2 (200 90 s rounds):
+The rules engine (`native/crates/hippo_sim`, a port of `src/sim/step.ts` with spawn, physics, gulp and effects, and of the bots in `src/sim/bots.ts`) runs solo and couch rounds whenever `public/hippo_sim.wasm` is there, and online and desktop rooms when their build carries it (`sim: Rust/wasm` in the corner; `?sim=ts` forces the TypeScript twin). The round and the bots stay inside the module: `Match.setEngine()` hands them over once, then each tick sends the human inputs in and reads back a compact view for the snapshot (positions, no velocities). Reading `match.sim` brings the round home (the next tick hands it back), so nothing outside `Match` changes. `bun bench/sim.ts 200` on an M-series Mac, Bun 1.4.2 (200 90 s rounds):
 
 | engine | ticks/s | µs/tick |
 |---|---|---|
@@ -48,6 +48,8 @@ The rules engine (`native/crates/hippo_sim`, a port of `src/sim/step.ts` with sp
 | TypeScript, before (`Math.hypot`) | ~800k | 1.25 |
 | TypeScript, now (`sqrt(x² + y²)`) | ~1,350k | 0.74 |
 | Rust/wasm, state copied in and out each tick | ~780k | 1.28 |
+
+Rooms get the module from their entry: `Room` takes it as `sim` and calls `match.setEngine()`, so every match holds its own instance. A Worker cannot compile wasm from bytes, so `src/edge.ts` (the Worker bundle's entry) imports `native/hippo_sim.wasm` as a module, and `build:native` writes that file on every build: the real module, or an empty one without cargo, which leaves the rooms in TypeScript. The desktop world (`packages/desktop/world.ts`) compiles `hippo_sim.wasm` from the client build the binary embeds.
 | Rust/wasm, state kept in the module | ~2,150k | 0.47 |
 | in play: `Match.tick()` + `snapshot()`, 4 bots | | |
 | TypeScript | ~410k | 2.45 |
@@ -176,6 +178,7 @@ src/client/render/fluid.ts   the geyser's fluid: the TypeScript twin + the wasm 
 src/sim/native.ts            the Rust twin of step() and the bots (native/crates/hippo_sim); src/client/driver.ts loads it, Match keeps the round in it
 src/room-do.ts the one World class: the Cloudflare Durable Object and the in-process desktop world
 src/worker.ts  the Cloudflare entry: validates and vouches identity, routes rooms
+src/edge.ts    what Alchemy bundles: worker.ts with native/hippo_sim.wasm handed to the rooms
 ```
 
 - **One game, two homes.** `World` runs on Cloudflare as a Durable Object and, unchanged, inside the desktop binary where Rusty Buns binds it in-process. The LAN host is just that world with the `guests` door opened.

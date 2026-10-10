@@ -10,10 +10,16 @@ declare const WebSocketPair: { new (): Record<0 | 1, any> };
 const clean = (s: string | null, max: number) => (s ?? "").replace(/\p{C}/gu, "").trim().slice(0, max);
 
 export class World {
+  /**
+   * The hippo_sim module every room steps its rounds in, or null for the
+   * TypeScript engine. Set by the entry that has it: src/edge.ts on Cloudflare
+   * (bundled), packages/desktop/world.ts on the desktop (embedded).
+   */
+  static sim: WebAssembly.Module | null = null;
   private room: Room;
 
   constructor(private ctx: any, _env: unknown) {
-    this.room = new Room(ctx, { report: (where, err) => console.error(`[hippo-tycoon ${where}]`, err) });
+    this.room = new Room(ctx, { sim: World.sim, report: (where, err) => console.error(`[hippo-tycoon ${where}]`, err) });
     ctx.blockConcurrencyWhile(() => this.room.restore());
   }
 

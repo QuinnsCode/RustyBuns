@@ -7,3 +7,4 @@ dist
 native/target
 public/hippo_fluid.wasm
 public/hippo_sim.wasm
+native/hippo_sim.wasm

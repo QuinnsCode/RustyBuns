@@ -78,6 +78,10 @@ export async function simFromWasm(bytes: BufferSource): Promise<NativeSim> {
   return instantiateSim(await compileSim(bytes));
 }
 
+/** `mod` if it is the hippo_sim module, else null (the empty stand-in a build without cargo bundles). */
+export const simModule = (mod: WebAssembly.Module | null | undefined): WebAssembly.Module | null =>
+  mod && WebAssembly.Module.exports(mod).some((x) => x.name === "sim_step") ? mod : null;
+
 export function instantiateSim(mod: WebAssembly.Module): NativeSim {
   const e = new WebAssembly.Instance(mod, {}).exports as unknown as SimExports;
   if (typeof e.sim_step !== "function" || !e.memory) throw new Error("not the hippo_sim module");
