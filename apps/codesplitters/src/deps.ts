@@ -151,16 +151,16 @@ const testerFor = (env: Env, s: Settings): Tester | null =>
 type Call = (who: string | null, path: string, init?: RequestInit) => Promise<Response>;
 
 /** Check one repo now, put what's worth taking on a branch, and keep the report. */
-export async function runDoctor(env: Env, call: Call, owner: string, repo: string, opts: { registry?: Registry; now?: number } = {}): Promise<Report> {
+export async function runDoctor(env: Env, call: Call, owner: string, repo: string, opts: { registry?: Registry; now?: number; deadline?: number } = {}): Promise<Report> {
   const now = opts.now ?? Date.now();
   const s = await settings(env, owner, repo);
-  const report = await check(env, call, owner, repo, s, opts.registry ?? (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, now)
+  const report = await check(env, call, owner, repo, s, opts.registry ?? (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, now, opts.deadline)
     .catch((e: Error): Report => ({ at: now, checked: 0, updates: [], note: `failed: ${e.message}` }));
   await env.DB.prepare("UPDATE dep_watches SET last_run = ?, last_report = ?, running_since = NULL WHERE owner = ? AND repo = ?").bind(now, JSON.stringify(report), owner, repo).run();
   return report;
 }
 
-async function check(env: Env, call: Call, owner: string, repo: string, s: Settings, registry: Registry, now: number): Promise<Report> {
+async function check(env: Env, call: Call, owner: string, repo: string, s: Settings, registry: Registry, now: number, deadline?: number): Promise<Report> {
   const base = `/api/repos/${owner}/${repo}`, q = "?path=package.json";
   const res = await call(owner, `${base}/do/file${q}`);
   if (!res.ok) return { at: now, checked: 0, updates: [], note: res.status === 404 ? "no package.json at the top of this repo" : `reading package.json: ${res.status}` };
@@ -175,29 +175,43 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   const tester = testerFor(env, s);
   let updates: Update[] = found.map((u) => ({ ...u, status: "untested" }));
   let note = tester ? undefined : s.run_tests ? "tests only run on the desktop app" : undefined;
+  let tested = false;
   if (tester) {
     const h = await handleFor(env, owner, repo);
     const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
     if (!art) note = "no git remote to test against";
     else {
       const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
-      const tryWith = (us: Update[]) => tester(remote, { "package.json": bump(lines, us).join("\n") + "\n" });
+      tested = true;
+      // With a deadline (the cron's time limit), a try only starts if there's room for one as slow as the slowest so far.
+      let slowest = 0, short = false;
+      const tryWith = async (us: Update[]) => {
+        if (deadline && Date.now() + slowest > deadline) { short = true; return null; }
+        const t0 = Date.now();
+        const r = await tester(remote, { "package.json": bump(lines, us).join("\n") + "\n" });
+        slowest = Math.max(slowest, Date.now() - t0);
+        return r;
+      };
       const all = await tryWith(updates);
-      if (all.ok) updates = updates.map((u) => ({ ...u, status: "kept" }));
-      else if (updates.length === 1) updates = [{ ...updates[0]!, status: "broke", out: tail(all.out) }];
-      else {
-        for (const u of updates) { const r = await tryWith([u]); Object.assign(u, r.ok ? { status: "kept" } : { status: "broke", out: tail(r.out) }); }
+      if (all?.ok) updates = updates.map((u) => ({ ...u, status: "kept" }));
+      else if (all && updates.length === 1) updates = [{ ...updates[0]!, status: "broke", out: tail(all.out) }];
+      else if (all) {
+        for (const u of updates) { const r = await tryWith([u]); if (r) Object.assign(u, r.ok ? { status: "kept" } : { status: "broke", out: tail(r.out) }); }
         const kept = updates.filter((u) => u.status === "kept");
-        if (kept.length > 1 && !(await tryWith(kept)).ok) {
-          for (const u of kept) u.status = "untested";
+        const again = kept.length > 1 ? await tryWith(kept) : { ok: true };
+        if (!again?.ok) for (const u of kept) u.status = "untested";
+        if (again && !again.ok) {
           note = "each of these passes alone but not together; nothing was put on a branch";
           return { at: now, checked, updates, note };
         }
       }
+      if (short) note = "ran out of time before every test ran; only what passed went on a branch, and the next run tries the rest";
     }
   }
-  const take = updates.filter((u) => u.status !== "broke");
+  // Once tests ran, only what passed them goes on the branch.
+  const take = updates.filter((u) => tested ? u.status === "kept" : u.status !== "broke");
   if (!take.length) return { at: now, checked, updates, note: note ?? "every update broke the tests; nothing was put on a branch" };
+
 
   // The branch: agent-deps opens it and makes the edits, so blame says who.
   const agent = "agent-deps";
@@ -282,12 +296,20 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
   return null;
 }
 
-/** The Worker's scheduled(): every repo whose doctor is on and due gets a run. */
-export async function scheduledDoctor(env: Env, self: (r: Request) => Promise<Response>, now = Date.now()) {
+/**
+ * How long a scheduled run may test for. A cron's waitUntil gets 15 minutes of wall clock on
+ * Cloudflare; this leaves room to write the branch. Repos not reached wait for the next cron.
+ */
+export const SCHEDULED_BUDGET = 12 * 60_000;
+
+/** The Worker's scheduled(): every repo whose doctor is on and due gets a run, while there's time. */
+export async function scheduledDoctor(env: Env, self: (r: Request) => Promise<Response>, now = Date.now(), budgetMs = SCHEDULED_BUDGET) {
+  const deadline = Date.now() + budgetMs;
   const { results } = await env.DB.prepare(
     "SELECT owner, repo FROM dep_watches WHERE enabled = 1 AND (running_since IS NULL OR running_since < ?) AND (last_run IS NULL OR last_run + every_hours * 3600000 <= ?)").bind(now - STALE, now + 60_000).all();
   const call = caller(self, "http://codesplitters.local");
   for (const { owner, repo } of results as { owner: string; repo: string }[]) {
-    if (await claim(env, owner, repo, now)) await runDoctor(env, call, owner, repo, { now });
+    if (Date.now() >= deadline) break;
+    if (await claim(env, owner, repo, now)) await runDoctor(env, call, owner, repo, { now, deadline });
   }
 }
