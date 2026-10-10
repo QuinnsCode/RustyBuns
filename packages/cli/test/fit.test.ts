@@ -24,6 +24,7 @@ test("ready: supported frameworks, Workers and fetch-handler servers", () => {
   expect(vr).toMatchObject({ verdict: "ready", stack: "vite-react", label: "Vite + React, TypeScript", typescript: true });
   expect(fit({ pkg: pkg({}), files: ["wrangler.jsonc"], viteConfig: null })).toMatchObject({ verdict: "ready", label: "Cloudflare Worker" });
   expect(fit({ pkg: pkg({ hono: "4" }), files: [] })).toMatchObject({ verdict: "ready", label: "hono" });
+  expect(fit({ pkg: pkg({ astro: "7", "@astrojs/cloudflare": "14" }), files: ["astro.config.mjs"] })).toMatchObject({ verdict: "ready", stack: "astro", label: "Astro" });
 });
 
 test("needs work: a framework init doesn't infer yet links its issue", () => {

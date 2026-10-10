@@ -7,6 +7,7 @@ Goal: every supported framework has a sample app in `apps/`. CI builds each one 
 Most frameworks already have a Cloudflare build that outputs a module exporting `default { fetch }`. Desktop `worker` mode mounts exactly that shape, and the host shim answers `cloudflare:workers`. So for most frameworks the same build can serve both the edge and desktop, with no per-framework adapter.
 
 - **Verified:** TanStack Start (probe on Sep 17: SSR, server function, KV persistence, compiled binary).
+- **Verified:** Astro 7 with @astrojs/cloudflare 14 (Oct 9: SSR, API route, KV through `cloudflare:workers`, compiled binary, Railway box bundle, deploy). With no adapter it is a static site and `init` writes an `spa` config.
 - **Still to verify:** every other framework below.
 
 ## Status key
@@ -24,7 +25,7 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | RWSDK | `worker` | `dist/worker/index.js` | `Cloudflare.Worker` | ✅ live |
 | TanStack Start | `worker` | `dist/server/server.js` | `Cloudflare.Website.Vite` | ✅ desktop, 🧪 edge |
 | SvelteKit | `worker` | adapter-cloudflare `_worker.js` | `Cloudflare.Website.SvelteKit` | 🧪 |
-| Astro | `worker` | @astrojs/cloudflare `_worker.js` | `Cloudflare.Website.Astro` | 🧪 |
+| Astro | `worker` (adapter), `spa` (static) | @astrojs/cloudflare 14: `dist/server/entry.mjs` + `dist/client` | `Cloudflare.Worker` + assets | ✅ `init`, desktop, box and edge (sample app, Oct 9) |
 | Nuxt | `worker` | Nitro `cloudflare-module` preset | `Cloudflare.Website.Nuxt` | 🧪 |
 | React Router v7 | `worker` | server build wrapped in `createRequestHandler` | `Cloudflare.Website.Vite` | 🔧 |
 | SolidStart | `worker` | Nitro CF preset or Vite plugin output | `Cloudflare.Website.Vite` | 🔧 |
