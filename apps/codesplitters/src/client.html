@@ -1274,7 +1274,7 @@ const views = {
       ? `<p class="muted" style="font-size:12px">${icon("lock")}The crew's copy goes upstream, private lines' real text and all. <a href="#" data-crew="0">Hold it back</a></p>`
       : `<button class="btn" data-crew="1">${icon("lock")}Push the crew's copy</button>`) : "";
     const who = m.identity ? `Commits go up as <b>${esc(m.identity.name)}</b> &lt;${esc(m.identity.email)}&gt; (this machine's git config).` : `No git identity on this machine: set <code>git config --global user.name</code> and <code>user.email</code>.`;
-    el.innerHTML = `<p>${head}</p>${m.state === "ok" && (m.ahead || m.behind) ? `<p class="muted">${waiting}; ${m.behind} to take.</p>` : ""}${m.state !== "ok" ? said : ""}${pickSide}
+    el.innerHTML = `<p>${head}</p>${m.state === "ok" && (m.ahead || m.behind) ? `<p class="muted">${waiting}; ${m.behind} to take.</p>` : ""}${m.state !== "ok" && m.state !== "held" && !(m.state === "rewritten" && !m.error?.includes(": ")) ? said : ""}${pickSide}
       <div class="row" style="gap:6px;margin-top:6px"><button class="btn" id="mirror-sync">${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}<p class="muted" style="font-size:12px">${who}</p>`;
     icons();
     $("#mirror-sync").addEventListener("click", () => { el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, {}); });
@@ -1282,7 +1282,7 @@ const views = {
     el.querySelectorAll("[data-crew]").forEach((b) => b.addEventListener("click", (e) => {
       e.preventDefault();
       // Once it's up it's up: the first click says so, the second does it.
-      if (b.dataset.crew === "1" && !b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Sure? Anyone who can read upstream sees the private lines"; return; }
+      if (b.dataset.crew === "1" && !b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Sure? Upstream will see them"; return; }
       el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, { pushCrew: b.dataset.crew === "1" });
     }));
   },
