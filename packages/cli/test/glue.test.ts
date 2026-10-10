@@ -109,7 +109,8 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const r = mkdtempSync(tmpdir() + "/rbdeploy-");
-  writeFileSync(r + "/package.json", JSON.stringify({ name: "g", dependencies: { vite: "6", react: "19" } }));
+  // the worker build is a stub too: it logs, so the test sees it run before Alchemy (#362)
+  writeFileSync(r + "/package.json", JSON.stringify({ name: "g", scripts: { build: `echo BUILD worker >> ${r}/calls.log` }, dependencies: { vite: "6", react: "19" } }));
   writeFileSync(r + "/wrangler.jsonc", `{ "name": "g", "main": "src/worker.tsx", "compatibility_date": "2026-01-01" }`);
   mkdirSync(r + "/src"); writeFileSync(r + "/src/worker.tsx", "export default { fetch: () => new Response('') }");
   const cli = new URL("../src/index.ts", import.meta.url).pathname;
@@ -131,6 +132,8 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   const calls = await Bun.file(r + "/calls.log").text();
   expect(calls).toContain("STUB alchemy plan");
   expect(calls).toContain("STUB alchemy deploy");
+  // plan and deploy each build the worker before Alchemy hashes its bundle
+  expect(calls.trim().split("\n").map((l) => l.split(" ").slice(0, 3).join(" "))).toEqual(["BUILD worker", "STUB alchemy plan", "BUILD worker", "STUB alchemy deploy"]);
   // config change invalidates the plan
   writeFileSync(r + "/rustybuns.config.ts", (await Bun.file(r + "/rustybuns.config.ts").text()).replace('"name": "g"', '"name": "g2"'));
   const d2 = run("deploy");

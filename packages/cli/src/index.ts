@@ -398,6 +398,17 @@ function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { 
   process.exit(2);
 }
 
+/** Edge is on when asked for, or when nothing else is (as in gen/alchemy.ts). */
+const edgeOn = (c: RustyBunsConfig) => !!c.targets.edge || !c.targets.box;
+
+/** Run the Worker's build command in the app, with the env the stack's Build gets. */
+async function buildWorker(command: string) {
+  console.log(`building the worker: ${command}`);
+  const p = Bun.spawn(["sh", "-c", command], { stdio: ["inherit", "inherit", "inherit"], env: { ...readDevVars(), ...process.env } });
+  const code = await p.exited;
+  if (code !== 0) throw new Error(`the worker build failed (exit ${code}): ${command}`);
+}
+
 async function alchemy(sub: string, rawArgs: string[]) {
   const cfg = await loadConfig();
   if (!cfg.worker && !cfg.targets.box) throw new Error("desktop-only app: no edge or box stack to plan or deploy");
@@ -417,20 +428,9 @@ async function alchemy(sub: string, rawArgs: string[]) {
   const note = profiled ? adoptNote(process.cwd(), cfg, alchemyStage(args)) : null;
   if (note) console.log(note + "\n");
   if (profiled) guardDeploy(sub, cfg, alchemyStage(args), { force, allowDelete });
-  // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
-  if (profiled && cfg.targets.box) {
-    console.log(`built ${await prof.step("build box", () => buildBox(cfg))}`);
-  }
   if (check) await checkStack(prof, checker);
   const hash = await stackHash();
   const stampFile = ".rustybuns/planned";
-  if (sub === "plan") {
-    const code = await prof.step("alchemy plan", () => runAlchemy(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args], cfg));
-    await prof.finish();
-    if (code !== 0) process.exit(code);
-    await Bun.write(stampFile, hash);
-    return;
-  }
   if (sub === "deploy" && !args.includes("--yes")) {
     // GUARDRAIL: deploy creates real resources. Require a plan for THIS exact
     // config first, so nobody provisions a stack they have not looked at.
@@ -441,6 +441,20 @@ async function alchemy(sub: string, rawArgs: string[]) {
         : "no plan on record for this config. Run `rustybuns plan` first (creates nothing), or pass --yes to skip.");
       process.exit(2);
     }
+  }
+  // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
+  if (profiled && cfg.targets.box) {
+    console.log(`built ${await prof.step("build box", () => buildBox(cfg))}`);
+  }
+  // The Worker hashes (and uploads) its bundle from disk at plan time, before the
+  // stack's Build runs, so build it first or it ships the previous build (#362).
+  if (profiled && edgeOn(cfg) && cfg.worker?.build) await prof.step("build worker", () => buildWorker(cfg.worker!.build!));
+  if (sub === "plan") {
+    const code = await prof.step("alchemy plan", () => runAlchemy(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args], cfg));
+    await prof.finish();
+    if (code !== 0) process.exit(code);
+    await Bun.write(stampFile, hash);
+    return;
   }
   // --yes satisfies our plan check above AND is forwarded to alchemy's own prompt.
   const code = await prof.step(`alchemy ${sub}`, () => runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args], cfg));
