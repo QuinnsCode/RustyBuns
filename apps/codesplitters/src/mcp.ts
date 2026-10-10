@@ -16,7 +16,7 @@ import { openapi } from "./openapi.ts";
 
 type Schema = Record<string, any>;
 interface Tool {
-  name: string; title: string; description: string;
+  name: string; title: string; description: string; tag: string; risky: boolean;
   inputSchema: Schema;
   annotations: { title: string; readOnlyHint: boolean; destructiveHint: boolean; idempotentHint: boolean; openWorldHint: boolean };
   method: string; path: string; pathParams: string[]; queryParams: string[]; hasBody: boolean;
@@ -56,7 +56,7 @@ export function tools(): Tool[] {
       }
       const risky = !!op["x-codesplitters-risky"], read = method === "get";
       out.push({
-        name: op.operationId, title: op.summary,
+        name: op.operationId, title: op.summary, tag: op.tags[0], risky,
         description: [op.summary, op.description, `(${method.toUpperCase()} /api${path})`, risky && "Can't be undone, or ships code: ask the person first."].filter(Boolean).join(" "),
         inputSchema: { type: "object", properties, ...(required.length && { required }), additionalProperties: false },
         annotations: { title: op.summary, readOnlyHint: read, destructiveHint: risky, idempotentHint: read || method === "put", openWorldHint: false },
@@ -69,6 +69,8 @@ export function tools(): Tool[] {
 
 let cached: Tool[] | null = null;
 const all = () => (cached ??= tools());
+/** GET /api/mcp/tools: every tool, for the /mcp page. Public, like the OpenAPI spec it comes from. */
+export const catalogue = () => all().map((t) => ({ ...listed(t), tag: t.tag, scope: t.method === "GET" ? "read" : "write", risky: t.risky, http: `${t.method} /api${t.path}` }));
 const listed = (t: Tool) => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations });
 
 const rpc = (id: unknown, result: unknown) => json({ jsonrpc: "2.0", id, result });

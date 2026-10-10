@@ -1178,7 +1178,7 @@ const views = {
         ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
         <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
-        ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("key-round")}<b>API tokens</b><a class="muted" style="margin-left:auto;font-size:12px" href="/api.html">the API</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
+        ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("key-round")}<b>API tokens</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
       </aside></div></div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
@@ -2408,7 +2408,7 @@ async function commands() {
   for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
   add("Anywhere", "info", "About codeSplitters", "", () => (location.hash = "#/about"));
-  add("Anywhere", "book-open", "API reference", "GET /api", () => (location.href = "/api.html"));
+  add("Anywhere", "book-open", "API reference", "GET /api", () => (location.href = "/reference"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
