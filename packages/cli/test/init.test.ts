@@ -300,3 +300,16 @@ test("init: a vite root of public/ builds into the app's dist, not public/dist",
   expect(c).toContain('"clientBuild": "bunx vite build --outDir ../dist/ui --emptyOutDir"');
   expect(c).toContain('"assets": "dist/web"');
 });
+
+test("init: a workspace member that gets vite from the root package.json is a vite app", () => {
+  const w = project({
+    "package.json": JSON.stringify({ name: "root", private: true, workspaces: ["app", "packages/*"], devDependencies: { vite: "^5" } }),
+    "app/package.json": JSON.stringify({ name: "app", dependencies: { react: "^19" } }),
+    "app/src/index.tsx": "", "bun.lock": "",
+  });
+  const p = Bun.spawnSync(["bun", CLI, "init"], { cwd: join(w.dir, "app"), env: { ...process.env, npm_config_user_agent: "" } });
+  const out = p.stdout.toString() + p.stderr.toString();
+  expect(p.exitCode).toBe(0);
+  expect(out).toMatch(/detected: vite-react app "app"/);
+  expect(w.read("app/rustybuns.config.ts")).toContain('"assets": "dist/web"');
+});
