@@ -1,11 +1,12 @@
 // 🧙 The council's furniture: every agent desk becomes a Druid Panel, the game's loot is strewn about like a
 // gamer's den, and the Council Chambers and a village stand outside. The elevator stays the office's own.
 // Everything the office does still works: the laptops ride on the panels (each tilted with its slab), the
-// elevator still opens and rides. The one collider it touches is each desk's, cut down to its lectern (fitDesks).
+// elevator still opens and rides. The colliders it touches are each desk's, cut down to its lectern (fitDesks), and
+// one more for each kiosk's lectern, which stands out past the kiosk's own (fenceKiosk).
 import { Box3, Group, Mesh, Object3D, Raycaster, Vector3, type Material } from "three";
 import { COUNCIL } from "./assets.ts";
 import { gltf } from "./loader.ts";
-import { ROOM, STREET_Y, byKiosk, fitDesks, type Box } from "./room.ts";
+import { ROOM, STREET_Y, byKiosk, fenceKiosk, fitDesks, type Box } from "./room.ts";
 
 interface Desk {
   def: { id: string; x: number; z: number; rotY: number };
@@ -91,8 +92,10 @@ export function council(into: Group, office: Office) {
       d.group.add(p);
       p.updateWorldMatrix(true, true);
       const b = new Box3().setFromObject(p);
-      footprints.push({ minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z });
+      const footprint = { minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z };
+      footprints.push(footprint);
       fitDesks(office.colliders, footprints, PANEL.top);
+      if (d.def.id.startsWith("station-")) fenceKiosk(office.colliders, footprint, PANEL.top);
 
       // lie the laptop along the slab: its pitch from the slab's height a little behind and in front of it
       const { x, z } = laptop.position, step = 0.12;

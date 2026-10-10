@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { CAST, ENEMIES, PLAYER, RACES, bareClip, clipName, personRole, raceFor, roleFor, type Pose, type Role } from "../druids/cast.ts";
 import { MODELS } from "../druids/assets.ts";
 import { forestColor, hexToHsl } from "../druids/palette.ts";
-import { DESK_TOP, fitDesks } from "../druids/room.ts";
+import { DESK_TOP, fenceKiosk, fitDesks } from "../druids/room.ts";
 
 const at = (p: Partial<Pose>): Pose =>
   ({ status: "idle", bouncing: false, bounceT: 0, cheerT: 0, walking: false, dancing: null, leaving: null, jailed: null, ...p });
@@ -87,4 +87,28 @@ test("desk colliders shrink to the Druid Panel lectern on each desk, and the des
   expect(front.maxZ).toBeCloseTo(1.08);
   // the desk's interact zone (1.25 m out from the desk, 1.3 m round) reaches past the collider's edge
   expect(0.55 + 1.25 - 1.3).toBeLessThan(front.maxZ + 0.32);
+});
+
+test("a kiosk's Druid Panel gets a collider over the part that stands out past the kiosk, and the kiosk is still in reach", () => {
+  // the Issues kiosk as the office lays it out (rotY PI, so its local +z is world -z): its fence runs from the wall
+  // to local z -0.25, KIOSK.width wide; the agent stands at local z 0.55 and its lectern is 5 cm the other way
+  const kx = -15.6, kz = -11.7, wall = -13;
+  const kiosk = { minX: kx - 0.4, maxX: kx + 0.4, minZ: wall, maxZ: kz + 0.25, bottom: 0, top: 1.5, fence: true };
+  const lectern = { minX: kx - 0.6, maxX: kx + 0.6, minZ: kz + 0.05 - 0.6, maxZ: kz + 0.05 + 0.6 };
+  const colliders: { minX: number; maxX: number; minZ: number; maxZ: number; bottom: number; top: number }[] = [kiosk];
+  const inside = (x: number, z: number) => colliders.some((c) => x > c.minX && x < c.maxX && z > c.minZ && z < c.maxZ);
+  // its front corner sticks out past the kiosk's fence: you can walk into it
+  expect(inside(kx + 0.5, kz + 0.6)).toBe(false);
+  fenceKiosk(colliders, lectern, 1.4);
+  expect(colliders).toHaveLength(2);
+  expect(colliders[1]).toEqual({ ...lectern, bottom: 0, top: 1.4 });
+  for (const [x, z] of [[lectern.minX, lectern.maxZ], [lectern.maxX, lectern.maxZ], [kx, lectern.maxZ], [lectern.maxX, kz]])
+    expect(inside(x! + Math.sign(kx - x!) * 0.01, z! + Math.sign(kz - z!) * 0.01)).toBe(true);
+  expect(kiosk.maxZ).toBeCloseTo(kz + 0.25);
+  // again, as when the office rebuilds: nothing more
+  fenceKiosk(colliders, lectern, 1.4);
+  expect(colliders).toHaveLength(2);
+  // the station's interact point (1 m out from the kiosk, 1.3 m round) is still out in the open, and reaches the lectern
+  expect(inside(kx, kz + 1)).toBe(false);
+  expect(kz + 1 - 1.3).toBeLessThan(lectern.maxZ);
 });
