@@ -68,12 +68,13 @@ describe("fresh start", () => {
     expect(await (await fresh.readFile({ ref: "main", path: "README" }))!.text()).toBe("found it again\n");
     expect(await (await fresh.readFile({ ref: "main", path: "src/deep/b.ts" }))!.text()).toBe("export const b = 2\n");
 
-    // A stock git client clones it, finds every object, and sees no staging branch.
+    // A stock git client clones it, checks out main, finds every object, and sees no other branch.
     const { clone } = await get(call, null, "/api/repos/ana/dig");
     const dir = mkdtempSync(join(tmpdir(), "cs-fresh-"));
     expect((await sh(clone, dir)).code).toBe(0);
+    expect(await Bun.file(join(dir, "dig", "src/deep/b.ts")).text()).toBe("export const b = 2\n");
     expect((await sh("git fsck --full", join(dir, "dig"))).code).toBe(0);
-    expect((await sh("git ls-remote origin", join(dir, "dig"))).out).not.toMatch(/fresh-start/);
+    expect((await sh("git ls-remote --symref origin", join(dir, "dig"))).out.trim().split("\n").map((l) => l.split("\t")[1])).toEqual(["HEAD", "HEAD", "refs/heads/main"]);
     rmSync(dir, { recursive: true, force: true });
 
     // The old git is still there until the owner deletes it.
@@ -96,6 +97,24 @@ describe("fresh start", () => {
     const { git } = await get(call, "ana", "/api/repos/ana/dig/limits");
     const log = await (await call.artifacts.get(git.artifact)).log({ ref: "main" });
     expect(log.map((c) => c.treeHash)).toEqual([tip!.treeHash]);
+  });
+
+  test("a folder that turns up twice, at different depths, still lands before both its parents", async () => {
+    const call = await repoWithGit();
+    // lib/ and pkg/deep/lib/ hold the same file, so they're one tree; pkg/deep is found after lib.
+    for (const path of ["lib/util.ts", "pkg/deep/lib/util.ts"]) {
+      await post(call, "ana", "/api/repos/ana/dig/files", { path, content: "export const u = 0" });
+      await post(call, "ana", `/api/repos/ana/dig/do/commit?path=${encodeURIComponent(path)}`, { message: `add ${path}` });
+    }
+    const [tip] = await (await call.artifacts.get("ana--dig")).log({ ref: "main", limit: 1 });
+    const was = { ...STEP };
+    Object.assign(STEP, { reads: 1, bytes: 1 });
+    try {
+      await post(call, "ana", "/api/repos/ana/dig/fresh", {});
+      expect(await untilDone(call)).toMatchObject({ state: "done", error: null });
+    } finally { Object.assign(STEP, was); }
+    const { git } = await get(call, "ana", "/api/repos/ana/dig/limits");
+    expect((await (await call.artifacts.get(git.artifact)).log({ ref: "main" })).map((c) => c.treeHash)).toEqual([tip!.treeHash]);
   });
 
   test("a repo near the cap starts fresh by itself on its next commit", async () => {

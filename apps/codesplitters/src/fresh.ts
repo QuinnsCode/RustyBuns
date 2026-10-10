@@ -7,7 +7,7 @@
 //
 // It copies in steps small enough for one request (a bounded number of
 // Artifacts reads, a pack of a few MB), each step its own push, so a big repo
-// moves over many requests: the page's polls and the five-minute cron drive it.
+// moves over many requests: the page's polls and the hourly cron drive it.
 // Commits made meanwhile wait in git_pending and land on the new git after.
 //   GET    /api/repos/:o/:r/limits         what this repo and you may do, and how close you are
 //   POST   /api/repos/:o/:r/fresh          (owner) start a fresh start, or retry one that failed
@@ -26,11 +26,12 @@ export const REPO_CAP = 1024 ** 3, BLOB_CAP = 32 * 1024 ** 2;
 const NEARLY_FULL = 0.9;
 /** How much one step may do: Artifacts reads, and bytes in its pack. Tests shrink it. */
 export const STEP = { reads: 150, bytes: 8 * 1024 ** 2 };
-const STAGE = "refs/heads/codesplitters-fresh-start";
+/** Blobs are numbered up from 1 and trees down from here, so every blob is copied before every tree. */
+const TREES = 2 ** 50;
 // Cloudflare's wording for a full repo isn't documented; anything that reads like one counts.
 const FULL = /storage|quota|too large|exceed|size limit|limit exceeded|no space/i;
 
-type Fresh = { owner: string; repo: string; state: string; artifact: string; remote: string; previous: string; tip: string; tree: string; queue: string | null; stage: string | null; done: number; total: number; bytes: number; error: string | null; started_at: number; finished_at: number | null };
+type Fresh = { owner: string; repo: string; state: string; artifact: string; remote: string; previous: string; tip: string; tree: string; queue: string | null; stage: string | null; seq: number; done: number; total: number; bytes: number; error: string | null; started_at: number; finished_at: number | null };
 
 const row = (env: Env, owner: string, repo: string) =>
   env.DB.prepare("SELECT * FROM fresh_starts WHERE owner = ? AND repo = ?").bind(owner, repo).first() as Promise<Fresh | null>;
@@ -80,6 +81,9 @@ async function limits(env: Env, owner: string, repo: string, user: string | null
   };
 }
 
+/** A hash, checked, to write straight into SQL (D1 binds at most 100 values a query). */
+const sha = (h: string) => { if (!/^[0-9a-f]{40}$/.test(h)) throw new Error(`not a git hash: ${h}`); return h; };
+
 const isFull = (r: any) => !!r && ((r.git_bytes ?? 0) >= REPO_CAP * NEARLY_FULL || (!!r.git_error && FULL.test(r.git_error)));
 
 /** After a push that didn't land: if git looks full, start fresh without being asked. */
@@ -105,9 +109,12 @@ async function start(env: Env, owner: string, repo: string): Promise<Fresh | { e
   const r = await env.DB.prepare("SELECT artifact FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
   const previous = r!.artifact as string;
   const art = await env.ARTIFACTS.create(`${previous.replace(/\.f[0-9a-z]+$/, "")}.f${Date.now().toString(36)}`, { description: `${owner}/${repo}, started fresh`, setDefaultBranch: h.branch });
-  await env.DB.prepare(`INSERT OR REPLACE INTO fresh_starts (owner, repo, state, artifact, remote, previous, tip, tree, queue, started_at)
-    VALUES (?, ?, 'walking', ?, ?, ?, ?, ?, ?, ?)`).bind(owner, repo, art.name, art.remote, previous, tip.hash, tip.treeHash, JSON.stringify([tip.treeHash]), Date.now()).run();
-  await env.DB.prepare("DELETE FROM fresh_objects WHERE owner = ? AND repo = ?").bind(owner, repo).run();
+  await env.DB.batch([
+    env.DB.prepare(`INSERT OR REPLACE INTO fresh_starts (owner, repo, state, artifact, remote, previous, tip, tree, queue, seq, started_at)
+      VALUES (?, ?, 'walking', ?, ?, ?, ?, ?, ?, 1, ?)`).bind(owner, repo, art.name, art.remote, previous, tip.hash, tip.treeHash, JSON.stringify([[tip.treeHash, TREES]]), Date.now()),
+    env.DB.prepare("DELETE FROM fresh_objects WHERE owner = ? AND repo = ?").bind(owner, repo),
+    env.DB.prepare("INSERT INTO fresh_objects (owner, repo, hash, type, seq) VALUES (?, ?, ?, 'tree', ?)").bind(owner, repo, tip.treeHash, TREES),
+  ]);
   return (await row(env, owner, repo))!;
 }
 
@@ -124,10 +131,18 @@ export async function advance(env: Env, owner: string, repo: string) {
   return (await limits(env, owner, repo, null)).fresh;
 }
 
-/** The five-minute cron: a step for every fresh start under way. */
-export async function advanceAll(env: Env) {
-  const { results } = await env.DB.prepare("SELECT owner, repo FROM fresh_starts WHERE state IN ('walking', 'copying')").all();
-  for (const { owner, repo } of results as { owner: string; repo: string }[]) await advance(env, owner, repo);
+/**
+ * The hourly cron: steps for every fresh start under way, round after round
+ * until `until` (ms), so a big repo moves with nobody watching. A round whose
+ * steps a page's poll is already taking just waits a moment for the next.
+ */
+export async function advanceAll(env: Env, until = 0) {
+  for (;;) {
+    const { results } = await env.DB.prepare("SELECT owner, repo FROM fresh_starts WHERE state IN ('walking', 'copying')").all();
+    for (const { owner, repo } of results as { owner: string; repo: string }[]) await advance(env, owner, repo);
+    if (!results.length || Date.now() >= until) return;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
 }
 
 async function step(env: Env, f: Fresh) {
@@ -139,37 +154,37 @@ async function step(env: Env, f: Fresh) {
   };
 
   if (f.state === "walking") {
-    // Read every tree once; D1 keeps them (they're named by hash), so later reads are free.
-    const queue: string[] = JSON.parse(f.queue!);
-    for (let reads = 0; queue.length && reads < STEP.reads; reads++)
-      for (const e of await tree(queue.pop()!)) if (e.type === "tree") queue.push(e.hash);
+    // Read each tree once (D1 keeps them, named by hash) and number what's in it as it turns
+    // up: one query a tree, so no step's D1 work grows with the repo. A tree found later is
+    // copied sooner. One found again under a parent that would be copied before it is
+    // renumbered and read again, so a tree shared by two folders still lands before both.
+    const queue: [string, number][] = JSON.parse(f.queue!);
+    let seq = f.seq;
+    for (let reads = 0; queue.length && reads < STEP.reads; reads++) {
+      const [hash, at] = queue.pop()!;
+      const rows = (await tree(hash)).filter((e) => e.type !== "gitlink")   // a submodule points elsewhere: nothing to copy
+        .map((e) => `(?1, ?2, '${sha(e.hash)}', '${e.type === "tree" ? "tree" : "blob"}', ${e.type === "tree" ? TREES - seq++ : seq++})`);
+      for (let i = 0; i < rows.length; i += 1000) {
+        const { results } = await env.DB.prepare(`INSERT INTO fresh_objects (owner, repo, hash, type, seq) VALUES ${rows.slice(i, i + 1000).join(", ")}
+          ON CONFLICT (owner, repo, hash) DO UPDATE SET seq = excluded.seq WHERE fresh_objects.type = 'tree' AND fresh_objects.seq >= ?3
+          RETURNING hash, type, seq`).bind(f.owner, f.repo, at).all();
+        for (const r of results as { hash: string; type: string; seq: number }[]) if (r.type === "tree") queue.push([r.hash, r.seq]);
+      }
+    }
     if (queue.length) {
-      await env.DB.prepare("UPDATE fresh_starts SET queue = ? WHERE owner = ? AND repo = ?").bind(JSON.stringify(queue), f.owner, f.repo).run();
+      await env.DB.prepare("UPDATE fresh_starts SET queue = ?, seq = ? WHERE owner = ? AND repo = ?").bind(JSON.stringify(queue), seq, f.owner, f.repo).run();
       return;
     }
-    // Lay out every object once, what's in a tree before the tree.
-    const order: { hash: string; type: string }[] = [], seen = new Set<string>();
-    const visit = async (hash: string) => {
-      for (const e of await tree(hash)) {
-        if (e.type === "gitlink" || seen.has(e.hash)) continue;   // a submodule points elsewhere: nothing to copy
-        seen.add(e.hash);
-        if (e.type === "tree") await visit(e.hash);
-        else order.push({ hash: e.hash, type: "blob" });
-      }
-      order.push({ hash, type: "tree" });
-    };
-    await visit(f.tree);
-    for (let i = 0; i < order.length; i += 400)
-      await env.DB.batch(order.slice(i, i + 400).map((o, j) => env.DB.prepare("INSERT INTO fresh_objects (owner, repo, seq, hash, type) VALUES (?, ?, ?, ?, ?)").bind(f.owner, f.repo, i + j, o.hash, o.type)));
-    await env.DB.prepare("UPDATE fresh_starts SET state = 'copying', queue = NULL, total = ? WHERE owner = ? AND repo = ?").bind(order.length, f.owner, f.repo).run();
+    await env.DB.prepare(`UPDATE fresh_starts SET state = 'copying', queue = NULL, seq = 0,
+      total = (SELECT COUNT(*) FROM fresh_objects WHERE owner = ?1 AND repo = ?2) WHERE owner = ?1 AND repo = ?2`).bind(f.owner, f.repo).run();
     return;
   }
 
   // Copying: the next objects in order, as long as the step has room.
-  const { results } = await env.DB.prepare("SELECT hash, type FROM fresh_objects WHERE owner = ? AND repo = ? AND seq >= ? ORDER BY seq LIMIT ?").bind(f.owner, f.repo, f.done, STEP.reads).all();
+  const { results } = await env.DB.prepare("SELECT hash, type, seq FROM fresh_objects WHERE owner = ? AND repo = ? AND seq > ? ORDER BY seq LIMIT ?").bind(f.owner, f.repo, f.seq, STEP.reads).all();
   const objs: Obj[] = [];
-  let size = 0;
-  for (const { hash, type } of results as { hash: string; type: string }[]) {
+  let size = 0, upTo = f.seq;
+  for (const { hash, type, seq } of results as { hash: string; type: string; seq: number }[]) {
     let o: Obj;
     if (type === "blob") {
       const blob = await old.readBlob(hash);
@@ -181,14 +196,15 @@ async function step(env: Env, f: Fresh) {
     // Built back byte for byte, or the new tree wouldn't be the old one.
     if (o.id !== hash) throw new Error(`${type} ${hash} came out as ${o.id}`);
     objs.push(o);
+    upTo = seq;
   }
   const last = f.done + objs.length === f.total;
   const h = await env.ARTIFACTS!.get(f.artifact);
   const a = await access(h, f.remote, "write", 300);
   const branch = (await h.info().catch(() => null))?.defaultBranch ?? "main";
-  const r = await copyObjects(a.remote, a.token, objs, { ref: STAGE, parent: f.stage, author: "codesplitters" },
-    last ? { tree: f.tree, branch, message: `Fresh start from ${f.tip.slice(0, 7)}: the same files, in a new Artifact. Every line's history is kept in codeSplitters.` } : undefined);
-  await env.DB.prepare("UPDATE fresh_starts SET done = done + ?, bytes = bytes + ?, stage = ? WHERE owner = ? AND repo = ?").bind(objs.length, r.bytes, r.stage, f.owner, f.repo).run();
+  const r = await copyObjects(a.remote, a.token, objs, { branch, parent: f.stage, author: "codesplitters" },
+    last ? { tree: f.tree, message: `Fresh start from ${f.tip.slice(0, 7)}: the same files, in a new Artifact. Every line's history is kept in codeSplitters.` } : undefined);
+  await env.DB.prepare("UPDATE fresh_starts SET done = done + ?, bytes = bytes + ?, stage = ?, seq = ? WHERE owner = ? AND repo = ?").bind(objs.length, r.bytes, r.stage, upTo, f.owner, f.repo).run();
   if (!last) return;
 
   // Done: point the repo at the new git, keep the old, and land what waited.

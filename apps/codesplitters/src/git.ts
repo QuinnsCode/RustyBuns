@@ -137,7 +137,7 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
     objs.push(commit);
 
     const packed = await pack(objs);
-    const report = await receive(remote, auth, [`${old} ${commit.id} ${ref}`], packed);
+    const report = await receive(remote, auth, `${old} ${commit.id} ${ref}`, packed);
     if (report.includes(`ok ${ref}`)) return { commit: commit.id, parent: old === ZERO ? null : old, bytes: packed.length };
     // Someone else pushed between our read and our write: rebuild on top of theirs.
     if (attempt < tries && report.some((l) => l.startsWith(`ng ${ref}`))) continue;
@@ -234,12 +234,14 @@ export async function pushTree(remote: string, token: string, files: AsyncIterab
   const report = lines(new Uint8Array(await res.arrayBuffer()));
   if (!report.includes(`ok ${ref}`)) throw new Error(`git: push rejected: ${report.join(" | ")}`);
   return { commit, objects, bytes };
-/** One receive-pack request: ref updates ("old new ref") and the pack they need; the report-status lines. */
-async function receive(remote: string, auth: Record<string, string>, commands: string[], packed: Uint8Array) {
+}
+
+/** One receive-pack request: a ref update ("old new ref") and the pack it needs; the report-status lines. */
+async function receive(remote: string, auth: Record<string, string>, command: string, packed: Uint8Array) {
   const res = await fetch(`${remote}/git-receive-pack`, {
     method: "POST",
     headers: { ...auth, "content-type": "application/x-git-receive-pack-request", accept: "application/x-git-receive-pack-result" },
-    body: concat([...commands.map((c, i) => pkt(i ? `${c}\n` : `${c}\0report-status delete-refs\n`)), enc.encode("0000"), packed]),
+    body: concat([pkt(`${command}\0report-status\n`), enc.encode("0000"), packed]),
   });
   if (!res.ok) throw new Error(`git: ${res.status} pushing to ${remote}`);
   return lines(new Uint8Array(await res.arrayBuffer()));
@@ -258,30 +260,30 @@ export async function rawObj(r: Raw): Promise<Obj> {
 
 /**
  * Copy objects into a repo a batch at a time, without a tree to hang them on
- * yet: each batch is a commit on `stageRef` whose tree names every object in
- * it by its hash, on top of the last batch, so all of them stay reachable.
- * With `finish` ({tree, message, branch}), the batch also lands the real
- * commit on `branch` (a root commit of that tree) and deletes `stageRef`.
+ * yet: each batch is a commit on `stage.branch` whose tree names every object
+ * in it by its hash, on top of the last batch, so all of them stay reachable.
+ * With `finish` ({tree, message}), the batch instead moves the branch to the
+ * real commit, a root commit of that tree, and the staging commits fall away.
+ * Staging on the branch itself matters on Cloudflare: an Artifact's HEAD is the
+ * first branch pushed to it, so a staging branch of its own would leave HEAD
+ * on a ref that's gone.
  */
-export async function copyObjects(remote: string, token: string, objs: Obj[], stage: { ref: string; parent: string | null; author: string },
-  finish?: { tree: string; message: string; branch: string }): Promise<{ stage: string; commit?: string; bytes: number }> {
+export async function copyObjects(remote: string, token: string, objs: Obj[], stage: { branch: string; parent: string | null; author: string },
+  finish?: { tree: string; message: string }): Promise<{ stage: string; commit?: string; bytes: number }> {
   const auth = { authorization: `Bearer ${token.split("?")[0]}` };
   const who = `${stage.author} <${stage.author}@codesplitters.local> ${Math.floor(Date.now() / 1000)} +0000`;
-  const holder = await rawObj({ type: "tree", entries: objs.map((o) => ({ name: o.id, mode: o.type === "tree" ? "40000" : "100644", hash: o.id, type: o.type })) });
-  const commit = await obj("commit", enc.encode(`tree ${holder.id}\n${stage.parent ? `parent ${stage.parent}\n` : ""}author ${who}\ncommitter ${who}\n\nfresh start: copying\n`));
-  const all = [...objs, holder, commit], commands = [`${stage.parent ?? ZERO} ${commit.id} ${stage.ref}`];
-  let done: Obj | undefined;
+  const ref = `refs/heads/${stage.branch}`;
+  let commit: Obj, all: Obj[];
   if (finish) {
-    done = await obj("commit", enc.encode(`tree ${finish.tree}\nauthor ${who}\ncommitter ${who}\n\n${finish.message}\n`));
-    all.push(done);
-    // The real branch lands, and the staging ref goes in the same request.
-    commands.splice(0, 1, `${ZERO} ${done.id} refs/heads/${finish.branch}`);
-    if (stage.parent) commands.push(`${stage.parent} ${ZERO} ${stage.ref}`);
-    all.splice(all.indexOf(holder), 2);
+    commit = await obj("commit", enc.encode(`tree ${finish.tree}\nauthor ${who}\ncommitter ${who}\n\n${finish.message}\n`));
+    all = [...objs, commit];
+  } else {
+    const holder = await rawObj({ type: "tree", entries: objs.map((o) => ({ name: o.id, mode: o.type === "tree" ? "40000" : "100644", hash: o.id, type: o.type })) });
+    commit = await obj("commit", enc.encode(`tree ${holder.id}\n${stage.parent ? `parent ${stage.parent}\n` : ""}author ${who}\ncommitter ${who}\n\nfresh start: copying\n`));
+    all = [...objs, holder, commit];
   }
   const packed = await pack(all);
-  const report = await receive(remote, auth, commands, packed);
-  const bad = report.filter((l) => l.startsWith("ng ") || (l.startsWith("unpack ") && l !== "unpack ok"));
-  if (bad.length || (finish && !report.includes(`ok refs/heads/${finish.branch}`))) throw new Error(`git: push rejected: ${report.join(" | ")}`);
-  return { stage: finish ? stage.parent ?? ZERO : commit.id, commit: done?.id, bytes: packed.length };
+  const report = await receive(remote, auth, `${stage.parent ?? ZERO} ${commit.id} ${ref}`, packed);
+  if (!report.includes(`ok ${ref}`)) throw new Error(`git: push rejected: ${report.join(" | ")}`);
+  return { stage: commit.id, commit: finish ? commit.id : undefined, bytes: packed.length };
 }

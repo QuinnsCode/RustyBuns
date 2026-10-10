@@ -20,10 +20,12 @@ export async function local(extra: Record<string, unknown> = {}) {
   const stopJobs = env.JOBS.consume((batch: any) => worker.queue(batch, env));
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
   const dir = mkdtempSync(join(tmpdir(), "codesplitters-artifacts-"));
-  env.ARTIFACTS = new LocalArtifacts(dir, "codesplitters");
-  const git = Bun.serve({ port: 0, fetch: (req) => gitHttp(req, [env.ARTIFACTS]) });
+  // An `ARTIFACTS` passed in wins (scripts/fresh-check.ts brings Cloudflare's).
+  const artifacts = new LocalArtifacts(dir, "codesplitters");
+  env.ARTIFACTS ??= artifacts;
+  const git = Bun.serve({ port: 0, fetch: (req) => gitHttp(req, [artifacts]) });
   git.unref();
-  env.ARTIFACTS.remoteBase = `http://127.0.0.1:${git.port}`;
+  artifacts.remoteBase = `http://127.0.0.1:${git.port}`;
   await applyD1Migrations(env.DB, join(import.meta.dir, "../migrations"));
   /** Call the app as `user` (a name, or null for logged out). */
   return Object.assign((user: string | null, path: string, init: RequestInit = {}) => {
