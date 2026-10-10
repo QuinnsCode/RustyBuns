@@ -26,8 +26,8 @@ export interface Artifacts {
 }
 
 /** The slice of an R2 bucket that chunks.ts uses. */
-/** A LEVEL_DIGS message: a level's first step, or one part of a big level's swarm (swarm.ts). */
-export interface DigMessage { dig: string; user: string | null; part?: { sha: string; n: number; files: [string, string, number][] } }
+/** A LEVEL_DIGS message: a level's first step (`again`: replacing its Artifact), or one part of a big level's swarm (swarm.ts). */
+export interface DigMessage { dig: string; user: string | null; again?: boolean; part?: { sha: string; n: number; files: [string, string, number][] } }
 
 export interface R2Like {
   put(key: string, value: Blob | Uint8Array): Promise<unknown>;

@@ -8,7 +8,7 @@ import { listDir, readText } from "./archive.ts";
 import { chunkRepo, importChunks } from "./chunks.ts";
 import { code, json, NAME, type ArtifactsRepo, type DigMessage, type Env } from "./env.ts";
 import { githubHead, githubTarball, githubToken, importRepo, submodules } from "./github.ts";
-import { tooBigToImport } from "./tarball.ts";
+import { tooBigToImport, whenFree } from "./tarball.ts";
 import { digPart, Later, planSwarm, progress } from "./swarm.ts";
 
 export interface Level { n: number; slug: string; title: string; repo: string; branch: string; blurb: string }
@@ -99,14 +99,18 @@ async function failed(env: Env, slug: string, e: unknown) {
  * import cap), else, too big for Artifacts at all, into R2: by the swarm when
  * there's a queue for it, else from the tarball in this one Worker. A retry
  * (`attempt` > 1) whose first try never finished, a big level that ran out of
- * time or memory pushing to git, goes straight to R2.
+ * time or memory pushing to git, goes straight to R2. `again` digs a level
+ * already in Artifacts afresh: its old repo goes first (#368).
  */
-async function dig(env: Env, level: Level, user: string | null, attempt: number) {
+async function dig(env: Env, level: Level, user: string | null, attempt: number, again = false) {
   const slug = level.slug, token = (await githubToken(env, user))?.token;
   if (attempt <= 1 || !env.LEVEL_CHUNKS) {
     try {
-      await importRepo(env, { repo: level.repo, branch: level.branch, token },
+      const go = () => importRepo(env, { repo: level.repo, branch: level.branch, token },
         { name: artifactName(slug), opts: { readOnly: true, description: `${level.title} (${level.repo}), a codeSplitters level` } });
+      // A deleted repo frees its name a few seconds later, so wait for it.
+      if (again && attempt <= 1) { await env.ARTIFACTS!.delete?.(artifactName(slug)).catch(() => false); await whenFree(go); }
+      else await go();
     } catch (e) {
       if (!(tooBig(e) && env.LEVEL_CHUNKS) && code(e) !== "ALREADY_EXISTS") throw e;
       if (code(e) === "ALREADY_EXISTS") return importing(env, slug);
@@ -148,7 +152,7 @@ export async function runDigs(batch: { messages: readonly { body: DigMessage; at
     try {
       if (m.body.part) {
         if (env.LEVEL_CHUNKS) await digPart(env, env.LEVEL_CHUNKS, level.slug, level.repo, m.body.part);
-      } else await dig(env, level, m.body.user, m.attempts);
+      } else await dig(env, level, m.body.user, m.attempts, m.body.again);
       m.ack();
     } catch (e) {
       // Only GitHub turning us away for now is worth waiting out; anything else is the answer.
@@ -167,18 +171,21 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
   const level = LEVELS.find((l) => l.slug === slug);
   if (!level) return json({ error: "no such level" }, 404);
 
-  // POST /api/levels/:slug/import  (admins): a shallow, read-only copy of the default branch
+  // POST /api/levels/:slug/import  (admins): a shallow, read-only copy of the default branch.
+  // Again on a level already in Artifacts, it replaces that repo: a fresh dig, with a fresh HEAD.
   if (p[3] === "import" && req.method === "POST") {
     if (!admin) return json({ error: "admins only" }, 403);
     if (!env.ARTIFACTS) return json({ error: "no Artifacts binding" }, 501);
+    const was = await env.DB.prepare("SELECT status, store FROM levels WHERE slug = ?").bind(slug).first();
+    const again = was?.status === "ready" && was.store !== "r2";
     // With a queue, the dig runs off it, so it carries on when the page that asked goes away.
     if (env.LEVEL_DIGS) {
       await env.DB.prepare("INSERT INTO levels (slug, status, store, imported_at) VALUES (?, 'importing', 'queued', ?) ON CONFLICT(slug) DO UPDATE SET status = 'importing', store = 'queued', error = NULL, parts = NULL")
         .bind(slug, Date.now()).run();
-      await env.LEVEL_DIGS.send({ dig: slug, user });
+      await env.LEVEL_DIGS.send({ dig: slug, user, ...(again ? { again } : {}) });
       return json({ slug, status: "importing" }, 202);
     }
-    try { return json(await dig(env, level, user, 1)); }
+    try { return json(await dig(env, level, user, 1, again)); }
     catch (e) { return json({ error: await failed(env, slug, e) }, 502); }
   }
 
