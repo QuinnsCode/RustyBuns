@@ -12,7 +12,7 @@
 //
 //   GET  /api/agents                                     which harnesses this machine can run
 //   POST /api/repos/:o/:r/agents {path, harness, task, model?}  start one; answers at once
-//   GET  /api/repos/:o/:r/agents?path=                   this file's runs, newest first
+//   GET  /api/repos/:o/:r/agents?path=                   this file's runs, newest first (owner only)
 
 import { json, type Env } from "./env.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
@@ -63,6 +63,9 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!(await canRead(owner, repo))) return json({ error: "not found" }, 404);
 
   if (req.method === "GET") {
+    // A run's task and output can quote the repo's code and the agent's chatter,
+    // so only the owner, who started them, sees them.
+    if (user !== owner) return json({ error: "only the repo's owner can see its coding agents" }, 403);
     const path = url.searchParams.get("path");
     return json(runs.filter((r) => r.owner === owner && r.repo === repo && (!path || r.path === path)).reverse());
   }
