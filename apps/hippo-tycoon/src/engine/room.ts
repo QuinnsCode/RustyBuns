@@ -42,6 +42,8 @@ const STORE_KEY = "room";
 export const MSG_RATE = 60, MSG_BURST = 120;
 /** Watchers beyond the four seats; past this a hello is refused as full. */
 export const MAX_WATCHERS = 8;
+/** Sockets a room holds from different players: past this an upgrade is refused before it is accepted. */
+export const MAX_SOCKETS = SEATS + MAX_WATCHERS;
 export const WATCHDOG_MS = 10_000;
 /** A running loop that has not woken for this long is dead. */
 export const STALL_MS = 2_000;
@@ -99,9 +101,19 @@ export class Room {
     if (this.match.humans() > 0) this.run();
   }
 
+  /** Room for one more socket from `uid`? Every seat and the gallery, and a spare for each player's own reconnect. */
+  admits(uid: string) {
+    return this.ctx.getWebSockets().filter((ws) => attach(ws)?.uid !== uid).length < MAX_SOCKETS;
+  }
+
   /** The shell accepted `ws` with this vouched identity. The seat is taken at `hello`. */
   onConnect(ws: EngineSocket, uid: string, name: string, room = "") {
     this.roomName = room || this.roomName;
+    // a uid's sockets that never said hello are stale tries: only the newest may wait for one
+    for (const other of this.ctx.getWebSockets()) {
+      const o = other !== ws && attach(other);
+      if (o && o.uid === uid && !o.hello) { other.serializeAttachment({ ...o, gone: true }); other.close(CLOSE_REPLACED, "replaced"); }
+    }
     ws.serializeAttachment({ uid, name, hello: false, k: 1 } satisfies Attachment);
   }
 
@@ -280,7 +292,7 @@ export class Room {
     const frame = { t: "room" as const, seq: ++this.seq, ph: m.phase, seats, secs: m.cfg.secs, diff: m.cfg.difficulty, bd: [...m.cfg.bots], host: m.hostSeat(), sp: this.watchers() };
     for (const ws of this.ctx.getWebSockets()) {
       const a = attach(ws);
-      this.send(ws, { ...frame, you: a?.hello ? this.seatsOf(a) : [] });
+      if (a?.hello) this.send(ws, { ...frame, you: this.seatsOf(a) });
     }
   }
 
@@ -291,6 +303,6 @@ export class Room {
   private send(ws: EngineSocket, m: ServerMsg) { try { ws.send(JSON.stringify(m)); } catch { /* a closing socket */ } }
   private broadcast(m: ServerMsg) {
     const s = JSON.stringify(m);
-    for (const ws of this.ctx.getWebSockets()) try { ws.send(s); } catch { /* a closing socket */ }
+    for (const ws of this.ctx.getWebSockets()) if (attach(ws)?.hello) try { ws.send(s); } catch { /* a closing socket */ }
   }
 }

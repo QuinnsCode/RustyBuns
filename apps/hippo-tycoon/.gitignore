@@ -6,3 +6,4 @@ dist
 .alchemy
 rust/target
 public/hippo_fluid.wasm
+public/hippo_sim.wasm

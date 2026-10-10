@@ -13,7 +13,7 @@ export function resolveGulps(s: State, out: Event[]) {
   for (const d of s.drops) {
     let best: (typeof live)[number] | null = null, bestD = Infinity;
     for (const j of live) {
-      const d2 = (d.x - j.x) ** 2 + (d.y - j.y) ** 2;
+      const dx = d.x - j.x, dy = d.y - j.y, d2 = dx * dx + dy * dy;
       if (d2 <= SCOOP_R * SCOOP_R && d2 < bestD) { best = j; bestD = d2; }
     }
     if (!best) continue;

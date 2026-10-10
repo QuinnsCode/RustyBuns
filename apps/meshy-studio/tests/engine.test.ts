@@ -121,9 +121,13 @@ test("workspace: drop, send, poll, download, fit; ledger first, folders kept", a
 
   // A reopened workspace remembers everything.
   const again = new Workspace(dir, () => "msy_test");
-  await again.open();
+  await again.open({ trustSync: (sy) => sy.dir === unity });
   expect(again.get("forest/flora_oak_h12.png").state).toBe("done");
   expect(again.sync?.engine).toBe("unity");
+  // A folder this computer never confirmed waits.
+  const shared = new Workspace(dir, () => "msy_test");
+  await shared.open();
+  expect([shared.sync, shared.pendingSync?.dir]).toEqual([null, unity]);
 });
 
 test("workspace: Meshy failure, retry, 402 pauses, cancel while pending, move between folders", async () => {
@@ -238,7 +242,7 @@ test("preset checks catch what Meshy would reject", () => {
   expect(checkPreset(base)).toEqual([]);
   expect(checkPreset({ ...base, options: { ai_model: "meshy-6-lite", texture_resolution: "8k" } })).toEqual(["meshy-6-lite textures at 2k only."]);
   expect(checkPreset({ ...base, options: { model_type: "smart-topology", target_polycount: 20000 } })[0]).toContain("15,000");
-  expect(checkPreset({ ...base, options: { ai_model: "meshy-6", geometry_resolution: "4k" } })[0]).toContain("meshy-7.1");
+  expect(checkPreset({ ...base, options: { ai_model: "meshy-6", geometry_resolution: "4k" } })[0]).toContain("only applies to meshy-7.1");
   expect(checkPreset({ ...base, size: { height: 0 } })).toEqual(["Height must be above 0 m."]);
 });
 
@@ -265,22 +269,22 @@ test("draft first, texture later: 5 credits now, Retexture on the keeper", async
   // Texture only the keeper.
   expect(ws.estimateTexture(["flora_fern_h2.png"]).credits).toBe(10);
   await ws.textureModels(["flora_fern_h2.png"]);
-  expect(fern.texture?.state).toBe("queued");
+  expect([fern.ops?.at(-1)?.kind, fern.ops?.at(-1)?.state]).toEqual(["retexture", "queued"]);
   for (let i = 0; i < 4; i++) await ws.tick();
   const rt = fake.retextured.at(-1);
   expect([rt.input_task_id, rt.image_style_url.startsWith("data:image/png;base64,"), rt.enable_pbr, rt.enable_original_uv]).toEqual([fern.taskId, true, true, true]);
-  expect([fern.textured, fern.texture?.state, fern.texture?.credits]).toEqual([true, "done", 10]);
+  expect([fern.textured, fern.ops?.at(-1)?.state, fern.ops?.at(-1)?.credits]).toEqual([true, "done", 10]);
   expect(existsSync(join(dir, RAW, "flora_fern.textures", "base_color.png"))).toBe(true);
   const r = await bounds(await Bun.file(join(dir, READY, "flora_fern.glb")).bytes());
   expect(r.max[1] - r.min[1]).toBeCloseTo(2);
-  expect(ws.get("flora_moss_h2.png").texture).toBeUndefined();
+  expect(ws.get("flora_moss_h2.png").ops).toBeUndefined();
   expect(ws.summary().spent).toBe(15 + 15 + 10);
   expect(ws.canTexture(fern)).toBe(false);
 
   // Unqueue a texture before it goes.
   await ws.textureModels(["flora_moss_h2.png"]);
   await ws.cancel("flora_moss_h2.png");
-  expect(ws.get("flora_moss_h2.png").texture).toBeUndefined();
+  expect(ws.get("flora_moss_h2.png").ops).toEqual([]);
 });
 
 test("presets: the editor's rules", async () => {
@@ -296,4 +300,39 @@ test("presets: the editor's rules", async () => {
   await ws.setPresets(ws.presets.filter((p) => p.prefix !== "item_"));
   expect(ws.get("item_gem.png").prefix).toBe("");
   expect((await Bun.file(join(ws.dir, "meshy-presets.json")).json()).some((p: Preset) => p.prefix === "item_")).toBe(false);
+});
+
+test("a shared workspace's ledger and edits can't reach outside it", async () => {
+  const dir = join(root, "shared");
+  const victim = join(root, "victim.txt");
+  writeFileSync(victim, "keep me");
+  mkdirSync(join(dir, READY), { recursive: true });
+  const row = (key: string, extra: object) => ({
+    key, folder: "", file: key, where: "inbox", source: "image", prefix: "", outName: "x", size: { height: 1 }, origin: "bottom",
+    state: "done", progress: 100, estimate: 0, createdAt: 0, updatedAt: 0, ...extra,
+  });
+  writeFileSync(join(dir, "meshy-jobs.json"), JSON.stringify({ version: 2, jobs: {
+    "ok.png": row("ok.png", { raw: "ok.glb", ready: "ok.glb" }),
+    "bad.png": row("bad.png", { raw: "bad.glb", ready: "../../victim.txt" }),
+    "../up.png": row("../up.png", {}),
+    "abs.png": row("abs.png", { folder: "/etc" }),
+    "ops.png": row("ops.png", { ops: [{ id: "a/../../b", files: [] }] }),
+  }, concepts: [{ id: "c1", folder: "..", name: "x", files: [] }] }));
+  writeFileSync(join(dir, "meshy-studio.json"), JSON.stringify({ sync: { dir: root, engine: "unity" } }));
+  const ws = new Workspace(dir, () => "msy_test");
+  await ws.open();
+  expect([...ws.jobs.keys()]).toEqual(["ok.png"]);
+  expect(ws.concepts).toEqual([]);
+  expect(ws.sync).toBeNull();
+  expect(ws.pendingSync?.dir).toBe(root);
+
+  // Edits take only the card's own fields.
+  writeFileSync(join(dir, INBOX, "item_new.png"), PNG);
+  await ws.scan();
+  await ws.edit("item_new.png", { ready: "../../victim.txt", folder: "..", state: "done", outName: "fine" } as any);
+  const j = ws.get("item_new.png");
+  expect([j.ready, j.folder, j.state, j.outName]).toEqual([undefined, "", "new", "fine"]);
+  await expect(ws.edit("item_new.png", { size: { height: -1 } })).rejects.toThrow("size");
+  await expect(ws.edit("item_new.png", { origin: "side" as any })).rejects.toThrow("origin");
+  expect(await Bun.file(victim).text()).toBe("keep me");
 });

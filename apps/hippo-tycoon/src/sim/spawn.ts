@@ -3,6 +3,7 @@ import {
   BURST_EXTRA, BURST_GAP, GOLD, MAX_DROPS, OVERFLOW_FACTOR, OVERFLOW_TICKS, SPAWN_END, SPAWN_START,
   SPEED, TICK_HZ, WEIGHTS, WEIGHTS_OVERFLOW,
 } from "./rules.ts";
+import { cosSin } from "./trig.ts";
 import type { Event, State } from "./types.ts";
 
 export const inOverflow = (s: State) => s.tick >= s.roundTicks - OVERFLOW_TICKS;
@@ -15,10 +16,10 @@ export function spawnInterval(s: State): number {
 }
 
 function drip(s: State, kind: number, out: Event[]) {
-  const ang = next(s) * Math.PI * 2;
+  const [c, sn] = cosSin(next(s) * Math.PI * 2);
   const [lo, hi] = SPEED[kind]!;
   const v = between(s, lo, hi) / TICK_HZ;
-  s.drops.push({ id: s.nextId++, kind, x: Math.cos(ang) * 0.3, y: Math.sin(ang) * 0.3, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, age: 0 });
+  s.drops.push({ id: s.nextId++, kind, x: c * 0.3, y: sn * 0.3, vx: c * v, vy: sn * v, age: 0 });
   out.push({ t: "spawn", kind });
 }
 

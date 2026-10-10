@@ -112,7 +112,7 @@ Current limits on the box:
 - **Plain HTTP on the port.** No TLS or domain yet. Put Cloudflare in front, or wait for the load balancer and certificate support on the roadmap.
 - **A box plays like the edge, not like the desktop.** There's no local player: each WebSocket at `worldPath` is a guest with its own id (`?uid=&name=` when the client sends them, trust on first use as on the LAN, otherwise a fresh id per connection), and `?room=CODE` picks that room's world, as the edge Worker routes it (codes are 1-32 of `[A-Za-z0-9_-]`, at most 200 rooms per box; no `room` is one shared world). `/__rb/info` and `POST /__rb/host` answer 404, so pages take their online path, and nobody on the internet can close the world or rebind the server. There's no real login: put the box behind your own auth if identity matters.
 - **`/health` says where data lives.** Its `X-RB-Data` header is `volume` when the data dir is its own filesystem (an attached Volume) and `container` when a redeploy would throw it away. `X-RB-Boots` counts the starts recorded in the data dir, so it only grows across a redeploy when the data survived it.
-- **Secrets are plaintext at rest.** They go into `/opt/<unit>/env` on the server and into Alchemy's local state in `.alchemy/`. Don't keep `HCLOUD_TOKEN` in `.dev.vars`, or `init` will treat it as an app secret.
+- **Secrets are plaintext at rest.** They go into `/opt/<unit>/env` on the server and into Alchemy's local state (`.alchemy/state`, see `state` under Config). Don't keep `HCLOUD_TOKEN` in `.dev.vars`, or `init` will treat it as an app secret.
 - **Rust crates build in Docker off Linux.** cdylibs don't cross-compile, so when `native/` has crates and the box's arch isn't this machine, `build box` builds them in `rust:<your rustc>-slim-bookworm` for `linux/amd64` (or `linux/arm64` on `cax`) into `native/dist/<crate>/linux-<arch>/` and embeds them as usual. Bookworm's glibc (2.36) is older than Ubuntu 24.04's (2.39), so the library loads on the server. Start Docker first; without it the build says so. On Linux of the same arch, nothing changes. The same goes for `build desktop` with Linux targets. Other cross targets (macOS, Windows) are refused only when a crate would be embedded: one named in `desktop.native`, or one already built into `native/dist`. A `native/` whose crates only build to wasm cross-compiles like pure TS; set `desktop.native: false` to keep it out of the binary (and the box image) altogether.
 
 ## Deploy to Railway
@@ -172,7 +172,7 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 | `dev` | `alchemy dev`: workerd and local simulators for the edge |
 | `eject` | copy `alchemy.run.ts` to the project root; from then on you own it |
 
-`--profile <name>` and `--stage <name>` pass through to Alchemy. `RB_NO_BROWSER=1` prints the desktop URL instead of opening a browser.
+`--profile <name>` and `--stage <name>` pass through to Alchemy. `RB_NO_BROWSER=1` prints the desktop token URL instead of opening a browser.
 
 ## Config
 
@@ -212,10 +212,15 @@ export default defineConfig({
 |---|---|
 | `source` | `dir`, `aliases`, `ignore` (inferred from tsconfig paths) |
 | `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `var`, `secret` (+ `op`) |
+| `state` | `shared` (default) \| `project`, see below |
 | `experimental` | `wheel` (`agent` \| `human`), see below |
-| `targets.edge` | `provider: "cloudflare"`, `domain` |
+| `targets.edge` | `provider: "cloudflare"`, `domain`, `adopt` |
 | `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize` |
 | `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world` (or `false`), `worldPath`, `identity`, `listen` (`hostname`, `port`), `guests` (`join`, `max`, `version`), `host`, `headers`, `native`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define` |
+
+**`targets.edge.adopt`** names the Worker, D1 databases and R2 buckets exactly as the config does (`name`, `databaseName`, `bucketName`) and takes over ones that already exist under those names, instead of making new ones beside them. Turn it on for an app first deployed with wrangler, or one whose Alchemy state was lost. Without it Alchemy picks its own `<app>-<id>-<stage>-<random>` names. Leave it off for a stack Alchemy already deployed: its names would change, so those resources would be replaced. On a fresh state, `plan` lists the Worker as a create even with `adopt`, because its bindings aren't known until deploy. It is still uploaded under the config's name, over the existing Worker.
+
+**`state`** is where Alchemy keeps what it deployed. `"shared"` (the default) makes `.alchemy/state` a symlink to `<repo>/.git/rustybuns/alchemy/<app path>/state`, so the main checkout and every git worktree of the repo share one state per app, and removing a worktree doesn't lose it. A state dir already in the app moves there on the next `plan`, `deploy`, `destroy` or `dev`, unless the shared one has state too, in which case it stops and asks you to keep one. Only one of those commands runs against the shared state at a time; a second one stops with the pid and directory of the first. Two worktrees on different branches still deploy to the same stage, one after the other. `"project"` keeps the state in the app's own `.alchemy/state`, as before. Outside git it always stays there.
 
 Three desktop keys are for apps that aren't Workers apps at all, like [tscircuit-desktop](apps/tscircuit-desktop/README.md):
 
@@ -258,11 +263,11 @@ At plan and deploy time, varlock resolves the schema and the values reach Alchem
 
 What it doesn't do: once a value is fetched, the command that receives it can read it. A process you run with secrets can print them. The wheel decides who can *fetch* a secret, and vault scoping limits the damage; neither one sandboxes what happens after.
 
-Two limits. Minted secrets live in Alchemy's state in `.alchemy/`, in plain text, like every other Alchemy output; a CI runner that throws its state away gets fresh ones next time. And minting doesn't work on a Hetzner box yet, because its env file can't take a generated value, so give those secrets an `op` reference or use Railway.
+Two limits. Minted secrets live in Alchemy's state (see `state` above), in plain text, like every other Alchemy output; a CI runner that throws its state away gets fresh ones next time. And minting doesn't work on a Hetzner box yet, because its env file can't take a generated value, so give those secrets an `op` reference or use Railway.
 
 ## The host
 
-The desktop host listens on `127.0.0.1` on a random port by default (`listen` in the config, `--listen host:port` or `RB_LISTEN` at launch), and every request needs the per-launch token. It sets COOP/COEP so `SharedArrayBuffer` works. `/__rb/info` shows runtime info, and `/__rb/action` runs your `"use server"` functions against sqlite. `cloudflare:workers` and `rwsdk/worker` are shimmed. D1 migrations apply at boot and are tracked in `d1_migrations`. `RB_VERSION` is `<package version>+<git sha>`. Data lives in `~/.<app-name>/`.
+The desktop host listens on `127.0.0.1` on a random port by default (`listen` in the config, `--listen host:port` or `RB_LISTEN` at launch), and every request needs the per-launch token. The browser it opens gets a one-time launch code (`?rb_launch=`, good for one use within 60 seconds) rather than the token, so the token stays out of the terminal log and `ps`; it is printed only with `RB_NO_BROWSER=1` or when no browser could be started. It sets COOP/COEP so `SharedArrayBuffer` works. `/__rb/info` shows runtime info, and `/__rb/action` runs your `"use server"` functions against sqlite. `cloudflare:workers` and `rwsdk/worker` are shimmed. D1 migrations apply at boot and are tracked in `d1_migrations`. `RB_VERSION` is `<package version>+<git sha>`. Data lives in `~/.<app-name>/`.
 
 The box host is the same program, minus the token and the browser.
 

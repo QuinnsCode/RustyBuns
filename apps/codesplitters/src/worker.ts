@@ -10,21 +10,28 @@ import { levelRoutes } from "./levels.ts";
 import { githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
+import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
+import { agentRoutes } from "./agent-routes.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
+export { AgentSandbox } from "./sandbox.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
-  const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  // A visitor's dig that has expired is gone, swept or not.
+  const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ? AND (expires_at IS NULL OR expires_at > ?)").bind(owner, repo, Date.now()).first();
   if (!r) return { read: false, write: false, exists: false };
   const collab = user ? await env.DB.prepare("SELECT 1 FROM collaborators WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, user).first() : null;
   const write = user === owner || !!collab;
   return { read: r.visibility === "public" || write, write, exists: true };
 }
 
+// What a page or agent may ask a file's DO directly; forks and merges go through the branch routes.
+const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws"]);
+
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
 const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
 
-export default {
+const app = {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -43,6 +50,8 @@ export default {
     if (game) return game;
     const share = await shareRoutes(req, env, p, user);
     if (share) return share;
+    const agents = await agentRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read, (r) => app.fetch(r, env));
+    if (agents) return agents;
 
     // GET|PUT /api/me
     if (p[1] === "me") {
@@ -59,7 +68,7 @@ export default {
       const u = await env.DB.prepare("SELECT name, bio, theme_html FROM users WHERE name = ?").bind(p[2]).first();
       if (!u) return json({ error: "no such user" }, 404);
       const { results: repos } = await env.DB.prepare(
-        "SELECT owner, name, visibility, level, created_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) ORDER BY created_at DESC").bind(p[2], user).all();
+        "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
       const { results: playlists } = await env.DB.prepare("SELECT * FROM playlists WHERE owner = ? ORDER BY id DESC").bind(p[2]).all();
       return json({ user: u, repos, playlists });
     }
@@ -87,7 +96,7 @@ export default {
 
       // GET /api/repos/:o/:r
       if (!p[4] && req.method === "GET") {
-        const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, created_at FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+        const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, created_at, expires_at FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
         // Anyone who can read the repo can clone its artifact, with an hour-long read token.
         const h = await handleFor(env, owner, repo).catch(() => null);
@@ -137,6 +146,8 @@ export default {
         }
         return json({ commit, entries });
       }
+      const branches = await branchRoutes(req, env, p, owner, repo, user, a);
+      if (branches) return branches;
       // POST /api/repos/:o/:r/collaborators {name}  (owner only; this is how agents get in)
       if (p[4] === "collaborators" && req.method === "POST") {
         if (user !== owner) return json({ error: "owner only" }, 403);
@@ -146,20 +157,27 @@ export default {
         await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
         return json({ ok: true });
       }
-      // POST /api/repos/:o/:r/files {path, content}
+      // POST /api/repos/:o/:r/files {path, content, branch?}
       if (p[4] === "files" && req.method === "POST") {
         if (!a.write) return json({ error: "no write access" }, 403);
-        const { path, content = "" } = await body<{ path: string; content?: string }>();
+        const { path, content = "", branch } = await body<{ path: string; content?: string; branch?: string }>();
         if (!path || path.length > 200 || path.includes("..") || path.startsWith("/")) return json({ error: "bad path" }, 400);
+        if (branch) {
+          if (!(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
+          return createOn(env, owner, repo, branch, path, content, user!);
+        }
         const r = await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, path).run();
         if (!r.meta?.changes) return json({ error: "file exists" }, 409);
         await toFile(env, owner, repo, path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: fromText(content) }) });
         return json({ path }, 201);
       }
-      // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws)?path=...  -> the file's DO
-      if (p[4] === "do" && p[5]) {
-        const path = url.searchParams.get("path") ?? "";
-        const m = await materialize(env, owner, repo, path);
+      // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws)?path=...&branch=...  -> the file's DO, or its copy on a branch
+      if (p[4] === "do" && DO_ROUTES.has(p[5] ?? "")) {
+        const path = url.searchParams.get("path") ?? "", branch = url.searchParams.get("branch") || undefined;
+        if (branch && !(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
+        // A branch catalogues when it merges into main, not before.
+        if (branch && p[5] === "commit") return json({ error: "merge the branch, then commit main" }, 400);
+        const m = branch ? await materializeOn(env, owner, repo, branch, path) : await materialize(env, owner, repo, path);
         if ("error" in m) return json({ error: m.error }, m.status);
         const writes = p[5] === "ops" || p[5] === "commit";
         if (writes && !a.write) return json({ error: "no write access" }, 403);
@@ -168,10 +186,10 @@ export default {
           const h = new Headers(req.headers);
           h.set("x-codesplitters-user", user ?? "anon");
           h.set("x-codesplitters-write", a.write ? "1" : "0");
-          return fileStub(env, owner, repo, path).fetch(new Request(req.url, { headers: h }));
+          return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
         }
-        const res = await toFile(env, owner, repo, path, user ?? "anon", p[5], { method: req.method, body: writes ? await req.text() : undefined },
-          url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "");
+        const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: writes ? await req.text() : undefined },
+          url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "", branch);
         if (p[5] === "commit" && res.ok) {
           // Index what was committed, not every keystroke.
           const { commit, content } = (await res.json()) as { commit: { message: string }; content: string };
@@ -194,9 +212,9 @@ export default {
       const { results } = await env.DB.prepare(`
         SELECT s.owner, s.repo, s.path, snippet(file_search, 3, '«', '»', '…', 16) AS snippet
         FROM file_search s JOIN repos r ON r.owner = s.owner AND r.name = s.repo
-        WHERE file_search MATCH ? AND (r.visibility = 'public' OR r.owner = ?
+        WHERE file_search MATCH ? AND (r.expires_at IS NULL OR r.expires_at > ?) AND (r.visibility = 'public' OR r.owner = ?
           OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))
-        ORDER BY rank LIMIT 20`).bind(q, user, user).all();
+        ORDER BY rank LIMIT 20`).bind(q, Date.now(), user, user).all();
       return json(results);
     }
 
@@ -244,3 +262,5 @@ export default {
     return json({ error: "not found" }, 404);
   },
 };
+
+export default app;

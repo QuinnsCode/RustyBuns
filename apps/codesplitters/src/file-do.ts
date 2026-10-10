@@ -7,8 +7,9 @@
 //   doc            the current lines
 //   op:<rev>       one applied op per key (the log)
 //   commit:<n>     a snapshot: sha, parent, rev, message
+//   base           on a branch's copy of a file: main's doc when it forked
 
-import { apply, empty, replay, sha, text, type Applied, type Doc, type Op } from "./lines.ts";
+import { apply, empty, merge, replay, sha, text, type Applied, type Doc, type Op } from "./lines.ts";
 
 interface Commit { n: number; sha: string; parent: string | null; rev: number; by: string; at: number; message: string }
 
@@ -19,6 +20,7 @@ const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { sta
 
 export class FileDurableObject {
   doc: Doc = empty();
+  base: Doc | null = null;
   commits = 0;
   queue: Promise<unknown> = Promise.resolve();
 
@@ -26,6 +28,7 @@ export class FileDurableObject {
     ctx.blockConcurrencyWhile(async () => {
       this.doc = (await ctx.storage.get("doc")) ?? empty();
       this.commits = (await ctx.storage.get("commits")) ?? 0;
+      this.base = (await ctx.storage.get("base")) ?? null;
     });
   }
 
@@ -50,7 +53,33 @@ export class FileDurableObject {
       return r.ok ? json({ rev: r.rev, applied: r.applied }) : json({ rev: r.rev, conflicts: r.conflicts }, 409);
     }
     if (req.method === "GET" && route === "log") return json(await this.log(Number(url.searchParams.get("since") ?? 0)));
-    if (req.method === "GET" && route === "at") return json(replay(await this.log(0), Number(url.searchParams.get("rev"))));
+    if (req.method === "GET" && route === "at") return json(replay(await this.log(0), Number(url.searchParams.get("rev")), this.base ?? empty()));
+    if (req.method === "GET" && route === "base") return json(this.base);
+    if (req.method === "POST" && route === "wipe") {
+      // Its repo was evicted: forget everything.
+      const all: Map<string, unknown> = await this.ctx.storage.list();
+      await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
+      [this.doc, this.base, this.commits] = [empty(), null, 0];
+      return json({ ok: true });
+    }
+    if (req.method === "POST" && route === "fork") {
+      // A branch's copy starts as main's doc, ids and revs and all, once.
+      const { doc } = (await req.json()) as { doc: Doc };
+      if (!this.base && !this.doc.rev) {
+        this.base = doc; this.doc = structuredClone(doc);
+        await Promise.all([this.ctx.storage.put("base", doc), this.ctx.storage.put("doc", this.doc)]);
+      }
+      return json(this.doc);
+    }
+    if (req.method === "POST" && route === "merge") {
+      // Main's copy merges a branch into itself: computed and applied with no
+      // await between, so nothing lands in the middle and the ids line up.
+      const { base, branch, resolve, dry, deleter } = (await req.json()) as { base: Doc; branch: Doc; resolve?: Record<string, "branch" | "main">; dry?: boolean; deleter?: string };
+      const m = merge(base, branch, this.doc, resolve, deleter);
+      if (m.conflicts.length || dry || !m.ops.length) return json({ rev: this.doc.rev, ops: m.ops, conflicts: m.conflicts }, m.conflicts.length && !dry ? 409 : 200);
+      const r = await this.edit(m.by, m.ops);
+      return r.ok ? json({ rev: r.rev, ops: m.ops, applied: r.applied, conflicts: [] }) : json({ rev: r.rev, conflicts: r.conflicts }, 409);
+    }
     if (req.method === "POST" && route === "commit") {
       const { message } = (await req.json()) as { message?: string };
       // Commits hash their parent, so they run one at a time.
@@ -85,7 +114,7 @@ export class FileDurableObject {
    * interleave; then persisted, then broadcast as the exact applied ops, so
    * every open page updates in place without refetching.
    */
-  async edit(by: string, ops: Op[], ifRev?: number) {
+  async edit(by: string | string[], ops: Op[], ifRev?: number) {
     const r = apply(this.doc, ops, by, Date.now(), ifRev);
     if (!r.ok) return { ok: false as const, rev: this.doc.rev, conflicts: r.conflicts };
     const doc = structuredClone(this.doc);

@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalArtifacts, gitHttp } from "../src/bindings/artifacts.ts";
@@ -70,6 +70,11 @@ test("log, readCommit, readTree and readBlob have Cloudflare's shapes", async ()
   expect(await (await repo.readBlob(src[0]!.hash))!.text()).toBe("export {}\n");
   await expect(repo.readTree("nope")).rejects.toThrow("INVALID_INPUT");
   expect(await repo.readFile({ ref: "main", path: "src" })).toBeNull();      // a folder is not a file
+  // A ref is never a git option: `--output` would write a file.
+  const out = join(dir, "injected.txt");
+  expect(await repo.log({ ref: `--output=${out}` })).toEqual([]);
+  expect(existsSync(out)).toBe(false);
+  expect(await repo.readFile({ ref: "--batch", path: "a.txt" })).toBeNull();
 });
 
 test("import is shallow and in progress until it lands; forks are writable copies", async () => {

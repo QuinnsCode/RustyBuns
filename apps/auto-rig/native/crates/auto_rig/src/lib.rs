@@ -428,6 +428,9 @@ pub fn analyze(pos: &[f32], idx: &[u32], o: Options) -> Result<Rig, &'static str
     if pos.len() < 9 || idx.len() < 3 { return Err("mesh has no triangles"); }
     let nv = pos.len() / 3;
     if idx.iter().any(|&i| i as usize >= nv) { return Err("index out of range"); }
+    // NaN or ±Inf clamps onto the grid's border in Grid::cell, where the 26
+    // neighbour offsets run off the ends of the voxel arrays and panic.
+    if pos.iter().any(|x| !x.is_finite()) { return Err("vertex position is not finite"); }
 
     let t0 = Instant::now();
     let g = make_grid(pos, &o);
@@ -565,4 +568,51 @@ pub unsafe extern "C" fn rig_info(r: *const Rig, out: *mut f64) {
 #[no_mangle]
 pub unsafe extern "C" fn rig_free(r: *mut Rig) {
     if !r.is_null() { drop(Box::from_raw(r)); }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opts() -> Options { Options::from_slice(&[48.0, 1.0, 24.0, 0.12, 4.0, 1.0]) }
+
+    /// A closed cube, 8 corners and 12 triangles, scaled by `s`.
+    fn cube(s: f32) -> (Vec<f32>, Vec<u32>) {
+        let mut pos = vec![];
+        for i in 0..8 { pos.extend([(i & 1) as f32 * s, ((i >> 1) & 1) as f32 * s, ((i >> 2) & 1) as f32 * s]); }
+        let idx = vec![0, 2, 1, 1, 2, 3, 4, 5, 6, 5, 7, 6, 0, 1, 4, 1, 5, 4, 2, 6, 3, 3, 6, 7, 0, 4, 2, 2, 4, 6, 1, 3, 5, 3, 7, 5];
+        (pos, idx)
+    }
+
+    #[test]
+    fn rigs_a_cube() {
+        let (pos, idx) = cube(1.0);
+        assert!(analyze(&pos, &idx, opts()).is_ok());
+    }
+
+    #[test]
+    fn rejects_an_index_past_the_vertices() {
+        let (pos, mut idx) = cube(1.0);
+        idx[5] = 8;
+        assert!(analyze(&pos, &idx, opts()).is_err());
+    }
+
+    #[test]
+    fn rejects_non_finite_positions() {
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            for v in [0, 7] {
+                for c in 0..3 {
+                    let (mut pos, idx) = cube(1.0);
+                    pos[v * 3 + c] = bad;
+                    assert!(analyze(&pos, &idx, opts()).is_err(), "{bad} at vertex {v} component {c}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rigs_a_mesh_at_the_edge_of_f32() {
+        let (pos, idx) = cube(f32::MAX);
+        assert!(analyze(&pos, &idx, opts()).is_ok());
+    }
 }

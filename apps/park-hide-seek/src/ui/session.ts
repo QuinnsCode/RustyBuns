@@ -76,7 +76,8 @@ export class NetSession implements Session {
     this.ws.onclose = (e) => {
       if (this.closed) return;
       // A refused upgrade gives the page no status code, so name the usual causes.
-      const error = this.seen ? "Lost the connection to the host."
+      const error = e.code === 4001 ? "You joined from somewhere else."
+        : this.seen ? "Lost the connection to the host."
         : kind === "online" ? "Couldn't reach that room. It may be full (8 players), or the server is busy; try again in a minute."
         : kind === "guest" ? "Couldn't join. Check the address and passphrase, that the host clicked Host a game, that you're on the same network, and that you both run the same build."
         : "Couldn't open the game world on this machine.";

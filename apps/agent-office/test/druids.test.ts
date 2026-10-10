@@ -63,24 +63,28 @@ test("every clip a race is given is in its model", async () => {
   }
 });
 
-test("desk colliders shrink to the Druid Panel over their pod, and the desk is still in reach", () => {
+test("desk colliders shrink to the Druid Panel lectern on each desk, and the desk is still in reach", () => {
   // a pod as the office lays it out: two back-to-back 2.2 x 1.1 m desks, and its collider for each (DESK_SIZE)
   const desk = (z: number) => ({ minX: -1.05, maxX: 1.05, minZ: z - 0.53, maxZ: z + 0.53, bottom: 0, top: DESK_TOP });
   const back = desk(-0.55), front = desk(0.55);
   const kiosk = { minX: -0.4, maxX: 0.4, minZ: -0.25, maxZ: 0.9, bottom: 0, top: 1.5, fence: true };
   const away = desk(10);
   const colliders = [back, front, kiosk, away];
-  const panel = { minX: -0.99, maxX: 0.99, minZ: -0.99, maxZ: 0.99 };
-  fitDesks(colliders, [panel], 1.4);
-  expect(back).toMatchObject({ minX: -0.99, maxX: 0.99, minZ: -0.99, top: 1.4 });
+  // a 1.2 m lectern on each desk, 5 cm back from its agent
+  const lectern = (z: number) => ({ minX: -0.6, maxX: 0.6, minZ: z - 0.6, maxZ: z + 0.6 });
+  const lecterns = [lectern(-0.5), lectern(0.5)];
+  fitDesks(colliders, lecterns, 1.4);
+  expect(back).toMatchObject({ minX: -0.6, maxX: 0.6, top: 1.4 });
+  expect(back.minZ).toBeCloseTo(-1.08);
   expect(back.maxZ).toBeCloseTo(-0.02);
-  expect(front).toMatchObject({ minX: -0.99, maxX: 0.99, maxZ: 0.99, top: 1.4 });
+  expect(front).toMatchObject({ minX: -0.6, maxX: 0.6, top: 1.4 });
   expect(front.minZ).toBeCloseTo(0.02);
+  expect(front.maxZ).toBeCloseTo(1.08);
   expect(kiosk.top).toBe(1.5);
   expect(away).toEqual(desk(10));
   // again, as the 2 s sweep does: nothing moves
-  fitDesks(colliders, [panel], 1.4);
-  expect(front.maxZ).toBe(0.99);
-  // the desk's interact zone (1.25 m out from the desk, 1.3 m round) reaches past the panel's edge
+  fitDesks(colliders, lecterns, 1.4);
+  expect(front.maxZ).toBeCloseTo(1.08);
+  // the desk's interact zone (1.25 m out from the desk, 1.3 m round) reaches past the collider's edge
   expect(0.55 + 1.25 - 1.3).toBeLessThan(front.maxZ + 0.32);
 });

@@ -177,3 +177,12 @@ test("serve bridge: an abnormal browser drop reaches webSocketClose with clean=f
   expect(closes).toContainEqual(["a", 1006, false]);
   await shell.stop();
 });
+
+test("idFromString only takes hex: the id becomes a sqlite file name", () => {
+  const NS = durableObject(Tagged, { log: [] as Tagged[] });
+  expect(() => NS.idFromString("x/../../pwned")).toThrow(TypeError);
+  expect(() => NS.idFromString("")).toThrow(TypeError);
+  const id = NS.newUniqueId();
+  expect(NS.idFromString(id.toString()).equals(id)).toBe(true);
+  expect(NS.idFromString("a".repeat(64)).toString()).toBe("a".repeat(64));
+});

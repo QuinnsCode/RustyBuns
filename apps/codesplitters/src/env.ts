@@ -19,6 +19,8 @@ export interface Artifacts {
   get(name: string): Promise<ArtifactsRepo>;
   /** Desktop only: true when import() can read a private source with `source.token`. */
   readonly privateImports?: boolean;
+  /** Deletes a repo for good. */
+  delete?(name: string): Promise<boolean>;
   import(params: { source: { url: string; branch?: string; depth?: number; token?: string }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }): Promise<{ name: string; remote: string; defaultBranch: string }>;
 }
 
@@ -27,6 +29,13 @@ export interface Env {
   FILES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One game room per level or repo: its lobby and multiplayer relay. */
   GAMES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** Containers that run hosted coding agents (Cloudflare only; the desktop runs the CLIs itself). */
+  AGENT_SANDBOX?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** Logins for the agent CLIs in the sandbox (see sandbox.ts). */
+  ANTHROPIC_API_KEY?: string;
+  CLAUDE_CODE_OAUTH_TOKEN?: string;
+  OPENAI_API_KEY?: string;
+  CODEX_API_KEY?: string;
   /** Cloudflare Artifacts (a bare-repo twin on the desktop). Optional: without it, nothing is pushed. */
   ARTIFACTS?: Artifacts;
   /** Handles allowed to import levels when accounts are on (comma separated). */
@@ -39,8 +48,12 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   /** A GitHub token for listing and digging up repos. Without it: the caller's GitHub sign-in, else `gh auth token`. */
   GITHUB_TOKEN?: string;
+  /** How many visitors' GitHub digs may be live at once (default 20); past it the oldest goes. */
+  DIG_CAP?: string;
   /** "off" stops the desktop asking the GitHub CLI for a token (the tests set it). */
   GH_CLI?: string;
+  /** Tests only: stands in for running a coding agent's CLI (see agent-run.ts). */
+  AGENT_EXEC?: unknown;
 }
 
 export const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>

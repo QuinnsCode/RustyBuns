@@ -17,6 +17,7 @@ import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { Profiler } from "./profile.ts";
+import { linkSharedState, lockState, unlinkSharedState } from "./state.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
@@ -230,7 +231,7 @@ async function generate(opts: { adopt: boolean }) {
     const lost = wranglerLosses();
     if (lost.length) throw new Error(`adopt would delete from wrangler.jsonc: ${lost.join(", ")}. Move those into the config first, or pass --force.`);
   }
-  const r = await writeIfChanged("wrangler.jsonc", generateWrangler(cfg), opts);
+  const r = await writeIfChanged("wrangler.jsonc", generateWrangler(cfg, existsSync("wrangler.jsonc") ? readFileSync("wrangler.jsonc", "utf8") : null), opts);
   if (r === "conflict") console.log("wrangler.jsonc is hand-written and differs; wrote wrangler.generated.jsonc. Diff it" + (wranglerLosses().length ? " (it lacks " + wranglerLosses().join(", ") + ", so adopt will refuse)." : ", then `rustybuns adopt`."));
   else console.log(`wrangler.jsonc ${r}`);
 }
@@ -334,6 +335,11 @@ async function alchemy(sub: string, rawArgs: string[]) {
   const { on: check, checker, rest: args } = checkFlags(rawArgs, profiled);
   const prof = new Profiler(sub);
   await prof.step("generate", () => generate({ adopt: false }));
+  if (cfg.state === "project") unlinkSharedState(process.cwd());
+  else {
+    const base = linkSharedState(process.cwd());
+    if (base) lockState(base, sub);
+  }
   // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
   if (profiled && cfg.targets.box) {
     console.log(`built ${await prof.step("build box", () => buildBox(cfg))}`);

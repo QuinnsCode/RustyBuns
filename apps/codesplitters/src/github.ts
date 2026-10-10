@@ -3,8 +3,13 @@
 // caller owns (local git on the desktop, Cloudflare Artifacts on the edge) and
 // GitHub never hears about the edits.
 
-import { accountsOn } from "./identity.ts";
+import { accountsOn, isAdmin } from "./identity.ts";
+import { fileStub } from "./archive.ts";
 import { json, NAME, type Env } from "./env.ts";
+
+/** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
+export const DIG_TTL = 24 * 3600_000;
+const digCap = (env: Env) => Math.max(1, Number(env.DIG_CAP) || 20);
 
 const API = "https://api.github.com";
 
@@ -38,10 +43,42 @@ const gh = (path: string, token?: string) => fetch(API + path, {
   headers: { accept: "application/vnd.github+json", "user-agent": "codesplitters", ...(token ? { authorization: `Bearer ${token}` } : {}) },
 });
 
-/** "owner/name", a github.com URL, or a git remote, as owner/name. */
+/**
+ * owner/name out of anything copied from GitHub: owner/name, a page URL (a
+ * file, a branch, a PR...), an https or ssh remote, a raw file URL, or a
+ * whole `git clone ...` or `gh repo clone ...` line.
+ */
 export function parseRepo(s: string): string | null {
-  const m = /^(?:https?:\/\/github\.com\/|git@github\.com:)?([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/.exec(s.trim());
-  return m ? `${m[1]}/${m[2]}` : null;
+  const words = s.trim().replace(/^(?:gh\s+repo\s+(?:clone|view|fork)|git\s+clone)\s+/, "").split(/\s+/);
+  for (const w of words) {
+    if (w.startsWith("-")) continue;   // a flag, like --depth
+    const m = /^(?:(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?(?:www\.)?github\.com[:/]|(?:https?:\/\/)?raw\.githubusercontent\.com\/)?([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:[/?#].*)?$/.exec(w);
+    if (m) return `${m[1]}/${m[2]}`;
+  }
+  return null;
+}
+
+/** Forget a repo: its rows, its files' Durable Objects, and its git. */
+export async function evict(env: Env, owner: string, name: string) {
+  const r = await env.DB.prepare("SELECT artifact FROM repos WHERE owner = ? AND name = ?").bind(owner, name).first();
+  const { results: files } = await env.DB.prepare("SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ? UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?")
+    .bind(owner, name, owner, name).all();
+  await Promise.all((files as { path: string; branch: string | null }[]).map((f) =>
+    fileStub(env, owner, name, f.path, f.branch ?? undefined).fetch(new Request("https://file/wipe", { method: "POST" })).catch(() => null)));
+  await env.DB.batch(["repos|owner = ? AND name = ?", "collaborators", "files", "file_search", "branches", "branch_files", "shares", "tracks"].map((t) => {
+    const [table, where = "owner = ? AND repo = ?"] = t.split("|");
+    return env.DB.prepare(`DELETE FROM ${table} WHERE ${where}`).bind(owner, name);
+  }));
+  if (r?.artifact) await env.ARTIFACTS?.delete?.(r.artifact as string).catch(() => false);
+}
+
+/** Drop the expired digs, then, to make room for `more`, the oldest past the cap. */
+async function makeRoom(env: Env, more: number) {
+  const { results } = await env.DB.prepare("SELECT owner, name, expires_at FROM repos WHERE expires_at IS NOT NULL ORDER BY expires_at").all();
+  const live = results as { owner: string; name: string; expires_at: number }[];
+  const expired = live.filter((r) => r.expires_at <= Date.now()).length;
+  const drop = Math.max(expired, live.length - digCap(env) + more);
+  for (const r of live.slice(0, drop)) await evict(env, r.owner, r.name);
 }
 
 /** /api/github/... */
@@ -52,11 +89,22 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   // GET /api/github/repos  who GitHub thinks you are, and your repos, newest push first
   if (p[2] === "repos" && req.method === "GET") {
     const privateOk = privateDigs(env);
-    if (!t) return json({ via: null, login: null, repos: [], privateOk });
+    const temp = { temporary: !isAdmin(env, user), ttlHours: DIG_TTL / 3600_000 };
+    if (!t) return json({ via: null, login: null, repos: [], privateOk, ...temp });
     const [me, list] = await Promise.all([gh("/user", t.token), gh("/user/repos?per_page=100&sort=pushed", t.token)]);
-    if (!me.ok) return json({ via: t.via, login: null, repos: [], privateOk, error: `GitHub said ${me.status}` });
+    if (!me.ok) return json({ via: t.via, login: null, repos: [], privateOk, ...temp, error: `GitHub said ${me.status}` });
     const repos = list.ok ? ((await list.json()) as any[]).map((r) => ({ repo: r.full_name, private: r.private, branch: r.default_branch, description: r.description })) : [];
-    return json({ via: t.via, login: ((await me.json()) as any).login, repos, privateOk });
+    return json({ via: t.via, login: ((await me.json()) as any).login, repos, privateOk, ...temp });
+  }
+
+  // GET /api/github/search?q=  public repos on GitHub, best match first
+  if (p[2] === "search" && req.method === "GET") {
+    const q = (new URL(req.url).searchParams.get("q") ?? "").trim().slice(0, 200);
+    if (!q) return json({ repos: [] });
+    const res = await gh(`/search/repositories?per_page=12&q=${encodeURIComponent(q + " is:public")}`, t?.token);
+    if (!res.ok) return json({ repos: [], error: res.status === 403 || res.status === 429 ? "GitHub's search is rate limited; try again in a minute" : `GitHub said ${res.status}` }, 200);
+    const items = ((await res.json()) as { items: any[] }).items ?? [];
+    return json({ repos: items.map((r) => ({ repo: r.full_name, description: r.description, stars: r.stargazers_count, language: r.language })) });
   }
 
   // POST /api/github/dig {repo, name?, visibility?}  fork a GitHub repo into one you own here
@@ -69,7 +117,9 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     const name = b.name || full.split("/")[1]!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
     const visibility = b.visibility ?? "public";
+    const expires = isAdmin(env, user) ? null : Date.now() + DIG_TTL;
     if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
+    await makeRoom(env, 0);
     if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
 
     const meta = await gh(`/repos/${full}`, t?.token);
@@ -81,14 +131,16 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     const head = await gh(`/repos/${info.full_name}/commits/${info.default_branch}`, t?.token);
     const sha = head.ok ? ((await head.json()) as { sha: string }).sha : null;
 
+    if (expires) await makeRoom(env, 1);
+
     // Shallow, like the levels; writable, because it's yours now.
     const art = await env.ARTIFACTS.import({
       source: { url: `https://github.com/${info.full_name}.git`, branch: info.default_branch, depth: 1, ...(info.private ? { token: t!.token } : {}) },
       target: { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}` } },
     });
-    await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, `github:${info.full_name}`, sha).run();
-    return json({ owner: user, name, upstream: `github:${info.full_name}`, commit: sha }, 201);
+    await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, `github:${info.full_name}`, sha, expires).run();
+    return json({ owner: user, name, upstream: `github:${info.full_name}`, commit: sha, ...(expires ? { expires_at: expires } : {}) }, 201);
   }
   return null;
 }

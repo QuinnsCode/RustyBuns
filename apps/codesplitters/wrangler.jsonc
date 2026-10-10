@@ -16,7 +16,6 @@
     {
       "binding": "DB",
       "database_name": "codesplitters-db",
-      "database_id": "managed-by-alchemy",
       "migrations_dir": "migrations"
     }
   ],
@@ -31,6 +30,10 @@
       {
         "name": "FILES",
         "class_name": "FileDurableObject"
+      },
+      {
+        "name": "GAMES",
+        "class_name": "GameRoom"
       }
     ]
   },
@@ -38,7 +41,8 @@
     {
       "tag": "v1",
       "new_sqlite_classes": [
-        "FileDurableObject"
+        "FileDurableObject",
+        "GameRoom"
       ]
     }
   ],

@@ -1,10 +1,17 @@
 // The launcher: mints the token, decides local vs remote, opens the browser.
 // Chrome/Edge in --app mode when present (chromeless window, own icon);
 // default browser otherwise. Children die with us.
+//
+// The token never goes on stdout or in the browser's argv (where `ps` shows
+// it to every local user) while a browser opens: the browser gets a one-time
+// launch code instead (shell.launchCode()). The token URL is printed only
+// when there is no browser to open (RB_NO_BROWSER, or the spawn failed).
 
 export interface LaunchOptions {
   url: string;
   token?: string;
+  /** One-time launch code (shell.launchCode()) handed to the browser instead of the token. */
+  code?: string;
   /** "app" = chromeless window via --app; "tab" = default browser. */
   window?: "app" | "tab";
   /** Override the browser binary. */
@@ -45,17 +52,22 @@ export function mintToken(): string {
 }
 
 export async function openBrowser(opts: LaunchOptions): Promise<void> {
-  const target = opts.token ? `${opts.url}/?token=${opts.token}` : opts.url;
-  console.log(`[rustybuns] open ${target}`);
-  if (process.env["RB_NO_BROWSER"]) return;
+  const withToken = opts.token ? `${opts.url}/?token=${opts.token}` : opts.url;
+  const fallback = () => console.log(`[rustybuns] could not open a browser. Open this yourself:\n  ${withToken}`);
+  if (process.env["RB_NO_BROWSER"]) { console.log(`[rustybuns] open ${withToken}`); return; }
+  // Without a code the token still has to ride the URL; a code is the safe path.
+  const target = opts.code ? `${opts.url}/?rb_launch=${opts.code}` : withToken;
+  console.log(`[rustybuns] open ${opts.url}`);
   const chromium = opts.browser ?? (opts.window !== "tab" ? await findChromium() : null);
   const cmd = chromium ? [chromium, `--app=${target}`, "--new-window"]
     : process.platform === "darwin" ? ["open", target]
     : process.platform === "win32" ? ["cmd", "/c", "start", "", target]
     : ["xdg-open", target];
+  let child: Bun.Subprocess;
   try {
-    children.push(Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" }));
-  } catch {
-    console.log(`[rustybuns] could not open a browser. Open this yourself:\n  ${target}`);
-  }
+    child = Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" });
+  } catch { fallback(); return; }
+  children.push(child);
+  // open/xdg-open/start hand off and exit; a non-zero exit means nothing opened.
+  if (!chromium) void child.exited.then((code) => { if (code !== 0) fallback(); });
 }

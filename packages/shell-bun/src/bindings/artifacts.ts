@@ -192,8 +192,9 @@ export class LocalArtifactsRepo {
   async createToken(scope: "read" | "write" = "write", ttl = 86400) { return this.ns.mint(this.name, scope, ttl); }
 
   async log(opts: { ref?: string; limit?: number; offset?: number } = {}) {
+    // --end-of-options: a ref like `--output=x` is a ref, not an option.
     try {
-      return commits(git(["log", "--first-parent", `--skip=${opts.offset ?? 0}`, `-n${Math.min(opts.limit ?? 50, 1000)}`, `--format=${FMT}`, opts.ref ?? "HEAD", "--"], this.p).toString());
+      return commits(git(["log", "--first-parent", `--skip=${opts.offset ?? 0}`, `-n${Math.min(opts.limit ?? 50, 1000)}`, `--format=${FMT}`, "--end-of-options", opts.ref ?? "HEAD", "--"], this.p).toString());
     } catch { return []; } // unresolvable ref: an empty list, like Cloudflare
   }
 
@@ -223,8 +224,8 @@ export class LocalArtifactsRepo {
     // Files only: `git show` would happily print a folder's listing.
     const spec = `${args.ref}:${args.path}`;
     try {
-      if (git(["cat-file", "-t", spec], this.p).toString().trim() !== "blob") return null;
-      return new Blob([new Uint8Array(git(["cat-file", "blob", spec], this.p))], { type: "text/plain; charset=utf-8" });
+      if (git(["cat-file", "-t", "--end-of-options", spec], this.p).toString().trim() !== "blob") return null;
+      return new Blob([new Uint8Array(git(["cat-file", "blob", "--end-of-options", spec], this.p))], { type: "text/plain; charset=utf-8" });
     } catch { return null; }
   }
 
