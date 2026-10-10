@@ -44,10 +44,12 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
       return null;
     case "container": {
       // The Container is the DO binding and its ContainerApplication together;
-      // the image builds from the Dockerfile's directory at deploy.
+      // the image builds from the Dockerfile's directory at deploy. Alchemy's
+      // ContainerProvider resolves `dockerfile` from the app, not from `context`,
+      // so it gets the whole path (#247).
       const at = b.dockerfile.lastIndexOf("/");
-      const [context, dockerfile] = at < 0 ? [".", b.dockerfile] : [b.dockerfile.slice(0, at), b.dockerfile.slice(at + 1)];
-      return `export const ${id} = Cloudflare.Container("${name}", { className: ${JSON.stringify(b.className)}, context: ${JSON.stringify(context)}, dockerfile: ${JSON.stringify(dockerfile)}, maxInstances: ${b.maxInstances ?? 1}, instanceType: ${JSON.stringify(b.instanceType ?? "lite")} });`;
+      const context = at < 0 ? "." : b.dockerfile.slice(0, at);
+      return `export const ${id} = Cloudflare.Container("${name}", { className: ${JSON.stringify(b.className)}, context: ${JSON.stringify(context)}, dockerfile: ${JSON.stringify(b.dockerfile)}, maxInstances: ${b.maxInstances ?? 1}, instanceType: ${JSON.stringify(b.instanceType ?? "lite")} });`;
     }
     case "var":
     case "secret":
