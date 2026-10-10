@@ -247,6 +247,28 @@ test("the schedule runs repos that are on and due, and skips the rest", async ()
   expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).last_run).toBe(NOW + 25 * 3_600_000);
 });
 
+test("a scheduled run that runs out of time tests no further and branches only what passed", async () => {
+  // Each fake test run takes 200ms, and kleur 4 breaks the build.
+  const tester: Tester = async (_remote, files) => {
+    await Bun.sleep(200);
+    const pkg = JSON.parse(files["package.json"]!);
+    return pkg.dependencies.kleur === "^4.1.5" ? { ok: false, out: "TypeError: kleur.red is not a function" } : { ok: true, out: "3 pass" };
+  };
+  const { call, send } = await app(tester);
+  await send("ryan", "/api/repos/ryan/lab/deps", { on: true, max_level: "major", ignore: "ky", run_tests: true }, "PUT");
+  const self = (r: Request) => (async () => (await import("../src/worker.ts")).default.fetch(r, call.env))();
+  await scheduledDoctor(call.env, self, NOW, 0);   // no time at all: not even started
+  expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).last_run).toBeNull();
+  // Time for together and clsx alone, but not a third try.
+  await scheduledDoctor(call.env, self, NOW, 500);
+  const got = await (await call("ryan", "/api/repos/ryan/lab/deps")).json();
+  expect(got.running).toBe(false);
+  expect(got.report.updates.map((u: any) => [u.name, u.status])).toEqual([["clsx", "kept"], ["hono", "untested"], ["kleur", "untested"]]);
+  expect(got.report.note).toContain("ran out of time");
+  const doc = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=package.json&branch=${got.report.branch}`)).json();
+  expect(doc.lines.map((l: any) => l.text).filter((t: string) => /clsx|hono|kleur/.test(t))).toEqual([`    "kleur": "^3.0.0",`, `    "clsx": "~2.0.0",`, `    "hono": "4.0.0",`]);
+});
+
 describe("on Cloudflare, tests run in an AGENT_SANDBOX container", () => {
   /** The app with AGENT_SANDBOX bound to fake containers whose server answers /deps-test with `server`. */
   async function hosted(server: (path: string, body: any) => { ok: boolean; out: string }) {
