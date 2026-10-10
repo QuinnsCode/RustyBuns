@@ -6,6 +6,8 @@
 // stumps, flowers and mushrooms, lights a council fire in the biggest clearing, and lets fireflies loose. Nothing the office does is changed:
 // desks and seats are all where they were, and it only ever adds or recolours, but for the desks' colliders, which
 // shrink to the Druid Panels drawn over them (council.ts).
+// What it adds (but the Druid Panels, which are part of their desks) stays out of the office's group, so you
+// can still aim through it.
 import {
   AdditiveBlending, BufferAttribute, BufferGeometry, CanvasTexture, Color, Group, Box3, Mesh,
   Object3D, PointLight, Points, PointsMaterial, RepeatWrapping, SRGBColorSpace, Vector3,
@@ -15,9 +17,9 @@ import { FOREST } from "./assets.ts";
 import { decoders, gltf } from "./loader.ts";
 import { forestColor } from "./palette.ts";
 import { jungle, outerJungle } from "./jungle.ts";
-import { council, refit, turn, type Office } from "./council.ts";
+import { council, refit, type Office } from "./council.ts";
 import { firstPerson, type Viewer } from "./people.ts";
-import { LOFT, ROAD, ROOM, STREET_Y, type Box } from "./room.ts";
+import { LOFT, ROAD, ROOM, STREET_Y, byKiosk, type Box } from "./room.ts";
 
 interface App extends Viewer { office: Office; renderer: WebGLRenderer }
 interface Stage { scene: Scene; hemi: HemisphereLight; ambient: AmbientLight; sun: DirectionalLight }
@@ -30,6 +32,7 @@ function rng(seed: number) {
 }
 
 let built: Group | null = null;
+let builtFor: Object3D | null = null;
 let fireflies: Points | null = null;
 let fire: PointLight | null = null;
 let growing: { update(t: number): void }[] = [];
@@ -45,13 +48,19 @@ const seen = new WeakSet<object>();
   stage.ambient.color.lerp(DUSK, 0.35);
   (stage.scene.fog as Fog | null)?.color.lerp(DUSK, 0.4);
 
-  if (built?.parent !== app.office.group) {
+  if (builtFor !== app.office.group) {
+    // In the scene beside the office, not in its group: the office raycasts its group for what's under your
+    // crosshair, and anything it hits without an interactable (a frond, a firefly) blocks the board behind it.
+    built?.removeFromParent();
     built = new Group();
     built.name = "druids-forest";
-    app.office.group.add(built);
+    builtFor = app.office.group;
+    stage.scene.add(built);
     plant(built, app.office.colliders);
     council(built, app.office);
   }
+  built!.visible = app.office.group.visible && !!app.office.group.parent;
+  built!.position.copy(app.office.group.position);
   if (t > sweepAt) {
     // new desks, laptops and floors arrive while the office runs; recolour whatever's new now and then
     sweepAt = t + 2;
@@ -61,7 +70,6 @@ const seen = new WeakSet<object>();
   if (fire) fire.intensity = 14 + Math.sin(t * 11) * 2 + Math.sin(t * 3.7) * 3;
   if (fireflies) drift(fireflies, t);
   for (const g of growing) g.update(t);
-  turn(dt);
   firstPerson(app, stage.scene);
 };
 
@@ -195,7 +203,7 @@ function plant(into: Group, colliders: Box[]) {
     const side = Math.floor(r() * 4), t = r();
     const x = side < 2 ? ROOM.minX + 1 + t * 34 : side === 2 ? ROOM.minX + 1.3 : ROOM.maxX - 1.3;
     const z = side >= 2 ? ROOM.minZ + 1 + t * 24 : side === 0 ? ROOM.minZ + 1.3 : ROOM.maxZ - 1.3;
-    if (underLoft(x, z) || !clear(x, z, 0.5)) continue;
+    if (underLoft(x, z) || !clear(x, z, 0.5) || byKiosk(colliders, x, z)) continue;
     place(into, pick(FOREST.edge), x, 0, z, 0.45 + r() * 0.4, r() * 6.3);
     n++;
   }

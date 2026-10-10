@@ -1,12 +1,12 @@
-// 🧙 The council's furniture: every agent desk becomes a Druid Panel, the elevator becomes the game's scene-travel
-// portal, the game's loot is strewn about like a gamer's den, and the Council Chambers and a village stand outside.
+// 🧙 The council's furniture: every agent desk becomes a Druid Panel, the game's loot is strewn about like a
+// gamer's den, and the Council Chambers and a village stand outside. The elevator stays the office's own.
 // Everything the office does still works: the laptops ride on the panels (each tilted with its slab), the
 // elevator still opens and rides. The colliders it touches are each desk's, cut down to its lectern (fitDesks), and
 // one more for each kiosk's lectern, which stands out past the kiosk's own (fenceKiosk).
-import { Box3, Color, Group, Mesh, MeshStandardMaterial, Object3D, Raycaster, Vector3, type Material } from "three";
+import { Box3, Group, Mesh, Object3D, Raycaster, Vector3, type Material } from "three";
 import { COUNCIL } from "./assets.ts";
 import { gltf } from "./loader.ts";
-import { ROOM, STREET_Y, fenceKiosk, fitDesks, type Box } from "./room.ts";
+import { ROOM, STREET_Y, byKiosk, fenceKiosk, fitDesks, type Box } from "./room.ts";
 
 interface Desk {
   def: { id: string; x: number; z: number; rotY: number };
@@ -15,14 +15,12 @@ interface Desk {
   seatAnchor: Object3D;
   stage: Object3D;
   vacancy: Object3D;
-  vacancyY: number;
   chair: Object3D;
 }
 export interface Office {
   group: Group;
   colliders: Box[];
   desks: Map<string, Desk>;
-  elevator: { group: Object3D; colliders: Box[] };
 }
 
 function rng(seed: number) {
@@ -49,10 +47,10 @@ async function copy(path: string, size: number, by: "height" | "longest" = "long
 }
 
 /** A Druid Panel is a lectern: a tilted slab on a pillar, low edge towards whoever reads it. Every agent gets its
- *  own, turned to face them, with the back-to-back pair's lecterns standing in their pod; its top is about twice the
- *  office's desk height, for agents twice the office's size. The laptop lies on the slab like a book on a lectern,
- *  tilted with it and half sunk into the wood. */
-const PANEL = { width: 1.2, top: 1.4, z: -0.05, sink: 0.06 };
+ *  own, turned to face them, with the back-to-back pair's lecterns standing in their pod. It's as tall as the office's
+ *  desk where it counts: the slab's middle, where the laptop lies, is at the office's 0.78 m desk top. The laptop lies
+ *  on the slab like a book on a lectern, tilted with it and half sunk into the wood. */
+const PANEL = { width: 1.2, top: 0.95, z: -0.05, sink: 0.06 };
 const down = new Vector3(0, -1, 0), ray = new Raycaster();
 /** Where each loaded lectern stands, for fitDesks: the desk's collider is cut down to it. */
 const footprints: { minX: number; maxX: number; minZ: number; maxZ: number }[] = [];
@@ -68,17 +66,6 @@ function on(panel: Object3D, space: Object3D, x: number, z: number, spread = 0) 
   }).sort((a, b) => a - b);
   return ys[2]!;
 }
-let swirl: Object3D | null = null;
-const axis = new Vector3(0, 0, 1);
-
-/** Which way a flat disc faces: its average normal, in world space (or its own space). */
-function discNormal(m: Mesh, world = true) {
-  const nrm = m.geometry.getAttribute("normal"), v = new Vector3(), sum = new Vector3();
-  for (let i = 0; i < nrm.count; i++) sum.add(v.fromBufferAttribute(nrm, i));
-  sum.normalize();
-  if (world) { m.updateWorldMatrix(true, false); sum.transformDirection(m.matrixWorld); sum.y = 0; sum.normalize(); }
-  return sum;
-}
 
 export function council(into: Group, office: Office) {
   const r = rng(2024);
@@ -91,8 +78,6 @@ export function council(into: Group, office: Office) {
     if (!/^(desk|station)-/.test(d.def.id)) continue;
     const keep = new Set([d.laptopAnchor, d.seatAnchor, d.stage, d.vacancy]);
     for (const c of d.group.children) if (!keep.has(c)) c.visible = false;
-    // the office bobs the vacancy plus at desk height + 0.55, which is inside the panel: lift it over the top
-    d.vacancyY = PANEL.top + 0.55;
 
     // the agent stands on this side of the desk; the slab's low edge (the model's +z) faces them
     const toward = Math.sign(d.seatAnchor.position.z || 1);
@@ -134,41 +119,13 @@ export function council(into: Group, office: Office) {
     });
   }
 
-  // the elevator → the portal: the arch in front of its doors, the swirl facing the room
-  const shaft = office.elevator.colliders;
-  if (shaft.length) {
-    // the doors are in the middle of the shaft's front, whether they're open or shut right now
-    const x = (Math.min(...shaft.map((c) => c.minX)) + Math.max(...shaft.map((c) => c.maxX))) / 2;
-    const z = Math.max(...shaft.map((c) => c.maxZ));
-    copy(COUNCIL.portal, 3.1, "height").then((p) => {
-      const disc = p.getObjectByName("swirl") as Mesh | undefined;
-      if (disc) {
-        // turn the arch so the swirl faces into the room (+z), then stand it with its back to the elevator
-        const n = discNormal(disc);
-        p.rotation.y = Math.atan2(n.x, n.z) * -1;
-        const src = disc.material as MeshStandardMaterial;
-        const glow = src.clone();
-        glow.emissive = new Color(0xffffff);
-        glow.emissiveMap = src.map;
-        glow.emissiveIntensity = 0.6;
-        disc.material = glow;
-        swirl = disc;
-        axis.copy(discNormal(disc, false));
-      }
-      p.updateMatrixWorld(true);
-      const b = new Box3().setFromObject(p);
-      p.position.set(x - (b.min.x + b.max.x) / 2, 0, z + 0.05 - b.min.z);
-      into.add(p);
-    }).catch((e) => console.warn("[druids] the portal didn't load", e));
-  }
-
   // loot everywhere: on the floor, in heaps, like nobody's tidied since the raid
   const solid = office.colliders.filter((c) => c.top > 0.05 && c.bottom < 2.5 && (c.maxX - c.minX) * (c.maxZ - c.minZ) < 200);
   const clear = (x: number, z: number, rad: number) =>
     !solid.some((c) => x > c.minX - rad && x < c.maxX + rad && z > c.minZ - rad && z < c.maxZ + rad);
   for (let n = 0, tries = 0; n < 110 && tries < 4000; tries++) {
     const x = ROOM.minX + 1 + r() * 34, z = ROOM.minZ + 1 + r() * 24;
-    if (!clear(x, z, 0.3)) continue;
+    if (!clear(x, z, 0.3) || byKiosk(office.colliders, x, z)) continue;
     const big = r() < 0.2;
     copy(big ? pick(loot.big) : pick(loot.small), big ? 0.7 + r() * 0.5 : 0.2 + r() * 0.2).then((o) => {
       o.position.set(x, 0, z);
@@ -187,9 +144,4 @@ export function council(into: Group, office: Office) {
 /** Now and then: the back office's desks, once their row is built, get cut down to their lecterns too. */
 export function refit(office: Office) {
   fitDesks(office.colliders, footprints, PANEL.top);
-}
-
-/** Every frame: the swirl turns. */
-export function turn(dt: number) {
-  swirl?.rotateOnAxis(axis, -dt * 0.65);
 }

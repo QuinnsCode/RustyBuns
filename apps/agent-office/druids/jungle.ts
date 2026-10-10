@@ -5,7 +5,7 @@
 // stays clear: vines stop above it and nothing tall stands in front of it.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { FEATURES, LOFT, ROOM, type Box, type Wall } from "./room.ts";
+import { FEATURES, LOFT, ROOM, byKiosk, type Box, type Wall } from "./room.ts";
 
 function rng(seed: number) {
   let x = seed >>> 0;
@@ -240,19 +240,19 @@ export function jungle(colliders: Box[], density = 1) {
   // palms: shoulder to shoulder along every bare stretch of wall, leaning into the room
   const palmShapes = [0, 1, 2, 3].map((i) => ({ geo: palm(i * 7 + 3, 8 + i * 1.2, 1.2 + i * 0.4), at: [] as Parameters<typeof instanced>[2] }));
   along(0.9, 0.75).forEach((s, i) => {
-    if (r() > density || underLoft(s.x, s.z) || feature(s, 0.6) || !clear(s.x, s.z, 0.35)) return;
+    if (r() > density || underLoft(s.x, s.z) || feature(s, 0.6) || byKiosk(colliders, s.x, s.z) || !clear(s.x, s.z, 0.35)) return;
     const k = 0.42 + r() * 0.24; // 8–11.6 m shapes → 3.4–6.6 m, under the 6.8 m ceiling
     palmShapes[i % 4]!.at.push({ x: s.x, y: 0, z: s.z, s: k * 0.8, sy: Math.min(k, 6.5 / (8 + (i % 4) * 1.2)), yaw: s.inward - Math.PI / 2 + (r() - 0.5) * 0.8 });
   });
   for (const p of palmShapes) instanced(p.geo, [barkMat, leafMat], p.at);
 
-  // fan bushes and ferns packed along the walls (under the boards and windows too, kept low there)
+  // fan bushes and ferns packed along the walls (under the boards and windows, and by the board agents, kept low there)
   const fans: Parameters<typeof instanced>[2] = [], ferns: Parameters<typeof instanced>[2] = [];
   along(0.55, 0.45).forEach((s) => {
     if (r() > density || !clear(s.x, s.z, 0.25)) return;
     const f = feature(s, 0.1);
     if (f && f.y0 < 0.3) return; // a door
-    const low = f || underLoft(s.x, s.z);
+    const low = f || underLoft(s.x, s.z) || byKiosk(colliders, s.x, s.z);
     (low ? ferns : fans).push({ x: s.x + (r() - 0.5) * 0.3, y: 0, z: s.z + (r() - 0.5) * 0.3, s: low ? 0.1 + r() * 0.06 : 0.28 + r() * 0.22, yaw: r() * 6.28 });
   });
   instanced(bush(12, 8, 1.05, 1), leafMat, fans);

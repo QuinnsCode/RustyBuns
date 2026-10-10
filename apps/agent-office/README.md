@@ -10,6 +10,7 @@ the office itself, on Bun, as **one file** you can copy to any Mac or Linux box.
 ```sh
 cd apps/agent-office
 bun run office                 # fetch the pinned release, Bun-ify it, open the office
+bun run office:update          # git pull, rebuild, then start it (or reload the page if it's up)
 bun run desktop:build          # dist/agent-office-<os>-<arch>
 bun run desktop:build:all      # + darwin-x64, linux-x64, linux-arm64
 ```
@@ -41,7 +42,7 @@ You (and everyone walking around) are **Qoa**; every worker is one of the game's
 witch, goblins, ninjas, zombies, the Void Wolf, Voidmire, Toadmire, the Skeleton and Kaladen. Coding is spellcasting,
 tests are a sword slash, done is a victory, waiting on you is a jump, and a worker heading home carries their box.
 Palms, ivy and vines take every wall that isn't a board, the TV, a window or a door; the floor is moss and Druids Curse
-grass; agent desks are the game's Druid Panels (one per pod, laptops on top), the elevator is its scene-travel portal,
+grass; agent desks are the game's Druid Panels (a lectern per agent, laptops on the slab), the elevator is still the office's own,
 loot is strewn everywhere, and the Council Chambers and a village stand outside. First person stays the default and
 the camera is Qoa's eyes: look down and you see his body. ⚙️ Settings switches to third person, where you see him run.
 
@@ -50,7 +51,7 @@ the camera is Qoa's eyes: look down and you see his body. ⚙️ Settings switch
 | Who's who, which clip | [`druids/cast.ts`](druids/cast.ts) (pure, tested in `test/druids.test.ts`) |
 | Workers → enemies | [`druids/skin.ts`](druids/skin.ts) |
 | People → Qoa, and your first-person body | [`druids/people.ts`](druids/people.ts) |
-| Druid Panels, the portal, loot, the village | [`druids/council.ts`](druids/council.ts) |
+| Druid Panels, loot, the village | [`druids/council.ts`](druids/council.ts) |
 | Palms, ivy, vines, grass | [`druids/jungle.ts`](druids/jungle.ts), all procedural and instanced (hippo-tycoon's palms, the game's grass blade) |
 | Colours, moss, fire, fireflies, the game's props | [`druids/forest.ts`](druids/forest.ts), [`druids/palette.ts`](druids/palette.ts) |
 | What's on the walls | [`druids/room.ts`](druids/room.ts), from Agent Office's `shared/layout.js` |

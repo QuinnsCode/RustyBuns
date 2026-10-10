@@ -8,7 +8,11 @@ export const STREET_Y = -3.6;
 export const ROAD = { minZ: 22, maxZ: 32 };
 
 export type Wall = "north" | "south" | "east" | "west";
-export type Box = { minX: number; maxX: number; minZ: number; maxZ: number; bottom: number; top: number };
+/** An office collider. `fence` marks a board agent's kiosk (and the agent behind it). */
+export type Box = { minX: number; maxX: number; minZ: number; maxZ: number; bottom: number; top: number; fence?: boolean };
+/** Whether (x, z) is within `pad` of a board agent's kiosk, where nothing tall may hide the agent. */
+export const byKiosk = (colliders: Box[], x: number, z: number, pad = 1.2) =>
+  colliders.some((c) => c.fence && x > c.minX - pad && x < c.maxX + pad && z > c.minZ - pad && z < c.maxZ + pad);
 /** How tall the office's desks are (DESK_SIZE.height): each agent desk is a collider this tall. */
 export const DESK_TOP = 0.78;
 
@@ -19,7 +23,7 @@ export const DESK_TOP = 0.78;
  */
 export function fitDesks(colliders: Box[], panels: { minX: number; maxX: number; minZ: number; maxZ: number }[], top: number) {
   for (const c of colliders) {
-    if ((c as { fence?: boolean }).fence || Math.abs(c.top - DESK_TOP) > 0.01) continue;
+    if (c.fence || Math.abs(c.top - DESK_TOP) > 0.01) continue;
     const x = (c.minX + c.maxX) / 2, z = (c.minZ + c.maxZ) / 2;
     const p = panels.find((p) => x > p.minX && x < p.maxX && z > p.minZ && z < p.maxZ);
     if (!p) continue;
