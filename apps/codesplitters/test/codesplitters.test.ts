@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
+import { lintMerge, newProblems } from "../src/lint.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
@@ -134,6 +135,36 @@ describe("merge", () => {
     expect(land(structuredClone(main), merge(base, branch, main, { L2: "main" }))).toBe(onMain);
     // The same rewrite on both sides is no conflict.
     expect(clean(was, onMain, onMain)).toBe(onMain);
+  });
+
+  test("a settled merge that would no longer build is a conflict until someone lands it anyway", () => {
+    // PR #243's deps.ts: keeping the branch's tryWith drops the `short` main declared, and main's later line still reads it.
+    const was = "const tryWith = (us) => tester(us);\nconst all = tryWith(updates);\nlog(all);";
+    const onMain = "let short = false;\nconst tryWith = async (us) => {\n  short = true;\n  return tester(us);\n};\nconst all = tryWith(updates);\nlog(all);\nif (short) log(\"short\");";
+    const onBranch = "const tryWith = async (us) => tester(us, tried);\nconst all = tryWith(updates);\nlog(all);";
+    const { base, main, branch } = sides(was, onMain, onBranch), m = merge(base, branch, main, { L1: "branch" });
+    expect(m.conflicts).toEqual([]);
+    // The globals both sides use (tester, log, updates) and the branch's own `tried` aren't new.
+    expect(lintMerge("deps.ts", main, branch, m, { L1: "branch" })).toEqual([{ line: "lint:undefined:short", base: "", main: null, branch: null, lint: "`short` is not defined (line 4)" }]);
+    expect(lintMerge("deps.ts", main, branch, m, { L1: "branch", "lint:undefined:short": "branch" })).toEqual([]);
+    // Only code is checked.
+    expect(lintMerge("deps.md", main, branch, m)).toEqual([]);
+  });
+
+  test("the merge check: redeclared names, undefined names and broken syntax, new ones only", () => {
+    const keys = (merged: string, a = "", b = "") => newProblems("x.ts", merged, a, b).map((p) => p.key);
+    expect(keys("const tryWith = 1;\nconst tryWith = 2;")).toEqual(["redeclared:tryWith"]);
+    expect(keys("if (a {")).toEqual(["syntax:UnexpectedToken"]);
+    expect(keys("f(a, b)", "f(a)", "f(b)")).toEqual([]);
+    // Scopes, hoisting, patterns, types, keys and labels aren't uses of an undefined name.
+    expect(keys([
+      "import { a } from './a'; import type { T } from './t';",
+      "export function f<U>({ b, c: [d] = [] }: T, ...e: U[]): T { return g(a, b, d, e, h, arguments) }",
+      "function g(...xs: unknown[]) { var h = 1; return xs }",
+      "const o = { k: 1, m() { return this.k }, [a]: 2 }; o.k; out: for (const [i, j] of Object.entries(o)) { if (i) break out; j }",
+      "class C extends Array<T> { #p = 1; static s = C; q(x = this.#p) { try {} catch ({ message }) { return message ?? x } } }",
+      "enum E { A = 1 } namespace N { export const v = E.A } declare const env: { z: number }; env.z as number; N.v; new C();",
+    ].join("\n"))).toEqual(["undefined:h", "undefined:Object", "undefined:Array"]);
   });
 
   test("the same line added on both sides in different places would land twice: a conflict", () => {
@@ -702,6 +733,25 @@ describe("shares", () => {
     expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.js": { L1: "branch" } } })).status).toBe(200);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.js")).json() as Doc)).toBe("branch\ny");
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=b.js")).json() as Doc)).toBe("Z");
+  });
+
+  test("a merge that would leave code that doesn't build waits, and says why", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "a.ts", content: "const x = 1;\nlog(x);" });
+    await post(call, "ana", "/api/repos/ana/r/branches", { name: "b1" });
+    const opsOn = (query: string, o: unknown[]) => post(call, "ana", `/api/repos/ana/r/do/ops${query}`, { ops: o });
+    // Each side declares the same new name in a different place: each builds alone, merged it's declared twice.
+    await opsOn("?path=a.ts&branch=b1", [{ kind: "insert", after: null, text: "const y = 2;" }]);
+    await opsOn("?path=a.ts", [{ kind: "insert", after: "L2", text: "const y = 3;" }]);
+    const review = await (await call("ana", "/api/repos/ana/r/branches/b1")).json() as any;
+    expect(review.files[0].conflicts).toEqual([{ line: "lint:redeclared:y", base: "", main: null, branch: null, lint: "`y` is declared twice (line 4)" }]);
+    const r = await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", {});
+    expect(r.status).toBe(409);
+    expect((await r.json() as any).error).toBe("merged, it wouldn't build: a.ts: `y` is declared twice (line 4)");
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc)).toBe("const x = 1;\nlog(x);\nconst y = 3;");
+    expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.ts": { "lint:redeclared:y": "branch" } } })).status).toBe(200);
   });
 
   test("private lines in a public repo: the crew reads them, everyone else, git and search get them blank", async () => {

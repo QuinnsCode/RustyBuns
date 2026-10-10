@@ -85,8 +85,12 @@ export function replay(log: Applied[], rev = Infinity, from: Doc = empty()): Doc
   return doc;
 }
 
-/** A conflict, keyed by `line`: a base line (the first of a stretch both sides rewrote), or a new branch line main also added (`doubled`). */
-export interface Conflict { line: string; base: string; main: string | null; branch: string | null; doubled?: true }
+/**
+ * A conflict, keyed by `line`: a base line (the first of a stretch both sides
+ * rewrote), a new branch line main also added (`doubled`), or `lint:<problem>`
+ * for merged code that would no longer build (`lint`, from lint.ts).
+ */
+export interface Conflict { line: string; base: string; main: string | null; branch: string | null; doubled?: true; lint?: string }
 
 /**
  * A three-way merge by line id: what `branch` changed since it forked from
