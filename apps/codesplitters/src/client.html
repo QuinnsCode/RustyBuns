@@ -313,7 +313,11 @@
   @keyframes reel { to { transform: translateY(-50%); } }
   @media (prefers-reduced-motion: reduce) { .levels { overflow: auto; } .levels .reel { animation: none; } .levels .reel [aria-hidden] { display: none; } }
   .level .blurb { color: var(--muted); font: 13px var(--sans); }
-  .level { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center; padding: 12px 14px; color: var(--fg); border: 1px solid var(--border-2); border-radius: 5px; background: var(--grain), var(--paper); text-decoration: none; transition: border-color .12s, background .12s; }
+  .level { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px 10px 14px; color: var(--fg); border: 1px solid var(--border-2); border-radius: 5px; background: var(--grain), var(--paper); text-decoration: none; transition: border-color .12s, background .12s; }
+  .level > a { color: var(--fg); text-decoration: none; min-width: 0; } .level > a:hover b { color: var(--accent); }
+  .lvl-acts { display: flex; align-items: center; gap: 6px; } .lvl-acts .lvl-st { margin-right: 4px; }
+  #lvl-admin { margin-bottom: 10px; } i.inline, svg.inline { width: 13px; height: 13px; vertical-align: -2px; }
+  @media (max-width: 560px) { .level { grid-template-columns: 1fr; } .level .lvl-n, .level .blurb { display: none; } }
   .level:hover { border-color: #a8a8a8; background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); }
   .level b { display: block; font-weight: 600; } .level .muted { font: 12px var(--mono); }
   .lvl-n { font: 500 12px var(--mono); color: var(--faint); }
@@ -978,7 +982,8 @@ const views = {
         <div class="cmds">${HOME_CMDS.map(([ic, title, what, call]) => `<div class="cmd" tabindex="0"><span class="ico">${icon(ic)}</span><b>${title}</b><span>${what}</span><code>${call}</code>${CMD_MINIS[title] ? `<div class="mini" aria-hidden="true">${CMD_MINIS[title]}</div>` : ""}</div>`).join("")}</div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">levels</div><h2>Dig into code people love</h2><p class="muted">Real repos, imported into Artifacts. Browse them, dig one up (fork it into a git repo you own; upstream stays as it was), or play one. Or bring any public repo from GitHub.</p>
+        <div class="label">levels</div><h2>Dig into code people love</h2><p class="muted">Real repos, imported into Artifacts. Fork one into a git repo you own in one click (upstream stays as it was), browse it, or play it. ${icon("copy", "inline")} copies a repo's GitHub link and drops it in the dig box below.</p>
+        <div class="row" id="lvl-admin" hidden></div>
         <div class="levels" id="levels"></div>
         <div style="margin-top:16px">${digBox("Fork any public GitHub repo into a git repo you own here, then mod it line by line. Upstream never hears about it.")}</div>
       </div></section>${siteFoot()}`;
@@ -987,13 +992,8 @@ const views = {
     wireFoot();
     intro($("#stage"), $("#phases"));
     featureStrip($("#feats"));
-    const levels = await api("/levels").catch(() => []);
-    const st = { ready: "open", importing: "digging…", failed: "dig failed", buried: "buried" };
-    // Two copies of the list back to back, so sliding up by half loops without a seam.
-    const rows = (copy) => levels.map((l) => `<a class="level" href="#/l/${l.slug}"${copy ? ' aria-hidden="true" tabindex="-1"' : ""}><span class="lvl-n">${String(l.n).padStart(2, "0")}</span>
-      <span><b>${esc(l.title)}</b><span class="muted">${esc(l.repo)}</span> <span class="blurb">${esc(l.blurb)}</span></span><span class="lvl-st st-${l.status}">${st[l.status] ?? l.status}</span></a>`).join("");
-    $("#levels").innerHTML = `<div class="reel" style="--reel-s:${levels.length * 4}s">${rows(false)}${rows(true)}</div>`;
-    icons();
+    wireLevels();
+    await drawLevels();
   },
 
   about() {
@@ -1746,6 +1746,74 @@ const views = {
   },
 };
 
+// The home page's levels. Each row: open it, fork it (an imported level forks straight from
+// Artifacts; a buried one is dug up from GitHub through the dig box), or copy its GitHub link,
+// which also lands in the dig box. Admins get one button to import every buried level.
+let levelPoll = 0;
+async function drawLevels() {
+  const el = $("#levels");
+  if (!el) return;
+  const levels = await api("/levels").catch(() => []);
+  if (!el.isConnected) return;
+  const st = { ready: "open", importing: "digging…", failed: "dig failed", buried: "buried" };
+  // Two copies of the list back to back, so sliding up by half loops without a seam.
+  const rows = (copy) => levels.map((l) => {
+    const tab = copy ? ' tabindex="-1"' : "";
+    const go = l.status === "ready" ? `<button class="btn" data-fork="${l.slug}"${tab}>${icon("git-fork")}Fork</button>`
+      : session.admin && l.status !== "importing" ? `<button class="btn" data-import="${l.slug}"${tab}>${icon("shovel")}${l.status === "failed" ? "Try again" : "Import"}</button>`
+      : l.status === "importing" ? "" : `<button class="btn" data-dig="${esc(l.repo)}"${tab}>${icon("git-fork")}Fork from GitHub</button>`;
+    return `<div class="level"${copy ? ' aria-hidden="true"' : ""}><span class="lvl-n">${String(l.n).padStart(2, "0")}</span>
+      <a href="#/l/${l.slug}"${tab}><b>${esc(l.title)}</b><span class="muted">${esc(l.repo)}</span> <span class="blurb">${esc(l.blurb)}</span></a>
+      <span class="lvl-acts"><span class="lvl-st st-${l.status}" ${l.error ? `title="${esc(l.error)}"` : ""}>${st[l.status] ?? l.status}</span>
+        <button class="btn ghost" data-copy="${esc(l.repo)}" title="Copy https://github.com/${esc(l.repo)} and put it in the dig box"${tab}>${icon("copy")}</button>${go}</span></div>`;
+  }).join("");
+  el.innerHTML = `<div class="reel" style="--reel-s:${levels.length * 4}s">${rows(false)}${rows(true)}</div>`;
+  const buried = levels.filter((l) => l.status === "buried" || l.status === "failed");
+  const bar = $("#lvl-admin");
+  bar.hidden = !session.admin || !buried.length;
+  bar.innerHTML = `<button class="btn primary" id="import-all">${icon("shovel")}Import the ${buried.length} buried level${buried.length === 1 ? "" : "s"}</button><span class="muted">admins only: a shallow, read-only copy of each into Artifacts</span>`;
+  $("#import-all")?.addEventListener("click", async (e) => {
+    e.currentTarget.disabled = true;
+    const failed = [];
+    for (const l of buried) await api(`/levels/${l.slug}/import`, {}).catch((err) => failed.push(`${l.slug}: ${err.message}`));
+    toast(failed.length ? `Couldn't start ${failed.length}: ${failed.join("; ")}` : `Digging up ${buried.length} levels`);
+    drawLevels();
+  });
+  icons();
+  // While any level is being dug up, check back every few seconds.
+  clearTimeout(levelPoll);
+  if (levels.some((l) => l.status === "importing")) levelPoll = setTimeout(() => { if ($("#levels")) drawLevels(); }, 5000);
+}
+function wireLevels() {
+  const into = (repo, submit) => {
+    const f = $("#ghdig");
+    if (!f) return;
+    f.repo.value = `https://github.com/${repo}`;
+    f.repo.dispatchEvent(new Event("input"));
+    f.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (submit) f.requestSubmit(); else f.name.focus({ preventScroll: true });
+  };
+  $("#levels").addEventListener("click", async (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.copy) {
+      try { await navigator.clipboard.writeText(`https://github.com/${b.dataset.copy}`); } catch {}
+      into(b.dataset.copy);
+      toast(`Copied github.com/${b.dataset.copy}: it's in the dig box`);
+    } else if (b.dataset.dig) {
+      into(b.dataset.dig, true);
+    } else if (b.dataset.fork) {
+      if (!me()) return toast("Sign in first (top right), then fork it");
+      b.disabled = true;
+      try { const r = await api(`/levels/${b.dataset.fork}/fork`, { name: b.dataset.fork }); location.hash = `#/r/${r.owner}/${r.name}`; }
+      catch (err) { b.disabled = false; toast(/already have/.test(err.message) ? `You already have a repo called ${b.dataset.fork}: fork it from its page with another name` : err.message); }
+    } else if (b.dataset.import) {
+      b.disabled = true;
+      try { await api(`/levels/${b.dataset.import}/import`, {}); drawLevels(); } catch (err) { b.disabled = false; toast(err.message); }
+    }
+  });
+}
+
 // The site footer: our links, who made it, and a year that's always this year.
 // Clicking the © three times shows how far back this all really goes.
 function siteFoot() {
@@ -2080,6 +2148,7 @@ async function route() {
   clearTimeout(agentTimer);
   stopIntro();
   stopStrip();
+  clearTimeout(levelPoll);
   document.body.classList.remove("ide-mode");
   const [, view = "home", ...args] = location.hash.replace(/^#/, "").split("/");
   const n = FIXED[view];
