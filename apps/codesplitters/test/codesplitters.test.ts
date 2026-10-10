@@ -786,7 +786,8 @@ describe("github", () => {
     const deleted: string[] = [];
     call.artifacts.import = (async (params: any) => call.artifacts.create(params.target.name, { setDefaultBranch: "main" })) as any;
     const del = call.artifacts.delete.bind(call.artifacts);
-    call.artifacts.delete = (async (n: string) => { deleted.push(n); return del(n); }) as any;
+    // Only the ones that removed a repo: a dig first clears any orphan under its name, usually none.
+    call.artifacts.delete = (async (n: string) => { const gone = await del(n); if (gone) deleted.push(n); return gone; }) as any;
     try {
       for (const u of ["ana", "bo", "boss"]) await post(call, u, "/api/login", { name: u });
       expect(await (await call(null, "/api/github/search?q=tiny")).json()).toEqual({ repos: [{ repo: "o/tiny", description: "d", stars: 5, language: "TS" }] });
