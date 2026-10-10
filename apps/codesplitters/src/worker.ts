@@ -13,6 +13,7 @@ import { createShare, shareRoutes } from "./shares.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
+import { previewRoutes } from "./preview.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -55,6 +56,8 @@ const app = {
     if (agents) return agents;
     const deps = await depRoutes(req, env, p, url, user, (r) => app.fetch(r, env));
     if (deps) return deps;
+    const preview = await previewRoutes(req, env, p, user);
+    if (preview) return preview;
 
     // GET|PUT /api/me
     if (p[1] === "me") {

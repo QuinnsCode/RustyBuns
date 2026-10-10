@@ -110,6 +110,17 @@
   .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
   .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent); } .sec .run .st.failed { color: var(--del-fg); }
   .sec .run pre { margin: 4px 0 0; max-height: 180px; overflow: auto; font: 400 11.5px/1.45 var(--mono); white-space: pre-wrap; color: var(--muted); }
+  .flow { display: flex; align-items: center; margin: 6px 0 4px; }
+  .flow .ln { flex: 1; height: 2px; background: var(--border-2); min-width: 6px; } .flow .ln.done { background: #2f9e44; }
+  .flow button { display: grid; justify-items: center; gap: 3px; background: none; border: 0; padding: 2px; cursor: pointer; font: 500 10px/1 var(--mono); color: var(--faint); }
+  .flow button .dot { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--border-2); background: var(--paper); }
+  .flow button svg.lucide { width: 15px; height: 15px; vertical-align: 0; }
+  .flow button.sel { color: var(--fg); } .flow button.sel .dot { box-shadow: 0 0 0 3px var(--select); }
+  .flow .running { color: var(--accent); } .flow .running .dot { border-color: var(--accent); color: var(--accent); animation: pulse 1s ease-in-out infinite; }
+  .flow .done { color: #2f9e44; } .flow .done .dot { border-color: #2f9e44; background: #2f9e44; color: #fff; }
+  .flow .failed { color: var(--del-fg); } .flow .failed .dot { border-color: var(--del-fg); background: var(--del-fg); color: #fff; }
+  .flow .skipped .dot { border-style: dashed; opacity: .5; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 4px var(--accent-soft); } }
   .sec .commit { display: grid; grid-template-columns: auto 1fr; gap: 0 6px; padding: 3px 0; } .sec .commit .muted { grid-column: 2; font-size: 12px; }
   .status { display: flex; align-items: center; gap: 14px; flex: none; height: 24px; padding: 0 12px; background: var(--fg); color: #e6e6e6; font: 400 12px var(--mono); white-space: nowrap; overflow: hidden; }
   .status span { display: inline-flex; align-items: center; gap: 4px; } .status svg.lucide { width: 13px; height: 13px; vertical-align: 0; }
@@ -542,7 +553,8 @@ const views = {
     return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p>`)
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<a href="#/u/${esc(c)}">@${esc(c)}</a>`).join(" ")}</p>`)
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
-      + (owner === me() ? sec("package", "Dependencies", `<div id="deps"><span class="muted">…</span></div>`) : "");
+      + (owner === me() ? sec("package", "Dependencies", `<div id="deps"><span class="muted">…</span></div>`) : "")
+      + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "");
   },
   /** The dependency doctor: when it checks, what it may propose, and what it found last. */
   async wireDeps(owner, repo) {
@@ -578,6 +590,47 @@ const views = {
     });
     icons();
   },
+  /** A preview deploy: five steps that go green as the stack goes up and comes down. Click one for its log. */
+  async wirePreview(owner, repo) {
+    const el = $("#preview"), base = `/repos/${owner}/${repo}/preview`;
+    if (!el) return;
+    const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"], ["destroy", "trash-2", "destroy"]];
+    let sel = null, timer = null;
+    const draw = (d) => {
+      const run = d.run, by = Object.fromEntries((run?.steps ?? []).map((s) => [s.key, s]));
+      sel ??= run?.steps.find((s) => s.status === "running")?.key ?? null;
+      const shown = sel && by[sel];
+      const pre = el.querySelector("pre"), stick = !pre || pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+      el.innerHTML = `<div class="flow">${STEPS.map(([k, ic, label], i) => `${i ? `<span class="ln${by[STEPS[i - 1][0]]?.status === "done" ? " done" : ""}"></span>` : ""}<button type="button" data-step="${k}" class="${by[k]?.status ?? "waiting"}${sel === k ? " sel" : ""}" title="${by[k]?.status ?? "waiting"}${by[k]?.ms ? ` · ${(by[k].ms / 1000).toFixed(1)}s` : ""}"><span class="dot">${icon(by[k]?.status === "done" ? "check" : by[k]?.status === "failed" ? "x" : ic)}</span>${label}</button>`).join("")}</div>
+        ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a>${run.done ? ' <span class="muted">(torn down)</span>' : ""}</p>` : ""}
+        ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
+        ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
+        <button class="btn primary" id="preview-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Running…" : "Deploy a preview"}</button>
+        <p class="muted" style="font-size:12px;margin-top:4px">Deploys this repo's <code>rustybuns.config.ts</code> to its targets as a throwaway stage, with the logins on this machine, checks it answers, then destroys it.</p>`;
+      const np = el.querySelector("pre");
+      if (np && stick) np.scrollTop = np.scrollHeight;
+      el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
+      $("#preview-run").addEventListener("click", async () => {
+        sel = null;
+        try { await api(base, {}); } catch (err) { toast(err.message); }
+        poll();
+      });
+      icons();
+    };
+    const poll = async () => {
+      clearTimeout(timer);
+      if (!document.body.contains(el)) return;
+      const d = await api(base).catch(() => null);
+      if (!d) { el.innerHTML = '<span class="muted">unavailable</span>'; return; }
+      // Follow the step that's running, unless someone picked one.
+      const running = d.run?.steps.find((s) => s.status === "running")?.key;
+      if (running && !el.dataset.picked) sel = running;
+      draw(d);
+      if (d.run && !d.run.done) timer = setTimeout(poll, 1000);
+    };
+    el.addEventListener("click", (e) => { if (e.target.closest("[data-step]")) el.dataset.picked = "1"; if (e.target.closest("#preview-run")) delete el.dataset.picked; });
+    poll();
+  },
   /** Open branches, each reviewed against main as it is now, with a merge button. */
   async wireBranches(owner, repo, r) {
     const el = $("#branches"), base = `/repos/${owner}/${repo}/branches`;
@@ -611,6 +664,7 @@ const views = {
     $("#flip")?.addEventListener("click", async () => { await api(`/repos/${owner}/${repo}`, { visibility: r.visibility === "private" ? "public" : "private" }, "PUT"); route(); });
     views.wireBranches(owner, repo, r);
     views.wireDeps(owner, repo);
+    views.wirePreview(owner, repo);
   },
   repoStatus(r, tree, extra = "") {
     return `<span>${icon("git-branch")}${esc(r.branch ?? "main")}</span>${tree?.commit ? `<span>${icon("git-commit-horizontal")}${tree.commit.hash.slice(0, 7)}</span>` : ""}<span>${icon(r.visibility === "private" ? "lock" : "globe")}${r.visibility}</span>${extra}`;
