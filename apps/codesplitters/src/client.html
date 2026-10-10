@@ -558,13 +558,14 @@ async function jobsBadge() {
   el.querySelector("span").textContent = `${n} queued`;
 }
 // Your personal API tokens (GET|POST /api/tokens, DELETE /api/tokens/:id), on your profile. A new one's secret shows once.
+// Apps signed in with OAuth (GET /api/oauth/grants, DELETE /api/oauth/grants/:id) list beside them, to sign out.
 // A new token's secret never goes in the page: the box shows it masked, and only the copy buttons use it.
 const masked = (token) => `${token.slice(0, 4)}${"•".repeat(12)}${token.slice(-4)}`;
 const mcpAdd = (token) => `claude mcp add --scope user --transport http codesplitters ${location.origin}/api/mcp --header "Authorization: Bearer ${token}"`;
 async function wireTokens(made) {
   const el = $("#tokens .body");
   if (!el) return;
-  const list = await api("/tokens").catch(() => []);
+  const [list, apps] = await Promise.all([api("/tokens").catch(() => []), api("/oauth/grants").catch(() => [])]);
   const when = (t) => t.expired ? "expired" : `expires ${new Date(t.expires_at).toLocaleDateString()}`;
   el.innerHTML = (made ? `<div style="display:grid;gap:4px;margin-bottom:8px"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again.</span>
       <div class="copyline"><input readonly value="${esc(masked(made.token))}" title="hidden: copy it with the button"><button class="btn" id="token-copy" title="copy the token">${icon("copy")}</button></div>
@@ -572,6 +573,8 @@ async function wireTokens(made) {
       <div class="copyline"><input readonly value="${esc(mcpAdd(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-mcp" title="copy the command">${icon("copy")}</button></div></div>` : "")
     + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon(t.scope === "write" ? "pencil" : "eye")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· ${t.scope === "write" ? "read and write" : "read"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}</span></span>
       <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("") || '<span class="muted" style="font-size:13px">Lets Claude Code, scripts and MCP clients act as you, until it expires.</span>'}</div>
+    ${apps.length ? `<div class="muted" style="font-size:12px;margin-top:8px">Apps signed in</div><div class="list">${apps.map((g) => `<div class="row" style="flex-wrap:nowrap">${icon("app-window")}<span style="flex:1;min-width:0">${esc(g.client_name)} <span class="muted">· ${g.scope === "write" ? "read and write" : "read"} · signed in ${ago(g.created_at)}${g.last_used_at ? ` · used ${ago(g.last_used_at)}` : ""}</span></span>
+      <button class="btn ghost" data-signout="${esc(g.id)}" title="sign it out">${icon("log-out")}</button></div>`).join("")}</div>` : ""}
     <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for, like claude code" required>
       <div style="display:flex;gap:6px"><select name="scope" style="flex:1;min-width:0"><option value="read">Read only</option><option value="write">Read and write</option></select>
       <select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select>
@@ -585,6 +588,9 @@ async function wireTokens(made) {
   });
   el.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
     await api(`/tokens/${b.dataset.revoke}`, undefined, "DELETE"); toast("Token revoked"); wireTokens();
+  }));
+  el.querySelectorAll("[data-signout]").forEach((b) => b.addEventListener("click", async () => {
+    await api(`/oauth/grants/${b.dataset.signout}`, undefined, "DELETE"); toast("App signed out"); wireTokens();
   }));
 }
 const app = $("#app");
