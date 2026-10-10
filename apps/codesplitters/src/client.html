@@ -2142,7 +2142,7 @@ const HOME_CMDS = [
   ["scissors", "Cut some lines", "Just them and what they use from the repo, as a branch: run the tests, share a card, merge the fix back.", "POST /api/repos/:o/:r/cuts"],
   ["bookmark-plus", "Collect lines", "Playlists of code you love, on your profile.", "POST /api/playlists/:id/tracks"],
   ["search", "Search code", "Everything committed that you're allowed to see.", "GET /api/search?q="],
-  ["gamepad-2", "Play the backrooms", "Every repo is a level. Swat the lines with its README.", "WS /api/game/:room/ws"],
+  ["gamepad-2", "Play the backrooms", "Every repo is a level. Swat the lines with its README.", "WS /api/game/l/:slug/ws"],
 ];
 
 // The little loop each home command plays in its hover panel, keyed by title. Static markup, all CSS.
@@ -2314,6 +2314,7 @@ async function commands() {
   for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
   add("Anywhere", "info", "About codeSplitters", "", () => (location.hash = "#/about"));
+  add("Anywhere", "book-open", "API reference", "GET /api", () => (location.href = "/api.html"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
