@@ -186,8 +186,11 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     let theirs = await must(["rev-parse", up], dir), ours = await must(["rev-parse", heads], dir);
     const before = ours;
 
+    // The crew's copy was forked from the repo's own git, which may have synced upstream since: fetch that agreed commit from it.
+    const has = async (c: string) => (await git(["cat-file", "-e", `${c}^{commit}`], dir)).code === 0;
+    if (crew && r.upstream_commit && !(await has(r.upstream_commit))) await git(["fetch", "--quiet", "--no-tags", lg.path(r.artifact), r.upstream_commit], dir);
     // Upstream rewrote its history when the last commit both sides agreed on isn't in it any more.
-    const agreed = r.upstream_commit && (await git(["cat-file", "-e", `${r.upstream_commit}^{commit}`], dir)).code === 0 ? r.upstream_commit : null;
+    const agreed = r.upstream_commit && await has(r.upstream_commit) ? r.upstream_commit : null;
     const rewritten = !!agreed && agreed !== theirs && !(await isAncestor(dir, agreed, theirs));
     const whose = "upstream's history was rewritten (a force-push), so there's nothing to merge with";
 

@@ -190,6 +190,28 @@ describe("mirrors", () => {
     expect(await sync(call, { pushCrew: false })).toMatchObject({ pushCrew: false });
   });
 
+  test("pushing the crew's copy right after upstream moved still tells a force-push from its own commits", async () => {
+    const call = await mirrored("crewlate");
+    await editHere(call, "README", 2, "token=s3cret", false);
+    const secret = (await file(call, "README")).lines[1];
+    expect((await post(call, "/api/repos/ana/up/do/private?path=README", { lines: [secret.id], private: true })).status).toBe(200);
+    await editHere(call, "README", 1, "hello from here");
+    // Upstream moves while held: only the repo's own git hears of it, so the crew's copy lacks the commit both sides agreed on.
+    await upstreamCommit({ "src/b.ts": "export const b = 1\n" }, "bo's change");
+    expect(await sync(call)).toMatchObject({ state: "held" });
+    const agreed = await upLog("%H");
+    expect(await sh(`git --git-dir ${call.artifacts.path("ana--up")} cat-file -t ${agreed}`)).toBe("commit");
+
+    // Then upstream force-pushes, and the owner turns on Push the crew's copy.
+    await upstreamRewrite({ "README": "hello\nworld\n", "src/a.ts": "export const a = 10\n" }, "start over");
+    expect(await sync(call, { pushCrew: true })).toMatchObject({ state: "rewritten" });
+    // Re-base knows which commits are this copy's own: just the one, on upstream's new history.
+    expect(await sync(call, { resolve: "rebase" })).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect(await sh(`git --git-dir ${up} log --format=%s main`)).toBe("edit README\nstart over");
+    expect(await upShow("README")).toBe("hello from here\ntoken=s3cret");
+    expect(await upShow("src/a.ts")).toBe("export const a = 10");
+  });
+
   test("takes any git URL on the desktop, and says what's wrong with a bad one", async () => {
     const call = await boot();
     opened.push(call);
