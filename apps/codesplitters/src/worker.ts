@@ -17,7 +17,8 @@ export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
-  const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  // A visitor's dig that has expired is gone, swept or not.
+  const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ? AND (expires_at IS NULL OR expires_at > ?)").bind(owner, repo, Date.now()).first();
   if (!r) return { read: false, write: false, exists: false };
   const collab = user ? await env.DB.prepare("SELECT 1 FROM collaborators WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, user).first() : null;
   const write = user === owner || !!collab;
@@ -67,7 +68,7 @@ const app = {
       const u = await env.DB.prepare("SELECT name, bio, theme_html FROM users WHERE name = ?").bind(p[2]).first();
       if (!u) return json({ error: "no such user" }, 404);
       const { results: repos } = await env.DB.prepare(
-        "SELECT owner, name, visibility, level, created_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) ORDER BY created_at DESC").bind(p[2], user).all();
+        "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
       const { results: playlists } = await env.DB.prepare("SELECT * FROM playlists WHERE owner = ? ORDER BY id DESC").bind(p[2]).all();
       return json({ user: u, repos, playlists });
     }
@@ -95,7 +96,7 @@ const app = {
 
       // GET /api/repos/:o/:r
       if (!p[4] && req.method === "GET") {
-        const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, created_at FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+        const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, created_at, expires_at FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
         // Anyone who can read the repo can clone its artifact, with an hour-long read token.
         const h = await handleFor(env, owner, repo).catch(() => null);
@@ -211,9 +212,9 @@ const app = {
       const { results } = await env.DB.prepare(`
         SELECT s.owner, s.repo, s.path, snippet(file_search, 3, '«', '»', '…', 16) AS snippet
         FROM file_search s JOIN repos r ON r.owner = s.owner AND r.name = s.repo
-        WHERE file_search MATCH ? AND (r.visibility = 'public' OR r.owner = ?
+        WHERE file_search MATCH ? AND (r.expires_at IS NULL OR r.expires_at > ?) AND (r.visibility = 'public' OR r.owner = ?
           OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))
-        ORDER BY rank LIMIT 20`).bind(q, user, user).all();
+        ORDER BY rank LIMIT 20`).bind(q, Date.now(), user, user).all();
       return json(results);
     }
 

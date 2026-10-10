@@ -55,6 +55,13 @@ export class FileDurableObject {
     if (req.method === "GET" && route === "log") return json(await this.log(Number(url.searchParams.get("since") ?? 0)));
     if (req.method === "GET" && route === "at") return json(replay(await this.log(0), Number(url.searchParams.get("rev")), this.base ?? empty()));
     if (req.method === "GET" && route === "base") return json(this.base);
+    if (req.method === "POST" && route === "wipe") {
+      // Its repo was evicted: forget everything.
+      const all: Map<string, unknown> = await this.ctx.storage.list();
+      await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
+      [this.doc, this.base, this.commits] = [empty(), null, 0];
+      return json({ ok: true });
+    }
     if (req.method === "POST" && route === "fork") {
       // A branch's copy starts as main's doc, ids and revs and all, once.
       const { doc } = (await req.json()) as { doc: Doc };

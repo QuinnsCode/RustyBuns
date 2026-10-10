@@ -45,13 +45,28 @@ export function slug(s: string) {
   return NAME.test(out) ? out : "digger";
 }
 
-/** The handle linked to this account, made on first sight: its name, else its email, numbered if taken. */
-async function handleFor(env: Env, u: { id: string; name?: string; email?: string }) {
+/** Handles this short are an admin's to give out (handle_grants), never made at signup. */
+export const SHORT = 5;
+
+/**
+ * The handle linked to this account, made on first sight: one granted to its
+ * (verified) email, else its name, else its email, lengthened if short and
+ * numbered if taken.
+ */
+async function handleFor(env: Env, u: { id: string; name?: string; email?: string; emailVerified?: boolean }) {
   const linked = await env.DB.prepare("SELECT name FROM users WHERE auth_id = ?").bind(u.id).first();
   if (linked) return linked.name as string;
-  const base = slug(u.name?.trim() || u.email?.split("@")[0] || "digger");
+  // Anyone can type an email at signup, so a grant goes to a verified one (GitHub, Google).
+  const granted = u.email && u.emailVerified ? await env.DB.prepare("SELECT handle FROM handle_grants WHERE email = ?").bind(u.email.toLowerCase()).first() : null;
+  if (granted) {
+    const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, auth_id) VALUES (?, ?)").bind(granted.handle, u.id).run();
+    if (r.meta?.changes) return granted.handle as string;
+  }
+  let base = slug(u.name?.trim() || u.email?.split("@")[0] || "digger");
+  if (base.length <= SHORT) base = `${base}-digger`;
   for (let n = 1; n < 1000; n++) {
     const name = n === 1 ? base : `${base.slice(0, 35)}-${n}`;
+    if (await env.DB.prepare("SELECT 1 FROM handle_grants WHERE handle = ?").bind(name).first()) continue;   // promised to someone
     const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, auth_id) VALUES (?, ?)").bind(name, u.id).run();
     if (r.meta?.changes) return name;
     // Lost a race to our own other request? Then the link exists now.
@@ -82,8 +97,28 @@ export function isAdmin(env: Env, user: string | null) {
   return !accountsOn(env);
 }
 
+/**
+ * GET|POST /api/admin/handles {handle, email}  give a handle (short ones are only
+ * given this way) to whoever signs in with that email. Admins only.
+ */
+async function grantRoutes(req: Request, env: Env, p: string[]): Promise<Response | null> {
+  if (p[1] !== "admin" || p[2] !== "handles") return null;
+  if (!isAdmin(env, await identify(req, env))) return json({ error: "admins only" }, 403);
+  if (req.method === "GET") return json((await env.DB.prepare("SELECT handle, email FROM handle_grants ORDER BY handle").all()).results);
+  if (req.method !== "POST") return null;
+  const b = (await req.json().catch(() => ({}))) as { handle?: string; email?: string };
+  const email = String(b.email ?? "").trim().toLowerCase();
+  if (!NAME.test(b.handle ?? "")) return json({ error: "handle: lowercase letters and digits, single dashes between" }, 400);
+  if (!/^[^@\s]+@[^@\s]+$/.test(email)) return json({ error: "give an email" }, 400);
+  if (await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(b.handle).first()) return json({ error: `${b.handle} is taken` }, 409);
+  await env.DB.prepare("INSERT OR REPLACE INTO handle_grants (handle, email) VALUES (?, ?)").bind(b.handle, email).run();
+  return json({ handle: b.handle, email }, 201);
+}
+
 /** /api/session, /api/login and /api/logout (alias mode), and /api/auth/* (Better Auth). */
 export async function identityRoutes(req: Request, env: Env, p: string[]): Promise<Response | null> {
+  const grants = await grantRoutes(req, env, p);
+  if (grants) return grants;
   if (p[1] === "auth") return accountsOn(env) ? authFor(env, new URL(req.url).origin).handler(req) : json({ error: "accounts are off; this app uses aliases" }, 404);
   if (p[1] === "session") return json({ mode: accountsOn(env) ? "accounts" : "alias", user: await identify(req, env), providers: accountsOn(env) ? providers(env) : [] });
   if (accountsOn(env)) return p[1] === "login" ? json({ error: "sign in with an account" }, 404) : null;

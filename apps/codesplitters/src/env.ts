@@ -19,6 +19,8 @@ export interface Artifacts {
   get(name: string): Promise<ArtifactsRepo>;
   /** Desktop only: true when import() can read a private source with `source.token`. */
   readonly privateImports?: boolean;
+  /** Deletes a repo for good. */
+  delete?(name: string): Promise<boolean>;
   import(params: { source: { url: string; branch?: string; depth?: number; token?: string }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }): Promise<{ name: string; remote: string; defaultBranch: string }>;
 }
 
@@ -46,6 +48,8 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   /** A GitHub token for listing and digging up repos. Without it: the caller's GitHub sign-in, else `gh auth token`. */
   GITHUB_TOKEN?: string;
+  /** How many visitors' GitHub digs may be live at once (default 20); past it the oldest goes. */
+  DIG_CAP?: string;
   /** "off" stops the desktop asking the GitHub CLI for a token (the tests set it). */
   GH_CLI?: string;
   /** Tests only: stands in for running a coding agent's CLI (see agent-run.ts). */

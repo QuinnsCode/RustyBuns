@@ -233,7 +233,91 @@ describe("accounts", () => {
   });
 });
 
+describe("handles", () => {
+  test("signup never makes a handle of five or fewer; an admin gives those out by email", async () => {
+    const origin = "http://codesplitters.local";
+    const call = await local({ BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "boss-person" });
+    const signup = async (email: string, name: string) => {
+      const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({ email, password: "correct horse battery", name }) });
+      return (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((c) => c.split(";")[0]).join("; ");
+    };
+    const handle = async (cookie: string) => ((await (await call(null, "/api/session", { headers: { cookie } })).json()) as any).user;
+    const grant = (cookie: string, body: unknown) => call(null, "/api/admin/handles", { method: "POST", headers: { cookie }, body: JSON.stringify(body) });
+
+    const boss = await signup("boss@example.com", "Boss Person");
+    expect(await handle(boss)).toBe("boss-person");
+    expect(await handle(await signup("ana@example.com", "Ana"))).toBe("ana-digger");     // too short to make
+
+    const zed = await signup("zed@example.com", "Zed Zedson");
+    expect((await grant(zed, { handle: "zed", email: "zed@example.com" })).status).toBe(403);   // admins only
+    expect((await grant(boss, { handle: "boss-person", email: "x@example.com" })).status).toBe(409);
+    expect((await grant(boss, { handle: "zed", email: "Zed2@Example.com" })).status).toBe(201);
+    // A grant goes to a verified email only, since anyone can type one at signup.
+    const typed = await signup("zed2@example.com", "Zed");
+    const verified = await signup("zed3@example.com", "Zed");
+    expect((await grant(boss, { handle: "zed", email: "zed3@example.com" })).status).toBe(201);
+    await call.env.DB.prepare(`UPDATE "user" SET emailVerified = 1 WHERE email = 'zed3@example.com'`).run();
+    expect(await handle(typed)).toBe("zed-digger");
+    expect(await handle(verified)).toBe("zed");
+  });
+});
+
 describe("github", () => {
+  test("a repo out of anything copied from GitHub", async () => {
+    const { parseRepo } = await import("../src/github.ts");
+    for (const s of ["honojs/hono", "https://github.com/honojs/hono", "github.com/honojs/hono/", "https://www.github.com/honojs/hono/tree/main/src",
+      "https://github.com/honojs/hono/blob/main/src/index.ts#L10", "https://github.com/honojs/hono/pull/12", "git@github.com:honojs/hono.git",
+      "ssh://git@github.com/honojs/hono.git", "git clone https://github.com/honojs/hono.git", "git clone --depth 1 git@github.com:honojs/hono.git my-dir",
+      "gh repo clone honojs/hono", "https://raw.githubusercontent.com/honojs/hono/main/README.md", "https://github.com/honojs/hono?tab=readme"])
+      expect([s, parseRepo(s)]).toEqual([s, "honojs/hono"]);
+    for (const s of ["hono", "https://gitlab.com/a/b", "not a repo"]) expect(parseRepo(s)).toBeNull();
+  });
+
+  test("search GitHub; a visitor's dig expires in a day, and the oldest goes once too many are live", async () => {
+    const call = await local({ GH_CLI: "off", ADMINS: "boss", DIG_CAP: "2" });
+    const real = globalThis.fetch, searched: string[] = [];
+    globalThis.fetch = (async (u: string) => {
+      const url = new URL(u), m = /^\/repos\/([^/]+\/[^/]+)(\/commits\/main)?$/.exec(url.pathname);
+      if (url.pathname === "/search/repositories") { searched.push(url.searchParams.get("q")!); return Response.json({ items: [{ full_name: "o/tiny", description: "d", stargazers_count: 5, language: "TS" }] }); }
+      if (m && m[2]) return Response.json({ sha: "c".repeat(40) });
+      if (m) return Response.json({ full_name: m[1], private: false, default_branch: "main" });
+      return new Response("{}", { status: 404 });
+    }) as any;
+    const deleted: string[] = [];
+    call.artifacts.import = (async (params: any) => call.artifacts.create(params.target.name, { setDefaultBranch: "main" })) as any;
+    const del = call.artifacts.delete.bind(call.artifacts);
+    call.artifacts.delete = (async (n: string) => { deleted.push(n); return del(n); }) as any;
+    try {
+      for (const u of ["ana", "bo", "boss"]) await post(call, u, "/api/login", { name: u });
+      expect(await (await call(null, "/api/github/search?q=tiny")).json()).toEqual({ repos: [{ repo: "o/tiny", description: "d", stars: 5, language: "TS" }] });
+      expect(searched).toEqual(["tiny is:public"]);
+
+      const one = (await (await post(call, "ana", "/api/github/dig", { repo: "o/one" })).json()) as any;
+      expect(one.expires_at - Date.now()).toBeGreaterThan(23 * 3600_000);
+      // Ana opens a file, so evicting it has a Durable Object to wipe.
+      await post(call, "ana", "/api/repos/ana/one/files", { path: "a.ts", content: "x\n" });
+      await post(call, "bo", "/api/github/dig", { repo: "o/two" });
+      expect((await post(call, "boss", "/api/github/dig", { repo: "o/keep" })).status).toBe(201);   // an admin's keeps
+      expect((await (await post(call, "boss", "/api/github/dig", { repo: "o/keep", name: "keep-2" })).json() as any).expires_at).toBeUndefined();
+
+      // A third visitor's dig past the cap of two: ana's, the oldest, goes.
+      expect((await post(call, "bo", "/api/github/dig", { repo: "o/three" })).status).toBe(201);
+      expect(deleted).toEqual(["ana--one"]);
+      expect((await call("ana", "/api/repos/ana/one")).status).toBe(404);
+      expect(await call.env.DB.prepare("SELECT path FROM files WHERE owner = 'ana'").all()).toMatchObject({ results: [] });
+      // And she can dig it up again, fresh.
+      await post(call, "ana", "/api/github/dig", { repo: "o/one" });
+      expect(((await (await call("ana", "/api/repos/ana/one/do/file?path=a.ts")).json()) as any).error).toBeDefined();
+
+      // Past its day, a dig is gone at once, swept or not.
+      await call.env.DB.prepare("UPDATE repos SET expires_at = ? WHERE owner = 'bo' AND name = 'three'").bind(Date.now() - 1).run();
+      expect((await call("bo", "/api/repos/bo/three")).status).toBe(404);
+      expect((await (await call("bo", "/api/users/bo")).json() as any).repos.map((r: any) => r.name)).toEqual([]);
+      expect((await call("boss", "/api/repos/boss/keep")).status).toBe(200);
+    } finally { globalThis.fetch = real; }
+  });
+
   test("dig up a GitHub repo: a fork you own, with where it came from", async () => {
     const call = await local({ GH_CLI: "off", GITHUB_TOKEN: "t0k" });
     // GitHub's API, faked; and the import, made local (a real one clones over the network).
