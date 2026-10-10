@@ -3,7 +3,7 @@
 // the name tags, the chatter bubbles) draws the icon's strokes where the emoji glyph would have gone, in the
 // same space, so the office's own measuring and centring still add up.
 import { createElement } from "lucide";
-import { EMOJI } from "./emoji.ts";
+import { TINT, iconFor } from "./emoji.ts";
 import { hasEmoji, split } from "./split.ts";
 
 // --- the DOM ---
@@ -18,7 +18,7 @@ function swap(node: Text) {
   // a swap that changed nothing would wake the observer for the same text, forever
   if (runs.every(run => typeof run === "string")) return;
   node.replaceWith(...runs.map(run => typeof run === "string" ? run
-    : createElement(EMOJI[run.emoji]!, { class: "rb-icon", width: "1em", height: "1em", "aria-hidden": "true" })));
+    : createElement(iconFor(run.emoji), { class: TINT[run.emoji]?.solid ? "rb-icon rb-solid" : "rb-icon", "aria-hidden": "true" })));
 }
 
 function walk(root: Node) {
@@ -31,7 +31,9 @@ function walk(root: Node) {
 
 function watchDom() {
   const style = document.createElement("style");
-  style.textContent = ".rb-icon{display:inline-block;width:1em;height:1em;vertical-align:-0.125em;flex:none}";
+  // a solid status badge (a passing check, say) is a size up, so it reads at a glance
+  style.textContent = ".rb-icon{display:inline-block;width:1em;height:1em;vertical-align:-0.125em;flex:none}" +
+    ".rb-solid{width:1.25em;height:1.25em;vertical-align:-0.25em}";
   document.head.append(style);
   walk(document.body);
   new MutationObserver(records => {
@@ -47,13 +49,14 @@ else document.addEventListener("DOMContentLoaded", watchDom, { once: true });
 
 // --- canvas ---
 
-// each icon as one Path2D on Lucide's 24-unit grid
-const paths = new Map<string, Path2D>();
-function pathFor(emoji: string): Path2D {
-  let p = paths.get(emoji);
-  if (p) return p;
-  p = new Path2D();
-  for (const [tag, a] of EMOJI[emoji]!) {
+// each icon's shapes as Path2Ds on Lucide's 24-unit grid, with the stroke and fill a tint gives them
+type Shape = { path: Path2D; stroke?: string; fill?: string };
+const shapes = new Map<string, Shape[]>();
+function shapesFor(emoji: string): Shape[] {
+  let list = shapes.get(emoji);
+  if (list) return list;
+  list = iconFor(emoji).map(([tag, a]) => {
+    const p = new Path2D();
     const n = (k: string) => Number(a[k] ?? 0);
     if (tag === "path") p.addPath(new Path2D(String(a.d)));
     else if (tag === "circle") { p.moveTo(n("cx") + n("r"), n("cy")); p.arc(n("cx"), n("cy"), n("r"), 0, Math.PI * 2); }
@@ -65,9 +68,11 @@ function pathFor(emoji: string): Path2D {
       for (let i = 0; i < pts.length; i += 2) i ? p.lineTo(pts[i]!, pts[i + 1]!) : p.moveTo(pts[0]!, pts[1]!);
       if (tag === "polygon") p.closePath();
     }
-  }
-  paths.set(emoji, p);
-  return p;
+    const fill = a.fill && a.fill !== "none" ? String(a.fill) : undefined;
+    return { path: p, stroke: a.stroke ? String(a.stroke) : undefined, fill };
+  });
+  shapes.set(emoji, list);
+  return list;
 }
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -89,7 +94,6 @@ function patchCanvas(proto: Ctx | undefined) {
     // the em box around the current baseline, which is where the icon is centred
     const em = measure.call(ctx, "M");
     const top = -em.fontBoundingBoxAscent, height = em.fontBoundingBoxAscent + em.fontBoundingBoxDescent;
-    const size = height * 0.78;
     ctx.save();
     ctx.textAlign = "left";
     ctx.translate(start, y);
@@ -99,14 +103,20 @@ function patchCanvas(proto: Ctx | undefined) {
       const w = measure.call(ctx, typeof run === "string" ? run : run.raw).width;
       if (typeof run === "string") orig.call(ctx, run, at, 0);
       else if (icons) {
+        // the emoji glyph is wider than a letter, so a solid badge can fill more of its space
+        const size = Math.min(w, height) * (TINT[run.emoji]?.solid ? 0.95 : 0.78);
         ctx.save();
         ctx.translate(at + (w - size) / 2, top + (height - size) / 2);
         ctx.scale(size / 24, size / 24);
-        ctx.strokeStyle = ctx.fillStyle;
+        const color = ctx.fillStyle;
         ctx.lineWidth = 2;
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
-        ctx.stroke(pathFor(run.emoji));
+        for (const s of shapesFor(run.emoji)) {
+          if (s.fill) { ctx.fillStyle = s.fill; ctx.fill(s.path); }
+          ctx.strokeStyle = s.stroke ?? color;
+          ctx.stroke(s.path);
+        }
         ctx.restore();
       }
       at += w;

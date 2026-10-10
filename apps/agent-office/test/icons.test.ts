@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { EMOJI } from "../icons/emoji.ts";
+import { EMOJI, TINT, iconFor } from "../icons/emoji.ts";
 import { hasEmoji, split } from "../icons/split.ts";
 
 test("every emoji has an icon, keyed without U+FE0F", () => {
@@ -27,6 +27,27 @@ test("a ZWJ sequence beats the person it starts with", () => {
 });
 
 test("emoji without an icon stay as they are", () => {
-  expect(hasEmoji("🟢 live")).toBe(false);
-  expect(hasEmoji("🟢 🍺")).toBe(true);
+  expect(hasEmoji("🧩 puzzle")).toBe(false);
+  expect(hasEmoji("🧩 🍺")).toBe(true);
+});
+
+test("a passing check is a solid green badge with a white tick", () => {
+  const [ring, tick] = iconFor("✅");
+  expect(ring![1]).toMatchObject({ fill: "#2da44e", stroke: "#2da44e" });
+  expect(tick![1]).toMatchObject({ stroke: "#fff" });
+});
+
+test("a solid tint fills the outline wherever it sits", () => {
+  // the octagon sits between OctagonX's two strokes; filled there, it would hide the first
+  const [first, ...rest] = iconFor("⛔");
+  expect(String(first![1].d)).toMatch(/z$/i);
+  expect(first![1].fill).toBe("#d1242f");
+  expect(rest.map(([, a]) => a.stroke)).toEqual(["#fff", "#fff"]);
+});
+
+test("every tint has an icon, and an outline to fill when solid", () => {
+  for (const [k, t] of Object.entries(TINT)) {
+    expect(EMOJI[k]).toBeDefined();
+    if (t.solid) expect(iconFor(k).some(([, a]) => a.fill === t.color)).toBe(true);
+  }
 });

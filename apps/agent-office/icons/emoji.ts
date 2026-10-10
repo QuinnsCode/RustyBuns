@@ -1,10 +1,9 @@
 // Agent Office's emoji, each with the Lucide icon that stands in for it. Keys are written without the U+FE0F
-// variation selector (split.ts matches with or without it). An emoji left out of here stays an emoji: the
-// coloured status dots, mostly, whose colour is the whole point.
+// variation selector (split.ts matches with or without it). An emoji left out of here stays an emoji.
 import {
   ArrowDown, ArrowDownUp, ArrowUp, ArrowUpToLine, Armchair, Asterisk, Axe, Ban, Banknote, Bean, Beer, Bell, BellOff,
   BookOpen, Bomb, Bot, Brain, BrickWall, BriefcaseBusiness, BrushCleaning, Building, BuildingComplex, Calendar, CarFront,
-  Castle, Cat, Check, ChevronsUp, Cigarette, CigaretteOff, CircleAlert, CircleCheck, CircleQuestionMark, CircleX,
+  Castle, Cat, Check, ChevronsUp, Cigarette, CigaretteOff, Circle, CircleAlert, CircleCheck, CircleQuestionMark, CircleX,
   ClipboardList, Clock, Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, Coffee, Command, Compass, Construction,
   CornerDownLeft, Croissant, Crown, CupSoda, Dices, Disc, Disc3, Dog, DoorOpen, Droplet, Ear, Earth, Eye,
   FaceAngry, FaceExpressionless, FaceGrinning, FaceNeutral, FaceSlightlyFrowning, FaceSlightlySmiling, FastForward,
@@ -67,4 +66,34 @@ export const EMOJI: Record<string, IconNode> = {
   "😵": FaceExpressionless, "🥴": FaceExpressionless, "🤦": FaceExpressionless, "😩": FaceAngry,
   "😢": FaceSlightlyFrowning, "😭": FaceSlightlyFrowning, "😞": FaceSlightlyFrowning, "😰": FaceSlightlyFrowning,
   "😨": FaceSlightlyFrowning, "😱": FaceSlightlyFrowning, "🥺": FaceSlightlyFrowning,
+  // CI and merge status: the dots (see TINT)
+  "🟢": Circle, "🔴": Circle, "🟡": Circle, "⚪": Circle,
 };
+
+// Status keeps its colour, since that's what you read at a glance (a PR's checks, a worker's state).
+// A solid one fills the icon's outline (its circle, or the path that closes) and draws the rest in white, like
+// GitHub's own badges.
+const GREEN = "#2da44e", RED = "#d1242f", AMBER = "#d4a72c", GREY = "#8c959f";
+export const TINT: Record<string, { color: string; solid?: boolean }> = {
+  "✅": { color: GREEN, solid: true }, "🟢": { color: GREEN, solid: true },
+  "❌": { color: RED, solid: true }, "🔴": { color: RED, solid: true },
+  "⛔": { color: RED, solid: true }, "🛑": { color: RED, solid: true },
+  "🟡": { color: AMBER, solid: true }, "⚠": { color: AMBER },
+  "⚪": { color: GREY, solid: true },
+};
+
+// an icon's outline: its circle, or a path that closes (an octagon's comes last, a circle's first)
+const isOutline = ([tag, a]: IconNode[number]) =>
+  tag === "circle" || tag === "rect" || tag === "polygon" || (tag === "path" && /z\s*$/i.test(String(a.d)));
+
+/** The icon for an emoji, its shapes carrying their own stroke and fill when it's tinted. */
+export function iconFor(emoji: string): IconNode {
+  const icon = EMOJI[emoji]!, tint = TINT[emoji];
+  if (!tint) return icon;
+  const outline = tint.solid ? icon.findIndex(isOutline) : -1;
+  if (outline < 0) return icon.map(([tag, a]) => [tag, { ...a, stroke: tint.color }]);
+  // the filled outline goes first, so it never paints over a shape drawn before it
+  const [tag, a] = icon[outline]!;
+  return [[tag, { ...a, fill: tint.color, stroke: tint.color }],
+    ...icon.filter((_, i) => i !== outline).map(([t, a]): IconNode[number] => [t, { ...a, stroke: "#fff" }])];
+}
