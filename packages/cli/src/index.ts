@@ -12,6 +12,7 @@ import { buildDesktop } from "./build.ts";
 import { buildBox } from "./box.ts";
 import type { RustyBunsConfig } from "./config.ts";
 import { infer, readPackageJson } from "./glue/infer.ts";
+import { unsupported } from "./glue/fit.ts";
 import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
@@ -104,6 +105,9 @@ async function init() {
   if (existsSync("rustybuns.config.ts") && !force) throw new Error("rustybuns.config.ts already exists; init would overwrite it. Edit it directly, or pass --force to regenerate from scratch.");
   if (inf.isWorkspaceRoot && !src && !inf.vite.configPath && inf.framework === "unknown")
     throw new Error("this looks like a monorepo root (workspaces, no app here). cd into the package you want to ship and run init there.");
+  const later = unsupported(inf.stack);
+  if (later && !force)
+    throw new Error(`${later.name} isn't supported yet (${later.issue}). Pass --force to write a config anyway.`);
   if (inf.framework === "unknown" && !src && !force)
     throw new Error("no vite or rwsdk dependency in package.json, so this does not look like a web app Rusty Buns can box. Pass --force to write a config anyway.");
   console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}`);

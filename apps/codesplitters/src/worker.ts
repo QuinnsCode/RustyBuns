@@ -13,6 +13,7 @@ import { createShare, shareRoutes } from "./shares.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
+import { repoFit } from "./fit.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -122,6 +123,8 @@ const app = {
         const v = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
         return createShare(env, owner, repo, user, a, v?.visibility === "private", await body());
       }
+      // GET /api/repos/:o/:r/fit  how easily Rusty Buns could box it
+      if (p[4] === "fit" && req.method === "GET") return repoFit((r) => app.fetch(r, env), url.origin, owner, repo, user);
       // GET /api/repos/:o/:r/tree?path=dir  the repo's git tree, plus files written here but not catalogued yet
       if (p[4] === "tree") {
         const dir = (url.searchParams.get("path") ?? "").replace(/^\/|\/$/g, "");
