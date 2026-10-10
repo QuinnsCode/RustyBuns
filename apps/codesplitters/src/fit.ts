@@ -1,8 +1,10 @@
 // Rusty Buns fit: could this repo ship as a desktop binary, a Worker and a
 // server with `rustybuns init`? Reads the top level, package.json and any
-// vite config, and lets the CLI's own detector decide.
+// vite config, and lets the CLI's own detector decide. A monorepo root also
+// lists its workspaces, each with a verdict of its own; ?dir= checks one.
 //
-//   GET /api/repos/:o/:r/fit   {verdict, stack, label, typescript, reasons, issue?}
+//   GET /api/repos/:o/:r/fit[?dir=apps/web]
+//     {verdict, stack, label, typescript, reasons, issue?, dir?, workspaces?: [{dir, name, verdict, stack, label}]}
 
 import { fit, type Fit } from "@rustybuns/cli/fit";
 import type { Doc } from "./lines.ts";
@@ -10,30 +12,81 @@ import { actingAs } from "./identity.ts";
 import { json } from "./env.ts";
 
 type Self = (r: Request) => Promise<Response>;
+type Entry = { path: string; type: string };
 
-export async function repoFit(self: Self, origin: string, owner: string, repo: string, user: string | null): Promise<Response> {
+/** How many workspaces a monorepo root checks before it stops: each one costs a few reads. */
+const MAX_WORKSPACES = 24;
+
+/** Workspace globs from package.json's `workspaces` (array or {packages}) or pnpm-workspace.yaml's `packages:`. */
+export function workspaceGlobs(pkg: Record<string, any> | null, pnpmYaml: string | null): string[] {
+  const out: string[] = [];
+  const ws = pkg?.workspaces;
+  for (const g of Array.isArray(ws) ? ws : Array.isArray(ws?.packages) ? ws.packages : []) if (typeof g === "string") out.push(g);
+  if (pnpmYaml) {
+    let inPackages = false;
+    for (const line of pnpmYaml.split("\n")) {
+      if (/^packages\s*:/.test(line)) { inPackages = true; continue; }
+      if (inPackages && /^\S/.test(line)) inPackages = false;
+      const m = inPackages && line.match(/^\s*-\s*["']?([^"'#]+?)["']?\s*(#.*)?$/);
+      if (m) out.push(m[1]!);
+    }
+  }
+  return [...new Set(out.filter((g) => !g.startsWith("!")).map((g) => g.replace(/^\.\//, "").replace(/\/+$/, "")).filter(Boolean))];
+}
+
+export async function repoFit(self: Self, origin: string, owner: string, repo: string, user: string | null, dir = ""): Promise<Response> {
+  dir = dir.replace(/^\/+|\/+$/g, "");
+  if (dir.split("/").some((s) => s === ".." || s === ".")) return json({ error: "dir: a folder in the repo" }, 400);
   const get = (path: string) => { const r = new Request(origin + `/api/repos/${owner}/${repo}` + path); if (user) actingAs.set(r, user); return self(r); };
-  const list = async (dir: string) => {
-    const r = await get(`/tree?path=${encodeURIComponent(dir)}`);
-    return r.status === 200 ? ((await r.json()) as { entries: { path: string; type: string }[] }).entries : null;
+  const list = async (d: string) => {
+    const r = await get(`/tree?path=${encodeURIComponent(d)}`);
+    return r.status === 200 ? ((await r.json()) as { entries: Entry[] }).entries : null;
   };
   const read = async (path: string) => {
     const r = await get(`/do/file?path=${encodeURIComponent(path)}`);
     return r.ok ? ((await r.json()) as Doc).lines.map((l) => l.text).join("\n") : null;
   };
+  const join = (d: string, name: string) => d ? `${d}/${name}` : name;
 
-  const top = await list("");
+  /** The fit of one folder, with paths relative to it, and its package.json for the caller. */
+  const fitAt = async (d: string, top: Entry[]): Promise<{ f: Fit; pkg: Record<string, any> | null; files: string[] }> => {
+    const rel = (p: string) => d ? p.slice(d.length + 1) : p;
+    const files = top.map((e) => rel(e.path));
+    // One level down is enough to spot TypeScript in the usual places.
+    for (const e of top.filter((e) => e.type === "dir" && ["src", "app", "lib", "server"].includes(rel(e.path)))) files.push(...((await list(e.path)) ?? []).map((x) => rel(x.path)));
+    let pkg: Record<string, any> | null = null;
+    if (files.includes("package.json")) {
+      try { pkg = JSON.parse((await read(join(d, "package.json"))) ?? "null"); }
+      catch { return { f: { verdict: "poor", stack: "unknown", label: "package.json", typescript: false, reasons: ["package.json isn't valid JSON."] }, pkg: null, files }; }
+    }
+    const vitePath = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"].find((f) => files.includes(f));
+    const viteConfig = vitePath ? await read(join(d, vitePath)) : null;
+    return { f: fit({ pkg, files, viteConfig }), pkg, files };
+  };
+
+  const top = await list(dir);
+  if (dir && !top?.length) return json({ error: `no folder ${dir} in this repo` }, 404);
   if (!top) return json({ error: "this repo's files aren't ready yet" }, 202);
-  const files = top.map((e) => e.path);
-  // One level down is enough to spot TypeScript in the usual places.
-  for (const d of top.filter((e) => e.type === "dir" && ["src", "app", "lib", "server"].includes(e.path))) files.push(...((await list(d.path)) ?? []).map((e) => e.path));
+  const { f, pkg, files } = await fitAt(dir, top);
+  if (dir) return json({ ...f, dir });
 
-  let pkg: Record<string, any> | null = null;
-  if (files.includes("package.json")) {
-    try { pkg = JSON.parse((await read("package.json")) ?? "null"); }
-    catch { return json({ verdict: "poor", stack: "unknown", label: "package.json", typescript: false, reasons: ["package.json isn't valid JSON."] } satisfies Fit); }
+  const globs = workspaceGlobs(pkg, files.includes("pnpm-workspace.yaml") ? await read("pnpm-workspace.yaml") : null);
+  if (!globs.length) return json(f);
+
+  // Expand each glob one level: `apps/*` (or `apps/**`) is every folder in apps/, anything else is a folder itself.
+  const dirs: string[] = [];
+  for (const g of globs) {
+    const star = g.match(/^(.*?)\/\*{1,2}$/);
+    if (!star) { dirs.push(g); continue; }
+    if (star[1]!.includes("*")) continue;
+    for (const e of (await list(star[1]!)) ?? []) if (e.type === "dir") dirs.push(e.path);
   }
-  const vitePath = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"].find((f) => files.includes(f));
-  const viteConfig = vitePath ? await read(vitePath) : null;
-  return json(fit({ pkg, files, viteConfig }));
+  const workspaces = [];
+  for (const d of [...new Set(dirs)].sort().slice(0, MAX_WORKSPACES)) {
+    const entries = await list(d);
+    if (!entries?.some((e) => e.type === "file" && e.path === join(d, "package.json"))) continue;
+    const w = await fitAt(d, entries);
+    workspaces.push({ dir: d, name: typeof w.pkg?.name === "string" ? w.pkg.name : d.split("/").pop()!, verdict: w.f.verdict, stack: w.f.stack, label: w.f.label });
+  }
+  return json({ ...f, workspaces });
 }
