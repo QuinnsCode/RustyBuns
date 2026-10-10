@@ -1,17 +1,19 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
+import { lintMerge, newProblems } from "../src/lint.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
 import { noodles } from "../src/noodles.ts";
 import { isBuildFile } from "../src/buildfiles.ts";
 import worker from "../src/worker.ts";
+import { ruleFor } from "../src/limits.ts";
 
 // Every app instance makes a temp dir of git repos; remove them all at the end.
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
-const local = async (extra?: Record<string, string>) => { const c = await boot(extra); opened.push(c); return c; };
+const local = async (extra?: Record<string, unknown>) => { const c = await boot(extra); opened.push(c); return c; };
 
 const post = (call: Call, user: string | null, path: string, body: unknown) =>
   call(user, path, { method: "POST", body: JSON.stringify(body) });
@@ -63,7 +65,8 @@ describe("merge", () => {
     const { base, main, branch } = fork("a\nb\nc");
     apply(main, [{ kind: "set", line: "L1", base: 1, text: "A" }, { kind: "insert", after: "L3", text: "main's" }], "ana");
     apply(branch, [{ kind: "set", line: "L2", base: 2, text: "B" }, { kind: "insert", after: "L2", text: "x" }, { kind: "insert", after: "L4", text: "y" }, { kind: "delete", line: "L3", base: 3 }], "bot");
-    const m = merge(base, branch, main, {}, "bot");
+    // As prose: in code, main's line right after the one the branch deleted would be a conflict (see below).
+    const m = merge(base, branch, main, {}, "bot", "notes.md");
     expect(m.conflicts).toEqual([]);
     expect(land(main, m)).toBe("A\nB\nx\ny\nmain's");
     expect(main.lines.map((l) => l.by)).toEqual(["ana", "bot", "bot", "bot", "ana"]);
@@ -154,12 +157,91 @@ describe("merge", () => {
     expect(clean(was, onMain, onMain)).toBe(onMain);
   });
 
+  test("a settled merge that would no longer build is a conflict until someone lands it anyway", () => {
+    // PR #243's deps.ts: keeping the branch's tryWith drops the `short` main declared, and main's later line still reads it.
+    const was = "const tryWith = (us) => tester(us);\nconst all = tryWith(updates);\nlog(all);";
+    const onMain = "let short = false;\nconst tryWith = async (us) => {\n  short = true;\n  return tester(us);\n};\nconst all = tryWith(updates);\nlog(all);\nif (short) log(\"short\");";
+    const onBranch = "const tryWith = async (us) => tester(us, tried);\nconst all = tryWith(updates);\nlog(all);";
+    const { base, main, branch } = sides(was, onMain, onBranch), m = merge(base, branch, main, { L1: "branch" });
+    expect(m.conflicts).toEqual([]);
+    // The globals both sides use (tester, log, updates) and the branch's own `tried` aren't new.
+    expect(lintMerge("deps.ts", main, branch, m, { L1: "branch" })).toEqual([{ line: "lint:undefined:short", base: "", main: null, branch: null, lint: "`short` is not defined (line 4)" }]);
+    expect(lintMerge("deps.ts", main, branch, m, { L1: "branch", "lint:undefined:short": "branch" })).toEqual([]);
+    // Only code is checked.
+    expect(lintMerge("deps.md", main, branch, m)).toEqual([]);
+  });
+
+  test("the merge check: redeclared names, undefined names and broken syntax, new ones only", () => {
+    const keys = (merged: string, a = "", b = "") => newProblems("x.ts", merged, a, b).map((p) => p.key);
+    expect(keys("const tryWith = 1;\nconst tryWith = 2;")).toEqual(["redeclared:tryWith"]);
+    expect(keys("if (a {")).toEqual(["syntax:UnexpectedToken"]);
+    expect(keys("f(a, b)", "f(a)", "f(b)")).toEqual([]);
+    // Scopes, hoisting, patterns, types, keys and labels aren't uses of an undefined name.
+    expect(keys([
+      "import { a } from './a'; import type { T } from './t';",
+      "export function f<U>({ b, c: [d] = [] }: T, ...e: U[]): T { return g(a, b, d, e, h, arguments) }",
+      "function g(...xs: unknown[]) { var h = 1; return xs }",
+      "const o = { k: 1, m() { return this.k }, [a]: 2 }; o.k; out: for (const [i, j] of Object.entries(o)) { if (i) break out; j }",
+      "class C extends Array<T> { #p = 1; static s = C; q(x = this.#p) { try {} catch ({ message }) { return message ?? x } } }",
+      "enum E { A = 1 } namespace N { export const v = E.A } declare const env: { z: number }; env.z as number; N.v; new C();",
+    ].join("\n"))).toEqual(["undefined:h", "undefined:Object", "undefined:Array"]);
+  });
+
+  // The same edits merged as a file at `path` (from PR #244 against main).
+  const at = (path: string, content: string, onMain: string, onBranch: string, resolve = {}) => {
+    const { base, main, branch } = sides(content, onMain, onBranch);
+    return { m: merge(base, branch, main, resolve, "bot", path), main };
+  };
+
+  test("a lockfile both changed is one whole-file conflict: keep a side, then regenerate", () => {
+    const was = `{\n  "packages": {\n    "varlock": ["varlock@1.20.0"],\n  }\n}`;
+    const onMain = was.replace("1.20.0", "1.21.1"), onBranch = was.replace("1.20.0", "1.22.0");
+    expect(at("bun.lock", was, onMain, onBranch).m.conflicts).toEqual([{ line: "file", base: "", main: null, branch: null, whole: true }]);
+    const { m, main } = at("bun.lock", was, onMain, onBranch, { file: "branch" });
+    expect(land(main, m)).toBe(onBranch);
+    // Only one side changed it: nothing to settle.
+    expect(at("bun.lock", was, onMain, was).m.conflicts).toEqual([]);
+  });
+
+  test("a config key the merge would define twice is a conflict", () => {
+    // Each side added BETTER_AUTH_SECRET, in a different place with a different value.
+    const was = "# @required\nGITHUB_ID=\n\n# deploys\nDEPLOY_KEY=";
+    const onMain = "# @required\nBETTER_AUTH_SECRET=op(op://cs/auth)\nGITHUB_ID=\n\n# deploys\nDEPLOY_KEY=", onBranch = "# @required\nGITHUB_ID=\n\n# deploys\nDEPLOY_KEY=\nBETTER_AUTH_SECRET=";
+    expect(at(".env.schema", was, onMain, onBranch).m.conflicts).toEqual([{ line: "key:BETTER_AUTH_SECRET", base: "", main: "BETTER_AUTH_SECRET=op(op://cs/auth)", branch: "BETTER_AUTH_SECRET=" }]);
+    const kept = at(".env.schema", was, onMain, onBranch, { "key:BETTER_AUTH_SECRET": "main" });
+    expect(land(kept.main, kept.m)).toBe(onMain);
+    // Nested keys count by their path: two "version"s in different objects are fine.
+    expect(at("package.json", `{\n  "a": {\n    "v": 1\n  }\n}`, `{\n  "a": {\n    "v": 1\n  },\n  "b": {\n    "v": 2\n  }\n}`, `{\n  "a": {\n    "v": 1\n  }\n}`).m.conflicts).toEqual([]);
+    const json = (deps: string) => `{\n  "dependencies": {\n${deps}\n  }\n}`;
+    const dup = at("package.json", json(`    "a": "1"`), json(`    "z": "2",\n    "a": "1"`), json(`    "a": "1",\n    "z": "3"`));
+    expect(dup.m.conflicts.map((x) => x.line)).toEqual(["key:dependencies.z"]);
+    for (const [pick, want] of [["main", `    "z": "2",\n    "a": "1"`], ["branch", `    "a": "1",\n    "z": "3"`]] as const) {
+      const r = at("package.json", json(`    "a": "1"`), json(`    "z": "2",\n    "a": "1"`), json(`    "a": "1",\n    "z": "3"`), { "key:dependencies.z": pick });
+      expect(land(r.main, r.m)).toBe(json(want));
+    }
+  });
+
+  test("in code, lines added next to lines the other side deleted are a conflict; in prose they merge", () => {
+    // Main stopped defining `set`; the branch added a new use of it right there.
+    const was = "const agents = on();\nconst set = (n) => !!env[n];\nif (agents && !set(\"X\")) fail();";
+    const onMain = "const agents = on();";
+    const onBranch = "const agents = on();\nconst set = (n) => !!env[n];\nif (agents && !set(\"X\")) fail();\nif (deploys && !set(\"X\")) fail();";
+    expect(at("rustybuns.config.ts", was, onMain, onBranch).m.conflicts).toHaveLength(1);
+    const doc = "# T\nold para\nmore", docMain = "# T", docBranch = "# T\nold para\nmore\nnew para";
+    const r = at("README.md", doc, docMain, docBranch);
+    expect(r.m.conflicts).toEqual([]);
+    expect(land(r.main, r.m)).toBe("# T\nnew para");
+  });
+
   test("the same line added on both sides in different places would land twice: a conflict", () => {
     const { base, main, branch } = sides("a\nb\nc", "import { z } from './z'\na\nb\nc", "a\nb\nimport { z } from './z'\nc");
     const m = merge(base, branch, main);
     expect(m.conflicts).toEqual([{ line: "L4", base: "", main: "import { z } from './z'", branch: "import { z } from './z'", doubled: true }]);
     expect(land(structuredClone(main), merge(base, branch, main, { L4: "main" }))).toBe("import { z } from './z'\na\nb\nc");
     expect(land(structuredClone(main), merge(base, branch, main, { L4: "branch" }))).toBe("import { z } from './z'\na\nb\nimport { z } from './z'\nc");
+    // A line the file already repeats (a test's setup call) isn't flagged either.
+    const setup = "await post(call, 'ana', '/api/repos', { name: 'r' });";
+    expect(clean(`${setup}\na\nb`, `${setup}\na\n${setup}\nb`, `${setup}\na\nb\n${setup}`)).toBe(`${setup}\na\n${setup}\nb\n${setup}`);
     // A short or bare line ("}", "return;") repeats all the time: it isn't flagged.
     expect(clean("a\nb\nc", "}\na\nb\nc", "a\nb\n}\nc")).toBe("}\na\nb\n}\nc");
   });
@@ -292,8 +374,12 @@ describe("levels", () => {
   });
 });
 
+// Every signup hashes a real password (scrypt), a few hundred ms per test alone and
+// several times that under the full suite, so tests that sign people up get longer.
+const SIGNUPS = 20_000;
+
 /** The app with accounts on, and helpers to sign up, pick a handle and ask who you are. */
-async function accounts(extra: Record<string, string> = {}) {
+async function accounts(extra: Record<string, unknown> = {}) {
   const origin = "http://codesplitters.local";
   const call = await local({ BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ...extra });
   const signup = async (email: string, name: string, headers: Record<string, string> = {}) => {
@@ -326,6 +412,95 @@ describe("accounts", () => {
     const me = await (await call(null, "/api/me", { headers: { cookie } })).json() as any;
     expect(me.name).toBe("analyst");
     expect((await call(null, "/api/repos", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "dig" }) })).status).toBe(201);
+  }, SIGNUPS);
+});
+
+describe("account email", () => {
+  /** A stand-in for the send_email binding: what was sent, and the link in the last one to `to`. */
+  const outbox = () => {
+    const sent: { from: unknown; to: string; subject: string; text: string; html?: string }[] = [];
+    return { sent, EMAIL: { send: async (m: (typeof sent)[number]) => { sent.push(m); return { messageId: String(sent.length) }; } },
+      link: (to: string) => { const m = sent.findLast((s) => s.to === to)!; const u = new URL(/https?:\/\/\S+/.exec(m.text)![0]); return u.pathname + u.search; } };
+  };
+  const cookies = (res: Response) => (res.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
+
+  test("without a sender there's no mail: no reset, no verification, and no grant for a typed email", async () => {
+    const { call, signup, session } = await accounts({ ADMINS: "boss-person" });
+    const cookie = await signup("ana@example.com", "Ana Lyst");
+    expect(await session(cookie)).not.toHaveProperty("unverified");
+    expect(await session()).not.toHaveProperty("mail");
+    const reset = await call(null, "/api/auth/request-password-reset", { method: "POST", headers: { "content-type": "application/json", origin: "http://codesplitters.local" },
+      body: JSON.stringify({ email: "ana@example.com", redirectTo: "/?reset=1" }) });
+    expect(reset.status).toBe(400);
+  });
+
+  test("signup mails a verification link; opening it verifies the email, so a grant lands", async () => {
+    const box = outbox();
+    const { call, signup, session, person } = await accounts({ ADMINS: "boss-person", EMAIL: box.EMAIL, EMAIL_FROM: "accounts@example.com" });
+    const boss = await person("boss@example.com", "boss-person");
+    await call(null, "/api/admin/handles", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ handle: "zed", email: "zed@example.com" }) });
+
+    const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin: "http://codesplitters.local" },
+      body: JSON.stringify({ email: "zed@example.com", password: "correct horse battery", name: "Zed", callbackURL: "/?verified=1" }) });
+    const zed = cookies(res);
+    expect(box.sent.at(-1)).toMatchObject({ to: "zed@example.com", from: { email: "accounts@example.com", name: "codeSplitters" }, subject: "Verify your codeSplitters email" });
+    expect(await session(zed)).toMatchObject({ mail: true, unverified: "zed@example.com", user: null });   // typed, so no grant yet
+
+    const opened = await call(null, box.link("zed@example.com"), { headers: { cookie: zed } });
+    expect(opened.status).toBe(302);
+    expect(new URL(opened.headers.get("location")!, "http://codesplitters.local").search).toBe("?verified=1");
+    const after = await session(zed);
+    expect(after.user).toBe("zed");
+    expect(after).not.toHaveProperty("unverified");
+
+    // A bad link goes back with an error, not a verification.
+    const bad = await call(null, "/api/auth/verify-email?token=nope&callbackURL=%2F%3Fverified%3D1");
+    expect(bad.headers.get("location")).toContain("error=");
+  });
+
+  test("a forgotten password: a link by email, a new password, and the old sessions signed out", async () => {
+    const box = outbox();
+    const { call, signup, session } = await accounts({ EMAIL: box.EMAIL, EMAIL_FROM: "accounts@example.com" });
+    const ana = await signup("ana@example.com", "Ana Lyst");
+    const ask = (email: string) => call(null, "/api/auth/request-password-reset", { method: "POST", headers: { "content-type": "application/json", origin: "http://codesplitters.local" },
+      body: JSON.stringify({ email, redirectTo: "/?reset=1" }) });
+    // The same answer for an address with no account, and nothing sent.
+    const before = box.sent.length;
+    expect((await ask("nobody@example.com")).status).toBe(200);
+    expect(box.sent.length).toBe(before);
+    expect((await ask("ana@example.com")).status).toBe(200);
+    expect(box.sent.at(-1)!.subject).toBe("Reset your codeSplitters password");
+
+    // The link hands the page a token, which sets the new password.
+    const opened = await call(null, box.link("ana@example.com"));
+    const back = new URL(opened.headers.get("location")!, "http://codesplitters.local");
+    expect(back.searchParams.get("reset")).toBe("1");
+    const token = back.searchParams.get("token")!;
+    const json = { "content-type": "application/json", origin: "http://codesplitters.local" };
+    expect((await call(null, "/api/auth/reset-password", { method: "POST", headers: json, body: JSON.stringify({ newPassword: "a brand new one", token }) })).status).toBe(200);
+    expect((await call(null, "/api/auth/reset-password", { method: "POST", headers: json, body: JSON.stringify({ newPassword: "again and again", token }) })).status).toBe(400);   // once
+    expect((await session(ana)).pick).toBeUndefined();                                   // signed out
+    const signin = (password: string) => call(null, "/api/auth/sign-in/email", { method: "POST", headers: json, body: JSON.stringify({ email: "ana@example.com", password }) });
+    expect((await signin("correct horse battery")).status).toBe(401);
+    expect((await signin("a brand new one")).status).toBe(200);
+  });
+
+  test("reset and verification requests count against the mail limit", () => {
+    expect(ruleFor("POST", ["", "auth", "request-password-reset"])).toBe("mail");
+    expect(ruleFor("POST", ["", "auth", "send-verification-email"])).toBe("mail");
+    expect(ruleFor("POST", ["", "auth", "reset-password"])).toBeNull();
+  });
+
+  test("a failed send is logged, not shown: the reset answer stays the same", async () => {
+    const { call } = await accounts({ EMAIL: { send: async () => { throw Object.assign(new Error("no"), { code: "E_SENDER_NOT_VERIFIED" }); } }, EMAIL_FROM: "accounts@example.com" });
+    const err = console.error; console.error = () => {};
+    try {
+      await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin: "http://codesplitters.local" },
+        body: JSON.stringify({ email: "ana@example.com", password: "correct horse battery", name: "Ana" }) });
+      const r = await call(null, "/api/auth/request-password-reset", { method: "POST", headers: { "content-type": "application/json", origin: "http://codesplitters.local" },
+        body: JSON.stringify({ email: "ana@example.com", redirectTo: "/?reset=1" }) });
+      expect(r.status).toBe(200);
+    } finally { console.error = err; }
   });
 });
 
@@ -362,7 +537,7 @@ describe("handles", () => {
 
     const alias = await local();
     expect((await post(alias, null, "/api/login", { name: "agent-codex" })).status).toBe(400);
-  });
+  }, SIGNUPS);
 });
 
 describe("rate limits", () => {
@@ -401,7 +576,7 @@ describe("rate limits", () => {
     await put(boss, [{ name: "repo", max: 1, window_s: 86400, enabled: false }]);
     expect((await repo(ana, "three")).status).toBe(201);
     expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
-  });
+  }, SIGNUPS);
 
   test("over a limit: reject, log, or flag; the log; and an admin's reset", async () => {
     const { call, person } = await accounts({ ADMINS: "boss-person" });
@@ -439,7 +614,7 @@ describe("rate limits", () => {
     // A save that leaves on_fail out keeps it.
     await put([{ name: "repo", max: 2, window_s: 86400, enabled: true }]);
     expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 2, on_fail: "flag" });
-  });
+  }, SIGNUPS);
   test("over a limit that queues: a place in line, then the dig runs once there's room", async () => {
     const call = await local({ GH_CLI: "off", ADMINS: "boss" });
     const real = globalThis.fetch;
@@ -492,7 +667,7 @@ describe("rate limits", () => {
       await Promise.all(waits);
       expect(await job(four.id, "boss")).toMatchObject({ state: "done", status: 201 });
     } finally { globalThis.fetch = real; }
-  });
+  }, SIGNUPS);
 
   test("live edits count against the edit limit, over the socket and POST alike", async () => {
     const call = await local({ ADMINS: "boss" });
@@ -842,6 +1017,25 @@ describe("shares", () => {
     expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.js": { L1: "branch" } } })).status).toBe(200);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.js")).json() as Doc)).toBe("branch\ny");
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=b.js")).json() as Doc)).toBe("Z");
+  });
+
+  test("a merge that would leave code that doesn't build waits, and says why", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "a.ts", content: "const x = 1;\nlog(x);" });
+    await post(call, "ana", "/api/repos/ana/r/branches", { name: "b1" });
+    const opsOn = (query: string, o: unknown[]) => post(call, "ana", `/api/repos/ana/r/do/ops${query}`, { ops: o });
+    // Each side declares the same new name in a different place: each builds alone, merged it's declared twice.
+    await opsOn("?path=a.ts&branch=b1", [{ kind: "insert", after: null, text: "const y = 2;" }]);
+    await opsOn("?path=a.ts", [{ kind: "insert", after: "L2", text: "const y = 3;" }]);
+    const review = await (await call("ana", "/api/repos/ana/r/branches/b1")).json() as any;
+    expect(review.files[0].conflicts).toEqual([{ line: "lint:redeclared:y", base: "", main: null, branch: null, lint: "`y` is declared twice (line 4)" }]);
+    const r = await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", {});
+    expect(r.status).toBe(409);
+    expect((await r.json() as any).error).toBe("merged, it wouldn't build: a.ts: `y` is declared twice (line 4)");
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc)).toBe("const x = 1;\nlog(x);\nconst y = 3;");
+    expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.ts": { "lint:redeclared:y": "branch" } } })).status).toBe(200);
   });
 
   test("private lines in a public repo: the crew reads them, everyone else, git and search get them blank", async () => {

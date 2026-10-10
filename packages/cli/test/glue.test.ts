@@ -424,6 +424,20 @@ test("images: wrangler, alchemy and the desktop host all get the binding; wrangl
   expect(wranglerToConfig({ name: "g", images: { binding: "IMG" } }).bindings).toEqual({ IMG: { type: "images" } });
 });
 
+test("send_email: wrangler and alchemy bind it; the desktop host leaves it out; wrangler's carries over", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { EMAIL: { type: "send_email", allowedSenderAddresses: ["hi@example.com"] } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, "")).send_email).toEqual([{ name: "EMAIL", allowed_sender_addresses: ["hi@example.com"] }]);
+  const a = generateAlchemy(c);
+  expect(a).toContain(`export const EMAIL = Cloudflare.Email.SendEmail("EMAIL", { allowedSenderAddresses: ["hi@example.com"] });`);
+  expect(a).toContain(`EMAIL: EMAIL`);
+  expect(desktopEntry(c)).toContain(`// EMAIL: Cloudflare Email Sending has no local twin`);
+  expect(wranglerToConfig({ name: "g", send_email: [{ name: "MAIL" }] }).bindings).toEqual({ MAIL: { type: "send_email" } });
+});
+
 test("container: wrangler and alchemy bind the class and its image; the desktop host leaves it out", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },

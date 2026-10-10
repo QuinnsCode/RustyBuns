@@ -35,6 +35,7 @@ const MIN = 60, HOUR = 3600, DAY = 86400;
 export const RULES: Rule[] = [
   { name: "signin", label: "Sign in", what: "password and social sign-ins", group: "Accounts", per: "ip", max: 10, window_s: 10 * MIN, on_fail: "reject" },
   { name: "signup", label: "Create account", what: "new email accounts", group: "Accounts", per: "ip", max: 5, window_s: HOUR, on_fail: "reject" },
+  { name: "mail", label: "Account email", what: "verification and password reset emails sent", group: "Accounts", per: "ip", max: 5, window_s: HOUR, on_fail: "reject" },
   { name: "handle", label: "Claim a handle", what: "picking your @handle", group: "Accounts", per: "ip", max: 10, window_s: HOUR, on_fail: "reject" },
   { name: "dig", label: "Dig up a repo", what: "GitHub digs and level forks (Artifacts imports)", group: "GitHub", per: "user", max: 5, window_s: HOUR, on_fail: "reject", queueable: true },
   { name: "github", label: "GitHub lookups", what: "repo lists and search, on the site's GitHub token", group: "GitHub", per: "user", max: 30, window_s: MIN, on_fail: "reject" },
@@ -55,7 +56,8 @@ export function ruleFor(method: string, p: string[]): string | null {
     return null;
   }
   if (method !== "POST") return null;
-  if (p[1] === "auth") return p[2] === "sign-in" ? "signin" : p[2] === "sign-up" ? "signup" : null;
+  if (p[1] === "auth") return p[2] === "sign-in" ? "signin" : p[2] === "sign-up" ? "signup"
+    : p[2] === "request-password-reset" || p[2] === "send-verification-email" ? "mail" : null;
   if (p[1] === "handle") return "handle";
   if (p[1] === "github" && p[2] === "dig") return "dig";
   if (p[1] === "levels" && p[3] === "fork") return "dig";

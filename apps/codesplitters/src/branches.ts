@@ -5,7 +5,9 @@
 // merge is a three-way merge by line id (`merge` in lines.ts) that main's
 // file applies in one batch, each line keeping its author. Lines only one
 // side changed never conflict; a line both changed is settled per line,
-// keeping the branch's or main's. Git hears about it when main is catalogued.
+// keeping the branch's or main's. A merged JavaScript or TypeScript file that
+// would no longer build (lint.ts) is a conflict too. Git hears about it when
+// main is catalogued.
 
 import { empty, fromText, type Conflict, type Doc, type Op } from "./lines.ts";
 import { materialize, toFile } from "./archive.ts";
@@ -48,7 +50,7 @@ export async function createOn(env: Env, owner: string, repo: string, branch: st
 /** Ask main's copy of `path` to merge the branch's: a dry run, or for real. */
 async function mergeFile(env: Env, owner: string, repo: string, branch: { name: string; by: string }, path: string, user: string, resolve: Record<string, Pick> | undefined, dry: boolean) {
   const [base, doc] = await Promise.all(["base", "file"].map(async (op) => (await toFile(env, owner, repo, path, user, op, {}, "", branch.name)).json() as Promise<Doc>));
-  const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by }) });
+  const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by, path }) });
   return { status: res.status, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[] }) };
 }
 
@@ -109,7 +111,9 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     // A dry run first, so a conflict anywhere merges nothing.
     const dry = await Promise.all(todo.map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user!, resolve[f.path], true)) })));
     const blocked = dry.filter((d) => d.conflicts.length).map(({ path, conflicts }) => ({ path, conflicts }));
-    if (blocked.length) return json({ error: "conflicts", conflicts: blocked }, 409);
+    // Settling a stretch can leave code that won't build: say so, as the review (settling nothing) can't show it.
+    const broken = blocked.flatMap((b) => b.conflicts.filter((c) => c.lint).map((c) => `${b.path}: ${c.lint}`));
+    if (blocked.length) return json({ error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked }, 409);
 
     const merged: { path: string; rev: number; ops: number }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
     for (const f of todo) {
