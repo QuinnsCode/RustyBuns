@@ -220,7 +220,83 @@
   .cmds { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 0; border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
   .cmd { display: grid; grid-template-columns: 30px 1fr; gap: 3px 12px; padding: 16px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--bg); }
   .cmd .ico { grid-row: span 3; width: 30px; height: 30px; border-radius: 5px; background: var(--grain), var(--paper); border: 1px solid var(--border-2); display: grid; place-items: center; color: var(--fg); }
-  .cmd b { font-weight: 600; } .cmd span { color: var(--muted); font-size: 13px; } .cmd code { color: var(--faint); font-size: 11.5px; }
+  .cmd > b { font-weight: 600; } .cmd > span { color: var(--muted); font-size: 13px; } .cmd > code { color: var(--faint); font-size: 11.5px; }
+
+  /* Hover (or tap) a command: a big panel above it plays a short loop of what it does. All CSS;
+     each loop is --d long, and .a1-.a4 bring things in at four beats through it. */
+  .cmd { position: relative; } .cmd:focus { outline: 0; } .cmd:focus-visible { box-shadow: inset 0 0 0 2px var(--accent-soft); }
+  .mini { --d: 4.2s; display: none; position: absolute; left: -1px; right: -1px; bottom: calc(100% + 6px); z-index: 10; height: 228px; padding: 18px 20px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--grain), var(--paper); box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 24px 48px -16px rgba(0,0,0,.22); font: 400 12.5px/24px var(--mono); color: var(--fg); overflow: hidden; pointer-events: none; animation: m-in .18s ease-out; }
+  .cmd:hover .mini, .cmd:focus .mini { display: block; }
+  @keyframes m-in { from { opacity: 0; transform: translateY(6px); } }
+  .mini .r { position: relative; height: 24px; white-space: pre; } .mini .f { color: var(--faint); }
+  .mini .cap { position: absolute; left: 20px; bottom: 12px; font: 500 10.5px/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .mini .chip { display: inline-block; font: 500 11.5px/22px var(--mono); padding: 0 8px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--bg); white-space: pre; }
+  .mini .who { margin-left: 6px; padding: 1px 5px; border-radius: 3px; font: 500 10px/1 var(--sans); color: #fff; background: var(--accent); vertical-align: 2px; } .mini .who.b { background: var(--fg); }
+  .mini .tp { display: inline-block; vertical-align: bottom; overflow: hidden; width: var(--w); border-right: 2px solid var(--accent); animation: m-type var(--d) steps(var(--n, 12)) infinite both; } .mini .tp.b { border-color: var(--fg); animation-delay: .5s; }
+  @keyframes m-type { 0%, 4% { width: 0; } 30%, 100% { width: var(--w); } }
+  .mini .a1 { animation: m-a1 var(--d) ease-out infinite both; } .mini .a2 { animation: m-a2 var(--d) ease-out infinite both; }
+  .mini .a3 { animation: m-a3 var(--d) ease-out infinite both; } .mini .a4 { animation: m-a4 var(--d) ease-out infinite both; }
+  @keyframes m-a1 { 0%, 12% { opacity: 0; transform: translateY(var(--dy, 6px)); } 20%, 90% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+  @keyframes m-a2 { 0%, 30% { opacity: 0; transform: translateY(var(--dy, 6px)); } 38%, 90% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+  @keyframes m-a3 { 0%, 48% { opacity: 0; transform: translateY(var(--dy, 6px)); } 56%, 90% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+  @keyframes m-a4 { 0%, 64% { opacity: 0; transform: translateY(var(--dy, 6px)); } 72%, 90% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+  .m-tag { position: absolute; right: 20px; } .mini mark { background: var(--accent-soft); color: var(--del-fg); border-radius: 2px; }
+  /* browse */
+  .m-hl { position: absolute; left: 12px; right: 12px; top: 18px; height: 24px; border-radius: 4px; background: var(--select); box-shadow: inset 2px 0 var(--accent); animation: m-walk var(--d) ease-in-out infinite; }
+  @keyframes m-walk { 0%, 14% { transform: none; } 24%, 38% { transform: translateY(24px); } 48%, 62% { transform: translateY(48px); } 72%, 92% { transform: translateY(72px); } }
+  /* fork */
+  .m-box { position: absolute; top: 18px; left: 20px; width: 38%; height: 136px; padding: 6px 12px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--bg); font-size: 11.5px; line-height: 20px; }
+  .m-box i { display: block; height: 6px; width: var(--w); margin-top: 12px; border-radius: 3px; background: var(--add-edge); }
+  .m-copy { border-color: var(--accent); transform: translateX(calc(100% + 24px)); animation: m-fork var(--d) cubic-bezier(.6, 0, .3, 1) infinite both; } .m-copy i { background: var(--del-edge); }
+  @keyframes m-fork { 0%, 10% { transform: none; opacity: 0; } 18% { opacity: 1; transform: none; } 48%, 90% { transform: translateX(calc(100% + 24px)); opacity: 1; } 100% { transform: translateX(calc(100% + 24px)); opacity: 0; } }
+  /* share, private lines */
+  .m-sel { position: absolute; left: 12px; right: 12px; top: 42px; height: 48px; border-radius: 4px; background: var(--accent-soft); box-shadow: inset 2px 0 var(--accent); }
+  .m-blur { filter: blur(4px); opacity: .45; animation: m-blur var(--d) ease-in-out infinite both; }
+  @keyframes m-blur { 0%, 22% { filter: none; opacity: 1; } 38%, 88% { filter: blur(4px); opacity: .45; } 100% { filter: none; opacity: 1; } }
+  /* invite */
+  .m-crew { display: flex; gap: 14px; margin-top: 22px; } .m-av { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; border: 1px solid var(--border-2); background: var(--bg); font: 600 13px var(--sans); }
+  .m-av.bot { border-radius: 10px; border-color: var(--accent); color: var(--accent); font: 500 11px var(--mono); }
+  /* public or private */
+  .m-sw { display: flex; align-items: center; gap: 14px; margin-top: 30px; }
+  .m-tr { position: relative; flex: none; width: 52px; height: 28px; border-radius: 14px; background: var(--accent); animation: m-trk var(--d) infinite both; }
+  .m-tr i { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transform: translateX(24px); animation: m-knob var(--d) cubic-bezier(.6, 0, .3, 1) infinite both; }
+  @keyframes m-trk { 0%, 40% { background: var(--border-2); } 50%, 90% { background: var(--accent); } 100% { background: var(--border-2); } }
+  @keyframes m-knob { 0%, 40% { transform: none; } 50%, 90% { transform: translateX(24px); } 100% { transform: none; } }
+  .m-st { display: grid; } .m-st > span { grid-area: 1 / 1; }
+  .m-off { opacity: 0; animation: m-off var(--d) infinite both; } .m-on { animation: m-on var(--d) infinite both; }
+  @keyframes m-off { 0%, 40% { opacity: 1; } 50%, 90% { opacity: 0; } 100% { opacity: 1; } }
+  @keyframes m-on { 0%, 40% { opacity: 0; } 50%, 90% { opacity: 1; } 100% { opacity: 0; } }
+  /* commit */
+  .m-add { background: var(--add); box-shadow: inset 3px 0 var(--add-edge); animation: m-sink var(--d) ease-in infinite both; }
+  @keyframes m-sink { 0% { opacity: 0; } 8%, 30% { opacity: 1; transform: none; } 50%, 100% { opacity: 0; transform: translateY(60px) scale(.6); } }
+  .m-git { position: absolute; left: 20px; right: 20px; top: 128px; height: 2px; background: var(--border-2); }
+  .m-git i { position: absolute; top: -5px; left: var(--x); width: 12px; height: 12px; border-radius: 50%; background: var(--paper); border: 2px solid var(--border-2); }
+  .m-git i.new { border-color: var(--accent); background: var(--accent); } .m-git .chip { position: absolute; top: 14px; left: calc(var(--x) - 60px); }
+  /* time travel */
+  .m-v1, .m-v2 { opacity: 0; } .m-v1 { animation: m-v1 var(--d) infinite both; } .m-v2 { animation: m-v2 var(--d) infinite both; } .m-v3 { animation: m-v3 var(--d) infinite both; }
+  @keyframes m-v1 { 0%, 30% { opacity: 1; } 33%, 97% { opacity: 0; } 100% { opacity: 1; } }
+  @keyframes m-v2 { 0%, 30% { opacity: 0; } 33%, 63% { opacity: 1; } 66%, 100% { opacity: 0; } }
+  @keyframes m-v3 { 0%, 63% { opacity: 0; } 66%, 97% { opacity: 1; } 100% { opacity: 0; } }
+  .m-scrub { position: absolute; left: 20px; right: 20px; top: 130px; height: 2px; background: var(--border-2); }
+  .m-scrub i { position: absolute; top: -6px; left: calc(100% - 14px); width: 14px; height: 14px; border-radius: 50%; background: var(--accent); animation: m-scrub var(--d) cubic-bezier(.6, 0, .3, 1) infinite both; }
+  @keyframes m-scrub { 0%, 30% { left: 0; } 33%, 63% { left: calc(50% - 7px); } 66%, 97% { left: calc(100% - 14px); } 100% { left: 0; } }
+  .m-ticks { position: absolute; left: 20px; right: 20px; top: 142px; display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); }
+  /* cut */
+  .m-cut { position: relative; width: fit-content; padding-right: 10px; border-radius: 4px; background: var(--bg); transform: translate(24px, -2px); box-shadow: 0 0 0 1px var(--accent); animation: m-cut var(--d) cubic-bezier(.6, 0, .3, 1) infinite both; }
+  @keyframes m-cut { 0%, 30% { transform: none; box-shadow: 0 0 0 1px transparent; background: transparent; } 44%, 90% { transform: translate(24px, -2px); box-shadow: 0 0 0 1px var(--accent); background: var(--bg); } 100% { transform: none; } }
+  .m-snip { position: absolute; left: 12px; right: 12px; height: 0; border-top: 1.5px dashed var(--accent); }
+  /* collect, search */
+  .m-pl { margin-top: 6px; padding: 8px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--bg); display: grid; gap: 6px; justify-items: start; } .m-pl .chip { --dy: -40px; background: var(--paper); }
+  .m-q { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; margin-bottom: 8px; border: 1px solid var(--fg); border-radius: 5px; background: var(--bg); }
+  /* play */
+  .m-bird { position: absolute; padding: 0 8px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--paper); font-size: 11.5px; line-height: 22px; white-space: pre; }
+  .m-b1 { animation: m-b1 var(--d) ease-in-out infinite both; } .m-b2 { animation: m-b2 var(--d) ease-in-out infinite alternate both; } .m-b3 { animation: m-b3 calc(var(--d) * .75) ease-in-out infinite alternate both; }
+  @keyframes m-b1 { 0% { left: 85%; top: 8%; transform: rotate(0); } 45% { left: 24%; top: 58%; transform: rotate(-8deg); border-color: var(--border-2); } 50% { left: 22%; top: 60%; border-color: var(--accent); background: var(--accent-soft); } 85%, 100% { left: 105%; top: -25%; transform: rotate(40deg); border-color: var(--accent); } }
+  @keyframes m-b2 { from { left: 55%; top: 14%; transform: rotate(3deg); } to { left: 38%; top: 30%; transform: rotate(-4deg); } }
+  @keyframes m-b3 { from { left: 45%; top: 62%; transform: rotate(-3deg); } to { left: 62%; top: 48%; transform: rotate(5deg); } }
+  .m-bat { position: absolute; left: 22px; bottom: 44px; width: 70px; height: 7px; border-radius: 4px; background: var(--fg); transform-origin: 4px 50%; transform: rotate(-55deg); animation: m-bat var(--d) ease-in infinite both; }
+  @keyframes m-bat { 0%, 40% { transform: rotate(-55deg); } 50% { transform: rotate(15deg); } 70%, 100% { transform: rotate(-55deg); } }
+  @media (prefers-reduced-motion: reduce) { .mini, .mini *, .mini *::before, .mini *::after { animation: none !important; } }
   .levels { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
   .level { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center; padding: 12px 14px; color: var(--fg); border: 1px solid var(--border-2); border-radius: 5px; background: var(--grain), var(--paper); text-decoration: none; transition: border-color .12s, background .12s; }
   .level:hover { border-color: #a8a8a8; background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); }
@@ -837,7 +913,7 @@ const views = {
       <section class="section"><div class="wrap">
         <div class="label">what you can do</div><h2>Everything is one command, for people and agents alike</h2>
         <p class="muted">Press <kbd>⌘K</kbd> anywhere. Each of these is a single call to the API underneath, so an agent can do anything you can.</p>
-        <div class="cmds">${HOME_CMDS.map(([ic, title, what, call]) => `<div class="cmd"><span class="ico">${icon(ic)}</span><b>${title}</b><span>${what}</span><code>${call}</code></div>`).join("")}</div>
+        <div class="cmds">${HOME_CMDS.map(([ic, title, what, call]) => `<div class="cmd" tabindex="0"><span class="ico">${icon(ic)}</span><b>${title}</b><span>${what}</span><code>${call}</code>${CMD_MINIS[title] ? `<div class="mini" aria-hidden="true">${CMD_MINIS[title]}</div>` : ""}</div>`).join("")}</div>
       </div></section>
       <section class="section"><div class="wrap">
         <div class="label">levels</div><h2>Dig into code people love</h2><p class="muted">Real repos, imported into Artifacts. Browse them, dig one up (fork it into a git repo you own; upstream stays as it was), or play one. Or bring any public repo from GitHub.</p>
@@ -1567,6 +1643,30 @@ const HOME_CMDS = [
   ["search", "Search code", "Everything committed that you're allowed to see.", "GET /api/search?q="],
   ["gamepad-2", "Play the backrooms", "Every repo is a level. The lines fight back.", "WS /api/game/:room/ws"],
 ];
+
+// The little loop each home command plays in its hover panel, keyed by title. Static markup, all CSS.
+const CMD_MINIS = {
+  "Browse a level": `<div class="m-hl"></div><div class="r">▾ mitt/</div><div class="r">  ▾ src/</div><div class="r">      index.ts</div><div class="r">      emit.ts</div><div class="r f">    README.md</div><span class="cap">read-only · walk any file</span>`,
+  "Fork a level": `<div class="m-box"><b>levels/mitt</b><i style="--w:80%"></i><i style="--w:55%"></i><i style="--w:70%"></i><i style="--w:40%"></i></div>
+    <div class="m-box m-copy"><b>you/mitt</b><i style="--w:80%"></i><i style="--w:55%"></i><i style="--w:70%"></i><i style="--w:40%"></i></div><span class="cap">your own copy · upstream untouched</span>`,
+  "Edit live, together": `<div class="r f">function add(n) {</div><div class="r">  <span class="tp" style="--w:17ch;--n:17">total = total + n</span><span class="who">you</span></div>
+    <div class="r">  <span class="tp b" style="--w:12ch;--n:12">return total</span><span class="who b">agent-renamer</span></div><div class="r f">}</div><span class="cap">every line its own record · live to all</span>`,
+  "Share some lines": `<div class="m-sel a1"></div><div class="r f">import { emit } from "./emit"</div><div class="r">export function add(n) {</div><div class="r">  return total += n</div><div class="r f">}</div>
+    <div class="r"><span class="chip a3">↗ /s/7f3a · live link to L2–3</span></div><span class="cap">even from a private repo</span>`,
+  "Invite your crew": `<div class="r f">crew of you/mitt</div><div class="m-crew"><span class="m-av a1">R</span><span class="m-av bot a2">lint</span><span class="m-av a3">M</span><span class="m-av bot a4">ci</span></div><span class="cap">people and agents, same door</span>`,
+  "Public or private": `<div class="r">you/mitt</div><div class="m-sw"><span class="m-tr"><i></i></span><span class="m-st"><span class="m-off">○ public · anyone can read</span><span class="m-on">● private · crew only</span></span></div><span class="cap">flip it either way, any time</span>`,
+  "Private lines": `<div class="r">const api = "/v1"</div><div class="r m-blur">const key = "sk-live-9f2c…"</div><div class="r m-blur">const team = "night-owls"</div><div class="r">export { api }</div>
+    <div class="r"><span class="chip a2">crew only · hidden in git too</span></div><span class="cap">a public repo, a few private lines</span>`,
+  "Commit to git": `<div class="r m-add">+ let total = 0</div><div class="r m-add">+   return total</div><div class="m-git"><i style="--x:12%"></i><i style="--x:40%"></i><i class="new a2" style="--x:70%"></i><span class="chip a3" style="--x:70%">a014902 · pushed</span></div><span class="cap">a real commit in the repo's artifact</span>`,
+  "Clone with git": `<div class="r">$ <span class="tp" style="--w:24ch;--n:24">git clone …/you/mitt.git</span></div><div class="r f a2">Cloning into 'mitt'…</div><div class="r f a3">auth: read token, good for 1h</div><div class="r a4">Receiving objects: 100% ✓</div><span class="cap">a real git remote</span>`,
+  "Time travel": `<div class="r m-st"><span class="m-v1"><span class="f">ryan   </span>var foo = 0</span><span class="m-v2"><span class="f">linter </span>let total = 0</span><span class="m-v3"><span class="f">you    </span>let total = 0 // kept</span></div>
+    <div class="r f">function add(n) { … }</div><div class="m-scrub"><i></i></div><div class="m-ticks"><span>rev 1</span><span>rev 6</span><span>rev 12</span></div><span class="cap">replay any edit · blame per line</span>`,
+  "Cut some lines": `<div class="r f">import { emit } from "./emit"</div><div class="m-cut"><span class="m-snip a1" style="top:-1px"></span><div class="r">export function add(n) {</div><div class="r">  return total += n }</div><span class="m-snip a1" style="bottom:-1px"></span></div>
+    <div class="r f">export const reset = …</div><div class="r"><span class="chip a3">branch cut/add · ✓ tests pass</span></div><span class="cap">just them and what they use</span>`,
+  "Collect lines": `<div class="r f">♪ playlist · my taste in code</div><div class="m-pl"><span class="chip a1">mitt/index.ts:12   emit(type, evt)</span><span class="chip a2">zod/types.ts:40    .optional()</span><span class="chip a3">hono/router.ts:8   app.get("/")</span></div><span class="cap">on your profile</span>`,
+  "Search code": `<div class="m-q"><span class="f" style="font-size:16px">⌕</span><span class="tp" style="--w:5ch;--n:5">total</span></div><div class="r a2">mitt/index.ts:4   let <mark>total</mark> = 0</div><div class="r a3">mitt/index.ts:7   <mark>total</mark> += n</div><div class="r a4">yours/sum.ts:2    return <mark>total</mark></div><span class="cap">only what you're allowed to see</span>`,
+  "Play the backrooms": `<span class="m-bird m-b1">return total</span><span class="m-bird m-b2">let foo = 0</span><span class="m-bird m-b3">}</span><span class="m-bat"></span><span class="chip a3 m-tag" style="top:18px">+1 · line batted</span><span class="cap">every repo is a level</span>`,
+};
 
 // The landing intro, calm to swarm: a file sits still on clean paper; a slit
 // opens across it; its lines tear free and take off as a flock, swooping and
