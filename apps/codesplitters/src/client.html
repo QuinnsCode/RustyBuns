@@ -120,6 +120,9 @@
   .sec .run pre { margin: 4px 0 0; max-height: 180px; overflow: auto; font: 400 11.5px/1.45 var(--mono); white-space: pre-wrap; color: var(--muted); }
   .ghwho { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 8px 10px; margin: 0 0 8px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--canvas); }
   .ghwho.on { border-color: var(--del-edge); background: var(--accent-soft); } .ghwho svg.lucide { margin-top: 2px; }
+  .ghwho { flex-wrap: wrap; } .ghaccts { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+  .ghacct { display: inline-flex; } .ghacct .btn:first-child { border-radius: 5px 0 0 5px; } .ghacct .btn:last-child { border-radius: 0 5px 5px 0; border-left: 0; padding-inline: 6px; }
+  .ghacct.on .btn:first-child { opacity: 1; font-weight: 600; }
   .flow { display: flex; align-items: center; margin: 6px 0 4px; }
   .flow .ln { flex: 1; height: 2px; background: var(--border-2); min-width: 6px; } .flow .ln.done { background: #2f9e44; }
   .flow button { display: grid; justify-items: center; gap: 3px; background: none; border: 0; padding: 2px; cursor: pointer; font: 500 10px/1 var(--mono); color: var(--faint); }
@@ -1000,7 +1003,7 @@ function wireDig() {
     for (const b of list.querySelectorAll("button:not([disabled])")) b.addEventListener("click", () => { f.repo.value = b.dataset.repo; list.innerHTML = ""; msg.textContent = `Ready to dig up ${b.dataset.repo}. ${note}`; f.name.focus(); });
   };
   const showMine = () => show(mine.repos, (x) => x.private && !mine.privateOk);
-  api("/github/repos").then((g) => {
+  const loadGh = () => api("/github/repos").then((g) => {
     mine = g;
     note = g.temporary ? `Digs last ${g.ttlHours} hours here, and the oldest goes first when too many are live.` : "";
     // Say plainly whose GitHub this is and where the login came from, since that's why private repos show up.
@@ -1011,12 +1014,24 @@ function wireDig() {
     who.innerHTML = g.login
       ? `${icon("github")}<span><b>Logged in to GitHub as <a href="https://github.com/${esc(g.login)}" rel="noopener">@${esc(g.login)}</a></b> through ${via}. That's why your ${g.repos.length} repo${g.repos.length === 1 ? "" : "s"}${priv ? ` (${priv} private)` : ""} show below. ${off}</span>`
       : g.error ? `${icon("github")}<span><b>GitHub login didn't work</b> (${esc(g.error)}). Only public repos can be searched.</span>`
-      : `${icon("github")}<span><b>Not logged in to GitHub.</b> Only public repos can be searched. ${g.privateOk ? "Run <code>gh auth login</code> on this machine to see your own." : "Sign in with GitHub to see your own."}</span>`;
+      : `${icon("github")}<span><b>Not logged in to GitHub.</b> Only public repos can be searched. ${g.privateOk ? "Run <code>gh auth login</code> on this machine to see your own." : g.accounts && session.providers.includes("github") ? "Connect your GitHub to see your own." : "Sign in with GitHub to see your own."}</span>`;
+    // Accounts mode: every GitHub linked to this sign-in, to switch between, plus one more to connect.
+    if (g.accounts && session.providers.includes("github")) {
+      const chips = g.accounts.map((a) => `<span class="ghacct${a.active ? " on" : ""}"><button type="button" class="btn" data-gh-use="${esc(a.id)}"${a.active ? " disabled" : ""} title="${a.active ? "digging as this one" : "dig as this one"}">${a.active ? icon("check") : ""}@${esc(a.login ?? "unknown")}</button><button type="button" class="btn" data-gh-unlink="${esc(a.id)}" title="unlink this GitHub">${icon("x")}</button></span>`).join("");
+      who.insertAdjacentHTML("beforeend", `<div class="ghaccts">${chips}<button type="button" class="btn" id="ghlink">${icon("plus")}${g.accounts.length ? "Connect another GitHub" : "Connect GitHub"}</button></div>`);
+      const act = (el, fn) => el.addEventListener("click", async () => { try { await fn(); loadGh(); } catch (e) { msg.textContent = e.message; } });
+      for (const b of who.querySelectorAll("[data-gh-use]")) act(b, () => api("/github/active", { id: b.dataset.ghUse }));
+      for (const b of who.querySelectorAll("[data-gh-unlink]")) act(b, () => api("/auth/unlink-account", { accountId: b.dataset.ghUnlink }));
+      $("#ghlink").addEventListener("click", async () => {
+        try { const r = await api("/auth/link-social", { provider: "github", callbackURL: location.href }); location.href = r.url; } catch (e) { msg.textContent = e.message; }
+      });
+    }
     who.classList.toggle("on", !!g.login);
     icons();
     msg.textContent = (g.login && g.repos.length ? "Pick one of yours, search, or paste anything from GitHub. " : "Search GitHub, or paste anything you copied there. ") + note;
     if (!f.repo.value) showMine();
   }).catch(() => {});
+  loadGh();
   f.repo.addEventListener("input", () => {
     clearTimeout(timer);
     const q = f.repo.value.trim();
@@ -2168,7 +2183,7 @@ const HOME_CMDS = [
   ["scissors", "Cut some lines", "Just them and what they use from the repo, as a branch: run the tests, share a card, merge the fix back.", "POST /api/repos/:o/:r/cuts"],
   ["bookmark-plus", "Collect lines", "Playlists of code you love, on your profile.", "POST /api/playlists/:id/tracks"],
   ["search", "Search code", "Everything committed that you're allowed to see.", "GET /api/search?q="],
-  ["gamepad-2", "Play the backrooms", "Every repo is a level. Swat the lines with its README.", "WS /api/game/:room/ws"],
+  ["gamepad-2", "Play the backrooms", "Every repo is a level. Swat the lines with its README.", "WS /api/game/l/:slug/ws"],
 ];
 
 // The little loop each home command plays in its hover panel, keyed by title. Static markup, all CSS.
@@ -2340,6 +2355,7 @@ async function commands() {
   for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
   add("Anywhere", "info", "About codeSplitters", "", () => (location.hash = "#/about"));
+  add("Anywhere", "book-open", "API reference", "GET /api", () => (location.href = "/api.html"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);

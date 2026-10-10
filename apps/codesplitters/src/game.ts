@@ -2,7 +2,7 @@
 // room, the walls are its files' lines, and the lines come off the walls at you.
 //   GET /api/game/l/:slug            who's waiting in a level's room
 //   GET /api/game/l/:slug/walls?path one room of the backrooms
-//   GET /api/game/l/:slug/ws         join (WebSocket to the GameRoom DO)
+//   WS  /api/game/l/:slug/ws         join (WebSocket to the GameRoom DO)
 // and the same under /api/game/r/:owner/:repo for any repo you can read.
 
 import { handleFor, walls } from "./archive.ts";

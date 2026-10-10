@@ -1,4 +1,4 @@
-// GET /api/openapi.json: the API as OpenAPI 3.1, so an agent outside the browser
+// GET /api/openapi.json  the API as OpenAPI 3.1, so an agent outside the browser
 // (Claude Code, or a gateway like Executor that turns a spec into tools) can drive
 // codeSplitters with a personal API token (tokens.ts). It covers every ⌘K palette
 // command (client.html commands()) and the reads each view makes. Operations that

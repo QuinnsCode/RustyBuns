@@ -3,6 +3,7 @@
 // caller owns (local git on the desktop, Cloudflare Artifacts on the edge) and
 // GitHub never hears about the edits.
 
+import { symmetricDecrypt } from "better-auth/crypto";
 import { accountsOn, isAdmin } from "./identity.ts";
 import { fileStub } from "./archive.ts";
 import { json, NAME, type Env } from "./env.ts";
@@ -29,8 +30,9 @@ export async function githubToken(env: Env, user: string | null): Promise<{ toke
   if (env.GITHUB_TOKEN) return { token: env.GITHUB_TOKEN, via: "secret" };
   if (accountsOn(env)) {
     if (!user) return null;
-    const r = await env.DB.prepare(`SELECT a.accessToken FROM account a JOIN users u ON u.auth_id = a.userId WHERE u.name = ? AND a.providerId = 'github'`).bind(user).first();
-    return r?.accessToken ? { token: r.accessToken, via: "account" } : null;
+    const accounts = await githubAccounts(env, user);
+    const a = accounts.find((x) => x.active);
+    return a ? { token: await a.token(), via: "account" } : null;
   }
   if (typeof Bun === "undefined" || env.GH_CLI === "off") return null;
   try {
@@ -39,6 +41,23 @@ export async function githubToken(env: Env, user: string | null): Promise<{ toke
     return token ? { token, via: "gh" } : null;
   } catch { return null; }   // no gh installed
 }
+
+/**
+ * The GitHub accounts linked to `user`'s sign-in, oldest first, and which one digs:
+ * the one they picked (users.github_account), else the one linked last. Tokens stay
+ * encrypted until asked for; ones stored before encryption was on read as they are.
+ */
+export async function githubAccounts(env: Env, user: string) {
+  const { results } = await env.DB.prepare(`SELECT a.id, a.accessToken, u.github_account AS pick FROM account a JOIN users u ON u.auth_id = a.userId
+    WHERE u.name = ? AND a.providerId = 'github' AND a.accessToken IS NOT NULL ORDER BY a.createdAt, a.id`).bind(user).all();
+  const rows = results as { id: string; accessToken: string; pick: string | null }[];
+  const active = rows.find((r) => r.id === r.pick)?.id ?? rows.at(-1)?.id;
+  return rows.map((r) => ({ id: r.id, active: r.id === active, token: () => openToken(env, r.accessToken) }));
+}
+
+/** Better Auth's encrypted token ($ba$ envelope, or hex from older versions) back to the token. */
+const openToken = async (env: Env, t: string) =>
+  t.startsWith("$ba$") || (t.length % 2 === 0 && /^[0-9a-f]+$/i.test(t)) ? symmetricDecrypt({ key: env.BETTER_AUTH_SECRET!, data: t }) : t;
 
 const gh = (path: string, token?: string) => fetch(API + path, {
   headers: { accept: "application/vnd.github+json", "user-agent": "codesplitters", ...(token ? { authorization: `Bearer ${token}` } : {}) },
@@ -155,11 +174,27 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   if (p[2] === "repos" && req.method === "GET") {
     const privateOk = privateDigs(env);
     const temp = { temporary: !isAdmin(env, user), ttlHours: DIG_TTL / 3600_000 };
-    if (!t) return json({ via: null, login: null, repos: [], privateOk, ...temp });
+    // Every GitHub linked to this sign-in, by login, so the page can switch between them.
+    const accounts = accountsOn(env) && user ? await Promise.all((await githubAccounts(env, user)).map(async (a) => {
+      const me = await gh("/user", await a.token());
+      return { id: a.id, active: a.active, login: me.ok ? ((await me.json()) as { login: string }).login : null };
+    })) : undefined;
+    const more = accounts ? { accounts } : {};
+    if (!t) return json({ via: null, login: null, repos: [], privateOk, ...temp, ...more });
     const [me, list] = await Promise.all([gh("/user", t.token), gh("/user/repos?per_page=100&sort=pushed", t.token)]);
-    if (!me.ok) return json({ via: t.via, login: null, repos: [], privateOk, ...temp, error: `GitHub said ${me.status}` });
+    if (!me.ok) return json({ via: t.via, login: null, repos: [], privateOk, ...temp, ...more, error: `GitHub said ${me.status}` });
     const repos = list.ok ? ((await list.json()) as any[]).map((r) => ({ repo: r.full_name, private: r.private, branch: r.default_branch, description: r.description })) : [];
-    return json({ via: t.via, login: ((await me.json()) as any).login, repos, privateOk, ...temp });
+    return json({ via: t.via, login: ((await me.json()) as any).login, repos, privateOk, ...temp, ...more });
+  }
+
+  // POST /api/github/active {id}  dig and list as this one of your linked GitHubs.
+  // Linking and unlinking are Better Auth's (/api/auth/link-social, /api/auth/unlink-account).
+  if (p[2] === "active" && req.method === "POST") {
+    if (!user || !accountsOn(env)) return json({ error: "sign in first" }, 401);
+    const { id } = (await req.json().catch(() => ({}))) as { id?: string };
+    if (!(await githubAccounts(env, user)).some((a) => a.id === id)) return json({ error: "that GitHub isn't linked to you" }, 404);
+    await env.DB.prepare("UPDATE users SET github_account = ? WHERE name = ?").bind(id, user).run();
+    return json({ id });
   }
 
   // GET /api/github/search?q=  public repos on GitHub, best match first
