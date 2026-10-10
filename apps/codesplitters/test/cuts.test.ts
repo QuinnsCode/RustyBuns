@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { imports, pick, readRun } from "../src/cuts.ts";
+import { candidates, chunks, follow, imports, pick, readRun } from "../src/cuts.ts";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -26,10 +26,72 @@ const SUM = [
 
 test("an import statement binds its names, across lines and renames", () => {
   expect(imports(lines(SUM))).toEqual([
-    { ids: ["L1"], names: ["round"] },
-    { ids: ["L2", "L3", "L4", "L5"], names: ["clamp", "R"] },
-    { ids: ["L6"], names: [] },
+    { ids: ["L1"], names: ["round"], from: "./round.ts", takes: ["round"] },
+    { ids: ["L2", "L3", "L4", "L5"], names: ["clamp", "R"], from: "./clamp.ts", takes: ["clamp", "Range"] },
+    { ids: ["L6"], names: [], from: "./polyfill.ts", takes: ["*"] },
   ]);
+  expect(imports(lines('import fmt, { a as b } from "../fmt";\nimport * as path from "node:path";')).map((s) => s.takes)).toEqual([["default", "a"], ["*"]]);
+});
+
+test("a file's top-level statements, each with the comments above it", () => {
+  const src = [
+    'import { x } from "./x.ts";',
+    "",
+    "/** Doubles. */",
+    "export function twice(n: number) {",
+    "",
+    "  return n * 2;",
+    "}",
+    "",
+    "const { a, b: c } = x;",
+    "const page = `",
+    "<html>",
+    "`;",
+    "export default class Box {}",
+    'export { c as see, page } ;',
+    'export * from "./more.ts";',
+    'export { thing as other } from "./thing.ts";',
+  ].join("\n");
+  expect(chunks(lines(src))).toEqual([
+    { ids: ["L3", "L4", "L5", "L6", "L7"], names: ["twice"], exports: ["twice"] },
+    { ids: ["L9"], names: ["a", "c"], exports: [] },
+    { ids: ["L10", "L11", "L12"], names: ["page"], exports: [] },
+    { ids: ["L13"], names: ["Box"], exports: ["default", "Box"] },
+    { ids: ["L14"], names: [], exports: ["see", "page"] },
+    { ids: ["L15"], names: [], exports: [], from: "./more.ts", takes: [] },
+    { ids: ["L16"], names: [], exports: ["other"], from: "./thing.ts", takes: ["thing"] },
+  ]);
+});
+
+test("a relative import could be one of a few files; a package is none", () => {
+  expect(candidates("src/a/b.ts", "../c.js").slice(0, 3)).toEqual(["src/c.ts", "src/c.tsx", "src/c.js"]);
+  expect(candidates("test/sum.test.ts", "../src/sum")).toContain("src/sum/index.ts");
+  expect(candidates("a.ts", "../../x")).toEqual([]);
+  expect(candidates("a.ts", "bun:test")).toEqual([]);
+});
+
+test("a cut follows imports into other files, taking what's imported and what that uses", async () => {
+  const repo: Record<string, string> = {
+    "test/mean.test.ts": ['import { expect, test } from "bun:test";', 'import { mean } from "../src";', "", 'test("mean", () => expect(mean([2, 4])).toBe(3));'].join("\n"),
+    "src/index.ts": ['export * from "./stats.ts";', 'export * from "./shapes.ts";'].join("\n"),
+    "src/stats.ts": ['import { round, unused } from "./util.js";', "", "const N = 1;", "", "// The average.", "export function mean(xs: number[]) {", "  return round(sum(xs) / xs.length / N);", "}", "", "export function sum(xs: number[]) {", "  return xs.reduce((a, b) => a + b, 0);", "}", "", "export const spare = 1;"].join("\n"),
+    "src/shapes.ts": "export const square = (n: number) => n * n;",
+    "src/util.ts": ['import { mean } from "./stats.ts";', "export const round = (n: number) => Math.round(n);", "export const unused = () => mean([]);"].join("\n"),
+  };
+  const doc = (text: string) => ({ rev: 1, nextId: 99, lines: lines(text) });
+  const loaded: string[] = [];
+  const got = await follow([{ path: "test/mean.test.ts", doc: doc(repo["test/mean.test.ts"]!), ranges: [[4, 4]] }], async (p) => {
+    loaded.push(p);
+    return repo[p] === undefined ? null : doc(repo[p]!);
+  });
+  expect(got.map((f) => [f.path, f.pulled, f.doc.lines.map((l) => l.text)])).toEqual([
+    ["test/mean.test.ts", false, ['import { expect, test } from "bun:test";', 'import { mean } from "../src";', 'test("mean", () => expect(mean([2, 4])).toBe(3));']],
+    ["src/index.ts", true, ['export * from "./stats.ts";', 'export * from "./shapes.ts";']],
+    ["src/stats.ts", true, ['import { round, unused } from "./util.js";', "const N = 1;", "// The average.", "export function mean(xs: number[]) {", "  return round(sum(xs) / xs.length / N);", "}", "export function sum(xs: number[]) {", "  return xs.reduce((a, b) => a + b, 0);", "}"]],
+    // round and what it uses; unused is imported too, so it's there with mean, which stats.ts already has.
+    ["src/util.ts", true, ['import { mean } from "./stats.ts";', "export const round = (n: number) => Math.round(n);", "export const unused = () => mean([]);"]],
+  ]);
+  expect(loaded).not.toContain("bun:test");
 });
 
 test("a cut keeps the picked lines and only the imports they use", () => {
@@ -95,6 +157,13 @@ test("cut lines out, run them, fix the cut, and merge the fix back", async () =>
   expect(page).toContain(`og:image" content="http://codesplitters.local/api/cuts/${id}/card.png`);
   expect(page).toContain("1 passed, 0 failed");
   expect(page).toContain('name="twitter:card" content="summary_large_image"');
+  expect(page).not.toContain("font=");
+  // Geist Mono on request: the share page passes it on to its card, which draws different pixels.
+  expect(await (await call(null, `/api/cuts/${id}/share?font=geist`)).text()).toMatch(/card\.png\?at=\d+&#38;font=geist/);
+  const png = async (q: string) => Buffer.from(await (await call(null, `/api/cuts/${id}/card.png${q}`)).arrayBuffer());
+  const dejavu = await png("");
+  expect((await png("?font=geist")).equals(dejavu)).toBe(false);
+  expect((await png("?font=nope")).equals(dejavu)).toBe(true);   // an unknown font falls back to DejaVu
 
   // Merge back: the fix lands on main; lines that were never in the cut stay put.
   const review = (await (await call("ryan", `/api/repos/ryan/lab/branches/${branch}`)).json()) as any;
@@ -105,4 +174,24 @@ test("cut lines out, run them, fix the cut, and merge the fix back", async () =>
   const spec2 = (await (await call("ryan", "/api/repos/ryan/lab/do/file?path=test/sum.test.ts")).json()) as any;
   expect(spec2.lines.map((l: any) => l.text).join("\n")).toBe(spec);
   expect(((await (await call(null, `/api/cuts/${id}`)).json()) as any).status).toBe("merged");
+});
+
+test("cut just a test line, and the code it imports comes along to run", async () => {
+  const call = await boot({ GH_CLI: "off" });
+  opened.push(call);
+  const send = (user: string, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
+  await send("ryan", "/api/login", { name: "ryan" });
+  await send("ryan", "/api/repos", { name: "lab2", visibility: "public" });
+  await send("ryan", "/api/repos/ryan/lab2/files", { path: "src/math.ts", content: ["export const half = (n: number) => n / 2;", "", "export function mean(xs: number[]) {", "  return xs.reduce((a, b) => a + b, 0) / xs.length;", "}"].join("\n") });
+  await send("ryan", "/api/repos/ryan/lab2/files", { path: "test/math.test.ts", content: ['import { expect, test } from "bun:test";', 'import { half, mean } from "../src/math";', "", 'test("half", () => expect(half(4)).toBe(2));', 'test("mean", () => expect(mean([2, 4])).toBe(3));'].join("\n") });
+
+  const made = await send("ryan", "/api/repos/ryan/lab2/cuts", { path: "test/math.test.ts", from: 5 });
+  expect(made.status).toBe(201);
+  const { id, files } = (await made.json()) as any;
+  expect(files).toEqual([{ path: "test/math.test.ts", lines: 3 }, { path: "src/math.ts", lines: 4, pulled: true }]);
+  // half's test isn't in the cut, but the import that comes with it names half, so half comes too.
+  const cut = (await (await call("ryan", `/api/cuts/${id}`)).json()) as any;
+  expect(cut.files[1].lines.map((l: any) => l.n)).toEqual([1, 3, 4, 5]);
+  const run = (await (await send("ryan", `/api/cuts/${id}/run`, {})).json()) as any;
+  expect([run.code, run.passed, run.failed]).toEqual([0, 1, 0]);
 });

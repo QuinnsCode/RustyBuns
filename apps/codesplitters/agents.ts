@@ -25,7 +25,7 @@ function show() {
   console.log(label, foo)
 }`;
 
-interface Agent { name: string; whole?: boolean; pick(lines: Line[]): { line: Line; op: Op } | null }
+interface Agent { name: string; whole?: boolean; pick(lines: Line[]): { line: Line; ops: Op[] } | null }
 
 const agents: Agent[] = [
   { // var -> const, or let if the name is ever reassigned. That answer depends on
@@ -38,14 +38,16 @@ const agents: Agent[] = [
       if (!line) return null;
       const v = line.text.split(" ")[1]!;
       const kw = lines.some((l) => new RegExp(`^\\s*${v} =`).test(l.text)) ? "let" : "const";
-      return { line, op: { kind: "set", line: line.id, base: line.rev, text: line.text.replace(/^var /, kw + " ") } };
+      return { line, ops: [{ kind: "set", line: line.id, base: line.rev, text: line.text.replace(/^var /, kw + " ") }] };
     },
   },
-  { // foo is a bad name
+  { // foo is a bad name. Every use is renamed in one batch: renamed one line at
+    // a time, the linter could read a half-renamed file, see no reassignment of
+    // total, and pick const.
     name: "agent-renamer",
     pick: (lines) => {
-      const line = lines.find((l) => /\bfoo\b/.test(l.text) && !l.text.startsWith("//"));
-      return line ? { line, op: { kind: "set", line: line.id, base: line.rev, text: line.text.replace(/\bfoo\b/g, "total") } } : null;
+      const uses = lines.filter((l) => /\bfoo\b/.test(l.text) && !l.text.startsWith("//"));
+      return uses.length ? { line: uses[0]!, ops: uses.map((l) => ({ kind: "set", line: l.id, base: l.rev, text: l.text.replace(/\bfoo\b/g, "total") })) } : null;
     },
   },
   { // every function gets a doc line
@@ -54,7 +56,7 @@ const agents: Agent[] = [
       const i = lines.findIndex((l, i) => l.text.startsWith("function ") && !lines[i - 1]?.text.startsWith("/**"));
       if (i < 0) return null;
       const name = lines[i]!.text.slice(9).split("(")[0];
-      return { line: lines[i]!, op: { kind: "insert", after: lines[i - 1]?.id ?? null, text: `/** ${name}: written by an agent */` } };
+      return { line: lines[i]!, ops: [{ kind: "insert", after: lines[i - 1]?.id ?? null, text: `/** ${name}: written by an agent */` }] };
     },
   },
 ];
@@ -81,11 +83,11 @@ export async function run(call: Call, opts: { owner?: string; repo?: string; del
       const move = a.pick(doc.lines);
       if (!move) return;
       await sleep(Math.random() * (opts.delay ?? 5)); // think
-      const res = await call(a.name, `${file}/ops${q}`, { method: "POST", body: JSON.stringify({ ops: [move.op], ifRev: a.whole ? doc.rev : undefined }) });
+      const res = await call(a.name, `${file}/ops${q}`, { method: "POST", body: JSON.stringify({ ops: move.ops, ifRev: a.whole ? doc.rev : undefined }) });
       if (res.status === 409) { stats[a.name]!.conflicts++; log(`  ${a.name}: conflict on ${a.whole ? "the file" : move.line.id}, re-reading`); continue; }
       if (!res.ok) throw new Error(`${a.name}: ${res.status} ${await res.text()}`);
       stats[a.name]!.edits++;
-      log(`  ${a.name}: ${move.op.kind} ${move.line.id}`);
+      log(`  ${a.name}: ${move.ops[0]!.kind} ${move.ops.map((o) => "line" in o ? o.line : move.line.id).join(" ")}`);
     }
   }));
 

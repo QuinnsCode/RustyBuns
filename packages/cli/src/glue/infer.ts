@@ -132,6 +132,21 @@ export interface AstroInfo {
   output: "static" | "server";
   /** The KV binding the Cloudflare adapter keeps sessions in. */
   sessionKV: string;
+  /** The Images binding the adapter's /_image endpoint uses; null when imageService doesn't need one. */
+  images: string | null;
+}
+
+/**
+ * As @astrojs/cloudflare decides it: the binding is used when the runtime image
+ * service is "cloudflare-binding", the default. `imageService` is a mode, or
+ * { build, runtime } where runtime defaults to build ("compile" -> "passthrough").
+ */
+function astroNeedsImages(src: string): boolean {
+  const m = src.match(/\bimageService:\s*(?:["']([^"']+)["']|\{([^}]*)\})/);
+  if (!m) return true;
+  if (m[1]) return m[1] === "cloudflare-binding";
+  const field = (k: string) => m[2]!.match(new RegExp(`\\b${k}:\\s*["']([^"']+)["']`))?.[1];
+  return (field("runtime") ?? field("build")) === "cloudflare-binding";
 }
 
 export function inferAstro(root: string): AstroInfo | null {
@@ -144,6 +159,7 @@ export function inferAstro(root: string): AstroInfo | null {
     configPath, adapter,
     output: /\boutput:\s*["']server["']/.test(src) ? "server" : "static",
     sessionKV: src.match(/\bsessionKVBindingName:\s*["']([^"']+)["']/)?.[1] ?? "SESSION",
+    images: astroNeedsImages(src) ? src.match(/\bimagesBindingName:\s*["']([^"']+)["']/)?.[1] ?? "IMAGES" : null,
   };
 }
 

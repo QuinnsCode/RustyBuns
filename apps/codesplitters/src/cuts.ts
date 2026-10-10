@@ -6,19 +6,21 @@
 // merge by line id. Main's lines that were never in the cut aren't in its
 // base, so the merge leaves them alone.
 //
-// What a cut pulls in: the picked ranges, plus each file's import statements
-// that bind a name the picked lines use (or import for side effects).
-// Following those imports into other files is not done yet; add their lines
-// as more pieces.
+// What a cut pulls in: the picked ranges, plus what they use: each file's
+// import statements that bind a name the picked lines use (or import for side
+// effects), the file's own declarations they use, and, following each
+// relative import into its file, the declarations it imports and what those
+// use in turn. Packages aren't followed. Add more pieces for what the lines
+// don't use but you want, like a test that covers them.
 //
 //   POST /api/repos/:o/:r/cuts      {pieces: [{path, from, to}], note?}  the crew; from/to are line numbers now
 //   GET  /api/cuts/:id              its files, each line with where it came from on main, and the last run
 //   POST /api/cuts/:id/run          bun test on the cut (the owner: on the desktop, or a container for admins)
-//   GET  /api/cuts/:id/card.png     the social card: the code and its test result
+//   GET  /api/cuts/:id/card.png     the social card: the code and its test result (?font=geist for Geist Mono)
 //   GET  /api/cuts/:id/share        a page for link previews (og:image), sending people on to the cut
 
 import { materialize, toFile } from "./archive.ts";
-import { renderCard, type CardLine } from "./card.ts";
+import { cardFont, renderCard, type CardLine } from "./card.ts";
 import { json, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import type { Doc, Line } from "./lines.ts";
@@ -32,20 +34,204 @@ export const REPORT = ".cut-report.xml";
 
 const MAX_LINES = 500, MAX_PIECES = 20, MAX_OUT = 20_000;
 
-/** Each import statement in a file: its line ids, and the names it binds ([] for `import "x"`). */
+const IDENT = /^[A-Za-z_$][\w$]*$/;
+const fromOf = (stmt: string) => /\bfrom\s*["']([^"']+)["']|^\s*import\s*["']([^"']+)["']/.exec(stmt)?.slice(1).find(Boolean) ?? "";
+
+/** What `{ a, b as c, type d }` takes from its module, and binds here: [["a", "a"], ["b", "c"], ["d", "d"]]. */
+const specifiers = (braces: string) => braces.split(",").map((s) => s.trim().replace(/^type\s+/, "").split(/\s+as\s+/).map((x) => x.trim()))
+  .filter((p) => p.every((x) => IDENT.test(x))).map((p) => [p[0]!, p[p.length - 1]!] as const);
+
+/**
+ * Each import statement in a file: its line ids, the names it binds ([] for
+ * `import "x"`), where it imports from, and which of that module's exports it
+ * takes ("default", or "*" for a namespace or a side-effect import).
+ */
 export function imports(lines: { id: string; text: string }[]) {
-  const out: { ids: string[]; names: string[] }[] = [];
+  const out: { ids: string[]; names: string[]; from: string; takes: string[] }[] = [];
   for (let i = 0; i < lines.length; i++) {
     if (!/^\s*import(\s|\{|\*|["'])/.test(lines[i]!.text)) continue;
     let j = i;
     while (j < lines.length - 1 && j - i < 60 && !/\bfrom\s*["']|^\s*import\s*["']/.test(lines[j]!.text)) j++;
     const stmt = lines.slice(i, j + 1).map((l) => l.text).join("\n");
     const clause = /^\s*import\s*["']/.test(stmt) ? "" : stmt.replace(/^\s*import\s+(type\s+)?/, "").replace(/\s*\bfrom\s*["'][\s\S]*$/, "");
-    const names = clause.split(/[{},]/).map((s) => s.trim().replace(/^type\s+/, "").split(/\s+as\s+/).pop()!.trim()).filter((s) => /^[A-Za-z_$][\w$]*$/.test(s));
-    out.push({ ids: lines.slice(i, j + 1).map((l) => l.id), names });
+    const names = clause.split(/[{},]/).map((s) => s.trim().replace(/^type\s+/, "").split(/\s+as\s+/).pop()!.trim()).filter((s) => IDENT.test(s));
+    const braced = /\{([^}]*)\}/.exec(clause)?.[1], rest = clause.replace(/\{[^}]*\}/, "");
+    const takes = !clause ? ["*"] : [...(/\*\s*as\s/.test(rest) ? ["*"] : /[A-Za-z_$]/.test(rest) ? ["default"] : []), ...specifiers(braced ?? "").map((p) => p[0])];
+    out.push({ ids: lines.slice(i, j + 1).map((l) => l.id), names, from: fromOf(stmt), takes });
     i = j;
   }
   return out;
+}
+
+/** One top-level statement of a file, other than an import: what it declares, what it exports, and for `export … from`, what it takes from where. */
+export interface Chunk { ids: string[]; names: string[]; exports: string[]; from?: string; takes?: string[] }
+
+/**
+ * A file's top-level statements, each with the comments right above it. A
+ * statement starts on an unindented line outside any bracket, string or
+ * comment, and runs to the next one. It's a light scan, not a parser: when it
+ * gets lost (a regex with a bracket in it), statements come out bigger, which
+ * only puts more in a cut.
+ */
+export function chunks(lines: { id: string; text: string }[]): Chunk[] {
+  const out: Chunk[] = [], stack: string[] = [];
+  let block = false, cur: { notes: string[]; lines: { id: string; text: string }[] } | null = null, notes: string[] = [];
+  const close = () => {
+    if (!cur) return;
+    while (cur.lines.length > 1 && !cur.lines.at(-1)!.text.trim()) cur.lines.pop();
+    const text = cur.lines.map((l) => l.text).join("\n");
+    if (!/^import\b/.test(text)) out.push({ ids: [...cur.notes, ...cur.lines.map((l) => l.id)], ...declares(text) });
+    cur = null;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!, text = line.text, top = !stack.length;
+    if (top && (block || /^(\/\/|\/\*)/.test(text))) { close(); notes.push(line.id); }
+    else if (top && /^[^\s)\]}]/.test(text)) { close(); cur = { notes, lines: [line] }; notes = []; }
+    else if (cur) cur.lines.push(line);
+    else if (!text.trim()) notes = [];
+    for (let k = 0; k < text.length; k++) {
+      const c = text[k]!, inner = stack.at(-1);
+      if (block) { if (c === "*" && text[k + 1] === "/") { block = false; k++; } continue; }
+      if (inner === "`") {
+        if (c === "\\") k++;
+        else if (c === "`") stack.pop();
+        else if (c === "$" && text[k + 1] === "{") { stack.push("${"); k++; }
+        continue;
+      }
+      if (c === "'" || c === '"') { for (k++; k < text.length && text[k] !== c; k++) if (text[k] === "\\") k++; continue; }
+      if (c === "/" && text[k + 1] === "/") break;
+      if (c === "/" && text[k + 1] === "*") { block = true; k++; continue; }
+      if ("`({[".includes(c)) stack.push(c);
+      else if (")]}".includes(c) && stack.length) stack.pop();
+    }
+  }
+  close();
+  return out;
+}
+
+/** What a top-level statement declares and exports. */
+function declares(text: string): Omit<Chunk, "ids"> {
+  const exported = /^export\b/.test(text);
+  if (exported && /^export\s+(type\s+)?(\*|\{)/.test(text)) {
+    const from = /\bfrom\s*["']([^"']+)["']/.exec(text)?.[1], braced = /\{([^}]*)\}/.exec(text)?.[1];
+    const pairs = braced === undefined ? [] : specifiers(braced);
+    // `export * from "x"` takes whatever's asked of it; `export { a as b }` declares nothing, but uses a.
+    return { names: [], exports: pairs.map((p) => p[1]), ...(from ? { from, takes: braced === undefined ? [] : pairs.map((p) => p[0]) } : {}) };
+  }
+  let head = text.replace(/^export\s+/, "");
+  const deflt = /^default\b/.test(head);
+  head = head.replace(/^default\s+/, "");
+  while (/^(declare|async|abstract|const\s+enum)\s/.test(head)) head = head.replace(/^(declare|async|abstract|const(?=\s+enum))\s+/, "");
+  let names: string[] = [];
+  const named = /^(function\s*\*?|class|interface|type|enum|namespace|module)\s*([A-Za-z_$][\w$]*)/.exec(head);
+  if (named) names = [named[2]!];
+  else {
+    const v = /^(const|let|var)\s+([\s\S]*)/.exec(head);
+    if (v) {
+      const lhs = /^[{[]/.test(v[2]!) ? v[2]!.slice(1, v[2]!.search(/[}\]]/)) : v[2]!.split(/[=:;\s]/)[0]!;
+      names = lhs.split(",").map((s) => s.split(":").pop()!.replace(/^\s*\.\.\./, "").split("=")[0]!.trim()).filter((s) => IDENT.test(s));
+    }
+  }
+  return { names, exports: deflt ? ["default", ...names] : exported ? names : [] };
+}
+
+/** The repo paths an import of `spec` from `path` could mean, most likely first; [] for a package. */
+export function candidates(path: string, spec: string) {
+  if (!/^\.\.?(\/|$)/.test(spec)) return [];
+  const parts = path.split("/").slice(0, -1);
+  for (const s of spec.split("/")) {
+    if (s === "..") { if (!parts.length) return []; parts.pop(); }
+    else if (s && s !== ".") parts.push(s);
+  }
+  const base = parts.join("/");
+  if (!base) return [];
+  const js = /\.[cm]?jsx?$/.test(base) ? [base.replace(/\.([cm]?)js(x?)$/, ".$1ts$2"), base.replace(/\.[cm]?jsx?$/, ".tsx")] : [];
+  return [...new Set([...js, base, ...[".ts", ".tsx", ".js", ".jsx", ".mjs", "/index.ts", "/index.tsx", "/index.js"].map((x) => base + x)])];
+}
+
+const CODE = /\.[cm]?[jt]sx?$/, MAX_FILES = 30;
+const words = (text: string) => new Set(text.replace(/(^|\s)\/\/.*$/gm, "").match(/[A-Za-z_$][\w$]*/g) ?? []);
+
+/**
+ * The picked lines of each file, and everything they need from the repo: the
+ * imports they use, the declarations of that file they use, and, following
+ * each relative import into its file, the declarations it imports and what
+ * those use in turn. Files come back picked first, then in the order they
+ * were reached; `load` gives a file of the repo, or null when there's none.
+ */
+export async function follow(picked: { path: string; doc: Doc; ranges: [number, number][] }[], load: (path: string) => Promise<Doc | null>) {
+  interface F { path: string; doc: Doc; keep: Set<string>; wants: Set<string>; stmts: ReturnType<typeof imports>; chunks: Chunk[]; stars: Set<string>; pulled: boolean }
+  const files = new Map<string, F>(), resolved = new Map<string, string | null>();
+  const open = (path: string, doc: Doc, pulled: boolean): F => {
+    const f: F = { path, doc, keep: new Set(), wants: new Set(), stmts: imports(doc.lines), chunks: CODE.test(path) ? chunks(doc.lines) : [], stars: new Set(), pulled };
+    files.set(path, f);
+    return f;
+  };
+  for (const p of picked) open(p.path, p.doc, false).keep = new Set(pick(p.doc.lines, p.ranges).map((l) => l.id));
+
+  /** Keep what `name` of this file's exports needs: its statements, or the whole file when it can't tell. */
+  const want = (f: F, name: string) => {
+    const soft = name.startsWith("?"), n = name.replace(/^\?/, "");
+    if (f.wants.has(name)) return;
+    f.wants.add(name);
+    const add = (c: Chunk) => c.ids.forEach((id) => f.keep.add(id));
+    const has = n === "*" ? [] : f.chunks.filter((c) => c.exports.includes(n));
+    has.forEach(add);
+    if (has.length) return;
+    const stars = f.chunks.filter((c) => c.from && !c.exports.length && !c.takes?.length);
+    // `export * from` passes the name on, but only a file that has it gives anything up.
+    if (n !== "*" && stars.length) { stars.forEach(add); f.stars.add("?" + n); }
+    else if (!soft) f.doc.lines.forEach((l) => f.keep.add(l.id));
+  };
+
+  /** Grow a file's cut until it holds what its own lines use: its statements, and its imports (side-effect ones always). */
+  const grow = (f: F) => {
+    for (let before = -1; before !== f.keep.size;) {
+      before = f.keep.size;
+      const inImport = new Set(f.stmts.flatMap((s) => s.ids));
+      const used = words(f.doc.lines.filter((l) => f.keep.has(l.id) && !inImport.has(l.id)).map((l) => l.text).join("\n"));
+      for (const c of f.chunks) if (c.names.some((n) => used.has(n))) c.ids.forEach((id) => f.keep.add(id));
+      for (const s of f.stmts) if (!s.names.length || s.names.some((n) => used.has(n))) s.ids.forEach((id) => f.keep.add(id));
+    }
+  };
+
+  const resolve = async (from: string, spec: string) => {
+    const key = from.replace(/[^/]*$/, "") + "\0" + spec;
+    if (!resolved.has(key)) {
+      let hit: string | null = null;
+      for (const path of candidates(from, spec)) {
+        if (files.has(path)) { hit = path; break; }
+        if (files.size >= MAX_FILES) break;
+        const doc = await load(path);
+        if (doc) { open(path, doc, true); hit = path; break; }
+      }
+      resolved.set(key, hit);
+    }
+    return resolved.get(key) ?? null;
+  };
+
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const f of files.values()) {
+      const before = f.keep.size;
+      grow(f);
+      // Each kept import or re-export of another file of the repo asks that file for what it takes.
+      const needs = [
+        ...f.stmts.filter((s) => s.ids.some((id) => f.keep.has(id))).map((s) => ({ from: s.from, takes: s.takes })),
+        ...f.chunks.filter((c) => c.from && c.ids.some((id) => f.keep.has(id))).map((c) => ({ from: c.from!, takes: c.takes!.length ? c.takes! : [...f.stars] })),
+      ];
+      for (const need of needs) {
+        const at = await resolve(f.path, need.from);
+        const t = at ? files.get(at)! : null;
+        if (!t) continue;
+        const size = t.keep.size, asked = t.wants.size;
+        need.takes.forEach((n) => want(t, n));
+        if (t.keep.size !== size || t.wants.size !== asked) changed = true;
+      }
+      if (f.keep.size !== before) changed = true;
+    }
+  }
+  return [...files.values()].filter((f) => f.keep.size).map((f) => ({ path: f.path, pulled: f.pulled, doc: { rev: f.doc.rev, nextId: f.doc.nextId, lines: f.doc.lines.filter((l) => f.keep.has(l.id)) } }));
 }
 
 /** The picked lines plus the imports they use, in file order, ids and revs intact. */
@@ -137,14 +323,16 @@ export async function createCut(env: Env, owner: string, repo: string, user: str
     if (!path || !(from >= 1) || !(to >= from)) return json({ error: "each piece needs a path and lines from ≤ to" }, 400);
     byPath.set(path, [...(byPath.get(path) ?? []), [from, to]]);
   }
-  const files: { path: string; doc: Doc }[] = [];
+  const picked: { path: string; doc: Doc; ranges: [number, number][] }[] = [];
   for (const [path, ranges] of byPath) {
     const m = await materialize(env, owner, repo, path);
     if ("error" in m) return json({ error: `${path}: ${m.error}` }, m.status);
     const main = await doc(env, owner, repo, path);
     if (ranges.some(([a]) => !main.lines[a - 1])) return json({ error: `${path} has no such lines` }, 400);
-    files.push({ path, doc: { rev: main.rev, nextId: main.nextId, lines: pick(main.lines, ranges) } });
+    picked.push({ path, doc: main, ranges });
   }
+  // A file a relative import points at, if the repo has it.
+  const files = await follow(picked, async (path) => "error" in (await materialize(env, owner, repo, path)) ? null : doc(env, owner, repo, path));
   if (files.reduce((n, f) => n + f.doc.lines.length, 0) > MAX_LINES) return json({ error: `cut at most ${MAX_LINES} lines` }, 400);
 
   const id = crypto.randomUUID().replace(/-/g, "").slice(0, 10), branch = `cut-${id}`, now = Date.now();
@@ -156,7 +344,7 @@ export async function createCut(env: Env, owner: string, repo: string, user: str
   }
   await env.DB.prepare("INSERT INTO cuts (id, owner, repo, branch, paths, by, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
     .bind(id, owner, repo, branch, JSON.stringify(files.map((f) => f.path)), user, String(body?.note ?? "").slice(0, 280), now).run();
-  return json({ id, branch, files: files.map((f) => ({ path: f.path, lines: f.doc.lines.length })) }, 201);
+  return json({ id, branch, files: files.map((f) => ({ path: f.path, lines: f.doc.lines.length, ...(f.pulled ? { pulled: true } : {}) })) }, 201);
 }
 
 interface CutRow { id: string; owner: string; repo: string; branch: string; paths: string; by: string; note: string; created_at: number; run: string | null; status: string }
@@ -209,7 +397,7 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
       ...(files.length > 1 ? [{ n: null, text: `// ${f.path}` }] : []),
       ...f.lines.map((l) => ({ n: l.n, text: l.text, mark: run?.marks[f.path]?.[l.id] })),
     ]);
-    const png = await renderCard({ title: `${c.owner}/${c.repo}  ${files.length === 1 ? files[0]!.path : `${files.length} files`}`, lines, status: summary(run), ok: run && !run.note ? run.code === 0 : null });
+    const png = await renderCard({ title: `${c.owner}/${c.repo}  ${files.length === 1 ? files[0]!.path : `${files.length} files`}`, lines, status: summary(run), ok: run && !run.note ? run.code === 0 : null, font: cardFont(url.searchParams.get("font")) });
     return new Response(png, { headers: { "content-type": "image/png", "cache-control": "public, max-age=60" } });
   }
 
@@ -217,7 +405,8 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
   if (p[3] === "share" && req.method === "GET") {
     const title = `${c.owner}/${c.repo}: a cut of ${(JSON.parse(c.paths) as string[]).join(", ")}`;
     const desc = `${c.note ? c.note + " · " : ""}${summary(run)}. Cut out of the repo on codeSplitters: run it, fix it, merge it back.`;
-    const page = `#/c/${c.id}`, image = `${url.origin}/api/cuts/${c.id}/card.png?at=${run?.at ?? 0}`;
+    const page = `#/c/${c.id}`, font = cardFont(url.searchParams.get("font"));
+    const image = `${url.origin}/api/cuts/${c.id}/card.png?at=${run?.at ?? 0}${font === "dejavu" ? "" : `&font=${font}`}`;
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
 <meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
 <meta property="og:image" content="${esc(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">

@@ -377,6 +377,12 @@ test("experimental.wheel: agent mints secrets in the stack, op secrets go throug
   expect(plain).not.toContain("@plugin");
   expect(plain).toContain("SESSION_SECRET=");
   expect(() => generateAlchemy({ ...human, bindings: { X: { type: "secret", op: "vault/item" } } })).toThrow(/1Password reference/);
+  // Optional: a missing item resolves to nothing, and the Worker binds it only when set.
+  const opt = { ...human, bindings: { ...c.bindings, AI_KEY: { type: "secret" as const, op: "op://rb-test/ai/key", optional: true } } };
+  expect(generateEnvSchema(opt)).toContain("# @sensitive @optional\nAI_KEY=op(op://rb-test/ai/key, allowMissing=true)\n");
+  const optStack = generateAlchemy(opt);
+  expect(optStack).toContain('...(process.env.AI_KEY ? { AI_KEY: Config.redacted("AI_KEY") } : {})');
+  expect(optStack).toContain("declare const process");
 });
 
 test("worker-mode host applies D1 migrations, like the spa host", () => {
@@ -402,6 +408,20 @@ test("artifacts: wrangler, alchemy and the desktop host all get the binding", ()
   expect(host).toContain(`ARTIFACTS: local.artifacts("codesplitters"),`);
   expect(host).toContain(`open: { "/__rb/git/": (req: Request) => gitHttp(req, [env.ARTIFACTS as any]) },`);
   expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
+});
+
+test("images: wrangler, alchemy and the desktop host all get the binding; wrangler's carries over", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { IMAGES: { type: "images" } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, "")).images).toEqual({ binding: "IMAGES" });
+  const a = generateAlchemy(c);
+  expect(a).toContain(`export const IMAGES = Cloudflare.Images.Images("IMAGES");`);
+  expect(a).toContain(`IMAGES: IMAGES`);
+  expect(desktopEntry(c)).toContain(`IMAGES: local.images(),`);
+  expect(wranglerToConfig({ name: "g", images: { binding: "IMG" } }).bindings).toEqual({ IMG: { type: "images" } });
 });
 
 test("container: wrangler and alchemy bind the class and its image; the desktop host leaves it out", () => {

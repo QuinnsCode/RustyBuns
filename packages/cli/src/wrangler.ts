@@ -19,6 +19,7 @@ export interface WranglerJson {
   migrations?: { tag: string; new_classes?: string[]; new_sqlite_classes?: string[]; renamed_classes?: { from: string; to: string }[]; deleted_classes?: string[] }[];
   vars?: Record<string, string>;
   triggers?: { crons?: string[] };
+  images?: { binding: string };
   [k: string]: unknown;
 }
 
@@ -34,7 +35,7 @@ export function parseWranglerToml(src: string): WranglerJson {
 /** Top-level keys that Rusty Buns reads. Anything else in a wrangler file is not carried into the config. */
 const HANDLED = new Set([
   "$schema", "name", "main", "compatibility_date", "compatibility_flags", "assets",
-  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers",
+  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images",
 ]);
 
 /** Wrangler keys (bindings, routes, per-env overrides) that `init` cannot represent yet. */
@@ -48,6 +49,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
   for (const k of w.kv_namespaces ?? []) bindings[k.binding] = { type: "kv" };
   for (const r of w.r2_buckets ?? []) bindings[r.binding] = { type: "r2", bucketName: r.bucket_name };
   for (const o of w.durable_objects?.bindings ?? []) bindings[o.name] = { type: "durable_object", className: o.class_name, scriptName: o.script_name };
+  if (w.images?.binding) bindings[w.images.binding] = { type: "images" };
   for (const [k, v] of Object.entries(w.vars ?? {})) bindings[k] = { type: "var", value: String(v) };
   const rwf = w.assets?.run_worker_first;
   return {

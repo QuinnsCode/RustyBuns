@@ -53,7 +53,7 @@ export function rebase(ops: Op[], doc: Doc): { ops: Op[]; skipped: Op[] } {
  * O(n + m) and time O((n + m) * d) for d changed lines, so a big file with a
  * small edit is cheap and no file is too big to keep its line ids.
  */
-function keptPairs(a: string[], b: string[]): { i: number; j: number }[] {
+export function keptPairs(a: string[], b: string[]): { i: number; j: number }[] {
   const pairs: { i: number; j: number }[] = [];
   const size = a.length + b.length + 2;
   const vf = new Int32Array(2 * size + 1), vb = new Int32Array(2 * size + 1);

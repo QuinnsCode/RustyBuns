@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { apply, empty, fromText, merge, replay, text, type Applied, type Doc } from "../src/lines.ts";
+import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc } from "../src/lines.ts";
+import { diffToOps } from "../src/sync.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
@@ -71,19 +72,95 @@ describe("merge", () => {
     const { base, main, branch } = fork("a\nb");
     apply(main, [{ kind: "set", line: "L1", base: 1, text: "main" }, { kind: "delete", line: "L2", base: 2 }], "ana");
     apply(branch, [{ kind: "set", line: "L1", base: 1, text: "branch" }, { kind: "set", line: "L2", base: 2, text: "B" }], "bot");
-    expect(merge(base, branch, main).conflicts).toEqual([
-      { line: "L1", base: "a", main: "main", branch: "branch" },
-      { line: "L2", base: "b", main: null, branch: "B" },
-    ]);
-    // Keep the branch's L1, and bring L2 back as a new line.
-    expect(land(structuredClone(main), merge(base, branch, main, { L1: "branch", L2: "branch" }))).toBe("branch\nB");
-    expect(land(structuredClone(main), merge(base, branch, main, { L1: "main", L2: "main" }))).toBe("main");
+    // Main deleted L2 where the branch changed it: the two lines are one stretch both reshaped.
+    expect(merge(base, branch, main).conflicts).toEqual([{ line: "L1", base: "a\nb", main: "main", branch: "branch\nB" }]);
+    expect(land(structuredClone(main), merge(base, branch, main, { L1: "branch" }))).toBe("branch\nB");
+    expect(land(structuredClone(main), merge(base, branch, main, { L1: "main" }))).toBe("main");
   });
 
   test("the same change on both sides, or a line deleted on both, is no change", () => {
     const { base, main, branch } = fork("a\nb");
     for (const d of [main, branch]) apply(d, [{ kind: "set", line: "L1", base: 1, text: "A" }, { kind: "delete", line: "L2", base: 2 }], "x");
     expect(merge(base, branch, main)).toEqual({ ops: [], by: [], conflicts: [] });
+  });
+
+  // Each side edits as an agent would: plain text, diffed back to line ops.
+  const sides = (content: string, onMain: string, onBranch: string) => {
+    const f = fork(content);
+    apply(f.main, diffToOps(f.main.lines, onMain.split("\n")), "ana");
+    apply(f.branch, diffToOps(f.branch.lines, onBranch.split("\n")), "bot");
+    return f;
+  };
+  const clean = (content: string, onMain: string, onBranch: string) => {
+    const { base, main, branch } = sides(content, onMain, onBranch), m = merge(base, branch, main, {}, "bot");
+    expect(m.conflicts).toEqual([]);
+    return land(main, m);
+  };
+
+  test("a line moved on one side keeps the other side's edit", () => {
+    expect(clean("# T\na\nb\nc", "# T\nb\na\nc", "# T\nA\nb\nc")).toBe("# T\nb\nA\nc");
+    expect(clean("# T\na\nb\nc", "# T\nA\nb\nc", "# T\nb\na\nc")).toBe("# T\nb\nA\nc");
+    // Moved on main, deleted on the branch: it's gone.
+    expect(clean("# T\na\nb\nc", "# T\nb\na\nc", "# T\nb\nc")).toBe("# T\nb\nc");
+    // Moved on both: it lands once, where main put it.
+    expect(clean("# T\na\nb\nc", "# T\nb\nc\na", "# T\nb\na\nc")).toBe("# T\nb\nc\na");
+  });
+
+  test("lines the branch added under a line main moved follow it", () => {
+    expect(clean("# T\na\nb\nc", "# T\nb\nc\na", "# T\na\nx\ny\nb\nc")).toBe("# T\nb\nc\na\nx\ny");
+    // Moved up, too.
+    expect(clean("# T\na\nb\nc", "# T\nc\na\nb", "# T\na\nb\nc\nz")).toBe("# T\nc\nz\na\nb");
+  });
+
+  test("a moved block of repeated lines is a move, not a rewrite", () => {
+    const f = (name: string) => `function ${name}() {\n  if (x) {\n    go();\n  }\n}`;
+    const rest = Array.from({ length: 12 }, (_, i) => `const v${i} = ${i};`).join("\n");
+    // Main moves two functions to the end: each `  if (x) {`, `    go();`, `  }` and `}` moved twice, so only the block around `function a() {` says which is which.
+    const was = `${f("a")}\n${f("c")}\n${rest}`, onMain = `${rest}\n${f("a")}\n${f("c")}`;
+    const goA = f("a").replace("go()", "go(1)");
+    expect(clean(was, onMain, `${goA}\n${f("c")}\n${rest}`)).toBe(`${rest}\n${goA}\n${f("c")}`);
+    // Lines added under the block follow it too.
+    expect(clean(was, onMain, `${f("a")}\n// a done\n${f("c")}\n${rest}`)).toBe(`${rest}\n${f("a")}\n// a done\n${f("c")}`);
+  });
+
+  test("the same new line added at the same spot on both sides lands once", () => {
+    expect(clean("# T\na", "# T\nimport y\nimport z\na", "# T\nimport z\na")).toBe("# T\nimport y\nimport z\na");
+    // Apart, they're two lines someone meant.
+    expect(clean("a\nb\nc", "z\na\nb\nc", "a\nb\nc\nz")).toBe("z\na\nb\nc\nz");
+  });
+
+  test("a line both sides changed merges word by word when the edits don't touch", () => {
+    expect(clean("x\n  foo(1, 2)\ny", "x\n    foo(1, 2)\ny", "x\n  foo(1, 3)\ny")).toBe("x\n    foo(1, 3)\ny");
+    expect(mergeWords("let a = 1;", "const a = 1;", "let a = 2;")).toBe("const a = 2;");
+    // The same words rewritten two ways is still a conflict.
+    expect(mergeWords("foo(1)", "foo(2)", "foo(3)")).toBeNull();
+    const { base, main, branch } = sides("x\nfoo(1)", "x\nfoo(2)", "x\nfoo(3)");
+    expect(merge(base, branch, main).conflicts).toEqual([{ line: "L2", base: "foo(1)", main: "foo(2)", branch: "foo(3)" }]);
+    // A rename on one side and a new use of the old name on the other: merged, it would use a name that's gone.
+    expect(mergeWords("const r = f(); g(r.ok)", "const r = f(); if (r) g(r.ok)", "const t = f(); g(t.ok)")).toBeNull();
+  });
+
+  test("a stretch both sides rewrote is one conflict, settled whole", () => {
+    // Both rewrote tryWith (from PR #243 against main): no half of each.
+    const was = "a\nconst tryWith = (us) => tester(remote, us);\nconst all = tryWith(updates);\nz";
+    const onMain = "a\nlet slowest = 0;\nconst tryWith = async (us) => {\n  slowest = 1;\n  return tester(remote, us);\n};\nconst all = tryWith(updates);\nz";
+    const onBranch = "a\nconst tryWith = async (us) => { const t = await tester(r, us); tried.set(us, t); return t; };\nconst all = tryWith(updates);\nz";
+    const { base, main, branch } = sides(was, onMain, onBranch), m = merge(base, branch, main);
+    expect(m.conflicts).toEqual([{ line: "L2", base: "const tryWith = (us) => tester(remote, us);", main: onMain.split("\n").slice(1, 6).join("\n"), branch: onBranch.split("\n")[1] }]);
+    expect(land(structuredClone(main), merge(base, branch, main, { L2: "branch" }))).toBe(onBranch);
+    expect(land(structuredClone(main), merge(base, branch, main, { L2: "main" }))).toBe(onMain);
+    // The same rewrite on both sides is no conflict.
+    expect(clean(was, onMain, onMain)).toBe(onMain);
+  });
+
+  test("the same line added on both sides in different places would land twice: a conflict", () => {
+    const { base, main, branch } = sides("a\nb\nc", "import { z } from './z'\na\nb\nc", "a\nb\nimport { z } from './z'\nc");
+    const m = merge(base, branch, main);
+    expect(m.conflicts).toEqual([{ line: "L4", base: "", main: "import { z } from './z'", branch: "import { z } from './z'", doubled: true }]);
+    expect(land(structuredClone(main), merge(base, branch, main, { L4: "main" }))).toBe("import { z } from './z'\na\nb\nc");
+    expect(land(structuredClone(main), merge(base, branch, main, { L4: "branch" }))).toBe("import { z } from './z'\na\nb\nimport { z } from './z'\nc");
+    // A short or bare line ("}", "return;") repeats all the time: it isn't flagged.
+    expect(clean("a\nb\nc", "}\na\nb\nc", "a\nb\n}\nc")).toBe("}\na\nb\n}\nc");
   });
 });
 
@@ -323,6 +400,74 @@ describe("rate limits", () => {
     await put(boss, [{ name: "repo", max: 1, window_s: 86400, enabled: false }]);
     expect((await repo(ana, "three")).status).toBe(201);
     expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
+  });
+
+  test("over a limit: reject, log, or flag; the log; and an admin's reset", async () => {
+    const { call, person } = await accounts({ ADMINS: "boss-person" });
+    const boss = await person("boss@example.com", "boss-person"), ana = await person("ana@example.com", "ana-lyst");
+    const put = (rules: unknown) => call(null, "/api/admin/limits", { method: "PUT", headers: { cookie: boss }, body: JSON.stringify({ rules }) });
+    const get = async () => (await (await call(null, "/api/admin/limits", { headers: { cookie: boss } })).json()) as any;
+    const repo = (name: string) => call(null, "/api/repos", { method: "POST", headers: { cookie: ana, ...ip }, body: JSON.stringify({ name }) });
+    expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "shrug" }])).status).toBe(400);
+
+    // Rejected: a 429, and one log entry for the window however many times she tries.
+    expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ on_fail: "reject", group: "Repos", defaults: { on_fail: "reject" } });
+    expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true }])).status).toBe(200);
+    expect((await repo("a")).status).toBe(201);
+    expect((await repo("b")).status).toBe(429);
+    expect((await repo("c")).status).toBe(429);
+    expect((await get()).events.map((e: any) => [e.rule, e.who, e.action])).toEqual([["repo", "@ana-lyst", "reject"]]);
+
+    // An admin resets her: she's back under the cap, and out of the log.
+    expect((await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: ana }, body: JSON.stringify({ who: "@ana-lyst" }) })).status).toBe(403);
+    expect((await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ who: "@ana-lyst", rule: "repo" }) })).status).toBe(200);
+    expect((await get()).events).toEqual([]);
+    expect((await repo("d")).status).toBe(201);
+
+    // Logged: let through, noted. Flagged: let through, and listed.
+    await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "log" }]);
+    expect((await repo("e")).status).toBe(201);
+    expect((await get()).flagged).toEqual([]);
+    await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ who: "@ana-lyst" }) });
+    await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "flag" }]);
+    expect((await repo("f")).status).toBe(201);
+    expect((await repo("g")).status).toBe(201);
+    const { events, flagged } = await get();
+    expect(events.map((e: any) => e.action)).toEqual(["flag"]);
+    expect(flagged).toMatchObject([{ who: "@ana-lyst", rules: ["repo"], times: 1 }]);
+    // A save that leaves on_fail out keeps it.
+    await put([{ name: "repo", max: 2, window_s: 86400, enabled: true }]);
+    expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 2, on_fail: "flag" });
+  });
+  test("live edits count against the edit limit, over the socket and POST alike", async () => {
+    const call = await local({ ADMINS: "boss" });
+    await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
+    const open = async (headers: Record<string, string>) => {
+      const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...headers } })) as any).webSocket, got: any[] = [];
+      ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+      ws.queue.splice(0);
+      let id = 0;
+      const edit = async (text: string) => {
+        ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
+        for (let i = 0; i < 200; i++) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+      };
+      return { edit };
+    };
+    const sock = await open(ip);
+    expect((await sock.edit("1")).type).toBe("ack");
+    expect((await sock.edit("2")).type).toBe("ack");
+    const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
+    expect((await ops("3")).status).toBe(200);
+    const over = await sock.edit("4");
+    expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
+    expect(over.retryAfter).toBeGreaterThan(0);
+    expect((await ops("5")).status).toBe(429);
+    // The desktop isn't counted, and a page can't name who its socket counts as.
+    const desk = await open({ "x-codesplitters-limit-as": "@someone-else" });
+    expect((await desk.edit("6")).type).toBe("ack");
+    expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
   });
 });
 
