@@ -61,14 +61,16 @@ export async function renderCard(card: Card): Promise<Uint8Array<ArrayBuffer>> {
   c.text(card.title, 40, 26, INK, W - 40);
   c.rect(0, 92, W, 1, [208, 215, 222]);
   // The code, with a gutter mark per line: green passed, red failed.
-  const top = 104, rows = Math.floor((H - top - 96) / lh), width = String(Math.max(...card.lines.map((l) => l.n ?? 0), 1)).length;
+  // When they don't all fit, the last row that does says how many more there are.
+  const top = 104, fit = Math.floor((H - top - 96) / lh), width = String(Math.max(...card.lines.map((l) => l.n ?? 0), 1)).length;
+  const rows = card.lines.length > fit ? fit - 1 : fit;
   card.lines.slice(0, rows).forEach((l, i) => {
     const y = top + i * lh;
     if (l.mark) c.rect(24, y + 4, 8, lh - 8, l.mark === "pass" ? GREEN : RED);
     const x = c.text((l.n === null ? "" : String(l.n)).padStart(width), 44, y, MUTED);
     c.text(l.text, x + cw, y, INK, W - 32);
   });
-  if (card.lines.length > rows) c.text(`... ${card.lines.length - rows} more lines`, 44 + (width + 1) * cw, top + rows * lh - 6, MUTED);
+  if (card.lines.length > rows) c.text(`... ${card.lines.length - rows} more lines`, 44 + (width + 1) * cw, top + rows * lh, MUTED);
   c.rect(0, H - 88, W, 88, CANVAS);
   c.rect(0, H - 88, W, 1, [208, 215, 222]);
   const x = c.text(card.status, 40, H - 68, card.ok === null ? MUTED : card.ok ? GREEN : RED);
