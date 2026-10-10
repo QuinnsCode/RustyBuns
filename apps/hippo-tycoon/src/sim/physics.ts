@@ -1,17 +1,19 @@
 import { DISH, DROP_R, MAX_SPEED, MIN_SPEED, FRICTION, RESTITUTION, SLICK_BOOST, SLICK_R, TICK_HZ, WALL_R } from "./rules.ts";
+import { len } from "./trig.ts";
 import type { Drop, State } from "./types.ts";
 
+const sq = (v: number) => v * v;
 const MIN_V = MIN_SPEED / TICK_HZ, MAX_V = MAX_SPEED / TICK_HZ;
 
 export function stepDrops(s: State) {
   for (const d of s.drops) {
     d.age++;
     let slick = false;
-    for (const k of s.slicks) if ((d.x - k.x) ** 2 + (d.y - k.y) ** 2 < SLICK_R * SLICK_R) { slick = true; break; }
+    for (const k of s.slicks) if (sq(d.x - k.x) + sq(d.y - k.y) < SLICK_R * SLICK_R) { slick = true; break; }
     // the dished pan pulls toward the middle, harder at the rim
-    const r = Math.hypot(d.x, d.y);
+    const r = len(d.x, d.y);
     if (r > 1e-6) { const pull = DISH * (r / WALL_R); d.vx -= (d.x / r) * pull; d.vy -= (d.y / r) * pull; }
-    let sp = Math.hypot(d.vx, d.vy);
+    let sp = len(d.vx, d.vy);
     if (sp > 1e-9) {
       const f = slick ? SLICK_BOOST : FRICTION;
       let target = sp * f;
@@ -26,7 +28,7 @@ export function stepDrops(s: State) {
 }
 
 function wall(d: Drop) {
-  const lim = WALL_R - DROP_R, r = Math.hypot(d.x, d.y);
+  const lim = WALL_R - DROP_R, r = len(d.x, d.y);
   if (r <= lim) return;
   const nx = d.x / r, ny = d.y / r;
   d.x = nx * lim; d.y = ny * lim;
