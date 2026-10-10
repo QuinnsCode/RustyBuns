@@ -14,7 +14,7 @@ import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
-import { counted, limit, limitRoutes, ruleFor, RULES, sweepLimits } from "./limits.ts";
+import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, sweepLimits } from "./limits.ts";
 import { previewRoutes } from "./preview.ts";
 import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { repoFit } from "./fit.ts";
@@ -61,6 +61,8 @@ const app = {
     if (slow) return slow;
     const limits = await limitRoutes(req, env, p, isAdmin(env, user));
     if (limits) return limits;
+    const job = await jobRoutes(req, env, p, user, isAdmin(env, user), (r) => app.fetch(r, env));
+    if (job) return job;
     const body = async <T>() => (await req.json()) as T;
 
     const levels = await levelRoutes(req, env, p, url, user, isAdmin(env, user));
@@ -319,11 +321,12 @@ const app = {
     return json({ error: "not found" }, 404);
   },
 
-  // Cron Triggers (rustybuns.config.ts crons): every five minutes, webhook retries;
-  // hourly, each repo's dependency doctor runs when it's due, and rate-limit
+  // Cron Triggers (rustybuns.config.ts crons): every five minutes, webhook retries
+  // and queued requests whose turn has come; hourly, each repo's dependency doctor runs when it's due, and rate-limit
   // windows that have ended are cleared out.
   async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
     ctx.waitUntil(retryHooks(env));
+    ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
     if (c.cron === HOURLY) {
       ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
       ctx.waitUntil(sweepLimits(env));

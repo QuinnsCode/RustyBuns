@@ -1,11 +1,13 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
+import { lintMerge, newProblems } from "../src/lint.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
 import { noodles } from "../src/noodles.ts";
 import { isBuildFile } from "../src/buildfiles.ts";
+import worker from "../src/worker.ts";
 import { ruleFor } from "../src/limits.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
@@ -157,6 +159,36 @@ describe("merge", () => {
     expect(land(structuredClone(main), merge(base, branch, main, { L2: "main" }))).toBe(onMain);
     // The same rewrite on both sides is no conflict.
     expect(clean(was, onMain, onMain)).toBe(onMain);
+  });
+
+  test("a settled merge that would no longer build is a conflict until someone lands it anyway", () => {
+    // PR #243's deps.ts: keeping the branch's tryWith drops the `short` main declared, and main's later line still reads it.
+    const was = "const tryWith = (us) => tester(us);\nconst all = tryWith(updates);\nlog(all);";
+    const onMain = "let short = false;\nconst tryWith = async (us) => {\n  short = true;\n  return tester(us);\n};\nconst all = tryWith(updates);\nlog(all);\nif (short) log(\"short\");";
+    const onBranch = "const tryWith = async (us) => tester(us, tried);\nconst all = tryWith(updates);\nlog(all);";
+    const { base, main, branch } = sides(was, onMain, onBranch), m = merge(base, branch, main, { L1: "branch" });
+    expect(m.conflicts).toEqual([]);
+    // The globals both sides use (tester, log, updates) and the branch's own `tried` aren't new.
+    expect(lintMerge("deps.ts", main, branch, m, { L1: "branch" })).toEqual([{ line: "lint:undefined:short", base: "", main: null, branch: null, lint: "`short` is not defined (line 4)" }]);
+    expect(lintMerge("deps.ts", main, branch, m, { L1: "branch", "lint:undefined:short": "branch" })).toEqual([]);
+    // Only code is checked.
+    expect(lintMerge("deps.md", main, branch, m)).toEqual([]);
+  });
+
+  test("the merge check: redeclared names, undefined names and broken syntax, new ones only", () => {
+    const keys = (merged: string, a = "", b = "") => newProblems("x.ts", merged, a, b).map((p) => p.key);
+    expect(keys("const tryWith = 1;\nconst tryWith = 2;")).toEqual(["redeclared:tryWith"]);
+    expect(keys("if (a {")).toEqual(["syntax:UnexpectedToken"]);
+    expect(keys("f(a, b)", "f(a)", "f(b)")).toEqual([]);
+    // Scopes, hoisting, patterns, types, keys and labels aren't uses of an undefined name.
+    expect(keys([
+      "import { a } from './a'; import type { T } from './t';",
+      "export function f<U>({ b, c: [d] = [] }: T, ...e: U[]): T { return g(a, b, d, e, h, arguments) }",
+      "function g(...xs: unknown[]) { var h = 1; return xs }",
+      "const o = { k: 1, m() { return this.k }, [a]: 2 }; o.k; out: for (const [i, j] of Object.entries(o)) { if (i) break out; j }",
+      "class C extends Array<T> { #p = 1; static s = C; q(x = this.#p) { try {} catch ({ message }) { return message ?? x } } }",
+      "enum E { A = 1 } namespace N { export const v = E.A } declare const env: { z: number }; env.z as number; N.v; new C();",
+    ].join("\n"))).toEqual(["undefined:h", "undefined:Object", "undefined:Array"]);
   });
 
   // The same edits merged as a file at `path` (from PR #244 against main).
@@ -583,35 +615,93 @@ describe("rate limits", () => {
     await put([{ name: "repo", max: 2, window_s: 86400, enabled: true }]);
     expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 2, on_fail: "flag" });
   });
+  test("over a limit that queues: a place in line, then the dig runs once there's room", async () => {
+    const call = await local({ GH_CLI: "off", ADMINS: "boss" });
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (u: string) => {
+      const m = /^\/repos\/([^/]+\/[^/]+)(\/commits\/main)?$/.exec(new URL(u).pathname);
+      if (m && m[2]) return Response.json({ sha: "c".repeat(40) });
+      if (m) return Response.json({ full_name: m[1], private: false, default_branch: "main" });
+      return new Response("{}", { status: 404 });
+    }) as any;
+    call.artifacts.import = (async (params: any) => call.artifacts.create(params.target.name, { setDefaultBranch: "main" })) as any;
+    try {
+      for (const u of ["ana", "bo", "boss"]) await post(call, u, "/api/login", { name: u });
+      const put = (rules: unknown) => call("boss", "/api/admin/limits", { method: "PUT", body: JSON.stringify({ rules }) });
+      const dig = (repo: string) => call("ana", "/api/github/dig", { method: "POST", headers: ip, body: JSON.stringify({ repo }) });
+      const job = async (id: number, user = "ana") => (await (await call(user, `/api/jobs/${id}`)).json()) as any;
+      const reset = () => call("boss", "/api/admin/limits/reset", { method: "POST", body: JSON.stringify({ who: "@ana", rule: "dig" }) });
+
+      // Only slow, costly jobs can queue.
+      expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "queue" }])).status).toBe(400);
+      const { rules } = (await (await call("boss", "/api/admin/limits")).json()) as any;
+      expect(rules.filter((r: any) => r.queueable).map((r: any) => r.name)).toEqual(["dig"]);
+      expect((await put([{ name: "dig", max: 1, window_s: 86400, enabled: true, on_fail: "queue" }])).status).toBe(200);
+
+      // Over the cap: a 202 and a place in line, which holds one window's worth.
+      expect((await dig("o/one")).status).toBe(201);
+      const second = await dig("o/two");
+      expect(second.status).toBe(202);
+      const { queued } = (await second.json()) as any;
+      expect(queued).toMatchObject({ state: "waiting", place: 1, label: "Dig up a repo" });
+      expect(queued.eta).toBeGreaterThan(Date.now());
+      expect((await dig("o/three")).status).toBe(429);
+      expect((await (await call("boss", "/api/admin/limits")).json() as any).events.map((e: any) => e.action)).toEqual(["queue"]);
+
+      // Polling with no room leaves it waiting; it's hers alone to see.
+      expect(await job(queued.id)).toMatchObject({ state: "waiting", place: 1 });
+      expect((await call("bo", `/api/jobs/${queued.id}`)).status).toBe(404);
+      expect((await call("ana", "/api/repos/ana/two")).status).toBe(404);
+
+      // Room again (an admin's reset, or the window ending): the next poll runs it, as her, taking a slot.
+      await reset();
+      expect(await job(queued.id)).toMatchObject({ state: "done", status: 201, result: { owner: "ana", name: "two" } });
+      expect((await call("ana", "/api/repos/ana/two")).status).toBe(200);
+      expect((await call.env.DB.prepare("SELECT count FROM limit_hits WHERE rule = 'dig' AND who = '@ana'").first() as any).count).toBe(1);
+
+      // Nobody polling: the five-minute cron runs it.
+      const four = ((await (await dig("o/four")).json()) as any).queued;
+      await reset();
+      const waits: Promise<unknown>[] = [];
+      await worker.scheduled({ cron: "*/5 * * * *" }, call.env, { waitUntil: (w) => waits.push(w) });
+      await Promise.all(waits);
+      expect(await job(four.id, "boss")).toMatchObject({ state: "done", status: 201 });
+    } finally { globalThis.fetch = real; }
+  });
+
   test("live edits count against the edit limit, over the socket and POST alike", async () => {
-    const call = await local({ ADMINS: "boss" });
-    await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
-    await post(call, "ana", "/api/repos", { name: "r" });
-    await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
-    const open = async (headers: Record<string, string>) => {
-      const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...headers } })) as any).webSocket, got: any[] = [];
-      ws.toBrowser = (d: string) => got.push(JSON.parse(d));
-      ws.queue.splice(0);
-      let id = 0;
-      const edit = async (text: string) => {
-        ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
-        for (const end = performance.now() + 15_000; performance.now() < end;) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+    // Windows start on the minute; stand the clock still at the start of one so no edit lands in the next.
+    setSystemTime(new Date(Math.ceil(Date.now() / 60_000) * 60_000));
+    try {
+      const call = await local({ ADMINS: "boss" });
+      await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
+      await post(call, "ana", "/api/repos", { name: "r" });
+      await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
+      const open = async (headers: Record<string, string>) => {
+        const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...headers } })) as any).webSocket, got: any[] = [];
+        ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+        ws.queue.splice(0);
+        let id = 0;
+        const edit = async (text: string) => {
+          ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
+          for (const end = performance.now() + 15_000; performance.now() < end;) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+        };
+        return { edit };
       };
-      return { edit };
-    };
-    const sock = await open(ip);
-    expect((await sock.edit("1")).type).toBe("ack");
-    expect((await sock.edit("2")).type).toBe("ack");
-    const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
-    expect((await ops("3")).status).toBe(200);
-    const over = await sock.edit("4");
-    expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
-    expect(over.retryAfter).toBeGreaterThan(0);
-    expect((await ops("5")).status).toBe(429);
-    // The desktop isn't counted, and a page can't name who its socket counts as.
-    const desk = await open({ "x-codesplitters-limit-as": "@someone-else" });
-    expect((await desk.edit("6")).type).toBe("ack");
-    expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
+      const sock = await open(ip);
+      expect((await sock.edit("1")).type).toBe("ack");
+      expect((await sock.edit("2")).type).toBe("ack");
+      const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
+      expect((await ops("3")).status).toBe(200);
+      const over = await sock.edit("4");
+      expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
+      expect(over.retryAfter).toBeGreaterThan(0);
+      expect((await ops("5")).status).toBe(429);
+      // The desktop isn't counted, and a page can't name who its socket counts as.
+      const desk = await open({ "x-codesplitters-limit-as": "@someone-else" });
+      expect((await desk.edit("6")).type).toBe("ack");
+      expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
+    } finally { setSystemTime(); }
   });
 });
 
@@ -931,6 +1021,25 @@ describe("shares", () => {
     expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.js": { L1: "branch" } } })).status).toBe(200);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.js")).json() as Doc)).toBe("branch\ny");
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=b.js")).json() as Doc)).toBe("Z");
+  });
+
+  test("a merge that would leave code that doesn't build waits, and says why", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "a.ts", content: "const x = 1;\nlog(x);" });
+    await post(call, "ana", "/api/repos/ana/r/branches", { name: "b1" });
+    const opsOn = (query: string, o: unknown[]) => post(call, "ana", `/api/repos/ana/r/do/ops${query}`, { ops: o });
+    // Each side declares the same new name in a different place: each builds alone, merged it's declared twice.
+    await opsOn("?path=a.ts&branch=b1", [{ kind: "insert", after: null, text: "const y = 2;" }]);
+    await opsOn("?path=a.ts", [{ kind: "insert", after: "L2", text: "const y = 3;" }]);
+    const review = await (await call("ana", "/api/repos/ana/r/branches/b1")).json() as any;
+    expect(review.files[0].conflicts).toEqual([{ line: "lint:redeclared:y", base: "", main: null, branch: null, lint: "`y` is declared twice (line 4)" }]);
+    const r = await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", {});
+    expect(r.status).toBe(409);
+    expect((await r.json() as any).error).toBe("merged, it wouldn't build: a.ts: `y` is declared twice (line 4)");
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc)).toBe("const x = 1;\nlog(x);\nconst y = 3;");
+    expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.ts": { "lint:redeclared:y": "branch" } } })).status).toBe(200);
   });
 
   test("private lines in a public repo: the crew reads them, everyone else, git and search get them blank", async () => {

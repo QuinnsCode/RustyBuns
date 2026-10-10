@@ -126,10 +126,10 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
 
   if (req.method === "GET") {
     const desktop = !!runnerFor(env), why = desktop ? null : hostedWhy(env, user);
-    const run = desktop ? live.get(`${owner}/${repo}`)?.run ?? null
+    const run = async () => desktop ? live.get(`${owner}/${repo}`)?.run ?? null
       : env.DEPLOY_RUNNER ? ((await (await hostedStub(env, owner, repo).fetch(new Request("http://deploy/run"))).json()) as { run: Run | null }).run : null;
     const key = await keyInfo(env, owner, repo);
-    return json({ settings: await settings(env, owner, repo), can_run: desktop || (!why && key.set), hosted: !desktop && !!env.DEPLOY_RUNNER, why, key, run, history: await history(env, owner, repo, false, run) });
+    return json({ settings: await settings(env, owner, repo), can_run: desktop || (!why && key.set), hosted: !desktop && !!env.DEPLOY_RUNNER, why, key, ...(await history(env, owner, repo, false, run)) });
   }
   if (req.method === "PUT") {
     const s = { ...(await settings(env, owner, repo)), ...((await req.json()) as Partial<Settings>) };
