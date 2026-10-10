@@ -31,6 +31,7 @@ export function billables(c: RustyBunsConfig): Billable[] {
       if (b.type === "artifacts") out.push({ what: `Artifacts ${name}`, kind: "usage", note: "Workers Paid only; 10k ops + 1 GB a month included, then $0.15 per 1k ops and $0.50 per GB-month" });
       if (b.type === "container") out.push({ what: `Container ${name} (${b.instanceType ?? "lite"}, at most ${b.maxInstances ?? 1})`, kind: "usage", note: "Workers Paid only; CPU, memory and disk by the 10 ms while an instance runs, past the monthly included hours" });
       if (b.type === "send_email") out.push({ what: `Email Sending ${name}`, kind: "usage", note: "Workers Paid only; 3,000 emails a month included, then $0.35 per 1k" });
+      if (b.type === "queue") out.push({ what: `Queue ${name}`, kind: "usage", note: "10k operations a day free, 1M a month on Workers Paid, then $0.40 per million; a message is about three (write, read, delete)" });
       if (b.type === "images") out.push({ what: `Images ${name}`, kind: "usage", note: "5,000 unique transformations a month free, then $0.50 per 1k" });
       if (b.type === "r2") out.push({ what: `R2 ${name}`, kind: "usage", note: "storage + operations (egress is free)" });
     }

@@ -314,6 +314,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   const dos: { name: string; className: string }[] = [];
   const migrations: [string, string][] = [];
   const artifacts: string[] = [];
+  const consumers: [string, object][] = [];
   for (const [name, b] of Object.entries(c.bindings ?? {})) {
     switch (b.type) {
       case "d1":
@@ -329,6 +330,12 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
         artifacts.push(name);
         break;
       case "images": bind.push(`  ${name}: local.images(),`); break;
+      case "queue": {
+        bind.push(`  ${name}: local.queue(${JSON.stringify(b.queueName)}),`);
+        // maxWaitTimeMs is the edge's: here a send is delivered at once.
+        if (b.consumer !== false) consumers.push([name, { batchSize: b.consumer?.batchSize, maxRetries: b.consumer?.maxRetries, retryDelay: b.consumer?.retryDelay }]);
+        break;
+      }
       case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
       case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;
       case "durable_object":
@@ -390,7 +397,9 @@ ${h.box
   : `shell.mount(worker as any, env);`}
 console.log(\`[${c.name}] serving \${shell.url}\`);${crons.length ? `
 // Cron Triggers: the edge runs scheduled() on these; here a minute timer does.
-schedule(${JSON.stringify(crons)}, (controller) => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} }));` : ""}
+schedule(${JSON.stringify(crons)}, (controller) => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} }));` : ""}${consumers.map(([n, s]) => `
+// Queue consumer: the edge hands ${n}'s batches to queue(); here an in-process loop does.
+(env.${n} as any).consume((batch: unknown) => (worker as any).queue?.(batch, env, { waitUntil() {}, passThroughOnException() {} }), ${JSON.stringify(s)});`).join("")}
 ${h.launch}`;
 }
 

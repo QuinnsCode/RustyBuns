@@ -27,7 +27,7 @@ export default defineConfig({
     compatibilityDate: "2026-06-01",
     compatibilityFlags: ["nodejs_compat"],   // Better Auth leans on Node APIs (AsyncLocalStorage)
     build: "bun run build.ts",
-    // Every five minutes: webhook retries (src/hooks.ts) and queued digs (src/limits.ts).
+    // Every five minutes: queued digs (src/limits.ts). Webhooks retry on the HOOKS queue.
     // Hourly: each repo's dependency doctor runs when its own schedule says it's due (src/deps.ts).
     crons: ["*/5 * * * *", "0 * * * *"],
   },
@@ -38,6 +38,9 @@ export default defineConfig({
     FILES: { type: "durable_object", className: "FileDurableObject" },
     // One game room per level or repo: the lobby on its page, then the relay.
     GAMES: { type: "durable_object", className: "GameRoom" },
+    // Webhook tries, one message each; this Worker's queue() sends them and books the
+    // retries with a delay (src/hooks.ts). The desktop runs it in-process on sqlite.
+    HOOKS: { type: "queue", queueName: "codesplitters-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
     // One git repo per excavation; cataloguing pushes to it.
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
     // Hosted coding agents (super experimental): one container per run, each CLI

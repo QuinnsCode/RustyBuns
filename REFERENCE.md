@@ -220,7 +220,7 @@ export default defineConfig({
 | Key | Values |
 |---|---|
 | `source` | `dir`, `aliases`, `ignore` (inferred from tsconfig paths) |
-| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `send_email` (+ `allowedSenderAddresses`), `var`, `secret` (+ `op`) |
+| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `send_email` (+ `allowedSenderAddresses`), `queue` (+ `queueName`, `consumer`: the Worker's `queue()` gets its batches; a sqlite queue in the host process off the edge), `var`, `secret` (+ `op`) |
 | `state` | `shared` (default) \| `project`, see below |
 | `experimental` | `wheel` (`agent` \| `human`), see below |
 | `targets.edge` | `provider: "cloudflare"`, `domain`, `adopt` |

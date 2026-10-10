@@ -2,7 +2,7 @@
 // RWSDK's Vite plugin (which reads wrangler.jsonc for local bindings) agrees
 // with what Alchemy deploys. Never hand-edit; edit the config.
 
-import type { DoMigration, RustyBunsConfig } from "../config.ts";
+import type { DoMigration, QueueConsumer, RustyBunsConfig } from "../config.ts";
 import { parseWrangler } from "../wrangler.ts";
 
 /**
@@ -36,6 +36,17 @@ function nextTag(history: DoMigration[]): string {
   return `v${n + 1}`;
 }
 
+/** A `queues.consumers` entry: wrangler's names, and its batch timeout in seconds. */
+function wranglerConsumer(queue: string, c: QueueConsumer) {
+  return {
+    queue,
+    ...(c.batchSize !== undefined ? { max_batch_size: c.batchSize } : {}),
+    ...(c.maxWaitTimeMs !== undefined ? { max_batch_timeout: c.maxWaitTimeMs / 1000 } : {}),
+    ...(c.maxRetries !== undefined ? { max_retries: c.maxRetries } : {}),
+    ...(c.retryDelay !== undefined ? { retry_delay: c.retryDelay } : {}),
+  };
+}
+
 /** The migrations in an existing wrangler.jsonc, or none when it's missing or unreadable. */
 export function previousMigrations(src: string | null): DoMigration[] {
   if (!src) return [];
@@ -56,6 +67,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     w["assets"] = { binding: "ASSETS", directory: c.worker.assets, ...(c.worker.runWorkerFirst ? { run_worker_first: c.worker.runWorkerFirst } : {}) };
   }
   const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [], sendEmail: unknown[] = [];
+  const producers: unknown[] = [], consumers: unknown[] = [];
   const vars: Record<string, string> = {};
   const sqliteClasses: string[] = [];
   // No database_id / KV id: local dev doesn't need them, and a placeholder makes
@@ -71,6 +83,10 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     // Wrangler takes one Images binding, as an object.
     if (b.type === "images") w["images"] = { binding: name };
     if (b.type === "send_email") sendEmail.push({ name, ...(b.allowedSenderAddresses ? { allowed_sender_addresses: b.allowedSenderAddresses } : {}) });
+    if (b.type === "queue") {
+      producers.push({ binding: name, queue: b.queueName });
+      if (b.consumer !== false) consumers.push(wranglerConsumer(b.queueName, b.consumer ?? {}));
+    }
     if (b.type === "container") {
       dos.push({ name, class_name: b.className });
       sqliteClasses.push(b.className);
@@ -83,6 +99,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   if (r2.length) w["r2_buckets"] = r2;
   if (artifacts.length) w["artifacts"] = artifacts;
   if (sendEmail.length) w["send_email"] = sendEmail;
+  if (producers.length) w["queues"] = { producers, ...(consumers.length ? { consumers } : {}) };
   if (dos.length) w["durable_objects"] = { bindings: dos };
   const migrations = doMigrations(sqliteClasses, previousMigrations(previous), c.worker.migrations);
   if (migrations.length) w["migrations"] = migrations;

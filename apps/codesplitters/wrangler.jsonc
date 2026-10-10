@@ -39,6 +39,21 @@
       "namespace": "codesplitters"
     }
   ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "HOOKS",
+        "queue": "codesplitters-hooks"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "codesplitters-hooks",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1
+      }
+    ]
+  },
   "durable_objects": {
     "bindings": [
       {

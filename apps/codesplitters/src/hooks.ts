@@ -9,9 +9,10 @@
 //   branch.merged    a branch merged into main (a merged `pull_request`)
 //   deploy.finished  a real deploy finished, either way (`deployment_status`)
 //
-// Every delivery is logged. The first try goes out at once; a failed one is
-// tried again from the Worker's Cron Trigger (a minute timer on the desktop)
-// after 1, 5, 30 and 120 minutes, then given up.
+// Every delivery is logged, and every try is a message on the HOOKS queue
+// (Cloudflare Queues; sqlite in the desktop's own process): the first goes out
+// at once, and a failed one books the next on the queue after 1, 5, 30 and 120
+// minutes, then is given up.
 //
 //   GET    /api/repos/:o/:r/hooks                           the hooks, each with its last delivery (owner only)
 //   POST   /api/repos/:o/:r/hooks                           {url, events?, secret?}: the secret is shown this once
@@ -27,9 +28,8 @@ export type Event = (typeof EVENTS)[number];
 const BACKOFF = [1, 5, 30, 120];
 const MAX_HOOKS = 10;
 
-/** Hands a delivery to the platform to finish after the response (`ctx.waitUntil` on Cloudflare). */
-export type Later = (p: Promise<unknown>) => void;
-const detached: Later = (p) => void p;
+/** A message on the queue: try `id` again, as its try number `n + 1`. */
+export interface HookMessage { id: string; n: number }
 
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 
@@ -40,7 +40,7 @@ export async function sign(secret: string, body: string) {
 
 interface Delivery { id: string; event: string; payload: string; attempts: number }
 
-/** One try: POST it, log the answer, and schedule the next try if it failed. */
+/** One try: POST it and log the answer. Says how many seconds until the next try, or null when there's none. */
 async function attempt(env: Env, d: Delivery, url: string, secret: string) {
   const send = (env.HOOK_FETCH as typeof fetch | undefined) ?? fetch;
   let code = 0, response = "";
@@ -65,13 +65,14 @@ async function attempt(env: Env, d: Delivery, url: string, secret: string) {
   }
   const ok = code >= 200 && code < 300, tries = d.attempts + 1;
   const status = ok ? "ok" : tries > BACKOFF.length ? "failed" : "pending";
-  const next = status === "pending" ? Date.now() + BACKOFF[tries - 1]! * 60_000 : null;
+  const wait = status === "pending" ? BACKOFF[tries - 1]! * 60 : null;
   await env.DB.prepare("UPDATE webhook_deliveries SET status = ?, attempts = ?, next_at = ?, code = ?, response = ? WHERE id = ?")
-    .bind(status, tries, next, code, response, d.id).run();
+    .bind(status, tries, wait === null ? null : Date.now() + wait * 1000, code, response, d.id).run();
+  return wait;
 }
 
-/** Something happened in owner/repo: log a delivery to every hook that wants it, and send them. */
-export async function emit(env: Env, owner: string, repo: string, event: Event, sender: string, data: Record<string, unknown>, later: Later = detached) {
+/** Something happened in owner/repo: log a delivery to every hook that wants it, and queue their first tries. */
+export async function emit(env: Env, owner: string, repo: string, event: Event, sender: string, data: Record<string, unknown>) {
   try {
     const { results } = await env.DB.prepare("SELECT id, url, secret, events FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).all();
     const hooks = (results as { id: string; url: string; secret: string; events: string }[]).filter((h) => h.events.split(",").includes(event));
@@ -83,26 +84,35 @@ export async function emit(env: Env, owner: string, repo: string, event: Event, 
       sender: { login: sender },
     });
     const now = Date.now();
-    const out = hooks.map((h) => ({ hook: h, d: { id: crypto.randomUUID(), event, payload, attempts: 0 } }));
-    // Logged before the first try, held a minute so the retry sweep doesn't send it twice.
-    await env.DB.batch(out.map(({ hook, d }) => env.DB.prepare("INSERT INTO webhook_deliveries (id, hook, owner, repo, event, payload, status, next_at, at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
-      .bind(d.id, hook.id, owner, repo, event, payload, now + 60_000, now)));
-    later(Promise.all(out.map(({ hook, d }) => attempt(env, d, hook.url, hook.secret).catch(() => {}))));
+    const ids = hooks.map(() => crypto.randomUUID());
+    await env.DB.batch(hooks.map((hook, i) => env.DB.prepare("INSERT INTO webhook_deliveries (id, hook, owner, repo, event, payload, status, next_at, at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
+      .bind(ids[i], hook.id, owner, repo, event, payload, now, now)));
+    await env.HOOKS.sendBatch(ids.map((id) => ({ body: { id, n: 0 } satisfies HookMessage })));
   } catch {
     // A hook never gets in the way of what happened.
   }
 }
 
-/** From the Cron Trigger: try again whatever is due. */
-export async function retryHooks(env: Env) {
-  const now = Date.now();
-  const { results } = await env.DB.prepare(`SELECT d.id, d.event, d.payload, d.attempts, d.next_at, h.url, h.secret FROM webhook_deliveries d
-    LEFT JOIN webhooks h ON h.id = d.hook WHERE d.status = 'pending' AND d.next_at <= ? ORDER BY d.next_at LIMIT 50`).bind(now).all();
-  await Promise.all((results as (Delivery & { next_at: number; url: string | null; secret: string | null })[]).map(async (d) => {
-    if (!d.url) return env.DB.prepare("UPDATE webhook_deliveries SET status = 'failed', next_at = NULL, response = 'hook deleted' WHERE id = ?").bind(d.id).run();
-    // Claim it, so two sweeps at once send it once.
-    const claim = await env.DB.prepare("UPDATE webhook_deliveries SET next_at = ? WHERE id = ? AND next_at = ? AND status = 'pending'").bind(now + 60_000, d.id, d.next_at).run();
-    if (claim.meta?.changes) await attempt(env, d, d.url, d.secret!).catch(() => {});
+/**
+ * The HOOKS queue's consumer: each message is one try. A message is stale once
+ * its delivery has moved on (tried since, redelivered, or finished), and whoever
+ * claims the delivery's next_at sends it, so a message the queue hands out twice
+ * is sent once.
+ */
+export async function deliverHooks(batch: { messages: readonly { body: HookMessage; ack(): void }[] }, env: Env) {
+  await Promise.all(batch.messages.map(async (m) => {
+    const { id, n } = m.body;
+    const d = await env.DB.prepare(`SELECT d.id, d.event, d.payload, d.attempts, d.next_at, h.url, h.secret FROM webhook_deliveries d
+      LEFT JOIN webhooks h ON h.id = d.hook WHERE d.id = ? AND d.status = 'pending' AND d.attempts = ?`).bind(id, n).first() as (Delivery & { next_at: number | null; url: string | null; secret: string | null }) | null;
+    if (d && !d.url) await env.DB.prepare("UPDATE webhook_deliveries SET status = 'failed', next_at = NULL, response = 'hook deleted' WHERE id = ?").bind(id).run();
+    else if (d && d.next_at !== null) {
+      const claim = await env.DB.prepare("UPDATE webhook_deliveries SET next_at = NULL WHERE id = ? AND attempts = ? AND next_at = ? AND status = 'pending'").bind(id, n, d.next_at).run();
+      if (claim.meta?.changes) {
+        const wait = await attempt(env, d, d.url!, d.secret!);
+        if (wait !== null) await env.HOOKS.send({ id, n: n + 1 } satisfies HookMessage, { delaySeconds: wait });
+      }
+    }
+    m.ack();
   }));
 }
 
@@ -113,7 +123,7 @@ function checkUrl(u: unknown) {
   } catch { return null; }
 }
 
-export async function hookRoutes(req: Request, env: Env, p: string[], user: string | null, later: Later): Promise<Response | null> {
+export async function hookRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "hooks")) return null;
   const [owner, repo, id] = [p[2], p[3], p[5]];
   // Hooks carry a secret and say what happens in the repo: the owner's alone.
@@ -155,11 +165,11 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
     return json(results);
   }
   if (p[6] === "deliveries" && p[7] && p[8] === "redeliver" && req.method === "POST") {
-    const d = await env.DB.prepare("SELECT id, event, payload FROM webhook_deliveries WHERE id = ? AND hook = ?").bind(p[7], id).first();
+    const d = await env.DB.prepare("SELECT id FROM webhook_deliveries WHERE id = ? AND hook = ?").bind(p[7], id).first();
     if (!d) return json({ error: "no such delivery" }, 404);
-    // A fresh run of tries, starting now.
-    await env.DB.prepare("UPDATE webhook_deliveries SET status = 'pending', attempts = 0, next_at = ? WHERE id = ?").bind(Date.now() + 60_000, d.id).run();
-    later(attempt(env, { ...d, attempts: 0 }, hook.url, hook.secret).catch(() => {}));
+    // A fresh run of tries, starting now; messages left from the last run are stale.
+    await env.DB.prepare("UPDATE webhook_deliveries SET status = 'pending', attempts = 0, next_at = ? WHERE id = ?").bind(Date.now(), d.id).run();
+    await env.HOOKS.send({ id: d.id as string, n: 0 } satisfies HookMessage);
     return json({ ok: true }, 202);
   }
   return null;

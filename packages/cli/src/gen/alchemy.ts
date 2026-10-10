@@ -29,6 +29,9 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
     case "artifacts":
       // A binding marker: namespaces appear with their first repo, nothing to provision.
       return `export const ${id} = Cloudflare.Artifacts.Namespace("${name}", { namespace: ${JSON.stringify(b.namespace)} });`;
+    case "queue":
+      // Bound in env as a producer; its consumer is attached to the Worker in the stack below.
+      return `export const ${id} = Cloudflare.Queues.Queue("${name}"${propsArg({ name: adopt ? b.queueName : undefined })});`;
     case "images":
       // A Worker-only binding: no resource behind it.
       return `export const ${id} = Cloudflare.Images.Images("${name}");`;
@@ -222,6 +225,14 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   lines.push(`  Effect.gen(function* () {`);
   if (edge && w.build) lines.push(`    yield* Build;`);
   if (edge) lines.push(`    const worker = yield* Worker;`);
+  // Queues this Worker consumes: its queue() handler gets their batches.
+  for (const [name, b] of edge ? Object.entries(bindings) : []) {
+    if (b.type !== "queue" || b.consumer === false) continue;
+    const s = b.consumer ?? {};
+    const settings = Object.entries({ batchSize: s.batchSize, maxWaitTimeMs: s.maxWaitTimeMs, maxRetries: s.maxRetries, retryDelay: s.retryDelay })
+      .filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${v}`);
+    lines.push(`    yield* Cloudflare.Queues.Consumer(${JSON.stringify(`${name}Consumer`)}, { queueId: (yield* ${ident(name)}).queueId, scriptName: worker.workerName${settings.length ? `, settings: { ${settings.join(", ")} }` : ""} });`);
+  }
   if (box && box.volumeSize > 0) lines.push(`    yield* Data;  // attached and mounted before the unit starts`);
   if (box || rail) lines.push(`    const service = yield* Service;`);
   if (rail?.volume) lines.push(`    yield* Data;  // attaching it redeploys the service onto the mount`);
