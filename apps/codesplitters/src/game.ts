@@ -6,7 +6,7 @@
 // and the same under /api/game/r/:owner/:repo for any repo you can read.
 
 import { handleFor, walls } from "./archive.ts";
-import { LEVELS } from "./levels.ts";
+import { LEVELS, levelSource } from "./levels.ts";
 import { json, type Env } from "./env.ts";
 
 type CanRead = (owner: string, repo: string) => Promise<boolean>;
@@ -18,11 +18,7 @@ export async function gameRoutes(req: Request, env: Env, p: string[], url: URL, 
     const level = LEVELS.find((l) => l.slug === p[3]);
     if (!level) return json({ error: "no such level" }, 404);
     room = `l/${level.slug}`, rest = p.slice(4);
-    open = async () => {
-      const row = await env.DB.prepare("SELECT status, commit_hash FROM levels WHERE slug = ?").bind(level.slug).first();
-      if (row?.status !== "ready" || !env.ARTIFACTS) return null;
-      return { handle: await env.ARTIFACTS.get(`level-${level.slug}`), ref: level.branch, commit: row.commit_hash };
-    };
+    open = () => levelSource(env, level.slug);
   } else if (p[2] === "r" && p[3] && p[4]) {
     const [owner, repo] = [p[3], p[4]];
     // A private repo you can't see looks the same as one that doesn't exist.

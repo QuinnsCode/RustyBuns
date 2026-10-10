@@ -88,6 +88,17 @@ async function submodules(repo: string, sha: string, token?: string) {
   return found.filter((m) => m !== null);
 }
 
+/** The commit at the tip of `repo`'s `branch`. */
+export async function githubHead(repo: string, branch: string, token?: string) {
+  const head = await gh(`/repos/${repo}/commits/${branch}`, token);
+  if (!head.ok) throw new Error(`GitHub said ${head.status} for ${repo}'s ${branch}`);
+  const c = (await head.json()) as { sha: string; commit: { message: string; author?: { name?: string; email?: string; date?: string } } };
+  return { sha: c.sha, message: c.commit.message, author: c.commit.author };
+}
+
+/** GitHub's tarball of `repo` at `sha`. */
+export const githubTarball = (repo: string, sha: string, token?: string) => gh(`/repos/${repo}/tarball/${sha}`, token);
+
 /**
  * Import `repo`'s `branch` at depth 1 into Artifact `target`. Past Cloudflare's
  * 40 MB import cap, which depth 1 can't get under, it comes from GitHub's
@@ -100,13 +111,11 @@ export async function importRepo(env: Env, src: { repo: string; branch: string; 
     return await ns.import({ source: { url: `https://github.com/${src.repo}.git`, branch: src.branch, depth: 1, ...(src.private ? { token: src.token } : {}) }, target });
   } catch (e) {
     if (!tooBigToImport(e)) throw e;
-    const head = await gh(`/repos/${src.repo}/commits/${src.branch}`, src.token);
-    if (!head.ok) throw new Error(`GitHub said ${head.status} for ${src.repo}'s ${src.branch}`);
-    const c = (await head.json()) as { sha: string; commit: { message: string; author?: { name?: string; email?: string; date?: string } } };
+    const c = await githubHead(src.repo, src.branch, src.token);
     return importTarball(ns, {
-      tarball: () => gh(`/repos/${src.repo}/tarball/${c.sha}`, src.token), submodules: () => submodules(src.repo, c.sha, src.token), repo: src.repo, sha: c.sha, branch: src.branch, target,
-      message: c.commit.message, author: (c.commit.author?.name ?? src.repo.split("/")[0]!).replace(/[<>\n]/g, ""),
-      email: c.commit.author?.email?.replace(/[<>\n\s]/g, "") || undefined, at: Date.parse(c.commit.author?.date ?? "") || undefined,
+      tarball: () => githubTarball(src.repo, c.sha, src.token), submodules: () => submodules(src.repo, c.sha, src.token), repo: src.repo, sha: c.sha, branch: src.branch, target,
+      message: c.message, author: (c.author?.name ?? src.repo.split("/")[0]!).replace(/[<>\n]/g, ""),
+      email: c.author?.email?.replace(/[<>\n\s]/g, "") || undefined, at: Date.parse(c.author?.date ?? "") || undefined,
     });
   }
 }

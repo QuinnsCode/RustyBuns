@@ -46,6 +46,10 @@ export default defineConfig({
     JOBS: { type: "queue", queueName: "codesplitters-jobs", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
     // One git repo per excavation; cataloguing pushes to it.
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
+    // Levels too big for Artifacts (Bun, Alchemy), as ~8 MB chunks of their text files
+    // (src/chunks.ts), read through the Cache API. Well under R2's free 10 GB. No desktop
+    // twin yet; the desktop's local git takes any size anyway.
+    LEVEL_CHUNKS: { type: "r2", bucketName: "codesplitters-level-chunks" },
     // Hosted coding agents (super experimental): one container per run, each CLI
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
     // The desktop has no twin and runs the CLIs on the machine instead.

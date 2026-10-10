@@ -24,6 +24,14 @@ export interface Artifacts {
   import(params: { source: { url: string; branch?: string; depth?: number; token?: string }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }): Promise<{ name: string; remote: string; defaultBranch: string }>;
 }
 
+/** The slice of an R2 bucket that chunks.ts uses. */
+export interface R2Like {
+  put(key: string, value: Blob | Uint8Array): Promise<unknown>;
+  get(key: string, opts?: { range?: { offset: number; length: number } }): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
+  list(opts?: { prefix?: string; cursor?: string }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
+  delete(keys: string | string[]): Promise<void>;
+}
+
 export interface Env {
   DB: any;
   FILES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
@@ -44,6 +52,11 @@ export interface Env {
   CODEX_API_KEY?: string;
   /** Cloudflare Artifacts (a bare-repo twin on the desktop). Optional: without it, nothing is pushed. */
   ARTIFACTS?: Artifacts;
+  /**
+   * Levels too big for Artifacts (Bun, Alchemy), packed into chunks (chunks.ts).
+   * Without it, such a level stays failed with Artifacts' reason.
+   */
+  LEVEL_CHUNKS?: R2Like;
   /** Handles allowed to import levels when accounts are on (comma separated). */
   ADMINS?: string;
   /** The owner's verified email; signing in with it claims the first ADMINS handle. */
