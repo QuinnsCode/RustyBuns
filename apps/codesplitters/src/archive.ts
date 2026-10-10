@@ -11,10 +11,15 @@ import type { ArtifactsRepo, Env, TreeEntry } from "./env.ts";
 export const fileStub = (env: Env, owner: string, repo: string, path: string, branch?: string) =>
   env.FILES.get(env.FILES.idFromName(`${owner}/${repo}${branch ? "@" + branch : ""}/${path}`));
 
-/** Call a file's DO (or its copy on `branch`) as `user`. */
+/**
+ * Call a file's DO (or its copy on `branch`) as `user`. The app's own calls
+ * see private lines; a read made for someone passes `x-codesplitters-crew`
+ * ("0" unless they're crew), so they see placeholders instead.
+ */
 export function toFile(env: Env, owner: string, repo: string, path: string, user: string, op: string, init: RequestInit = {}, search = "", branch?: string) {
   const headers = new Headers(init.headers);
   headers.set("x-codesplitters-user", user);
+  if (!headers.has("x-codesplitters-crew")) headers.set("x-codesplitters-crew", "1");
   return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 

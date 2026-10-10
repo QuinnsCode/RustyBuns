@@ -77,7 +77,12 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     const out = await Promise.all((await files()).map(async (f) => {
       if (f.merged) return { path: f.path, merged: true, ops: [], conflicts: [] };
       const m = await mergeFile(env, owner, repo, branch, f.path, user ?? "anon", undefined, true);
-      return { path: f.path, merged: false, ops: m.ops ?? [], conflicts: m.conflicts };
+      if (a.write) return { path: f.path, merged: false, ops: m.ops ?? [], conflicts: m.conflicts };
+      // Outside the crew, main's private lines stay blank here too.
+      const secret = new Set(await (await toFile(env, owner, repo, f.path, "upstream", "private")).json() as string[]);
+      const ops = (m.ops ?? []).map((o: any) => o.kind === "set" && secret.has(o.line) ? { ...o, text: "" } : o);
+      const conflicts = m.conflicts.map((c) => secret.has(c.line) ? { ...c, base: "", main: c.main === null ? null : "", branch: c.branch === null ? null : "" } : c);
+      return { path: f.path, merged: false, ops, conflicts };
     }));
     return json({ ...branch, files: out });
   }
