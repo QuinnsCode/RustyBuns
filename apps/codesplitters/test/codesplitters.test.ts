@@ -384,6 +384,44 @@ describe("rate limits", () => {
     expect((await repo(ana, "three")).status).toBe(201);
     expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
   });
+
+  test("over a limit: reject, log, or flag; the log; and an admin's reset", async () => {
+    const { call, person } = await accounts({ ADMINS: "boss-person" });
+    const boss = await person("boss@example.com", "boss-person"), ana = await person("ana@example.com", "ana-lyst");
+    const put = (rules: unknown) => call(null, "/api/admin/limits", { method: "PUT", headers: { cookie: boss }, body: JSON.stringify({ rules }) });
+    const get = async () => (await (await call(null, "/api/admin/limits", { headers: { cookie: boss } })).json()) as any;
+    const repo = (name: string) => call(null, "/api/repos", { method: "POST", headers: { cookie: ana, ...ip }, body: JSON.stringify({ name }) });
+    expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "shrug" }])).status).toBe(400);
+
+    // Rejected: a 429, and one log entry for the window however many times she tries.
+    expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ on_fail: "reject", group: "Repos", defaults: { on_fail: "reject" } });
+    expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true }])).status).toBe(200);
+    expect((await repo("a")).status).toBe(201);
+    expect((await repo("b")).status).toBe(429);
+    expect((await repo("c")).status).toBe(429);
+    expect((await get()).events.map((e: any) => [e.rule, e.who, e.action])).toEqual([["repo", "@ana-lyst", "reject"]]);
+
+    // An admin resets her: she's back under the cap, and out of the log.
+    expect((await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: ana }, body: JSON.stringify({ who: "@ana-lyst" }) })).status).toBe(403);
+    expect((await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ who: "@ana-lyst", rule: "repo" }) })).status).toBe(200);
+    expect((await get()).events).toEqual([]);
+    expect((await repo("d")).status).toBe(201);
+
+    // Logged: let through, noted. Flagged: let through, and listed.
+    await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "log" }]);
+    expect((await repo("e")).status).toBe(201);
+    expect((await get()).flagged).toEqual([]);
+    await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ who: "@ana-lyst" }) });
+    await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "flag" }]);
+    expect((await repo("f")).status).toBe(201);
+    expect((await repo("g")).status).toBe(201);
+    const { events, flagged } = await get();
+    expect(events.map((e: any) => e.action)).toEqual(["flag"]);
+    expect(flagged).toMatchObject([{ who: "@ana-lyst", rules: ["repo"], times: 1 }]);
+    // A save that leaves on_fail out keeps it.
+    await put([{ name: "repo", max: 2, window_s: 86400, enabled: true }]);
+    expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 2, on_fail: "flag" });
+  });
   test("live edits count against the edit limit, over the socket and POST alike", async () => {
     const call = await local({ ADMINS: "boss" });
     await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
