@@ -230,7 +230,19 @@ export interface RustyBunsConfig {
   };
   bindings: Record<string, Binding>;
   targets: {
-    edge?: { provider: "cloudflare"; domain?: string };
+    edge?: {
+      provider: "cloudflare";
+      domain?: string;
+      /**
+       * Give the Worker the config's `name`, D1 its `databaseName` and R2 its
+       * `bucketName`, and take over ones that already exist under those names
+       * (made with wrangler, or lost with a deleted worktree's .alchemy/ state).
+       * Off, Alchemy names them `<app>-<id>-<stage>-<random>` itself. Don't turn
+       * it on for a stack Alchemy already deployed: the names change, so those
+       * resources are replaced.
+       */
+      adopt?: boolean;
+    };
     box?: BoxTarget;
     desktop?: DesktopTarget;
   };

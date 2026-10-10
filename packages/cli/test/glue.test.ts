@@ -46,6 +46,18 @@ test("wrangler round trip keeps every binding and generates both files", async (
   expect(g.r2_buckets[0].bucket_name).toBe("druids-curse-assets");
 });
 
+test("targets.edge.adopt names resources as the config does and takes over the Worker", async () => {
+  const c = wranglerToConfig(parseWrangler(await Bun.file(root + "/wrangler.jsonc").text()));
+  const off = generateAlchemy(c);
+  expect(off).not.toContain("AdoptPolicy");
+  expect(off).not.toMatch(/D1\.Database\("DB", \{ name:/);
+  const on = generateAlchemy({ ...c, targets: { ...c.targets, edge: { provider: "cloudflare", adopt: true } } });
+  expect(on).toContain(`Cloudflare.D1.Database("DB", { name: ${JSON.stringify((c.bindings.DB as any).databaseName)}`);
+  expect(on).toContain('Cloudflare.R2.Bucket("ASSETS_BUCKET", { name: "druids-curse-assets" })');
+  expect(on).toContain(`  name: ${JSON.stringify(c.name)},`);
+  expect(on).toContain("}).pipe(Alchemy.AdoptPolicy.adopt(true));");
+});
+
 test("layout: app/ with ~ and #lib from tsconfig paths, no src/", () => {
   const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs");
   const { tmpdir } = require("node:os");
