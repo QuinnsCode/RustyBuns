@@ -8,8 +8,13 @@ import { defineConfig } from "@rustybuns/cli/config";
 // Hosted coding agents are still opt-in from the deploying shell:
 //   CODESPLITTERS_AGENTS=1  hosted coding agents (super experimental, see README)
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
-const secrets = (on: boolean, ...names: string[]) => on ? Object.fromEntries(names.map((n) => [n, { type: "secret" as const }])) : {};
 const op = (ref: string) => ({ type: "secret" as const, op: `op://codesplitters/${ref}` });
+// The hosted agents' logins, from 1Password like the rest: add the ones your
+// harnesses use (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, OPENAI_API_KEY,
+// CODEX_API_KEY), each an item in the codesplitters vault, e.g.
+//   ANTHROPIC_API_KEY: "anthropic/api-key",
+// A cut's tests and the dependency doctor run in the same container with none.
+const agentLogins: Record<string, string> = {};
 
 export default defineConfig({
   name: "codesplitters",
@@ -38,7 +43,7 @@ export default defineConfig({
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
     // The desktop has no twin and runs the CLIs on the machine instead.
     ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
-    ...secrets(agents, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"),
+    ...(agents ? Object.fromEntries(Object.entries(agentLogins).map(([k, ref]) => [k, op(ref)])) : {}),
     // Accounts (Better Auth), GitHub and Google sign-in.
     BETTER_AUTH_SECRET: op("better-auth/secret"),
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitters.notryanquinn.workers.dev" },

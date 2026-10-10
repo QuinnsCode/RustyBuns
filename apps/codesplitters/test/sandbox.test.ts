@@ -77,10 +77,14 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
   async function hosted(server: (body: any) => Promise<unknown>) {
     const booted = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "ryan-quinn" });
     opened.push(booted);
-    const runs: any[] = [];
+    const runs: any[] = [], containers: ReturnType<typeof fakeContainer>["seen"][] = [];
     booted.env.AGENT_SANDBOX = {
       idFromName: (n: string) => n,
-      get: () => new AgentSandbox({ container: fakeContainer(async (b) => { runs.push(b); return server(b); }).c }, booted.env),
+      get: () => {
+        const { c, seen } = fakeContainer(async (b) => { runs.push(b); return server(b); });
+        containers.push(seen);
+        return new AgentSandbox({ container: c }, booted.env);
+      },
     };
     // Each handle's session cookie, from signing up and claiming it.
     const cookies: Record<string, string> = {};
@@ -101,7 +105,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     await post("ryan-quinn", "/api/repos", { name: "r1", visibility: "public" });
     await post("ryan-quinn", "/api/repos/ryan-quinn/r1/collaborators", { name: "pat-person" });
     await post("ryan-quinn", "/api/repos/ryan-quinn/r1/files", { path: "src/a.js", content: "var x = 1\nf()" });
-    return { call, post, runs, env: booted.env };
+    return { call, post, runs, containers, env: booted.env };
   }
   const doc = async (call: Call) => await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/do/file?path=src/a.js")).json() as Doc;
 
@@ -159,5 +163,27 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     const res = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "codex", path: "src/a.js", task: "x" });
     expect(await res.json()).toMatchObject({ status: "failed" });
     expect(text(await doc(call))).toBe("var x = 1\nf()");
+  });
+
+  test("an admin's cut runs bun test in its own container, marks the gutter, and the container stops", async () => {
+    const { call, post, runs, containers } = await hosted(testCut);
+    await post("ryan-quinn", "/api/repos/ryan-quinn/r1/files", { path: "src/sum.ts", content: "export function sum(xs: number[]) {\n  return xs.reduce((a, b) => a + b, 1);\n}" });
+    await post("ryan-quinn", "/api/repos/ryan-quinn/r1/files", { path: "test/sum.test.ts", content: 'import { expect, test } from "bun:test";\nimport { sum } from "../src/sum.ts";\ntest("sums", () => expect(sum([1, 2])).toBe(3));\ntest("empty", () => expect(typeof sum([])).toBe("number"));' });
+    const made = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/cuts", { pieces: [{ path: "test/sum.test.ts", from: 3, to: 4 }] });
+    const { id } = (await made.json()) as { id: string };
+    const cut = (await (await call("ryan-quinn", `/api/cuts/${id}`)).json()) as any;
+    expect(cut.can_run).toBe(true);
+    // A collaborator who doesn't own the repo can't run it, and nothing starts.
+    expect((await post("pat-person", `/api/cuts/${id}/run`, {})).status).toBe(403);
+    expect(containers).toHaveLength(0);
+
+    const run = (await (await post("ryan-quinn", `/api/cuts/${id}/run`, {})).json()) as any;
+    expect(Object.keys(runs[0].files).sort()).toEqual(["src/sum.ts", "test/sum.test.ts"]);   // the import was followed
+    expect([run.passed, run.failed, run.note]).toEqual([1, 1, undefined]);
+    const [sums, empty] = cut.files.find((f: any) => f.path === "test/sum.test.ts").lines.slice(-2).map((l: any) => l.id);
+    expect(run.marks["test/sum.test.ts"]).toMatchObject({ [sums]: "fail", [empty]: "pass" });
+    expect(containers).toHaveLength(1);
+    expect(containers[0]!.started?.env).toEqual({});   // a test run gets no logins
+    expect(containers[0]!.destroyed).toBe(1);
   });
 });
