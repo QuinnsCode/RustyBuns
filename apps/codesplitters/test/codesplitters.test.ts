@@ -343,6 +343,33 @@ describe("levels", () => {
     expect([bun.status, bun.error]).toEqual(["failed", "The repository exceeds the size limit."]);
   });
 
+  test("an admin digs a ready level again: its old repo goes, side branches and all (#368)", async () => {
+    const call = await local({ ADMINS: "boss" });
+    const ns = call.artifacts, { push } = await import("../src/git.ts");
+    // An old dig whose HEAD names the side branch it was first pushed to.
+    const old = await ns.create("level-hono");
+    await push(old.remote, old.token, { changes: { "README.md": "old\n" }, message: "part", author: "upstream", branch: "codesplitters-parts" });
+    await push(old.remote, old.token, { changes: { "README.md": "old\n" }, message: "upstream", author: "upstream" });
+    await call.env.DB.prepare("INSERT INTO levels (slug, status) VALUES ('hono', 'ready')").run();
+    // Here HEAD always names main; on Cloudflare it names the first branch pushed, so check that branch goes.
+    const side = async () => (await (await ns.get("level-hono")).log({ ref: "codesplitters-parts" }).catch(() => [])).length;
+    expect(await side()).toBe(1);
+    // Stand in for the import: the default branch, pushed first.
+    ns.import = (async ({ target }: { target: { name: string } }) => {
+      const made = await ns.create(target.name);
+      await push(made.remote, made.token, { changes: { "README.md": "new\n" }, message: "upstream", author: "upstream" });
+      return made;
+    }) as any;
+
+    await post(call, "boss", "/api/login", { name: "boss" });
+    expect((await post(call, "boss", "/api/levels/hono/import", {})).status).toBe(202);
+    let hono: any;
+    for (let i = 0; i < 200 && hono?.status !== "ready"; i++, await Bun.sleep(25)) hono = (await (await call(null, "/api/levels")).json() as any[]).find((l) => l.slug === "hono");
+    expect(hono.status).toBe("ready");
+    expect((await (await call(null, "/api/levels/hono/file?path=README.md")).json() as any).text).toBe("new\n");
+    expect(await side()).toBe(0);
+  });
+
   test("browse a level, fork it, open a deep file, catalogue it: the push keeps every other file", async () => {
     const call = await local();
     // Stand in for an import (which needs the network): a repo with a few files, marked ready.

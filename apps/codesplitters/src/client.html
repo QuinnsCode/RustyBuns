@@ -1512,7 +1512,7 @@ const views = {
     if (!level) throw new Error("no such level");
     ctx = { view: "l", slug, path, level };
     const head = `<div class="repohead"><h1>${icon("landmark")}<span class="muted">level ${level.n} ·</span><b><a href="#/l/${slug}">${esc(level.title)}</a></b></h1>
-      <span class="badge">${icon("globe")}Public · read-only</span>${level.store === "r2" ? `<span class="badge" title="Too big for an Artifacts git repo, so its text files are kept in R2: browse and play it, but there's no git to fork">${icon("package")}No git: too big for Artifacts</span>` : ""}<span class="grow"></span>${level.status === "ready" ? playButton(`l/${slug}`) : ""}
+      <span class="badge">${icon("globe")}Public · read-only</span>${level.store === "r2" ? `<span class="badge" title="Too big for an Artifacts git repo, so its text files are kept in R2: browse and play it, but there's no git to fork">${icon("package")}No git: too big for Artifacts</span>` : ""}<span class="grow"></span>${session.admin && level.status === "ready" ? `<button class="btn" id="redig" title="admins only: dig ${esc(level.repo)} up afresh, replacing this copy">${icon("shovel")}Dig again</button>` : ""}${level.status === "ready" ? playButton(`l/${slug}`) : ""}
       ${me() && level.status === "ready" && level.store !== "r2" ? `<div class="pop"><button class="btn primary" id="forkbtn">${icon("git-fork")}Fork</button><form class="panel" id="fork" hidden><b>Dig it up: fork into your repos</b><span class="muted" style="font-size:13px">Your own writable copy, with the level's history, in a git repo you own. Change any line; upstream never hears about it.</span><div class="copyline"><input name="name" value="${slug}" required pattern="[a-z0-9]+(-[a-z0-9]+)*"><button class="btn primary">Fork</button></div><span class="muted" id="forkmsg"></span></form></div>` : ""}</div>`;
     if (level.status !== "ready") {
       app.innerHTML = head + `<div class="wrap" style="padding-top:20px"><div class="box"><div class="body">${level.status === "importing" ? "Being dug up now. This takes a minute for the big ones." : level.status === "failed" ? `The dig failed: ${esc(level.error)}` : "Still buried."}
@@ -1538,6 +1538,7 @@ const views = {
       status: `<span>${icon("git-branch")}${esc(level.branch ?? "main")}</span>${level.commit ? `<span>${icon("git-commit-horizontal")}${level.commit.slice(0, 7)}</span>` : ""}<span>${icon("lock")}read-only</span><span class="grow"></span>${isFile ? `<span id="st-sel"></span><span>${lines.length} lines</span>` : ""}`,
     });
     mountExplorer($("#tree"), `l/${slug}`, load, href, path);
+    $("#redig")?.addEventListener("click", async (e) => { const b = e.currentTarget; b.disabled = true; try { await api(`/levels/${slug}/import`, {}); route(); } catch (err) { b.disabled = false; toast(err.message); } });
     if ($("#lines")) selectable($("#lines"), ([a, b]) => ($("#st-sel").textContent = a === b ? `Ln ${a}` : `Ln ${a}–${b}`));
     if ($("#forkbtn")) {
       popover($("#forkbtn"));
