@@ -58,9 +58,12 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [];
   const vars: Record<string, string> = {};
   const sqliteClasses: string[] = [];
+  // No database_id / KV id: local dev doesn't need them, and a placeholder makes
+  // `wrangler d1 ... --remote` in the app dir send it to the API (code 7400).
+  // Without one, wrangler resolves the database by name.
   for (const [name, b] of Object.entries(c.bindings)) {
-    if (b.type === "d1") d1.push({ binding: name, database_name: b.databaseName, database_id: "managed-by-alchemy", ...(b.migrationsDir ? { migrations_dir: b.migrationsDir } : {}) });
-    if (b.type === "kv") kv.push({ binding: name, id: "managed-by-alchemy" });
+    if (b.type === "d1") d1.push({ binding: name, database_name: b.databaseName, ...(b.migrationsDir ? { migrations_dir: b.migrationsDir } : {}) });
+    if (b.type === "kv") kv.push({ binding: name });
     if (b.type === "r2") r2.push({ binding: name, bucket_name: b.bucketName });
     if (b.type === "durable_object") { dos.push({ name, class_name: b.className, ...(b.scriptName ? { script_name: b.scriptName } : {}) }); if (!b.scriptName) sqliteClasses.push(b.className); }
     if (b.type === "var") vars[name] = b.value;
