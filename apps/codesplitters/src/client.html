@@ -545,7 +545,11 @@ let agentTimer = null;
 // What the page is showing, so the palette can offer what makes sense here.
 let ctx = {};
 function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 2400); }
-async function copy(text, what = "Copied") { try { await navigator.clipboard.writeText(text); toast(what); } catch { prompt("Copy this:", text); } }
+async function copy(text, what = "Copied") {
+  // An agent's call isn't a click, so the clipboard may refuse it: hand it the text instead of a prompt() that blocks the page.
+  if (agentCall) agentCall.copied = text;
+  try { await navigator.clipboard.writeText(text); toast(what); } catch { if (!agentCall) prompt("Copy this:", text); }
+}
 
 async function refreshSession() { session = await api("/session").catch(() => session); }
 
@@ -1665,7 +1669,7 @@ const views = {
       const f = $("#agent-form"), go = $("button.primary", f);
       $("#agent").addEventListener("click", () => f.task.focus());
       const av = await api("/agents").catch((e) => ({ available: false, why: e.message, harnesses: [], all: [] }));
-      ctx.agents = av; ctx.pollAgents = pollAgents;
+      ctx.agents = av; ctx.pollAgents = pollAgents; webTools();
       f.harness.innerHTML = av.all.map((h) => `<option value="${h}"${av.harnesses.includes(h) ? "" : " disabled"}>${h}${av.harnesses.includes(h) ? "" : " (not installed)"}</option>`).join("");
       if (av.harnesses.length) f.harness.value = av.harnesses[0];
       else { $("#agent-why").textContent = av.why || "None of claude, codex, pi or opencode is installed on this machine."; go.disabled = true; }
@@ -2333,9 +2337,82 @@ addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); palette.el.hidden ? palette.open() : palette.close(); }
 });
 
+// WebMCP: the palette's commands, plus a few reads, as tools an agent in the browser can call
+// (document.modelContext; earlier Chrome builds put it on navigator). Like the palette, what you
+// can do depends on the page, so the tools are registered again on every route. Each one does
+// exactly what the palette does, as whoever is signed in.
+let agentCall = null, toolsOff = null;
+const toolName = (title) => title.toLowerCase().replace(/[“”]/g, "").replace(/\d+(–\d+)?/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 64);
+const noInput = { type: "object", properties: {} };
+const where = () => ({ page: location.hash || "#/", ...JSON.parse(JSON.stringify({ ...ctx, agents: ctx.agents?.harnesses })), user: me(), admin: !!session.admin });
+async function asAgent(run) {
+  agentCall = {};
+  const was = routing, at = location.hash;
+  try {
+    const result = await run();
+    // A command that changed the hash has its route start on hashchange, a task or two later.
+    for (let i = 0; i < 50 && location.hash !== at && routing === was; i++) await new Promise((r) => setTimeout(r, 10));
+    await routing;
+    return { ...(result === undefined ? {} : { result }), ...(agentCall.copied ? { copied: agentCall.copied } : {}), now: where() };
+  } finally { agentCall = null; }
+}
+// Which file a read means: the one asked for, else the one on screen.
+const fileArgs = (a) => ({ owner: a.owner || ctx.owner, repo: a.repo || ctx.repo, path: a.path ?? ctx.path ?? ctx.dir ?? "" });
+const readTools = () => [
+  { name: "current_page", title: "Where am I", description: "What the page shows now: its view (home, r repo, f file, l level, c cut, s share, u profile, search…), the repo, file or level, the selected lines, what you may do there, and who is signed in.",
+    inputSchema: noInput, annotations: { readOnlyHint: true }, execute: async () => where() },
+  { name: "open_page", title: "Open a page", description: "Go to a page by its hash: #/ home, #/r/owner/repo[/dir], #/f/owner/repo/path/to/file, #/l/level-slug[/path], #/u/handle, #/search/query, #/about. Answers with the new page.",
+    inputSchema: { type: "object", properties: { hash: { type: "string", description: "like #/f/owner/repo/src/app.ts" } }, required: ["hash"] },
+    annotations: { readOnlyHint: true }, execute: ({ hash }) => asAgent(() => { history.pushState(null, "", "#" + hash.replace(/^#?\/?/, "/")); return route(); }) },
+  { name: "list_files", title: "List files", description: "A repo folder's files and folders. Defaults to the repo and folder on screen.",
+    inputSchema: { type: "object", properties: { owner: { type: "string" }, repo: { type: "string" }, path: { type: "string", description: "folder, \"\" for the root" } } },
+    annotations: { readOnlyHint: true }, execute: (a) => { const f = fileArgs(a); return ctx.view === "l" && !a.repo ? api(`/levels/${ctx.slug}/tree?path=${encodeURIComponent(a.path ?? "")}`) : api(`/repos/${f.owner}/${f.repo}/tree?path=${encodeURIComponent(a.path ?? "")}`); } },
+  { name: "read_file", title: "Read a file", description: "A file's lines, numbered, each with who last wrote it. Defaults to the file on screen.",
+    inputSchema: { type: "object", properties: { owner: { type: "string" }, repo: { type: "string" }, path: { type: "string" } } },
+    annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: async (a) => {
+      if (ctx.view === "l" && !a.repo) { const t = (await api(`/levels/${ctx.slug}/file?path=${encodeURIComponent(a.path || ctx.path)}`)).text ?? ""; return { lines: t.replace(/\n$/, "").split("\n").map((text, i) => ({ n: i + 1, text })) }; }
+      const f = fileArgs(a), doc = await api(`/repos/${f.owner}/${f.repo}/do/file?path=${encodeURIComponent(f.path)}`);
+      return { rev: doc.rev, lines: doc.lines.map((l, i) => ({ n: i + 1, text: l.text, by: l.by, ...(l.private ? { private: true } : {}) })) };
+    } },
+  { name: "select_lines", title: "Select lines", description: "Select lines on the file on screen, as clicking their numbers would, so the line commands (share, cut, make private) act on them.",
+    inputSchema: { type: "object", properties: { from: { type: "integer", minimum: 1 }, to: { type: "integer", minimum: 1 } }, required: ["from"] },
+    execute: ({ from, to = from }) => asAgent(() => {
+      const ln = (n) => $(`#lines .ln[data-i="${n - 1}"] .n`);
+      if (!ln(from) || !ln(to)) throw new Error("no such line on this page");
+      ln(from).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      ln(to).dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+    }) },
+];
+async function webTools() {
+  const mc = document.modelContext ?? navigator.modelContext;
+  if (!mc?.registerTool) return;
+  toolsOff?.abort();
+  const off = (toolsOff = new AbortController()), seen = new Set();
+  const cmds = (await commands().catch(() => [])).flatMap((c) => {
+    const name = toolName(c.title);
+    if (!name || seen.has(name)) return [];
+    seen.add(name);
+    const read = !c.api || c.api.startsWith("GET") || c.api.startsWith("WS");
+    return [{ name, title: c.title, description: `${c.group}: ${c.title}${c.ask ? ` (input: ${c.ask})` : ""}. The palette's ${c.api || "navigation"}.`,
+      inputSchema: c.ask ? { type: "object", properties: { input: { type: "string", description: c.ask } }, required: ["input"] } : noInput,
+      annotations: { readOnlyHint: read, consequentialHint: /^DELETE|^PUT|\/merge|\/commit/.test(c.api) },
+      execute: ({ input } = {}) => asAgent(() => c.run(input)) }];
+  });
+  if (off !== toolsOff) return; // a newer route got here first
+  for (const t of [...readTools(), ...cmds]) {
+    try {
+      const h = await mc.registerTool(t, { signal: off.signal });
+      off.signal.addEventListener("abort", () => { try { h?.unregister ? h.unregister() : mc.unregisterTool?.(t.name); } catch {} });
+    } catch {}
+  }
+}
+
 // Views and how many plain segments come before a path tail: #/f/owner/repo/<path>.
 const FIXED = { f: 2, r: 2, l: 1 };
+// Settles when the page has drawn, so an agent's tool call can answer with where it landed.
+let routing = Promise.resolve();
 async function route() {
+  let drawn; routing = new Promise((r) => (drawn = r));
   socket?.close(); socket = null;
   clearTimeout(agentTimer);
   stopIntro();
@@ -2349,6 +2426,8 @@ async function route() {
   try { await (views[view] && view !== "repoHead" && view !== "wireRepoHead" ? views[view] : views.home)(...parts); }
   catch (err) { app.innerHTML = `<div class="wrap" style="padding-top:24px"><div class="box"><div class="body">${esc(err.message)}</div></div></div>`; }
   window.scrollTo(0, 0);
+  await webTools();
+  drawn();
 }
 addEventListener("hashchange", route);
 refreshSession().then(() => { header(); route(); mailedLink(); });
