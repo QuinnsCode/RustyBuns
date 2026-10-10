@@ -394,7 +394,10 @@ describe("rate limits", () => {
       ws.toBrowser = (d: string) => got.push(JSON.parse(d));
       ws.queue.splice(0);
       let id = 0;
-      const edit = async (text: string) => { ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] })); await Bun.sleep(5); return got.find((m) => m.id === id && m.type !== "ops"); };
+      const edit = async (text: string) => {
+        ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
+        for (let i = 0; i < 200; i++) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+      };
       return { edit };
     };
     const sock = await open(ip);

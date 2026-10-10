@@ -1146,7 +1146,7 @@ const views = {
           : inp.value === "" ? [{ kind: "delete", line: line.id, base: line.rev }]
           : [{ kind: "set", line: line.id, base: line.rev, text: inp.value }];
         // The broadcast has already updated `doc`; close the editor and show it.
-        try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
+        try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = /^Slow down/.test(err.message) ? err.message : "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
       });
     };
     draw(doc); drawCommits(commits);
