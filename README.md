@@ -52,7 +52,7 @@ Because Bun is the one runtime that has every piece built in:
 | `Bun.serve` with WebSockets | Durable Objects with hibernating sockets, in-process |
 | `bun:ffi` | Rust cdylibs called directly, nanosecond calls, with a TypeScript fallback |
 | `Bun.spawn` with a terminal | real PTYs without node-gyp (see [agent-office](apps/agent-office/README.md)) |
-| TypeScript with no build step, `bun test`, `bun check` | a typecheck in ~60ms and a full desktop build in under a second |
+| TypeScript with no build step, `bun test`, `bun check` | a full desktop build in under a second, and a typecheck in milliseconds once `bun check` ships (Bun 1.4.3; canary only so far, tsc-rs or `tsc` until then) |
 
 Your users never install Bun. It's inside the binary.
 
@@ -78,7 +78,7 @@ Coding agents are now writing most of the code. Rusty Buns is shaped for how the
 - **One file to reason about.** `rustybuns.config.ts` is the only file you own. The host, the wrangler config and the infrastructure are all generated from it, so an agent changes one line and the rest follows.
 - **The whole stack runs locally.** sqlite stands in for every cloud binding, so an agent can boot, test and break the real app with no cloud account and no bill.
 - **The app is a web page, so an agent can see it.** It renders in Chrome, which agents already drive: click, screenshot, read the console. No custom harness for a native window.
-- **The loop is fast.** `bun check` typechecks in milliseconds and a desktop build takes about a second. Agents iterate dozens of times; each loop should be cheap.
+- **The loop is fast.** A desktop build takes about a second, and `bun check` (Bun 1.4.3, canary only so far) will typecheck in milliseconds. Agents iterate dozens of times; each loop should be cheap.
 - **Guard rails before anything costs money.** `plan` typechecks the generated stack and shows the diff. `deploy` refuses to run without a plan for that exact config, then asks. The compiler catches an agent's mistake before a server exists.
 - **Agents get keys you can take back (experimental).** Set `experimental.wheel` to `"agent"` and a test stack mints its own secrets on create and drops them on destroy, so CI and agents can spin stacks up as often as they like with nothing to rotate. Set it to `"human"` and prod secrets come from 1Password behind your Touch ID. Either way a committed `.env.schema` lists every secret by name, never value, so any machine or agent knows what's needed. The 1Password path is untested so far; see [REFERENCE.md](REFERENCE.md#who-holds-the-keys-experimental) for why it's safe and what it doesn't cover.
 - **Rust without risk.** An agent can write the Rust engine and prove it matches the TypeScript one, sample by sample, and the TypeScript path keeps working if it doesn't.

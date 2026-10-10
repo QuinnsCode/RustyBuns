@@ -1,5 +1,6 @@
 // Type checking for `plan` (the generated stack) and `build desktop --check` (the app).
-// Three checkers, fastest first: Bun's built-in `bun check` (Bun >= 1.4.3), tsc-rs
+// Three checkers, fastest first: Bun's built-in `bun check` (Bun >= 1.4.3, canaries
+// included: no stable release has it yet), tsc-rs
 // (Rust port of tsc 7, with Effect's diagnostics built in), and plain tsc.
 // `bun check` ignores tsconfig "plugins", so a project that asks for
 // @effect/language-service gets tsc-rs when it is installed.
@@ -23,10 +24,13 @@ export function localBin(name: string, from = process.cwd()): string | null {
   }
 }
 
+/** Does this Bun version have `bun check`? A 1.4.3 canary counts: semver ranks 1.4.3-canary.N below 1.4.3. */
+export const hasBunCheck = (version: string) => Bun.semver.satisfies(version, `>=${BUN_CHECK_MIN}-0`);
+
 /** A Bun that has `bun check`: $RB_BUN if set, else this Bun when it is new enough. */
 export function bunWithCheck(): string | null {
   if (process.env.RB_BUN) return process.env.RB_BUN;
-  return Bun.semver.satisfies(Bun.version, `>=${BUN_CHECK_MIN}`) ? process.execPath : null;
+  return hasBunCheck(Bun.version) ? process.execPath : null;
 }
 
 function find(name: CheckerName): Checker | null {
@@ -47,7 +51,7 @@ export function pickChecker(want: CheckerName | "auto", tsconfig: string | null)
     const c = find(want);
     if (c) return c;
     throw new Error(want === "bun"
-      ? `bun check needs Bun >= ${BUN_CHECK_MIN} (this is ${Bun.version}). Run \`bun upgrade\`, or point RB_BUN at a newer bun.`
+      ? `bun check needs Bun >= ${BUN_CHECK_MIN} (this is ${Bun.version}). Until 1.4.3 ships, \`bun upgrade --canary\` has it, or point RB_BUN at a newer bun.`
       : `${want} is not installed here. Add it: bun add -d ${want === "tsc" ? "typescript" : want}`);
   }
   if (tsconfig && wantsEffectDiagnostics(tsconfig)) { const rs = find("tsc-rs"); if (rs) return rs; }
