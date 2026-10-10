@@ -230,7 +230,7 @@ async function generate(opts: { adopt: boolean }) {
     const lost = wranglerLosses();
     if (lost.length) throw new Error(`adopt would delete from wrangler.jsonc: ${lost.join(", ")}. Move those into the config first, or pass --force.`);
   }
-  const r = await writeIfChanged("wrangler.jsonc", generateWrangler(cfg), opts);
+  const r = await writeIfChanged("wrangler.jsonc", generateWrangler(cfg, existsSync("wrangler.jsonc") ? readFileSync("wrangler.jsonc", "utf8") : null), opts);
   if (r === "conflict") console.log("wrangler.jsonc is hand-written and differs; wrote wrangler.generated.jsonc. Diff it" + (wranglerLosses().length ? " (it lacks " + wranglerLosses().join(", ") + ", so adopt will refuse)." : ", then `rustybuns adopt`."));
   else console.log(`wrangler.jsonc ${r}`);
 }
