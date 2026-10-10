@@ -66,6 +66,7 @@ The desktop and box hosts are the same generated program. The desktop build bind
 | KV | KV | sqlite table | sqlite table | sqlite table |
 | blob | R2 | directory on a Volume | directory on a Volume | embedded directory |
 | git repos | Artifacts | untested | untested | bare repos over git HTTP (worker mode; needs `git`) |
+| image transforms | Images | passthrough | passthrough | passthrough: the original image, `info()` from its header (worker mode) |
 | secrets | Worker secrets | env file on the server | service variables | n/a |
 | native (FFI, `SharedArrayBuffer`) | no | yes | yes (crates built in the image) | yes |
 
@@ -211,7 +212,7 @@ export default defineConfig({
 | Key | Values |
 |---|---|
 | `source` | `dir`, `aliases`, `ignore` (inferred from tsconfig paths) |
-| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `var`, `secret` (+ `op`) |
+| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `var`, `secret` (+ `op`) |
 | `state` | `shared` (default) \| `project`, see below |
 | `experimental` | `wheel` (`agent` \| `human`), see below |
 | `targets.edge` | `provider: "cloudflare"`, `domain`, `adopt` |

@@ -8,6 +8,11 @@ export type Binding =
   /** Cloudflare Artifacts: git repos created at runtime. Locally, bare repos served over git HTTP. */
   | { type: "artifacts"; namespace: string }
   /**
+   * Cloudflare Images: transform and convert images inside the Worker.
+   * Off the edge it is a passthrough: the original image, header-read info().
+   */
+  | { type: "images" }
+  /**
    * Cloudflare Containers: a Durable Object class exported by `main` with a
    * container image behind it (the class reaches it through `ctx.container`).
    * Edge only: the desktop has no twin, so the binding is left out there and

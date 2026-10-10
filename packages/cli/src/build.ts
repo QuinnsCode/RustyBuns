@@ -328,6 +328,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
         bind.push(`  ${name}: local.artifacts(${JSON.stringify(b.namespace)}),`);
         artifacts.push(name);
         break;
+      case "images": bind.push(`  ${name}: local.images(),`); break;
       case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;
       case "durable_object":
         if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);
@@ -380,7 +381,9 @@ const shell = serve<typeof env>({
   // Artifacts remotes: git clients bring a repo token, not the host cookie.
   open: { "/__rb/git/": (req: Request) => gitHttp(req, [${artifacts.map((n) => `env.${n} as any`).join(", ")}]) },` : ""}
 });
-${artifacts.map((n) => `(env.${n} as any).remoteBase = shell.url;`).join("\n")}
+${artifacts.map((n) => `(env.${n} as any).remoteBase = shell.url;`).join("\n")}${c.worker!.assets ? `
+// env.ASSETS, as the edge binds it: the Worker can fetch its own static files.
+env.ASSETS ??= shell.assets;` : ""}
 ${h.box
   ? `shell.mount({ fetch: (req: Request, e: any, ctx: any) => new URL(req.url).pathname === "/health" ? new Response("ok") : (worker as any).fetch(req, e, ctx) } as any, env);`
   : `shell.mount(worker as any, env);`}

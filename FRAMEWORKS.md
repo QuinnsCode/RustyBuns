@@ -7,7 +7,7 @@ Goal: every supported framework has a sample app in `apps/`. CI builds each one 
 Most frameworks already have a Cloudflare build that outputs a module exporting `default { fetch }`. Desktop `worker` mode mounts exactly that shape, and the host shim answers `cloudflare:workers`. So for most frameworks the same build can serve both the edge and desktop, with no per-framework adapter.
 
 - **Verified:** TanStack Start (probe on Sep 17: SSR, server function, KV persistence, compiled binary).
-- **Verified:** Astro 7 with @astrojs/cloudflare 14 (Oct 9: SSR, API route, KV through `cloudflare:workers`, compiled binary, Railway box bundle, deploy). With no adapter it is a static site and `init` writes an `spa` config.
+- **Verified:** Astro 7 with @astrojs/cloudflare 14 (Oct 9: SSR, API route, KV through `cloudflare:workers`, compiled binary, Railway box bundle, deploy). With no adapter it is a static site and `init` writes an `spa` config. `init` adds the `IMAGES` binding the adapter's `/_image` uses unless `imageService` doesn't need it (`compile`, `passthrough`); on the desktop it passes the original image through (Oct 10: `/_image` served from a dev desktop build).
 - **Still to verify:** every other framework below.
 
 ## Status key

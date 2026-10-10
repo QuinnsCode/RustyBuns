@@ -9,6 +9,7 @@ export { kv, KVNamespace } from "./bindings/kv.ts";
 export { storage, type StorageOptions } from "./bindings/storage.ts";
 export { r2, R2Bucket } from "./bindings/r2.ts";
 export { LocalArtifacts, LocalArtifactsRepo, gitHttp } from "./bindings/artifacts.ts";
+export { images, LocalImages } from "./bindings/images.ts";
 export { schedule, parseCron, cronMatches, type ScheduledController } from "./cron.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
@@ -19,6 +20,7 @@ import { kv } from "./bindings/kv.ts";
 import { storage, type StorageOptions } from "./bindings/storage.ts";
 import { r2 } from "./bindings/r2.ts";
 import { LocalArtifacts } from "./bindings/artifacts.ts";
+import { images } from "./bindings/images.ts";
 import { durableObject, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
 export const caps: MemoryPort["caps"] = { sab: true, ffi: true, fs: true, gpu: false };
@@ -68,6 +70,8 @@ export function localBindings(dataDir: string) {
     r2: (bucket: string, dir?: string) => r2(dir ?? `${dataDir}/r2/${bucket}`, `${dataDir}/r2/${bucket}`),
     /** Artifacts over bare git repos. Serve them with `gitHttp` under /__rb/git/ and set `remoteBase`. */
     artifacts: (namespace: string) => new LocalArtifacts(`${dataDir}/artifacts/${namespace}`, namespace),
+    /** Cloudflare Images as a passthrough: info() reads the header, output() returns the original. */
+    images,
     durableObject: <Env>(Ctor: DurableObjectCtor<Env>, env: Env, binding: string, opts?: { codec?: "json" | "v8" }) =>
       durableObject(Ctor, env, { storage: (id) => storage(`${dataDir}/do_${binding}_${id}.sqlite`, { codec: opts?.codec }) }),
   };

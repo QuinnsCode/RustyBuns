@@ -122,6 +122,8 @@ export interface BunShell<Env> {
   readonly port: number;
   comms: CommsPort;
   mount(handler: FetchHandler<Env>, env: Env): void;
+  /** The asset layer as a Fetcher, for env.ASSETS: the same files the shell serves before fetch(). */
+  assets: { fetch(req: Request | URL | string): Promise<Response> };
   /**
    * Listen somewhere else without restarting the process: stops accepting on
    * the old address (open sockets stay up) and binds the new one. Keeping the
@@ -326,6 +328,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       broadcast: (d) => { for (const s of live) { try { s.send(d); } catch {} } },
     },
     mount(h, e) { handler = h; env = e; },
+    assets: { fetch: async (req) => (await asset(new URL(req instanceof Request ? req.url : req))) ?? new Response("not found", { status: 404 }) },
     rebind(o) {
       const hostname = o.hostname ?? server.hostname!, next = o.port ?? server.port!;
       if (hostname === server.hostname && next === server.port) return { hostname, port: next };

@@ -30,6 +30,7 @@ export function billables(c: RustyBunsConfig): Billable[] {
       if (b.type === "kv") out.push({ what: `KV ${name}`, kind: "usage", note: "reads/writes + storage" });
       if (b.type === "artifacts") out.push({ what: `Artifacts ${name}`, kind: "usage", note: "Workers Paid only; 10k ops + 1 GB a month included, then $0.15 per 1k ops and $0.50 per GB-month" });
       if (b.type === "container") out.push({ what: `Container ${name} (${b.instanceType ?? "lite"}, at most ${b.maxInstances ?? 1})`, kind: "usage", note: "Workers Paid only; CPU, memory and disk by the 10 ms while an instance runs, past the monthly included hours" });
+      if (b.type === "images") out.push({ what: `Images ${name}`, kind: "usage", note: "5,000 unique transformations a month free, then $0.50 per 1k" });
       if (b.type === "r2") out.push({ what: `R2 ${name}`, kind: "usage", note: "storage + operations (egress is free)" });
     }
   }
