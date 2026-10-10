@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { apply, empty, fromText, text, type Doc } from "../src/lines.ts";
-import { diffToOps, rebase } from "../src/sync.ts";
+import { diffToOps, merge3, rebase } from "../src/sync.ts";
 
 /** A doc built from `start` through the real op path, so ids and revs are the app's own. */
 function docFrom(start: string): Doc {
@@ -113,5 +113,29 @@ describe("diffToOps on big files", () => {
       const kept = docFrom(start.join("\n")).lines.length - touched.size;
       expect(kept).toBe(lcs(start.length ? start : [""], next));
     }
+  });
+});
+
+describe("merge3", () => {
+  const base = ["a", "b", "c", "d", "e", "f"];
+
+  test("changes on different lines both land", () => {
+    const ours = ["a", "b", "c", "d", "e", "f", "g"];          // a line added at the end, live
+    const theirs = ["A", "b", "c", "x", "d", "e", "f"];        // a changed, x inserted after c
+    expect(merge3(base, ours, theirs)).toEqual(["A", "b", "c", "x", "d", "e", "f", "g"]);
+    expect(merge3(base, ["b", "c", "d", "e", "f"], ["a", "b", "c", "d", "F"])).toEqual(["b", "c", "d", "F"]);   // ours removed a, theirs changed f
+    expect(merge3(base, base, ["a", "e", "f"])).toEqual(["a", "e", "f"]);
+  });
+
+  test("a change on, or right next to, a line ours changed is a clash", () => {
+    expect(merge3(base, ["a", "B", "c", "d", "e", "f"], ["a", "b2", "c", "d", "e", "f"])).toBeNull();
+    expect(merge3(base, ["a", "B", "c", "d", "e", "f"], ["a", "b", "C", "d", "e", "f"])).toBeNull();
+    expect(merge3(base, ["z", ...base], ["y", ...base])).toBeNull();                        // both insert at the top
+    expect(merge3(base, [...base, "g"], ["a", "b", "c", "d", "e", "F"])).toBeNull();       // ours appended right after theirs' change
+  });
+
+  test("with nothing changed on either side it's ours", () => {
+    expect(merge3(base, ["a", "q", "b", "c", "d", "e", "f"], base)).toEqual(["a", "q", "b", "c", "d", "e", "f"]);
+    expect(merge3([], [], ["new"])).toEqual(["new"]);
   });
 });

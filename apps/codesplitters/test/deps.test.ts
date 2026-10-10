@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { bump, localFixer, outdated, packageManager, parseNpmrc, registryUrl, scheduledDoctor, DEFAULTS, type Fixer, type Registry, type Tester } from "../src/deps.ts";
+import { bump, localFixer, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, DEFAULTS, type Fixer, type Registry, type Tester } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
-import { depsTest as containerTest } from "../sandbox/server.mjs";
+import { depsFix as containerFix, depsTest as containerTest } from "../sandbox/server.mjs";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -192,6 +192,57 @@ test("a fixer that gives up leaves the update out, with its last output", async 
   expect(paint.lines[0].text).toBe(`import kleur from "kleur";`);
 });
 
+test("a fix lands on top of live edits made since the last commit, unless they touch the same lines", async () => {
+  const OTHER = `import kleur from "kleur";\nexport const dim = (s: string) => kleur.dim(s);\n`;
+  const fixer: Fixer = async () => ({ ok: true, tries: 1, out: "pass", edits: [
+    { path: "src/paint.ts", before: COLOR, after: COLOR.replace(`import kleur from "kleur"`, `import * as kleur from "kleur/colors"`) },
+    { path: "src/other.ts", before: OTHER, after: OTHER.replace(`import kleur from "kleur"`, `import * as kleur from "kleur/colors"`) },
+  ] });
+  const { call, send } = await app(kleurTester(), fixer);
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "src/other.ts", content: OTHER.replace(/\n$/, "") });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=src/other.ts", { message: "other" });
+  // Live edits on main, not committed: a line added at the end of paint.ts, and other.ts's import changed.
+  const live = async (path: string, op: (lines: any[]) => any) => {
+    const doc = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=${path}`)).json();
+    expect((await send("ryan", `/api/repos/ryan/lab/do/ops?path=${path}`, { ops: [op(doc.lines)] })).status).toBe(200);
+  };
+  await live("src/paint.ts", (ls) => ({ kind: "insert", after: ls.at(-1).id, text: "export const info = (s: string) => s;" }));
+  await live("src/other.ts", (ls) => ({ kind: "set", line: ls[0].id, base: ls[0].rev, text: `import kleur from "kleur"; // live` }));
+  await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true, fix_with: "claude" }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const got = await settle(call);
+  expect(got.report.note).toContain("merged into live edits, untested together: src/paint.ts");
+  expect(got.report.note).toContain("touch the same lines: src/other.ts");
+  const branch = got.report.branch;
+  const paint = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=src/paint.ts&branch=${branch}`)).json();
+  expect(paint.lines.map((l: any) => [l.text, l.by])).toEqual([
+    [`import * as kleur from "kleur/colors";`, "agent-claude"],
+    ["export const warn = (s: string) => kleur.red(s);", "ryan"],
+    ["export const ok = (s: string) => kleur.green(s);", "ryan"],
+    ["export const info = (s: string) => s;", "ryan"],
+  ]);
+  const other = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=src/other.ts&branch=${branch}`)).json();
+  expect(other.lines[0].text).toBe(`import kleur from "kleur"; // live`);
+});
+
+test("a long run beats, so it's never taken for dead while it goes", async () => {
+  let release!: () => void;
+  const held = new Promise<void>((r) => { release = r; });
+  const tester: Tester = async () => { await held; return { ok: true, out: "pass" }; };
+  const { call, send } = await app(tester);
+  await send("ryan", "/api/repos/ryan/lab/deps", { run_tests: true }, "PUT");
+  const db = call.env.DB;
+  const since = async () => (await db.prepare("SELECT running_since FROM dep_watches WHERE owner = 'ryan' AND repo = 'lab'").first()).running_since as number | null;
+  await db.prepare("UPDATE dep_watches SET running_since = 1 WHERE owner = 'ryan' AND repo = 'lab'").run();   // claimed long ago
+  const done = runDoctor(call.env, (who, path, init) => call(who!, path, init), "ryan", "lab", { beatMs: 20 });
+  await until(async () => ((await since()) ?? 0) > 1);
+  expect(await since()).toBeGreaterThan(Date.now() - 5_000);
+  release();
+  await done;
+  await Bun.sleep(60);
+  expect(await since()).toBeNull();   // done, and no late beat brings it back
+});
+
 test("localFixer: the agent edits a real clone, the tests decide, and only its edits come back", async () => {
   const { mkdtempSync, rmSync, writeFileSync, mkdirSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -329,7 +380,7 @@ test("a scheduled run that runs out of time tests no further and branches only w
 
 describe("on Cloudflare, tests run in an AGENT_SANDBOX container", () => {
   /** The app with AGENT_SANDBOX bound to fake containers whose server answers /deps-test with `server`. */
-  async function hosted(server: (path: string, body: any) => { ok: boolean; out: string }) {
+  async function hosted(server: (path: string, body: any) => unknown) {
     const { call, send } = await app();
     call.env.ADMINS = "ryan";
     const seen: { path: string; body: any; env?: Record<string, string> }[] = [];
@@ -366,6 +417,24 @@ describe("on Cloudflare, tests run in an AGENT_SANDBOX container", () => {
     expect(seen.every((s) => s.path === "/deps-test" && s.body.remote.includes("://x:") && JSON.stringify(s.env) === "{}")).toBe(true);
   });
 
+  test("the fixer runs in a container too, with only its own harness's logins", async () => {
+    const { call, send, seen } = await hosted((path, b) => path === "/deps-fix"
+      ? { ok: true, tries: 1, out: "pass", edits: [{ path: "src/paint.ts", before: COLOR, after: COLOR.replace(`import kleur from "kleur"`, `import * as kleur from "kleur/colors"`) }] }
+      : JSON.parse(b.files["package.json"]).dependencies.kleur === "^4.1.5" ? { ok: false, out: "kleur broke" } : { ok: true, out: "pass" });
+    call.env.OPENAI_API_KEY = "sk-not-for-claude";
+    await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true, fix_with: "claude", fix_tries: 2 }, "PUT");
+    const report = await (await send("ryan", "/api/repos/ryan/lab/deps/run", {})).json();
+    expect(report.updates.find((u: any) => u.name === "kleur")).toMatchObject({ status: "fixed", fix: { by: "agent-claude", tries: 1, files: ["src/paint.ts"] } });
+    const fix = seen.find((s) => s.path === "/deps-fix")!;
+    expect(fix.env).toEqual({ ANTHROPIC_API_KEY: "sk-not-for-tests" });
+    expect(fix.body).toMatchObject({ name: "kleur", tries: 2, out: "kleur broke", pm: "bun", cmd: { bin: "claude" } });
+    // The prompt is a template: the container fills in each try.
+    expect(fix.body.cmd.args[1]).toContain("Try {{try}} of 2");
+    expect(fix.body.cmd.args[1]).toContain("{{out}}");
+    const paint = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=src/paint.ts&branch=${report.branch}`)).json();
+    expect(paint.lines[0]).toMatchObject({ text: `import * as kleur from "kleur/colors";`, by: "agent-claude" });
+  });
+
   test("an owner who isn't an admin gets no container: the updates go up untested", async () => {
     const { call, send, seen } = await hosted(() => ({ ok: true, out: "" }));
     call.env.ADMINS = "someone-else";
@@ -400,6 +469,31 @@ describe("the container's /deps-test", () => {
     expect((await containerTest({ remote, files: pkg("echo nope && exit 3") })).ok).toBe(false);
     expect((await containerTest({ remote, files: pkg() })).out).toContain("(no test script)");
   });
+
+  test("/deps-fix: the agent gets each try's prompt filled in, the tests decide, and its edits come back", async () => {
+    const remote = await repo("grep -q 'v = 2' v.js");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(`${remote}/v.js`, "export const v = 0; // kleur\n");
+    Bun.spawnSync(["git", "add", "v.js"], { cwd: remote });
+    Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "use kleur"], { cwd: remote });
+    // The fake agent writes the try it's on; the second is right. Its prompt names the history and the call sites.
+    const prompt = "try {{try}}: {{out}} | {{history}} | {{sites}} | {{changelog}}";
+    const cmd = { bin: "sh", args: ["-c", `printf '%s' "$1" > prompt.txt; echo "export const v = {{try}};" > v.js; git remote -v >> prompt.txt`, "sh", prompt] };
+    const files = { "package.json": JSON.stringify({ name: "r", scripts: { test: "grep -q 'v = 2' v.js && cat prompt.txt" } }) };
+    const r = await containerFix({ cmd, remote, files, pm: "bun", name: "kleur", out: "first failure", tries: 3 });
+    expect(r).toMatchObject({ ok: true, tries: 2 });
+    expect(r.out).toContain("try 2:");                 // the test printed the second try's prompt
+    expect(r.out).toContain("use kleur");              // the repo's history of the package
+    expect(r.out).toContain("v.js:1");                 // where it's used
+    expect(r.out).not.toContain(remote);               // no remote left for the agent to see
+    expect(r.edits.sort((a: any, b: any) => a.path.localeCompare(b.path))).toEqual([
+      { path: "prompt.txt", before: null, after: expect.stringContaining("try 2") },
+      { path: "v.js", before: "export const v = 0; // kleur\n", after: "export const v = 2;\n" },
+    ]);
+    const gaveUp = await containerFix({ cmd: { bin: "true", args: [] }, remote, files, pm: "bun", name: "kleur", tries: 2 });
+    expect(gaveUp).toMatchObject({ ok: false, tries: 2, edits: [] });
+    expect((await containerFix({ cmd, remote: "/no/such/repo", files, name: "kleur" }))).toMatchObject({ ok: false, tries: 0, edits: [] });
+  }, 60_000);
 
   test("a bad remote or a path out of the clone fails cleanly", async () => {
     expect((await containerTest({ remote: "/no/such/repo", files: {} })).ok).toBe(false);

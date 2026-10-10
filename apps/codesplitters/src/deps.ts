@@ -26,8 +26,12 @@
 // coding agent gets the failing output, the package's changelog and the
 // repo's history of the affected API, patches the call sites across as many
 // files as it needs in the same throwaway clone, and the tests run again,
-// until they pass or it runs out of tries. A fix that passes lands on the
-// same branch, blamed on agent-<harness>.
+// until they pass or it runs out of tries. On Cloudflare that's a container
+// too, with only that agent's logins. A fix that passes lands on the same
+// branch, blamed on agent-<harness>; the agent worked on the last commit, so a
+// file with live edits since gets the fix merged into them line by line, and is
+// left out only where the two touch the same lines. A run says it's alive every
+// few minutes, so a long one is never taken for dead and run twice.
 //
 //   GET  /api/repos/:o/:r/deps        settings and the last report (owner only)
 //   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries}
@@ -37,7 +41,7 @@ import type { Doc, Op } from "./lines.ts";
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { actingAs, isAdmin } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
-import { diffToOps } from "./sync.ts";
+import { diffToOps, merge3 } from "./sync.ts";
 import { json, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { harnessCommand, HARNESSES, type Harness } from "./harness.ts";
@@ -130,8 +134,12 @@ export function packageManager(top: string[], pkg: Record<string, any>): { pm: P
  */
 export type Tester = (remote: string, files: Record<string, string>, opts: { pm: PM; lock: string | null; test: boolean }) => Promise<{ ok: boolean; out: string; lock?: string }>;
 
-/** One update for a coding agent to make work: the clone has `files` swapped in and fails its tests with `out`. */
-export interface FixJob { remote: string; files: Record<string, string>; pm: PM; update: Update; out: string; harness: Harness; tries: number }
+/**
+ * One update for a coding agent to make work: the clone has `files` swapped in
+ * and fails its tests with `out`. With `until` (the cron's deadline), a try only
+ * starts if there's room for one as slow as the slowest so far.
+ */
+export interface FixJob { remote: string; files: Record<string, string>; pm: PM; update: Update; out: string; harness: Harness; tries: number; until?: number }
 
 /** A file the fix changed: its text at the commit cloned (null: new) and after. */
 export interface Edit { path: string; before: string | null; after: string }
@@ -289,6 +297,8 @@ export const localFixer = (exec: Exec = execCommand, timeoutMs = 10 * 60_000): F
   inClone(job.remote, job.files, 0, timeoutMs, false, async (repo, run) => {
     const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
+    // The agent needs the history, not the remote, whose URL carries a token.
+    await run(["git", "remote", "remove", "origin"]);
     const install = await run(INSTALL[job.pm]);
     const name = job.update.name;
     const changelog = ["CHANGELOG.md", "HISTORY.md", "History.md", "CHANGES.md"].map((f) => join(repo, "node_modules", name, f)).find(existsSync);
@@ -297,15 +307,18 @@ export const localFixer = (exec: Exec = execCommand, timeoutMs = 10 * 60_000): F
       history: (await run(["git", "log", "-n", "15", "--format=%h %an, %ar: %s", "-S", name])).out,
       sites: (await run(["git", "grep", "-n", "-F", name, "--", ".", ":!package.json", ":!*.lock", ":!*.lockb"])).out.slice(0, 6000),
     };
-    let out = job.out, tries = 0, ok = false;
-    while (tries < job.tries && !ok && install.code === 0) {
+    const prompt = fixPrompt(job.update, job.tries);
+    let out = job.out, tries = 0, ok = false, slowest = 0;
+    while (tries < job.tries && !ok && install.code === 0 && !(job.until && Date.now() + slowest > job.until)) {
       tries++;
-      const ran = await exec(harnessCommand(job.harness, fixPrompt(job.update, out, context, tries, job.tries)), repo);
+      const t0 = Date.now();
+      const ran = await exec(harnessCommand(job.harness, fillPrompt(prompt, { ...context, out: tail(out), try: String(tries) })), repo);
       for (const [path, text] of Object.entries(job.files)) writeFileSync(join(repo, path), text);
       const gone = (await run(["git", "ls-files", "--deleted"])).out.split("\n").slice(1).filter(Boolean);
       if (gone.length) await run(["git", "checkout", "--", ...gone]);
       const t = ran.code !== 0 ? { ok: false, out: `${job.harness} exited ${ran.code}:\n${ran.out.slice(-2000)}` } : await installAndTest(run, repo, job.files, job.pm);
       ({ ok, out } = t);
+      slowest = Math.max(slowest, Date.now() - t0);
     }
     if (install.code !== 0) out = install.out;
     if (!ok) return { ok, tries, out, edits: [] };
@@ -320,19 +333,26 @@ export const localFixer = (exec: Exec = execCommand, timeoutMs = 10 * 60_000): F
     return { ok, tries, out, edits };
   }, (out) => ({ ok: false, tries: 0, out, edits: [] }));
 
-/** What the fixer is told on each try. */
-export function fixPrompt(u: Update, out: string, ctx: { changelog: string; history: string; sites: string }, attempt: number, of: number): string {
+/**
+ * What the fixer is told, with {{try}}, {{out}}, {{changelog}}, {{history}} and
+ * {{sites}} filled in on each try (fillPrompt), here or in the container.
+ */
+export function fixPrompt(u: Update, of: number): string {
   return [
     `This repository's tests fail after updating the dependency ${u.name} from ${u.from} to ${u.to} (a ${u.level} update). The new version is installed.`,
-    `Change the repository's code so it works with ${u.name} ${u.to} and the tests pass. Try ${attempt} of ${of}.`,
-    ``, `The failing test output${attempt > 1 ? " after your last try" : ""}:`, tail(out),
-    ...(ctx.changelog ? [``, `The start of ${u.name}'s changelog:`, ctx.changelog] : [``, `${u.name} ships no changelog; read its code and types in node_modules/${u.name}.`]),
-    ``, `Commits in this repo that added or removed mentions of ${u.name}:`, ctx.history.trim() || "(none)",
-    ``, `Where the repo mentions ${u.name}:`, ctx.sites.trim() || "(nowhere)",
+    `Change the repository's code so it works with ${u.name} ${u.to} and the tests pass. Try {{try}} of ${of}.`,
+    ``, `The failing test output (after your last try, if this isn't the first):`, `{{out}}`,
+    ``, `The start of ${u.name}'s changelog (if it ships none, read its code and types in node_modules/${u.name}):`, `{{changelog}}`,
+    ``, `Commits in this repo that added or removed mentions of ${u.name}:`, `{{history}}`,
+    ``, `Where the repo mentions ${u.name}:`, `{{sites}}`,
     ``, `Edit as many files as the fix needs, and keep every other line as it is. Do not edit package.json or the lockfile, do not delete files, and do not run git commands.`,
     `The tests run again after you stop.`,
   ].join("\n");
 }
+
+/** The prompt for one try. In one pass, so a {{...}} in the test output stays as it is; an empty value reads "(none)". */
+export const fillPrompt = (prompt: string, values: Record<string, string>) =>
+  prompt.replace(/\{\{(\w+)\}\}/g, (m, k: string) => k in values ? values[k]!.trim() || "(none)" : m);
 
 const onDesktop = (env: Env) => typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET;
 
@@ -356,20 +376,39 @@ function testerAt(env: Env, owner: string): Tester | null {
 
 const testerFor = (env: Env, s: Settings, owner: string): Tester | null => s.run_tests ? testerAt(env, owner) : null;
 
-/** Who fixes a broken update: the agent the owner picked. It runs on this machine, so not on Cloudflare, even where tests run in a container. */
+/**
+ * The same fix in a container of its own (sandbox/server.mjs, POST /deps-fix), torn down after.
+ * The container builds each try's prompt from the template; it gets only the harness's logins.
+ */
+export const containerFixer = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Fixer => async (job) => {
+  const stub = ns.get(ns.idFromName(crypto.randomUUID()));
+  const cmd = harnessCommand(job.harness, fixPrompt(job.update, job.tries));
+  const body = { cmd, remote: job.remote, files: job.files, pm: job.pm, name: job.update.name, out: job.out, tries: job.tries, until: job.until };
+  const res = await stub.fetch(new Request("http://sandbox/deps-fix", { method: "POST", body: JSON.stringify(body) }));
+  if (!res.ok) return { ok: false, tries: 0, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(job.remote, "<remote>")}`, edits: [] };
+  return (await res.json()) as Awaited<ReturnType<Fixer>>;
+};
+
+/** Who fixes a broken update: the agent the owner picked, wherever the tests run (a container on Cloudflare). */
 const fixerFor = (env: Env, s: Settings, owner: string): Fixer | null =>
-  !s.fix_with || !testerFor(env, s, owner) ? null : (env.DEPS_FIXER as Fixer | undefined) ?? (env.AGENT_SANDBOX ? null : localFixer(env.AGENT_EXEC as Exec | undefined));
+  !s.fix_with || !testerFor(env, s, owner) ? null
+    : (env.DEPS_FIXER as Fixer | undefined) ?? (env.AGENT_SANDBOX ? containerFixer(env.AGENT_SANDBOX) : localFixer(env.AGENT_EXEC as Exec | undefined));
 
 // ---- a run ------------------------------------------------------------------
 
 type Call = (who: string | null, path: string, init?: RequestInit) => Promise<Response>;
 
 /** Check one repo now, put what's worth taking on a branch, and keep the report. */
-export async function runDoctor(env: Env, call: Call, owner: string, repo: string, opts: { registry?: Registry; now?: number; deadline?: number } = {}): Promise<Report> {
+export async function runDoctor(env: Env, call: Call, owner: string, repo: string, opts: { registry?: Registry; now?: number; deadline?: number; beatMs?: number } = {}): Promise<Report> {
   const now = opts.now ?? Date.now();
   const s = await settings(env, owner, repo);
+  // While it runs, it says so, so a long one (a slow suite, several fix tries) is never taken for dead.
+  const beat = setInterval(() => {
+    void env.DB.prepare("UPDATE dep_watches SET running_since = ? WHERE owner = ? AND repo = ? AND running_since IS NOT NULL").bind(Date.now(), owner, repo).run().catch(() => {});
+  }, opts.beatMs ?? BEAT);
   const report = await check(env, call, owner, repo, s, opts.registry ?? (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, now, opts.deadline)
-    .catch((e: Error): Report => ({ at: now, checked: 0, updates: [], note: `failed: ${e.message}` }));
+    .catch((e: Error): Report => ({ at: now, checked: 0, updates: [], note: `failed: ${e.message}` }))
+    .finally(() => clearInterval(beat));
   await env.DB.prepare("UPDATE dep_watches SET last_run = ?, last_report = ?, running_since = NULL WHERE owner = ? AND repo = ?").bind(now, JSON.stringify(report), owner, repo).run();
   return report;
 }
@@ -472,7 +511,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
       for (const u of fixer ? updates.filter((u) => u.status === "broke") : []) {
         const taken = updates.filter((x) => x === u || x.status === "kept" || x.status === "fixed");
         const files = { ...Object.fromEntries(edits.map((e) => [e.path, e.after])), ...filesFor(taken) };
-        const f = await fixer!({ remote: r, files, pm, update: u, out: u.out ?? "", harness: s.fix_with!, tries: s.fix_tries });
+        const f = await fixer!({ remote: r, files, pm, update: u, out: u.out ?? "", harness: s.fix_with!, tries: s.fix_tries, ...(deadline ? { until: deadline } : {}) });
         const by = `agent-${s.fix_with}`;
         if (f.ok) {
           for (const e of f.edits) {
@@ -527,20 +566,22 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   }
   if (locked !== undefined) await write(lock!, () => locked!.split("\n"));
   if (edits.length) {
-    const skipped = await landFix(call, owner, base, branch, `agent-${s.fix_with}`, edits);
-    if (skipped.length) note = [note, `left out of the fix, changed since the last commit: ${skipped.join(", ")}`].filter(Boolean).join("; ");
+    const { merged, skipped } = await landFix(call, owner, base, branch, `agent-${s.fix_with}`, edits);
+    if (merged.length) note = [note, `the fix was merged into live edits, untested together: ${merged.join(", ")}`].filter(Boolean).join("; ");
+    if (skipped.length) note = [note, `left out of the fix, its live edits touch the same lines: ${skipped.join(", ")}`].filter(Boolean).join("; ");
   }
   return { at: now, checked, updates, branch, ...(locked !== undefined ? { lock: lock! } : {}), ...(note ? { note } : {}) };
 }
 
 /**
  * The fixer's edits, on the branch as its agent. The agent worked on the last
- * commit; a file that has changed since keeps its own lines and comes back here.
+ * commit; a file with live edits since gets the fix merged into them, line by
+ * line (`merged`), unless the two touch the same lines (`skipped`).
  */
-async function landFix(call: Call, owner: string, base: string, branch: string, agent: string, edits: Edit[]): Promise<string[]> {
+async function landFix(call: Call, owner: string, base: string, branch: string, agent: string, edits: Edit[]): Promise<{ merged: string[]; skipped: string[] }> {
   const add = await call(owner, `${base}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
   if (!add.ok && add.status !== 409) throw new Error(`adding ${agent}: ${add.status}`);
-  const skipped: string[] = [];
+  const merged: string[] = [], skipped: string[] = [];
   for (const e of edits) {
     const q = `?path=${encodeURIComponent(e.path)}&branch=${branch}`;
     if (e.before === null) {
@@ -549,12 +590,18 @@ async function landFix(call: Call, owner: string, base: string, branch: string, 
       continue;
     }
     const doc = (await (await call(agent, `${base}/do/file${q}`)).json()) as Doc;
-    if (toDisk(doc.lines) !== e.before) { skipped.push(e.path); continue; }
-    const ops = diffToOps(doc.lines, fromDisk(e.after));
+    let next = fromDisk(e.after);
+    if (toDisk(doc.lines) !== e.before) {
+      const m = merge3(fromDisk(e.before), doc.lines.map((l) => l.text), next);
+      if (!m) { skipped.push(e.path); continue; }
+      next = m;
+      merged.push(e.path);
+    }
+    const ops = diffToOps(doc.lines, next);
     const r = ops.length && await call(agent, `${base}/do/ops${q}`, { method: "POST", body: JSON.stringify({ ops }) });
     if (r && !r.ok) throw new Error(`editing ${e.path} on ${branch}: ${r.status}`);
   }
-  return skipped;
+  return { merged, skipped };
 }
 
 const tail = (s: string) => s.trim().slice(-1500);
@@ -567,8 +614,10 @@ export async function settings(env: Env, owner: string, repo: string): Promise<S
   return { on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: r.ignore ? String(r.ignore).split(",") : [], run_tests: !!r.run_tests, fix_with: r.fix_with ?? null, fix_tries: r.fix_tries };
 }
 
-/** A run that hasn't reported in an hour died with its process; the next one may go. */
-const STALE = 3_600_000;
+/** A run beats this often while it goes (running_since moves up)... */
+const BEAT = 5 * 60_000;
+/** ...so one that hasn't beaten in this long died with its process, and the next one may go. */
+const STALE = 20 * 60_000;
 
 /** Mark a run as started, unless one already is. */
 async function claim(env: Env, owner: string, repo: string, now = Date.now()) {
