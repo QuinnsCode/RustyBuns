@@ -59,16 +59,21 @@ type AuthUser = { id: string; name?: string; email?: string; emailVerified?: boo
 
 /**
  * The handle linked to this account, or null until its owner picks one. An
- * account whose (verified) email an admin granted a handle gets it on first sight.
+ * account whose (verified) email an admin granted a handle, or ADMIN_EMAIL, gets it on first sight.
  */
 async function handleFor(env: Env, u: AuthUser) {
   const linked = await env.DB.prepare("SELECT name FROM users WHERE auth_id = ?").bind(u.id).first();
   if (linked) return linked.name as string;
   // Anyone can type an email at signup, so a grant goes to a verified one (GitHub, Google).
-  const granted = u.email && u.emailVerified ? await env.DB.prepare("SELECT handle FROM handle_grants WHERE email = ?").bind(u.email.toLowerCase()).first() : null;
+  if (!u.email || !u.emailVerified) return null;
+  const email = u.email.toLowerCase();
+  // The site's owner (ADMIN_EMAIL) gets the first ADMINS handle, even a short one.
+  const owner = env.ADMIN_EMAIL?.trim().toLowerCase() === email ? env.ADMINS?.split(",")[0]?.trim() : undefined;
+  const granted = owner || (await env.DB.prepare("SELECT handle FROM handle_grants WHERE email = ?").bind(email).first())?.handle as string | undefined;
   if (granted) {
-    const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, auth_id) VALUES (?, ?)").bind(granted.handle, u.id).run();
-    if (r.meta?.changes) return granted.handle as string;
+    // A grant also takes over a row alias mode left behind (no account), never an owned one.
+    const r = await env.DB.prepare("INSERT INTO users (name, auth_id) VALUES (?, ?) ON CONFLICT (name) DO UPDATE SET auth_id = excluded.auth_id WHERE users.auth_id IS NULL").bind(granted, u.id).run();
+    if (r.meta?.changes) return granted;
   }
   return null;
 }

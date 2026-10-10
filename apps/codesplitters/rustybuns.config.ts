@@ -1,19 +1,19 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
-// A deploy needs every declared secret, so the optional ones are only declared
-// when they're switched on in the deploying shell:
+// Accounts and admin secrets live in 1Password (vault "codesplitters") and reach
+// the deploy through varlock: experimental.wheel "human" unlocks them with your
+// Touch ID, so there's nothing to export and BETTER_AUTH_SECRET never drifts.
+// See .env.schema for the full list. The desktop has none of them: it uses aliases.
+//
+// Hosted coding agents are still opt-in from the deploying shell:
 //   CODESPLITTERS_AGENTS=1  hosted coding agents (super experimental, see README)
-//   BETTER_AUTH_SECRET      accounts; without it the site uses aliases
-//   GITHUB_/GOOGLE_CLIENT_ID  that sign-in, with its _SECRET
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
 const secrets = (on: boolean, ...names: string[]) => on ? Object.fromEntries(names.map((n) => [n, { type: "secret" as const }])) : {};
-const set = (name: string) => !!process.env[name];
-// Hosted agents bill the site's keys and are limited to ADMINS, which only means
-// something with accounts: with aliases anyone can claim an admin's handle.
-if (agents && !set("BETTER_AUTH_SECRET")) throw new Error("CODESPLITTERS_AGENTS=1 needs accounts on: set BETTER_AUTH_SECRET too");
+const op = (ref: string) => ({ type: "secret" as const, op: `op://codesplitters/${ref}` });
 
 export default defineConfig({
   name: "codesplitters",
+  experimental: { wheel: "human" },
   worker: {
     main: "src/worker.ts",
     builtMain: "dist/worker/worker.js",
@@ -38,14 +38,17 @@ export default defineConfig({
     // The desktop has no twin and runs the CLIs on the machine instead.
     ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
     ...secrets(agents, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"),
-    // Accounts (Better Auth). Unset on the desktop: it uses aliases.
-    ...secrets(set("BETTER_AUTH_SECRET"), "BETTER_AUTH_SECRET"),
+    // Accounts (Better Auth), GitHub and Google sign-in.
+    BETTER_AUTH_SECRET: op("better-auth/secret"),
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitters.notryanquinn.workers.dev" },
-    ...secrets(set("GITHUB_CLIENT_ID"), "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"),
-    ...secrets(set("GOOGLE_CLIENT_ID"), "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
-    // Handles allowed to excavate levels once accounts are on. "quinn" is short, so
-    // it's claimed through a handle_grants row for the owner's verified email (#214).
+    GITHUB_CLIENT_ID: op("github-oauth/client-id"),
+    GITHUB_CLIENT_SECRET: op("github-oauth/client-secret"),
+    GOOGLE_CLIENT_ID: op("google-oauth/client-id"),
+    GOOGLE_CLIENT_SECRET: op("google-oauth/client-secret"),
+    // Handles allowed to excavate levels once accounts are on. "quinn" is short,
+    // so nobody can pick it; it goes to whoever signs in with ADMIN_EMAIL, verified.
     ADMINS: { type: "var", value: "quinn" },
+    ADMIN_EMAIL: op("admin/email"),
   },
   targets: {
     // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler;

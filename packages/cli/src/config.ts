@@ -281,8 +281,8 @@ export interface RustyBunsConfig {
      * any machine, CI job or agent, each behind its own wheel. Remove its
      * "# GENERATED" header to own it.
      *
-     * `op` secrets need varlock (`bun add -d varlock`, or `brew install
-     * dmno-dev/tap/varlock`); "human" also needs the 1Password CLI, `op`.
+     * `op` secrets are fetched by varlock, which ships with the CLI; "human"
+     * also needs the 1Password CLI, `op`.
      */
     wheel?: "agent" | "human";
   };
