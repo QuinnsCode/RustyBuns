@@ -1,6 +1,6 @@
 // The world's limits on a fake platform: sockets per room, messages per socket,
 // and an online room left empty long enough is deleted (the desktop's never is).
-import { expect, test, setSystemTime, afterEach } from "bun:test";
+import { expect, test, setSystemTime, afterEach, beforeAll, afterAll } from "bun:test";
 import World, { CLOSE_FLOOD, MAX_SOCKETS } from "../packages/desktop/world.ts";
 import { TRACKS } from "../src/engine/params.ts";
 
@@ -10,12 +10,17 @@ class Sock {
   close(code: number) { this.closed = code; this.readyState = 3; }
   serializeAttachment(v: unknown) { this.att = v; }
 }
-(globalThis as any).WebSocketPair = class { 0 = new Sock(); 1 = new Sock(); };
+// Swapped in for these tests only: bun test runs every file in one process, so a fake left
+// behind breaks later files that use the real ones (shell-bun's DO tests).
+const FakePair = class { 0 = new Sock(); 1 = new Sock(); };
 // Bun's Response refuses status 101; the world's reply shape is not what these tests check.
 const RealResponse = Response;
-(globalThis as any).Response = class extends RealResponse {
+const FakeResponse = class extends RealResponse {
   constructor(body: any, init?: any) { super(body, init?.status === 101 ? { status: 200 } : init); }
 };
+let realPair: unknown;
+beforeAll(() => { realPair = (globalThis as any).WebSocketPair; (globalThis as any).WebSocketPair = FakePair; (globalThis as any).Response = FakeResponse; });
+afterAll(() => { (globalThis as any).WebSocketPair = realPair; (globalThis as any).Response = RealResponse; });
 
 async function setup() {
   const store = new Map<string, unknown>();
