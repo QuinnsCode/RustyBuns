@@ -196,6 +196,13 @@ const guests: GuestState = {
   version: ${guestVersion},
   connected: () => guestCount,
 };
+// A passphrase is the only lock on a world bound off loopback: at launch, as at
+// POST /__rb/host, it takes at least JOIN_MIN characters there, or the host won't start.
+const JOIN_MIN = 12, LOOPBACK = /^(127\\.|localhost$|::1$|\\[::1\\]$)/;
+if (guests.join !== undefined && guests.join.length < JOIN_MIN && !LOOPBACK.test(listen.hostname)) {
+  console.error(\`[rustybuns] guests on \${listen.hostname} need a join passphrase of at least \${JOIN_MIN} characters (--join, RB_JOIN or desktop.guests.join); this one has \${guests.join.length}. Use a longer one, or listen on 127.0.0.1.\`);
+  process.exit(1);
+}
 const token = ${h.token};
 const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${h.listen},
   guest: { paths: [${JSON.stringify(worldPath)}], passphrase: () => guests.join } });
@@ -213,8 +220,6 @@ function guestIdentity(url: URL): Record<string, string> | string {
   return { ...identity, "X-User-Id": uid, "X-User-Name": name };
 }
 const reject = (status: number, error: string, extra: Record<string, unknown> = {}) => Response.json({ error, ...extra }, { status });
-// POST /__rb/host: a passphrase is the only lock on a world bound off loopback.
-const JOIN_MIN = 12, LOOPBACK = /^(127\\.|localhost$|::1$|\\[::1\\]$)/;
 const madeUpJoin = () => Array.from(crypto.getRandomValues(new Uint8Array(15)), (n) => "abcdefghjkmnpqrstuvwxyz23456789"[n % 31]).join("").replace(/(.{5})(?!$)/g, "$1-");
 ${h.box ? `
 // A box is public and plays like the edge: no local player, so every socket

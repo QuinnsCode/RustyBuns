@@ -4,17 +4,19 @@
 //
 // Search order:
 //   1. opts.dir
-//   2. native/dist/<name>/<platform>-<arch>/     (dev, after `cargo build`)
+//   2. native/dist/<name>/<platform>-<arch>/     (dev, after `cargo build`), in the
+//      entry script's folder or one above it, up to the nearest package.json
 //   3. /$bunfs/root/native/<name>/<platform>-<arch>/  (compiled binary; `rustybuns build desktop` embeds it)
-// A compiled binary skips (2): it would dlopen whatever library sits in the
-// folder it was run from. It loads only opts.dir or its embedded copy.
+// (2) follows the entry script (Bun.main), never process.cwd(): running a dev
+// build from someone else's folder must not dlopen the library sitting there.
+// A compiled binary skips (2) and loads only opts.dir or its embedded copy.
 // dlopen can't map a file inside the binary, so (3) copies it to a cache dir
 // keyed by content hash on first run, and checks a copy already there byte for
 // byte before every dlopen: any local process could have swapped it.
 
 import { dlopen, type FFIFunction, type ConvertFns } from "bun:ffi";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
 export interface LoadOptions { dir?: string; cacheDir?: string; }
@@ -30,13 +32,22 @@ export const platformTag = () => `${process.platform}-${process.arch}`;
 // Bun puts a compiled binary's modules under /$bunfs (B:\~BUN on Windows).
 export const isCompiled = (here: string) => here.startsWith("/$bunfs") || here.includes("~BUN");
 
-export function candidates(name: string, opts: LoadOptions, here = import.meta.dir): string[] {
+/** The entry script's folder and each one above it, up to the first with a package.json (or the root). */
+export function projectDirs(main: string): string[] {
+  const dirs: string[] = [];
+  for (let d = dirname(main); ; d = dirname(d)) {
+    dirs.push(d);
+    if (existsSync(join(d, "package.json")) || dirname(d) === d) return dirs;
+  }
+}
+
+export function candidates(name: string, opts: LoadOptions, here = import.meta.dir, main = Bun.main): string[] {
   const f = libFile(name);
   const tag = platformTag();
   const dev = !isCompiled(here);
   return [
     opts.dir && join(opts.dir, f),
-    dev && join(process.cwd(), "native", "dist", name, tag, f),
+    ...(dev ? projectDirs(main).map((d) => join(d, "native", "dist", name, tag, f)) : []),
     dev && join(here, "..", "..", "..", "native", "dist", name, tag, f),
     join("/$bunfs/root", "native", name, tag, f),   // rustybuns build desktop embeds here
     join("/$bunfs/root", name, tag, f),
