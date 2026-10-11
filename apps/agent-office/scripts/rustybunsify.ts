@@ -37,7 +37,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -100,11 +100,11 @@ async function prepare(tag: string) {
 
   // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem with the
   // office's CPU profiles and heap snapshots (triage/server.ts): signed in, and to workers on the hook port
-  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\n");
+  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\nimport { codesplittersRoute as __rbCs } from '../rb-codesplitters.js';\n");
   patch("http/router.js", "const signedIn = routes.filter((r) => r.auth === 'session');",
-    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());");
+    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n    const __rbCsRoute = __rbCs();");
   patch("http/router.js", "            for (const route of signedIn)\n",
-    "            const __rb = p.startsWith('/__rb/') && await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1');\n" +
+    "            const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url) ?? await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1'));\n" +
     "            if (__rb)\n                return send(res, __rb.status, __rb.body);\n            for (const route of signedIn)\n");
   prepend("hooks/server.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\n");
   patch("hooks/server.js", "        if (url.pathname === '/office/queue')\n",
@@ -129,7 +129,7 @@ async function prepare(tag: string) {
   patch("ptyhost.js", "const token = JSON.parse(readFileSync(infoPath, 'utf8')).token;",
     "const token = JSON.parse(readFileSync(infoPath, 'utf8')).token;\n__rbMem(infoPath);");
 
-  // 8. Lucide icons for the emoji, on every page, and a search box for the queue
+  // 8. Lucide icons for the emoji, on every page, a search box for the queue, and the codeSplitters mark (codesplitters/)
   await buildPageScripts();
 
   // 9. the time on the issues and PR boards, in front of "Updated …" (its setting is a page script, clock/)
@@ -146,7 +146,7 @@ async function prepare(tag: string) {
   // 12. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -221,6 +221,7 @@ async function buildSkin(dir: string) {
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
   for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["checks/server.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
+    ["codesplitters/server.ts", "rb-codesplitters.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
     const built = await Bun.build({ entrypoints: [path.join(root, entry!)], target: "bun" });
@@ -241,6 +242,8 @@ async function buildPageScripts() {
   await buildPageScript("checks/index.ts", "rb-checks", ["index", "lite"]);
   // the triage tools, over WebMCP for an agent in the browser
   await buildPageScript("triage/index.ts", "rb-triage", ["index", "lite"]);
+  // the codeSplitters mark by the boards, off until Settings › You turns it on
+  await buildPageScript("codesplitters/index.ts", "rb-codesplitters", ["index", "lite"]);
 }
 
 async function buildPageScript(entry: string, prefix: string, pages: string[]) {

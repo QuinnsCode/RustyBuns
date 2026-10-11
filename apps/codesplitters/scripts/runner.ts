@@ -23,10 +23,15 @@ const { values: o, positionals: [slug] } = parseArgs({ allowPositionals: true, o
   label: { type: "string", default: `${process.env.USER ?? "runner"}@${hostname()}` },
   names: { type: "string" }, command: { type: "string" }, once: { type: "boolean" }, idle: { type: "string", default: "10" },
 } });
-const base = process.env.CODESPLITTERS_URL, token = process.env.CODESPLITTERS_TOKEN;
-if (!slug?.includes("/") || !base || !token) throw new Error("usage: CODESPLITTERS_URL=… CODESPLITTERS_TOKEN=cst_… bun scripts/runner.ts owner/repo [--label] [--names a,b] [--command] [--once]");
+const site = process.env.CODESPLITTERS_URL, token = process.env.CODESPLITTERS_TOKEN;
+if (!slug?.includes("/") || !site || !token) throw new Error("usage: CODESPLITTERS_URL=… CODESPLITTERS_TOKEN=cst_… bun scripts/runner.ts owner/repo [--label] [--names a,b] [--command] [--once]");
+// The desktop app sits behind its launch token too: a URL like http://127.0.0.1:5199/?token=<it>
+// (what RB_NO_BROWSER=1 prints) sends it as the cookie the desktop expects.
+const u = new URL(site), launch = u.searchParams.get("token");
+const base = u.origin + u.pathname.replace(/\/$/, "");
 const api = (path: string, body: unknown, method = "POST") => fetch(`${base}/api/repos/${slug}/checks${path}`, {
-  method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body),
+  method, body: JSON.stringify(body),
+  headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(launch && { cookie: `rb_token_${u.port}=${launch}` }) },
 });
 
 /** One run, start to finish. */
