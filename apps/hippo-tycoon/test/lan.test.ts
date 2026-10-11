@@ -60,30 +60,30 @@ test("LAN party: host and guests share one ticking world", async () => {
     expect(host.of("room").at(-1)!.seats[0]!.n).toBe("Hippo Host");
 
     // closed until the host opens it, then guests are let in on the app's wire version
-    const early = new Client(`${url}/ws?join=pw&uid=g0&name=Early&v=${LAN_VERSION}`);
+    const early = new Client(`${url}/ws?join=pwxxxxxxxxxx&uid=g0&name=Early&v=${LAN_VERSION}`);
     await early.until(() => early.closed);                  // refused: the world is closed to guests
     expect(early.of("hello").length).toBe(0);
-    const info = await post({ listen: { hostname: "0.0.0.0" }, join: "pw" });
+    const info = await post({ listen: { hostname: "0.0.0.0" }, join: "pwxxxxxxxxxx" });
     expect(info.guests.open).toBe(true);
     const status = async (q: string) => (await fetch(`${url}/ws?${q}`, { headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "x", "sec-websocket-version": "13" } })).status;
-    expect(await status("join=pw&uid=g9&v=wrong")).toBe(409);
+    expect(await status("join=pwxxxxxxxxxx&uid=g9&v=wrong")).toBe(409);
 
     // a guest whose game speaks another protocol is told so, and the DO's close code survives the bridge
-    const old = new Client(`${url}/ws?join=pw&uid=g8&name=Old&v=${LAN_VERSION}`, {}, PROTO_VERSION + 1);
+    const old = new Client(`${url}/ws?join=pwxxxxxxxxxx&uid=g8&name=Old&v=${LAN_VERSION}`, {}, PROTO_VERSION + 1);
     await old.until(() => old.closed);
     expect(old.closed!.code).toBe(CLOSE_VERSION);
     expect(old.of("err")[0]!.msg).toMatch(/protocol/);
 
-    const g1 = new Client(`${url}/ws?join=pw&uid=g1&name=Guest%20One&v=${LAN_VERSION}`);
+    const g1 = new Client(`${url}/ws?join=pwxxxxxxxxxx&uid=g1&name=Guest%20One&v=${LAN_VERSION}`);
     // guest two brings a couch partner on the same socket: two seats
-    const g2 = new Client(`${url}/ws?join=pw&uid=g2&name=Guest%20Two&v=${LAN_VERSION}`, {}, PROTO_VERSION, 2);
+    const g2 = new Client(`${url}/ws?join=pwxxxxxxxxxx&uid=g2&name=Guest%20Two&v=${LAN_VERSION}`, {}, PROTO_VERSION, 2);
     await g1.until(() => g1.of("hello").length); await g2.until(() => g2.of("room").at(-1)?.you.length === 2);
     const pair = g2.of("room").at(-1)!.you;
     expect(new Set([g1.of("hello")[0]!.you, ...pair, 0]).size).toBe(4);   // four humans, four seats
     await host.until(() => host.of("room").at(-1)?.seats.filter((s) => s.h).length === 4);
     expect(host.of("room").at(-1)!.seats.map((s) => s.n)).toEqual(expect.arrayContaining(["Guest One", "Guest Two", "Guest Two 2"]));
     // a fifth human (a third guest) watches instead of being turned away
-    const g3 = new Client(`${url}/ws?join=pw&uid=g3&name=Guest%20Three&v=${LAN_VERSION}`);
+    const g3 = new Client(`${url}/ws?join=pwxxxxxxxxxx&uid=g3&name=Guest%20Three&v=${LAN_VERSION}`);
     await g3.until(() => g3.of("hello").length);
     expect(g3.of("hello")[0]!.you).toBe(-1);
     await host.until(() => host.of("room").at(-1)?.sp === 1);

@@ -24,7 +24,8 @@ export async function hostInfo(): Promise<HostInfo | null> {
 const A = ["crude", "gusher", "barrel", "derrick", "slick", "brass", "tycoon", "refined"];
 const B = ["kettle", "bonus", "dividend", "pipeline", "yacht", "cigar", "stocks", "jackpot"];
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)]!;
-export const makeJoinCode = () => `${pick(A)}-${pick(B)}`;
+// The only lock on a world open to the LAN, so the host wants 12+ characters: two words and four digits
+export const makeJoinCode = () => `${pick(A)}-${pick(B)}-${String(crypto.getRandomValues(new Uint32Array(1))[0]! % 10_000).padStart(4, "0")}`;
 export const makeRoomCode = () => Array.from({ length: 4 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ"[Math.floor(Math.random() * 24)]).join("");
 
 /** Open the host's world to the LAN with this passphrase. */
