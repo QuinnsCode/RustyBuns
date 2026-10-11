@@ -81,7 +81,7 @@ const OPS: Record<string, Record<string, Op>> = {
   "/jobs/{id}": { get: { id: "get_job", summary: "A queued request: its place in line, or its answer once it ran", tag: "Account", ok: loose("{id, rule, state, place?, eta?, status?, result?}") } },
 
   "/search": { get: { id: "search_code", summary: "Search committed code you're allowed to see", tag: "Search", open: true,
-    query: { q: { ...str("words to look for"), required: true } },
+    query: { q: { ...str("words to look for"), required: true }, repo: str("owner/name: search just this repo (else your repos first, then the 50 most recently committed)") },
     ok: arr(obj({ owner: str(), repo: str(), path: str(), snippet: str("matches marked «like this»") })) } },
 
   "/levels": { get: { id: "list_levels", summary: "Every level (an imported open-source repo) and whether it's ready", tag: "Levels", open: true, ok: arr(loose("{slug, title, repo, status, …}")) } },
@@ -172,7 +172,14 @@ const OPS: Record<string, Record<string, Op>> = {
       body: obj({ name: str() }, ["name"]), ok: ref("Branch"), status: 201 },
   },
   [`${repo}/branches/{branch}`]: { get: { id: "review_branch", summary: "A branch's review: each file's ops against main now, and its conflicts", tag: "Branches", open: true,
-    ok: loose("the branch row, plus {deploys, files: [{path, merged, build, deleted?, ops, conflicts, lines?}]}") } },
+    description: "Each conflict is {line, base, main, branch, choices, suggestion?}: settle it in merge_branch's `resolve` by its `line` with one of its `choices` " +
+      "(\"text\" meaning {\"text\": \"...\"}). `suggestion`, where there is one, keeps both sides' words: merge with {\"text\": suggestion} to take it. " +
+      "suggest_resolution has a coding agent write one.",
+    ok: loose("the branch row, plus {deploys, files: [{path, merged, build, deleted?, ops, conflicts: [{line, base, main, branch, choices, suggestion?, doubled?, whole?, lint?}], lines?}]}") } },
+  [`${repo}/branches/{branch}/conflicts/agent`]: { post: { id: "suggest_resolution", summary: "Have a coding agent write the settled text for one conflict; nothing lands (the crew)", tag: "Branches",
+    description: "The agent sees the conflict as git's markers, with main's lines around it, and writes the lines that replace it. Merge with resolve {path: {line: {text}}} to take it. Waits for the agent, a minute or so.",
+    body: obj({ path: str(), line: str("the conflict's line, as review_branch lists it"), harness: str("one GET /agents lists"), model: str() }, ["path", "line", "harness"]),
+    ok: obj({ path: str(), line: str(), harness: str(), text: str("the settled lines") }) } },
   [`${repo}/branches/{branch}/files`]: { delete: { id: "delete_branch_file", summary: "Delete a file on a branch: merging the branch deletes it from main (the crew)", tag: "Branches",
     description: "Making the file again on the branch (add_file with branch) brings it back.",
     query: { path: { ...str(), required: true } }, ok: obj({ path: str(), branch: str(), deleted: bool() }) } },
@@ -215,8 +222,10 @@ const OPS: Record<string, Record<string, Op>> = {
   },
   [`${repo}/checks/{id}/cancel`]: { post: { id: "cancel_check", summary: "Stop one of our check runs that's queued or running (the crew)", tag: "Checks", ok: loose("the run") } },
   [`${repo}/branches/{branch}/merge`]: { post: { id: "merge_branch", summary: "Merge a branch into main (the crew)", tag: "Branches", risky: true,
-    description: "Conflicts merge nothing (409); settle each conflicting line with `resolve`. A branch that changes build or deploy files needs `build_ok` when commits deploy.",
-    body: obj({ resolve: loose("{path: {lineId: \"branch\" | \"main\"}}"), build_ok: bool() }),
+    description: "Conflicts merge nothing (409, with each conflict's choices); settle each one in `resolve` by its line: \"main\", \"branch\", \"both\" (main's first), " +
+      "\"both:branch-first\", or {\"text\": \"...\"} (one or more lines, in its place). Lockfiles, doubled config keys and code that won't build take only main or branch. " +
+      "A branch that changes build or deploy files needs `build_ok` when commits deploy.",
+    body: obj({ resolve: loose("{path: {line: \"main\" | \"branch\" | \"both\" | \"both:branch-first\" | {text}}}"), build_ok: bool() }),
     ok: obj({ status: str("merged or open"), merged: arr(obj({ path: str(), rev: int(), ops: int(), deleted: bool() })), conflicts: arr(loose("{path, conflicts}")) }) } },
   [`${repo}/limits`]: { get: { id: "repo_limits", summary: "What this repo and you may do, and how close you are", tag: "Repos", ok: loose("{git, fresh, files, dig, you: [{label, used, max, window_s, on}]}") } },
   [`${repo}/agents`]: {

@@ -66,6 +66,19 @@ export interface StoragePort {
   list<T = unknown>(opts?: { prefix?: string; limit?: number }): Promise<Map<string, T>>;
   setAlarm(at: number): Promise<void>;
   deleteAlarm(): Promise<void>;
+  /** SQLite, as Cloudflare's `ctx.storage.sql` (SQLite-backed DOs). */
+  sql?: SqlStoragePort;
+}
+
+/** Cloudflare's SqlStorage: what a SQLite-backed DO runs its queries on. */
+export interface SqlStoragePort {
+  exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): SqlCursor<T>;
+  readonly databaseSize: number;
+}
+export interface SqlCursor<T> extends IterableIterator<T> {
+  toArray(): T[];
+  one(): T;
+  readonly rowsWritten: number;
 }
 
 // ---- memory ---------------------------------------------------------------

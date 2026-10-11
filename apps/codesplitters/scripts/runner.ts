@@ -6,6 +6,8 @@
 //   CODESPLITTERS_TOKEN=cst_… \
 //   bun scripts/runner.ts owner/repo [--label my-mac] [--names test,lint] [--command "bun test"] [--once]
 //
+// Leave CODESPLITTERS_URL out to use the desktop app running on this machine (~/.codesplitters/desktop.json).
+//
 // The token is a write token from your profile page, of someone in the repo's crew. The command
 // is the check's own (a required check's `command` in the settings), else --command, else
 // `bun test`, run with sh in a fresh clone checked out at the run's sha. Its output streams to
@@ -14,8 +16,9 @@
 // junit.xml left in the clone goes up as the report. To wrap Jenkins, Docker or anything else,
 // make --command the thing that starts it, or copy this loop: it's the whole protocol.
 
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
-import { hostname, tmpdir } from "node:os";
+import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -23,10 +26,18 @@ const { values: o, positionals: [slug] } = parseArgs({ allowPositionals: true, o
   label: { type: "string", default: `${process.env.USER ?? "runner"}@${hostname()}` },
   names: { type: "string" }, command: { type: "string" }, once: { type: "boolean" }, idle: { type: "string", default: "10" },
 } });
-const site = process.env.CODESPLITTERS_URL, token = process.env.CODESPLITTERS_TOKEN;
+// No CODESPLITTERS_URL: the desktop app, if it's running, from the 0600 file it keeps while it does.
+function desktop(): string | undefined {
+  try {
+    const d = JSON.parse(readFileSync(join(homedir(), ".codesplitters/desktop.json"), "utf8")) as { url: string; token: string; pid: number };
+    process.kill(d.pid, 0); // throws when the app is gone and left the file behind
+    return `${d.url}/?token=${encodeURIComponent(d.token)}`;
+  } catch { return undefined; }
+}
+const site = process.env.CODESPLITTERS_URL ?? desktop(), token = process.env.CODESPLITTERS_TOKEN;
 if (!slug?.includes("/") || !site || !token) throw new Error("usage: CODESPLITTERS_URL=… CODESPLITTERS_TOKEN=cst_… bun scripts/runner.ts owner/repo [--label] [--names a,b] [--command] [--once]");
 // The desktop app sits behind its launch token too: a URL like http://127.0.0.1:5199/?token=<it>
-// (what RB_NO_BROWSER=1 prints) sends it as the cookie the desktop expects.
+// (what RB_NO_BROWSER=1 prints, or desktop() finds) sends it as the cookie the desktop expects.
 const u = new URL(site), launch = u.searchParams.get("token");
 const base = u.origin + u.pathname.replace(/\/$/, "");
 const api = (path: string, body: unknown, method = "POST") => fetch(`${base}/api/repos/${slug}/checks${path}`, {
