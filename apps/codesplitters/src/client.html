@@ -588,6 +588,13 @@
   @media (max-width: 860px) { .flapboard { grid-template-columns: 1fr; } }
   @media (max-width: 560px) { .flap-cell b { width: .95em; font-size: 11px; } .flap-cols, .flap-row { gap: 8px; } .flap-side { padding: 12px; } }
   @media (prefers-reduced-motion: reduce) { .flap-cell b.go { animation: none; } }
+  /* "What if git was your ___": the same tiles, one big word, turning over slowly. */
+  .whatif { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .flap-word { display: inline-flex; background: #111; border-radius: 8px; padding: 8px 10px; box-shadow: inset 0 0 0 1px #000, 0 24px 48px -28px rgba(0,0,0,.45); }
+  .flap-word .flap-cell b { font-size: clamp(15px, 3.2vw, 28px); }
+  .flap-word.hot .flap-cell b { color: var(--accent); }
+  .shell { margin: 10px 0 0; padding: 12px 14px; background: #111; color: #f2f2f2; border-radius: 8px; font: 12px/1.7 var(--mono); overflow-x: auto; }
+  .shell i { color: #8a8a8a; font-style: normal; }
 
   /* The site footer, on home and about. */
   .site-foot { margin-top: 64px; border-top: 1px solid var(--border); background: var(--canvas); }
@@ -773,6 +780,9 @@ const maskedUrl = (line) => line.replace(/(:\/\/[^:/@\s]+:)([^@\s]+)@/, (_, pre,
 // Connecting an AI needs no token: the MCP client signs in with OAuth (src/oauth.ts) and you say yes.
 const mcpUrl = () => `${location.origin}/api/mcp`;
 const mcpSignIn = () => `claude mcp add --scope user --transport http codesplitters ${mcpUrl()}`;
+// The CLI (cli.ts), installed from this site (GET /install.sh, src/install.ts).
+const cliInstall = () => `curl -fsSL ${location.origin}/install.sh | sh`;
+const cliLogin = (token) => `codesplitters login --url ${location.origin} --token ${token}`;
 const mcpAdd = (token) => `claude mcp add --scope user --transport http codesplitters ${location.origin}/api/mcp --header "Authorization: Bearer ${token}"`;
 // Invites (POST /api/repos/:o/:r/invites): a handle, an email, or nothing for a bare link.
 const invite = (owner, repo, who = "", note = "") => {
@@ -796,7 +806,9 @@ async function wireTokens(made) {
   const fresh = made ? `<div style="display:grid;gap:4px;margin-bottom:8px"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again.</span>
       <div class="copyline"><input readonly value="${esc(masked(made.token))}" title="hidden: copy it with the button"><button class="btn" id="token-copy" title="copy the token">${icon("copy")}</button></div>
       <span class="muted" style="font-size:12px">Or add it to Claude Code with the token as a header:</span>
-      <div class="copyline"><input readonly value="${esc(mcpAdd(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-mcp" title="copy the command">${icon("copy")}</button></div></div>` : "";
+      <div class="copyline"><input readonly value="${esc(mcpAdd(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-mcp" title="copy the command">${icon("copy")}</button></div>
+      <span class="muted" style="font-size:12px">Or sign in the CLI (<code>${esc(cliInstall())}</code>) with it:</span>
+      <div class="copyline"><input readonly value="${esc(cliLogin(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-cli" title="copy the command">${icon("copy")}</button></div></div>` : "";
   el.innerHTML = connect + signedIn
     + `<div class="muted" style="font-size:12px;margin-top:10px">${icon("key-round")} Tokens, for scripts and CI (no browser)</div>` + fresh
     + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon(t.scope === "write" ? "pencil" : "eye")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· ${t.scope === "write" ? "read and write" : "read"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}</span></span>
@@ -810,6 +822,7 @@ async function wireTokens(made) {
   $("#connect-url").addEventListener("click", () => copy(mcpUrl(), "URL copied"));
   $("#token-copy")?.addEventListener("click", () => copy(made.token, "Token copied"));
   $("#token-mcp")?.addEventListener("click", () => copy(mcpAdd(made.token), "Command copied"));
+  $("#token-cli")?.addEventListener("click", () => copy(cliLogin(made.token), "Command copied"));
   $("#newtoken").addEventListener("submit", async (e) => {
     e.preventDefault(); const f = e.target;
     try { wireTokens(await api("/tokens", { label: f.elements.label.value, scope: f.elements.scope.value, days: Number(f.elements.days.value) })); } catch (err) { toast(err.message); }
@@ -1635,6 +1648,12 @@ const views = {
         <div class="flapboard" id="flapboard" aria-label="Who's handing what to whom, on a departures and arrivals board"></div>
       </div></section>
       <section class="section"><div class="wrap">
+        <div class="label">yours, line by line</div>
+        <h2 class="whatif">What if git was your <span class="flap-word" id="flapword" role="img" aria-label="${esc(WHATIF.join(", "))}"></span></h2>
+        <p class="muted">What if git was as public as you wanted to be, private as you wanted to be: here, there, everywhere. A line by line privacy model, making it easier to share more with human and agent alike.</p>
+        <div class="quits">${TAKE_CONTROL.map((t) => `<span>${t}</span>`).join("")}</div>
+      </div></section>
+      <section class="section"><div class="wrap">
         <div class="label">the desktop app</div><h2>Never let your git quit</h2>
         <p class="muted">You want to git commit, but is your git committed to you? Most hosts keep your git in their cloud and sync it down to you. The desktop app turns that around: your git lives on your machine, and syncs out to whatever clouds you like. If a cloud dies, you and your agents keep going.</p>
         <div class="owngit">
@@ -1656,6 +1675,14 @@ const views = {
         <div class="cmds">${HOME_CMDS.map(([ic, title, what, call]) => `<div class="cmd" tabindex="0"><span class="ico">${icon(ic)}</span><b>${title}</b><span>${what}</span><code>${call}</code>${CMD_MINIS[title] ? `<div class="mini" aria-hidden="true">${CMD_MINIS[title]}</div>` : ""}</div>`).join("")}</div>
       </div></section>
       <section class="section"><div class="wrap">
+        <div class="label">from your shell</div><h2>Every tool, one command away</h2>
+        <p class="muted">The same calls as a shell command, for you or for an agent that would rather run a command than speak MCP. One line installs it, on Bun or Node.</p>
+        <div class="copyline"><input readonly value="${esc(cliInstall())}" aria-label="the install command"><button class="btn" id="cli-copy" title="copy the command">${icon("copy")}</button></div>
+        <pre class="shell"><i>$</i> codesplitters login      <i># paste a token from your profile</i>
+<i>$</i> codesplitters tools      <i># every command, one a line</i>
+<i>$</i> codesplitters read_file --owner you --repo lab --path a.ts</pre>
+      </div></section>
+      <section class="section"><div class="wrap">
         <div class="label">levels</div><h2>Dig into code people love</h2><p class="muted">Real repos, imported into Artifacts. Fork one into a git repo you own in one click (upstream stays as it was), browse it, or play it. ${icon("copy", "inline")} copies a repo's GitHub link and drops it in the dig box below.</p>
         <div class="row" id="lvl-admin" hidden></div>
         <div class="levels" id="levels"></div>
@@ -1667,6 +1694,8 @@ const views = {
     intro($("#stage"), $("#phases"));
     featureStrip($("#feats"));
     flapBoard($("#flapboard"));
+    flapWord($("#flapword"));
+    $("#cli-copy").addEventListener("click", () => copy(cliInstall(), "Command copied"));
     wireLevels();
     await drawLevels();
   },
@@ -3243,6 +3272,38 @@ function flapBoard(el) {
   stopBoard = () => { clearInterval(tick); timers.forEach(clearTimeout); timers.clear(); io.disconnect(); stopBoard = () => {}; };
 }
 
+// "What if git was your ___", one word at a time, slower than the board. The shouted ones land orange.
+const WHATIF = ["deploy", "build", "friends", "hobbies", "YOURS", "history", "ONLY YOURS", "agentic", "human", "social", "here", "there", "everywhere"];
+const TAKE_CONTROL = ["Git in control of your git", "What if your git did more for you", "Git to taking control of your git", "Git over your old relationship with git", "Git in charge of your history"];
+let stopWord = () => {};
+function flapWord(el) {
+  if (!el) return;
+  const n = Math.max(...WHATIF.map((w) => w.length));
+  el.innerHTML = `<span class="flap-cell" aria-hidden="true">${"<b> </b>".repeat(n)}</span>`;
+  const tiles = [...el.querySelectorAll("b")], calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const timers = new Set();
+  const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); };
+  const show = (word) => {
+    const want = word.toUpperCase().padEnd(n);
+    const hot = () => el.classList.toggle("hot", word === word.toUpperCase());
+    calm ? hot() : later(hot, n * 40 + 8 * 120);
+    tiles.forEach((b, i) => {
+      if (b.textContent === want[i]) return;
+      if (calm) return (b.textContent = want[i]);
+      const steps = 4 + Math.floor(Math.random() * 5);
+      for (let s = 0; s <= steps; s++) later(() => {
+        b.classList.remove("go"); void b.offsetWidth; b.classList.add("go");
+        b.textContent = s === steps ? want[i] : FLAP[Math.floor(Math.random() * FLAP.length)];
+      }, i * 40 + s * 120);
+    });
+  };
+  let next = 0, seen = true;
+  show(WHATIF[next++]);
+  const io = new IntersectionObserver(([e]) => (seen = e.isIntersecting)); io.observe(el);
+  const tick = setInterval(() => { if (seen && !document.hidden) show(WHATIF[next++ % WHATIF.length]); }, 3400);
+  stopWord = () => { clearInterval(tick); timers.forEach(clearTimeout); timers.clear(); io.disconnect(); stopWord = () => {}; };
+}
+
 // Your data (privacy.ts): download all of it, or delete your account once your handle is typed back.
 // On your profile and on #/privacy.
 // Where git truth lives (PUT /api/me {git_truth}): whose side a mirror takes when it and upstream disagree.
@@ -3777,6 +3838,7 @@ async function route() {
   stopIntro();
   stopStrip();
   stopBoard();
+  stopWord();
   clearTimeout(levelPoll);
   document.body.classList.remove("ide-mode");
   const [, view = "home", ...args] = location.hash.replace(/^#/, "").split("/");

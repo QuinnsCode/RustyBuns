@@ -13,30 +13,38 @@
 // --url and --token stand in for the variables. On the desktop (aliases, no
 // accounts) --as NAME signs in as that handle instead of a token. The answer is
 // printed as the app sent it; a failed call prints its status to stderr and exits 1.
+//
+// Or install it, no checkout needed (build.ts bundles this to /cli.js, which runs on
+// Bun or Node 18+, and the site serves the script at /install.sh):
+//
+//   curl -fsSL https://<site>/install.sh | sh
+//   codesplitters login                      saves the site and your token
+//   codesplitters read_file --owner ryan --repo lab --path a.ts
 
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tool, tools, toRequest } from "./src/mcp.ts";
 
 type Out = { code: number; out: string; err: string };
 type Fetch = (req: Request) => Promise<Response>;
 
-const USAGE = "usage: bun cli.ts <command> [--param value …] [--body JSON|-] [--url URL] [--token cst_…|--as NAME]\n       bun cli.ts tools | help <command>";
+const USAGE = "usage: codesplitters <command> [--param value …] [--body JSON|-] [--url URL] [--token cst_…|--as NAME]\n       codesplitters tools | help <command> | login [--url URL] [--token cst_…]";
 
 /** Run one command. `env` and `send` are the process's own unless a test says otherwise. */
-export async function main(argv: string[], env: Record<string, string | undefined> = process.env, send: Fetch = (r) => fetch(r), stdin = () => Bun.stdin.text()): Promise<Out> {
+export async function main(argv: string[], env: Record<string, string | undefined> = process.env, send: Fetch = (r) => fetch(r), stdin = readStdin): Promise<Out> {
   const [name, ...rest] = argv;
   const ok = (out: string): Out => ({ code: 0, out, err: "" }), fail = (err: string, code = 2): Out => ({ code, out: "", err });
   if (!name || name === "--help" || name === "-h") return ok(USAGE);
   if (name === "tools") return ok(tools().map((t) => `${t.name.padEnd(24)} ${t.method === "GET" ? "read " : "write"} ${t.title}`).join("\n"));
   if (name === "help") {
     const t = rest[0] && tool(rest[0]);
-    if (!t) return fail(rest[0] ? `no command ${rest[0]}: bun cli.ts tools lists them` : USAGE);
+    if (!t) return fail(rest[0] ? `no command ${rest[0]}: codesplitters tools lists them` : USAGE);
     const req = new Set<string>(t.inputSchema.required ?? []);
     const params = Object.entries(t.inputSchema.properties as Record<string, any>).map(([k, s]) =>
       `  --${k}${req.has(k) ? " (required)" : ""}  ${k === "body" ? "JSON, or - for stdin" : s.description ?? s.type ?? ""}`);
     return ok([`${t.name}: ${t.description}`, ...params].join("\n"));
   }
   const t = tool(name);
-  if (!t) return fail(`no command ${name}: bun cli.ts tools lists them`);
+  if (!t) return fail(`no command ${name}: codesplitters tools lists them`);
 
   const args: Record<string, unknown> = {}, opts: Record<string, string> = {};
   for (let i = 0; i < rest.length; i += 2) {
@@ -47,23 +55,67 @@ export async function main(argv: string[], env: Record<string, string | undefine
     else if (k === "body") {
       try { args.body = JSON.parse(value === "-" ? await stdin() : value); } catch { return fail("--body takes JSON"); }
     } else if (k in t.inputSchema.properties) args[k] = value;
-    else return fail(`${name} takes no --${k}: bun cli.ts help ${name}`);
+    else return fail(`${name} takes no --${k}: codesplitters help ${name}`);
   }
   const url = opts.url ?? env.CODESPLITTERS_URL, token = opts.token ?? env.CODESPLITTERS_TOKEN, as = opts.as ?? env.CODESPLITTERS_AS;
   if (!url) return fail("set CODESPLITTERS_URL (or --url)");
-  if (!token && !as) return fail("set CODESPLITTERS_TOKEN (or --token): make one on your profile page");
+  if (!token && !as) return fail("set CODESPLITTERS_TOKEN (or --token), or run codesplitters login");
   // Its own user agent, so the admins' insights page shows CLI calls apart from other token calls.
   const headers: Record<string, string> = { "user-agent": "codesplitters-cli/1", ...(token ? { authorization: `Bearer ${token}` } : { cookie: `cs_user=${as}` }) };
   const req = toRequest(t, args, url.replace(/\/$/, ""), headers);
-  if (typeof req === "string") return fail(`${req}: bun cli.ts help ${name}`);
+  if (typeof req === "string") return fail(`${req}: codesplitters help ${name}`);
   const res = await send(req);
   const text = await res.text();
   return res.ok ? ok(text) : { code: 1, out: text, err: `${res.status} ${res.statusText}`.trim() };
 }
 
+async function readStdin() {
+  const chunks: Buffer[] = [];
+  for await (const c of process.stdin) chunks.push(c as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+// `codesplitters login` keeps the site and token here, so neither has to be exported
+// every time. The variables and flags still win over it.
+const configPath = (env: Record<string, string | undefined>) => `${env.XDG_CONFIG_HOME ?? `${env.HOME ?? "."}/.config`}/codesplitters/config.json`;
+function saved(env: Record<string, string | undefined>): { url?: string; token?: string } {
+  try { return JSON.parse(readFileSync(configPath(env), "utf8")); } catch { return {}; }
+}
+
+/** `login`, or any command with the saved site and token filled in under the variables. */
+export async function run(argv: string[], env: Record<string, string | undefined> = process.env, ask = askLine, send?: Fetch): Promise<Out> {
+  const conf = saved(env);
+  if (argv[0] !== "login") return main(argv, { CODESPLITTERS_URL: conf.url, CODESPLITTERS_TOKEN: conf.token, ...strip(env) }, send);
+  const flags: Record<string, string> = {};
+  for (let i = 1; i < argv.length; i += 2) {
+    const k = argv[i]!.replace(/^--/, "");
+    if ((k !== "url" && k !== "token") || argv[i + 1] === undefined) return { code: 2, out: "", err: "usage: codesplitters login [--url URL] [--token cst_…]" };
+    flags[k] = argv[i + 1]!;
+  }
+  const url = (flags.url ?? env.CODESPLITTERS_URL ?? conf.url)?.replace(/\/$/, "");
+  if (!url) return { code: 2, out: "", err: "codesplitters login --url https://<site>" };
+  const token = flags.token ?? (await ask(`Make a token on your profile page at ${url} (sign in, then your name, top right), and paste it here: `)) ?? conf.token;
+  const path = configPath(env);
+  mkdirSync(path.replace(/\/[^/]+$/, ""), { recursive: true });
+  writeFileSync(path, JSON.stringify({ url, ...(token ? { token: token.trim() } : {}) }, null, 2) + "\n", { mode: 0o600 });
+  chmodSync(path, 0o600);
+  return { code: 0, out: token ? `Signed in to ${url}. Try: codesplitters tools` : `Saved ${url}. Add a token with: codesplitters login --token cst_…`, err: "" };
+}
+
+const strip = (env: Record<string, string | undefined>) => Object.fromEntries(Object.entries(env).filter(([, v]) => v));
+
+// One line from the terminal, or nothing when there isn't one (the install script, a pipe).
+async function askLine(q: string): Promise<string | undefined> {
+  if (!process.stdin.isTTY) return undefined;
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try { return (await rl.question(q)).trim() || undefined; } finally { rl.close(); }
+}
+
 if (import.meta.main) {
-  const r = await main(process.argv.slice(2));
-  if (r.out) console.log(r.out);
-  if (r.err) console.error(r.err);
-  process.exit(r.code);
+  run(process.argv.slice(2)).then((r) => {
+    if (r.out) console.log(r.out);
+    if (r.err) console.error(r.err);
+    process.exit(r.code);
+  });
 }

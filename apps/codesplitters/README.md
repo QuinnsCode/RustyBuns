@@ -26,6 +26,12 @@ The highest-value things, in order:
    claude mcp add --transport http codesplitters https://codesplitters.notryanquinn.workers.dev/api/mcp
    ```
    It signs in with OAuth. Every tool is an operation in the OpenAPI spec, so the MCP server and the API never drift, and the ones that can't be undone (merge, delete, deploy) are marked so your client asks first.
+   Or from your shell, no checkout needed (Bun or Node 18+):
+   ```sh
+   curl -fsSL https://codesplitters.notryanquinn.workers.dev/install.sh | sh
+   codesplitters login     # paste a token from your profile page
+   codesplitters tools     # every MCP tool, as a command
+   ```
 6. **Deploy it.** Every repo says how easily [Rusty Buns](../../README.md) could ship it, then ships it: to Cloudflare, to a Railway or Hetzner box, from your desktop or from the site with a write-only, sealed deploy key.
 
 ## Git here, git there, git everywhere
@@ -55,6 +61,8 @@ Most code hosts keep the real repo in their cloud and sync it down to you. When 
 You say where git truth lives, on your profile: codeSplitters, the artifact (this copy's git) or GitHub, or ask each time. We don't mind which. Mirrors sync both ways whatever you pick, and the setting only says whose side wins when both changed the same lines or upstream rewrote its history. **Your git history never goes extinct**: whatever one side drops stays in its own git (this copy keeps it under `refs/kept/`), and every line here keeps its history, for the present and the future.
 
 Don't let your git quit on you or your agents.
+
+What if git was your deploy, your build, your friends, your history, yours, only yours? As public as you want it to be, private as you want it to be: here, there, everywhere. A line by line privacy model, making it easier to share more with human and agent alike. Git in control of your git. Git over your old relationship with git. Git in charge of your history.
 
 codeSplitters is one codebase that runs as a Cloudflare Worker and as a desktop app on your machine. [Rusty Buns](../../README.md) gives every Cloudflare binding a local twin: sqlite for D1 and for each file's Durable Object, local bare repos for Artifacts, in-process queues, the Worker's cron as a minute timer. Same code, nothing forked.
 

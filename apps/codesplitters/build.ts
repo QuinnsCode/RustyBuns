@@ -28,3 +28,7 @@ for (const [from, to] of [
 // clear each other's state and getSession throws "No request state found".
 const r = await Bun.build({ entrypoints: ["src/worker.ts"], outdir: "dist/worker", target: "browser", conditions: ["workerd", "worker"], external: ["node:*"], format: "esm", naming: "worker.js" });
 if (!r.success) { for (const l of r.logs) console.error(l); process.exit(1); }
+// The CLI as one file for Bun or Node, so anyone can install it from the site (GET /install.sh
+// fetches it and adds the shebang). Tree-shaking leaves just the tool list and the HTTP call.
+const cli = await Bun.build({ entrypoints: ["cli.ts"], outdir: "dist/client", target: "node", format: "cjs", minify: true, naming: "cli.js" });
+if (!cli.success) { for (const l of cli.logs) console.error(l); process.exit(1); }
