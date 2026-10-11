@@ -35,7 +35,7 @@ if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} 
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
-  await buildIcons();
+  await buildPageScripts();
   await buildLive();
 } else {
   await prepare(tag);
@@ -104,8 +104,8 @@ async function prepare(tag: string) {
   patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
     "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
 
-  // 7. Lucide icons for the emoji, on every page
-  await buildIcons();
+  // 7. Lucide icons for the emoji, on every page, and a search box for the queue
+  await buildPageScripts();
 
   // 8. the Druids Curse skin
   if (skin === "druids") await druids(cache);
@@ -170,19 +170,25 @@ async function buildLive() {
 
 // into /assets/, the one place the sign-in pages can load from before you're in; it's served as immutable,
 // so the name carries a hash, and every page's tag goes ahead of the page's own script
-async function buildIcons() {
-  const built = await Bun.build({ entrypoints: [path.join(root, "icons/index.ts")], minify: true, target: "browser" });
-  if (!built.success) throw new AggregateError(built.logs, "icons/index.ts failed to build");
+async function buildPageScripts() {
+  await buildPageScript("icons/index.ts", "rb-icons", ["index", "lite", "login", "join", "claim"]);
+  // the task queue's search box, on the two pages with the queue
+  await buildPageScript("queue/index.ts", "rb-queue", ["index", "lite"]);
+}
+
+async function buildPageScript(entry: string, prefix: string, pages: string[]) {
+  const built = await Bun.build({ entrypoints: [path.join(root, entry)], minify: true, target: "browser" });
+  if (!built.success) throw new AggregateError(built.logs, `${entry} failed to build`);
   const js = await built.outputs[0]!.text();
   const pub = path.join(office, "dist/public");
-  for (const old of new Bun.Glob("assets/rb-icons-*.js").scanSync({ cwd: pub })) rmSync(path.join(pub, old));
-  const name = `assets/rb-icons-${Bun.hash(js).toString(36).slice(0, 8)}.js`;
+  for (const old of new Bun.Glob(`assets/${prefix}-*.js`).scanSync({ cwd: pub })) rmSync(path.join(pub, old));
+  const name = `assets/${prefix}-${Bun.hash(js).toString(36).slice(0, 8)}.js`;
   writeFileSync(path.join(pub, name), js);
   const tag = `<script type="module" src="/${name}"></script>`;
-  for (const page of ["index", "lite", "login", "join", "claim"]) {
+  for (const page of pages) {
     const file = path.join(pub, `${page}.html`);
     const html = readFileSync(file, "utf8");
-    const old = /<script type="module" src="\/assets\/rb-icons-\w+\.js"><\/script>/;
+    const old = new RegExp(`<script type="module" src="/assets/${prefix}-\\w+\\.js"></script>`);
     if (old.test(html)) writeFileSync(file, html.replace(old, tag));
     else patch(file, "<head>", `<head>\n    ${tag}`);
   }
