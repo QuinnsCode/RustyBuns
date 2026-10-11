@@ -227,6 +227,11 @@
   .box { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; background: var(--bg); }
   .box > .bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; background: var(--canvas); border-bottom: 1px solid var(--border); font-size: 13px; }
   .box > .body { padding: 14px 16px; }
+  .box > .bar:has(+ .body[hidden]) { border-bottom: 0; }
+  /* A folded box: its bar is the summary, the rest opens when asked (#729). */
+  .box.fold > summary { cursor: pointer; list-style: none; } .box.fold > summary::-webkit-details-marker { display: none; }
+  .box.fold:not([open]) > summary { border-bottom: 0; } .box.fold > summary .chev { margin-left: auto; transition: transform .15s; } .box.fold[open] > summary .chev { transform: rotate(180deg); }
+  details.more > summary { cursor: pointer; font-size: 12px; }
   .crumbs { font: 600 14px var(--sans); } .crumbs a { font-weight: 400; } .crumbs .sep { color: var(--faint); margin: 0 4px; }
   .table a.rowlink { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: center; padding: 8px 16px; border-top: 1px solid var(--border); color: var(--fg); text-decoration: none; }
   .table a.rowlink:first-child { border-top: 0; } .table a.rowlink:hover { background: var(--canvas); }
@@ -338,7 +343,7 @@
   .pop { position: relative; }
   .pop > .panel { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 340px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px -8px rgba(0,0,0,.14); display: grid; gap: 9px; }
   .pop > .panel[hidden] { display: none; }
-  .copyline { display: flex; gap: 6px; } .copyline input { flex: 1; font: 12px var(--mono); }
+  .copyline { display: flex; gap: 6px; } .copyline input { flex: 1; min-width: 0; font: 12px var(--mono); }
 
   /* The hero: plain white, a dot grid, one big confident line. */
   .hero { border-bottom: 1px solid var(--border); background: radial-gradient(circle, #e4e4e4 1px, transparent 1.2px) 0 0 / 22px 22px, var(--bg); }
@@ -498,7 +503,7 @@
   .crew-pulse { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; } .crew-pulse svg.pulse { width: 56px; height: 14px; }
   @media (prefers-reduced-motion: reduce) { .live .beat-dot, .beat-dot.live, .who.beat { animation: none; } }
   .prof-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
-  .prof-grid .box > .body { padding: 8px 12px; }
+  .prof-grid .box > .body, .prof-grid .fold > form > .body { padding: 8px 12px; }
   .prof-grid .box > .body > p:first-child { margin-top: 0; }
   .prof-grid aside .photo iframe { height: 160px; }
   /* An agent's pulse: a bar per day, its line edits, 30 days. */
@@ -885,14 +890,16 @@ const inviteSaid = (i) => i.kind === "email" ? (i.mailed ? `Emailed ${i.target}.
   : i.kind === "handle" ? `Only @${i.target} can use it.` : "Anyone with it can join once, a person or an agent.";
 // An agent's MCP line for each harness, from POST /api/invites/claim; the token in it stays masked here.
 const HARNESS_HOW = { claude: "Claude Code: run", codex: "Codex: run", opencode: "opencode: add to opencode.json", pi: "pi (0.99 or later): add to ~/.pi/agent/mcp.json" };
-async function wireTokens(made) {
+// The connect line shows; tokens and apps fold under "Tokens and apps", which #/me/tokens opens (#729).
+async function wireTokens(made, open = !!made) {
   const el = $("#tokens .body");
   if (!el) return;
   const [list, apps] = await Promise.all([api("/tokens").catch(() => []), api("/oauth/grants").catch(() => [])]);
   const when = (t) => t.expired ? "expired" : `expires ${new Date(t.expires_at).toLocaleDateString()}`;
-  const connect = `<div style="display:grid;gap:4px;margin-bottom:10px"><span class="muted" style="font-size:12px">Run this in Claude Code, then <b>/mcp</b> → Authenticate. Or add the URL to any MCP client. It asks you to sign in here, no token needed.</span>
-      <div class="copyline"><input readonly value="${esc(mcpSignIn())}"><button class="btn" id="connect-cmd" title="copy the command">${icon("copy")}</button></div>
-      <div class="copyline"><input readonly value="${esc(mcpUrl())}"><button class="btn" id="connect-url" title="copy the server URL">${icon("copy")}</button></div></div>`;
+  const connect = `<div style="display:grid;gap:4px;margin-bottom:10px"><span class="muted" style="font-size:12px">Run this in Claude Code, then <b>/mcp</b> → Authenticate. It asks you to sign in here, no token needed.</span>
+      <div class="copyline"><input readonly value="${esc(mcpSignIn())}"><button class="btn" id="connect-cmd" title="copy the command">${icon("copy")}</button></div></div>`;
+  const url = `<span class="muted" style="font-size:12px">The server URL, for any MCP client:</span>
+      <div class="copyline" style="margin:4px 0 10px"><input readonly value="${esc(mcpUrl())}"><button class="btn" id="connect-url" title="copy the server URL">${icon("copy")}</button></div>`;
   const signedIn = apps.length ? `<div class="muted" style="font-size:12px">Apps signed in</div><div class="list">${apps.map((g) => `<div class="row" style="flex-wrap:nowrap">${icon("app-window")}<span style="flex:1;min-width:0">${esc(g.client_name)} <span class="muted">· ${g.scope === "write" ? "read and write" : "read"} · signed in ${ago(g.created_at)}${g.last_used_at ? ` · used ${ago(g.last_used_at)}` : ""}</span></span>
       <button class="btn ghost" data-signout="${esc(g.id)}" title="sign it out">${icon("log-out")}</button></div>`).join("")}</div>` : "";
   const fresh = made ? `<div style="display:grid;gap:4px;margin-bottom:8px"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again.</span>
@@ -901,15 +908,15 @@ async function wireTokens(made) {
       <div class="copyline"><input readonly value="${esc(mcpAdd(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-mcp" title="copy the command">${icon("copy")}</button></div>
       <span class="muted" style="font-size:12px">Or sign in the CLI (<code>${esc(cliInstall())}</code>) with it:</span>
       <div class="copyline"><input readonly value="${esc(cliLogin(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-cli" title="copy the command">${icon("copy")}</button></div></div>` : "";
-  el.innerHTML = connect + signedIn
+  el.innerHTML = connect + `<details class="more" id="tokens-more"${open ? " open" : ""}><summary class="muted">${icon("key-round")} Tokens and apps</summary><div style="margin-top:8px">` + url + signedIn
     + `<div class="muted" style="font-size:12px;margin-top:10px">${icon("key-round")} Tokens, for scripts and CI (no browser)</div>` + fresh
     + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon(t.scope === "write" ? "pencil" : "eye")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· ${t.scope === "write" ? "read and write" : "read"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}</span></span>
       <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("")}</div>
     <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for, like a deploy script" required>
-      <div style="display:flex;flex-wrap:wrap;gap:6px"><select name="scope" style="flex:1;min-width:0"><option value="read">Read only</option><option value="write">Read and write</option></select>
+      <div style="display:flex;flex-wrap:wrap;gap:6px"><select name="scope" style="flex:1 1 auto"><option value="read">Read only</option><option value="write">Read and write</option></select>
       <select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select>
       <button class="btn primary">${icon("plus")}Make</button></div></form>
-    <details id="my-audit" style="margin-top:10px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("shield")} Audit log: tokens, crews, invites and keys you changed</summary><div></div></details>`;
+    <details id="my-audit" style="margin-top:10px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("shield")} Audit log: tokens, crews, invites and keys you changed</summary><div></div></details></div></details>`;
   icons();
   $("#my-audit").addEventListener("toggle", (e) => { if (e.target.open) wireAudit(e.target.lastElementChild, "/tokens/audit", true); }, { once: true });
   $("#connect-cmd").addEventListener("click", () => copy(mcpSignIn(), "Command copied"));
@@ -922,10 +929,10 @@ async function wireTokens(made) {
     try { wireTokens(await api("/tokens", { label: f.elements.label.value, scope: f.elements.scope.value, days: Number(f.elements.days.value) })); } catch (err) { toast(err.message); }
   });
   el.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
-    await api(`/tokens/${b.dataset.revoke}`, undefined, "DELETE"); toast("Token revoked"); wireTokens();
+    await api(`/tokens/${b.dataset.revoke}`, undefined, "DELETE"); toast("Token revoked"); wireTokens(undefined, true);
   }));
   el.querySelectorAll("[data-signout]").forEach((b) => b.addEventListener("click", async () => {
-    await api(`/oauth/grants/${b.dataset.signout}`, undefined, "DELETE"); toast("App signed out"); wireTokens();
+    await api(`/oauth/grants/${b.dataset.signout}`, undefined, "DELETE"); toast("App signed out"); wireTokens(undefined, true);
   }));
 }
 // The security audit log (GET /api/tokens/audit, /api/repos/:o/:r/audit; src/audit.ts): who did what, signed in how, from where.
@@ -1982,11 +1989,14 @@ function visBadge(v, canFlip) {
 }
 // Dig up anything on GitHub: search words, or paste whatever you copied there
 // (owner/name, a page URL, a remote, a git clone line). The server reads the repo out of it.
-const digBox = (why) => `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div><div class="body"><p class="muted" style="margin-top:0">${why}</p>
+const digBox = (why, fold = false) => `${fold ? `<details class="box fold" id="digfold"><summary class="bar">${icon("github")}<b>Dig up a GitHub repo</b><span class="muted">fork one here</span>${icon("chevron-down", "chev")}</summary><form id="ghdig">` : `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div>`}<div class="body"><p class="muted" style="margin-top:0">${why}</p>
   <div class="ghwho" id="ghwho" hidden></div>
   <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up (fork)</button></div>
   <label class="muted" id="ghmirror" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:8px"><input type="checkbox" name="mirror">Keep it in sync with upstream (a mirror): its commits come here, yours go back, and if it goes down you keep working until it's back. Takes any git URL, GitHub or not.</label>
-  <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form>`;
+  <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form>${fold ? "</details>" : ""}`;
+// A box that folds to its bar on your profile (#729): open it to see the rest. Unfolded elsewhere.
+const boxTop = (fold, id, bar) => fold ? `<details class="box fold" id="${id}"><summary class="bar">${bar}${icon("chevron-down", "chev")}</summary>` : `<div class="box" id="${id}"><div class="bar">${bar}</div>`;
+const boxEnd = (fold) => fold ? "</details>" : "</div>";
 const looksPasted = (v) => /[\/:]/.test(v.trim());
 function wireDig() {
   const f = $("#ghdig");
@@ -2029,7 +2039,9 @@ function wireDig() {
     // Mirrors need git on this machine: the desktop.
     if (g.mirrorsOk) $("#ghmirror").hidden = false;
   }).catch(() => {});
-  loadGh();
+  // Folded (your profile), GitHub isn't asked until you open the box.
+  const folded = f.closest("details");
+  if (folded && !folded.open) folded.addEventListener("toggle", loadGh, { once: true }); else loadGh();
   // A dig clones a whole repo, so only the button starts one: Enter in a field doesn't (#443).
   // Picking one of yours fills the box and focuses the name, and a stray Enter there dug it up.
   f.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("input")) e.preventDefault(); });
@@ -2250,7 +2262,7 @@ const views = {
   },
   noclip() { return views.backrooms(); },
 
-  async u(name) {
+  async u(name, open) {
     const mine = name === me();
     const pulseOf = () => api(`/users/${encodeURIComponent(name)}/pulse`).catch(() => null);
     const [{ user, repos, playlists, following = 0, followers = 0, stamps, agent }, { jobs }, follows, invites, pulse] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : [], mine ? api("/invites").catch(() => []) : [], pulseOf()]);
@@ -2276,23 +2288,23 @@ const views = {
         <textarea name="theme_html" rows="5" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
         <div><button class="btn primary">Save</button></div></div></form>` : ""}
       <div class="prof-grid"><div>
-        ${pulse ? `<div class="box pulse-box" id="pulse-box"></div>` : ""}
-        ${invites.length ? `<div class="box" id="invites"><div class="bar">${icon("mail")}<b>Invited to</b><span class="muted">crews waiting on you: open one to look, then join</span></div><div class="body list">${invites.map(inviteRow).join("")}</div></div>` : ""}
-        ${agentBoxes}
         <div class="box"><div class="bar">${icon("book-marked")}<b>${agent ? "Works in" : "Repos"}</b>
           ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn primary">${icon("plus")}Create</button></form>` : ""}</div>
           <div class="body list">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet</span>'}</div></div>
-        ${mine ? digBox("Fork any public GitHub repo into one you own here, then mod it line by line. Upstream never hears about it.") : ""}
+        ${pulse ? `<div class="box pulse-box" id="pulse-box"></div>` : ""}
+        ${invites.length ? `<div class="box" id="invites"><div class="bar">${icon("mail")}<b>Invited to</b><span class="muted">crews waiting on you: open one to look, then join</span></div><div class="body list">${invites.map(inviteRow).join("")}</div></div>` : ""}
+        ${agentBoxes}
+        ${mine ? digBox("Fork any public GitHub repo into one you own here, then mod it line by line. Upstream never hears about it.", true) : ""}
         ${stampBox}
         ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">this week's digs, previews and checks that waited in line</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       </div><aside>
-        ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
-        ${agent ? "" : `<div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
-          ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>`}
-        ${mine ? `<div class="box"><div class="bar">${icon("eye")}<b>Following</b><span class="muted">people, agents, repos and lines</span></div><div class="body list">${follows.map(followLink).join("") || '<span class="muted">nothing yet: Follow is on profiles, repos, agent runs, shares and collections</span>'}</div></div>` : ""}
         ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("plug")}<b>Connect your AI</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
-        ${mine ? truthBox() : ""}
-        ${mine ? dataBox() : ""}
+        ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
+        ${agent ? "" : `<div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || (mine ? "" : '<span class="muted">nothing collected yet</span>')}
+          ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>`}
+        ${mine ? `<div class="box"><div class="bar"${follows.length ? "" : ' style="border-bottom:0" title="Follow is on profiles, repos, agent runs, shares and collections"'}>${icon("eye")}<b>Following</b><span class="muted">${follows.length ? "people, agents, repos and lines" : "nobody yet"}</span></div>${follows.length ? `<div class="body list">${follows.map(followLink).join("")}</div>` : ""}</div>` : ""}
+        ${mine ? truthBox(true) : ""}
+        ${mine ? dataBox(true) : ""}
       </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
     // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
@@ -2304,7 +2316,7 @@ const views = {
       box.innerHTML = `<div class="bar"><span class="beat-dot"></span><b>Pulse</b><span class="muted">${p.total ? `${p.total} line${p.total === 1 ? "" : "s"} landed this week` : "quiet this week"}${isLive(p) ? " · typing now" : p.live_at ? ` · last line ${ago(p.live_at)}` : ""}</span><span class="grow"></span>
         ${mine ? `<label class="muted" style="font-size:12px" title="off: only you see your pulse"><input type="checkbox" id="pulse-public"${user.pulse ? " checked" : ""}> public</label>` : ""}
         ${!mine || user.pulse ? `<a class="btn ghost" href="https://x.com/intent/post?text=${encodeURIComponent(`@${name}'s pulse on codeSplitters`)}&url=${encodeURIComponent(share)}" target="_blank" rel="noopener" title="share the pulse card on X">${icon("share-2")}</a>` : ""}</div>
-        <div class="body">${pulseSvg(p)}${mine ? `<span class="muted" style="font-size:12px">${user.pulse ? "Everyone sees the lines you land in public repos; private repos count only here, for you." : "Only you see your pulse."}</span>` : ""}</div>`;
+        <div class="body"${p.total || isLive(p) ? "" : " hidden"}>${pulseSvg(p)}${mine ? `<span class="muted" style="font-size:12px">${user.pulse ? "Everyone sees the lines you land in public repos; private repos count only here, for you." : "Only you see your pulse."}</span>` : ""}</div>`;
       $("#pulse-public")?.addEventListener("change", async (e) => { user.pulse = e.target.checked ? 1 : 0; await api("/me", { pulse: e.target.checked }, "PUT"); drawPulse(p); toast(e.target.checked ? "Your pulse is public" : "Only you see your pulse now"); });
       icons();
     };
@@ -2321,11 +2333,18 @@ const views = {
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
     $("#citypub")?.addEventListener("change", async (e) => { await api("/me/city", { public: e.target.checked }, "PUT"); route(); });
-    if (mine) { wireTokens(); wireData(); wireTruth(); }
+    if (mine) {
+      // #/me/tokens (or #/u/<you>/tokens) opens Tokens and apps, ready for a label.
+      wireTokens(undefined, open === "tokens").then(() => {
+        if (open !== "tokens") return;
+        $("#newtoken")?.scrollIntoView({ block: "center" }); $("#newtoken")?.elements.label.focus({ preventScroll: true });
+      });
+      wireData(); wireTruth();
+    }
     icons();
   },
-  // #/me: your own page, where signing in lands (or home, signed out).
-  me() { if (!me()) return views.home(); location.replace(`#/u/${me()}`); },
+  // #/me: your own page, where signing in lands (or home, signed out). #/me/tokens opens its Tokens and apps.
+  me(open) { if (!me()) return views.home(); location.replace(`#/u/${me()}${open === "tokens" ? "/tokens" : ""}`); },
 
   /** The header every repo page shares: name, visibility, and its main actions. */
   repoHead(owner, repo, r) {
@@ -4006,12 +4025,12 @@ const TRUTHS = {
   artifact: ["The artifact", "This copy's git commits win, and go on top of a rewritten upstream. Edits not committed yet still ask."],
   github: ["GitHub (upstream)", "Upstream's side wins: its lines in a clash, its history when it's rewritten."],
 };
-const truthBox = () => `<div class="box" id="truth"><div class="bar">${icon("scale")}<b>Where git truth lives</b></div><div class="body" style="display:grid;gap:8px;font-size:13px">
+const truthBox = (fold = false) => `${boxTop(fold, "truth", `${icon("scale")}<b>Where git truth lives</b>`)}<div class="body" style="display:grid;gap:8px;font-size:13px">
   <span class="muted">We don't mind which: your mirrors sync both ways, and this says whose side wins when both changed the same lines.</span>
   <select id="truth-pick" aria-label="where git truth lives">${Object.entries(TRUTHS).map(([k, [label]]) => `<option value="${k}">${esc(label)}</option>`).join("")}</select>
   <span class="muted" id="truth-what" style="font-size:12px"></span>
   <b style="font-size:12px">${icon("shield-check")}Your git history never goes extinct.</b><span class="muted" style="font-size:12px">Whichever side wins, the other's commits stay in its own git, and every line here keeps its history, for the present and the future.</span>
-</div></div>`;
+</div>${boxEnd(fold)}`;
 async function wireTruth() {
   const pick = $("#truth-pick"), what = $("#truth-what");
   if (!pick) return;
@@ -4023,12 +4042,12 @@ async function wireTruth() {
     try { await api("/me", { git_truth: pick.value }, "PUT"); toast(`Git truth lives ${pick.value === "ask" ? "wherever you say, each time" : `in ${TRUTHS[pick.value][0]}`}`); } catch (e) { toast(e.message); }
   });
 }
-const dataBox = () => `<div class="box" id="yourdata"><div class="bar">${icon("archive")}<b>Your data</b><a class="muted" style="margin-left:auto;font-size:12px" href="#/privacy">privacy</a></div><div class="body" style="display:grid;gap:10px;font-size:13px">
+const dataBox = (fold = false) => `${boxTop(fold, "yourdata", `${icon("archive")}<b>Your data</b><a class="muted" style="font-size:12px" href="#/privacy">privacy</a>`)}<div class="body" style="display:grid;gap:10px;font-size:13px">
   <div><a class="btn" href="/api/me/export" download>${icon("download")}Download everything</a> <span class="muted" style="font-size:12px">one JSON file; clone your repos for the code</span></div>
   <details><summary class="muted" style="cursor:pointer;font-size:12px">Delete my account</summary><form id="delme" style="display:grid;gap:6px;margin-top:8px">
     <span class="muted" style="font-size:12px">Gone for good: your repos (files, branches, git), collections, shares, tokens, connected apps, sessions and sign-in, and codeSplitters' access to your GitHub and Google. Lines you wrote in other people's repos stay under @${esc(me())}, which is retired.</span>
     <input name="name" placeholder="type ${esc(me())} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete @${esc(me())} for good</button></div></form></details>
-</div></div>`;
+</div>${boxEnd(fold)}`;
 function wireData() {
   $("#delme")?.addEventListener("submit", async (e) => {
     e.preventDefault();

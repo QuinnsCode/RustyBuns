@@ -102,10 +102,12 @@ export async function run(argv: string[], env: Record<string, string | undefined
   }
   const url = (flags.url ?? env.CODESPLITTERS_URL ?? conf.url)?.replace(/\/$/, "");
   if (!url) return { code: 2, out: "", err: "codesplitters login --url https://<site>" };
-  const token = flags.token ?? (await ask(`Make a token on your profile page at ${url} (sign in, then your name, top right), and paste it here: `)) ?? conf.token;
+  const token = (flags.token ?? (await ask(`Make a token at ${url}/#/me/tokens (sign in first), copy it with its copy button, and paste it here: `)) ?? conf.token)?.trim();
+  // A token copied from its box, not its button, comes out masked (cst_••••6x48): don't save that (#729).
+  if (token && (token.includes("•") || !token.startsWith("cst_"))) return { code: 2, out: "", err: `That isn't a whole token: it starts with cst_ and has no •. Copy it with the copy button at ${url}/#/me/tokens.` };
   const path = configPath(env);
   mkdirSync(path.replace(/\/[^/]+$/, ""), { recursive: true });
-  writeFileSync(path, JSON.stringify({ url, ...(token ? { token: token.trim() } : {}) }, null, 2) + "\n", { mode: 0o600 });
+  writeFileSync(path, JSON.stringify({ url, ...(token ? { token } : {}) }, null, 2) + "\n", { mode: 0o600 });
   chmodSync(path, 0o600);
   return { code: 0, out: token ? `Signed in to ${url}. Try: codesplitters tools` : `Saved ${url}. Add a token with: codesplitters login --token cst_…`, err: "" };
 }
