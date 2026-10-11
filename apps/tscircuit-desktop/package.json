@@ -9,8 +9,8 @@
     "native": "bun native/build.ts",
     "test": "bun test",
     "licenses": "bun scripts/licenses.ts",
-    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
-    "desktop:build": "rustybuns build desktop"
+    "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.6",
