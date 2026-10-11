@@ -95,7 +95,7 @@
   .repohead h1 { margin: 0; font: 400 15px/1.3 var(--sans); letter-spacing: -0.015em; display: flex; align-items: center; gap: 6px; }
   .repohead h1 b { font-weight: 600; }
   .repohead .btn { padding: 2px 10px; }
-  .wb { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr) 290px; }
+  .wb { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr) var(--dw, 290px); position: relative; }
   .wb > * { min-height: 0; overflow: auto; }
   .explorer { background: var(--canvas); border-right: 1px solid var(--border); padding-bottom: 12px; }
   .pad { padding: 8px 12px 4px; }
@@ -111,7 +111,25 @@
   .crumbbar .btn { padding: 1px 8px; font-size: 12.5px; }
   .crumbbar .crumbs { font-weight: 500; font-size: 13px; }
   .editor .scroll { flex: 1; min-height: 0; overflow: auto; }
-  .details { border-left: 1px solid var(--border); font-size: 13px; }
+  .details { border-left: 1px solid var(--border); font-size: 13px; container-type: inline-size; }
+  /* The details side (dock()): drag its left edge to widen it, or snap it to 2/3 or the whole bench.
+     Panels drag by their title to a new spot and fold to a rounded bar; the rail jumps to one.
+     Each browser keeps its own layout. */
+  .drail { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 4px 8px; background: var(--canvas); border-bottom: 1px solid var(--border); }
+  .drail button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
+  .drail button:hover, .drail button.on { background: var(--select); color: var(--fg); }
+  .drail button.shut { color: var(--faint); }
+  .drail svg.lucide { width: 14px; height: 14px; vertical-align: 0; }
+  .drail .sep { width: 1px; height: 16px; margin: 0 4px; background: var(--border-2); }
+  @container (min-width: 620px) { .dpanels { columns: 300px; column-gap: 0; } .dpanels .sec { break-inside: avoid; } }
+  .sec h3 { cursor: grab; user-select: none; } .sec h3 .fold { margin-left: auto; transition: transform .12s; }
+  .sec.shut { margin: 6px 10px; padding: 3px 12px; border: 1px solid var(--border-2); border-radius: 999px; background: var(--canvas); }
+  .sec.shut h3 { margin: 0; } .sec.shut > :not(h3) { display: none; } .sec.shut h3 .fold { transform: rotate(-90deg); }
+  .sec.dragging { opacity: .4; } .sec.drop-before { box-shadow: inset 0 2px var(--accent); } .sec.drop-after { box-shadow: inset 0 -2px var(--accent); }
+  .sec.flash { animation: flash 1s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
+  .dgrip { position: absolute; top: 0; bottom: 0; right: calc(var(--dw, 290px) - 3px); width: 6px; z-index: 3; cursor: col-resize; }
+  .dgrip:hover, .dgrip.on { background: var(--accent); opacity: .5; }
+  @media (min-width: 1200px) { .wb.d-full { grid-template-columns: minmax(0, 1fr); } .wb.d-full > :is(.explorer, .editor, .dgrip) { display: none; } .wb.d-full > .details { border-left: 0; } }
   .sec { padding: 10px 14px; border-bottom: 1px solid var(--border); }
   .sec h3 { margin: 0 0 6px; font: 500 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .sec p { margin: 0 0 6px; } .sec .btn { margin: 2px 4px 2px 0; }
@@ -158,6 +176,7 @@
     .wb { grid-template-columns: 230px minmax(0, 1fr); } .wb > * { overflow: visible; }
     .explorer { grid-row: span 2; } .editor { overflow: visible; } .editor .scroll { overflow-x: auto; }
     .details { border-left: 0; border-top: 1px solid var(--border); grid-column: 2; }
+    .dgrip, .drail .dw { display: none; } .drail { position: static; }
     .status { position: sticky; bottom: 0; }
   }
   .box { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; background: var(--bg); }
@@ -989,9 +1008,80 @@ function mountExplorer(el, key, load, href, current) {
 /** A repo or level page: header, then explorer | editor | details, then the status bar. */
 function workbench(head, { tab, bar, body, details, status }) {
   document.body.classList.add("ide-mode");
+  queueMicrotask(dock);
   return `${head}<div class="wb"><aside class="explorer"><div class="label pad">Explorer</div><nav class="tree" id="tree"></nav></aside>
     <section class="editor">${tab ? `<div class="tabs"><span class="tab">${tab}</span></div>` : ""}<div class="crumbbar">${bar}</div><div class="scroll">${body}</div></section>
     <aside class="details">${details}</aside></div><footer class="status">${status}</footer>`;
+}
+/** This browser's layout of the details side: its width (px, "66.667%" or "full"), the panels' order, and which are folded. */
+const dockPrefs = () => { try { return { w: "", order: [], shut: [], ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", order: [], shut: [] }; } };
+const saveDock = (d) => { try { localStorage.setItem("cs_dock", JSON.stringify(d)); } catch {} };
+/** Make the details side a dock: a rail of width snaps and panel jumps, a resize edge, panels to drag and fold. */
+function dock() {
+  const wb = $(".wb"), aside = $(".details");
+  if (!wb || !aside || aside.querySelector(".drail")) return;
+  const d = dockPrefs();
+  const panels = document.createElement("div"); panels.className = "dpanels";
+  const secs = [...aside.querySelectorAll(":scope > .sec")];
+  // Saved panels take the saved order within the slots they hold; panels this browser hasn't placed stay put.
+  const slots = secs.map((s, i) => d.order.includes(s.dataset.key) ? i : -1).filter((i) => i >= 0);
+  const placed = slots.map((i) => secs[i]).sort((a, b) => d.order.indexOf(a.dataset.key) - d.order.indexOf(b.dataset.key));
+  slots.forEach((i, j) => (secs[i] = placed[j]));
+  secs.forEach((s) => { s.classList.toggle("shut", d.shut.includes(s.dataset.key)); panels.append(s); });
+  const rail = document.createElement("div"); rail.className = "drail";
+  const widths = [["290px", "panel-right", "Narrow"], ["66.667%", "columns-2", "Two-thirds of the screen"], ["full", "maximize-2", "Whole screen"]];
+  const drawRail = () => {
+    rail.innerHTML = widths.map(([w, ic, t]) => `<button type="button" class="dw${(d.w || "290px") === w ? " on" : ""}" data-w="${w}" title="${t}">${icon(ic)}</button>`).join("")
+      + `<span class="sep dw"></span>` + [...panels.children].map((s) => `<button type="button" class="${s.classList.contains("shut") ? "shut" : ""}" data-jump="${s.dataset.key}" title="${esc(s.querySelector("h3").textContent)}">${icon(s.dataset.ic)}</button>`).join("")
+      + `<span class="grow" style="flex:1"></span><button type="button" data-fold title="Fold every panel, or open them all">${icon("chevrons-down-up")}</button>`;
+    icons();
+  };
+  const save = () => {
+    const keys = [...panels.children].map((s) => s.dataset.key);
+    d.order = [...keys, ...d.order.filter((k) => !keys.includes(k))];
+    d.shut = [...new Set([...d.shut.filter((k) => !keys.includes(k)), ...[...panels.children].filter((s) => s.classList.contains("shut")).map((s) => s.dataset.key)])];
+    saveDock(d); drawRail();
+  };
+  const setWidth = (w) => {
+    d.w = w; wb.classList.toggle("d-full", w === "full");
+    wb.style.setProperty("--dw", w && w !== "full" ? w : "290px");
+  };
+  setWidth(d.w);
+  aside.append(rail, panels); drawRail();
+  rail.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.w) { setWidth(b.dataset.w); return save(); }
+    if ("fold" in b.dataset) { const all = [...panels.children], shut = all.some((s) => !s.classList.contains("shut")); all.forEach((s) => s.classList.toggle("shut", shut)); return save(); }
+    const s = panels.querySelector(`[data-key="${b.dataset.jump}"]`); if (!s) return;
+    s.classList.remove("shut"); save();
+    s.scrollIntoView({ block: "nearest", behavior: "smooth" }); s.classList.remove("flash"); void s.offsetWidth; s.classList.add("flash");
+  });
+  // A click on a title folds the panel; a drag carries it above or below another.
+  panels.addEventListener("click", (e) => { const h = e.target.closest(".sec > h3"); if (!h || e.target.closest("a, button")) return; h.parentElement.classList.toggle("shut"); save(); });
+  let dragged = null;
+  const clearDrop = () => panels.querySelectorAll(".drop-before, .drop-after").forEach((s) => s.classList.remove("drop-before", "drop-after"));
+  panels.addEventListener("dragstart", (e) => { dragged = e.target.closest?.(".sec"); if (!dragged) return; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragged.dataset.key); dragged.classList.add("dragging"); });
+  panels.addEventListener("dragover", (e) => {
+    const s = e.target.closest(".sec"); if (!dragged || !s || s === dragged) return;
+    e.preventDefault(); clearDrop();
+    const r = s.getBoundingClientRect(); s.classList.add(e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after");
+  });
+  panels.addEventListener("drop", (e) => {
+    const s = e.target.closest(".sec"); if (!dragged || !s || s === dragged) return;
+    e.preventDefault(); s.classList.contains("drop-before") ? s.before(dragged) : s.after(dragged); save();
+  });
+  panels.addEventListener("dragend", () => { dragged?.classList.remove("dragging"); dragged = null; clearDrop(); });
+  // The left edge: drag to any width, double-click for the narrow default.
+  const grip = document.createElement("div"); grip.className = "dgrip"; grip.title = "Drag to widen; double-click to reset";
+  wb.append(grip);
+  grip.addEventListener("dblclick", () => { setWidth("290px"); save(); });
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); grip.setPointerCapture(e.pointerId); grip.classList.add("on");
+    const box = wb.getBoundingClientRect();
+    const move = (m) => setWidth(`${Math.round(Math.min(box.width - 160, Math.max(220, box.right - m.clientX)))}px`);
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", () => { grip.removeEventListener("pointermove", move); grip.classList.remove("on"); save(); }, { once: true });
+  });
 }
 const fits = {};
 /** A run's steps as a row of icons that go orange, then green or red; click one for its log. */
@@ -1010,7 +1100,7 @@ const deleteRepo = async (owner, repo, typed) => {
   await api(`/repos/${owner}/${repo}?confirm=${encodeURIComponent(repo)}`, undefined, "DELETE");
   toast(`Deleted ${owner}/${repo}`); location.hash = `#/u/${owner}`;
 };
-const sec = (ic, title, html) => `<section class="sec"><h3>${icon(ic)}${title}</h3>${html}</section>`;
+const sec = (ic, title, html) => `<section class="sec" data-key="${title.toLowerCase().replace(/\W+/g, "-")}" data-ic="${ic}"><h3 draggable="true">${icon(ic)}${title}${icon("chevron-down", "fold")}</h3>${html}</section>`;
 /** mm:ss gone since `from`, or left until `deadline`. */
 const tickText = (from, deadline) => {
   const s = Math.floor(Math.max(0, deadline ? deadline - Date.now() : Date.now() - from) / 1000);
