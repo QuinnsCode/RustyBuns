@@ -24,9 +24,11 @@ import { commitsBehindMain, statefulDeletes } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
+import { checkDisabled, checkVersion } from "./advisories.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
+const VERSION = (await Bun.file(new URL("../package.json", import.meta.url)).json()).version as string;
 
 async function loadConfig(): Promise<RustyBunsConfig> {
   const f = Bun.file("rustybuns.config.ts");
@@ -494,6 +496,12 @@ async function alchemy(sub: string, rawArgs: string[]) {
     : "\nthe box bills hourly from now on; `rustybuns destroy` stops it.");
 }
 
+const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
+if (!isVersion && !checkDisabled()) {
+  const advice = await checkVersion(VERSION);
+  if (advice) console.error(`${advice}\n`);
+}
+
 try {
   switch (cmd) {
     case "init": await init(); break;   // --spa forces the desktop-only path
@@ -541,10 +549,14 @@ try {
       break;
     }
     case "--version": case "-v": case "version": {
-      console.log((await Bun.file(new URL("../package.json", import.meta.url)).json()).version); break;
+      console.log(VERSION);
+      // Always checks, even in CI: asking for the version is asking whether it is a good one.
+      const advice = await checkVersion(VERSION, { force: true });
+      if (advice) console.log(advice);
+      break;
     }
     default:
-      console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}
+      console.log(`rustybuns ${VERSION}
 Box and ship the web app you already have. A dev dependency, never in prod.
 
   init [--spa] [--force]     read package.json / vite.config / tsconfig / wrangler.*,
@@ -590,9 +602,12 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              build desktop, plan and deploy print a per-step timing table and
                              save it to .rustybuns/profile/, with deltas against the last run
   eject                      copy alchemy.run.ts to the root; you own the stack from then on
+  version                    print the version, and whether it is a known-bad release or out of date
+                             (every command checks once a day and warns on a known-bad release)
 
   Env:  RB_NO_BROWSER=1      do not open a browser; print the token URL instead
         RB_BUN=<path>        a Bun with \`bun check\` to type check with (e.g. a canary)
+        RUSTYBUNS_NO_UPDATE_CHECK=1  skip the daily version check (CI skips it too)
   Docs: README.md · GETTING_STARTED.md`);
   }
 } catch (e) {

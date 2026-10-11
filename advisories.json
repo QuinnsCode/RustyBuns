@@ -1,0 +1,10 @@
+{
+  "advisories": [
+    {
+      "versions": "0.1.6",
+      "do": "upgrade",
+      "to": "latest",
+      "why": "0.1.6 was published against @rustybuns/ports and @rustybuns/shell-bun 0.1.5, so it runs 0.1.5 code"
+    }
+  ]
+}

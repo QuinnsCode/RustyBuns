@@ -9,7 +9,8 @@
   "scripts": {
     "typecheck": "bun scripts/typecheck.ts",
     "test": "bun test",
-    "publish:all": "bun scripts/check-release.ts && for p in ports shell-bun native cli; do (cd packages/$p && bun publish --access public); done"
+    "publish:all": "bun scripts/check-release.ts && for p in ports shell-bun native cli; do (cd packages/$p && bun publish --access public); done",
+    "deprecate:bad": "bun scripts/deprecate-bad.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",

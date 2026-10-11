@@ -180,8 +180,13 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 | `plan` / `deploy [--yes]` / `destroy` | Alchemy against the generated stack; `deploy` refuses without a plan for this exact config |
 | `dev` | `alchemy dev`: workerd and local simulators for the edge |
 | `eject` | copy `alchemy.run.ts` to the project root; from then on you own it |
+| `version` | print the version, and say whether it is a known-bad release or out of date |
 
 `--profile <name>` and `--stage <name>` pass through to Alchemy. `RB_NO_BROWSER=1` prints the desktop token URL instead of opening a browser.
+
+### Known-bad versions
+
+[`advisories.json`](advisories.json) lists releases to move off, and which way to go (`upgrade`, or `downgrade` to a given version). Each command checks the installed version against it and against npm's latest at most once a day (cached in `~/.cache/rustybuns/`, 1.5 s timeout). On a listed version it prints how to move before running. It never fails a command, and it is off in CI and with `RUSTYBUNS_NO_UPDATE_CHECK=1`. To flag a release, add an entry, merge it, then run `bun run deprecate:bad` (needs your npm login) so installs warn too.
 
 ## Config
 
