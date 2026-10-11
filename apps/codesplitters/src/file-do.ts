@@ -291,17 +291,21 @@ export class FileDurableObject {
   /**
    * Snapshot the doc as it is now, and past KEEP_SNAPS let the oldest go with every op up to the
    * one after it: history then starts at that snapshot. The ops themselves go a page at a time.
+   * A file's first snapshot on a log already longer than KEEP_SNAPS snapshots reach (one from
+   * before trimming) starts history right there, rather than after 20,000 more edits (#707).
    */
   async snapshot() {
     const rev = this.doc.rev;
+    const long = !this.snaps.length && rev - (this.base?.rev ?? 0) > KEEP_SNAPS * SNAP_EVERY;
     this.snaps.push(rev);
     const drop = this.snaps.length > KEEP_SNAPS ? this.snaps.shift()! : null;
-    if (drop !== null) this.trimmed = this.snaps[0];
+    if (drop !== null || long) this.trimmed = this.snaps[0];
     await Promise.all([...new DocStore(this.ctx.storage, "snap:" + pad(rev)).replace(this.doc), this.ctx.storage.put("snaps", this.snaps), this.ctx.storage.put("trimmed", this.trimmed)]);
-    if (drop === null) return;
-    const gone: Map<string, unknown> = await this.ctx.storage.list({ prefix: "snap:" + pad(drop) });
-    await Promise.all([...gone.keys()].map((k) => this.ctx.storage.delete(k)));
-    this.sweeping = this.sweeping.then(() => this.sweep()).catch(() => {});
+    if (drop !== null) {
+      const gone: Map<string, unknown> = await this.ctx.storage.list({ prefix: "snap:" + pad(drop) });
+      await Promise.all([...gone.keys()].map((k) => this.ctx.storage.delete(k)));
+    }
+    if (drop !== null || long) this.sweeping = this.sweeping.then(() => this.sweep()).catch(() => {});
   }
 
   /** Delete the ops history no longer reaches, a page at a time. */

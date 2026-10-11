@@ -6,8 +6,8 @@ import { replay, type Applied } from "../src/lines.ts";
 setDefaultTimeout(60_000);
 
 /** The file DO over the sqlite twin, its log reads recorded. */
-async function file() {
-  const s = storage(":memory:"), lists: { prefix?: string; start?: string; end?: string; limit?: number }[] = [];
+async function file(s = storage(":memory:")) {
+  const lists: { prefix?: string; start?: string; end?: string; limit?: number }[] = [];
   const list = s.list.bind(s);
   s.list = (o) => { lists.push(o ?? {}); return list(o); };
   let ready: Promise<void> = Promise.resolve();
@@ -70,4 +70,30 @@ test("a short log keeps everything: since=0 and time travel to rev 1", async () 
   expect(await (await call("log?since=0")).json()).toEqual(r.applied);
   expect(await (await call("log?since=1")).json()).toEqual(r.applied.slice(1));
   expect(((await (await call("at?rev=1")).json()) as { lines: { text: string }[] }).lines.map((l) => l.text)).toEqual(["a"]);
+});
+
+test("a long log from before trimming is trimmed at the file's first snapshot (#707)", async () => {
+  const s = storage(":memory:");
+  const { o, call } = await file(s);
+  // Past 20,000 ops, then the log as it was before #625: no snapshots, nothing trimmed.
+  const pair = async (i: number) => {
+    const add = (await (await call("ops", { ops: Array.from({ length: 1000 }, (_, j) => ({ kind: "insert", after: null, text: `${i}.${j}` })) })).json()) as { applied: Applied[] };
+    await call("ops", { ops: add.applied.slice(0, 990).map((a) => ({ kind: "delete", line: a.line, base: a.rev })) });
+  };
+  for (let i = 0; i < 11; i++) await pair(i);
+  await o.sweeping;
+  expect(o.trimmed).toBe(0);
+  for (const k of (await s.list({ prefix: "snap", limit: 1e9 })).keys()) await s.delete(k);
+  await s.delete("trimmed");
+
+  const old = await file(s);
+  expect(old.o.snaps).toEqual([]);
+  expect((await (await old.call("log?since=0")).json() as Applied[]).length).toBe(old.o.doc.rev);
+  // Its next edit snapshots (it has none), and history starts there.
+  const add = (await (await old.call("ops", { ops: [{ kind: "insert", after: null, text: "x" }] })).json()) as { rev: number };
+  await old.o.sweeping;
+  expect(old.o.snaps).toEqual([add.rev]);
+  expect(old.o.trimmed).toBe(add.rev);
+  expect((await old.call("log?since=0")).status).toBe(410);
+  expect((await s.list({ prefix: "op:", limit: 1e9 })).size).toBe(0);
 });
