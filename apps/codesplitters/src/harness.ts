@@ -50,8 +50,9 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
  * The instruction every harness gets: one file, edit it in place, nothing else.
  * On a re-run, `conflicts` lists the lines someone else changed while the agent
  * worked; their version is already in the file and the agent must keep it.
+ * `notes` are what its owner told it since it started (a note sends it round again).
  */
-export function taskPrompt(path: string, task: string, conflicts: Conflict[] = []): string {
+export function taskPrompt(path: string, task: string, conflicts: Conflict[] = [], notes: string[] = []): string {
   const moved = conflicts.filter((c) => !c.held).map(({ op, now }) =>
     now === null ? `- a line you ${op.kind === "insert" ? "anchored an insert to" : "changed"} was deleted by someone else`
     : `- ${JSON.stringify(now.text)} (changed by ${now.by}; you had ${op.kind === "set" ? JSON.stringify(op.text) : op.kind === "delete" ? "deleted it" : `inserted ${JSON.stringify(op.text)} after it`})`);
@@ -62,6 +63,13 @@ export function taskPrompt(path: string, task: string, conflicts: Conflict[] = [
       `You already worked on this task once. While you worked, someone else changed these lines, so your edits to them did not land:`,
       ...moved,
       `The file now has their version and your other edits. Keep their changes, and finish the task on the file as it is now.`,
+    ] : []),
+    // Notes its owner sent while it worked: they come in on the next run, as the CLI can't take messages mid-run.
+    ...(notes.length ? [
+      ...(moved.length ? [] : [`You already worked on this task once, and the file has your edits.`]),
+      `While you worked, the person who gave you the task told you:`,
+      ...notes.map((n) => `- ${n}`),
+      `Take that into account, and finish the task on the file as it is now.`,
     ] : []),
     `Edit ${path} in place. Change only what the task needs, keep every other line as it is, and do not add files.`,
     `Do not run git commands.`,

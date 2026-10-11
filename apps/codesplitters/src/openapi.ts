@@ -130,6 +130,12 @@ const OPS: Record<string, Record<string, Op>> = {
     post: { id: "start_agent", summary: "Give a coding agent a task on a file (owner only)", tag: "Agents",
       body: obj({ path: str(), harness: str("one GET /agents lists"), task: str(), model: str() }, ["path", "harness", "task"]), ok: loose("the run"), status: 202 },
   },
+  [`${repo}/agents/stop`]: { post: { id: "stop_agents", summary: "Stop running coding agents: by run, file, harness or the lines they claimed (owner only)", tag: "Agents",
+    description: "Every filter given must match; with none, every running agent on the repo stops. The CLI is killed (a hosted run's container destroyed within a few seconds), nothing more it does lands, and its claim on lines is lifted.",
+    body: obj({ ids: arr(int()), path: str(), harness: str(), lines: arr(str("a line id")) }), ok: obj({ stopped: arr(int()) }) } },
+  [`${repo}/agents/{id}/notes`]: { post: { id: "tell_agent", summary: "Tell a running coding agent something, for its next run (owner only)", tag: "Agents",
+    description: "A running CLI can't take messages, so the note goes into the prompt of its next run: when this run ends, it goes round again with every note so far (up to 5 extra runs). 409 once the run has ended.",
+    body: obj({ text: str() }, ["text"]), ok: loose("the run, with its notes") } },
   "/agents": { get: { id: "list_harnesses", summary: "Which coding-agent harnesses this site can run", tag: "Agents", open: true, ok: loose("{available, why, harnesses, all}") } },
   [`${repo}/deploy`]: {
     get: { id: "deploy_status", summary: "Deploy settings, the run going now, and the last 20 (owner only)", tag: "Deploys", ok: loose("{settings, run, deploys}") },

@@ -84,3 +84,82 @@ test("a desktop run cut off when the app quit shows as failed, not running for e
   const runs = await (await call("ryan", "/api/repos/ryan/lab/agents")).json() as any[];
   expect(runs[0]).toMatchObject({ status: "failed", error: "the app stopped before the agent finished" });
 });
+
+/** A CLI that waits: till Stop kills it (signal), or till `go` lets it upper-case the file. Each run's prompt is kept. */
+function gated(call: { env: any }) {
+  const prompts: string[] = [];
+  let go = () => {};
+  call.env.AGENT_EXEC = (async (cmd, cwd, signal) => {
+    const gate = new Promise<void>((done, fail) => { go = done; signal?.addEventListener("abort", () => fail(new Error("killed"))); });
+    prompts.push(cmd.args.join(" "));
+    await gate;
+    const f = join(cwd, "a.js");
+    writeFileSync(f, readFileSync(f, "utf8").toUpperCase());
+    return { code: 0, out: "done" };
+  }) as Exec;
+  /** Waits for its `n`th run to start. */
+  const started = (n: number) => until(async () => prompts.length >= n);
+  return { prompts, go: () => go(), started };
+}
+
+const runsOf = async (call: any) => (await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json()) as any[];
+
+test("Stop kills a running agent: nothing it left lands, its claim is lifted, and it shows as stopped", async () => {
+  const { call, post } = await app();
+  const cli = gated(call);
+  const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.js")).json() as { lines: { id: string }[] };
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout", lines: [doc.lines[0]!.id] })).json() as any;
+  await cli.started(1);
+  await until(async () => ((await (await call("ryan", "/api/repos/ryan/lab/do/claims?path=a.js")).json()) as unknown[]).length > 0);
+
+  expect((await post("sam", "/api/repos/ryan/lab/agents/stop", { ids: [run.id] })).status).toBe(403);
+  expect(await (await post("ryan", "/api/repos/ryan/lab/agents/stop", { ids: [run.id] })).json()).toEqual({ stopped: [run.id] });
+  await until(async () => (await runsOf(call))[0].error !== undefined);
+  expect((await runsOf(call))[0]).toMatchObject({ status: "stopped", error: "stopped by @ryan" });
+  expect(await (await call("ryan", "/api/repos/ryan/lab/do/claims?path=a.js")).json()).toEqual([]);
+  cli.go(); // too late: it was killed
+  await Bun.sleep(50);
+  const after = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.js")).json() as { lines: { text: string }[] };
+  expect(after.lines.map((l) => l.text)).toEqual(["let a = 1", "let b = 2"]);
+  // Stopping it again stops nothing.
+  expect(await (await post("ryan", "/api/repos/ryan/lab/agents/stop", { ids: [run.id] })).json()).toEqual({ stopped: [] });
+});
+
+test("a note to a running agent goes into its next run's prompt: it goes round again when this run ends", async () => {
+  const { call, post } = await app();
+  const cli = gated(call);
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "shout" })).json() as any;
+  await cli.started(1);
+  expect((await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: " " })).status).toBe(400);
+  expect((await post("sam", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(403);
+  const told = await (await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "leave b alone" })).json() as any;
+  expect(told.notes).toMatchObject([{ text: "leave b alone" }]);
+  expect(cli.prompts[0]).not.toContain("leave b alone");
+
+  cli.go();
+  await cli.started(2);
+  expect(cli.prompts[1]).toContain("told you:\n- leave b alone");
+  cli.go();
+  await until(async () => (await runsOf(call))[0].status !== "running");
+  expect((await runsOf(call))[0]).toMatchObject({ status: "done", runs: 2, notes: [{ text: "leave b alone" }] });
+  // A finished run takes no notes.
+  expect((await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(409);
+  expect((await post("ryan", "/api/repos/ryan/lab/agents/999/notes", { text: "x" })).status).toBe(404);
+});
+
+test("bulk Stop: by harness, by the lines they claimed, or all of them", async () => {
+  const { call, post } = await app();
+  call.env.AGENT_EXEC = (async (_cmd, _cwd, signal) => new Promise((_, fail) => signal?.addEventListener("abort", () => fail(new Error("killed"))))) as Exec;
+  const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.js")).json() as { lines: { id: string }[] };
+  const [a, b] = doc.lines.map((l) => l.id);
+  const start = async (harness: string, lines?: string[]) => (await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness, task: "x", lines })).json() as any).id as number;
+  const c1 = await start("claude", [a!]), c2 = await start("claude", [b!]), p1 = await start("pi"), p2 = await start("pi");
+
+  expect(await (await post("ryan", "/api/repos/ryan/lab/agents/stop", { lines: [a] })).json()).toEqual({ stopped: [c1] });
+  expect(((await (await post("ryan", "/api/repos/ryan/lab/agents/stop", { harness: "pi" })).json()) as any).stopped.sort()).toEqual([p1, p2].sort());
+  expect(await (await post("ryan", "/api/repos/ryan/lab/agents/stop", {})).json()).toEqual({ stopped: [c2] });
+  await until(async () => (await runsOf(call)).every((r) => r.status === "stopped" && !live(r)));
+  expect((await runsOf(call)).map((r) => r.status)).toEqual(["stopped", "stopped", "stopped", "stopped"]);
+});
+/** Whether a run's own write-up hasn't landed yet (it keeps the error the Stop wrote). */
+const live = (r: any) => r.error === undefined;

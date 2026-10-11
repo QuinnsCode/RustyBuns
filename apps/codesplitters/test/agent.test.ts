@@ -61,6 +61,13 @@ describe("harnessCommand", () => {
     expect(p).toContain("Do not run git");
     expect(p).not.toContain("someone else");
   });
+  test("notes its owner sent while it worked come in on the next run's prompt", () => {
+    const p = taskPrompt("a.ts", "rename foo", [], ["call it bar", "and the tests too"]);
+    expect(p).toContain("You already worked on this task once, and the file has your edits.");
+    expect(p).toContain("told you:\n- call it bar\n- and the tests too");
+    expect(taskPrompt("a.ts", "rename foo")).not.toContain("told you");
+  });
+
   test("a re-run prompt lists the lines that moved and says to keep them", () => {
     const p = taskPrompt("a.ts", "x", [
       { op: { kind: "set", line: "L1", base: 1, text: "mine" }, now: { id: "L1", text: "theirs", by: "ryan", rev: 5 } },

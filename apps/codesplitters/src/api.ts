@@ -149,6 +149,8 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/agents", does: "which coding-agent harnesses this machine can run" },
       { method: "GET", path: "/api/repos/:o/:r/agents?path=", who: OWNER, does: "the repo's agent runs, newest first, or one file's with path" },
       { method: "POST", path: "/api/repos/:o/:r/agents", body: "{path, harness, task, model?}", who: OWNER, does: "give a coding agent a task on a file; answers at once" },
+      { method: "POST", path: "/api/repos/:o/:r/agents/stop", body: "{ids?, path?, harness?, lines?}", who: OWNER, does: "stop the running agents that match every filter (none: all of them): the CLI is killed or its container destroyed, nothing more lands, its claim is lifted; answers {stopped: [id]}" },
+      { method: "POST", path: "/api/repos/:o/:r/agents/:id/notes", body: "{text}", who: OWNER, does: "tell a running agent something: a CLI can't take messages mid-run, so it goes into the prompt of its next run, and when this run ends it goes round again (up to 5 times); 409 once it has ended" },
       { method: "GET", path: "/api/repos/:o/:r/preview", who: OWNER, does: "the current or last preview deploy, and the last 20" },
       { method: "POST", path: "/api/repos/:o/:r/preview", who: OWNER, does: "start a preview deploy" },
       { method: "GET", path: "/api/repos/:o/:r/deploy", who: OWNER, does: "deploy settings, the run going now, the last 20 deploys" },

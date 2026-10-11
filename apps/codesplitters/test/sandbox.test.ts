@@ -221,6 +221,24 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     expect(runs).toEqual([]);
   });
 
+  test("Stop on a hosted run: the run sees it in D1 and destroys its container, and nothing lands", async () => {
+    let seen: { destroyed: number } | undefined;
+    const { call, post, containers } = await hosted(async () => {
+      seen = containers.at(-1);
+      // The agent works till its container goes.
+      while (!seen!.destroyed) await Bun.sleep(20);
+      return { code: 137, out: "killed", text: null };
+    });
+    const { id } = await (await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "claude", path: "src/a.js", task: "use let" })).json() as { id: number };
+    for (const end = performance.now() + 5_000; !seen && performance.now() < end;) await Bun.sleep(20);
+    expect(await (await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents/stop", { path: "src/a.js" })).json()).toEqual({ stopped: [id] });
+    for (const end = performance.now() + 10_000; !seen!.destroyed && performance.now() < end;) await Bun.sleep(20);
+    expect(seen!.destroyed).toBeGreaterThan(0);
+    const run = ((await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/agents")).json()) as any[])[0];
+    expect(run).toMatchObject({ id, status: "stopped", error: "stopped by @ryan-quinn" });
+    expect(text(await doc(call))).toBe("var x = 1\nf()");
+  });
+
   test("a CLI that fails in the container comes back as a failed run, and nothing lands", async () => {
     const { call } = await hosted(async () => ({ code: 1, out: "not logged in", text: "junk" }));
     expect(await finished(call, { harness: "codex", path: "src/a.js", task: "x" })).toMatchObject({ status: "failed" });
