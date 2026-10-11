@@ -25,7 +25,7 @@ const privacyNotice = "";
 // Cloudflare Turnstile's site key (public) for the widget on sign-up, password reset and joining a
 // crew (src/security.ts). Set it once the widget exists for this hostname; its secret is then
 // required from 1Password (codesplitters/turnstile/secret). Empty means no bot check.
-const turnstileSiteKey = "";
+const turnstileSiteKey = "0x4AAAAAAFTyaxcLpAqRT0pg";
 const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitters/${ref}`, optional });
 
 export default defineConfig({

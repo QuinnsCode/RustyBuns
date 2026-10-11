@@ -144,7 +144,8 @@
   ],
   "vars": {
     "BETTER_AUTH_URL": "https://codesplitters.notryanquinn.workers.dev",
-    "ADMINS": "quinn"
+    "ADMINS": "quinn",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFTyaxcLpAqRT0pg"
   },
   "limits": {
     "cpu_ms": 300000
