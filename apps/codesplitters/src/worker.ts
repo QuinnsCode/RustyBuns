@@ -5,7 +5,8 @@
 import { fromText } from "./lines.ts";
 import { ensureCrewRemote, fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
 import { code, json, NAME, type DigMessage, type Env } from "./env.ts";
-import { identityRoutes, identify, isAdmin } from "./identity.ts";
+import { accountsOn, actingAs, identityRoutes, identify, isAdmin } from "./identity.ts";
+import { privacyRoutes, sweepSessions } from "./privacy.ts";
 import { levelRoutes, runDigs } from "./levels.ts";
 import { evict, githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
@@ -117,6 +118,10 @@ const app = {
     if (deploy) return deploy;
     const hooks = await hookRoutes(req, env, p, user);
     if (hooks) return hooks;
+
+    // GET /api/me/export and DELETE /api/me: take your data, or bury it (privacy.ts)
+    const privacy = await privacyRoutes(req, env, p, url, user, !token && !actingAs.has(req));
+    if (privacy) return privacy;
 
     // GET|PUT /api/me
     if (p[1] === "me") {
@@ -393,6 +398,7 @@ const app = {
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(sweepOAuth(env));
+    if (accountsOn(env)) ctx.waitUntil(sweepSessions(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(advanceAll(env, Date.now() + 10 * 60_000));
   },

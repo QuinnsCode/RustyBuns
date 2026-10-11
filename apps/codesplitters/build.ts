@@ -10,6 +10,9 @@ await copyFile("src/features.json", "dist/client/features.json");
 // Not api.html: Cloudflare serves that at /api, over the Worker's JSON.
 await copyFile("src/api.html", "dist/client/reference.html");
 await copyFile("src/mcp.html", "dist/client/mcp.html");
+// Geist, served from here (no Google Fonts call): the stylesheet, both variable fonts and their license.
+await mkdir("dist/client/fonts", { recursive: true });
+for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2", "LICENSE.txt"]) await copyFile(`src/fonts/${f}`, `dist/client/fonts/${f}`);
 // Resolve packages as wrangler does for workerd, and leave node:* to the runtime
 // (nodejs_compat). Without it Better Auth takes its browser build, whose stand-in
 // AsyncLocalStorage is one slot shared by every request: overlapping requests

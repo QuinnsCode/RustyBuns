@@ -92,6 +92,8 @@ export default defineConfig({
     // so nobody can pick it; it goes to whoever signs in with ADMIN_EMAIL, verified.
     ADMINS: { type: "var", value: "quinn" },
     ADMIN_EMAIL: op("admin/email"),
+    // Where privacy requests go, shown on #/privacy (src/privacy.ts). Optional: without it the page offers the export and delete buttons only.
+    PRIVACY_EMAIL: op("privacy/email", true),
     // Verification and reset links for email accounts (src/identity.ts).
     ...(mailFrom ? {
       EMAIL: { type: "send_email", allowedSenderAddresses: [mailFrom] } as const,

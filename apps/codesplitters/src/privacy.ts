@@ -1,0 +1,113 @@
+// Your data, yours to take and to bury (GDPR articles 15, 17 and 20). The policy
+// itself is the #/privacy page in client.html; keep the two telling the same story.
+//
+//   GET    /api/me/export            everything here about you, as one JSON download
+//   DELETE /api/me?confirm=<handle>  your account, your repos and everything of them
+//
+// Both are for the person, signed in on the site: never a token, an OAuth app or a
+// hosted agent acting as you. Lines and branches you made in other people's repos
+// stay there under your handle, the way commits stay in git; the handle is retired
+// so no one can pick it up and pass as you.
+
+import { evict } from "./github.ts";
+import { json, type Env } from "./env.ts";
+
+const all = async (env: Env, sql: string, ...args: unknown[]) => (await env.DB.prepare(sql).bind(...args).all()).results;
+
+/** The Better Auth account behind a handle, or null in alias mode. */
+async function authUser(env: Env, handle: string) {
+  const row = await env.DB.prepare("SELECT auth_id FROM users WHERE name = ?").bind(handle).first();
+  if (!row?.auth_id) return null;
+  return env.DB.prepare(`SELECT id, name, email, "emailVerified", image, "createdAt", "updatedAt" FROM "user" WHERE id = ?`).bind(row.auth_id).first()
+    .catch(() => null) as Promise<{ id: string; email: string } | null>;
+}
+
+/** Everything we hold about `handle`. Secrets go out as their last four, never hashes or tokens. */
+export async function exportFor(env: Env, handle: string) {
+  const u = await authUser(env, handle);
+  const owned = await all(env, "SELECT owner, name, visibility, level, branch, upstream, created_at, expires_at FROM repos WHERE owner = ?", handle);
+  const auth = u && {
+    account: u,
+    // How you sign in. The tokens behind them stay here, encrypted.
+    sign_ins: await all(env, `SELECT "providerId" AS provider, "accountId" AS account, scope, "createdAt" FROM account WHERE "userId" = ?`, u.id),
+    sessions: await all(env, `SELECT "createdAt", "expiresAt", "ipAddress", "userAgent" FROM session WHERE "userId" = ?`, u.id),
+  };
+  return {
+    exported_at: new Date().toISOString(),
+    handle,
+    profile: await env.DB.prepare("SELECT name, bio, theme_html, github_account, agent_github FROM users WHERE name = ?").bind(handle).first(),
+    ...(auth ?? {}),
+    repos: owned,
+    repo_code: "Your code is git: clone each repo (the Clone button on its page) to take every file and its history.",
+    collaborating_on: await all(env, "SELECT owner, repo FROM collaborators WHERE name = ?", handle),
+    collections: await Promise.all((await all(env, "SELECT id, title FROM playlists WHERE owner = ?", handle)).map(async (p: any) =>
+      ({ ...p, tracks: await all(env, "SELECT owner, repo, path, from_line, to_line, note FROM tracks WHERE playlist = ?", p.id) }))),
+    shares: await all(env, "SELECT * FROM shares WHERE by = ?", handle),
+    branches: await all(env, "SELECT owner, repo, name, status, created_at, merged_at FROM branches WHERE by = ?", handle),
+    cuts: await all(env, "SELECT * FROM cuts WHERE by = ?", handle),
+    deploys: await all(env, "SELECT owner, repo, stage, trigger, status, commit_hash, url, at FROM deploys WHERE by = ?", handle),
+    agent_runs: await all(env, "SELECT r.owner, r.repo, r.path, r.harness, r.task, r.model, r.status, r.started FROM agent_runs r JOIN repos o ON o.owner = r.owner AND o.name = r.repo WHERE o.owner = ?", handle),
+    api_tokens: await all(env, "SELECT label, scope, last4, created_at, expires_at, last_used_at FROM api_tokens WHERE name = ? AND grant_id IS NULL", handle),
+    connected_apps: await all(env, "SELECT client_name, scope, created_at, last_used_at FROM oauth_grants WHERE name = ?", handle),
+  };
+}
+
+/** Bury `handle`: its repos (rows, file DOs, git), its rows everywhere, and its sign-in. */
+export async function eraseUser(env: Env, handle: string) {
+  const u = await authUser(env, handle);
+  for (const r of await all(env, "SELECT name FROM repos WHERE owner = ?", handle)) await evict(env, handle, (r as { name: string }).name);
+  const by = (sql: string, ...args: unknown[]) => env.DB.prepare(sql).bind(...args);
+  await env.DB.batch([
+    by("DELETE FROM tracks WHERE playlist IN (SELECT id FROM playlists WHERE owner = ?)", handle),
+    by("DELETE FROM playlists WHERE owner = ?", handle),
+    by("DELETE FROM collaborators WHERE name = ?", handle),
+    by("DELETE FROM shares WHERE by = ?", handle),
+    by("DELETE FROM api_tokens WHERE name = ?", handle),
+    by("DELETE FROM oauth_grants WHERE name = ?", handle),
+    by("DELETE FROM oauth_requests WHERE name = ?", handle),
+    by("DELETE FROM limit_jobs WHERE user = ?", handle),
+    by("DELETE FROM users WHERE name = ?", handle),
+    // Retired, not freed: the handle is still on lines in other people's repos.
+    // handle_grants is what makes a handle unclaimable; no inbox is called this.
+    by("INSERT OR REPLACE INTO handle_grants (handle, email) VALUES (?, ?)", handle, `retired:${handle}`),
+  ]);
+  if (!u) return;
+  await env.DB.batch([
+    by(`DELETE FROM session WHERE "userId" = ?`, u.id),
+    by(`DELETE FROM account WHERE "userId" = ?`, u.id),
+    // Pending email links: a verification is keyed by the address, a reset carries the user's id.
+    by(`DELETE FROM verification WHERE identifier = ? OR value = ?`, u.email, u.id),
+    by("DELETE FROM handle_grants WHERE email = ?", u.email.toLowerCase()),
+    by(`DELETE FROM "user" WHERE id = ?`, u.id),
+  ]);
+}
+
+/** GET /api/me/export and DELETE /api/me. `person` is false for a token or a hosted agent. */
+export async function privacyRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null, person: boolean): Promise<Response | null> {
+  if (p[1] !== "me") return null;
+  const exporting = p[2] === "export" && !p[3] && req.method === "GET";
+  const erasing = !p[2] && req.method === "DELETE";
+  if (!exporting && !erasing) return null;
+  if (!user) return json({ error: "sign in first" }, 401);
+  if (!person) return json({ error: "only you can do this, signed in on the site: not a token, an app or an agent" }, 403);
+  if (exporting) {
+    return json(await exportFor(env, user), 200, { "content-disposition": `attachment; filename="codesplitters-${user}.json"`, "cache-control": "no-store" });
+  }
+  if (url.searchParams.get("confirm") !== user) return json({ error: `to delete your account, confirm with your handle: ?confirm=${user}` }, 400);
+  await eraseUser(env, user);
+  // Alias mode's cookie, and Better Auth's (its __Secure- twin is cleared the same way on https).
+  const gone = ["cs_user", "better-auth.session_token", "better-auth.session_data", "__Secure-better-auth.session_token", "__Secure-better-auth.session_data"];
+  const res = json({ deleted: user });
+  for (const c of gone) res.headers.append("set-cookie", `${c}=; Path=/; Max-Age=0; SameSite=Lax${c.startsWith("__Secure-") ? "; Secure" : ""}`);
+  return res;
+}
+
+/**
+ * Hourly: sessions (and their IP and browser) and email links that have run out.
+ * Better Auth keeps its dates as ISO text in D1 and as numbers elsewhere, so match either.
+ */
+export async function sweepSessions(env: Env, now = Date.now()) {
+  const expired = `(typeof("expiresAt") IN ('integer', 'real') AND "expiresAt" < ?1) OR (typeof("expiresAt") = 'text' AND "expiresAt" < ?2)`;
+  await env.DB.batch(["session", "verification"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE ${expired}`).bind(now, new Date(now).toISOString())))
+    .catch((e: unknown) => console.error("codeSplitters: session sweep failed", String((e as Error)?.message ?? e)));
+}

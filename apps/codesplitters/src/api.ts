@@ -43,6 +43,8 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/handle", body: "{name}", who: SIGNED_IN, does: "claim your handle: once, six or more characters, for good" },
       { method: "GET", path: "/api/me", who: SIGNED_IN, does: "your user row" },
       { method: "PUT", path: "/api/me", body: "{bio, theme_html}", who: SIGNED_IN, does: "your profile's text and HTML/CSS" },
+      { method: "GET", path: "/api/me/export", who: SIGNED_IN, does: "everything here about you, as one JSON download (cookie only, never a token or agent)" },
+      { method: "DELETE", path: "/api/me?confirm=:handle", who: SIGNED_IN, does: "delete your account, your repos and everything of them; your handle is retired (cookie only)" },
       { method: "GET", path: "/api/users/:name", does: "a profile: {user, repos you may see, playlists}" },
       { method: "GET", path: "/api/tokens", who: SIGNED_IN, does: "your personal API tokens, without their secrets (cookie only, never a token)" },
       { method: "POST", path: "/api/tokens", body: "{label, scope: \"read\" | \"write\", days?}", who: SIGNED_IN, does: "a personal API token, 1 to 365 days (30 by default), sent as Authorization: Bearer cst_…; its secret is shown this once (cookie only)" },

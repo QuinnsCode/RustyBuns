@@ -12,9 +12,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>codeSplitters</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="/fonts/geist.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 <style>
   /* GitHub's shape in black and white, written like a staff engineer's blog:
@@ -537,6 +535,18 @@
   .about { max-width: 720px; padding-top: 40px; } .about h1 { font: 600 34px/1.05 var(--sans); letter-spacing: -0.04em; margin: 10px 0 18px; } .about h1 em { font-style: normal; color: var(--accent); }
   .about h2 { font: 600 18px var(--sans); letter-spacing: -0.02em; margin: 30px 0 6px; } .about p { color: #333; margin: 0 0 12px; font-size: 15px; }
   .about .quiet { color: var(--faint); font-size: 12px; margin-top: 36px; }
+  /* Privacy: the field report. Four finds up top, then the strata table. */
+  .privacy .lede { font-size: 16px; color: var(--fg); } .privacy ul { margin: 0 0 12px; padding-left: 20px; color: #333; font-size: 15px; } .privacy li { margin: 0 0 6px; }
+  .privacy .tldr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin: 24px 0 8px; }
+  .privacy .tldr > div { background: var(--canvas); padding: 14px 16px; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 13px; }
+  .privacy .tldr [data-lucide], .privacy .tldr svg { grid-row: span 2; color: var(--accent); margin-top: 3px; } .privacy .tldr span { color: var(--muted); }
+  .privacy .strata { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; margin: 10px 0 12px; }
+  .privacy table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 560px; }
+  .privacy th, .privacy td { text-align: left; vertical-align: top; padding: 9px 12px; border-top: 1px solid var(--border); }
+  .privacy thead th { border-top: 0; background: var(--canvas); color: var(--muted); font-weight: 500; font-size: 12px; } .privacy tbody th { font-weight: 600; white-space: nowrap; }
+  .privacy tbody tr:nth-child(odd) td, .privacy tbody tr:nth-child(odd) th { background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,.012) 3px 4px); }
+  .privacy #yourdata { margin: 12px 0 16px; }
+  @media (max-width: 560px) { .privacy .tldr { grid-template-columns: 1fr; } }
   .backrooms { min-height: calc(100vh - 49px); display: grid; place-items: center; text-align: center; background: repeating-linear-gradient(90deg, #f3edc9 0 46px, #ebe3b5 46px 48px); color: #4a4426; }
   .backrooms h1 { font: 600 34px var(--mono); letter-spacing: -0.02em; margin: 0 0 8px; } .backrooms p { margin: 0 0 16px; }
 
@@ -819,6 +829,7 @@ function signInDrawer(mode = "in") {
       <label class="field"><span>Password${up ? " · 8 or more characters" : ""}</span><input name="password" type="password" required minlength="8" autocomplete="${up ? "new-password" : "current-password"}"></label>
       <p class="formmsg" id="authmsg"></p>
       <button class="btn primary wide">${up ? "Create account" : "Sign in"}</button>
+      ${up ? `<p class="muted small" style="margin:8px 0 0">We keep only what it takes to run your account. <a href="#/privacy">What we keep, and why</a>.</p>` : ""}
     </form>
     ${!up && session.mail ? `<p class="muted small" style="margin:0"><a href="#" id="forgot">Forgot your password?</a></p>` : ""}`);
   $("#forgot")?.addEventListener("click", (e) => { e.preventDefault(); forgotDrawer($("#email").email.value); });
@@ -1457,6 +1468,81 @@ const views = {
     wireFoot();
   },
 
+  // The privacy policy, written up as a dig: what we found, why it's there, how to take it or bury it.
+  // Keep it true to src/privacy.ts (the export and the delete) and to what the app really stores.
+  privacy() {
+    ctx = { view: "privacy" };
+    const mail = session.privacy;
+    const contact = mail ? `<a href="mailto:${esc(mail)}">${esc(mail)}</a>` : "the export and delete buttons below, which work without asking anyone";
+    const row = (what, items, why, kept) => `<tr><th>${what}</th><td>${items}</td><td>${why}</td><td>${kept}</td></tr>`;
+    app.innerHTML = `<div class="wrap about privacy">
+      <div class="label">privacy · field report</div>
+      <h1>We excavated our own site for your <em>personal data</em>.</h1>
+      <p class="lede">Here's everything we dug up, what each find is for, and how to take it home or bury it. We brushed every layer. The short version: we keep what it takes to run a code host, and not one shard more.</p>
+      <div class="tldr">
+        <div>${icon("shovel")}<b>We keep the minimum.</b><span>Your account, your code, and enough to keep you signed in.</span></div>
+        <div>${icon("eye-off")}<b>Nobody's watching.</b><span>No analytics, no ad pixels, no trackers, no fingerprinting.</span></div>
+        <div>${icon("hand-coins")}<b>Not for sale.</b><span>We don't sell or rent your data, or train AI on your code.</span></div>
+        <div>${icon("download")}<b>It's yours.</b><span>Download all of it, or delete your account, any time, from your profile.</span></div>
+      </div>
+
+      <h2>The dig site</h2>
+      <p>codeSplitters is a code host run by <b>QNTBR</b>, who is the controller of your data under the GDPR and UK GDPR. Questions, requests or complaints: ${contact}. We answer within a month, usually much sooner.</p>
+
+      <h2>What we found, layer by layer</h2>
+      <div class="strata"><table>
+        <thead><tr><th>Layer</th><th>What's in it</th><th>Why</th><th>How long</th></tr></thead>
+        <tbody>
+        ${row("Account", "Your email, name and avatar (from GitHub or Google, if you sign in with them), and your password as a one-way hash", "Signing you in, and the one email you asked for (verify, reset). No newsletters, ever.", "Until you delete your account")}
+        ${row("Handle and page", "Your @handle, your bio and your page's HTML and CSS", "Your public profile", "Until you delete your account")}
+        ${row("Your code", "Repos, files, every line's history with the handle that wrote it, branches, collections, shares and deploy logs", "That's the product. Public repos are public, to everyone.", "Until you delete it or your account")}
+        ${row("Sessions", "The IP address and browser of each signed-in session", "Keeping you signed in, and spotting a stolen session", "Until the session ends; swept every hour after")}
+        ${row("Linked GitHub", "Your GitHub account id and its access token, encrypted at rest", "Forking the repos you choose", "Until you unlink it or delete your account")}
+        ${row("Tokens and apps", "API token labels and last four characters, apps you connected, and when each was last used. The secrets are stored only as hashes.", "Letting your scripts, agents and apps act as you", "Until they expire or you revoke them")}
+        ${row("Agent runs", "The task you gave an agent, the model and a short log", "Showing you what your agent did", "With the repo")}
+        ${row("Rate limits", "Your IP address, counted against sign-in and sign-up attempts", "Keeping bots out", "An hour; a blocked attempt is noted for 7 days")}
+        </tbody></table></div>
+
+      <h2>Trenches that came up empty</h2>
+      <p>We dug where the usual stuff hides and found nothing: no analytics, no advertising, no third-party cookies, no tracking pixels, no session replays, no data brokers. Our fonts are served from our own server, so Google doesn't hear about your visit either. We don't use your code or your data to train AI models, ours or anyone's.</p>
+
+      <h2>Cookies: one jar, no biscuits for anyone else</h2>
+      <p>The only cookies here keep you signed in: <code>better-auth.session_token</code> (and a short-lived <code>session_data</code> copy that saves a database trip), or <code>cs_user</code> on the desktop app. They're strictly necessary, so there's no banner to click through; there's nothing optional to say no to. The site also remembers a few layout choices, like how wide you like the sidebar, in your browser's local storage. That never leaves your device.</p>
+
+      <h2>Who else handles a piece</h2>
+      <p>Cloudflare processes your data for us under its data processing addendum. GitHub, Google and the AI providers only get what you choose to send them, under their own terms. Some of these are in the US; transfers rely on the EU-US Data Privacy Framework and the EU's standard contractual clauses.</p>
+      <ul>
+        <li><b>Cloudflare</b> hosts everything: the site, the database, your files, git storage and our account email. <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Their policy</a>.</li>
+        <li><b>GitHub</b> and <b>Google</b>, only if you sign in with them, and GitHub when you fork a repo from it.</li>
+        <li><b>AI model providers</b> (Anthropic, OpenAI, Google and others), only when you start a hosted agent: the file it edits and your task go to the model behind the harness you picked.</li>
+        <li><b>jsDelivr</b>, the public CDN our icons and the game's 3D engine load from, sees your IP address when your browser fetches them.</li>
+      </ul>
+
+      <h2>Why we're allowed to</h2>
+      <p>Running your account and your repos is the service you signed up for (performing our contract with you). Session records, rate limits and security logs are in our legitimate interest in keeping the site safe. Where we ever need your consent, we'll ask first, plainly, and you can take it back.</p>
+
+      <h2>Your rights, and the buttons for them</h2>
+      <p>You can see, download, correct and delete your data, object to or restrict how we use it, and take it to another service. Most of that doesn't need us at all:</p>
+      <ul>
+        <li><b>Take it home.</b> Download everything we hold about you as one JSON file. Your code is git, so clone it too.</li>
+        <li><b>Fix it.</b> Edit your page and bio on your profile.</li>
+        <li><b>Bury it.</b> Delete your account: your repos, files, collections, tokens, sessions and sign-in go for good.</li>
+      </ul>
+      ${me() ? dataBox() : `<p class="muted">Sign in and these buttons appear here and on your profile.</p>`}
+      <p>You can also complain to your data protection authority. We'd love the chance to fix it first.</p>
+
+      <h2>What a deletion leaves behind</h2>
+      <p>Lines and branches you wrote in other people's repos stay there under your handle, the way commits stay in git, because they're part of someone else's work. Your handle is retired so nobody can pick it up and pass as you. Copies someone already cloned are theirs. Our database's point-in-time backups roll off within 30 days.</p>
+
+      <h2>Small print, large font</h2>
+      <p>codeSplitters isn't meant for anyone under 16. If this page changes in a way that matters, we'll say so on the site before it applies. Last carbon-dated <b>10 October 2026</b>.</p>
+      <p class="quiet">No artifacts were harmed in the making of this report.</p>
+    </div>${siteFoot()}`;
+    wireFoot();
+    wireData();
+    icons();
+  },
+
   // Not linked from anywhere: #/backrooms (or #/noclip).
   backrooms() {
     ctx = { view: "backrooms" };
@@ -1491,6 +1577,7 @@ const views = {
         <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
         ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("plug")}<b>Connect your AI</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
+        ${mine ? dataBox() : ""}
       </aside></div></div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
@@ -1498,7 +1585,7 @@ const views = {
     wireDig();
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
-    if (mine) wireTokens();
+    if (mine) { wireTokens(); wireData(); }
     icons();
   },
   // #/me: your own page, where signing in lands (or home, signed out).
@@ -2735,11 +2822,30 @@ function flapBoard(el) {
   stopBoard = () => { clearInterval(tick); timers.forEach(clearTimeout); timers.clear(); io.disconnect(); stopBoard = () => {}; };
 }
 
+// Your data (privacy.ts): download all of it, or delete your account once your handle is typed back.
+// On your profile and on #/privacy.
+const dataBox = () => `<div class="box" id="yourdata"><div class="bar">${icon("archive")}<b>Your data</b><a class="muted" style="margin-left:auto;font-size:12px" href="#/privacy">privacy</a></div><div class="body" style="display:grid;gap:10px;font-size:13px">
+  <div><a class="btn" href="/api/me/export" download>${icon("download")}Download everything</a> <span class="muted" style="font-size:12px">one JSON file; clone your repos for the code</span></div>
+  <details><summary class="muted" style="cursor:pointer;font-size:12px">Delete my account</summary><form id="delme" style="display:grid;gap:6px;margin-top:8px">
+    <span class="muted" style="font-size:12px">Gone for good: your repos (files, branches, git), collections, shares, tokens, connected apps, sessions and sign-in. Lines you wrote in other people's repos stay under @${esc(me())}, which is retired.</span>
+    <input name="name" placeholder="type ${esc(me())} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete @${esc(me())} for good</button></div></form></details>
+</div></div>`;
+function wireData() {
+  $("#delme")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const typed = e.target.name.value.trim();
+    if (typed !== me()) return toast(`Type ${me()} to delete your account`);
+    try { await api(`/me?confirm=${encodeURIComponent(typed)}`, undefined, "DELETE"); }
+    catch (err) { return toast(err.message); }
+    await refreshSession(); header(); toast("Account deleted. Rest in pieces."); location.hash = "#/";
+  });
+}
+
 // The site footer: our links, who made it, and a year that's always this year.
 // Clicking the © three times shows how far back this all really goes.
 function siteFoot() {
   return `<footer class="site-foot"><div class="wrap">
-    <nav><a href="#/">Home</a><a href="#/about">About</a><a href="/features.html">Features</a><a href="/play.html#l/mitt">Play</a>
+    <nav><a href="#/">Home</a><a href="#/about">About</a><a href="/features.html">Features</a><a href="/play.html#l/mitt">Play</a><a href="#/privacy">Privacy</a>
       <a href="https://github.com/QuinnsCode/RustyBuns/tree/main/apps/codesplitters" rel="noopener">Source on GitHub</a><a href="https://github.com/QuinnsCode/RustyBuns" rel="noopener">Rusty Buns</a></nav>
     <span class="grow"></span>
     <span class="by">created by <b>QNTBR</b> · <span class="yr" id="yr">© ${new Date().getFullYear()}</span></span>
@@ -3038,6 +3144,7 @@ async function commands() {
   for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
   add("Anywhere", "info", "About codeSplitters", "", () => (location.hash = "#/about"));
+  add("Anywhere", "shield-check", "Privacy: what we keep, and your data", "", () => (location.hash = "#/privacy"));
   add("Anywhere", "book-open", "API reference", "GET /api", () => (location.href = "/reference"));
   add("Anywhere", "plug", "Connect your AI (MCP)", "", () => (location.href = "/mcp"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
