@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { CSP, headersFile } from "../src/security.ts";
+import { createHash } from "node:crypto";
+import { CSP, csp, headersFile, inlineScriptHashes, secured } from "../src/security.ts";
 
 // End to end (password hashes, in-process D1), like invites.test.ts.
 setDefaultTimeout(20_000);
@@ -19,12 +20,27 @@ describe("security headers", () => {
       expect(res.headers.get("x-content-type-options")).toBe("nosniff");
       expect(res.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
       expect(res.headers.get("strict-transport-security")).toMatch(/^max-age=\d+/);
-      expect(res.headers.get("content-security-policy-report-only")).toBe(CSP);
+      expect(res.headers.get("content-security-policy")).toBe(CSP);
+      expect(res.headers.has("content-security-policy-report-only")).toBe(false);
     }
     expect(CSP).toContain("frame-ancestors 'none'");
+    expect(CSP).toMatch(/script-src 'self' https:\/\/challenges\.cloudflare\.com;/);
     expect(headersFile()).toStartWith("/*\n");
     expect(headersFile()).toContain(`  x-frame-options: DENY\n`);
-    expect(headersFile()).toContain(`  content-security-policy-report-only: ${CSP}\n`);
+    expect(headersFile(["sha256-abc="])).toContain(`  content-security-policy: ${csp(["sha256-abc="])}\n`);
+    expect(csp(["sha256-abc="])).toContain("script-src 'self' 'sha256-abc=' https://challenges.cloudflare.com;");
+  });
+
+  test("the OAuth consent page keeps its own, stricter CSP", async () => {
+    const res = secured(new Response("", { headers: { "content-security-policy": "default-src 'none'" } }));
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'");
+    expect(res.headers.get("x-frame-options")).toBe("DENY");
+  });
+
+  test("inlineScriptHashes hashes inline scripts and importmaps, not ones with a src", () => {
+    const sha = (s: string) => `sha256-${createHash("sha256").update(s).digest("base64")}`;
+    const html = `<script src="/a.js"></script><script type="importmap">{"imports":{}}</script>\n<script>\nlet x = 1;\n</script>`;
+    expect(inlineScriptHashes(html)).toEqual([sha(`{"imports":{}}`), sha("\nlet x = 1;\n")]);
   });
 });
 
