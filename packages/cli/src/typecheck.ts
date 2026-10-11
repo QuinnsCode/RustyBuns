@@ -1,6 +1,6 @@
 // Type checking for `plan` (the generated stack) and `build desktop --check` (the app).
 // Three checkers, fastest first: Bun's built-in `bun check` (Bun >= 1.4.3, canaries
-// included: no stable release has it yet), tsc-rs
+// included), tsc-rs
 // (Rust port of tsc 7, with Effect's diagnostics built in), and plain tsc.
 // `bun check` ignores tsconfig "plugins", so a project that asks for
 // @effect/language-service gets tsc-rs when it is installed.
@@ -51,7 +51,7 @@ export function pickChecker(want: CheckerName | "auto", tsconfig: string | null)
     const c = find(want);
     if (c) return c;
     throw new Error(want === "bun"
-      ? `bun check needs Bun >= ${BUN_CHECK_MIN} (this is ${Bun.version}). Until 1.4.3 ships, \`bun upgrade --canary\` has it, or point RB_BUN at a newer bun.`
+      ? `bun check needs Bun >= ${BUN_CHECK_MIN} (this is ${Bun.version}). Run \`bun upgrade\`, or point RB_BUN at a newer bun.`
       : `${want} is not installed here. Add it: bun add -d ${want === "tsc" ? "typescript" : want}`);
   }
   if (tsconfig && wantsEffectDiagnostics(tsconfig)) { const rs = find("tsc-rs"); if (rs) return rs; }

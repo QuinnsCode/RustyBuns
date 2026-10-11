@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-        with: { bun-version: "1.4.2" }
+        with: { bun-version: "1.4.3" }
       - id: p
         run: |
           apps="${{ inputs.apps }}"; version="${{ inputs.version }}"; channel="${{ inputs.channel || 'experimental' }}"
@@ -73,7 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-        with: { bun-version: "1.4.2" }
+        with: { bun-version: "1.4.3" }
       - if: matrix.prep
         uses: dtolnay/rust-toolchain@stable
         with: { targets: wasm32-unknown-unknown }
@@ -110,7 +110,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-        with: { bun-version: "1.4.2" }
+        with: { bun-version: "1.4.3" }
       - uses: actions/download-artifact@v4
         with: { path: bins, pattern: "${{ matrix.app }}-*", merge-multiple: true }
       - name: Every target built?

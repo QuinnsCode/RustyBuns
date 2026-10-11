@@ -17,7 +17,7 @@ export const APPS: Record<string, App> = {
   "agent-office":      { test: "bun test test", build: "bun scripts/rustybunsify.ts compile --all" },
   "auto-rig":          { test: "bun test test", prep: "bun run build:native", perOs: true },
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true },
-  "codesplitters":     { test: "bun test test" },
+  "codesplitters":     { test: "bun test --parallel test" },
   "hippo-tycoon":      { test: "bun test test", prep: "bun run build:native", check: true },
   "motion-midi":       { test: "bun test test", prep: "bun run build:native", perOs: true },
   "park-hide-seek":    { test: "bun test" },

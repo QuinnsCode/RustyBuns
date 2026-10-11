@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: oven-sh/setup-bun@v2
-        with: { bun-version: "1.4.2" }
+        with: { bun-version: "1.4.3" }
       - id: p
         # A manual run has no PR base: diff against the root commit, so every app runs.
         run: bun scripts/ci-apps.ts test "${{ github.event.pull_request.base.sha || '$(git rev-list --max-parents=0 HEAD)' }}" >> "$GITHUB_OUTPUT"
@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-        with: { bun-version: "1.4.2" }
+        with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
       - run: bun test packages
 
@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-        with: { bun-version: "1.4.2" }
+        with: { bun-version: "1.4.3" }
       - if: matrix.prep
         uses: dtolnay/rust-toolchain@stable
         with: { targets: wasm32-unknown-unknown }

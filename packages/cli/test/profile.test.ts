@@ -44,7 +44,7 @@ test("checker commands and the Effect-plugin preference", () => {
   // An explicit checker that is not there is an error with the fix in it.
   const prev = process.env.RB_BUN; delete process.env.RB_BUN;
   try {
-    if (!hasBunCheck(Bun.version)) expect(() => pickChecker("bun", null)).toThrow("bun upgrade --canary");
+    if (!hasBunCheck(Bun.version)) expect(() => pickChecker("bun", null)).toThrow("bun upgrade");
   } finally { if (prev !== undefined) process.env.RB_BUN = prev; }
 });
 
