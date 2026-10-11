@@ -84,7 +84,12 @@ async function cloudflare(p: Extract<Plan, { via: "cloudflare" }>) {
   const origin = `http://127.0.0.1:${p.port}`;
   const cmd = p.tunnel ? [cf, "tunnel", "run", "--url", origin, p.tunnel] : [cf, "tunnel", "--url", origin];
   const child = Bun.spawn(cmd, { stdout: "inherit", stderr: "pipe" });
-  if (p.hostname) ready(liteUrl(`https://${p.hostname}`));
+  if (p.hostname) {
+    ready(liteUrl(`https://${p.hostname}`));
+    // the office answers only to names it knows (live/hosts.ts): ask it whether it knows this one
+    const asked = await fetch(`${origin}/`, { headers: { host: p.hostname } }).catch(() => undefined);
+    if (asked?.status === 421) console.log(`   ⚠️  The office doesn't answer to ${p.hostname} yet: restart it with AGENT_OFFICE_ALLOWED_HOSTS=${p.hostname}`);
+  }
   let shown = !!p.hostname, log = "";
   const decoder = new TextDecoder();
   const reader = child.stderr.getReader();

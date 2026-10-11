@@ -54,6 +54,10 @@ cloudflared tunnel route dns office office.example.com
 bun run office:phone -- --cloudflare --tunnel office --hostname office.example.com
 ```
 
+The office answers only to names it knows, against DNS rebinding ([`live/hosts.ts`](live/hosts.ts)): localhost, IP
+addresses, this Mac's name, `*.ts.net` and `*.trycloudflare.com`. Start it with
+`AGENT_OFFICE_ALLOWED_HOSTS=office.example.com` for a named tunnel's hostname; `office:phone` warns when it's missing.
+
 **Passwords.** The tunnel only carries traffic. The office's own sign-in still guards every page and socket. The
 link opens `/login?next=/lite`; sign in with the office password once and the session cookie lasts on the phone. Better,
 make yourself an account in **☰ → 🔑 Accounts**, then turn the shared password off (upstream's
@@ -73,7 +77,7 @@ Nothing is forked. `scripts/rustybunsify.ts` downloads a pinned release tarball 
 |---|---|
 | `@lydell/node-pty` → [`shim/node-pty`](shim/node-pty/index.js) | The native addon spawns under Bun but its shell is hung up at once. ~80 lines over `Bun.spawn({ terminal })` replace it: no node-gyp, no prebuilds, and it survives `--compile`. |
 | `@xterm/*` bundle their CJS `main` | Bun's bundler prefers `module`, whose ESM build has no default export. |
-| `http/static.js` reads `$AGENT_OFFICE_PUBLIC_DIR` | The 3D client is embedded and unpacked once to `~/.cache/agent-office-rustybuns/<tag>-<content hash>/`. |
+| `http/static.js` reads `$AGENT_OFFICE_PUBLIC_DIR` | The 3D client is embedded and unpacked once to `~/.cache/agent-office-rustybuns/<tag>-<content hash>/`, and checked against that hash every start: an edited unpack is replaced. |
 | `ptys.js` falls back to `$HOME` as the pty host's cwd | Inside a binary the code dir is the virtual `/$bunfs`. |
 | `workers/process.js` points `office-workers` / `office-queue` at the binary | There's no `bin/` on disk to find. |
 | [`live/`](live/github.ts) hooks each floor's GitHub boards | Upstream lists issues and PRs every 90s. A worker's own `gh pr merge`, `gh issue close` or `git push` now refreshes the boards within a couple of seconds, and while a floor is busy the office asks GitHub every 10s whether anything changed. That check is a conditional request, so an unchanged answer is a free 304, and the full `gh` lists only run on a change. Open PRs with CI running are watched through their check suites. With `AGENT_OFFICE_WEBHOOKS=1` (needs `gh extension install cli/gh-webhook` and admin on the repo), `gh webhook forward` pushes the repo's issue, PR, review and CI events to a localhost port instead, so changes from anyone, on idle floors too, show within about a second, and the 10s check stands down. GitHub allows one forwarder per repo; if it can't start or drops, the check carries on and it tries again in 10 min. |

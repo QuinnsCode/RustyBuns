@@ -321,7 +321,9 @@ desktop: { mode: "spa", guests: { max: 8 } }      // closed until the UI opens i
 The host's page opens and closes the world at runtime, so there is no rebuild between "single player" and "host a world":
 
 ```ts
-// "Host a world": listen on every interface (the port stays the same, so this page keeps working) and set a passphrase
+// "Host a world": listen on every interface (the port stays the same, so this page keeps working) and set a passphrase.
+// Off loopback it takes at least 12 characters (shorter is a 400 weak_passphrase that changes nothing);
+// join: true makes one up and returns it once, as guests.join
 await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ listen: { hostname: "0.0.0.0" }, join: "orange-kettle" }) });
 // "Stop hosting"
 await fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) });

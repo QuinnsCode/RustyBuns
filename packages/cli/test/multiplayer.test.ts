@@ -63,26 +63,36 @@ test("generated host: host identity by cookie, guests by passphrase with their o
     expect("hello" in h && h.hello).toMatchObject({ id: "local", principal: "host", slug: "local" });
 
     // closed to guests until the host page opens it; then 0.0.0.0 keeps the port
-    expect(await connect(`${url}/ws?join=pw&uid=g1&name=Guest&v=v1`)).toEqual({ closed: true });
-    const opened = await (await fetch(`${url}/__rb/host`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ listen: { hostname: "0.0.0.0" }, join: "pw" }) })).json() as any;
+    expect(await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=g1&name=Guest&v=v1`)).toEqual({ closed: true });
+    const host = (body: unknown) => fetch(`${url}/__rb/host`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) });
+    // off loopback a short passphrase changes nothing; join: true makes one up
+    const weak = await host({ listen: { hostname: "0.0.0.0" }, join: "short" });
+    expect(weak.status).toBe(400);
+    expect(((await weak.json()) as any).error).toBe("weak_passphrase");
+    expect((await info()).listen.hostname).toBe("127.0.0.1");
+    expect((await info()).guests.open).toBe(false);
+    const made = await (await host({ join: true, listen: { hostname: "0.0.0.0" } })).json() as any;
+    expect(made.guests.join).toMatch(/^[a-z2-9]{5}-[a-z2-9]{5}-[a-z2-9]{5}$/);
+    expect((await host({ join: "pw" })).status).toBe(400);          // still off loopback
+    const opened = await (await host({ listen: { hostname: "0.0.0.0" }, join: "pw" + "x".repeat(10) })).json() as any;
     expect(opened.listen).toEqual({ hostname: "0.0.0.0", port: Number(new URL(url).port) });
     expect(opened.guests.open).toBe(true);
 
-    const g1 = await connect(`${url}/ws?join=pw&uid=g1&name=Guest%20One&v=v1`);
+    const g1 = await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=g1&name=Guest%20One&v=v1`);
     expect("hello" in g1 && g1.hello).toEqual({ id: "g1", name: "Guest One", principal: "guest", slug: "local" });
     expect((await info()).guests.connected).toBe(1);
 
     // rejections happen before the upgrade, with a reason
     const status = async (q: string) => (await fetch(`${url}/ws?${q}`, { headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "x", "sec-websocket-version": "13" } })).status;
-    expect(await status("join=pw&uid=g2&v=v0")).toBe(409);          // version mismatch
-    expect(await status("join=pw&uid=g2")).toBe(409);               // version missing
-    expect(await status("join=pw&uid=local&v=v1")).toBe(400);       // the host's id
-    expect(await status("join=pw&uid=bad%20id&v=v1")).toBe(400);
+    expect(await status("join=pwxxxxxxxxxx&uid=g2&v=v0")).toBe(409);          // version mismatch
+    expect(await status("join=pwxxxxxxxxxx&uid=g2")).toBe(409);               // version missing
+    expect(await status("join=pwxxxxxxxxxx&uid=local&v=v1")).toBe(400);       // the host's id
+    expect(await status("join=pwxxxxxxxxxx&uid=bad%20id&v=v1")).toBe(400);
     expect(await status("join=nope&uid=g2&v=v1")).toBe(403);        // wrong passphrase
     // the rest of the host stays closed to guests
-    expect((await fetch(`${url}/__rb/info?join=pw`)).status).toBe(403);
-    expect((await fetch(`${url}/__rb/action?join=pw`, { method: "POST", body: "{}" })).status).toBe(403);
-    expect((await fetch(`${url}/?join=pw`)).status).toBe(403);
+    expect((await fetch(`${url}/__rb/info?join=pwxxxxxxxxxx`)).status).toBe(403);
+    expect((await fetch(`${url}/__rb/action?join=pwxxxxxxxxxx`, { method: "POST", body: "{}" })).status).toBe(403);
+    expect((await fetch(`${url}/?join=pwxxxxxxxxxx`)).status).toBe(403);
     // the host still runs actions (the request body survives the principal rewrite)
     expect(await (await fetch(`${url}/__rb/action`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ module: "m", fn: "f", args: [] }) })).json()).toBe(42);
     // a client body is checked field by field: a wrong shape is a 400, and only own keys name an action
@@ -93,16 +103,16 @@ test("generated host: host identity by cookie, guests by passphrase with their o
     expect(await act(JSON.stringify({ module: "m", fn: "constructor", args: [] }))).toBe(404);
     expect((await fetch(`${url}/__rb/host`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: "42" })).status).toBe(200);
 
-    const g2 = await connect(`${url}/ws?join=pw&uid=g2&name=Two&v=v1`);
+    const g2 = await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=g2&name=Two&v=v1`);
     expect("hello" in g2).toBe(true);
-    expect(await status("join=pw&uid=g3&v=v1")).toBe(503);          // full (max 2)
+    expect(await status("join=pwxxxxxxxxxx&uid=g3&v=v1")).toBe(503);          // full (max 2)
     (g2 as any).ws.close();
     await Bun.sleep(50);
     expect((await info()).guests.connected).toBe(1);
 
     // stop hosting: closes to new guests, back to loopback; the live guest socket survives
     await fetch(`${url}/__rb/host`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) });
-    expect(await connect(`${url}/ws?join=pw&uid=g3&v=v1`)).toEqual({ closed: true });
+    expect(await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=g3&v=v1`)).toEqual({ closed: true });
     const echo = new Promise<string>((res) => ((g1 as any).ws.onmessage = (m: any) => res(String(m.data))));
     (g1 as any).ws.send("still");
     expect(await echo).toBe("echo:still");
@@ -119,19 +129,19 @@ test("generated host: --listen and --join at launch", async () => {
 });
 
 test("generated host: a guest the world closes frees exactly one slot", async () => {
-  const { p, url } = await launch({ RB_JOIN: "pw" }, ["--listen", "127.0.0.1:0"]);
+  const { p, url } = await launch({ RB_JOIN: "pwxxxxxxxxxx" }, ["--listen", "127.0.0.1:0"]);
   try {
-    const a = await connect(`${url}/ws?join=pw&uid=a&v=v1`), b = await connect(`${url}/ws?join=pw&uid=b&v=v1`);
+    const a = await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=a&v=v1`), b = await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=b&v=v1`);
     expect("hello" in a && "hello" in b).toBe(true);
     const closed = new Promise<{ code: number }>((res) => ((b as any).ws.onclose = (e: any) => res({ code: e.code })));
     (b as any).ws.send("bye");                        // the world closes b itself, with its own code
     expect((await closed).code).toBe(4000);           // and the code reaches the guest
     await Bun.sleep(50);
     // two more guests fit: a still holds one of the two slots. A double decrement would have let a third in.
-    const c = await connect(`${url}/ws?join=pw&uid=c&v=v1`);
+    const c = await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=c&v=v1`);
     expect("hello" in c).toBe(true);
     const status = async (q: string) => (await fetch(`${url}/ws?${q}`, { headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "x", "sec-websocket-version": "13" } })).status;
-    expect(await status("join=pw&uid=d&v=v1")).toBe(503);   // full: a and c
+    expect(await status("join=pwxxxxxxxxxx&uid=d&v=v1")).toBe(503);   // full: a and c
   } finally { p.kill(); }
 });
 
