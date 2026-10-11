@@ -16,6 +16,7 @@
 import { $ } from "bun";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 
@@ -35,7 +36,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -115,10 +116,15 @@ async function prepare(tag: string) {
   // 10. the PR agent's brief: follow up with workers once their pull requests merge (briefs.ts)
   pullsFollowUp();
 
-  // 11. the Druids Curse skin
+  // 11. a health bar of each PR's checks on the PR board (checks/), its tally from the list the board already fetches
+  writeFileSync(path.join(srv, "github.js"), checkTallyServer(readFileSync(path.join(srv, "github.js"), "utf8")));
+  prepend("github.js", SERVER_IMPORT);
+  patchAsk(checksBarClient);
+
+  // 12. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -171,7 +177,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"]]) {
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["checks/tally.ts", "rb-checks.js"]]) {
     const built = await Bun.build({ entrypoints: [path.join(root, entry!)], target: "bun" });
     if (!built.success) throw new AggregateError(built.logs, `${entry} failed to build`);
     await Bun.write(path.join(srv, out!), built.outputs[0]!);
@@ -186,6 +192,8 @@ async function buildPageScripts() {
   await buildPageScript("queue/index.ts", "rb-queue", ["index", "lite"]);
   // the boards' clock and its setting, where the boards are
   await buildPageScript("clock/index.ts", "rb-clock", ["index", "lite"]);
+  // the PR board's checks health bar
+  await buildPageScript("checks/index.ts", "rb-checks", ["index", "lite"]);
 }
 
 async function buildPageScript(entry: string, prefix: string, pages: string[]) {
@@ -224,10 +232,15 @@ function clockOnBoards() {
 function pullsFollowUp() {
   const shared = path.join(office, "dist/server/shared/prompts.js");
   writeFileSync(shared, pullsFollowUpServer(readFileSync(shared, "utf8")));
+  patchAsk(pullsFollowUpClient);
+}
+
+/** Patch the client chunk the boards and the prompt settings live in, then give it a name of its own. */
+function patchAsk(change: (js: string) => string) {
   const pub = path.join(office, "dist/public");
   const [ask, ...more] = [...new Bun.Glob("assets/ask-*.js").scanSync({ cwd: pub })];
   if (!ask || more.length) throw new Error(`Agent Office changed: expected one assets/ask-*.js, found ${more.length + (ask ? 1 : 0)}`);
-  writeFileSync(path.join(pub, ask), pullsFollowUpClient(readFileSync(path.join(pub, ask), "utf8")));
+  writeFileSync(path.join(pub, ask), change(readFileSync(path.join(pub, ask), "utf8")));
   rehash(pub, ask);
 }
 
