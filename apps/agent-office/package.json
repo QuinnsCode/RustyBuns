@@ -10,6 +10,7 @@
     "office:phone": "bun scripts/phone.ts",
     "desktop:build": "bun scripts/rustybunsify.ts compile --check",
     "desktop:build:all": "bun scripts/rustybunsify.ts compile --all --check",
+    "desktop:smoke": "bun scripts/smoke.ts",
     "test": "bun test test"
   },
   "devDependencies": {
