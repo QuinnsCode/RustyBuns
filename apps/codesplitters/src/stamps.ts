@@ -18,6 +18,9 @@ interface Line { id: string; by: string; private?: true }
 const fileLines = async (env: Env, owner: string, repo: string, path: string, crew: boolean) =>
   ((await (await toFile(env, owner, repo, path, "stamp", "file", { headers: { "x-codesplitters-crew": crew ? "1" : "0" } })).json()) as { lines: Line[] }).lines;
 
+/** Tell the pages that have the file open that its stamps changed (file-do.ts). */
+const stamped = (env: Env, owner: string, repo: string, path: string) => toFile(env, owner, repo, path, "stamp", "stamped", { method: "POST" });
+
 export async function stampRoutes(req: Request, env: Env, p: string[], url: URL, owner: string, repo: string, user: string | null, a: { read: boolean; write: boolean }): Promise<Response | null> {
   if (p[4] !== "stamps" || p[5]) return null;
   const q = req.method === "POST" ? ((await req.json().catch(() => ({}))) as Record<string, unknown>) : Object.fromEntries(url.searchParams);
@@ -51,6 +54,7 @@ export async function stampRoutes(req: Request, env: Env, p: string[], url: URL,
   if (req.method === "DELETE") {
     await env.DB.prepare("DELETE FROM stamps WHERE owner = ? AND repo = ? AND path = ? AND line = ? AND stamp = ? AND by = ?")
       .bind(owner, repo, path, String(q.line ?? ""), stamp, user).run();
+    await stamped(env, owner, repo, path);
     return json({ ok: true });
   }
 
@@ -67,6 +71,7 @@ export async function stampRoutes(req: Request, env: Env, p: string[], url: URL,
   const now = Date.now();
   await env.DB.batch(picked.map((l) => env.DB.prepare("INSERT OR IGNORE INTO stamps (owner, repo, path, line, stamp, by, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
     .bind(owner, repo, path, l.id, stamp, user, l.by, now)));
+  await stamped(env, owner, repo, path);
   return json({ stamp, lines: picked.map((l) => l.id) }, 201);
 }
 

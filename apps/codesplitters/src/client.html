@@ -2910,6 +2910,8 @@ const views = {
         return schedule();
       }
       if (msg.type === "commit") return drawCommits(await api(`${base}/commits${q}`));
+      // Someone stamped a line or took one off: fetch the stamps this reader may see.
+      if (msg.type === "stamps") return loadStamps();
       // Lines went private or public: the server says what this reader may see.
       if (msg.type === "private") {
         doc = await api(`${base}/file${q}`);

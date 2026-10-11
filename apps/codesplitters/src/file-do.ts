@@ -118,6 +118,12 @@ export class FileDurableObject {
       this.broadcast({ type: "private", lines, private: on });
       return json([...this.secret]);
     }
+    if (req.method === "POST" && route === "stamped") {
+      // A stamp went on or came off (stamps.ts). Just a ping, so a private line's
+      // stamps don't reach outside the crew: each page asks again for what it may see.
+      this.broadcast({ type: "stamps" });
+      return json({ ok: true });
+    }
     if (req.method === "GET" && route === "here") return json(this.here());
     if (req.method === "GET" && route === "claims") return json(this.live());
     if (req.method === "POST" && route === "claims") {

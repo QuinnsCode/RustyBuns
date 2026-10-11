@@ -43,6 +43,21 @@ describe("stamps", () => {
     expect((await stamps(null))[0]!.stamps).toEqual({ shovel: ["ana"] });
   });
 
+  test("a page with the file open hears that its stamps changed, and nothing of which lines", async () => {
+    const { call, send, lines } = await app();
+    const [one] = await lines();
+    const ws = ((await call("bo", "/api/repos/ana/pub/do/ws?path=a.ts", { headers: { upgrade: "websocket" } })) as any).webSocket, got: any[] = [];
+    ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+    const pings = async (n: number) => {
+      for (const end = performance.now() + 5_000; performance.now() < end;) { if (got.filter((m) => m.type === "stamps").length >= n) break; await Bun.sleep(5); }
+      return got.filter((m) => m.type === "stamps");
+    };
+    await send("ana", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "gem", lines: [one!.id] });
+    expect(await pings(1)).toEqual([{ type: "stamps" }]);
+    await send("ana", `/api/repos/ana/pub/stamps?path=a.ts&line=${one!.id}&stamp=gem`, undefined, "DELETE");
+    expect(await pings(2)).toHaveLength(2);
+  });
+
   test("signed out, a stamp that isn't one, or a line that isn't there, is refused", async () => {
     const { send } = await app();
     expect((await send(null, "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "+1", from: 1 })).status).toBe(401);
