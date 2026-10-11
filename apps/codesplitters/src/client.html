@@ -117,6 +117,12 @@
   .sec p { margin: 0 0 6px; } .sec .btn { margin: 2px 4px 2px 0; }
   .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
   .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent); } .sec .run .st.failed { color: var(--del-fg); }
+  .phone { max-width: 640px; margin: 0 auto; padding: 12px 0 40px; }
+  .phone h1 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0 14px 10px; font-size: 18px; font-weight: 400; }
+  .phone .sec { font-size: 14px; } .phone .sec .run { padding: 10px 0; }
+  .phone #m-agent { display: grid; gap: 8px; margin-bottom: 10px; }
+  .phone #m-agent :is(input, select, textarea) { font: inherit; font-size: 16px; padding: 8px; width: 100%; box-sizing: border-box; }
+  .phone .btn { min-height: 36px; }
   .sec .run pre { margin: 4px 0 0; max-height: 180px; overflow: auto; font: 400 11.5px/1.45 var(--mono); white-space: pre-wrap; color: var(--muted); }
   .ghwho { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 8px 10px; margin: 0 0 8px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--canvas); }
   .ghwho.on { border-color: var(--del-edge); background: var(--accent-soft); } .ghwho svg.lucide { margin-top: 2px; }
@@ -944,6 +950,14 @@ const deleteRepo = async (owner, repo, typed) => {
   toast(`Deleted ${owner}/${repo}`); location.hash = `#/u/${owner}`;
 };
 const sec = (ic, title, html) => `<section class="sec"><h3>${icon(ic)}${title}</h3>${html}</section>`;
+/** One coding agent's run: who, how it's going, its task, and its output. With file, which file it's on. */
+const agentRun = (x, file) => {
+  const result = x.status === "running" ? esc(x.log[x.log.length - 1] ?? "starting…")
+    : x.status === "failed" ? esc(x.error.split("\n")[0])
+    : (x.applied ? `${x.applied} line ops landed at r${x.rev}` : "no changes") + (x.runs > 1 ? ` after ${x.runs} runs` : "")
+      + (x.conflicts.length ? `; ${x.conflicts.length} edit${x.conflicts.length > 1 ? "s" : ""} kept someone else's version` : "");
+  return `<div class="run"><div class="row"><b>${esc(x.agent)}</b><span class="st ${x.status}">${x.status}</span></div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
+};
 const readmeOf = (tree) => tree.entries.find((e) => e.type === "file" && /^readme(\.|$)/i.test(e.name)) ?? tree.entries.find((e) => e.type === "file");
 function table(tree, href) {
   if (!tree.entries.length) return '<div class="body muted">Nothing unearthed yet.</div>';
@@ -1206,6 +1220,7 @@ const views = {
       ${visBadge(r.visibility, isOwner)}
       <span class="grow"></span>
       ${playButton(`r/${owner}/${repo}`)}
+      <a class="btn" href="#/m/${owner}/${repo}" title="this repo's agents and branches, laid out for a phone">${icon("smartphone")}Phone</a>
       ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. Agents join the same way.</span><div class="copyline"><input name="name" placeholder="agent-linter or a person's handle" required><button class="btn primary">Invite</button></div></form></div>` : ""}
       ${me() ? `<div class="pop"><button class="btn" id="limits" title="what this repo and you may do, and how close you are">${icon("gauge")}Limits</button><div class="panel" id="limits-panel" hidden style="width:380px;max-height:70vh;overflow:auto"><span class="muted">…</span></div></div>` : ""}
       ${r.clone ? `<div class="pop"><button class="btn primary" id="clone">${icon("code")}Clone</button><div class="panel" hidden><b>${icon("terminal")} Clone with git</b><span class="muted" style="font-size:13px">A real git remote in Cloudflare Artifacts. The token in it is read-only and lasts an hour.</span><div class="copyline"><input readonly value="${esc(r.clone)}"><button class="btn" id="clone-copy">${icon("copy")}</button></div>${r.crewClone ? `<b>${icon("lock")} The crew's remote</b><span class="muted" style="font-size:13px">Private lines are blank in the remote above. This one has their real text, for the crew only; previews and deploys clone it.</span><div class="copyline"><input readonly value="${esc(r.crewClone)}"><button class="btn" id="crew-clone-copy">${icon("copy")}</button></div>` : ""}</div></div>` : ""}
@@ -1641,6 +1656,46 @@ const views = {
     return `<span>${icon("git-branch")}${esc(r.branch ?? "main")}</span>${tree?.commit ? `<span>${icon("git-commit-horizontal")}${tree.commit.hash.slice(0, 7)}</span>` : ""}<span>${icon(r.visibility === "private" ? "lock" : "globe")}${r.visibility}</span>${extra}`;
   },
 
+  /** The repo on a phone: its coding agents (start one, see each one's task and how it's going) and its branches to review and merge. */
+  async m(owner, repo) {
+    const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=`).catch(() => ({ entries: [] }))]);
+    const isOwner = owner === me();
+    ctx = { view: "m", owner, repo, canWrite: r.canWrite, isOwner, visibility: r.visibility };
+    app.innerHTML = `<div class="phone">
+      <h1>${icon("smartphone")}<a href="#/u/${owner}">${esc(owner)}</a><span class="muted">/</span><b>${esc(repo)}</b><span class="grow"></span><a class="btn ghost" href="#/r/${owner}/${repo}" title="the full repo page">${icon("monitor")}Full view</a></h1>
+      ${sec("bot", "Agents", isOwner && r.canWrite ? `<form id="m-agent"><input name="path" list="m-files" placeholder="file, e.g. src/index.ts" autocomplete="off" autocapitalize="off" required><datalist id="m-files">${tree.entries.filter((e) => e.type === "file").map((e) => `<option value="${esc(e.path)}">`).join("")}</datalist><select name="harness"></select><textarea name="task" rows="3" placeholder="what should the agent do?" required></textarea><button class="btn primary">${icon("play")}Run</button><span class="muted" id="m-why" style="font-size:13px"></span></form><div id="m-runs"><span class="muted">…</span></div>`
+        : `<p class="muted">Only the repo's owner starts and sees its coding agents.</p>`)}
+      ${sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)}
+    </div>`;
+    icons();
+    views.wireBranches(owner, repo, r);
+    const f = $("#m-agent");
+    if (!f) return;
+    // Every run on the repo, polled while one is going; its lines land live on the file's page.
+    const poll = async () => {
+      clearTimeout(agentTimer);
+      const rs = await api(`/repos/${owner}/${repo}/agents`).catch(() => []);
+      const el = $("#m-runs");
+      if (!el) return;
+      el.innerHTML = rs.map((x) => agentRun(x, true)).join("") || '<span class="muted">No agents yet. Pick a file and give one a task.</span>';
+      icons();
+      if (rs.some((x) => x.status === "running")) agentTimer = setTimeout(poll, 2000);
+    };
+    poll();
+    const go = $("button.primary", f);
+    const av = await api("/agents").catch((e) => ({ available: false, why: e.message, harnesses: [], all: [] }));
+    f.harness.innerHTML = av.all.map((h) => `<option value="${h}"${av.harnesses.includes(h) ? "" : " disabled"}>${h}${av.harnesses.includes(h) ? "" : " (not installed)"}</option>`).join("");
+    if (av.harnesses.length) f.harness.value = av.harnesses[0];
+    else { $("#m-why").textContent = av.why || "None of claude, codex, pi or opencode is installed on this machine."; go.disabled = true; }
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault(); go.disabled = true;
+      // A hosted run answers only when it's done, so say so now and poll meanwhile.
+      toast(`agent-${f.harness.value} is on it`); setTimeout(poll, 500);
+      try { await api(`/repos/${owner}/${repo}/agents`, { path: f.path.value.trim(), harness: f.harness.value, task: f.task.value }); f.task.value = ""; }
+      catch (err) { toast(err.message); }
+      finally { go.disabled = false; poll(); }
+    });
+  },
   async r(owner, repo, dir = "") {
     const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(dir)}`)]);
     // Straight to the code: a repo opens on its README (or its first file).
@@ -1804,15 +1859,11 @@ const views = {
     if ($("#agent")) {
       // Runs are polled while one is going; the edits themselves arrive on the file's socket like anyone's.
       const runsEl = $("#agent-runs");
-      const result = (x) => x.status === "running" ? esc(x.log[x.log.length - 1] ?? "starting…")
-        : x.status === "failed" ? esc(x.error.split("\n")[0])
-        : (x.applied ? `${x.applied} line ops landed at r${x.rev}` : "no changes") + (x.runs > 1 ? ` after ${x.runs} runs` : "")
-          + (x.conflicts.length ? `; ${x.conflicts.length} edit${x.conflicts.length > 1 ? "s" : ""} kept someone else's version` : "");
       const pollAgents = async () => {
         clearTimeout(agentTimer);
         const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
         if (!runsEl.isConnected) return;
-        runsEl.innerHTML = rs.map((x) => `<div class="run"><div class="row"><b>${esc(x.agent)}</b><span class="st ${x.status}">${x.status}</span></div><span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result(x)}</span>${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`).join("")
+        runsEl.innerHTML = rs.map((x) => agentRun(x)).join("")
           || '<span class="muted">No agents on this file yet. Press Agent to give one a task.</span>';
         if (rs.some((x) => x.status === "running")) agentTimer = setTimeout(pollAgents, 1500);
       };
@@ -2422,6 +2473,7 @@ async function commands() {
       try { await api(`/repos/${c.owner}/${c.repo}/branches/${encodeURIComponent(name)}/merge`, {}); toast(`Merged ${name}`); } catch (e) { toast(`Not merged: ${e.message}`); }
       route();
     }, "branch name");
+    if (c.view !== "m") add("This repo", "smartphone", "Phone view: agents and branches", `GET /api/repos/${c.owner}/${c.repo}/agents`, () => (location.hash = `#/m/${c.owner}/${c.repo}`));
     if (u) add("This repo", "gauge", "Show this repo's limits", `GET /api/repos/${c.owner}/${c.repo}/limits`, () => { const b = $("#limits"); if (b) { b.click(); } });
     if (c.clone) add("This repo", "terminal", "Copy the git clone command", `GET /api/repos/${c.owner}/${c.repo}`, () => copy(c.clone, "Clone command copied"));
     add("This repo", "gamepad-2", "Play this repo's backrooms", `WS /api/game/r/${c.owner}/${c.repo}/ws`, () => (location.href = `/play.html#r/${c.owner}/${c.repo}`));
@@ -2514,7 +2566,7 @@ const fileArgs = (a) => ({ owner: a.owner || ctx.owner, repo: a.repo || ctx.repo
 const readTools = () => [
   { name: "current_page", title: "Where am I", description: "What the page shows now: its view (home, r repo, f file, l level, c cut, s share, u profile, search…), the repo, file or level, the selected lines, what you may do there, and who is signed in.",
     inputSchema: noInput, annotations: { readOnlyHint: true }, execute: async () => where() },
-  { name: "open_page", title: "Open a page", description: "Go to a page by its hash: #/ home, #/r/owner/repo[/dir], #/f/owner/repo/path/to/file, #/l/level-slug[/path], #/u/handle, #/search/query, #/about. Answers with the new page.",
+  { name: "open_page", title: "Open a page", description: "Go to a page by its hash: #/ home, #/r/owner/repo[/dir], #/f/owner/repo/path/to/file, #/l/level-slug[/path], #/u/handle, #/m/owner/repo (agents and branches, for a phone), #/search/query, #/about. Answers with the new page.",
     inputSchema: { type: "object", properties: { hash: { type: "string", description: "like #/f/owner/repo/src/app.ts" } }, required: ["hash"] },
     annotations: { readOnlyHint: true }, execute: ({ hash }) => asAgent(() => { history.pushState(null, "", "#" + hash.replace(/^#?\/?/, "/")); return route(); }) },
   { name: "list_files", title: "List files", description: "A repo folder's files and folders. Defaults to the repo and folder on screen.",

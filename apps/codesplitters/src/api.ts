@@ -142,7 +142,7 @@ export const GROUPS: Group[] = [
     name: "Agents, previews and deploys",
     endpoints: [
       { method: "GET", path: "/api/agents", does: "which coding-agent harnesses this machine can run" },
-      { method: "GET", path: "/api/repos/:o/:r/agents?path=", who: OWNER, does: "this file's agent runs, newest first" },
+      { method: "GET", path: "/api/repos/:o/:r/agents?path=", who: OWNER, does: "the repo's agent runs, newest first, or one file's with path" },
       { method: "POST", path: "/api/repos/:o/:r/agents", body: "{path, harness, task, model?}", who: OWNER, does: "give a coding agent a task on a file; answers at once" },
       { method: "GET", path: "/api/repos/:o/:r/preview", who: OWNER, does: "the current or last preview deploy, and the last 20" },
       { method: "POST", path: "/api/repos/:o/:r/preview", who: OWNER, does: "start a preview deploy" },
