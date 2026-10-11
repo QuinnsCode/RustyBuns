@@ -245,6 +245,8 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     return { state: refused ? "refused" as const : "down" as const, said: said || "upstream didn't take the push" };
   };
   try {
+    // Commits pushed to this git from outside reach the files open here first (#773).
+    if (!crew) await landPushes(env, owner, repo);
     // This copy leads: commits waiting on top of what upstream last had go up before anything's fetched.
     // Upstream moved meanwhile? The push is turned away, and the usual fetch, merge and push follow.
     if (primaryOf(r.mirror_primary) === "here" && !held && !crew) {
@@ -315,6 +317,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
       const dropped = !(await isAncestor(dir, ours, tip));
       // A catalogue that landed meanwhile moved the branch: take it from the top next round.
       if ((await git(["update-ref", heads, tip, ours], dir)).code) return again(env, r);
+      if (!crew) await env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND git_seen = ?").bind(tip, owner, repo, ours).run();
       if (dropped) await git(["update-ref", `refs/kept/${branch}/${Date.now()}`, ours], dir);
       ours = tip;
     }
@@ -458,24 +461,53 @@ async function liveChanges(env: Env, owner: string, repo: string, dir: string, o
   return clash.length ? { clash } : { plans };
 }
 
-/** Put a plan into the file's Durable Object as upstream's edits; a file that was clean is committed there too. */
-async function land(env: Env, owner: string, repo: string, p: Plan, tip: string) {
+/** Put a plan into the file's Durable Object as `by`'s edits (upstream's); a file that was clean is committed there too. */
+async function land(env: Env, owner: string, repo: string, p: Plan, tip: string, by = "upstream", message = `upstream ${tip.slice(0, 7)}`) {
   if (p.next === null) {
     // Upstream deleted it: the file goes here too.
-    await toFile(env, owner, repo, p.path, "upstream", "wipe", { method: "POST" });
+    await toFile(env, owner, repo, p.path, by, "wipe", { method: "POST" });
     await env.DB.batch(["files", "git_pending"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE owner = ? AND repo = ? AND path = ?`).bind(owner, repo, p.path)));
     await unindexFile(env, owner, repo, p.path);
     return;
   }
   const ops = diffToOps(p.doc.lines, p.next);
   if (ops.length) {
-    const res = await toFile(env, owner, repo, p.path, "upstream", "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: p.doc.rev }) });
+    const res = await toFile(env, owner, repo, p.path, by, "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: p.doc.rev }) });
     if (!res.ok) throw new Error(`${p.path} was edited while syncing; trying again`);
   }
   if (!p.clean) return;
-  const c = await toFile(env, owner, repo, p.path, "upstream", "commit", { method: "POST", body: JSON.stringify({ message: `upstream ${tip.slice(0, 7)}` }) });
+  const c = await toFile(env, owner, repo, p.path, by, "commit", { method: "POST", body: JSON.stringify({ message }) });
   const { published } = (await c.json()) as { published: string };
   await indexFile(env, owner, repo, p.path, published);
+}
+
+/**
+ * Pushes to a desktop repo's own git (#773). Its bare repo is a remote for the
+ * owner's tools (Push back), and a push there moves main without the files open
+ * here hearing of it, so their next commit here would write their old lines
+ * back over it. repos.git_seen is main's tip as the app last knew it (its own
+ * commits move it, see archive.ts, and so do syncs and this): the commits since
+ * came in from outside, and land in open files as line edits by the owner (only
+ * the owner gets a remote that writes), merged into any live edits. Where those
+ * touch the same lines, the edits here are kept. A git that started over (a fresh
+ * start) shares nothing with what was seen: the tip becomes the new baseline.
+ * Not for a repo with private lines: no push back is offered there.
+ */
+export async function landPushes(env: Env, owner: string, repo: string) {
+  const lg = localGit(env);
+  if (!lg) return;
+  const r = await env.DB.prepare("SELECT artifact, branch, crew_artifact, git_seen FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as { artifact: string | null; branch: string | null; crew_artifact: string | null; git_seen: string | null } | null;
+  if (!r?.artifact || r.crew_artifact) return;
+  const dir = lg.path(r.artifact), t = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${r.branch ?? "main"}`], dir), tip = t.out.trim();
+  if (t.code || !tip || tip === r.git_seen) return;
+  const seen = r.git_seen && (await git(["cat-file", "-e", `${r.git_seen}^{commit}`], dir)).code === 0 && await isAncestor(dir, r.git_seen, tip) ? r.git_seen : null;
+  if (seen) {
+    const changes = await liveChanges(env, owner, repo, dir, seen, tip, "mine");
+    const message = (await must(["log", "-1", "--format=%s", tip], dir)) || `pushed ${tip.slice(0, 7)}`;
+    if ("plans" in changes) for (const p of changes.plans) await land(env, owner, repo, p, tip, owner, message);
+  }
+  // Someone else landed it, or the app committed, meanwhile: theirs stands.
+  await env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND git_seen IS ?").bind(tip, owner, repo, r.git_seen).run();
 }
 
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */

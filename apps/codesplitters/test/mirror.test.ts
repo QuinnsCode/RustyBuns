@@ -441,6 +441,42 @@ describe("mirrors", () => {
     expect((await (await call("bo", "/api/repos/ana/up")).json() as any).push).toBeUndefined();
   });
 
+  test("a push to this copy's git reaches the files open here, so the next commit here keeps it (#773)", async () => {
+    const call = await mirrored("pushed");
+    expect(await sync(call, { primary: "here" })).toMatchObject({ state: "ok" });
+    await editHere(call, "README", 1, "hello, here");
+    await editHere(call, "src/a.ts", 1, "export const a = 2", false);
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
+
+    // A terminal pushes a change to README's second line, and to src/a.ts, which has live edits here.
+    const repo = await get(call, "/api/repos/ana/up");
+    const work = mkdtempSync(join(root, "tool-"));
+    await sh(`git clone -q ${repo.clone.split(" ")[2]} . && ${repo.push} && git config user.name Ana && git config user.email ana@example.com`, work);
+    writeFileSync(join(work, "README"), "hello, here\nworld, from a terminal\n");
+    writeFileSync(join(work, "src/a.ts"), "export const a = 1\nexport const z = 26\n");
+    await sh(`git add -A && git commit -qm "from a terminal" && git push -q codesplitters main`, work);
+
+    // The sync takes it up and lands it in the open files: README is clean, so it's committed as pushed.
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect(await upShow("README")).toBe("hello, here\nworld, from a terminal");
+    expect((await file(call, "README")).lines.map((l: any) => [l.text, l.by])).toEqual([["hello, here", "ana"], ["world, from a terminal", "ana"]]);
+    // src/a.ts has an edit not committed yet right beside the pushed line: a clash, and the edit here stands.
+    expect((await file(call, "src/a.ts")).lines.map((l: any) => l.text)).toEqual(["export const a = 2"]);
+
+    // The next commit here keeps the pushed line, and so does upstream.
+    await editHere(call, "README", 1, "hello again");
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
+    expect(await upShow("README")).toBe("hello again\nworld, from a terminal");
+
+    // No sync in between: committing here picks the push up first.
+    await sh(`git pull -q --ff-only codesplitters main`, work);
+    writeFileSync(join(work, "README"), "hello again\nworld, pushed twice\n");
+    await sh(`git commit -qam "again" && git push -q codesplitters main`, work);
+    await editHere(call, "README", 1, "hello, third time");
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
+    expect(await upShow("README")).toBe("hello, third time\nworld, pushed twice");
+  });
+
   test("takes any git URL on the desktop, and says what's wrong with a bad one", async () => {
     const call = await boot();
     opened.push(call);
