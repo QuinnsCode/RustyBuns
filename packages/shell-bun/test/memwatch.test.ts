@@ -7,7 +7,7 @@ import { memWatch, slope } from "../src/memwatch.ts";
 const MB = 2 ** 20, MIN = 60_000;
 
 /** A watch on a fake clock, its RSS climbing `perTick` MB a sample. */
-function fake(perTick: number, opts: { maxMb?: number; snapshotDir?: string } = {}) {
+function fake(perTick: number, opts: { maxMb?: number; snapshotDir?: string; beforeRestart?: () => Promise<unknown> } = {}) {
   let t = 0, rss = 100 * MB;
   const lines: string[] = [], exits: number[] = [];
   const w = memWatch({ ...opts, everyMs: 3_600_000, now: () => t, log: (l) => lines.push(l), exit: (c) => exits.push(c),
@@ -50,4 +50,15 @@ test("memWatch: over the ceiling it snapshots the heap once and exits 1", async 
   expect(exits).toEqual([1]);
   expect(lines.some((l) => l.includes("over the 180MB ceiling"))).toBe(true);
   expect(readdirSync(dir).filter((f) => f.endsWith(".heapsnapshot"))).toHaveLength(1);
+});
+
+test("memWatch: over the ceiling, beforeRestart runs first, and a failure still restarts", async () => {
+  const order: string[] = [];
+  const { w, step, exits, lines } = fake(50, { maxMb: 120, beforeRestart: async () => { order.push("prof"); throw new Error("busy"); } });
+  for (let i = 0; i < 2; i++) step();
+  w.stop();
+  await Bun.sleep(20);
+  expect(order).toEqual(["prof"]);
+  expect(exits).toEqual([1]);
+  expect(lines.some((l) => l.includes("before restart: busy"))).toBe(true);
 });
