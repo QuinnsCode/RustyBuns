@@ -117,6 +117,13 @@
   .sec p { margin: 0 0 6px; } .sec .btn { margin: 2px 4px 2px 0; }
   .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
   .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent); } .sec .run .st.failed { color: var(--del-fg); }
+  /* A run's clock (ticker()): fixed-width tabular digits, so ticking never shifts what's beside it. */
+  .tick { display: inline-flex; align-items: center; gap: 4px; font: 500 11px/1.4 var(--mono); color: var(--muted); white-space: nowrap; }
+  .tick .tick-n { display: inline-block; min-width: 5ch; text-align: right; font-variant-numeric: tabular-nums; }
+  .tick.low { color: var(--del-fg); }
+  .tick-i { display: inline-grid; place-items: center; width: 14px; height: 14px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); font: italic 600 9px/1 var(--sans); cursor: help; flex: none; }
+  .tick-i:hover, .tick-i:focus-visible { border-color: var(--accent); color: var(--accent); }
+  #tick-tip { position: fixed; z-index: 1000; max-width: min(260px, calc(100vw - 32px)); padding: 6px 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px rgb(0 0 0 / .12); font: 400 12px/1.4 var(--sans); pointer-events: none; }
   .phone { max-width: 640px; margin: 0 auto; padding: 12px 0 40px; }
   .phone h1 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0 14px 10px; font-size: 18px; font-weight: 400; }
   .phone .sec { font-size: 14px; } .phone .sec .run { padding: 10px 0; }
@@ -1004,13 +1011,56 @@ const deleteRepo = async (owner, repo, typed) => {
   toast(`Deleted ${owner}/${repo}`); location.hash = `#/u/${owner}`;
 };
 const sec = (ic, title, html) => `<section class="sec"><h3>${icon(ic)}${title}</h3>${html}</section>`;
+/** mm:ss gone since `from`, or left until `deadline`. */
+const tickText = (from, deadline) => {
+  const s = Math.floor(Math.max(0, deadline ? deadline - Date.now() : Date.now() - from) / 1000);
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+};
+/**
+ * A running thing's clock: counting down to `deadline` when it will be cut off then,
+ * else up from `from`; the i says what it counts. One interval ticks them all.
+ */
+const ticker = (from, deadline, tip) => `<span class="tick${deadline && deadline - Date.now() < 60_000 ? " low" : ""}" data-from="${from}" data-deadline="${deadline ?? ""}"><span class="tick-n">${tickText(from, deadline)}</span>${deadline ? "left" : ""}<button type="button" class="tick-i" data-tip="${esc(tip)}" aria-label="${esc(tip)}">i</button></span>`;
+setInterval(() => {
+  for (const t of document.querySelectorAll(".tick")) {
+    const deadline = +t.dataset.deadline || null;
+    t.querySelector(".tick-n").textContent = tickText(+t.dataset.from, deadline);
+    t.classList.toggle("low", !!deadline && deadline - Date.now() < 60_000);
+  }
+}, 1000);
+// The i's tip floats on the body, so a list redrawing under it doesn't close it: hover or focus shows it, a tap toggles it.
+{
+  let tip = null, on = null;
+  const hide = () => { tip?.remove(); tip = on = null; };
+  const show = (b) => {
+    hide(); on = b;
+    tip = Object.assign(document.createElement("div"), { id: "tick-tip", role: "tooltip", textContent: b.dataset.tip });
+    document.body.append(tip);
+    const r = b.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = `${Math.max(16, Math.min(innerWidth - w - 16, r.left + r.width / 2 - w / 2))}px`;
+    tip.style.top = `${r.top - h - 6 < 8 ? r.bottom + 6 : r.top - h - 6}px`;
+  };
+  document.addEventListener("pointerover", (e) => { const b = e.target.closest?.(".tick-i"); if (b && e.pointerType === "mouse") show(b); });
+  document.addEventListener("pointerout", (e) => { if (e.pointerType === "mouse" && e.target.closest?.(".tick-i")) hide(); });
+  document.addEventListener("focusin", (e) => { if (e.target.closest?.(".tick-i")) show(e.target.closest(".tick-i")); });
+  document.addEventListener("focusout", (e) => { if (e.target.closest?.(".tick-i")) hide(); });
+  document.addEventListener("click", (e) => { const b = e.target.closest?.(".tick-i"); if (b && b === on && e.pointerType !== "mouse") hide(); else if (b) show(b); else hide(); });
+  addEventListener("scroll", hide, true);
+  addEventListener("hashchange", hide);
+}
+/** A deploy or preview run's clock, while it goes. */
+const runTicker = (run) => run && !run.done ? `<p style="margin:4px 0">${ticker(run.at, run.deadline, run.deadline
+  ? "Time left before this hosted run is cut off. Its container gets 13 minutes, leaving time to clean up inside the 15 minutes the site gives a run."
+  : "How long this run has been going. A hosted run counts down instead, once its container starts.")}</p>` : "";
 /** One coding agent's run: who, how it's going, its task, and its output. With file, which file it's on. */
 const agentRun = (x, file) => {
   const result = x.status === "running" ? esc(x.log[x.log.length - 1] ?? "starting…")
     : x.status === "failed" ? esc(x.error.split("\n")[0])
     : (x.applied ? `${x.applied} line ops landed at r${x.rev}` : "no changes") + (x.runs > 1 ? ` after ${x.runs} runs` : "")
       + (x.conflicts.length ? `; ${x.conflicts.length} edit${x.conflicts.length > 1 ? "s" : ""} kept someone else's version` : "");
-  return `<div class="run"><div class="row"><b>${esc(x.agent)}</b><span class="st ${x.status}">${x.status}</span></div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
+  return `<div class="run"><div class="row"><b>${esc(x.agent)}</b><span class="st ${x.status}">${x.status}</span>${x.status === "running" ? ticker(x.started, x.deadline, x.deadline
+    ? "Time left before this hosted run is cut off. It runs off the site's job queue, which gives a run 15 minutes from when it was started."
+    : "How long this agent has been working. It runs on this machine, so there's no time limit.") : ""}</div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
 };
 const readmeOf = (tree) => tree.entries.find((e) => e.type === "file" && /^readme(\.|$)/i.test(e.name)) ?? tree.entries.find((e) => e.type === "file");
 function table(tree, href) {
@@ -1529,7 +1579,7 @@ const views = {
       runButton(d);
       if (force || !busy($("#key-form"))) drawKeys(d);
       const out = $("#dp-run pre"), stick = !out || out.scrollTop + out.clientHeight >= out.scrollHeight - 4;
-      $("#dp-run").innerHTML = `${run ? flowRow(STEPS, by, sel) : ""}
+      $("#dp-run").innerHTML = `${run ? flowRow(STEPS, by, sel) : ""}${runTicker(run)}
         ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a></p>` : ""}
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
@@ -1605,7 +1655,7 @@ const views = {
       sel ??= run?.steps.find((s) => s.status === "running")?.key ?? null;
       const shown = sel && by[sel];
       const pre = el.querySelector("pre"), stick = !pre || pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
-      el.innerHTML = `${flowRow(STEPS, by, sel)}
+      el.innerHTML = `${flowRow(STEPS, by, sel)}${runTicker(run)}
         ${run?.url ? `<p style="font-size:12px"><a href="${esc(run.url)}" target="_blank" rel="noopener">${esc(run.url)}</a>${run.done ? ' <span class="muted">(torn down)</span>' : ""}</p>` : ""}
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
@@ -1764,8 +1814,7 @@ const views = {
     else { $("#m-why").textContent = av.why || "None of claude, codex, pi or opencode is installed on this machine."; go.disabled = true; }
     f.addEventListener("submit", async (e) => {
       e.preventDefault(); go.disabled = true;
-      // A hosted run answers only when it's done, so say so now and poll meanwhile.
-      toast(`agent-${f.harness.value} is on it`); setTimeout(poll, 500);
+      toast(`agent-${f.harness.value} is on it`);
       try { await api(`/repos/${owner}/${repo}/agents`, { path: f.path.value.trim(), harness: f.harness.value, task: f.task.value }); f.task.value = ""; }
       catch (err) { toast(err.message); }
       finally { go.disabled = false; poll(); }

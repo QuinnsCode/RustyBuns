@@ -40,8 +40,12 @@ export interface Run {
   github?: boolean;
   output?: string;
   error?: string;
+  /** When a hosted run is cut off: the queue consumer's 15 minutes. A local run has none. */
+  deadline?: number;
 }
 
+/** A queue consumer's wall time, so a hosted run's limit. */
+const HOSTED_RUN_MS = 15 * 60_000;
 /** How many runs each repo keeps. */
 const KEEP = 50;
 /** How many of a run's log lines are kept. */
@@ -49,7 +53,7 @@ const LOG_LINES = 50;
 
 interface Row { id: number; owner: string; repo: string; path: string; harness: Harness; task: string; model: string | null; agent: string; status: Run["status"]; started: number; picked: number; log: string; result: string | null }
 
-const toRun = (r: Row): Run => ({ id: r.id, owner: r.owner, repo: r.repo, path: r.path, harness: r.harness, task: r.task, agent: r.agent, status: r.status, started: r.started, log: JSON.parse(r.log), ...(r.result ? JSON.parse(r.result) : {}) });
+const toRun = (r: Row, env: Env): Run => ({ ...(env.AGENT_SANDBOX ? { deadline: r.started + HOSTED_RUN_MS } : {}), id: r.id, owner: r.owner, repo: r.repo, path: r.path, harness: r.harness, task: r.task, agent: r.agent, status: r.status, started: r.started, log: JSON.parse(r.log), ...(r.result ? JSON.parse(r.result) : {}) });
 const getRow = (env: Env, id: number) => env.DB.prepare("SELECT * FROM agent_runs WHERE id = ?").bind(id).first() as Promise<Row | null>;
 const finish = (env: Env, id: number, status: "done" | "failed", result: Partial<Run>) =>
   env.DB.prepare("UPDATE agent_runs SET status = ?, result = ? WHERE id = ?").bind(status, JSON.stringify(result), id).run();
@@ -103,7 +107,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
       await finish(env, r.id, "failed", { error });
       Object.assign(r, { status: "failed", result: JSON.stringify({ error }) });
     }
-    return json(rows.map(toRun));
+    return json(rows.map((r) => toRun(r, env)));
   }
   if (req.method !== "POST") return null;
   const why = unavailable(env);
@@ -130,7 +134,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     .bind(owner, repo, owner, repo).run();
   if (env.AGENT_SANDBOX) await env.JOBS.send({ agent: row.id, origin });
   else { live.add(row.id); void execute(env, self, origin, row.id).finally(() => live.delete(row.id)); }
-  return json(toRun(row), 202);
+  return json(toRun(row, env), 202);
 }
 
 /** The JOBS queue's agent messages (worker.ts): each hosted run, side by side, since one can take minutes. */
