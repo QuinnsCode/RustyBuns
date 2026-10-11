@@ -8,9 +8,13 @@ import { mirrorIdentity } from "./mirror.ts";
 import { noodles, type Noodle } from "./noodles.ts";
 import type { ArtifactsRepo, Env, TreeEntry } from "./env.ts";
 
-/** A file's DO; on a branch, the branch's own copy of it ("@" can't appear in a repo name). */
+/**
+ * A file's DO; on a branch, the branch's own copy of it ("@" can't appear in a repo name).
+ * The branch is URI-encoded, so feat/x's a.ts and feat's x/a.ts are two files; a name of
+ * letters, digits and dashes encodes to itself, so branches from before keep their copies.
+ */
 export const fileStub = (env: Env, owner: string, repo: string, path: string, branch?: string) =>
-  env.FILES.get(env.FILES.idFromName(`${owner}/${repo}${branch ? "@" + branch : ""}/${path}`));
+  env.FILES.get(env.FILES.idFromName(`${owner}/${repo}${branch ? "@" + encodeURIComponent(branch) : ""}/${path}`));
 
 /**
  * Call a file's DO (or its copy on `branch`) as `user`. The app's own calls
