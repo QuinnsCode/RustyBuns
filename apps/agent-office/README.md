@@ -123,8 +123,8 @@ the camera is Qoa's eyes: look down and you see his body. ⚙️ Settings switch
 | The models and sounds | the live game's `/non_repo/models/` and `/non_repo/sfx/`, fetched into `.cache/druids/`, never committed |
 
 Three one-line hooks go into the client bundle: the worker and person constructors push themselves onto
-`globalThis.__rbWorkers` / `__rbPeople`, and the per-frame update calls `__rbOfficeTick` once the sky has set the
-lights. The patched bundle gets a new name, since the original is served as immutable. If a model fails to load, that
+`globalThis.__rbWorkers` / `__rbPeople`, and the per-frame update calls everything on `__rbOfficeTicks` once the sky
+has set the lights. That last one goes in for either skin, since the codeSplitters tiles hang off it too. The patched bundle gets a new name, since the original is served as immutable. If a model fails to load, that
 worker or person keeps the office's own look. In the browser console, `__rbDruids` and `__rbQoa` show who's who and
 what clip they're playing, and `__rbOffice` is the office itself. `AGENT_OFFICE_SKIN=office` builds the plain office; `DRUIDS_CURSE_URL` points at another
 build of the game.

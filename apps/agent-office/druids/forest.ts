@@ -1,7 +1,7 @@
 // 🌲 The office, retold as the jungle where every race of Druids Curse gathers in council.
 //
 // rustybunsify.ts adds one call at the end of the office's per-frame update (after its sky and mood have set the
-// lights), `globalThis.__rbOfficeTick?.(app, stage, dt, t)`. From there this recolours the room (palette.ts),
+// lights) to everything on `globalThis.__rbOfficeTicks`, this among them, as `(app, stage, dt, t)`. From there this recolours the room (palette.ts),
 // lays moss on the floor and leaves overhead, grows the jungle up the walls (jungle.ts), scatters the game's
 // stumps, flowers and mushrooms, lights a council fire in the biggest clearing, and lets fireflies loose. Nothing the office does is changed:
 // desks and seats are all where they were, and it only ever adds or recolours, but for the desks' colliders, which
@@ -39,7 +39,7 @@ let growing: { update(t: number): void }[] = [];
 let sweepAt = 0;
 const seen = new WeakSet<object>();
 
-(globalThis as { __rbOfficeTick?: unknown }).__rbOfficeTick = (app: App, stage: Stage, dt: number, t: number) => {
+((globalThis as { __rbOfficeTicks?: unknown[] }).__rbOfficeTicks ??= []).push((app: App, stage: Stage, dt: number, t: number) => {
   decoders(app.renderer);
   (globalThis as { __rbOffice?: App }).__rbOffice = app; // for poking at from the console
   // the office's mood has just set the lights for its time of day; lean them into the wood
@@ -71,7 +71,7 @@ const seen = new WeakSet<object>();
   if (fireflies) drift(fireflies, t);
   for (const g of growing) g.update(t);
   firstPerson(app, stage.scene);
-};
+});
 
 // ---- colour ---------------------------------------------------------------------------------------------
 
