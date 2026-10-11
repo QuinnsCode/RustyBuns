@@ -526,9 +526,15 @@ async function landNow(env: Env, owner: string, repo: string) {
     for (const path of changes.clash) clashes[path] = tip;
   }
   // Someone else landed it, or the app committed, meanwhile: theirs stands.
-  await env.DB.prepare("UPDATE repos SET git_seen = ?, git_clash = ? WHERE owner = ? AND name = ? AND git_seen IS ?")
+  const set = await env.DB.prepare("UPDATE repos SET git_seen = ?, git_clash = ? WHERE owner = ? AND name = ? AND git_seen IS ?")
     .bind(tip, Object.keys(clashes).length ? JSON.stringify(clashes) : null, owner, repo, r.git_seen).run();
+  // Pages open on a newly clashed file show it now, not on their next load.
+  const was = clashesOf(r.git_clash);
+  if (set.meta?.changes) for (const path of Object.keys(clashes)) if (!was[path]) await pingClash(env, owner, repo, path);
 }
+
+const pingClash = (env: Env, owner: string, repo: string, path: string) =>
+  toFile(env, owner, repo, path, owner, "pushclash", { method: "POST" }).catch(() => null);
 
 /**
  * On the desktop, a push lands in the files open here as it arrives (#788), so
@@ -571,9 +577,11 @@ async function pushedLines(env: Env, owner: string, repo: string, path: string) 
   return { commit, lines: text === null ? null : fromDisk(text) };
 }
 
-const unclash = (env: Env, owner: string, repo: string, path: string) =>
+async function unclash(env: Env, owner: string, repo: string, path: string) {
   // Read and written in one statement, so a push landing meanwhile keeps its own.
-  env.DB.prepare("UPDATE repos SET git_clash = NULLIF(json_remove(git_clash, '$.' || json_quote(?)), '{}') WHERE owner = ? AND name = ? AND git_clash IS NOT NULL").bind(path, owner, repo).run();
+  await env.DB.prepare("UPDATE repos SET git_clash = NULLIF(json_remove(git_clash, '$.' || json_quote(?)), '{}') WHERE owner = ? AND name = ? AND git_clash IS NOT NULL").bind(path, owner, repo).run();
+  await pingClash(env, owner, repo, path);
+}
 
 /**
  * Is `path`'s commit here held by a push it clashed with (#788)? Not once its

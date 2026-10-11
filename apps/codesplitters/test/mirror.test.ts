@@ -457,6 +457,11 @@ describe("mirrors", () => {
     await editHere(call, "src/a.ts", 1, "export const a = 2", false);
     expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
 
+    // A page open on src/a.ts, listening.
+    const ws = ((await call("ana", "/api/repos/ana/up/do/ws?path=src%2Fa.ts", { headers: { upgrade: "websocket" } })) as any).webSocket, heard: any[] = [];
+    ws.toBrowser = (d: string) => heard.push(JSON.parse(d));
+    const pings = () => heard.filter((m) => m.type === "pushclash").length;
+
     // A terminal pushes a change to README's second line, and to src/a.ts, which has live edits here.
     const repo = await get(call, "/api/repos/ana/up");
     const work = mkdtempSync(join(root, "tool-"));
@@ -466,6 +471,8 @@ describe("mirrors", () => {
     await sh(`git add -A && git commit -qm "from a terminal" && git push -q codesplitters main`, work);
     // It's heard as it arrives (#788): no sync or open needed for src/a.ts's clash to show.
     expect(await pushClash(call)).toEqual(["src/a.ts"]);
+    // The open page is told, so it shows the clash without a reload.
+    expect(pings()).toBe(1);
 
     // The sync takes it up and lands it in the open files: README is clean, so it's committed as pushed.
     expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
@@ -481,6 +488,7 @@ describe("mirrors", () => {
     expect((await post(call, "/api/repos/ana/up/pushes", { path: "src/a.ts", take: "pushed" })).status).toBe(200);
     expect((await file(call, "src/a.ts")).lines.map((l: any) => l.text)).toEqual(["export const a = 1", "export const z = 26"]);
     expect((await get(call, "/api/repos/ana/up")).pushClash).toBeUndefined();
+    expect(pings()).toBe(2);
     expect((await commit(call, "src/a.ts")).status).toBe(200);
 
     // The next commit here keeps the pushed line, and so does upstream.

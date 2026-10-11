@@ -173,6 +173,12 @@ export class FileDurableObject {
       this.broadcast({ type: "private", lines, private: on });
       return json([...this.secret]);
     }
+    if (req.method === "POST" && route === "pushclash") {
+      // A push to the repo's git clashed with edits here, or that was settled (mirror.ts, #788).
+      // Just a ping: each page asks the repo whether it's still held.
+      this.broadcast({ type: "pushclash" });
+      return json({ ok: true });
+    }
     if (req.method === "POST" && route === "stamped") {
       // A stamp went on or came off (stamps.ts). Just a ping, so a private line's
       // stamps don't reach outside the crew: each page asks again for what it may see.

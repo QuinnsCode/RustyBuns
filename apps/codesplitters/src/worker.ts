@@ -565,6 +565,8 @@ const app = {
     // Every five minutes on the desktop, mirrors whose turn has come sync with upstream (mirror.ts).
     // Shas sent up to GitHub get their Actions results polled in (checks.ts).
     // The desktop runs any checks still queued here (ci-runner.ts).
+    // Pushes are heard from the first tick, should no request have come in since the app started (#788).
+    hearPushes(env);
     if (c.cron === MIRRORS) { if (mirrorsOn(env)) ctx.waitUntil(syncDue(env).then(() => pollGithub(env))); if (desktopRuns(env)) ctx.waitUntil(kickQueued(env)); return; }
     if (c.cron !== HOURLY) return;
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
