@@ -107,7 +107,7 @@ export const GROUPS: Group[] = [
     endpoints: [
       { method: "GET", path: "/api/repos/:o/:r/do/file?path=", does: "the file now, with blame: {rev, lines: [{id, text, by, rev, private?}]}" },
       { method: "POST", path: "/api/repos/:o/:r/do/ops?path=", body: "{ops: Op[], ifRev?}", who: CREW, does: "edit, all or nothing: {rev, applied}, or 409 {rev, conflicts}" },
-      { method: "GET", path: "/api/repos/:o/:r/do/log?path=&since=", does: "every op after rev since: [{rev, by, at, op, line}]; 410 {from} if since is before where history starts" },
+      { method: "GET", path: "/api/repos/:o/:r/do/log?path=&since=&limit=", does: "a page of the ops after rev since: {ops: [{rev, by, at, op, line}], next}, at most limit (default and cap 1,000); pass next as since for the next page, null at the end; 410 {from} if since is before where history starts" },
       { method: "GET", path: "/api/repos/:o/:r/do/at?path=&rev=", does: "time travel: the file as it was at rev, with blame; 410 {from} before where history starts" },
       { method: "POST", path: "/api/repos/:o/:r/do/commit?path=", body: "{message}", who: CREW, does: "commit the file on main: indexed for search and pushed to git ({…commit, git})" },
       { method: "GET", path: "/api/repos/:o/:r/do/commits?path=", does: "the file's commits, newest first" },
@@ -123,7 +123,7 @@ export const GROUPS: Group[] = [
     endpoints: [
       { method: "GET", path: "/api/repos/:o/:r/branches", does: "the repo's branches" },
       { method: "POST", path: "/api/repos/:o/:r/branches", body: "{name}", who: CREW, does: "open a branch, named as git allows (slashes, dots, capitals; no spaces, no ..); edit on it with ?branch=name" },
-      { method: "GET", path: "/api/repos/:o/:r/branches/:b", does: "the review: each file's ops against main now, its conflicts, and any build-time changes; a file the branch deleted says deleted: true" },
+      { method: "GET", path: "/api/repos/:o/:r/branches/:b", does: "the review: each file's ops against main now, its conflicts, and any build-time changes; a file the branch deleted says deleted: true, and a binary one a mirror branch took from upstream says binary: true with its git blob" },
       { method: "GET", path: "/api/repos/:o/:r/branches/:b/hunks?path=", does: "what the branch changed in one file since it forked, a stretch at a time: {path, hunks: [{key, at, from, del: [{id, text}], add: [{id, text}], before}]} (the review has each file's hunks too)" },
       { method: "POST", path: "/api/repos/:o/:r/branches/:b/hunks/reject", body: "{path, key}", who: CREW, does: "reject one hunk: the branch's copy goes back to how it read where the branch forked, there and nowhere else. {path, key, rev}; 404 when the hunk is gone, 409 when the file moved under you" },
       { method: "DELETE", path: "/api/repos/:o/:r/branches/:b/files?path=", who: CREW, does: "delete a file on the branch: merging deletes it from main (and its git). Text, binary or too big, all can go; making it again on the branch brings it back" },
@@ -210,7 +210,7 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/github/active", body: "{id}", who: SIGNED_IN, does: "dig and list as this one of your linked GitHubs" },
       { method: "POST", path: "/api/github/agent", body: "{id|null}", who: SIGNED_IN, does: "your hosted agents work as this one of your linked GitHubs (GH_TOKEN in their container); null: none" },
       { method: "GET", path: "/api/github/search?q=", does: "public repos on GitHub, best match first" },
-      { method: "POST", path: "/api/github/dig", body: "{repo, name?, visibility?}", who: SIGNED_IN, does: "fork a GitHub repo into one you own here" },
+      { method: "POST", path: "/api/github/dig", body: "{repo, name?, visibility?, path?}", who: SIGNED_IN, does: "fork a GitHub repo into one you own here; a folder's URL (github.com/o/r/tree/<branch>/<path>) or a path digs up just that folder, as the new repo's root" },
       { method: "POST", path: "/api/mirrors", body: "{url, name?, visibility?}", who: SIGNED_IN, does: "desktop only: clone any git remote (GitHub, GitLab, an ssh or https URL) as a mirror that keeps in step with it, pulling its commits and pushing yours back" },
       { method: "GET", path: "/api/jobs", who: SIGNED_IN, does: "your queued requests from the last week" },
       { method: "GET", path: "/api/jobs/:id", does: "a queued request: its place in line, or the answer it had once it ran" },

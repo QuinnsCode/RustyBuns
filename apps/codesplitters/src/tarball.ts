@@ -110,6 +110,8 @@ export async function whenFree<T>(make: () => Promise<T>, tries = 30, gapMs = 10
  */
 export async function importTarball(ns: Artifacts, p: {
   tarball: () => Promise<Response>; submodules?: () => Promise<{ path: string; commit: string }[]>; repo: string; sha: string; branch: string; message: string; author: string; email?: string; at?: number; packBytes?: number;
+  /** Keep only this folder, as the root (#381). */
+  folder?: string;
   target: { name: string; opts?: { description?: string; readOnly?: boolean } };
 }): Promise<{ name: string; remote: string; defaultBranch: string }> {
   const ro = p.target.opts?.readOnly === true, name = ro ? `${p.target.name}-tip` : p.target.name;
@@ -123,12 +125,20 @@ export async function importTarball(ns: Artifacts, p: {
     if (!res.ok || !res.body) throw new Error(`GitHub said ${res.status} for ${p.repo}'s tarball`);
     const token = (made as { token?: string }).token || (await (await ns.get(name)).createToken("write", 3600)).plaintext;
     const body = res.body;
-    async function* files(): AsyncGenerator<TreeFile> {
+    async function* all(): AsyncGenerator<TreeFile> {
       yield* tarFiles(body.pipeThrough(new DecompressionStream("gzip")));
       for (const m of (await p.submodules?.()) ?? []) yield { path: m.path, mode: "160000", commit: m.commit };
     }
+    async function* files(): AsyncGenerator<TreeFile> {
+      if (!p.folder) return yield* all();
+      const under = p.folder + "/";
+      let kept = 0;
+      for await (const f of all()) if (f.path.startsWith(under)) { kept++; yield { ...f, path: f.path.slice(under.length) }; }
+      if (!kept) throw new Error(`${p.repo} has no folder ${p.folder} at ${p.sha.slice(0, 7)}`);
+    }
     await pushTree(made.remote, token, files(), {
-      message: `${p.message}\n\n${p.repo} at ${p.sha}, from GitHub's tarball: too big for an Artifacts import.`,
+      message: p.folder ? `${p.message}\n\n${p.repo}'s ${p.folder} at ${p.sha}, from GitHub's tarball.`
+        : `${p.message}\n\n${p.repo} at ${p.sha}, from GitHub's tarball: too big for an Artifacts import.`,
       author: p.author, email: p.email, branch: p.branch, at: p.at, packBytes: p.packBytes ?? PACK_BYTES,
     });
     if (!ro) return made;

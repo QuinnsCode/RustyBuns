@@ -44,8 +44,17 @@ test("a long log is read by range, snapshotted, and trimmed past KEEP_SNAPS snap
 
   // The log from where history starts, and a 410 before it.
   lists.length = 0;
-  const log = (await (await call(`log?since=${o.trimmed}`)).json()) as Applied[];
+  // A page at a time, following next until it's null (#719).
+  const log: Applied[] = [];
+  let pages = 0;
+  for (let since: number | null = o.trimmed; since !== null; pages++) {
+    const page = (await (await call(`log?since=${since}`)).json()) as { ops: Applied[]; next: number | null };
+    expect(page.ops.length).toBeLessThanOrEqual(1000);
+    log.push(...page.ops);
+    since = page.next;
+  }
   expect(log).toEqual(all.filter((a) => a.rev > o.trimmed));
+  expect(pages).toBeGreaterThan(1);
   expect(lists.every((l) => l.start && l.limit)).toBe(true);
   const gone = await call(`log?since=${o.trimmed - 1}`);
   expect(gone.status).toBe(410);
@@ -67,8 +76,9 @@ test("a long log is read by range, snapshotted, and trimmed past KEEP_SNAPS snap
 test("a short log keeps everything: since=0 and time travel to rev 1", async () => {
   const { call } = await file();
   const r = (await (await call("ops", { ops: [{ kind: "insert", after: null, text: "a" }, { kind: "insert", after: null, text: "b" }] })).json()) as { applied: Applied[] };
-  expect(await (await call("log?since=0")).json()).toEqual(r.applied);
-  expect(await (await call("log?since=1")).json()).toEqual(r.applied.slice(1));
+  expect(await (await call("log?since=0")).json()).toEqual({ ops: r.applied, next: null });
+  expect(await (await call("log?since=1")).json()).toEqual({ ops: r.applied.slice(1), next: null });
+  expect(await (await call("log?since=0&limit=1")).json()).toEqual({ ops: r.applied.slice(0, 1), next: r.applied[0]!.rev });
   expect(((await (await call("at?rev=1")).json()) as { lines: { text: string }[] }).lines.map((l) => l.text)).toEqual(["a"]);
 });
 
@@ -88,7 +98,8 @@ test("a long log from before trimming is trimmed at the file's first snapshot (#
 
   const old = await file(s);
   expect(old.o.snaps).toEqual([]);
-  expect((await (await old.call("log?since=0")).json() as Applied[]).length).toBe(old.o.doc.rev);
+  const first = (await (await old.call("log?since=0")).json()) as { ops: Applied[]; next: number };
+  expect([first.ops.length, first.next]).toEqual([1000, 1000]);
   // Its next edit snapshots (it has none), and history starts there.
   const add = (await (await old.call("ops", { ops: [{ kind: "insert", after: null, text: "x" }] })).json()) as { rev: number };
   await old.o.sweeping;

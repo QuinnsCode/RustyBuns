@@ -146,7 +146,10 @@ export class FileDurableObject {
       return r.ok ? json({ rev: r.rev, applied: r.applied }) : json({ rev: r.rev, conflicts: r.conflicts }, 409);
     }
     try {
-      if (req.method === "GET" && route === "log") return json(this.hide(await this.log(Number(url.searchParams.get("since") ?? 0)), crew));
+      if (req.method === "GET" && route === "log") {
+        const page = await this.log(Number(url.searchParams.get("since") ?? 0), Number(url.searchParams.get("limit") || OP_PAGE));
+        return json({ ops: this.hide(page.ops, crew), next: page.next });
+      }
       if (req.method === "GET" && route === "at") return json(this.shown(await this.at(Number(url.searchParams.get("rev"))), crew));
     } catch (e) {
       if (e instanceof Trimmed) return json({ error: e.message, from: e.from }, 410);
@@ -320,10 +323,16 @@ export class FileDurableObject {
     }
   }
 
-  async log(since: number): Promise<Applied[]> {
-    const out: Applied[] = [];
-    for await (const a of this.ops(since)) out.push(a);
-    return out;
+  /** A page of the log after rev `since`: at most `limit` ops (capped at OP_PAGE), and the rev to pass as
+   *  `since` for the next page, or null when this page reached the end (#719). */
+  async log(since: number, limit = OP_PAGE): Promise<{ ops: Applied[]; next: number | null }> {
+    const max = Math.min(Math.max(1, Math.floor(limit) || OP_PAGE), OP_PAGE);
+    const ops: Applied[] = [];
+    for await (const a of this.ops(since)) {
+      if (ops.length === max) return { ops, next: ops.at(-1)!.rev };
+      ops.push(a);
+    }
+    return { ops, next: null };
   }
 
   /** Who edited after rev `since`; what was trimmed counts from where history starts. */

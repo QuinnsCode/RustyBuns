@@ -114,9 +114,10 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { ...filePath, ...onBranch }, ok: ref("Doc") } },
   [`${repo}/do/at`]: { get: { id: "read_file_at", summary: "Time travel: the file as it was at a rev, with blame per line", tag: "Files", open: true,
     query: { ...filePath, ...onBranch, rev: { ...int("the edit to stop at"), required: true } }, ok: ref("Doc") } },
-  [`${repo}/do/log`]: { get: { id: "file_log", summary: "Every edit to a file since a rev", tag: "Files", open: true,
-    description: "History reaches back about 20,000 edits (a file whose log predates trimming, from its first snapshot); since a rev before that is a 410 naming the rev it starts at.",
-    query: { ...filePath, ...onBranch, since: int("0 for all") }, ok: arr(ref("Applied")) } },
+  [`${repo}/do/log`]: { get: { id: "file_log", summary: "A file's edits since a rev, a page at a time", tag: "Files", open: true,
+    description: "A page holds up to 1,000 edits; `next` is the rev to pass as `since` for the following page. History reaches back about 20,000 edits (a file whose log predates trimming, from its first snapshot); since a rev before that is a 410 naming the rev it starts at.",
+    query: { ...filePath, ...onBranch, since: int("0 for all"), limit: int("at most this many ops, up to and by default 1,000") },
+    ok: obj({ ops: arr(ref("Applied")), next: int("pass as since for the next page; null at the end") }) } },
   [`${repo}/do/ops`]: { post: { id: "edit_lines", summary: "Edit a file's lines: insert, set and delete by line id, all or nothing (the crew)", tag: "Files",
     description: "Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts. `ifRev` pins the batch to the whole file's rev.",
     query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int() }, ["ops"]),
@@ -179,7 +180,7 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "Each conflict is {line, base, main, branch, choices, suggestion?}: settle it in merge_branch's `resolve` by its `line` with one of its `choices` " +
       "(\"text\" meaning {\"text\": \"...\"}). `suggestion`, where there is one, keeps both sides' words: merge with {\"text\": suggestion} to take it. " +
       "suggest_resolution has a coding agent write one.",
-    ok: loose("the branch row, plus {deploys, files: [{path, merged, build, deleted?, ops, conflicts: [{line, base, main, branch, choices, suggestion?, doubled?, whole?, lint?}], hunks, lines?}]}; " +
+    ok: loose("the branch row, plus {deploys, files: [{path, merged, build, deleted?, binary?, blob?, ops, conflicts: [{line, base, main, branch, choices, suggestion?, doubled?, whole?, lint?}], hunks, lines?}]}; " +
       "hunks are what the branch itself changed since it forked: [{key, at, from, del: [{id, text}], add: [{id, text}], before}]") } },
   [`${repo}/branches/{branch}/hunks/reject`]: { post: { id: "reject_hunk", summary: "Reject one hunk of a branch: its copy of the file reads as it did where the branch forked, there only (the crew)", tag: "Branches",
     description: "Name the hunk by the `key` review_branch lists for it. The rest of the branch stays. A 404 means the hunk changed or went: review again.",

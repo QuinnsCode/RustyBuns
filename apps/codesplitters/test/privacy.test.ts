@@ -111,7 +111,7 @@ describe("@ghost in other people's repos (#514)", () => {
     expect((await send("ryan", "/api/repos/mia/pit/do/ops?path=b.ts&branch=ryan-idea", { ops: [{ kind: "insert", after: null, text: "on the branch" }] })).status).toBe(200);
     const look = async () => {
       const file = (await (await call("mia", "/api/repos/mia/pit/do/file?path=b.ts")).json()) as any;
-      const log = (await (await call("mia", "/api/repos/mia/pit/do/log?path=b.ts&since=0")).json()) as any[];
+      const log = ((await (await call("mia", "/api/repos/mia/pit/do/log?path=b.ts&since=0")).json()) as { ops: any[] }).ops;
       const commits = (await (await call("mia", "/api/repos/mia/pit/do/commits?path=b.ts")).json()) as any[];
       const branch = (await (await call("mia", "/api/repos/mia/pit/do/file?path=b.ts&branch=ryan-idea")).json()) as any;
       const mias = (await (await call("mia", "/api/repos/mia/pit/do/file?path=c.ts")).json()) as any;
