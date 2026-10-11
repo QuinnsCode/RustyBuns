@@ -187,13 +187,39 @@
   .status span { display: inline-flex; align-items: center; gap: 4px; } .status svg.lucide { width: 13px; height: 13px; vertical-align: 0; }
   .status .grow { flex: 1; }
   .status .diffstat .plus { color: var(--faint); }
+  /* Sheets: the repos you were in, as tabs along the bottom like a workbook's. The one you're on
+     is white with an orange edge; click it again for the wire map of its folders. */
+  .sheets { display: flex; align-items: stretch; flex: none; height: 28px; background: var(--canvas); border-top: 1px solid var(--border); padding: 0 6px; overflow-x: auto; scrollbar-width: none; }
+  .sheets::-webkit-scrollbar { display: none; }
+  .sheet { display: flex; align-items: center; gap: 6px; max-width: 200px; padding: 0 6px 0 10px; margin-top: -1px; font: 400 12.5px var(--sans); color: var(--muted); text-decoration: none; white-space: nowrap; border: 1px solid transparent; border-top: 0; border-radius: 0 0 5px 5px; cursor: pointer; }
+  .sheet:hover { color: var(--fg); background: var(--grain), var(--paper); border-color: var(--border-2); }
+  .sheet.on { color: var(--fg); background: var(--bg); border-color: var(--border-2); box-shadow: inset 0 -2px var(--accent); font-weight: 500; }
+  .sheet .nm { overflow: hidden; text-overflow: ellipsis; }
+  .sheet .x { display: inline-flex; padding: 2px; border-radius: 3px; color: var(--faint); visibility: hidden; }
+  .sheet:hover .x, .sheet.on .x { visibility: visible; } .sheet .x:hover { color: var(--fg); background: var(--select); }
+  .sheet .x svg.lucide { width: 12px; height: 12px; }
+  .sheets .add { display: flex; align-items: center; padding: 0 8px; color: var(--muted); background: none; border: 0; cursor: pointer; } .sheets .add:hover { color: var(--fg); }
+  /* The wire map: the repo's top folders left to right, and each folder you open
+     rising out of it as a column, wired to its files and folders. */
+  .wiremap { position: fixed; left: 8px; right: 8px; z-index: 30; max-height: 72vh; display: flex; flex-direction: column; background: var(--grain), var(--paper); border: 1px solid var(--border-2); border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.12); }
+  .wiremap .wm-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--border); }
+  .wiremap .wm-scroll { overflow: auto; min-height: 0; }
+  .wm-stage { position: relative; padding: 16px; }
+  .wm-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .wm-wires path { fill: none; stroke: var(--border-2); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  .wm-wires path.hot { stroke: var(--accent); stroke-width: 1.6; }
+  .wm-root { display: flex; gap: 8px; width: max-content; }
+  .wm-col { position: absolute; display: flex; flex-direction: column; gap: 3px; max-height: 44vh; overflow-y: auto; padding: 2px 4px 2px 0; }
+  .wm-item { display: inline-flex; align-items: center; gap: 6px; font: 400 12.5px var(--mono); color: var(--fg); white-space: nowrap; background: var(--bg); border: 1px solid var(--border-2); border-radius: 5px; padding: 4px 8px; cursor: pointer; }
+  .wm-item:hover { border-color: #a8a8a8; background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); }
+  .wm-item.dir svg.lucide { color: var(--muted); } .wm-item.on { border-color: var(--accent); } .wm-item.on svg.lucide { color: var(--accent); }
   @media (max-width: 1199px) {
     body.ide-mode { height: auto; overflow: visible; display: block; } body.ide-mode main { display: block; }
     .wb { grid-template-columns: 230px minmax(0, 1fr); } .wb > * { overflow: visible; }
     .explorer { grid-row: span 2; } .editor { overflow: visible; } .editor .scroll { overflow-x: auto; }
     .details { border-left: 0; border-top: 1px solid var(--border); grid-column: 2; }
     .dgrip, .drail .dw { display: none; } .drail { position: static; }
-    .status { position: sticky; bottom: 0; }
+    .status { position: sticky; bottom: 0; } .sheets { position: sticky; bottom: 24px; z-index: 5; }
   }
   .box { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; background: var(--bg); }
   .box > .bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; background: var(--canvas); border-bottom: 1px solid var(--border); font-size: 13px; }
@@ -1368,10 +1394,128 @@ function mountExplorer(el, key, load, href, current) {
 /** A repo or level page: header, then explorer | editor | details, then the status bar. */
 function workbench(head, { tab, bar, body, details, status }) {
   document.body.classList.add("ide-mode");
-  queueMicrotask(dock);
+  queueMicrotask(dock); queueMicrotask(sheets);
   return `${head}<div class="wb"><aside class="explorer"><div class="label pad">Explorer</div><nav class="tree" id="tree"></nav></aside>
     <section class="editor">${tab ? `<div class="tabs"><span class="tab">${tab}</span></div>` : ""}<div class="crumbbar">${bar}</div><div class="scroll">${body}</div></section>
-    <aside class="details">${details}</aside></div><footer class="status">${status}</footer>`;
+    <aside class="details">${details}</aside></div><nav class="sheets" id="sheets" aria-label="Recent repos"></nav><footer class="status">${status}</footer>`;
+}
+// ---- sheets: the repos you were in, as tabs along the bottom -------------------------
+/** This browser's recent repos, in the order they were first opened, each with the page you were last on. */
+const SHEETS_MAX = 12;
+const sheetList = () => { try { const a = JSON.parse(localStorage.getItem("cs_sheets") ?? "[]"); return Array.isArray(a) ? a : []; } catch { return []; } };
+const saveSheets = (a) => { try { localStorage.setItem("cs_sheets", JSON.stringify(a)); } catch {} };
+/** Draw the tabs, putting the repo you're in among them (a new one at the end, like a new sheet, so the others never move). */
+function sheets() {
+  const el = $("#sheets"); if (!el) return;
+  const here = ctx.view === "r" || ctx.view === "f" ? ctx : null;
+  const same = (s) => here && s.owner === here.owner && s.repo === here.repo;
+  let list = sheetList();
+  if (here) {
+    const s = list.find(same);
+    if (s) s.hash = location.hash; else list.push({ owner: here.owner, repo: here.repo, hash: location.hash });
+    // Over the cap, the oldest tab you aren't on goes.
+    while (list.length > SHEETS_MAX) list.splice(list.findIndex((x) => !same(x)), 1);
+    saveSheets(list);
+  }
+  el.innerHTML = list.map((s, i) => `<a class="sheet${same(s) ? " on" : ""}" href="${esc(s.hash)}" data-i="${i}" title="${esc(s.owner)}/${esc(s.repo)}${same(s) ? ": click for the wire map" : ""}">${icon(same(s) ? "network" : "book-marked")}<span class="nm">${esc(s.repo)}</span><span class="x" data-x="${i}" title="close tab">${icon("x")}</span></a>`).join("")
+    + `<button class="add" type="button" title="open a repo (⌘K)">${icon("plus")}</button>`;
+  icons();
+  el.querySelector(".sheet.on")?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  el.onclick = (e) => {
+    if (e.target.closest(".add")) { e.preventDefault(); return $("#jump").click(); }
+    const x = e.target.closest("[data-x]");
+    if (x) {
+      e.preventDefault();
+      const i = +x.dataset.x, gone = list.splice(i, 1)[0]; saveSheets(list);
+      // Closing the tab you're on moves you to its neighbour, as a workbook does.
+      if (same(gone)) { $("#wiremap")?.shut(); location.hash = (list[i] ?? list[i - 1])?.hash ?? "#/"; } else sheets();
+      return;
+    }
+    const a = e.target.closest(".sheet.on");
+    if (a) { e.preventDefault(); e.stopPropagation(); wireMap(here); }
+  };
+}
+/** The wire map of the repo you're in: its top level along the bottom, left to right, and each folder
+ *  you open rising out of it as a column, wired to what's inside. It opens on the way to where you are. */
+function wireMap(c) {
+  if ($("#wiremap")) return $("#wiremap").shut();
+  const { owner, repo } = c, at = c.view === "f" ? c.path : c.dir || "";
+  const segs = at.split("/").filter(Boolean), dirs = c.view === "f" ? segs.slice(0, -1) : segs;
+  let trail = dirs.map((_, i) => dirs.slice(0, i + 1).join("/"));
+  const kids = {};
+  const load = (d) => kids[d] ??= api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(d)}`).then((t) => t.entries ?? []).catch(() => []);
+  const el = document.createElement("div");
+  el.className = "wiremap"; el.id = "wiremap"; el.shut = () => close();
+  el.innerHTML = `<div class="wm-head">${icon("network")}<b>${esc(owner)}/${esc(repo)}</b><span class="muted">click a folder to wire out what's in it, a file to open it</span><span class="grow"></span><button class="btn ghost" id="wm-x" title="close (esc)">${icon("x")}</button></div><div class="wm-scroll"><div class="wm-stage" id="wm-stage"></div></div>`;
+  document.body.append(el);
+  const place = () => { const t = $("#sheets")?.getBoundingClientRect().top ?? innerHeight; el.style.bottom = Math.max(8, innerHeight - t + 6) + "px"; };
+  place();
+  const item = (e) => `<button class="wm-item ${e.type === "dir" ? "dir" : "file"}${trail.includes(e.path) || e.path === at ? " on" : ""}" data-path="${esc(e.path)}" data-type="${e.type}" title="${esc(e.path)}">${icon(e.type === "dir" ? (trail.includes(e.path) ? "folder-open" : "folder") : "file")}${esc(e.name)}</button>`;
+  const stage = () => $("#wm-stage");
+  const draw = async () => {
+    const cols = await Promise.all(["", ...trail].map(load));
+    if (!el.isConnected) return;
+    const st = stage();
+    st.innerHTML = `<svg class="wm-wires"></svg>${cols.slice(1).map((es, i) => `<div class="wm-col" data-col="${i}">${es.map(item).join("") || '<span class="muted">empty</span>'}</div>`).join("")}<div class="wm-root">${cols[0].map(item).join("") || '<span class="muted">nothing here yet</span>'}</div>`;
+    icons();
+    layout();
+  };
+  // Columns sit above the top row: the first over the folder it came from, each next one to the right of its parent.
+  const layout = () => {
+    const st = stage(), root = st.querySelector(".wm-root"), colEls = [...st.querySelectorAll(".wm-col")];
+    const find = (scope, p) => [...scope.querySelectorAll(".wm-item")].find((b) => b.dataset.path === p);
+    let x = 0, tallest = 0, right = root.offsetLeft + root.offsetWidth;
+    colEls.forEach((col, i) => {
+      const from = i === 0 ? find(root, trail[0]) : null;
+      x = i === 0 ? (from?.offsetLeft ?? 16) + 22 : x + colEls[i - 1].offsetWidth + 36;
+      col.style.left = x + "px";
+      tallest = Math.max(tallest, col.offsetHeight);
+      right = Math.max(right, x + col.offsetWidth);
+    });
+    st.style.paddingTop = 16 + (colEls.length ? tallest + 28 : 0) + "px";
+    st.style.width = right + 16 + "px";
+    colEls.forEach((col) => (col.style.bottom = root.offsetHeight + 16 + 28 + "px"));
+    wires();
+  };
+  // Each column hangs off one trunk: up from the folder's tile (or out of its row), with a tick to every row.
+  const wires = () => {
+    const st = stage(), svg = st.querySelector(".wm-wires"); if (!svg) return;
+    const box = st.getBoundingClientRect(), r = (n) => { const b = n.getBoundingClientRect(); return { l: b.left - box.left, r: b.right - box.left, t: b.top - box.top, b: b.bottom - box.top, m: (b.top + b.bottom) / 2 - box.top }; };
+    const root = st.querySelector(".wm-root"), colEls = [...st.querySelectorAll(".wm-col")];
+    const find = (scope, p) => [...scope.querySelectorAll(".wm-item")].find((b) => b.dataset.path === p);
+    let d = "", hot = "";
+    colEls.forEach((col, i) => {
+      const from = find(i === 0 ? root : colEls[i - 1], trail[i]); if (!from) return;
+      const f = r(from), c = r(col), tx = c.l - 12;
+      const rows = [...col.children].map(r).filter((y) => y.m >= c.t && y.m <= c.b);
+      if (!rows.length) return;
+      const top = Math.min(...rows.map((y) => y.m)), low = Math.max(...rows.map((y) => y.m));
+      const lead = i === 0 ? `M${tx} ${f.t}V${low}` : `M${f.r} ${f.m}H${tx}M${tx} ${Math.min(f.m, low)}V${Math.max(f.m, low)}`;
+      d += lead + `M${tx} ${low}V${top}` + rows.map((y) => `M${tx} ${y.m}H${y.l}`).join("");
+      // The way to where you are, in orange.
+      const next = [...col.children].find((n) => n.dataset?.path === (trail[i + 1] ?? at)), n = next && r(next);
+      const start = i === 0 ? `M${tx} ${f.t}` : `M${f.r} ${f.m}H${tx}`;
+      hot += n && n.m >= c.t && n.m <= c.b ? start + `V${n.m}H${n.l}` : lead;
+    });
+    svg.innerHTML = `<path d="${d}"/><path class="hot" d="${hot}"/>`;
+  };
+  el.addEventListener("scroll", wires, true);
+  el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (e.target.closest("#wm-x")) return close();
+    const b = e.target.closest(".wm-item"); if (!b) return;
+    const p = b.dataset.path;
+    if (b.dataset.type !== "dir") { close(); location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(p)}`; return; }
+    // A folder in column i opens column i+1; opening it again folds it and everything right of it.
+    const i = b.closest(".wm-col") ? +b.closest(".wm-col").dataset.col + 1 : 0;
+    trail = trail[i] === p ? trail.slice(0, i) : [...trail.slice(0, i), p];
+    draw();
+  });
+  el.addEventListener("dblclick", (e) => { const b = e.target.closest(".wm-item.dir"); if (b) { close(); location.hash = `#/r/${owner}/${repo}/${encodeURIComponent(b.dataset.path)}`; } });
+  const off = (e) => { if (e.key === "Escape" || e.type === "click") close(); };
+  const close = () => { el.remove(); removeEventListener("keydown", off); removeEventListener("click", off); removeEventListener("resize", place); };
+  addEventListener("keydown", off); addEventListener("click", off); addEventListener("resize", place);
+  return draw();
 }
 /** This browser's layout of the details side: its width (px, "66.667%" or "full"), the panels' order, and which are folded. */
 const dockPrefs = () => { try { return { w: "", order: [], shut: [], ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", order: [], shut: [] }; } };
@@ -4151,6 +4295,7 @@ async function route() {
   stopWord();
   clearTimeout(levelPoll);
   document.body.classList.remove("ide-mode");
+  $("#wiremap")?.shut();
   const [, view = "home", ...args] = location.hash.replace(/^#/, "").split("/");
   const n = FIXED[view];
   const parts = n === undefined ? args.map(decodeURIComponent) : [...args.slice(0, n).map(decodeURIComponent), decodeURIComponent(args.slice(n).join("/"))];
