@@ -14,6 +14,7 @@ import { evict, githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
 import { followers, followRoutes, listFollows } from "./follows.ts";
+import { cityRoutes } from "./city.ts";
 import { recentStamps, stampRoutes } from "./stamps.ts";
 import { agentProfile } from "./actors.ts";
 import { createCut, cutRoutes } from "./cuts.ts";
@@ -146,6 +147,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   const feed = await feedRoutes(req, env, p, url, user);
   if (feed) return feed;
 
+  // GET /api/users/:name/city(.png), its walkers' socket, and PUT /api/me/city (city.ts)
+  const city = await cityRoutes(req, env, p, user);
+  if (city) return city;
+
   // GET /api/me/export and DELETE /api/me: take your data, or bury it (privacy.ts)
   const privacy = await privacyRoutes(req, env, p, url, user, !token && !actingAs.has(req));
   if (privacy) return privacy;
@@ -170,7 +175,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/users/:name  profile, the repos you may see, playlists, how many it follows and are following it, the stamps it gave and got;
   // an agent's (agent-…) also says who runs it, where, and its runs (actors.ts)
   if (p[1] === "users" && p[2]) {
-    const u = await env.DB.prepare("SELECT name, bio, theme_html, pulse FROM users WHERE name = ?").bind(p[2]).first();
+    const u = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public FROM users WHERE name = ?").bind(p[2]).first();
     if (!u) return json({ error: "no such user" }, 404);
     const { results: repos } = await env.DB.prepare(
       "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
