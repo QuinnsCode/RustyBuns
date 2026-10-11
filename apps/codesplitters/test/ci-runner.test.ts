@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { local as boot } from "../src/local.ts";
-import { planFrom, workspacePatterns } from "../src/checks.ts";
+import { installFor, planFrom, workspacePatterns } from "../src/checks.ts";
 import { CiRunner, drained } from "../src/ci-runner.ts";
 import type { ContainerApi } from "../src/sandbox.ts";
 import { gated, gateExports } from "./fake-gate.ts";
@@ -67,6 +67,17 @@ test("a monorepo's checks are per workspace, scoped to it and what it depends on
   // No workspace with scripts of its own: the root's, as before. A codesplitters.ci still wins.
   expect(planFrom(null, root, ws.slice(3))).toEqual([{ name: "test", command: "bun run test" }, { name: "typecheck", command: "bun run typecheck" }]);
   expect(planFrom(JSON.stringify({ lint: "biome check" }), root, ws)).toEqual([{ name: "lint", command: "biome check" }]);
+  // With an install, every package.json check starts with it, at the root; a codesplitters.ci's runs as written (#775).
+  const install = installFor(["package.json", "bun.lock"]);
+  expect(install).toBe("bun install --frozen-lockfile");
+  expect(installFor(["package.json", "package-lock.json"])).toBe("bun install");
+  expect(planFrom(null, root, ws, install).map((p) => p.command)).toEqual([
+    "bun install --frozen-lockfile && cd 'apps/a' && bun run test", "bun install --frozen-lockfile && cd 'apps/b' && bun run test",
+    "bun install --frozen-lockfile && cd 'apps/b' && bun run typecheck", "bun install --frozen-lockfile && cd 'apps/it'\\''s' && bun run test",
+    "bun install --frozen-lockfile && bun run typecheck",
+  ]);
+  expect(planFrom(null, root, ws.slice(3), "bun install")[0]).toEqual({ name: "test", command: "bun install && bun run test" });
+  expect(planFrom(JSON.stringify({ lint: "biome check" }), root, ws, install)).toEqual([{ name: "lint", command: "biome check" }]);
 });
 
 test("a monorepo queues only the workspaces a branch touches, and main runs them all (#750)", async () => {
@@ -103,7 +114,14 @@ test("a monorepo queues only the workspaces a branch touches, and main runs them
   await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
   expect(await names("main")).toEqual(["apps/a:test", "apps/b:test"]);
   const [first] = (await checks("main")).runs;
-  expect((await (await call("ryan", `/api/repos/ryan/lab/checks/${first.id}`)).json()).command).toBe("cd 'apps/a' && bun run test");
+  // A fresh clone has no node_modules, so it installs first, at the root (#775).
+  const command = async (ref: string) => (await (await call("ryan", `/api/repos/ryan/lab/checks/${(await checks(ref)).runs[0].id}`)).json()).command;
+  expect(await command("main")).toBe("bun install && cd 'apps/a' && bun run test");
+  // Frozen to bun's lockfile once the repo has one, a branch's own included.
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "locked" });
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "bun.lock", content: "{}", branch: "locked" });
+  await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "locked" });
+  expect(await command("locked")).toBe("bun install --frozen-lockfile && cd 'apps/a' && bun run test");
 });
 
 test("a commit's runs take the place of the ones still queued on an older commit (#750)", async () => {

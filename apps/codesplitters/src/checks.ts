@@ -263,11 +263,19 @@ export function workspacePatterns(pkg: string | null): string[] {
 }
 
 /**
+ * How a fresh clone gets its dependencies before a package.json plan runs (#775), from the
+ * files at the repo's root: frozen to bun's lockfile when there is one. Plans run with bun, and
+ * bun reads npm's, yarn's and pnpm's lockfiles too, so it installs those repos as well.
+ */
+export const installFor = (top: string[]) => top.includes("bun.lock") || top.includes("bun.lockb") ? "bun install --frozen-lockfile" : "bun install";
+
+/**
  * The repo's own checks, as `codesplitters.ci` says ({name: command | {run, paths?}}), else
  * per workspace when `workspaces` (each one's folder and package.json) have scripts of their
- * own, else package.json's test and typecheck scripts.
+ * own, else package.json's test and typecheck scripts. Those two start with `install`, at the
+ * root, when given: a runner's clone has no node_modules. A codesplitters.ci's commands run as written.
  */
-export function planFrom(ci: string | null, pkg: string | null, workspaces: { dir: string; pkg: string | null }[] = []): Planned[] {
+export function planFrom(ci: string | null, pkg: string | null, workspaces: { dir: string; pkg: string | null }[] = [], install?: string): Planned[] {
   const conf = parse(ci);
   if (conf) return Object.entries(conf).flatMap(([name, v]): Planned[] => {
     const c = typeof v === "string" ? { run: v } : v as { run?: unknown; paths?: unknown };
@@ -275,6 +283,7 @@ export function planFrom(ci: string | null, pkg: string | null, workspaces: { di
     const paths = Array.isArray(c.paths) ? c.paths.filter((x): x is string => typeof x === "string" && !!x.trim()) : [];
     return [{ name: name.trim(), command: c.run, ...(paths.length && { paths }) }];
   });
+  const first = install ? `${install} && ` : "";
   const own = workspaces.map((w) => {
     const j = parse(w.pkg);
     const deps = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"].flatMap((k) => Object.keys((j?.[k] as object | undefined) ?? {}));
@@ -290,11 +299,11 @@ export function planFrom(ci: string | null, pkg: string | null, workspaces: { di
       return [...seen];
     };
     return [
-      ...own.flatMap((w) => w.scripts.map((n) => ({ name: `${w.dir}:${n}`, command: `cd ${quote(w.dir)} && bun run ${n}`, paths: [...uses(w), ...LOCKFILES] }))),
-      ...scriptsOf(pkg).filter((n) => n === "typecheck").map((n) => ({ name: n, command: `bun run ${n}` })),
+      ...own.flatMap((w) => w.scripts.map((n) => ({ name: `${w.dir}:${n}`, command: `${first}cd ${quote(w.dir)} && bun run ${n}`, paths: [...uses(w), ...LOCKFILES] }))),
+      ...scriptsOf(pkg).filter((n) => n === "typecheck").map((n) => ({ name: n, command: `${first}bun run ${n}` })),
     ].filter((p) => p.name.length <= 100 && !p.name.includes(","));
   }
-  return scriptsOf(pkg).map((n) => ({ name: n, command: `bun run ${n}` }));
+  return scriptsOf(pkg).map((n) => ({ name: n, command: `${first}bun run ${n}` }));
 }
 
 /** The folders `patterns` name on `ref`: a folder as is, or `dir/*`'s subfolders (on main, and any a branch adds). Other globs aren't followed. */
@@ -319,6 +328,19 @@ async function workspaceDirs(env: Env, owner: string, repo: string, ref: string,
   return [...dirs].sort().slice(0, 100);
 }
 
+/** The files at the root of `ref`: main's, with the ones a branch adds or deletes there. */
+async function rootFiles(env: Env, owner: string, repo: string, ref: string) {
+  const { handleFor, listDir } = await import("./archive.ts");
+  const h = await handleFor(env, owner, repo).catch(() => null);
+  const listing = h ? await listDir(env, h.handle, h.branch, "").catch(() => null) : null;
+  const names = new Set((listing?.entries ?? []).filter((e) => e.type === "file").map((e) => e.name));
+  if (ref !== "main") {
+    const { results } = await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND path NOT LIKE '%/%'").bind(owner, repo, ref).all();
+    for (const r of results as { path: string; deleted: number }[]) r.deleted ? names.delete(r.path) : names.add(r.path);
+  }
+  return [...names];
+}
+
 /** What runs here on `ref`, given what it touched: each required check with a command, then the repo's own, by name. */
 export async function planChecks(env: Env, owner: string, repo: string, ref: string, required: Required[], paths: string[] | null) {
   const [ci, pkg] = await Promise.all(["codesplitters.ci", "package.json"].map((f) => readAt(env, owner, repo, ref, f).catch(() => null)));
@@ -327,7 +349,8 @@ export async function planChecks(env: Env, owner: string, repo: string, ref: str
   const workspaces = patterns.length ? await Promise.all((await workspaceDirs(env, owner, repo, ref, patterns)).map(async (dir) => ({ dir, pkg: await readAt(env, owner, repo, ref, `${dir}/package.json`).catch(() => null) }))) : [];
   const ours = new Map<string, { name: string; command?: string }>();
   for (const r of requiredFor(required.filter((r) => r.command && r.name !== "*"), paths)) ours.set(r.name, r);
-  for (const r of requiredFor(planFrom(ci ?? null, pkg ?? null, workspaces), paths)) if (!ours.has(r.name)) ours.set(r.name, r);
+  const install = parse(ci ?? null) || !pkg ? undefined : installFor(await rootFiles(env, owner, repo, ref).catch(() => []));
+  for (const r of requiredFor(planFrom(ci ?? null, pkg ?? null, workspaces, install), paths)) if (!ours.has(r.name)) ours.set(r.name, r);
   return ours.size ? [...ours.values()] : [{ name: "test" }];
 }
 
