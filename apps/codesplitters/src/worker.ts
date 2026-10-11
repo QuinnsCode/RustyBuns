@@ -35,7 +35,7 @@ import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
 import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts";
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
-import { callers, insightRoutes, record, sweepTraffic } from "./insights.ts";
+import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
 import { pulseRoutes } from "./pulse.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
@@ -82,7 +82,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/mcp  the same operations as an MCP server's tools, for a personal API token (mcp.ts)
   // GET /api/mcp/tools  every MCP tool, in words, for the /mcp page
   if (p[1] === "mcp" && p[2] === "tools" && !p[3] && req.method === "GET") return json(catalogue());
-  if (p[1] === "mcp" && !p[2]) return mcp(req, url.origin, (r) => app.fetch(r, env));
+  if (p[1] === "mcp" && !p[2]) return mcp(req, url.origin, (r) => { viaMcp.set(r, req); return app.fetch(r, env); });
   // /api/gh/v3/repos/:o/:r/*  GitHub's status and check-run API for external CI, with a repo's CI token, not a personal one (gh-compat.ts)
   const gh = await ghCompatRoutes(req, env, p, url);
   if (gh) return gh;
@@ -342,6 +342,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         // Its edits count against the edit limit, as the HTTP ones do (the DO counts them).
         const as = a.write ? counted(req, "edit", user, admin) : null;
         as ? h.set("x-codesplitters-limit-as", as) : h.delete("x-codesplitters-limit-as");
+        // A socket from the internet notes its first edit as the person's "wrote code" step (insights.ts).
+        a.write && user && req.headers.has("cf-connecting-ip") ? h.set("x-codesplitters-step-as", user) : h.delete("x-codesplitters-step-as");
         return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
       }
       // Only the crew reads private lines; everyone else gets placeholders.
@@ -448,8 +450,8 @@ const app = {
   async fetch(req: Request, env: Env, ctx?: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
     let res: Response;
     try { res = await route(req, env); }
-    catch (e) { await record(env, req, 500); throw e; }
-    if (req.headers.has("cf-connecting-ip")) { const t = record(env, req, res.status); if (ctx) ctx.waitUntil(t); else await t; }
+    catch (e) { if (tallied(req)) await record(env, req, 500); throw e; }
+    if (tallied(req)) { const t = record(env, req, res.status); if (ctx) ctx.waitUntil(t); else await t; }
     return res;
   },
 

@@ -32,6 +32,7 @@ describe("classify", () => {
     expect(classify(req({ ...browser, "user-agent": CHROME.replace("Chrome/", "HeadlessChrome/") }), ["api", "session"])).toEqual({ kind: "agent", via: "headless" });
     expect(classify(req({ "user-agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" }), ["api", "session"])).toEqual({ kind: "bot", via: "crawler" });
     expect(classify(req(browser), ["api", "mcp"])).toEqual({ kind: "agent", via: "mcp" });
+    expect(classify(req({ authorization: "Bearer cst_x", "user-agent": "codesplitters-cli/1" }), ["api", "session"])).toEqual({ kind: "agent", via: "cli" });
   });
 });
 
@@ -65,6 +66,45 @@ describe("insights", () => {
     expect(d.steps.find((s: any) => s.step === "repo").people).toBe(1);
     expect(d.health.checks.map((c: any) => c.name)).toContain("API errors");
     expect(d.health.checks.every((c: any) => ["ok", "warn", "bad"].includes(c.state))).toBe(true);
+  });
+
+  test("MCP calls count under the token's owner, with the steps their tools take", async () => {
+    const { call, send } = await app();
+    const { token } = (await (await call("ryan", "/api/tokens", { method: "POST", body: JSON.stringify({ label: "mcp", scope: "write" }) })).json()) as any;
+    const mcp = { ...curl, authorization: `Bearer ${token}`, "user-agent": "claude-code/2.0" };
+    const tool = (name: string, args: unknown) => send(null, "/api/mcp", mcp, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } });
+    await tool("create_repo", { body: { name: "lab" } });
+    await tool("add_file", { owner: "ryan", repo: "lab", body: { path: "a.ts", content: "one" } });
+
+    const d = (await (await call("boss", "/api/admin/insights")).json()) as any;
+    expect(d.traffic.callers).toEqual([expect.objectContaining({ who: "@ryan", kind: "agent", via: "mcp", hits: 2 })]);
+    const ryan = d.users.find((u: any) => u.name === "ryan");
+    expect(Object.keys(ryan.steps).sort()).toEqual(["code", "joined", "repo"]);
+    expect(ryan.hits).toEqual({ person: 0, agent: 2, bot: 0 });
+  });
+
+  test("an edit over a file's socket is writing code, noted once a socket", async () => {
+    const { call, send } = await app();
+    await call("ryan", "/api/repos", { method: "POST", body: JSON.stringify({ name: "lab" }) });
+    await call("ryan", "/api/repos/ryan/lab/files", { method: "POST", body: JSON.stringify({ path: "a.ts", content: "one" }) });
+    const open = async (user: string, headers: Record<string, string>) => {
+      const ws = ((await send(user, "/api/repos/ryan/lab/do/ws?path=a.ts", { upgrade: "websocket", ...headers })) as any).webSocket, got: any[] = [];
+      ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+      ws.queue.splice(0);
+      let id = 0;
+      return async (text: string) => {
+        ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
+        for (const end = performance.now() + 15_000; performance.now() < end;) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+      };
+    };
+    const steps = async () => ((await (await call("boss", "/api/admin/insights")).json()) as any).users.find((u: any) => u.name === "ryan").steps;
+    // The desktop's sockets (no cf-connecting-ip) aren't counted.
+    expect((await (await open("ryan", {}))("x")).type).toBe("ack");
+    expect((await steps()).code).toBeUndefined();
+    const edit = await open("ryan", browser);
+    expect((await edit("y")).type).toBe("ack");
+    expect((await edit("z")).type).toBe("ack");
+    expect((await steps()).code).toMatchObject({ n: 1 });
   });
 
   test("a failed request isn't a step", async () => {

@@ -5,7 +5,7 @@
 // Every request from the internet (Cloudflare stamps those with cf-connecting-ip,
 // like limits.ts counts) is tallied per day, per caller, by what it looks like:
 //   person  a browser: a Mozilla user agent that sends the sec-fetch-* headers browsers add
-//   agent   an API token or OAuth app, MCP, a script (curl, python, node…), or a
+//   agent   an API token or OAuth app, MCP, the CLI (cli.ts), a script (curl, python, node…), or a
 //           "browser" without the headers a real one sends (headless, or a spoofed agent)
 //   bot     a crawler or uptime checker that says so
 // A signed-in caller counts as their @handle; a signed-out one as a hash of their
@@ -14,6 +14,10 @@
 //
 // A person's steps (made a repo, wrote code, committed, shared, ran an agent,
 // deployed) are noted the first and last time a request for one succeeds.
+// MCP's tools are requests the Worker makes to itself (mcp.ts): each counts its
+// step under the token's owner, and the MCP call from outside counts as theirs.
+// Edits over a file's socket never reach the Worker, so the file's DO notes the
+// first one on each socket (file-do.ts).
 
 import { json, type Env } from "./env.ts";
 import { actingAs, identify } from "./identity.ts";
@@ -23,6 +27,11 @@ const DAY = 86_400_000, KEEP_DAYS = 30;
 
 /** Who each request turned out to be: the worker notes it once it's known. */
 export const callers = new WeakMap<Request, string | null>();
+/** MCP's inner requests (mcp.ts), and the call from the internet each one serves. */
+export const viaMcp = new WeakMap<Request, Request>();
+
+/** Whether a request is tallied: it came from the internet, or MCP made it for a call that did. */
+export const tallied = (req: Request) => req.headers.has("cf-connecting-ip") || !!viaMcp.get(req)?.headers.has("cf-connecting-ip");
 
 export type Kind = "person" | "agent" | "bot";
 const BOT = /bot\b|bot\/|crawl|spider|slurp|facebookexternalhit|embedly|preview|uptime|monitor|pingdom|statuscake|lighthouse/i;
@@ -33,6 +42,7 @@ const SCRIPT = /^(curl|wget|httpie|python|aiohttp|httpx|go-http|okhttp|java|ruby
 export function classify(req: Request, p: string[]): { kind: Kind; via: string } {
   const ua = req.headers.get("user-agent") ?? "";
   if (p[1] === "mcp") return { kind: "agent", via: "mcp" };
+  if (ua.startsWith("codesplitters-cli/")) return { kind: "agent", via: "cli" };
   if (/^bearer /i.test(req.headers.get("authorization") ?? "")) return { kind: "agent", via: "token" };
   if (BOT.test(ua)) return { kind: "bot", via: "crawler" };
   if (HEADLESS.test(ua)) return { kind: "agent", via: "headless" };
@@ -58,8 +68,30 @@ async function ipHash(env: Env, ip: string, day: number) {
   return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${day}:${ip}:${env.BETTER_AUTH_SECRET ?? ""}`))).slice(0, 12);
 }
 
+const stepSql = (env: Env, user: string, step: string, now: number) => env.DB.prepare(`INSERT INTO user_steps (name, step, first_at, last_at, n) VALUES (?, ?, ?, ?, 1)
+  ON CONFLICT (name, step) DO UPDATE SET last_at = excluded.last_at, n = n + 1`).bind(user, step, now, now);
+const failed = (what: string) => (e: unknown) => console.error(`codeSplitters: ${what} failed`, String((e as Error)?.message ?? e));
+
+/** Note a step for someone, outside a request (an edit over a file's socket). */
+export async function noteStep(env: Env, user: string, step: string, now = Date.now()) {
+  await env.DB.batch([
+    env.DB.prepare("INSERT OR IGNORE INTO user_steps (name, step, first_at, last_at, n) VALUES (?, 'joined', ?, ?, 1)").bind(user, now, now),
+    stepSql(env, user, step, now),
+  ]).catch(failed("step"));
+}
+
 /** Tally one answered request (only those from the internet; not the Worker's own calls). */
 export async function record(env: Env, req: Request, status: number) {
+  const outer = viaMcp.get(req);
+  if (outer) {
+    // An MCP tool's request: the MCP call itself is the hit, counted as whoever the token is; this is only its step.
+    const user = callers.get(req) ?? null;
+    if (!user) return;
+    if (!callers.get(outer)) callers.set(outer, user);
+    const step = status < 300 ? STEP_OF[ruleFor(req.method, new URL(req.url).pathname.split("/").filter(Boolean).map(decodeURIComponent)) ?? ""] : undefined;
+    if (step) await noteStep(env, user, step);
+    return;
+  }
   const ip = req.headers.get("cf-connecting-ip");
   if (!ip || actingAs.has(req)) return;
   const p = new URL(req.url).pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -77,10 +109,9 @@ export async function record(env: Env, req: Request, status: number) {
   if (user) {
     out.push(env.DB.prepare("INSERT OR IGNORE INTO user_steps (name, step, first_at, last_at, n) VALUES (?, 'joined', ?, ?, 1)").bind(user, now, now));
     const step = status < 300 ? STEP_OF[ruleFor(req.method, p) ?? ""] : undefined;
-    if (step) out.push(env.DB.prepare(`INSERT INTO user_steps (name, step, first_at, last_at, n) VALUES (?, ?, ?, ?, 1)
-      ON CONFLICT (name, step) DO UPDATE SET last_at = excluded.last_at, n = n + 1`).bind(user, step, now, now));
+    if (step) out.push(stepSql(env, user, step, now));
   }
-  await env.DB.batch(out).catch((e: unknown) => console.error("codeSplitters: traffic tally failed", String((e as Error)?.message ?? e)));
+  await env.DB.batch(out).catch(failed("traffic tally"));
 }
 
 /** Hourly: traffic older than 30 days. */
