@@ -2,3 +2,4 @@
 import "./skin.ts";
 import "./people.ts";
 import "./forest.ts";
+import "./audio.ts";

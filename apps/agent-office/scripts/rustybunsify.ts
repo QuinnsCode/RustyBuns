@@ -37,7 +37,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -146,7 +146,7 @@ async function prepare(tag: string) {
   // 12. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -154,19 +154,36 @@ async function druids(cache: string) {
   const pub = path.join(office, "dist/public");
   const dir = path.join(pub, "druids");
 
-  // every race and the forest, from the live game, cached
-  const { MODELS } = await import("../druids/assets.ts");
+  // every enemy, the forest and the sounds, from the live game, cached
+  const { MODELS, SOUND_FILES } = await import("../druids/assets.ts");
   const game = process.env.DRUIDS_CURSE_URL ?? "https://druids-curse-votv.notryanquinn.workers.dev";
-  for (const name of MODELS) {
-    const glb = path.join(cache, "druids", `${name}.glb`);
-    if (!existsSync(glb)) {
-      const res = await fetch(`${game}/non_repo/models/${name}.glb`);
-      if (!res.ok) throw new Error(`Druids Curse model ${name} failed (${res.status}) from ${game}`);
-      await Bun.write(glb, res);
+  for (const file of [...MODELS.map((m) => `models/${m}.glb`), ...SOUND_FILES.map((f) => `sfx/${f}`)]) {
+    const cached = path.join(cache, "druids", file.replace(/^models\//, ""));
+    if (!existsSync(cached)) {
+      const res = await fetch(`${game}/non_repo/${file}`);
+      if (!res.ok) throw new Error(`Druids Curse ${file} failed (${res.status}) from ${game}`);
+      await Bun.write(cached, res);
     }
-    mkdirSync(path.dirname(path.join(dir, "models", name)), { recursive: true });
-    cpSync(glb, path.join(dir, "models", `${name}.glb`));
+    mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    cpSync(cached, path.join(dir, file));
   }
+
+  // the jukebox has one tune now, the Ambiance of the Vale (druids/audio.ts plays it): on the server, which keeps
+  // what's on, and in the client chunk its menu reads the list from
+  const vale = "{ id: 'vale', title: 'Ambiance of the Vale', mood: 'the forest, breathing' }";
+  const tunes = path.join(office, "dist/server/shared/jukebox.js");
+  const server = readFileSync(tunes, "utf8");
+  const serverList = /export const JUKEBOX_TUNES = \[\n[^\]]*\];/;
+  if (!serverList.test(server)) throw new Error("Agent Office changed: JUKEBOX_TUNES moved in shared/jukebox.js");
+  writeFileSync(tunes, server.replace(serverList, `export const JUKEBOX_TUNES = [${vale}];`));
+  const [dom, ...doms] = [...new Bun.Glob("assets/dom-*.js").scanSync({ cwd: pub })];
+  if (!dom || doms.length) throw new Error(`Agent Office changed: expected one assets/dom-*.js, found ${doms.length + (dom ? 1 : 0)}`);
+  const client = readFileSync(path.join(pub, dom), "utf8");
+  const clientList = /\[\{id:`rainy-window`[^\]]*\]/;
+  if (!clientList.test(client)) throw new Error("Agent Office changed: the jukebox's tunes moved in " + dom);
+  writeFileSync(path.join(pub, dom), client.replace(clientList, "[{id:`vale`,title:`Ambiance of the Vale`,mood:`the forest, breathing`}]"));
+  // renames main-*.js too, which imports it
+  rehash(pub, dom);
 
   // the KTX2 transcoder the game's textures need, from the same three as the bundle
   const three = path.dirname(Bun.resolveSync("three/package.json", root));
@@ -180,6 +197,10 @@ async function druids(cache: string) {
   patch(file, ",this.setName(e)}setPropSpot", ",this.setName(e),(globalThis.__rbWorkers??=[]).push(this)}setPropSpot");
   // and every person (you, your teammates, the bartender) to Qoa
   patch(file, "legR:this.legR},this.setLabel(e,!1)}setColor(e){", "legR:this.legR},this.setLabel(e,!1),(globalThis.__rbPeople??=[]).push(this)}setColor(e){");
+  // the gong rings the game's totem once it's loaded, and the jukebox plays the vale (druids/audio.ts)
+  patch(file, "gong(e){_I(this.a,e)}", "gong(e){globalThis.__rbGong?.(this.a,e)||_I(this.a,e)}");
+  patch(file, "let r=this.tune=new XS(t,this.musicIn,n.track)",
+    "let r=this.tune=globalThis.__rbTune?.(t,this.musicIn,n.track)??new XS(t,this.musicIn,n.track)");
   // and every frame, once the sky has set the lights, the forest gets a turn
   patch(file, "l.setWeather(s.rain,1-s.daylight)}function b(t)",
     "l.setWeather(s.rain,1-s.daylight),globalThis.__rbOfficeTick?.(e,n.stage,r,i)}function b(t)");
@@ -188,7 +209,7 @@ async function druids(cache: string) {
   renameSync(file, path.join(pub, renamed));
   patch(path.join(pub, "index.html"), `<script type="module" crossorigin src="/${main}">`,
     `<script type="module" src="/druids/druids.js"></script>\n    <script type="module" crossorigin src="/${renamed}">`);
-  console.log(`   ✓ Druids Curse office: ${MODELS.length} models`);
+  console.log(`   ✓ Druids Curse office: ${MODELS.length} models, ${SOUND_FILES.length} sounds`);
 }
 
 async function buildSkin(dir: string) {
@@ -276,10 +297,12 @@ function rehash(pub: string, rel: string) {
   const renamed = rel.replace(/\.js$/, `-rb${Bun.hash(readFileSync(file)).toString(36).slice(0, 6)}.js`);
   renameSync(file, path.join(pub, renamed));
   const from = path.basename(rel), to = path.basename(renamed);
-  for (const f of ["*.html", "assets/*.js"].flatMap(g => [...new Bun.Glob(g).scanSync({ cwd: pub })])) {
-    const s = readFileSync(path.join(pub, f), "utf8");
-    if (!s.includes(from)) continue;
-    writeFileSync(path.join(pub, f), s.replaceAll(from, to));
+  // one at a time, looking again after each: renaming one importer renames the files that import it in turn, so a
+  // file shared by two of them (main imports both ask and dom, say) would be gone from a list made up front
+  const importer = () => ["*.html", "assets/*.js"].flatMap(g => [...new Bun.Glob(g).scanSync({ cwd: pub })])
+    .find((f) => readFileSync(path.join(pub, f), "utf8").includes(from));
+  for (let f = importer(); f; f = importer()) {
+    writeFileSync(path.join(pub, f), readFileSync(path.join(pub, f), "utf8").replaceAll(from, to));
     if (f.endsWith(".js")) rehash(pub, f);
   }
 }
