@@ -61,6 +61,11 @@ export type Binding =
        * resolves to nothing instead of failing plan/deploy. For keys you may not use.
        */
       optional?: boolean;
+      /**
+       * Only the box gets it, not the edge Worker: a secret for the host itself,
+       * like RB_PROF_SECRET, which turns on /__rb/prof (see `rustybuns prof`).
+       */
+      boxOnly?: boolean;
     };
 
 /** A queue consumer's settings, as wrangler's `queues.consumers` has them. */
