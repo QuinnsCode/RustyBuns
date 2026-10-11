@@ -17,6 +17,7 @@ import { $ } from "bun";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
+import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
@@ -38,7 +39,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -163,10 +164,13 @@ async function prepare(tag: string) {
   // 13. a per-frame hook in the 3D office, for either skin: the forest and the codeSplitters tiles both hang off it
   officeTicks();
 
+  // 13b. the issues board's Open column puts issues already handed to a worker last, so new ones are on top (board.ts)
+  patchAsk(openNewFirstClient);
+
   // 14. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
