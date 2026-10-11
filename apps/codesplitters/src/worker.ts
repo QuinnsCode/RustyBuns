@@ -228,7 +228,7 @@ const app = {
       }
       // GET|POST /api/repos/:o/:r/mirror  where a mirror stands with upstream; sync it now (mirror.ts)
       if (p[4] === "mirror" && !p[5]) return mirrorRepoRoute(req, env, owner, repo, user);
-      // GET|POST /api/repos/:o/:r/mirror/branches[/:b/push]  upstream's branches, opened here; ours, pushed there
+      // GET|POST /api/repos/:o/:r/mirror/branches[/:b/pull|push]  upstream's branches, opened here; ours, pushed there
       if (p[4] === "mirror") { const r = await mirrorBranchRoute(req, env, p, owner, repo, user); if (r) return r; }
       const fresh = await freshRoutes(req, env, p, url, owner, repo, user);
       if (fresh) return fresh;

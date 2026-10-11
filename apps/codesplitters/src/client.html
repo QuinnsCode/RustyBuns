@@ -1623,7 +1623,7 @@ const views = {
         ${r.canWrite && broken ? `<span class="muted"><label><input type="checkbox" data-anyway="${esc(b.name)}"> Land it anyway, though it won't build</label></span>` : ""}
         ${r.canWrite ? `<span class="muted">${clash.some((c) => !c.lint)
           ? `<button class="btn" data-merge="${esc(b.name)}" data-keep="branch">Merge, keep the branch's lines</button> <button class="btn" data-merge="${esc(b.name)}" data-keep="main">Merge, keep main's</button>`
-          : `<button class="btn primary" data-merge="${esc(b.name)}">${icon("git-merge")}Merge</button>`}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}">${icon("upload")}Push upstream</button>` : ""}</span>` : ""}</div>`;
+          : `<button class="btn primary" data-merge="${esc(b.name)}">${icon("git-merge")}Merge</button>`}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}">${icon("upload")}Push upstream</button>${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}" title="Take what upstream's ${esc(b.upstream_ref)} got since">${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
     }).join("");
     const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`), anyway = (name) => el.querySelector(`[data-anyway="${CSS.escape(name)}"]`);
     // A merge button waits on every box its branch shows.
@@ -1643,8 +1643,15 @@ const views = {
     // A mirror's branch goes upstream as a real git branch, the one it came from or one of its name.
     el.querySelectorAll("[data-push]").forEach((btn) => btn.addEventListener("click", async () => {
       btn.disabled = true;
-      try { const p = await api(`/repos/${owner}/${repo}/mirror/branches/${btn.dataset.push}/push`, {}); toast(p.pushed ? `Pushed ${btn.dataset.push} to upstream's ${p.ref}` : `Upstream's ${p.ref} already has it`); }
+      try { const p = await api(`/repos/${owner}/${repo}/mirror/branches/${btn.dataset.push}/push`, {}); toast(`${p.pushed ? `Pushed ${btn.dataset.push} to upstream's ${p.ref}` : `Upstream's ${p.ref} already has it`}${p.took?.length ? `, after taking its ${p.took.join(", ")}` : ""}`); if (p.took?.length) route(); }
       catch (e) { toast(`Not pushed: ${e.message}`); }
+      btn.disabled = false;
+    }));
+    // A branch that came from or went upstream takes what its upstream branch got since (each sync does too).
+    el.querySelectorAll("[data-pull]").forEach((btn) => btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try { const p = await api(`/repos/${owner}/${repo}/mirror/branches/${btn.dataset.pull}/pull`, {}); toast(p.files.length ? `Took upstream's ${p.files.join(", ")}${p.skipped.length ? `; skipped ${p.skipped.join(", ")}` : ""}` : `Nothing new on upstream's ${p.ref}`); if (p.files.length) route(); }
+      catch (e) { toast(`Not pulled: ${e.message}`); }
       btn.disabled = false;
     }));
     icons();
