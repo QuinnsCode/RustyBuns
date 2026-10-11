@@ -13,6 +13,12 @@
         "typescript": "^5.9.0",
       },
     },
+    "apps/agent-demo": {
+      "name": "agent-demo",
+      "dependencies": {
+        "@rustybuns/cli": "workspace:*",
+      },
+    },
     "apps/agent-office": {
       "name": "agent-office-bun",
       "version": "0.1.0",
@@ -1195,6 +1201,8 @@
     "@webgpu/types": ["@webgpu/types@0.1.72", "", {}, "sha512-0cF7RFM2edNoiIS1ODJp0/Gzv4/xSXhwoR0YCza+OWpJWtn4wmo9DvK91aLlH9+uUnwIriP7ZiC3WitmyhuzBw=="],
 
     "abort-controller": ["abort-controller@3.0.0", "", { "dependencies": { "event-target-shim": "^5.0.0" } }, "sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg=="],
+
+    "agent-demo": ["agent-demo@workspace:apps/agent-demo"],
 
     "agent-office-bun": ["agent-office-bun@workspace:apps/agent-office"],
 

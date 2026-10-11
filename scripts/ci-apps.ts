@@ -13,9 +13,11 @@ type App = {
   perOs?: boolean;      // Rust cdylibs don't cross-compile: one runner per OS
   build?: string;       // default: rustybuns build desktop --target <t>, for each target
   check?: boolean;      // typecheck before building (--check)
+  drop?: false;         // tests only: no desktop binaries to build
 };
 
 export const APPS: Record<string, App> = {
+  "agent-demo":        { test: "bun test test", drop: false },
   "agent-office":      { test: "bun test test", build: "bun scripts/rustybunsify.ts compile --all" },
   "auto-rig":          { test: "bun test test", prep: "bun run build:native", perOs: true },
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true },
@@ -72,6 +74,7 @@ if (cmd === "drop") {
     const rows = pipeline ? "all" : await rowChanges(base);
     names = rows === "all" ? Object.keys(APPS) : [...rows];
   } else names = arg === "all" || !arg ? Object.keys(APPS) : arg.split(/[\s,]+/).filter(Boolean);
+  names = names.filter((n) => APPS[n]?.drop !== false);
   const unknown = names.filter((n) => !APPS[n]);
   if (unknown.length) throw new Error(`unknown app(s): ${unknown.join(", ")}. Known: ${Object.keys(APPS).join(", ")}`);
   const include = names.flatMap((app) => {
