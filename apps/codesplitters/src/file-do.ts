@@ -243,21 +243,32 @@ export class FileDurableObject {
     for (const ws of this.ctx.getWebSockets()) try { ws.send(s); } catch {}
   }
 
-  /** Edits over the socket: {type:"ops", id, ops, ifRev?} -> {type:"ack"|"nack", id, ...}. */
+  /**
+   * Edits over the socket: {type:"ops", id, ops, ifRev?} -> {type:"ack"|"nack", id, ...}.
+   * Every ops message gets one or the other, even when something throws, so a page never
+   * waits on an edit that went nowhere (#659).
+   */
   async webSocketMessage(ws: any, raw: string | ArrayBuffer) {
     let msg: { type?: string; id?: number; ops?: Op[]; ifRev?: number; claim?: string };
     try { msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw)); } catch { return; }
     if (msg.type !== "ops" || !Array.isArray(msg.ops)) return;
-    const who = (ws.deserializeAttachment() ?? {}) as { user?: string; write?: boolean; limitAs?: string | null; stepAs?: string | null };
-    if (!who.write) return ws.send(JSON.stringify({ type: "nack", id: msg.id, error: "no write access" }));
-    const over = who.limitAs ? await this.edits.hit(who.limitAs) : null;
-    if (over) return ws.send(JSON.stringify({ type: "nack", id: msg.id, error: over.error, retryAfter: over.wait }));
-    const r = await this.edit(who.user ?? "anon", msg.ops, msg.ifRev, msg.claim);
-    if (r.ok && who.stepAs) {
-      ws.serializeAttachment({ ...who, stepAs: null });
-      await noteStep(this.env, who.stepAs, "code");
+    const answer = (m: Record<string, unknown>) => { try { ws.send(JSON.stringify({ ...m, id: msg.id })); } catch {} };
+    try {
+      const who = (ws.deserializeAttachment() ?? {}) as { user?: string; write?: boolean; limitAs?: string | null; stepAs?: string | null };
+      if (!who.write) return answer({ type: "nack", error: "no write access" });
+      // The limit reads its rules from D1: if that fails, the edit goes through rather than nowhere.
+      const over = who.limitAs ? await this.edits.hit(who.limitAs).catch(() => null) : null;
+      if (over) return answer({ type: "nack", error: over.error, retryAfter: over.wait });
+      const r = await this.edit(who.user ?? "anon", msg.ops, msg.ifRev, msg.claim);
+      answer(r.ok ? { type: "ack", rev: r.rev } : { type: "nack", rev: r.rev, conflicts: r.conflicts });
+      if (r.ok && who.stepAs) {
+        ws.serializeAttachment({ ...who, stepAs: null });
+        await noteStep(this.env, who.stepAs, "code");
+      }
+    } catch (e) {
+      console.error("codeSplitters: socket edit failed", String((e as Error)?.message ?? e));
+      answer({ type: "nack", rev: this.doc.rev, error: `the file couldn't take it: ${(e as Error)?.message ?? e}` });
     }
-    ws.send(JSON.stringify(r.ok ? { type: "ack", id: msg.id, rev: r.rev } : { type: "nack", id: msg.id, rev: r.rev, conflicts: r.conflicts }));
   }
   webSocketClose(ws: any) { try { ws.close(); } catch {} this.presence(ws); }
   webSocketError(ws: any) { this.presence(ws); }
