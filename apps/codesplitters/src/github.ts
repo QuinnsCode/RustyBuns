@@ -8,7 +8,7 @@ import { accountsOn, isAdmin } from "./identity.ts";
 import { fileStub } from "./archive.ts";
 import { json, NAME, type Env } from "./env.ts";
 import { importTarball, tooBigToImport } from "./tarball.ts";
-import { mirrorsOn } from "./mirror.ts";
+import { mirrorsOn, seeGit } from "./mirror.ts";
 import { wipeSearch } from "./search.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
@@ -461,6 +461,8 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     }
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, upstream, sha, expires).run();
+    // On the desktop its git takes pushes from the start: land them from here on (#788).
+    await seeGit(env, user, name);
     return json({ owner: user, name, upstream, commit: sha, ...(expires ? { expires_at: expires } : {}) }, 201);
   }
   return null;

@@ -268,7 +268,7 @@ async function pushChanges(env: Env, owner: string, repo: string, h: Handle, cha
       env.DB.prepare("UPDATE repos SET git_error = NULL, git_bytes = COALESCE(git_bytes, 0) + ? WHERE owner = ? AND name = ?").bind(r.bytes, owner, repo),
       ...Object.keys(changes).map((p) => env.DB.prepare("DELETE FROM git_pending WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, p)),
       // The desktop's git takes pushes from outside too (#773, mirror.ts landPushes): a commit built on what the app had seen is seen.
-      ...localGit(env) ? [env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND (git_seen IS NULL OR git_seen IS ?)").bind(r.commit, owner, repo, r.parent)] : [],
+      ...localGit(env) ? [env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND (git_seen IS NULL OR git_seen IS ?)").bind(r.commit, owner, repo, r.parent ?? "")] : [],
     ]);
     return { remote: a.remote, ...r };
   } catch (e) {

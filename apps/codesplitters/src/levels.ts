@@ -5,6 +5,7 @@
 // built on (rwsdk, Effect, React, Alchemy, Bun), ending in the biggest digs.
 
 import { listDir, readText } from "./archive.ts";
+import { seeGit } from "./mirror.ts";
 import { chunkRepo, importChunks } from "./chunks.ts";
 import { code, json, NAME, type ArtifactsRepo, type DigMessage, type Env } from "./env.ts";
 import { githubHead, githubTarball, githubToken, importRepo, submodules } from "./github.ts";
@@ -214,6 +215,8 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
     const [tip] = await r.handle.log({ ref: level.branch, limit: 1 });
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, level, upstream, upstream_commit) VALUES (?, ?, 'public', ?, ?, ?, ?, ?, ?, ?)")
       .bind(user, name, Date.now(), art.name, art.remote, art.defaultBranch ?? level.branch, slug, `github:${level.repo}`, tip?.hash ?? null).run();
+    // On the desktop its git takes pushes from the start: land them from here on (#788).
+    await seeGit(env, user, name);
     return json({ owner: user, name }, 201);
   }
   return json({ error: "not found" }, 404);

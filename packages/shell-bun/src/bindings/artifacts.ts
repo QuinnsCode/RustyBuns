@@ -50,6 +50,8 @@ export class LocalArtifacts {
   private busy = new Map<string, "IMPORT_IN_PROGRESS" | "FORK_IN_PROGRESS">();
   /** Unlike Cloudflare's, import() here takes a token for a private source. */
   readonly privateImports = true;
+  /** Told the repo's name after a git client pushes to it through gitHttp, so the app can catch up. */
+  onPush?: (name: string) => unknown;
 
   constructor(readonly dir: string, readonly namespace: string) { mkdirSync(dir, { recursive: true }); }
 
@@ -286,5 +288,7 @@ export async function gitHttp(req: Request, namespaces: LocalArtifacts[]): Promi
     if (k.toLowerCase() === "status") status = parseInt(v, 10);
     else headers.set(k, v);
   }
+  // A push landed (or was turned away: the hook looks for itself). Told after the answer goes, never awaited.
+  if (rest === "/git-receive-pack" && status === 200 && ns.onPush) setTimeout(() => { try { Promise.resolve(ns.onPush!(repo)).catch(() => {}); } catch {} }, 0);
   return new Response(out.subarray(split + 4), { status, headers });
 }
