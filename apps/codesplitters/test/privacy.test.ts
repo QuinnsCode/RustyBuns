@@ -18,6 +18,7 @@ async function app() {
   await send("ryan", "/api/playlists", { title: "favourite regexes" });
   await send("mia", "/api/repos", { name: "pit" });
   await call.env.DB.prepare("INSERT INTO collaborators (owner, repo, name) VALUES ('mia', 'pit', 'ryan')").run();
+  await call.env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES ('ryan', 'lab', 'a.ts', 'claude', 'secret plans', 'agent-claude', 'done', 0)").run();
   const token = (await (await send("ryan", "/api/tokens", { label: "script", scope: "write" })).json()) as { token: string };
   const bearer = (url: string, method = "GET") => call(null, url, { method, headers: { authorization: `Bearer ${token.token}` } });
   return { call, send, token: token.token, bearer };
@@ -54,7 +55,7 @@ describe("your data", () => {
     expect((await call(null, "/api/users/ryan")).status).toBe(404);
     expect((await call("mia", "/api/repos/ryan/lab")).status).toBe(404);
     const db = call.env.DB;
-    for (const [table, where] of [["repos", "owner"], ["collaborators", "name"], ["playlists", "owner"], ["api_tokens", "name"]])
+    for (const [table, where] of [["repos", "owner"], ["collaborators", "name"], ["playlists", "owner"], ["api_tokens", "name"], ["agent_runs", "owner"]])
       expect(await db.prepare(`SELECT 1 FROM ${table} WHERE ${where} = 'ryan'`).first()).toBeNull();
     expect(await db.prepare("SELECT email FROM handle_grants WHERE handle = 'ryan'").first()).toEqual({ email: "retired:ryan" });
     // mia's repo is hers, untouched.
