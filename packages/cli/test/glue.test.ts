@@ -339,6 +339,21 @@ test("desktop.advisories: the host checks the app's own version and serves the n
   expect(plain).not.toContain("appLaunchCheck(");
 });
 
+test("box.webmcp: off by default; on, both box hosts add the script tag to their pages and serve it", () => {
+  const c = wranglerToConfig(parseWrangler('{"name":"b","main":"src/w.ts","compatibility_date":"2025-05-07"}'));
+  for (const src of [spaEntry(c, "box"), desktopEntry(c, "box")]) expect(src).not.toContain("webMcpRoute");
+  const on = { ...c, targets: { ...c.targets, box: { provider: "railway" as const, webmcp: true } } };
+  expect(spaEntry(on)).not.toContain("webMcpRoute");                 // the desktop never
+  const spa = spaEntry(on, "box"), worker = desktopEntry(on, "box");
+  for (const src of [spa, worker]) {
+    expect(src).toContain(", webMcpRoute, WEBMCP_TAG");
+    expect(src).toContain("const webmcp = webMcpRoute();");
+    expect(src).toContain("head: WEBMCP_TAG");
+  }
+  expect(spa).toContain("const script = webmcp(req);");
+  expect(worker).toContain("(await prof(req)) ?? webmcp(req) ?? (worker as any).fetch(req, e, ctx)");
+});
+
 test("box: honors desktop.host and headers; a box-only app needs no worker section", () => {
   const c = { name: "tsci", bindings: {}, targets: { box: { provider: "hetzner" }, desktop: { mode: "spa", world: false, host: "desktop/host.ts", headers: { "Cross-Origin-Embedder-Policy": "credentialless" } } } } as any;
   const box = spaEntry(c, "box");

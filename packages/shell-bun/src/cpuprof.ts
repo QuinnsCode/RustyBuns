@@ -9,8 +9,8 @@ import { Session } from "node:inspector";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
-import { historyRuns, type History } from "./history.ts";
-import { summarizeProfile } from "./profsummary.ts";
+import { formatHistory, historyRuns, type History } from "./history.ts";
+import { formatProfileSummary, summarizeProfile } from "./profsummary.ts";
 
 export interface CpuProfileOptions {
   /** Where the .cpuprofile goes. */
@@ -73,6 +73,8 @@ const same = (a: string, b: string) => {
  * `Authorization: Bearer <secret>` samples for 10 seconds, saves the profile to
  * `dir` and answers with it. With a `history`, each profile's summary goes into
  * it, and `GET /__rb/history`, behind the same secret, answers with its runs.
+ * With `?text=1` both answer as text an agent can read (the profile's hottest
+ * frames, `&top=N` of them; the newest `&runs=N` runs), for the box's WebMCP tools.
  */
 export function profRoute(o: { secret?: string; dir: string; log?: (l: string) => void; history?: History }) {
   const secret = o.secret && o.secret.length >= 16 ? o.secret : "";
@@ -82,15 +84,27 @@ export function profRoute(o: { secret?: string; dir: string; log?: (l: string) =
     const url = new URL(req.url);
     const hist = url.pathname === "/__rb/history" && o.history;
     if (!secret || (url.pathname !== "/__rb/prof" && !hist)) return null;
-    if (!same(req.headers.get("authorization") ?? "", `Bearer ${secret}`)) return new Response("unauthorized", { status: 401 });
-    if (hist) return req.method === "GET" ? Response.json({ runs: historyRuns(hist.read()) }) : new Response("GET /__rb/history", { status: 405, headers: { Allow: "GET" } });
-    if (req.method !== "POST") return new Response("POST /__rb/prof?s=<seconds>", { status: 405, headers: { Allow: "POST" } });
-    if (busy) return new Response("a profile is already running", { status: 409 });
+    // X-RB-Prof tells the page's tools this answer is the box's, not the app's.
+    const text = (body: string, status = 200, headers: Record<string, string> = {}) =>
+      new Response(body, { status, headers: { "Content-Type": "text/plain; charset=utf-8", "X-RB-Prof": "1", ...headers } });
+    const asText = url.searchParams.get("text") === "1";
+    const n = (k: string, d: number) => Math.min(Math.max(Math.round(Number(url.searchParams.get(k))) || d, 1), 50);
+    if (!same(req.headers.get("authorization") ?? "", `Bearer ${secret}`)) return text("unauthorized", 401);
+    if (hist) {
+      if (req.method !== "GET") return text("GET /__rb/history", 405, { Allow: "GET" });
+      const runs = historyRuns(hist.read());
+      return asText ? text(formatHistory(runs, n("runs", 5))) : Response.json({ runs });
+    }
+    if (req.method !== "POST") return text("POST /__rb/prof?s=<seconds>", 405, { Allow: "POST" });
+    if (busy) return text("a profile is already running", 409);
     const ms = Math.round((Number(url.searchParams.get("s")) || 10) * 1000);
     log(`[prof] sampling ${Math.min(ms, PROF_MAX_MS) / 1000}s`);
     const { file, json } = await cpuProfile({ dir: o.dir, ms });
     log(`[prof] cpu profile ${file}`);
-    o.history?.profile(basename(file), summarizeProfile(JSON.parse(json)));
+    const id = basename(file), profile = JSON.parse(json);
+    o.history?.profile(id, summarizeProfile(profile));
+    if (asText) return text(`${id} (sampled ${Math.min(ms, PROF_MAX_MS) / 1000}s)\n${formatProfileSummary(summarizeProfile(profile, n("top", 10)))}\n\n` +
+      `saved on the box at ${file}; for a flame graph, \`rustybuns prof\` takes one and saves the .cpuprofile on your machine`);
     return new Response(json, { headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="${file.split("/").at(-1)}"` } });
   };
 }

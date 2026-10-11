@@ -122,6 +122,8 @@ export interface ServeOptions<Env> {
   token?: string;
   /** Extra headers on every response. COOP/COEP are on by default for SAB. */
   headers?: Record<string, string>;
+  /** Markup added to the <head> of every HTML page served, assets and the handler's alike (a box's WebMCP script tag). */
+  head?: string;
   port?: number;
   hostname?: string;
   reporter?: Reporter;
@@ -198,10 +200,15 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   let env: Env | null = null;
   const rep = opts.reporter;
 
+  const head = opts.head;
   const withHeaders = (res: Response) => {
     const h = new Headers(res.headers);
     for (const [k, v] of Object.entries(headers)) if (!h.has(k)) h.set(k, v);
-    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+    const html = !!head && !!h.get("content-type")?.startsWith("text/html");
+    if (html) h.delete("content-length");
+    const out = new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+    if (!html) return out;
+    return new HTMLRewriter().on("head", { element: (e) => { e.append(head!, { html: true }); } }).transform(out);
   };
 
   // Two instances on one machine both set cookies for 127.0.0.1 (cookies ignore

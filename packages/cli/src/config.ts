@@ -249,6 +249,12 @@ export interface HetznerBoxTarget {
   provider: "hetzner";
   /** RSS ceiling in MB. Above it the box writes a heap snapshot to <data>/heap and exits, so it restarts before it runs out. RB_MEM_MAX_MB overrides. Unset: watch only (/__rb/mem). */
   memMaxMb?: number;
+  /**
+   * Triage tools on the box's pages, over WebMCP: an agent in the browser gets mem_stats,
+   * and take_cpu_profile and mem_history once the visitor opens the page with #rb_prof=<RB_PROF_SECRET>.
+   * It adds a script tag to every HTML page the box serves. @default false
+   */
+  webmcp?: boolean;
   /** `nbg1`, `fsn1`, `hel1`, `ash`, `hil`, `sin`. Changing it replaces the server. */
   location?: string;
   /** @deprecated use `location` */
@@ -275,6 +281,12 @@ export interface RailwayBoxTarget {
   provider: "railway";
   /** RSS ceiling in MB. Above it the box writes a heap snapshot to <data>/heap and exits, so it restarts before it runs out. RB_MEM_MAX_MB overrides. Unset: watch only (/__rb/mem). */
   memMaxMb?: number;
+  /**
+   * Triage tools on the box's pages, over WebMCP: an agent in the browser gets mem_stats,
+   * and take_cpu_profile and mem_history once the visitor opens the page with #rb_prof=<RB_PROF_SECRET>.
+   * It adds a script tag to every HTML page the box serves. @default false
+   */
+  webmcp?: boolean;
   /** `us-west2`, `us-east4`, `europe-west4`, `asia-southeast1`. Railway picks when unset. */
   region?: string;
   /** Port the host listens on (Railway routes the public domain to it). @default 3000 */

@@ -26,7 +26,8 @@
     "./intro": "./src/intro.tsx",
     "./memwatch": "./src/memwatch.ts",
     "./profsummary": "./src/profsummary.ts",
-    "./shims": "./src/shims.ts"
+    "./shims": "./src/shims.ts",
+    "./webmcp": "./src/webmcp.ts"
   },
   "files": [
     "src",
