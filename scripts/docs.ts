@@ -58,15 +58,36 @@ function blurb(app: string): string {
   return (text.match(/^.*?[.!?](\s|$)/)?.[0] ?? text).trim().replace(/\|/g, "\\|") || "TODO: say what this one proves";
 }
 
-// Relative links in the root docs.
+// Features: every `###` under "## Features" is a one-line short explanation, then the long one in a
+// <details> block, so the README reads as a list and expands where you want more.
+const features = readme.match(/\n## Features\n([\s\S]*?)\n## /)?.[1];
+if (!features) problems.push("README.md: no `## Features` section");
+else
+  for (const [, title, body] of features.matchAll(/\n### (.+)\n([\s\S]*?)(?=\n### |$)/g)) {
+    const [short, ...rest] = body!.trim().split(/\n\s*\n/);
+    if (!short || short.startsWith("<")) problems.push(`README.md feature "${title}": needs a one-line short explanation`);
+    if (!/^<details><summary>/.test(rest[0] ?? "") || !body!.trim().endsWith("</details>"))
+      problems.push(`README.md feature "${title}": put the long explanation in <details><summary>More</summary> ... </details>`);
+  }
+
+// Relative links (and their #anchors) in the root docs.
 const docs = readdirSync(".").filter((f) => f.endsWith(".md")).concat(existsSync("notes/ROADMAP.md") ? ["notes/ROADMAP.md"] : []);
+const textOf = (doc: string) => (doc === "README.md" ? readme : readFileSync(doc, "utf8"));
+// GitHub's heading ids: lowercase, punctuation dropped, spaces to hyphens.
+const anchors = (doc: string) =>
+  new Set(
+    [...textOf(doc).replace(/```[\s\S]*?```/g, "").matchAll(/^#+ (.+)$/gm)].map(([, h]) =>
+      h!.toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, "").replace(/ /g, "-"),
+    ),
+  );
 for (const doc of docs) {
-  const text = doc === "README.md" ? readme : readFileSync(doc, "utf8");
-  const prose = text.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
+  const prose = textOf(doc).replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
   for (const [, target] of prose.matchAll(/\]\(([^)\s]+)\)/g)) {
-    if (/^[a-z]+:|^#/.test(target!)) continue;
-    const file = decodeURI(target!.split("#")[0]!);
-    if (!existsSync(join(dirname(doc), file))) problems.push(`${doc}: broken link to ${file}`);
+    if (/^[a-z]+:/.test(target!)) continue;
+    const [path, hash] = target!.split("#");
+    const file = path ? join(dirname(doc), decodeURI(path)) : doc;
+    if (!existsSync(file)) problems.push(`${doc}: broken link to ${path}`);
+    else if (hash && file.endsWith(".md") && !anchors(file).has(hash)) problems.push(`${doc}: no heading #${hash} in ${file}`);
   }
 }
 
