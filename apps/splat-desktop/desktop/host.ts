@@ -23,6 +23,8 @@ let library: string | null = null;
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const bad = (msg: string, status = 400) => json({ error: msg }, status);
+// A client body: the named fields, each unknown until checked. Bad JSON or a non-object body has none.
+const fields = async <K extends string>(req: Request) => (await req.json().catch(() => null)) as { [k in K]?: unknown } | null;
 const expand = (p: string) => resolve(p.replace(/^~(?=$|\/)/, homedir()));
 
 /** Test hook: forget the open library. */
@@ -147,8 +149,8 @@ export default {
         return json({ supported: dir !== null, dir: dir || null });
       }
       if (path === "/api/library/open" && req.method === "POST") {
-        const raw = String(((await req.json()) as any).dir ?? "");
-        if (!raw) return bad("dir required");
+        const raw = (await fields<"dir">(req))?.dir;
+        if (typeof raw !== "string" || !raw) return bad("dir required");
         const dir = expand(raw);
         if (!existsSync(dir) || !statSync(dir).isDirectory()) return bad(`not a folder: ${dir}`, 404);
         library = dir;
