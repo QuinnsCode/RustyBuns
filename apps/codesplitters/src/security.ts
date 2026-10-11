@@ -1,7 +1,8 @@
 // What keeps a browser and a bot honest, before any route runs (#647):
 //   headers    every answer, the Worker's here and the static pages' through dist/client/_headers
-//              (build.ts writes it from the same list): no framing, no sniffing, HTTPS only, and a
-//              Content-Security-Policy in report-only until the console has stayed quiet a while.
+//              (build.ts writes it from the same list): no framing, no sniffing, HTTPS only, and an
+//              enforced Content-Security-Policy (#673). Inline scripts run only by hash: the build
+//              hashes the pages' own, and the Worker's answers have none.
 //   origin     a cookie-signed POST, PUT, PATCH or DELETE to /api from another site is refused.
 //              SameSite=Lax was all that stood in a cross-site form's way. Bearer tokens are exempt:
 //              no browser attaches one on its own.
@@ -10,16 +11,17 @@
 //   edge limit AUTH_LIMIT, Workers Rate Limiting, counts the per-IP rules (signing in and up, account
 //              mail, ...) in memory at each location before D1's counters write a row (limits.ts).
 
+import { createHash } from "node:crypto";
 import { json, type Env } from "./env.ts";
 
 /** Turnstile's script and its iframe come from here. */
 export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
-// What the pages load: their own inline scripts and styles, the vendored scripts and fonts,
+// What the pages load: their own inline scripts (by hash) and styles, the vendored scripts and fonts,
 // images from anywhere (avatars, data: and blob: previews), and the file sockets on this host.
-export const CSP = [
+export const csp = (scriptHashes: string[] = []) => [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' ${TURNSTILE_ORIGIN}`,
+  ["script-src 'self'", ...scriptHashes.map((h) => `'${h}'`), TURNSTILE_ORIGIN].join(" "),
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self'",
@@ -32,22 +34,29 @@ export const CSP = [
   "frame-ancestors 'none'",
 ].join("; ");
 
+/** The Worker's own answers: JSON, redirects and share cards, none with an inline script. */
+export const CSP = csp();
+
+/** sha256-… of each inline <script> in a page (the importmap too), as script-src takes them. */
+export const inlineScriptHashes = (html: string) =>
+  [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(([, body]) => `sha256-${createHash("sha256").update(body!).digest("base64")}`);
+
 export const SECURITY_HEADERS: Record<string, string> = {
-  // Report-only first: a page that breaks under it says so in the console, and nothing is blocked.
-  "content-security-policy-report-only": CSP,
+  "content-security-policy": CSP,
   "strict-transport-security": "max-age=31536000",
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
   "referrer-policy": "strict-origin-when-cross-origin",
 };
 
-/** The static pages' copy of the headers, in Cloudflare's _headers format. */
-export const headersFile = () => `/*\n${Object.entries(SECURITY_HEADERS).map(([k, v]) => `  ${k}: ${v}`).join("\n")}\n`;
+/** The static pages' copy of the headers, in Cloudflare's _headers format, with their inline scripts' hashes. */
+export const headersFile = (scriptHashes: string[] = []) =>
+  `/*\n${Object.entries({ ...SECURITY_HEADERS, "content-security-policy": csp(scriptHashes) }).map(([k, v]) => `  ${k}: ${v}`).join("\n")}\n`;
 
 /** `res` with the headers it doesn't set itself (the OAuth consent page has its own, stricter CSP). A socket's 101 is left be. */
 export function secured(res: Response): Response {
   if (res.status === 101 || (res as { webSocket?: unknown }).webSocket) return res;
-  const missing = Object.entries(SECURITY_HEADERS).filter(([k]) => !res.headers.has(k) && !(k === "content-security-policy-report-only" && res.headers.has("content-security-policy")));
+  const missing = Object.entries(SECURITY_HEADERS).filter(([k]) => !res.headers.has(k));
   if (!missing.length) return res;
   // A Response from a fetch or a Durable Object has immutable headers: copy it then.
   try { for (const [k, v] of missing) res.headers.set(k, v); return res; }

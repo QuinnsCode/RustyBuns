@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { inlineScriptHashes } from "../src/security.ts";
 
 // The Worker bundle must resolve Better Auth as workerd does. Its browser build keeps
 // request state in one slot every request shares, so on the live site overlapping
@@ -24,4 +25,22 @@ test("the pages load their scripts and styles from the site, and the build ships
     expect(html).not.toMatch(/"imports":\s*\{[^}]*"(https?:)?\/\//);
   }
   for (const f of ["vendor/lucide.min.js", "vendor/three.module.js", "fonts/geist.css"]) expect(await Bun.file(`${dist}/${f}`).exists()).toBe(true);
+}, 60_000);
+
+// The CSP is enforced (#673) without 'unsafe-inline': each page's inline scripts run because
+// _headers lists their hashes. A page whose script changed without a rebuild would go blank.
+test("_headers enforces the CSP and lets every page's inline scripts run by hash", async () => {
+  const p = Bun.spawn(["bun", "run", "build.ts"], { cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe" });
+  expect(await p.exited).toBe(0);
+  const dist = `${import.meta.dir}/../dist/client`;
+  const headers = await Bun.file(`${dist}/_headers`).text();
+  const policy = headers.match(/^  content-security-policy: (.*)$/m)?.[1] ?? "";
+  expect(headers).not.toContain("report-only");
+  const scriptSrc = policy.split("; ").find((d) => d.startsWith("script-src "))!;
+  expect(scriptSrc).not.toContain("unsafe-inline");
+  for (const page of ["index.html", "play.html", "features.html", "reference.html", "mcp.html"]) {
+    const hashes = inlineScriptHashes(await Bun.file(`${dist}/${page}`).text());
+    expect(hashes.length).toBeGreaterThan(0);
+    for (const h of hashes) expect(scriptSrc).toContain(`'${h}'`);
+  }
 }, 60_000);
