@@ -31,7 +31,7 @@ if (!sha256) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -107,10 +107,13 @@ async function prepare(tag: string) {
   // 7. Lucide icons for the emoji, on every page, and a search box for the queue
   await buildPageScripts();
 
-  // 8. the Druids Curse skin
+  // 8. the time on the issues and PR boards, in front of "Updated …" (its setting is a page script, clock/)
+  clockOnBoards();
+
+  // 9. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -174,6 +177,8 @@ async function buildPageScripts() {
   await buildPageScript("icons/index.ts", "rb-icons", ["index", "lite", "login", "join", "claim"]);
   // the task queue's search box, on the two pages with the queue
   await buildPageScript("queue/index.ts", "rb-queue", ["index", "lite"]);
+  // the boards' clock and its setting, where the boards are
+  await buildPageScript("clock/index.ts", "rb-clock", ["index", "lite"]);
 }
 
 async function buildPageScript(entry: string, prefix: string, pages: string[]) {
@@ -191,6 +196,34 @@ async function buildPageScript(entry: string, prefix: string, pages: string[]) {
     const old = new RegExp(`<script type="module" src="/assets/${prefix}-\\w+\\.js"></script>`);
     if (old.test(html)) writeFileSync(file, html.replace(old, tag));
     else patch(file, "<head>", `<head>\n    ${tag}`);
+  }
+}
+
+// The boards' "Updated just now" gets the time in front: "3:42 PM PDT · Updated just now". The 3D office and
+// /lite share the chunk the boards live in, and the hashed chunks are served as immutable, so the patched one
+// gets a new name, and so does each file that imports it.
+function clockOnBoards() {
+  const pub = path.join(office, "dist/public");
+  const [ask, ...more] = [...new Bun.Glob("assets/ask-*.js").scanSync({ cwd: pub })];
+  if (!ask || more.length) throw new Error(`Agent Office changed: expected one assets/ask-*.js, found ${more.length + (ask ? 1 : 0)}`);
+  // once when the board draws, and again every 15 seconds
+  for (const v of ["l", "t"])
+    patch(path.join(pub, ask), `${v}.fetchedAt?\`Updated \${c(${v}.fetchedAt)}\``,
+      `${v}.fetchedAt?\`\${globalThis.__rbClock?.(${v}.fetchedAt)??\`\`}Updated \${c(${v}.fetchedAt)}\``);
+  rehash(pub, ask);
+}
+
+/** Give a patched asset a name of its own, then point everything that loads it there, renaming those in turn. */
+function rehash(pub: string, rel: string) {
+  const file = path.join(pub, rel);
+  const renamed = rel.replace(/\.js$/, `-rb${Bun.hash(readFileSync(file)).toString(36).slice(0, 6)}.js`);
+  renameSync(file, path.join(pub, renamed));
+  const from = path.basename(rel), to = path.basename(renamed);
+  for (const f of ["*.html", "assets/*.js"].flatMap(g => [...new Bun.Glob(g).scanSync({ cwd: pub })])) {
+    const s = readFileSync(path.join(pub, f), "utf8");
+    if (!s.includes(from)) continue;
+    writeFileSync(path.join(pub, f), s.replaceAll(from, to));
+    if (f.endsWith(".js")) rehash(pub, f);
   }
 }
 
