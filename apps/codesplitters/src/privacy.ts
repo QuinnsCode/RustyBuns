@@ -10,6 +10,7 @@
 // so no one can pick it up and pass as you.
 
 import { evict } from "./github.ts";
+import { listFollows } from "./follows.ts";
 import { json, type Env } from "./env.ts";
 
 const all = async (env: Env, sql: string, ...args: unknown[]) => (await env.DB.prepare(sql).bind(...args).all()).results;
@@ -43,6 +44,8 @@ export async function exportFor(env: Env, handle: string) {
     collections: await Promise.all((await all(env, "SELECT id, title FROM playlists WHERE owner = ?", handle)).map(async (p: any) =>
       ({ ...p, tracks: await all(env, "SELECT owner, repo, path, from_line, to_line, note FROM tracks WHERE playlist = ?", p.id) }))),
     shares: await all(env, "SELECT * FROM shares WHERE by = ?", handle),
+    // Who and what you follow; a private repo's only while you're its crew, as in the app.
+    following: await listFollows(env.DB, handle),
     branches: await all(env, "SELECT owner, repo, name, status, created_at, merged_at FROM branches WHERE by = ?", handle),
     cuts: await all(env, "SELECT * FROM cuts WHERE by = ?", handle),
     deploys: await all(env, "SELECT owner, repo, stage, trigger, status, commit_hash, url, at FROM deploys WHERE by = ?", handle),
@@ -65,6 +68,7 @@ export async function eraseUser(env: Env, handle: string) {
     by("DELETE FROM playlists WHERE owner = ?", handle),
     by("DELETE FROM collaborators WHERE name = ?", handle),
     by("DELETE FROM shares WHERE by = ?", handle),
+    by("DELETE FROM follows WHERE follower = ? OR (kind IN ('user', 'agent') AND target = ?)", handle, handle),
     by("DELETE FROM api_tokens WHERE name = ?", handle),
     by("DELETE FROM oauth_grants WHERE name = ?", handle),
     by("DELETE FROM oauth_requests WHERE name = ?", handle),

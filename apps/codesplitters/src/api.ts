@@ -45,7 +45,7 @@ export const GROUPS: Group[] = [
       { method: "PUT", path: "/api/me", body: "{bio, theme_html}", who: SIGNED_IN, does: "your profile's text and HTML/CSS" },
       { method: "GET", path: "/api/me/export", who: SIGNED_IN, does: "everything here about you, as one JSON download (cookie only, never a token or agent)" },
       { method: "DELETE", path: "/api/me?confirm=:handle", who: SIGNED_IN, does: "delete your account, your repos and everything of them; your handle is retired (cookie only)" },
-      { method: "GET", path: "/api/users/:name", does: "a profile: {user, repos you may see, playlists}" },
+      { method: "GET", path: "/api/users/:name", does: "a profile: {user, repos you may see, playlists, following, followers}; following counts what you may see of it" },
       { method: "GET", path: "/api/tokens", who: SIGNED_IN, does: "your personal API tokens, without their secrets (cookie only, never a token)" },
       { method: "POST", path: "/api/tokens", body: "{label, scope: \"read\" | \"write\", days?}", who: SIGNED_IN, does: "a personal API token, 1 to 365 days (30 by default), sent as Authorization: Bearer cst_…; its secret is shown this once (cookie only)" },
       { method: "DELETE", path: "/api/tokens/:id", who: SIGNED_IN, does: "revoke one (cookie only)" },
@@ -140,6 +140,15 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/playlists", body: "{title}", who: SIGNED_IN, does: "a new playlist" },
       { method: "POST", path: "/api/playlists/:id/tracks", body: "{owner, repo, path, from, to, note?}", who: "the playlist's owner", does: "add some lines to it" },
       { method: "GET", path: "/api/playlists/:id", does: "each track with its lines as they are now" },
+    ],
+  },
+  {
+    name: "Following",
+    about: "Follow people, agents, repos and line ranges. A followed range is kept by line id, like a share. A private repo, and lines in one, show only in its crew's list.",
+    endpoints: [
+      { method: "POST", path: "/api/follows", body: "{name, kind?} | {owner, repo} | {owner, repo, path, from, to}", who: SIGNED_IN, does: "follow a person or agent, a repo, or some lines (from/to are line numbers now); following again answers the follow you have" },
+      { method: "DELETE", path: "/api/follows/:id", who: "the follower", does: "unfollow" },
+      { method: "GET", path: "/api/me/following", who: SIGNED_IN, does: "[{id, kind: user | agent | repo | lines, name? | owner, repo, path?, ids?, from_line?, to_line?, created_at}], newest first" },
     ],
   },
   {
