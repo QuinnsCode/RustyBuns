@@ -12,9 +12,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>codeSplitters</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="/fonts/geist.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 <style>
   /* GitHub's shape in black and white, written like a staff engineer's blog:
@@ -474,7 +472,9 @@
   .rule .ctl :is(input, select) { padding: 2px 6px; font-size: 13px; line-height: 18px; }
   .rule .ctl input { width: 64px; font-family: var(--mono); text-align: right; }
   .rule .ctl .btn { padding: 2px 4px; color: var(--muted); }
-  .rule.off .what, .rule.off .ctl, .rule.off .use, .rule.off .per { opacity: .4; }
+  .rule .spread { display: flex; flex-wrap: wrap; gap: 2px 10px; padding-left: 38px; font: 400 11px var(--mono); color: var(--faint); }
+  .rule .spread b { font-weight: 500; color: var(--muted); } .rule .spread .hot b { color: var(--accent); }
+  .rule.off .what, .rule.off .ctl, .rule.off .use, .rule.off .per, .rule.off .spread { opacity: .4; }
   /* The rate limits page: rule groups flowed into columns, a save bar that sticks, the log as rows. */
   .limits .rgroups { columns: 3 340px; column-gap: 12px; }
   .limits .rgroups > .box { break-inside: avoid; margin: 0 0 12px; }
@@ -487,6 +487,23 @@
   #mirror .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
   #mirror .tag.ok { color: var(--accent); border-color: var(--accent); } #mirror .tag.fail { color: var(--del-fg); border-color: var(--del-fg); }
   .limits .tag.reject, .jobs .tag.failed { color: var(--del-fg); } .limits .tag.flag, .limits .tag.queue, .jobs .tag.waiting, .jobs .tag.running { color: var(--accent); border-color: var(--accent); }
+  .insights .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 12px; }
+  .insights .tile { border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; display: grid; gap: 2px; } .insights .tile b { font: 600 22px var(--mono); } .insights .tile span { color: var(--muted); font-size: 12px; }
+  .insights .tile.person b { color: var(--accent); }
+  .insights .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } .insights .cols > .box { margin: 0 0 12px; }
+  .insights .days { display: grid; gap: 6px; padding: 12px 16px; font-size: 12px; } .insights .days > div { display: grid; grid-template-columns: 52px 1fr 64px; gap: 10px; align-items: center; }
+  .insights .stack { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--canvas); } .insights .stack i { display: block; height: 100%; }
+  .insights .k-person { background: var(--accent); } .insights .k-agent { background: var(--fg); } .insights .k-bot { background: var(--border-2); }
+  .insights .key { display: inline-flex; gap: 12px; } .insights .key i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+  .insights .chk { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; } .insights .chk:first-of-type { border-top: 0; }
+  .insights .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--border-2); } .insights .dot.ok { background: var(--fg); } .insights .dot.warn { background: var(--accent); } .insights .dot.bad { background: var(--del-fg); box-shadow: 0 0 0 3px color-mix(in srgb, var(--del-fg) 25%, transparent); }
+  .insights .chk .muted { margin-left: auto; text-align: right; }
+  .insights .way > div { display: grid; grid-template-columns: 150px 1fr 70px; gap: 10px; align-items: center; padding: 6px 16px; font-size: 13px; } .insights .way .meter i { background: var(--accent); }
+  .insights table { width: 100%; border-collapse: collapse; font-size: 13px; } .insights th, .insights td { text-align: left; padding: 7px 12px; border-top: 1px solid var(--border); white-space: nowrap; } .insights thead th { border-top: 0; color: var(--muted); font-weight: 500; font-size: 12px; }
+  .insights .scroll { overflow-x: auto; } .insights td.ua { max-width: 280px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+  .insights .steps { display: inline-flex; gap: 3px; } .insights .steps i { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--border-2); } .insights .steps i.on { background: var(--accent); border-color: var(--accent); }
+  .insights .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); } .insights .tag.person { color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 720px) { .insights .tiles, .insights .cols { grid-template-columns: 1fr; } .insights .way > div { grid-template-columns: 110px 1fr 56px; } }
   .switch { position: relative; width: 30px; height: 18px; margin-left: auto; flex: none; }
   .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
   .switch i { position: absolute; inset: 0; border-radius: 9px; background: var(--border-2); transition: background .15s; pointer-events: none; }
@@ -537,6 +554,18 @@
   .about { max-width: 720px; padding-top: 40px; } .about h1 { font: 600 34px/1.05 var(--sans); letter-spacing: -0.04em; margin: 10px 0 18px; } .about h1 em { font-style: normal; color: var(--accent); }
   .about h2 { font: 600 18px var(--sans); letter-spacing: -0.02em; margin: 30px 0 6px; } .about p { color: #333; margin: 0 0 12px; font-size: 15px; }
   .about .quiet { color: var(--faint); font-size: 12px; margin-top: 36px; }
+  /* Privacy: the field report. Four finds up top, then the strata table. */
+  .privacy .lede { font-size: 16px; color: var(--fg); } .privacy ul { margin: 0 0 12px; padding-left: 20px; color: #333; font-size: 15px; } .privacy li { margin: 0 0 6px; }
+  .privacy .tldr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin: 24px 0 8px; }
+  .privacy .tldr > div { background: var(--canvas); padding: 14px 16px; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 13px; }
+  .privacy .tldr [data-lucide], .privacy .tldr svg { grid-row: span 2; color: var(--accent); margin-top: 3px; } .privacy .tldr span { color: var(--muted); }
+  .privacy .strata { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; margin: 10px 0 12px; }
+  .privacy table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 560px; }
+  .privacy th, .privacy td { text-align: left; vertical-align: top; padding: 9px 12px; border-top: 1px solid var(--border); }
+  .privacy thead th { border-top: 0; background: var(--canvas); color: var(--muted); font-weight: 500; font-size: 12px; } .privacy tbody th { font-weight: 600; white-space: nowrap; }
+  .privacy tbody tr:nth-child(odd) td, .privacy tbody tr:nth-child(odd) th { background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(0,0,0,.012) 3px 4px); }
+  .privacy #yourdata { margin: 12px 0 16px; }
+  @media (max-width: 560px) { .privacy .tldr { grid-template-columns: 1fr; } }
   .backrooms { min-height: calc(100vh - 49px); display: grid; place-items: center; text-align: center; background: repeating-linear-gradient(90deg, #f3edc9 0 46px, #ebe3b5 46px 48px); color: #4a4426; }
   .backrooms h1 { font: 600 34px var(--mono); letter-spacing: -0.02em; margin: 0 0 8px; } .backrooms p { margin: 0 0 16px; }
 
@@ -720,7 +749,7 @@ function landHome() {
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
@@ -819,6 +848,7 @@ function signInDrawer(mode = "in") {
       <label class="field"><span>Password${up ? " · 8 or more characters" : ""}</span><input name="password" type="password" required minlength="8" autocomplete="${up ? "new-password" : "current-password"}"></label>
       <p class="formmsg" id="authmsg"></p>
       <button class="btn primary wide">${up ? "Create account" : "Sign in"}</button>
+      ${up ? `<p class="muted small" style="margin:8px 0 0">We keep only what it takes to run your account. <a href="#/privacy">What we keep, and why</a>.</p>` : ""}
     </form>
     ${!up && session.mail ? `<p class="muted small" style="margin:0"><a href="#" id="forgot">Forgot your password?</a></p>` : ""}`);
   $("#forgot")?.addEventListener("click", (e) => { e.preventDefault(); forgotDrawer($("#email").email.value); });
@@ -953,10 +983,14 @@ async function limitsPage() {
     const d = r.defaults, changed = d && (d.max !== r.max || d.window_s !== r.window_s || d.on_fail !== r.on_fail || !r.enabled);
     const opts = (WINDOWS.some(([w]) => w === r.window_s) ? WINDOWS : [...WINDOWS, [r.window_s, every(r.window_s)]])
       .map(([w, l]) => `<option value="${w}"${w === r.window_s ? " selected" : ""}>${l}</option>`).join("");
+    // What callers really get: their count per window, across every window still kept (about the last day).
+    const sp = r.spread, stat = (k, l, tip) => `<span class="${sp[k] > r.max ? "hot" : ""}" title="${tip}">${l} <b>${sp[k]}</b></span>`;
+    const spread = sp ? `<div class="spread" title="per caller per ${every(r.window_s)}, over ${sp.windows} busy caller-window${sp.windows === 1 ? "" : "s"} since ${new Date(sp.since).toLocaleString()}">
+      ${stat("low", "low", "the quietest busy window")}${stat("p50", "med", "half of callers' windows were at or under this")}${stat("mean", "avg", "the average")}${stat("p90", "p90", "9 in 10 windows at or under")}${stat("p95", "p95", "19 in 20 windows at or under")}${stat("p99", "p99", "99 in 100 windows at or under")}${stat("worst", "worst", "the busiest a caller has been in one window")}<span>of ${r.max}${sp.over ? ` · <span class="hot"><b>${sp.over}</b> over</span>` : ""}</span></div>` : "";
     const used = `${r.now.hits} hit${r.now.hits === 1 ? "" : "s"} · ${r.now.callers} caller${r.now.callers === 1 ? "" : "s"}${r.now.blocked ? ` · <span class="hot">${r.now.blocked} over</span>` : ""}`;
     return `<div class="rule${r.enabled ? "" : " off"}" data-name="${r.name}">
       <label class="rhead"><span class="switch"><input type="checkbox" name="enabled"${r.enabled ? " checked" : ""} aria-label="limit ${esc(r.label)}"><i></i></span><b>${esc(r.label)}</b><span class="per">${r.per === "ip" ? "IP" : "handle"}</span><span class="use" title="this ${every(r.window_s)}">${used}</span></label>
-      <span class="what" title="${esc(r.what)}">${esc(r.what)}</span>
+      <span class="what" title="${esc(r.what)}">${esc(r.what)}</span>${spread}
       <div class="ctl"><input name="max" type="number" min="1" max="100000" value="${r.max}" aria-label="most allowed"><span>/</span><select name="window_s" aria-label="window">${opts}</select><span>then</span><select name="on_fail" aria-label="when a caller goes over">${ON_FAIL.filter(([v]) => v !== "queue" || r.queueable).map(([v, l, t]) => `<option value="${v}" title="${t}"${v === r.on_fail ? " selected" : ""}>${l}</option>`).join("")}</select>
         ${changed ? `<button type="button" class="btn ghost small" data-default title="back to the default: ${d.max} per ${every(d.window_s)}, ${d.on_fail}">${icon("rotate-ccw")}</button>` : ""}</div>
     </div>`;
@@ -993,6 +1027,46 @@ async function limitsPage() {
   });
   icons();
   sealBox();
+}
+// Insights (admins, src/insights.ts): people vs agents vs bots by day, the site's
+// health over the last day, how far everyone has got, and who's been calling.
+const KINDS = [["person", "People", "browsers"], ["agent", "Agents", "API tokens, MCP, scripts, headless"], ["bot", "Bots", "crawlers and monitors"]];
+async function insightsPage(days = 7) {
+  const d = await api(`/admin/insights?days=${days}`);
+  const { kinds, by_day, by_via, callers } = d.traffic, fmt = (n) => Number(n || 0).toLocaleString();
+  const dayList = Array.from({ length: d.days }, (_, i) => d.from + i * 86400000);
+  const per = (day, k) => by_day.find((r) => r.day === day && r.kind === k)?.hits ?? 0;
+  const top = Math.max(1, ...dayList.map((day) => KINDS.reduce((s, [k]) => s + per(day, k), 0)));
+  const date = (t) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const stepIx = (s) => d.steps.findIndex((x) => x.step === s);
+  app.innerHTML = `<div class="wrap limits insights" style="padding-top:24px">
+    <h2 style="margin:0 0 6px;font-weight:600">${icon("activity")} Insights<span class="grow"></span>
+      <select id="ins-days" aria-label="how far back">${[1, 7, 30].map((n) => `<option value="${n}"${n === d.days ? " selected" : ""}>${n === 1 ? "today" : `last ${n} days`}</option>`).join("")}</select></h2>
+    <p class="muted" style="margin:0 0 18px">Who's really here. Requests from the internet, split by whether they look like a person in a browser, an agent, or a bot. Signed-out callers are a daily hash, never an IP. Kept 30 days.</p>
+    <div class="tiles">${KINDS.map(([k, label, what]) => `<div class="tile ${k}" title="${what}"><span>${label}</span><b>${fmt(kinds[k]?.callers)}</b><span>${fmt(kinds[k]?.hits)} requests${kinds[k]?.errors ? ` · <span class="hot">${fmt(kinds[k].errors)} 5xx</span>` : ""}</span></div>`).join("")}</div>
+    <div class="cols">
+      <div class="box"><div class="bar">${icon("chart-column")}<b>Requests by day</b><span class="grow"></span><span class="key muted small">${KINDS.map(([k, l]) => `<span><i class="k-${k}"></i>${l}</span>`).join("")}</span></div>
+        <div class="days">${dayList.map((day) => { const all = KINDS.reduce((s, [k]) => s + per(day, k), 0);
+          return `<div><span class="muted">${date(day)}</span><span class="stack" title="${KINDS.map(([k, l]) => `${l}: ${per(day, k)}`).join(", ")}" style="width:${Math.max(1, (all / top) * 100)}%">${KINDS.map(([k]) => per(day, k) ? `<i class="k-${k}" style="flex:${per(day, k)}"></i>` : "").join("")}</span><span class="muted" style="text-align:right">${fmt(all)}</span></div>`; }).join("")}</div>
+        <div class="body muted small" style="border-top:1px solid var(--border)">${by_via.map((v) => `${esc(v.via)} <b>${fmt(v.hits)}</b>`).join(" · ") || "No traffic from the internet yet."}</div></div>
+      <div class="box"><div class="bar">${icon("heart-pulse")}<b>Health</b><span class="muted">the last 24 hours</span></div>
+        ${d.health.checks.map((c) => `<div class="chk"><span class="dot ${c.state}" title="${c.state}"></span><b>${esc(c.name)}</b><span class="muted">${esc(c.detail)}</span></div>`).join("")}</div>
+    </div>
+    <div class="box"><div class="bar">${icon("footprints")}<b>The way in</b><span class="muted">of ${fmt(d.total_users)} people, how many reached each step</span></div>
+      <div class="way" style="padding:6px 0">${d.steps.map((s) => `<div><span>${esc(s.label)}</span><span class="meter"><i style="width:${d.total_users ? (s.people / d.total_users) * 100 : 0}%"></i></span><span class="muted" style="text-align:right">${fmt(s.people)}</span></div>`).join("")}</div></div>
+    <div class="box"><div class="bar">${icon("users")}<b>Recent people</b><span class="muted">most recently here, with how far each got; requests over the range above</span></div>
+      <div class="scroll"><table><thead><tr><th>Who</th><th>Joined</th><th>Last seen</th><th>Got as far as</th><th></th><th>As a person</th><th>Via agents</th></tr></thead><tbody>
+      ${d.users.map((u) => `<tr><td><a href="#/u/${esc(u.name)}">@${esc(u.name)}</a></td><td class="muted">${u.joined ? ago(u.joined) : "—"}</td><td class="muted">${u.last_seen ? ago(u.last_seen) : "—"}</td>
+        <td>${u.furthest ? esc(d.steps[stepIx(u.furthest)].label) : '<span class="muted">not yet</span>'}</td>
+        <td><span class="steps">${d.steps.map((s) => `<i class="${u.steps[s.step] ? "on" : ""}" title="${esc(s.label)}${u.steps[s.step] ? `: ${u.steps[s.step].n}×, first ${ago(u.steps[s.step].first_at)}` : ""}"></i>`).join("")}</span></td>
+        <td>${fmt(u.hits.person)}</td><td>${u.hits.agent ? `<b>${fmt(u.hits.agent)}</b>` : '<span class="muted">0</span>'}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">Nobody yet.</td></tr>'}</tbody></table></div></div>
+    <div class="box"><div class="bar">${icon("radio")}<b>Callers today</b><span class="muted">the last 24 hours, newest first</span></div>
+      <div class="scroll"><table><thead><tr><th>Caller</th><th>Looks like</th><th>Via</th><th>Requests</th><th>Last</th><th>User agent</th></tr></thead><tbody>
+      ${callers.map((c) => `<tr><td>${c.who.startsWith("@") ? `<a href="#/u/${esc(c.who.slice(1))}">${esc(c.who)}</a>` : `<span class="muted" title="signed out: a hash of their IP, for today only">${esc(c.who)}</span>`}</td>
+        <td><span class="tag ${c.kind}">${c.kind}</span></td><td class="muted">${esc(c.via)}</td><td>${fmt(c.hits)}${c.errors ? ` <span class="hot">· ${c.errors} 5xx</span>` : ""}</td><td class="muted">${ago(c.last_at)}</td><td class="ua" title="${esc(c.ua ?? "")}">${esc(c.ua ?? "none")}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">No one in the last day.</td></tr>'}</tbody></table></div></div>
+  </div>`;
+  $("#ins-days").addEventListener("change", (e) => insightsPage(Number(e.target.value)));
+  icons();
 }
 // Hosted deploys' sealing key (src/deploy-keys.ts): after a rotation, seal what the old key sealed under the new one.
 async function sealBox() {
@@ -1457,6 +1531,82 @@ const views = {
     wireFoot();
   },
 
+  // The privacy policy, written up as a dig: what we found, why it's there, how to take it or bury it.
+  // Keep it true to src/privacy.ts (the export and the delete) and to what the app really stores.
+  privacy() {
+    ctx = { view: "privacy" };
+    const mail = session.privacy;
+    const contact = mail ? `<a href="mailto:${esc(mail)}">${esc(mail)}</a>` : "the export and delete buttons below, which work without asking anyone";
+    const row = (what, items, why, kept) => `<tr><th>${what}</th><td>${items}</td><td>${why}</td><td>${kept}</td></tr>`;
+    app.innerHTML = `<div class="wrap about privacy">
+      <div class="label">privacy · field report</div>
+      <h1>We excavated our own site for your <em>personal data</em>.</h1>
+      <p class="lede">Here's everything we dug up, what each find is for, and how to take it home or bury it. We brushed every layer. The short version: we keep what it takes to run a code host, and not one shard more.</p>
+      <div class="tldr">
+        <div>${icon("shovel")}<b>We keep the minimum.</b><span>Your account, your code, and enough to keep you signed in.</span></div>
+        <div>${icon("eye-off")}<b>Nobody's watching.</b><span>No analytics, no ad pixels, no trackers, no fingerprinting.</span></div>
+        <div>${icon("hand-coins")}<b>Not for sale.</b><span>We don't sell or rent your data, or train AI on your code.</span></div>
+        <div>${icon("download")}<b>It's yours.</b><span>Download all of it, or delete your account, any time, from your profile.</span></div>
+      </div>
+
+      <h2>The dig site</h2>
+      <p>codeSplitters is a code host run by <b>QNTBR</b>, who is the controller of your data under the GDPR and UK GDPR. Questions, requests or complaints: ${contact}. We answer within a month, usually much sooner.</p>
+
+      <h2>What we found, layer by layer</h2>
+      <div class="strata"><table>
+        <thead><tr><th>Layer</th><th>What's in it</th><th>Why</th><th>How long</th></tr></thead>
+        <tbody>
+        ${row("Account", "Your email, name and avatar (from GitHub or Google, if you sign in with them), and your password as a one-way hash", "Signing you in, and the one email you asked for (verify, reset). No newsletters, ever.", "Until you delete your account")}
+        ${row("Handle and page", "Your @handle, your bio and your page's HTML and CSS", "Your public profile", "Until you delete your account")}
+        ${row("Your code", "Repos, files, every line's history with the handle that wrote it, branches, collections, shares and deploy logs", "That's the product. Public repos are public, to everyone.", "Until you delete it or your account")}
+        ${row("Sessions", "The IP address and browser of each signed-in session", "Keeping you signed in, and spotting a stolen session", "Until the session ends; swept every hour after")}
+        ${row("Linked GitHub", "Your GitHub account id and its access token, encrypted at rest", "Forking the repos you choose", "Until you unlink it or delete your account")}
+        ${row("Tokens and apps", "API token labels and last four characters, apps you connected, and when each was last used. The secrets are stored only as hashes.", "Letting your scripts, agents and apps act as you", "Until they expire or you revoke them")}
+        ${row("Agent runs", "The task you gave an agent, the model and a short log", "Showing you what your agent did", "With the repo")}
+        ${row("Rate limits", "Your IP address, counted against sign-in and sign-up attempts", "Keeping bots out", "An hour; a blocked attempt is noted for 7 days")}
+        ${row("Usage", "A daily count of your requests (by handle, or signed out by a hash of your IP that changes every day), whether they came from a browser or a script, your browser's name, and the first time you did each thing here (made a repo, committed, deployed)", "Seeing whether people or bots use the site, and where people get stuck", "Daily counts 30 days; the firsts until you delete your account")}
+        </tbody></table></div>
+
+      <h2>Trenches that came up empty</h2>
+      <p>We dug where the usual stuff hides and found nothing: no analytics, no advertising, no third-party cookies, no tracking pixels, no session replays, no data brokers. Our fonts are served from our own server, so Google doesn't hear about your visit either. We don't use your code or your data to train AI models, ours or anyone's.</p>
+
+      <h2>Cookies: one jar, no biscuits for anyone else</h2>
+      <p>The only cookies here keep you signed in: <code>better-auth.session_token</code> (and a short-lived <code>session_data</code> copy that saves a database trip), or <code>cs_user</code> on the desktop app. They're strictly necessary, so there's no banner to click through; there's nothing optional to say no to. The site also remembers a few layout choices, like how wide you like the sidebar, in your browser's local storage. That never leaves your device.</p>
+
+      <h2>Who else handles a piece</h2>
+      <p>Cloudflare processes your data for us under its data processing addendum. GitHub, Google and the AI providers only get what you choose to send them, under their own terms. Some of these are in the US; transfers rely on the EU-US Data Privacy Framework and the EU's standard contractual clauses.</p>
+      <ul>
+        <li><b>Cloudflare</b> hosts everything: the site, the database, your files, git storage and our account email. <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Their policy</a>.</li>
+        <li><b>GitHub</b> and <b>Google</b>, only if you sign in with them, and GitHub when you fork a repo from it.</li>
+        <li><b>AI model providers</b> (Anthropic, OpenAI, Google and others), only when you start a hosted agent: the file it edits and your task go to the model behind the harness you picked.</li>
+        <li><b>jsDelivr</b>, the public CDN our icons and the game's 3D engine load from, sees your IP address when your browser fetches them.</li>
+      </ul>
+
+      <h2>Why we're allowed to</h2>
+      <p>Running your account and your repos is the service you signed up for (performing our contract with you). Session records, rate limits and security logs are in our legitimate interest in keeping the site safe. Where we ever need your consent, we'll ask first, plainly, and you can take it back.</p>
+
+      <h2>Your rights, and the buttons for them</h2>
+      <p>You can see, download, correct and delete your data, object to or restrict how we use it, and take it to another service. Most of that doesn't need us at all:</p>
+      <ul>
+        <li><b>Take it home.</b> Download everything we hold about you as one JSON file. Your code is git, so clone it too.</li>
+        <li><b>Fix it.</b> Edit your page and bio on your profile.</li>
+        <li><b>Bury it.</b> Delete your account: your repos, files, collections, tokens, sessions and sign-in go for good.</li>
+      </ul>
+      ${me() ? dataBox() : `<p class="muted">Sign in and these buttons appear here and on your profile.</p>`}
+      <p>You can also complain to your data protection authority. We'd love the chance to fix it first.</p>
+
+      <h2>What a deletion leaves behind</h2>
+      <p>Lines and branches you wrote in other people's repos stay there under your handle, the way commits stay in git, because they're part of someone else's work. Your handle is retired so nobody can pick it up and pass as you. Copies someone already cloned are theirs. Our database's point-in-time backups roll off within 30 days.</p>
+
+      <h2>Small print, large font</h2>
+      <p>codeSplitters isn't meant for anyone under 16. If this page changes in a way that matters, we'll say so on the site before it applies. Last carbon-dated <b>10 October 2026</b>.</p>
+      <p class="quiet">No artifacts were harmed in the making of this report.</p>
+    </div>${siteFoot()}`;
+    wireFoot();
+    wireData();
+    icons();
+  },
+
   // Not linked from anywhere: #/backrooms (or #/noclip).
   backrooms() {
     ctx = { view: "backrooms" };
@@ -1491,6 +1641,7 @@ const views = {
         <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
         ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("plug")}<b>Connect your AI</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
+        ${mine ? dataBox() : ""}
       </aside></div></div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
@@ -1498,7 +1649,7 @@ const views = {
     wireDig();
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
-    if (mine) wireTokens();
+    if (mine) { wireTokens(); wireData(); }
     icons();
   },
   // #/me: your own page, where signing in lands (or home, signed out).
@@ -1874,6 +2025,7 @@ const views = {
   async wireBranches(owner, repo, r) {
     const el = $("#branches"), base = `/repos/${owner}/${repo}/branches`;
     const open = (await api(base).catch(() => [])).filter((b) => b.status === "open");
+    await wireCheckHead(el, owner, repo, r);
     if (!open.length) return;
     const reviews = await Promise.all(open.map((b) => api(`${base}/${b.name}`)));
     el.innerHTML = reviews.map((b) => {
@@ -1900,7 +2052,7 @@ const views = {
         ${r.canWrite && broken ? `<span class="muted"><label><input type="checkbox" data-anyway="${esc(b.name)}"> Land it anyway, though it won't build</label></span>` : ""}
         ${r.canWrite ? `<span class="muted">${clash.some((c) => !c.lint)
           ? `<button class="btn" data-merge="${esc(b.name)}" data-keep="branch">Merge, keep the branch's lines</button> <button class="btn" data-merge="${esc(b.name)}" data-keep="main">Merge, keep main's</button>`
-          : `<button class="btn primary" data-merge="${esc(b.name)}"${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${b.checks?.where === "here" || b.checks?.where === "both" ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}">${icon("upload")}Push upstream</button>${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}" title="Take what upstream's ${esc(b.upstream_ref)} got since">${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
+          : `<button class="btn primary" data-merge="${esc(b.name)}"${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${r.canWrite ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now, on this machine: no GitHub needed">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}">${icon("upload")}Push upstream</button>${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}" title="Take what upstream's ${esc(b.upstream_ref)} got since">${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
     }).join("");
     const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`), anyway = (name) => el.querySelector(`[data-anyway="${CSS.escape(name)}"]`);
     // A merge button waits on every box its branch shows.
@@ -2585,6 +2737,7 @@ const views = {
     ctx = { view: "admin" };
     if (!session.admin) throw new Error("Admins only.");
     if (section === "limits") return limitsPage();
+    if (section === "insights") return insightsPage();
     location.hash = "#/admin/limits";
   },
   async search(q) {
@@ -2735,11 +2888,30 @@ function flapBoard(el) {
   stopBoard = () => { clearInterval(tick); timers.forEach(clearTimeout); timers.clear(); io.disconnect(); stopBoard = () => {}; };
 }
 
+// Your data (privacy.ts): download all of it, or delete your account once your handle is typed back.
+// On your profile and on #/privacy.
+const dataBox = () => `<div class="box" id="yourdata"><div class="bar">${icon("archive")}<b>Your data</b><a class="muted" style="margin-left:auto;font-size:12px" href="#/privacy">privacy</a></div><div class="body" style="display:grid;gap:10px;font-size:13px">
+  <div><a class="btn" href="/api/me/export" download>${icon("download")}Download everything</a> <span class="muted" style="font-size:12px">one JSON file; clone your repos for the code</span></div>
+  <details><summary class="muted" style="cursor:pointer;font-size:12px">Delete my account</summary><form id="delme" style="display:grid;gap:6px;margin-top:8px">
+    <span class="muted" style="font-size:12px">Gone for good: your repos (files, branches, git), collections, shares, tokens, connected apps, sessions and sign-in. Lines you wrote in other people's repos stay under @${esc(me())}, which is retired.</span>
+    <input name="name" placeholder="type ${esc(me())} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete @${esc(me())} for good</button></div></form></details>
+</div></div>`;
+function wireData() {
+  $("#delme")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const typed = e.target.name.value.trim();
+    if (typed !== me()) return toast(`Type ${me()} to delete your account`);
+    try { await api(`/me?confirm=${encodeURIComponent(typed)}`, undefined, "DELETE"); }
+    catch (err) { return toast(err.message); }
+    await refreshSession(); header(); toast("Account deleted. Rest in pieces."); location.hash = "#/";
+  });
+}
+
 // The site footer: our links, who made it, and a year that's always this year.
 // Clicking the © three times shows how far back this all really goes.
 function siteFoot() {
   return `<footer class="site-foot"><div class="wrap">
-    <nav><a href="#/">Home</a><a href="#/about">About</a><a href="/features.html">Features</a><a href="/play.html#l/mitt">Play</a>
+    <nav><a href="#/">Home</a><a href="#/about">About</a><a href="/features.html">Features</a><a href="/play.html#l/mitt">Play</a><a href="#/privacy">Privacy</a>
       <a href="https://github.com/QuinnsCode/RustyBuns/tree/main/apps/codesplitters" rel="noopener">Source on GitHub</a><a href="https://github.com/QuinnsCode/RustyBuns" rel="noopener">Rusty Buns</a></nav>
     <span class="grow"></span>
     <span class="by">created by <b>QNTBR</b> · <span class="yr" id="yr">© ${new Date().getFullYear()}</span></span>
@@ -2963,7 +3135,31 @@ function checkRow(c) {
     return `<span class="check ${r.status}" title="${esc(r.name)}: ${r.status}">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${label}</a>` : label}</span>`;
   }).join("");
   const g = c.gate, why = g.ok ? "" : [g.failed.length && `${g.failed.join(", ")} failed`, g.waiting.length && `waiting on ${g.waiting.join(", ")}`].filter(Boolean).join("; ");
-  return `<span class="checks">${icon("list-checks")}${runs || '<span class="muted">No checks yet</span>'}${c.sha ? `<code class="muted">${esc(c.sha.slice(0, 7))}</code>` : ""}</span>${why ? `<span class="muted">${icon("shield-alert")} Merge waits for required checks: ${esc(why)}</span>` : ""}`;
+  const later = g.deferred?.length ? `<span class="muted">${icon("cloud-off")} GitHub is down: ${esc(g.deferred.join(", "))} put off until it's back. Ours passed, so it merges now.</span>` : "";
+  const tip = !g.ok && c.offline ? " GitHub is down: run checks here, and once they pass it can merge without it." : "";
+  return `<span class="checks">${icon("list-checks")}${runs || '<span class="muted">No checks yet</span>'}${c.sha ? `<code class="muted">${esc(c.sha.slice(0, 7))}</code>` : ""}</span>${why ? `<span class="muted">${icon("shield-alert")} Merge waits for required checks: ${esc(why)}.${esc(tip)}</span>` : ""}${later}`;
+}
+
+/**
+ * Above the branches: where checks run (GitHub first for a mirror, here always on offer),
+ * what to expect while GitHub is down, and main's own checks, where GitHub's catch up.
+ */
+async function wireCheckHead(el, owner, repo, r) {
+  const [s, main] = await Promise.all([api(`/repos/${owner}/${repo}/checks/settings`).catch(() => null), api(`/repos/${owner}/${repo}/checks?ref=main`).catch(() => null)]);
+  if (!s) return;
+  document.getElementById("checkhead")?.remove();
+  const isOwner = owner === me();
+  const opts = [...(s.github ? [["github", "On GitHub, here when it's down"]] : []), ["here", "Here, on this machine"], ...(s.github ? [["both", "Here and on GitHub"]] : [])];
+  const pick = isOwner ? `<label class="muted" style="font-size:12px">${icon("list-checks")} Checks run <select id="check-where">${s.where ? "" : `<option value="" selected>nowhere yet</option>`}${opts.map(([v, t]) => `<option value="${v}"${s.where === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>` : "";
+  const down = s.offline ? `<span class="muted">${icon("cloud-off")} GitHub has been down${s.down_since ? ` since ${new Date(s.down_since).toLocaleTimeString()}` : ""}. Keep going: commits, branches and merges work here, checks run on this machine, and everything syncs to GitHub when it's back.</span>` : "";
+  const mainRow = main?.runs.length ? `<div class="commit"><code>main</code><span class="muted">checks on the latest commit${s.github ? ", GitHub's included once it has them" : ""}</span>${checkRow(main)}</div>` : "";
+  if (!pick && !down && !mainRow) return;
+  el.insertAdjacentHTML("beforebegin", `<div id="checkhead" class="commit" style="display:block">${pick}${down ? `<div>${down}</div>` : ""}${mainRow}</div>`);
+  $("#check-where")?.addEventListener("change", async (e) => {
+    try { await api(`/repos/${owner}/${repo}/checks/settings`, { where: e.target.value || null }, "PUT"); toast(e.target.value === "here" ? "Checks run here now: local first" : "Saved"); route(); }
+    catch (err) { toast(err.message); }
+  });
+  icons();
 }
 
 async function commands() {
@@ -3014,6 +3210,9 @@ async function commands() {
     if (c.canWrite) add("This repo", "list-checks", "Run checks", `POST /api/repos/${c.owner}/${c.repo}/checks/run`, async (ref) => {
       try { await api(`/repos/${c.owner}/${c.repo}/checks/run`, { ref: ref.trim() || "main" }); toast(`Checks queued on ${ref.trim() || "main"}`); route(); } catch (e) { toast(`Not queued: ${e.message}`); }
     }, "main or a branch's name");
+    if (c.isOwner) add("This repo", "list-checks", "Set where checks run", `PUT /api/repos/${c.owner}/${c.repo}/checks/settings`, async (where) => {
+      try { const s = await api(`/repos/${c.owner}/${c.repo}/checks/settings`, { where: where.trim() || null }, "PUT"); toast(`Checks run ${s.where === "both" ? "here and on GitHub" : s.where === "github" ? "on GitHub, here when it's down" : s.where === "here" ? "here: local first" : "nowhere"}`); route(); } catch (e) { toast(e.message); }
+    }, "here, github or both");
     add("This repo", "list-checks", "Show checks", `GET /api/repos/${c.owner}/${c.repo}/checks?ref=`, async (ref) => {
       const k = await api(`/repos/${c.owner}/${c.repo}/checks?ref=${encodeURIComponent(ref.trim() || "main")}`);
       toast(k.runs.length ? `${k.ref}: ${k.runs.map((r) => `${r.name} ${r.status}`).join(", ")}${k.gate.ok ? "" : " · merge waits"}` : `No checks on ${k.ref} yet`);
@@ -3038,8 +3237,10 @@ async function commands() {
   for (const l of await api("/levels").catch(() => [])) if (l.status === "ready") add("Levels", "landmark", `Go to ${l.title}`, `GET /api/levels/${l.slug}/tree`, () => (location.hash = `#/l/${l.slug}`));
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
   add("Anywhere", "info", "About codeSplitters", "", () => (location.hash = "#/about"));
+  add("Anywhere", "shield-check", "Privacy: what we keep, and your data", "", () => (location.hash = "#/privacy"));
   add("Anywhere", "book-open", "API reference", "GET /api", () => (location.href = "/reference"));
   add("Anywhere", "plug", "Connect your AI (MCP)", "", () => (location.href = "/mcp"));
+  if (session.admin) add("Admin", "activity", "Insights", "GET /api/admin/insights", () => (location.hash = "#/admin/insights"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);

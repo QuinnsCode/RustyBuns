@@ -10,13 +10,18 @@
 //     polls now). Our own results can go the other way, as `codesplitters/<name>` statuses;
 //   - anyone in the crew, by hand, with POST .../checks.
 //
-// The repo's setting says where they run: here, github or both. Its required checks
-// gate a merge, the way build-file changes wait for a person (branches.ts). Every
-// run that starts or finishes is a `check_run` webhook, shaped like GitHub's.
+// The repo's setting says where they run: here, github or both. A GitHub mirror
+// starts on github, and here is always on offer. GitHub is the backup, not a
+// dependency: while the mirror finds it down, the desktop checks here instead,
+// and a merge goes on our own checks passing, with GitHub's required ones
+// deferred. When GitHub's back, the mirror pushes and its results come in on
+// main. Required checks gate a merge, the way build-file changes wait for a
+// person (branches.ts). Every run that starts or finishes is a `check_run`
+// webhook, shaped like GitHub's.
 //
 //   GET  /api/repos/:o/:r/checks[?ref=]        the ref's runs (main by default) on its latest sha, and the merge gate
 //   POST /api/repos/:o/:r/checks {ref, sha, name, runner?, status?}  record a run (the crew, or a runner)
-//   POST /api/repos/:o/:r/checks/run {ref}     queue our own checks on a ref as it is now (the crew)
+//   POST /api/repos/:o/:r/checks/run {ref}     queue our own checks on a ref as it is now, whatever the setting (the crew)
 //   POST /api/repos/:o/:r/checks/github {ref?}  fetch GitHub's results for the shas sent up now (the crew)
 //   GET|PUT /api/repos/:o/:r/checks/settings   where checks run, which are required, and whether ours go to GitHub
 //   GET  /api/repos/:o/:r/checks/:id           one run, with its log
@@ -56,7 +61,15 @@ export async function checkSettings(env: Env, owner: string, repo: string) {
   const s = await env.DB.prepare("SELECT run_where, required, post_statuses FROM check_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
   const github = await githubOf(env, owner, repo);
   const where = (s?.run_where as Where | null) ?? (github ? "github" : null);
-  return { where, required: String(s?.required ?? "").split(",").map((x) => x.trim()).filter(Boolean), post_statuses: !!s?.post_statuses, github };
+  // The mirror couldn't reach GitHub last time it tried: GitHub's checks can't run, so ours stand in.
+  const m = github ? await env.DB.prepare("SELECT mirror_state, mirror_down_since FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() : null;
+  const offline = m?.mirror_state === "down";
+  return {
+    where, required: String(s?.required ?? "").split(",").map((x) => x.trim()).filter(Boolean), post_statuses: !!s?.post_statuses, github,
+    offline, down_since: offline ? (m?.mirror_down_since as number | null) ?? null : null,
+    /** Whether our own checks run: asked for, or standing in while GitHub is down. */
+    here: where === "here" || where === "both" || (where === "github" && offline),
+  };
 }
 
 /** GitHub's REST API with the owner's token. Tests stand a fake in with env.GITHUB_FETCH. */
@@ -133,7 +146,7 @@ export async function updateRun(env: Env, run: CheckRun, u: { status?: Status; l
 export async function startChecks(env: Env, owner: string, repo: string, ref: string, sha: string, by: string) {
   try {
     const s = await checkSettings(env, owner, repo);
-    if (s.where === "here" || s.where === "both") await queueHere(env, owner, repo, ref, sha, by);
+    if (s.here) await queueHere(env, owner, repo, ref, sha, by, s.where === "github" ? "GitHub is down, so this runs here instead. GitHub's checks run when the mirror catches up.\n" : "");
     if ((s.where === "github" || s.where === "both") && s.github) await watchGithub(env, owner, repo, ref, sha);
   } catch {
     // Checks never get in the way of what happened.
@@ -149,10 +162,12 @@ export async function upstreamMoved(env: Env, owner: string, repo: string, ref: 
 }
 
 /** Our own checks on `ref` at `sha`: one `test` run, on this machine or in a container, for a runner to pick up. */
-async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string) {
+async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "") {
   const runner: Runner = typeof Bun !== "undefined" ? "desktop" : "container";
   const live = await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND runner = ? AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, runner).first();
-  if (!live) await recordRun(env, { owner, repo, ref, sha, name: "test", runner }, by);
+  if (live) return;
+  const run = await recordRun(env, { owner, repo, ref, sha, name: "test", runner }, by);
+  if (why) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(why, run.id).run();
 }
 
 /** A sha that went up to GitHub: poll it for its Actions results for a while. */
@@ -216,6 +231,9 @@ export async function pollGithub(env: Env, now = Date.now()) {
  * A ref's checks: the runs on its latest sha (the newest of each name), and whether
  * a merge may go. A required check that hasn't run, or is still going, holds it;
  * one that failed or was cancelled blocks it. `*` requires every check that ran.
+ * While GitHub is down, a required check only GitHub runs is deferred, not waited
+ * on, once our own checks on the sha have all passed: work carries on, and GitHub's
+ * verdict comes in on main when it's back.
  */
 export async function refChecks(env: Env, owner: string, repo: string, ref: string) {
   const s = await checkSettings(env, owner, repo);
@@ -228,12 +246,19 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
   for (const r of results as CheckRun[]) latest.set(r.name, r);
   const runs = [...latest.values()];
   const wanted = s.required.includes("*") ? (runs.length ? runs.map((r) => r.name) : ["*"]) : s.required;
-  const passed: string[] = [], waiting: string[] = [], failed: string[] = [];
+  const passed: string[] = [], waiting: string[] = [], failed: string[] = [], deferred: string[] = [];
+  const ours = runs.filter((r) => r.runner !== "github"), oursPassed = ours.length > 0 && ours.every((r) => r.status === "passed");
   for (const name of new Set(wanted)) {
     const r = latest.get(name);
-    (r?.status === "passed" ? passed : !r || !DONE.has(r.status) ? waiting : failed).push(name);
+    if (r?.status === "passed") passed.push(name);
+    else if (r && DONE.has(r.status)) failed.push(name);
+    else if (s.offline && oursPassed && (!r || r.runner === "github")) deferred.push(name);
+    else waiting.push(name);
   }
-  return { ref, sha, where: s.where, runs, gate: { required: s.required, ok: !waiting.length && !failed.length, passed, waiting, failed } };
+  return {
+    ref, sha, where: s.where, here: s.here, offline: s.offline, runs,
+    gate: { required: s.required, ok: !waiting.length && !failed.length, passed, waiting, failed, deferred },
+  };
 }
 
 /** Why a merge of `ref` has to wait for its checks, or null when it doesn't. */
@@ -241,7 +266,8 @@ export async function mergeBlock(env: Env, owner: string, repo: string, ref: str
   const c = await refChecks(env, owner, repo, ref);
   if (c.gate.ok) return null;
   const why = [c.gate.failed.length && `${c.gate.failed.join(", ")} failed`, c.gate.waiting.length && `waiting on ${c.gate.waiting.join(", ")}`].filter(Boolean).join("; ");
-  return { error: `required checks haven't passed: ${why}`, checks: c.gate };
+  const tip = c.offline && c.gate.waiting.length ? ". GitHub is down: run checks here, and once they pass, GitHub's wait until it's back" : "";
+  return { error: `required checks haven't passed: ${why}${tip}`, checks: c.gate };
 }
 
 /** What `ref` is in git right now, to run checks on: main's commit, or the commit a branch last went upstream as. */
@@ -277,8 +303,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   if (p[5] === "run" && req.method === "POST") {
     const no = crew(); if (no) return no;
     const { ref = "main" } = await body<{ ref?: string }>();
-    const s = await checkSettings(env, owner, repo);
-    if (s.where !== "here" && s.where !== "both") return json({ error: "checks don't run here for this repo: set where to here or both" }, 409);
+    // Running here is always on offer, whatever the setting: local first, GitHub as the backup.
     if (ref !== "main" && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first())) return json({ error: "no open branch " + ref }, 404);
     const sha = await headOf(env, owner, repo, ref);
     if (!sha) return json({ error: "main has no commit yet" }, 409);

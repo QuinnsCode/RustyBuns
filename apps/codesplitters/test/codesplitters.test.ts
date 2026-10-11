@@ -7,7 +7,7 @@ import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
 import { noodles } from "../src/noodles.ts";
 import { isBuildFile } from "../src/buildfiles.ts";
-import { ruleFor } from "../src/limits.ts";
+import { ruleFor, spread } from "../src/limits.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -440,13 +440,16 @@ describe("accounts", () => {
     const cookie = await person("stuck@example.com", "stuckone");
     // The next session lookup never comes back, like a request cancelled mid-query on Workers.
     const db = call.env.DB, prepare = db.prepare.bind(db);
-    let armed = true;
+    let armed = true, stuck!: () => void;
+    const isStuck = new Promise<void>((r) => (stuck = r));
     db.prepare = (sql: string) => {
       if (!armed || !/"session"/.test(sql)) return prepare(sql);
-      armed = false;
+      armed = false; stuck();
       return { bind: () => ({ all: () => new Promise(() => {}) }) };
     };
+    // Wait until the first is stuck: started together, a cold second one could reach the trap first.
     void session(cookie);
+    await isStuck;
     const next = await Promise.race([session(cookie), Bun.sleep(3000).then(() => "hung")]);
     expect(next).toMatchObject({ user: "stuckone" });
   });
@@ -608,6 +611,13 @@ describe("handles", () => {
 describe("rate limits", () => {
   const ip = { "cf-connecting-ip": "203.0.113.7" };
 
+  test("the spread of what callers used per window: low, median, mean, p90/95/99, worst", () => {
+    expect(spread([], 10)).toBeNull();
+    // 100 caller-windows: 1 used once, 89 used 3, 5 used 8, 4 used 12, 1 used 40.
+    expect(spread([[1, 1], [3, 89], [8, 5], [12, 4], [40, 1]], 10))
+      .toEqual({ windows: 100, low: 1, p50: 3, mean: 4, p90: 3, p95: 8, p99: 12, worst: 40, over: 5 });
+  });
+
   test("count requests from the internet, per IP before sign-in and per handle after", async () => {
     const { call, signup, claim, person } = await accounts({ ADMINS: "boss-person" });
     const boss = await person("boss@example.com", "boss-person");
@@ -636,6 +646,9 @@ describe("rate limits", () => {
     const { rules } = (await (await call(null, "/api/admin/limits", { headers: { cookie: boss } })).json()) as any;
     expect(rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 1, now: { callers: 1, hits: 2, blocked: 1 } });
     expect(rules.find((r: any) => r.name === "signup")).toMatchObject({ max: 5, now: { callers: 1, hits: 6, blocked: 1 } });
+    // And what callers actually got: one caller-window, at 2 against a cap of 1.
+    expect(rules.find((r: any) => r.name === "repo").spread).toMatchObject({ windows: 1, low: 2, p50: 2, p99: 2, worst: 2, over: 1 });
+    expect(rules.find((r: any) => r.name === "agent").spread).toBeNull();
 
     // Switched off, it counts nothing.
     await put(boss, [{ name: "repo", max: 1, window_s: 86400, enabled: false }]);

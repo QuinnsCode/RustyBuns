@@ -213,14 +213,16 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
   if (grants) return grants;
   if (p[1] === "auth") return accountsOn(env) ? authFor(req, env).handler(req) : json({ error: "accounts are off; this app uses aliases" }, 404);
   if (p[1] === "session") {
-    if (!accountsOn(env)) return json({ mode: "alias", user: aliasOf(req), providers: [] });
+    // privacy: who to write to about your data, on the #/privacy page.
+    const privacy = env.PRIVACY_EMAIL ? { privacy: env.PRIVACY_EMAIL } : {};
+    if (!accountsOn(env)) return json({ mode: "alias", user: aliasOf(req), providers: [], ...privacy });
     // Signed in but no handle yet: the page asks for one, with a free one to start from.
     const a = await account(req, env);
     const user = a?.handle ?? null;
     // mail: the page offers a reset link. unverified: an email account that hasn't opened its link yet.
     const unverified = mailOn(env) && a && a.user.email && !a.user.emailVerified ? { unverified: a.user.email } : {};
     return json({ mode: "accounts", user, providers: providers(env), ...(isAdmin(env, user) ? { admin: true } : {}),
-      ...(mailOn(env) ? { mail: true } : {}), ...unverified,
+      ...(mailOn(env) ? { mail: true } : {}), ...unverified, ...privacy,
       ...(a && !a.handle ? { pick: { suggest: await suggest(env, a.user), email: a.user.email } } : {}) });
   }
   if (accountsOn(env) && p[1] === "handle") return handleRoutes(req, env, new URL(req.url));

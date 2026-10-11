@@ -3,6 +3,8 @@
 //
 //   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched (all of them if packages/ moved)
 //   bun scripts/ci-apps.ts drop <all|a,b,c>    the build matrix for desktop-drop.yml
+//   bun scripts/ci-apps.ts drop pr <base-ref>  a PR's dry run: the apps whose rows below changed
+//                                              (all of them if the pipeline itself changed)
 //
 // Prints `key=json` lines for $GITHUB_OUTPUT.
 type App = {
@@ -16,14 +18,15 @@ type App = {
 export const APPS: Record<string, App> = {
   "agent-office":      { test: "bun test test", build: "bun scripts/rustybunsify.ts compile --all" },
   "auto-rig":          { test: "bun test test", prep: "bun run build:native", perOs: true },
-  "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true },
+  "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true },
   "codesplitters":     { test: "bun test --parallel test" },
   "hippo-tycoon":      { test: "bun test --parallel test", prep: "bun run build:native", check: true },
-  "motion-midi":       { test: "bun test test", prep: "bun run build:native", perOs: true },
+  "meshy-studio":      { test: "bun test --parallel tests", check: true },
+  "motion-midi":       { test: "bun test test", prep: "bun run build:native", perOs: true, check: true },
   "park-hide-seek":    { test: "bun test" },
   "splat-desktop":     { test: "bun test" },
   "splat-rooms":       { test: "bun test test" },
-  "splat-spray":       { test: "bun test" },
+  "splat-spray":       { test: "bun test --parallel" },
   "tscircuit-desktop": { test: "bun test", prep: "bun run native", perOs: true },
 };
 
@@ -43,11 +46,32 @@ function buildCmd(a: App, targets: string[]) {
   return targets.map((t) => `${CLI}${a.check ? " --check" : ""} --target ${t}`).join(" && ");
 }
 
-const [cmd, arg = ""] = process.argv.slice(2);
+const [cmd, arg = "", base = ""] = process.argv.slice(2);
 const out = (k: string, v: unknown) => console.log(`${k}=${JSON.stringify(v)}`);
+const changedFiles = async (base: string) => (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
+
+// Editing one app's row in APPS should only rerun that app. Returns the apps whose rows changed,
+// or "all" when any other line of this file did.
+async function rowChanges(base: string): Promise<Set<string> | "all"> {
+  const diff = await Bun.$`git diff -U0 ${base}...HEAD -- scripts/ci-apps.ts`.text();
+  const apps = new Set<string>();
+  for (const line of diff.split("\n")) {
+    if (!/^[+-](?![+-])/.test(line) || /^[+-]\s*$/.test(line)) continue;
+    const row = line.match(/^[+-]\s*"([\w-]+)":\s*\{.*\},?\s*$/);
+    if (!row) return "all";
+    if (APPS[row[1]!]) apps.add(row[1]!);
+  }
+  return apps;
+}
 
 if (cmd === "drop") {
-  const names = arg === "all" || !arg ? Object.keys(APPS) : arg.split(/[\s,]+/).filter(Boolean);
+  let names: string[];
+  if (arg === "pr") {
+    if (!base) throw new Error("drop pr needs a base ref");
+    const pipeline = (await changedFiles(base)).some((f) => /^(scripts\/drop\.ts|\.github\/workflows\/desktop-drop\.yml)$/.test(f));
+    const rows = pipeline ? "all" : await rowChanges(base);
+    names = rows === "all" ? Object.keys(APPS) : [...rows];
+  } else names = arg === "all" || !arg ? Object.keys(APPS) : arg.split(/[\s,]+/).filter(Boolean);
   const unknown = names.filter((n) => !APPS[n]);
   if (unknown.length) throw new Error(`unknown app(s): ${unknown.join(", ")}. Known: ${Object.keys(APPS).join(", ")}`);
   const include = names.flatMap((app) => {
@@ -59,12 +83,14 @@ if (cmd === "drop") {
   });
   out("build", { include });
   out("apps", names);
+  out("any", names.length > 0);
 } else if (cmd === "test") {
   if (!arg) throw new Error("test needs a base ref");
-  const changed = (await Bun.$`git diff --name-only ${arg}...HEAD`.text()).split("\n").filter(Boolean);
+  const changed = await changedFiles(arg);
   // A change to the shared code or the lockfile can break any app.
-  const shared = changed.some((f) => /^(packages\/|bun\.lock$|package\.json$|scripts\/ci-apps\.ts$|\.github\/workflows\/apps\.yml$)/.test(f));
-  const touched = new Set(changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean));
+  const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
+  const shared = rows === "all" || changed.some((f) => /^(packages\/|bun\.lock$|package\.json$|\.github\/workflows\/apps\.yml$)/.test(f));
+  const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => APPS[n]!.test && (shared || touched.has(n)));
   out("apps", { include: names.map((app) => ({ app, test: APPS[app]!.test, prep: APPS[app]!.prep ?? "", cargo: cargo(app) })) });
   out("any", names.length > 0);

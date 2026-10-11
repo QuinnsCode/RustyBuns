@@ -65,6 +65,8 @@ export interface Env {
   ADMINS?: string;
   /** The owner's verified email; signing in with it claims the first ADMINS handle. */
   ADMIN_EMAIL?: string;
+  /** Where privacy requests go, shown on the #/privacy page (privacy.ts). */
+  PRIVACY_EMAIL?: string;
   BETTER_AUTH_SECRET?: string;
   /**
    * Cloudflare Email Sending, and the address it sends from (its domain onboarded
