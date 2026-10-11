@@ -192,6 +192,8 @@ test("a failed destroy keeps the clone and says how to finish", async () => {
 test("urlIn reads Alchemy's outputs", () => {
   expect(urlIn('Outputs: { url: "https://a.workers.dev", box: "https://b.up.railway.app" }')).toBe("https://b.up.railway.app");
   expect(urlIn("live at https://lab-x.ryan.workers.dev now")).toBe("https://lab-x.ryan.workers.dev");
+  // A Hetzner box answers on its IP over plain http.
+  expect(urlIn('Outputs: { box: "http://203.0.113.9:3000" }')).toBe("http://203.0.113.9:3000");
   expect(urlIn("nothing here")).toBeUndefined();
 });
 

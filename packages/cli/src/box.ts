@@ -75,6 +75,23 @@ export function boxDefaults(b: HetznerBoxTarget) {
   };
 }
 
+/** Hetzner Volumes are 10 GB to 10 TB. */
+export const HETZNER_VOLUME_MIN = 10, HETZNER_VOLUME_MAX = 10240;
+
+/**
+ * Throws on a Hetzner box config that would deploy wrong. A Volume under 10 GB
+ * is the bad one: Alchemy creates it at 10, then every later deploy diffs
+ * "asked 5, have 10" as a shrink and REPLACES it, data and all.
+ */
+export function checkBox(c: RustyBunsConfig): void {
+  if (c.targets.box?.provider !== "hetzner") return;
+  const { volumeSize, port } = boxDefaults(c.targets.box);
+  if (volumeSize !== 0 && !(Number.isInteger(volumeSize) && volumeSize >= HETZNER_VOLUME_MIN && volumeSize <= HETZNER_VOLUME_MAX))
+    throw new Error(`targets.box.volumeSize is ${volumeSize}: a Hetzner Volume is a whole number of GB from ${HETZNER_VOLUME_MIN} to ${HETZNER_VOLUME_MAX}, or 0 for none.`);
+  if (!(Number.isInteger(port) && port >= 1 && port <= 65535))
+    throw new Error(`targets.box.port is ${port}: give a port from 1 to 65535.`);
+}
+
 /** Hetzner's cax* types are Ampere ARM; everything else is x86. */
 export function boxArch(serverType: string): DesktopOs {
   return /^cax/i.test(serverType) ? "linux-arm64" : "linux-x64";

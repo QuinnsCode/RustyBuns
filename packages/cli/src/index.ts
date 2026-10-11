@@ -10,7 +10,7 @@ import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
-import { buildBox } from "./box.ts";
+import { buildBox, checkBox } from "./box.ts";
 import type { RustyBunsConfig } from "./config.ts";
 import { infer, readPackageJson } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
@@ -439,7 +439,7 @@ async function alchemy(sub: string, rawArgs: string[]) {
   const cfg = await loadConfig();
   if (!cfg.worker && !cfg.targets.box) throw new Error("desktop-only app: no edge or box stack to plan or deploy");
   const profiled = sub === "plan" || sub === "deploy";
-  if (profiled) { checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
+  if (profiled) { checkBox(cfg); checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
   const { on: check, checker, rest: flagged } = checkFlags(rawArgs, profiled);
   // Ours, not Alchemy's: they waive the guards below.
   const force = flagged.includes("--force"), allowDelete = flagged.includes("--allow-delete");
