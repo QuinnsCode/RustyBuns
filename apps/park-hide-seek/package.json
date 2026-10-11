@@ -8,11 +8,11 @@
     "build": "vite build",
     "test": "bun test",
     "fetch-parks": "bun scripts/fetch-parks.ts",
-    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
-    "desktop:build": "rustybuns build desktop",
+    "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop --check",
     "fetch-zones": "bun scripts/fetch-zones.ts",
-    "edge:dev": "vite build && bunx wrangler dev",
-    "deploy": "vite build && bunx wrangler deploy"
+    "edge:dev": "bun check && vite build && bunx wrangler dev",
+    "deploy": "bun check && vite build && bunx wrangler deploy"
   },
   "dependencies": {
     "@fontsource/ultra": "^5.3.0",
