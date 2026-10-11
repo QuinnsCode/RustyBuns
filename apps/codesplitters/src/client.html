@@ -472,7 +472,9 @@
   .rule .ctl :is(input, select) { padding: 2px 6px; font-size: 13px; line-height: 18px; }
   .rule .ctl input { width: 64px; font-family: var(--mono); text-align: right; }
   .rule .ctl .btn { padding: 2px 4px; color: var(--muted); }
-  .rule.off .what, .rule.off .ctl, .rule.off .use, .rule.off .per { opacity: .4; }
+  .rule .spread { display: flex; flex-wrap: wrap; gap: 2px 10px; padding-left: 38px; font: 400 11px var(--mono); color: var(--faint); }
+  .rule .spread b { font-weight: 500; color: var(--muted); } .rule .spread .hot b { color: var(--accent); }
+  .rule.off .what, .rule.off .ctl, .rule.off .use, .rule.off .per, .rule.off .spread { opacity: .4; }
   /* The rate limits page: rule groups flowed into columns, a save bar that sticks, the log as rows. */
   .limits .rgroups { columns: 3 340px; column-gap: 12px; }
   .limits .rgroups > .box { break-inside: avoid; margin: 0 0 12px; }
@@ -964,10 +966,14 @@ async function limitsPage() {
     const d = r.defaults, changed = d && (d.max !== r.max || d.window_s !== r.window_s || d.on_fail !== r.on_fail || !r.enabled);
     const opts = (WINDOWS.some(([w]) => w === r.window_s) ? WINDOWS : [...WINDOWS, [r.window_s, every(r.window_s)]])
       .map(([w, l]) => `<option value="${w}"${w === r.window_s ? " selected" : ""}>${l}</option>`).join("");
+    // What callers really get: their count per window, across every window still kept (about the last day).
+    const sp = r.spread, stat = (k, l, tip) => `<span class="${sp[k] > r.max ? "hot" : ""}" title="${tip}">${l} <b>${sp[k]}</b></span>`;
+    const spread = sp ? `<div class="spread" title="per caller per ${every(r.window_s)}, over ${sp.windows} busy caller-window${sp.windows === 1 ? "" : "s"} since ${new Date(sp.since).toLocaleString()}">
+      ${stat("low", "low", "the quietest busy window")}${stat("p50", "med", "half of callers' windows were at or under this")}${stat("mean", "avg", "the average")}${stat("p90", "p90", "9 in 10 windows at or under")}${stat("p95", "p95", "19 in 20 windows at or under")}${stat("p99", "p99", "99 in 100 windows at or under")}${stat("worst", "worst", "the busiest a caller has been in one window")}<span>of ${r.max}${sp.over ? ` · <span class="hot"><b>${sp.over}</b> over</span>` : ""}</span></div>` : "";
     const used = `${r.now.hits} hit${r.now.hits === 1 ? "" : "s"} · ${r.now.callers} caller${r.now.callers === 1 ? "" : "s"}${r.now.blocked ? ` · <span class="hot">${r.now.blocked} over</span>` : ""}`;
     return `<div class="rule${r.enabled ? "" : " off"}" data-name="${r.name}">
       <label class="rhead"><span class="switch"><input type="checkbox" name="enabled"${r.enabled ? " checked" : ""} aria-label="limit ${esc(r.label)}"><i></i></span><b>${esc(r.label)}</b><span class="per">${r.per === "ip" ? "IP" : "handle"}</span><span class="use" title="this ${every(r.window_s)}">${used}</span></label>
-      <span class="what" title="${esc(r.what)}">${esc(r.what)}</span>
+      <span class="what" title="${esc(r.what)}">${esc(r.what)}</span>${spread}
       <div class="ctl"><input name="max" type="number" min="1" max="100000" value="${r.max}" aria-label="most allowed"><span>/</span><select name="window_s" aria-label="window">${opts}</select><span>then</span><select name="on_fail" aria-label="when a caller goes over">${ON_FAIL.filter(([v]) => v !== "queue" || r.queueable).map(([v, l, t]) => `<option value="${v}" title="${t}"${v === r.on_fail ? " selected" : ""}>${l}</option>`).join("")}</select>
         ${changed ? `<button type="button" class="btn ghost small" data-default title="back to the default: ${d.max} per ${every(d.window_s)}, ${d.on_fail}">${icon("rotate-ccw")}</button>` : ""}</div>
     </div>`;

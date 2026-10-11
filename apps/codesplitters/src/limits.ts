@@ -306,7 +306,23 @@ export async function sweepLimits(env: Env, now = Date.now()) {
 }
 
 /**
+ * What callers actually get under a rule: spread over every (caller, window) the sweep has
+ * kept, from a histogram of counts ([count, how many caller-windows had it], ascending).
+ * Windows a caller sent nothing in aren't kept, so this is how busy callers were when active.
+ */
+export function spread(hist: [number, number][], max: number) {
+  const n = hist.reduce((a, [, k]) => a + k, 0);
+  if (!n) return null;
+  // The nearest-rank percentile: the smallest count at least p% of caller-windows are at or under.
+  const at = (p: number) => { const rank = Math.ceil((p / 100) * n); let seen = 0; for (const [c, k] of hist) if ((seen += k) >= rank) return c; return hist.at(-1)![0]; };
+  const over = hist.reduce((a, [c, k]) => a + (c > max ? k : 0), 0);
+  return { windows: n, low: hist[0]![0], p50: at(50), mean: Math.round((hist.reduce((a, [c, k]) => a + c * k, 0) / n) * 10) / 10,
+    p90: at(90), p95: at(95), p99: at(99), worst: hist.at(-1)![0], over };
+}
+
+/**
  * GET  /api/admin/limits  every rule with this window's traffic (callers, hits, and how many are over),
+ *                          how much callers used per window across the windows still kept (spread),
  *                          the last week's log of callers going over, and who's flagged.
  * PUT  /api/admin/limits {rules: [{name, max, window_s, enabled, on_fail?}]}
  * POST /api/admin/limits/reset {who, rule?}  clear a caller's counts (one rule's, or all) and their log entries.
@@ -345,8 +361,11 @@ export async function limitRoutes(req: Request, env: Env, p: string[], admin: bo
     const span = r.window_s * 1000, win = Math.floor(now / span) * span;
     const s = await env.DB.prepare("SELECT COUNT(*) AS callers, COALESCE(SUM(count), 0) AS hits, COALESCE(SUM(count > ?), 0) AS blocked FROM limit_hits WHERE rule = ? AND win = ?")
       .bind(r.max, r.name, win).first();
+    const { results: hist } = await env.DB.prepare("SELECT count, COUNT(*) AS n, MIN(win) AS since FROM limit_hits WHERE rule = ? GROUP BY count ORDER BY count").bind(r.name).all();
+    const h = hist as { count: number; n: number; since: number }[], since = h.length ? Math.min(...h.map((x) => x.since)) : null;
     const { name, label, what, group, per, max, window_s, enabled, on_fail, queueable = false } = r;
-    out.push({ name, label, what, group, per, max, window_s, enabled, on_fail, queueable, defaults: RULES.find((d) => d.name === name), now: s });
+    out.push({ name, label, what, group, per, max, window_s, enabled, on_fail, queueable, defaults: RULES.find((d) => d.name === name), now: s,
+      spread: since === null ? null : { ...spread(h.map((x) => [x.count, x.n]), max)!, since } });
   }
   const { results: events } = await env.DB.prepare("SELECT rule, who, win, action, at FROM limit_events ORDER BY at DESC, id DESC LIMIT 100").all();
   const { results: flagged } = await env.DB.prepare("SELECT who, GROUP_CONCAT(DISTINCT rule) AS rules, MAX(at) AS last, COUNT(*) AS times FROM limit_events WHERE action = 'flag' GROUP BY who ORDER BY last DESC").all();
