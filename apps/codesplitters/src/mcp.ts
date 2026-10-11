@@ -7,6 +7,9 @@
 //   claude mcp add --transport http codesplitters https://<site>/api/mcp \
 //     --header "Authorization: Bearer cst_…"
 //
+// Or sign in with OAuth (oauth.ts): with no header, the 401 points the client at
+// /.well-known/oauth-protected-resource/api/mcp, and it opens a sign-in page.
+//
 // A read token lists only the reads. Risky operations (openapi.ts `risky`) are marked
 // destructive, so a client asks a person before it calls them. No sessions and no
 // server-sent stream: each POST is one JSON-RPC request, answered as JSON.
@@ -16,7 +19,7 @@ import { openapi } from "./openapi.ts";
 
 type Schema = Record<string, any>;
 interface Tool {
-  name: string; title: string; description: string;
+  name: string; title: string; description: string; tag: string; risky: boolean;
   inputSchema: Schema;
   annotations: { title: string; readOnlyHint: boolean; destructiveHint: boolean; idempotentHint: boolean; openWorldHint: boolean };
   method: string; path: string; pathParams: string[]; queryParams: string[]; hasBody: boolean;
@@ -56,7 +59,7 @@ export function tools(): Tool[] {
       }
       const risky = !!op["x-codesplitters-risky"], read = method === "get";
       out.push({
-        name: op.operationId, title: op.summary,
+        name: op.operationId, title: op.summary, tag: op.tags[0], risky,
         description: [op.summary, op.description, `(${method.toUpperCase()} /api${path})`, risky && "Can't be undone, or ships code: ask the person first."].filter(Boolean).join(" "),
         inputSchema: { type: "object", properties, ...(required.length && { required }), additionalProperties: false },
         annotations: { title: op.summary, readOnlyHint: read, destructiveHint: risky, idempotentHint: read || method === "put", openWorldHint: false },
@@ -69,11 +72,14 @@ export function tools(): Tool[] {
 
 let cached: Tool[] | null = null;
 const all = () => (cached ??= tools());
+/** GET /api/mcp/tools: every tool, for the /mcp page. Public, like the OpenAPI spec it comes from. */
+export const catalogue = () => all().map((t) => ({ ...listed(t), tag: t.tag, scope: t.method === "GET" ? "read" : "write", risky: t.risky, http: `${t.method} /api${t.path}` }));
 const listed = (t: Tool) => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations });
 
 const rpc = (id: unknown, result: unknown) => json({ jsonrpc: "2.0", id, result });
 const rpcError = (id: unknown, code: number, message: string, status = 200) => json({ jsonrpc: "2.0", id: id ?? null, error: { code, message } }, status);
-const unauthorized = (why: string) => json({ error: why }, 401, { "www-authenticate": 'Bearer realm="codeSplitters", error="invalid_token"' });
+const unauthorized = (why: string, origin: string) => json({ error: why }, 401,
+  { "www-authenticate": `Bearer realm="codeSplitters", error="invalid_token", resource_metadata="${origin}/.well-known/oauth-protected-resource/api/mcp"` });
 
 /** One tool call: the HTTP call it stands for, as the token that made it. */
 async function call(t: Tool, args: Record<string, unknown>, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>) {
@@ -92,7 +98,7 @@ async function call(t: Tool, args: Record<string, unknown>, origin: string, auth
 export async function mcp(req: Request, origin: string, dispatch: (r: Request) => Promise<Response>): Promise<Response> {
   if (req.method !== "POST") return json({ error: "POST JSON-RPC here; this server keeps no sessions or streams" }, 405, { allow: "POST" });
   const auth = req.headers.get("authorization");
-  if (!auth || !/^Bearer\s+cst_\S+$/i.test(auth)) return unauthorized("send a personal API token from your profile page: Authorization: Bearer cst_…");
+  if (!auth || !/^Bearer\s+cst_\S+$/i.test(auth)) return unauthorized("sign in with OAuth, or send a personal API token from your profile page: Authorization: Bearer cst_…", origin);
 
   let msg: any;
   try { msg = await req.json(); } catch { return rpcError(null, -32700, "parse error", 400); }
@@ -102,7 +108,7 @@ export async function mcp(req: Request, origin: string, dispatch: (r: Request) =
 
   // Who the token is, and its scope; tool calls check it again on the way through.
   const who = await dispatch(new Request(`${origin}/api/session`, { headers: { authorization: auth } }));
-  if (who.status === 401) return unauthorized(((await who.json().catch(() => ({}))) as { error?: string }).error ?? "bad token");
+  if (who.status === 401) return unauthorized(((await who.json().catch(() => ({}))) as { error?: string }).error ?? "bad token", origin);
   const scope = ((await who.json().catch(() => ({}))) as { token?: { scope?: string } }).token?.scope;
   const mine = all().filter((t) => scope === "write" || t.method === "GET");
 

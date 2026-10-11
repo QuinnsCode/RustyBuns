@@ -77,3 +77,15 @@ describe("POST /api/mcp", () => {
     expect((await tool(read, "read_file", { owner: "ryan", repo: "lab" })).isError).toBe(true);
   });
 });
+
+describe("GET /api/mcp/tools", () => {
+  test("lists every tool in words, to anyone", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    opened.push(call);
+    const r = await call(null, "/api/mcp/tools");
+    expect(r.status).toBe(200);
+    const list = (await r.json()) as any[];
+    expect(list.map((t) => t.name).sort()).toEqual(tools().map((t) => t.name).sort());
+    expect(list.find((t) => t.name === "merge_branch")).toMatchObject({ scope: "write", risky: true, tag: "Branches", http: "POST /api/repos/{owner}/{repo}/branches/{branch}/merge" });
+  });
+});

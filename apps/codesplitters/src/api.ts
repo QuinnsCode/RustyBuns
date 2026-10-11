@@ -1,6 +1,6 @@
 // The API reference: every read and action the site's own page uses, so anyone can
 // build their own UI on it, or point an agent at it. The Worker serves it as JSON at
-// GET /api, and /api.html shows it. test/api.test.ts keeps it whole: every route
+// GET /api, and /reference shows it. test/api.test.ts keeps it whole: every route
 // comment in src/ and every call the command palette names must be in here.
 //
 // Paths: :o/:r is a repo's owner and name, :path a file's path in the repo (a query
@@ -26,7 +26,8 @@ export const GROUPS: Group[] = [
     endpoints: [
       { method: "GET", path: "/api", does: "this reference, as JSON" },
       { method: "GET", path: "/api/openapi.json", does: "the same API as an OpenAPI 3.1 spec, for agents and gateways outside the browser; calls that can't be undone or ship code carry x-codesplitters-risky: true" },
-      { method: "POST", path: "/api/mcp", body: "a JSON-RPC request", does: "a remote MCP server (Streamable HTTP, no sessions) whose tools are the spec's operations, one per operationId; send a personal API token (a read token lists only reads), and risky ones are marked destructive" },
+      { method: "POST", path: "/api/mcp", body: "a JSON-RPC request", does: "a remote MCP server (Streamable HTTP, no sessions) whose tools are the spec's operations, one per operationId; send a personal API token (a read token lists only reads), and risky ones are marked destructive; /mcp shows how to connect" },
+      { method: "GET", path: "/api/mcp/tools", does: "every MCP tool: name, description, inputs, scope and whether it's risky (no token needed)" },
     ],
   },
   {
@@ -46,6 +47,14 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/tokens", who: SIGNED_IN, does: "your personal API tokens, without their secrets (cookie only, never a token)" },
       { method: "POST", path: "/api/tokens", body: "{label, scope: \"read\" | \"write\", days?}", who: SIGNED_IN, does: "a personal API token, 1 to 365 days (30 by default), sent as Authorization: Bearer cst_…; its secret is shown this once (cookie only)" },
       { method: "DELETE", path: "/api/tokens/:id", who: SIGNED_IN, does: "revoke one (cookie only)" },
+      { method: "GET", path: "/.well-known/oauth-authorization-server", does: "OAuth sign-in for apps outside the browser (RFC 8414): authorization code with PKCE (S256), public clients, scopes read and write" },
+      { method: "GET", path: "/.well-known/oauth-protected-resource/api/mcp", does: "where an MCP client signs in for /api/mcp (RFC 9728)" },
+      { method: "GET", path: "/api/oauth/authorize", does: "the consent page: response_type=code, client_id, redirect_uri, code_challenge, code_challenge_method=S256, state?, scope?. An unregistered client_id may only redirect to http://127.0.0.1 or localhost" },
+      { method: "POST", path: "/api/oauth/token", body: "grant_type=authorization_code&code&redirect_uri&client_id&code_verifier, or grant_type=refresh_token&refresh_token", does: "{access_token (cst_…, an hour), refresh_token (rotated on every use, 30 days from its last), scope}" },
+      { method: "POST", path: "/api/oauth/register", body: "{redirect_uris, client_name?}", does: "register an app (RFC 7591): https or loopback redirects; it gets a client_id and no secret" },
+      { method: "POST", path: "/api/oauth/revoke", body: "token", does: "end the grant behind a refresh token, or one access token (RFC 7009)" },
+      { method: "GET", path: "/api/oauth/grants", who: SIGNED_IN, does: "the apps you've signed in (cookie only)" },
+      { method: "DELETE", path: "/api/oauth/grants/:id", who: SIGNED_IN, does: "sign one out: its tokens stop at once (cookie only)" },
     ],
   },
   {

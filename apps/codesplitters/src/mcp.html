@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codeSplitters MCP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* The MCP server in words: how to connect, and every tool, drawn from
+     GET /api/mcp/tools (src/mcp.ts), which builds them from the OpenAPI spec. */
+  :root { --bg: #fff; --border: #e6e6e6; --fg: #0a0a0a; --muted: #6b6b6b; --accent: #e8590c; --accent-soft: #fff4ec; --paper: #fcfbf8;
+    --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+  a { color: var(--fg); } a:hover { color: var(--accent); }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 32px 24px 64px; }
+  .label { font: 500 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  h1 { font: 600 30px/1.1 var(--sans); letter-spacing: -0.04em; margin: 8px 0 6px; } h1 em { font-style: normal; color: var(--accent); }
+  h2 { font: 600 17px/1.3 var(--sans); letter-spacing: -0.02em; margin: 32px 0 4px; }
+  p, ol { color: var(--muted); margin: 0 0 12px; max-width: 680px; }
+  ol { padding-left: 20px; } ol li { margin: 4px 0; }
+  code { font: 12.5px var(--mono); overflow-wrap: anywhere; }
+  pre { font: 12.5px/1.5 var(--mono); background: var(--paper); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; margin: 6px 0 12px; }
+  .tools { border: 1px solid var(--border); border-radius: 6px; background: var(--paper); margin-top: 10px; }
+  .tool { padding: 10px 12px; border-top: 1px solid var(--border); }
+  .tool:first-child { border-top: 0; }
+  .name { font: 500 13px/20px var(--mono); }
+  .tag { font: 500 11px/18px var(--mono); padding: 0 6px; border-radius: 3px; margin-left: 6px; border: 1px solid var(--border); color: var(--muted); }
+  .tag.risky { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .d { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .http { font: 11.5px var(--mono); color: var(--muted); }
+  .args { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12.5px; }
+  .args li { padding: 1px 0; color: var(--muted); }
+  .args b { font: 500 12px var(--mono); color: var(--fg); }
+  .args i { font-style: normal; color: var(--accent); font-size: 11px; }
+  @media (max-width: 560px) { .wrap { padding: 20px 16px 48px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="label" href="/">← codeSplitters</a>
+  <h1>The <em>MCP</em> server</h1>
+  <p>Agents outside the browser (Claude Code, Claude Desktop, any MCP client) can use codeSplitters through these tools. Each one is a call in the <a href="/reference">API</a>, made as you with your token.</p>
+
+  <h2>Connect</h2>
+  <ol>
+    <li>Sign in, open your profile page, and make a token in the <b>API tokens</b> box: <b>Read only</b> or <b>Read and write</b>.</li>
+    <li>Copy the <b>claude mcp add</b> line it hands you, or this one with your token in it:</li>
+  </ol>
+  <pre id="add"></pre>
+  <p>Other clients: a Streamable HTTP server at <code id="url"></code>, with the header <code>Authorization: Bearer cst_…</code>. No sessions, no OAuth.</p>
+
+  <h2>What a token may do</h2>
+  <p>It acts as you and counts against your rate limits, until it expires (1 to 365 days). A <b>read</b> token only sees the read tools. Tools marked <span class="tag risky">asks first</span> can't be undone or ship code (delete a repo, commit, merge, deploy), so your client asks you before calling them. A token never reaches admin routes, sign-in, or other tokens. Revoke it on your profile page any time.</p>
+
+  <div id="groups"><p>Loading…</p></div>
+</div>
+<script>
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const url = `${location.origin}/api/mcp`;
+document.getElementById("url").textContent = url;
+document.getElementById("add").textContent = `claude mcp add --scope user --transport http codesplitters ${url} \\\n  --header "Authorization: Bearer cst_…"`;
+const type = (s = {}) => s.enum ? s.enum.join(" | ") : Array.isArray(s.type) ? s.type.join(" | ") : s.type === "array" ? `${type(s.items)}[]` : s.type ?? (s.oneOf ? "one of several" : "");
+/** A tool's inputs; a body's fields one level down. */
+const args = (schema) => {
+  const req = new Set(schema.required ?? []);
+  return Object.entries(schema.properties ?? {}).map(([k, s]) => {
+    const inner = k === "body" && s.properties ? `<ul class="args" style="margin-left:16px">${args(s)}</ul>` : "";
+    return `<li><b>${esc(k)}</b> ${esc(type(s))}${req.has(k) ? " <i>required</i>" : ""}${s.description ? ` · ${esc(s.description)}` : ""}${inner}</li>`;
+  }).join("");
+};
+fetch("/api/mcp/tools").then((r) => r.json()).then((tools) => {
+  const groups = [...new Set(tools.map((t) => t.tag))];
+  document.getElementById("groups").innerHTML = `<p>${tools.length} tools, as JSON at <a href="/api/mcp/tools"><code>GET /api/mcp/tools</code></a>.</p>` + groups.map((g) => `<h2>${esc(g)}</h2><div class="tools">`
+    + tools.filter((t) => t.tag === g).map((t) => `<div class="tool"><span class="name">${esc(t.name)}</span>`
+      + `<span class="tag">${t.scope === "read" ? "read" : "write"}</span>${t.risky ? '<span class="tag risky">asks first</span>' : ""}`
+      + `<div class="d">${esc(t.annotations.title)}</div><div class="http">${esc(t.http)}</div>`
+      + (Object.keys(t.inputSchema.properties ?? {}).length ? `<ul class="args">${args(t.inputSchema)}</ul>` : "") + "</div>").join("") + "</div>").join("");
+}).catch((e) => { document.getElementById("groups").innerHTML = `<p>Couldn't load the tools: ${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>

@@ -223,14 +223,16 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   const astro = inf.framework === "astro";
   // vite resolves --outDir against its `root`, so a root of public/ would build into public/dist/ui.
   const outDir = (d: string) => inf.vite.root ? relative(inf.vite.root, d).split("\\").join("/") : d;
-  clientBuild ??= `${inf.execCmd("vite")} build --outDir ${outDir("dist/ui")} --emptyOutDir`;
+  // The app's prebuild steps first, and the vite config its build names (#403).
+  const vite = (d: string) => [...inf.prebuild, `${inf.execCmd("vite")} build${inf.vite.buildConfig ? ` --config ${inf.vite.buildConfig}` : ""} --outDir ${outDir(d)} --emptyOutDir`].join(" && ");
+  clientBuild ??= vite("dist/ui");
   // The same build, put on the web as an assets-only Worker: Cloudflare serves the files, no
   // code of ours runs. Not for an app with a Node server: its frontend alone wouldn't work.
   const web = inf.serverDeps.length ? null : {
     assets: "dist/web",
     compatibilityDate: new Date().toISOString().slice(0, 10),
     compatibilityFlags: [],
-    build: astro ? `${inf.execCmd("astro")} build --outDir dist/web` : `${inf.execCmd("vite")} build --outDir ${outDir("dist/web")} --emptyOutDir`,
+    build: astro ? `${inf.execCmd("astro")} build --outDir dist/web` : vite("dist/web"),
     notFoundHandling: astro ? "404-page" : "single-page-application",
   };
   const cfg = {
