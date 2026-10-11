@@ -6,7 +6,7 @@ import { fromText } from "./lines.ts";
 import { ensureCrewRemote, fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
 import { code, json, NAME, type DigMessage, type Env } from "./env.ts";
 import { accountsOn, actingAs, identityRoutes, identify, isAdmin, isAgentHandle } from "./identity.ts";
-import { privacyRoutes, sweepSessions } from "./privacy.ts";
+import { privacyRoutes, scrubRoutes, sweepSessions } from "./privacy.ts";
 import { feedRoutes, runQueuedDigests, type DigestMessage } from "./feed.ts";
 import { sweepLineEvents } from "./line-events.ts";
 import { levelRoutes, runDigs } from "./levels.ts";
@@ -37,7 +37,7 @@ import { openapi } from "./openapi.ts";
 import { catalogue, mcp } from "./mcp.ts";
 import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
-import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts";
+import { checkRoutes, expireQueued, pollGithub, requeueStale, startChecks } from "./checks.ts";
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
 import { scaleRoutes } from "./scale.ts";
@@ -134,6 +134,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/admin/insights  people vs agents, the site's health, how far each person got (insights.ts)
   const insights = await insightRoutes(req, env, p, url, admin);
   if (insights) return insights;
+  // POST /api/admin/scrub {handle}  put @ghost where a deleted account's handle still shows (privacy.ts)
+  const scrub = await scrubRoutes(req, env, p, admin);
+  if (scrub) return scrub;
   // GET /api/admin/scale  the scale sideboard: each wall, how close we are, the next step (scale.ts)
   const scale = await scaleRoutes(req, env, p, admin);
   if (scale) return scale;
@@ -351,7 +354,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (!NAME.test(name ?? "")) return json({ error: "bad name" }, 400);
       // A person has to have signed up first, so adding one never takes a handle nobody chose.
       // agent- handles are ours to give (no person can pick one): a hosted agent comes in this way.
-      if (isAgentHandle(name)) await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
+      if (isAgentHandle(name)) await env.DB.prepare("INSERT OR IGNORE INTO users (name, created_at) VALUES (?, ?)").bind(name, Date.now()).run();
       else if (!(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(name).first())) return json({ error: `no one's @${name} here yet: send them an invite link` }, 404);
       const r = await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
       if (r.meta?.changes) await audit(env, req, { actor: user, action: "crew.add", owner, repo, target: name });
@@ -409,6 +412,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         h.set("x-codesplitters-write", a.write ? "1" : "0");
         h.set("x-codesplitters-crew", a.write ? "1" : "0");
         branch ? h.delete("x-codesplitters-file") : h.set("x-codesplitters-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
+        // A branch's copy learns which branch it is, to stamp when the branch last changed (checks.ts).
+        branch ? h.set("x-codesplitters-branch", encodeURIComponent(JSON.stringify([owner, repo, branch]))) : h.delete("x-codesplitters-branch");
         // Its edits count against the edit limit, as the HTTP ones do (the DO counts them).
         const as = a.write ? counted(req, "edit", user, admin) : null;
         as ? h.set("x-codesplitters-limit-as", as) : h.delete("x-codesplitters-limit-as");
@@ -538,7 +543,8 @@ const app = {
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(advanceAll(env, Date.now() + 10 * 60_000));
     // Check runs a runner claimed and then went quiet on go back in the queue (a claim does this too).
-    ctx.waitUntil(requeueStale(env));
+    // and ones no runner has picked up in hours are cancelled, so the merge gate isn't left waiting on them.
+    ctx.waitUntil(requeueStale(env).then(() => expireQueued(env)));
     // Files the vector index doesn't have as committed yet (search.ts); nothing without it.
     ctx.waitUntil(embedDue(env).catch(() => null));
   },

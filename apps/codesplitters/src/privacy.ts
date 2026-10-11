@@ -7,9 +7,11 @@
 // Both are for the person, signed in on the site: never a token, an OAuth app or a
 // hosted agent acting as you. Lines and branches you made in other people's repos
 // stay there under your handle, the way commits stay in git; the handle is retired
-// so no one can pick it up and pass as you.
+// so no one can pick it up and pass as you. Asked to (?scrub=1, or an admin later:
+// POST /api/admin/scrub {handle}), @ghost takes its place there instead (#514).
 
 import { evict, openToken } from "./github.ts";
+import { fileStub } from "./archive.ts";
 import { listFollows } from "./follows.ts";
 import { json, type Env } from "./env.ts";
 
@@ -97,12 +99,58 @@ export async function revokeSignIns(env: Env, authId: string): Promise<string[]>
   return [...new Set(failed.filter((p): p is string => !!p))];
 }
 
+/** Who stands in for a deleted account in other people's repos, like GitHub's @ghost. Retired by migration 0056. */
+export const GHOST = "ghost";
+
+/** Other people's repos `handle` may be named in: crew of, edited, branched, merged, deployed, cut or invited in. */
+async function touched(env: Env, handle: string): Promise<[string, string][]> {
+  const rows = await all(env, `SELECT owner, repo FROM collaborators WHERE name = ?1
+    UNION SELECT owner, repo FROM line_events WHERE who = ?1
+    UNION SELECT owner, repo FROM branches WHERE by = ?1 OR merged_by = ?1
+    UNION SELECT owner, repo FROM deploys WHERE by = ?1
+    UNION SELECT owner, repo FROM cuts WHERE by = ?1
+    UNION SELECT owner, repo FROM invites WHERE by = ?1 OR target = ?1 OR claimed_by = ?1`, handle) as { owner: string; repo: string }[];
+  return rows.filter((r) => r.owner !== handle).map((r) => [r.owner, r.repo]);
+}
+
+/**
+ * Put @ghost where retired `handle` is still named in other people's repos: each line's
+ * author, op and commit in every file DO there (main's and each branch's), and branches,
+ * deploys, cuts and invites in D1. Git commits keep their author, as clones do. Repos
+ * come from what the delete noted (retired_handles) and the rows still naming it.
+ */
+export async function scrubHandle(env: Env, handle: string) {
+  const noted = await env.DB.prepare("SELECT repos FROM retired_handles WHERE handle = ?").bind(handle).first();
+  const repos = new Map<string, [string, string]>();
+  for (const r of [...JSON.parse((noted?.repos as string) ?? "[]") as [string, string][], ...await touched(env, handle)]) repos.set(r.join("/"), r);
+  let files = 0;
+  for (const [owner, repo] of repos.values()) {
+    const list = await all(env, "SELECT path, NULL AS branch FROM files WHERE owner = ?1 AND repo = ?2 UNION ALL SELECT path, branch FROM branch_files WHERE owner = ?1 AND repo = ?2", owner, repo) as { path: string; branch: string | null }[];
+    const changed = await Promise.all(list.map(async (f) => {
+      const res = await fileStub(env, owner, repo, f.path, f.branch ?? undefined).fetch(new Request("https://file/scrub", { method: "POST", body: JSON.stringify({ from: handle, to: GHOST }) }));
+      return ((await res.json()) as { changed?: number }).changed ?? 0;
+    }));
+    files += changed.filter(Boolean).length;
+  }
+  const now = Date.now(), set = (table: string, col: string) => env.DB.prepare(`UPDATE ${table} SET ${col} = ?1 WHERE ${col} = ?2`).bind(GHOST, handle);
+  await env.DB.batch([
+    set("branches", "by"), set("branches", "merged_by"), set("deploys", "by"), set("cuts", "by"),
+    set("invites", "by"), set("invites", "target"), set("invites", "claimed_by"),
+    env.DB.prepare(`INSERT INTO retired_handles (handle, repos, retired_at, scrubbed_at) VALUES (?, '[]', ?, ?)
+      ON CONFLICT (handle) DO UPDATE SET repos = '[]', scrubbed_at = excluded.scrubbed_at`).bind(handle, now, now),
+  ]);
+  return { handle, as: GHOST, repos: repos.size, files };
+}
+
 /**
  * Bury `handle`: its repos (rows, file DOs, git), its rows everywhere, and its sign-in,
- * GitHub's and Google's grants included. Returns the providers to revoke by hand.
+ * GitHub's and Google's grants included; with `scrub`, @ghost takes its name in other
+ * people's repos too. Returns the providers to revoke by hand.
  */
-export async function eraseUser(env: Env, handle: string): Promise<string[]> {
+export async function eraseUser(env: Env, handle: string, { scrub = false } = {}): Promise<string[]> {
   const u = await authUser(env, handle);
+  // Where it's named, before the rows that say so go: a scrub asked for later needs it.
+  await env.DB.prepare("INSERT OR REPLACE INTO retired_handles (handle, repos, retired_at) VALUES (?, ?, ?)").bind(handle, JSON.stringify(await touched(env, handle)), Date.now()).run();
   // While the tokens are still here to revoke with.
   const revokeYourself = u ? await revokeSignIns(env, u.id) : [];
   for (const r of await all(env, "SELECT name FROM repos WHERE owner = ?", handle)) await evict(env, handle, (r as { name: string }).name);
@@ -133,6 +181,7 @@ export async function eraseUser(env: Env, handle: string): Promise<string[]> {
     // handle_grants is what makes a handle unclaimable; no inbox is called this.
     by("INSERT OR REPLACE INTO handle_grants (handle, email) VALUES (?, ?)", handle, `retired:${handle}`),
   ]);
+  if (scrub) await scrubHandle(env, handle);
   if (!u) return revokeYourself;
   await env.DB.batch([
     by(`DELETE FROM session WHERE "userId" = ?`, u.id),
@@ -157,12 +206,23 @@ export async function privacyRoutes(req: Request, env: Env, p: string[], url: UR
     return json(await exportFor(env, user), 200, { "content-disposition": `attachment; filename="codesplitters-${user}.json"`, "cache-control": "no-store" });
   }
   if (url.searchParams.get("confirm") !== user) return json({ error: `to delete your account, confirm with your handle: ?confirm=${user}` }, 400);
-  const revokeYourself = await eraseUser(env, user);
+  const revokeYourself = await eraseUser(env, user, { scrub: url.searchParams.get("scrub") === "1" });
   // Alias mode's cookie, and Better Auth's (its __Secure- twin is cleared the same way on https).
   const gone = ["cs_user", "better-auth.session_token", "better-auth.session_data", "__Secure-better-auth.session_token", "__Secure-better-auth.session_data"];
   const res = json({ deleted: user, ...(revokeYourself.length ? { revoke_yourself: revokeYourself } : {}) });
   for (const c of gone) res.headers.append("set-cookie", `${c}=; Path=/; Max-Age=0; SameSite=Lax${c.startsWith("__Secure-") ? "; Secure" : ""}`);
   return res;
+}
+
+/** POST /api/admin/scrub {handle}  put @ghost where a deleted account's handle still shows. Admins only. */
+export async function scrubRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
+  if (p[1] !== "admin" || p[2] !== "scrub" || p[3]) return null;
+  if (!admin) return json({ error: "admins only" }, 403);
+  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  const { handle = "" } = (await req.json().catch(() => ({}))) as { handle?: string };
+  const grant = await env.DB.prepare("SELECT email FROM handle_grants WHERE handle = ?").bind(handle).first();
+  if (handle === GHOST || grant?.email !== `retired:${handle}`) return json({ error: `@${handle} isn't a deleted account's handle` }, 404);
+  return json(await scrubHandle(env, handle));
 }
 
 /**

@@ -64,6 +64,91 @@ describe("your data", () => {
   });
 });
 
+describe("deleting with accounts on (#513)", () => {
+  const origin = "http://codesplitters.local";
+  test("the Better Auth rows go, the handle is retired, and the old cookie is no one", async () => {
+    const call = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin });
+    opened.push(call);
+    const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
+      body: JSON.stringify({ email: "ana@example.com", password: "correct horse battery", name: "ana" }) });
+    const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+    expect((await call(null, "/api/handle", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "ana-digger" }) })).status).toBe(201);
+    const db = call.env.DB;
+    const id = (await db.prepare("SELECT auth_id FROM users WHERE name = 'ana-digger'").first())!.auth_id as string;
+    // A reset link waiting in the inbox, keyed to the account.
+    await db.prepare(`INSERT INTO verification (id, identifier, value, "expiresAt", "createdAt", "updatedAt") VALUES ('v1', 'reset-password:tok', ?, '2099-01-01', '2026-01-01', '2026-01-01')`).bind(id).run();
+    for (const t of ["session", "account"]) expect(await db.prepare(`SELECT 1 FROM ${t} WHERE "userId" = ?`).bind(id).first()).not.toBeNull();
+
+    const gone = await call(null, "/api/me?confirm=ana-digger", { method: "DELETE", headers: { cookie } });
+    expect(gone.status).toBe(200);
+    expect(gone.headers.getSetCookie().filter((c) => c.startsWith("better-auth.session_token=;"))).toHaveLength(1);
+    for (const t of ["session", "account"]) expect(await db.prepare(`SELECT 1 FROM ${t} WHERE "userId" = ?`).bind(id).first()).toBeNull();
+    expect(await db.prepare(`SELECT 1 FROM verification WHERE identifier = 'ana@example.com' OR value = ?`).bind(id).first()).toBeNull();
+    expect(await db.prepare(`SELECT 1 FROM "user" WHERE id = ?`).bind(id).first()).toBeNull();
+    expect(await db.prepare("SELECT email FROM handle_grants WHERE handle = 'ana-digger'").first()).toEqual({ email: "retired:ana-digger" });
+    // The cookie the browser held before is no one now, and the handle can't be claimed again.
+    expect(((await (await call(null, "/api/session", { headers: { cookie } })).json()) as any).user).toBeNull();
+    expect(((await (await call(null, "/api/handle?name=ana-digger")).json()) as any).ok).toBe(false);
+  });
+
+  test("in alias mode a retired handle, or @ghost, can't be signed in as again", async () => {
+    const { call } = await app();
+    await call("ryan", "/api/me?confirm=ryan", { method: "DELETE" });
+    for (const name of ["ryan", "ghost"]) expect((await call(null, "/api/login", { method: "POST", body: JSON.stringify({ name }) })).status).toBe(409);
+    expect((await call(null, "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan2" }) })).status).toBe(200);
+  });
+});
+
+describe("@ghost in other people's repos (#514)", () => {
+  /** ryan, crew on mia's pit, wrote a file there, committed it, and edited it on a branch of his. */
+  async function worked() {
+    const a = await app();
+    const { call, send } = a;
+    await send("ryan", "/api/repos/mia/pit/files", { path: "b.ts", content: "ryan's line" });
+    await send("ryan", "/api/repos/mia/pit/do/commit?path=b.ts", { message: "ryan's commit" });
+    await send("mia", "/api/repos/mia/pit/files", { path: "c.ts", content: "mia's line" });
+    expect((await send("ryan", "/api/repos/mia/pit/branches", { name: "ryan-idea" })).status).toBeLessThan(300);
+    expect((await send("ryan", "/api/repos/mia/pit/do/ops?path=b.ts&branch=ryan-idea", { ops: [{ kind: "insert", after: null, text: "on the branch" }] })).status).toBe(200);
+    const look = async () => {
+      const file = (await (await call("mia", "/api/repos/mia/pit/do/file?path=b.ts")).json()) as any;
+      const log = ((await (await call("mia", "/api/repos/mia/pit/do/log?path=b.ts&since=0")).json()) as { ops: any[] }).ops;
+      const commits = (await (await call("mia", "/api/repos/mia/pit/do/commits?path=b.ts")).json()) as any[];
+      const branch = (await (await call("mia", "/api/repos/mia/pit/do/file?path=b.ts&branch=ryan-idea")).json()) as any;
+      const mias = (await (await call("mia", "/api/repos/mia/pit/do/file?path=c.ts")).json()) as any;
+      const row = await call.env.DB.prepare("SELECT by FROM branches WHERE owner = 'mia' AND repo = 'pit' AND name = 'ryan-idea'").first();
+      return { lines: file.lines.map((l: any) => l.by), log: [...new Set(log.map((o) => o.by))], commits: commits.map((c) => c.by),
+        branch: [...new Set(branch.lines.map((l: any) => l.by))], mias: mias.lines.map((l: any) => l.by), row: row?.by };
+    };
+    expect(await look()).toEqual({ lines: ["ryan"], log: ["ryan"], commits: ["ryan"], branch: ["ryan"], mias: ["mia"], row: "ryan" });
+    return { ...a, look };
+  }
+  const ghosted = { lines: ["ghost"], log: ["ghost"], commits: ["ghost"], branch: ["ghost"], mias: ["mia"], row: "ghost" };
+
+  test("left alone, a deleted handle stays on what it wrote, and the delete notes where", async () => {
+    const { call, look } = await worked();
+    await call("ryan", "/api/me?confirm=ryan", { method: "DELETE" });
+    expect((await look()).lines).toEqual(["ryan"]);
+    expect(await call.env.DB.prepare("SELECT repos FROM retired_handles WHERE handle = 'ryan'").first()).toEqual({ repos: JSON.stringify([["mia", "pit"]]) });
+  });
+
+  test("asked for at the delete, @ghost takes its place on lines, ops, commits and branches", async () => {
+    const { call, look } = await worked();
+    expect((await call("ryan", "/api/me?confirm=ryan&scrub=1", { method: "DELETE" })).status).toBe(200);
+    expect(await look()).toEqual(ghosted);
+    expect(await call.env.DB.prepare("SELECT repos, scrubbed_at IS NOT NULL AS done FROM retired_handles WHERE handle = 'ryan'").first()).toEqual({ repos: "[]", done: 1 });
+  });
+
+  test("an admin can scrub one later, only a deleted account's handle", async () => {
+    const { call, send, look } = await worked();
+    await call("ryan", "/api/me?confirm=ryan", { method: "DELETE" });
+    expect((await send("mia", "/api/admin/scrub", { handle: "mia" })).status).toBe(404);
+    expect((await send("mia", "/api/admin/scrub", { handle: "ghost" })).status).toBe(404);
+    const res = await send("mia", "/api/admin/scrub", { handle: "ryan" });
+    expect(await res.json()).toEqual({ handle: "ryan", as: "ghost", repos: 1, files: 2 });
+    expect(await look()).toEqual(ghosted);
+  });
+});
+
 describe("GitHub and Google grants (#515)", () => {
   const origin = "http://codesplitters.local", key = "test-secret-".padEnd(40, "x");
   /** ana, signed up with email and a handle, with a GitHub and a Google sign-in linked; `fetch` answers GitHub and Google. */

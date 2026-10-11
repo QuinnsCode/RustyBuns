@@ -3,7 +3,7 @@
 // open, and pushing a catalogue as a commit.
 
 import { fromText } from "./lines.ts";
-import { push } from "./git.ts";
+import { push, type Change } from "./git.ts";
 import { mirrorIdentity } from "./mirror.ts";
 import { noodles, type Noodle } from "./noodles.ts";
 import type { ArtifactsRepo, Env, TreeEntry } from "./env.ts";
@@ -27,6 +27,8 @@ export function toFile(env: Env, owner: string, repo: string, path: string, user
   if (!headers.has("x-codesplitters-crew")) headers.set("x-codesplitters-crew", "1");
   // Main's copy learns where it lives, for the feed; a branch's edits reach it when the branch merges.
   if (!branch) headers.set("x-codesplitters-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
+  // A branch's copy learns which branch it is, so its edits mark the branch changed (checks.ts).
+  else headers.set("x-codesplitters-branch", encodeURIComponent(JSON.stringify([owner, repo, branch])));
   return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 
@@ -224,6 +226,26 @@ export async function uncatalogue(env: Env, owner: string, repo: string, path: s
   return pub.value;
 }
 
+/**
+ * Write a binary file into main's git (and the crew's copy, when there is one): a branch's
+ * binary file, merging (#446). It doesn't wait out a fresh start: the merge says so and is tried again.
+ */
+export async function catalogueBlob(env: Env, owner: string, repo: string, path: string, blob: { bytes: Uint8Array; mode?: string }, author: string, message: string) {
+  const [h, crew] = await Promise.all([handleFor(env, owner, repo), handleFor(env, owner, repo, true)]);
+  if (!h) throw new Error("this repo has no git");
+  if (await env.DB.prepare("SELECT 1 FROM fresh_starts WHERE owner = ? AND repo = ? AND state IN ('walking', 'copying')").bind(owner, repo).first())
+    throw new Error("git is moving to a fresh start; merge again when it's done");
+  const [pub] = await Promise.allSettled([
+    (async () => pushChanges(env, owner, repo, h, { ...(await pendingChanges(env, owner, repo)), [path]: blob }, author, message))(),
+    crew?.crew ? (async () => {
+      const a = await access(crew.handle, crew.remote, "write", 300);
+      return push(a.remote, a.token, { changes: { [path]: blob }, ...(await byline(env, owner, repo, author, message)), branch: crew.branch, base: crew.handle });
+    })() : null,
+  ]);
+  if (pub.status === "rejected") throw pub.reason;
+  return pub.value;
+}
+
 /** Push the files still waiting, if any, as one commit. */
 export async function flushPending(env: Env, owner: string, repo: string) {
   const h = await handleFor(env, owner, repo), changes = await pendingChanges(env, owner, repo);
@@ -238,7 +260,7 @@ async function byline(env: Env, owner: string, repo: string, author: string, mes
 }
 
 type Handle = NonNullable<Awaited<ReturnType<typeof handleFor>>>;
-async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, string | null>, author: string, message: string) {
+async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, Change>, author: string, message: string) {
   try {
     const a = await access(h.handle, h.remote, "write", 300);
     const r = await push(a.remote, a.token, { changes, ...(await byline(env, owner, repo, author, message)), branch: h.branch, base: h.handle });
@@ -248,7 +270,8 @@ async function pushChanges(env: Env, owner: string, repo: string, h: Handle, cha
     ]);
     return { remote: a.remote, ...r };
   } catch (e) {
-    await pend(env, owner, repo, Object.keys(changes));
+    // Bytes can't wait in git_pending (it rebuilds text from the file's lines): their caller retries.
+    await pend(env, owner, repo, Object.entries(changes).filter(([, c]) => c === null || typeof c === "string").map(([p]) => p));
     await env.DB.prepare("UPDATE repos SET git_error = ? WHERE owner = ? AND name = ?").bind(String((e as Error).message ?? e), owner, repo).run();
     throw e;
   }

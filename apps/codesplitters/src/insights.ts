@@ -11,6 +11,7 @@
 // A signed-in caller counts as their @handle; a signed-out one as a hash of their
 // IP salted with the day (and BETTER_AUTH_SECRET), so no IP is kept and no one is
 // followed from one day to the next. Days older than 30 are swept every hour.
+// The admins themselves (ADMINS) aren't counted at all.
 // Each isolate gathers its tallies for a second (TRAFFIC_MS) and writes them as
 // one upsert per caller, so D1 takes a write per caller a second, not one per
 // request (#638). Insights can lag by that second.
@@ -23,7 +24,7 @@
 // first one on each socket (file-do.ts).
 
 import { json, type Env } from "./env.ts";
-import { actingAs, identify } from "./identity.ts";
+import { actingAs, identify, isAdmin } from "./identity.ts";
 import { ruleFor } from "./limits.ts";
 
 const DAY = 86_400_000, KEEP_DAYS = 30;
@@ -116,6 +117,7 @@ export async function record(env: Env, req: Request, status: number, later = fal
     const user = callers.get(req) ?? null;
     if (!user) return;
     if (!callers.get(outer)) callers.set(outer, user);
+    if (env.ADMINS && isAdmin(env, user)) return;
     const step = status < 300 ? STEP_OF[ruleFor(req.method, new URL(req.url).pathname.split("/").filter(Boolean).map(decodeURIComponent)) ?? ""] : undefined;
     if (step) await noteStep(env, user, step);
     return;
@@ -125,6 +127,8 @@ export async function record(env: Env, req: Request, status: number, later = fal
   const p = new URL(req.url).pathname.split("/").filter(Boolean).map(decodeURIComponent);
   // Routes that answer before the worker knows who's calling (the session, signing in) are looked up here, after the answer's gone.
   let user = callers.has(req) ? callers.get(req)! : await identify(req, env).catch(() => null);
+  // The admins' own browsing (ADMINS) isn't counted: on a small site it would swamp the people it's about.
+  if (env.ADMINS && isAdmin(env, user)) return;
   // An account just deleted leaves nothing behind under its handle.
   if (req.method === "DELETE" && p[1] === "me" && !p[2] && status < 300) user = null;
   const now = Date.now(), day = now - (now % DAY);
@@ -228,7 +232,7 @@ export async function insightRoutes(req: Request, env: Env, p: string[], url: UR
     FROM traffic WHERE last_at >= ? GROUP BY who, kind, via ORDER BY last_at DESC LIMIT 40`, now - DAY);
 
   const people = await all(`SELECT u.name,
-      (SELECT MIN(first_at) FROM user_steps s WHERE s.name = u.name) AS joined,
+      (SELECT MIN(at) FROM (SELECT first_at AS at FROM user_steps s WHERE s.name = u.name UNION ALL SELECT u.created_at)) AS joined,
       (SELECT MAX(last_at) FROM traffic t WHERE t.who = '@' || u.name) AS seen,
       (SELECT MAX(last_at) FROM user_steps s WHERE s.name = u.name AND s.step != 'joined') AS acted
     FROM users u ORDER BY MAX(COALESCE(seen, 0), COALESCE(acted, 0), COALESCE(joined, 0)) DESC LIMIT 50`);

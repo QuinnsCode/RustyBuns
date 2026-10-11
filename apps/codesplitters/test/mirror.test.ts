@@ -340,15 +340,21 @@ describe("mirrors", () => {
     expect((await get(call, "/api/repos/ana/up/mirror/branches")).map((b: any) => b.ref)).toEqual(["tidy"]);
   });
 
-  test("branches carry deletions both ways, and merging one deletes upstream too (#440)", async () => {
+  test("branches carry deletions and binary files both ways, and merging one deletes upstream too (#440, #446)", async () => {
     const call = await mirrored("deletes");
     const q = (path: string, b: string) => `?path=${encodeURIComponent(path)}&branch=${encodeURIComponent(b)}`;
     // Upstream's branch deletes src/a.ts and adds a binary file.
     const work = mkdtempSync(join(root, "work-"));
     await sh(`git clone -q ${up} . && git config user.name Bo && git config user.email bo@example.com && git checkout -qb prune && git rm -q src/a.ts && printf 'a\\000b' > logo.bin && git add -A && git commit -qm prune && git push -q origin prune`, work);
     const made = await post(call, "/api/repos/ana/up/mirror/branches", { ref: "prune" });
-    expect(await made.json()).toMatchObject({ name: "prune", files: [], deleted: ["src/a.ts"], skipped: ["logo.bin"] });
-    expect((await get(call, "/api/repos/ana/up/branches/prune")).files).toEqual([{ path: "src/a.ts", merged: false, build: false, deleted: true, ops: [], conflicts: [] }]);
+    expect(await made.json()).toMatchObject({ name: "prune", files: ["logo.bin"], deleted: ["src/a.ts"], skipped: [] });
+    const blob = await sh(`git --git-dir ${up} rev-parse prune:logo.bin`);
+    expect((await get(call, "/api/repos/ana/up/branches/prune")).files).toEqual([
+      { path: "logo.bin", merged: false, build: false, binary: true, blob, ops: [], conflicts: [] },
+      { path: "src/a.ts", merged: false, build: false, deleted: true, ops: [], conflicts: [] },
+    ]);
+    // It has no lines to open.
+    expect((await call("ana", `/api/repos/ana/up/do/file${q("logo.bin", "prune")}`)).status).toBe(415);
     expect((await call("ana", `/api/repos/ana/up/do/file${q("src/a.ts", "prune")}`)).status).toBe(404);
 
     // Here, the branch deletes README too: pushed, upstream's branch loses it, logo.bin and all else as Bo left it.
@@ -356,16 +362,17 @@ describe("mirrors", () => {
     expect(await (await post(call, "/api/repos/ana/up/mirror/branches/prune/push")).json()).toMatchObject({ pushed: true });
     expect(await sh(`git --git-dir ${up} ls-tree -r --name-only prune`)).toBe("logo.bin");
 
-    // Bo brings src/a.ts back upstream: the branch takes it in, no longer a deletion.
-    await sh(`git pull -q origin prune && mkdir -p src && printf 'export const a = 3\\n' > src/a.ts && git add -A && git commit -qm back && git push -q origin prune`, work);
-    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/prune/pull")).json()).toMatchObject({ files: ["src/a.ts"], deleted: [] });
+    // Bo brings src/a.ts back upstream and changes logo.bin: the branch takes both in, a.ts no longer a deletion.
+    await sh(`git pull -q origin prune && mkdir -p src && printf 'export const a = 3\\n' > src/a.ts && printf 'a\\000c' > logo.bin && git add -A && git commit -qm back && git push -q origin prune`, work);
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/prune/pull")).json()).toMatchObject({ files: ["logo.bin", "src/a.ts"], deleted: [] });
     expect((await get(call, `/api/repos/ana/up/do/file${q("src/a.ts", "prune")}`)).lines.map((l: any) => l.text)).toEqual(["export const a = 3"]);
 
-    // Merged: README goes from main here, from its git, and upstream with the next sync.
-    expect(await (await post(call, "/api/repos/ana/up/branches/prune/merge")).json()).toMatchObject({ status: "merged" });
+    // Merged: README goes from main here, from its git, and upstream with the next sync; logo.bin, as Bo last left it, comes in.
+    expect(await (await post(call, "/api/repos/ana/up/branches/prune/merge")).json()).toMatchObject({ status: "merged", merged: expect.arrayContaining([{ path: "logo.bin", rev: 0, ops: 0, binary: true }]) });
     expect((await call("ana", "/api/repos/ana/up/do/file?path=README")).status).toBe(404);
     expect(await sync(call)).toMatchObject({ state: "ok" });
-    expect(await sh(`git --git-dir ${up} ls-tree -r --name-only main`)).toBe("src/a.ts");
+    expect(await sh(`git --git-dir ${up} ls-tree -r --name-only main`)).toBe("logo.bin\nsrc/a.ts");
+    expect(await sh(`git --git-dir ${up} rev-parse main:logo.bin`)).toBe(await sh(`git --git-dir ${up} rev-parse prune:logo.bin`));
   });
 
   test("pushing the crew's copy right after upstream moved still tells a force-push from its own commits", async () => {

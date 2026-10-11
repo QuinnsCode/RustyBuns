@@ -13,9 +13,11 @@
 // main is catalogued. A branch can delete a file too: its row is marked
 // deleted, and merging deletes it from main, and from git there and then.
 // A merge also waits for the repo's required checks to pass on the branch (checks.ts).
+// A binary file a mirror branch took from upstream has no lines: its row holds
+// the git blob (#446), which the review shows as changed and the merge writes into main's git.
 
 import { empty, explain, fromText, PICKS, type Conflict, type Doc, type Op, type Pick, type Resolve } from "./lines.ts";
-import { materialize, toFile, uncatalogue } from "./archive.ts";
+import { catalogueBlob, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { mergeBlock, refChecks } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
@@ -58,7 +60,8 @@ export async function openBranch(env: Env, owner: string, repo: string, name: st
 
 /** Make sure `path` has a copy on `branch`, forked from main's file the first time it's opened. */
 export async function materializeOn(env: Env, owner: string, repo: string, branch: string, path: string): Promise<{ ok: true } | { error: string; status: number }> {
-  const row = await env.DB.prepare("SELECT deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).first();
+  const row = await env.DB.prepare("SELECT deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).first();
+  if (row?.blob) return { error: "binary file", status: 415 };
   if (row) return row.deleted ? { error: "deleted on this branch", status: 404 } : { ok: true };
   const m = await materialize(env, owner, repo, path);
   if ("error" in m) return m;
@@ -69,9 +72,9 @@ export async function materializeOn(env: Env, owner: string, repo: string, branc
   return { ok: true };
 }
 
-/** A file that's new on the branch: forked from nothing. One the branch deleted can be made again. */
+/** A file that's new on the branch: forked from nothing. One the branch deleted, or had as binary, can be made again. */
 export async function createOn(env: Env, owner: string, repo: string, branch: string, path: string, content: string, user: string) {
-  const gone = await env.DB.prepare("UPDATE branch_files SET deleted = 0, merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND deleted = 1").bind(owner, repo, branch, path).run();
+  const gone = await env.DB.prepare("UPDATE branch_files SET deleted = 0, merged = 0, blob = NULL, mode = NULL WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND (deleted = 1 OR blob IS NOT NULL)").bind(owner, repo, branch, path).run();
   if (gone.meta?.changes) {
     // Its copy starts over, forked from main's again if main has it, so merging it is an edit of main's.
     await toFile(env, owner, repo, path, user, "wipe", { method: "POST" }, "", branch);
@@ -97,14 +100,14 @@ export async function createOn(env: Env, owner: string, repo: string, branch: st
  * the merge deletes it from main.
  */
 export async function deleteOn(env: Env, owner: string, repo: string, branch: string, path: string) {
-  const row = await env.DB.prepare("SELECT deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).first();
+  const row = await env.DB.prepare("SELECT deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).first();
   if (row?.deleted) return json({ error: "no such file" }, 404);
   const onMain = await materialize(env, owner, repo, path);
   const mainHas = !("error" in onMain) || onMain.status !== 404;
   if (!mainHas && !row) return json({ error: "no such file" }, 404);
-  if (row) await toFile(env, owner, repo, path, "upstream", "wipe", { method: "POST" }, "", branch);
+  if (row && !row.blob) await toFile(env, owner, repo, path, "upstream", "wipe", { method: "POST" }, "", branch);
   if (!mainHas) await env.DB.prepare("DELETE FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).run();
-  else await env.DB.prepare("INSERT INTO branch_files (owner, repo, branch, path, deleted) VALUES (?, ?, ?, ?, 1) ON CONFLICT (owner, repo, branch, path) DO UPDATE SET deleted = 1, merged = 0").bind(owner, repo, branch, path).run();
+  else await env.DB.prepare("INSERT INTO branch_files (owner, repo, branch, path, deleted) VALUES (?, ?, ?, ?, 1) ON CONFLICT (owner, repo, branch, path) DO UPDATE SET deleted = 1, merged = 0, blob = NULL, mode = NULL").bind(owner, repo, branch, path).run();
   return json({ path, branch, deleted: true });
 }
 
@@ -118,6 +121,15 @@ async function deleteOnMain(env: Env, owner: string, repo: string, path: string,
     const { kickMirror } = await import("./mirror.ts");
     await kickMirror(env, owner, repo);
   }
+}
+
+/** Main takes the branch's binary `path` (#446): its bytes, from the mirror's git, into main's git (and upstream's, at the next sync). */
+async function blobOnMain(env: Env, owner: string, repo: string, f: { path: string; blob: string; mode: string | null }, user: string, message: string) {
+  const { blobBytes, kickMirror } = await import("./mirror.ts");
+  const bytes = await blobBytes(env, owner, repo, f.blob);
+  if (!bytes) throw new Error(`${f.path}'s bytes aren't in this repo's git any more`);
+  await catalogueBlob(env, owner, repo, f.path, { bytes, mode: f.mode ?? undefined }, user, message);
+  await kickMirror(env, owner, repo);
 }
 
 /** Ask main's copy of `path` to merge the branch's: a dry run, or for real. */
@@ -158,7 +170,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
 
   const branch = name && await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first();
   if (!branch) return json({ error: "no such branch" }, 404);
-  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as { path: string; merged: number; deleted: number }[]);
+  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as { path: string; merged: number; deleted: number; blob: string | null; mode: string | null }[]);
 
   // DELETE /api/repos/:o/:r/branches/:b/files?path=  delete a file on the branch; merging deletes it from main.
   if (p[6] === "files" && req.method === "DELETE") {
@@ -177,6 +189,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       const build = isBuildFile(f.path);
       if (f.merged) return { path: f.path, merged: true, build, ops: [], conflicts: [], ...(f.deleted && { deleted: true }) };
       if (f.deleted) return { path: f.path, merged: false, build, deleted: true, ops: [], conflicts: [] };
+      // Binary: no lines to show, only that it changed.
+      if (f.blob) return { path: f.path, merged: false, build, binary: true, blob: f.blob, ops: [], conflicts: [] };
       const m = await mergeFile(env, owner, repo, branch, f.path, user ?? "anon", undefined, true);
       let ops = m.ops ?? [], conflicts = m.conflicts;
       if (!a.write) {
@@ -196,7 +210,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   // GET /api/repos/:o/:r/branches/:b/hunks?path=  what the branch changed in one file, as hunks against where it forked.
   if (p[6] === "hunks" && !p[7] && req.method === "GET") {
     const path = new URL(req.url).searchParams.get("path") ?? "";
-    const f = (await files()).find((x) => x.path === path && !x.merged && !x.deleted);
+    const f = (await files()).find((x) => x.path === path && !x.merged && !x.deleted && !x.blob);
     if (!f) return json({ path, hunks: [] });
     return json({ path, hunks: (await fileHunks(env, owner, repo, name, path, user ?? "anon", a.write)).hunks });
   }
@@ -205,7 +219,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (!a.write) return json({ error: "no write access" }, 403);
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
     const b = (await req.json().catch(() => ({}))) as { path?: string; key?: string };
-    const f = b.path && (await files()).find((x) => x.path === b.path && !x.merged && !x.deleted);
+    const f = b.path && (await files()).find((x) => x.path === b.path && !x.merged && !x.deleted && !x.blob);
     const got = f && await fileHunks(env, owner, repo, name, f.path, user!, true);
     const h = got && got.hunks.find((x) => x.key === b.key);
     if (!got || !h) return json({ error: `no change ${b.key} in ${b.path} on ${name}: read the review again` }, 404);
@@ -225,7 +239,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (!b.harness || !HARNESSES.includes(b.harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
     if (!installedHarnesses(env).includes(b.harness)) return json({ error: `${b.harness} isn't installed on this machine` }, 400);
     if (!b.path || !b.line) return json({ error: "path and line: a conflict the review lists" }, 400);
-    const f = (await files()).find((x) => x.path === b.path && !x.merged && !x.deleted);
+    const f = (await files()).find((x) => x.path === b.path && !x.merged && !x.deleted && !x.blob);
     const c = f && (await mergeFile(env, owner, repo, branch, f.path, user!, undefined, true)).conflicts.find((x) => x.line === b.line);
     if (!c) return json({ error: `no conflict ${b.line} in ${b.path} on ${name}` }, 404);
     if (!explain(c).choices.includes("text")) return json({ error: "this conflict only takes main or branch" }, 400);
@@ -250,14 +264,14 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     // Required checks that failed, or haven't finished, hold it, as a GitHub branch protection rule would.
     const held = await mergeBlock(env, owner, repo, name);
     if (held) return json(held, 409);
-    // A dry run first, so a conflict anywhere merges nothing. A deletion never conflicts.
-    const dry = await Promise.all(todo.filter((f) => !f.deleted).map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user!, resolve[f.path], true)) })));
+    // A dry run first, so a conflict anywhere merges nothing. A deletion or a binary file never conflicts.
+    const dry = await Promise.all(todo.filter((f) => !f.deleted && !f.blob).map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user!, resolve[f.path], true)) })));
     const blocked = dry.filter((d) => d.conflicts.length).map(({ path, conflicts }) => ({ path, conflicts: conflicts.map(explain) }));
     // Settling a stretch can leave code that won't build: say so, as the review (settling nothing) can't show it.
     const broken = blocked.flatMap((b) => b.conflicts.filter((c) => c.lint).map((c) => `${b.path}: ${c.lint}`));
     if (blocked.length) return json({ error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked }, 409);
 
-    const merged: { path: string; rev: number; ops: number; deleted?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
+    const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
     for (const f of todo) {
       // Claim the file, so two merges at once can't both apply it.
       const claim = await env.DB.prepare("UPDATE branch_files SET merged = 1 WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, name, f.path).run();
@@ -265,6 +279,15 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       if (f.deleted) {
         await deleteOnMain(env, owner, repo, f.path, user!, `Delete ${f.path}, merging ${name}`);
         merged.push({ path: f.path, rev: 0, ops: 0, deleted: true });
+        continue;
+      }
+      if (f.blob) {
+        try { await blobOnMain(env, owner, repo, { path: f.path, blob: f.blob, mode: f.mode }, user!, `${f.path}, merging ${name}`); }
+        catch (e) {
+          await env.DB.prepare("UPDATE branch_files SET merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, f.path).run();
+          throw e;
+        }
+        merged.push({ path: f.path, rev: 0, ops: 0, binary: true });
         continue;
       }
       // A file new on the branch becomes a file on main.

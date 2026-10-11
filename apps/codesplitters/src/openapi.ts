@@ -114,9 +114,10 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { ...filePath, ...onBranch }, ok: ref("Doc") } },
   [`${repo}/do/at`]: { get: { id: "read_file_at", summary: "Time travel: the file as it was at a rev, with blame per line", tag: "Files", open: true,
     query: { ...filePath, ...onBranch, rev: { ...int("the edit to stop at"), required: true } }, ok: ref("Doc") } },
-  [`${repo}/do/log`]: { get: { id: "file_log", summary: "Every edit to a file since a rev", tag: "Files", open: true,
-    description: "History reaches back about 20,000 edits (a file whose log predates trimming, from its first snapshot); since a rev before that is a 410 naming the rev it starts at.",
-    query: { ...filePath, ...onBranch, since: int("0 for all") }, ok: arr(ref("Applied")) } },
+  [`${repo}/do/log`]: { get: { id: "file_log", summary: "A file's edits since a rev, a page at a time", tag: "Files", open: true,
+    description: "A page holds up to 1,000 edits; `next` is the rev to pass as `since` for the following page. History reaches back about 20,000 edits (a file whose log predates trimming, from its first snapshot); since a rev before that is a 410 naming the rev it starts at.",
+    query: { ...filePath, ...onBranch, since: int("0 for all"), limit: int("at most this many ops, up to and by default 1,000") },
+    ok: obj({ ops: arr(ref("Applied")), next: int("pass as since for the next page; null at the end") }) } },
   [`${repo}/do/ops`]: { post: { id: "edit_lines", summary: "Edit a file's lines: insert, set and delete by line id, all or nothing (the crew)", tag: "Files",
     description: "Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts. `ifRev` pins the batch to the whole file's rev.",
     query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int() }, ["ops"]),
@@ -179,7 +180,7 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "Each conflict is {line, base, main, branch, choices, suggestion?}: settle it in merge_branch's `resolve` by its `line` with one of its `choices` " +
       "(\"text\" meaning {\"text\": \"...\"}). `suggestion`, where there is one, keeps both sides' words: merge with {\"text\": suggestion} to take it. " +
       "suggest_resolution has a coding agent write one.",
-    ok: loose("the branch row, plus {deploys, files: [{path, merged, build, deleted?, ops, conflicts: [{line, base, main, branch, choices, suggestion?, doubled?, whole?, lint?}], hunks, lines?}]}; " +
+    ok: loose("the branch row, plus {deploys, files: [{path, merged, build, deleted?, binary?, blob?, ops, conflicts: [{line, base, main, branch, choices, suggestion?, doubled?, whole?, lint?}], hunks, lines?}]}; " +
       "hunks are what the branch itself changed since it forked: [{key, at, from, del: [{id, text}], add: [{id, text}], before}]") } },
   [`${repo}/branches/{branch}/hunks/reject`]: { post: { id: "reject_hunk", summary: "Reject one hunk of a branch: its copy of the file reads as it did where the branch forked, there only (the crew)", tag: "Branches",
     description: "Name the hunk by the `key` review_branch lists for it. The rest of the branch stays. A 404 means the hunk changed or went: review again.",
@@ -194,10 +195,11 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { path: { ...str(), required: true } }, ok: obj({ path: str(), branch: str(), deleted: bool() }) } },
   [`${repo}/checks`]: {
     get: { id: "checks", summary: "A ref's check runs, ours and GitHub Actions', and whether a merge may go", tag: "Checks", open: true,
-      description: "Like `gh pr checks`: the newest run of each name on the ref's latest sha. gate.ok false means merging waits: on gate.waiting, or for gate.failed to be fixed. While GitHub is down (offline), required checks only GitHub runs are deferred once our own have passed.",
+      description: "Like `gh pr checks`: the newest run of each name on the ref's latest sha. gate.ok false means merging waits: on gate.waiting, or for gate.failed to be fixed. While GitHub is down (offline), required checks only GitHub runs are deferred once our own have passed. A branch edited since its runs is stale: every required check waits again.",
       query: { ref: str("main or a branch's name; main by default") },
       ok: obj({ ref: str(), sha: { type: ["string", "null"] }, where: { type: ["string", "null"] }, runs: arr(ref("CheckRun")),
         here: bool("whether our own checks run"), offline: bool("the mirror can't reach GitHub"),
+        stale: bool("the branch changed since these runs saw it"), changed_at: { type: ["integer", "null"], description: "when the branch last changed (ms), null on main" },
         gate: obj({ required: arr(str("the ones this ref needs")), ok: bool(), passed: arr(str()), waiting: arr(str()), failed: arr(str()), deferred: arr(str("GitHub's, put off while it's down")),
           skipped: arr(str("required checks scoped to paths this branch doesn't touch")) }) }) },
     post: { id: "record_check", summary: "Record a check run by hand (the crew queues one; only the owner may give it a status past queued)", tag: "Checks",
@@ -209,9 +211,9 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/checks/github`]: { post: { id: "import_github_checks", summary: "Fetch GitHub's results for the shas sent up, now (the crew)", tag: "Checks",
     body: obj({ ref: str("just this ref's") }), ok: loose("{polled: [{sha, imported, done} or {error}]}") } },
   [`${repo}/checks/claim`]: { post: { id: "claim_check", summary: "A runner of your own takes the oldest queued check run (the crew)", tag: "Checks",
-    description: "Marks it running for runner_label and answers {id, ref, sha, name, clone_url, command?, stale_after_s}, or 204 when nothing's queued. Report with update_check, passing runner_label: each call is a heartbeat, and a run quiet for stale_after_s goes back in the queue.",
+    description: "Marks it running for runner_label and answers {id, ref, sha, name, clone_url, command?, stale_after_s}, or 204 when nothing's queued. A sha like `<branch>@<time>` is a branch not pushed as a git commit: check out main and write the branch's files over it (scripts/runner.ts does). A run nobody claims in 6 hours is cancelled. Report with update_check, passing runner_label: each call is a heartbeat, and a run quiet for stale_after_s goes back in the queue.",
     body: obj({ runner_label: str("what this runner calls itself"), names: arr(str("only these checks")) }, ["runner_label"]),
-    ok: obj({ id: int(), ref: str(), sha: str(), name: str(), clone_url: { type: ["string", "null"] }, command: str("the check's command, when its setting has one"), stale_after_s: int() }) } },
+    ok: obj({ id: int(), ref: str(), sha: str(), name: str(), clone_url: { type: ["string", "null"] }, command: str("what to run: the required check's command, else the repo's codesplitters.ci or package.json script; none means the runner's default"), stale_after_s: int() }) } },
   [`${repo}/checks/settings`]: {
     get: { id: "check_settings", summary: "Where a repo's checks run, and which ones a merge waits on", tag: "Checks", open: true, ok: ref("CheckSettings") },
     put: { id: "set_check_settings", summary: "Set where checks run, which are required, and whether ours go to GitHub (owner only)", tag: "Checks",

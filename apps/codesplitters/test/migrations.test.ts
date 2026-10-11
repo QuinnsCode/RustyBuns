@@ -20,6 +20,9 @@ const SHARED = new Set([
   "0041_line_events.sql",
   "0052_deps_alerted.sql",
   "0052_repo_search_stale.sql",
+  // #749 and #751 landed side by side; either may be live already, so neither is renamed.
+  "0056_check_freshness.sql",
+  "0056_join_dates_and_ghost.sql",
 ]);
 
 const files = readdirSync(`${import.meta.dir}/../migrations`).filter(f => f.endsWith(".sql"));

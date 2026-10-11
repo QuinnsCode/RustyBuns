@@ -28,6 +28,21 @@
 // branch that touches one of them, so a change in apps/a doesn't wait on b-tests.
 // One with a command is queued here too, for a runner to claim. Only whoever claimed a run, or the
 // owner, says how it went, so a collaborator (an agent too) can't pass a check it didn't run (#645).
+//
+// What runs here (#463): the required checks with a command, then the repo's own list, read at
+// the ref: a `codesplitters.ci` file at the top, {"<name>": "<command>" | {run, paths?}}, any
+// command at all (a `docker build .` runs on whoever's machine claims it), else package.json's
+// `test` and `typecheck` scripts, else one `test` run with the runner's default command.
+//
+// A branch knows when it last changed (#489): its file copies stamp `changed_at` on every edit,
+// and runs on the branch from before that are stale, so the gate waits again. When checks run
+// here, an edit queues a run of each check that hasn't one queued already: a run waiting in the
+// queue reads the branch as it is when it's claimed, so a burst of edits makes one run, not many.
+// A branch that hasn't gone up as a git commit is checked at `<branch>@<time>`: the runner
+// clones main and lays the branch's files over it (scripts/runner.ts).
+//
+// A run nobody claims in UNCLAIMED (no runner, or one that's offline) is cancelled by the
+// hourly cron, its log saying so, rather than waiting on the gate forever (#490).
 // Every run that starts or finishes is a `check_run`
 // webhook, shaped like GitHub's.
 //
@@ -54,7 +69,7 @@ type Where = "here" | "github" | "both";
 export interface CheckRun {
   id: number; owner: string; repo: string; ref: string; sha: string; name: string; runner: Runner; status: Status;
   started_at: number | null; finished_at: number | null; log: string; junit: string | null; url: string | null; external_id: string | null; created_at: number;
-  runner_label: string | null; heartbeat_at: number | null; claimed_by: string | null;
+  runner_label: string | null; heartbeat_at: number | null; claimed_by: string | null; command: string | null;
 }
 
 /** A check a merge waits on: on every branch, or only on one that touches `paths`. One with a `command` is queued for our runners. */
@@ -67,6 +82,8 @@ const WATCH = 2 * 3600_000;
 const MAX_LOG = 256 * 1024;
 /** A claimed run whose runner hasn't been heard from in this long goes back in the queue. */
 export const STALE = 10 * 60_000;
+/** A run of ours still queued after this long has no runner coming for it: the cron cancels it. */
+export const UNCLAIMED = 6 * 3600_000;
 const COLUMNS = "id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at, runner_label";
 
 /** The setting as stored: JSON, or the comma-separated names it used to be. */
@@ -158,11 +175,11 @@ async function postStatus(env: Env, run: CheckRun) {
 }
 
 /** Record a run. Its webhook goes out; one that's finished already says so too. */
-export async function recordRun(env: Env, r: { owner: string; repo: string; ref: string; sha: string; name: string; runner: Runner; status?: Status; url?: string | null; external_id?: string | null; started_at?: number | null; finished_at?: number | null; runner_label?: string | null }, by: string) {
+export async function recordRun(env: Env, r: { owner: string; repo: string; ref: string; sha: string; name: string; runner: Runner; status?: Status; url?: string | null; external_id?: string | null; started_at?: number | null; finished_at?: number | null; runner_label?: string | null; command?: string | null }, by: string) {
   const now = Date.now(), status = r.status ?? "queued";
   const started = r.started_at ?? (status === "queued" ? null : now), finished = r.finished_at ?? (DONE.has(status) ? now : null);
-  const res = await env.DB.prepare("INSERT INTO check_runs (owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at, runner_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id")
-    .bind(r.owner, r.repo, r.ref, r.sha, r.name, r.runner, status, started, finished, r.url ?? null, r.external_id ?? null, now, r.runner_label ?? null).first();
+  const res = await env.DB.prepare("INSERT INTO check_runs (owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at, runner_label, command) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id")
+    .bind(r.owner, r.repo, r.ref, r.sha, r.name, r.runner, status, started, finished, r.url ?? null, r.external_id ?? null, now, r.runner_label ?? null, r.command ?? null).first();
   const run = (await get(env, res!.id as number))!;
   await told(env, run, "created", by);
   if (DONE.has(status)) await told(env, run, "completed", by);
@@ -206,21 +223,80 @@ export async function upstreamMoved(env: Env, owner: string, repo: string, ref: 
   } catch {}
 }
 
+/** A file's text on `ref` (the branch's copy when it has one, else main's), or null when there's none. */
+async function readAt(env: Env, owner: string, repo: string, ref: string, path: string) {
+  const { materialize, toFile } = await import("./archive.ts");
+  const own = ref === "main" ? null : await env.DB.prepare("SELECT deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, ref, path).first();
+  if (own?.deleted) return null;
+  if (!own && "error" in await materialize(env, owner, repo, path)) return null;
+  const res = await toFile(env, owner, repo, path, "upstream", "file", {}, "", own ? ref : undefined);
+  return res.ok ? ((await res.json()) as { lines: { text: string }[] }).lines.map((l) => l.text).join("\n") : null;
+}
+
+/** A check the repo runs, from its codesplitters.ci or package.json. */
+export interface Planned { name: string; command: string; paths?: string[] }
+
+/** The repo's own checks, as `codesplitters.ci` says ({name: command | {run, paths?}}), else package.json's test and typecheck scripts. */
+export function planFrom(ci: string | null, pkg: string | null): Planned[] {
+  const parse = (t: string | null) => { try { const v = t && JSON.parse(t); return v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : null; } catch { return null; } };
+  const conf = parse(ci);
+  if (conf) return Object.entries(conf).flatMap(([name, v]): Planned[] => {
+    const c = typeof v === "string" ? { run: v } : v as { run?: unknown; paths?: unknown };
+    if (!name.trim() || name.includes(",") || name.length > 100 || typeof c?.run !== "string" || !c.run.trim() || c.run.length > 1000) return [];
+    const paths = Array.isArray(c.paths) ? c.paths.filter((x): x is string => typeof x === "string" && !!x.trim()) : [];
+    return [{ name: name.trim(), command: c.run, ...(paths.length && { paths }) }];
+  });
+  const scripts = parse(pkg)?.scripts as Record<string, unknown> | undefined;
+  return ["test", "typecheck"].filter((n) => typeof scripts?.[n] === "string").map((n) => ({ name: n, command: `bun run ${n}` }));
+}
+
+/** What runs here on `ref`, given what it touched: each required check with a command, then the repo's own, by name. */
+export async function planChecks(env: Env, owner: string, repo: string, ref: string, required: Required[], paths: string[] | null) {
+  const [ci, pkg] = await Promise.all(["codesplitters.ci", "package.json"].map((f) => readAt(env, owner, repo, ref, f).catch(() => null)));
+  const ours = new Map<string, { name: string; command?: string }>();
+  for (const r of requiredFor(required.filter((r) => r.command && r.name !== "*"), paths)) ours.set(r.name, r);
+  for (const r of requiredFor(planFrom(ci ?? null, pkg ?? null), paths)) if (!ours.has(r.name)) ours.set(r.name, r);
+  return ours.size ? [...ours.values()] : [{ name: "test" }];
+}
+
 /**
  * Our own checks on `ref` at `sha`, on this machine or in a container, for a runner to
- * claim: each required check with a command that the ref's changes call for, or one
- * `test` run when none do. One that's queued or running already isn't queued again.
+ * claim: what planChecks says the ref's changes call for. One that's queued or running
+ * already isn't queued again; after an edit, one queued at all on the ref isn't.
  */
-async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "") {
+async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false) {
   const runner: Runner = typeof Bun !== "undefined" ? "desktop" : "container";
   const s = await checkSettings(env, owner, repo);
-  const ours = requiredFor(s.required.filter((r) => r.command && r.name !== "*"), await touched(env, owner, repo, ref)).map((r) => r.name);
-  for (const name of ours.length ? ours : ["test"]) {
-    const live = await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND name = ? AND runner != 'github' AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, name).first();
+  for (const { name, command } of await planChecks(env, owner, repo, ref, s.required, await touched(env, owner, repo, ref))) {
+    const live = edit
+      ? await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND name = ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, name).first()
+      : await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND name = ? AND runner != 'github' AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, name).first();
     if (live) continue;
-    const run = await recordRun(env, { owner, repo, ref, sha, name, runner }, by);
+    const run = await recordRun(env, { owner, repo, ref, sha, name, runner, command }, by);
     if (why) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(why, run.id).run();
   }
+}
+
+/**
+ * A branch's copy of a file took an edit at `at` (file-do.ts): the branch has changed since its
+ * checks, and when they run here, a run of each is queued unless one's waiting already.
+ */
+export async function branchEdited(env: Env, owner: string, repo: string, branch: string, at: number, by: string) {
+  const r = await env.DB.prepare("UPDATE branches SET changed_at = MAX(COALESCE(changed_at, 0), ?) WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(at, owner, repo, branch).run();
+  if (!r.meta?.changes) return;
+  try {
+    if ((await checkSettings(env, owner, repo)).here) await queueHere(env, owner, repo, branch, `${branch}@${at}`, by, "", true);
+  } catch {
+    // Checks never get in the way of an edit.
+  }
+}
+
+/** Runs of ours still queued after UNCLAIMED are cancelled: nobody's coming for them (the hourly cron). */
+export async function expireQueued(env: Env, now = Date.now()) {
+  const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE status = 'queued' AND runner IN ('desktop', 'container') AND created_at < ?").bind(now - UNCLAIMED).all();
+  for (const run of results as unknown as CheckRun[])
+    await updateRun(env, run, { status: "cancelled", append: `\nno runner picked it up in ${UNCLAIMED / 3600_000} hours: cancelled. Start a runner (scripts/runner.ts) and press Run.\n` }, "codesplitters");
+  return results.length;
 }
 
 /** Claimed runs nobody's heard from in STALE go back in the queue, for another runner (one repo's, or every repo's for the cron). */
@@ -254,7 +330,7 @@ export async function claimRun(env: Env, owner: string, repo: string, label: str
     .bind(now, label, now, by, owner, repo, ...names).first() as CheckRun | null;
   if (!run) return null;
   await postStatus(env, run).catch(() => null);
-  const command = (await checkSettings(env, owner, repo)).required.find((r) => r.name === run.name)?.command;
+  const command = (await checkSettings(env, owner, repo)).required.find((r) => r.name === run.name)?.command ?? run.command;
   return { id: run.id, ref: run.ref, sha: run.sha, name: run.name, clone_url: await cloneUrl(env, owner, repo), ...(command && { command }), stale_after_s: STALE / 1000 };
 }
 
@@ -322,7 +398,8 @@ export async function pollGithub(env: Env, now = Date.now()) {
  * One scoped to paths the branch doesn't touch isn't required here: it's `skipped`.
  * While GitHub is down, a required check only GitHub runs is deferred, not waited
  * on, once our own checks on the sha have all passed: work carries on, and GitHub's
- * verdict comes in on main when it's back.
+ * verdict comes in on main when it's back. A branch edited since its runs is `stale`:
+ * every required check waits again, whatever its last run said.
  */
 export async function refChecks(env: Env, owner: string, repo: string, ref: string) {
   const s = await checkSettings(env, owner, repo);
@@ -334,6 +411,9 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
   const latest = new Map<string, Omit<CheckRun, "log" | "junit">>();
   for (const r of results as CheckRun[]) latest.set(r.name, r);
   const runs = [...latest.values()];
+  const changed = ref === "main" ? null : (await env.DB.prepare("SELECT changed_at FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first())?.changed_at as number | null ?? null;
+  const asOf = sha && changed ? await checkedAt(env, owner, repo, sha, runs) : null;
+  const stale = asOf !== null && changed! > asOf;
   const applies = requiredFor(s.required, await touched(env, owner, repo, ref)).map((r) => r.name);
   const skipped = s.required.map((r) => r.name).filter((n) => !applies.includes(n));
   const wanted = applies.includes("*") ? (runs.length ? runs.map((r) => r.name) : ["*"]) : applies;
@@ -341,22 +421,37 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
   const ours = runs.filter((r) => r.runner !== "github"), oursPassed = ours.length > 0 && ours.every((r) => r.status === "passed");
   for (const name of new Set(wanted)) {
     const r = latest.get(name);
-    if (r?.status === "passed") passed.push(name);
+    if (stale) waiting.push(name);
+    else if (r?.status === "passed") passed.push(name);
     else if (r && DONE.has(r.status)) failed.push(name);
     else if (s.offline && oursPassed && (!r || r.runner === "github")) deferred.push(name);
     else waiting.push(name);
   }
   return {
-    ref, sha, where: s.where, here: s.here, offline: s.offline, runs,
+    ref, sha, where: s.where, here: s.here, offline: s.offline, runs, stale, changed_at: changed,
     gate: { required: applies, ok: !waiting.length && !failed.length, passed, waiting, failed, deferred, skipped },
   };
+}
+
+/**
+ * When a sha's runs saw the code: a git commit's when its first run was recorded or it went
+ * up to GitHub, whichever came first; a branch checked as it is here (`<branch>@<time>`) when
+ * its first run was claimed, since that's when the runner read it. null: none has started yet.
+ */
+async function checkedAt(env: Env, owner: string, repo: string, sha: string, runs: Omit<CheckRun, "log" | "junit">[]) {
+  if (!/^[0-9a-f]{40}$/.test(sha) && /@\d+$/.test(sha)) {
+    const started = runs.map((r) => r.started_at).filter((t): t is number => t !== null);
+    return started.length ? Math.min(...started) : null;
+  }
+  const w = await env.DB.prepare("SELECT until FROM check_watches WHERE owner = ? AND repo = ? AND sha = ?").bind(owner, repo, sha).first();
+  return Math.min(...runs.map((r) => r.created_at), ...(w ? [(w.until as number) - WATCH] : []));
 }
 
 /** Why a merge of `ref` has to wait for its checks, or null when it doesn't. */
 export async function mergeBlock(env: Env, owner: string, repo: string, ref: string) {
   const c = await refChecks(env, owner, repo, ref);
   if (c.gate.ok) return null;
-  const why = [c.gate.failed.length && `${c.gate.failed.join(", ")} failed`, c.gate.waiting.length && `waiting on ${c.gate.waiting.join(", ")}`].filter(Boolean).join("; ");
+  const why = [c.stale && "the branch changed since its checks ran", c.gate.failed.length && `${c.gate.failed.join(", ")} failed`, c.gate.waiting.length && `waiting on ${c.gate.waiting.join(", ")}`].filter(Boolean).join("; ");
   const tip = c.offline && c.gate.waiting.length ? ". GitHub is down: run checks here, and once they pass, GitHub's wait until it's back" : "";
   return { error: `required checks haven't passed: ${why}${tip}`, checks: c.gate };
 }

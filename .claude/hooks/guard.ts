@@ -1,5 +1,6 @@
 // PreToolUse hook (wired in .claude/settings.json): stops an agent reading secrets, printing the
-// environment, or pushing to main or tags. The deny-list there matches command prefixes; this catches
+// environment, pushing to main or tags, deleting shared branches and worktrees, or changing the repo's
+// rulesets, secrets and release workflows through gh. The deny-list there matches command prefixes; this catches
 // the same things inside `a && b`, `$(...)`, `FOO=1 env`, `git -C dir push`, and Read/Grep paths.
 // A speed bump, not a sandbox: a script the agent writes can still read a file. Exit 2 blocks the
 // call and shows stderr to the agent.
@@ -73,11 +74,46 @@ function gitPush(t: string[], cwd: string, branchOf: BranchOf): string | null {
   const refs = pos.slice(1);
   const current = () => branchOf(dir);
   if (!refs.length) return MAIN.has(current() ?? "") ? "push from main" : null;
+  if (t.slice(i + 1).some((a) => a === "--delete" || a === "-d")) return "delete a remote branch";
   for (const r of refs) {
     if (r === "tag" || r.includes("refs/tags/")) return "push a tag";
+    if (r.startsWith(":")) return "delete a remote branch";
     if (r.startsWith("+")) return "force push (+refspec)";
     const dst = (r.includes(":") ? r.slice(r.indexOf(":") + 1) : r).replace(/^refs\/heads\//, "");
     if (MAIN.has(dst) || (dst === "HEAD" && MAIN.has(current() ?? ""))) return "push to main";
+  }
+  return null;
+}
+
+// Every worktree shares one .git, so these reach other agents' work, or the hooks that run for them.
+function gitShared(t: string[]): string | null {
+  let i = 1;
+  while (t[i]?.startsWith("-")) i += t[i] === "-C" || t[i] === "-c" ? 2 : 1;
+  const [sub, a] = [t[i], t[i + 1]];
+  if (sub === "worktree" && (a === "remove" || a === "prune")) return `git worktree ${a} (the office sends workers home)`;
+  if (sub === "branch" && t.slice(i + 1).some((x) => x === "-D" || (x === "--force" && t.includes("--delete"))))
+    return "force-delete a branch (git branch -d deletes a merged one)";
+  if (t.some((x) => /^core\.hookspath/i.test(x))) return "change the shared git hooks";
+  return null;
+}
+
+// gh calls that change who can merge, what gates a merge, or where secrets go. The owner makes these.
+const GH_ADMIN = /\/(rulesets|protection|environments|secrets|variables|collaborators|hooks|keys)(\/|$)|^repos\/[^/]+\/[^/]+$/;
+function ghAdmin(t: string[]): string | null {
+  const [, a1, a2] = t;
+  if (a1 === "pr" && a2 === "merge" && t.includes("--admin")) return "gh pr merge --admin";
+  if ((a1 === "secret" || a1 === "variable" || a1 === "ruleset") && a2 !== "list" && a2 !== "view" && a2 !== "check")
+    return `gh ${a1} ${a2 ?? ""}`.trim();
+  if (a1 === "repo" && (a2 === "edit" || a2 === "delete" || a2 === "rename" || a2 === "archive")) return `gh repo ${a2}`;
+  if (a1 === "release" && a2 !== "list" && a2 !== "view" && a2 !== "download") return `gh release ${a2 ?? ""}`.trim();
+  if (a1 === "workflow" && (a2 === "disable" || (a2 === "run" && t.some((x) => /desktop-drop|npm-publish/.test(x)))))
+    return `gh workflow ${a2} of a release workflow`;
+  if (a1 === "api") {
+    const path = t.slice(2).find((x) => !x.startsWith("-") && /\//.test(x))?.replace(/^\//, "").replace(/\?.*/, "") ?? "";
+    const m = t.findIndex((x) => x === "-X" || x === "--method");
+    const method = (m >= 0 ? t[m + 1] : t.find((x) => /^(-X|--method=)\w+/.test(x))?.replace(/^(-X|--method=)/, "")) ?? "";
+    const writes = (method && method.toUpperCase() !== "GET") || t.some((x) => /^(-f|-F|--field|--raw-field|--input)/.test(x));
+    if (writes && GH_ADMIN.test(path)) return `gh api write to ${path}`;
   }
   return null;
 }
@@ -96,7 +132,9 @@ function checkBash(cmd: string, cwd: string, branchOf: BranchOf): string | null 
     if (c === "op") return "1Password CLI: deploy secrets resolve through varlock, not agents";
     if (c === "gh" && a1 === "auth" && a2 === "token") return "print the GitHub token";
     if (c === "wrangler" && a1 === "secret") return "wrangler secret";
-    if (c === "git") { const why = gitPush(t, cwd, branchOf); if (why) return why; }
+    if (c === "git") { const why = gitPush(t, cwd, branchOf) ?? gitShared(t); if (why) return why; }
+    if (c === "gh") { const why = ghAdmin(t); if (why) return why; }
+    if (t.slice(1).some((x) => /\.git\/hooks(\/|$)/.test(x))) return "change the shared git hooks";
     // A reader's file arguments, and any `< file` redirect.
     const inputs = t.slice(1).filter((x, k) => READERS.has(c) || x.startsWith("<") || t[k] === "<").map((x) => x.replace(/^<+/, ""));
     const f = inputs.find((x) => x && !x.startsWith("-") && secretPath(x, cwd));
@@ -116,13 +154,15 @@ export function check(input: HookInput, branchOf: BranchOf = gitBranch): string 
   if (input.tool_name === "Bash") return checkBash(String(ti.command ?? ""), cwd, branchOf);
   const p = ti.file_path ?? ti.path;
   if ((input.tool_name === "Read" || input.tool_name === "Grep") && typeof p === "string" && secretPath(p, cwd)) return `read ${p}`;
+  if ((input.tool_name === "Write" || input.tool_name === "Edit") && typeof p === "string" && /\/\.git\/(hooks\/|config$)/.test(resolve(cwd, p)))
+    return "change the shared git hooks or config";
   return null;
 }
 
 if (import.meta.main) {
   const why = check(JSON.parse(await Bun.stdin.text()));
   if (why) {
-    console.error(`Blocked by .claude/hooks/guard.ts: ${why}. Secrets stay in 1Password and resolve through varlock at deploy; read .env.schema for names. main and tags change through pull requests. See AGENTS.md "Secrets and pushes".`);
+    console.error(`Blocked by .claude/hooks/guard.ts: ${why}. Secrets stay in 1Password and resolve through varlock at deploy; read .env.schema for names. main, tags, rulesets and release workflows are the owner's. See AGENTS.md "Secrets and pushes".`);
     process.exit(2);
   }
 }

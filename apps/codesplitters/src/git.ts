@@ -36,6 +36,8 @@ export interface TreeReader {
   readTree(hash: string): Promise<{ name: string; mode: string; hash: string; type: string }[] | null>;
 }
 interface Entry { name: string; mode: string; id: string; dir: boolean }
+/** What a path becomes: text, bytes (a binary file, with its mode if not 100644), or null to remove it. */
+export type Change = string | { bytes: Uint8Array; mode?: string } | null;
 
 /**
  * The tree at `treeHash` with `changes` applied ({ "a/b.ts": content, "old.ts": null }).
@@ -43,10 +45,10 @@ interface Entry { name: string; mode: string; id: string; dir: boolean }
  * hash and stays out of the pack (the remote already has it). Returns null for
  * an empty tree.
  */
-async function apply(base: TreeReader | undefined, treeHash: string | null, changes: Record<string, string | null>, out: Obj[]): Promise<Obj | null> {
+async function apply(base: TreeReader | undefined, treeHash: string | null, changes: Record<string, Change>, out: Obj[]): Promise<Obj | null> {
   const entries = new Map<string, Entry>();
   if (treeHash && base) for (const e of (await base.readTree(treeHash)) ?? []) entries.set(e.name, { name: e.name, mode: e.mode, id: e.hash, dir: e.type === "tree" });
-  const here: Record<string, string | null> = {}, sub: Record<string, Record<string, string | null>> = {};
+  const here: Record<string, Change> = {}, sub: Record<string, Record<string, Change>> = {};
   for (const [path, content] of Object.entries(changes)) {
     const i = path.indexOf("/");
     if (i < 0) here[path] = content;
@@ -54,10 +56,10 @@ async function apply(base: TreeReader | undefined, treeHash: string | null, chan
   }
   for (const [name, content] of Object.entries(here)) {
     if (content === null) { entries.delete(name); continue; }
-    const b = await obj("blob", enc.encode(content));
+    const b = await obj("blob", typeof content === "string" ? enc.encode(content) : content.bytes);
     out.push(b);
-    const was = entries.get(name);
-    entries.set(name, { name, mode: was && !was.dir ? was.mode : "100644", id: b.id, dir: false });
+    const was = entries.get(name), mode = typeof content === "string" ? undefined : content.mode;
+    entries.set(name, { name, mode: mode ?? (was && !was.dir ? was.mode : "100644"), id: b.id, dir: false });
   }
   for (const [name, inner] of Object.entries(sub)) {
     const was = entries.get(name);
@@ -105,7 +107,7 @@ function lines(buf: Uint8Array) {
 
 export interface Snapshot {
   /** Paths to write (content) or remove (null). Everything else is kept from the parent commit. */
-  changes: Record<string, string | null>;
+  changes: Record<string, Change>;
   message: string; author: string; branch?: string; at?: number;
   /** The author's email; `<author>@codesplitters.local` without it. */
   email?: string;

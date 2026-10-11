@@ -162,6 +162,29 @@ describe("past the Artifacts import cap", () => {
     } finally { restore(); }
   });
 
+  test("a folder's URL digs up just that folder, as the root of a repo named for it (#381)", async () => {
+    const { sha, tgz, dir } = upstream();
+    const call = await local({ GH_CLI: "off" });
+    // Not too big: a folder skips the Artifacts import, which can only take the whole repo.
+    const imports: unknown[] = [];
+    call.artifacts.import = (async (o: unknown) => { imports.push(o); throw new Error("not this way"); }) as any;
+    const restore = fakeGitHub(sha, tgz, { limited: true });
+    try {
+      await call("ana", "/api/login", { method: "POST", body: JSON.stringify({ name: "ana" }) });
+      const dig = (repo: string) => call("ana", "/api/github/dig", { method: "POST", body: JSON.stringify({ repo }) });
+      const res = await dig("https://github.com/o/big/tree/main/src");
+      expect(res.status).toBe(201);
+      expect(await res.json()).toMatchObject({ owner: "ana", name: "src", upstream: "github:o/big/tree/main/src", commit: sha });
+      expect(imports).toEqual([]);
+      const [tip] = await (await call.artifacts.get("ana--src")).log();
+      expect(tip!.treeHash).toBe(git(dir, "rev-parse", "HEAD:src"));
+      expect(tip!.message).toContain("o/big's src at");
+      // A folder that isn't there makes no repo.
+      expect((await dig("github.com/o/big/tree/main/nope")).status).toBe(502);
+      expect((await call("ana", "/api/repos/ana/nope")).status).toBe(404);
+    } finally { restore(); }
+  });
+
   test("a level does too, and stays read-only", async () => {
     const { sha, tree, tgz } = upstream();
     const call = await local({ GH_CLI: "off", ADMINS: "boss" });

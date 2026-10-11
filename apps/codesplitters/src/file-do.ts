@@ -13,6 +13,7 @@
 //   private        ids of lines only the crew may read (in a public repo too)
 //   claim:<id>     who is working on which lines right now (see Claim), one key each
 //   where          [owner, repo, path] on main's copy, so its edits reach the home feed (feed.ts)
+//   branch         [owner, repo, branch] on a branch's copy, so its edits mark the branch changed (checks.ts)
 //
 // Private lines: the Worker says whether the caller is crew
 // (`x-codesplitters-crew: 1`); everyone else gets each private line as a
@@ -23,6 +24,7 @@
 import type { Env } from "./env.ts";
 import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
+import { branchEdited } from "./checks.ts";
 import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
@@ -75,6 +77,8 @@ export class FileDurableObject {
   leaving = new Set<unknown>();
   /** Main's copy knows where it lives (the Worker says so), so its edits go into the feed's line events. */
   where: [string, string, string] | null = null;
+  /** A branch's copy knows which branch it is, so an edit marks the branch changed since its checks. */
+  onBranch: [string, string, string] | null = null;
   /** Each writer's line event still being folded into, and the writes to D1, one after another. */
   recent = new Map<string, Recent>();
   logging: Promise<unknown> = Promise.resolve();
@@ -99,6 +103,7 @@ export class FileDurableObject {
       this.base = await this.bases.load();
       this.secret = new Set((await ctx.storage.get("private")) ?? []);
       this.where = (await ctx.storage.get("where")) ?? null;
+      this.onBranch = (await ctx.storage.get("branch")) ?? null;
       this.snaps = (await ctx.storage.get("snaps")) ?? [];
       this.trimmed = (await ctx.storage.get("trimmed")) ?? 0;
       // A sweep the object was evicted in the middle of picks up where it stopped.
@@ -116,6 +121,11 @@ export class FileDurableObject {
     if (where && decodeURIComponent(where) !== JSON.stringify(this.where)) {
       this.where = JSON.parse(decodeURIComponent(where));
       await this.ctx.storage.put("where", this.where);
+    }
+    const onBranch = req.headers.get("x-codesplitters-branch");
+    if (onBranch && decodeURIComponent(onBranch) !== JSON.stringify(this.onBranch)) {
+      this.onBranch = JSON.parse(decodeURIComponent(onBranch));
+      await this.ctx.storage.put("branch", this.onBranch);
     }
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
@@ -136,7 +146,10 @@ export class FileDurableObject {
       return r.ok ? json({ rev: r.rev, applied: r.applied }) : json({ rev: r.rev, conflicts: r.conflicts }, 409);
     }
     try {
-      if (req.method === "GET" && route === "log") return json(this.hide(await this.log(Number(url.searchParams.get("since") ?? 0)), crew));
+      if (req.method === "GET" && route === "log") {
+        const page = await this.log(Number(url.searchParams.get("since") ?? 0), Number(url.searchParams.get("limit") || OP_PAGE));
+        return json({ ops: this.hide(page.ops, crew), next: page.next });
+      }
       if (req.method === "GET" && route === "at") return json(this.shown(await this.at(Number(url.searchParams.get("rev"))), crew));
     } catch (e) {
       if (e instanceof Trimmed) return json({ error: e.message, from: e.from }, 410);
@@ -171,10 +184,15 @@ export class FileDurableObject {
       // Its repo was evicted: forget everything.
       const all: Map<string, unknown> = await this.ctx.storage.list();
       await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
-      [this.doc, this.base, this.commits, this.secret, this.where, this.snaps, this.trimmed] = [empty(), null, 0, new Set(), null, [], 0];
+      [this.doc, this.base, this.commits, this.secret, this.where, this.onBranch, this.snaps, this.trimmed] = [empty(), null, 0, new Set(), null, null, [], 0];
       this.docs.clear(); this.bases.clear();
       this.claims.clear(); this.claimOf.clear(); this.recent.clear();
       return json({ ok: true });
+    }
+    if (req.method === "POST" && route === "scrub") {
+      // A deleted account's handle, swapped for the ghost's everywhere here (privacy.ts).
+      const { from, to } = (await req.json()) as { from: string; to: string };
+      return json({ changed: await this.ctx.blockConcurrencyWhile(() => this.scrub(from, to)) });
     }
     if (req.method === "POST" && route === "fork") {
       // A branch's copy starts as main's doc, ids and revs and all, once,
@@ -251,7 +269,47 @@ export class FileDurableObject {
       const [owner, repo, path] = this.where;
       this.logging = this.logging.then(() => recordEdits(this.env, { owner, repo, path }, r.applied, this.recent, claim)).catch(() => {});
     }
+    // A branch's edit: the branch has changed since its checks ran, and may queue a run of them.
+    if (this.onBranch) {
+      const [owner, repo, branch] = this.onBranch, at = r.applied.at(-1)?.at ?? Date.now();
+      this.logging = this.logging.then(() => branchEdited(this.env, owner, repo, branch, at, typeof by === "string" ? by : by[0] ?? "upstream")).catch(() => {});
+    }
     return { ok: true as const, rev: this.doc.rev, applied: r.applied };
+  }
+
+  /**
+   * `from` becomes `to` on every line, op, snapshot, commit and claim in storage, a page
+   * at a time, then the doc, base and claims are read back. Returns how many keys changed.
+   */
+  async scrub(from: string, to: string) {
+    const swap = (v: any): boolean => {
+      if (Array.isArray(v)) return v.map(swap).some(Boolean);
+      if (!v || typeof v !== "object") return false;
+      let hit = false;
+      for (const k of Object.keys(v)) {
+        if ((k === "by" || k === "who") && v[k] === from) { v[k] = to; hit = true; }
+        else if ((k === "by" || k === "writers") && Array.isArray(v[k]) && v[k].includes(from)) { v[k] = v[k].map((w: unknown) => w === from ? to : w); hit = true; }
+        else if (typeof v[k] === "object" && swap(v[k])) hit = true;
+      }
+      return hit;
+    };
+    let changed = 0, start: string | undefined;
+    for (;;) {
+      const m: Map<string, unknown> = await this.ctx.storage.list({ start, limit: OP_PAGE });
+      const hits = [...m].filter(([, v]) => swap(v));
+      await Promise.all(hits.map(([k, v]) => this.ctx.storage.put(k, v)));
+      changed += hits.length;
+      if (m.size < OP_PAGE) break;
+      start = [...m.keys()].at(-1)! + "\0";
+    }
+    if (!changed) return 0;
+    this.docs = new DocStore(this.ctx.storage, "doc");
+    this.bases = new DocStore(this.ctx.storage, "base");
+    this.doc = (await this.docs.load()) ?? empty();
+    this.base = await this.bases.load();
+    this.claims.clear(); this.claimOf.clear();
+    for (const c of ((await this.ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
+    return changed;
   }
 
   /** Every op after rev `since` (up to `until`), a page at a time by key range, so a long log is never read whole. */
@@ -265,10 +323,16 @@ export class FileDurableObject {
     }
   }
 
-  async log(since: number): Promise<Applied[]> {
-    const out: Applied[] = [];
-    for await (const a of this.ops(since)) out.push(a);
-    return out;
+  /** A page of the log after rev `since`: at most `limit` ops (capped at OP_PAGE), and the rev to pass as
+   *  `since` for the next page, or null when this page reached the end (#719). */
+  async log(since: number, limit = OP_PAGE): Promise<{ ops: Applied[]; next: number | null }> {
+    const max = Math.min(Math.max(1, Math.floor(limit) || OP_PAGE), OP_PAGE);
+    const ops: Applied[] = [];
+    for await (const a of this.ops(since)) {
+      if (ops.length === max) return { ops, next: ops.at(-1)!.rev };
+      ops.push(a);
+    }
+    return { ops, next: null };
   }
 
   /** Who edited after rev `since`; what was trimmed counts from where history starts. */

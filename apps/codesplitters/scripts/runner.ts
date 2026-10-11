@@ -10,7 +10,8 @@
 //
 // The token is a write token from your profile page, of someone in the repo's crew. The command
 // is the check's own (a required check's `command` in the settings), else --command, else
-// `bun test`, run with sh in a fresh clone checked out at the run's sha. Its output streams to
+// `bun test`, run with sh in a fresh clone checked out at the run's sha (or, for a branch edited
+// here and not pushed, main with the branch's files laid over it as they are now). Its output streams to
 // the run's log every couple of seconds, and each of those PUTs is the heartbeat: go quiet for
 // 10 minutes and the run goes back in the queue. Exit 0 passes it; anything else fails it. A
 // junit.xml left in the clone goes up as the report. To wrap Jenkins, Docker or anything else,
@@ -48,8 +49,26 @@ const api = (path: string, body: unknown, method = "POST") => fetch(`${base}/api
 // The command is repo code, maybe an agent's: it doesn't get our write token, or the URL (it can carry the desktop launch token).
 const { CODESPLITTERS_TOKEN: _token, CODESPLITTERS_URL: _url, ...commandEnv } = process.env;
 
+/** A branch's own files, written over the clone (and the ones it deleted, removed). Says what it did, for the log. */
+async function overlay(dir: string, ref: string) {
+  const get = (path: string) => fetch(`${base}/api/repos/${slug}${path}`, { headers: { authorization: `Bearer ${token}`, ...(launch && { cookie: `rb_token_${u.port}=${launch}` }) } });
+  const res = await get(`/branches/${encodeURIComponent(ref)}`);
+  if (!res.ok) throw new Error(`reading branch ${ref}: ${res.status}`);
+  const { files } = (await res.json()) as { files: { path: string; merged: boolean; deleted?: boolean }[] };
+  const mine = files.filter((f) => !f.merged);
+  for (const f of mine) {
+    const at = join(dir, f.path);
+    if (!at.startsWith(dir + "/")) throw new Error(`${f.path} is outside the repo`);
+    if (f.deleted) { await rm(at, { force: true }); continue; }
+    const doc = await get(`/do/file?path=${encodeURIComponent(f.path)}&branch=${encodeURIComponent(ref)}`);
+    if (!doc.ok) throw new Error(`reading ${f.path} on ${ref}: ${doc.status}`);
+    await Bun.write(at, ((await doc.json()) as { lines: { text: string }[] }).lines.map((l) => l.text).join("\n") + "\n");
+  }
+  return `main, with ${mine.length} file${mine.length === 1 ? "" : "s"} from branch ${ref} as they are now\n`;
+}
+
 /** One run, start to finish. */
-async function work(job: { id: number; sha: string; name: string; clone_url: string | null; command?: string }) {
+async function work(job: { id: number; ref: string; sha: string; name: string; clone_url: string | null; command?: string }) {
   const report = (b: object) => api(`/${job.id}`, { runner_label: o.label, ...b }, "PUT");
   const dir = await mkdtemp(join(tmpdir(), "cs-runner-"));
   let out = "";
@@ -59,10 +78,12 @@ async function work(job: { id: number; sha: string; name: string; clone_url: str
     const git = (...a: string[]) => Bun.spawnSync(["git", ...a], { cwd: dir, stderr: "pipe" });
     const cloned = git("clone", "--quiet", job.clone_url, ".");
     if (cloned.exitCode) throw new Error(`git clone failed: ${cloned.stderr}`);
-    // A branch that hasn't gone up as a git commit has no sha to check out: there's nothing here to test.
-    if (!/^[0-9a-f]{40}$/.test(job.sha) || git("checkout", "--quiet", job.sha).exitCode) throw new Error(`${job.sha} isn't a commit in the repo's git`);
+    // A branch that hasn't gone up as a git commit (`<branch>@<time>`): main, with the branch's files laid over it as they are now.
+    if (/^[0-9a-f]{40}$/.test(job.sha)) { if (git("checkout", "--quiet", job.sha).exitCode) throw new Error(`${job.sha} isn't a commit in the repo's git`); }
+    else if (/@\d+$/.test(job.sha)) out = await overlay(dir, job.ref);
+    else throw new Error(`${job.sha} isn't a commit in the repo's git`);
     const command = job.command ?? o.command ?? "bun test";
-    out = `$ ${command}\n`;
+    out += `$ ${command}\n`;
     const p = Bun.spawn(["sh", "-c", command], { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...commandEnv, CI: "1" } });
     const pump = async (s: ReadableStream<Uint8Array>) => { for await (const t of s.pipeThrough(new TextDecoderStream())) out += t; };
     const tick = setInterval(() => flush().catch(() => p.kill()), 2000);
