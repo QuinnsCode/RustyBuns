@@ -115,7 +115,7 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/do/at`]: { get: { id: "read_file_at", summary: "Time travel: the file as it was at a rev, with blame per line", tag: "Files", open: true,
     query: { ...filePath, ...onBranch, rev: { ...int("the edit to stop at"), required: true } }, ok: ref("Doc") } },
   [`${repo}/do/log`]: { get: { id: "file_log", summary: "Every edit to a file since a rev", tag: "Files", open: true,
-    description: "History reaches back at least 20,000 edits; since a rev before that is a 410 naming the rev it starts at.",
+    description: "History reaches back about 20,000 edits (a file whose log predates trimming, from its first snapshot); since a rev before that is a 410 naming the rev it starts at.",
     query: { ...filePath, ...onBranch, since: int("0 for all") }, ok: arr(ref("Applied")) } },
   [`${repo}/do/ops`]: { post: { id: "edit_lines", summary: "Edit a file's lines: insert, set and delete by line id, all or nothing (the crew)", tag: "Files",
     description: "Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts. `ifRev` pins the batch to the whole file's rev.",
