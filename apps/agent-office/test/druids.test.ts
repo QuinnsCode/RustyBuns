@@ -1,33 +1,35 @@
 import { expect, test } from "bun:test";
 import { CAST, ENEMIES, PLAYER, RACES, bareClip, clipName, personRole, raceFor, roleFor, type Pose, type Role } from "../druids/cast.ts";
-import { MODELS } from "../druids/assets.ts";
+import { MODELS, SOUND_FILES } from "../druids/assets.ts";
 import { forestColor, hexToHsl } from "../druids/palette.ts";
 import { DESK_TOP, fenceKiosk, fitDesks } from "../druids/room.ts";
 
 const at = (p: Partial<Pose>): Pose =>
-  ({ status: "idle", bouncing: false, bounceT: 0, cheerT: 0, walking: false, dancing: null, leaving: null, jailed: null, ...p });
+  ({ status: "idle", cheerT: 0, walking: false, dancing: null, leaving: null, jailed: null, ...p });
 
-test("office poses map to roles", () => {
-  expect(roleFor(at({}))[0]).toBe("idle");
-  expect(roleFor(at({ status: "working" }))[0]).toBe("cast");
-  expect(roleFor(at({ status: "working", action: "test" }))[0]).toBe("test");
-  expect(roleFor(at({ status: "working", action: "read" }))[0]).toBe("read");
-  expect(roleFor(at({ status: "done", bouncing: true }))[0]).toBe("victory");
-  expect(roleFor(at({ status: "needs_input", bounceT: 1 }))[0]).toBe("jump");
-  expect(roleFor(at({ status: "working", walking: true }))[0]).toBe("walk");
-  expect(roleFor(at({ leaving: {}, walking: true }))[0]).toBe("carry");
-  expect(roleFor(at({ jailed: { dead: true } }))).toEqual(["death", false]);
+test("office poses map to idle, walk and the two attacks", () => {
+  expect(roleFor(at({}))).toBe("idle");
+  expect(roleFor(at({ status: "working" }))).toBe("attack");
+  expect(roleFor(at({ status: "working", action: "failing" }))).toBe("attack");
+  expect(roleFor(at({ status: "working", action: "test" }))).toBe("strike");
+  expect(roleFor(at({ status: "working", action: "read" }))).toBe("idle");
+  expect(roleFor(at({ status: "done", cheerT: 1 }))).toBe("strike");
+  expect(roleFor(at({ status: "needs_input" }))).toBe("idle");
+  expect(roleFor(at({ status: "working", walking: true }))).toBe("walk");
+  expect(roleFor(at({ leaving: {}, walking: true }))).toBe("walk");
+  expect(roleFor(at({ jailed: { dead: true } }))).toBe("idle");
 });
 
-test("workers are enemies, every one of them before anyone doubles up; you're Qoa", () => {
+test("workers are the vale's enemies, every one of them before anyone doubles up; you're Qoa", () => {
+  expect(ENEMIES.sort()).toEqual(["kaladen", "skeleton", "void_wolf", "voidmire"]);
   const names = Array.from({ length: ENEMIES.length + 2 }, (_, i) => `Worker ${i}`);
   const taken: string[] = [];
   for (const n of names) taken.push(raceFor(n, taken));
   expect(new Set(taken.slice(0, ENEMIES.length)).size).toBe(ENEMIES.length);
   expect(taken).not.toContain(PLAYER);
-  expect(taken).not.toContain("druid");
   expect(raceFor("Pixel")).toBe(raceFor("Pixel"));
-  expect(personRole(true, false, 2)).toBe("run");
+  expect(personRole(true, 2)).toBe("run");
+  expect(personRole(true, 1)).toBe("walk");
   expect(clipName(PLAYER, "run")).toBe("running");
 });
 
@@ -49,12 +51,17 @@ const glb = async (path: string) => {
 };
 
 test("every model is there", async () => {
-  if (!(await glb(CAST.druid.file))) return console.warn("no ./office yet; run bun scripts/rustybunsify.ts");
+  if (!(await glb(CAST.qoa.file))) return console.warn("no ./office yet; run bun scripts/rustybunsify.ts");
   for (const m of MODELS) expect(await glb(m), m).not.toBeNull();
 });
 
+test("every sound comes in both of the game's encodings", () => {
+  expect(SOUND_FILES.filter((f) => f.endsWith(".webm")).length).toBe(SOUND_FILES.length / 2);
+  expect(SOUND_FILES).toContain("871683__cat-fox_alex__cure-spell_totemsound1.m4a");
+});
+
 test("every clip a race is given is in its model", async () => {
-  const roles: Role[] = ["idle", "walk", "run", "cast", "test", "read", "victory", "jump", "hit", "carry", "defeat", "death"];
+  const roles: Role[] = ["idle", "walk", "run", "attack", "strike"];
   for (const race of RACES) {
     const json = await glb(CAST[race].file);
     if (!json) return;

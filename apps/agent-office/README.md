@@ -97,14 +97,15 @@ the camera is Qoa's eyes: look down and you see his body. ⚙️ Settings switch
 | What | Where |
 |---|---|
 | Who's who, which clip | [`druids/cast.ts`](druids/cast.ts) (pure, tested in `test/druids.test.ts`) |
-| Workers → enemies | [`druids/skin.ts`](druids/skin.ts) |
+| Workers → enemies (skeletons, Voidmires, void wolves, the Bound Druid) | [`druids/skin.ts`](druids/skin.ts) |
+| The merge gong (the totem's cure spell), the jukebox's Ambiance of the Vale | [`druids/audio.ts`](druids/audio.ts) |
 | People → Qoa, and your first-person body | [`druids/people.ts`](druids/people.ts) |
 | Druid Panels, loot, the village | [`druids/council.ts`](druids/council.ts) |
 | Palms, ivy, vines, grass | [`druids/jungle.ts`](druids/jungle.ts), all procedural and instanced (hippo-tycoon's palms, the game's grass blade) |
 | Colours, moss, fire, fireflies, the game's props | [`druids/forest.ts`](druids/forest.ts), [`druids/palette.ts`](druids/palette.ts) |
 | What's on the walls | [`druids/room.ts`](druids/room.ts), from Agent Office's `shared/layout.js` |
 | KTX2 textures | [`druids/loader.ts`](druids/loader.ts), with three's Basis transcoder at `/druids/basis/` |
-| The models | the live game's `/non_repo/models/`, fetched into `.cache/druids/`, never committed |
+| The models and sounds | the live game's `/non_repo/models/` and `/non_repo/sfx/`, fetched into `.cache/druids/`, never committed |
 
 Three one-line hooks go into the client bundle: the worker and person constructors push themselves onto
 `globalThis.__rbWorkers` / `__rbPeople`, and the per-frame update calls `__rbOfficeTick` once the sky has set the

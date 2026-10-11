@@ -1,10 +1,10 @@
-// 🧙 Each worker's blob becomes one of the races of Druids Curse.
+// 🧙 Each worker's blob becomes one of Druids Curse's enemies: a skeleton, a Voidmire, a void wolf or the Bound Druid.
 //
 // rustybunsify.ts adds one line to the office's worker constructor, `(globalThis.__rbWorkers ??= []).push(this)`.
 // Everything else is read from the worker's own public fields (status, action, walking, ...), so the office's
 // logic is untouched. Until a model loads, or if it fails to, the blob stays as it was.
 import {
-  AnimationMixer, CylinderGeometry, LoopOnce, LoopRepeat, Mesh, MeshBasicMaterial, Object3D, type AnimationAction,
+  AnimationMixer, CylinderGeometry, LoopRepeat, Mesh, MeshBasicMaterial, Object3D, type AnimationAction,
   type AnimationClip,
 } from "three";
 import { clone } from "three/examples/jsm/utils/SkeletonUtils.js";
@@ -60,12 +60,10 @@ function attach(w: Worker) {
     if (w.whiskers) w.whiskers.group.visible = false;
     if (w.skeleton) w.skeleton.visible = false;
 
-    const [role, loop] = roleFor(w);
-    const clip = clips.get(clipName(race, role)) ?? clips.get(clipName(race, "idle"));
+    const clip = clips.get(clipName(race, roleFor(w))) ?? clips.get(clipName(race, "idle"));
     const next = clip && mixer.clipAction(clip);
     if (next && next !== current) {
-      next.reset().setLoop(loop ? LoopRepeat : LoopOnce, Infinity);
-      next.clampWhenFinished = !loop;
+      next.reset().setLoop(LoopRepeat, Infinity);
       current ? next.crossFadeFrom(current, FADE, false).play() : next.play();
       current = next;
     }

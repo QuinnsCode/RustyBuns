@@ -45,7 +45,7 @@ function attach(p: Person) {
     // the office's person, kept in step but out of sight from the start: Qoa stands in for it once he's loaded
     if (!failed) hideBody(p);
     if (!avatar || !mixer) return;
-    const clip = clips.get(clipName(PLAYER, personRole(moving, airborne, speed)));
+    const clip = clips.get(clipName(PLAYER, personRole(moving, speed)));
     const next = clip && mixer.clipAction(clip);
     if (next && next !== current) {
       next.reset().setLoop(LoopRepeat, Infinity);
