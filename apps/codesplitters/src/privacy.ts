@@ -9,7 +9,7 @@
 // stay there under your handle, the way commits stay in git; the handle is retired
 // so no one can pick it up and pass as you.
 
-import { evict } from "./github.ts";
+import { evict, openToken } from "./github.ts";
 import { listFollows } from "./follows.ts";
 import { json, type Env } from "./env.ts";
 
@@ -63,9 +63,46 @@ export async function exportFor(env: Env, handle: string) {
   };
 }
 
-/** Bury `handle`: its repos (rows, file DOs, git), its rows everywhere, and its sign-in. */
-export async function eraseUser(env: Env, handle: string) {
+/**
+ * Take back what GitHub and Google gave us, at their end (#515): otherwise codeSplitters
+ * stays listed under the person's authorized apps there after the tokens here are gone.
+ * Best effort and never in the way of the delete; returns the providers that didn't
+ * take it, so the person can revoke those themselves.
+ */
+export async function revokeSignIns(env: Env, authId: string): Promise<string[]> {
+  const rows = await all(env, `SELECT "providerId" AS provider, "accessToken" AS access, "refreshToken" AS refresh FROM account WHERE "userId" = ? AND "providerId" IN ('github', 'google')`, authId) as { provider: string; access: string | null; refresh: string | null }[];
+  const failed = await Promise.all(rows.map(async (r) => {
+    try {
+      // Google drops the whole grant for either token; a refresh token outlives the access one.
+      const sealed = r.provider === "google" ? r.refresh ?? r.access : r.access;
+      if (!sealed) return null;
+      // GitHub's needs our app's keys; without them it's the person's to revoke.
+      if (r.provider === "github" && !(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET)) return r.provider;
+      const token = await openToken(env, sealed);
+      const signal = AbortSignal.timeout(5000);
+      const res = r.provider === "github"
+        ? await fetch(`https://api.github.com/applications/${env.GITHUB_CLIENT_ID}/grant`, {
+          method: "DELETE", signal, body: JSON.stringify({ access_token: token }),
+          headers: { accept: "application/vnd.github+json", "user-agent": "codesplitters", authorization: `Basic ${btoa(`${env.GITHUB_CLIENT_ID}:${env.GITHUB_CLIENT_SECRET}`)}` },
+        })
+        : await fetch("https://oauth2.googleapis.com/revoke", { method: "POST", signal, body: new URLSearchParams({ token }) });
+      // 404 (GitHub) and 400 invalid_token (Google): already revoked or expired, so gone all the same.
+      if (res.ok || res.status === 404 || (r.provider === "google" && res.status === 400)) return null;
+      console.error(`codeSplitters: revoking the ${r.provider} grant failed`, res.status);
+    } catch (e) { console.error(`codeSplitters: revoking the ${r.provider} grant failed`, String((e as Error)?.message ?? e)); }
+    return r.provider;
+  }));
+  return [...new Set(failed.filter((p): p is string => !!p))];
+}
+
+/**
+ * Bury `handle`: its repos (rows, file DOs, git), its rows everywhere, and its sign-in,
+ * GitHub's and Google's grants included. Returns the providers to revoke by hand.
+ */
+export async function eraseUser(env: Env, handle: string): Promise<string[]> {
   const u = await authUser(env, handle);
+  // While the tokens are still here to revoke with.
+  const revokeYourself = u ? await revokeSignIns(env, u.id) : [];
   for (const r of await all(env, "SELECT name FROM repos WHERE owner = ?", handle)) await evict(env, handle, (r as { name: string }).name);
   const by = (sql: string, ...args: unknown[]) => env.DB.prepare(sql).bind(...args);
   await env.DB.batch([
@@ -93,7 +130,7 @@ export async function eraseUser(env: Env, handle: string) {
     // handle_grants is what makes a handle unclaimable; no inbox is called this.
     by("INSERT OR REPLACE INTO handle_grants (handle, email) VALUES (?, ?)", handle, `retired:${handle}`),
   ]);
-  if (!u) return;
+  if (!u) return revokeYourself;
   await env.DB.batch([
     by(`DELETE FROM session WHERE "userId" = ?`, u.id),
     by(`DELETE FROM account WHERE "userId" = ?`, u.id),
@@ -102,6 +139,7 @@ export async function eraseUser(env: Env, handle: string) {
     by("DELETE FROM handle_grants WHERE email = ?", u.email.toLowerCase()),
     by(`DELETE FROM "user" WHERE id = ?`, u.id),
   ]);
+  return revokeYourself;
 }
 
 /** GET /api/me/export and DELETE /api/me. `person` is false for a token or a hosted agent. */
@@ -116,10 +154,10 @@ export async function privacyRoutes(req: Request, env: Env, p: string[], url: UR
     return json(await exportFor(env, user), 200, { "content-disposition": `attachment; filename="codesplitters-${user}.json"`, "cache-control": "no-store" });
   }
   if (url.searchParams.get("confirm") !== user) return json({ error: `to delete your account, confirm with your handle: ?confirm=${user}` }, 400);
-  await eraseUser(env, user);
+  const revokeYourself = await eraseUser(env, user);
   // Alias mode's cookie, and Better Auth's (its __Secure- twin is cleared the same way on https).
   const gone = ["cs_user", "better-auth.session_token", "better-auth.session_data", "__Secure-better-auth.session_token", "__Secure-better-auth.session_data"];
-  const res = json({ deleted: user });
+  const res = json({ deleted: user, ...(revokeYourself.length ? { revoke_yourself: revokeYourself } : {}) });
   for (const c of gone) res.headers.append("set-cookie", `${c}=; Path=/; Max-Age=0; SameSite=Lax${c.startsWith("__Secure-") ? "; Secure" : ""}`);
   return res;
 }
