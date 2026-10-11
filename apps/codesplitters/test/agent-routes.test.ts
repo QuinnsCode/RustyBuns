@@ -21,6 +21,8 @@ async function app() {
     return { code: 0, out: `${cmd.bin} done` };
   };
   call.env.AGENT_EXEC = exec;
+  // A batch waits a moment on main before it lands; a test that reviews one sets a longer wait.
+  call.env.AGENT_REVIEW_MS = "200";
   const post = (user: string | null, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
   await post("ryan", "/api/login", { name: "ryan" });
   await post("ryan", "/api/repos", { name: "lab", visibility: "public" });
@@ -42,8 +44,12 @@ test("the owner gives an agent a task; its edit lands on the file, blamed on the
 
   let runs: any[] = [];
   await until(async () => (runs = await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json())[0].status !== "running");
-  expect(runs[0]).toMatchObject({ status: "done", applied: 2, conflicts: [], output: "claude done" });
+  expect(runs[0]).toMatchObject({ status: "done", applied: 2, conflicts: [], output: "claude done", pending: { branch: `agent-run-${started.id}` } });
 
+  // Nobody stopped the clock: it lands on main by itself.
+  await until(async () => !!(runs = await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json())[0].landed);
+  expect(runs[0]).toMatchObject({ landed: { by: "auto" } });
+  expect(runs[0].pending).toBeUndefined();
   const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.js")).json() as { lines: { text: string; by: string }[] };
   expect(doc.lines.map((l) => [l.text, l.by])).toEqual([["LET A = 1", "agent-claude"], ["LET B = 2", "agent-claude"]]);
   const repo = await (await call("ryan", "/api/repos/ryan/lab")).json() as { collaborators: string[] };
@@ -163,3 +169,57 @@ test("bulk Stop: by harness, by the lines they claimed, or all of them", async (
 });
 /** Whether a run's own write-up hasn't landed yet (it keeps the error the Stop wrote). */
 const live = (r: any) => r.error === undefined;
+
+/** Starts a run on a.js with a long wait, and waits for its batch to be waiting on main. */
+async function waiting(call: any, post: any) {
+  call.env.AGENT_REVIEW_MS = "60000";
+  const id = (await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any).id as number;
+  await until(async () => (await runsOf(call)).find((r) => r.id === id)?.status !== "running");
+  return { id, run: (await runsOf(call)).find((r) => r.id === id) };
+}
+const mainText = async (call: any) => ((await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.js")).json()) as { lines: { text: string }[] }).lines.map((l) => l.text);
+
+test("a batch waits on main as its own branch's hunks: hold stops the clock, a look puts it off, accept lands it", async () => {
+  const { call, post } = await app();
+  const { id, run } = await waiting(call, post);
+  expect(run.status).toBe("done");
+  expect(run.pending.until).toBeGreaterThan(Date.now() + 30_000);
+  expect(await mainText(call)).toEqual(["let a = 1", "let b = 2"]);
+  const { hunks } = await (await call("ryan", `/api/repos/ryan/lab/branches/agent-run-${id}/hunks?path=a.js`)).json() as any;
+  expect(hunks.map((h: any) => h.add.map((l: any) => l.text))).toEqual([["LET A = 1", "LET B = 2"]]);
+
+  expect((await post("sam", `/api/repos/ryan/lab/agents/${id}/accept`, {})).status).toBe(403);
+  const looked = await (await post("ryan", `/api/repos/ryan/lab/agents/${id}/look`, {})).json() as any;
+  expect(looked.pending.until).toBe(run.pending.until); // already further off than a look puts it
+  expect((await (await post("ryan", `/api/repos/ryan/lab/agents/${id}/hold`, {})).json() as any).pending.until).toBeNull();
+  expect((await (await post("ryan", `/api/repos/ryan/lab/agents/${id}/look`, {})).json() as any).pending.until).toBeNull(); // held stays held
+
+  // Someone changes line 2 on main meanwhile: theirs stays, and the run says what the agent wanted.
+  const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.js")).json() as { lines: { id: string; rev: number }[] };
+  await post("ryan", "/api/repos/ryan/lab/do/ops?path=a.js", { ops: [{ kind: "set", line: doc.lines[1]!.id, base: doc.lines[1]!.rev, text: "const b = 2" }] });
+  expect(await (await post("ryan", `/api/repos/ryan/lab/agents/${id}/accept`, {})).json()).toMatchObject({ landed: true });
+  expect(await mainText(call)).toEqual(["LET A = 1", "const b = 2"]);
+  const after = (await runsOf(call)).find((r) => r.id === id);
+  expect(after).toMatchObject({ landed: { by: "ryan" }, kept: [{ line: doc.lines[1]!.id, yours: "const b = 2", wanted: "LET B = 2" }] });
+  expect(after.pending).toBeUndefined();
+  expect((await post("ryan", `/api/repos/ryan/lab/agents/${id}/accept`, {})).status).toBe(409);
+});
+
+test("a rejected batch never lands, and its branch goes", async () => {
+  const { call, post } = await app();
+  const { id } = await waiting(call, post);
+  expect((await (await post("ryan", `/api/repos/ryan/lab/agents/${id}/reject`, {})).json() as any).rejected).toMatchObject({ by: "ryan" });
+  expect(await mainText(call)).toEqual(["let a = 1", "let b = 2"]);
+  expect(await (await call("ryan", "/api/repos/ryan/lab/branches")).json()).toEqual([]);
+  expect((await post("ryan", `/api/repos/ryan/lab/agents/${id}/accept`, {})).status).toBe(409);
+});
+
+test("with AGENT_REVIEW_MS=0 the agent writes main as it goes, with no branch", async () => {
+  const { call, post } = await app();
+  call.env.AGENT_REVIEW_MS = "0";
+  await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "pi", task: "shout" });
+  await until(async () => (await runsOf(call))[0].status !== "running");
+  expect((await runsOf(call))[0].pending).toBeUndefined();
+  expect(await mainText(call)).toEqual(["LET A = 1", "LET B = 2"]);
+  expect(await (await call("ryan", "/api/repos/ryan/lab/branches")).json()).toEqual([]);
+});

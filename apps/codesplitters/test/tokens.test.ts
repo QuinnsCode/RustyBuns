@@ -124,7 +124,7 @@ describe("GET /api/openapi.json", () => {
         expect(o.parameters.filter((p: any) => p.in === "path").map((p: any) => p.name)).toEqual([...path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]));
     // Executor's policy keys off these.
     const risky = Object.values(s.paths).flatMap((m: any) => Object.values(m).filter((o: any) => o["x-codesplitters-risky"]).map((o: any) => o.operationId)).sort();
-    expect(risky).toEqual(["commit_file", "create_ci_token", "create_invite", "delete_repo", "delete_share", "deploy", "invite", "merge_branch",
+    expect(risky).toEqual(["accept_agent_batch", "commit_file", "create_ci_token", "create_invite", "delete_repo", "delete_share", "deploy", "invite", "merge_branch", "reject_agent_batch",
       "remove_collaborator", "revoke_ci_token", "revoke_invite", "set_private_lines", "set_repo_visibility", "stop_agents"]);
   });
 

@@ -84,6 +84,8 @@ const NOTE_RUNS = 5;
 export async function runAgent(call: Call, opts: {
   user: string; owner: string; repo: string; path: string;
   harness: Harness; task: string; model?: string; commit?: string;
+  /** Work on this branch's copy of the file instead of main's (its claim still holds main's lines). No commit there. */
+  branch?: string;
   /** The lines it was given (ids): claimed for the run, so nobody else edits them meanwhile. */
   lines?: string[];
   /** The claim's id; one run's claim, since every agent of a harness edits under one name. */
@@ -104,7 +106,8 @@ export async function runAgent(call: Call, opts: {
   const { user, owner, repo, path } = opts;
   const log = opts.log ?? (() => {});
   const sandbox = opts.sandbox ?? localSandbox(opts.exec);
-  const file = `/api/repos/${owner}/${repo}/do`, q = `?path=${encodeURIComponent(path)}`;
+  const file = `/api/repos/${owner}/${repo}/do`, onMain = `?path=${encodeURIComponent(path)}`;
+  const q = onMain + (opts.branch ? `&branch=${encodeURIComponent(opts.branch)}` : "");
   const get = async () => {
     const res = await call(user, `${file}/file${q}`);
     if (!res.ok) throw new Error(`read ${path}: ${res.status} ${await res.text()}`);
@@ -117,11 +120,11 @@ export async function runAgent(call: Call, opts: {
   // run keeps the other writer's version and comes back in `conflicts`.
   const claim = opts.lines?.length ? opts.claim ?? `run-${Date.now().toString(36)}` : undefined;
   if (claim) {
-    const res = await call(user, `${file}/claims${q}`, { method: "POST", body: JSON.stringify({ id: claim, lines: opts.lines, task: opts.task }) });
+    const res = await call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim, lines: opts.lines, task: opts.task }) });
     if (!res.ok) throw new Error(`claiming its lines: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? res.status}`);
   }
   try { return await work(); }
-  finally { if (claim) await call(user, `${file}/claims${q}`, { method: "POST", body: JSON.stringify({ id: claim, release: true }) }).catch(() => {}); }
+  finally { if (claim) await call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim, release: true }) }).catch(() => {}); }
 
   async function work(): Promise<Result> {
   const retries = opts.retries ?? 2, signal = opts.signal;
@@ -183,7 +186,7 @@ export async function runAgent(call: Call, opts: {
     retried++;
     log(`${opts.harness}: ${conflicts.length} line(s) changed by someone else while it worked`);
   }
-  if (opts.commit && applied) {
+  if (opts.commit && applied && !opts.branch) {
     const res = await call(user, `${file}/commit${q}`, { method: "POST", body: JSON.stringify({ message: opts.commit }) });
     if (!res.ok) throw new Error(`commit: ${res.status} ${await res.text()}`);
   }

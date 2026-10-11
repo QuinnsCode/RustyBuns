@@ -22,6 +22,19 @@
 //        (none: every one on the repo). Its CLI is killed or its container destroyed, and its claim lifted.
 //   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something. A CLI can't take messages
 //        while it runs, so the note goes into the prompt of its next run: when this one ends, it goes round again.
+//   POST /api/repos/:o/:r/agents/:id/accept   land its batch, waiting on main (below), now
+//   POST /api/repos/:o/:r/agents/:id/hold     stop its batch's clock: it lands when accepted
+//   POST /api/repos/:o/:r/agents/:id/look     someone's reading its batch: it waits a few seconds more
+//   POST /api/repos/:o/:r/agents/:id/reject   throw its batch away
+//
+// A run's batch doesn't land on main as it's written (#745). The agent works on a branch of its own,
+// agent-run-<id>, and when it ends the batch waits there for AGENT_REVIEW_MS (8 seconds by default),
+// shown on main's file page as a ghost diff with a countdown. Then it merges into main on its own (a
+// JOBS message, delayed), unless someone said otherwise: look puts the landing off while they read it,
+// hold stops the clock till they accept, accept lands it now, reject throws it away. A line someone
+// changed on main meanwhile keeps their version, and the run's `kept` says what the agent wanted there.
+// A batch that touches build or deploy files, or that the repo's required checks hold, waits for an accept.
+// AGENT_REVIEW_MS=0 writes main directly, as the agent goes.
 
 import { json, type Env } from "./env.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
@@ -29,6 +42,7 @@ import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
+import { toFile } from "./archive.ts";
 
 export interface Run {
   id: number;
@@ -51,6 +65,14 @@ export interface Run {
   lines?: string[];
   /** What its owner told it while it ran, oldest first. */
   notes: Note[];
+  /** Its batch, waiting on its own branch to land on main. `until` null: held till someone accepts it (`why`, when it wasn't a person). */
+  pending?: { branch: string; until: number | null; why?: string };
+  /** When its batch landed on main, and who landed it ("auto": nobody stopped the clock). */
+  landed?: { at: number; by: string };
+  /** Lines someone changed on main while the batch waited: theirs stayed, and this is what the agent wanted. */
+  kept?: { line: string; yours: string | null; wanted: string | null }[];
+  /** Its batch was thrown away. */
+  rejected?: { at: number; by: string };
 }
 
 export interface Note { text: string; at: number }
@@ -65,6 +87,13 @@ const LOG_LINES = 50;
 const CHECK_MS = 2000;
 /** Notes a run takes, and how long each may be. */
 const NOTES = 20, NOTE_CHARS = 2000;
+/** How long a finished run's batch waits on main before it lands; 0: none, the agent writes main itself. */
+export const reviewMs = (env: Env) => { const n = Number(env.AGENT_REVIEW_MS ?? 8000); return Number.isFinite(n) && n >= 0 ? n : 8000; };
+/** Looking at a waiting batch puts its landing off till this long after the last look. */
+const LOOK_MS = 6000;
+const REVIEWS = ["accept", "hold", "look", "reject"];
+/** The branch a run's batch waits on. */
+export const runBranch = (id: number) => `agent-run-${id}`;
 
 interface Row { id: number; owner: string; repo: string; path: string; harness: Harness; task: string; model: string | null; agent: string; status: Run["status"]; started: number; picked: number; log: string; result: string | null; notes: string }
 
@@ -74,8 +103,8 @@ const getRow = (env: Env, id: number) => env.DB.prepare("SELECT * FROM agent_run
 const finish = (env: Env, id: number, status: "done" | "failed", result: Partial<Run>) =>
   env.DB.prepare("UPDATE agent_runs SET status = ?, result = ? WHERE id = ? AND status = 'running'").bind(status, JSON.stringify(result), id).run();
 
-/** A JOBS message that starts hosted run `agent`; `origin` is the site's, for the agent's calls to the API. */
-export interface AgentMessage { agent: number; origin: string }
+/** A JOBS message that starts hosted run `agent` (or with `land`, lands its batch when its clock runs out); `origin` is the site's, for the agent's calls to the API. */
+export interface AgentMessage { agent: number; origin: string; land?: true }
 
 /** Calls the app as `who`, as the agent and its owner do. */
 const caller = (self: (req: Request) => Promise<Response>, origin: string) => (who: string | null, path: string, init: RequestInit = {}) => {
@@ -114,12 +143,14 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "agents")) return null;
   const [owner, repo] = [p[2], p[3]];
-  const stop = p[5] === "stop" && !p[6], note = p[5] && /^\d+$/.test(p[5]) && p[6] === "notes" && !p[7];
-  if (p[5] && !stop && !note) return null;
+  const stop = p[5] === "stop" && !p[6], one = !!p[5] && /^\d+$/.test(p[5]) && !p[7];
+  const note = one && p[6] === "notes", review = one && REVIEWS.includes(p[6] ?? "");
+  if (p[5] && !stop && !note && !review) return null;
   if (!(await canRead(owner, repo))) return json({ error: "not found" }, 404);
-  if (stop || note) {
+  if (stop || note || review) {
     if (req.method !== "POST") return null;
-    if (user !== owner) return json({ error: "only the repo's owner can stop or tell its coding agents" }, 403);
+    if (user !== owner) return json({ error: "only the repo's owner can stop, tell or review its coding agents" }, 403);
+    if (review) return reviewRun(env, self, url.origin, owner, repo, Number(p[5]), p[6]!, user);
     return stop ? stopRuns(req, env, owner, repo, user, caller(self, url.origin)) : tell(req, env, owner, repo, Number(p[5]));
   }
 
@@ -135,6 +166,11 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
       const error = "the app stopped before the agent finished";
       await finish(env, r.id, "failed", { error });
       Object.assign(r, { status: "failed", result: JSON.stringify({ error }) });
+    }
+    // A batch whose landing was lost (the app quit with it queued) goes round again.
+    for (const r of rows) {
+      const p = resultOf(r).pending;
+      if (p?.until != null && p.until < Date.now() - 5000) await landLater(env, r.id, url.origin, 0);
     }
     return json(rows.map((r) => toRun(r, env)));
   }
@@ -206,9 +242,89 @@ async function tell(req: Request, env: Env, owner: string, repo: string, id: num
   return json(toRun((await getRow(env, id))!, env));
 }
 
-/** The JOBS queue's agent messages (worker.ts): each hosted run, side by side, since one can take minutes. */
+/** The JOBS queue's agent messages (worker.ts): each hosted run, side by side, since one can take minutes; and batches whose clock ran out. */
 export async function runQueuedAgents(messages: readonly { body: AgentMessage; ack(): void }[], env: Env, self: (req: Request) => Promise<Response>) {
-  await Promise.all(messages.map(async (m) => { await execute(env, self, m.body.origin, m.body.agent); m.ack(); }));
+  await Promise.all(messages.map(async (m) => {
+    if (m.body.land) await landDue(env, self, m.body.origin, m.body.agent).catch(() => {});
+    else await execute(env, self, m.body.origin, m.body.agent);
+    m.ack();
+  }));
+}
+
+const resultOf = (r: Row | null): Partial<Run> => r?.result ? JSON.parse(r.result) : {};
+const landLater = (env: Env, id: number, origin: string, ms: number) => env.JOBS.send({ agent: id, origin, land: true }, { delaySeconds: Math.max(0, Math.ceil(ms / 1000)) });
+/** Sets a run's result if its batch is still waiting as `was` read it; false if something else got there first. */
+const swap = async (env: Env, id: number, was: Partial<Run>, now: Partial<Run>) =>
+  !!(await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ? AND json_extract(result, '$.pending') = json(?)")
+    .bind(JSON.stringify(now), id, JSON.stringify(was.pending)).run()).meta?.changes;
+
+/** A batch's clock ran out: it lands, unless it's held or someone looked meanwhile (then it waits again). */
+async function landDue(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number) {
+  const p = resultOf(await getRow(env, id)).pending;
+  if (!p || p.until === null) return;
+  if (p.until > Date.now() + 250) return landLater(env, id, origin, p.until - Date.now());
+  await land(env, self, origin, id, "auto");
+}
+
+/**
+ * Merges run `id`'s branch into main. Where someone changed a line on main since the
+ * agent's branch began, theirs stays (and `kept` says what the agent wanted). A merge
+ * the checks or a build file hold back waits, held, for a person to accept it.
+ */
+async function land(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number, by: string): Promise<Response> {
+  const row = await getRow(env, id), run = resultOf(row), p = run.pending;
+  if (!row || !p) return json({ error: run.landed ? "it already landed" : "nothing of this run's is waiting" }, 409);
+  // Take it, so a landing and an accept at once merge it once.
+  const { pending: _, ...rest } = run;
+  if (!(await swap(env, id, run, rest))) return json({ error: "it's landing already" }, 409);
+  const call = caller(self, origin), url = `/api/repos/${row.owner}/${row.repo}/branches/${encodeURIComponent(p.branch)}/merge`;
+  const resolve: Record<string, Record<string, string>> = {}, kept: NonNullable<Run["kept"]> = [];
+  // An accept is someone reading it, build files and all; the clock running out isn't.
+  const merge = () => call(row.owner, url, { method: "POST", body: JSON.stringify({ resolve, build_ok: by !== "auto" }) });
+  let res = await merge();
+  for (let i = 0; i < 3 && res.status === 409; i++) {
+    const body = await res.clone().json() as { conflicts?: { path: string; conflicts: { line: string; main: string | null; branch: string | null }[] }[] };
+    const fresh = (body.conflicts ?? []).flatMap((f) => f.conflicts.map((c) => ({ path: f.path, c }))).filter(({ path, c }) => !resolve[path]?.[c.line]);
+    if (!fresh.length) break;
+    for (const { path, c } of fresh) { (resolve[path] ??= {})[c.line] = "main"; kept.push({ line: c.line, yours: c.main, wanted: c.branch }); }
+    res = await merge();
+  }
+  if (res.ok) {
+    await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ?").bind(JSON.stringify({ ...rest, landed: { at: Date.now(), by }, ...(kept.length ? { kept } : {}) }), id).run();
+    return json({ landed: true, kept });
+  }
+  // Not now: it waits, held, saying why.
+  const why = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `merge: ${res.status}`;
+  await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ?").bind(JSON.stringify({ ...rest, pending: { branch: p.branch, until: null, why } }), id).run();
+  return json({ error: why, held: true }, 409);
+}
+
+/** Accept, hold, look at or reject run `id`'s waiting batch. */
+async function reviewRun(env: Env, self: (req: Request) => Promise<Response>, origin: string, owner: string, repo: string, id: number, what: string, user: string) {
+  const row = await getRow(env, id);
+  if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);
+  const run = resultOf(row), p = run.pending;
+  if (!p) return json({ error: run.landed ? "it already landed" : run.rejected ? "it was rejected" : "nothing of this run's is waiting" }, 409);
+  if (what === "accept") return land(env, self, origin, id, user);
+  if (what === "reject") {
+    const { pending: _, ...rest } = run;
+    if (!(await swap(env, id, run, { ...rest, rejected: { at: Date.now(), by: user } }))) return json({ error: "it's landing already" }, 409);
+    await dropBranch(env, owner, repo, p.branch, row.path);
+    return json(toRun((await getRow(env, id))!, env));
+  }
+  // Hold stops the clock; a look puts it off a little (a held one stays held).
+  const until = what === "hold" || p.until === null ? null : Math.max(p.until, Date.now() + LOOK_MS);
+  if (until !== p.until && !(await swap(env, id, run, { ...run, pending: { ...p, until } }))) return json({ error: "it's landing already" }, 409);
+  return json(toRun((await getRow(env, id))!, env));
+}
+
+/** A run's branch whose batch won't land goes: its copy of the file, then its rows. A merged one stays, as merged branches do. */
+async function dropBranch(env: Env, owner: string, repo: string, name: string, path: string) {
+  const open = await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, name).first();
+  if (!open) return;
+  await toFile(env, owner, repo, path, "upstream", "wipe", { method: "POST" }, "", name).catch(() => {});
+  await env.DB.batch(["branch_files WHERE owner = ? AND repo = ? AND branch = ?", "branches WHERE owner = ? AND repo = ? AND name = ?"]
+    .map((t) => env.DB.prepare(`DELETE FROM ${t}`).bind(owner, repo, name)));
 }
 
 /** Runs the agent of run `id`, keeping its log and result in D1. Only once: a second try (the queue's retry after a cut-off consumer) fails it instead. */
@@ -223,6 +339,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   // Stopped before it was picked up off the queue.
   if (!row || row.status !== "running") return;
   const { owner, repo, path, harness, agent } = row;
+  // Its batch waits on a branch of its own, made as its owner, unless there's no wait.
+  const wait = reviewMs(env), branch = wait ? runBranch(id) : undefined;
   // Stop: on the desktop the route aborts it here; a hosted Stop lands on another
   // isolate, so this one checks D1 every couple of seconds, and right as the agent ends.
   const stopper = live.get(id) ?? new AbortController(), signal = stopper.signal;
@@ -251,8 +369,12 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     }
     const log: string[] = JSON.parse(row.log);
     let logged = Promise.resolve();
+    if (branch) {
+      const made = await call(owner, `/api/repos/${owner}/${repo}/branches`, { method: "POST", body: JSON.stringify({ name: branch }) });
+      if (!made.ok) throw new Error(`making its branch ${branch}: ${await made.text()}`);
+    }
     const r = await runAgent(call, {
-      user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal,
+      user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal, branch,
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map((n) => n.text); given = all.length; return fresh; },
       log: (s) => {
         log.push(s);
@@ -261,12 +383,18 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       },
     });
     await logged;
-    await finish(env, id, "done", { ...extra, applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000) });
+    const pending = branch && r.applied ? { branch, until: Date.now() + wait } : undefined;
+    const done = await finish(env, id, "done", { ...extra, applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), ...(pending ? { pending } : {}) });
+    // Stopped just as it ended: nothing waits.
+    if (pending && done.meta?.changes) await landLater(env, id, origin, wait);
+    else if (branch) await dropBranch(env, owner, repo, branch, path);
   } catch (e) {
     if (signal.aborted) {
       const stopped = await getRow(env, id);
       const was = stopped?.result ? JSON.parse(stopped.result) as Partial<Run> : {};
       await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ? AND status = 'stopped'").bind(JSON.stringify({ ...extra, error: was.error ?? "stopped" }), id).run();
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
+    // Whatever it left on its branch goes with it.
+    if (branch) await dropBranch(env, owner, repo, branch, path);
   } finally { clearInterval(checking); }
 }
