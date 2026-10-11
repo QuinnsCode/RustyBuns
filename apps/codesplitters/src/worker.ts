@@ -137,6 +137,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   const insights = await insightRoutes(req, env, p, url, admin);
   if (insights) return insights;
   // POST /api/admin/scrub {handle}  put @ghost where a deleted account's handle still shows (privacy.ts)
+  // POST /api/admin/scrub/backfill {after?}  wake a page of file DOs to note their authors (#770)
   const scrub = await scrubRoutes(req, env, p, admin);
   if (scrub) return scrub;
   // GET /api/admin/scale  the scale sideboard: each wall, how close we are, the next step (scale.ts)

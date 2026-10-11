@@ -201,6 +201,14 @@ export class FileDurableObject {
       const { from, to } = (await req.json()) as { from: string; to: string };
       return json({ changed: await this.ctx.blockConcurrencyWhile(() => this.scrub(from, to)) });
     }
+    if (req.method === "POST" && route === "authors") {
+      // The admin's backfill (privacy.ts, #770): every line's author into D1's authors
+      // again, D1 deduping, so a copy whose first note failed gets another go.
+      this.authors = new Set();
+      this.noteAuthors([...this.doc.lines, ...this.base?.lines ?? []].map((l) => l.by));
+      await this.logging;
+      return json({ authors: this.authors.size });
+    }
     if (req.method === "POST" && route === "fork") {
       // A branch's copy starts as main's doc, ids and revs and all, once,
       // and main's private lines are private here too.

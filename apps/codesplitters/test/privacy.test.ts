@@ -164,6 +164,25 @@ describe("@ghost in other people's repos (#514)", () => {
     expect((await db.prepare("SELECT handle FROM authors WHERE owner = 'mia' AND repo = 'pit' ORDER BY handle").all()).results).toEqual([{ handle: "ghost" }]);
   });
 
+  test("the backfill wakes every file, main's and each branch's, a page at a time (#770)", async () => {
+    const { call, send } = await worked();
+    const db = call.env.DB, authors = async () => (await db.prepare("SELECT owner, repo, handle FROM authors ORDER BY owner, repo, handle").all()).results;
+    const want = [{ owner: "mia", repo: "pit", handle: "mia" }, { owner: "mia", repo: "pit", handle: "ryan" }, { owner: "ryan", repo: "lab", handle: "ryan" }];
+    for (let i = 0; i < 50 && (await authors()).length < want.length; i++) await Bun.sleep(10);
+    // As if none of them had woken since #748, and only the branch's copy has b.ts.
+    await db.batch([db.prepare("DELETE FROM authors"), db.prepare("DELETE FROM files WHERE owner = 'mia' AND path = 'b.ts'")]);
+    const { backfillAuthors } = await import("../src/privacy.ts");
+    let next: Awaited<ReturnType<typeof backfillAuthors>>["next"] = null, woken = 0;
+    do { const page = await backfillAuthors(call.env, next, 1); woken += page.woken; next = page.next; } while (next);
+    const files = (await db.prepare("SELECT (SELECT COUNT(*) FROM files) + (SELECT COUNT(*) FROM branch_files) AS n").first()) as { n: number };
+    expect(woken).toBe(files.n);
+    expect(await authors()).toEqual(want);
+    // The route does the same, all in one page here.
+    await db.prepare("DELETE FROM authors").run();
+    expect(await (await send("mia", "/api/admin/scrub/backfill", {})).json()).toEqual({ woken: files.n, next: null });
+    expect(await authors()).toEqual(want);
+  });
+
   test("a repo's authors go with it", async () => {
     const { call } = await app();
     const db = call.env.DB, rows = () => db.prepare("SELECT 1 FROM authors WHERE owner = 'ryan' AND repo = 'lab'").first();
