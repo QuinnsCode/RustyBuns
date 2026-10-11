@@ -230,7 +230,15 @@ export function mayTake(spec: string, version: string): boolean {
   return v ? allows(r, v) : spec.trim() === version;
 }
 
-const levelOf = (from: V, to: V): Level => to[0] !== from[0] ? "major" : to[1] !== from[1] ? "minor" : "patch";
+/**
+ * How big a move is, the way semver reads it: below 1.0 the leftmost non-zero part is the
+ * major, so every 0.0.x change breaks, and a 0.x minor does too (a 0.x patch counts as minor).
+ */
+function levelOf(from: V, to: V): Level {
+  const raw = to[0] !== from[0] ? 2 : to[1] !== from[1] ? 1 : 0;
+  const shift = from[0] > 0 ? 0 : from[1] > 0 ? 1 : 2;
+  return LEVELS[Math.min(2, raw + shift)];
+}
 
 /** The version each movable range starts at, the one a vulnerability check asks about. */
 export function floors(pkg: Record<string, any>): { name: string; version: string }[] {

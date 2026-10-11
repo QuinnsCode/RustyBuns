@@ -59,6 +59,23 @@ test("outdated: only what the range doesn't allow, old enough, within the level,
   expect(minor.updates.map((u) => u.name)).toEqual(["hono"]);
 });
 
+test("outdated: below 1.0 the leftmost non-zero part is the major, as semver has it", async () => {
+  const npm = registry({
+    tiny: { "0.0.599": 400, "0.0.617": 100 },              // any 0.0.x change breaks
+    exact: { "0.0.1929": 400, "0.0.2112": 100 },
+    zero: { "0.3.1": 400, "0.4.0": 100 },                  // a 0.x minor breaks
+    near: { "0.3.1": 400, "0.3.2": 100 },                  // a 0.x patch may add things
+    one: { "1.2.3": 400, "1.2.4": 100 },
+  });
+  const pkg = { dependencies: { tiny: "^0.0.599", exact: "0.0.1929", zero: "~0.3.1", near: "0.3.1", one: "1.2.3" } };
+  const all = await outdated(pkg, { ...DEFAULTS, max_level: "major", ignore: [] }, npm, NOW);
+  expect(Object.fromEntries(all.updates.map((u) => [u.name, u.level]))).toEqual({ exact: "major", near: "minor", one: "patch", tiny: "major", zero: "major" });
+  const patch = await outdated(pkg, { ...DEFAULTS, max_level: "patch", ignore: [] }, npm, NOW);
+  expect(patch.updates.map((u) => u.name)).toEqual(["one"]);
+  const minor = await outdated(pkg, { ...DEFAULTS, max_level: "minor", ignore: [] }, npm, NOW);
+  expect(minor.updates.map((u) => u.name)).toEqual(["near", "one"]);
+});
+
 test("outdated: a vulnerable version moves to its first fix, past the level and the minimum age", async () => {
   const npm = registry({
     mitt: { "3.0.0": 400, "3.0.1": 1, "3.0.2": 0 },     // the fix is a day old and inside the range
