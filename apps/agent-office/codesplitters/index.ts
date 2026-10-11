@@ -100,7 +100,10 @@ function liteMarks(on: boolean) {
 // ---- the 3D office: a tile on the wall beside each board ---------------------------------------------------
 
 interface App { scene: Scene; camera: Camera; canvas: HTMLCanvasElement; office: { boardMeshes?: Partial<Record<string, Mesh>> } }
-const app = () => (globalThis as { __rbOffice?: App }).__rbOffice;
+// the office hands itself to every add-on on the frame hook, in either skin (scripts/rustybunsify.ts)
+let office: App | undefined;
+((globalThis as { __rbOfficeTicks?: unknown[] }).__rbOfficeTicks ??= []).push((a: App) => void (office = a));
+const app = () => office;
 const SIZE = 0.55;
 let wall: Group | null = null;
 const tiles = new Map<Board, { mesh: Mesh<PlaneGeometry, MeshBasicMaterial>; dot: boolean | null }>();

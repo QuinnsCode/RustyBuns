@@ -38,7 +38,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -160,10 +160,13 @@ async function prepare(tag: string) {
   for (const [rel, change] of [["workers/util.js", hookTokensUtil], ["workers/persist.js", hookTokensPersist], ["workers/manager.js", hookTokensManager]] as const)
     writeFileSync(path.join(srv, rel), change(readFileSync(path.join(srv, rel), "utf8")));
 
-  // 13. the Druids Curse skin
+  // 13. a per-frame hook in the 3D office, for either skin: the forest and the codeSplitters tiles both hang off it
+  officeTicks();
+
+  // 14. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -218,15 +221,23 @@ async function druids(cache: string) {
   patch(file, "gong(e){_I(this.a,e)}", "gong(e){globalThis.__rbGong?.(this.a,e)||_I(this.a,e)}");
   patch(file, "let r=this.tune=new XS(t,this.musicIn,n.track)",
     "let r=this.tune=globalThis.__rbTune?.(t,this.musicIn,n.track)??new XS(t,this.musicIn,n.track)");
-  // and every frame, once the sky has set the lights, the forest gets a turn
-  patch(file, "l.setWeather(s.rain,1-s.daylight)}function b(t)",
-    "l.setWeather(s.rain,1-s.daylight),globalThis.__rbOfficeTick?.(e,n.stage,r,i)}function b(t)");
   // the bundle is served as immutable, so a patched one needs its own name or browsers keep the old one
   const renamed = main.replace(/\.js$/, `-rb${Bun.hash(readFileSync(file)).toString(36).slice(0, 6)}.js`);
   renameSync(file, path.join(pub, renamed));
   patch(path.join(pub, "index.html"), `<script type="module" crossorigin src="/${main}">`,
     `<script type="module" src="/druids/druids.js"></script>\n    <script type="module" crossorigin src="/${renamed}">`);
   console.log(`   ✓ Druids Curse office: ${MODELS.length} models, ${SOUND_FILES.length} sounds`);
+}
+
+// Every frame, once the sky has set the lights, each add-on on globalThis.__rbOfficeTicks gets a turn with the
+// office (app, stage, dt, t): the Druids forest (druids/forest.ts), the codeSplitters tiles (codesplitters/).
+function officeTicks() {
+  const pub = path.join(office, "dist/public");
+  const [main, ...more] = [...new Bun.Glob("assets/main-*.js").scanSync({ cwd: pub })];
+  if (!main || more.length) throw new Error(`Agent Office changed: expected one assets/main-*.js, found ${more.length + (main ? 1 : 0)}`);
+  patch(path.join(pub, main), "l.setWeather(s.rain,1-s.daylight)}function b(t)",
+    "l.setWeather(s.rain,1-s.daylight),globalThis.__rbOfficeTicks?.forEach(f=>f(e,n.stage,r,i))}function b(t)");
+  rehash(pub, main);
 }
 
 async function buildSkin(dir: string) {
