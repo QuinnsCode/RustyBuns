@@ -212,6 +212,8 @@ test("with a fixer on, an agent patches the call sites the update broke, on the 
   };
   const { call, send } = await app(kleurTester(), fixer);
   expect((await send("ryan", "/api/repos/ryan/lab/deps", { fix_with: "gpt" }, "PUT")).status).toBe(400);
+  // codex runs shell commands, in a clone with the repo's code installed, next to its login (#683).
+  expect((await send("ryan", "/api/repos/ryan/lab/deps", { fix_with: "codex" }, "PUT")).status).toBe(400);
   expect((await send("ryan", "/api/repos/ryan/lab/deps", { fix_with: "claude", fix_tries: 9 }, "PUT")).status).toBe(400);
   const s = await (await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true, fix_with: "claude", fix_tries: 2 }, "PUT")).json();
   expect(s).toMatchObject({ fix_with: "claude", fix_tries: 2 });
