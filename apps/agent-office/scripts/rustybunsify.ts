@@ -38,7 +38,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -138,6 +138,10 @@ async function prepare(tag: string) {
   patch("ws/upgrade.js", "        socket.on('error', () => socket.destroy());\n",
     "        socket.on('error', () => socket.destroy());\n        if ((ctx.__rbHost ??= __rbGuardUpgrade(cfg))(req, socket))\n            return;\n");
 
+  // 7c. workers, their shells and the office's own claude and gh get its environment less the secrets (live/env.ts)
+  prepend("workers/env.js", "import { workerEnv as __rbWorkerEnv } from '../rb-env.js';\n");
+  patch("workers/env.js", "            env[k] = v;\n    return env;\n}", "            env[k] = v;\n    return __rbWorkerEnv(env);\n}");
+
   // 8. Lucide icons for the emoji, on every page, a search box for the queue, and the codeSplitters mark (codesplitters/)
   await buildPageScripts();
 
@@ -159,7 +163,7 @@ async function prepare(tag: string) {
   // 13. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -233,7 +237,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["checks/server.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["checks/server.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
     ["codesplitters/server.ts", "rb-codesplitters.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
