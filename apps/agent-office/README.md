@@ -75,6 +75,7 @@ Nothing is forked. `scripts/rustybunsify.ts` downloads a pinned release tarball 
 | `http/static.js` reads `$AGENT_OFFICE_PUBLIC_DIR` | The 3D client is embedded and unpacked once to `~/.cache/agent-office-rustybuns/<tag>-<content hash>/`. |
 | `ptys.js` falls back to `$HOME` as the pty host's cwd | Inside a binary the code dir is the virtual `/$bunfs`. |
 | `workers/process.js` points `office-workers` / `office-queue` at the binary | There's no `bin/` on disk to find. |
+| [`live/`](live/github.ts) hooks each floor's GitHub boards | Upstream lists issues and PRs every 90s. A worker's own `gh pr merge`, `gh issue close` or `git push` now refreshes the boards within a couple of seconds, and while a floor is busy the office asks GitHub every 10s whether anything changed. That check is a conditional request, so an unchanged answer is a free 304, and the full `gh` lists only run on a change. Open PRs with CI running are watched through their check suites. |
 | [`icons/`](icons/index.ts) loads ahead of every page | Its emoji become [Lucide](https://lucide.dev) icons: inline SVG in the DOM, and on canvas (boards, name tags, bubbles) drawn in the emoji's own space. Which icon stands in for which emoji is [`icons/emoji.ts`](icons/emoji.ts); one left out stays an emoji. |
 
 ## 🌴 The Druids Curse jungle

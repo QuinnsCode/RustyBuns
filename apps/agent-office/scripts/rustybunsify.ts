@@ -31,11 +31,12 @@ if (!sha256) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
   await buildIcons();
+  await buildLive();
 } else {
   await prepare(tag);
 }
@@ -93,13 +94,23 @@ async function prepare(tag: string) {
   patch("workers/process.js", "export function binScript(name) {",
     "export function binScript(name) {\n    if (process.env.AGENT_OFFICE_RUSTYBUNS_BIN)\n        return `/rustybuns/bin/${name}`;");
 
-  // 6. Lucide icons for the emoji, on every page
+  // 6. the GitHub boards kept fresh (live/github.ts): a worker's own gh writes and git pushes look again at once,
+  // and a busy floor asks GitHub every few seconds, with a free conditional request, whether anything changed
+  await buildLive();
+  prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\n");
+  patch("floor.js", "        void this.github.refresh();\n        // A floor with people on it",
+    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir);\n        // A floor with people on it");
+  patch("floor.js", "this.github.stop();", "this.github.stop();\n        this.__rbLive?.stop();");
+  patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
+    "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
+
+  // 7. Lucide icons for the emoji, on every page
   await buildIcons();
 
-  // 7. the Druids Curse skin
+  // 8. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -148,6 +159,13 @@ async function buildSkin(dir: string) {
   const built = await Bun.build({ entrypoints: [path.join(root, "druids/index.ts")], minify: true, target: "browser" });
   if (!built.success) throw new AggregateError(built.logs, "druids/index.ts failed to build");
   await Bun.write(path.join(dir, "druids.js"), built.outputs[0]);
+}
+
+// next to the server code it hooks into, rebuilt every start like the skin
+async function buildLive() {
+  const built = await Bun.build({ entrypoints: [path.join(root, "live/github.ts")], target: "bun" });
+  if (!built.success) throw new AggregateError(built.logs, "live/github.ts failed to build");
+  await Bun.write(path.join(srv, "rb-live.js"), built.outputs[0]!);
 }
 
 // into /assets/, the one place the sign-in pages can load from before you're in; it's served as immutable,
