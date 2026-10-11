@@ -21,6 +21,8 @@ export interface CpuProfileOptions {
   keep?: number;
   /** Name prefix. @default "cpu" */
   name?: string;
+  /** Called once the profiler is sampling, before the wait starts. */
+  onStart?: () => void;
 }
 
 export const PROF_MAX_MS = 60_000;
@@ -40,6 +42,7 @@ export async function cpuProfile(o: CpuProfileOptions): Promise<{ file: string; 
     await post("Profiler.enable");
     await post("Profiler.setSamplingInterval", { interval: o.intervalUs ?? 1000 });
     await post("Profiler.start");
+    o.onStart?.();
     await Bun.sleep(Math.min(Math.max(o.ms ?? 10_000, 1), PROF_MAX_MS));
     const { profile } = await post("Profiler.stop");
     const json = JSON.stringify(profile);
