@@ -73,3 +73,16 @@ test("Following keeps the button neutral", () => {
   expect(pressed.map((r) => r.sel)).toEqual(['.btn.follow[aria-pressed="true"] svg']);
   expect(pressed[0]!.body).not.toMatch(/border|background/);
 });
+
+// The owner couldn't find where to make a token, and its copy buttons ran off the column (#729).
+describe("the profile's tokens", () => {
+  test("a copyline's input shrinks, so its copy button stays in the column", () => {
+    expect(rulesFor("copyline").find((r) => r.sel === ".copyline input")?.body).toContain("min-width: 0");
+  });
+
+  test("#/me/tokens opens Tokens and apps", () => {
+    expect(html).toContain('location.replace(`#/u/${me()}${open === "tokens" ? "/tokens" : ""}`)');
+    expect(html).toContain('wireTokens(undefined, open === "tokens")');
+    expect(html).toContain('<details class="more" id="tokens-more"${open ? " open" : ""}>');
+  });
+});

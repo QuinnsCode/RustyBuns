@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { main, run } from "../cli.ts";
 import { installScript } from "../src/install.ts";
@@ -89,6 +89,18 @@ describe("bun cli.ts", () => {
     // With no terminal to ask (the install script), it keeps the site and any token it had.
     expect((await run(["login", "--url", "http://site"], env, async () => undefined)).code).toBe(0);
     expect(JSON.parse(readFileSync(file, "utf8")).token).toBe(token);
+  });
+
+  // The owner copied the masked box instead of pressing its copy button, and login saved cst_•••• (#729).
+  test("login refuses a masked or foreign token and names the tokens link", async () => {
+    const home = mkdtempSync(`${tmpdir()}/cs-cli-`), env = { HOME: home };
+    let asked = "";
+    for (const bad of ["cst_••••••••••••6x48", "ghp_abc123"]) {
+      const r = await run(["login", "--url", "http://site"], env, async (q) => ((asked = q), bad));
+      expect(r).toMatchObject({ code: 2, err: expect.stringContaining("http://site/#/me/tokens") });
+    }
+    expect(asked).toContain("http://site/#/me/tokens");
+    expect(existsSync(`${home}/.config/codesplitters/config.json`)).toBe(false);
   });
 
   test("/install.sh fetches this site's /cli.js and saves the site", async () => {
