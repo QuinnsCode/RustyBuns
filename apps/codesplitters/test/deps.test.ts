@@ -12,7 +12,8 @@ setDefaultTimeout(20_000);
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
 
-const NOW = Date.UTC(2026, 9, 9);
+// The app reads the real clock, so the fake releases are dated from it too.
+const NOW = Date.now();
 const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString();
 
 /** A fake npm: each package's versions and how many days ago each came out. */
@@ -295,7 +296,7 @@ test("the schedule runs repos that are on and due, and skips the rest", async ()
   await scheduledDoctor(call.env, self, NOW);
   const first = await (await call("ryan", "/api/repos/ryan/lab/deps")).json();
   expect(first.last_run).toBe(NOW);
-  expect(first.report.branch).toBe("deps-2026-10-09");
+  expect(first.report.branch).toBe(`deps-${new Date(NOW).toISOString().slice(0, 10)}`);
   await scheduledDoctor(call.env, self, NOW + 3_600_000);   // an hour later: not due
   expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).last_run).toBe(NOW);
   await scheduledDoctor(call.env, self, NOW + 25 * 3_600_000);
