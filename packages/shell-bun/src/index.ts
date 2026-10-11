@@ -12,6 +12,7 @@ export { LocalArtifacts, LocalArtifactsRepo, gitHttp } from "./bindings/artifact
 export { images, LocalImages } from "./bindings/images.ts";
 export { queue, LocalQueue, type QueueBatch, type QueueMessage, type QueueConsumerSettings, type QueueSendOptions } from "./bindings/queue.ts";
 export { launchCheck, appLaunchCheck } from "./advisories.ts";
+export { memWatch, slope, type MemStats, type MemWatchOptions } from "./memwatch.ts";
 export { schedule, parseCron, cronMatches, type ScheduledController } from "./cron.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 

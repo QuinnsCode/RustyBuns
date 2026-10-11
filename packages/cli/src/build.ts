@@ -77,6 +77,16 @@ const appImport = (c: RustyBunsConfig) => c.targets.desktop?.advisories ? ", app
 const ALL_OS: DesktopOs[] = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64"];
 
 /** spa mode: your Vite SPA + your world class. No worker, no RSC, no shims. */
+/** A box's memory watch: RSS and heap every 5 minutes with the growth rate, served at /__rb/mem. */
+function boxMemWatch(c: RustyBunsConfig): string {
+  return `// RSS and heap every 5 minutes, with the growth rate; /__rb/mem serves them.
+// Over the ceiling (RB_MEM_MAX_MB, else box.memMaxMb) it writes a heap snapshot
+// to <data>/heap and exits 1, so the box restarts before it runs out.
+const mem = memWatch({ maxMb: Number(process.env.RB_MEM_MAX_MB) || ${c.targets.box?.memMaxMb ?? 0}, snapshotDir: join(dataDir, "heap") });
+mem.tick();
+`;
+}
+
 export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string {
   const d = c.targets.desktop ?? {};
   const h = hostParts(c, host, d.dataDir ?? `~/.${c.name}`);
@@ -104,7 +114,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck${appImport(c)}, type GuestState } from "@rustybuns/shell-bun";
+import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck${h.box ? ", memWatch" : ""}${appImport(c)}, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
@@ -127,7 +137,7 @@ const bootFile = join(dataDir, ".rb-boots");
 const boots = (existsSync(bootFile) ? Number(readFileSync(bootFile, "utf8")) || 0 : 0) + 1;
 writeFileSync(bootFile, String(boots));
 console.log("[data] " + dataDir + " on the " + dataMount + ", start " + boots);
-` : ""}
+${boxMemWatch(c)}` : ""}
 // Compiled: --asset embeds a dir at /$bunfs/root/<basename>. Dev: the working tree.
 function resolveDir(rel: string): string {
   // A mount under ~ or an absolute path is the user's own directory: read it
@@ -248,7 +258,7 @@ shell.mount({
   async fetch(req) {
     const url = new URL(req.url);
     const guest = ${h.box ? "true" : `req.headers.get("x-rb-principal") === "guest"`};
-${h.box ? `    if (url.pathname === "/health") return new Response("ok", { headers: { "X-RB-Data": dataMount, "X-RB-Boots": String(boots) } });\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
+${h.box ? `    if (url.pathname === "/health") return new Response("ok", { headers: { "X-RB-Data": dataMount, "X-RB-Boots": String(boots) } });\n    if (url.pathname === "/__rb/mem") return Response.json({ ...mem.stats(), boots });\n` : ""}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
 ${h.box ? `      if (!wsAllowed(req.headers.get("X-Real-IP"), Date.now())) return reject(429, "too_many", { detail: "at most " + WS_PER_MIN + " connections a minute from one address" });
 ` : ""}      const h = new Headers(req.headers);
       let who = identity;
@@ -364,7 +374,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
-import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
+import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck${h.box ? ", memWatch" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
@@ -381,7 +391,7 @@ function assetDir(rel: string): string | undefined {
 const dataDir = ${h.dataDir};
 mkdirSync(dataDir, { recursive: true });
 const local = localBindings(dataDir);
-const argv = process.argv.slice(2);
+${h.box ? boxMemWatch(c) : ""}const argv = process.argv.slice(2);
 const flag = (n: string) => { const i = argv.indexOf("--" + n); return i >= 0 ? argv[i + 1] : undefined; };
 const [lh, lp] = (flag("listen") ?? process.env.RB_LISTEN ?? "").split(":");
 const listen = { hostname: lh || ${JSON.stringify(c.targets.desktop?.listen?.hostname ?? "127.0.0.1")}, port: lp ? Number(lp) : ${c.targets.desktop?.listen?.port ?? 0} };
@@ -411,7 +421,7 @@ ${artifacts.map((n) => `(env.${n} as any).remoteBase = shell.url;`).join("\n")}$
 // env.ASSETS, as the edge binds it: the Worker can fetch its own static files.
 env.ASSETS ??= shell.assets;` : ""}
 ${h.box
-  ? `shell.mount({ fetch: (req: Request, e: any, ctx: any) => new URL(req.url).pathname === "/health" ? new Response("ok") : (worker as any).fetch(req, e, ctx) } as any, env);`
+  ? `shell.mount({ fetch: (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/health" ? new Response("ok") : p === "/__rb/mem" ? Response.json(mem.stats()) : (worker as any).fetch(req, e, ctx); } } as any, env);`
   : `shell.mount(worker as any, env);`}
 console.log(\`[${c.name}] serving \${shell.url}\`);${crons.length ? `
 // Cron Triggers: the edge runs scheduled() on these; here a minute timer does.

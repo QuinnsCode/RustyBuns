@@ -291,6 +291,11 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).toContain("MAX_ROOMS = 200");
   expect(box).toContain('"X-RB-Data": dataMount, "X-RB-Boots": String(boots)');
   expect(box).toContain('join(dataDir, ".rb-boots")');
+  // Memory watch: /__rb/mem on a box, a ceiling from the config or RB_MEM_MAX_MB.
+  expect(box).toContain(", memWatch");
+  expect(box).toContain('if (url.pathname === "/__rb/mem")');
+  expect(box).toContain("Number(process.env.RB_MEM_MAX_MB) || 0");
+  expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "railway", memMaxMb: 400 } } }, "box")).toContain("RB_MEM_MAX_MB) || 400");
   const desk = spaEntry(c);
   expect(desk).toContain('const guest = req.headers.get("x-rb-principal") === "guest";');
   expect(desk).not.toContain("boxIdentity");
@@ -302,6 +307,7 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   for (const src of [desk, box]) expect(src).toContain('launchCheck(typeof RB_RUSTYBUNS === "string" ? RB_RUSTYBUNS : undefined');
   expect(desk).toContain("await openBrowser");
   expect(desk).not.toContain("/health");
+  expect(desk).not.toContain("memWatch");
 });
 
 test("desktop.advisories: the host checks the app's own version and serves the notice in /__rb/info", () => {
