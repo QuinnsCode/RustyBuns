@@ -67,6 +67,8 @@ export interface Env {
   ADMIN_EMAIL?: string;
   /** Where privacy requests go, shown on the #/privacy page (privacy.ts). */
   PRIVACY_EMAIL?: string;
+  /** A coming change to the privacy page, "YYYY-MM-DD what changes", shown as a banner (privacy.ts). */
+  PRIVACY_NOTICE?: string;
   BETTER_AUTH_SECRET?: string;
   /**
    * Cloudflare Email Sending, and the address it sends from (its domain onboarded

@@ -129,3 +129,14 @@ export async function sweepSessions(env: Env, now = Date.now()) {
   await env.DB.batch(["session", "verification"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE ${expired}`).bind(now, new Date(now).toISOString())))
     .catch((e: unknown) => console.error("codeSplitters: session sweep failed", String((e as Error)?.message ?? e)));
 }
+
+/**
+ * The "we'll say so before it applies" promise on #/privacy: PRIVACY_NOTICE is
+ * "YYYY-MM-DD what changes", the date the change applies. /api/session hands it to
+ * the page as a banner people can dismiss; a new date brings it back. Unset, or
+ * anything else, and there's no banner.
+ */
+export function privacyNotice(raw?: string): { date: string; text: string } | null {
+  const m = raw?.trim().match(/^(\d{4}-\d{2}-\d{2})\s+(\S[\s\S]*)$/);
+  return m && !Number.isNaN(Date.parse(m[1]!)) ? { date: m[1]!, text: m[2]!.trim() } : null;
+}

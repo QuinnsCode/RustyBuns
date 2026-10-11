@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
+import { privacyNotice } from "../src/privacy.ts";
 
 // End to end (real git, in-process D1), like tokens.test.ts.
 setDefaultTimeout(20_000);
@@ -60,5 +61,20 @@ describe("your data", () => {
     expect(await db.prepare("SELECT email FROM handle_grants WHERE handle = 'ryan'").first()).toEqual({ email: "retired:ryan" });
     // mia's repo is hers, untouched.
     expect((await call("mia", "/api/repos/mia/pit")).status).toBe(200);
+  });
+});
+
+describe("the change notice", () => {
+  test("PRIVACY_NOTICE reaches the page through /api/session, dated", async () => {
+    const call = await boot({ GH_CLI: "off", PRIVACY_NOTICE: "2026-11-01  We'll keep request logs 3 days, not 7." });
+    opened.push(call);
+    expect(((await (await call(null, "/api/session")).json()) as any).notice).toEqual({ date: "2026-11-01", text: "We'll keep request logs 3 days, not 7." });
+  });
+
+  test("unset or undated means no banner", () => {
+    expect(privacyNotice(undefined)).toBeNull();
+    expect(privacyNotice("")).toBeNull();
+    expect(privacyNotice("we changed things")).toBeNull();
+    expect(privacyNotice("2026-13-45 bad date")).toBeNull();
   });
 });
