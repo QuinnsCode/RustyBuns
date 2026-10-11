@@ -36,7 +36,9 @@ test("the owner gives an agent a task; its edit lands on the file, blamed on the
 
   const res = await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" });
   expect(res.status).toBe(202);
-  expect(await res.json()).toMatchObject({ agent: "agent-claude", status: "running" });
+  const started = await res.json() as any;
+  expect(started).toMatchObject({ agent: "agent-claude", status: "running" });
+  expect(started.deadline).toBeUndefined(); // the desktop has no limit: its clock counts up
 
   let runs: any[] = [];
   await until(async () => (runs = await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json())[0].status !== "running");

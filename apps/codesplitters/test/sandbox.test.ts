@@ -230,6 +230,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
   test("runs are kept in D1, so any isolate sees them; a retry after a cut-off consumer fails the run rather than running it twice", async () => {
     const { call, runs, env } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
     const run = await finished(call, { harness: "claude", path: "src/a.js", task: "x" });
+    expect(run.deadline).toBe(run.started + 15 * 60_000); // the queue consumer's limit, for the page's countdown
     expect(await env.DB.prepare("SELECT status, picked FROM agent_runs WHERE id = ?").bind(run.id).first()).toEqual({ status: "done", picked: 1 });
     // A run whose consumer was cut off mid-run: picked, still running. Its message comes again.
     await env.DB.prepare("UPDATE agent_runs SET status = 'running', result = NULL WHERE id = ?").bind(run.id).run();

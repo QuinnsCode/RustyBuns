@@ -161,8 +161,8 @@ export class DeployRunner {
     try {
       if (job.started) throw new Error("the run was cut off before it finished (an alarm gets 15 minutes)");
       job.started = Date.now();
+      const deadline = run.deadline = job.started + this.budgetMs;
       await this.save();
-      const deadline = job.started + this.budgetMs;
       if (!c) throw new Error("this Durable Object has no container");
       const keys = await deployKeys(this.env, owner, repo);
       if (!Object.keys(keys).length) throw new Error("every deploy key was removed");
