@@ -403,6 +403,15 @@
 
   /* Profiles, collections, search. */
   .cards { display: grid; gap: 16px; padding-top: 20px; } .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  /* Own your git: the desktop is home, the clouds are where it syncs out to. */
+  .owngit { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding-top: 20px; }
+  .owngit > div { border: 1px solid var(--border); border-radius: 8px; padding: 18px; background: var(--bg); }
+  .owngit > div.home { border-color: var(--accent); background: var(--accent-soft); }
+  .owngit b { display: block; margin-bottom: 6px; } .owngit p { margin: 0; color: var(--muted); }
+  .owngit .flow { font: 500 12px/1.6 var(--mono); color: var(--fg); margin-top: 12px; }
+  .owngit .flow em { font-style: normal; color: var(--accent); }
+  .quits { font: 500 12px/1.8 var(--mono); color: var(--muted); margin-top: 16px; } .quits span + span::before { content: " · "; color: var(--faint); }
+  @media (max-width: 720px) { .owngit { grid-template-columns: 1fr; } }
   /* A profile: one header line, the repos and digging in the main column, collections and the page on the side. */
   .prof { max-width: 1160px; padding-top: 16px; padding-bottom: 32px; }
   .prof-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
@@ -1485,6 +1494,17 @@ const views = {
         <div class="label">the agentic code host</div><h2>Every direction, all at once</h2>
         <p class="muted">Human to human, human to agent, agent to agent, and everyone to the computer. Your agents don't get a sandbox off to the side: they work in the same repo as you, live, line by line, each line signed by whoever wrote it, and nothing ships until a person says so.</p>
         <div class="flapboard" id="flapboard" aria-label="Who's handing what to whom, on a departures and arrivals board"></div>
+      </div></section>
+      <section class="section"><div class="wrap">
+        <div class="label">the desktop app</div><h2>Never let your git quit</h2>
+        <p class="muted">You want to git commit, but is your git committed to you? Most hosts keep your git in their cloud and sync it down to you. The desktop app turns that around: your git lives on your machine, and syncs out to whatever clouds you like. If a cloud dies, you and your agents keep going.</p>
+        <div class="owngit">
+          <div><b>Cloud first, syncing in</b><p>The host holds the real repo. When it's down, so are your pushes, your checks, your merges and every agent waiting on them.</p>
+            <div class="flow">cloud → you<br>cloud ✕ → you're stuck</div></div>
+          <div class="home"><b>Yours first, syncing out</b><p>Bare repos in <code>~/.codesplitters</code>, mirrored both ways to GitHub, GitLab or any git remote. Upstream goes down: keep editing, committing, branching, checking and merging. It catches up by itself, and never force-pushes.</p>
+            <div class="flow">you → <em>GitHub, GitLab, anywhere</em><br>cloud ✕ → you keep going</div></div>
+        </div>
+        <div class="quits"><span>Own your git and put it wherever you want</span><span>Don't let your git quit on you or your agents</span><span>Never let a git commit quit</span></div>
       </div></section>
       <section class="section"><div class="wrap">
         <div class="label">everything it does</div><h2>All of it, on one strip</h2>
