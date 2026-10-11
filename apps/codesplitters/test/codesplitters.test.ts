@@ -1439,7 +1439,7 @@ describe("shares", () => {
 
     expect((await call("ana", "/api/repos/ana/gone")).status).toBe(404);
     expect((await call(null, `/api/shares/${share.id}`)).status).toBe(404);
-    for (const t of ["files", "branches", "branch_files", "collaborators", "shares", "cuts", "file_search"]) {
+    for (const t of ["files", "branches", "branch_files", "collaborators", "shares", "cuts", "file_search", "repo_search"]) {
       expect(await call.env.DB.prepare(`SELECT count(*) AS n FROM ${t} WHERE owner = 'ana' AND repo = 'gone'`).first()).toEqual({ n: 0 });
     }
     // The name is free again, and starts empty: the file's Durable Object was wiped, and the git went too.

@@ -52,6 +52,8 @@ export default defineConfig({
     FILES: { type: "durable_object", className: "FileDurableObject" },
     // One game room per level or repo: the lobby on its page, then the relay.
     GAMES: { type: "durable_object", className: "GameRoom" },
+    // One code search index per repo, FTS5 in its SQLite (src/search.ts).
+    SEARCH: { type: "durable_object", className: "RepoSearch" },
     // Webhook tries, one message each; this Worker's queue() sends them and books the
     // retries with a delay (src/hooks.ts). The desktop runs it in-process on sqlite.
     HOOKS: { type: "queue", queueName: "codesplitters-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
