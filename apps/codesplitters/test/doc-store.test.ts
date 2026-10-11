@@ -79,6 +79,30 @@ test("a chunk splits as it grows, and long lines make smaller chunks", async () 
   expect(await new DocStore(s, "doc").load()).toEqual(doc);
 });
 
+test("chunks an edit shrinks fold into their neighbours, and the rest aren't written", async () => {
+  const s = memory(), store = new DocStore(s, "doc"), doc = empty();
+  await Promise.all(store.save(doc, edit(doc, big(10 * CHUNK_LINES))));
+  expect(store.chunks.length).toBe(10);
+  // Delete all but a few lines of every other chunk, one chunk per edit.
+  for (let c = 0; c < 10; c += 2) {
+    const n = store.chunks[c / 2]!; // each earlier fold took one chunk away
+    const lines = doc.lines.filter((l) => store.chunkOf.get(l.id) === n).slice(3);
+    s.puts.length = 0;
+    await Promise.all(store.save(doc, edit(doc, lines.map((l) => ({ kind: "delete", line: l.id, base: l.rev })))));
+    // One chunk, the shrunk one and its neighbour folded together, and the manifest.
+    expect(s.puts.length).toBe(2);
+  }
+  expect(store.chunks.length).toBe(5);
+  for (const n of store.chunks) expect((s.m.get(store.chunkKey(n)) as unknown[]).length).toBeGreaterThanOrEqual(CHUNK_LINES / 4);
+  expect([...s.m.keys()].filter((k) => k.startsWith("doc:")).length).toBe(5);
+  expect(await new DocStore(s, "doc").load()).toEqual(doc);
+
+  // A file deleted down to a few lines is one chunk.
+  await Promise.all(store.save(doc, edit(doc, doc.lines.slice(10).map((l) => ({ kind: "delete", line: l.id, base: l.rev })))));
+  expect(store.chunks.length).toBe(1);
+  expect(await new DocStore(s, "doc").load()).toEqual(doc);
+});
+
 test("a doc stored the old way, in one key, loads and is rewritten in chunks", async () => {
   const s = memory(), doc = empty();
   edit(doc, big(1500));
