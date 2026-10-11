@@ -108,6 +108,7 @@ The launcher exists because Alchemy's `Hetzner.Service` always starts `node <mai
 | `image` | `ubuntu-24.04` | |
 | `port` | `3000` | |
 | `volumeSize` | `10` | GB, minimum 10. `0` keeps data on the server's own disk in `/var/lib/<name>`. |
+| `memMaxMb` | none | RSS ceiling in MB: above it the box saves a CPU profile and a heap snapshot, then restarts. `RB_MEM_MAX_MB` overrides. See `/__rb/mem` below. |
 
 Current limits on the box:
 
@@ -115,7 +116,13 @@ Current limits on the box:
 - **A box plays like the edge, not like the desktop.** There's no local player: each WebSocket at `worldPath` is a guest with its own id (`?uid=&name=` when the client sends them, trust on first use as on the LAN, otherwise a fresh id per connection), and `?room=CODE` picks that room's world, as the edge Worker routes it (codes are 1-32 of `[A-Za-z0-9_-]`, at most 200 rooms per box; no `room` is one shared world). `/__rb/info` and `POST /__rb/host` answer 404, so pages take their online path, and nobody on the internet can close the world or rebind the server. There's no real login: put the box behind your own auth if identity matters.
 - **`/health` says where data lives.** Its `X-RB-Data` header is `volume` when the data dir is its own filesystem (an attached Volume) and `container` when a redeploy would throw it away. `X-RB-Boots` counts the starts recorded in the data dir, so it only grows across a redeploy when the data survived it.
 - **`/__rb/mem` says how memory is going.** The box samples RSS and the JS heap every 5 minutes and logs a `[mem]` line; `/__rb/mem` returns the latest, the peak, and a least-squares slope over the last hour (`slopeMbPerHour`), so a slow leak shows up as a steady positive number long before it hurts. Set `targets.box.memMaxMb` (or the `RB_MEM_MAX_MB` variable) and, once RSS passes it, the box writes a V8 heap snapshot to `<data>/heap/` and exits 1, so Railway or systemd restarts it before the OOM killer does; `hoursToMax` is the time left at the current slope. Open the snapshot in Chrome DevTools > Memory, or compare two of them to see what grew. Before that snapshot it samples 5 seconds of CPU into `<data>/prof/ceiling-*.cpuprofile`. Desktop hosts watch themselves the same way: `/__rb/mem` answers the local player (not guests), and only `RB_MEM_MAX_MB` sets a ceiling there; they don't take the ceiling profile or serve `/__rb/prof`.
-- **`/__rb/prof` takes a CPU flame graph from the running box.** Set the `RB_PROF_SECRET` variable (16 characters or more) and `curl -X POST -H "Authorization: Bearer $RB_PROF_SECRET" "https://<box>/__rb/prof?s=10" -o box.cpuprofile` samples for that many seconds (at most 60, one profile at a time), answers with the profile and keeps it in `<data>/prof/` (the newest 10). Open it in Chrome DevTools > Performance or drop it on speedscope.app. Without the secret the route doesn't exist and the path goes to your app, since anyone who can start profiles can keep the box busy. Locally, `bun --cpu-prof` still works and writes the profile on exit.
+- **`rustybuns prof` takes a CPU flame graph from the running box.** Give the box a secret of 16 characters or more, for the box alone:
+
+  ```ts
+  bindings: { RB_PROF_SECRET: { type: "secret", boxOnly: true } }   // add op: "op://…" under experimental.wheel
+  ```
+
+  Deploy, then `rustybuns prof [--seconds 10]` finds the box's URL in the Alchemy state (`--url` to name another), sends the secret from the shell, `.dev.vars` or 1Password, and saves a `.cpuprofile` in `.rustybuns/prof/`. Open it in Chrome DevTools > Performance or drop it on speedscope.app. Under it is `POST /__rb/prof?s=10` with `Authorization: Bearer <secret>`: it samples for that many seconds (at most 60, one profile at a time), answers with the profile and keeps it in `<data>/prof/` too (the newest 10). Without the secret the route doesn't exist and the path goes to your app, since anyone who can start profiles can keep the box busy. A Hetzner box is plain HTTP, so there the secret crosses the network unencrypted. `boxOnly` keeps any secret off the edge Worker. Locally, `bun --cpu-prof` still works and writes the profile on exit.
 - **Secrets are plaintext at rest.** They go into `/opt/<unit>/env` on the server and into Alchemy's local state (`.alchemy/state`, see `state` under Config). Don't keep `HCLOUD_TOKEN` in `.dev.vars`, or `init` will treat it as an app secret.
 - **Rust crates build in Docker off Linux.** cdylibs don't cross-compile, so when `native/` has crates and the box's arch isn't this machine, `build box` builds them in `rust:<your rustc>-slim-bookworm` for `linux/amd64` (or `linux/arm64` on `cax`) into `native/dist/<crate>/linux-<arch>/` and embeds them as usual. Bookworm's glibc (2.36) is older than Ubuntu 24.04's (2.39), so the library loads on the server. Start Docker first; without it the build says so. On Linux of the same arch, nothing changes. The same goes for `build desktop` with Linux targets. Other cross targets (macOS, Windows) are refused only when a crate would be embedded: one named in `desktop.native`, or one already built into `native/dist`. A crate that only builds to wasm says so in its own `Cargo.toml`:
 
@@ -150,6 +157,7 @@ Railway's upload is a Docker context capped at 32 MiB, and a compiled Bun binary
 | `region` | Railway's | `us-west2`, `us-east4`, `europe-west4`, `asia-southeast1` |
 | `port` | `3000` | |
 | `volume` | `true` | `false` keeps data in the container, lost on every redeploy |
+| `memMaxMb` | none | RSS ceiling in MB: above it the box saves a CPU profile and a heap snapshot, then restarts. `RB_MEM_MAX_MB` overrides. See `/__rb/mem` below. |
 | `sleep` | `true` | sleeps when idle, so a quiet box costs close to nothing; the first request wakes it, and in-memory world state starts fresh (sqlite doesn't) |
 
 HTTPS comes with the Railway domain. Identity works the same as on Hetzner.
@@ -181,6 +189,7 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 | `login <cloudflare\|hetzner\|railway>` | connect a provider account to your Alchemy profile (`~/.alchemy`, shared by every app), through this project's pinned Alchemy |
 | `plan` / `deploy [--yes]` / `destroy` | Alchemy against the generated stack; `deploy` refuses without a plan for this exact config |
 | `dev` | `alchemy dev`: workerd and local simulators for the edge |
+| `prof [--seconds N] [--url U]` | sample the deployed box's CPU and save a `.cpuprofile` (a flame graph) in `.rustybuns/prof/`; needs `RB_PROF_SECRET`, see [the box limits](#deploy-to-hetzner) |
 | `eject` | copy `alchemy.run.ts` to the project root; from then on you own it |
 | `version` | print the version, and say whether it is a known-bad release or out of date |
 
@@ -238,11 +247,11 @@ export default defineConfig({
 | Key | Values |
 |---|---|
 | `source` | `dir`, `aliases`, `ignore` (inferred from tsconfig paths) |
-| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `send_email` (+ `allowedSenderAddresses`), `queue` (+ `queueName`, `consumer`: the Worker's `queue()` gets its batches; a sqlite queue in the host process off the edge), `var`, `secret` (+ `op`) |
+| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `send_email` (+ `allowedSenderAddresses`), `queue` (+ `queueName`, `consumer`: the Worker's `queue()` gets its batches; a sqlite queue in the host process off the edge), `var`, `secret` (+ `op`, `optional`, `boxOnly`) |
 | `state` | `shared` (default) \| `project`, see below |
 | `experimental` | `wheel` (`agent` \| `human`), see below |
 | `targets.edge` | `provider: "cloudflare"`, `domain`, `adopt` |
-| `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize` |
+| `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize`, `memMaxMb`; or `provider: "railway"`, `region`, `port`, `volume`, `sleep`, `memMaxMb` |
 | `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world` (or `false`), `worldPath`, `identity`, `listen` (`hostname`, `port`), `guests` (`join`, `max`, `version`), `host`, `headers`, `native`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define` |
 
 **`targets.edge.adopt`** names the Worker, D1 databases and R2 buckets exactly as the config does (`name`, `databaseName`, `bucketName`) and takes over ones that already exist under those names, instead of making new ones beside them. Turn it on for an app first deployed with wrangler, or one whose Alchemy state was lost. Without it Alchemy picks its own `<app>-<id>-<stage>-<random>` names. Leave it off for a stack Alchemy already deployed: its names would change, so those resources would be replaced. On a fresh state, `plan` lists the Worker as a create even with `adopt`, because its bindings aren't known until deploy. It is still uploaded under the config's name, over the existing Worker.
