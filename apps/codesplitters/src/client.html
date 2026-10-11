@@ -2456,7 +2456,7 @@ const views = {
     if (!el) return;
     const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
     let sel = null, timer = null, picked = false, editKey = null;
-    // What a hosted deploy waits on (#646): the diff, once loaded, for the tip it was read at.
+    // What a deploy waits on (#646, #682): the diff, once loaded, for the tip it was read at.
     let shownDiff = null;
     // A monorepo's apps, from the fit check, offered as the folder once it answers.
     let apps = [];
@@ -2515,7 +2515,7 @@ const views = {
           <div class="row">stage <input name="stage" value="${esc(s.stage)}" style="width:8em;font:12px var(--mono)" pattern="[a-z0-9][a-z0-9-]*" required>
             folder <input name="dir" value="${esc(s.dir ?? "")}" placeholder="(repo root)" list="deploy-dirs" title="Where the app's rustybuns.config.ts is, in a monorepo" style="width:12em;font:12px var(--mono)">
             <datalist id="deploy-dirs"></datalist></div>
-          <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits; crew and agents never start a deploy${d.hosted ? ", and their code waits for you to approve it" : ""})</span></label>
+          <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits; crew and agents never start a deploy, and their code waits for you to approve it)</span></label>
           <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This is production <span class="muted">(lets a stack with <code>adopt</code> take over the live resources)</span></label>
           <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"></button></div>
         </form>`;
@@ -2531,7 +2531,7 @@ const views = {
         poll();
       });
     };
-    /** Code on main that isn't yours alone since your last approved deploy: the site would run it with your keys, so it waits for you. */
+    /** Code on main that isn't yours alone since your last approved deploy: a deploy would run it with your keys or logins, so it waits for you. */
     const drawReview = (d) => {
       const box = $("#dp-review"), r = d.review;
       if (!waiting(d)) { box.innerHTML = ""; return; }
@@ -2539,7 +2539,7 @@ const views = {
       const n = r.commits.length;
       const kind = (l) => l.startsWith("@@") ? "h" : l[0] === "-" ? "d" : l[0] === "+" ? "a" : "";
       box.innerHTML = `<div style="display:grid;gap:6px;font-size:12px;margin:8px 0">
-        <span>${icon("shield-alert")} <b>Waiting for you.</b> ${n ? `${n}${r.more ? "+" : ""} commit${n === 1 && !r.more ? "" : "s"} since your last approved deploy ${n === 1 && !r.more ? "isn't" : "aren't"} yours alone` : "This history goes back further than the site checks"}. A deploy from the site runs the repo's code with your deploy keys, so read the changes first.</span>
+        <span>${icon("shield-alert")} <b>Waiting for you.</b> ${n ? `${n}${r.more ? "+" : ""} commit${n === 1 && !r.more ? "" : "s"} since your last approved deploy ${n === 1 && !r.more ? "isn't" : "aren't"} yours alone` : "This history goes back further than this checks"}. A deploy runs the repo's code with ${d.hosted ? "your deploy keys" : "this machine's logins"}, so read the changes first.</span>
         ${r.commits.slice(0, 12).map((c) => `<span class="muted"><code>${esc(c.sha.slice(0, 7))}</code> ${esc(c.message)} · ${esc(c.author)} · ${ago(c.at)}</span>`).join("")}
         ${n > 12 ? `<span class="muted">and ${n - 12} more</span>` : ""}
         ${shownDiff ? shownDiff.files.map((f) => `<div class="buildiff"><div class="h">${esc(f.path)}${f.note ? ` <span class="muted">(${esc(f.note)})</span>` : ""}</div>${f.lines.map((l) => `<div class="${kind(l)}">${esc(l)}</div>`).join("")}</div>`).join("")
