@@ -48,7 +48,7 @@ import { seenRoutes } from "./seen.ts";
 import { installScript } from "./install.ts";
 import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
-import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue, TRUTHS, type Truth } from "./mirror.ts";
+import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue, TRUTHS, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
@@ -413,6 +413,9 @@ async function route(req: Request, env: Env): Promise<Response> {
       if ("error" in m) return json({ error: m.error }, m.status);
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims") && req.method === "POST");
       if (writes && !a.write) return json({ error: "no write access" }, 403);
+      // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
+      // committed, so a commit here never writes their old lines back over it (#773).
+      if (!branch && (p[5] === "commit" || (p[5] === "file" && req.method === "GET")) && mirrorsOn(env)) await landPushes(env, owner, repo).catch(() => {});
       // Hiding lines is the crew's; showing them again (to git and search on the next commit) the owner's.
       const sent = writes ? await req.text() : undefined;
       if (p[5] === "private" && req.method === "POST") {
