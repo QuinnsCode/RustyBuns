@@ -36,9 +36,9 @@
   #banner { top: 30%; left: 0; right: 0; text-align: center; font: 600 64px/1 var(--sans); letter-spacing: -0.05em; color: var(--ink); opacity: 0; transition: opacity .25s; text-shadow: 0 1px 0 #fff; }
   #banner small { display: block; margin-top: 10px; font: 500 13px/1.5 var(--mono); letter-spacing: .04em; color: var(--ink-2); }
   #hurt { inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(232,89,12,.45)); opacity: 0; transition: opacity .3s; }
-  .panel { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(250,250,250,.6); backdrop-filter: blur(4px); }
+  .panel { position: fixed; inset: 0; display: flex; overflow-y: auto; padding: 16px 0; background: rgba(250,250,250,.6); backdrop-filter: blur(4px); }
   .panel[hidden] { display: none; }
-  .card { width: min(520px, calc(100vw - 32px)); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 26px 28px; box-shadow: 0 24px 64px -16px rgba(0,0,0,.22); }
+  .card { margin: auto; width: min(520px, calc(100vw - 32px)); background: var(--paper-2); border: 1px solid var(--rule); border-radius: 10px; padding: 26px 28px; box-shadow: 0 24px 64px -16px rgba(0,0,0,.22); }
   .card h1 { margin: 0 0 4px; font: 600 32px/1.05 var(--sans); letter-spacing: -0.045em; }
   .label { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); margin-bottom: 12px; }
   .muted { color: var(--ink-2); }
@@ -63,6 +63,24 @@
   kbd { font: 500 11px var(--mono); border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--paper); color: var(--ink); }
   /* Ways out of the game: back to the repo it came from, or to your profile. On every panel. */
   .exits { display: flex; gap: 16px; flex-wrap: wrap; margin: 14px 0 0; font-size: 13px; }
+  /* On a phone: a stick to walk, the rest of the screen to look, and buttons to swat and jump. */
+  #touch { position: fixed; inset: 0; pointer-events: none; }
+  #touch[hidden], .touch-only { display: none; }
+  body.touch .touch-only { display: block; } body.touch .mouse-only { display: none; }
+  #stick { position: absolute; left: max(18px, env(safe-area-inset-left)); bottom: max(22px, env(safe-area-inset-bottom)); width: 116px; height: 116px; border-radius: 50%; border: 1px solid var(--edge); background: rgba(255,255,255,.55); pointer-events: auto; touch-action: none; }
+  #stick i { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: var(--ink); opacity: .75; }
+  .tbtn { position: absolute; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; justify-content: center; border-radius: 50%; font: 600 13px/1 var(--sans); }
+  #t-swat { right: max(18px, env(safe-area-inset-right)); bottom: max(26px, env(safe-area-inset-bottom)); width: 84px; height: 84px; background: var(--grain), var(--accent); border-color: var(--accent); color: #fff; }
+  #t-jump { right: calc(max(18px, env(safe-area-inset-right)) + 96px); bottom: max(22px, env(safe-area-inset-bottom)); width: 58px; height: 58px; }
+  .tbtn.on { transform: scale(.92); }
+  body.touch #bl { bottom: auto; top: 14px; left: 50%; transform: translateX(-50%); width: 120px; padding: 6px 10px; }
+  body.touch #tl { max-width: calc(50vw - 82px); overflow: hidden; } body.touch #where { display: none; }
+  body.touch #cross { width: 8px; height: 8px; margin: -4px 0 0 -4px; }
+  canvas#c { touch-action: none; }
+  @media (max-width: 600px), (max-height: 500px) {
+    #banner { font-size: 40px; } #tl .big, #tr .big { font-size: 16px; } .hud { font-size: 11px; }
+    .card { padding: 20px 18px; } .card h1 { font-size: 26px; }
+  }
   a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; } a:hover { text-decoration-color: var(--accent); }
 </style>
 <script type="importmap">{ "imports": { "three": "/vendor/three.module.js" } }</script>
@@ -76,6 +94,7 @@
 <div class="hud" id="press"><b></b><i></i></div>
 <div class="hud" id="banner"></div>
 <div class="hud" id="hurt"></div>
+<div id="touch" hidden><div id="stick"><i></i></div><button class="tbtn" id="t-jump">jump</button><button class="tbtn" id="t-swat">swat</button></div>
 
 <div class="panel" id="lobby"><div class="card">
   <div class="label" id="lobby-label">the backrooms</div>
@@ -88,10 +107,11 @@
   </div>
   <ul id="lobby-players"></ul>
   <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><span class="muted" id="lobby-msg"></span></div>
-  <div class="keys"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swat · <kbd>hold</kbd> press the README into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
+  <div class="keys touch-only">left stick: walk (push it all the way to run) · drag anywhere else: look · <b>swat</b>: tap to swat, hold to press the README into a line · <b>jump</b><br>scraps on the floor split again when you swat them · walk into a doorway to go into that folder</div>
+  <div class="keys mouse-only"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swat · <kbd>hold</kbd> press the README into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
   <p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p>
 </div></div>
-<div class="panel" id="lock" hidden style="background:transparent;place-items:end center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;padding:12px 18px"><b>Click to roll up the README</b> <span class="muted">· Esc lets go</span><p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p></div></div>
+<div class="panel" id="lock" hidden style="background:transparent;align-items:flex-end;justify-content:center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;margin:0 16px;padding:12px 18px"><b>Click to roll up the README</b> <span class="muted">· Esc lets go</span><p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p></div></div>
 <div class="panel" id="over" hidden><div class="card">
   <div class="label">the round is over</div><h1 id="over-title">Swatted flat.</h1>
   <ul id="over-players"></ul>
@@ -302,7 +322,8 @@ function cladMat(lines, kind) {
 let mode = "horde", diff = null, diffData = null;
 const broken = new Set();       // ids broken this round, from everyone
 const breakables = [];          // {id, obj, kind, hp, r, lines, furn, wall?}
-const debris = [];              // {obj, vel, spin, rest}
+const debris = [];              // scraps on the loose or on the floor: {obj, vel, spin, rest, kind, size, …}
+const fading = [];              // scraps shrinking to nothing: {obj, t}
 /** What the next round's wreckage is made of: one piece per file in a wreck, the diff's lines in a smash. */
 function furnitureFor(path, w) {
   if (mode === "wreck") return w.files.filter((f) => f.lines.some((l) => l.trim())).slice(0, 12).map((f) => {
@@ -359,7 +380,7 @@ function buildRoom(path, w, minPanels = 8) {
   // The lobby: a wall of lava lamps, the kind that keeps a certain San Francisco office's randomness honest.
   if (!path) panels.push({ kind: "lava" }, { kind: "lava" });
   while (panels.length < minPanels) panels.push({ kind: "blank" });
-  lava.length = 0; breakables.length = 0; debris.length = 0;
+  lava.length = 0; breakables.length = 0; debris.length = 0; fading.length = 0;
   // Shuffle so doors and files mix around the room, the same way every visit.
   const order = mulberry([...path].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7));
   panels.sort(() => order() - 0.5);
@@ -459,7 +480,7 @@ const player = { pos: new THREE.Vector3(0, EYE, 0), vel: new THREE.Vector3(), vy
 const keys = new Set();
 addEventListener("keydown", (e) => {
   keys.add(e.code);
-  if (e.code === "Space" && playing) { e.preventDefault(); if (player.alive && player.pos.y <= EYE + 0.01) player.vy = 5.8; }
+  if (e.code === "Space" && playing) { e.preventDefault(); jump(); }
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("mousemove", (e) => {
@@ -467,11 +488,41 @@ addEventListener("mousemove", (e) => {
   player.yaw -= e.movementX * 0.0022;
   player.pitch = Math.max(-1.4, Math.min(1.4, player.pitch - e.movementY * 0.0022));
 });
-document.addEventListener("pointerlockchange", () => { $("#lock").hidden = !playing || document.pointerLockElement === renderer.domElement; });
+document.addEventListener("pointerlockchange", () => { $("#lock").hidden = touch || !playing || document.pointerLockElement === renderer.domElement; });
 $("#lock").addEventListener("click", (e) => { if (!e.target.closest("a")) renderer.domElement.requestPointerLock(); });
 let held = false;
 renderer.domElement.addEventListener("mousedown", () => { if (document.pointerLockElement === renderer.domElement) { held = true; swing(); } });
-addEventListener("mouseup", () => { held = false; if (pin) letGo(); });
+addEventListener("mouseup", () => { if ($("#t-swat").classList.contains("on")) return; held = false; if (pin) letGo(); });
+
+// Touch: no pointer lock on a phone. A stick walks, a drag anywhere else looks, and buttons swat and jump.
+let touch = matchMedia("(pointer: coarse)").matches;
+const stick = { id: null, x: 0, y: 0 };
+function useTouch() { if (touch) return; touch = true; document.body.classList.add("touch"); $("#lock").hidden = true; }
+if (touch) document.body.classList.add("touch");
+addEventListener("touchstart", useTouch, { passive: true });
+const jump = () => { if (playing && player.alive && player.pos.y <= EYE + 0.01) player.vy = 5.8; };
+$("#stick").addEventListener("pointerdown", (e) => { stick.id = e.pointerId; try { $("#stick").setPointerCapture(e.pointerId); } catch {} moveStick(e); });
+$("#stick").addEventListener("pointermove", (e) => { if (e.pointerId === stick.id) moveStick(e); });
+for (const ev of ["pointerup", "pointercancel"]) $("#stick").addEventListener(ev, (e) => { if (e.pointerId !== stick.id) return; stick.id = null; stick.x = stick.y = 0; $("#stick i").style.transform = ""; });
+function moveStick(e) {
+  const r = $("#stick").getBoundingClientRect(), R = r.width / 2;
+  let x = (e.clientX - r.left - R) / R, y = (e.clientY - r.top - R) / R;
+  const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
+  stick.x = x; stick.y = y; $("#stick i").style.transform = `translate(${x * R * 0.6}px, ${y * R * 0.6}px)`;
+}
+const looks = new Map();   // pointerId -> last [x, y], for each finger dragging the view
+renderer.domElement.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") looks.set(e.pointerId, [e.clientX, e.clientY]); });
+renderer.domElement.addEventListener("pointermove", (e) => {
+  const p = looks.get(e.pointerId); if (!p) return;
+  player.yaw -= (e.clientX - p[0]) * 0.006;
+  player.pitch = Math.max(-1.4, Math.min(1.4, player.pitch - (e.clientY - p[1]) * 0.006));
+  looks.set(e.pointerId, [e.clientX, e.clientY]);
+});
+for (const ev of ["pointerup", "pointercancel"]) renderer.domElement.addEventListener(ev, (e) => looks.delete(e.pointerId));
+$("#t-swat").addEventListener("pointerdown", (e) => { e.preventDefault(); sound.init(); $("#t-swat").classList.add("on"); held = true; swing(); });
+for (const ev of ["pointerup", "pointercancel", "pointerleave"]) $("#t-swat").addEventListener(ev, () => { $("#t-swat").classList.remove("on"); held = false; if (pin) letGo(); });
+$("#t-jump").addEventListener("pointerdown", (e) => { e.preventDefault(); jump(); });
+for (const b of document.querySelectorAll(".tbtn")) b.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // The swatter: the repo's README, torn off the wall and rolled up tight, with an orange rubber band.
 // Nobody gets hurt by a README; it just stings a bit.
@@ -708,51 +759,107 @@ function updateEnemies(dt, time) {
 }
 
 // ---- breaking things (wreck it, smash the removed) ------------------------------------
+// A piece you break splits in two, text and all, and the halves land on the floor as
+// scraps. Swat a scrap and it splits again; small enough and it crumbles to confetti,
+// so a good wreck cleans up after itself.
 const tmpW = new THREE.Vector3();
+const MIN_SCRAP = 0.16;   // a scrap smaller than this (its longest side, in metres) crumbles instead
+let freeze = 0;           // hit-stop: the world all but stops for a beat when something breaks
 /** The README lands on a piece. Big ones take two hits; lines a diff added don't break at all. */
 function strike(b, dir) {
   if (b.locked) { sound.impact("thud", 0.6); banner("", "that line is new: it stays", 0.9); b.wobble = 0.3; return false; }
-  if (--b.hp > 0) { sound.impact(SOUND_OF[b.kind] === "shatter" ? "shatter" : "thud", 0.7); b.wobble = 0.3; burst(b.obj.getWorldPosition(tmpW), "#e8590c", 8); return false; }
+  if (--b.hp > 0) { sound.impact(SOUND_OF[b.kind] === "shatter" ? "shatter" : "thud", 0.7); b.wobble = 0.3; shake = Math.max(shake, 0.08); burst(b.obj.getWorldPosition(tmpW), "#e8590c", 8); return false; }
   breakPiece(b, dir, true);
   return true;
+}
+/** Halve a geometry across its longest side. Each half comes back centred, with how far its
+ *  centre sits from the old one; the UVs are cut with it, so the text splits where the paper does.
+ *  Works on anything built of 4-vertex faces (a BoxGeometry, a one-segment strip). */
+function halves(geo) {
+  geo.computeBoundingBox();
+  const { min, max } = geo.boundingBox, P = geo.attributes.position.array, U = geo.attributes.uv.array, n = geo.attributes.position.count;
+  const size = max.clone().sub(min), ax = size.x >= size.y && size.x >= size.z ? 0 : size.y >= size.z ? 1 : 2;
+  const lo = min.getComponent(ax), hi = max.getComponent(ax), mid = (lo + hi) / 2, near = (a, b) => Math.abs(a - b) < 1e-5;
+  return [[lo, mid], [mid, hi]].map(([a, b]) => {
+    const g = geo.clone(), p = g.attributes.position.array, u = g.attributes.uv.array, c = (a + b) / 2;
+    for (let f = 0; f < n; f += 4) for (let v = f; v < f + 4; v++) {
+      const atHi = !near(P[v * 3 + ax], lo), to = atHi ? b : a;
+      p[v * 3 + ax] = to - c;
+      // On a side that runs across the cut, slide the text along with the edge.
+      const w = [f, f + 1, f + 2, f + 3].find((k) => k !== v && !near(P[k * 3 + ax], P[v * 3 + ax]) && [0, 1, 2].every((i) => i === ax || near(P[k * 3 + i], P[v * 3 + i])));
+      if (w === undefined) continue;
+      const [l, h] = atHi ? [w, v] : [v, w], s = (to - lo) / (hi - lo);
+      u[v * 2] = U[l * 2] + (U[h * 2] - U[l * 2]) * s; u[v * 2 + 1] = U[l * 2 + 1] + (U[h * 2 + 1] - U[l * 2 + 1]) * s;
+    }
+    g.attributes.position.needsUpdate = g.attributes.uv.needsUpdate = true;
+    g.computeBoundingBox(); g.computeBoundingSphere();
+    return { geo: g, off: new THREE.Vector3().setComponent(ax, c) };
+  });
+}
+const scrapSize = (o) => { if (!o.isMesh) return 0; o.geometry.computeBoundingBox(); const s = o.geometry.boundingBox.getSize(tmpW); return Math.max(s.x, s.y, s.z) * o.scale.x; };
+/** A scrap on the loose: paper flutters, glass and wood drop like stones. */
+function scrap(obj, vel, kind) {
+  const d = { obj, vel, kind, spin: new THREE.Vector3().randomDirection().multiplyScalar(4 + Math.random() * 6), rest: false, pop: 0.18, squash: 0, t: 0,
+    size: scrapSize(obj), paper: kind === "paper", flat: !!obj.geometry?.parameters?.width && obj.geometry.parameters.depth === undefined };
+  here.group.add(obj); debris.push(d);
+  return d;
+}
+/** Split a mesh in two where it stands and throw the halves apart along the cut. */
+function split(m, dir, power, kind) {
+  m.updateWorldMatrix(true, false);
+  const mw = m.matrixWorld.clone(), out = [];
+  for (const { geo, off } of halves(m.geometry)) {
+    const h = new THREE.Mesh(geo, m.material);
+    mw.clone().multiply(new THREE.Matrix4().makeTranslation(off.x, off.y, off.z)).decompose(h.position, h.quaternion, h.scale);
+    const apart = off.clone().applyQuaternion(h.quaternion).normalize().multiplyScalar(1.5 + Math.random() * 1.5);
+    const vel = dir.clone().multiplyScalar(power * (0.7 + Math.random() * 0.6)).add(apart).add(new THREE.Vector3((Math.random() - 0.5) * 2, 2.5 + Math.random() * 2.5, (Math.random() - 0.5) * 2));
+    out.push(scrap(h, vel, kind));
+  }
+  m.removeFromParent(); m.geometry.dispose();
+  return out;
+}
+/** Take a scrap off the floor for good: shrink it away (or puff it to confetti). */
+function crumble(d, puff = true) {
+  const i = debris.indexOf(d);
+  if (i >= 0) debris.splice(i, 1);
+  if (puff) { const at = d.obj.getWorldPosition(new THREE.Vector3()); burst(at, d.kind === "glass" ? "#ffd8bf" : "#fcfbf8", 14); burst(at, "#0a0a0a", 6); }
+  fading.push({ obj: d.obj, t: 0 });
+}
+/** The README lands on a scrap: it splits again, or if it's down to a shred, it's gone. */
+function hitScrap(d, dir) {
+  shake = Math.max(shake, 0.06); freeze = Math.max(freeze, 0.035);
+  if (d.size < MIN_SCRAP * 2 || !d.obj.isMesh) {
+    crumble(d); sound.rip(0.6);
+    player.score += 15 * player.combo; return;
+  }
+  debris.splice(debris.indexOf(d), 1);
+  split(d.obj, dir, 6, d.kind);
+  sound.rip(0.9); if (d.kind !== "paper") sound.impact(SOUND_OF[d.kind] ?? "thud", 0.35);
+  player.score += 5 * player.combo;
 }
 /** Break a piece for good: yours (scored, told to the room) or someone else's (`mine` false). */
 function breakPiece(b, dir, mine) {
   const i = breakables.indexOf(b);
   if (i < 0) return;
   breakables.splice(i, 1); broken.add(b.id);
-  const at = b.obj.getWorldPosition(new THREE.Vector3()), pieces = [], p = b.obj.geometry?.parameters;
-  b.obj.updateWorldMatrix(true, false);
-  if (p?.depth !== undefined) {
-    // A slab splits into shards along its longest side.
-    const dims = [p.width, p.height, p.depth], ax = dims.indexOf(Math.max(...dims)), n = Math.min(4, Math.max(1, Math.round(dims[ax] / 0.35))), d = [...dims];
-    d[ax] /= n;
-    for (let k = 0; k < n; k++) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(...d), b.obj.material), off = new THREE.Vector3();
-      off.setComponent(ax, (k + 0.5) * d[ax] - dims[ax] / 2);
-      new THREE.Matrix4().copy(b.obj.matrixWorld).multiply(new THREE.Matrix4().makeTranslation(off.x, off.y, off.z)).decompose(m.position, m.quaternion, m.scale);
-      pieces.push(m);
-    }
-    b.obj.removeFromParent(); b.obj.geometry.dispose();
-  } else {
-    // A line off the wall, or a lava lamp, goes whole.
-    b.obj.matrixWorld.decompose(b.obj.position, b.obj.quaternion, b.obj.scale);
-    b.obj.removeFromParent(); pieces.push(b.obj);
+  const at = b.obj.getWorldPosition(new THREE.Vector3());
+  if (b.obj.isMesh && b.obj.geometry.attributes.uv) split(b.obj, dir, mine ? 7 : 4, b.kind);
+  else {
+    // A lava lamp goes whole, and shatters on the next hit.
+    b.obj.updateWorldMatrix(true, false); b.obj.matrixWorld.decompose(b.obj.position, b.obj.quaternion, b.obj.scale);
+    b.obj.removeFromParent();
+    scrap(b.obj, dir.clone().multiplyScalar((mine ? 7 : 4) + Math.random() * 3).add(new THREE.Vector3((Math.random() - 0.5) * 3, 2.5 + Math.random() * 3, (Math.random() - 0.5) * 3)), b.kind);
   }
-  for (const m of pieces) {
-    here.group.add(m);
-    const vel = dir.clone().multiplyScalar((mine ? 7 : 4) + Math.random() * 3).add(new THREE.Vector3((Math.random() - 0.5) * 3, 2.5 + Math.random() * 3, (Math.random() - 0.5) * 3));
-    debris.push({ obj: m, vel, spin: new THREE.Vector3().randomDirection().multiplyScalar(4 + Math.random() * 6), rest: false });
-  }
-  // The floor keeps the wreckage, up to a point.
-  while (debris.length > 260) { const d = debris.shift(); d.obj.removeFromParent(); if (d.obj.isMesh && !Object.values(lampGeo).includes(d.obj.geometry)) d.obj.geometry.dispose(); }
+  // The floor keeps the wreckage, up to a point: past it the oldest scraps shrink away.
+  while (debris.length > 220) crumble(debris[0], false);
   burst(at, "#e8590c");
   const sfx = SOUND_OF[b.kind], loud = mine ? 1 : 0.45;
-  sound.impact(sfx, loud);
-  if (pieces.length >= 3) sound.settle(loud);
+  sound.impact(sfx, loud); sound.rip(0.5 * loud);
   const done = b.furn && --b.furn.left === 0;
   if (done) { sound.impact("crash", loud); sound.settle(loud); }
   if (!mine) return;
+  // Animation cheats: a beat of hit-stop and a kick of the camera sell the hit.
+  freeze = Math.max(freeze, done ? 0.13 : 0.06); shake = Math.max(shake, done ? 0.3 : 0.14);
   send({ t: "break", id: b.id });
   player.score += (mode === "removed" ? 40 + 20 * b.lines : b.wall && b.kind === "paper" ? 10 : 25) * player.combo;
   player.combo = Math.min(8, player.combo + 1); player.comboT = 2.5;
@@ -760,6 +867,7 @@ function breakPiece(b, dir, mine) {
 }
 /** Lines the diff took out that are still standing. */
 const removedLeft = () => breakables.reduce((n, b) => n + (b.furn && !b.locked ? b.lines : 0), 0);
+const KICK_R = 0.45;
 function updateBreaking(dt) {
   for (const b of breakables) if (b.wobble > 0) {
     b.wobble = Math.max(0, b.wobble - dt);
@@ -767,16 +875,51 @@ function updateBreaking(dt) {
   }
   const lim = here.half - 0.15;
   for (const d of debris) {
-    if (d.rest) continue;
     const o = d.obj.position;
-    d.vel.y -= 14 * dt; o.addScaledVector(d.vel, dt);
-    d.obj.rotation.x += d.spin.x * dt; d.obj.rotation.y += d.spin.y * dt; d.obj.rotation.z += d.spin.z * dt;
-    if (Math.abs(o.x) > lim) { o.x = Math.sign(o.x) * lim; d.vel.x *= -0.4; }
-    if (Math.abs(o.z) > lim) { o.z = Math.sign(o.z) * lim; d.vel.z *= -0.4; }
-    if (o.y < 0.06) {
-      o.y = 0.06; d.vel.y *= -0.3; d.vel.x *= 0.6; d.vel.z *= 0.6; d.spin.multiplyScalar(0.5);
-      if (d.vel.lengthSq() < 0.3) d.rest = true;
+    d.t += dt;
+    // Walk into a scrap and you punt it.
+    const dx = o.x - player.pos.x, dz = o.z - player.pos.z, dh = Math.hypot(dx, dz);
+    if (dh < KICK_R && dh > 1e-4 && o.y < player.pos.y - 0.6) {
+      const k = 3 + Math.random() * 2;
+      d.vel.set(dx / dh * k, 2 + Math.random() * 2.5, dz / dh * k); d.spin.randomDirection().multiplyScalar(8);
+      if (d.rest) sound.impact("thud", 0.15);
+      d.rest = false;
     }
+    // A fresh half pops a little bigger, then settles to size; a hard landing squashes it.
+    const s = 1 + d.pop * 1.3 + Math.sin(d.squash * 30) * d.squash * 0.6;
+    d.pop = Math.max(0, d.pop - dt); d.squash = Math.max(0, d.squash - dt);
+    d.obj.scale.setScalar(s);
+    if (d.rest) continue;
+    if (d.paper) {
+      // Paper floats down like a leaf: heavy drag, and it sways as it goes.
+      d.vel.y -= 7 * dt; d.vel.multiplyScalar(Math.max(0, 1 - 2.2 * dt));
+      d.vel.x += Math.sin(d.t * 7 + d.size * 50) * 6 * dt; d.vel.z += Math.cos(d.t * 6 + d.size * 30) * 6 * dt;
+    } else d.vel.y -= 18 * dt;
+    o.addScaledVector(d.vel, dt);
+    d.obj.rotation.x += d.spin.x * dt; d.obj.rotation.y += d.spin.y * dt; d.obj.rotation.z += d.spin.z * dt;
+    if (Math.abs(o.x) > lim) { o.x = Math.sign(o.x) * lim; d.vel.x *= -0.5; }
+    if (Math.abs(o.z) > lim) { o.z = Math.sign(o.z) * lim; d.vel.z *= -0.5; }
+    // Furniture still standing is in the way: bounce off it.
+    for (const f of here.furn) if (f.left > 0) {
+      const fx = o.x - f.x, fz = o.z - f.z, fd = Math.hypot(fx, fz);
+      if (fd < f.r && fd > 1e-4 && o.y < 1.2) { o.x = f.x + fx / fd * f.r; o.z = f.z + fz / fd * f.r; const vn = (d.vel.x * fx + d.vel.z * fz) / fd; if (vn < 0) { d.vel.x -= 1.6 * vn * fx / fd; d.vel.z -= 1.6 * vn * fz / fd; } }
+    }
+    const floor = d.flat ? 0.012 : 0.06;
+    if (o.y < floor) {
+      o.y = floor;
+      if (d.vel.y < -4) d.squash = 0.18;
+      d.vel.y *= d.paper ? -0.1 : -0.35; d.vel.x *= 0.6; d.vel.z *= 0.6; d.spin.multiplyScalar(0.45);
+      if (d.vel.lengthSq() < 0.3) {
+        d.rest = true;
+        // Paper lands face up, so you can still read the line it was.
+        if (d.flat) d.obj.rotation.set(-Math.PI / 2, 0, d.obj.rotation.z);
+      }
+    }
+  }
+  for (const f of [...fading]) {
+    f.t += dt;
+    f.obj.scale.setScalar(Math.max(0.001, 1 - f.t / 0.25));
+    if (f.t >= 0.25) { f.obj.removeFromParent(); if (f.obj.isMesh && !Object.values(lampGeo).includes(f.obj.geometry)) f.obj.geometry.dispose(); fading.splice(fading.indexOf(f), 1); }
   }
 }
 
@@ -941,9 +1084,9 @@ function hurt(n, by, why) {
 
 let transit = false;
 function updatePlayer(dt) {
-  const f = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0), s = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
+  const f = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0) - stick.y, s = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0) + stick.x;
   // Pressing the README into a line pins you down to a shuffle.
-  const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") ? 8 : 4.8) * (pin ? 0.45 : 1);
+  const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") || Math.hypot(stick.x, stick.y) > 0.95 ? 8 : 4.8) * (pin ? 0.45 : 1);
   const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
   const move = new THREE.Vector3(-sin * f + cos * s, 0, -cos * f - sin * s);
   if (move.lengthSq() > 1) move.normalize();
@@ -1033,16 +1176,21 @@ function updateSwatter(dt) {
     }
     if (hits >= 3) { player.score += 500; banner("HAT TRICK", `${hits} lines in one swat`, 1.2); }
     // Furniture, walls, lamps: the nearest few in the arc, once a swing.
+    // Scraps on the floor count too, by where they lie around you rather than up and down.
     if (mode !== "horde" && !swingHit.has("pieces")) {
-      const near = [];
+      const near = [], flat = tmpV.set(fwd.x, 0, fwd.z).normalize().clone();
       for (const b of breakables) {
         const to = b.obj.getWorldPosition(tmpW).sub(player.pos), d = to.length() - b.r;
         if (d < 2.2 && to.normalize().dot(fwd) > 0.35) near.push([d, b]);
       }
+      for (const sc of debris) {
+        const to = sc.obj.getWorldPosition(tmpW).sub(player.pos).setY(0), d = to.length();
+        if (d < 1.9 && (d < 0.5 || to.normalize().dot(flat) > 0.5)) near.push([d, sc]);
+      }
       if (near.length) {
-        swingHit.add("pieces");
+        swingHit.add("pieces"); hitStop = 0.05;
         const dir = fwd.clone().setY(Math.max(0.15, fwd.y)).normalize();
-        const n = near.sort((a, b) => a[0] - b[0]).slice(0, 4).filter(([, b]) => strike(b, dir)).length;
+        const n = near.sort((a, b) => a[0] - b[0]).slice(0, 5).filter(([, b]) => breakables.includes(b) ? strike(b, dir) : (hitScrap(b, dir), false)).length;
         if (n >= 3) { player.score += 300; banner("", `${n} in one swat`, 0.9); }
       }
     }
@@ -1161,7 +1309,7 @@ async function begin(seed, startAt) {
   }
   for (const l of here.lines) if (!l.mesh.parent) l.wall.add(l.mesh);
   renderer.domElement.requestPointerLock?.()?.catch?.(() => {});
-  $("#lock").hidden = document.pointerLockElement === renderer.domElement;
+  $("#lock").hidden = touch || document.pointerLockElement === renderer.domElement;
   const tick = () => {
     const left = Math.ceil((startAt - Date.now()) / 1000);
     if (left > 0) { banner(String(left), "roll up the README"); setTimeout(tick, 250); return; }
@@ -1257,6 +1405,8 @@ const sound = {
     else if (kind === "shatter") { this.noise(0.45, 5000, 0.5, 0.45 * v, "highpass"); for (let i = 0; i < 7; i++) { const f = 2500 + r() * 4000; this.sweep(f, f * 0.97, 0.1 + r() * 0.2, "sine", 0.07 * v, r() * 0.25); } }
     else if (kind === "splinter") { for (let i = 0; i < 9; i++) this.noise(0.03, 1500 + r() * 1500, 4, 0.5 * v, "bandpass", i * 0.012 + r() * 0.01); this.sweep(160, 60, 0.12, "triangle", 0.35 * v); }
   },
+  /** Paper tearing: a split, or a scrap swept up. */
+  rip(v = 1) { const n = this.noise(0.14, 1800, 0.9, 0.35 * v, "highpass"); n?.f.frequency.exponentialRampToValueAtTime(5200, n.c.currentTime + 0.12); this.sweep(420, 160, 0.06, "triangle", 0.12 * v); },
   /** Debris settling after a big smash: little knocks trailing off. */
   settle(v = 1) { for (let i = 0; i < 6; i++) this.noise(0.05, 600 + Math.random() * 900, 2, (0.14 - i * 0.015) * v, "bandpass", 0.35 + i * 0.13 + Math.random() * 0.08); },
   thwack(v = 1) {
@@ -1336,6 +1486,8 @@ function hud() {
   $("#health i").style.width = hp + "%";
   $("#health").classList.toggle("low", hp < 30);
   $("#press").classList.toggle("on", !!pin);
+  const pad = !(touch && playing);
+  if ($("#touch").hidden !== pad) $("#touch").hidden = pad;
   if (pin) {
     $("#press i").style.width = Math.min(100, pin.c / JAM * 100) + "%";
     $("#press").classList.toggle("sweet", pin.c >= SWEET[0] && pin.c <= SWEET[1]);
@@ -1348,7 +1500,9 @@ function frame(now, manual) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const time = now / 1000;
   if (here) {
-    updatePlayer(dt); updateSwatter(dt); updateEnemies(dt, time); updateBosses(dt, time); updateWaves(dt); updateBreaking(dt); updateMode(); updateOthers(dt); updateLava(time);
+    // Hit-stop: for a beat after a big hit the world crawls, while you and the README don't.
+    const wdt = freeze > 0 ? dt * 0.1 : dt; freeze = Math.max(0, freeze - dt);
+    updatePlayer(dt); updateSwatter(dt); updateEnemies(wdt, time); updateBosses(wdt, time); updateWaves(dt); updateBreaking(wdt); updateMode(); updateOthers(dt); updateLava(time);
     player.comboT -= dt; if (player.comboT <= 0) player.combo = 1;
     if (now - sent > 100 && playing) {
       sent = now;
@@ -1370,7 +1524,7 @@ if (!(await enter(""))) $("#lobby-msg").textContent = "this room isn't dug up ye
 connect();
 requestAnimationFrame(frame);
 // For poking at it from the console.
-window.game = { player, enemies, bosses, others, breakables, broken, debris, strike, get mode() { return mode; }, get here() { return here; }, get wave() { return wave; }, get toSpawn() { return toSpawn; }, spawn, swing, lava, get pin() { return pin; }, set held(v) { held = v; if (!v && pin) letGo(); }, step: (ms = 16) => frame(last + ms, true) };
+window.game = { player, enemies, bosses, others, breakables, broken, debris, strike, hitScrap, get mode() { return mode; }, get here() { return here; }, get wave() { return wave; }, get toSpawn() { return toSpawn; }, spawn, swing, lava, get pin() { return pin; }, set held(v) { held = v; if (!v && pin) letGo(); }, step: (ms = 16) => frame(last + ms, true) };
 </script>
 </body>
 </html>
