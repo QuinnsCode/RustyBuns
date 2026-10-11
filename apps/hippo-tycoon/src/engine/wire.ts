@@ -44,9 +44,8 @@ const PHASES: readonly string[] = ["lobby", "countdown", "playing", "podium"];
 /** Parse and validate one client message; anything off-shape is null. */
 export function decodeClient(raw: unknown): ClientMsg | null {
   if (typeof raw !== "string" || raw.length > MAX_CLIENT_MESSAGE) return null;
-  let m: Record<string, unknown>;
-  try { m = JSON.parse(raw); } catch { return null; }
-  if (!m || typeof m !== "object") return null;
+  let m: { t?: unknown; v?: unknown; k?: unknown; m?: unknown; g?: unknown; h?: unknown; s?: unknown; secs?: unknown; diff?: unknown; n?: unknown };
+  try { m = JSON.parse(raw) ?? {}; } catch { return null; }
   switch (m.t) {
     case "hello":
       if (!isInt(m.v, 0, 1e6) || (m.k !== undefined && !isInt(m.k, 1, SEATS))) return null;

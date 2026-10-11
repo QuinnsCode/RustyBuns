@@ -35,6 +35,7 @@ test("a bad key is refused and not saved; a good one is saved user-only", async 
 
 test("workspace routes: open, upload, folders, image, no escapes", async () => {
   expect((await call("/api/jobs")).status).toBe(409);
+  expect((await call("/api/workspace/open", { method: "POST", body: "null" })).status).toBe(400);
   const dir = join(root, "My Game");
   mkdirSync(dir);
   expect((await post("/api/workspace/open", { dir })).status).toBe(200);

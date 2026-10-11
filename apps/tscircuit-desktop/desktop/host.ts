@@ -73,6 +73,8 @@ async function proxy(req: Request, url: URL, ctx: HostContext): Promise<Response
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const bad = (msg: string, status = 400) => json({ error: msg }, status);
+// A client body: the named fields, each unknown until checked. Bad JSON or a non-object body has none.
+const fields = async <K extends string>(req: Request) => (await req.json().catch(() => null)) as { [k in K]?: unknown } | null;
 
 function recentFile(ctx: HostContext) { return join(ctx.dataDir, "recent.json"); }
 async function recent(ctx: HostContext): Promise<string[]> {
@@ -185,7 +187,8 @@ async function reveal(raw: unknown) {
 async function runExport(req: Request, url: URL) {
   if (!project) return bad("no project open");
   const format = url.searchParams.get("format") ?? "";
-  const { circuitJson, board = "board" } = (await req.json()) as { circuitJson: any[]; board?: string };
+  const b = await fields<"circuitJson" | "board">(req);
+  const circuitJson = b?.circuitJson, board = typeof b?.board === "string" ? b.board : "board";
   if (!Array.isArray(circuitJson)) return bad("circuitJson required");
   const stem = basename(board).replace(/\.circuit\.tsx$|\.tsx$/, "") || "board";
   const outDir = join(project, "exports", stem);
@@ -257,12 +260,12 @@ export default {
         return json({ supported: dir !== null, dir: dir || null });
       }
       if (path === "/api/project/open" && req.method === "POST") {
-        return openProject(ctx, ((await req.json()) as any).dir);
+        return openProject(ctx, (await fields<"dir">(req))?.dir);
       }
       if (path === "/api/project/new" && req.method === "POST") {
-        const raw = String(((await req.json()) as any).dir ?? "");
+        const raw = (await fields<"dir">(req))?.dir;
+        if (typeof raw !== "string" || !raw) return bad("dir required");
         const dir = resolve(raw.replace(/^~(?=$|\/)/, homedir()));
-        if (!raw) return bad("dir required");
         if (existsSync(join(dir, "index.circuit.tsx"))) return bad("index.circuit.tsx already exists there", 409);
         mkdirSync(dir, { recursive: true });
         await Bun.write(join(dir, "index.circuit.tsx"), STARTER_CIRCUIT);
@@ -283,7 +286,7 @@ export default {
       if (path === "/api/project/events") return events();
       if (path === "/api/analyze" && req.method === "POST") return runAnalysis(req, url);
       if (path === "/api/export" && req.method === "POST") return runExport(req, url);
-      if (path === "/api/reveal" && req.method === "POST") return reveal(((await req.json()) as any).path);
+      if (path === "/api/reveal" && req.method === "POST") return reveal((await fields<"path">(req))?.path);
       if (path.startsWith("/api/proxy/")) return proxy(req, url, ctx);
       return bad("no such route", 404);
     } catch (err) {
