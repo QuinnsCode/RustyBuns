@@ -9,7 +9,7 @@
   /* Same system as the site: white paper, black ink, hairlines, one orange.
      The backrooms are a clean white Kamino hall here: white panels, grey floor, black trim. */
   :root {
-    --paper: #fcfbf8; --paper-2: #ffffff; --ink: #0a0a0a; --ink-2: #6b6b6b; --rule: #e6e6e6; --edge: #cfcfcf; --accent: #e8590c; --accent-soft: #fff4ec;
+    --paper: #fcfbf8; --paper-2: #ffffff; --ink: #0a0a0a; --ink-2: #6b6b6b; --rule: #e6e6e6; --edge: #cfcfcf; --accent: #e8590c; --accent-ink: #c2410c; --accent-soft: #fff4ec;
     --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .28 0 0 0 0 .2 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, Menlo, monospace;
   }
@@ -44,11 +44,12 @@
   .muted { color: var(--ink-2); }
   .card ul { list-style: none; padding: 0; margin: 16px 0; border-top: 1px solid var(--rule); }
   .card li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--rule); font: 400 13px var(--mono); }
-  .card li .ok { color: var(--accent); }
+  .card li .ok { color: var(--accent-ink); }
   /* Infinite Craft tiles in paper, same as the site. */
   button { display: inline-flex; align-items: center; gap: 7px; font: 500 13px/1 var(--sans); padding: 9px 12px 8px; border: 1px solid var(--edge); border-radius: 5px; background: var(--grain), var(--paper); color: var(--ink); cursor: pointer; transition: border-color .12s, background .12s, transform .06s; }
   button:hover { background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); border-color: #a8a8a8; }
   button:active { transform: translateY(1px); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button.primary { background: var(--grain), var(--ink); border-color: var(--ink); color: #fff; }
   button.primary:hover { background: var(--grain), linear-gradient(0deg, #2a2a2a, #0a0a0a 85%); }
   /* The mode picker: three paper tiles, the picked one inked orange. */
@@ -95,13 +96,13 @@
 <script type="importmap">{ "imports": { "three": "/vendor/three.module.js" } }</script>
 </head>
 <body>
-<canvas id="c"></canvas>
+<canvas id="c" aria-hidden="true"></canvas>
 <div class="hud" id="tl"><div class="big" id="title">codeSplitters</div><div id="where"></div><div id="wave"></div></div>
 <div class="hud" id="tr"><div id="score" class="big">0</div><div id="combo"></div><div id="others"></div></div>
 <div class="hud" id="bl"><div id="hp">100</div><div id="health"><i style="width:100%"></i></div></div>
 <div class="hud" id="cross"></div>
 <div class="hud" id="press"><b></b><i></i></div>
-<div class="hud" id="banner"></div>
+<div class="hud" id="banner" role="status" aria-live="polite"></div>
 <div class="hud" id="hurt"></div>
 <div id="touch" hidden><div id="stick"><i></i></div><button class="tbtn" id="t-jump">jump</button><button class="tbtn" id="t-swat">swat</button></div>
 
@@ -109,7 +110,7 @@
   <div class="label" id="lobby-label">the backrooms</div>
   <h1 id="lobby-title">…</h1>
   <p class="muted" style="margin:6px 0 0" id="lobby-blurb">Every folder is a room. The walls are the code. The code is restless. Roll up the README. 🗞️</p>
-  <div class="modes" id="modes">
+  <div class="modes" id="modes" role="group" aria-label="game mode">
     <button data-mode="horde">horde<small>the lines come off the walls at you</small></button>
     <button data-mode="wreck">wreck it<small>a panic room: smash the codebase together</small></button>
     <button data-mode="removed">smash the removed<small id="diff-name">pick a diff in a file's History</small></button>
@@ -120,7 +121,7 @@
   <div class="keys mouse-only"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swat · <kbd>hold</kbd> press the README into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
   <p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p>
 </div></div>
-<div class="panel" id="lock" hidden style="background:transparent;align-items:flex-end;justify-content:center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;margin:0 16px;padding:12px 18px"><b>Click to roll up the README</b> <span class="muted">· Esc lets go</span><p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p></div></div>
+<div class="panel" id="lock" hidden style="background:transparent;align-items:flex-end;justify-content:center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;margin:0 16px;padding:12px 18px"><button id="lock-go" class="primary">Click to roll up the README</button> <span class="muted">· Esc lets go</span><p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p></div></div>
 <div class="panel" id="over" hidden><div class="card">
   <div class="label">the round is over</div><h1 id="over-title">Swatted flat.</h1>
   <ul id="over-players"></ul>
@@ -1285,7 +1286,7 @@ const BLURB = {
 };
 function renderModes() {
   for (const b of document.querySelectorAll("#modes button")) {
-    b.classList.toggle("on", b.dataset.mode === mode);
+    b.classList.toggle("on", b.dataset.mode === mode); b.setAttribute("aria-pressed", b.dataset.mode === mode);
     if (b.dataset.mode === "removed") b.disabled = !diff;
   }
   $("#diff-name").textContent = diff ? `${diff.path.split("/").pop()} · r${diff.from} → r${diff.to}` : room.startsWith("r/") ? "pick a diff in a file's History" : "levels are read-only: fork one to diff it";
