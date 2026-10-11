@@ -107,6 +107,8 @@ export interface Env {
   DEPS_ADVISORIES?: unknown;
   DEPS_TESTER?: unknown;
   DEPS_FIXER?: unknown;
+  /** Tests only: stands in for emailing or notifying the owner about a run (see deps.ts). */
+  DEPS_NOTIFY?: unknown;
   /** Where desktop deploys keep each repo's Alchemy state (deploy.ts); ~/.codesplitters/alchemy if unset. */
   DEPLOY_STATE_DIR?: string;
   /** Tests only: stands in for the commands and the fetch a preview deploy runs (see preview.ts). */
