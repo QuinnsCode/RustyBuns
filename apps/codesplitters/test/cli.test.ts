@@ -1,6 +1,9 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { main } from "../cli.ts";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { main, run } from "../cli.ts";
+import { installScript } from "../src/install.ts";
 import { tools } from "../src/mcp.ts";
 
 setDefaultTimeout(20_000);
@@ -21,7 +24,7 @@ async function app() {
   // The CLI's request, answered by the app in-process, headers and all.
   const fetch = (r: Request) => { seen.push(r); const u = new URL(r.url); return call(null, u.pathname + u.search, { method: r.method, headers: r.headers, body: r.body ? r.clone().body : undefined }); };
   const cli = (argv: string[], env: Record<string, string> = { CODESPLITTERS_URL: "http://site", CODESPLITTERS_TOKEN: token }, stdin = "") => main(argv, env, fetch, async () => stdin);
-  return { cli, seen };
+  return { cli, seen, fetch, token };
 }
 
 describe("bun cli.ts", () => {
@@ -62,5 +65,27 @@ describe("bun cli.ts", () => {
     const { cli } = await app();
     const r = await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts", "--as", "ryan"], { CODESPLITTERS_URL: "http://site" });
     expect(r.code).toBe(0);
+  });
+
+  test("login saves the site and token, and every command after uses them", async () => {
+    const { fetch, token } = await app();
+    const home = mkdtempSync(`${tmpdir()}/cs-cli-`), env = { HOME: home };
+    const login = await run(["login", "--url", "http://site/"], env, async () => token);
+    expect(login).toMatchObject({ code: 0, out: expect.stringContaining("Signed in to http://site") });
+    const file = `${home}/.config/codesplitters/config.json`;
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ url: "http://site", token });
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    const read = await run(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], env, undefined, fetch);
+    expect(read.code).toBe(0);
+    // With no terminal to ask (the install script), it keeps the site and any token it had.
+    expect((await run(["login", "--url", "http://site"], env, async () => undefined)).code).toBe(0);
+    expect(JSON.parse(readFileSync(file, "utf8")).token).toBe(token);
+  });
+
+  test("/install.sh fetches this site's /cli.js and saves the site", async () => {
+    const sh = await installScript("https://cs.example").text();
+    expect(sh).toContain("curl -fsSL \"$site/cli.js\"");
+    expect(sh).toContain("site='https://cs.example'");
+    expect(sh).toContain('login --url "$site"');
   });
 });

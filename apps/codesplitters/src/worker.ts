@@ -38,6 +38,7 @@ import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts"
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
 import { pulseRoutes } from "./pulse.ts";
+import { installScript } from "./install.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue, TRUTHS, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -69,6 +70,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (known) return known;
   // GET /invite/:token  an invite link: the page for a browser, the steps as text for an agent (invites.ts)
   if (p[0] === "invite" && p[1] && !p[2] && req.method === "GET") return invitePage(req, env, p[1]);
+  // GET /install.sh  the CLI in one line, fetched from /cli.js on this site (install.ts)
+  if (p[0] === "install.sh" && !p[1] && req.method === "GET") return installScript(url.origin);
   if (p[0] !== "api") return new Response("not found", { status: 404 });
   // GET /api  the API reference (src/api.ts), for anyone building their own UI or agent
   if (!p[1] && req.method === "GET") return json(REFERENCE);
