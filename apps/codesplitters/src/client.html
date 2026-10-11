@@ -191,13 +191,13 @@
      is white with an orange edge; click it again for the wire map of its folders. */
   .sheets { display: flex; align-items: stretch; flex: none; height: 28px; background: var(--canvas); border-top: 1px solid var(--border); padding: 0 6px; overflow-x: auto; scrollbar-width: none; }
   .sheets::-webkit-scrollbar { display: none; }
-  .sheet { display: flex; align-items: center; gap: 6px; max-width: 200px; padding: 0 6px 0 10px; margin-top: -1px; font: 400 12.5px var(--sans); color: var(--muted); text-decoration: none; white-space: nowrap; border: 1px solid transparent; border-top: 0; border-radius: 0 0 5px 5px; cursor: pointer; }
-  .sheet:hover { color: var(--fg); background: var(--grain), var(--paper); border-color: var(--border-2); }
-  .sheet.on { color: var(--fg); background: var(--bg); border-color: var(--border-2); box-shadow: inset 0 -2px var(--accent); font-weight: 500; }
-  .sheet .nm { overflow: hidden; text-overflow: ellipsis; }
-  .sheet .x { display: inline-flex; padding: 2px; border-radius: 3px; color: var(--faint); visibility: hidden; }
-  .sheet:hover .x, .sheet.on .x { visibility: visible; } .sheet .x:hover { color: var(--fg); background: var(--select); }
-  .sheet .x svg.lucide { width: 12px; height: 12px; }
+  .rtab { display: flex; align-items: center; gap: 6px; max-width: 200px; padding: 0 6px 0 10px; margin-top: -1px; font: 400 12.5px var(--sans); color: var(--muted); text-decoration: none; white-space: nowrap; border: 1px solid transparent; border-top: 0; border-radius: 0 0 5px 5px; cursor: pointer; }
+  .rtab:hover { color: var(--fg); background: var(--grain), var(--paper); border-color: var(--border-2); }
+  .rtab.on { color: var(--fg); background: var(--bg); border-color: var(--border-2); box-shadow: inset 0 -2px var(--accent); font-weight: 500; }
+  .rtab .nm { overflow: hidden; text-overflow: ellipsis; }
+  .rtab .x { display: inline-flex; padding: 2px; border-radius: 3px; color: var(--faint); visibility: hidden; }
+  .rtab:hover .x, .rtab.on .x { visibility: visible; } .rtab .x:hover { color: var(--fg); background: var(--select); }
+  .rtab .x svg.lucide { width: 12px; height: 12px; }
   .sheets .add { display: flex; align-items: center; padding: 0 8px; color: var(--muted); background: none; border: 0; cursor: pointer; } .sheets .add:hover { color: var(--fg); }
   /* The wire map: the repo's top folders left to right, and each folder you open
      rising out of it as a column, wired to its files and folders. */
@@ -1465,10 +1465,10 @@ function sheets() {
     while (list.length > SHEETS_MAX) list.splice(list.findIndex((x) => !same(x)), 1);
     saveSheets(list);
   }
-  el.innerHTML = list.map((s, i) => `<a class="sheet${same(s) ? " on" : ""}" href="${esc(s.hash)}" data-i="${i}" title="${esc(s.owner)}/${esc(s.repo)}${same(s) ? ": click for the wire map" : ""}">${icon(same(s) ? "network" : "book-marked")}<span class="nm">${esc(s.repo)}</span><span class="x" data-x="${i}" title="close tab">${icon("x")}</span></a>`).join("")
+  el.innerHTML = list.map((s, i) => `<a class="rtab${same(s) ? " on" : ""}" href="${esc(s.hash)}" data-i="${i}" title="${esc(s.owner)}/${esc(s.repo)}${same(s) ? ": click for the wire map" : ""}">${icon(same(s) ? "network" : "book-marked")}<span class="nm">${esc(s.repo)}</span><span class="x" data-x="${i}" title="close tab">${icon("x")}</span></a>`).join("")
     + `<button class="add" type="button" title="open a repo (⌘K)">${icon("plus")}</button>`;
   icons();
-  el.querySelector(".sheet.on")?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  el.querySelector(".rtab.on")?.scrollIntoView({ inline: "nearest", block: "nearest" });
   el.onclick = (e) => {
     if (e.target.closest(".add")) { e.preventDefault(); return $("#jump").click(); }
     const x = e.target.closest("[data-x]");
@@ -1479,7 +1479,7 @@ function sheets() {
       if (same(gone)) { $("#wiremap")?.shut(); location.hash = (list[i] ?? list[i - 1])?.hash ?? "#/"; } else sheets();
       return;
     }
-    const a = e.target.closest(".sheet.on");
+    const a = e.target.closest(".rtab.on");
     if (a) { e.preventDefault(); e.stopPropagation(); wireMap(here); }
   };
 }
