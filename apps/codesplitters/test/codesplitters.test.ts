@@ -440,13 +440,16 @@ describe("accounts", () => {
     const cookie = await person("stuck@example.com", "stuckone");
     // The next session lookup never comes back, like a request cancelled mid-query on Workers.
     const db = call.env.DB, prepare = db.prepare.bind(db);
-    let armed = true;
+    let armed = true, stuck!: () => void;
+    const isStuck = new Promise<void>((r) => (stuck = r));
     db.prepare = (sql: string) => {
       if (!armed || !/"session"/.test(sql)) return prepare(sql);
-      armed = false;
+      armed = false; stuck();
       return { bind: () => ({ all: () => new Promise(() => {}) }) };
     };
+    // Wait until the first is stuck: started together, a cold second one could reach the trap first.
     void session(cookie);
+    await isStuck;
     const next = await Promise.race([session(cookie), Bun.sleep(3000).then(() => "hung")]);
     expect(next).toMatchObject({ user: "stuckone" });
   });
