@@ -437,9 +437,12 @@
   .agent-pulse { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; align-items: end; height: 48px; }
   .agent-pulse i { display: block; min-height: 2px; border-radius: 2px; background: var(--border); }
   .agent-pulse i.on { background: var(--accent); }
-  /* A person's code city: a quiet link by their name. */
-  .city-link { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; }
-  .city-link svg { width: 13px; height: 13px; }
+  /* A person's code city: a quiet door at the foot of their profile, in a face the rest of the site never uses. */
+  .city-door { display: flex; justify-content: center; gap: 14px; margin: 48px 0 8px; font: italic 400 13px/1 "Didot", "Bodoni 72", "Cormorant Garamond", Georgia, serif; letter-spacing: .18em; text-transform: lowercase; }
+  .city-door a, .city-door label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); opacity: .45; text-decoration: none; transition: opacity .6s; }
+  .city-door a:hover, .city-door label:hover { opacity: 1; }
+  .city-door svg { width: 13px; height: 13px; stroke-width: 1.5; }
+  .city-door input { margin: 0; accent-color: var(--muted); }
   .list .when { margin-left: auto; font: 12px var(--mono); color: var(--faint); white-space: nowrap; }
   .bar .barform { margin-left: auto; display: flex; gap: 6px; }
   .bar .barform input, .bar .barform select { padding: 2px 8px; font-size: 12.5px; } .bar .barform input { width: 150px; } .bar .barform .btn { padding: 2px 8px; font-size: 12.5px; }
@@ -1814,12 +1817,11 @@ const views = {
     const agentBoxes = agent ? `<div class="box"><div class="bar">${icon("activity")}<b>Pulse</b><span class="muted">line edits a day, the last 30 days</span></div><div class="body"><div class="agent-pulse">${agent.pulse.map((d) => `<i${d.runs ? ' class="on"' : ""} style="height:${Math.round((d.lines / peak) * 100)}%" title="${new Date(d.day).toISOString().slice(0, 10)}: ${n(d.runs, "run")}, ${n(d.lines, "line edit")}"></i>`).join("")}</div></div></div>
         <div class="box"><div class="bar">${icon("play")}<b>Runs</b><span class="muted">${n(agent.run_count, "run")} you can see</span></div><div class="body list">${agent.runs.map((r) => `<a href="#/f/${r.owner}/${r.repo}/${encodeURIComponent(r.path)}">${icon(r.status === "done" ? "check" : r.status === "running" ? "loader" : "x")}<span>${esc(r.owner)}/${esc(r.repo)} <span class="muted">${esc(r.path)}${r.applied ? ` · ${n(r.applied, "line edit")}` : ""}${r.task ? ` · ${esc(r.task.slice(0, 80))}` : ""}</span></span><span class="when">${ago(r.started)}</span></a>`).join("") || '<span class="muted">no runs you can see</span>'}</div></div>` : "";
     const shown = agent ? agent.repos : repos;
-    // A person's code city (play.html#c/…): a quiet link by their name, not a box. Its owner can close it to visitors.
-    const cityLink = agent || !(user.city_public || mine) ? "" : `<a class="muted city-link" href="/play.html#c/${encodeURIComponent(name)}" title="walk @${esc(name)}'s code city">${icon("building-2")}city</a>${mine ? `<label class="muted city-link" title="let others walk your city"><input type="checkbox" id="citypub"${user.city_public ? " checked" : ""}>public</label>` : ""}`;
+    // A person's code city (play.html#c/…): a quiet door at the foot of their profile, not a box. Its owner can close it to visitors.
+    const cityLink = agent || !(user.city_public || mine) ? "" : `<a href="/play.html#c/${encodeURIComponent(name)}" title="walk @${esc(name)}'s code city">${icon("building")}the city</a>${mine ? `<label title="let others walk your city"><input type="checkbox" id="citypub"${user.city_public ? " checked" : ""}>open</label>` : ""}`;
     app.innerHTML = `<div class="wrap prof">
       <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}</h1><span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
         <span class="stat">${agent ? `${n(shown.length, "repo")} · ${n(agent.run_count, "run")} · ${n(agent.lines, "line edit")}` : `${n(repos.length, "repo")} · ${n(playlists.length, "collection")}`} · ${following} following · ${n(followers, "follower")}</span>
-        ${cityLink}
         ${followButton({ name, kind: name.startsWith("agent-") ? "agent" : "user" })}
         ${mine ? `<button class="btn ghost" id="editpage">${icon("palette")}Edit page</button>` : ""}</div>
       ${mine ? `<form id="theme" class="box" hidden><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">any HTML and CSS, rendered in a sandbox (no scripts)</span></div><div class="body" style="display:grid;gap:8px">
@@ -1844,7 +1846,7 @@ const views = {
         ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("plug")}<b>Connect your AI</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
         ${mine ? truthBox() : ""}
         ${mine ? dataBox() : ""}
-      </aside></div></div>`;
+      </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
     // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
     const share = `${location.origin}/api/users/${encodeURIComponent(name)}/share`;
