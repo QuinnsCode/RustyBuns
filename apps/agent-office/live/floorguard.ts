@@ -8,9 +8,10 @@
 //   the floor gets a toast of it, so a prompt-injected agent can't pass its injection on as an order.
 // - AGENT_OFFICE_PEOPLE_ONLY=tell,hire,home,pr (any of them, or all) keeps those to people: an agent asking gets
 //   a 403 that says so. Agents can still list the workers.
-// - AGENT_OFFICE_ASK_FIRST=tell,hire,home,pr (any of them, or all) is the softer one (#727): the agent's request
-//   waits while the office asks its people (an Allow / Deny card on every open office and /lite, asks/index.ts),
-//   then goes ahead, or gets a 403 if someone said no or nobody answered in two minutes.
+// - AGENT_OFFICE_ASK_FIRST=tell,hire,home,pr (any of them, or all) is the softer one (#727): once the office's own
+//   checks pass, the agent's request waits while the office asks its people (an Allow / Deny card on every open
+//   office and /lite, asks/index.ts), then goes ahead, or gets a 403 if someone said no or nobody answered in two
+//   minutes.
 
 /** What AGENT_OFFICE_PEOPLE_ONLY can hold, by the endpoint's action (the path after /office/workers). */
 const ACTIONS: Record<string, string> = { "": "hire", "/home": "home", "/tell": "tell", "/pr": "pr" };

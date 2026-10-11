@@ -138,6 +138,17 @@ test("a person's Deny turns the agent down, and the actions not on the list neve
   expect((await call(ctx, "/tell", { worker: "Sprocket", prompt: "hi" })).status).toBe(200);
 });
 
+test("a request that fails upstream's own checks is turned down without asking anyone", async () => {
+  process.env.AGENT_OFFICE_ASK_FIRST = "all";
+  const { ctx, seen } = office(0);
+  expect((await call(ctx, "/tell", { worker: "Nobody", prompt: "hi" })).status).toBe(404);
+  expect((await call(ctx, "/tell", { worker: "Pixel", prompt: "hi" })).status).toBe(400);
+  expect((await call(ctx, "/home", { workers: ["Pixel"] })).status).toBe(200);
+  expect((await call(ctx, "/pr", { worker: "Nobody", pr: 3 })).status).toBe(404);
+  expect(pendingAsks()).toEqual([]);
+  expect(seen.toasts).toEqual([]);
+});
+
 test("nobody answering turns it down when the time's up", async () => {
   const toasts: string[] = [];
   const why = await askFirst("", "f", "Pixel", { prompt: "fix it", issue: 7 }, (m) => toasts.push(m), { setting: "all", ms: 30 });
