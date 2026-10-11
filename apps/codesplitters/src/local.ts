@@ -9,7 +9,8 @@ import worker, { FileDurableObject, GameRoom, RepoSearch } from "./worker.ts";
 
 export async function local(extra: Record<string, unknown> = {}) {
   installCloudflareGlobals();
-  const env: any = { DB: d1(":memory:"), ...extra };
+  // The tests claim check runs themselves, so the desktop's own runner stays off unless asked for.
+  const env: any = { DB: d1(":memory:"), CHECKS_RUNNER: "off", ...extra };
   env.FILES = durableObject(FileDurableObject as any, env);
   env.GAMES = durableObject(GameRoom as any, env);
   env.SEARCH = durableObject(RepoSearch as any, env);

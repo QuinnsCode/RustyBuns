@@ -7,6 +7,7 @@
 //   bun scripts/runner.ts owner/repo [--label my-mac] [--names test,lint] [--command "bun test"] [--once]
 //
 // Leave CODESPLITTERS_URL out to use the desktop app running on this machine (~/.codesplitters/desktop.json).
+// The desktop runs its own queue already (src/ci-runner.ts); this is for running them on another machine.
 //
 // The token is a write token from your profile page, of someone in the repo's crew. The command
 // is the check's own (a required check's `command` in the settings), else --command, else

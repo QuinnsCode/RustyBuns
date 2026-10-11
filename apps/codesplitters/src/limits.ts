@@ -28,7 +28,9 @@
 //
 // Only requests from the internet are counted: Cloudflare stamps those with
 // cf-connecting-ip. The desktop, the tests, and the Worker's own calls (hosted
-// agents, the dependency doctor) carry none. Admins are never limited.
+// agents, the dependency doctor) carry none. Admins are never limited. One
+// rule counts work the site starts itself rather than a request: container
+// check runs (ci-runner.ts), charged to the repo's owner as each one starts.
 //
 // Edits sent over a file's WebSocket skip the Worker, so the Worker works out
 // who a socket counts as when it opens (or that it isn't counted) and the
@@ -63,6 +65,7 @@ export const RULES: Rule[] = [
   { name: "preview", label: "Preview deploys", what: "stacks stood up and torn down to try a repo", group: "Deploys and checks", per: "user", max: 6, window_s: HOUR, on_fail: "reject", queueable: true },
   { name: "deploy", label: "Deploys", what: "deploys started with the Deploy button (hosted, on the owner's deploy key)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "flag" },
   { name: "ci", label: "CI reports", what: "statuses and check runs external CI sends to /api/gh/v3, counted per CI token", group: "Deploys and checks", per: "token", max: 600, window_s: HOUR, on_fail: "reject" },
+  { name: "checks", label: "Container checks", what: "check runs in a codeSplitters container (CI_RUNNER), counted against the repo's owner", group: "Deploys and checks", per: "user", max: 30, window_s: HOUR, on_fail: "reject" },
   { name: "doctor", label: "Dependency checks", what: "dependency-doctor runs started by hand (registry lookups, installs and tests)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "reject", queueable: true },
 ];
 
@@ -147,6 +150,16 @@ async function hit(env: Env, rule: string, who: string, queue: boolean): Promise
   if (r.on_fail === "queue" && r.queueable && queue) return { queue: r, win };
   if (r.on_fail !== "reject" && r.on_fail !== "queue") return null;
   return slowDown(r, win);
+}
+
+/**
+ * Count one hit of something the site starts itself, not a request (a container check run,
+ * ci-runner.ts), against `who` (`@handle`): why it can't go when that's over a rule that
+ * rejects or queues, else null. Nothing is held for later: the caller says no.
+ */
+export async function charge(env: Env, rule: string, who: string): Promise<string | null> {
+  const over = await hit(env, rule, who, false);
+  return over && "error" in over ? over.error : null;
 }
 
 function slowDown(r: Rule, win: number) {

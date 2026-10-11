@@ -9,10 +9,14 @@
 // POST /state {cwd, files?} carries the app's Alchemy state (.alchemy/state) across
 // runs, since each container starts empty: with files it writes them, without it
 // answers {files} as they are after the deploy. DeployRunner keeps them sealed.
+//
+// The check container (ci.Dockerfile, CiRunner in src/ci-runner.ts) runs this same server.
+// POST /files {cwd, files: {path: text | null}} lays a branch's files over a clone there:
+// each written, or removed when null.
 
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 
 const ROOT = process.env.WORK_ROOT ?? "/work";
@@ -70,9 +74,23 @@ export async function state({ cwd, files }, root = ROOT) {
   return { files: out };
 }
 
+/** Write (or, for null, remove) files under cwd: {relative path: text | null}. */
+export async function files({ cwd, files }, root = ROOT) {
+  const dir = resolve(root, cwd ?? ".");
+  if (relative(root, dir).startsWith("..")) throw new Error(`bad directory: ${cwd}`);
+  for (const [name, text] of Object.entries(files ?? {})) {
+    const at = resolve(dir, name);
+    if (!relative(dir, at) || relative(dir, at).startsWith("..")) throw new Error(`bad file: ${name}`);
+    if (text === null) { await rm(at, { force: true }); continue; }
+    await mkdir(dirname(at), { recursive: true });
+    await writeFile(at, String(text));
+  }
+  return { files: Object.keys(files ?? {}).length };
+}
+
 if (import.meta.main ?? import.meta.url === `file://${process.argv[1]}`) {
   createServer(async (req, res) => {
-    const route = req.method === "POST" && { "/exec": exec, "/state": state }[req.url];
+    const route = req.method === "POST" && { "/exec": exec, "/state": state, "/files": files }[req.url];
     if (!route) { res.writeHead(404).end(); return; }
     let body = "";
     for await (const chunk of req) body += chunk;
