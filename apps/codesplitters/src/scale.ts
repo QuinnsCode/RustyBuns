@@ -39,17 +39,17 @@ export const CARDS: Card[] = [
     id: "d1-size", name: "D1's 10 GB cap", where: "D1, the whole database",
     wall: "10 GB per database",
     shows: "Writes start failing: new repos, digs, commits, sign-ins",
-    here: "Yes. Move search out of D1, keep line_events short, split per owner if it comes to that",
+    here: "Yes. Search is out of D1 now (#626); keep line_events short, split per owner if it comes to that",
     box: "Disk is the cap: hundreds of GB for a few euros",
-    next: "Move search out of D1 (the search card)",
+    next: "Empty the old file_search (search-move), then drop it",
   },
   {
-    id: "search", name: "Search keeps every file", where: "D1: file_search (FTS5)",
-    wall: "~4 GB of text (the index roughly doubles it, inside D1's 10)",
-    shows: "Digging up a big repo eats the database; search slows down",
-    here: "Yes. Per-repo FTS in a repo DO for in-repo search; AI Search or Vectorize for across repos",
+    id: "search", name: "Search keeps every file", where: "RepoSearch: FTS5 in one Durable Object per repo (search.ts)",
+    wall: "10 GB per repo's index (a Durable Object's SQLite), ~4 GB of text; across repos, a search asks at most 50",
+    shows: "One huge repo stops indexing commits; a search across repos misses repos past the 50 it asks",
+    here: "Done for one repo. Across repos, AI Search or Vectorize in place of the fan-out",
     box: "Same FTS5, plenty of disk; one box still runs out eventually",
-    next: "File search per repo, in a repo coordinator DO",
+    next: "Search across repos without the fan-out: AI Search or Vectorize",
   },
   {
     id: "big-file", name: "A file is one storage key", where: "file-do.ts: put(\"doc\") on every edit",
@@ -119,8 +119,10 @@ export async function readings(env: Env, now = Date.now()): Promise<Record<strin
   // The busiest edit window in the last day, in D1 writes: a file's Tally writes each typist's edits once every TALLY_MS at most, before the feed's and traffic's.
   const edits = await first("SELECT MAX(c) AS peak FROM (SELECT SUM(MIN(count, ?)) AS c FROM limit_hits WHERE rule = 'edit' AND win >= ? GROUP BY win)", 60_000 / TALLY_MS, now - 86_400_000);
   // The biggest committed file: its text, plus ~70 bytes a line of id, rev, author and time in the doc.
-  const big = await first("SELECT owner, repo, path, length(content) AS bytes, length(content) - length(replace(content, char(10), '')) + 1 AS lines FROM file_search ORDER BY length(content) DESC LIMIT 1");
-  const search = await first("SELECT SUM(length(content)) AS bytes FROM file_search");
+  const big = await first("SELECT owner, repo, big_path AS path, big_bytes AS bytes, big_lines AS lines FROM repo_search ORDER BY big_bytes DESC LIMIT 1");
+  // The biggest repo's search index (its DO's SQLite, as of its last commit), and what's still in D1's old one.
+  const search = await first("SELECT owner, repo, size_bytes AS bytes FROM repo_search ORDER BY size_bytes DESC LIMIT 1");
+  const old = await first("SELECT COUNT(*) AS n FROM file_search").catch(() => ({ n: 0 }));
   // The most edited file in the 30 days of line_events: ops added to its log.
   const hot = await first("SELECT owner, repo, path, SUM(sets + inserts + deletes) AS ops FROM line_events GROUP BY owner, repo, path ORDER BY ops DESC LIMIT 1");
   const runs = await first("SELECT COUNT(*) AS c FROM agent_runs WHERE status = 'running'");
@@ -130,7 +132,8 @@ export async function readings(env: Env, now = Date.now()): Promise<Record<strin
   return {
     "d1-writes": { value: n(edits.peak) / 60, limit: 500, unit: "writes/s", note: "edit tallies in the busiest minute of the last day; traffic and feed writes come on top" },
     "d1-size": { value: size, limit: 10 * GB, unit: "bytes", note: size === null ? "D1 didn't say" : "the whole database" },
-    "search": { value: n(search.bytes), limit: 4 * GB, unit: "bytes", note: "text of every file's last commit" },
+    "search": { value: n(search.bytes), limit: 10 * GB, unit: "bytes",
+      note: `${search.repo ? `${search.owner}/${search.repo}, the biggest repo's index` : "no repo indexed yet"}${n(old.n) ? `; ${n(old.n).toLocaleString()} files still in D1's old index (search-move)` : ""}` },
     "big-file": { value: n(big.bytes) + n(big.lines) * 70, limit: 2 * MB, unit: "bytes", note: big.path ? `${where(big)}, ${n(big.lines).toLocaleString()} lines` : "no files yet" },
     "op-log": { value: n(hot.ops), limit: 300_000, unit: "ops", note: hot.path ? `${where(hot)}, ops in the last 30 days (the log keeps all of them)` : "no edits yet" },
     "agents": { value: n(runs.c), limit: 2, unit: "runs", note: "running now" },

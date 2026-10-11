@@ -11,7 +11,7 @@
 // tree, types left out.
 
 import { parse } from "@babel/parser";
-import { apply, text, type Conflict, type Doc, type Op } from "./lines.ts";
+import { apply, text, type Conflict, type Doc, type Op, type Resolve } from "./lines.ts";
 
 export interface Problem { key: string; message: string; line: number }
 
@@ -55,7 +55,7 @@ export function newProblems(path: string, merged: string, main: string, branch: 
  * problem is a conflict keyed `lint:<problem>`. Resolved `branch`, it lands
  * anyway (someone read it and means to fix it after); `main` keeps it out.
  */
-export function lintMerge(path: string, main: Doc, branch: Doc, m: { ops: Op[]; by: string[] }, resolve: Record<string, "branch" | "main"> = {}): Conflict[] {
+export function lintMerge(path: string, main: Doc, branch: Doc, m: { ops: Op[]; by: string[] }, resolve: Resolve = {}): Conflict[] {
   if (!lintable(path) || !m.ops.length) return [];
   const merged = structuredClone(main);
   if (!apply(merged, m.ops, m.by, 0, main.rev).ok) return [];

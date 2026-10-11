@@ -40,6 +40,6 @@ Each step makes one point. Stop whenever the room has it.
 - **"Rust engine missing":** expected without cargo. The app uses TypeScript, with identical output.
 - **fm-daw `Could not resolve "./.rustybuns/vite"` in the browser:** run `bun run desktop:dev` once first; it writes that file.
 - **tscircuit `native crate(s) not built: tsci_analysis`:** run `bun native/build.ts`.
-- **Can't find the window:** the host picks a random port on `127.0.0.1` with a token in the URL. `RB_NO_BROWSER=1` prints the URL instead of opening it, and `RB_LISTEN=host:port` pins the port.
+- **Can't find the window:** the host picks a random port on `127.0.0.1` with a token in the URL. `RB_NO_BROWSER=1` prints the URL instead of opening it, `RB_LISTEN=host:port` pins the port, and while it runs the URL and token sit in `desktop.json` in its data dir (yours alone, gone on exit).
 - **Reset an app:** delete `~/.<app-name>/`.
 - **Deploys** (`plan`, `deploy`, `build box`) aren't needed for any local demo. See [GETTING_STARTED.md](GETTING_STARTED.md).

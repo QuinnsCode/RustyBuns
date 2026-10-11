@@ -1245,7 +1245,7 @@ describe("shares", () => {
 
     const r = await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", {});
     expect(r.status).toBe(409);
-    expect((await r.json() as any).conflicts).toEqual([{ path: "a.js", conflicts: [{ line: "L1", base: "x", main: "main", branch: "branch" }] }]);
+    expect((await r.json() as any).conflicts).toEqual([{ path: "a.js", conflicts: [{ line: "L1", base: "x", main: "main", branch: "branch", choices: ["main", "branch", "both", "both:branch-first", "text"] }] }]);
     // Not even the clean file landed.
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=b.js")).json() as Doc)).toBe("z");
     expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.js": { L1: "branch" } } })).status).toBe(200);
@@ -1264,7 +1264,7 @@ describe("shares", () => {
     await opsOn("?path=a.ts&branch=b1", [{ kind: "insert", after: null, text: "const y = 2;" }]);
     await opsOn("?path=a.ts", [{ kind: "insert", after: "L2", text: "const y = 3;" }]);
     const review = await (await call("ana", "/api/repos/ana/r/branches/b1")).json() as any;
-    expect(review.files[0].conflicts).toEqual([{ line: "lint:redeclared:y", base: "", main: null, branch: null, lint: "`y` is declared twice (line 4)" }]);
+    expect(review.files[0].conflicts).toEqual([{ line: "lint:redeclared:y", base: "", main: null, branch: null, lint: "`y` is declared twice (line 4)", choices: ["main", "branch"] }]);
     const r = await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", {});
     expect(r.status).toBe(409);
     expect((await r.json() as any).error).toBe("merged, it wouldn't build: a.ts: `y` is declared twice (line 4)");
@@ -1443,7 +1443,7 @@ describe("shares", () => {
 
     expect((await call("ana", "/api/repos/ana/gone")).status).toBe(404);
     expect((await call(null, `/api/shares/${share.id}`)).status).toBe(404);
-    for (const t of ["files", "branches", "branch_files", "collaborators", "shares", "cuts", "file_search"]) {
+    for (const t of ["files", "branches", "branch_files", "collaborators", "shares", "cuts", "file_search", "repo_search"]) {
       expect(await call.env.DB.prepare(`SELECT count(*) AS n FROM ${t} WHERE owner = 'ana' AND repo = 'gone'`).first()).toEqual({ n: 0 });
     }
     // The name is free again, and starts empty: the file's Durable Object was wiped, and the git went too.

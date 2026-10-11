@@ -10,6 +10,10 @@ concurrency:
   group: apps-${{ github.ref }}
   cancel-in-progress: true
 
+# Read-only token by default; a job that needs more says so.
+permissions:
+  contents: read
+
 jobs:
   plan:
     runs-on: ubuntu-latest

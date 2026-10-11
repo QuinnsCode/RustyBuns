@@ -186,3 +186,34 @@ test("idFromString only takes hex: the id becomes a sqlite file name", () => {
   expect(NS.idFromString(id.toString()).equals(id)).toBe(true);
   expect(NS.idFromString("a".repeat(64)).toString()).toBe("a".repeat(64));
 });
+
+test("ctx.storage.sql: Cloudflare's cursor shape, FTS5, kept across eviction and in the sqlite file", async () => {
+  class Notes {
+    constructor(private ctx: LocalDurableObjectState) {
+      ctx.storage.sql!.exec("CREATE VIRTUAL TABLE IF NOT EXISTS notes USING fts5(body); CREATE TABLE IF NOT EXISTS n (x)");
+    }
+    async fetch(req: Request) {
+      const sql = this.ctx.storage.sql!;
+      const q = new URL(req.url).searchParams.get("q");
+      if (!q) return Response.json({ wrote: sql.exec("INSERT INTO notes (body) VALUES (?)", await req.text()).rowsWritten });
+      return Response.json(sql.exec<{ body: string }>("SELECT body FROM notes WHERE notes MATCH ?", q).toArray().map((r) => r.body));
+    }
+  }
+  const ns = durableObject(Notes as any, {});
+  const id = ns.idFromName("a");
+  // FTS5 writes its shadow tables too, so a row in the index is several rows written.
+  expect((await (await ns.get(id).fetch("http://do/", { method: "POST", body: "the brass tuba" })).json() as any).wrote).toBeGreaterThan(0);
+  await ns.get(id).fetch("http://do/", { method: "POST", body: "a quiet flute" });
+  ns.evict(id);
+  expect(await (await ns.get(id).fetch("http://do/?q=tuba")).json()).toEqual(["the brass tuba"]);
+
+  const { storage } = await import("../src/index.ts");
+  const file = `${require("node:os").tmpdir()}/rb-sql-${crypto.randomUUID()}.sqlite`;
+  const s = storage(file);
+  await s.put("k", 1);
+  const cur = s.sql!.exec<{ key: string }>("SELECT key FROM storage");
+  expect([...cur]).toEqual([{ key: "k" }]);
+  expect(() => s.sql!.exec("SELECT 1 WHERE 0").one()).toThrow("no results");
+  expect(s.sql!.databaseSize).toBeGreaterThan(0);
+  require("node:fs").rmSync(file, { force: true });
+});
