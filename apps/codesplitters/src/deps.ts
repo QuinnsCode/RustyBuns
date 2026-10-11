@@ -52,7 +52,7 @@ import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { json, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
-import { harnessCommand, HARNESSES, type Harness } from "./harness.ts";
+import { FIX_HARNESSES, harnessCommand, type Harness } from "./harness.ts";
 
 export type Level = "patch" | "minor" | "major";
 const LEVELS: Level[] = ["patch", "minor", "major"];
@@ -696,7 +696,7 @@ const tail = (s: string) => s.trim().slice(-1500);
 export async function settings(env: Env, owner: string, repo: string): Promise<Settings> {
   const r = await env.DB.prepare("SELECT * FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
   if (!r) return { ...DEFAULTS };
-  return { on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: r.ignore ? String(r.ignore).split(",") : [], run_tests: !!r.run_tests, fix_with: r.fix_with ?? null, fix_tries: r.fix_tries };
+  return { on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: r.ignore ? String(r.ignore).split(",") : [], run_tests: !!r.run_tests, fix_with: FIX_HARNESSES.includes(r.fix_with as Harness) ? r.fix_with as Harness : null, fix_tries: r.fix_tries };
 }
 
 /** A run beats this often while it goes (running_since moves up)... */
@@ -737,7 +737,7 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     if (!(every >= 1 && every <= 24 * 30)) return json({ error: "every_hours: 1 to 720" }, 400);
     if (!(age >= 0 && age <= 90)) return json({ error: "min_age_days: 0 to 90" }, 400);
     const fixWith = s.fix_with || null, tries = Math.round(Number(s.fix_tries));
-    if (fixWith && !HARNESSES.includes(fixWith)) return json({ error: `fix_with: ${HARNESSES.join(", ")} or null` }, 400);
+    if (fixWith && !FIX_HARNESSES.includes(fixWith)) return json({ error: `fix_with: ${FIX_HARNESSES.join(", ")} or null` }, 400);
     if (!(tries >= 1 && tries <= 5)) return json({ error: "fix_tries: 1 to 5" }, 400);
     const ignore = (Array.isArray(s.ignore) ? s.ignore : String(s.ignore).split(",")).map((x) => x.trim()).filter(Boolean).join(",");
     await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ? WHERE owner = ? AND repo = ?")

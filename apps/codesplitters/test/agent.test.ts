@@ -35,6 +35,12 @@ describe("harnessCommand", () => {
       expect(c.args.join(" ")).toContain("do it");
     }
   });
+  test("claude gets only the file tools, the user's settings and no MCP servers", () => {
+    const { args } = harnessCommand("claude", "do it");
+    expect(args[args.indexOf("--tools") + 1]).toBe("Read,Edit,Write,Glob,Grep");
+    expect(args[args.indexOf("--setting-sources") + 1]).toBe("user");
+    expect(args).toContain("--strict-mcp-config");
+  });
   test("pi gets only the file tools, no bash", () => {
     const { args } = harnessCommand("pi", "do it");
     expect(args[args.indexOf("--tools") + 1]).toBe("read,edit,write");

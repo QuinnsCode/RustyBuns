@@ -12,6 +12,17 @@ export const HARNESSES: Harness[] = ["claude", "codex", "pi", "opencode"];
 
 export interface Command { bin: string; args: string[]; env?: Record<string, string> }
 
+/** claude's tools: reading and editing files, nothing that runs a command. */
+export const CLAUDE_TOOLS = "Read,Edit,Write,Glob,Grep";
+
+/**
+ * The harnesses that can fix a broken update (deps.ts). The fixer works in a
+ * clone with node_modules installed, as the user that holds the agent's login,
+ * so it may only use a harness that can't run a command: codex's shell is how it
+ * works, and its sandbox still lets what it runs read the login (#683).
+ */
+export const FIX_HARNESSES: Harness[] = ["claude", "pi", "opencode"];
+
 // opencode reads permissions from config. OPENCODE_CONFIG_CONTENT outranks any
 // global or project config, so a stray opencode.json can't loosen it. Everything
 // is denied except reading and editing inside the working directory.
@@ -25,9 +36,12 @@ export const OPENCODE_PERMISSION = {
 export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string } = {}): Command {
   const model = opts.model ? (args: string[]) => [...args, "--model", opts.model!] : (args: string[]) => args;
   switch (harness) {
-    // Print mode, edits allowed without asking. It can still run shell commands.
+    // Print mode, edits allowed without asking, and only the file tools: no Bash,
+    // so it can't run the code it's working on (#683). Only the user's settings
+    // load, as a repo's .claude/settings.json can add hooks (shell commands run at
+    // startup) and permissions, and no MCP servers, as a repo's .mcp.json starts them.
     case "claude":
-      return { bin: "claude", args: model(["-p", prompt, "--permission-mode", "acceptEdits"]) };
+      return { bin: "claude", args: model(["-p", prompt, "--permission-mode", "acceptEdits", "--tools", CLAUDE_TOOLS, "--setting-sources", "user", "--strict-mcp-config"]) };
     // Workspace-write sandbox: it can edit the scratch dir, not the rest of the machine
     // (a write to $HOME is refused). Needs `codex login` or a provider in ~/.codex/config.toml.
     case "codex":
