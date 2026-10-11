@@ -373,10 +373,10 @@ function underVarlock(cfg: RustyBunsConfig, cmd: string[], env: Record<string, s
 }
 
 /** Run the project-local alchemy with the terminal attached, so its prompts work. */
-async function runAlchemy(args: string[], cfg?: RustyBunsConfig): Promise<number> {
+async function runAlchemy(args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}): Promise<number> {
   let cmd = [...alchemyCli(), ...args];
   // Secret values come from .dev.vars; anything already exported in the shell wins.
-  const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env };
+  const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env, ...extra };
   // An edge stack logs in to Cloudflare through wrangler, with only the scopes it needs; Alchemy's profile otherwise.
   if (cfg?.targets.edge) {
     const w = wranglerCli();
@@ -474,16 +474,19 @@ async function alchemy(sub: string, rawArgs: string[]) {
   }
   // The Worker hashes (and uploads) its bundle from disk at plan time, before the
   // stack's Build runs, so build it first or it ships the previous build (#362).
-  if (profiled && edgeOn(cfg) && cfg.worker?.build) await prof.step("build worker", () => buildWorker(cfg.worker!.build!));
+  const built = profiled && edgeOn(cfg) && !!cfg.worker?.build;
+  if (built) await prof.step("build worker", () => buildWorker(cfg.worker!.build!));
+  // The stack's Build then only records dist, not rebuild it while the assets upload (#424).
+  const buildEnv: Record<string, string> = built ? { RUSTYBUNS_BUILT: "1" } : {};
   if (sub === "plan") {
-    const code = await prof.step("alchemy plan", () => runAlchemy(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args], cfg));
+    const code = await prof.step("alchemy plan", () => runAlchemy(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args], cfg, buildEnv));
     await prof.finish();
     if (code !== 0) process.exit(code);
     await Bun.write(stampFile, hash);
     return;
   }
   // --yes satisfies our plan check above AND is forwarded to alchemy's own prompt.
-  const code = await prof.step(`alchemy ${sub}`, () => runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args], cfg));
+  const code = await prof.step(`alchemy ${sub}`, () => runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args], cfg, buildEnv));
   if (profiled) await prof.finish();
   if (code !== 0) process.exit(code);
   if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"

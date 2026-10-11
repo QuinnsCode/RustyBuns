@@ -116,7 +116,7 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   const cli = new URL("../src/index.ts", import.meta.url).pathname;
   // stub the project's alchemy so no real one runs; record what it was called with
   const bin = r + "/node_modules/.bin"; mkdirSync(bin, { recursive: true });
-  writeFileSync(bin + "/alchemy", `#!/bin/sh\necho "STUB alchemy $@" >> ${r}/calls.log\n`); require("node:fs").chmodSync(bin + "/alchemy", 0o755);
+  writeFileSync(bin + "/alchemy", `#!/bin/sh\necho "STUB alchemy $@ built=$RUSTYBUNS_BUILT" >> ${r}/calls.log\n`); require("node:fs").chmodSync(bin + "/alchemy", 0o755);
   const env = { ...process.env };
   const run = (...a: string[]) => Bun.spawnSync(["bun", cli, ...a], { cwd: r, env, stdout: "pipe", stderr: "pipe" });
   // init needs @rustybuns/cli resolvable for the config import; link the package dir
@@ -134,6 +134,11 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   expect(calls).toContain("STUB alchemy deploy");
   // plan and deploy each build the worker before Alchemy hashes its bundle
   expect(calls.trim().split("\n").map((l) => l.split(" ").slice(0, 3).join(" "))).toEqual(["BUILD worker", "STUB alchemy plan", "BUILD worker", "STUB alchemy deploy"]);
+  // and tell the stack's Build so, so it doesn't build again under the upload (#424)
+  expect(calls).toMatch(/STUB alchemy deploy .*built=1/);
+  const stack = await Bun.file(r + "/.rustybuns/alchemy.run.ts").text();
+  expect(stack).toContain('command: process.env.RUSTYBUNS_BUILT ? "true" : "echo BUILD worker');
+  expect(stack).toContain("declare const process");
   // config change invalidates the plan
   writeFileSync(r + "/rustybuns.config.ts", (await Bun.file(r + "/rustybuns.config.ts").text()).replace('"name": "g"', '"name": "g2"'));
   const d2 = run("deploy");
