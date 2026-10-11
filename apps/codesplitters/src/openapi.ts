@@ -248,6 +248,12 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/agents/{id}/notes`]: { post: { id: "tell_agent", summary: "Tell a running coding agent something, for its next run (owner only)", tag: "Agents",
     description: "A running CLI can't take messages, so the note goes into the prompt of its next run: when this run ends, it goes round again with every note so far (up to 5 extra runs). 409 once the run has ended.",
     body: obj({ text: str() }, ["text"]), ok: loose("the run, with its notes") } },
+  [`${repo}/agents/{id}/accept`]: { post: { id: "accept_agent_batch", summary: "Land a finished run's waiting batch on main now (owner only)", tag: "Agents", risky: true,
+    description: "A run's batch waits on its own branch (the run's `pending.branch`) for a few seconds before it merges into main by itself. Accept merges it now, build files and all. A line someone changed on main meanwhile keeps their version: the run's `kept` lists what the agent wanted there. 409 if the repo's required checks hold it back; it stays waiting, held.",
+    ok: obj({ landed: bool(), kept: arr(loose("{line, yours, wanted}")) }) } },
+  [`${repo}/agents/{id}/hold`]: { post: { id: "hold_agent_batch", summary: "Stop a waiting batch's clock: it lands only when accepted (owner only)", tag: "Agents", ok: loose("the run") } },
+  [`${repo}/agents/{id}/look`]: { post: { id: "look_at_agent_batch", summary: "Say someone is reading a waiting batch: it lands no sooner than a few seconds from now (owner only)", tag: "Agents", ok: loose("the run") } },
+  [`${repo}/agents/{id}/reject`]: { post: { id: "reject_agent_batch", summary: "Throw a waiting batch away: nothing of it lands, and its branch goes (owner only)", tag: "Agents", risky: true, ok: loose("the run") } },
   "/agents": { get: { id: "list_harnesses", summary: "Which coding-agent harnesses this site can run", tag: "Agents", open: true, ok: loose("{available, why, harnesses, all}") } },
   [`${repo}/deploy`]: {
     get: { id: "deploy_status", summary: "Deploy settings, the run going now, and the last 20 (owner only)", tag: "Deploys", ok: loose("{settings, run, deploys}") },

@@ -1347,6 +1347,25 @@ describe("shares", () => {
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.js")).json() as Doc)).toBe("ONE\ntwo\nthree\nfour");
   });
 
+  test("on a branch that deleted every file of a folder git has, the folder goes too (#745)", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "r" });
+    for (const path of ["a.js", "src/deep/b.js"]) {
+      await post(call, "ana", "/api/repos/ana/r/files", { path, content: "x" });
+      expect((await post(call, "ana", `/api/repos/ana/r/do/commit?path=${encodeURIComponent(path)}`, { message: "add" })).status).toBe(200);
+    }
+    await post(call, "ana", "/api/repos/ana/r/branches", { name: "tidy" });
+    const tree = async (branch?: string) => ((await (await call("ana", `/api/repos/ana/r/tree?path=${branch ? `&branch=${branch}` : ""}`)).json()) as any).entries.map((e: any) => e.path).sort();
+    expect(await tree("tidy")).toEqual(["a.js", "src"]);
+    await call("ana", "/api/repos/ana/r/branches/tidy/files?path=src/deep/b.js", { method: "DELETE" });
+    expect(await tree("tidy")).toEqual(["a.js"]);
+    expect(await tree()).toEqual(["a.js", "src"]);
+    // A file written on the branch under it brings it back.
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "src/c.js", content: "y", branch: "tidy" });
+    expect(await tree("tidy")).toEqual(["a.js", "src"]);
+  });
+
   test("a merge with a conflict lands nothing until each line is settled", async () => {
     const call = await local();
     await post(call, "ana", "/api/login", { name: "ana" });

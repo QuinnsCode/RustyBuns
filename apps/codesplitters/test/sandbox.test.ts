@@ -132,10 +132,14 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
 
   test("the owner gives an agent a task; it runs in a container off the queue, and its lines are blamed on it", async () => {
     const { call, runs } = await hosted(async (b) => ({ code: 0, out: "ok", text: b.text.replace("var", "let") }));
-    expect(await finished(call, { harness: "opencode", path: "src/a.js", task: "use let" })).toMatchObject({ agent: "agent-opencode", status: "done", applied: 1, conflicts: [] });
+    const run = await finished(call, { harness: "opencode", path: "src/a.js", task: "use let" });
+    expect(run).toMatchObject({ agent: "agent-opencode", status: "done", applied: 1, conflicts: [], pending: { branch: `agent-run-${run.id}` } });
     expect(runs[0].cmd.bin).toBe("opencode");
     expect(runs[0].cmd.env.OPENCODE_CONFIG_CONTENT).toContain("deny"); // the harness's own limits reach the container
     expect(runs[0].text).toBe("var x = 1\nf()\n");
+    // Its batch waits on main as a ghost diff; accepted, it lands.
+    expect(text(await doc(call))).toBe("var x = 1\nf()");
+    expect((await call("ryan-quinn", `/api/repos/ryan-quinn/r1/agents/${run.id}/accept`, { method: "POST" })).status).toBe(200);
     const d = await doc(call);
     expect(text(d)).toBe("let x = 1\nf()");
     expect(d.lines.map((l) => l.by)).toEqual(["agent-opencode", "ryan-quinn"]);

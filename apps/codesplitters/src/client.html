@@ -367,6 +367,21 @@
   .gl.h .t { text-decoration: none; display: flex; align-items: center; gap: 6px; } .gl.h .t::before { content: none; }
   .gl.h .btn { padding: 0 8px; font-size: 12px; line-height: 18px; }
   .ln.chg { background: var(--add); } .ln.chg .n { box-shadow: inset 3px 0 var(--accent); color: var(--fg); }
+  /* On main, an agent's batch waiting to land (#745): the lines it takes out struck through, what it puts in as grey ghosts below. */
+  .ln.gone { background: var(--del); } .ln.gone .t { color: var(--del-fg); text-decoration: line-through; text-decoration-color: var(--del-edge); }
+  .gl.a { background: var(--add); color: var(--fg); } .gl.a .t { text-decoration: none; } .gl.a .t::before { content: "+"; color: var(--muted); }
+  .gl.h .btn.icon-only { padding: 0 5px; } .gl.h .tick { flex: none; }
+  .wait-row { display: flex; align-items: center; gap: 4px; } .wait-row .btn.icon-only { padding: 1px 6px; }
+  .kept { display: inline-flex; vertical-align: middle; margin-left: 8px; color: var(--muted); cursor: help; } .kept svg { width: 13px; height: 13px; }
+  /* Back after being away: what changed meanwhile, a stretch at a time. */
+  .ln.caught .n { box-shadow: inset 3px 0 var(--accent); }
+  .caught-bar { position: sticky; bottom: 8px; z-index: 3; display: flex; align-items: center; gap: 6px; width: max-content; max-width: calc(100% - 16px); margin: 8px auto 0; padding: 4px 6px 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); box-shadow: 0 4px 16px rgb(0 0 0 / .12); font: 12px var(--sans); color: var(--muted); white-space: nowrap; }
+  .caught-bar .n { font-variant-numeric: tabular-nums; min-width: 4ch; text-align: center; } .caught-bar .btn { padding: 1px 6px; }
+  /* Lines landing: new rows open, changed ones cross-fade, deleted ones fold away (~200ms). */
+  .ln.rise, .gl.rise { overflow: hidden; animation: rise .2s ease-out; } @keyframes rise { from { max-height: 0; opacity: 0; } to { max-height: 44px; opacity: 1; } }
+  .ln.xfade .t { animation: xfade .2s ease-out; } @keyframes xfade { from { opacity: .15; } }
+  .ln.fold { overflow: hidden; pointer-events: none; background: var(--del); animation: fold .2s ease-in forwards; } @keyframes fold { from { max-height: 44px; opacity: 1; } to { max-height: 0; opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .ln.rise, .gl.rise, .ln.xfade .t { animation: none; } .ln.fold { display: none; } }
   .checks { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; margin: 2px 0; }
   .check { display: inline-flex; align-items: center; gap: 4px; } .check a { color: inherit; } .check.failed, .check.cancelled { color: var(--del-fg); } .check.running svg { animation: spin 1.2s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -1986,15 +2001,36 @@ setInterval(() => {
 const runTicker = (run) => run && !run.done ? `<p style="margin:4px 0">${ticker(run.at, run.deadline, run.deadline
   ? "Time left before this hosted run is cut off. Its container gets 13 minutes, leaving time to clean up inside the 15 minutes the site gives a run."
   : "How long this run has been going. A hosted run counts down instead, once its container starts.")}</p>` : "";
+// ---- an agent's batch, waiting to land on main (#745) -------------------------------
+// A finished run's batch waits on its own branch for a few seconds, then lands on main by itself. Reading it
+// (it's on screen) puts that off; Hold stops the clock; Accept lands it now; Reject throws it away.
+const WAIT_TIP = "When this lands on main by itself. Reading it puts that off a few seconds; Hold stops the clock till you accept it.";
+/** The clock (or "held") and Accept / Hold / Reject for run `x`'s waiting batch; `data-review` buttons, which reviewBatch handles. */
+const waitControls = (x) => `${x.pending.until === null ? `<span class="tick" title="${esc(x.pending.why ?? "held: it lands when you accept it")}">${icon("hand")}held</span>` : ticker(x.started, x.pending.until, WAIT_TIP)}`
+  + `<button type="button" class="btn icon-only" data-review="accept" data-run="${x.id}" title="land it on main now" aria-label="accept ${esc(x.agent)}'s change">${icon("check")}</button>`
+  + (x.pending.until === null ? "" : `<button type="button" class="btn icon-only" data-review="hold" data-run="${x.id}" title="hold it: it waits till you accept it" aria-label="hold ${esc(x.agent)}'s change">${icon("hand")}</button>`)
+  + `<button type="button" class="btn icon-only" data-review="reject" data-run="${x.id}" title="throw it away: none of it lands" aria-label="reject ${esc(x.agent)}'s change">${icon("x")}</button>`;
+/** POST accept, hold, look or reject for run `id`; says what happened unless it was a look. */
+async function reviewBatch(owner, repo, id, what) {
+  try {
+    const r = await api(`/repos/${owner}/${repo}/agents/${id}/${what}`, {});
+    if (what === "accept") toast(r.kept?.length ? `Landed on main; ${r.kept.length} line${r.kept.length > 1 ? "s" : ""} kept yours` : "Landed on main");
+    else if (what === "reject") toast("Rejected: none of it lands");
+    else if (what === "hold") toast("Held: it lands when you accept it");
+  } catch (err) { if (what !== "look") toast(err.message); }
+}
 /** One coding agent's run: who, how it's going, its task, and its output. With file, which file it's on. */
 const agentRun = (x, file) => {
   const result = x.status === "running" ? esc(x.log[x.log.length - 1] ?? "starting…")
     : x.status === "failed" || x.status === "stopped" ? esc((x.error ?? "stopped").split("\n")[0])
-    : (x.applied ? `${x.applied} line ops landed at r${x.rev}` : "no changes") + (x.runs > 1 ? ` after ${x.runs} runs` : "")
-      + (x.conflicts.length ? `; ${x.conflicts.length} edit${x.conflicts.length > 1 ? "s" : ""} kept someone else's version` : "");
+    : (!x.applied ? "no changes" : x.pending ? `${x.applied} line ops waiting to land on main` : x.landed ? `${x.applied} line ops landed on main${x.landed.by === "auto" ? "" : ` (accepted by @${esc(x.landed.by)})`}`
+        : x.rejected ? `${x.applied} line ops rejected by @${esc(x.rejected.by)}` : `${x.applied} line ops landed at r${x.rev}`) + (x.runs > 1 ? ` after ${x.runs} runs` : "")
+      + (x.conflicts.length ? `; ${x.conflicts.length} edit${x.conflicts.length > 1 ? "s" : ""} kept someone else's version` : "")
+      + (x.kept?.length ? `; ${x.kept.length} line${x.kept.length > 1 ? "s" : ""} kept yours` : "")
+      + (x.pending?.why ? `; held: ${esc(x.pending.why)}` : "");
   return `<div class="run"><div class="row"><b><a href="#/u/${esc(x.agent)}">${esc(x.agent)}</a></b><span class="st ${x.status}">${x.status}</span>${followButton({ name: x.agent, kind: "agent" })}${x.status === "running" ? ticker(x.started, x.deadline, x.deadline
     ? "Time left before this hosted run is cut off. It runs off the site's job queue, which gives a run 15 minutes from when it was started."
-    : "How long this agent has been working. It runs on this machine, so there's no time limit.") : ""}${x.status === "running" ? `<button type="button" class="btn stop" data-stop="${x.id}" title="stop it: its CLI is killed, what it left is dropped, and its lines are freed">${icon("square")}Stop</button>` : ""}</div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${x.notes?.length ? `<span class="muted" style="font-size:12px" title="${esc(x.notes.map((n) => n.text).join("\n"))}">${icon("message-square")}told it ${x.notes.length === 1 ? "once" : `${x.notes.length} times`}: ${esc(x.notes[x.notes.length - 1].text)}</span>` : ""}${x.status === "running" ? `<form class="tell" data-note="${x.id}"><input name="text" maxlength="2000" placeholder="tell it something" title="A running agent can't take messages, so this goes into the prompt of its next run: when this one ends, it goes round again with it" autocomplete="off"><button class="btn" title="send it">${icon("send")}</button></form>` : ""}${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
+    : "How long this agent has been working. It runs on this machine, so there's no time limit.") : ""}${x.status === "running" ? `<button type="button" class="btn stop" data-stop="${x.id}" title="stop it: its CLI is killed, what it left is dropped, and its lines are freed">${icon("square")}Stop</button>` : ""}</div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${x.pending ? `<div class="row wait-row">${waitControls(x)}</div>` : ""}${x.notes?.length ? `<span class="muted" style="font-size:12px" title="${esc(x.notes.map((n) => n.text).join("\n"))}">${icon("message-square")}told it ${x.notes.length === 1 ? "once" : `${x.notes.length} times`}: ${esc(x.notes[x.notes.length - 1].text)}</span>` : ""}${x.status === "running" ? `<form class="tell" data-note="${x.id}"><input name="text" maxlength="2000" placeholder="tell it something" title="A running agent can't take messages, so this goes into the prompt of its next run: when this one ends, it goes round again with it" autocomplete="off"><button class="btn" title="send it">${icon("send")}</button></form>` : ""}${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
 };
 /**
  * A list of runs, with Stop and "tell it" on the running ones and, with a crowd going, Stop for a
@@ -2021,7 +2057,8 @@ function drawRuns(el, rs, { owner, repo, file, scope = {}, lines, refresh, empty
   el.onclick = (e) => {
     const b = e.target.closest("button");
     if (!b) return;
-    if (b.dataset.stop) stop({ ids: [Number(b.dataset.stop)] });
+    if (b.dataset.review) { b.disabled = true; reviewBatch(owner, repo, b.dataset.run, b.dataset.review).then(refresh); }
+    else if (b.dataset.stop) stop({ ids: [Number(b.dataset.stop)] });
     else if (b.hasAttribute("data-stop-all")) stop({});
     else if (b.dataset.stopH) stop({ harness: b.dataset.stopH });
     else if (b.hasAttribute("data-stop-sel")) stop({ lines: lines() });
@@ -3144,7 +3181,7 @@ const views = {
       const el = $("#m-runs");
       if (!el) return;
       drawRuns(el, rs, { owner, repo, file: true, refresh: poll, empty: '<span class="muted">No agents yet. Pick a file and give one a task.</span>' });
-      if (rs.some((x) => x.status === "running")) agentTimer = setTimeout(poll, 2000);
+      if (rs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(poll, 2000);
     };
     poll();
     // Suggest the folder being typed: its files, and its folders (ending in /) to step into, so a deep file is a few taps away.
@@ -3306,9 +3343,119 @@ const views = {
         draw(doc);
       }); icons(); }
     };
+    // On main, finished agent runs' batches waiting to land (#745), each its branch's hunks: the lines it takes
+    // out struck through, what it puts in as ghost rows below them, the clock and Accept / Hold / Reject on top,
+    // and on each stretch a way to leave just that one out. Lines where your version won keep a small mark
+    // for a day that says what the agent wanted. The owner's runs poll (pollAgents) feeds setRuns.
+    let waits = [], keptOf = new Map(), ghostsShown = new Set();
+    const hunkCache = new Map(), calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const rowOf = (id) => id && box.querySelector(`.ln[data-id="${CSS.escape(id)}"]`);
+    const waitGhosts = () => {
+      for (const { run: x, hunks } of waits) hunks.forEach((h, k) => {
+        const gone = h.del.map((l) => rowOf(l.id)).filter(Boolean), rise = !ghostsShown.has(x.id) && !calm ? " rise" : "";
+        gone.forEach((el) => el.classList.add("gone"));
+        const head = `<div class="gl h${rise}" data-wait="${x.id}"><span></span><span></span><span class="t hunk-h">${icon("bot")}<span class="grow">${esc(x.agent)} wants to change this ${hunkStat([h])}</span>${k === 0 ? waitControls(x) : ""}<button type="button" class="btn icon-only" data-drop="${esc(h.key)}" data-run="${x.id}" title="leave this stretch as it is: the rest still lands" aria-label="leave this stretch out">${icon("undo-2")}</button></span></div>`;
+        const adds = h.add.map((l) => `<div class="gl a${rise}"><span></span><span></span><span class="t">${esc(l.text) || " "}</span></div>`).join("");
+        const after = rowOf(h.before);
+        if (gone.length) { gone[0].insertAdjacentHTML("beforebegin", head); gone.at(-1).insertAdjacentHTML("afterend", adds); }
+        else if (after) after.insertAdjacentHTML("afterend", head + adds);
+        else box.insertAdjacentHTML("afterbegin", head + adds);
+      });
+      for (const [id, k] of keptOf) {
+        const t = rowOf(id)?.querySelector(".t");
+        if (t) t.insertAdjacentHTML("beforeend", `<span class="kept" title="kept yours: ${esc(k.agent)} wanted ${k.wanted === null ? "this line gone" : `“${esc(k.wanted)}”`}">${icon("shield-check")}</span>`);
+      }
+      ghostsShown = new Set(waits.map((w) => w.run.id));
+      if (waits.length || keptOf.size) icons();
+    };
+    const onScreen = (id) => [...box.querySelectorAll(`.gl[data-wait="${id}"]`)].some((el) => { const b = el.getBoundingClientRect(); return b.bottom > 0 && b.top < innerHeight; });
+    const setRuns = async (rs) => {
+      if (branch) return;
+      const day = Date.now() - 86_400_000;
+      const sig = (ws) => JSON.stringify([ws.map((w) => [w.run.id, w.run.pending, w.hunks.map((h) => h.key)]), [...keptOf.keys()]]), was = sig(waits);
+      keptOf = new Map(rs.filter((x) => x.kept?.length && x.landed?.at > day).flatMap((x) => x.kept.map((k) => [k.line, { ...k, agent: x.agent }])));
+      const next = await Promise.all(rs.filter((x) => x.pending).map(async (x) => {
+        if (!hunkCache.has(x.id)) hunkCache.set(x.id, api(`/repos/${owner}/${repo}/branches/${encodeURIComponent(x.pending.branch)}/hunks?path=${encodeURIComponent(path)}`).then((b) => b.hunks).catch(() => { hunkCache.delete(x.id); return []; }));
+        return { run: x, hunks: await hunkCache.get(x.id) };
+      }));
+      waits = next;
+      const changed = sig(waits) !== was;
+      if (changed && viewing === null && !box.querySelector(".ln input")) draw(doc);
+      // On screen in a tab that's showing: someone's reading it, so it waits a little longer.
+      if (document.visibilityState === "visible") for (const w of waits)
+        if (w.run.pending.until !== null && w.run.pending.until - Date.now() < 4000 && onScreen(w.run.id)) reviewBatch(owner, repo, w.run.id, "look");
+    };
+    box.addEventListener("click", async (e) => {
+      const b = e.target.closest(".gl [data-review], .gl [data-drop]");
+      if (!b) return;
+      b.disabled = true;
+      const w = waits.find((x) => String(x.run.id) === b.dataset.run);
+      if (b.dataset.review) await reviewBatch(owner, repo, b.dataset.run, b.dataset.review);
+      else if (w) {
+        try { await rejectHunk(owner, repo, w.run.pending.branch, path, w.hunks.find((h) => h.key === b.dataset.drop)); hunkCache.delete(w.run.id); toast("Left that stretch out: the rest still lands"); }
+        catch (err) { toast(err.message); }
+      }
+      ctx.pollAgents?.();
+    });
+    // Lines landing move: new rows open, changed ones cross-fade, and gone ones fold away where they were.
+    let shown = null, folds = [];
+    const motion = (d, before) => {
+      const was = shown;
+      shown = new Map(d.lines.map((l) => [l.id, l.text]));
+      if (!was || calm) return;
+      for (const el of box.querySelectorAll(".ln[data-id]")) { const t = was.get(el.dataset.id); if (t === undefined) el.classList.add("rise"); else if (t !== shown.get(el.dataset.id)) el.classList.add("xfade"); }
+      let above = null, last = null;
+      for (const el of before) {
+        const id = el.dataset.id;
+        if (shown.has(id)) { above = id; last = null; continue; }
+        if (!was.has(id)) continue;
+        el.className = "ln fold"; el.removeAttribute("data-id"); el.removeAttribute("data-i");
+        el.addEventListener("animationend", () => el.remove(), { once: true });
+        folds.push([el, last ?? rowOf(above)]);
+        last = el;
+      }
+    };
+    // Back after a while away: what changed meanwhile, a stretch at a time, instead of the file having moved silently.
+    let caught = [], caughtAt = -1, caughtGone = 0, away = null;
+    const catchBar = () => {
+      let bar = $("#caught");
+      if (!caught.length) return bar?.remove();
+      if (!bar) {
+        bar = document.createElement("div"); bar.id = "caught"; bar.className = "caught-bar"; box.after(bar);
+        bar.addEventListener("click", (e) => {
+          const step = e.target.closest("[data-step]")?.dataset.step;
+          if (step === undefined) return;
+          if (step === "0") { caught = []; draw(doc); return catchBar(); }
+          caughtAt = (caughtAt + Number(step) + caught.length) % caught.length;
+          const els = caught[caughtAt].map(rowOf).filter(Boolean);
+          els[0]?.scrollIntoView({ block: "center" });
+          for (const el of els) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+          catchBar();
+        });
+      }
+      bar.innerHTML = `${icon("history")}<span>Changed while you were away${caughtGone ? ` · ${caughtGone} line${caughtGone > 1 ? "s" : ""} went` : ""}</span><button class="btn" data-step="-1" title="the change before" aria-label="previous change">${icon("chevron-up")}</button><span class="n">${caughtAt < 0 ? "–" : caughtAt + 1}/${caught.length}</span><button class="btn" data-step="1" title="the next change" aria-label="next change">${icon("chevron-down")}</button><button class="btn" data-step="0" title="done: stop marking them" aria-label="done">${icon("x")}</button>`;
+      icons();
+    };
+    const onVisible = () => {
+      if (!box.isConnected) return document.removeEventListener("visibilitychange", onVisible);
+      if (document.hidden) { away = { at: Date.now(), lines: new Map(doc.lines.map((l) => [l.id, l.text])) }; return; }
+      const was = away; away = null;
+      if (!was || Date.now() - was.at < 20_000) return;
+      const runs = [];
+      let cur = null;
+      for (const l of doc.lines) if (was.lines.get(l.id) !== l.text) (cur ??= (runs.push([]), runs.at(-1))).push(l.id); else cur = null;
+      const now = new Set(doc.lines.map((l) => l.id));
+      caughtGone = [...was.lines.keys()].filter((id) => !now.has(id)).length;
+      if (!runs.length && !caughtGone) return;
+      caught = runs.length ? runs : [[]]; caughtAt = -1;
+      if (viewing === null && !box.querySelector(".ln input")) draw(doc);
+      catchBar();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     const draw = (d, fresh = new Set()) => {
       const live = viewing === null;
       if (!live) {
+        shown = null;
         const diff = diffRows(d.lines, doc.lines);
         box.innerHTML = diff.html;
         $("#revl").innerHTML = `<span class="diffstat">r${viewing} → r${doc.rev} <b class="${diff.del ? "minus" : "plus"}">−${diff.del}</b> <b class="plus">+${diff.add}</b></span>`;
@@ -3317,9 +3464,12 @@ const views = {
         return;
       }
       $("#smash").hidden = true;
-      const keep = anchor();
+      const keep = anchor(), before = [...box.querySelectorAll(".ln[data-id]")];
       box.innerHTML = codeRows(d.lines);
       if (branch) ghosts(d);
+      else waitGhosts();
+      motion(d, before);
+      if (caught.length) { const ids = new Set(caught.flat()); for (const el of box.querySelectorAll(".ln")) if (ids.has(el.dataset.id)) el.classList.add("caught"); }
       if (stampsOf.size) for (const el of box.children) {
         const st = stampsOf.get(el.dataset.id), t = st && $(".t", el);
         if (!t) continue;
@@ -3345,6 +3495,7 @@ const views = {
       if (sel) box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("sel", sel.some(([a, b]) => k >= a - 1 && k <= b - 1)));
       $("#revl").textContent = live ? `${d.lines.length} lines · r${doc.rev}` : `viewing r${viewing} of ${doc.rev}`;
       if (live && r.canWrite) for (const el of box.querySelectorAll(".ln")) el.addEventListener("dblclick", () => edit(el));
+      folds.forEach(([el, after]) => after ? after.after(el) : box.prepend(el)); folds = [];
     };
     selectable(box, (runs) => {
       sel = runs.length ? runs : null;
@@ -3551,6 +3702,9 @@ const views = {
       const held = claimOf.get(el.dataset.id);
       if (held && !mine(held)) return toast(held.bot ? `An agent is working on this line${held.task ? `: ${held.task}` : ""}. Lift its claim under Here now to take it back` : `@${held.who} is holding this line`);
       const line = doc.lines.find((l) => l.id === el.dataset.id);
+      // Editing a line an agent's waiting batch would change: its clock stops till you accept it.
+      const w = waits.find((x) => x.run.pending.until !== null && x.hunks.some((h) => h.del.some((l) => l.id === line.id)));
+      if (w) reviewBatch(owner, repo, w.run.id, "hold").then(() => ctx.pollAgents?.());
       const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}"><span class="saving" hidden></span>`;
       const inp = $("input", t), note = $(".saving", t); inp.focus();
       // The rev this edit is based on: the line's when the box opened, or, once a save failed
@@ -3605,7 +3759,8 @@ const views = {
         if (!runsEl.isConnected) return;
         drawRuns(runsEl, rs, { owner, repo, scope: { path }, lines: () => selLines().map((l) => l.id), refresh: pollAgents,
           empty: '<span class="muted">No agents on this file yet. Press Agent to give one a task.</span>' });
-        if (rs.some((x) => x.status === "running")) agentTimer = setTimeout(pollAgents, 1500);
+        void setRuns(rs);
+        if (rs.some((x) => x.status === "running" || x.pending)) agentTimer = setTimeout(pollAgents, 1500);
       };
       pollAgents();
       popover($("#agent"));

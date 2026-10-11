@@ -290,9 +290,9 @@ async function route(req: Request, env: Env): Promise<Response> {
     // GET /api/repos/:o/:r/tree?path=dir[&branch=b]  the repo's git tree, plus files written here but not catalogued yet
     if (p[4] === "tree") {
       const dir = (url.searchParams.get("path") ?? "").replace(/^\/|\/$/g, "");
-      let entries: { name: string; path: string; type: string }[] = [], commit = null;
+      let entries: { name: string; path: string; type: string }[] = [], commit = null, h: Awaited<ReturnType<typeof handleFor>> = null;
       try {
-        const h = await handleFor(env, owner, repo);
+        h = await handleFor(env, owner, repo);
         if (h) {
           const listing = await listDir(env, h.handle, h.branch, dir);
           if (listing.entries) entries = listing.entries;
@@ -312,6 +312,14 @@ async function route(req: Request, env: Env): Promise<Response> {
         : [];
       const gone = new Set(own.filter((f) => f.deleted).map((f) => f.path));
       entries = entries.filter((e) => !gone.has(e.path));
+      // A folder in git the branch deleted every file of goes too (files written here put it back below).
+      const emptied = async (d: string): Promise<boolean> => {
+        if (![...gone].some((g) => g.startsWith(d + "/"))) return false;
+        for (const e of (await listDir(env, h!.handle, h!.branch, d)).entries ?? [])
+          if (e.type === "dir" ? !(await emptied(e.path)) : !gone.has(e.path)) return false;
+        return true;
+      };
+      if (gone.size && h) for (const e of [...entries]) if (e.type === "dir" && await emptied(e.path).catch(() => false)) entries.splice(entries.indexOf(e), 1);
       const seen = new Set(entries.map((e) => e.name));
       for (const { path } of [...results as { path: string }[], ...own.filter((f) => !f.deleted)]) {
         if (gone.has(path)) continue;
