@@ -38,7 +38,7 @@ import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts"
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
 import { pulseRoutes } from "./pulse.ts";
-import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
+import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue, TRUTHS, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { AgentSandbox } from "./sandbox.ts";
@@ -160,10 +160,11 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (!user) return json({ error: "sign in first" }, 401);
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
-      const b = await body<{ bio?: string; theme_html?: string; pulse?: boolean }>();
+      const b = await body<{ bio?: string; theme_html?: string; pulse?: boolean; git_truth?: string }>();
       if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
-      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse) WHERE name = ?")
-        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, user).run();
+      if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
+      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth) WHERE name = ?")
+        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, user).run();
     }
     return json(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first());
   }

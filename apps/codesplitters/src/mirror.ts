@@ -21,6 +21,15 @@
 // itself. When both sides changed the same lines it stops at a "clash" and
 // changes nothing until the owner picks a side for those files: theirs or ours.
 //
+// Where git truth lives (users.git_truth, PUT /api/me {git_truth}) settles those
+// stops without asking: "github" takes upstream's side of a clash or a rewrite;
+// "codesplitters" keeps the side here, edits and all, and re-bases this copy's
+// commits on a rewritten upstream; "artifact" does the same for commits but still
+// stops for edits that aren't committed yet. "ask", the default, always stops. A
+// pick sent with the sync beats it. Nobody's commits are lost either way: what one
+// side drops stays in its own git (this copy's, under refs/kept/<branch>/<ms>)
+// and, here, every line keeps its history.
+//
 // Commits that go upstream carry this machine's git identity (user.name and
 // user.email), with a Co-authored-by trailer when a handle like agent-claude made
 // them (archive.ts). A repo with private lines is "held": its git has them blank,
@@ -126,6 +135,14 @@ const row = (env: Env, owner: string, repo: string) =>
 
 type State = "ok" | "down" | "refused" | "clash" | "held" | "rewritten";
 export type Resolve = "mine" | "upstream" | "rebase";
+export const TRUTHS = ["ask", "codesplitters", "artifact", "github"] as const;
+export type Truth = typeof TRUTHS[number];
+
+/** Where `owner` says git truth lives (users.git_truth): whose side a sync takes when nobody picked. */
+async function truthOf(env: Env, owner: string): Promise<Truth> {
+  const u = await env.DB.prepare("SELECT git_truth FROM users WHERE name = ?").bind(owner).first();
+  return TRUTHS.includes(u?.git_truth as Truth) ? u!.git_truth as Truth : "ask";
+}
 
 /**
  * Whether the crew's copy is the git kept in step with upstream: when the owner
@@ -228,11 +245,14 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
 
     // 2. Take what upstream has that we don't.
     if (rewritten || (ours !== theirs && !(await isAncestor(dir, theirs, ours)))) {
-      let tip = theirs, clash: string[] = [], live: "mine" | "upstream" | undefined = o.resolve === "rebase" ? undefined : o.resolve;
+      // Nobody picked a side for this sync: the owner's standing one, where they said git truth lives.
+      const truth = o.resolve ? "ask" : await truthOf(env, owner);
+      const resolve: Resolve | undefined = o.resolve ?? (truth === "github" ? "upstream" : truth === "ask" ? undefined : rewritten ? "rebase" : "mine");
+      let tip = theirs, clash: string[] = [], live: "mine" | "upstream" | undefined = resolve === "rebase" ? undefined : resolve;
       if (rewritten) {
         // Re-base: this copy's own commits, replayed on upstream's. Or take upstream's and let them go.
-        if (o.resolve !== "rebase" && o.resolve !== "upstream") return failed(env, r, "rewritten", whose);
-        if (o.resolve === "rebase") {
+        if (resolve !== "rebase" && resolve !== "upstream") return failed(env, r, "rewritten", whose);
+        if (resolve === "rebase") {
           const re = await replay(dir, ours, [agreed, theirs], theirs);
           if ("clash" in re) return failed(env, r, "rewritten", `${whose}, and replaying this copy's commits on it clashed`, re.clash);
           [tip, live] = [re.tip, "mine"];
@@ -241,7 +261,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
         const m = await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", ours, theirs], dir);
         if (m.code > 1) {
           // No common history to merge on, and no agreed commit to tell which commits are ours: all that's left is upstream's.
-          if (o.resolve !== "upstream") return failed(env, r, "rewritten", `${whose}: ${m.err}`);
+          if (resolve !== "upstream") return failed(env, r, "rewritten", `${whose}: ${m.err}`);
         } else {
           const [tree, ...files] = m.out.trim().split("\n");
           let merged = tree!;
@@ -254,11 +274,15 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
         }
       }
       // Files open here get upstream's changes as line edits, before git moves, so a catalogue never undoes them.
-      const changes = await liveChanges(env, owner, repo, dir, ours, tip, live);
+      // Git truth in the artifact speaks for commits only: edits not committed yet still ask.
+      const changes = await liveChanges(env, owner, repo, dir, ours, tip, truth === "artifact" && !rewritten ? undefined : live);
       if ("clash" in changes) return failed(env, r, "clash", "edits here that aren't committed yet touch the same lines upstream changed", changes.clash);
       for (const p of changes.plans) await land(env, owner, repo, p, tip);
+      // Taking upstream's history drops this copy's commits from the branch, not from git: a ref keeps them.
+      const dropped = !(await isAncestor(dir, ours, tip));
       // A catalogue that landed meanwhile moved the branch: take it from the top next round.
       if ((await git(["update-ref", heads, tip, ours], dir)).code) return again(env, r);
+      if (dropped) await git(["update-ref", `refs/kept/${branch}/${Date.now()}`, ours], dir);
       ours = tip;
     }
     // The crew's copy moved: the repo's own git takes the same files, all but the private-lined ones.
@@ -439,7 +463,7 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
     url: shownUrl(r.mirror_url as string), branch, state: (r.mirror_state ?? "ok") as State, error: r.mirror_error ?? null,
     clash: r.mirror_clash ? JSON.parse(r.mirror_clash as string) as string[] : [], downSince: r.mirror_down_since ?? null,
     syncedAt: r.mirror_synced_at ?? null, nextAt: r.mirror_next_at ?? null, upstreamCommit: r.upstream_commit ?? null,
-    ahead: ahead ?? 0, behind: behind ?? 0, identity: gitIdentity(),
+    ahead: ahead ?? 0, behind: behind ?? 0, identity: gitIdentity(), truth: await truthOf(env, owner),
     // Private lines: whether it has any, and whether the crew's copy (real text) is the one that goes upstream.
     private: !!r.crew_artifact, pushCrew: !!r.mirror_push_crew,
   };
