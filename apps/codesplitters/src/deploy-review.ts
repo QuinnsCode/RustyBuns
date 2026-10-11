@@ -1,7 +1,8 @@
-// What a hosted deploy may run with the owner's keys (#646). The deploy
-// container runs the repo's install and Alchemy code with the deploy keys in
-// its env, so whoever gets code onto main gets it run with them. Crew and
-// agents can do that, so their code waits for the owner.
+// What a deploy may run with the owner's keys (#646, #682). A deploy runs the
+// repo's install and Alchemy code with keys in its env (the stored ones in a
+// hosted container, this machine's logins on the desktop), so whoever gets
+// code onto main gets it run with them. Crew and agents can do that, so their
+// code waits for the owner.
 //
 // The remote deploys clone (the crew's, when there is one) is walked from its
 // tip back through each commit's parents. A commit is cleared when the owner
@@ -10,8 +11,8 @@
 // commit after it, having read the diff. Anything else (a crew or agent commit,
 // a file with someone else's edits in it, a merge's, a mirror's or an import's
 // commits, the crew remote's backfill) means the deploy waits until the owner
-// approves the tip. The runner checks again right before it unseals the keys,
-// and the clone has to be the commit that was checked.
+// approves the tip. A hosted runner checks again right before it unseals the
+// keys, and either way the clone has to be the commit that was checked.
 //
 //   deploy_cleared   (owner, repo, sha, kind: own | approved)
 

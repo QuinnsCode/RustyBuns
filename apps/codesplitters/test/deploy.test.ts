@@ -1,4 +1,5 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { review } from "../src/deploy-review.ts";
 import { local as boot } from "../src/local.ts";
 import type { Runner } from "../src/preview.ts";
 
@@ -33,6 +34,13 @@ async function app(runner: Runner, extra: Record<string, unknown> = {}) {
   const call = await boot({ GH_CLI: "off", ...extra });
   opened.push(call);
   call.env.PREVIEW_RUNNER = runner;
+  // The clone lands on the remote's tip, as a real one would: a deploy checks it's the commit it reviewed.
+  const exec = runner.exec;
+  runner.exec = async (cmd, cwd, out) => {
+    if (!cmd.includes("rev-parse")) return exec(cmd, cwd, out);
+    out(`${(await review(call.env, "ryan", "lab")).tip}\n`);
+    return 0;
+  };
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   await send("ryan", "/api/repos", { name: "lab", visibility: "public" });
@@ -64,7 +72,7 @@ test("the owner ships to their stage; it stays up and goes in the log", async ()
   expect(d.run.steps.map((s: any) => [s.key, s.status])).toEqual([["clone", "done"], ["install", "done"], ["deploy", "done"], ["check", "done"]]);
   expect(ran.find((l) => l.includes("rustybuns deploy"))).toContain("--stage live");
   expect(ran.some((l) => l.includes("rustybuns destroy"))).toBe(false);
-  expect(d.history[0]).toMatchObject({ stage: "live", by: "ryan", trigger: "button", status: "done", commit_hash: SHA, url: "https://lab.ryan.workers.dev" });
+  expect(d.history[0]).toMatchObject({ stage: "live", by: "ryan", trigger: "button", status: "done", commit_hash: (await review(call.env, "ryan", "lab")).tip, url: "https://lab.ryan.workers.dev" });
 });
 
 test("only the owner's own commit ships, and only when they turned it on", async () => {
@@ -84,10 +92,53 @@ test("only the owner's own commit ships, and only when they turned it on", async
   await Bun.sleep(50);
   expect(ran.some((l) => l.includes("rustybuns deploy"))).toBe(false);   // an agent's commit never ships
 
+  // Nor does the owner's next one while the agent's is under it, unreviewed (#682).
   await edit("ryan", '{"a":3}'); await commit("ryan");
+  await Bun.sleep(50);
+  expect(ran.some((l) => l.includes("rustybuns deploy"))).toBe(false);
+
+  // Once the owner approves main, their own commits ship again.
+  const { tip } = await review(call.env, "ryan", "lab");
+  expect((await send("ryan", "/api/repos/ryan/lab/deploy", { approve: tip })).status).toBe(202);
+  await settle(call);
+  await edit("ryan", '{"a":4}'); await commit("ryan");
+  const d = await settle(call, 2);
+  expect(d.history.map((h: any) => [h.trigger, h.status])).toEqual([["commit", "done"], ["button", "done"]]);
+});
+
+test("a crew commit holds a desktop deploy until the owner approves the diff at that tip", async () => {
+  const { runner, ran } = fake();
+  const { call, send } = await app(runner);
+  const D = "/api/repos/ryan/lab/deploy";
+  await send("pat", "/api/login", { name: "pat" });
+  await send("ryan", "/api/repos/ryan/lab/collaborators", { name: "pat" });
+  await send("pat", "/api/repos/ryan/lab/files", { path: "rustybuns.config.ts", content: "export default { exfiltrate: true }" });
+  await send("pat", "/api/repos/ryan/lab/do/commit?path=rustybuns.config.ts", { message: "pat's config" });
+
+  const pressed = await send("ryan", D, {});
+  expect(pressed.status).toBe(409);
+  const waiting = (await pressed.json()) as any;
+  expect(waiting.error).toContain("waiting for you");
+  expect(waiting.review.commits.map((c: any) => c.message)).toEqual(["pat's config"]);
+  expect(((await (await call("ryan", D)).json()) as any).review).toMatchObject({ cleared: false, tip: waiting.review.tip });
+  const r = (await (await call("ryan", `${D}/review`)).json()) as any;
+  expect(r.diff.files.find((f: any) => f.path === "rustybuns.config.ts")).toMatchObject({ lines: expect.arrayContaining(["+ export default { exfiltrate: true }"]) });
+  expect(ran).toEqual([]);
+
+  expect((await send("ryan", D, { approve: "f".repeat(40) })).status).toBe(409);
+  expect((await send("ryan", D, { approve: waiting.review.tip })).status).toBe(202);
+  expect((await settle(call)).history[0]).toMatchObject({ status: "done", commit_hash: waiting.review.tip });
+});
+
+test("a desktop deploy won't run a clone of another commit than the one it checked", async () => {
+  const { runner, ran } = fake();
+  const { call, send } = await app(runner);
+  const exec = runner.exec;
+  runner.exec = async (cmd, cwd, out) => { if (!cmd.includes("rev-parse")) return exec(cmd, cwd, out); out(`${SHA}\n`); return 0; };
+  await send("ryan", "/api/repos/ryan/lab/deploy", {});
   const d = await settle(call);
-  expect(d.history).toHaveLength(1);
-  expect(d.history[0]).toMatchObject({ by: "ryan", trigger: "commit", status: "done" });
+  expect(d.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("main moved") });
+  expect(ran.some((l) => l.includes("bun install"))).toBe(false);
 });
 
 test("a commit while a deploy runs ships once more afterwards; a second press is refused", async () => {
