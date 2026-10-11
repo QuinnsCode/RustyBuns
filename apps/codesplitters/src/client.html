@@ -645,7 +645,7 @@
   @media (prefers-reduced-motion: reduce) { body.flock * { animation: none !important; } }
 
   @media (max-width: 860px) {
-    .hero .wrap, .two, .wb { grid-template-columns: 1fr; } .explorer { max-height: 220px; grid-row: auto; } .details { grid-column: auto; }
+    .hero .wrap, .two, .wb { grid-template-columns: 1fr; } .explorer { max-height: 220px; overflow: auto; grid-row: auto; border-right: 0; border-bottom: 1px solid var(--border); } .details { grid-column: auto; }
     .jump { min-width: 0; flex: 1; } .jump span { display: none; } .ln { grid-template-columns: 44px minmax(0, 1fr); } .ln .by { display: none; }
     .wrap { padding: 0 16px; } .top { padding: 10px 16px; } .hero .wrap { padding-top: 40px; }
   }
