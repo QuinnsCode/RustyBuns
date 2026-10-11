@@ -1045,7 +1045,7 @@ function wireDig() {
   let mine = { repos: [] }, note = "", timer = 0, asked = "";
   const show = (repos, disabled = () => false) => {
     list.innerHTML = repos.map((x) => `<button type="button" data-repo="${esc(x.repo)}"${disabled(x) ? " disabled title=\"Cloudflare Artifacts imports public repos only: dig this up in the desktop app\"" : ""}>${esc(x.repo)}${x.private ? " · private" : ""}${x.stars != null ? `<span class="muted">★ ${x.stars}${x.language ? " · " + esc(x.language) : ""}</span>` : ""}</button>`).join("");
-    for (const b of list.querySelectorAll("button:not([disabled])")) b.addEventListener("click", () => { f.repo.value = b.dataset.repo; list.innerHTML = ""; msg.textContent = `Ready to dig up ${b.dataset.repo}. ${note}`; f.name.focus(); });
+    for (const b of list.querySelectorAll("button:not([disabled])")) b.addEventListener("click", () => { f.repo.value = b.dataset.repo; list.innerHTML = ""; msg.textContent = `Ready to dig up ${b.dataset.repo}: press Dig it up. ${note}`; f.name.focus(); });
   };
   const showMine = () => show(mine.repos, (x) => x.private && !mine.privateOk);
   const loadGh = () => api("/github/repos").then((g) => {
@@ -1080,6 +1080,9 @@ function wireDig() {
     if (g.mirrorsOk) $("#ghmirror").hidden = false;
   }).catch(() => {});
   loadGh();
+  // A dig clones a whole repo, so only the button starts one: Enter in a field doesn't (#443).
+  // Picking one of yours fills the box and focuses the name, and a stray Enter there dug it up.
+  f.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("input")) e.preventDefault(); });
   f.repo.addEventListener("input", () => {
     clearTimeout(timer);
     const q = f.repo.value.trim();
