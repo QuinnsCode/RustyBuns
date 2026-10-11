@@ -110,7 +110,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
       else if (b.type === "durable_object")
         envEntries.push(`${name}: Cloudflare.DurableObject("${name}", { className: "${b.className}"${b.scriptName ? `, scriptName: "${b.scriptName}"` : ""} })`);
       else if (b.type === "var") envEntries.push(`${name}: ${JSON.stringify(b.value)}`);
-      else if (b.type === "secret") envEntries.push(minted.has(name) ? `${name}: ${ident(name)}`
+      else if (b.type === "secret" && !b.boxOnly) envEntries.push(minted.has(name) ? `${name}: ${ident(name)}`
         : b.optional ? `...(process.env.${name} ? { ${name}: Config.redacted("${name}") } : {})`
         : `${name}: Config.redacted("${name}")`);
     }

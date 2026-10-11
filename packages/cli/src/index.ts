@@ -24,6 +24,7 @@ import { commitsBehindMain, statefulDeletes } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
+import { PROF_SECRET, boxUrl, fetchProfile, secretProblem } from "./prof.ts";
 import { checkDisabled, checkVersion } from "./advisories.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
@@ -496,6 +497,33 @@ async function alchemy(sub: string, rawArgs: string[]) {
     : "\nthe box bills hourly from now on; `rustybuns destroy` stops it.");
 }
 
+/** `rustybuns prof`: sample the deployed box's CPU and save the .cpuprofile here. */
+async function prof(args: string[]) {
+  const cfg = await loadConfig();
+  if (!cfg.targets.box) throw new Error("rustybuns prof profiles a box, and this config has no targets.box");
+  const opt = (n: string) => { const i = args.indexOf("--" + n); return i >= 0 ? args[i + 1] : undefined; };
+  const seconds = Number(opt("seconds") ?? 10);
+  if (!(seconds > 0 && seconds <= 60)) throw new Error("--seconds takes 1 to 60");
+  const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env };
+  const b = cfg.bindings?.[PROF_SECRET];
+  // An op secret: run again under varlock, which fetches it from 1Password.
+  if (!env[PROF_SECRET] && b?.type === "secret" && b.op && cfg.experimental?.wheel && existsSync(ENV_SCHEMA) && !env.RB_PROF_VARLOCK) {
+    const p = Bun.spawn(underVarlock(cfg, [process.execPath, fileURLToPath(import.meta.url), "prof", ...args], env),
+      { stdio: ["inherit", "inherit", "inherit"], env: { ...env, RB_PROF_VARLOCK: "1" } });
+    process.exit(await p.exited);
+  }
+  const secret = env[PROF_SECRET];
+  const problem = secretProblem(cfg, secret);
+  if (problem) throw new Error(problem);
+  const stage = alchemyStage(args);
+  const url = opt("url") ?? boxUrl(process.cwd(), cfg, stage);
+  if (!url) throw new Error(`no box URL in the Alchemy state for stage ${stage}. Deploy first, or pass --url.`);
+  if (url.startsWith("http://")) console.log(`note: ${url} is plain HTTP, so the secret crosses the network unencrypted. Rotate it if that matters.`);
+  console.log(`sampling ${url} for ${seconds}s...`);
+  const file = await fetchProfile({ url, secret: secret!, seconds, outDir: join(".rustybuns", "prof"), name: cfg.name });
+  console.log(`saved ${file}\nopen it in Chrome DevTools > Performance (Load profile), or drop it on https://www.speedscope.app`);
+}
+
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -520,6 +548,7 @@ try {
       break;
     }
     case "dev": await alchemy("dev", rest); break;
+    case "prof": await prof(rest); break;
     case "add": {
       if (rest[0] === "deploy") { await addDeploy(rest.includes("--dry-run")); break; }
       if (rest[0] !== "desktop") throw new Error("usage: rustybuns add desktop [--entry <file>#<Component>] | add deploy [--dry-run]");
@@ -597,6 +626,9 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   destroy                    alchemy destroy: removes everything the stack created
                              (--stage <name> passes through to all three)
   dev                        alchemy dev: workerd + local simulators for the edge column
+  prof [--seconds N]         sample the deployed box's CPU for N seconds (default 10, at most 60)
+       [--url U]             and save a .cpuprofile in .rustybuns/prof/ (a flame graph in DevTools
+                             or speedscope); needs a RB_PROF_SECRET secret binding (boxOnly: true)
   --checker bun|tsc-rs|tsc   pick the type checker (default: bun check on Bun >= 1.4.3 or its canary, else
                              tsc-rs, else tsc; tsc-rs first when tsconfig has the Effect plugin)
                              build desktop, plan and deploy print a per-step timing table and
