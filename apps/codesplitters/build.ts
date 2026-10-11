@@ -13,6 +13,13 @@ await copyFile("src/mcp.html", "dist/client/mcp.html");
 // Geist, served from here (no Google Fonts call): the stylesheet, both variable fonts and their license.
 await mkdir("dist/client/fonts", { recursive: true });
 for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2", "LICENSE.txt"]) await copyFile(`src/fonts/${f}`, `dist/client/fonts/${f}`);
+// Lucide (the icons) and three.js (the game's 3D engine) the same way, from the pinned
+// packages, so no visitor's browser asks a CDN for them.
+await mkdir("dist/client/vendor", { recursive: true });
+for (const [from, to] of [
+  ["lucide/dist/umd/lucide.min.js", "lucide.min.js"], ["lucide/LICENSE", "lucide-LICENSE.txt"],
+  ["three/build/three.module.js", "three.module.js"], ["three/LICENSE", "three-LICENSE.txt"],
+]) await copyFile(`node_modules/${from}`, `dist/client/vendor/${to}`);
 // Resolve packages as wrangler does for workerd, and leave node:* to the runtime
 // (nodejs_compat). Without it Better Auth takes its browser build, whose stand-in
 // AsyncLocalStorage is one slot shared by every request: overlapping requests

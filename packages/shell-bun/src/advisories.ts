@@ -20,7 +20,8 @@ export type Advisory = {
   /** The version to install, or "latest". */
   to: string;
   why: string;
-  issue?: number;
+  /** A RustyBuns issue number, or for an app's own file a URL. */
+  issue?: number | string;
 };
 
 export type Facts = { advisories: Advisory[]; latest?: string; checkedAt: number };
@@ -129,4 +130,60 @@ export async function launchCheck(version: string | undefined, opts: { dev: bool
   const out = opts.dev ? `[rustybuns] ${notice}\n` : `[rustybuns] ${notice.split("\n").map((l) => l.trim()).join(" · ")}`;
   console.warn(out);
   return out;
+}
+
+/**
+ * An app's own advisories (`targets.desktop.advisories`): the same shape as
+ * RustyBuns' file, plus where to get the app.
+ *   { "latest": "1.4.0", "download": "https://example.com/app",
+ *     "advisories": [{ "versions": "1.3.0", "do": "upgrade", "to": "latest", "why": "saves are lost on quit" }] }
+ * `latest` is what `to: "latest"` means. `issue` here is a full URL, if any.
+ */
+export type AppFacts = { advisories: Advisory[]; latest?: string; download?: string; checkedAt: number };
+
+/** For the app's users on `version` of `app`: a notice when it is a known-bad release, else nothing. */
+export function adviseApp(app: string, version: string, facts: Pick<AppFacts, "advisories" | "latest" | "download">): string | null {
+  const bad = matching(version, facts.advisories);
+  if (!bad.length) return null;
+  const where = facts.download ? ` from ${facts.download}` : "";
+  const lines = bad.map((a) => {
+    const to = a.to === "latest" ? facts.latest ?? "the latest version" : a.to;
+    const issue = typeof a.issue === "string" ? ` (${a.issue})` : "";
+    return `  ${a.why}${issue}\n  ${a.do === "downgrade" ? "go back to" : "update to"} ${to}${where}`;
+  });
+  return `${app} ${version} is a known-bad release.\n${lines.join("\n")}`;
+}
+
+/**
+ * The generated host calls this after it starts serving, without awaiting it,
+ * when the config sets `targets.desktop.advisories`. Unlike launchCheck the
+ * notice is for the app's users, so a release build shows it too: one log
+ * line, and the desktop's /__rb/info carries the notice it returns as
+ * `update` for the page to show.
+ * Cached once a day per app (build metadata after `+` is ignored). Off in CI
+ * and with RUSTYBUNS_NO_UPDATE_CHECK=1. Never throws.
+ */
+export async function appLaunchCheck(app: string, version: string | undefined, url: string, opts: { path?: string; fetcher?: typeof fetch; now?: number; ms?: number; env?: Record<string, string | undefined> } = {}): Promise<string | null> {
+  const v = version?.split("+")[0];
+  if (!v || checkDisabled(opts.env)) return null;
+  try {
+    const { path = join(dirname(cachePath()), `app-${app.replace(/[^\w.-]/g, "_")}.json`), now = Date.now(), fetcher = fetch, ms = 1500 } = opts;
+    let facts = readCache(path) as AppFacts | null;
+    if (!facts || now - facts.checkedAt > DAY) {
+      const got = await getJson(url, fetcher, ms).catch(() => null);
+      facts = {
+        advisories: Array.isArray(got?.advisories) ? got.advisories : facts?.advisories ?? [],
+        latest: typeof got?.latest === "string" ? got.latest : facts?.latest,
+        download: typeof got?.download === "string" ? got.download : facts?.download,
+        checkedAt: now,
+      };
+      try { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(facts)); } catch {}
+    }
+    const notice = adviseApp(app, v, facts);
+    if (!notice) return null;
+    console.warn(`[${app}] ${notice.split("\n").map((l) => l.trim()).join(" · ")}`);
+    return notice;
+  } catch {
+    return null;
+  }
 }

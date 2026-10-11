@@ -56,7 +56,7 @@ export const RULES: Rule[] = [
   { name: "edit", label: "Line edits", what: "live edits to a file's lines, over its socket or POST", group: "Editing and sharing", per: "user", max: 300, window_s: MIN, on_fail: "reject" },
   { name: "commit", label: "Commits", what: "pushes to Artifacts", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "invite", label: "Invites", what: "crew invites made, emailed ones included", group: "Editing and sharing", per: "user", max: 30, window_s: HOUR, on_fail: "reject" },
-  { name: "share", label: "Shares and collections", what: "share links, collections and tracks, and follows", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
+  { name: "share", label: "Shares, stamps and collections", what: "share links, line stamps, collections and tracks, and follows", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", group: "Agents", per: "user", max: 20, window_s: DAY, on_fail: "reject" },
   { name: "preview", label: "Preview deploys", what: "stacks stood up and torn down to try a repo", group: "Deploys and checks", per: "user", max: 6, window_s: HOUR, on_fail: "reject", queueable: true },
   { name: "deploy", label: "Deploys", what: "deploys started with the Deploy button (hosted, on the owner's deploy key)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "flag" },
@@ -83,7 +83,7 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "follows") return "share";
   if (p[1] === "repos" && !p[2]) return "repo";
   if (p[1] === "repos" && p[4] === "files") return "file";
-  if (p[1] === "repos" && p[4] === "shares") return "share";
+  if (p[1] === "repos" && (p[4] === "shares" || p[4] === "stamps")) return "share";
   if (p[1] === "repos" && p[4] === "agents") return "agent";
   if (p[1] === "repos" && p[4] === "preview" && !p[5]) return "preview";
   if (p[1] === "repos" && p[4] === "deploy" && !p[5]) return "deploy";

@@ -12,6 +12,7 @@
 
 import { betterAuth } from "better-auth";
 import { json, NAME, type Env } from "./env.ts";
+import { privacyNotice } from "./privacy.ts";
 
 export const accountsOn = (env: Env) => !!env.BETTER_AUTH_SECRET;
 
@@ -213,8 +214,9 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
   if (grants) return grants;
   if (p[1] === "auth") return accountsOn(env) ? authFor(req, env).handler(req) : json({ error: "accounts are off; this app uses aliases" }, 404);
   if (p[1] === "session") {
-    // privacy: who to write to about your data, on the #/privacy page.
-    const privacy = env.PRIVACY_EMAIL ? { privacy: env.PRIVACY_EMAIL } : {};
+    // privacy: who to write to about your data, on the #/privacy page. notice: a change to it that's coming.
+    const notice = privacyNotice(env.PRIVACY_NOTICE);
+    const privacy = { ...(env.PRIVACY_EMAIL ? { privacy: env.PRIVACY_EMAIL } : {}), ...(notice ? { notice } : {}) };
     if (!accountsOn(env)) return json({ mode: "alias", user: aliasOf(req), providers: [], ...privacy });
     // Signed in but no handle yet: the page asks for one, with a free one to start from.
     const a = await account(req, env);
