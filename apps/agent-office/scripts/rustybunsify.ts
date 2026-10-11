@@ -36,7 +36,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -109,16 +109,26 @@ async function prepare(tag: string) {
   patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
     "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
 
-  // 7. Lucide icons for the emoji, on every page, and a search box for the queue
+  // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem
+  prepend("http/router.js", "import { officeMem as __rbMem } from '../rb-mem.js';\n");
+  patch("http/router.js", "const signedIn = routes.filter((r) => r.auth === 'session');",
+    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbMemStats = __rbMem(ctx.cfg.dataDir, () => ctx.floors.values());");
+  patch("http/router.js", "            for (const route of signedIn)\n",
+    "            if (p === '/__rb/mem')\n                return send(res, 200, __rbMemStats());\n            for (const route of signedIn)\n");
+  prepend("ptyhost.js", "import { ptyHostMem as __rbMem } from './rb-mem.js';\n");
+  patch("ptyhost.js", "const token = JSON.parse(readFileSync(infoPath, 'utf8')).token;",
+    "const token = JSON.parse(readFileSync(infoPath, 'utf8')).token;\n__rbMem(infoPath);");
+
+  // 8. Lucide icons for the emoji, on every page, and a search box for the queue
   await buildPageScripts();
 
-  // 8. the time on the issues and PR boards, in front of "Updated …" (its setting is a page script, clock/)
+  // 9. the time on the issues and PR boards, in front of "Updated …" (its setting is a page script, clock/)
   clockOnBoards();
 
-  // 9. the Druids Curse skin
+  // 10. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -169,11 +179,13 @@ async function buildSkin(dir: string) {
   await Bun.write(path.join(dir, "druids.js"), built.outputs[0]);
 }
 
-// next to the server code it hooks into, rebuilt every start like the skin
+// next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  const built = await Bun.build({ entrypoints: [path.join(root, "live/github.ts")], target: "bun" });
-  if (!built.success) throw new AggregateError(built.logs, "live/github.ts failed to build");
-  await Bun.write(path.join(srv, "rb-live.js"), built.outputs[0]!);
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"]]) {
+    const built = await Bun.build({ entrypoints: [path.join(root, entry!)], target: "bun" });
+    if (!built.success) throw new AggregateError(built.logs, `${entry} failed to build`);
+    await Bun.write(path.join(srv, out!), built.outputs[0]!);
+  }
 }
 
 // into /assets/, the one place the sign-in pages can load from before you're in; it's served as immutable,

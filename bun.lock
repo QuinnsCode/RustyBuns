@@ -17,6 +17,7 @@
       "name": "agent-office-bun",
       "version": "0.1.0",
       "devDependencies": {
+        "@rustybuns/shell-bun": "workspace:*",
         "@types/three": "^0.180.0",
         "lucide": "1.55.0",
         "three": "0.186.1",
