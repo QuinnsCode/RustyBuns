@@ -25,6 +25,8 @@ import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { PROF_SECRET, boxUrl, fetchProfile, secretProblem } from "./prof.ts";
+import { TRIAGE_USAGE, triage } from "./triage.ts";
+import { rustybunsContext } from "./triage-context.ts";
 import { checkDisabled, checkVersion } from "./advisories.ts";
 import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
@@ -524,6 +526,21 @@ async function prof(args: string[]) {
   console.log(`saved ${file}\nopen it in Chrome DevTools > Performance (Load profile), or drop it on https://www.speedscope.app`);
 }
 
+/** `rustybuns triage`: your coding agent, started on what went wrong with the facts of this project (triage.ts). */
+async function triageCommand(args: string[]) {
+  let cfg: RustyBunsConfig | null | { error: string } = null;
+  if (await Bun.file("rustybuns.config.ts").exists()) {
+    try { cfg = await loadConfig(); } catch (err) { cfg = { error: (err as Error).message }; }
+  }
+  const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env };
+  const context = await rustybunsContext({ cwd: process.cwd(), version: VERSION, cfg, stage: alchemyStage(args), env });
+  const playbook = readFileSync(new URL("./triage/PLAYBOOK.md", import.meta.url), "utf8");
+  process.exitCode = await triage({
+    product: "RustyBuns", command: "rustybuns triage", dir: join(process.cwd(), ".rustybuns", "triage"), context, playbook,
+    argv: args.filter((a, i) => !(a === "--stage" || a.startsWith("--stage=") || args[i - 1] === "--stage")),
+  });
+}
+
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -549,6 +566,7 @@ try {
     }
     case "dev": await alchemy("dev", rest); break;
     case "prof": await prof(rest); break;
+    case "triage": await triageCommand(rest); break;
     case "add": {
       if (rest[0] === "deploy") { await addDeploy(rest.includes("--dry-run")); break; }
       if (rest[0] !== "desktop") throw new Error("usage: rustybuns add desktop [--entry <file>#<Component>] | add deploy [--dry-run]");
@@ -629,6 +647,10 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   prof [--seconds N]         sample the deployed box's CPU for N seconds (default 10, at most 60)
        [--url U]             and save a .cpuprofile in .rustybuns/prof/ (a flame graph in DevTools
                              or speedscope); needs a RB_PROF_SECRET secret binding (boxOnly: true)
+  triage [--agent claude|codex] [--model M] [--print]
+                             something wrong? start your coding agent on it, with this project's
+                             facts (versions, config, the box and its memory) in .rustybuns/triage/
+                             and a playbook: it asks what went wrong, digs in, and drafts the issue
   --checker bun|tsc-rs|tsc   pick the type checker (default: bun check on Bun >= 1.4.3 or its canary, else
                              tsc-rs, else tsc; tsc-rs first when tsconfig has the Effect plugin)
                              build desktop, plan and deploy print a per-step timing table and

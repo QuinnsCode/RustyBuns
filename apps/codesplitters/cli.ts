@@ -22,12 +22,15 @@
 //   codesplitters read_file --owner ryan --repo lab --path a.ts
 
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { TRIAGE_USAGE, triage } from "@rustybuns/cli/triage";
 import { tool, tools, toRequest } from "./src/mcp.ts";
+import { splittersContext } from "./triage/context.ts";
+import PLAYBOOK from "./triage/PLAYBOOK.md" with { type: "text" };
 
 type Out = { code: number; out: string; err: string };
 type Fetch = (req: Request) => Promise<Response>;
 
-const USAGE = "usage: codesplitters <command> [--param value …] [--body JSON|-] [--url URL] [--token cst_…|--as NAME]\n       codesplitters tools | help <command> | login [--url URL] [--token cst_…]";
+const USAGE = "usage: codesplitters <command> [--param value …] [--body JSON|-] [--url URL] [--token cst_…|--as NAME]\n       codesplitters tools | help <command> | login [--url URL] [--token cst_…]\n       codesplitters " + TRIAGE_USAGE;
 
 /** Run one command. `env` and `send` are the process's own unless a test says otherwise. */
 export async function main(argv: string[], env: Record<string, string | undefined> = process.env, send: Fetch = (r) => fetch(r), stdin = readStdin): Promise<Out> {
@@ -85,6 +88,7 @@ function saved(env: Record<string, string | undefined>): { url?: string; token?:
 /** `login`, or any command with the saved site and token filled in under the variables. */
 export async function run(argv: string[], env: Record<string, string | undefined> = process.env, ask = askLine, send?: Fetch): Promise<Out> {
   const conf = saved(env);
+  if (argv[0] === "triage") return triageCommand(argv.slice(1), env, conf, send);
   if (argv[0] !== "login") return main(argv, { CODESPLITTERS_URL: conf.url, CODESPLITTERS_TOKEN: conf.token, ...strip(env) }, send);
   const flags: Record<string, string> = {};
   for (let i = 1; i < argv.length; i += 2) {
@@ -100,6 +104,29 @@ export async function run(argv: string[], env: Record<string, string | undefined
   writeFileSync(path, JSON.stringify({ url, ...(token ? { token: token.trim() } : {}) }, null, 2) + "\n", { mode: 0o600 });
   chmodSync(path, 0o600);
   return { code: 0, out: token ? `Signed in to ${url}. Try: codesplitters tools` : `Saved ${url}. Add a token with: codesplitters login --token cst_…`, err: "" };
+}
+
+/** `triage`: your coding agent, started on what went wrong with this machine's facts (@rustybuns/cli/triage). */
+async function triageCommand(argv: string[], env: Record<string, string | undefined>, conf: { url?: string; token?: string }, send?: Fetch): Promise<Out> {
+  // --url/--token/--as pick the site to look at, as for any command; the rest is triage's
+  const opts: Record<string, string> = {}, rest: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const k = argv[i]!.replace(/^--/, "");
+    if ((k === "url" || k === "token" || k === "as") && argv[i + 1] !== undefined) opts[k] = argv[++i]!;
+    else rest.push(argv[i]!);
+  }
+  const from = (flag: string, v: string, c?: string) => opts[flag] ? `--${flag}` : env[v] ? v : c ? configPath(env) : undefined;
+  const url = (opts.url ?? env.CODESPLITTERS_URL ?? conf.url)?.replace(/\/$/, "");
+  const token = opts.token ?? env.CODESPLITTERS_TOKEN ?? conf.token;
+  const context = await splittersContext({
+    url, urlFrom: from("url", "CODESPLITTERS_URL", conf.url), token, tokenFrom: from("token", "CODESPLITTERS_TOKEN", conf.token),
+    as: opts.as ?? env.CODESPLITTERS_AS, configPath: configPath(env), send: send && (((u: string, i?: RequestInit) => send(new Request(u, i))) as typeof fetch),
+  });
+  const code = await triage({
+    product: "codeSplitters", command: "codesplitters triage", dir: configPath(env).replace(/config\.json$/, "triage"),
+    context, playbook: PLAYBOOK, argv: rest, env,
+  });
+  return { code, out: "", err: "" };
 }
 
 const strip = (env: Record<string, string | undefined>) => Object.fromEntries(Object.entries(env).filter(([, v]) => v));
