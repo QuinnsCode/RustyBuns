@@ -217,7 +217,10 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
     // privacy: who to write to about your data, on the #/privacy page. notice: a change to it that's coming.
     const notice = privacyNotice(env.PRIVACY_NOTICE);
     const privacy = { ...(env.PRIVACY_EMAIL ? { privacy: env.PRIVACY_EMAIL } : {}), ...(notice ? { notice } : {}) };
-    if (!accountsOn(env)) return json({ mode: "alias", user: aliasOf(req), providers: [], ...privacy });
+    if (!accountsOn(env)) {
+      const user = aliasOf(req);
+      return json({ mode: "alias", user, providers: [], ...(isAdmin(env, user) ? { admin: true } : {}), ...privacy });
+    }
     // Signed in but no handle yet: the page asks for one, with a free one to start from.
     const a = await account(req, env);
     const user = a?.handle ?? null;
