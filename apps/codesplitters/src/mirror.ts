@@ -540,7 +540,7 @@ async function forkPoint(s: Setup, c: string) {
   return mb.code ? ours : mb.out.trim();
 }
 
-/** Upstream's branches other than the default, each with its tip and the branch here that follows it, if any. */
+/** Upstream's branches other than the default, newest commit first, each with its tip and the branch here that follows it, if any. */
 export async function upstreamBranches(env: Env, owner: string, repo: string) {
   const s = await branchSetup(env, owner, repo);
   if ("error" in s) return s.error;
@@ -548,10 +548,30 @@ export async function upstreamBranches(env: Env, owner: string, repo: string) {
   if (ls.code) return json({ error: `upstream didn't answer: ${ls.err}` }, 502);
   const { results } = await env.DB.prepare("SELECT name, upstream_ref, status FROM branches WHERE owner = ? AND repo = ?").bind(owner, repo).all();
   const here = new Map((results as { name: string; upstream_ref: string | null; status: string }[]).filter((b) => b.upstream_ref).map((b) => [b.upstream_ref!, b]));
-  return json(heads(ls.out).map(([ref, commit]) => {
+  const list = heads(ls.out).filter(([ref]) => ref !== s.main);
+  const at = await tipDates(s, list);
+  return json(list.map(([ref, commit]) => {
     const b = here.get(ref);
-    return { ref, commit, branch: b?.name ?? null, status: b?.status ?? null };
-  }).filter((b) => b.ref !== s.main));
+    return { ref, commit, at: at.get(commit) ?? null, branch: b?.name ?? null, status: b?.status ?? null };
+  }).sort((a, b) => (b.at ?? 0) - (a.at ?? 0)));
+}
+/**
+ * When each tip was committed, in ms. Tips this git doesn't have yet are fetched
+ * (only their commits past what it has); no ref keeps them, so a gc may take them
+ * back and the next list fetches them again. A tip that won't come is left undated.
+ */
+async function tipDates(s: Setup, tips: (readonly [string, string])[]) {
+  const dated = async () => new Map((await git(["log", "--no-walk", "--ignore-missing", "--format=%H %ct", ...tips.map(([, c]) => c)], s.dir)).out
+    .split("\n").filter(Boolean).map((l) => { const [c, t] = l.split(" "); return [c!, Number(t) * 1000] as const; }));
+  if (!tips.length) return new Map<string, number>();
+  const at = await dated();
+  const missing = tips.filter(([, c]) => !at.has(c));
+  if (!missing.length) return at;
+  for (let i = 0; i < missing.length; i += 50) {
+    const r = await git(["fetch", "--quiet", "--no-tags", s.r.mirror_url, ...missing.slice(i, i + 50).map(([ref]) => `refs/heads/${ref}`)], s.dir, s.net);
+    if (r.code) break;
+  }
+  return dated();
 }
 const heads = (lsRemote: string) => lsRemote.trim().split("\n").filter(Boolean).map((l) => {
   const [commit, full] = l.split("\t") as [string, string];

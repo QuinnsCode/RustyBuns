@@ -57,7 +57,8 @@
   .btn.ghost { background: transparent; border-color: transparent; }
   .btn.ghost:hover { background: var(--grain), var(--paper); border-color: var(--border-2); }
   .btn[disabled] { opacity: .4; cursor: default; transform: none; }
-  .btn.follow[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--grain), var(--accent-soft); }
+  /* Following: the button stays as it was, only its eye goes orange (an orange button reads as a warning). */
+  .btn.follow[aria-pressed="true"] svg { color: var(--accent); }
   .btn .count { background: rgba(10,10,10,.06); border-radius: 4px; padding: 1px 5px; font-size: 11.5px; }
   .badge { display: inline-flex; align-items: center; gap: 5px; font: 500 12px/18px var(--sans); color: var(--muted); border: 1px solid var(--border-2); border-radius: 5px; padding: 1px 7px; background: var(--grain), var(--paper); }
   button.badge { cursor: pointer; } button.badge:hover { border-color: #a8a8a8; color: var(--fg); }
@@ -241,6 +242,12 @@
   .code { font: 400 13px/20px var(--mono); overflow-x: auto; tab-size: 4; }
   .ln { display: grid; grid-template-columns: 52px 92px minmax(0, 1fr); }
   .ln .n { text-align: right; padding-right: 12px; color: var(--faint); cursor: pointer; user-select: none; }
+  /* Upstream's branches: past a few, a filter and a box that scrolls, a row each. */
+  .up-branches { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 5px; }
+  .up-branches .row { flex-wrap: nowrap; gap: 6px; padding: 2px 4px 2px 8px; font-size: 13px; min-height: 28px; }
+  .up-branches .row + .row { border-top: 1px solid var(--border); }
+  .up-branches code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .up-branches .btn { padding: 2px 6px; } .up-branches .muted { flex: none; display: inline-flex; }
   .ln .n:hover { color: var(--fg); }
   .ln .by { color: var(--faint); font-size: 11.5px; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-right: 1px solid var(--border); user-select: none; }
   .ln .t { white-space: pre; padding: 0 16px; }
@@ -258,7 +265,9 @@
   .st { display: inline-flex; align-items: center; } .st svg { width: 14px; height: 14px; } .ln .st svg { width: 11px; height: 11px; }
   .st-heart svg { fill: var(--accent); stroke: var(--accent); }
   .st-lgtm { font: 700 10px/1 var(--sans); letter-spacing: .04em; }
-  .ln.sel { background: var(--select); } .ln.sel .n { color: var(--fg); box-shadow: inset 2px 0 0 var(--fg); }
+  /* Picked lines get a solid black gutter, one bar down a run; a line open for editing keeps its gutter and gets a dark box. */
+  .ln.sel { background: var(--select); } .ln.sel .n { color: #fff; background: #0a0a0a; }
+  .ln .t > input { border-color: #0a0a0a; box-shadow: 0 0 0 2px var(--select); }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   /* Claimed lines: the holder's colour down the edge, and their name in the blame column. An agent's shimmer while it works. */
   .ln.claim .t { box-shadow: inset 3px 0 0 var(--who); background: color-mix(in srgb, var(--who) 7%, transparent); }
@@ -295,7 +304,8 @@
   .act b { color: var(--fg); font-weight: 500; flex: none; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .act .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .act .age { flex: none; font: 500 11px/1 var(--mono); font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; }
-  .ln.priv .n { box-shadow: inset 2px 0 0 var(--faint); } .ln .ph { color: var(--faint); font-style: italic; }
+  .ln.priv .n { box-shadow: inset 2px 0 0 var(--faint); position: relative; } .ln .ph { color: var(--faint); font-style: italic; }
+  .ln.priv .n::before { content: "🔒"; position: absolute; left: 5px; font-size: 10px; }
   /* The crew reads private lines, blurred until hovered or edited, so a screen share doesn't show them. */
   .ln.priv .t :is(.secret, input) { transition: filter .15s; } .ln.priv:not(:hover):not(:focus-within) .t :is(.secret, input) { filter: blur(5px); }
   .ln.priv .t::after { content: "private"; margin-left: 10px; padding: 0 6px; border: 1px solid var(--border-2); border-radius: 9px; font-size: 10.5px; color: var(--faint); }
@@ -1918,17 +1928,45 @@ function diffRows(then, now) {
   }
   return { html: rows.join(""), del, add };
 }
-/** Click a line number to select it; shift-click to select a range. Calls back with [from, to] (1-based). */
+const PICK_TIP = "select lines first: click a line number, shift-click another, ⌘-click to add one, or drag down the numbers";
+const SHARE_TIP = PICK_TIP + ". A share is one run of lines";
+/**
+ * Pick lines by their numbers, as in VS Code: click one, shift-click another for the lines
+ * between, ⌘-click (ctrl-click) to add or drop one, or drag down the gutter for a run.
+ * Calls back with the picked lines' runs, [[from, to], ...] (1-based, in order).
+ */
 function selectable(box, onChange) {
-  let anchor = null;
-  box.addEventListener("click", (e) => {
-    const n = e.target.closest(".n"); if (!n) return;
-    const i = Number(n.parentElement.dataset.i);
-    const [a, b] = e.shiftKey && anchor !== null ? [Math.min(anchor, i), Math.max(anchor, i)] : [i, i];
-    if (!e.shiftKey) anchor = i;
-    box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("sel", k >= a && k <= b));
-    onChange([a + 1, b + 1]);
+  let anchor = null, picked = new Set(), drag = null;
+  const at = (e) => { const n = e.target.closest?.(".n"); return n && box.contains(n) ? Number(n.parentElement.dataset.i) : null; };
+  const span = (a, b) => Array.from({ length: Math.abs(b - a) + 1 }, (_, k) => Math.min(a, b) + k);
+  const pick = (next) => {
+    picked = next;
+    box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("sel", picked.has(k)));
+    onChange(runsOf(picked));
+  };
+  box.addEventListener("mousedown", (e) => {
+    const i = at(e); if (i === null || e.button) return;
+    e.preventDefault();
+    const more = e.metaKey || e.ctrlKey;
+    if (e.shiftKey && anchor !== null) return pick(new Set([...(more ? picked : []), ...span(anchor, i)]));
+    anchor = i;
+    if (more && picked.has(i)) { const next = new Set(picked); next.delete(i); return pick(next); }
+    drag = { from: i, keep: more ? new Set(picked) : new Set() };
+    pick(new Set([...drag.keep, i]));
   });
+  box.addEventListener("mouseover", (e) => { if (!drag) return; const i = at(e); if (i !== null) pick(new Set([...drag.keep, ...span(drag.from, i)])); });
+  addEventListener("mouseup", () => (drag = null));
+}
+/** Picked line indexes (0-based) as runs of line numbers: {2, 3, 4, 9} is [[3, 5], [10, 10]]. */
+function runsOf(picked) {
+  const runs = [];
+  for (const i of [...picked].sort((a, b) => a - b)) { const r = runs.at(-1); if (r && r[1] === i) r[1] = i + 1; else runs.push([i + 1, i + 1]); }
+  return runs;
+}
+/** "line 4", "lines 4–9" or "lines 4–9, 12, 20–22" (a long list ends "and 3 more"). */
+function runsLabel(runs, one = "line ", many = "lines ") {
+  const r = runs.map(([a, b]) => a === b ? `${a}` : `${a}–${b}`);
+  return (runs.length === 1 && runs[0][0] === runs[0][1] ? one : many) + (r.length > 4 ? `${r.slice(0, 3).join(", ")} and ${r.length - 3} more` : r.join(", "));
 }
 // The game's door on a level or repo page, with whoever is already in there.
 function playButton(room) {
@@ -2405,10 +2443,21 @@ const views = {
     const el = $("#mirror-branches");
     const list = await api(`/repos/${owner}/${repo}/mirror/branches`).catch(() => []);
     if (!el || !list.length) return;
-    el.innerHTML = `<p class="muted" style="font-size:12px;margin-bottom:4px">Upstream's branches</p>` + list.map((b) => `<div class="row" style="gap:6px;font-size:13px"><code>${esc(b.ref)}</code>${b.branch
-      ? `<span class="muted">${b.status === "open" ? `open here as <code>${esc(b.branch)}</code>` : `${esc(b.status)} here`}</span>`
-      : `<button class="btn" data-open-ref="${esc(b.ref)}"${picAttr("open", { ref: b.ref })}>${icon("download")}Open here</button>`}</div>`).join("");
+    // Newest first, a compact row each: the name, then ⤓ to open it here, or where it already is.
+    const row = (b) => `<div class="row" data-ref="${esc(b.ref.toLowerCase())}"><code title="${esc(b.ref)}${b.at ? ` · last commit ${ago(b.at)}` : ""}">${esc(b.ref)}</code>${b.branch
+      ? b.status === "open"
+        ? `<a class="btn ghost" href="#/b/${esc(owner)}/${esc(repo)}/${encodeURIComponent(b.branch)}" title="open here as ${esc(b.branch)}">${icon("git-branch")}</a>`
+        : `<span class="muted" title="${esc(b.status)} here as ${esc(b.branch)}">${icon(b.status === "merged" ? "git-merge" : "archive")}</span>`
+      : `<button class="btn" data-open-ref="${esc(b.ref)}" title="Open here"${picAttr("open", { ref: b.ref })}>${icon("download")}</button>`}</div>`;
+    const many = list.length > 8;
+    el.innerHTML = `<p class="muted" style="font-size:12px;margin-bottom:4px">Upstream's branches${many ? ` · ${list.length}` : ""}</p>`
+      + (many ? `<input id="up-filter" type="search" placeholder="filter branches" style="width:100%;margin-bottom:4px">` : "")
+      + `<div class="up-branches">${list.map(row).join("")}</div>`;
     icons();
+    $("#up-filter")?.addEventListener("input", (e) => {
+      const needle = e.target.value.trim().toLowerCase();
+      el.querySelectorAll("[data-ref]").forEach((r) => (r.hidden = !!needle && !r.dataset.ref.includes(needle)));
+    });
     el.querySelectorAll("[data-open-ref]").forEach((btn) => btn.addEventListener("click", async () => {
       btn.disabled = true;
       try { const r = await api(`/repos/${owner}/${repo}/mirror/branches`, { ref: btn.dataset.openRef }); toast(`Opened ${r.name}: ${r.files.length} file${r.files.length === 1 ? "" : "s"}${r.deleted.length ? `, deleted ${r.deleted.join(", ")}` : ""}${r.skipped.length ? `, skipped ${r.skipped.join(", ")}` : ""}`); }
@@ -2980,7 +3029,7 @@ const views = {
     });
     mountExplorer($("#tree"), `l/${slug}`, load, href, path);
     $("#redig")?.addEventListener("click", async (e) => { const b = e.currentTarget; b.disabled = true; try { await api(`/levels/${slug}/import`, {}); route(); } catch (err) { b.disabled = false; toast(err.message); } });
-    if ($("#lines")) selectable($("#lines"), ([a, b]) => ($("#st-sel").textContent = a === b ? `Ln ${a}` : `Ln ${a}–${b}`));
+    if ($("#lines")) selectable($("#lines"), (runs) => ($("#st-sel").textContent = runs.length ? runsLabel(runs, "Ln ", "Ln ") : ""));
     if ($("#forkbtn")) {
       popover($("#forkbtn"));
       const dir = isFile ? path.split("/").slice(0, -1).join("/") : path;
@@ -3003,9 +3052,9 @@ const views = {
       tab: `${icon("file")}${esc(path.split("/").pop())}`,
       bar: `${crumbs(`#/r/${owner}/${repo}`, repo, path)}<span class="grow"></span>
         <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit. Older revisions show as a diff against now.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"><span class="legend"><span><i class="d"></i>taken out</span><span><i class="a"></i>put in</span></span><a class="btn" id="smash" hidden title="the lines this took out, as furniture in the backrooms">${icon("hammer")}Smash what it took out</a></div></div>
-        ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
+        ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="${SHARE_TIP}">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
         <div class="pop"><button class="btn" id="stamp" disabled title="select lines first, then stamp them: a reaction that stays on each line through edits">${icon("stamp")}Stamp</button><div class="panel stamp-pick" id="stamp-pick" hidden><b>Stamp <span id="stamp-range"></span></b><span class="muted" style="font-size:13px">It stays on each line as the file is edited, whoever wrote it, person or agent.</span><div class="row">${STAMP_KINDS.map(([k, , t]) => `<button class="btn" type="button" data-stamp="${k}" title="${t}">${stampFace(k)}</button>`).join("")}</div></div></div>
-        ${r.canWrite ? `<div class="pop"><button class="btn" id="cut" disabled title="select lines first: click a line number, shift-click another">${icon("scissors")}Cut</button><form class="panel" id="cut-form" hidden style="width:380px"><b>Cut <span id="cut-range"></span> out</b><span class="muted" style="font-size:13px">Just these lines and what they use, followed through imports into the repo's other files, as a tiny repo on a branch of its own: run its tests, share it, merge a fix back.</span><textarea name="more" rows="3" placeholder="add these lines too, a range a line:&#10;test/sum.test.ts:10-24"></textarea><input name="note" placeholder="what it shows (optional)"><button class="btn primary">${icon("scissors")}Cut</button></form></div>` : ""}
+        ${r.canWrite ? `<div class="pop"><button class="btn" id="cut" disabled title="${PICK_TIP}">${icon("scissors")}Cut</button><form class="panel" id="cut-form" hidden style="width:380px"><b>Cut <span id="cut-range"></span> out</b><span class="muted" style="font-size:13px">Just these lines and what they use, followed through imports into the repo's other files, as a tiny repo on a branch of its own: run its tests, share it, merge a fix back.</span><textarea name="more" rows="3" placeholder="add these lines too, a range a line:&#10;test/sum.test.ts:10-24"></textarea><input name="note" placeholder="what it shows (optional)"><button class="btn primary">${icon("scissors")}Cut</button></form></div>` : ""}
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
         ${r.canWrite ? `<button class="btn" id="hold" disabled title="select lines first. Held lines are yours alone: agents and everyone else leave them be till you let go">${icon("hand")}<span>Hold</span></button>` : ""}
         ${r.canWrite ? `<button class="btn" id="lock" disabled title="select lines first. Only the crew reads a private line; everyone else, git and search get it blank">${icon("lock")}<span>Make private</span></button>` : ""}
@@ -3014,7 +3063,7 @@ const views = {
       body: `<div class="crew" id="crew"></div><div class="code" id="lines"></div>`,
       details: sec("radio", "Here now", `<p id="who-here" class="muted">just you</p><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div>`)
         + sec("activity", "Activity", `<div class="act-bar"><div class="seg" id="act-kinds">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who"></div><div class="acts" id="acts"></div>`)
-        + (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, then share it.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
+        + (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click to add a line, or drag down the numbers.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
         + (owner === me() && r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
         + sec("scroll-text", "Commits", `<div id="commits"></div>`)
         + views.repoDetails(owner, repo, r),
@@ -3065,22 +3114,30 @@ const views = {
       }
       fresh.forEach((id) => box.querySelector(`[data-id="${id}"]`)?.classList.add("flash"));
       keep(fresh);
-      if (sel) box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("sel", k >= sel[0] - 1 && k <= sel[1] - 1));
+      if (sel) box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("sel", sel.some(([a, b]) => k >= a - 1 && k <= b - 1)));
       $("#revl").textContent = live ? `${d.lines.length} lines · r${doc.rev}` : `viewing r${viewing} of ${doc.rev}`;
       if (live && r.canWrite) for (const el of box.querySelectorAll(".ln")) el.addEventListener("dblclick", () => edit(el));
     };
-    selectable(box, (range) => {
-      sel = range;
-      const label = range[0] === range[1] ? `line ${range[0]}` : `lines ${range[0]}–${range[1]}`;
-      for (const b of ["#share", "#stamp", "#collect", "#lock", "#cut", "#hold"]) if ($(b)) $(b).disabled = false;
+    selectable(box, (runs) => {
+      sel = runs.length ? runs : null;
+      const label = sel ? runsLabel(runs) : "";
+      for (const b of ["#share", "#stamp", "#collect", "#lock", "#cut", "#hold"]) if ($(b)) $(b).disabled = !sel;
+      // A share is one run of lines: a link to lines 4–9, not to 4–9 and 20.
+      if ($("#share")) { $("#share").disabled = runs.length !== 1; $("#share").title = runs.length > 1 ? "a share is one run of lines: pick lines next to each other" : SHARE_TIP; }
       if ($("#lock")) $("#lock span").textContent = selPrivate() ? "Make public" : "Make private";
       holdLabel();
-      if ($("#agent-only")) { $("#agent-only").hidden = false; $("#agent-only span").textContent = label; }
+      if ($("#agent-only")) { $("#agent-only").hidden = !sel; $("#agent-only span").textContent = label; }
       for (const b of ["#share-range", "#stamp-range", "#cut-range"]) if ($(b)) $(b).textContent = label;
-      $("#st-sel").textContent = range[0] === range[1] ? `Ln ${range[0]}` : `Ln ${range[0]}–${range[1]}`;
+      $("#st-sel").textContent = sel ? runsLabel(runs, "Ln ", "Ln ") : "";
     });
-    const selLines = () => sel ? doc.lines.slice(sel[0] - 1, sel[1]) : [];
+    const selLines = () => sel ? sel.flatMap(([a, b]) => doc.lines.slice(a - 1, b)) : [];
     const selPrivate = () => selLines().length > 0 && selLines().every((l) => l.private);
+    // Lines went private or public: the server says what this reader may see.
+    const privateChanged = async () => {
+      doc = await api(`${base}/file${q}`);
+      if (sel && $("#lock")) $("#lock span").textContent = selPrivate() ? "Make public" : "Make private";
+      if (viewing === null && !box.querySelector(".ln input")) draw(doc);
+    };
 
     // Who's here and who holds what. People come from the socket's presence; agents
     // from their claims, one per run, so a thousand runs of one harness are a thousand
@@ -3357,12 +3414,14 @@ const views = {
       const on = !selPrivate();
       await api(`${base}/private${q}`, { lines: selLines().map((l) => l.id), private: on });
       toast(on ? "Only the crew can read those lines now. Text already pushed stays in git's history" : "Those lines are public again");
+      // The 🔒 shows now, not when the socket gets round to it.
+      await privateChanged();
     });
     if ($("#share")) {
       popover($("#share"));
       $("#share-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const s = await api(`/repos/${owner}/${repo}/shares`, { path, from: sel[0], to: sel[1], note: e.target.note.value });
+        const s = await api(`/repos/${owner}/${repo}/shares`, { path, from: sel[0][0], to: sel[0][1], note: e.target.note.value });
         const url = `${location.origin}/#/s/${s.id}`;
         $("#share-out").hidden = false; $("#share-out input").value = url; copy(url, "Link copied");
       });
@@ -3392,7 +3451,7 @@ const views = {
       $("#cut-form").addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = e.target;
-        try { location.hash = "#/c/" + (await cutLines(owner, repo, [{ path, from: sel[0], to: sel[1] }], f.more.value, f.note.value)).id; }
+        try { location.hash = "#/c/" + (await cutLines(owner, repo, sel.map(([from, to]) => ({ path, from, to })), f.more.value, f.note.value)).id; }
         catch (err) { toast(err.message); }
       });
     }
@@ -3401,7 +3460,9 @@ const views = {
       const { playlists } = await api("/users/" + me());
       $("#track select").innerHTML = playlists.map((p) => `<option value="${p.id}">${esc(p.title)}</option>`).join("") || "<option disabled>start a collection on your profile first</option>";
       $("#track").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target;
-        await api(`/playlists/${f.pl.value}/tracks`, { owner, repo, path, from: sel[0], to: sel[1], note: f.note.value }); location.hash = "#/p/" + f.pl.value; });
+        // Each run of lines is a track of its own.
+        for (const [from, to] of sel) await api(`/playlists/${f.pl.value}/tracks`, { owner, repo, path, from, to, note: f.note.value });
+        location.hash = "#/p/" + f.pl.value; });
     }
     icons();
     // Live: every applied op from every editor arrives here, and is applied in
@@ -3465,13 +3526,7 @@ const views = {
       if (msg.type === "commit") return drawCommits(await api(`${base}/commits${q}`));
       // Someone stamped a line or took one off: fetch the stamps this reader may see.
       if (msg.type === "stamps") return loadStamps();
-      // Lines went private or public: the server says what this reader may see.
-      if (msg.type === "private") {
-        doc = await api(`${base}/file${q}`);
-        if (sel && $("#lock")) $("#lock span").textContent = selPrivate() ? "Make public" : "Make private";
-        if (viewing === null && !box.querySelector(".ln input")) draw(doc);
-        return;
-      }
+      if (msg.type === "private") return privateChanged();
       if (msg.type !== "ops") return;
       // In order: apply in place. Missed something (a gap): fetch the whole file.
       if (msg.applied[0]?.rev === doc.rev + 1) msg.applied.forEach(applyLocal);
@@ -4287,21 +4342,21 @@ async function commands() {
   const out = [], add = (group, ic, title, apiCall, run, ask) => out.push({ group, ic, title, api: apiCall, run, ask });
   const c = ctx, u = me();
   if (c.view === "f") {
-    const range = c.sel ? (c.sel[0] === c.sel[1] ? `line ${c.sel[0]}` : `lines ${c.sel[0]}–${c.sel[1]}`) : null;
-    if (u) add("This file", "share-2", range ? `Share ${range}` : "Share lines…", `POST /api/repos/${c.owner}/${c.repo}/shares`, async (arg) => {
-      const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
-      const s = await api(`/repos/${c.owner}/${c.repo}/shares`, { path: c.path, from, to: to || from });
+    // The picked runs of lines, or the ones typed in, like 4-12.
+    const range = c.sel ? runsLabel(c.sel) : null, one = c.sel?.length === 1 ? c.sel[0] : null;
+    const typed = (arg) => { const [from, to] = String(arg).split(/[-–, ]+/).map(Number); return [[from, to || from]]; };
+    if (u) add("This file", "share-2", one ? `Share ${range}` : "Share lines…", `POST /api/repos/${c.owner}/${c.repo}/shares`, async (arg) => {
+      const [[from, to]] = one ? [one] : typed(arg);
+      const s = await api(`/repos/${c.owner}/${c.repo}/shares`, { path: c.path, from, to });
       copy(`${location.origin}/#/s/${s.id}`, `Link to lines ${s.from}–${s.to} copied`);
-    }, c.sel ? null : "which lines, like 4-12");
+    }, one ? null : "which lines, like 4-12");
     if (u) add("This file", "thumbs-up", range ? `Stamp ${range} +1` : "Stamp lines +1…", `POST /api/repos/${c.owner}/${c.repo}/stamps`, async (arg) => {
-      const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
-      await api(`/repos/${c.owner}/${c.repo}/stamps`, { path: c.path, stamp: "+1", from, to: to || from });
+      for (const [from, to] of c.sel ?? typed(arg)) await api(`/repos/${c.owner}/${c.repo}/stamps`, { path: c.path, stamp: "+1", from, to });
       await c.loadStamps?.();
     }, c.sel ? null : "which lines, like 4-12");
     if (c.canWrite && range) add("This file", "lock", `${$("#lock span")?.textContent ?? "Make private"}: ${range}`, `POST /api/repos/${c.owner}/${c.repo}/do/private`, async () => $("#lock").click());
     if (c.canWrite) add("This file", "scissors", range ? `Cut ${range} out` : "Cut lines out…", `POST /api/repos/${c.owner}/${c.repo}/cuts`, async (arg) => {
-      const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
-      location.hash = "#/c/" + (await cutLines(c.owner, c.repo, [{ path: c.path, from, to: to || from }])).id;
+      location.hash = "#/c/" + (await cutLines(c.owner, c.repo, (c.sel ?? typed(arg)).map(([from, to]) => ({ path: c.path, from, to })))).id;
     }, c.sel ? null : "which lines, like 4-12");
     if (c.canWrite) add("This file", "git-commit-horizontal", "Commit this file", `POST /api/repos/${c.owner}/${c.repo}/do/commit`, async (msg) => {
       const r = await api(`${c.base}/commit${c.q}`, { message: msg }); toast(r.git?.commit ? `Pushed ${r.git.commit.slice(0, 7)}` : "Committed");
