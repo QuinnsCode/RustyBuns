@@ -287,7 +287,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "cuts" && req.method === "POST") return createCut(env, owner, repo, user, a.write, await body());
     // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
     if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
-    // GET /api/repos/:o/:r/tree?path=dir  the repo's git tree, plus files written here but not catalogued yet
+    // GET /api/repos/:o/:r/tree?path=dir[&branch=b]  the repo's git tree, plus files written here but not catalogued yet
     if (p[4] === "tree") {
       const dir = (url.searchParams.get("path") ?? "").replace(/^\/|\/$/g, "");
       let entries: { name: string; path: string; type: string }[] = [], commit = null;
@@ -303,10 +303,18 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (code(e) === "NOT_FOUND") return json({ lost: true, entries: [] });   // a clone that never landed
         throw e;
       }
-      const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path LIKE ? ESCAPE '\\'")
-        .bind(owner, repo, (dir ? dir.replace(/[%_\\]/g, "\\$&") + "/" : "") + "%").all();
+      const under = (dir ? dir.replace(/[%_\\]/g, "\\$&") + "/" : "") + "%";
+      const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path LIKE ? ESCAPE '\\'").bind(owner, repo, under).all();
+      // ?branch=: the branch's own files show too, and the ones it deleted don't (#734).
+      const branch = url.searchParams.get("branch");
+      const own = branch && await openBranch(env, owner, repo, branch)
+        ? (await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND path LIKE ? ESCAPE '\\'").bind(owner, repo, branch, under).all()).results as { path: string; deleted: number }[]
+        : [];
+      const gone = new Set(own.filter((f) => f.deleted).map((f) => f.path));
+      entries = entries.filter((e) => !gone.has(e.path));
       const seen = new Set(entries.map((e) => e.name));
-      for (const { path } of results as { path: string }[]) {
+      for (const { path } of [...results as { path: string }[], ...own.filter((f) => !f.deleted)]) {
+        if (gone.has(path)) continue;
         const rest = dir ? path.slice(dir.length + 1) : path, name = rest.split("/")[0]!;
         if (seen.has(name)) continue;
         seen.add(name);

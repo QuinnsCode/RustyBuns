@@ -347,6 +347,26 @@
   .buildiff { grid-column: 2; min-width: 0; margin: 4px 0; font: 12px/1.5 var(--mono); border: 1px solid var(--border-2); border-radius: 4px; overflow-x: auto; }
   .buildiff div { padding: 0 8px; white-space: pre; } .buildiff .d { background: var(--del); color: var(--del-fg); } .buildiff .a { background: var(--add); }
   .buildiff .h { padding: 3px 8px; color: var(--muted); border-bottom: 1px solid var(--border-2); }
+  /* A branch's change, a hunk at a time (#735): what it took out in orange, what it put in in grey, Accept / Reject on each. */
+  .hunks { grid-column: 2; min-width: 0; display: grid; gap: 6px; margin: 4px 0; }
+  .hunks > details { border: 1px solid var(--border-2); border-radius: 4px; min-width: 0; }
+  .hunks > details > summary { display: flex; align-items: center; gap: 6px; padding: 3px 8px; cursor: pointer; font: 12px var(--mono); color: var(--muted); }
+  .hunks .diffstat b { font-weight: 600; }
+  .hunk { font: 12px/1.5 var(--mono); border-top: 1px solid var(--border-2); overflow-x: auto; }
+  .hunk div { padding: 0 8px; white-space: pre; } .hunk .d { background: var(--del); color: var(--del-fg); } .hunk .a { background: var(--add); }
+  .hunk .d::before { content: "− "; } .hunk .a::before { content: "+ "; color: var(--muted); }
+  .hunk-h { display: flex; align-items: center; gap: 6px; padding: 2px 4px 2px 8px; font: 11.5px var(--sans); color: var(--muted); white-space: normal; position: sticky; left: 0; }
+  .hunk-h .btn { padding: 1px 8px; font-size: 12px; }
+  .hunk.seen > :not(.hunk-h) { display: none; }
+  .hunk.seen .hunk-h { color: var(--faint); }
+  /* In the code view on a branch: the ghost of what it took out, over the lines it put in. */
+  .gl { display: grid; grid-template-columns: 52px 92px minmax(0, 1fr); background: var(--del); color: var(--del-fg); user-select: none; }
+  .gl .t { white-space: pre; padding: 0 16px; text-decoration: line-through; text-decoration-color: var(--del-edge); }
+  .gl .t::before { content: "−"; display: inline-block; width: 14px; margin-left: -14px; }
+  .gl.h { background: var(--accent-soft); color: var(--muted); font: 12px/22px var(--sans); }
+  .gl.h .t { text-decoration: none; display: flex; align-items: center; gap: 6px; } .gl.h .t::before { content: none; }
+  .gl.h .btn { padding: 0 8px; font-size: 12px; line-height: 18px; }
+  .ln.chg { background: var(--add); } .ln.chg .n { box-shadow: inset 3px 0 var(--accent); color: var(--fg); }
   .checks { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; margin: 2px 0; }
   .check { display: inline-flex; align-items: center; gap: 4px; } .check a { color: inherit; } .check.failed, .check.cancelled { color: var(--del-fg); } .check.running svg { animation: spin 1.2s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -1536,6 +1556,56 @@ async function startBranch(owner, repo, raw) {
   route();
 }
 
+// ---- a branch's change, a hunk at a time (#735) ----------------------------------
+// The review (and GET .../hunks) lists what a branch changed since it forked, a stretch at a time.
+// Accept is a note in this browser that you've read it; Reject puts that stretch back on the branch.
+/** The tree's query for the branch this repo's pages are on (#734): its new files in, its deleted ones out. */
+const treeQ = (owner, repo, dir) => { const b = branchPicked(owner, repo); return `/repos/${owner}/${repo}/tree?path=${encodeURIComponent(dir)}${b ? `&branch=${encodeURIComponent(b)}` : ""}`; };
+const seenKey = (owner, repo, branch) => `cs_seen:${owner}/${repo}:${branch}`, seenMem = new Map();
+const hunkSig = (path, h) => { let x = 5381; for (const c of path + "\0" + h.del.map((l) => l.text).join("\n") + "\0" + h.add.map((l) => l.text).join("\n")) x = (x * 33 + c.charCodeAt(0)) | 0; return `${h.key}:${(x >>> 0).toString(36)}`; };
+const seenAll = (owner, repo, branch) => { try { return JSON.parse(localStorage.getItem(seenKey(owner, repo, branch)) || "{}"); } catch { return seenMem.get(seenKey(owner, repo, branch)) ?? {}; } };
+/** Whether this hunk, as it reads now, was accepted here: one that changes again asks again. */
+const hunkSeen = (owner, repo, branch, path, h) => !!seenAll(owner, repo, branch)[hunkSig(path, h)];
+const acceptHunk = (owner, repo, branch, path, h, on = true) => {
+  const all = seenAll(owner, repo, branch);
+  on ? (all[hunkSig(path, h)] = 1) : delete all[hunkSig(path, h)];
+  seenMem.set(seenKey(owner, repo, branch), all);
+  try { localStorage.setItem(seenKey(owner, repo, branch), JSON.stringify(all)); } catch {}
+};
+const rejectHunk = (owner, repo, branch, path, h) => api(`/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/hunks/reject`, { path, key: h.key });
+const hunkStat = (hs) => { const d = hs.reduce((n, h) => n + h.del.length, 0), a = hs.reduce((n, h) => n + h.add.length, 0); return `<span class="diffstat"><b class="minus">−${d}</b> <b class="plus">+${a}</b></span>`; };
+/** One file's hunks, each with Accept / Reject (the crew's), as a review shows them. */
+function hunksHtml(owner, repo, branch, f, canWrite, open) {
+  const hs = f.hunks ?? [], seen = hs.filter((h) => hunkSeen(owner, repo, branch, f.path, h)).length;
+  return `<details${open ? " open" : ""}><summary>${icon("file-diff")}<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(f.path)}</span>${hunkStat(hs)}${seen ? `<span title="accepted here">${icon("check")}${seen}/${hs.length}</span>` : ""}</summary>
+    ${hs.map((h) => `<div class="hunk${hunkSeen(owner, repo, branch, f.path, h) ? " seen" : ""}" data-hunk="${esc(h.key)}" data-path="${esc(f.path)}" data-branch="${esc(branch)}">
+      <span class="hunk-h"><span class="grow">line ${h.at}${hunkSeen(owner, repo, branch, f.path, h) ? " · accepted" : ""}</span>${canWrite ? `<button class="btn" data-accept title="${hunkSeen(owner, repo, branch, f.path, h) ? "show it again" : "you've read it: it stays, folded"}">${icon(hunkSeen(owner, repo, branch, f.path, h) ? "eye" : "check")}</button><button class="btn" data-reject title="put these lines back as they were where the branch began">${icon("undo-2")}</button>` : ""}</span>
+      ${h.del.map((l) => `<div class="d">${esc(l.text) || " "}</div>`).join("")}${h.add.map((l) => `<div class="a">${esc(l.text) || " "}</div>`).join("")}</div>`).join("")}</details>`;
+}
+/** Accept / Reject on the hunks inside `el`; `hunksOf(branch, path)` finds a hunk's data; `then(rejected)` after either. */
+function wireHunks(el, owner, repo, hunksOf, then) {
+  el.querySelectorAll("[data-hunk]").forEach((card) => {
+    const { branch, path } = card.dataset, h = () => hunksOf(branch, path)?.find((x) => x.key === card.dataset.hunk);
+    card.querySelector("[data-accept]")?.addEventListener("click", (e) => {
+      const x = h();
+      if (!x) return;
+      const on = !hunkSeen(owner, repo, branch, path, x);
+      acceptHunk(owner, repo, branch, path, x, on);
+      card.classList.toggle("seen", on);
+      const label = card.querySelector(".hunk-h .grow");
+      if (label && card.classList.contains("hunk")) label.textContent = `line ${x.at}${on ? " · accepted" : ""}`;
+      e.currentTarget.innerHTML = icon(on ? "eye" : "check"); e.currentTarget.title = on ? "show it again" : "you've read it: it stays, folded";
+      icons(); then(false);
+    });
+    card.querySelector("[data-reject]")?.addEventListener("click", async (e) => {
+      e.currentTarget.disabled = true;
+      try { await rejectHunk(owner, repo, branch, path, h()); toast(`Put back line ${h().at} of ${path} on ${branch}`); }
+      catch (err) { toast(`Not put back: ${err.message}`); }
+      then(true);
+    });
+  });
+}
+
 function workbench(head, { tab, bar, body, details, status }) {
   document.body.classList.add("ide-mode");
   queueMicrotask(dock); queueMicrotask(sheets);
@@ -1587,7 +1657,7 @@ function wireMap(c) {
   const segs = at.split("/").filter(Boolean), dirs = c.view === "f" ? segs.slice(0, -1) : segs;
   let trail = dirs.map((_, i) => dirs.slice(0, i + 1).join("/"));
   const kids = {};
-  const load = (d) => kids[d] ??= api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(d)}`).then((t) => t.entries ?? []).catch(() => []);
+  const load = (d) => kids[d] ??= api(treeQ(owner, repo, d)).then((t) => t.entries ?? []).catch(() => []);
   const el = document.createElement("div");
   el.className = "wiremap"; el.id = "wiremap"; el.shut = () => close();
   el.innerHTML = `<div class="wm-head">${icon("network")}<b>${esc(owner)}/${esc(repo)}</b><span class="muted">click a folder to wire out what's in it, a file to open it</span><span class="grow"></span><button class="btn ghost" id="wm-x" title="close (esc)">${icon("x")}</button></div><div class="wm-scroll"><div class="wm-stage" id="wm-stage"></div></div>`;
@@ -2867,7 +2937,7 @@ const views = {
    * Open branches, each reviewed against main as it is now. In the repo's panel a branch with conflicts
    * links to its merge page (`full`, #/b/owner/repo/branch), where each conflict is a card wide enough to read.
    */
-  async wireBranches(owner, repo, r, { only, full = false } = {}) {
+  async wireBranches(owner, repo, r, { only, full = false, phone = false } = {}) {
     const el = $("#branches"), base = `/repos/${owner}/${repo}/branches`;
     const open = (await api(base).catch(() => [])).filter((b) => b.status === "open" && (!only || b.name === only));
     await wireCheckHead(el, owner, repo, r);
@@ -2895,6 +2965,7 @@ const views = {
           : settles(clash) ? `<span class="muted">${icon("git-merge")} ${settles(clash)} conflict${settles(clash) > 1 ? "s" : ""} with main: ${esc([...new Set(clash.filter((c) => !c.lint).map((c) => c.path))].join(", "))}</span>` : ""}
         ${build.length ? `<span class="muted">${icon("triangle-alert")} Changes what runs at build or deploy time${b.deploys ? ", and your next commit to main ships it" : ""}:</span>
           ${build.map((f) => `<div class="buildiff"><div class="h">${esc(f.path)}</div>${(f.lines ?? []).map((l) => `<div class="${l[0] === "-" ? "d" : "a"}">${esc(l)}</div>`).join("")}</div>`).join("")}` : ""}
+        ${files.some((f) => f.hunks?.length) ? `<div class="hunks">${files.filter((f) => f.hunks?.length).map((f) => hunksHtml(owner, repo, b.name, f, r.canWrite, full || phone)).join("")}</div>` : ""}
         ${checkRow(b.checks)}
         ${full && mergeRefused.get(clashId(owner, repo, b.name)) ? `<span class="muted" style="color:var(--del-fg)" role="alert">${icon("triangle-alert")} Not merged: ${esc(mergeRefused.get(clashId(owner, repo, b.name)))}. Settle it another way, then merge again.</span>` : ""}
         ${r.canWrite && gate ? `<span class="muted"><label><input type="checkbox" data-read="${esc(b.name)}"> I've read the build changes</label></span>` : ""}
@@ -2943,7 +3014,14 @@ const views = {
     void clashContext(el, owner, repo);
     reviews.forEach((b) => gate(b.name));
     el.querySelectorAll("[data-read], [data-anyway]").forEach((box) => box.addEventListener("change", () => gate(box.dataset.read ?? box.dataset.anyway)));
+    // Each hunk: Accept folds it here, Reject puts it back on the branch, and the review is read again.
+    wireHunks(el, owner, repo, (branch, path) => reviews.find((x) => x.name === branch)?.files.find((f) => f.path === path)?.hunks, (rejected) => rejected && route());
     el.querySelectorAll("[data-merge]").forEach((btn) => btn.addEventListener("click", async () => {
+      // On a phone a tap is easy to miss: the first one asks, a second within a few seconds merges.
+      if (phone && !btn.dataset.sure) {
+        btn.dataset.sure = "1"; btn.innerHTML = `${icon("git-merge")}Tap again to merge`; icons();
+        return void setTimeout(() => { if (btn.isConnected) { delete btn.dataset.sure; btn.innerHTML = `${icon("git-merge")}Merge`; icons(); } }, 4000);
+      }
       const b = reviews.find((x) => x.name === btn.dataset.merge), resolve = {};
       for (const f of b.files) for (const c of f.conflicts) {
         const pick = c.lint ? anyway(b.name)?.checked && "branch" : clashResolve(clashes.get(clashId(owner, repo, b.name, f.path, c.line)) ?? {});
@@ -3039,7 +3117,7 @@ const views = {
     ctx = { view: "b", owner, repo, branch, canWrite: r.canWrite, visibility: r.visibility };
     app.innerHTML = `<div class="wrap merge-page" style="padding-top:20px;padding-bottom:40px">
       <h1 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:20px">${icon("git-merge")}<span>Merge <code>${esc(branch)}</code> into main</span><span class="muted" style="font-size:14px"><a href="#/r/${esc(owner)}/${esc(repo)}">${esc(owner)}/${esc(repo)}</a></span></h1>
-      <p class="muted" style="margin:4px 0 12px">Both sides changed these lines since the branch began. Settle each one: main's, the branch's, both, or lines of your own. Nothing lands until you press Merge.</p>
+      <p class="muted" style="margin:4px 0 12px">Read what the branch changed, a stretch at a time: Accept folds it away, Reject puts those lines back as they were. Where both sides changed a line, settle it: main's, the branch's, both, or lines of your own. Nothing lands on main until you press Merge.</p>
       <div class="sec"><div id="branches"><span class="muted">Reading the branch…</span></div></div>
     </div>`;
     icons();
@@ -3056,7 +3134,7 @@ const views = {
       ${sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)}
     </div>`;
     icons();
-    views.wireBranches(owner, repo, r);
+    views.wireBranches(owner, repo, r, { phone: true });
     const f = $("#m-agent");
     if (!f) return;
     // Every run on the repo, polled while one is going; its lines land live on the file's page.
@@ -3092,7 +3170,7 @@ const views = {
     });
   },
   async r(owner, repo, dir = "") {
-    const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(dir)}`)]);
+    const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(treeQ(owner, repo, dir))]);
     // Straight to the code: a repo opens on its README (or its first file).
     const first = !dir && readmeOf(tree);
     if (first) return location.replace(`#/f/${owner}/${repo}/${encodeURIComponent(first.path)}`);
@@ -3108,7 +3186,7 @@ const views = {
       status: views.repoStatus(r, tree),
     });
     views.wireRepoHead(owner, repo, r);
-    mountExplorer($("#tree"), `r/${owner}/${repo}`, (d) => api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(d)}`), href, dir);
+    mountExplorer($("#tree"), `r/${owner}/${repo}`, (d) => api(treeQ(owner, repo, d)), href, dir);
     if ($("#add")) { popover($("#add")); $("#newfile").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api(`/repos/${owner}/${repo}/files`, { path: f.path.value, content: f.content.value }); location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(f.path.value)}`; }); }
     icons();
   },
@@ -3191,7 +3269,7 @@ const views = {
         + views.repoDetails(owner, repo, r),
       status: views.repoStatus(r, null, `<span class="grow"></span><span id="st-sel"></span>${r.upstream ? '<span id="modded"></span>' : ""}<span id="revl"></span>`),
     });
-    mountExplorer($("#tree"), `r/${owner}/${repo}`, (d) => api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(d)}`), href, path);
+    mountExplorer($("#tree"), `r/${owner}/${repo}`, (d) => api(treeQ(owner, repo, d)), href, path);
     views.wireRepoHead(owner, repo, r);
     const box = $("#lines");
     // Line id -> {stamp: [who]}, from GET .../stamps (stamps.ts).
@@ -3201,6 +3279,33 @@ const views = {
       if (viewing === null && !box.querySelector(".ln input")) draw(doc);
     };
     ctx.loadStamps = loadStamps;
+    // On a branch, what it changed here since it began (#735): the lines it put in are tinted, the ones it
+    // took out show as ghosts above them, and each stretch has Accept / Reject. Read again as the file moves.
+    let hunksHere = [], hunksRev = -1, hunkTimer = 0;
+    const loadHunks = async () => {
+      hunksRev = doc.rev;
+      hunksHere = (await api(`/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/hunks${q.replace(/&branch=[^&]*/, "")}`).catch(() => ({ hunks: [] }))).hunks;
+      if (viewing === null && !box.querySelector(".ln input")) draw(doc);
+    };
+    const ghosts = (d) => {
+      if (d.rev !== hunksRev) { clearTimeout(hunkTimer); hunkTimer = setTimeout(loadHunks, 400); }
+      const row = (id) => id && box.querySelector(`.ln[data-id="${CSS.escape(id)}"]`);
+      for (const h of hunksHere) {
+        if (hunkSeen(owner, repo, branch, path, h)) continue;
+        h.add.forEach((l) => row(l.id)?.classList.add("chg"));
+        const head = `<div class="gl h" data-hunk="${esc(h.key)}" data-path="${esc(path)}" data-branch="${esc(branch)}"><span></span><span></span><span class="t hunk-h">${icon("git-branch")}<span class="grow">${esc(branch)} changed this ${hunkStat([h])}</span>${r.canWrite ? `<button class="btn" data-accept title="keep it: the ghost goes, the lines stay">${icon("check")}Accept</button><button class="btn" data-reject title="put these lines back as they were where the branch began">${icon("undo-2")}Reject</button>` : ""}</span></div>`;
+        const html = head + h.del.map((l) => `<div class="gl"><span></span><span></span><span class="t">${esc(l.text) || " "}</span></div>`).join("");
+        const first = row(h.add[0]?.id), after = row(h.before);
+        if (first) first.insertAdjacentHTML("beforebegin", html);
+        else if (after) after.insertAdjacentHTML("afterend", html);
+        else box.insertAdjacentHTML("afterbegin", html);
+      }
+      if (hunksHere.length) { wireHunks(box, owner, repo, () => hunksHere, async (rejected) => {
+        // The socket brings the put-back lines too; read the file anyway, so the page never shows the old ones.
+        if (rejected) { doc = await api(`${base}/file${q}`).catch(() => doc); return loadHunks(); }
+        draw(doc);
+      }); icons(); }
+    };
     const draw = (d, fresh = new Set()) => {
       const live = viewing === null;
       if (!live) {
@@ -3214,6 +3319,7 @@ const views = {
       $("#smash").hidden = true;
       const keep = anchor();
       box.innerHTML = codeRows(d.lines);
+      if (branch) ghosts(d);
       if (stampsOf.size) for (const el of box.children) {
         const st = stampsOf.get(el.dataset.id), t = st && $(".t", el);
         if (!t) continue;
