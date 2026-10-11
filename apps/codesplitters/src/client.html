@@ -267,6 +267,9 @@
   .who { display: inline-flex; align-items: center; gap: 4px; max-width: 150px; padding: 1px 7px 1px 5px; border: 1px solid color-mix(in srgb, var(--who) 45%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--who) 10%, transparent); color: var(--fg); font: 500 11.5px/18px var(--sans); white-space: nowrap; cursor: pointer; flex: none; }
   .who span { overflow: hidden; text-overflow: ellipsis; }
   .who svg { width: 12px; height: 12px; color: var(--who); flex: none; }
+  a.who { text-decoration: none; }
+  .who-prof { display: inline-flex; color: var(--muted); flex: none; } .who-prof:hover { color: var(--accent); }
+  .who-prof svg { width: 14px; height: 14px; }
   .crew .counts { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font: 500 11.5px/1 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .crew .counts span { display: inline-flex; align-items: center; gap: 3px; } .crew .counts svg { width: 12px; height: 12px; }
   .crew .above { margin-left: auto; padding: 1px 8px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); color: var(--accent); font: 500 11.5px/18px var(--sans); cursor: pointer; white-space: nowrap; }
@@ -2995,9 +2998,13 @@ const views = {
     };
     // Whoever just landed lines beats, live off the socket: their pulse (pulse.ts) between its looks.
     const beating = new Map();
+    // A chip holding lines jumps to them; one that's only looking opens their profile (an agent's
+    // page, for an agent), and so does profileOf, the small link Here now puts beside a holder.
+    const profileOf = (c) => `<a class="who-prof" href="#/u/${esc(c.who)}" title="${esc(c.bot ? `${c.who}'s page: its runs` : `@${c.who}'s profile`)}">${glyph("circle-user")}</a>`;
     const face = (c, who) => {
       const bot = c ? c.bot : who.startsWith("agent-"), name = c ? nameOf(c) : who;
-      return `<button class="who${(beating.get(c ? c.who : who) ?? 0) > Date.now() ? " beat" : ""}" style="--who:${hueOf(c?.bot ? c.id : who ?? c.who)}"${c ? ` data-claim="${esc(c.id)}"` : ""} title="${esc(c ? `${bot ? "agent" : "@" + c.who} on ${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? `: ${c.task}` : ""}` : `@${who} has this file open`)}">${glyph(bot ? "bot" : "user")}<span>${esc(name)}</span></button>`;
+      const tag = c ? "button" : "a";
+      return `<${tag} class="who${(beating.get(c ? c.who : who) ?? 0) > Date.now() ? " beat" : ""}" style="--who:${hueOf(c?.bot ? c.id : who ?? c.who)}"${c ? ` data-claim="${esc(c.id)}"` : ` href="#/u/${esc(who)}"`} title="${esc(c ? `${bot ? "agent" : "@" + c.who} on ${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? `: ${c.task}` : ""}` : `@${who} has this file open: open ${bot ? "its page" : "their profile"}`)}">${glyph(bot ? "bot" : "user")}<span>${esc(name)}</span></${tag}>`;
     };
     const FACES = 6, LISTED = 200;
     const drawCrew = () => {
@@ -3013,7 +3020,7 @@ const views = {
       f.hidden = cs.length + humans.length < 12;
       const rows = [...cs.map((c) => ({ c, key: `${nameOf(c)} ${c.task ?? ""}`.toLowerCase() })), ...humans.filter((w) => !cs.some((c) => c.who === w)).map((w) => ({ w, key: w.toLowerCase() }))]
         .filter((x) => !needle || x.key.includes(needle));
-      $("#here-list").innerHTML = rows.slice(0, LISTED).map(({ c, w }) => `<div class="row">${face(c, w)}<span class="what">${c ? `${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? ` · ${esc(c.task)}` : ""}` : "looking"}</span>${c && r.canWrite ? `<button class="btn" data-lift="${esc(c.id)}" title="${mine(c) ? "let go of these lines" : "lift this claim: the lines are free again, and the agent's edits to them won't land"}">${mine(c) ? "Let go" : "Lift"}</button>` : ""}</div>`).join("")
+      $("#here-list").innerHTML = rows.slice(0, LISTED).map(({ c, w }) => `<div class="row">${face(c, w)}${c ? profileOf(c) : ""}<span class="what">${c ? `${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? ` · ${esc(c.task)}` : ""}` : "looking"}</span>${c && r.canWrite ? `<button class="btn" data-lift="${esc(c.id)}" title="${mine(c) ? "let go of these lines" : "lift this claim: the lines are free again, and the agent's edits to them won't land"}">${mine(c) ? "Let go" : "Lift"}</button>` : ""}</div>`).join("")
         + (rows.length > LISTED ? `<p class="muted">and ${rows.length - LISTED} more: type to find one</p>` : "");
     };
     // Activity: who changed what, newest first, from the socket's ops and claims alone.
