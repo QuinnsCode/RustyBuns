@@ -4,6 +4,7 @@
 import { Database } from "bun:sqlite";
 import { serialize, deserialize } from "bun:jsc";
 import type { StoragePort } from "@rustybuns/ports";
+import { sqlStorage } from "./sql.ts";
 
 export interface StorageOptions {
   /**
@@ -26,6 +27,8 @@ export function storage(path: string = ":memory:", opts: StorageOptions | (() =>
   db.exec(`PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS storage (key TEXT PRIMARY KEY, value ${v8 ? "BLOB" : "TEXT"} NOT NULL)`);
   let alarm: ReturnType<typeof setTimeout> | null = null;
   return {
+    // ctx.storage.sql shares the file, as on Cloudflare (the KV keys sit in their own table).
+    sql: sqlStorage(() => db),
     async get<T>(key: string) {
       const r = db.query("SELECT value FROM storage WHERE key = ?").get(key) as { value: string | Uint8Array } | null;
       return r ? dec<T>(r.value) : undefined;

@@ -38,11 +38,13 @@ import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts"
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
 import { scaleRoutes } from "./scale.ts";
+import { indexFile, searchAll, searchRepo, searchRoutes } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
 import { installScript } from "./install.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue, TRUTHS, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
+export { RepoSearch } from "./search.ts";
 export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
 
@@ -59,7 +61,6 @@ async function access(env: Env, owner: string, repo: string, user: string | null
 const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private", "claims"]);
 
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
-const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
 
 const HOURLY = "0 * * * *", MIRRORS = "*/5 * * * *";
 
@@ -120,6 +121,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/admin/scale  the scale sideboard: each wall, how close we are, the next step (scale.ts)
   const scale = await scaleRoutes(req, env, p, admin);
   if (scale) return scale;
+  // POST /api/admin/scale/search-move  D1's old search index into the repos' own (search.ts)
+  const searchMove = await searchRoutes(req, env, p, admin);
+  if (searchMove) return searchMove;
   const job = await jobRoutes(req, env, p, user, admin, (r) => app.fetch(r, env));
   if (job) return job;
   const body = async <T>() => (await req.json()) as T;
@@ -375,10 +379,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         // Index what was committed, not every keystroke; git and search get private lines blank,
         // the crew's remote the real text.
         const { commit, content, published } = (await res.json()) as { commit: { message: string }; content: string; published: string };
-        await env.DB.batch([
-          env.DB.prepare("DELETE FROM file_search WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path),
-          env.DB.prepare("INSERT INTO file_search (owner, repo, path, content) VALUES (?, ?, ?, ?)").bind(owner, repo, path, published),
-        ]);
+        await indexFile(env, owner, repo, path, published);
         // The catalogue entry stands even if the push fails; the next push that lands carries it,
         // and if git is full, it starts fresh (fresh.ts) and the file lands there.
         const git = await pushCatalogue(env, owner, repo, path, { content, published }, user!, commit.message).catch((e: Error) => ({ error: e.message }));
@@ -400,17 +401,13 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
   }
 
-  // GET /api/search?q=  committed code you are allowed to see
+  // GET /api/search?q=[&repo=owner/name]  committed code you are allowed to see, in one repo or across them (search.ts)
   if (p[1] === "search") {
-    const q = ftsQuery(url.searchParams.get("q") ?? "");
-    if (!q) return json([]);
-    const { results } = await env.DB.prepare(`
-      SELECT s.owner, s.repo, s.path, snippet(file_search, 3, '«', '»', '…', 16) AS snippet
-      FROM file_search s JOIN repos r ON r.owner = s.owner AND r.name = s.repo
-      WHERE file_search MATCH ? AND (r.expires_at IS NULL OR r.expires_at > ?) AND (r.visibility = 'public' OR r.owner = ?
-        OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))
-      ORDER BY rank LIMIT 20`).bind(q, Date.now(), user, user).all();
-    return json(results);
+    const q = url.searchParams.get("q") ?? "", only = url.searchParams.get("repo");
+    if (!only) return json(await searchAll(env, user, q));
+    const [o, r] = only.split("/");
+    if (!o || !r || !(await access(env, o, r, user)).read) return json({ error: "not found" }, 404);
+    return json(await searchRepo(env, o, r, q));
   }
 
   // POST /api/playlists {title}

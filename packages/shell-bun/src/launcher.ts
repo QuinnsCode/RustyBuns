@@ -6,6 +6,10 @@
 // it to every local user) while a browser opens: the browser gets a one-time
 // launch code instead (shell.launchCode()). The token URL is printed only
 // when there is no browser to open (RB_NO_BROWSER, or the spawn failed).
+// Local tools find a running app through <data>/desktop.json instead (writeDesktopFile).
+
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 export interface LaunchOptions {
   url: string;
@@ -46,6 +50,23 @@ const children: Bun.Subprocess[] = [];
 function reap() { for (const c of children) { try { c.kill(); } catch {} } }
 process.on("exit", reap);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { reap(); process.exit(0); });
+
+/**
+ * Writes {url, token} to <dataDir>/desktop.json, readable by this user alone (0600), so a local
+ * tool can reach the running app without RB_NO_BROWSER; removed on exit if it is still ours.
+ * Same user, same machine: no weaker than the browser's cookie.
+ */
+export function writeDesktopFile(dataDir: string, url: string, token: string | undefined): string | undefined {
+  if (!token) return;
+  const file = join(dataDir, "desktop.json"), body = JSON.stringify({ url, token, pid: process.pid }) + "\n";
+  try {
+    rmSync(file, { force: true }); // so the mode below applies, whatever an older file had
+    writeFileSync(file, body, { mode: 0o600, flag: "wx" });
+  } catch { return; }
+  // A second copy of the app may have taken the file over since: leave its file alone.
+  process.on("exit", () => { try { if (readFileSync(file, "utf8") === body) rmSync(file); } catch {} });
+  return file;
+}
 
 export function mintToken(): string {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString("base64url");

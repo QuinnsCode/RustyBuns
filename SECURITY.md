@@ -17,3 +17,7 @@ Any repo hosted on codeSplitters can turn it on. Running it on this repo is [#61
 ## The examples
 
 The example apps change quickly and haven't had a formal security review. See the caution in the [README](README.md#see-it-work).
+
+## Agents
+
+Agents write most of this repo. [notes/SECURITY_AUDIT.md](notes/SECURITY_AUDIT.md) covers how we keep a bad or prompt-injected agent away from secrets, `main` and other people's code: each surface, what's done, and what's still open (issues labelled `security`).

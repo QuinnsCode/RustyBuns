@@ -94,6 +94,17 @@ export function replay(log: Applied[], rev = Infinity, from: Doc = empty()): Doc
  */
 export interface Conflict { line: string; base: string; main: string | null; branch: string | null; doubled?: true; whole?: true; lint?: string }
 
+/**
+ * How one conflict is settled: keep main's, keep the branch's, keep both (main's
+ * first, or the branch's first), or a text of your own, which may be several
+ * lines. A lockfile, a doubled config key or code that won't build only takes
+ * main or branch: the others leave it a conflict.
+ */
+export type Pick = "main" | "branch" | "both" | "both:branch-first" | { text: string };
+export type Resolve = Record<string, Pick>;
+export const PICKS = ["main", "branch", "both", "both:branch-first"] as const;
+const sideOnly = (id: string) => id === "file" || id.startsWith("key:") || id.startsWith("lint:");
+
 /** How a file merges, by its path: lockfiles whole, config by key, prose loosely, code strictly. */
 export type Kind = "lock" | "keyed" | "prose" | "code";
 export function kindOf(path: string): Kind {
@@ -113,8 +124,8 @@ export function kindOf(path: string): Kind {
  * other side's edit, and lines the branch added under a line main moved go
  * under it where it is now. The same new line added at the same spot on both sides lands once.
  *
- * Conflicts, each settled by `resolve` (by its `line`, keeping the branch's
- * or main's version) or left out and reported:
+ * Conflicts, each settled by `resolve` (by its `line`: main's, the branch's,
+ * both, or a text of `writer`'s; see Pick) or left out and reported:
  * - a stretch both sides reshaped: lines added or deleted on one side where
  *   the other changed a line too (one changed a line the other deleted, or
  *   both rewrote a function). The whole stretch is one conflict, as in git.
@@ -132,11 +143,13 @@ export function kindOf(path: string): Kind {
  * the batch must land on `main` exactly as passed. Deleted lines leave no
  * blame, so their ops are credited to `deleter`.
  */
-export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string, "branch" | "main"> = {}, deleter = "anon", path = "") {
+export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter) {
+  // What only takes a side keeps only a side.
+  const resolve: Resolve = Object.fromEntries(Object.entries(given).filter(([id, v]) => !sideOnly(id) || v === "main" || v === "branch"));
   const kind = kindOf(path);
   if (kind === "lock") {
     const [b, m, br] = [base, main, branch].map(text);
-    if (b !== m && b !== br && m !== br) return wholeFile(branch, main, resolve.file, deleter);
+    if (b !== m && b !== br && m !== br) return wholeFile(branch, main, resolve.file as "main" | "branch" | undefined, deleter);
   }
   const was = new Map(base.lines.map((l) => [l.id, l])), now = new Map(main.lines.map((l) => [l.id, l]));
   const at = new Map(main.lines.map((l, i) => [l.id, i]));
@@ -160,16 +173,32 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
     }
     return null;
   };
-  // A stretch both reshaped: keep main's as is, or swap in the branch's whole.
+  const written = (pick: Pick | undefined) => typeof pick === "object" ? pick.text.split("\n") : null;
+  // A stretch both reshaped: keep main's as is, swap in the branch's whole or a text of the writer's, or keep both.
   const settle = (g: Region) => {
     const within = (d: Doc, pos: Map<string, number>) => d.lines.filter((l) => g.lo <= pos.get(l.id)! && pos.get(l.id)! <= g.hi);
     const ms = within(main, mainPos), bs = within(branch, branchPos), key = base.lines[Math.ceil((g.lo - 1) / 2)]!.id;
     const join = (ls: Line[]) => ls.length ? ls.map((l) => l.text).join("\n") : null;
     // Both reshaped it the same way: nothing to do.
-    const pick = join(ms) === join(bs) ? "main" : resolve[key];
-    if (pick === "branch") {
-      if (after === null || now.has(after)) after = main.lines.filter((l) => mainPos.get(l.id)! < g.lo).at(-1)?.id ?? null;
+    const pick = join(ms) === join(bs) ? "main" : resolve[key], own = written(pick);
+    // Just before the stretch, unless something already went in there.
+    const before = () => { if (after === null || now.has(after)) after = main.lines.filter((l) => mainPos.get(l.id)! < g.lo).at(-1)?.id ?? null; };
+    if (pick === "branch" || own) {
+      before();
       for (const m of ms) push({ kind: "delete", line: m.id, base: m.rev }, deleter);
+      if (own) for (const t of own) insert(t, writer);
+      else for (const l of bs) insert(l.text, l.by);
+      return;
+    }
+    if (pick === "both:branch-first") {
+      before();
+      for (const l of bs) insert(l.text, l.by);
+      if (ms.length) after = ms.at(-1)!.id;
+      return;
+    }
+    if (pick === "both") {
+      if (ms.length) after = ms.at(-1)!.id;
+      else before();
       for (const l of bs) insert(l.text, l.by);
       return;
     }
@@ -190,8 +219,11 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
       const same = twin(l.text);
       if (same) { after = same; continue; }
       // Main added this very line somewhere else: landing it too would double it.
-      if (mainAdded.has(l.text) && /[A-Za-z]{2}/.test(l.text) && l.text.trim().length >= 8 && resolve[l.id] !== "branch") {
-        if (!resolve[l.id]) conflicts.push({ line: l.id, base: "", main: l.text, branch: l.text, doubled: true });
+      // Main's copy stays; settled as the branch (or both) it lands as well, or as a text in its place.
+      const twice = resolve[l.id];
+      if (mainAdded.has(l.text) && /[A-Za-z]{2}/.test(l.text) && l.text.trim().length >= 8 && twice !== "branch" && twice !== "both" && twice !== "both:branch-first") {
+        if (!twice) conflicts.push({ line: l.id, base: "", main: l.text, branch: l.text, doubled: true });
+        for (const t of written(twice) ?? []) insert(t, writer);
         continue;
       }
       insert(l.text, l.by);
@@ -204,8 +236,19 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
       const words = m && !pick ? mergeWords(b.text, m.text, l.text) : null;
       if (words !== null) push({ kind: "set", line: m!.id, base: m!.rev, text: words }, l.by);
       else if (!pick) conflicts.push({ line: l.id, base: b.text, main: m?.text ?? null, branch: l.text });
-      else if (pick === "branch") {
-        if (!m) { insert(l.text, l.by); continue; }
+      else if (pick !== "main") {
+        const own = written(pick);
+        // Main deleted it: both is the branch's line back.
+        if (!m) { for (const t of own ?? [l.text]) insert(t, own ? writer : l.by); continue; }
+        if (own) {
+          push({ kind: "set", line: m.id, base: m.rev, text: own[0]! }, writer);
+          after = m.id;
+          for (const t of own.slice(1)) insert(t, writer);
+          continue;
+        }
+        if (pick === "both") { after = m.id; insert(l.text, l.by); continue; }
+        // The branch's first: main's line takes the branch's text, and main's text goes in under it, still main's.
+        if (pick === "both:branch-first") { push({ kind: "set", line: m.id, base: m.rev, text: l.text }, l.by); after = m.id; insert(m.text, m.by); continue; }
         push({ kind: "set", line: m.id, base: m.rev, text: l.text }, l.by);
       }
     }
@@ -219,9 +262,15 @@ export function merge(base: Doc, branch: Doc, main: Doc, resolve: Record<string,
     // Moved on both sides: main's copy stays.
     const m = now.get(b.id) ?? (movedOnBranch.has(b.id) ? undefined : movedOnMain.get(b.id));
     if (!m || inRegion(mainPos.get(m.id)!)) continue;
-    const pick = m.text === b.text || movedOnBranch.has(b.id) ? "branch" : resolve[b.id];
+    const pick = m.text === b.text || movedOnBranch.has(b.id) ? "branch" : resolve[b.id], own = written(pick);
     if (!pick) conflicts.push({ line: b.id, base: b.text, main: m.text, branch: null });
     else if (pick === "branch") push({ kind: "delete", line: m.id, base: m.rev }, deleter);
+    else if (own) {
+      // The branch deleted it, main changed it: a text of the writer's in its place. Main's or both keep main's.
+      push({ kind: "set", line: m.id, base: m.rev, text: own[0]! }, writer);
+      after = m.id;
+      for (const t of own.slice(1)) insert(t, writer);
+    }
   }
   if (kind === "keyed") twiceKeyed(main, branch, ops, by, conflicts, resolve, deleter, path);
   return { ops, by, conflicts };
@@ -244,7 +293,7 @@ function wholeFile(branch: Doc, main: Doc, pick: "branch" | "main" | undefined, 
  * does): a conflict each, `key:<path>`. Settled as main, the merge's new
  * copies are dropped; as the branch, main's are.
  */
-function twiceKeyed(main: Doc, branch: Doc, ops: Op[], by: string[], conflicts: Conflict[], resolve: Record<string, "branch" | "main">, deleter: string, path: string) {
+function twiceKeyed(main: Doc, branch: Doc, ops: Op[], by: string[], conflicts: Conflict[], resolve: Resolve, deleter: string, path: string) {
   const d = structuredClone(main);
   if (!apply(d, ops, by).ok) return;
   const count = (doc: Doc) => { const c = new Map<string, number>(); for (const k of keys(doc.lines.map((l) => l.text), path)) if (k) c.set(k, (c.get(k) ?? 0) + 1); return c; };
@@ -401,9 +450,11 @@ const words = (s: string) => s.match(/\s+|\w+|[^\s\w]/g) ?? [];
  * as spans of words, applied together. Null when the spans overlap or touch
  * (unless both made the very same change), or when a word one side replaced
  * is one the other side adds (a rename on one side, a new use of the old
- * name on the other): that's a real conflict.
+ * name on the other): that's a real conflict. With `both`, words both sides
+ * only added at the very same spot are kept, `a`'s first: not safe to merge on
+ * its own, since only a person knows the order, but a good suggestion.
  */
-export function mergeWords(base: string, a: string, b: string): string | null {
+export function mergeWords(base: string, a: string, b: string, both = false): string | null {
   const o = words(base);
   const spans = (x: string[]) => {
     const out: { from: number; to: number; add: string[] }[] = [];
@@ -425,6 +476,8 @@ export function mergeWords(base: string, a: string, b: string): string | null {
   for (const s of all) {
     if (last && s.from <= last.to) {
       if (s.from === last.from && s.to === last.to && s.add.join("") === last.add.join("")) continue;
+      // Two inserts at one spot (the sort is stable, so a's came first): b's goes after a's.
+      if (both && s.from === s.to && last.from === last.to && s.from === last.from) { out += s.add.join(""); continue; }
       return null;
     }
     out += o.slice(i, s.from).join("") + s.add.join("");
@@ -432,6 +485,19 @@ export function mergeWords(base: string, a: string, b: string): string | null {
     last = s;
   }
   return out + o.slice(i).join("");
+}
+
+/**
+ * A conflict as the review shows it: which picks settle it (`text` is
+ * `{text}`), and for one line both sides only added words to at the same spot,
+ * a `suggestion` that keeps both, main's words first.
+ */
+export function explain(c: Conflict): Conflict & { choices: string[]; suggestion?: string } {
+  const sides = !!(c.whole || c.lint || c.line.startsWith("key:"));
+  const choices = sides ? ["main", "branch"] : c.doubled ? ["main", "branch", "text"] : [...PICKS, "text"];
+  const one = (x: string | null): x is string => x !== null && !x.includes("\n");
+  const suggestion = !sides && !c.doubled && one(c.main) && one(c.branch) && one(c.base) && c.main !== c.branch ? mergeWords(c.base, c.main, c.branch, true) : null;
+  return { ...c, choices, ...(suggestion !== null && { suggestion }) };
 }
 
 export const text = (doc: Doc) => doc.lines.map((l) => l.text).join("\n");
