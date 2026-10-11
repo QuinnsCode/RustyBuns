@@ -93,3 +93,5 @@ curl localhost:3000/health
 ```
 
 A box plays like the edge, not like the desktop: every visitor is their own guest, `?room=CODE` picks a room, and there's no login. Server keys, TLS, identity and the other limits are in [REFERENCE.md](REFERENCE.md#deploy-to-hetzner).
+
+Once it's up, `/__rb/mem` shows the box's memory and how fast it's growing. For a CPU flame graph, add `RB_PROF_SECRET: { type: "secret", boxOnly: true }` to `bindings`, deploy, and run `pnpm exec rustybuns prof`. It saves a `.cpuprofile` you can open in Chrome DevTools or speedscope.
