@@ -205,6 +205,47 @@ test("a batch waits on main as its own branch's hunks: hold stops the clock, a l
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${id}/accept`, {})).status).toBe(409);
 });
 
+test("the crew see a waiting batch and can look at or hold it; landing and binning it stay the owner's", async () => {
+  const { call, post } = await app();
+  await post("sam", "/api/login", { name: "sam" });
+  await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
+  const { id, run } = await waiting(call, post);
+  type W = { waiting: { id: number; agent: string; pending: { until: number | null }; hunks: { add: { text: string }[] }[] }[]; kept: unknown[] };
+  const seen = await (await call("sam", "/api/repos/ryan/lab/agents/waiting?path=a.js")).json() as W;
+  expect(seen.waiting).toMatchObject([{ id, agent: run.agent, pending: { until: run.pending.until } }]);
+  expect(seen.waiting[0]!.hunks.map((h) => h.add.map((l) => l.text))).toEqual([["LET A = 1", "LET B = 2"]]);
+  expect(seen.waiting[0]).not.toHaveProperty("task");
+  // Anyone who reads a public repo sees it too, but can't put it off.
+  expect((await (await call(null, "/api/repos/ryan/lab/agents/waiting?path=a.js")).json() as W).waiting.map((w) => w.id)).toEqual([id]);
+  expect((await post(null, `/api/repos/ryan/lab/agents/${id}/look`, {})).status).toBe(403);
+  expect((await post("eve", `/api/repos/ryan/lab/agents/${id}/hold`, {})).status).toBe(403);
+  expect((await call("sam", "/api/repos/ryan/lab/agents/waiting")).status).toBe(400);
+
+  expect((await post("sam", `/api/repos/ryan/lab/agents/${id}/look`, {})).status).toBe(200);
+  expect((await (await post("sam", `/api/repos/ryan/lab/agents/${id}/hold`, {})).json() as any).pending.until).toBeNull();
+  expect((await post("sam", `/api/repos/ryan/lab/agents/${id}/accept`, {})).status).toBe(403);
+  expect((await post("sam", `/api/repos/ryan/lab/agents/${id}/reject`, {})).status).toBe(403);
+  expect((await (await call("sam", "/api/repos/ryan/lab/agents/waiting?path=a.js")).json() as W).waiting[0]!.pending.until).toBeNull();
+
+  // A private repo's batch is the crew's alone.
+  await call("ryan", "/api/repos/ryan/lab", { method: "PUT", body: JSON.stringify({ visibility: "private" }) });
+  expect((await call("eve", "/api/repos/ryan/lab/agents/waiting?path=a.js")).status).toBe(404);
+  expect((await call("sam", "/api/repos/ryan/lab/agents/waiting?path=a.js")).status).toBe(200);
+});
+
+test("what a landing kept is the crew's to see, not every reader's", async () => {
+  const { call, post } = await app();
+  await post("sam", "/api/login", { name: "sam" });
+  await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
+  const { id } = await waiting(call, post);
+  const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.js")).json() as { lines: { id: string; rev: number }[] };
+  await post("ryan", "/api/repos/ryan/lab/do/ops?path=a.js", { ops: [{ kind: "set", line: doc.lines[1]!.id, base: doc.lines[1]!.rev, text: "const b = 2" }] });
+  await post("ryan", `/api/repos/ryan/lab/agents/${id}/accept`, {});
+  const crew = await (await call("sam", "/api/repos/ryan/lab/agents/waiting?path=a.js")).json() as any;
+  expect(crew).toMatchObject({ waiting: [], kept: [{ line: doc.lines[1]!.id, yours: "const b = 2", wanted: "LET B = 2", agent: "agent-claude" }] });
+  expect((await (await call(null, "/api/repos/ryan/lab/agents/waiting?path=a.js")).json() as any).kept).toEqual([]);
+});
+
 test("a rejected batch never lands, and its branch goes", async () => {
   const { call, post } = await app();
   const { id } = await waiting(call, post);

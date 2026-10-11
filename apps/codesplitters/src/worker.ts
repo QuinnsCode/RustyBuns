@@ -159,7 +159,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (share) return share;
   const cut = await cutRoutes(req, env, p, url, user);
   if (cut) return cut;
-  const agents = await agentRoutes(req, env, p, url, user, async (o, r) => (await access(env, o, r, user)).read, (r) => app.fetch(r, env));
+  const agents = await agentRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user), (r) => app.fetch(r, env));
   if (agents) return agents;
   const deps = await depRoutes(req, env, p, url, user, (r) => app.fetch(r, env));
   if (deps) return deps;
