@@ -13,6 +13,7 @@ bun run office                 # fetch the pinned release, Bun-ify it, open the 
 bun run office:update          # git pull, rebuild, then start it (or reload the page if it's up)
 bun run desktop:build          # dist/agent-office-<os>-<arch>
 bun run desktop:build:all      # + darwin-x64, linux-x64, linux-arm64
+bun run desktop:smoke          # start that binary on a temp floor, check /__rb/mem sees it and its pty host
 ```
 
 Then copy `./dist/agent-office-linux-x64` to a server and run it there, with all of Agent Office's own flags.
