@@ -41,7 +41,7 @@ export const CARDS: Card[] = [
     shows: "Writes start failing: new repos, digs, commits, sign-ins",
     here: "Yes. Search is out of D1 now (#626); keep line_events short, split per owner if it comes to that",
     box: "Disk is the cap: hundreds of GB for a few euros",
-    next: "Empty the old file_search (search-move), then drop it",
+    next: "Split D1 per owner if it nears the cap",
   },
   {
     id: "search", name: "Search keeps every file", where: "RepoSearch: FTS5 in one Durable Object per repo (search.ts)",
@@ -120,9 +120,8 @@ export async function readings(env: Env, now = Date.now()): Promise<Record<strin
   const edits = await first("SELECT MAX(c) AS peak FROM (SELECT SUM(MIN(count, ?)) AS c FROM limit_hits WHERE rule = 'edit' AND win >= ? GROUP BY win)", 60_000 / TALLY_MS, now - 86_400_000);
   // The biggest committed file: its text, plus ~70 bytes a line of id, rev, author and time in the doc.
   const big = await first("SELECT owner, repo, big_path AS path, big_bytes AS bytes, big_lines AS lines FROM repo_search ORDER BY big_bytes DESC LIMIT 1");
-  // The biggest repo's search index (its DO's SQLite, as of its last commit), and what's still in D1's old one.
+  // The biggest repo's search index (its DO's SQLite, as of its last commit).
   const search = await first("SELECT owner, repo, size_bytes AS bytes FROM repo_search ORDER BY size_bytes DESC LIMIT 1");
-  const old = await first("SELECT COUNT(*) AS n FROM file_search").catch(() => ({ n: 0 }));
   // The most edited file in the 30 days of line_events: ops added to its log.
   const hot = await first("SELECT owner, repo, path, SUM(sets + inserts + deletes) AS ops FROM line_events GROUP BY owner, repo, path ORDER BY ops DESC LIMIT 1");
   const runs = await first("SELECT COUNT(*) AS c FROM agent_runs WHERE status = 'running'");
@@ -133,7 +132,7 @@ export async function readings(env: Env, now = Date.now()): Promise<Record<strin
     "d1-writes": { value: n(edits.peak) / 60, limit: 500, unit: "writes/s", note: "edit tallies in the busiest minute of the last day; traffic and feed writes come on top" },
     "d1-size": { value: size, limit: 10 * GB, unit: "bytes", note: size === null ? "D1 didn't say" : "the whole database" },
     "search": { value: n(search.bytes), limit: 10 * GB, unit: "bytes",
-      note: `${search.repo ? `${search.owner}/${search.repo}, the biggest repo's index` : "no repo indexed yet"}${n(old.n) ? `; ${n(old.n).toLocaleString()} files still in D1's old index (search-move)` : ""}` },
+      note: search.repo ? `${search.owner}/${search.repo}, the biggest repo's index` : "no repo indexed yet" },
     "big-file": { value: n(big.bytes) + n(big.lines) * 70, limit: 64 * MB, unit: "bytes", note: big.path ? `${where(big)}, ${n(big.lines).toLocaleString()} lines` : "no files yet" },
     "op-log": { value: n(hot.ops), limit: 300_000, unit: "ops", note: hot.path ? `${where(hot)}, ops in the last 30 days (the log keeps all of them)` : "no edits yet" },
     "agents": { value: n(runs.c), limit: 2, unit: "runs", note: "running now" },

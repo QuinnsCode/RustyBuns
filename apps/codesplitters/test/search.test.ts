@@ -43,7 +43,6 @@ test("each repo has its own index: across repos, in one, and none of it in D1", 
   const row: any = await call.env.DB.prepare("SELECT * FROM repo_search WHERE owner = 'bo' AND repo = 'two'").first();
   expect(row).toMatchObject({ files: 1, text_bytes: 30, big_path: "b.ts", big_lines: 3 });
   expect(row.size_bytes).toBeGreaterThan(0);
-  expect(await call.env.DB.prepare("SELECT COUNT(*) AS n FROM file_search").first()).toEqual({ n: 0 });
 
   // A new commit replaces the file's text.
   await post("ana", "/api/repos/ana/one/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L1", base: 1, text: "const quiet_flute = 1" }] });
@@ -57,26 +56,4 @@ test("each repo has its own index: across repos, in one, and none of it in D1", 
   expect(await call.env.DB.prepare("SELECT COUNT(*) AS n FROM repo_search WHERE owner = 'bo' AND repo = 'two'").first()).toEqual({ n: 0 });
   await post("bo", "/api/repos", { name: "two" });
   expect(await search("bo", "q=brass_tuba&repo=bo/two")).toEqual([]);
-});
-
-test("search-move takes D1's old index into the repos' own, never over a newer commit", async () => {
-  const { call, post, commit, search } = await app();
-  await post("ana", "/api/repos", { name: "old" });
-  await commit("ana", "ana", "old", "new.ts", "fresh_kazoo");
-  const db = call.env.DB;
-  const put = (path: string, content: string) => db.prepare("INSERT INTO file_search (owner, repo, path, content) VALUES ('ana', 'old', ?, ?)").bind(path, content).run();
-  for (let i = 0; i < 60; i++) await put(`f${i}.ts`, `old_oboe ${i}`);
-  // A commit after the deploy cleared its own old row, so the move can't bring back stale text.
-  await put("new.ts", "stale_kazoo");
-  await post("ana", "/api/repos/ana/old/do/ops?path=new.ts", { ops: [{ kind: "set", line: "L1", base: 1, text: "fresher_kazoo" }] });
-  await post("ana", "/api/repos/ana/old/do/commit?path=new.ts", {});
-
-  expect((await post("ana", "/api/admin/scale/search-move")).status).toBe(403);
-  const first = await (await post("boss", "/api/admin/scale/search-move")).json();
-  expect(first).toEqual({ moved: 50, repos: 1, left: 10 });
-  expect(await (await post("boss", "/api/admin/scale/search-move")).json()).toEqual({ moved: 10, repos: 1, left: 0 });
-  expect((await search("ana", "q=old_oboe&repo=ana/old")).length).toBe(20);
-  expect(await search("ana", "q=stale_kazoo")).toEqual([]);
-  expect((await search("ana", "q=fresher_kazoo")).length).toBe(1);
-  expect(await db.prepare("SELECT files FROM repo_search WHERE owner = 'ana' AND repo = 'old'").first()).toEqual({ files: 61 });
 });

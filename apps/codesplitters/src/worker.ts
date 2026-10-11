@@ -137,9 +137,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/admin/scale  the scale sideboard: each wall, how close we are, the next step (scale.ts)
   const scale = await scaleRoutes(req, env, p, admin);
   if (scale) return scale;
-  // POST /api/admin/scale/search-move  D1's old search index into the repos' own (search.ts)
-  const searchMove = await searchRoutes(req, env, p, admin);
-  if (searchMove) return searchMove;
+  // POST /api/admin/scale/search-embed  one round of the cron's embedding (search.ts)
+  const searchAdmin = await searchRoutes(req, env, p, admin);
+  if (searchAdmin) return searchAdmin;
   const job = await jobRoutes(req, env, p, user, admin, (r) => app.fetch(r, env));
   if (job) return job;
   const body = async <T>() => (await req.json()) as T;
