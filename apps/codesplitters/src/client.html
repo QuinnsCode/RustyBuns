@@ -4075,6 +4075,8 @@ const views = {
       if (msg.type === "commit") return drawCommits(await api(`${base}/commits${q}`));
       // Someone stamped a line or took one off: fetch the stamps this reader may see.
       if (msg.type === "stamps") return loadStamps();
+      // A push clashed with edits here, or that was settled (#788).
+      if (msg.type === "pushclash") return pushClash((await api(`/repos/${owner}/${repo}`).catch(() => null))?.pushClash);
       if (msg.type === "private") return privateChanged();
       if (msg.type !== "ops") return;
       // In order: apply in place. Missed something (a gap): fetch the whole file.
