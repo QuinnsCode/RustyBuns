@@ -147,6 +147,31 @@ describe("@ghost in other people's repos (#514)", () => {
     expect(await res.json()).toEqual({ handle: "ryan", as: "ghost", repos: 1, files: 2 });
     expect(await look()).toEqual(ghosted);
   });
+
+  test("lines found by who wrote them, after the crew row and line events are gone (#748)", async () => {
+    const { call, send } = await app();
+    await send("ryan", "/api/repos/mia/pit/files", { path: "b.ts", content: "ryan's line" });
+    const db = call.env.DB, row = () => db.prepare("SELECT handle FROM authors WHERE owner = 'mia' AND repo = 'pit' AND handle = 'ryan'").first();
+    for (let i = 0; i < 50 && !(await row()); i++) await Bun.sleep(10);
+    expect(await row()).toEqual({ handle: "ryan" });
+    // Off the crew, and the feed swept: only the file DO's authors remember him there.
+    await db.batch([db.prepare("DELETE FROM collaborators WHERE name = 'ryan'"), db.prepare("DELETE FROM line_events")]);
+    await call("ryan", "/api/me?confirm=ryan", { method: "DELETE" });
+    expect(await db.prepare("SELECT repos FROM retired_handles WHERE handle = 'ryan'").first()).toEqual({ repos: JSON.stringify([["mia", "pit"]]) });
+    expect(await (await send("mia", "/api/admin/scrub", { handle: "ryan" })).json()).toEqual({ handle: "ryan", as: "ghost", repos: 1, files: 1 });
+    const file = (await (await call("mia", "/api/repos/mia/pit/do/file?path=b.ts")).json()) as any;
+    expect(file.lines.map((l: any) => l.by)).toEqual(["ghost"]);
+    expect((await db.prepare("SELECT handle FROM authors WHERE owner = 'mia' AND repo = 'pit' ORDER BY handle").all()).results).toEqual([{ handle: "ghost" }]);
+  });
+
+  test("a repo's authors go with it", async () => {
+    const { call } = await app();
+    const db = call.env.DB, rows = () => db.prepare("SELECT 1 FROM authors WHERE owner = 'ryan' AND repo = 'lab'").first();
+    for (let i = 0; i < 50 && !(await rows()); i++) await Bun.sleep(10);
+    expect(await rows()).not.toBeNull();
+    await call("ryan", "/api/me?confirm=ryan", { method: "DELETE" });
+    expect(await rows()).toBeNull();
+  });
 });
 
 describe("GitHub and Google grants (#515)", () => {
