@@ -19,8 +19,8 @@ async function app() {
   const token = async (scope: string) => ((await (await send("/api/tokens", { label: "mcp", scope })).json()) as { token: string }).token;
   const read = await token("read"), write = await token("write");
   let n = 0;
-  const raw = (auth: string | null, body: unknown) =>
-    call(null, "/api/mcp", { method: "POST", body: JSON.stringify(body), headers: auth ? { authorization: `Bearer ${auth}` } : {} });
+  const raw = (auth: string | null, body: unknown, headers: Record<string, string> = {}) =>
+    call(null, "/api/mcp", { method: "POST", body: JSON.stringify(body), headers: { ...headers, ...auth && { authorization: `Bearer ${auth}` } } });
   const rpc = async (auth: string, method: string, params?: unknown) => ((await (await raw(auth, { jsonrpc: "2.0", id: ++n, method, params })).json()) as any);
   const tool = async (auth: string, name: string, args: unknown) => (await rpc(auth, "tools/call", { name, arguments: args })).result;
   return { read, write, raw, rpc, tool };
@@ -34,6 +34,16 @@ describe("POST /api/mcp", () => {
     expect(JSON.stringify(ts.map((t) => t.inputSchema))).not.toContain("$ref");
     expect(ts.find((t) => t.name === "delete_repo")!.annotations.destructiveHint).toBe(true);
     expect(ts.find((t) => t.name === "read_file")!.inputSchema.required).toEqual(["owner", "repo", "path"]);
+  });
+
+  test("a tool call from the internet counts against the rate limits, as the HTTP call would", async () => {
+    const { write, raw } = await app();
+    const create = async (i: number) => (await (await raw(write, { jsonrpc: "2.0", id: i, method: "tools/call", params: { name: "create_repo", arguments: { body: { name: `r${i}` } } } }, { "cf-connecting-ip": "203.0.113.7" })).json() as any).result;
+    // Ten repos a day each.
+    for (let i = 0; i < 10; i++) expect((await create(i)).isError).toBe(false);
+    const over = await create(10);
+    expect(over.isError).toBe(true);
+    expect(over.content[0].text).toMatch(/^429/);
   });
 
   test("needs a good token", async () => {

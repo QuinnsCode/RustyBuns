@@ -25,14 +25,14 @@
 
 import { json, type Env } from "./env.ts";
 import { actingAs, identify, isAdmin } from "./identity.ts";
-import { ruleFor } from "./limits.ts";
+import { ruleFor, viaMcp } from "./limits.ts";
 
 const DAY = 86_400_000, KEEP_DAYS = 30;
 
 /** Who each request turned out to be: the worker notes it once it's known. */
 export const callers = new WeakMap<Request, string | null>();
-/** MCP's inner requests (mcp.ts), and the call from the internet each one serves. */
-export const viaMcp = new WeakMap<Request, Request>();
+// MCP's inner requests (mcp.ts) and the call each one serves: kept in limits.ts, which counts them too.
+export { viaMcp };
 
 /** Whether a request is tallied: it came from the internet, or MCP made it for a call that did. */
 export const tallied = (req: Request) => req.headers.has("cf-connecting-ip") || !!viaMcp.get(req)?.headers.has("cf-connecting-ip");

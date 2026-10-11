@@ -28,7 +28,8 @@
 //
 // Only requests from the internet are counted: Cloudflare stamps those with
 // cf-connecting-ip. The desktop, the tests, and the Worker's own calls (hosted
-// agents, the dependency doctor) carry none. Admins are never limited. One
+// agents, the dependency doctor) carry none. A tool call over MCP carries only
+// the token, so it counts as the MCP call it serves (viaMcp). Admins are never limited. One
 // rule counts work the site starts itself rather than a request: container
 // check runs (ci-runner.ts), charged to the repo's owner as each one starts.
 //
@@ -124,7 +125,10 @@ export async function usage(env: Env, user: string) {
   }));
 }
 
-const ipOf = (req: Request) => req.headers.get("cf-connecting-ip");
+/** MCP's inner requests (mcp.ts), and the call from the internet each one serves. */
+export const viaMcp = new WeakMap<Request, Request>();
+/** Where a request came from on the internet: its own stamp, or for a tool call, the MCP call's, since a tool call carries only the token. */
+const ipOf = (req: Request) => req.headers.get("cf-connecting-ip") ?? viaMcp.get(req)?.headers.get("cf-connecting-ip") ?? null;
 
 /** Who a request counts as under a rule, or null when it isn't counted (not from the internet, an admin, or no such rule). A `token` rule's `user` is the CI token. */
 export function counted(req: Request, rule: string | null, user: string | null, admin: boolean): string | null {
