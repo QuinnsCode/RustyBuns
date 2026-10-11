@@ -27,6 +27,8 @@ export function toFile(env: Env, owner: string, repo: string, path: string, user
   if (!headers.has("x-codesplitters-crew")) headers.set("x-codesplitters-crew", "1");
   // Main's copy learns where it lives, for the feed; a branch's edits reach it when the branch merges.
   if (!branch) headers.set("x-codesplitters-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
+  // A branch's copy learns which branch it is, so its edits mark the branch changed (checks.ts).
+  else headers.set("x-codesplitters-branch", encodeURIComponent(JSON.stringify([owner, repo, branch])));
   return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 

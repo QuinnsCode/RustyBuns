@@ -1,6 +1,6 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { pathMatches, pollGithub, requeueStale, STALE, startChecks, watchGithub } from "../src/checks.ts";
+import { expireQueued, pathMatches, planFrom, pollGithub, requeueStale, STALE, startChecks, UNCLAIMED, watchGithub } from "../src/checks.ts";
 import worker from "../src/worker.ts";
 
 // End to end, with real git: a full run on a busy machine can stretch one past bun's 5s default.
@@ -374,4 +374,148 @@ test("a collaborator can't pass a check it didn't run: only the claimer or the o
   const mine = await (await send("agent-x", "/api/repos/ryan/lab/checks/claim", { runner_label: "agent-box" })).json();
   expect((await send("agent-x", `/api/repos/ryan/lab/checks/${mine.id}`, { runner_label: "agent-box", status: "failed" }, "PUT")).status).toBe(200);
   expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${mine.id}`)).json()).toMatchObject({ status: "failed", claimed_by: "agent-x" });
+});
+
+test("what runs here: codesplitters.ci says, else package.json's scripts, else one test run (#463)", () => {
+  expect(planFrom(null, null)).toEqual([]);
+  expect(planFrom(null, JSON.stringify({ scripts: { test: "bun test", typecheck: "tsc", dev: "vite" } }))).toEqual([
+    { name: "test", command: "bun run test" }, { name: "typecheck", command: "bun run typecheck" },
+  ]);
+  // Any command, a path scope, and a broken entry left out; codesplitters.ci wins over package.json.
+  expect(planFrom(JSON.stringify({ image: { run: "docker build .", paths: ["Dockerfile", "src/**"] }, lint: "biome check", "a,b": "x", empty: { run: "" } }), JSON.stringify({ scripts: { test: "bun test" } }))).toEqual([
+    { name: "image", command: "docker build .", paths: ["Dockerfile", "src/**"] }, { name: "lint", command: "biome check" },
+  ]);
+  expect(planFrom("not json", JSON.stringify({ scripts: { test: "x" } }))).toEqual([{ name: "test", command: "bun run test" }]);
+});
+
+test("a commit queues the repo's own checks, scoped by paths, each with its command for the runner (#463, #490)", async () => {
+  const { call, send, checks } = await app();
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "codesplitters.ci", content: JSON.stringify({ test: "ignored: the required one wins", lint: "biome check", image: { run: "docker build .", paths: ["Dockerfile"] } }) });
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "github", required: [{ name: "test", command: "bun test ./a" }] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "tidy" });
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "x.ts", content: "x", branch: "tidy" });
+  await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "tidy" });
+  // The branch doesn't touch the Dockerfile, so image isn't queued; main would run all three.
+  const runs = (await checks("tidy")).runs;
+  expect(runs.map((r: any) => r.name)).toEqual(["test", "lint"]);
+  expect(await (await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box" })).json()).toMatchObject({ name: "test", command: "bun test ./a" });
+  expect(await (await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box" })).json()).toMatchObject({ name: "lint", command: "biome check" });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=codesplitters.ci", { message: "ci" });
+  await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
+  expect((await checks()).runs.map((r: any) => r.name)).toEqual(["test", "lint", "image"]);
+  expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${(await checks()).runs[2].id}`)).json()).toMatchObject({ command: "docker build ." });
+});
+
+test("queued runs nobody picks up are cancelled by the cron, saying so, and the gate stops waiting on them (#490)", async () => {
+  const { call, send, hooks, checks } = await app();
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: ["test"] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/checks", { ref: "main", sha: SHA, name: "test" });
+  expect(await expireQueued(call.env)).toBe(0);   // not old yet
+  expect((await checks()).gate).toMatchObject({ ok: false, waiting: ["test"] });
+  expect(await expireQueued(call.env, Date.now() + UNCLAIMED + 1)).toBe(1);
+  const [run] = (await checks()).runs;
+  expect(run.status).toBe("cancelled");
+  expect((await (await call("ryan", `/api/repos/ryan/lab/checks/${run.id}`)).json()).log).toContain("no runner picked it up in 6 hours");
+  expect((await checks()).gate).toMatchObject({ ok: false, waiting: [], failed: ["test"] });
+  await arrived(hooks, 2);
+  expect(hooks.at(-1)).toMatchObject({ body: { action: "completed", check_run: { conclusion: "cancelled" } } });
+  // A finished run is never expired again.
+  expect(await expireQueued(call.env, Date.now() + UNCLAIMED + 1)).toBe(0);
+});
+
+/** Wait for a branch edit's stamp: the file's copy writes it after the edit's answered. */
+const stamped = async (checks: (ref?: string) => Promise<any>, ref: string, after = 0) => {
+  for (const end = performance.now() + 15_000; performance.now() < end; await Bun.sleep(10)) {
+    const k = await checks(ref);
+    if (k.changed_at && k.changed_at > after) return k;
+  }
+  throw new Error("the branch was never stamped");
+};
+
+test("an edit to a branch after its checks passed makes them stale: the merge waits again (#489)", async () => {
+  const { call, send, checks } = await app();
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test"] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "tidy" });
+  const edit = async (text: string) => {
+    const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.ts&branch=tidy")).json();
+    await send("ryan", "/api/repos/ryan/lab/do/ops?path=a.ts&branch=tidy", { ops: [{ kind: "set", line: doc.lines[0].id, text, base: doc.lines[0].rev }] });
+  };
+  await edit("ONE");
+  const first = (await stamped(checks, "tidy")).changed_at;
+  await Bun.sleep(5);
+  await send("ryan", "/api/repos/ryan/lab/checks", { ref: "tidy", sha: SHA, name: "test", status: "passed" });
+  expect((await checks("tidy")).gate).toMatchObject({ ok: true, passed: ["test"] });
+  expect((await checks("tidy")).stale).toBe(false);
+
+  await Bun.sleep(5);
+  await edit("One");
+  const k = await stamped(checks, "tidy", first);
+  expect(k).toMatchObject({ stale: true, gate: { ok: false, passed: [], waiting: ["test"] } });
+  // Checks don't run here, so nothing was queued: the last run still shows, but doesn't count.
+  expect(k.runs).toMatchObject([{ name: "test", status: "passed" }]);
+  const merge = await (await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {})).json();
+  expect(merge.error).toContain("the branch changed since its checks ran");
+
+  // A fresh run lets it through.
+  await Bun.sleep(5);
+  await send("ryan", "/api/repos/ryan/lab/checks", { ref: "tidy", sha: "b".repeat(40), name: "test", status: "passed" });
+  expect((await checks("tidy")).gate).toMatchObject({ ok: true, passed: ["test"] });
+  expect((await checks("tidy")).stale).toBe(false);
+});
+
+test("with checks running here, edits to a branch queue one run, read when a runner claims it (#489)", async () => {
+  const { call, send, checks } = await app();
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: ["test"] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "tidy" });
+  const edit = async (text: string) => {
+    const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.ts&branch=tidy")).json();
+    await send("ryan", "/api/repos/ryan/lab/do/ops?path=a.ts&branch=tidy", { ops: [{ kind: "set", line: doc.lines[0].id, text, base: doc.lines[0].rev }] });
+  };
+  await edit("ONE");
+  let k = await stamped(checks, "tidy");
+  await edit("One");
+  k = await stamped(checks, "tidy", k.changed_at);
+  // A burst of edits is one queued run, at the branch as it is here; queued, it isn't stale.
+  expect(k.runs).toMatchObject([{ name: "test", status: "queued", runner: "desktop" }]);
+  expect(k.sha).toMatch(/^tidy@\d+$/);
+  expect(k).toMatchObject({ stale: false, gate: { waiting: ["test"] } });
+
+  const claimed = await (await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box" })).json();
+  expect(claimed).toMatchObject({ ref: "tidy", sha: k.sha });
+  await send("ryan", `/api/repos/ryan/lab/checks/${claimed.id}`, { runner_label: "box", status: "passed" }, "PUT");
+  expect((await checks("tidy")).gate.ok).toBe(true);
+
+  // An edit after it was claimed: stale, and a new run's queued.
+  await Bun.sleep(5);
+  await edit("uno");
+  k = await stamped(checks, "tidy", k.changed_at);
+  for (const end = performance.now() + 15_000; performance.now() < end && k.runs[0]?.id === claimed.id; await Bun.sleep(10)) k = await checks("tidy");
+  expect(k.runs).toMatchObject([{ name: "test", status: "queued" }]);
+  expect(k.runs[0].id).not.toBe(claimed.id);
+  expect(k.gate.ok).toBe(false);
+});
+
+test("the reference runner checks a branch edited here and not pushed: main, with the branch's files over it (#489)", async () => {
+  const { call, send } = await app();
+  const server = Bun.serve({ port: 0, fetch: (req) => worker.fetch(req, call.env) });
+  opened.push({ close: () => server.stop(true) });
+  const { token: secret } = await (await send("ryan", "/api/tokens", { label: "runner", scope: "write" })).json();
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "math.test.ts", content: 'import { expect, test } from "bun:test";\ntest("adds", () => expect(1 + 1).toBe(2));' });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=math.test.ts", { message: "a test" });
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: [{ name: "test", command: "bun test ./math.test.ts" }] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "oops" });
+  const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=math.test.ts&branch=oops")).json();
+  await send("ryan", "/api/repos/ryan/lab/do/ops?path=math.test.ts&branch=oops", { ops: [{ kind: "set", line: doc.lines[1].id, text: 'test("adds", () => expect(1 + 1).toBe(3));', base: doc.lines[1].rev }] });
+  let k: any;
+  for (const end = performance.now() + 15_000; performance.now() < end && !k?.runs.length; await Bun.sleep(10)) k = await (await call("ryan", "/api/repos/ryan/lab/checks?ref=oops")).json();
+
+  const p = Bun.spawn(["bun", "scripts/runner.ts", "ryan/lab", "--once", "--label", "ci-box"], {
+    cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe",
+    env: { ...process.env, CODESPLITTERS_URL: `http://127.0.0.1:${server.port}`, CODESPLITTERS_TOKEN: secret },
+  });
+  expect(await p.exited).toBe(0);
+  const run = await (await call("ryan", `/api/repos/ryan/lab/checks/${k.runs[0].id}`)).json();
+  expect(run).toMatchObject({ ref: "oops", status: "failed" });
+  expect(run.log).toContain("main, with 1 file from branch oops as they are now");
+  expect(run.log).toContain("1 fail");
 });
