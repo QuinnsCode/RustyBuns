@@ -39,8 +39,9 @@ Work from evidence, in rough order of value:
 - Run the failing command again and read all of its output. `rustybuns plan` shows what a deploy would do
   without doing it. Never run `deploy` or `destroy` yourself: they change, bill or delete real resources.
 - A box: `<url>/health`, and `<url>/__rb/mem` for RSS, heap and the MB/h slope (a steady positive slope is a
-  leak; hoursToMax is when it restarts itself). `rustybuns prof --seconds 10` saves a CPU profile while it's
-  slow; open it in Chrome DevTools or speedscope, and name its hottest functions. Heap snapshots from a ceiling
+  leak; hoursToMax is when it restarts itself), or `rustybuns mem --json`. `rustybuns prof --seconds 10 --json`
+  takes a CPU profile while it's slow and prints its hottest functions; name them. `rustybuns history` shows
+  each run since a deploy or restart side by side (slope, profiles, ceiling restarts): compare before and after. Heap snapshots from a ceiling
   restart are in the box's data dir under `heap/`.
 - A desktop build: `rustybuns build desktop --dev` then `rustybuns run desktop` shows the errors a compiled
   binary hides.

@@ -2,7 +2,9 @@ import { test, expect } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { boxUrl, fetchProfile, secretProblem } from "../src/prof.ts";
+import { boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "../src/prof.ts";
+import { history } from "../../shell-bun/src/history.ts";
+import { memWatch } from "../../shell-bun/src/memwatch.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { profRoute } from "../../shell-bun/src/cpuprof.ts";
 
@@ -52,5 +54,29 @@ test("fetchProfile: end to end against the box's route", async () => {
   const bare = Bun.serve({ port: 0, fetch: async (req) => (await off(req)) ?? new Response("<html>app</html>", { headers: { "content-type": "text/html" } }) });
   try {
     await expect(fetchProfile({ url: `http://localhost:${bare.port}`, secret: SECRET, seconds: 0.05, outDir, name: "b" })).rejects.toThrow("has no /__rb/prof");
+  } finally { bare.stop(true); }
+});
+
+test("fetchMem and fetchHistory: the box's /__rb/mem, and its history behind the secret", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rb-histbox-"));
+  const hist = history({ file: join(dir, "history.jsonl") });
+  hist.boot("v1");
+  const mem = memWatch({ log: () => {}, onSample: (s) => hist.mem(s), sample: () => ({ rss: 100 * 2 ** 20, heap: 40 * 2 ** 20 }) });
+  mem.tick();
+  const route = profRoute({ secret: SECRET, dir, log: () => {}, history: hist });
+  const server = Bun.serve({ port: 0, fetch: async (req) => new URL(req.url).pathname === "/__rb/mem" ? Response.json({ ...mem.stats(), boots: 2 })
+    : (await route(req)) ?? new Response("<html>app</html>", { headers: { "content-type": "text/html" } }) });
+  const url = `http://localhost:${server.port}`;
+  try {
+    expect(await fetchMem({ url })).toMatchObject({ rssMb: 100, heapMb: 40, boots: 2 });
+    const runs = await fetchHistory({ url, secret: SECRET });
+    expect(runs).toMatchObject([{ build: "v1", mem: { samples: 1, lastMb: 100 } }]);
+    await expect(fetchHistory({ url, secret: SECRET + "x" })).rejects.toThrow("refused the secret");
+  } finally { server.stop(true); mem.stop(); }
+  // An app with no such routes answers HTML.
+  const bare = Bun.serve({ port: 0, fetch: () => new Response("<html>app</html>", { headers: { "content-type": "text/html" } }) });
+  try {
+    await expect(fetchMem({ url: `http://localhost:${bare.port}` })).rejects.toThrow("has no /__rb/mem");
+    await expect(fetchHistory({ url: `http://localhost:${bare.port}`, secret: SECRET })).rejects.toThrow("has no /__rb/history");
   } finally { bare.stop(true); }
 });

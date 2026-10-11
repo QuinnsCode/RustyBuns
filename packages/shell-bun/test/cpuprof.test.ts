@@ -5,14 +5,21 @@ import { join } from "node:path";
 import { cpuProfile, profRoute } from "../src/cpuprof.ts";
 
 const SECRET = "a-long-enough-secret";
-function busyWork(ms: number) { const end = Date.now() + ms; let x = 0; while (Date.now() < end) x += Math.sqrt(x + 1); return x; }
+const BUSY = "const end = Date.now() + ms; let x = 0; while (Date.now() < end) x += Math.sqrt(x + 1); return x;";
+// A fresh busyWork per profile: once JSC tiers a function up, its samples can land
+// on the caller or not at all, and the frame drops out of the profile (#641).
+function freshBusyWork(i: number): (ms: number) => number {
+  const f = new Function("ms", `/* ${i} */ ${BUSY}`) as (ms: number) => number;
+  return Object.defineProperty(f, "name", { value: "busyWork" });
+}
 
 test("cpuProfile: samples, writes a .cpuprofile DevTools can open, keeps the newest", async () => {
   const dir = mkdtempSync(join(tmpdir(), "rb-prof-"));
   for (let i = 0; i < 3; i++) {
-    const p = cpuProfile({ dir, ms: 80, keep: 2 });
-    setTimeout(() => busyWork(40), 10);              // while it samples
-    const { file } = await p;
+    // Busy once sampling has started: a timer set before then can fire too early
+    // on a slow runner, as the inspector's posts are async.
+    const busyWork = freshBusyWork(i);
+    const { file } = await cpuProfile({ dir, ms: 80, keep: 2, onStart: () => busyWork(40) });
     const prof = JSON.parse(readFileSync(file, "utf8"));
     expect(prof.nodes.map((n: any) => n.callFrame.functionName)).toContain("busyWork");
     expect(prof.samples.length).toBe(prof.timeDeltas.length);

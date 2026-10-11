@@ -26,7 +26,10 @@ import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
-import { PROF_SECRET, boxUrl, fetchProfile, secretProblem } from "./prof.ts";
+import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
+import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
+import { formatMemStats } from "@rustybuns/shell-bun/memwatch";
+import { formatHistory } from "@rustybuns/shell-bun/history";
 import { TRIAGE_USAGE, triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
 import { checkDisabled, checkVersion } from "./advisories.ts";
@@ -524,31 +527,64 @@ async function redactAfterDeploy(cfg: RustyBunsConfig, stage: string) {
   }
 }
 
-/** `rustybuns prof`: sample the deployed box's CPU and save the .cpuprofile here. */
-async function prof(args: string[]) {
+const flagValue = (args: string[], n: string) => { const i = args.indexOf("--" + n); return i >= 0 ? args[i + 1] : undefined; };
+
+/**
+ * The deployed box `rustybuns <cmd>` talks to: its URL (--url, else the Alchemy state) and, when
+ * `withSecret`, RB_PROF_SECRET. An op secret runs the command again under varlock, which fetches it.
+ * `say` takes the notes, so --json keeps stdout to the JSON.
+ */
+async function boxTarget(cmd: string, args: string[], withSecret: boolean, say: (l: string) => void) {
   const cfg = await loadConfig();
-  if (!cfg.targets.box) throw new Error("rustybuns prof profiles a box, and this config has no targets.box");
-  const opt = (n: string) => { const i = args.indexOf("--" + n); return i >= 0 ? args[i + 1] : undefined; };
-  const seconds = Number(opt("seconds") ?? 10);
-  if (!(seconds > 0 && seconds <= 60)) throw new Error("--seconds takes 1 to 60");
-  const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env };
-  const b = cfg.bindings?.[PROF_SECRET];
-  // An op secret: run again under varlock, which fetches it from 1Password.
-  if (!env[PROF_SECRET] && b?.type === "secret" && b.op && cfg.experimental?.wheel && existsSync(ENV_SCHEMA) && !env.RB_PROF_VARLOCK) {
-    const p = Bun.spawn(underVarlock(cfg, [process.execPath, fileURLToPath(import.meta.url), "prof", ...args], env),
-      { stdio: ["inherit", "inherit", "inherit"], env: { ...env, RB_PROF_VARLOCK: "1" } });
-    process.exit(await p.exited);
+  if (!cfg.targets.box) throw new Error(`rustybuns ${cmd} reads a box, and this config has no targets.box`);
+  let secret: string | undefined;
+  if (withSecret) {
+    const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env };
+    const b = cfg.bindings?.[PROF_SECRET];
+    if (!env[PROF_SECRET] && b?.type === "secret" && b.op && cfg.experimental?.wheel && existsSync(ENV_SCHEMA) && !env.RB_PROF_VARLOCK) {
+      const p = Bun.spawn(underVarlock(cfg, [process.execPath, fileURLToPath(import.meta.url), cmd, ...args], env),
+        { stdio: ["inherit", "inherit", "inherit"], env: { ...env, RB_PROF_VARLOCK: "1" } });
+      process.exit(await p.exited);
+    }
+    secret = env[PROF_SECRET];
+    const problem = secretProblem(cfg, secret);
+    if (problem) throw new Error(problem);
   }
-  const secret = env[PROF_SECRET];
-  const problem = secretProblem(cfg, secret);
-  if (problem) throw new Error(problem);
   const stage = alchemyStage(args);
-  const url = opt("url") ?? boxUrl(process.cwd(), cfg, stage);
+  const url = flagValue(args, "url") ?? boxUrl(process.cwd(), cfg, stage);
   if (!url) throw new Error(`no box URL in the Alchemy state for stage ${stage}. Deploy first, or pass --url.`);
-  if (url.startsWith("http://")) console.log(`note: ${url} is plain HTTP, so the secret crosses the network unencrypted. Rotate it if that matters.`);
-  console.log(`sampling ${url} for ${seconds}s...`);
-  const file = await fetchProfile({ url, secret: secret!, seconds, outDir: join(".rustybuns", "prof"), name: cfg.name });
-  console.log(`saved ${file}\nopen it in Chrome DevTools > Performance (Load profile), or drop it on https://www.speedscope.app`);
+  if (withSecret && url.startsWith("http://")) say(`note: ${url} is plain HTTP, so the secret crosses the network unencrypted. Rotate it if that matters.`);
+  return { cfg, url, secret: secret ?? "" };
+}
+
+/** `rustybuns prof`: sample the deployed box's CPU, save the .cpuprofile here and print its hottest frames. */
+async function prof(args: string[]) {
+  const json = args.includes("--json"), say = json ? console.error : console.log;
+  const seconds = Number(flagValue(args, "seconds") ?? 10);
+  if (!(seconds > 0 && seconds <= 60)) throw new Error("--seconds takes 1 to 60");
+  const { cfg, url, secret } = await boxTarget("prof", args, true, say);
+  say(`sampling ${url} for ${seconds}s...`);
+  const file = await fetchProfile({ url, secret, seconds, outDir: join(".rustybuns", "prof"), name: cfg.name });
+  const summary = summarizeProfile(JSON.parse(readFileSync(file, "utf8")), Number(flagValue(args, "top")) || 10);
+  if (json) return console.log(JSON.stringify({ url, file, seconds, summary }, null, 2));
+  console.log(`saved ${file}\n\n${formatProfileSummary(summary)}\n\nfor the flame graph, open it in Chrome DevTools > Performance (Load profile), or drop it on https://www.speedscope.app`);
+}
+
+/** `rustybuns mem`: the deployed box's memory, and how fast it's growing. */
+async function memCommand(args: string[]) {
+  const json = args.includes("--json");
+  const { url } = await boxTarget("mem", args, false, console.error);
+  const m = await fetchMem({ url });
+  console.log(json ? JSON.stringify({ url, ...m }, null, 2) : `${url}: ${formatMemStats(m)}${m.boots ? `, ${m.boots} boot${m.boots === 1 ? "" : "s"}` : ""}`);
+}
+
+/** `rustybuns history`: the box's runs (one per boot) with their memory slope, profiles and ceiling restarts. */
+async function historyCommand(args: string[]) {
+  const json = args.includes("--json");
+  const { url, secret } = await boxTarget("history", args, true, json ? console.error : console.log);
+  const runs = await fetchHistory({ url, secret });
+  const max = Number(flagValue(args, "runs")) || 5;
+  console.log(json ? JSON.stringify({ url, runs: runs.slice(0, max) }, null, 2) : formatHistory(runs, max));
 }
 
 /** `rustybuns triage`: your coding agent, started on what went wrong with the facts of this project (triage.ts). */
@@ -591,6 +627,8 @@ try {
     }
     case "dev": await alchemy("dev", rest); break;
     case "prof": await prof(rest); break;
+    case "mem": await memCommand(rest); break;
+    case "history": await historyCommand(rest); break;
     case "triage": await triageCommand(rest); break;
     case "add": {
       if (rest[0] === "deploy") { await addDeploy(rest.includes("--dry-run")); break; }
@@ -676,9 +714,14 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   destroy                    alchemy destroy: removes everything the stack created
                              (--stage <name> passes through to all three)
   dev                        alchemy dev: workerd + local simulators for the edge column
-  prof [--seconds N]         sample the deployed box's CPU for N seconds (default 10, at most 60)
-       [--url U]             and save a .cpuprofile in .rustybuns/prof/ (a flame graph in DevTools
-                             or speedscope); needs a RB_PROF_SECRET secret binding (boxOnly: true)
+  prof [--seconds N]         sample the deployed box's CPU for N seconds (default 10, at most 60),
+       [--url U] [--json]    save a .cpuprofile in .rustybuns/prof/ (a flame graph in DevTools or
+                             speedscope) and print its hottest functions (--json: as JSON);
+                             needs a RB_PROF_SECRET secret binding (boxOnly: true)
+  mem [--url U] [--json]     the deployed box's memory: RSS, heap, peak and the MB/h slope
+  history [--runs N] [--json]
+                             the box's runs, one per boot or deploy, newest first: memory slope,
+                             profiles and ceiling restarts side by side (needs RB_PROF_SECRET)
   triage [--agent claude|codex] [--model M] [--print]
                              something wrong? start your coding agent on it, with this project's
                              facts (versions, config, the box and its memory) in .rustybuns/triage/

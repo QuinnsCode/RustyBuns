@@ -1,12 +1,15 @@
 // `rustybuns prof`: a CPU profile from the deployed box. The box answers
 // POST /__rb/prof?s=N, behind RB_PROF_SECRET, with a .cpuprofile; this finds
 // the box's URL in the stack's Alchemy state, sends the secret and saves the
-// file under .rustybuns/prof/ for DevTools or speedscope.
+// file under .rustybuns/prof/ for DevTools or speedscope. `rustybuns mem` reads
+// the box's /__rb/mem, and `rustybuns history` its /__rb/history (same secret).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RustyBunsConfig } from "./config.ts";
 import { sharedStateBase } from "./state.ts";
+import type { MemStats } from "@rustybuns/shell-bun/memwatch";
+import type { Run } from "@rustybuns/shell-bun/history";
 
 export const PROF_SECRET = "RB_PROF_SECRET";
 
@@ -49,4 +52,21 @@ export async function fetchProfile(o: { url: string; secret: string; seconds: nu
   const file = join(o.outDir, `${o.name}-${new Date().toISOString().replace(/[:.]/g, "-")}.cpuprofile`);
   writeFileSync(file, body);
   return file;
+}
+
+/** GET /__rb/mem: the box's memory, open to anyone like /health. */
+export async function fetchMem(o: { url: string; fetch?: typeof fetch }): Promise<MemStats & { boots?: number }> {
+  const res = await (o.fetch ?? fetch)(`${o.url}/__rb/mem`, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json"))
+    throw new Error(`${o.url} has no /__rb/mem (status ${res.status}): is it a RustyBuns box, built before the memory watch?`);
+  return res.json() as Promise<MemStats & { boots?: number }>;
+}
+
+/** GET /__rb/history, behind the same secret as /__rb/prof: the box's runs, newest first. */
+export async function fetchHistory(o: { url: string; secret: string; fetch?: typeof fetch }): Promise<Run[]> {
+  const res = await (o.fetch ?? fetch)(`${o.url}/__rb/history`, { headers: { Authorization: `Bearer ${o.secret}` }, signal: AbortSignal.timeout(30_000) });
+  if (res.status === 401) throw new Error(`the box refused the secret: ${PROF_SECRET} here isn't the one it was deployed with.`);
+  if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json"))
+    throw new Error(`${o.url} has no /__rb/history (status ${res.status}): the box has no ${PROF_SECRET}, or was built before \`rustybuns history\`. Set it and deploy again.`);
+  return (await res.json() as { runs: Run[] }).runs;
 }

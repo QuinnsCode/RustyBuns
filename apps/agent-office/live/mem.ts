@@ -3,12 +3,14 @@
 // The office and each floor's pty host sample RSS and the JS heap every 5 minutes and fit a slope over the
 // last hour, so a slow leak reads as a steady +MB/h. The office logs a [mem] line to its terminal; a pty host
 // to the floor's .agent-office/pty-host.log, and it leaves its latest numbers in pty-host-mem.json beside it
-// for the office to read. Signed in, /__rb/mem returns them all. AGENT_OFFICE_MEM_MAX_MB sets a ceiling for
+// for the office to read. Signed in, /__rb/mem returns them all. The office's samples also go into
+// <data>/history.jsonl with its profiles, so /__rb/history compares this run with the ones before. AGENT_OFFICE_MEM_MAX_MB sets a ceiling for
 // each: over it, that process writes a V8 heap snapshot to its data dir's heap/ and exits (the pty host
 // outlives an office that exits, as it does a restart). Unset, they only watch.
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { memWatch, type MemStats } from "@rustybuns/shell-bun/memwatch";
+import { history, type History } from "@rustybuns/shell-bun/history";
 
 export const PTY_MEM_FILE = "pty-host-mem.json";
 
@@ -20,6 +22,16 @@ export interface PtyHostMem extends MemStats {
 const ceiling = () => Number(process.env.AGENT_OFFICE_MEM_MAX_MB) || 0;
 
 let office: ReturnType<typeof memWatch> | undefined;
+let officeHist: History | undefined;
+
+/** The office's history (<data>/history.jsonl): a line per start, memory sample, profile and ceiling restart. */
+export function officeHistory(dataDir: string): History {
+  if (!officeHist) {
+    officeHist = history({ file: path.join(dataDir, "history.jsonl") });
+    officeHist.boot();
+  }
+  return officeHist;
+}
 
 export interface OfficeMem {
   office: MemStats;
@@ -30,7 +42,11 @@ export interface OfficeMem {
 /** Start the office's watch (once) and return what /__rb/mem serves. */
 export function officeMem(dataDir: string, floors: () => Iterable<{ id: string; dir: string }>): () => OfficeMem {
   if (!office) {
-    office = memWatch({ maxMb: ceiling(), snapshotDir: path.join(dataDir, "heap") });
+    const hist = officeHistory(dataDir);
+    office = memWatch({
+      maxMb: ceiling(), snapshotDir: path.join(dataDir, "heap"),
+      onSample: (s) => hist.mem(s), beforeRestart: async (s) => hist.ceiling(s),
+    });
     office.tick();
   }
   const watch = office;

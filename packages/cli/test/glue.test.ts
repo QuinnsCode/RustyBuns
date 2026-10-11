@@ -297,10 +297,14 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).toContain("Number(process.env.RB_MEM_MAX_MB) || 0");
   expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "railway", memMaxMb: 400 } } }, "box")).toContain("RB_MEM_MAX_MB) || 400");
   // CPU profiles: /__rb/prof behind RB_PROF_SECRET, and one before a ceiling restart.
-  expect(box).toContain(", memWatch, cpuProfile, profRoute");
-  expect(box).toContain('profRoute({ secret: process.env.RB_PROF_SECRET, dir: join(dataDir, "prof") })');
+  expect(box).toContain(", memWatch, cpuProfile, profRoute, history, summarizeProfile");
+  expect(box).toContain('profRoute({ secret: process.env.RB_PROF_SECRET, dir: join(dataDir, "prof"), history: hist })');
   expect(box).toContain("const profiled = await prof(req);");
-  expect(box).toContain('beforeRestart: () => cpuProfile({ dir: join(dataDir, "prof"), ms: 5000, name: "ceiling" })');
+  expect(box).toContain('const { file, json } = await cpuProfile({ dir: join(dataDir, "prof"), ms: 5000, name: "ceiling" });');
+  // History: samples, profiles and ceiling restarts in <data>/history.jsonl, a boot line per start.
+  expect(box).toContain('const hist = history({ file: join(dataDir, "history.jsonl") });');
+  expect(box).toContain("onSample: (s) => hist.mem(s),");
+  expect(box).toContain("hist.ceiling(s);");
   const desk = spaEntry(c);
   expect(desk).toContain('const guest = req.headers.get("x-rb-principal") === "guest";');
   expect(desk).not.toContain("boxIdentity");
@@ -320,6 +324,7 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "railway", memMaxMb: 400 } } })).toContain("RB_MEM_MAX_MB) || 0");
   expect(desk).not.toContain("/__rb/prof");
   expect(desk).not.toContain("cpuProfile");
+  expect(desk).not.toContain("history(");
 });
 
 test("desktop.advisories: the host checks the app's own version and serves the notice in /__rb/info", () => {

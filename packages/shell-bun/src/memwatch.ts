@@ -34,7 +34,7 @@ export interface MemWatchOptions {
   /** Where the heap snapshot goes. Unset: no snapshot. */
   snapshotDir?: string;
   /** Runs over the ceiling before the snapshot, e.g. a short CPU profile of what the box was doing. Failures are logged. */
-  beforeRestart?: () => Promise<unknown>;
+  beforeRestart?: (stats: MemStats) => Promise<unknown>;
   log?: (line: string) => void;
   /** Called with the stats after every sample, e.g. to hand them to another process. */
   onSample?: (stats: MemStats) => void;
@@ -53,6 +53,13 @@ export function slope(points: { at: number; rss: number }[]): number | null {
   let num = 0, den = 0;
   for (const p of points) { num += (p.at - mx) * (p.rss - my); den += (p.at - mx) ** 2; }
   return den === 0 ? null : num / den;
+}
+
+/** The stats as one line: `rss 400 MB, heap 120 MB, peak 410 MB, +25 MB/h, ~4h to the 500 MB ceiling, up 120 min`. */
+export function formatMemStats(m: MemStats): string {
+  const slope = m.slopeMbPerHour === null ? `slope after ${3 - m.samples} more sample${3 - m.samples === 1 ? "" : "s"}` : `${m.slopeMbPerHour >= 0 ? "+" : ""}${m.slopeMbPerHour} MB/h`;
+  const ceiling = m.maxMb ? (m.hoursToMax === null ? `, ceiling ${m.maxMb} MB` : `, ~${m.hoursToMax}h to the ${m.maxMb} MB ceiling`) : ", no ceiling";
+  return `rss ${m.rssMb} MB, heap ${m.heapMb} MB, peak ${m.peakRssMb} MB, ${slope}${ceiling}, up ${Math.round(m.uptimeS / 60)} min`;
 }
 
 export function memWatch(o: MemWatchOptions = {}) {
@@ -97,7 +104,7 @@ export function memWatch(o: MemWatchOptions = {}) {
             .finally(() => exit(1));
         } catch (err) { log(`[mem] heap snapshot failed: ${(err as Error).message}`); exit(1); }
       };
-      if (o.beforeRestart) o.beforeRestart().catch((err) => log(`[mem] before restart: ${(err as Error).message}`)).finally(snapshot);
+      if (o.beforeRestart) o.beforeRestart(st).catch((err) => log(`[mem] before restart: ${(err as Error).message}`)).finally(snapshot);
       else snapshot();
     }
   }

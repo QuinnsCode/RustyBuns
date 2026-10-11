@@ -86,12 +86,21 @@ function hostMemWatch(c: RustyBunsConfig, box: boolean): string {
 // Over the ceiling (RB_MEM_MAX_MB${box ? ", else box.memMaxMb" : ""}) it writes a heap snapshot
 // to <data>/heap and exits 1, so ${box ? "the box restarts before it runs out" : "a leak stops before it takes the machine down"}.
 ${box ? `// It takes 5 seconds of CPU profile into <data>/prof first.
+// <data>/history.jsonl keeps the samples, profile summaries and ceiling restarts
+// across restarts and deploys: GET /__rb/history, behind RB_PROF_SECRET, reads it.
+const hist = history({ file: join(dataDir, "history.jsonl") });
+hist.boot([typeof RB_VERSION === "string" ? RB_VERSION : "", process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? ""].filter(Boolean).join(" ") || undefined);
 const mem = memWatch({ maxMb: Number(process.env.RB_MEM_MAX_MB) || ${c.targets.box?.memMaxMb ?? 0}, snapshotDir: join(dataDir, "heap"),
-  beforeRestart: () => cpuProfile({ dir: join(dataDir, "prof"), ms: 5000, name: "ceiling" }) });` : `const mem = memWatch({ maxMb: Number(process.env.RB_MEM_MAX_MB) || 0, snapshotDir: join(dataDir, "heap") });`}
+  onSample: (s) => hist.mem(s),
+  beforeRestart: async (s) => {
+    hist.ceiling(s);
+    const { file, json } = await cpuProfile({ dir: join(dataDir, "prof"), ms: 5000, name: "ceiling" });
+    hist.profile(basename(file), summarizeProfile(JSON.parse(json)), "ceiling");
+  } });` : `const mem = memWatch({ maxMb: Number(process.env.RB_MEM_MAX_MB) || 0, snapshotDir: join(dataDir, "heap") });`}
 mem.tick();
 ${box ? `// POST /__rb/prof?s=10 with Authorization: Bearer $RB_PROF_SECRET samples the CPU
 // and answers with a .cpuprofile (also kept in <data>/prof). No secret, no route.
-const prof = profRoute({ secret: process.env.RB_PROF_SECRET, dir: join(dataDir, "prof") });
+const prof = profRoute({ secret: process.env.RB_PROF_SECRET, dir: join(dataDir, "prof"), history: hist });
 ` : ""}`;
 }
 
@@ -122,7 +131,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute" : ""}${appImport(c)}, type GuestState } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${appImport(c)}, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
@@ -404,7 +413,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";

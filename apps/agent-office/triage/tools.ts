@@ -1,9 +1,10 @@
 // The office's self-triage tools, the same for a worker's MCP server (mcp.ts) and an agent in the
-// browser (index.ts, WebMCP): read memory, take a CPU profile, read one back as its hottest frames,
-// list heap snapshots. Each answers in text an agent can read; a profile or a snapshot itself stays a
-// file on the office's machine, since it's far too big to put in context.
+// browser (index.ts, WebMCP): read memory and its history, take a CPU profile, read one back as its
+// hottest frames, list heap snapshots. Each answers in text an agent can read; a profile or a snapshot
+// itself stays a file on the office's machine, since it's far too big to put in context.
 import { formatProfileSummary, type ProfileSummary, type SavedFile } from "@rustybuns/shell-bun/profsummary";
-import type { MemStats } from "@rustybuns/shell-bun/memwatch";
+import { formatMemStats, type MemStats } from "@rustybuns/shell-bun/memwatch";
+import { formatHistory, type Run } from "@rustybuns/shell-bun/history";
 import type { OfficeMem } from "../live/mem.ts";
 
 /** One call to the office's /__rb routes: the status and the JSON it answered. */
@@ -55,6 +56,20 @@ export const TRIAGE_TOOLS = [
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
+    name: "mem_history",
+    title: "Office history",
+    description:
+      "The office's runs, one per start, newest first, kept across restarts and updates: each run's RSS from start to now with its MB/h slope, " +
+      "the CPU profiles taken in it with their hottest functions, and whether it went over its memory ceiling and restarted. " +
+      "Compare this run with the one before to see what a change did.",
+    inputSchema: {
+      type: "object",
+      properties: { runs: { type: "integer", minimum: 1, maximum: 50, description: "How many runs to show (default 5)." } },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
     name: "heap_snapshots",
     title: "List heap snapshots",
     description:
@@ -68,14 +83,10 @@ export const TRIAGE_TOOLS = [
 export const TRIAGE_READ_ONLY = TRIAGE_TOOLS.filter((t) => t.annotations.readOnlyHint).map((t) => t.name);
 
 export const TRIAGE_NOTE =
-  " When the office itself is slow or growing (yours to look into, or asked about), mem_stats, take_cpu_profile, list_profiles, read_profile and heap_snapshots " +
+  " When the office itself is slow or growing (yours to look into, or asked about), mem_stats, mem_history, take_cpu_profile, list_profiles, read_profile and heap_snapshots " +
   "read its memory and profile it; file what you find with the numbers.";
 
-export function formatMem(name: string, m: MemStats): string {
-  const slope = m.slopeMbPerHour === null ? `slope after ${3 - m.samples} more sample${3 - m.samples === 1 ? "" : "s"}` : `${m.slopeMbPerHour >= 0 ? "+" : ""}${m.slopeMbPerHour} MB/h`;
-  const ceiling = m.maxMb ? (m.hoursToMax === null ? `, ceiling ${m.maxMb} MB` : `, ~${m.hoursToMax}h to the ${m.maxMb} MB ceiling`) : ", no ceiling";
-  return `${name}: rss ${m.rssMb} MB, heap ${m.heapMb} MB, peak ${m.peakRssMb} MB, ${slope}${ceiling}, up ${Math.round(m.uptimeS / 60)} min`;
-}
+export const formatMem = (name: string, m: MemStats): string => `${name}: ${formatMemStats(m)}`;
 
 const files = (list: SavedFile[]) => list.map((f) => `  ${f.id}  ${f.at}  ${(f.bytes / 1e6).toFixed(1)} MB  ${f.file}`);
 
@@ -113,6 +124,10 @@ export async function runTriageTool(name: string, args: Record<string, unknown> 
       if (!id) throw new Error("No CPU profiles yet: take_cpu_profile takes one");
     }
     return formatProfile(await ask("GET", `/__rb/prof/${encodeURIComponent(id)}${query(a)}`));
+  }
+  if (name === "mem_history") {
+    const { runs } = await ask("GET", "/__rb/history") as { runs: Run[] };
+    return formatHistory(runs, Number.isInteger(a.runs) ? Number(a.runs) : 5);
   }
   if (name === "heap_snapshots") {
     const { snapshots } = await ask("GET", "/__rb/heap") as { snapshots: (SavedFile & { process: string })[] };
