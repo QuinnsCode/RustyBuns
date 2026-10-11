@@ -60,6 +60,14 @@ Do these once. They are what actually cap a bill.
       macOS) are free for public repos. If it ever goes private, set the
       Actions spending limit to $0 under Billing first; the motion-midi
       workflow runs a macOS job on every push to `packages/**`.
+- [ ] Set the Actions **budget** to $0 with **Stop usage when budget limit is
+      reached** (Settings → Billing → Budgets and alerts) anyway. It costs
+      nothing while the repo is public and holds if that ever changes.
+- `scripts/ci-guard.ts` runs on every PR (apps.yml) and fails it if a
+  workflow uses a runner that isn't a standard GitHub-hosted one (a larger
+  runner bills even on a public repo; a self-hosted one runs fork PRs' code
+  on your machine) or a job has no `timeout-minutes` (GitHub's default is 6
+  hours).
 
 ## Writing apps that stay cheap
 

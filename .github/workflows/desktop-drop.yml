@@ -44,6 +44,7 @@ permissions:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       build: ${{ steps.p.outputs.build }}
       apps: ${{ steps.p.outputs.apps }}
@@ -86,6 +87,7 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.build) }}
     name: ${{ matrix.app }} ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -123,6 +125,7 @@ jobs:
         app: ${{ fromJSON(needs.plan.outputs.apps) }}
     name: drop ${{ matrix.app }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     concurrency: drop-${{ matrix.app }}   # channels.json is read, changed, written: one drop per app at a time
     # The drop secrets live in the `drops` environment, which waits for the owner's approval, so a
     # workflow_dispatch of an edited copy of this file on some branch can't reach them. A PR gets none.
