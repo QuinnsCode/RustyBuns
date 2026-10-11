@@ -2501,7 +2501,7 @@ async function commands() {
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
   add("Anywhere", "info", "About codeSplitters", "", () => (location.hash = "#/about"));
   add("Anywhere", "book-open", "API reference", "GET /api", () => (location.href = "/reference"));
-  add("Anywhere", "plug", "Connect your AI (MCP)", "POST /api/mcp", () => (location.href = "/mcp"));
+  add("Anywhere", "plug", "Connect your AI (MCP)", "", () => (location.href = "/mcp"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
