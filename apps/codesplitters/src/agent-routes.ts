@@ -22,7 +22,10 @@
 //        (none: every one on the repo). Its CLI is killed or its container destroyed, and its claim lifted.
 //   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something. A CLI can't take messages
 //        while it runs, so the note goes into the prompt of its next run: when this one ends, it goes round again.
-//   POST /api/repos/:o/:r/agents/:id/(accept|hold|look|reject)  its batch, waiting on main (below).
+//   POST /api/repos/:o/:r/agents/:id/accept   land its batch, waiting on main (below), now
+//   POST /api/repos/:o/:r/agents/:id/hold     stop its batch's clock: it lands when accepted
+//   POST /api/repos/:o/:r/agents/:id/look     someone's reading its batch: it waits a few seconds more
+//   POST /api/repos/:o/:r/agents/:id/reject   throw its batch away
 //
 // A run's batch doesn't land on main as it's written (#745). The agent works on a branch of its own,
 // agent-run-<id>, and when it ends the batch waits there for AGENT_REVIEW_MS (8 seconds by default),
