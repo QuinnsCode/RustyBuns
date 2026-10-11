@@ -151,6 +151,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     }
     wb.push(`  compatibility: { date: ${JSON.stringify(w.compatibilityDate)}, flags: ${JSON.stringify(w.compatibilityFlags)} },`);
     if (w.cpuMs) wb.push(`  limits: { cpuMs: ${w.cpuMs} },`);
+    if (w.placement) wb.push(`  placement: ${JSON.stringify(w.placement)},  // Smart Placement: run near D1 and the Durable Objects`);
     if (w.crons?.length) wb.push(`  crons: ${JSON.stringify(w.crons)},  // Cron Triggers: the Worker exports scheduled()`);
     if (c.targets.edge?.domain) wb.push(`  domain: ${JSON.stringify(c.targets.edge.domain)},`);
     wb.push(`  env: { ${envEntries.join(", ")} },`);

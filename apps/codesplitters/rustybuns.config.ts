@@ -48,6 +48,9 @@ export default defineConfig({
     // (#348): Alchemy's dig took 9.9 s of CPU, and Bun's level import to R2 8.9 s. That's under
     // the default 30 s, but a bigger repo has room to grow. This is a cap, billed per ms used.
     cpuMs: 300_000,
+    // Smart Placement (#611): most requests make several round trips to codesplitters-db and the
+    // file Durable Objects, so the Worker runs near those instead of near the visitor.
+    placement: { mode: "smart" },
     // Workers Logs drop each URL's query string (OAuth codes, ?confirm= handles), as #/privacy
     // says. Each upload resets it, so rustybuns deploy sets it again after (#553).
     redactQueryStrings: true,

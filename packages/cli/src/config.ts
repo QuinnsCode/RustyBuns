@@ -340,6 +340,13 @@ export interface RustyBunsConfig {
      */
     cpuMs?: number;
     /**
+     * Where the Worker runs (`placement`). `{ mode: "smart" }` is Smart Placement:
+     * Cloudflare runs it near the D1 database and Durable Objects it calls rather than
+     * near the visitor, which pays off when a request makes several round trips.
+     * Free on every plan. The desktop and box hosts ignore it.
+     */
+    placement?: { mode: "smart" };
+    /**
      * Workers Logs keep each request's URL without its query string
      * (`observability.redact_query_string`), so codes and tokens passed in a URL
      * aren't logged. Alchemy can't set it and each upload resets it, so
