@@ -35,7 +35,8 @@ test("admins get every card with live readings; nobody else does", async () => {
   const d: any = await r.json();
   expect(d.cards.map((c: any) => c.id)).toEqual(CARDS.map((c) => c.id));
   const card = (id: string) => d.cards.find((c: any) => c.id === id);
-  expect(card("d1-writes").reading.value).toBe(2);
+  // 120 edits by one typist in a minute: tallied at most once a second, so 60 writes.
+  expect(card("d1-writes").reading.value).toBe(1);
   expect(card("big-file").reading.note).toContain("ryan/lab/big.ts");
   expect(card("big-file").reading.note).toContain("1,001 lines");
   expect(card("search").reading).toMatchObject({ value: 8192, limit: 10 * 1024 ** 3 });

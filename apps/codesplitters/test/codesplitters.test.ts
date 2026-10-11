@@ -7,7 +7,7 @@ import { run } from "../agents.ts";
 import { GameRoom } from "../src/game-do.ts";
 import { noodles } from "../src/noodles.ts";
 import { isBuildFile } from "../src/buildfiles.ts";
-import { ruleFor, spread } from "../src/limits.ts";
+import { ruleFor, spread, TALLY_MS } from "../src/limits.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -845,6 +845,10 @@ describe("rate limits", () => {
       expect((await sock.edit("2")).type).toBe("ack");
       const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
       expect((await ops("3")).status).toBe(200);
+      // The socket's two are counted in the file's DO, not D1, until its tally lands; that tally learns of the POST's too.
+      expect(await call.env.DB.prepare("SELECT count FROM limit_hits WHERE rule = 'edit'").first().then((r: any) => r.count)).toBe(1);
+      await Bun.sleep(TALLY_MS + 200);
+      expect(await call.env.DB.prepare("SELECT count FROM limit_hits WHERE rule = 'edit'").first().then((r: any) => r.count)).toBe(3);
       const over = await sock.edit("4");
       expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
       expect(over.retryAfter).toBeGreaterThan(0);
