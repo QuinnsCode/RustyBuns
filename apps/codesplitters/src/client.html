@@ -1632,6 +1632,20 @@ const sawRev = (key, rev) => {
   lastRevMem.delete(key); lastRevMem.set(key, rev);
   try { localStorage.setItem("cs_last_rev", JSON.stringify(all)); } catch {}
 };
+// Signed in, the account keeps it too (#779), so another device catches you up as well. A rev goes
+// up once it has settled for a few seconds (not on every live edit), and at once when the tab hides.
+const seenOut = new Map();
+const sendSeen = (key) => {
+  const o = seenOut.get(key);
+  if (!o) return;
+  seenOut.delete(key); clearTimeout(o.timer);
+  o.after.then(() => fetch("/api/me/seen", { method: "PUT", keepalive: true, headers: { "content-type": "application/json" }, body: JSON.stringify({ key, rev: o.rev }) })).catch(() => {});
+};
+const tellSeen = (key, rev, after = Promise.resolve()) => {
+  clearTimeout(seenOut.get(key)?.timer);
+  seenOut.set(key, { rev, after, timer: setTimeout(() => sendSeen(key), 3000) });
+};
+const flushSeen = () => { for (const key of [...seenOut.keys()]) sendSeen(key); };
 /** What changed between `was` (line id -> text) and `lines`: runs of changed or new line ids, and how many went. */
 const changedRuns = (was, lines) => {
   const runs = [];
@@ -3504,11 +3518,18 @@ const views = {
       }
     };
     // Back after a while away: what changed meanwhile, a stretch at a time, instead of the file having moved silently.
-    // Away is the tab hidden 20s or more, or the page closed: the rev you last saw here is kept in this browser (#758).
+    // Away is the tab hidden 20s or more, or the page closed: the rev you last saw here is kept in this browser (#758),
+    // and signed in, on your account (#779). The account's is read before this page writes its own.
     const revKey = lastRevKey(owner, repo, branch, path), lastSeen = lastRev(revKey);
-    let savedRev = lastSeen;
+    const accountSeen = me() ? api(`/me/seen?key=${encodeURIComponent(revKey)}`).then((r) => (Number.isInteger(r?.rev) ? r.rev : null), () => null) : Promise.resolve(null);
+    // Signed in, the first rev drawn goes up even if this browser had it: the account may be behind.
+    let savedRev = me() ? null : lastSeen;
     /** You've seen the file at `rev` once it's drawn live, on this page (not one you've left), in a tab that shows. */
-    const seenNow = (rev) => { if (rev !== savedRev && viewing === null && box.isConnected && document.visibilityState === "visible") sawRev(revKey, savedRev = rev); };
+    const seenNow = (rev) => {
+      if (rev === savedRev || viewing !== null || !box.isConnected || document.visibilityState !== "visible") return;
+      sawRev(revKey, savedRev = rev);
+      if (me()) tellSeen(revKey, rev, accountSeen);
+    };
     let caught = [], caughtAt = -1, caughtGone = 0, caughtSince = null, away = null;
     const catchBar = () => {
       let bar = $("#caught");
@@ -3531,7 +3552,7 @@ const views = {
     };
     const onVisible = () => {
       if (!box.isConnected) return document.removeEventListener("visibilitychange", onVisible);
-      if (document.hidden) { away = { at: Date.now(), lines: new Map(doc.lines.map((l) => [l.id, l.text])) }; return; }
+      if (document.hidden) { away = { at: Date.now(), lines: new Map(doc.lines.map((l) => [l.id, l.text])) }; flushSeen(); return; }
       const was = away; away = null;
       seenNow(doc.rev);
       if (!was || Date.now() - was.at < 20_000) return;
@@ -3547,10 +3568,12 @@ const views = {
     document.addEventListener("visibilitychange", onVisible);
     // Opened again after landings since your last visit: the file as you last saw it, against now.
     // Too far back (history trimmed past it, a 410) or gone, and the page just opens as it is.
+    // The newer of this browser's and the account's: either may have missed the other's last visit.
     const sinceLast = async () => {
-      if (lastSeen === null || lastSeen >= doc.rev) return;
-      const then = await api(`${base}/at${q}&rev=${lastSeen}`).catch(() => null);
-      if (then?.lines && box.isConnected && !caught.length) catchUp(new Map(then.lines.map((l) => [l.id, l.text])), lastSeen);
+      const account = await accountSeen, seen = account === null ? lastSeen : lastSeen === null ? account : Math.max(lastSeen, account);
+      if (seen === null || seen >= doc.rev || !box.isConnected) return;
+      const then = await api(`${base}/at${q}&rev=${seen}`).catch(() => null);
+      if (then?.lines && box.isConnected && !caught.length) catchUp(new Map(then.lines.map((l) => [l.id, l.text])), seen);
     };
     const draw = (d, fresh = new Set()) => {
       const live = viewing === null;

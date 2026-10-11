@@ -44,6 +44,7 @@ import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from ".
 import { scaleRoutes } from "./scale.ts";
 import { embedDue, indexFile, restaleSearch, searchAll, searchRepo, searchRoutes } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
+import { seenRoutes } from "./seen.ts";
 import { installScript } from "./install.ts";
 import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
@@ -177,6 +178,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/follows, DELETE /api/follows/:id, GET /api/me/following (follows.ts)
   const follows = await followRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
   if (follows) return follows;
+
+  // GET|PUT /api/me/seen, the rev of each file you last saw (seen.ts)
+  const seen = await seenRoutes(req, env, p, url, user);
+  if (seen) return seen;
 
   // GET /api/me/feed and its digest (feed.ts)
   const feed = await feedRoutes(req, env, p, url, user);
