@@ -12,6 +12,9 @@
 //   - It can't make or revoke tokens, sign in or out, or claim a handle, so a leaked
 //     one can't outlive itself. Those take the cookie.
 //   - No WebSockets: a socket edits as well as reads, and the live page is the browser's.
+//   - One an agent got from an invite (invites.ts) is held to that repo: it reaches
+//     /api/repos/<that one> and claiming another invite, and reads elsewhere only what
+//     isn't a repo. Taking the agent out of that crew revokes it (#645).
 //   - Only its SHA-256 is stored; the secret is shown once.
 //   - An app signed in with OAuth (oauth.ts) gets the same kind of token, an hour long
 //     and tied to its grant: these rules hold for it too, and it's never listed here.
@@ -25,7 +28,7 @@ import { actingAs } from "./identity.ts";
 
 export const SCOPES = ["read", "write"] as const;
 export type Scope = (typeof SCOPES)[number];
-export interface Token { id: string; user: string; scope: Scope; label: string; expires_at: number }
+export interface Token { id: string; user: string; scope: Scope; label: string; expires_at: number; repo: string | null }
 
 export const DAY = 86_400_000, MAX_DAYS = 365;
 const MAX_TOKENS = 20;
@@ -51,22 +54,28 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   const secret = bearerOf(req);
   if (secret === null) return null;
   const now = Date.now();
-  const t = secret && await env.DB.prepare("SELECT id, name AS user, scope, label, expires_at, last_used_at FROM api_tokens WHERE hash = ?").bind(await hash(secret)).first() as (Token & { last_used_at: number | null }) | null;
+  const t = secret && await env.DB.prepare("SELECT id, name AS user, scope, label, expires_at, last_used_at, repo FROM api_tokens WHERE hash = ?").bind(await hash(secret)).first() as (Token & { last_used_at: number | null }) | null;
   if (!t || t.expires_at <= now) return json({ error: "this API token is expired, revoked or wrong: make one on your profile page" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
   if (COOKIE_ONLY.has(p[1] ?? "")) return json({ error: "API tokens can't reach this: sign in on the site" }, 403);
   if (p.at(-1) === "ws") return json({ error: "API tokens don't open live sockets: use the HTTP routes" }, 403);
+  if (t.repo && !heldTo(t.repo, p, req.method)) return json({ error: `this API token is for ${t.repo} only` }, 403);
   if (t.scope !== "write" && req.method !== "GET" && req.method !== "HEAD") return json({ error: "this API token is read-only" }, 403, { "www-authenticate": 'Bearer error="insufficient_scope", scope="write"' });
   // Last used, to the minute: one write a minute at most, not one a request.
   if (!t.last_used_at || now - t.last_used_at > 60_000) await env.DB.prepare("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").bind(now, t.id).run();
-  return { id: t.id, user: t.user, scope: t.scope, label: t.label, expires_at: t.expires_at };
+  return { id: t.id, user: t.user, scope: t.scope, label: t.label, expires_at: t.expires_at, repo: t.repo };
 }
 
+/** Whether a token held to `repo` (owner/name) reaches this route: that repo, claiming an invite, or reading what isn't a repo. */
+const heldTo = (repo: string, p: string[], method: string) =>
+  p[1] === "repos" && p[2] && p[3] ? `${p[2]}/${p[3]}` === repo
+  : (p[1] === "invites" && p[2] === "claim") || method === "GET" || method === "HEAD";
+
 /** A new token for `user`, its secret in `token` this once. */
-export async function mint(env: Env, user: string, label: string, scope: Scope, days: number) {
+export async function mint(env: Env, user: string, label: string, scope: Scope, days: number, repo: string | null = null) {
   const secret = "cst_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
   const t = { id: crypto.randomUUID().slice(0, 8), label, scope, last4: secret.slice(-4), created_at: Date.now(), expires_at: Date.now() + days * DAY };
-  await env.DB.prepare("INSERT INTO api_tokens (id, name, label, hash, last4, scope, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(t.id, user, t.label, await hash(secret), t.last4, t.scope, t.created_at, t.expires_at).run();
+  await env.DB.prepare("INSERT INTO api_tokens (id, name, label, hash, last4, scope, created_at, expires_at, repo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(t.id, user, t.label, await hash(secret), t.last4, t.scope, t.created_at, t.expires_at, repo).run();
   return { ...t, token: secret };
 }
 

@@ -272,6 +272,9 @@ describe("app", () => {
     await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
     const op = { ops: [{ kind: "insert", after: null, text: "hi" }] };
     expect((await post(call, "bo", "/api/repos/ana/r/do/ops?path=a", op)).status).toBe(403);
+    // Nobody signed up as bo yet: adding them would take the handle.
+    expect((await post(call, "ana", "/api/repos/ana/r/collaborators", { name: "bo" })).status).toBe(404);
+    await post(call, "bo", "/api/login", { name: "bo" });
     await post(call, "ana", "/api/repos/ana/r/collaborators", { name: "bo" });
     expect((await post(call, "bo", "/api/repos/ana/r/do/ops?path=a", op)).status).toBe(200);
   });

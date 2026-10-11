@@ -124,7 +124,7 @@ const OPS: Record<string, Record<string, Op>> = {
     query: filePath, body: obj({ message: str() }), ok: { allOf: [ref("Commit"), obj({ git: loose("{commit, parent} or {error}") })] } } },
   [`${repo}/do/private`]: {
     get: { id: "private_lines", summary: "The ids of a file's private lines", tag: "Files", open: true, query: filePath, ok: arr(str()) },
-    post: { id: "set_private_lines", summary: "Hide lines from everyone but the crew, git included, or show them again (the crew)", tag: "Files",
+    post: { id: "set_private_lines", summary: "Hide lines from everyone but the crew, git included (the crew), or show them again (the owner only)", tag: "Files",
       query: filePath, body: obj({ lines: arr(str("line id")), private: bool() }, ["lines", "private"]), ok: arr(str()) },
   },
   [`${repo}/shares`]: { post: { id: "share_lines", summary: "A live link to some lines, even from a private repo", tag: "Sharing",
@@ -191,7 +191,7 @@ const OPS: Record<string, Record<string, Op>> = {
         here: bool("whether our own checks run"), offline: bool("the mirror can't reach GitHub"),
         gate: obj({ required: arr(str("the ones this ref needs")), ok: bool(), passed: arr(str()), waiting: arr(str()), failed: arr(str()), deferred: arr(str("GitHub's, put off while it's down")),
           skipped: arr(str("required checks scoped to paths this branch doesn't touch")) }) }) },
-    post: { id: "record_check", summary: "Record a check run, by hand or from a runner (the crew)", tag: "Checks",
+    post: { id: "record_check", summary: "Record a check run by hand (the crew queues one; only the owner may give it a status past queued)", tag: "Checks",
       body: obj({ ref: str(), sha: str(), name: str(), runner: { type: "string", enum: ["desktop", "container", "github", "external"] }, status: ref("CheckStatus"), url: str() }, ["ref", "sha", "name"]),
       ok: ref("CheckRun"), status: 201 },
   },
@@ -217,7 +217,7 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/checks/tokens/{id}`]: { delete: { id: "revoke_ci_token", summary: "Revoke a CI token: the CI's next report is a 401 (owner only)", tag: "Checks", ok: ref("Ok") } },
   [`${repo}/checks/{id}`]: {
     get: { id: "get_check", summary: "One check run, with its log", tag: "Checks", open: true, ok: loose("a check run, plus {log, junit}") },
-    put: { id: "update_check", summary: "Report on a check run: its status, its log (the crew, or a runner)", tag: "Checks",
+    put: { id: "update_check", summary: "Report on a check run: its status, its log (the runner that claimed it, or the owner)", tag: "Checks",
       body: obj({ status: ref("CheckStatus"), log: str("the whole log"), append: str("more log"), junit: str("a JUnit XML report"), runner_label: str("the claimer: a 409 if the run is someone else's now") }), ok: loose("the run") },
   },
   [`${repo}/checks/{id}/cancel`]: { post: { id: "cancel_check", summary: "Stop one of our check runs that's queued or running (the crew)", tag: "Checks", ok: loose("the run") } },

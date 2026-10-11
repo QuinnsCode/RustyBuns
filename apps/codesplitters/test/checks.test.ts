@@ -250,7 +250,7 @@ test("two runners race for one queued run: only one gets it, and names pick whic
   expect([a.status, b.status].sort()).toEqual([200, 204]);
   const won = await (a.status === 200 ? a : b).json();
   expect(won).toMatchObject({ ref: "main", sha: SHA, name: "test", stale_after_s: STALE / 1000 });
-  expect((await checks()).runs.map((r: any) => `${r.name}:${r.status}:${r.runner_label}`)).toEqual(["lint:queued:null", `test:running:${a.status === 200 ? "box-a" : "box-b"}`]);
+  expect((await checks()).runs.map((r: any) => `${r.name}:${r.status}:${r.runner_label}`)).toEqual(["lint:queued:by hand: @ryan", `test:running:${a.status === 200 ? "box-a" : "box-b"}`]);
   // With no names it's the oldest left; then there's nothing.
   expect(await (await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box-b" })).json()).toMatchObject({ name: "lint" });
   expect((await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box-b" })).status).toBe(204);
@@ -348,4 +348,28 @@ test("the reference runner claims a run, clones, runs a real bun test and report
   expect(log).toContain("$ bun test ./math.test.ts");
   expect(log).toContain("1 pass");
   expect(log).toContain("exit 0");
+});
+
+test("a collaborator can't pass a check it didn't run: only the claimer or the owner says how it went (#645)", async () => {
+  const { call, send, checks } = await app();
+  await send("ryan", "/api/repos/ryan/lab/collaborators", { name: "agent-x" });
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test"] }, "PUT");
+  // By hand, a collaborator only queues one, and it says who.
+  expect((await send("agent-x", "/api/repos/ryan/lab/checks", { ref: "main", sha: SHA, name: "test", status: "passed" })).status).toBe(403);
+  const queued = await (await send("agent-x", "/api/repos/ryan/lab/checks", { ref: "main", sha: SHA, name: "test" })).json();
+  expect(queued).toMatchObject({ status: "queued", runner_label: "by hand: @agent-x" });
+  expect(queued.log).toContain("recorded by hand by @agent-x");
+  // Nor can it finish one nobody claimed.
+  expect((await send("agent-x", `/api/repos/ryan/lab/checks/${queued.id}`, { status: "passed" }, "PUT")).status).toBe(403);
+  expect((await checks()).gate.ok).toBe(false);
+  // The owner's runner claims it; only it (or the owner) reports.
+  const { id } = await (await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box" })).json();
+  expect((await send("agent-x", `/api/repos/ryan/lab/checks/${id}`, { runner_label: "box", status: "passed" }, "PUT")).status).toBe(403);
+  expect((await send("ryan", `/api/repos/ryan/lab/checks/${id}`, { runner_label: "box", status: "passed" }, "PUT")).status).toBe(200);
+  expect((await checks()).gate.ok).toBe(true);
+  // A runner the collaborator claimed is its own to report on.
+  await send("ryan", "/api/repos/ryan/lab/checks", { ref: "main", sha: SHA, name: "lint" });
+  const mine = await (await send("agent-x", "/api/repos/ryan/lab/checks/claim", { runner_label: "agent-box" })).json();
+  expect((await send("agent-x", `/api/repos/ryan/lab/checks/${mine.id}`, { runner_label: "agent-box", status: "failed" }, "PUT")).status).toBe(200);
+  expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${mine.id}`)).json()).toMatchObject({ status: "failed", claimed_by: "agent-x" });
 });
