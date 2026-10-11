@@ -1,7 +1,8 @@
 // The apps CI knows about: how each one tests, and how it builds desktop binaries.
 // apps.yml and desktop-drop.yml both read this, so adding an app is one entry here.
 //
-//   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched (all of them if packages/ moved)
+//   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched (all of them if packages/ moved),
+//                                              and whether .claude/ moved (the guard hook tests)
 //   bun scripts/ci-apps.ts drop <all|a,b,c>    the build matrix for desktop-drop.yml
 //   bun scripts/ci-apps.ts drop pr <base-ref>  a PR's dry run: the apps whose rows below changed
 //                                              (all of them if the pipeline itself changed)
@@ -98,6 +99,8 @@ if (cmd === "drop") {
   out("apps", { include: names.map((app) => ({ app, test: APPS[app]!.test, prep: APPS[app]!.prep ?? "", cargo: cargo(app) })) });
   out("any", names.length > 0);
   out("packages", changed.some((f) => f.startsWith("packages/")));
+  // bun test skips dot directories, so the agent guard hook's tests (.claude/hooks) get their own job.
+  out("hooks", shared || changed.some((f) => f.startsWith(".claude/")));
 } else {
   throw new Error("usage: bun scripts/ci-apps.ts test <base-ref> | drop <all|a,b,c>");
 }
