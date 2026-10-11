@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { bump, localFixer, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, DEFAULTS, type Advisories, type Fixer, type Registry, type Tester, type Vuln } from "../src/deps.ts";
+import { bump, localFixer, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, whatsNew, DEFAULTS, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { depsFix as containerFix, depsTest as containerTest } from "../sandbox/server.mjs";
@@ -115,6 +115,58 @@ test("a run reports what no update fixes, and goes on when osv.dev is down", asy
   const r2 = await (await down.send("ryan", "/api/repos/ryan/lab/deps/run", {})).json();
   expect(r2.branch).toBeTruthy();
   expect(r2.note).toContain("couldn't check for known vulnerabilities (503)");
+});
+
+test("whatsNew: only advisories and branch fixes the owner wasn't told about", () => {
+  const report = (exposed: string[], fixes: string[], status: Update["status"] = "untested"): Report => ({
+    at: 0, checked: 2, branch: fixes.length ? "deps-x" : undefined,
+    exposed: exposed.length ? [{ name: "clsx", version: "1.2.1", ids: exposed, path: "package.json" }] : undefined,
+    updates: fixes.length ? [{ name: "mitt", from: "^3.0.0", to: "^3.0.1", level: "patch", status, fixes, path: "package.json" }] : [],
+  });
+  const first = whatsNew([], report(["GHSA-a"], ["GHSA-m"]));
+  expect(first.exposed.map((x) => x.ids)).toEqual([["GHSA-a"]]);
+  expect(first.fixes.map((u) => u.name)).toEqual(["mitt"]);
+  // The same again (the branch wasn't merged): nothing new.
+  const same = whatsNew(first.seen, report(["GHSA-a"], ["GHSA-m"]));
+  expect([same.exposed, same.fixes]).toEqual([[], []]);
+  // A second advisory on the same version is news; the first isn't.
+  expect(whatsNew(first.seen, report(["GHSA-a", "GHSA-b"], [])).exposed.map((x) => x.ids)).toEqual([["GHSA-b"]]);
+  // Gone, then back: news again.
+  const gone = whatsNew(first.seen, report([], []));
+  expect(whatsNew(gone.seen, report(["GHSA-a"], [])).exposed.length).toBe(1);
+  // A fix whose update broke the tests didn't go on the branch.
+  expect(whatsNew([], report([], ["GHSA-m"], "broke")).fixes).toEqual([]);
+});
+
+test("a run alerts the owner once about what's new, and a failed run forgets nothing", async () => {
+  let advisories: Advisories = async () => new Map([["kleur@3.0.0", [{ id: "GHSA-k", summary: "", fixed: [] }]]]);
+  const { call, send } = await app(undefined, undefined, PKG, { advisories: ((pkgs) => advisories(pkgs)) as Advisories });
+  const told: { owner: string; subject: string; lines: string[] }[] = [];
+  call.env.DEPS_NOTIFY = (async (owner, subject, lines) => { told.push({ owner, subject, lines }); }) satisfies Notify;
+  await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "patch", ignore: "ky" }, "PUT");
+  const run = async () => (await send("ryan", "/api/repos/ryan/lab/deps/run", {})).json();
+
+  await run();
+  expect(told.length).toBe(1);
+  expect(told[0]).toMatchObject({ owner: "ryan", subject: "ryan/lab: a dependency is exposed" });
+  expect(told[0]!.lines.join("\n")).toContain("kleur@3.0.0: GHSA-k");
+  await run();
+  expect(told.length).toBe(1);
+
+  // A run that fails knows nothing new: no alert, and the next good one still remembers.
+  const failed = await runDoctor(call.env, async () => { throw new Error("down"); }, "ryan", "lab");
+  expect(failed.note).toBe("failed: down");
+  expect(told.length).toBe(1);
+  await run();
+  expect(told.length).toBe(1);
+
+  // A security fix that lands on a branch is news.
+  advisories = async () => new Map([["hono@4.0.0", [{ id: "GHSA-h", summary: "", fixed: ["4.6.0"] }]]]);
+  const r = await run();
+  expect(r.branch).toBeTruthy();
+  expect(told.length).toBe(2);
+  expect(told[1]!.subject).toBe(`ryan/lab: security fixes on ${r.branch}`);
+  expect(told[1]!.lines.join("\n")).toContain("hono 4.0.0 → 4.6.0: GHSA-h");
 });
 
 test("bump edits only the version strings, keeping the file as written", () => {

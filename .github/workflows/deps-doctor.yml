@@ -1,0 +1,60 @@
+# The codeSplitters dependency doctor on RustyBuns itself (#615): weekly, the same outdated()
+# and osv.dev check the app runs on its repos (apps/codesplitters/scripts/deps-doctor.ts).
+# What's worth taking goes on the deps-doctor branch as one PR, rebuilt from main each week;
+# a dependency no release fixes yet gets an issue. Merging stays a person's call.
+name: deps-doctor
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: deps-doctor
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  # A PR opened with this token starts no pull_request runs, so the required checks are dispatched.
+  actions: write
+
+jobs:
+  doctor:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: deps-doctor
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - id: d
+        run: bun apps/codesplitters/scripts/deps-doctor.ts --write --report "$RUNNER_TEMP/report.md" >> "$GITHUB_OUTPUT"
+      - run: cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # The lockfile, with no install scripts, so none of the new versions' code runs here.
+      - if: steps.d.outputs.changed == 'true'
+        run: bun install --ignore-scripts
+      - if: steps.d.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git commit -qam "Dependency doctor: $(date -u +%F)"
+          git fetch -q origin "$BRANCH:refs/remotes/origin/$BRANCH" || true
+          git push --force-with-lease="$BRANCH" origin "HEAD:$BRANCH"
+          { cat "$RUNNER_TEMP/report.md"; printf '\nRebuilt from main each week by `.github/workflows/deps-doctor.yml`; commits pushed here by hand are replaced on the next run.\n'; } > "$RUNNER_TEMP/body.md"
+          pr=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+          if [ -n "$pr" ]; then gh pr edit "$pr" --body-file "$RUNNER_TEMP/body.md"
+          else gh pr create --head "$BRANCH" --title "Dependency doctor: updates and security fixes" --body-file "$RUNNER_TEMP/body.md"; fi
+          gh workflow run typecheck.yml --ref "$BRANCH"
+          gh workflow run apps.yml --ref "$BRANCH"
+
+      - if: steps.d.outputs.exposed != '0'
+        run: |
+          title="Dependency doctor: a dependency is exposed"
+          n=$(gh issue list --state open --search "\"$title\" in:title" --json number -q '.[0].number')
+          if [ -n "$n" ]; then gh issue edit "$n" --body-file "$RUNNER_TEMP/report.md"
+          else gh issue create --title "$title" --body-file "$RUNNER_TEMP/report.md"; fi

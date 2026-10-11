@@ -14,7 +14,10 @@
 // moved to the first release that fixes it, past the level and the minimum age
 // (the advisory, not the release, says which version is safe), and raising the
 // range makes every install take it, whatever the lockfile held. One with no
-// fixed release yet is listed in the report as exposed, ignored or not.
+// fixed release yet is listed in the report as exposed, ignored or not. When a
+// run finds a newly exposed dependency or puts new security fixes on a branch,
+// the owner hears once: an email on the site, a system notification on the desktop.
+// scripts/deps-doctor.ts runs the same check on RustyBuns itself, weekly in CI.
 //
 // The repo's lockfile says which package manager it uses (bun, npm, pnpm or
 // yarn), and the lockfile goes on the branch too, regenerated in a throwaway
@@ -47,7 +50,7 @@
 
 import type { Doc, Op } from "./lines.ts";
 import { access as artifactAccess, handleFor } from "./archive.ts";
-import { actingAs, isAdmin } from "./identity.ts";
+import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { json, type Env } from "./env.ts";
@@ -487,8 +490,67 @@ export async function runDoctor(env: Env, call: Call, owner: string, repo: strin
     .catch((e: Error): Report => ({ at: now, checked: 0, updates: [], note: `failed: ${e.message}` }))
     .finally(() => clearInterval(beat));
   await env.DB.prepare("UPDATE dep_watches SET last_run = ?, last_report = ?, running_since = NULL WHERE owner = ? AND repo = ?").bind(now, JSON.stringify(report), owner, repo).run();
+  // A failed run knows nothing new, so it neither alerts nor forgets what was told.
+  if (!report.note?.startsWith("failed:")) {
+    const row = await env.DB.prepare("SELECT alerted FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
+    const news = whatsNew(row?.alerted ? String(row.alerted).split("\n") : [], report);
+    await env.DB.prepare("UPDATE dep_watches SET alerted = ? WHERE owner = ? AND repo = ?").bind(news.seen.join("\n"), owner, repo).run();
+    if (news.exposed.length || news.fixes.length) await alert(env, owner, repo, report, news).catch((e) => console.error("codeSplitters: dependency alert failed", String((e as Error)?.message ?? e)));
+  }
   return report;
 }
+
+// ---- telling the owner ----------------------------------------------------------
+
+/**
+ * What this report has that the owner wasn't told about yet: advisories no update
+ * fixes, and security fixes on its branch. `seen` is what to remember for next
+ * time: everything in this report, so one that goes away and comes back is news again.
+ */
+export function whatsNew(told: string[], report: Report): { exposed: Exposed[]; fixes: Update[]; seen: string[] } {
+  const was = new Set(told), seen: string[] = [];
+  const key = (kind: string, path: string | undefined, nameAt: string, id: string) => { const k = `${kind} ${path ?? "package.json"} ${nameAt} ${id}`; seen.push(k); return !was.has(k); };
+  const exposed = (report.exposed ?? []).map((x) => ({ ...x, ids: x.ids.filter((id) => key("exposed", x.path, `${x.name}@${x.version}`, id)) })).filter((x) => x.ids.length);
+  // What went on the branch: once tests ran, what passed; else everything that didn't break.
+  const tested = report.updates.some((u) => u.status !== "untested");
+  const taken = report.branch ? report.updates.filter((u) => u.fixes?.length && (tested ? u.status === "kept" || u.status === "fixed" : true)) : [];
+  const fixes = taken.filter((u) => u.fixes!.map((id) => key("fix", u.path, `${u.name}@${u.to}`, id)).some(Boolean));
+  return { exposed, fixes, seen };
+}
+
+/** Says a short thing to the owner: a subject, some lines, a link. */
+export type Notify = (owner: string, subject: string, lines: string[], link: string) => Promise<void>;
+
+/**
+ * The owner hears about it once: by email on the site (when it can send mail and
+ * their address is verified), as a system notification on the desktop.
+ */
+async function alert(env: Env, owner: string, repo: string, report: Report, news: ReturnType<typeof whatsNew>) {
+  const lines: string[] = [];
+  if (news.fixes.length) lines.push(`The dependency doctor put security fixes on the branch ${report.branch}, ready to review and merge:`,
+    ...news.fixes.map((u) => `  ${u.name} ${u.from} → ${u.to}${u.path && u.path !== "package.json" ? ` (${u.path})` : ""}: ${u.fixes!.join(", ")}`));
+  if (news.exposed.length) lines.push(`${news.exposed.length === 1 ? "A dependency has" : `${news.exposed.length} dependencies have`} a known vulnerability that no update here fixes yet:`,
+    ...news.exposed.map((x) => `  ${x.name}@${x.version}${x.path && x.path !== "package.json" ? ` (${x.path})` : ""}: ${x.ids.join(", ")}`));
+  const subject = news.exposed.length ? `${owner}/${repo}: a dependency is exposed` : `${owner}/${repo}: security fixes on ${report.branch}`;
+  const link = `${(env.BETTER_AUTH_URL ?? "").replace(/\/$/, "")}/#/r/${owner}/${repo}`;
+  await notifierFor(env)?.(owner, subject, lines, link);
+}
+
+const notifierFor = (env: Env): Notify | null => (env.DEPS_NOTIFY as Notify | undefined) ?? (mailOn(env) ? mailNotify(env) : onDesktop(env) ? desktopNotify : null);
+
+/** Email, to the address behind the owner's account, once it's verified. */
+const mailNotify = (env: Env): Notify => async (owner, subject, lines, link) => {
+  const u = await env.DB.prepare(`SELECT u.email, u."emailVerified" AS verified FROM users h JOIN "user" u ON u.id = h.auth_id WHERE h.name = ?`).bind(owner).first().catch(() => null) as { email?: string; verified?: unknown } | null;
+  if (u?.email && u.verified && u.verified !== "false") await mail(env, u.email, subject, lines, link, "You get this when a dependency doctor run finds something new. Turn the doctor off on the repo's page to stop.");
+};
+
+/** A system notification: Notification Center on a Mac, notify-send on Linux. Best effort. */
+const desktopNotify: Notify = async (_owner, subject, lines) => {
+  const body = lines.filter((l) => l.startsWith("  ")).map((l) => l.trim()).join("; ").slice(0, 200);
+  const cmd = process.platform === "darwin" ? ["osascript", "-e", `display notification ${JSON.stringify(body)} with title "codeSplitters" subtitle ${JSON.stringify(subject)}`]
+    : process.platform === "linux" ? ["notify-send", "codeSplitters: " + subject, body] : null;
+  if (cmd) await Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" }).exited.catch(() => {});
+};
 
 async function check(env: Env, call: Call, owner: string, repo: string, s: Settings, registry: Registry, advisories: Advisories, now: number, deadline?: number): Promise<Report> {
   const base = `/api/repos/${owner}/${repo}`;
