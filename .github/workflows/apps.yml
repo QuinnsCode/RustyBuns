@@ -35,7 +35,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
-      - run: bun test packages
+      - run: bun scripts/ci-test-count.ts "bun test packages"
 
   test:
     needs: plan
@@ -62,4 +62,5 @@ jobs:
         working-directory: .
       - if: matrix.prep
         run: ${{ matrix.prep }}
-      - run: ${{ matrix.test }}
+      # the test count goes on the check run as an annotation, for the office's PR health bar
+      - run: bun ../../scripts/ci-test-count.ts "${{ matrix.test }}"
