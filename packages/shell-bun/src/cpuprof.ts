@@ -7,8 +7,10 @@
 
 import { Session } from "node:inspector";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
+import { historyRuns, type History } from "./history.ts";
+import { summarizeProfile } from "./profsummary.ts";
 
 export interface CpuProfileOptions {
   /** Where the .cpuprofile goes. */
@@ -69,22 +71,26 @@ const same = (a: string, b: string) => {
  * secret is set (shorter than 16 characters counts as unset), so the path falls
  * through to the app as if it weren't there. `POST /__rb/prof?s=10` with
  * `Authorization: Bearer <secret>` samples for 10 seconds, saves the profile to
- * `dir` and answers with it.
+ * `dir` and answers with it. With a `history`, each profile's summary goes into
+ * it, and `GET /__rb/history`, behind the same secret, answers with its runs.
  */
-export function profRoute(o: { secret?: string; dir: string; log?: (l: string) => void }) {
+export function profRoute(o: { secret?: string; dir: string; log?: (l: string) => void; history?: History }) {
   const secret = o.secret && o.secret.length >= 16 ? o.secret : "";
   const log = o.log ?? ((l) => console.log(l));
   if (o.secret && !secret) log("[prof] RB_PROF_SECRET is under 16 characters: /__rb/prof is off");
   return async (req: Request): Promise<Response | null> => {
     const url = new URL(req.url);
-    if (!secret || url.pathname !== "/__rb/prof") return null;
+    const hist = url.pathname === "/__rb/history" && o.history;
+    if (!secret || (url.pathname !== "/__rb/prof" && !hist)) return null;
     if (!same(req.headers.get("authorization") ?? "", `Bearer ${secret}`)) return new Response("unauthorized", { status: 401 });
+    if (hist) return req.method === "GET" ? Response.json({ runs: historyRuns(hist.read()) }) : new Response("GET /__rb/history", { status: 405, headers: { Allow: "GET" } });
     if (req.method !== "POST") return new Response("POST /__rb/prof?s=<seconds>", { status: 405, headers: { Allow: "POST" } });
     if (busy) return new Response("a profile is already running", { status: 409 });
     const ms = Math.round((Number(url.searchParams.get("s")) || 10) * 1000);
     log(`[prof] sampling ${Math.min(ms, PROF_MAX_MS) / 1000}s`);
     const { file, json } = await cpuProfile({ dir: o.dir, ms });
     log(`[prof] cpu profile ${file}`);
+    o.history?.profile(basename(file), summarizeProfile(JSON.parse(json)));
     return new Response(json, { headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="${file.split("/").at(-1)}"` } });
   };
 }

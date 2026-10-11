@@ -69,12 +69,16 @@ test("the tools read as text, and the MCP server's go through the hook port with
   expect(await runTriageTool("list_profiles", {}, hookCall({ env, fetch: fakeFetch }))).toMatch(/^1 CPU profile\n  office-/);
   expect(await runTriageTool("read_profile", { top: 2 }, hookCall({ env, fetch: fakeFetch }))).toContain("total time:");
   expect(await runTriageTool("heap_snapshots", {}, hookCall({ env, fetch: fakeFetch }))).toContain("No heap snapshots");
+  // This run's history: the profile just taken, beside the memory samples.
+  const hist = await runTriageTool("mem_history", {}, hookCall({ env, fetch: fakeFetch }));
+  expect(hist).toMatch(/^this run: /);
+  expect(hist).toMatch(/profile office-.*\.cpuprofile \(asked, /);
 
   await expect(runTriageMcp("mem_stats", {}, { env: {}, fetch: fakeFetch })).rejects.toThrow("AGENT_OFFICE_HOOK_URL");
 });
 
 test("only the tools that look skip the permission prompt", () => {
-  expect(TRIAGE_READ_ONLY).toEqual(["mem_stats", "list_profiles", "read_profile", "heap_snapshots"]);
+  expect(TRIAGE_READ_ONLY).toEqual(["mem_stats", "list_profiles", "read_profile", "mem_history", "heap_snapshots"]);
   expect(TRIAGE_TOOLS.map((t) => t.name)).toContain("take_cpu_profile");
 });
 

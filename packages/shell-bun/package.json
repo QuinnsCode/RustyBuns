@@ -22,6 +22,7 @@
     "./advisories": "./src/advisories.ts",
     "./client": "./src/client.ts",
     "./cpuprof": "./src/cpuprof.ts",
+    "./history": "./src/history.ts",
     "./intro": "./src/intro.tsx",
     "./memwatch": "./src/memwatch.ts",
     "./profsummary": "./src/profsummary.ts",

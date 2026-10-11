@@ -5,12 +5,14 @@
 //   POST /__rb/prof?s=10        profile the office for 10s, save it to <data>/prof, answer with its summary
 //   GET  /__rb/prof/<id>        a saved profile's summary (?top=N frames)
 //   GET  /__rb/heap             the heap snapshots the office and the pty hosts wrote over their ceiling
+//   GET  /__rb/history          the office's runs, one per start, newest first: memory slope, profiles, ceiling restarts
 // A POST from the page needs an X-RB-Triage header, which a form on another site can't send.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { cpuProfile, PROF_MAX_MS, profiling } from "@rustybuns/shell-bun/cpuprof";
 import { listSaved, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
-import { officeMem } from "../live/mem.ts";
+import { historyRuns } from "@rustybuns/shell-bun/history";
+import { officeHistory, officeMem } from "../live/mem.ts";
 
 export const TRIAGE_HEADER = "x-rb-triage";
 
@@ -21,11 +23,13 @@ const top = (url: URL) => Math.min(Math.max(Number(url.searchParams.get("top")) 
 /** The /__rb route handler; null for a path that isn't one of them. `trusted` lets a POST through. */
 export function officeTriage(dataDir: string, floors: () => Iterable<{ id: string; dir: string }>) {
   const mem = officeMem(dataDir, floors);
+  const hist = officeHistory(dataDir);
   const profDir = path.join(dataDir, "prof");
   return async (method: string, url: URL, trusted: boolean): Promise<TriageAnswer | null> => {
     const p = url.pathname;
     const only = (m: string) => ({ status: 405, body: { error: `${m} ${p}` } });
     if (p === "/__rb/mem") return method === "GET" ? { status: 200, body: mem() } : only("GET");
+    if (p === "/__rb/history") return method === "GET" ? { status: 200, body: { runs: historyRuns(hist.read()) } } : only("GET");
     if (p === "/__rb/heap") {
       if (method !== "GET") return only("GET");
       const snapshots = [
@@ -41,7 +45,9 @@ export function officeTriage(dataDir: string, floors: () => Iterable<{ id: strin
       if (profiling()) return { status: 409, body: { error: "A profile is already being taken; try again when it's done" } };
       const ms = Math.min(Math.max(Math.round((Number(url.searchParams.get("s")) || 10) * 1000), 1000), PROF_MAX_MS);
       const { file, json } = await cpuProfile({ dir: profDir, ms, name: "office" });
-      return { status: 200, body: { id: path.basename(file), file, seconds: ms / 1000, summary: summarizeProfile(JSON.parse(json), top(url)) } };
+      const profile = JSON.parse(json), id = path.basename(file);
+      hist.profile(id, summarizeProfile(profile));
+      return { status: 200, body: { id, file, seconds: ms / 1000, summary: summarizeProfile(profile, top(url)) } };
     }
     if (p.startsWith("/__rb/prof/")) {
       if (method !== "GET") return only("GET");
