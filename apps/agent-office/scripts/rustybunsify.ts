@@ -19,6 +19,7 @@ import path from "node:path";
 import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
+import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
 
 const root = path.dirname(import.meta.dir);
 const office = path.join(root, "office");
@@ -36,7 +37,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -97,12 +98,33 @@ async function prepare(tag: string) {
   patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
     "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
 
-  // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem
-  prepend("http/router.js", "import { officeMem as __rbMem } from '../rb-mem.js';\n");
+  // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem with the
+  // office's CPU profiles and heap snapshots (triage/server.ts): signed in, and to workers on the hook port
+  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\n");
   patch("http/router.js", "const signedIn = routes.filter((r) => r.auth === 'session');",
-    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbMemStats = __rbMem(ctx.cfg.dataDir, () => ctx.floors.values());");
+    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());");
   patch("http/router.js", "            for (const route of signedIn)\n",
-    "            if (p === '/__rb/mem')\n                return send(res, 200, __rbMemStats());\n            for (const route of signedIn)\n");
+    "            const __rb = p.startsWith('/__rb/') && await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1');\n" +
+    "            if (__rb)\n                return send(res, __rb.status, __rb.body);\n            for (const route of signedIn)\n");
+  prepend("hooks/server.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\n");
+  patch("hooks/server.js", "        if (url.pathname === '/office/queue')\n",
+    "        if (url.pathname.startsWith('/__rb/')) {\n" +
+    "            const id = url.searchParams.get('worker') ?? '';\n" +
+    "            if (!ctx.workerFloor(id)?.workers.authenticate(id, (req.headers.authorization ?? '').replace(/^Bearer\\s+/i, '')))\n" +
+    "                return send(res, 401, { error: 'Send your own AGENT_OFFICE_WORKER_ID as ?worker= and AGENT_OFFICE_HOOK_TOKEN as the bearer token' });\n" +
+    "            const __rb = await (ctx.__rbTriage ??= __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values()))(req.method, url, true);\n" +
+    "            return __rb ? send(res, __rb.status, __rb.body) : send(res, 404, { error: 'No such route' });\n" +
+    "        }\n        if (url.pathname === '/office/queue')\n");
+  // the same as tools in the workers' MCP server (bin/office-workers.js), the looking ones without asking
+  patch("../../../bin/office-workers.js", "import { fileURLToPath } from 'node:url';\n",
+    "import { fileURLToPath } from 'node:url';\nimport { TRIAGE_NOTE as __rbTriageNote, TRIAGE_TOOLS as __rbTriageTools, runTriageMcp as __rbTriage } from './rb-triage.js';\n");
+  patch("../../../bin/office-workers.js", "];\n\nconst INSTRUCTIONS =", "  ...__rbTriageTools,\n];\n\nconst INSTRUCTIONS =");
+  patch("../../../bin/office-workers.js", "'The office-workers command on your PATH does the same from a shell.';",
+    "'The office-workers command on your PATH does the same from a shell.' + __rbTriageNote;");
+  patch("../../../bin/office-workers.js", "  throw new Error(`Unknown tool: ${name}`);\n}",
+    "  if (__rbTriageTools.some((t) => t.name === name)) return __rbTriage(name, a, io);\n  throw new Error(`Unknown tool: ${name}`);\n}");
+  patch("office-workers.js", "export const MCP_READ_ONLY = [`mcp__${MCP_NAME}__list_workers`];",
+    `export const MCP_READ_ONLY = [\`mcp__\${MCP_NAME}__list_workers\`, ...${JSON.stringify(TRIAGE_READ_ONLY)}.map((t) => \`mcp__\${MCP_NAME}__\${t}\`)];`);
   prepend("ptyhost.js", "import { ptyHostMem as __rbMem } from './rb-mem.js';\n");
   patch("ptyhost.js", "const token = JSON.parse(readFileSync(infoPath, 'utf8')).token;",
     "const token = JSON.parse(readFileSync(infoPath, 'utf8')).token;\n__rbMem(infoPath);");
@@ -124,7 +146,7 @@ async function prepare(tag: string) {
   // 12. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -177,10 +199,12 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["checks/tally.ts", "rb-checks.js"]]) {
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["checks/tally.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
+    // beside bin/office-workers.js, the workers' MCP server
+    ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
     const built = await Bun.build({ entrypoints: [path.join(root, entry!)], target: "bun" });
     if (!built.success) throw new AggregateError(built.logs, `${entry} failed to build`);
-    await Bun.write(path.join(srv, out!), built.outputs[0]!);
+    await Bun.write(path.resolve(srv, out!), built.outputs[0]!);
   }
 }
 
@@ -194,6 +218,8 @@ async function buildPageScripts() {
   await buildPageScript("clock/index.ts", "rb-clock", ["index", "lite"]);
   // the PR board's checks health bar
   await buildPageScript("checks/index.ts", "rb-checks", ["index", "lite"]);
+  // the triage tools, over WebMCP for an agent in the browser
+  await buildPageScript("triage/index.ts", "rb-triage", ["index", "lite"]);
 }
 
 async function buildPageScript(entry: string, prefix: string, pages: string[]) {

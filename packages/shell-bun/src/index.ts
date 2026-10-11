@@ -14,6 +14,7 @@ export { queue, LocalQueue, type QueueBatch, type QueueMessage, type QueueConsum
 export { launchCheck, appLaunchCheck } from "./advisories.ts";
 export { memWatch, slope, type MemStats, type MemWatchOptions } from "./memwatch.ts";
 export { cpuProfile, profRoute, profiling, PROF_MAX_MS, type CpuProfileOptions } from "./cpuprof.ts";
+export { summarizeProfile, formatProfileSummary, listSaved, type CpuProfile, type ProfileSummary, type HotFrame, type SavedFile } from "./profsummary.ts";
 export { schedule, parseCron, cronMatches, type ScheduledController } from "./cron.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
