@@ -1342,7 +1342,7 @@ const views = {
     icons();
     el.querySelectorAll("[data-open-ref]").forEach((btn) => btn.addEventListener("click", async () => {
       btn.disabled = true;
-      try { const r = await api(`/repos/${owner}/${repo}/mirror/branches`, { ref: btn.dataset.openRef }); toast(`Opened ${r.name}: ${r.files.length} file${r.files.length === 1 ? "" : "s"}${r.skipped.length ? `, skipped ${r.skipped.join(", ")}` : ""}`); }
+      try { const r = await api(`/repos/${owner}/${repo}/mirror/branches`, { ref: btn.dataset.openRef }); toast(`Opened ${r.name}: ${r.files.length} file${r.files.length === 1 ? "" : "s"}${r.deleted.length ? `, deleted ${r.deleted.join(", ")}` : ""}${r.skipped.length ? `, skipped ${r.skipped.join(", ")}` : ""}`); }
       catch (e) { toast(`Not opened: ${e.message}`); }
       route();
     }));
@@ -1603,13 +1603,14 @@ const views = {
     const reviews = await Promise.all(open.map((b) => api(`${base}/${b.name}`)));
     el.innerHTML = reviews.map((b) => {
       const files = b.files.filter((f) => !f.merged), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
-      const ops = files.reduce((n, f) => n + f.ops.length, 0), build = files.filter((f) => f.build);
+      const ops = files.reduce((n, f) => n + f.ops.length, 0), build = files.filter((f) => f.build), gone = files.filter((f) => f.deleted);
       // Build and deploy files run on the next deploy: show every changed line, and when the owner's
       // commit after this merge would ship, ask them to say they've read it first.
       const gate = build.length && b.deploys;
       // Code the merge check says won't build lands only when its own box is ticked, never with "keep the branch's lines".
       const broken = clash.some((c) => c.lint);
       return `<div class="commit"><code>${esc(b.name)}</code><span>@${esc(b.by)} · ${files.length} file${files.length === 1 ? "" : "s"}, ${ops} line op${ops === 1 ? "" : "s"}</span>
+        ${gone.length ? `<span class="muted">Deletes ${gone.map((f) => `<code>${esc(f.path)}</code>`).join(", ")}</span>` : ""}
         ${clash.map((c) => `<span class="muted">${esc(c.path)} ${esc(c.line)}: ${c.lint
           ? `merged, it wouldn't build: ${esc(c.lint)}`
           : c.whole
