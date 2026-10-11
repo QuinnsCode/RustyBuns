@@ -120,12 +120,18 @@ test("generated host: host identity by cookie, guests by passphrase with their o
 });
 
 test("generated host: --listen and --join at launch", async () => {
-  const { p, url } = await launch({ RB_JOIN: "fromenv" }, ["--listen", "0.0.0.0:0"]);
+  const { p, url } = await launch({ RB_JOIN: "fromenvxxxxxx" }, ["--listen", "0.0.0.0:0"]);
   try {
     expect(new URL(url).hostname).toBe("0.0.0.0");
-    const g = await connect(`http://127.0.0.1:${new URL(url).port}/ws?join=fromenv&uid=g1&v=v1`);
+    const g = await connect(`http://127.0.0.1:${new URL(url).port}/ws?join=fromenvxxxxxx&uid=g1&v=v1`);
     expect("hello" in g && g.hello.id).toBe("g1");
   } finally { p.kill(); }
+});
+
+test("generated host: a short launch passphrase off loopback won't start, on loopback it does", async () => {
+  await expect(launch({ RB_JOIN: "short" }, ["--listen", "0.0.0.0:0"])).rejects.toThrow(/at least 12 characters/);
+  const { p } = await launch({}, ["--listen", "127.0.0.1:0", "--join", "short"]);
+  p.kill();
 });
 
 test("generated host: a guest the world closes frees exactly one slot", async () => {
