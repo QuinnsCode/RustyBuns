@@ -55,6 +55,21 @@ test("a real git client pushes to and clones from a local Artifacts repo, behind
   await expect(ns.get("starter")).rejects.toThrow("NOT_FOUND");
 });
 
+test("onPush hears each push, with the repo's name", async () => {
+  const heard: string[] = [];
+  ns.onPush = (name) => heard.push(name);
+  try {
+    const { remote, work } = await seeded("heard", { "a.txt": "a\n" });
+    expect(heard).toEqual(["heard"]);
+    await Bun.write(join(work, "a.txt"), "b\n");
+    await sh([...git, "commit", "-qam", "second"], work);
+    const { plaintext } = await (await ns.get("heard")).createToken("write", 60);
+    expect((await sh(["git", "push", "-q", withToken(remote, plaintext), "main"], work)).ok).toBe(true);
+    await Bun.sleep(10);
+    expect(heard).toEqual(["heard", "heard"]);
+  } finally { ns.onPush = undefined; }
+});
+
 test("log, readCommit, readTree and readBlob have Cloudflare's shapes", async () => {
   await seeded("shapes", { "a.txt": "A\n", "src/b.ts": "export {}\n" });
   const repo = await ns.get("shapes");

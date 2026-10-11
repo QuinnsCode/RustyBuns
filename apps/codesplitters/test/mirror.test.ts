@@ -55,6 +55,15 @@ async function upstreamCommit(files: Record<string, string>, message: string) {
   await sh(`git add -A && git commit -qm "${message}" && git push -q origin main`, work);
 }
 const upLog = (fmt: string) => sh(`git --git-dir ${up} log -1 --format=${fmt} main`);
+const commit = (call: Call, path: string) => post(call, `/api/repos/ana/up/do/commit?path=${encodeURIComponent(path)}`, { message: `commit ${path}` });
+/** The files a push clashed with, once one has: it lands as it arrives, a moment after the push. */
+async function pushClash(call: Call) {
+  for (let i = 0; i < 100; i++) {
+    const r = await get(call, "/api/repos/ana/up");
+    if (r.pushClash) return r.pushClash;
+    await Bun.sleep(20);
+  }
+}
 const upShow = (path: string) => sh(`git --git-dir ${up} show main:${path}`);
 
 let up = join(root, "up.git");
@@ -455,6 +464,8 @@ describe("mirrors", () => {
     writeFileSync(join(work, "README"), "hello, here\nworld, from a terminal\n");
     writeFileSync(join(work, "src/a.ts"), "export const a = 1\nexport const z = 26\n");
     await sh(`git add -A && git commit -qm "from a terminal" && git push -q codesplitters main`, work);
+    // It's heard as it arrives (#788): no sync or open needed for src/a.ts's clash to show.
+    expect(await pushClash(call)).toEqual(["src/a.ts"]);
 
     // The sync takes it up and lands it in the open files: README is clean, so it's committed as pushed.
     expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
@@ -462,19 +473,41 @@ describe("mirrors", () => {
     expect((await file(call, "README")).lines.map((l: any) => [l.text, l.by])).toEqual([["hello, here", "ana"], ["world, from a terminal", "ana"]]);
     // src/a.ts has an edit not committed yet right beside the pushed line: a clash, and the edit here stands.
     expect((await file(call, "src/a.ts")).lines.map((l: any) => l.text)).toEqual(["export const a = 2"]);
+    // Its commit waits for a side to be picked, so it can't undo the push (#788). Only the owner picks.
+    expect((await commit(call, "src/a.ts")).status).toBe(409);
+    expect((await call("bob", "/api/repos/ana/up/pushes", { method: "POST", body: JSON.stringify({ path: "src/a.ts", take: "pushed" }) })).status).toBe(403);
+    expect((await post(call, "/api/repos/ana/up/pushes", { path: "src/a.ts", take: "sideways" })).status).toBe(400);
+    // Take the pushed lines: they replace the edit here, and the commit goes ahead.
+    expect((await post(call, "/api/repos/ana/up/pushes", { path: "src/a.ts", take: "pushed" })).status).toBe(200);
+    expect((await file(call, "src/a.ts")).lines.map((l: any) => l.text)).toEqual(["export const a = 1", "export const z = 26"]);
+    expect((await get(call, "/api/repos/ana/up")).pushClash).toBeUndefined();
+    expect((await commit(call, "src/a.ts")).status).toBe(200);
 
     // The next commit here keeps the pushed line, and so does upstream.
     await editHere(call, "README", 1, "hello again");
     expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
     expect(await upShow("README")).toBe("hello again\nworld, from a terminal");
 
-    // No sync in between: committing here picks the push up first.
+    // No sync in between: the push is in before the commit here.
     await sh(`git pull -q --ff-only codesplitters main`, work);
     writeFileSync(join(work, "README"), "hello again\nworld, pushed twice\n");
     await sh(`git commit -qam "again" && git push -q codesplitters main`, work);
     await editHere(call, "README", 1, "hello, third time");
     expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
     expect(await upShow("README")).toBe("hello, third time\nworld, pushed twice");
+
+    // Keep mine: the edit here stands, and its commit writes over the pushed line on purpose.
+    await sh(`git pull -q --ff-only codesplitters main`, work);
+    await editHere(call, "README", 1, "hello, mine", false);
+    writeFileSync(join(work, "README"), "hello, pushed\nworld, pushed twice\n");
+    await sh(`git commit -qam "clash" && git push -q codesplitters main`, work);
+    expect(await pushClash(call)).toEqual(["README"]);
+    expect((await commit(call, "README")).status).toBe(409);
+    expect((await post(call, "/api/repos/ana/up/pushes", { path: "README", take: "mine" })).status).toBe(200);
+    expect((await post(call, "/api/repos/ana/up/pushes", { path: "README", take: "mine" })).status).toBe(404);
+    expect((await commit(call, "README")).status).toBe(200);
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
+    expect(await upShow("README")).toBe("hello, mine\nworld, pushed twice");
   });
 
   test("takes any git URL on the desktop, and says what's wrong with a bad one", async () => {

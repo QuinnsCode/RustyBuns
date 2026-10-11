@@ -71,7 +71,7 @@ import { indexFile, unindexFile } from "./search.ts";
 export const EVERY = 5 * 60_000, MAX_WAIT = 15 * 60_000;
 
 /** The desktop's Artifacts: bare repos on this machine (shell-bun's LocalArtifacts). */
-interface LocalGit { path(name: string): string; remote(name: string): string; stamp(p: string, o: { description?: string; source?: string }): void }
+interface LocalGit { path(name: string): string; remote(name: string): string; stamp(p: string, o: { description?: string; source?: string }): void; onPush?: (name: string) => unknown }
 export const localGit = (env: Env) => {
   const a = env.ARTIFACTS as unknown as Partial<LocalGit> | undefined;
   return typeof a?.path === "function" && typeof a.stamp === "function" && typeof Bun !== "undefined" ? a as LocalGit : null;
@@ -311,7 +311,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
       // Files open here get upstream's changes as line edits, before git moves, so a catalogue never undoes them.
       // Git truth in the artifact speaks for commits only: edits not committed yet still ask.
       const changes = await liveChanges(env, owner, repo, dir, ours, tip, truth === "artifact" && !rewritten ? undefined : live);
-      if ("clash" in changes) return failed(env, r, "clash", "edits here that aren't committed yet touch the same lines upstream changed", changes.clash);
+      if (changes.clash.length) return failed(env, r, "clash", "edits here that aren't committed yet touch the same lines upstream changed", changes.clash);
       for (const p of changes.plans) await land(env, owner, repo, p, tip);
       // Taking upstream's history drops this copy's commits from the branch, not from git: a ref keeps them.
       const dropped = !(await isAncestor(dir, ours, tip));
@@ -438,11 +438,12 @@ interface Plan { path: string; doc: Doc; next: string[] | null; clean: boolean }
  * lines it should have. One with no edits since its last commit just takes
  * upstream's; one with live edits gets upstream's changes merged into them,
  * unless they touch the same lines, which is a clash (or `resolve` says whose
- * wins). `next` null means upstream deleted it.
+ * wins). `next` null means upstream deleted it. Plans are for the files that
+ * don't clash: a sync lands none of them while any do.
  */
-async function liveChanges(env: Env, owner: string, repo: string, dir: string, ours: string, tip: string, resolve?: "mine" | "upstream"): Promise<{ plans: Plan[] } | { clash: string[] }> {
+async function liveChanges(env: Env, owner: string, repo: string, dir: string, ours: string, tip: string, resolve?: "mine" | "upstream"): Promise<{ plans: Plan[]; clash: string[] }> {
   const paths = (await must(["diff", "--name-only", "-z", "--no-renames", ours, tip], dir)).split("\0").filter(Boolean);
-  if (!paths.length) return { plans: [] };
+  if (!paths.length) return { plans: [], clash: [] };
   const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all();
   const open = new Set((results as { path: string }[]).map((f) => f.path));
   const plans: Plan[] = [], clash: string[] = [];
@@ -458,7 +459,7 @@ async function liveChanges(env: Env, owner: string, repo: string, dir: string, o
     if (merged) plans.push({ path, doc, next: merged, clean: false });
     else if (resolve !== "mine") clash.push(path);
   }
-  return clash.length ? { clash } : { plans };
+  return { plans, clash };
 }
 
 /** Put a plan into the file's Durable Object as `by`'s edits (upstream's); a file that was clean is committed there too. */
@@ -485,29 +486,124 @@ async function land(env: Env, owner: string, repo: string, p: Plan, tip: string,
  * Pushes to a desktop repo's own git (#773). Its bare repo is a remote for the
  * owner's tools (Push back), and a push there moves main without the files open
  * here hearing of it, so their next commit here would write their old lines
- * back over it. repos.git_seen is main's tip as the app last knew it (its own
- * commits move it, see archive.ts, and so do syncs and this): the commits since
- * came in from outside, and land in open files as line edits by the owner (only
- * the owner gets a remote that writes), merged into any live edits. Where those
- * touch the same lines, the edits here are kept. A git that started over (a fresh
- * start) shares nothing with what was seen: the tip becomes the new baseline.
- * Not for a repo with private lines: no push back is offered there.
+ * back over it. repos.git_seen is main's tip as the app last knew it (set when
+ * the repo's made, see seeGit; its own commits move it, see archive.ts, and so
+ * do syncs and this): the commits since came in from outside, and land in open
+ * files as line edits by the owner (only the owner gets a remote that writes),
+ * merged into any live edits. Where those touch the same lines (or lines right
+ * beside them) it's a clash (#788): the edits here stay as they are, the file
+ * goes in repos.git_clash with the pushed commit, and its commit here waits for
+ * the owner to pick a side (settlePush). A git that started over (a fresh start)
+ * shares nothing with what was seen: the tip becomes the new baseline. "" is an
+ * empty git's baseline. Not for a repo with private lines: no push back is offered there.
  */
-export async function landPushes(env: Env, owner: string, repo: string) {
+export function landPushes(env: Env, owner: string, repo: string): Promise<void> {
+  // One landing at a time per repo: a push heard as it arrives and a commit here both look.
+  const key = `${owner}/${repo}`, next = (landing.get(key) ?? Promise.resolve()).catch(() => {}).then(() => landNow(env, owner, repo));
+  landing.set(key, next);
+  next.finally(() => { if (landing.get(key) === next) landing.delete(key); }).catch(() => {});
+  return next;
+}
+const landing = new Map<string, Promise<void>>();
+async function landNow(env: Env, owner: string, repo: string) {
   const lg = localGit(env);
   if (!lg) return;
-  const r = await env.DB.prepare("SELECT artifact, branch, crew_artifact, git_seen FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as { artifact: string | null; branch: string | null; crew_artifact: string | null; git_seen: string | null } | null;
+  const r = await env.DB.prepare("SELECT artifact, branch, crew_artifact, git_seen, git_clash FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as { artifact: string | null; branch: string | null; crew_artifact: string | null; git_seen: string | null; git_clash: string | null } | null;
   if (!r?.artifact || r.crew_artifact) return;
   const dir = lg.path(r.artifact), t = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${r.branch ?? "main"}`], dir), tip = t.out.trim();
   if (t.code || !tip || tip === r.git_seen) return;
-  const seen = r.git_seen && (await git(["cat-file", "-e", `${r.git_seen}^{commit}`], dir)).code === 0 && await isAncestor(dir, r.git_seen, tip) ? r.git_seen : null;
+  const seen = r.git_seen === "" ? EMPTY_TREE
+    : r.git_seen && (await git(["cat-file", "-e", `${r.git_seen}^{commit}`], dir)).code === 0 && await isAncestor(dir, r.git_seen, tip) ? r.git_seen : null;
+  const clashes = clashesOf(r.git_clash);
   if (seen) {
-    const changes = await liveChanges(env, owner, repo, dir, seen, tip, "mine");
+    const changes = await liveChanges(env, owner, repo, dir, seen, tip);
     const message = (await must(["log", "-1", "--format=%s", tip], dir)) || `pushed ${tip.slice(0, 7)}`;
-    if ("plans" in changes) for (const p of changes.plans) await land(env, owner, repo, p, tip, owner, message);
+    for (const p of changes.plans) {
+      await land(env, owner, repo, p, tip, owner, message);
+      // A file that clashed before takes this push's lines when that side is picked.
+      if (clashes[p.path]) clashes[p.path] = tip;
+    }
+    for (const path of changes.clash) clashes[path] = tip;
   }
   // Someone else landed it, or the app committed, meanwhile: theirs stands.
-  await env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND git_seen IS ?").bind(tip, owner, repo, r.git_seen).run();
+  await env.DB.prepare("UPDATE repos SET git_seen = ?, git_clash = ? WHERE owner = ? AND name = ? AND git_seen IS ?")
+    .bind(tip, Object.keys(clashes).length ? JSON.stringify(clashes) : null, owner, repo, r.git_seen).run();
+}
+
+/**
+ * On the desktop, a push lands in the files open here as it arrives (#788), so
+ * a page left open sees the pushed lines live (the file's socket hears the edits)
+ * and a clash shows at once. Wired on the first request, once.
+ */
+export function hearPushes(env: Env) {
+  const lg = localGit(env);
+  if (!lg || lg.onPush) return;
+  lg.onPush = async (name) => {
+    const r = await env.DB.prepare("SELECT owner, name FROM repos WHERE artifact = ?").bind(name).first() as { owner: string; name: string } | null;
+    if (r) await landPushes(env, r.owner, r.name);
+  };
+}
+
+/** git's empty tree: what an empty repo's git had, to diff its first push against. */
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const clashesOf = (v: unknown): Record<string, string> => { try { return v ? JSON.parse(v as string) : {}; } catch { return {}; } };
+
+/** A desktop repo's baseline for landPushes: main's tip as it is when the repo's made or dug up ("" for an empty git). */
+export async function seeGit(env: Env, owner: string, repo: string) {
+  const lg = localGit(env);
+  const r = lg && await env.DB.prepare("SELECT artifact, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as { artifact: string | null; branch: string | null } | null;
+  if (!lg || !r?.artifact) return;
+  const t = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${r.branch ?? "main"}`], lg.path(r.artifact));
+  await env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND git_seen IS NULL").bind(t.code ? "" : t.out.trim(), owner, repo).run();
+}
+
+/** The files a push clashed with (#788), each with its pushed commit. */
+export async function pushClashes(env: Env, owner: string, repo: string) {
+  const r = await env.DB.prepare("SELECT artifact, git_clash FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  return { artifact: r?.artifact as string | undefined, clashes: clashesOf(r?.git_clash) };
+}
+
+/** The pushed lines a clash is with, or null if the push deleted the file. */
+async function pushedLines(env: Env, owner: string, repo: string, path: string) {
+  const { artifact, clashes } = await pushClashes(env, owner, repo), lg = localGit(env), commit = clashes[path];
+  if (!commit || !lg || !artifact) return undefined;
+  const text = await show(lg.path(artifact), commit, path);
+  return { commit, lines: text === null ? null : fromDisk(text) };
+}
+
+const unclash = (env: Env, owner: string, repo: string, path: string) =>
+  // Read and written in one statement, so a push landing meanwhile keeps its own.
+  env.DB.prepare("UPDATE repos SET git_clash = NULLIF(json_remove(git_clash, '$.' || json_quote(?)), '{}') WHERE owner = ? AND name = ? AND git_clash IS NOT NULL").bind(path, owner, repo).run();
+
+/**
+ * Is `path`'s commit here held by a push it clashed with (#788)? Not once its
+ * lines are the pushed ones (somebody settled it by hand): that clears it.
+ */
+export async function pushHolds(env: Env, owner: string, repo: string, path: string) {
+  const pushed = await pushedLines(env, owner, repo, path);
+  if (!pushed) return false;
+  const doc = (await (await toFile(env, owner, repo, path, owner, "file")).json()) as Doc;
+  if (pushed.lines && doc.lines.length === pushed.lines.length && doc.lines.every((l, i) => l.text === pushed.lines![i])) {
+    await unclash(env, owner, repo, path);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Settle a push's clash with a file (#788): "mine" keeps the edits here (its
+ * next commit writes them over what was pushed), "pushed" puts the pushed lines
+ * in their place as the owner's edits (a push that deleted the file deletes it here).
+ */
+export async function settlePush(env: Env, owner: string, repo: string, path: string, take: "mine" | "pushed") {
+  const pushed = await pushedLines(env, owner, repo, path);
+  if (!pushed) return false;
+  if (take === "pushed") {
+    const doc = (await (await toFile(env, owner, repo, path, owner, "file")).json()) as Doc;
+    await land(env, owner, repo, { path, doc, next: pushed.lines, clean: false }, pushed.commit, owner);
+  }
+  await unclash(env, owner, repo, path);
+  return true;
 }
 
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
@@ -928,7 +1024,7 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
   const branch = await must(["symbolic-ref", "--short", "HEAD"], dir), sha = await must(["rev-parse", "HEAD"], dir);
   await must(["update-ref", `refs/upstream/${branch}`, sha], dir);
   const now = Date.now();
-  await env.DB.prepare(`INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, mirror_url, mirror_state, mirror_synced_at, mirror_next_at, mirror_fails)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, 0)`).bind(user, name, visibility, now, art, lg.remote(art), branch, src.upstream, sha, src.url, now, now + EVERY).run();
+  await env.DB.prepare(`INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, mirror_url, mirror_state, mirror_synced_at, mirror_next_at, mirror_fails, git_seen)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, 0, ?)`).bind(user, name, visibility, now, art, lg.remote(art), branch, src.upstream, sha, src.url, now, now + EVERY, sha).run();
   return json({ owner: user, name, upstream: src.upstream, commit: sha, mirror: true }, 201);
 }

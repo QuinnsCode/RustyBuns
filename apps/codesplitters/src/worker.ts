@@ -48,7 +48,7 @@ import { seenRoutes } from "./seen.ts";
 import { installScript } from "./install.ts";
 import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
-import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue, TRUTHS, type Truth } from "./mirror.ts";
+import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, hearPushes, pushClashes, pushHolds, seeGit, settlePush, syncDue, TRUTHS, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
@@ -239,6 +239,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       // One artifact repo per excavation; "--" can't appear in either name, so it can't collide.
       const art = await env.ARTIFACTS.create(`${user}--${name}`, { description: `codeSplitters ${user}/${name}`, setDefaultBranch: "main" });
       await env.DB.prepare("UPDATE repos SET artifact = ?, artifact_remote = ? WHERE owner = ? AND name = ?").bind(art.name, art.remote, user, name).run();
+      // On the desktop its git takes pushes from the start: land them from here on (#788).
+      await seeGit(env, user, name);
     }
     return json({ owner: user, name, visibility }, 201);
   }
@@ -269,7 +271,9 @@ async function route(req: Request, env: Env): Promise<Response> {
       const push = wa && `git remote add codesplitters ${wa.remote.replace("://", `://x:${wa.token.split("?")[0]}@`)}`;
       // The owner sees who's invited but not in yet, beside the crew.
       const invites = user === owner ? { invites: await pendingInvites(env, owner, repo) } : {};
-      return json({ ...r, mirror: !!r?.mirror, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home, ...(push && { push }), ...invites });
+      // Files a push to that git clashed with, whose commit here waits on the owner's pick (#788).
+      const pushClash = home === "local" && a.write ? Object.keys((await pushClashes(env, owner, repo)).clashes) : [];
+      return json({ ...r, mirror: !!r?.mirror, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home, ...(push && { push }), ...(pushClash.length && { pushClash }), ...invites });
     }
     // PUT /api/repos/:o/:r {visibility}  (owner only)
     if (!p[4] && req.method === "PUT") {
@@ -346,6 +350,14 @@ async function route(req: Request, env: Env): Promise<Response> {
       }
       return json({ commit, entries });
     }
+    // POST /api/repos/:o/:r/pushes {path, take: "mine" | "pushed"}  settle a push that clashed with edits here (#788)
+    if (p[4] === "pushes" && !p[5] && req.method === "POST") {
+      if (user !== owner) return json({ error: "owner only" }, 403);
+      const { path, take } = await body<{ path?: string; take?: string }>();
+      if (!path || (take !== "mine" && take !== "pushed")) return json({ error: "{path, take: \"mine\" | \"pushed\"}, please" }, 400);
+      if (!(await settlePush(env, owner, repo, path, take))) return json({ error: `no push clashes with ${path}` }, 404);
+      return json({ ok: true });
+    }
     // GET|POST /api/repos/:o/:r/mirror  where a mirror stands with upstream; sync it now (mirror.ts)
     if (p[4] === "mirror" && !p[5]) return mirrorRepoRoute(req, env, owner, repo, user);
     // GET|POST /api/repos/:o/:r/mirror/branches[/:b/pull|push]  upstream's branches, opened here; ours, pushed there
@@ -416,6 +428,9 @@ async function route(req: Request, env: Env): Promise<Response> {
       // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
       // committed, so a commit here never writes their old lines back over it (#773).
       if (!branch && (p[5] === "commit" || (p[5] === "file" && req.method === "GET")) && mirrorsOn(env)) await landPushes(env, owner, repo).catch(() => {});
+      // One whose edits here clashed with a push waits for the owner to pick a side, so it can't undo the push (#788).
+      if (!branch && p[5] === "commit" && mirrorsOn(env) && await pushHolds(env, owner, repo, path))
+        return json({ error: `a push to this repo's git changed the same lines as edits here: keep yours or take the pushed ones, then commit`, pushClash: path }, 409);
       // Hiding lines is the crew's; showing them again (to git and search on the next commit) the owner's.
       const sent = writes ? await req.text() : undefined;
       if (p[5] === "private" && req.method === "POST") {
@@ -535,6 +550,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 const app = {
   // Each answer to the internet is tallied for the admins' insights page (insights.ts), after it's sent.
   async fetch(req: Request, env: Env, ctx?: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
+    hearPushes(env);
     let res: Response;
     try { res = secured(await route(req, env)); }
     catch (e) { if (tallied(req)) { const t = record(env, req, 500, !!ctx); if (ctx) ctx.waitUntil(t); else await t; } throw e; }

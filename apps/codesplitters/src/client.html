@@ -3376,7 +3376,8 @@ const views = {
         ${r.canWrite && !branch ? `<button class="btn" id="lock" disabled title="select lines first. Only the crew reads a private line; everyone else, git and search get it blank">${icon("lock")}<span>Make private</span></button>` : ""}
         ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><label id="agent-only" class="muted" style="font-size:13px" hidden><input type="checkbox" name="only" checked> Only <span></span>: they're held for it while it works</label><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
         ${r.canWrite && !branch ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
-      body: `<div class="crew" id="crew"></div><div class="code" id="lines"></div>`,
+      // A push to the repo's git (the desktop's Push back) that clashed with edits here: its commit waits on a pick (#788).
+      body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div>`,
       details: sec("radio", "Here now", `<p id="who-here" class="muted">just you</p><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div>`)
         + sec("activity", "Activity", `<div class="act-bar"><div class="seg" id="act-kinds" role="group" aria-label="show">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === "all"}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who" aria-label="filter by who"></div><div class="acts" id="acts"></div>`)
         + (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click to add a line, or drag down the numbers.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
@@ -3865,11 +3866,29 @@ const views = {
       viewing = v >= doc.rev ? null : v;
       draw(viewing === null ? doc : await api(`${base}/at${q}&rev=${v}`));
     });
+    const pushClash = (list) => { if ($("#pushclash")) $("#pushclash").hidden = !list?.includes(path); };
+    pushClash(r.pushClash);
+    $("#pushclash")?.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-take]");
+      if (!b) return;
+      try {
+        await api(`/repos/${owner}/${repo}/pushes`, { path, take: b.dataset.take });
+        pushClash([]);
+        toast(b.dataset.take === "mine" ? "Kept yours: the next commit writes them over the push" : "Took the pushed lines");
+      } catch (err) { toast(err.message); }
+    });
     if ($("#commit")) {
       popover($("#commit"));
       $("#commit-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const c = await api(`${base}/commit${q}`, { message: $("#msg").value });
+        let c;
+        try { c = await api(`${base}/commit${q}`, { message: $("#msg").value }); }
+        catch (err) {
+          // Held by a push that clashed with these edits (#788): say so where the pick is.
+          toast(err.message);
+          if (r.home === "local") pushClash((await api(`/repos/${owner}/${repo}`).catch(() => null))?.pushClash);
+          return;
+        }
         $("#msg").value = ""; $("#commit-form").hidden = true;
         toast(c.git?.commit ? `Committed and pushed: ${c.git.commit.slice(0, 7)}` : c.git?.error ? `Committed; the push failed: ${c.git.error}` : "Committed");
       });
