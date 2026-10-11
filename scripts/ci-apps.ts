@@ -100,7 +100,7 @@ if (cmd === "drop") {
   out("any", names.length > 0);
   out("packages", changed.some((f) => f.startsWith("packages/")));
   // bun test skips dot directories, so the agent guard hook's tests (.claude/hooks) get their own job.
-  out("hooks", changed.some((f) => f.startsWith(".claude/")));
+  out("hooks", shared || changed.some((f) => f.startsWith(".claude/")));
 } else {
   throw new Error("usage: bun scripts/ci-apps.ts test <base-ref> | drop <all|a,b,c>");
 }
