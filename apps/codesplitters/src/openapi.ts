@@ -41,8 +41,9 @@ const OPS: Record<string, Record<string, Op>> = {
   "/session": { get: { id: "whoami", summary: "Who this token acts as, its scope and when it expires", tag: "Account", ok: obj({ mode: str("token"), user: str(), token: obj({ id: str(), label: str(), scope: str(), expires_at: int("ms") }) }) } },
   "/me": {
     get: { id: "get_me", summary: "Your profile row", tag: "Account", ok: ref("User") },
-    put: { id: "update_me", summary: "Change your bio, page HTML, or whether your pulse is public", tag: "Account", description: "Only the fields you send change.",
-      body: obj({ bio: str(), theme_html: str("any HTML and CSS, rendered in a sandbox"), pulse: bool("false: only you see your pulse") }), ok: ref("User") },
+    put: { id: "update_me", summary: "Change your bio, page HTML, whether your pulse is public, or where git truth lives", tag: "Account", description: "Only the fields you send change.",
+      body: obj({ bio: str(), theme_html: str("any HTML and CSS, rendered in a sandbox"), pulse: bool("false: only you see your pulse"),
+        git_truth: { type: "string", enum: ["ask", "codesplitters", "artifact", "github"], description: "whose side your mirrors take when they and upstream changed the same lines or upstream rewrote its history: ask (stop and wait, the default), codesplitters (the edits here), artifact (this copy's commits; uncommitted edits still ask) or github (upstream's)" } }), ok: ref("User") },
   },
   "/users/{name}": { get: { id: "get_user", summary: "A profile, a person's or an agent's: its repos you may see, its collections, its following and follower counts, and the stamps it gave and got", tag: "Account", open: true,
     description: "An agent's handle starts agent- (agent-claude). Its profile adds `agent`: the harness, who runs it, the repos it works in, its line edits, its pulse per day and its runs, all from repos you may read.",

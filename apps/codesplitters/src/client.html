@@ -826,7 +826,7 @@ let socket = null;
 let agentTimer = null;
 // What the page is showing, so the palette can offer what makes sense here.
 let ctx = {};
-function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 2400); }
+function toast(msg, ms = 2400) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), ms); }
 async function copy(text, what = "Copied") {
   // An agent's call isn't a click, so the clipboard may refuse it: hand it the text instead.
   if (agentCall) agentCall.copied = text;
@@ -1643,7 +1643,7 @@ const views = {
           <div class="home"><b>Yours first, syncing out</b><p>Bare repos in <code>~/.codesplitters</code>, mirrored both ways to GitHub, GitLab or any git remote. Upstream goes down: keep editing, committing, branching, checking and merging. It catches up by itself, and never force-pushes.</p>
             <div class="flow">you → <em>GitHub, GitLab, anywhere</em><br>cloud ✕ → you keep going</div></div>
         </div>
-        <div class="quits"><span>Own your git and put it wherever you want</span><span>Don't let your git quit on you or your agents</span><span>Never let a git commit quit</span></div>
+        <div class="quits"><span>Own your git and put it wherever you want</span><span>Don't let your git quit on you or your agents</span><span>Never let a git commit quit</span><span>Your git history never goes extinct</span></div>
       </div></section>
       <section class="section"><div class="wrap">
         <div class="label">everything it does</div><h2>All of it, on one strip</h2>
@@ -1751,7 +1751,7 @@ const views = {
       <ul>
         <li><b>Take it home.</b> Download everything we hold about you as one JSON file. Your code is git, so clone it too.</li>
         <li><b>Fix it.</b> Edit your page and bio on your profile.</li>
-        <li><b>Bury it.</b> Delete your account: your repos, files, collections, tokens, sessions and sign-in go for good.</li>
+        <li><b>Bury it.</b> Delete your account: your repos, files, collections, tokens, sessions and sign-in go for good, and we revoke codeSplitters' access at GitHub and Google too.</li>
       </ul>
       ${me() ? dataBox() : `<p class="muted">Sign in and these buttons appear here and on your profile.</p>`}
       <p>You can also complain to your data protection authority. We'd love the chance to fix it first.</p>
@@ -1822,6 +1822,7 @@ const views = {
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>`}
         ${mine ? `<div class="box"><div class="bar">${icon("eye")}<b>Following</b><span class="muted">people, agents, repos and lines</span></div><div class="body list">${follows.map(followLink).join("") || '<span class="muted">nothing yet: Follow is on profiles, repos, agent runs, shares and collections</span>'}</div></div>` : ""}
         ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("plug")}<b>Connect your AI</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
+        ${mine ? truthBox() : ""}
         ${mine ? dataBox() : ""}
       </aside></div></div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
@@ -1851,7 +1852,7 @@ const views = {
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
     $("#citypub")?.addEventListener("change", async (e) => { await api("/me/city", { public: e.target.checked }, "PUT"); route(); });
-    if (mine) { wireTokens(); wireData(); }
+    if (mine) { wireTokens(); wireData(); wireTruth(); }
     icons();
   },
   // #/me: your own page, where signing in lands (or home, signed out).
@@ -1948,7 +1949,7 @@ const views = {
       : `<button class="btn" data-crew="1">${icon("lock")}Push the crew's copy</button>`) : "";
     const who = m.identity ? `Commits go up as <b>${esc(m.identity.name)}</b> &lt;${esc(m.identity.email)}&gt; (this machine's git config).` : `No git identity on this machine: set <code>git config --global user.name</code> and <code>user.email</code>.`;
     el.innerHTML = `<p>${head}</p>${m.state === "ok" && (m.ahead || m.behind) ? `<p class="muted">${waiting}; ${m.behind} to take.</p>` : ""}${m.state !== "ok" && m.state !== "held" && !(m.state === "rewritten" && !m.error?.includes(": ")) ? said : ""}${pickSide}
-      <div class="row" style="gap:6px;margin-top:6px"><button class="btn" id="mirror-sync">${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}<p class="muted" style="font-size:12px">${who}</p><div id="mirror-branches"></div>`;
+      <div class="row" style="gap:6px;margin-top:6px"><button class="btn" id="mirror-sync">${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}<p class="muted" style="font-size:12px">${who} ${m.truth && m.truth !== "ask" ? `Clashes settle themselves: ${esc(TRUTHS[m.truth]?.[0] ?? m.truth)} wins.` : "Clashes wait for you."} <a href="#/u/${esc(me())}">Where git truth lives</a>: your history never goes extinct either way.</p><div id="mirror-branches"></div>`;
     icons();
     $("#mirror-sync").addEventListener("click", () => { el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, {}); });
     el.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => { el.querySelector("p").textContent = "settling…"; views.wireMirror(owner, repo, { resolve: b.dataset.resolve }); }));
@@ -3244,10 +3245,34 @@ function flapBoard(el) {
 
 // Your data (privacy.ts): download all of it, or delete your account once your handle is typed back.
 // On your profile and on #/privacy.
+// Where git truth lives (PUT /api/me {git_truth}): whose side a mirror takes when it and upstream disagree.
+const TRUTHS = {
+  ask: ["Ask me", "Stop at a clash or a rewritten upstream, and wait for you to pick."],
+  codesplitters: ["codeSplitters", "The edits here win, committed or not; on a rewritten upstream, your commits go on top of it."],
+  artifact: ["The artifact", "This copy's git commits win, and go on top of a rewritten upstream. Edits not committed yet still ask."],
+  github: ["GitHub (upstream)", "Upstream's side wins: its lines in a clash, its history when it's rewritten."],
+};
+const truthBox = () => `<div class="box" id="truth"><div class="bar">${icon("scale")}<b>Where git truth lives</b></div><div class="body" style="display:grid;gap:8px;font-size:13px">
+  <span class="muted">We don't mind which: your mirrors sync both ways, and this says whose side wins when both changed the same lines.</span>
+  <select id="truth-pick" aria-label="where git truth lives">${Object.entries(TRUTHS).map(([k, [label]]) => `<option value="${k}">${esc(label)}</option>`).join("")}</select>
+  <span class="muted" id="truth-what" style="font-size:12px"></span>
+  <b style="font-size:12px">${icon("shield-check")}Your git history never goes extinct.</b><span class="muted" style="font-size:12px">Whichever side wins, the other's commits stay in its own git, and every line here keeps its history, for the present and the future.</span>
+</div></div>`;
+async function wireTruth() {
+  const pick = $("#truth-pick"), what = $("#truth-what");
+  if (!pick) return;
+  const say = () => { what.textContent = TRUTHS[pick.value]?.[1] ?? ""; };
+  const u = await api("/me").catch(() => null);
+  pick.value = u?.git_truth in TRUTHS ? u.git_truth : "ask"; say();
+  pick.addEventListener("change", async () => {
+    say();
+    try { await api("/me", { git_truth: pick.value }, "PUT"); toast(`Git truth lives ${pick.value === "ask" ? "wherever you say, each time" : `in ${TRUTHS[pick.value][0]}`}`); } catch (e) { toast(e.message); }
+  });
+}
 const dataBox = () => `<div class="box" id="yourdata"><div class="bar">${icon("archive")}<b>Your data</b><a class="muted" style="margin-left:auto;font-size:12px" href="#/privacy">privacy</a></div><div class="body" style="display:grid;gap:10px;font-size:13px">
   <div><a class="btn" href="/api/me/export" download>${icon("download")}Download everything</a> <span class="muted" style="font-size:12px">one JSON file; clone your repos for the code</span></div>
   <details><summary class="muted" style="cursor:pointer;font-size:12px">Delete my account</summary><form id="delme" style="display:grid;gap:6px;margin-top:8px">
-    <span class="muted" style="font-size:12px">Gone for good: your repos (files, branches, git), collections, shares, tokens, connected apps, sessions and sign-in. Lines you wrote in other people's repos stay under @${esc(me())}, which is retired.</span>
+    <span class="muted" style="font-size:12px">Gone for good: your repos (files, branches, git), collections, shares, tokens, connected apps, sessions and sign-in, and codeSplitters' access to your GitHub and Google. Lines you wrote in other people's repos stay under @${esc(me())}, which is retired.</span>
     <input name="name" placeholder="type ${esc(me())} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete @${esc(me())} for good</button></div></form></details>
 </div></div>`;
 function wireData() {
@@ -3255,9 +3280,14 @@ function wireData() {
     e.preventDefault();
     const typed = e.target.name.value.trim();
     if (typed !== me()) return toast(`Type ${me()} to delete your account`);
-    try { await api(`/me?confirm=${encodeURIComponent(typed)}`, undefined, "DELETE"); }
+    let out;
+    try { out = await api(`/me?confirm=${encodeURIComponent(typed)}`, undefined, "DELETE"); }
     catch (err) { return toast(err.message); }
-    await refreshSession(); header(); toast("Account deleted. Rest in pieces."); location.hash = "#/";
+    // The grants we couldn't take back at GitHub or Google (privacy.ts revokeSignIns): theirs to revoke.
+    const left = (out.revoke_yourself || []).map((p) => ({ github: "GitHub (Settings > Applications)", google: "Google (myaccount.google.com/connections)" })[p] || p);
+    await refreshSession(); header();
+    toast(left.length ? `Account deleted. We couldn't remove codeSplitters' access at ${left.join(" and ")}: revoke it there.` : "Account deleted. Rest in pieces.", left.length ? 10000 : 2400);
+    location.hash = "#/";
   });
 }
 

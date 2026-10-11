@@ -52,6 +52,8 @@ You want to git commit, but is your git committed to you?
 
 Most code hosts keep the real repo in their cloud and sync it down to you. When the host is down, so are your pushes, your checks, your merges and every agent waiting on them. The desktop app turns that around. Your git lives on your machine, in bare repos under `~/.codesplitters`, and syncs **out**: mirrored both ways to GitHub, GitLab or any git remote you can reach. When one of them goes down, you keep editing, committing, branching, running checks and merging, and your agents keep working. It catches up by itself once upstream answers, and it never force-pushes.
 
+You say where git truth lives, on your profile: codeSplitters, the artifact (this copy's git) or GitHub, or ask each time. We don't mind which. Mirrors sync both ways whatever you pick, and the setting only says whose side wins when both changed the same lines or upstream rewrote its history. **Your git history never goes extinct**: whatever one side drops stays in its own git (this copy keeps it under `refs/kept/`), and every line here keeps its history, for the present and the future.
+
 Don't let your git quit on you or your agents.
 
 codeSplitters is one codebase that runs as a Cloudflare Worker and as a desktop app on your machine. [Rusty Buns](../../README.md) gives every Cloudflare binding a local twin: sqlite for D1 and for each file's Durable Object, local bare repos for Artifacts, in-process queues, the Worker's cron as a minute timer. Same code, nothing forked.

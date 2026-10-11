@@ -69,7 +69,7 @@ export async function agentGithubToken(env: Env, owner: string): Promise<string 
 }
 
 /** Better Auth's encrypted token ($ba$ envelope, or hex from older versions) back to the token. */
-const openToken = async (env: Env, t: string) =>
+export const openToken = async (env: Env, t: string) =>
   t.startsWith("$ba$") || (t.length % 2 === 0 && /^[0-9a-f]+$/i.test(t)) ? symmetricDecrypt({ key: env.BETTER_AUTH_SECRET!, data: t }) : t;
 
 const gh = (path: string, token?: string) => fetch(API + path, {
