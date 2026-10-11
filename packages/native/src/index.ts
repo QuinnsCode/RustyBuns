@@ -9,10 +9,11 @@
 // A compiled binary skips (2): it would dlopen whatever library sits in the
 // folder it was run from. It loads only opts.dir or its embedded copy.
 // dlopen can't map a file inside the binary, so (3) copies it to a cache dir
-// keyed by content hash on first run.
+// keyed by content hash on first run, and checks a copy already there byte for
+// byte before every dlopen: any local process could have swapped it.
 
 import { dlopen, type FFIFunction, type ConvertFns } from "bun:ffi";
-import { existsSync, mkdirSync, writeFileSync, renameSync, chmodSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -45,20 +46,29 @@ export function candidates(name: string, opts: LoadOptions, here = import.meta.d
 
 async function materialize(path: string, opts: LoadOptions): Promise<string> {
   if (!path.startsWith("/$bunfs")) return path;
-  const bytes = await Bun.file(path).arrayBuffer();
+  return cacheCopy(new Uint8Array(await Bun.file(path).arrayBuffer()), path.split("/").pop()!, opts);
+}
+
+/** The library's bytes as a file dlopen can map: the cached copy, rewritten unless it is exactly these bytes. */
+export function cacheCopy(bytes: Uint8Array, file: string, opts: LoadOptions = {}): string {
   const hash = Bun.hash(bytes).toString(16);
   const dir = opts.cacheDir ?? join(homedir(), ".cache", "rustybuns");
-  mkdirSync(dir, { recursive: true });
-  const out = join(dir, `${hash}-${path.split("/").pop()}`);
-  if (!existsSync(out)) {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const out = join(dir, `${hash}-${file}`);
+  if (!sameBytes(out, bytes)) {
     // copyFileSync can't read /$bunfs; write the bytes we already have. tmp +
     // rename so a second instance never dlopens a half-written file.
     const tmp = `${out}.${process.pid}.tmp`;
-    writeFileSync(tmp, new Uint8Array(bytes));
+    writeFileSync(tmp, bytes);
     chmodSync(tmp, 0o755);
     renameSync(tmp, out);
+    if (!sameBytes(out, bytes)) throw new Error(`${out} doesn't match the embedded library`);
   }
   return out;
+}
+
+function sameBytes(file: string, bytes: Uint8Array): boolean {
+  try { return Buffer.from(bytes).equals(readFileSync(file)); } catch { return false; }
 }
 
 export async function loadNative<S extends Record<string, FFIFunction>>(

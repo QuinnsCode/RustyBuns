@@ -42,14 +42,14 @@ The REFERENCE notes that the 1Password path "has not been run against a real vau
 | Binds `127.0.0.1`, with a password and an HttpOnly signed cookie; WebSocket and uploads check Origin | **Any agent can read every worker's hook token, the pty-host token and the office session secret and password** (verified). It can then act as another worker, type into any terminal, or sign in to the office (#642) |
 | The hook port needs each worker's own bearer token; agents can't send themselves home or message shells | Workers inherit the office's whole env (#643) |
 | No `--dangerously-skip-permissions`; hire/home/tell go through Claude Code's permission prompt | `send_home` with forced cleanup deletes another agent's uncommitted work. `tell_worker` passes prompts between agents unchecked. The `office-workers` CLI skips the MCP prompt (#644) |
-| Default `send_home` keeps a branch with unpushed commits | Agents aren't confined to their worktree. Host header isn't allowlisted. The cached client is trusted once unpacked (#651) |
+| Default `send_home` keeps a branch with unpushed commits. The Host header is allowlisted (DNS rebinding) and the unpacked client is checked against the binary's hash every start (#651) | Agents aren't confined to their worktree |
 
 ### RustyBuns hosts (`packages/shell-bun`, `packages/cli`)
 
 | Done | Not done |
 | --- | --- |
-| Desktop: `127.0.0.1`, per-launch token, SameSite=Strict cookie, Origin must match Host, timing-safe compares; the browser gets a one-time launch code, not the token | Cached native dylibs are loaded without a hash check (#651) |
-| `/__rb/host` and `/__rb/action` are host-only (guests 403, box 404), with bodies checked field by field and `Object.hasOwn` lookups | `/__rb/host` takes any bind address and any non-empty passphrase (#651) |
+| Desktop: `127.0.0.1`, per-launch token, SameSite=Strict cookie, Origin must match Host, timing-safe compares; the browser gets a one-time launch code, not the token. A cached native dylib is checked byte for byte against the embedded one before every dlopen (#651) | Dev runs still load `native/dist` under the current folder (compiled binaries don't) |
+| `/__rb/host` and `/__rb/action` are host-only (guests 403, box 404), with bodies checked field by field and `Object.hasOwn` lookups. Off loopback `/__rb/host` needs a passphrase of 12+ characters, or makes one up (#651) | A passphrase given at launch (`--join`, `RB_JOIN`) isn't held to that length |
 | Box: `/__rb/prof` doesn't exist without a ≥16-character secret; `boxOnly` keeps secrets off the edge Worker | Box `/health` and `/__rb/mem` are public (small info leak, by design for now). A Hetzner box is plain HTTP |
 
 ### codeSplitters web app and API

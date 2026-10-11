@@ -37,7 +37,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -129,6 +129,14 @@ async function prepare(tag: string) {
   patch("ptyhost.js", "const token = JSON.parse(readFileSync(infoPath, 'utf8')).token;",
     "const token = JSON.parse(readFileSync(infoPath, 'utf8')).token;\n__rbMem(infoPath);");
 
+  // 7b. a Host allowlist in front of every request and socket (live/hosts.ts): the DNS-rebinding guard
+  prepend("http/router.js", "import { guardHost as __rbGuardHost } from '../rb-hosts.js';\n");
+  patch("http/router.js", "    return async (req, res) => {\n        const { cfg, auth } = ctx;\n",
+    "    const __rbHost = __rbGuardHost(ctx.cfg);\n    return async (req, res) => {\n        if (__rbHost(req, res))\n            return;\n        const { cfg, auth } = ctx;\n");
+  prepend("ws/upgrade.js", "import { guardUpgrade as __rbGuardUpgrade } from '../rb-hosts.js';\n");
+  patch("ws/upgrade.js", "        socket.on('error', () => socket.destroy());\n",
+    "        socket.on('error', () => socket.destroy());\n        if ((ctx.__rbHost ??= __rbGuardUpgrade(cfg))(req, socket))\n            return;\n");
+
   // 8. Lucide icons for the emoji, on every page, a search box for the queue, and the codeSplitters mark (codesplitters/)
   await buildPageScripts();
 
@@ -146,7 +154,7 @@ async function prepare(tag: string) {
   // 12. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -220,7 +228,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["checks/server.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["checks/server.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
     ["codesplitters/server.ts", "rb-codesplitters.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
@@ -319,9 +327,11 @@ async function compile(tag: string) {
   const pub = path.join(office, "dist/public");
   const files = [...new Bun.Glob("**/*").scanSync({ cwd: pub, dot: true })].sort();
   // keyed by content too, so a re-patched client (the skin, say) never reuses an older unpack of the same tag
-  const sum = new Bun.CryptoHasher("sha1");
+  // and the binary checks every start that the unpack still matches it, so a local process can't edit the page's script
+  const sum = new Bun.CryptoHasher("sha256");
   for (const f of files) sum.update(f).update(readFileSync(path.join(pub, f)));
-  const unpack = `${tag}-${sum.digest("hex").slice(0, 8)}`;
+  const digest = sum.digest("hex");
+  const unpack = `${tag}-${digest.slice(0, 8)}`;
   writeFileSync(path.join(gen, "assets.js"),
     files.map((f, i) => `import a${i} from ${JSON.stringify(path.join(pub, f))} with { type: "file" };`).join("\n") +
     `\nexport default [${files.map((f, i) => `[${JSON.stringify(f)}, a${i}]`).join(",")}];\n`);
@@ -329,7 +339,7 @@ async function compile(tag: string) {
   // one entry for every job the binary has: the office, its pty host, and the office-workers / office-queue commands
   const bin = (name: string) => JSON.stringify(path.join(office, "bin", name));
   writeFileSync(path.join(gen, "entry.js"), `
-import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 const arg = process.argv[2] ?? "";
@@ -346,15 +356,25 @@ if (helper === "workers") {
   const { default: assets } = await import("./assets.js");
   const cache = process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache");
   const dir = path.join(cache, "agent-office-rustybuns", ${JSON.stringify(unpack)}, "public");
-  if (!existsSync(path.join(dir, ".ok"))) {
+  const intact = () => {
+    if (!existsSync(path.join(dir, ".ok"))) return false;
+    const sum = new Bun.CryptoHasher("sha256");
+    try { for (const [rel] of assets) sum.update(rel).update(readFileSync(path.join(dir, rel))); } catch { return false; }
+    return sum.digest("hex") === ${JSON.stringify(digest)};
+  };
+  if (!intact()) {
     const tmp = dir + ".tmp-" + process.pid;
+    rmSync(tmp, { recursive: true, force: true });
     for (const [rel, src] of assets) {
-      mkdirSync(path.dirname(path.join(tmp, rel)), { recursive: true });
+      mkdirSync(path.dirname(path.join(tmp, rel)), { recursive: true, mode: 0o700 });
       writeFileSync(path.join(tmp, rel), new Uint8Array(await Bun.file(src).arrayBuffer()));
     }
     writeFileSync(path.join(tmp, ".ok"), "");
-    mkdirSync(path.dirname(dir), { recursive: true });
-    try { renameSync(tmp, dir); } catch {}
+    mkdirSync(path.dirname(dir), { recursive: true, mode: 0o700 });
+    // an unpack that failed the check is moved aside first; a second office starting at once may win the rename
+    if (existsSync(dir)) { const old = dir + ".bad-" + process.pid; try { renameSync(dir, old); rmSync(old, { recursive: true, force: true }); } catch {} }
+    try { renameSync(tmp, dir); } catch { rmSync(tmp, { recursive: true, force: true }); }
+    if (!intact()) throw new Error("agent-office: the office client in " + dir + " doesn't match this binary; remove it and start again");
   }
   process.env.AGENT_OFFICE_PUBLIC_DIR ??= dir;
   process.env.AGENT_OFFICE_RUSTYBUNS_BIN = "1";

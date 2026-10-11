@@ -213,6 +213,9 @@ function guestIdentity(url: URL): Record<string, string> | string {
   return { ...identity, "X-User-Id": uid, "X-User-Name": name };
 }
 const reject = (status: number, error: string, extra: Record<string, unknown> = {}) => Response.json({ error, ...extra }, { status });
+// POST /__rb/host: a passphrase is the only lock on a world bound off loopback.
+const JOIN_MIN = 12, LOOPBACK = /^(127\\.|localhost$|::1$|\\[::1\\]$)/;
+const madeUpJoin = () => Array.from(crypto.getRandomValues(new Uint8Array(15)), (n) => "abcdefghjkmnpqrstuvwxyz23456789"[n % 31]).join("").replace(/(.{5})(?!$)/g, "$1-");
 ${h.box ? `
 // A box is public and plays like the edge: no local player, so every socket
 // is a guest with its own identity, ?uid=&name= when the client sends them
@@ -306,16 +309,23 @@ ${h.box ? `    // Pages read /__rb/info to tell the desktop from the web. A box 
 ${h.box ? `    // Hosting controls are the desktop owner's; on a public box anyone could call them.
     if (url.pathname === "/__rb/host") return reject(404, "not_on_box");
 ` : ""}    if (url.pathname === "/__rb/host" && req.method === "POST") {
-      // Host-page control: { listen?: { hostname, port }, join?: string | null, max?: number, version?: string | null }.
-      // "Host a world" = { listen: { hostname: "0.0.0.0" }, join: "pass" }; "Stop hosting" = { join: null, listen: { hostname: "127.0.0.1" } }.
+      // Host-page control: { listen?: { hostname, port }, join?: string | true | null, max?: number, version?: string | null }.
+      // "Host a world" = { listen: { hostname: "0.0.0.0" }, join: "a long passphrase" }; "Stop hosting" = { join: null, listen: { hostname: "127.0.0.1" } }.
+      // join: true makes up a passphrase, returned once as guests.join. Off loopback a passphrase is the only lock
+      // on the world, so it takes at least JOIN_MIN characters there, or the request changes nothing.
       // The body is the client's: every field is unknown until checked, and a non-object body just has none.
       const b = await req.json().catch(() => null) as { listen?: { hostname?: unknown; port?: unknown }; join?: unknown; max?: unknown; version?: unknown } | null;
-      if (b?.join !== undefined) guests.join = typeof b.join === "string" && b.join.length > 0 ? b.join : undefined;
+      const made = b?.join === true ? madeUpJoin() : undefined;
+      const join = b?.join === undefined ? guests.join : made ?? (typeof b.join === "string" && b.join.length > 0 ? b.join : undefined);
+      const bindTo = typeof b?.listen?.hostname === "string" ? b.listen.hostname : shell.hostname;
+      if (join !== undefined && join.length < JOIN_MIN && !LOOPBACK.test(bindTo))
+        return reject(400, "weak_passphrase", { detail: "guests off this machine need a passphrase of at least " + JOIN_MIN + " characters, or send join: true for one", min: JOIN_MIN });
+      guests.join = join;
       if (typeof b?.max === "number" && b.max >= 0) guests.max = b.max;
       if (b?.version !== undefined) guests.version = typeof b.version === "string" ? b.version : undefined;
       const l = b?.listen;
       if (l) shell.rebind({ hostname: typeof l.hostname === "string" ? l.hostname : undefined, port: typeof l.port === "number" && Number.isInteger(l.port) ? l.port : undefined });
-      return Response.json({ listen: { hostname: shell.hostname, port: shell.port }, guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null } });
+      return Response.json({ listen: { hostname: shell.hostname, port: shell.port }, guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null, ...(made ? { join: made } : {}) } });
     }
 ${h.box ? `    // Actions run as the desktop's one host identity. A box has no token, so
     // anyone on the internet would be that user: actions stay off there.
