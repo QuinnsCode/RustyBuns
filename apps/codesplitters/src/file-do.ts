@@ -176,6 +176,11 @@ export class FileDurableObject {
       this.claims.clear(); this.claimOf.clear(); this.recent.clear();
       return json({ ok: true });
     }
+    if (req.method === "POST" && route === "scrub") {
+      // A deleted account's handle, swapped for the ghost's everywhere here (privacy.ts).
+      const { from, to } = (await req.json()) as { from: string; to: string };
+      return json({ changed: await this.ctx.blockConcurrencyWhile(() => this.scrub(from, to)) });
+    }
     if (req.method === "POST" && route === "fork") {
       // A branch's copy starts as main's doc, ids and revs and all, once,
       // and main's private lines are private here too.
@@ -252,6 +257,41 @@ export class FileDurableObject {
       this.logging = this.logging.then(() => recordEdits(this.env, { owner, repo, path }, r.applied, this.recent, claim)).catch(() => {});
     }
     return { ok: true as const, rev: this.doc.rev, applied: r.applied };
+  }
+
+  /**
+   * `from` becomes `to` on every line, op, snapshot, commit and claim in storage, a page
+   * at a time, then the doc, base and claims are read back. Returns how many keys changed.
+   */
+  async scrub(from: string, to: string) {
+    const swap = (v: any): boolean => {
+      if (Array.isArray(v)) return v.map(swap).some(Boolean);
+      if (!v || typeof v !== "object") return false;
+      let hit = false;
+      for (const k of Object.keys(v)) {
+        if ((k === "by" || k === "who") && v[k] === from) { v[k] = to; hit = true; }
+        else if ((k === "by" || k === "writers") && Array.isArray(v[k]) && v[k].includes(from)) { v[k] = v[k].map((w: unknown) => w === from ? to : w); hit = true; }
+        else if (typeof v[k] === "object" && swap(v[k])) hit = true;
+      }
+      return hit;
+    };
+    let changed = 0, start: string | undefined;
+    for (;;) {
+      const m: Map<string, unknown> = await this.ctx.storage.list({ start, limit: OP_PAGE });
+      const hits = [...m].filter(([, v]) => swap(v));
+      await Promise.all(hits.map(([k, v]) => this.ctx.storage.put(k, v)));
+      changed += hits.length;
+      if (m.size < OP_PAGE) break;
+      start = [...m.keys()].at(-1)! + "\0";
+    }
+    if (!changed) return 0;
+    this.docs = new DocStore(this.ctx.storage, "doc");
+    this.bases = new DocStore(this.ctx.storage, "base");
+    this.doc = (await this.docs.load()) ?? empty();
+    this.base = await this.bases.load();
+    this.claims.clear(); this.claimOf.clear();
+    for (const c of ((await this.ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
+    return changed;
   }
 
   /** Every op after rev `since` (up to `until`), a page at a time by key range, so a long log is never read whole. */

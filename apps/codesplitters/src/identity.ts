@@ -125,7 +125,7 @@ async function handleFor(env: Env, u: AuthUser) {
   const granted = owner || (await env.DB.prepare("SELECT handle FROM handle_grants WHERE email = ?").bind(email).first())?.handle as string | undefined;
   if (granted) {
     // A grant also takes over a row alias mode left behind (no account), never an owned one.
-    const r = await env.DB.prepare("INSERT INTO users (name, auth_id) VALUES (?, ?) ON CONFLICT (name) DO UPDATE SET auth_id = excluded.auth_id WHERE users.auth_id IS NULL").bind(granted, u.id).run();
+    const r = await env.DB.prepare("INSERT INTO users (name, auth_id, created_at) VALUES (?, ?, ?) ON CONFLICT (name) DO UPDATE SET auth_id = excluded.auth_id WHERE users.auth_id IS NULL").bind(granted, u.id, Date.now()).run();
     if (r.meta?.changes) return granted;
   }
   return null;
@@ -214,7 +214,7 @@ async function handleRoutes(req: Request, env: Env, url: URL) {
   const { name = "" } = (await req.json().catch(() => ({}))) as { name?: string };
   const why = await unclaimable(env, name);
   if (why) return json({ error: `@${name}: ${why}` }, why === "taken" ? 409 : 400);
-  const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, auth_id) VALUES (?, ?)").bind(name, a.user.id).run();
+  const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, auth_id, created_at) VALUES (?, ?, ?)").bind(name, a.user.id, Date.now()).run();
   if (!r.meta?.changes) return json({ error: `@${name}: taken` }, 409);
   return json({ name }, 201);
 }
@@ -250,7 +250,10 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
     const { name } = (await req.json()) as { name: string };
     if (!NAME.test(name ?? "")) return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
     if (isAgentHandle(name)) return json({ error: "agent- handles are for coding agents" }, 400);
-    await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
+    // A deleted account's handle, and @ghost that stands in for them (privacy.ts), stay retired here too.
+    const grant = await env.DB.prepare("SELECT email FROM handle_grants WHERE handle = ?").bind(name).first();
+    if (String(grant?.email ?? "").startsWith("retired:")) return json({ error: `@${name} was retired when its account was deleted` }, 409);
+    await env.DB.prepare("INSERT OR IGNORE INTO users (name, created_at) VALUES (?, ?)").bind(name, Date.now()).run();
     return json({ name }, 200, { "set-cookie": `cs_user=${name}; Path=/; SameSite=Lax` });
   }
   if (p[1] === "logout" && req.method === "POST") return json({ ok: true }, 200, { "set-cookie": "cs_user=; Path=/; Max-Age=0; SameSite=Lax" });
