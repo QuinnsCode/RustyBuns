@@ -306,11 +306,13 @@ ${h.box ? `    // Hosting controls are the desktop owner's; on a public box anyo
 ` : ""}    if (url.pathname === "/__rb/host" && req.method === "POST") {
       // Host-page control: { listen?: { hostname, port }, join?: string | null, max?: number, version?: string | null }.
       // "Host a world" = { listen: { hostname: "0.0.0.0" }, join: "pass" }; "Stop hosting" = { join: null, listen: { hostname: "127.0.0.1" } }.
-      const b = await req.json() as { listen?: { hostname?: string; port?: number }; join?: string | null; max?: number; version?: string | null };
-      if ("join" in b) guests.join = typeof b.join === "string" && b.join.length > 0 ? b.join : undefined;
-      if (typeof b.max === "number" && b.max >= 0) guests.max = b.max;
-      if ("version" in b) guests.version = b.version ?? undefined;
-      if (b.listen) shell.rebind(b.listen);
+      // The body is the client's: every field is unknown until checked, and a non-object body just has none.
+      const b = await req.json().catch(() => null) as { listen?: { hostname?: unknown; port?: unknown }; join?: unknown; max?: unknown; version?: unknown } | null;
+      if (b?.join !== undefined) guests.join = typeof b.join === "string" && b.join.length > 0 ? b.join : undefined;
+      if (typeof b?.max === "number" && b.max >= 0) guests.max = b.max;
+      if (b?.version !== undefined) guests.version = typeof b.version === "string" ? b.version : undefined;
+      const l = b?.listen;
+      if (l) shell.rebind({ hostname: typeof l.hostname === "string" ? l.hostname : undefined, port: typeof l.port === "number" && Number.isInteger(l.port) ? l.port : undefined });
       return Response.json({ listen: { hostname: shell.hostname, port: shell.port }, guests: { open: guests.join !== undefined, connected: guestCount, max: guests.max, version: guests.version ?? null } });
     }
 ${h.box ? `    // Actions run as the desktop's one host identity. A box has no token, so
@@ -318,8 +320,10 @@ ${h.box ? `    // Actions run as the desktop's one host identity. A box has no t
     if (url.pathname === "/__rb/action") return reject(404, "not_on_box");
 ` : ""}    if (url.pathname === "/__rb/action" && req.method === "POST") {
       // "use server" runs here, for real, against sqlite. Same code as the edge.
-      const { module, fn, args } = await req.json() as { module: string; fn: string; args: unknown[] };
-      const f = actions[module]?.[fn];
+      const { module, fn, args } = (await req.json().catch(() => null) ?? {}) as { module?: unknown; fn?: unknown; args?: unknown };
+      if (typeof module !== "string" || typeof fn !== "string" || !Array.isArray(args)) return reject(400, "bad_action");
+      // Own keys only: "constructor" or "__proto__" must not walk the prototype to a callable.
+      const f = Object.hasOwn(actions, module) && Object.hasOwn(actions[module], fn) ? actions[module][fn] : undefined;
       if (!f) return new Response(\`no action \${module}#\${fn}\`, { status: 404 });
       try { return Response.json((await f(...args)) ?? null); }
       catch (err) { stdoutReporter.escaped("action", err, { module, fn }); return new Response(String((err as Error).message ?? err), { status: 500 }); }

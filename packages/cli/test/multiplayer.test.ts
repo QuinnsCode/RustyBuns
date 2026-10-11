@@ -85,6 +85,13 @@ test("generated host: host identity by cookie, guests by passphrase with their o
     expect((await fetch(`${url}/?join=pw`)).status).toBe(403);
     // the host still runs actions (the request body survives the principal rewrite)
     expect(await (await fetch(`${url}/__rb/action`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ module: "m", fn: "f", args: [] }) })).json()).toBe(42);
+    // a client body is checked field by field: a wrong shape is a 400, and only own keys name an action
+    const act = (body: string) => fetch(`${url}/__rb/action`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body }).then((r) => r.status);
+    expect(await act("null")).toBe(400);
+    expect(await act(JSON.stringify({ module: "m", fn: "f" }))).toBe(400);
+    expect(await act(JSON.stringify({ module: "constructor", fn: "assign", args: [] }))).toBe(404);
+    expect(await act(JSON.stringify({ module: "m", fn: "constructor", args: [] }))).toBe(404);
+    expect((await fetch(`${url}/__rb/host`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: "42" })).status).toBe(200);
 
     const g2 = await connect(`${url}/ws?join=pw&uid=g2&name=Two&v=v1`);
     expect("hello" in g2).toBe(true);
