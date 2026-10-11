@@ -9,6 +9,8 @@ import { defineConfig } from "@rustybuns/cli/config";
 //   CODESPLITTERS_AGENTS=1  hosted coding agents (super experimental, see README)
 //   CODESPLITTERS_DEPLOYS=1 hosted deploys with each repo's stored deploy key, sealed under
 //                           DEPLOY_SECRETS_KEY (1Password, like the rest)
+//   CODESPLITTERS_CHECKS=1  queued checks run in a container per run (CiRunner, src/ci-runner.ts);
+//                           billed by use, see REFERENCE.md. No secrets go in.
 //   CODESPLITTERS_VECTORS=1 search across repos through one Vectorize index, embedded with
 //                           Workers AI (src/search.ts); billed by use, see REFERENCE.md
 //   CODESPLITTERS_WATCH_NEWS=1 the supply-chain watch's daily news search for compromised
@@ -20,6 +22,7 @@ import { defineConfig } from "@rustybuns/cli/config";
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
 const deploys = process.env.CODESPLITTERS_DEPLOYS === "1";
 const vectors = process.env.CODESPLITTERS_VECTORS === "1";
+const checks = process.env.CODESPLITTERS_CHECKS === "1";
 const news = process.env.CODESPLITTERS_WATCH_NEWS === "1";
 const mailFrom = process.env.CODESPLITTERS_MAIL_FROM?.trim();
 // A change to the privacy page that matters goes here first, as "YYYY-MM-DD what changes"
@@ -114,6 +117,10 @@ export default defineConfig({
       // Only while rotating it: the key before, so what it sealed opens until an admin re-seals (README).
       DEPLOY_SECRETS_KEY_OLD: op("DEPLOY_SECRETS_KEY_OLD/password", true),
     } : {}),
+    // Checks in containers: one Durable Object per repo, so one run at a time, each in its own
+    // container (deploy-sandbox/ci.Dockerfile: git, bun and the deploy image's small server),
+    // with no secrets at all. Two at once across the site caps the spend.
+    ...(checks ? { CI_RUNNER: { type: "container", className: "CiRunner", dockerfile: "deploy-sandbox/ci.Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
     // Accounts (Better Auth), GitHub and Google sign-in.
     BETTER_AUTH_SECRET: op("better-auth/secret"),
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitters.notryanquinn.workers.dev" },

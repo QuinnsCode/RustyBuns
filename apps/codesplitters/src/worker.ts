@@ -38,6 +38,7 @@ import { catalogue, mcp } from "./mcp.ts";
 import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
 import { checkRoutes, expireQueued, pollGithub, requeueStale, startChecks } from "./checks.ts";
+import { desktopRuns, kickQueued } from "./ci-runner.ts";
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
 import { scaleRoutes } from "./scale.ts";
@@ -51,6 +52,7 @@ export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
 export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
+export { CiRunner } from "./ci-runner.ts";
 export { EgressGate } from "./egress.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
@@ -530,7 +532,8 @@ const app = {
   async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
     // Every five minutes on the desktop, mirrors whose turn has come sync with upstream (mirror.ts).
     // Shas sent up to GitHub get their Actions results polled in (checks.ts).
-    if (c.cron === MIRRORS) { if (mirrorsOn(env)) ctx.waitUntil(syncDue(env).then(() => pollGithub(env))); return; }
+    // The desktop runs any checks still queued here (ci-runner.ts).
+    if (c.cron === MIRRORS) { if (mirrorsOn(env)) ctx.waitUntil(syncDue(env).then(() => pollGithub(env))); if (desktopRuns(env)) ctx.waitUntil(kickQueued(env)); return; }
     if (c.cron !== HOURLY) return;
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     // The supply-chain watch: agent platforms' status pages, and new malicious-package advisories against every repo (watch.ts).
@@ -544,7 +547,8 @@ const app = {
     ctx.waitUntil(advanceAll(env, Date.now() + 10 * 60_000));
     // Check runs a runner claimed and then went quiet on go back in the queue (a claim does this too).
     // and ones no runner has picked up in hours are cancelled, so the merge gate isn't left waiting on them.
-    ctx.waitUntil(requeueStale(env).then(() => expireQueued(env)));
+    // Then the built-in runner of each repo with runs still queued is woken, in case a kick went missing.
+    ctx.waitUntil(requeueStale(env).then(() => expireQueued(env)).then(() => kickQueued(env)));
     // Files the vector index doesn't have as committed yet (search.ts); nothing without it.
     ctx.waitUntil(embedDue(env).catch(() => null));
   },

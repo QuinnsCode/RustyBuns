@@ -151,6 +151,12 @@ Then Deploy, and their own commits to main if they turned that on, ship from the
 
 What it protects against: crew can change code but can't see keys or deploy targets, and their code only reaches a key once the owner has read it and approved it. Agents have no keys; code a prompt injection plants waits on a branch for a person. Agents are on separate branches, containers and CLI keys, and no agent commit deploys.
 
+### Checks in a container (Cloudflare)
+
+Off by default. Checks that run here are queued for a runner to claim (`src/checks.ts`). On the desktop the app is that runner (#750): it drains its own queue in-process as soon as checks are queued, and on its 5-minute cron for any left over, one run at a time per repo, in a temp dir on your machine, so there's no `scripts/runner.ts` to start by hand. On Cloudflare a Worker can't run a test suite, so without a runner of your own the runs wait and are cancelled after 6 hours. Deploy with `CODESPLITTERS_CHECKS=1` and they run in containers instead (`src/ci-runner.ts`): a `CiRunner` Durable Object per repo claims each queued run through the same `claimRun` as any runner, so one run at a time per repo, one per alarm, each in a fresh container (`deploy-sandbox/ci.Dockerfile`: git, bun, and the deploy image's small server) that's destroyed when the run ends. It clones the run's commit, or main with a branch's files laid over it, runs the check's command, streams the log, and reports. The container gets no secrets at all, starts with the internet off, and reaches only the repo's git remote and npm's and yarn's registries through `EgressGate` (#681). A run gets 13 minutes (it's in an alarm). A newer commit cancels the runs still queued on an older one, and each run counts against the `checks` rate limit, charged to the repo's owner: 30 an hour by default, admins exempt, tunable on `#/admin/limits`. One over the limit is cancelled, saying so. No Rust and no Docker in the image, so checks that need them belong on the desktop or a runner of your own.
+
+What it costs (Containers on Workers Paid, priced 2026-10-11, [Cloudflare's pricing](https://developers.cloudflare.com/containers/pricing/)): a `basic` instance is 1/4 vCPU, 1 GiB and 4 GB of disk, billed per 10 ms while it runs, memory and disk as provisioned, CPU as used: $0.0000025 per GiB-second, $0.000020 per vCPU-second, $0.00000007 per GB-second. A 5-minute run at full CPU is about $0.0023 (memory $0.00075, CPU $0.0015, disk $0.00008), and a full 13-minute one about $0.006. The plan includes 25 GiB-hours, 375 vCPU-minutes and 200 GB-hours a month, about 300 five-minute runs. `maxInstances: 2` caps the worst case: two containers busy around the clock is about $41 a month before the included usage. The clone and installs are egress (1 TB a month included). To turn it off, deploy again without the flag: the binding goes.
+
 ## Layout
 
 | File | What |
@@ -182,7 +188,9 @@ What it protects against: crew can change code but can't see keys or deploy targ
 | `src/deploy-keys.ts` | hosted deploys' write-only keys: sealing, the owner's routes, who may deploy |
 | `src/deploy-runner.ts` | the per-repo Durable Object that runs a hosted deploy in its own container |
 | `src/deploy-review.ts` | what a deploy (hosted or desktop) may run with the owner's keys: the owner's own commits, or what they approved after reading the diff |
-| `deploy-sandbox/` | the deploy container image: git, bun, and the server that runs one command |
+| `deploy-sandbox/` | the deploy container image: git, bun, and the server that runs one command; `ci.Dockerfile` is the check container's image, the same server without the deploy tools |
+| `src/checks.ts` | checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results |
+| `src/ci-runner.ts` | the built-in check runners: the desktop draining its own queue, and the per-repo `CiRunner` that runs each check in a container |
 | `src/cuts.ts` | cuts: picking lines and following what they use across files, the cut's branch, running its tests, the share page |
 | `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
 | `src/fit.ts` | the Rusty Buns fit check: how easily `rustybuns init` could box the repo |

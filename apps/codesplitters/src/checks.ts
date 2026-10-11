@@ -33,6 +33,15 @@
 // the ref: a `codesplitters.ci` file at the top, {"<name>": "<command>" | {run, paths?}}, any
 // command at all (a `docker build .` runs on whoever's machine claims it), else package.json's
 // `test` and `typecheck` scripts, else one `test` run with the runner's default command.
+// A monorepo (package.json `workspaces`) checks per workspace instead (#750): each one's own
+// `test` and `typecheck`, run in its folder as `<folder>:test`, and only when the change touches
+// that folder, a workspace it depends on (by package name, followed through theirs), the root
+// package.json or a lockfile: a change in apps/a runs a's tests, not b's, and one in a library
+// both use runs both. The root `typecheck` stays, repo-wide.
+//
+// Who runs them (#750): a runner of your own; the desktop app, which drains its own queue
+// in-process; or on Cloudflare, with CI_RUNNER bound, a container per run (src/ci-runner.ts).
+// A commit's runs take the place of the ref's runs still queued on an older commit.
 //
 // A branch knows when it last changed (#489): its file copies stamp `changed_at` on every edit,
 // and runs on the branch from before that are stale, so the gate waits again. When checks run
@@ -224,7 +233,7 @@ export async function upstreamMoved(env: Env, owner: string, repo: string, ref: 
 }
 
 /** A file's text on `ref` (the branch's copy when it has one, else main's), or null when there's none. */
-async function readAt(env: Env, owner: string, repo: string, ref: string, path: string) {
+export async function readAt(env: Env, owner: string, repo: string, ref: string, path: string) {
   const { materialize, toFile } = await import("./archive.ts");
   const own = ref === "main" ? null : await env.DB.prepare("SELECT deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, ref, path).first();
   if (own?.deleted) return null;
@@ -236,9 +245,29 @@ async function readAt(env: Env, owner: string, repo: string, ref: string, path: 
 /** A check the repo runs, from its codesplitters.ci or package.json. */
 export interface Planned { name: string; command: string; paths?: string[] }
 
-/** The repo's own checks, as `codesplitters.ci` says ({name: command | {run, paths?}}), else package.json's test and typecheck scripts. */
-export function planFrom(ci: string | null, pkg: string | null): Planned[] {
-  const parse = (t: string | null) => { try { const v = t && JSON.parse(t); return v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : null; } catch { return null; } };
+const parse = (t: string | null) => { try { const v = t && JSON.parse(t); return v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : null; } catch { return null; } };
+const SCRIPTS = ["test", "typecheck"];
+const scriptsOf = (pkg: string | null) => {
+  const s = parse(pkg)?.scripts as Record<string, unknown> | undefined;
+  return SCRIPTS.filter((n) => typeof s?.[n] === "string");
+};
+/** Files that, changed, can break any workspace: the root package.json and the lockfiles. */
+const LOCKFILES = ["package.json", "bun.lock", "bun.lockb", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"];
+const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/** A package.json's workspace patterns (an array, or yarn's {packages}). */
+export function workspacePatterns(pkg: string | null): string[] {
+  const w = parse(pkg)?.workspaces as unknown;
+  const list = Array.isArray(w) ? w : Array.isArray((w as { packages?: unknown })?.packages) ? (w as { packages: unknown[] }).packages : [];
+  return list.filter((x): x is string => typeof x === "string" && !!x.trim()).map((x) => x.replace(/^\.\//, "").replace(/\/+$/, ""));
+}
+
+/**
+ * The repo's own checks, as `codesplitters.ci` says ({name: command | {run, paths?}}), else
+ * per workspace when `workspaces` (each one's folder and package.json) have scripts of their
+ * own, else package.json's test and typecheck scripts.
+ */
+export function planFrom(ci: string | null, pkg: string | null, workspaces: { dir: string; pkg: string | null }[] = []): Planned[] {
   const conf = parse(ci);
   if (conf) return Object.entries(conf).flatMap(([name, v]): Planned[] => {
     const c = typeof v === "string" ? { run: v } : v as { run?: unknown; paths?: unknown };
@@ -246,27 +275,76 @@ export function planFrom(ci: string | null, pkg: string | null): Planned[] {
     const paths = Array.isArray(c.paths) ? c.paths.filter((x): x is string => typeof x === "string" && !!x.trim()) : [];
     return [{ name: name.trim(), command: c.run, ...(paths.length && { paths }) }];
   });
-  const scripts = parse(pkg)?.scripts as Record<string, unknown> | undefined;
-  return ["test", "typecheck"].filter((n) => typeof scripts?.[n] === "string").map((n) => ({ name: n, command: `bun run ${n}` }));
+  const own = workspaces.map((w) => {
+    const j = parse(w.pkg);
+    const deps = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"].flatMap((k) => Object.keys((j?.[k] as object | undefined) ?? {}));
+    return { dir: w.dir, name: typeof j?.name === "string" ? j.name : null, deps, scripts: scriptsOf(w.pkg) };
+  });
+  if (own.some((w) => w.scripts.length)) {
+    const byName = new Map(own.filter((w) => w.name).map((w) => [w.name!, w]));
+    // The workspaces `w` uses, and what they use in turn: a change in any of them can break it.
+    const uses = (w: (typeof own)[number]) => {
+      const seen = new Set<string>([w.dir]);
+      const walk = (x: typeof w) => { for (const d of x.deps) { const y = byName.get(d); if (y && !seen.has(y.dir)) { seen.add(y.dir); walk(y); } } };
+      walk(w);
+      return [...seen];
+    };
+    return [
+      ...own.flatMap((w) => w.scripts.map((n) => ({ name: `${w.dir}:${n}`, command: `cd ${quote(w.dir)} && bun run ${n}`, paths: [...uses(w), ...LOCKFILES] }))),
+      ...scriptsOf(pkg).filter((n) => n === "typecheck").map((n) => ({ name: n, command: `bun run ${n}` })),
+    ].filter((p) => p.name.length <= 100 && !p.name.includes(","));
+  }
+  return scriptsOf(pkg).map((n) => ({ name: n, command: `bun run ${n}` }));
+}
+
+/** The folders `patterns` name on `ref`: a folder as is, or `dir/*`'s subfolders (on main, and any a branch adds). Other globs aren't followed. */
+async function workspaceDirs(env: Env, owner: string, repo: string, ref: string, patterns: string[]) {
+  const { handleFor, listDir } = await import("./archive.ts");
+  const h = await handleFor(env, owner, repo).catch(() => null);
+  const added = ref === "main" ? [] : ((await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0").bind(owner, repo, ref).all()).results as { path: string }[]).map((r) => r.path);
+  const dirs = new Set<string>();
+  for (const p of patterns) {
+    if (!/[*?[]/.test(p)) { dirs.add(p); continue; }
+    const m = p.match(/^([^*?[]*?)\/?\*$/);
+    if (!m) continue;
+    const parent = m[1]!;
+    const listing = h ? await listDir(env, h.handle, h.branch, parent).catch(() => null) : null;
+    for (const e of listing?.entries ?? []) if (e.type === "dir") dirs.add(e.path);
+    const under = parent ? `${parent}/` : "";
+    for (const f of added) {
+      const [name, file, ...more] = f.startsWith(under) ? f.slice(under.length).split("/") : [];
+      if (name && file === "package.json" && !more.length) dirs.add(under + name);
+    }
+  }
+  return [...dirs].sort().slice(0, 100);
 }
 
 /** What runs here on `ref`, given what it touched: each required check with a command, then the repo's own, by name. */
 export async function planChecks(env: Env, owner: string, repo: string, ref: string, required: Required[], paths: string[] | null) {
   const [ci, pkg] = await Promise.all(["codesplitters.ci", "package.json"].map((f) => readAt(env, owner, repo, ref, f).catch(() => null)));
+  // A monorepo without its own codesplitters.ci: each workspace's package.json, to plan per workspace.
+  const patterns = parse(ci ?? null) ? [] : workspacePatterns(pkg ?? null);
+  const workspaces = patterns.length ? await Promise.all((await workspaceDirs(env, owner, repo, ref, patterns)).map(async (dir) => ({ dir, pkg: await readAt(env, owner, repo, ref, `${dir}/package.json`).catch(() => null) }))) : [];
   const ours = new Map<string, { name: string; command?: string }>();
   for (const r of requiredFor(required.filter((r) => r.command && r.name !== "*"), paths)) ours.set(r.name, r);
-  for (const r of requiredFor(planFrom(ci ?? null, pkg ?? null), paths)) if (!ours.has(r.name)) ours.set(r.name, r);
+  for (const r of requiredFor(planFrom(ci ?? null, pkg ?? null, workspaces), paths)) if (!ours.has(r.name)) ours.set(r.name, r);
   return ours.size ? [...ours.values()] : [{ name: "test" }];
 }
 
 /**
  * Our own checks on `ref` at `sha`, on this machine or in a container, for a runner to
  * claim: what planChecks says the ref's changes call for. One that's queued or running
- * already isn't queued again; after an edit, one queued at all on the ref isn't.
+ * already isn't queued again; after an edit, one queued at all on the ref isn't. A new
+ * commit's runs cancel the ones still queued on an older one: nobody reads those.
+ * Then the built-in runner, if there is one, is told there's work (ci-runner.ts).
  */
 async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false) {
-  const runner: Runner = typeof Bun !== "undefined" ? "desktop" : "container";
+  const runner: Runner = env.CI_RUNNER || typeof Bun === "undefined" ? "container" : "desktop";
   const s = await checkSettings(env, owner, repo);
+  if (!edit) {
+    const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha != ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, sha).all();
+    for (const old of results as unknown as CheckRun[]) await updateRun(env, old, { status: "cancelled", append: `\n${sha.slice(0, 12)} came along before a runner did: cancelled\n` }, by);
+  }
   for (const { name, command } of await planChecks(env, owner, repo, ref, s.required, await touched(env, owner, repo, ref))) {
     const live = edit
       ? await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND name = ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, name).first()
@@ -275,6 +353,7 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     const run = await recordRun(env, { owner, repo, ref, sha, name, runner, command }, by);
     if (why) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(why, run.id).run();
   }
+  await (await import("./ci-runner.ts")).kick(env, owner, repo).catch(() => null);
 }
 
 /**
