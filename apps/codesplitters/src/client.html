@@ -2574,19 +2574,26 @@ async function commands() {
 }
 
 const palette = {
-  el: $("#palette"), input: $("#pal-q"), list: $("#pal-list"), all: [], shown: [], at: 0, asking: null,
-  async open() {
+  el: $("#palette"), input: $("#pal-q"), list: $("#pal-list"), all: [], shown: [], at: 0, asking: null, ready: null,
+  // The input shows before commands() resolves, so Enter waits on `ready`: typing "connect" and
+  // Enter straight after ⌘K runs the command, not a code search for it.
+  open() {
     this.asking = null; $("#pal-ask").hidden = true; this.input.placeholder = "Type a command, or search code";
     this.el.hidden = false; this.input.value = ""; this.input.focus();
-    this.all = await commands(); this.render();
+    this.all = []; this.render();
+    const ready = (this.ready = commands().catch(() => []).then((all) => {
+      if (this.ready === ready) { this.all = all; this.ready = null; this.render(); }
+    }));
+    return ready;
   },
   close() { this.el.hidden = true; },
+  async settled() { while (this.ready) await this.ready; },
   render() {
     if (this.asking) { this.list.innerHTML = `<li class="on">${icon(this.asking.ic)}<span>${esc(this.asking.title)}: press Enter</span><span class="api">${esc(this.asking.api)}</span></li>`; return icons(); }
     const q = this.input.value.trim().toLowerCase();
     this.shown = this.all.filter((c) => !q || c.title.toLowerCase().includes(q) || c.group.toLowerCase().includes(q));
     // Words that match nothing: offer them as a code search.
-    if (q && !this.shown.length) this.shown = [{ group: "Search", ic: "search", title: `Search code for “${this.input.value.trim()}”`, api: "GET /api/search?q=", run: () => (location.hash = "#/search/" + encodeURIComponent(this.input.value.trim())) }];
+    if (q && !this.shown.length && !this.ready) this.shown = [{ group: "Search", ic: "search", title: `Search code for “${this.input.value.trim()}”`, api: "GET /api/search?q=", run: () => (location.hash = "#/search/" + encodeURIComponent(this.input.value.trim())) }];
     this.at = Math.min(this.at, Math.max(0, this.shown.length - 1));
     let group = null;
     this.list.innerHTML = this.shown.map((c, i) => (c.group !== group ? `<li class="group">${esc((group = c.group))}</li>` : "")
@@ -2609,7 +2616,10 @@ palette.input.addEventListener("input", () => { palette.at = 0; palette.render()
 palette.input.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); return palette.asking ? palette.open() : palette.close(); }
   if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); palette.at = (palette.at + (e.key === "ArrowDown" ? 1 : -1) + palette.shown.length) % Math.max(1, palette.shown.length); return palette.render(); }
-  if (e.key === "Enter") { e.preventDefault(); const c = palette.asking ?? palette.shown[palette.at]; if (c) palette.run(c); }
+  if (e.key === "Enter") {
+    e.preventDefault();
+    palette.settled().then(() => { const c = palette.asking ?? palette.shown[palette.at]; if (c && !palette.el.hidden) palette.run(c); });
+  }
 });
 palette.list.addEventListener("click", (e) => { const li = e.target.closest("li[data-i]"); if (li) palette.run(palette.shown[Number(li.dataset.i)]); });
 palette.el.addEventListener("click", (e) => { if (e.target === palette.el) palette.close(); });
