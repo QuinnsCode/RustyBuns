@@ -66,6 +66,10 @@ export async function eraseUser(env: Env, handle: string) {
     by("DELETE FROM oauth_grants WHERE name = ?", handle),
     by("DELETE FROM oauth_requests WHERE name = ?", handle),
     by("DELETE FROM limit_jobs WHERE user = ?", handle),
+    // evict leaves these: agent runs (the tasks you gave) and the limits counted against you.
+    by("DELETE FROM agent_runs WHERE owner = ?", handle),
+    by("DELETE FROM limit_hits WHERE who = ?", `@${handle}`),
+    by("DELETE FROM limit_events WHERE who = ?", `@${handle}`),
     by("DELETE FROM users WHERE name = ?", handle),
     // Retired, not freed: the handle is still on lines in other people's repos.
     // handle_grants is what makes a handle unclaimable; no inbox is called this.
