@@ -11,11 +11,17 @@
 //   range could take a poisoned version is a hit, whatever its floor, and
 //   whether or not the repo's dependency doctor is on.
 //
+// - Optional, news (#699): with WATCH_NEWS=1 and ANTHROPIC_API_KEY, once a day
+//   Claude searches the web for compromised npm packages and reports each incident
+//   it found a source for. It's unverified, so it only shows as news: it never
+//   makes a hit the way an advisory does.
+//
 // A sweep of the repos goes on across hours if it runs out of time; one that
 // finishes while newer advisories came in starts again.
 //
-//   GET /api/watch    the status lines, and hits in your own repos
+//   GET /api/watch    the status lines, the news, and hits in your own repos
 
+import Anthropic from "@anthropic-ai/sdk";
 import { caller, mayTake, readManifests, type Call } from "./deps.ts";
 import { json, type Env } from "./env.ts";
 
@@ -168,7 +174,116 @@ async function allMal(env: Env): Promise<Map<string, Mal[]>> {
   return out;
 }
 
-/** The hourly cron: the status pages, new advisories, and a sweep of the repos while there's time. */
+/** One incident from the news search: unverified, with the page it came from. */
+export interface News { url: string; title: string; packages: string[]; summary: string; published: string | null; at: number }
+
+/** How often the news search runs, and how long its finds are kept. */
+export const NEWS_EVERY = 86_400_000;
+export const NEWS_KEEP = 30 * 86_400_000;
+const NEWS_MODEL = "claude-opus-5-5";
+/** Searches one run may make: what bounds its cost. */
+const NEWS_SEARCHES = 5;
+
+const REPORT: Anthropic.Beta.BetaTool = {
+  name: "report",
+  description: "Report the incidents found. Call it once, at the end, with every incident (an empty list when there are none).",
+  strict: true,
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["incidents"],
+    properties: {
+      incidents: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["title", "url", "packages", "summary", "published"],
+          properties: {
+            title: { type: "string", description: "A short headline for the incident." },
+            url: { type: "string", description: "The search result it came from, exactly as the search gave it." },
+            packages: { type: "array", items: { type: "string" }, description: "The npm package names it says were compromised." },
+            summary: { type: "string", description: "One sentence: what happened, and which versions if the source says." },
+            published: { type: "string", description: "When the source was published, YYYY-MM-DD, or empty if it doesn't say." },
+          },
+        },
+      },
+    },
+  },
+};
+
+/**
+ * Ask Claude, with web search, for this week's news of compromised npm packages.
+ * Only incidents whose url was one of the search's results are kept, so each has
+ * a real page behind it; what the page says is still unchecked.
+ */
+export async function searchNews(env: Env, now = Date.now()): Promise<News[]> {
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, fetch: fetcher(env), maxRetries: 1, timeout: 5 * 60_000 });
+  const today = new Date(now).toISOString().slice(0, 10);
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{
+    role: "user",
+    content: `Today is ${today}. Search the web for news from the past 7 days of npm packages that were compromised, hijacked or published with malicious code (a supply-chain attack). ` +
+      `Then call the report tool once with each distinct incident, citing the search result it came from. Report only what a search result says; an empty list is fine.`,
+  }];
+  const seen = new Set<string>();
+  // A search can pause the turn; carry on from where it stopped, a few times at most.
+  for (let turn = 0; turn < 4; turn++) {
+    const res = await client.beta.messages.create({
+      model: NEWS_MODEL,
+      max_tokens: 16_000,
+      output_config: { effort: "low" },
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      tools: [{ type: "web_search_20260209", name: "web_search", max_uses: NEWS_SEARCHES }, REPORT],
+      messages,
+    });
+    for (const b of res.content) {
+      if (b.type === "web_search_tool_result" && Array.isArray(b.content)) for (const r of b.content) seen.add(r.url);
+    }
+    const call = res.content.find((b) => b.type === "tool_use" && b.name === "report");
+    if (call?.type === "tool_use") return newsFrom(call.input, seen, now);
+    if (res.stop_reason !== "pause_turn") return [];
+    messages.push({ role: "assistant", content: res.content });
+  }
+  return [];
+}
+
+/** The report tool's incidents, each kept only when its url was a search result. */
+export function newsFrom(input: unknown, seen: Set<string>, now: number): News[] {
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const out = new Map<string, News>();
+  for (const i of ((input as any)?.incidents ?? []) as any[]) {
+    const url = str(i?.url, 2000);
+    if (!seen.has(url) || !/^https?:\/\//.test(url) || out.has(url)) continue;
+    const packages = (Array.isArray(i.packages) ? i.packages : []).map((p: unknown) => str(p, 214)).filter(Boolean).slice(0, 20);
+    const published = /^\d{4}-\d{2}-\d{2}$/.test(str(i.published, 10)) ? str(i.published, 10) : null;
+    out.set(url, { url, title: str(i.title, 200) || url, packages, summary: str(i.summary, 500), published, at: now });
+  }
+  return [...out.values()];
+}
+
+/** The news search, when it's on and a day has passed since it last ran. Returns how many it found, or null when it didn't run. */
+export async function takeNews(env: Env, now = Date.now()): Promise<number | null> {
+  if (env.WATCH_NEWS !== "1" || !env.ANTHROPIC_API_KEY) return null;
+  const r = await env.DB.prepare("SELECT value FROM watch_state WHERE key = 'news'").first();
+  if (r && now - JSON.parse(r.value).at < NEWS_EVERY) return null;
+  // Booked before it runs: one that fails waits a day too, so a broken run never costs more than one a day.
+  await env.DB.prepare("INSERT OR REPLACE INTO watch_state (key, value) VALUES ('news', ?)").bind(JSON.stringify({ at: now })).run();
+  const found = await searchNews(env, now);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM watch_news WHERE at < ?").bind(now - NEWS_KEEP),
+    // A story seen before keeps the day it was first found.
+    ...found.map((n) => env.DB.prepare("INSERT OR IGNORE INTO watch_news (url, title, packages, summary, published, at) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(n.url, n.title, JSON.stringify(n.packages), n.summary, n.published, n.at)),
+  ]);
+  return found.length;
+}
+
+export const newsLines = async (env: Env): Promise<News[]> =>
+  ((await env.DB.prepare("SELECT * FROM watch_news ORDER BY at DESC, published DESC LIMIT 20").all()).results as any[])
+    .map((n) => ({ ...n, packages: JSON.parse(n.packages) }));
+
+/** The hourly cron: the status pages, new advisories, a sweep of the repos while there's time, and the daily news search. */
 export async function scheduledWatch(env: Env, self: (r: Request) => Promise<Response>, now = Date.now(), budgetMs = SWEEP_BUDGET) {
   const deadline = Date.now() + budgetMs;
   await pollStatus(env, now).catch(() => {});
@@ -190,6 +305,7 @@ export async function scheduledWatch(env: Env, self: (r: Request) => Promise<Res
     if (finished) { s.after = s.again ? ["", ""] : null; s.again = false; }
   }
   await save(env, s);
+  await takeNews(env, now).catch(() => {});
 }
 
 export const statusLines = async (env: Env) =>
@@ -201,5 +317,5 @@ export const hitsFor = async (env: Env, owner: string, repo?: string) =>
 
 export async function watchRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (!(p[1] === "watch" && !p[2] && req.method === "GET")) return null;
-  return json({ status: await statusLines(env), hits: user ? await hitsFor(env, user) : [] });
+  return json({ status: await statusLines(env), news: await newsLines(env), hits: user ? await hitsFor(env, user) : [] });
 }

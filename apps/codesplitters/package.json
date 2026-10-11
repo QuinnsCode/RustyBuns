@@ -11,6 +11,7 @@
     "desktop": "bun ../../packages/cli/src/index.ts build desktop --dev && bun ../../packages/cli/src/index.ts run desktop"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.132.1",
     "@babel/parser": "7.28.5",
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
