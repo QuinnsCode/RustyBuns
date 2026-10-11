@@ -1,0 +1,47 @@
+# The @rustybuns packages go to npm from here, never a laptop: npm trusted publishing
+# (OIDC, no token anywhere) with --provenance, so each version links back to this
+# run and commit. Push a tag v<version> matching packages/*/package.json to publish;
+# run it from the Actions tab to only pack and dry-run.
+# Bun packs (it turns workspace:* into versions); npm publishes, since trusted
+# publishing and provenance are npm's.
+name: npm-publish
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: npm-publish
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write   # the OIDC token npm trades for a one-off publish credential
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: "24" }   # no registry-url: its placeholder token would stand in for OIDC
+      - run: npm install -g npm@11.6.2   # trusted publishing needs npm 11.5.1+
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/check-release.ts
+      - name: Tag matches the packages
+        if: github.event_name == 'push'
+        run: |
+          v="$(bun -p 'require("./packages/cli/package.json").version')"
+          [ "$GITHUB_REF_NAME" = "v$v" ] || { echo "tag $GITHUB_REF_NAME, packages are $v"; exit 1; }
+      - name: Pack
+        run: for p in ports shell-bun native cli; do (cd "packages/$p" && bun pm pack --destination ../../npm-dist --quiet); done
+      - name: Publish
+        # Dependencies first, so the CLI never lands pointing at a version that isn't up yet.
+        run: |
+          for p in ports shell-bun native cli; do
+            npm publish ./npm-dist/rustybuns-$p-*.tgz --provenance --access public ${{ github.event_name != 'push' && '--dry-run' || '' }}
+          done

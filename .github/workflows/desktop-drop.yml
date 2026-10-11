@@ -51,20 +51,28 @@ jobs:
       channel: ${{ steps.p.outputs.channel }}
       any: ${{ steps.p.outputs.any }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { fetch-depth: 0 }
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - id: p
+        # Inputs go through env, never pasted into the script: a typed `$(...)` would run.
+        env:
+          APPS: ${{ inputs.apps }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel || 'experimental' }}
+          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          apps="${{ inputs.apps }}"; version="${{ inputs.version }}"; channel="${{ inputs.channel || 'experimental' }}"
+          apps="$APPS"; version="$VERSION"; channel="$CHANNEL"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then   # <app>-v<version>; a prerelease (1.3.0-beta.1) is experimental
             tag="${GITHUB_REF#refs/tags/}"; apps="${tag%-v*}"; version="${tag##*-v}"
             [[ "$version" == *-* ]] && channel=experimental || channel=stable
           fi
+          # It names an R2 folder and a release title: a version, nothing else.
+          [[ -z "$version" || "$version" =~ ^[0-9A-Za-z.+-]+$ ]] || { echo "bad version: $version"; exit 1; }
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            bun scripts/ci-apps.ts drop pr "${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            bun scripts/ci-apps.ts drop pr "$BASE" >> "$GITHUB_OUTPUT"
           else
             bun scripts/ci-apps.ts drop "$apps" >> "$GITHUB_OUTPUT"
           fi
@@ -83,14 +91,14 @@ jobs:
         shell: bash
         working-directory: apps/${{ matrix.app }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - if: matrix.prep
-        uses: dtolnay/rust-toolchain@stable
-        with: { targets: wasm32-unknown-unknown }
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master; the toolchain is the input below
+        with: { toolchain: stable, targets: wasm32-unknown-unknown }
       - if: matrix.prep
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with: { workspaces: "${{ matrix.cargo }}" }
       - run: bun install --frozen-lockfile
         working-directory: .
@@ -99,7 +107,7 @@ jobs:
       - if: matrix.test
         run: ${{ matrix.test }}     # a native binary still gets its tests on its own OS
       - run: ${{ matrix.build }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.app }}-${{ matrix.target }}
           path: apps/${{ matrix.app }}/dist/${{ matrix.app }}-*
@@ -120,10 +128,10 @@ jobs:
       contents: write   # the GitHub Release on a stable tag
       actions: read     # the artifact count below
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: { path: bins, pattern: "${{ matrix.app }}-*", merge-multiple: true }
       - name: Every target built?
         run: |
@@ -139,10 +147,14 @@ jobs:
           APP: ${{ matrix.app }}
       - name: Drop
         run: |
-          v="${{ needs.plan.outputs.version }}"
-          [ -z "$v" ] && v="$(bun -p 'require("./apps/${{ matrix.app }}/package.json").version')"
-          bun scripts/drop.ts --app "${{ matrix.app }}" --version "$v" --channel "${{ needs.plan.outputs.channel }}" ${{ (inputs.dry || github.event_name == 'pull_request') && '--dry out' || '' }} bins/*
+          v="$VERSION"
+          [ -z "$v" ] && v="$(bun -p 'require("./apps/" + process.env.APP + "/package.json").version')"
+          bun scripts/drop.ts --app "$APP" --version "$v" --channel "$CHANNEL" ${{ (inputs.dry || github.event_name == 'pull_request') && '--dry out' || '' }} bins/*
         env:
+          # The version and channel can come from a typed input, so through env, not the script.
+          APP: ${{ matrix.app }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
           # One bucket for every app's drops; each app gets its own top-level folder.
           CLOUDFLARE_ACCOUNT_ID: c2d417e655e0ef55de8fe2d07874f521
           R2_BUCKET: rustybuns-drops
@@ -154,7 +166,7 @@ jobs:
       - name: GitHub Release
         if: github.event_name == 'push' && needs.plan.outputs.channel == 'stable'
         run: |
-          app="${{ matrix.app }}"; v="${{ needs.plan.outputs.version }}"
+          app="$APP"; v="$VERSION"
           (cd bins && sha256sum * > SHA256SUMS)
           cat > notes.md <<EOF
           Desktop binaries for [$app](https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_REF_NAME/apps/$app), built from $GITHUB_REF_NAME. One file, nothing to install: Bun is inside.
@@ -169,4 +181,7 @@ jobs:
           EOF
           # --latest=false: the repo's "latest" release stays the npm packages' one.
           gh release create "$GITHUB_REF_NAME" bins/* --title "$app $v" --notes-file notes.md --latest=false --verify-tag
-        env: { GH_TOKEN: "${{ github.token }}" }
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          APP: ${{ matrix.app }}
+          VERSION: ${{ needs.plan.outputs.version }}
