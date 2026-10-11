@@ -171,6 +171,8 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
  * `content`. The result is the remote's push; a crew push that failed is in `crewError`.
  * Files whose push to the remote didn't land before ride along. One that doesn't
  * land now waits in git_pending, and so does every commit while git moves to a fresh start.
+ * `deployCommit` is the commit on the remote deploys clone (the crew's, when there is one),
+ * when that commit carries this file alone.
  */
 export async function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string) {
   await (files.content !== files.published ? ensureCrewRemote(env, owner, repo, path) : payBackfill(env, owner, repo, path));
@@ -185,12 +187,15 @@ export async function pushCatalogue(env: Env, owner: string, repo: string, path:
     const a = await access(to.handle, to.remote, "write", 300);
     return push(a.remote, a.token, { changes: { [path]: text(files.content) }, ...(await byline(env, owner, repo, author, message)), branch: to.branch, base: to.handle });
   };
+  const pending = await pendingChanges(env, owner, repo);
   const [pub, crewed] = await Promise.allSettled([
-    (async () => pushChanges(env, owner, repo, h, { ...(await pendingChanges(env, owner, repo)), [path]: text(files.published) }, author, message))(),
+    pushChanges(env, owner, repo, h, { ...pending, [path]: text(files.published) }, author, message),
     crew?.crew ? crewPush(crew) : null,
   ]);
   if (pub.status === "rejected") throw pub.reason;
-  return crewed.status === "rejected" ? { ...pub.value, crewError: (crewed.reason as Error).message } : pub.value;
+  if (crewed.status === "rejected") return { ...pub.value, crewError: (crewed.reason as Error).message, deployCommit: undefined };
+  const deployCommit = crew?.crew ? crewed.value?.commit : Object.keys(pending).some((p) => p !== path) ? undefined : pub.value.commit;
+  return { ...pub.value, deployCommit };
 }
 
 /**

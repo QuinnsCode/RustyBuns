@@ -75,8 +75,8 @@ The REFERENCE notes that the 1Password path "has not been run against a real vau
 
 | Done | Not done |
 | --- | --- |
-| A fresh container per agent run, as a non-root user, with only that harness's LLM key | **DeployRunner runs collaborator-merged code with the owner's unsealed deploy key**, and the output masking only catches the exact string (#646) |
-| Deploy keys are sealed with AES-GCM under `DEPLOY_SECRETS_KEY`, with a rotation slot | The dependency doctor's `install` runs lifecycle scripts next to the LLM keys; containers have open egress (#646) |
+| A fresh container per agent run, with only that harness's LLM key; the agent CLI and the repo's own code run as two separate non-root users | ~~**DeployRunner runs collaborator-merged code with the owner's unsealed deploy key**, and the output masking only catches the exact string~~ Fixed for #646: a hosted deploy runs only the owner's own commits, or a tip they approved after reading the diff, and the clone must be the commit checked. Desktop deploys aren't held this way yet (#682) |
+| Deploy keys are sealed with AES-GCM under `DEPLOY_SECRETS_KEY`, with a rotation slot | ~~The dependency doctor's `install` runs lifecycle scripts next to the LLM keys~~ Fixed for #646: install and tests run as a user that can't read the agent's environment or home, and the server takes one request. Containers still have open egress (#681) |
 | Hosted agents, cuts and the dependency doctor are admin-only while `ADMINS` is set | |
 
 ## Free Cloudflare features we're not using yet

@@ -155,9 +155,11 @@ console.log("RB " + JSON.stringify({ adopt: !!c.targets?.edge?.adopt, edge: !!c.
 /**
  * Clone, install, deploy and check `run.stage`; then destroy it, unless this is
  * a real deploy (`keep`, see deploy.ts), whose run has no destroy step. A real
- * deploy may take over live resources (`adopt`) when the owner said so.
+ * deploy may take over live resources (`adopt`) when the owner said so. With
+ * `expect`, the clone has to be that commit (the one a hosted deploy checked,
+ * deploy-review.ts), or nothing after it runs.
  */
-export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean; dir?: string } = {}) {
+export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean; dir?: string; expect?: string } = {}) {
   const fs = runner.workdir ? null : await import("node:fs");
   const dir = runner.workdir ?? fs!.mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "codesplitters-preview-"));
   const app = opts.dir ? `${dir}/repo/${opts.dir}` : `${dir}/repo`;
@@ -182,6 +184,11 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
   try {
     if (!(await go("clone", [{ cmd: ["git", "clone", "--depth", "1", "--quiet", remote, "repo"], cwd: dir }, { cmd: ["git", "-C", "repo", "rev-parse", "HEAD"], cwd: dir }]))) return skip("install", "deploy", "check", "destroy");
     run.commit = /\b[0-9a-f]{40}\b/.exec(step("clone").out)?.[0];
+    if (opts.expect && run.commit !== opts.expect) {
+      step("clone").status = "failed";
+      run.note = `main moved to ${run.commit?.slice(0, 7) ?? "?"} after ${opts.expect.slice(0, 7)} was checked: deploy again`;
+      return skip("install", "deploy", "check", "destroy");
+    }
     // A folder that isn't there says so, rather than failing to start bun in it.
     const has = opts.dir ? [{ cmd: ["test", "-d", opts.dir], cwd: `${dir}/repo` }] : [];
     if (!(await go("install", [...has, { cmd: ["bun", "install"], cwd: app }, { cmd: ["bun", "-e", CONFIG_READ], cwd: app }]))) {

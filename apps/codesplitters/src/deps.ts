@@ -34,7 +34,8 @@
 // repo's history of the affected API, patches the call sites across as many
 // files as it needs in the same throwaway clone, and the tests run again,
 // until they pass or it runs out of tries. On Cloudflare that's a container
-// too, with only that agent's logins. A fix that passes lands on the same
+// too, with only that agent's logins, and the repo's install and tests run there
+// as another user, who can't read them (sandbox/server.mjs). A fix that passes lands on the same
 // branch, blamed on agent-<harness>; the agent worked on the last commit, so a
 // file with live edits since gets the fix merged into them line by line, and is
 // left out only where the two touch the same lines. A run says it's alive every
