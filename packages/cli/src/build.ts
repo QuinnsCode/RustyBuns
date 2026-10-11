@@ -54,7 +54,8 @@ function hostParts(c: RustyBunsConfig, host: HostKind, desktopDataDir: string) {
     dataDir: box
       ? `process.env.DATA_DIR ?? ${JSON.stringify(`/var/lib/${c.name}`)}`
       : `${JSON.stringify(desktopDataDir)}.replace(/^~/, homedir())`,
-    token: box ? "undefined" : "mintToken()",
+    // A dev host takes RB_TOKEN from `run desktop --watch`, so a restart keeps the window logged in.
+    token: box ? "undefined" : `(typeof RB_DEV === "boolean" && RB_DEV && process.env.RB_TOKEN) || mintToken()`,
     listen: box ? `, hostname: "0.0.0.0", port: Number(process.env.PORT ?? 3000)` : `, hostname: listen.hostname, port: listen.port`,
     launch: box ? "" : `// <data>/desktop.json (0600, gone on exit) is how local tools find this run without RB_NO_BROWSER.
 writeDesktopFile(dataDir, shell.url, token);
@@ -617,6 +618,12 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   // desktop.native names the crates to embed (all built crates when unset);
   // a named crate that was never built is an error, not a silent TS fallback.
   for (const t of linuxCross) await step(`native ${t} (docker)`, () => buildLinuxNative(t, only));
+  // A box built on its own OS and arch (the hosted deploy container, for an x86 box) compiles
+  // the crates native/dist lacks with the local cargo, rather than shipping the TS path.
+  if (host === "box" && hasRust && targets.includes(hostTag) && Bun.which("cargo")) {
+    const missing = (only ?? shippingCrates()).filter((c) => !existsSync(join("native", "dist", c, hostTag)));
+    if (missing.length) await step(`native ${hostTag} (cargo)`, () => buildHostNative(hostTag, missing));
+  }
   if (only?.length) nativeDirs(only);
   const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, only)) : [];
   const { migrationDirs, mountDirs: projectMounts } = embeddedDirs(c);
@@ -688,6 +695,24 @@ export async function buildLinuxNative(target: DesktopOs, only?: string[]): Prom
     const out = join("native", "dist", c, target);
     await mkdir(out, { recursive: true });
     await copyFile(join(targetDir, "release", `lib${c}.so`), join(out, `lib${c}.so`));
+  }
+}
+
+/**
+ * Build crates with this machine's cargo into native/dist/<crate>/<os-arch>/, as native/build.ts
+ * does, for a box built on its own platform. Linux and macOS only: a box is never Windows.
+ */
+export async function buildHostNative(tag: DesktopOs, crates: string[]): Promise<void> {
+  console.log(`[native] building ${crates.join(", ")} for ${tag} with cargo`);
+  const p = Bun.spawn(["cargo", "build", "--release", "--manifest-path", "native/Cargo.toml", ...crates.flatMap((c) => ["-p", c])],
+    { stdio: ["inherit", "inherit", "inherit"] });
+  if (await p.exited !== 0) throw new Error(`cargo build of native/ for ${tag} failed (see above)`);
+  const { mkdir, copyFile } = await import("node:fs/promises");
+  const ext = tag.startsWith("darwin") ? "dylib" : "so";
+  for (const c of crates) {
+    const out = join("native", "dist", c, tag);
+    await mkdir(out, { recursive: true });
+    await copyFile(join("native", "target", "release", `lib${c}.${ext}`), join(out, `lib${c}.${ext}`));
   }
 }
 

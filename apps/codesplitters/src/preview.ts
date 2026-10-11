@@ -39,8 +39,12 @@ export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Pro
 export interface Runner {
   exec: Exec; fetch: (url: string) => Promise<{ status: number }>; workdir?: string;
   state?: { restore(app: string): Promise<void>; keep(app: string): Promise<void> };
-  /** The machine can't compile Rust (a hosted deploy container: no Docker, no cargo), so a box whose crates would need it is refused up front. */
-  noRust?: boolean;
+  /**
+   * The Linux arches this machine can compile a box's native/ crates for; unset for any (the desktop:
+   * Docker, or it says to start it). A hosted deploy container has cargo and no Docker, so only
+   * linux-x64: a box whose crates need another arch is refused up front.
+   */
+  nativeArches?: string[];
 }
 
 /**
@@ -134,8 +138,8 @@ const LOGIN_HINT = /unauthori[sz]ed|authentication|not logged in|no credentials|
  * The config read, run with the repo's own install so it is what deploy will see:
  * `RB {adopt, edge, box, native}`. `native` is set when a Hetzner box would have
  * to compile native/ crates: `rustybuns build box` builds a cax (arm64) box's in
- * Docker every time, and an x86 one's only take the Rust path when
- * native/dist/<crate>/linux-x64/ is already there. It mirrors the CLI's
+ * Docker every time, and an x86 one's with the local cargo when
+ * native/dist/<crate>/linux-x64/ isn't there (on Linux x64; elsewhere in Docker). It mirrors the CLI's
  * shippingCrates(): desktop.native names them, or every crate under
  * native/crates without `[package.metadata.rustybuns] desktop = false`.
  * Railway boxes build theirs in Railway's own image, so they need nothing here.
@@ -207,11 +211,11 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
         : "refused: targets.edge.adopt is on, so this stack would take over the live Worker and its data under their real names, and destroy would delete them.\nTurn adopt off on a branch to preview it.\n";
       return skip("check", "destroy");
     }
-    if (cfg.native && runner.noRust) {
+    if (cfg.native && runner.nativeArches && !runner.nativeArches.includes(cfg.native.arch)) {
       const { arch, crates } = cfg.native as { arch: string; crates: string[] };
       step("deploy").status = "failed";
-      step("deploy").out = `refused: targets.box would compile native/ crates (${crates.join(", ")}) for ${arch}, and the hosted deploy container has no Docker or Rust to build them.\n`
-        + (arch === "linux-x64" ? `Commit their native/dist/<crate>/linux-x64/ builds, or deploy` : "Deploy") + " this one from the desktop app.\n";
+      step("deploy").out = `refused: targets.box would compile native/ crates (${crates.join(", ")}) for ${arch}, and the hosted deploy container builds them for ${runner.nativeArches.join(", ")} only (it has no Docker).\n`
+        + `Commit their native/dist/<crate>/${arch}/ builds, pick an x86 server type, or deploy this one from the desktop app.\n`;
       run.note = "this box's Rust crates need building: deploy it from the desktop app";
       return skip("check", "destroy");
     }

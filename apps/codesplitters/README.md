@@ -73,6 +73,7 @@ On the desktop you get the things a Worker can't do: coding agents run on your m
 cd apps/codesplitters
 bun install
 bun run desktop        # the app in a window
+bun run desktop:watch  # the same, rebuilt and restarted on every save
 ```
 
 There's no downloadable build yet; that's one command from source.
