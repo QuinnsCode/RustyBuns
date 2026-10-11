@@ -35,8 +35,9 @@ export function apply(doc: Doc, ops: Op[], by: string | string[], at = Date.now(
   const draft: Doc = { rev: doc.rev, nextId: doc.nextId, lines: doc.lines.map((l) => ({ ...l })) };
   const applied: Applied[] = [];
   const conflicts: { index: number; reason: string }[] = [];
+  const near = { i: 0 };
   ops.forEach((op, index) => {
-    const r = step(draft, op, typeof by === "string" ? by : by[index] ?? "anon", at);
+    const r = step(draft, op, typeof by === "string" ? by : by[index] ?? "anon", at, near);
     if (typeof r === "string") conflicts.push({ index, reason: r });
     else applied.push(r);
   });
@@ -45,18 +46,34 @@ export function apply(doc: Doc, ops: Op[], by: string | string[], at = Date.now(
   return { ok: true, applied };
 }
 
-function step(doc: Doc, op: Op, by: string, at: number): Applied | string {
+/**
+ * Where line `id` is, scanning outward from `near.i` (the last line the batch
+ * touched): a paste inserts each line after the one before, and a diff or block
+ * delete walks the file in order, so a big batch stays linear, not quadratic.
+ */
+function locate(lines: Line[], id: string, near: { i: number }): number {
+  const from = Math.min(Math.max(near.i, 0), lines.length);
+  for (let d = 0; from + d < lines.length || from - d >= 0; d++) {
+    if (lines[from + d]?.id === id) return from + d;
+    if (d && lines[from - d]?.id === id) return from - d;
+  }
+  return -1;
+}
+
+function step(doc: Doc, op: Op, by: string, at: number, near: { i: number }): Applied | string {
   const rev = doc.rev + 1;
   if (op.kind === "insert") {
-    const i = op.after === null ? 0 : doc.lines.findIndex((l) => l.id === op.after) + 1;
+    const i = op.after === null ? 0 : locate(doc.lines, op.after, near) + 1;
     if (i === 0 && op.after !== null) return `no line ${op.after}`;
     const id = `L${doc.nextId++}`;
     doc.lines.splice(i, 0, { id, text: op.text, by, rev });
+    near.i = i;
     doc.rev = rev;
     return { rev, by, at, op, line: id };
   }
-  const i = doc.lines.findIndex((l) => l.id === op.line);
+  const i = locate(doc.lines, op.line, near);
   if (i < 0) return `no line ${op.line}`;
+  near.i = i;
   if (doc.lines[i]!.rev !== op.base) return `line ${op.line} is at rev ${doc.lines[i]!.rev}, not ${op.base}`;
   if (op.kind === "set") doc.lines[i] = { id: op.line, text: op.text, by, rev };
   else doc.lines.splice(i, 1);
@@ -67,16 +84,19 @@ function step(doc: Doc, op: Op, by: string, at: number): Applied | string {
 /** Rebuild the file as it was at `rev` by replaying the log (onto `from`, a branch's fork point). Time travel, line by line. */
 export function replay(log: Applied[], rev = Infinity, from: Doc = empty()): Doc {
   const doc = structuredClone(from);
+  const near = { i: 0 };
   for (const a of log) {
     if (a.rev > rev) break;
     // Replays are trusted: force the logged id and rev so blame matches history.
     const op = a.op;
     if (op.kind === "insert") {
-      const i = op.after === null ? 0 : doc.lines.findIndex((l) => l.id === op.after) + 1;
+      const i = op.after === null ? 0 : locate(doc.lines, op.after, near) + 1;
       doc.lines.splice(i, 0, { id: a.line, text: op.text, by: a.by, rev: a.rev });
+      near.i = i;
       doc.nextId = Math.max(doc.nextId, Number(a.line.slice(1)) + 1);
     } else {
-      const i = doc.lines.findIndex((l) => l.id === a.line);
+      const i = locate(doc.lines, a.line, near);
+      near.i = i;
       if (op.kind === "set") doc.lines[i] = { id: a.line, text: op.text, by: a.by, rev: a.rev };
       else doc.lines.splice(i, 1);
     }

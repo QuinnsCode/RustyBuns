@@ -58,6 +58,37 @@ describe("lines", () => {
     expect(replay(log, 3).lines[0]).toEqual({ id: "L1", text: "ONE", by: "x", rev: 3 });
     expect(replay(log)).toEqual(doc);
   });
+
+  test("a big paste applies and replays in linear time (#684)", () => {
+    const n = 40_000, doc = empty();
+    const t = performance.now();
+    const r = apply(doc, fromText(Array.from({ length: n }, (_, i) => `line ${i}`).join("\n")), "me");
+    if (!r.ok) throw new Error("paste failed");
+    // Rewrite every other line, top to bottom, then delete the block back out.
+    const sets = doc.lines.filter((_, i) => i % 2 === 0).map((l) => ({ kind: "set" as const, line: l.id, base: l.rev, text: l.text.toUpperCase() }));
+    const s = apply(doc, sets, "me");
+    const d = apply(doc, doc.lines.slice(100, 30_100).map((l) => ({ kind: "delete" as const, line: l.id, base: l.rev })), "me");
+    if (!s.ok || !d.ok) throw new Error("edit failed");
+    expect(text(replay([...r.applied, ...s.applied, ...d.applied]))).toBe(text(doc));
+    // Quadratic was several seconds for the paste alone.
+    expect(performance.now() - t).toBeLessThan(1_500);
+    expect(doc.lines).toHaveLength(n - 30_000);
+  });
+
+  test("ops out of order still find their lines", () => {
+    const doc = empty();
+    apply(doc, fromText("a\nb\nc\nd\ne"), "me");
+    const r = apply(doc, [
+      { kind: "set", line: "L5", base: 5, text: "E" },
+      { kind: "insert", after: "L1", text: "a2" },
+      { kind: "delete", line: "L4", base: 4 },
+      { kind: "insert", after: "L1", text: "a1" },
+      { kind: "set", line: "L2", base: 2, text: "B" },
+    ], "x");
+    expect(r.ok).toBe(true);
+    expect(text(doc)).toBe("a\na1\na2\nB\nc\nE");
+    expect(apply(doc, [{ kind: "insert", after: "L4", text: "gone" }], "x").ok).toBe(false);
+  });
 });
 
 describe("merge", () => {
