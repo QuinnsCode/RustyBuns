@@ -21,12 +21,21 @@
 // at once, and a failed one books the next on the queue after 1, 5, 30 and 120
 // minutes, then is given up.
 //
+// A hook's URL can't point inside the network the app runs in (#648): loopback,
+// RFC 1918, link-local (cloud metadata), CGNAT and IPv6's private ranges are refused
+// when it's added. On Workers they're unreachable anyway; on the desktop the app runs
+// on someone's machine, where they're not. There each delivery also looks the host up
+// first and isn't sent if any address it has is private, so a public name pointed
+// inward is caught too (a name that changes its answer between the lookup and the send
+// still gets through: the desktop's own network is the last line).
+//
 //   GET    /api/repos/:o/:r/hooks                           the hooks, each with its last delivery (owner only)
 //   POST   /api/repos/:o/:r/hooks                           {url, events?, secret?, github_compat?}: the secret is shown this once
 //   DELETE /api/repos/:o/:r/hooks/:id
 //   GET    /api/repos/:o/:r/hooks/:id/deliveries            the last 20
 //   POST   /api/repos/:o/:r/hooks/:id/deliveries/:d/redeliver
 
+import { audit } from "./audit.ts";
 import { json, type Env } from "./env.ts";
 
 export const EVENTS = ["commit", "branch.opened", "branch.merged", "deploy.finished", "check_run"] as const;
@@ -51,11 +60,44 @@ export async function sign(secret: string, body: string) {
 
 interface Delivery { id: string; event: string; payload: string; attempts: number }
 
+const v4 = (h: string) => /^\d+\.\d+\.\d+\.\d+$/.test(h) ? h.split(".").map(Number) : null;
+
+/** Whether `host` (a URL's hostname, or an address) is loopback, private, link-local or otherwise not out on the internet. */
+export function privateHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
+  const a = v4(h);
+  if (a) {
+    const [x, y] = a as [number, number];
+    return x === 0 || x === 10 || x === 127 || x >= 224 || (x === 169 && y === 254) || (x === 172 && y >= 16 && y <= 31)
+      || (x === 192 && y === 168) || (x === 100 && y >= 64 && y <= 127) || (x === 192 && y === 0 && a[2] === 0) || (x === 198 && (y === 18 || y === 19));
+  }
+  if (!h.includes(":")) return false;
+  // IPv6: unspecified, loopback, unique-local (fc00::/7), link-local (fe80::/10), multicast, and IPv4 in IPv6.
+  if (h === "::" || h === "::1" || /^f[cd]/.test(h) || /^fe[89ab]/.test(h) || h.startsWith("ff")) return true;
+  const mapped = /^(?:0*:)*:?(?:ffff:)?(\d+\.\d+\.\d+\.\d+)$/.exec(h)?.[1];
+  if (mapped) return privateHost(mapped);
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(h);
+  return !!hex && privateHost([parseInt(hex[1]!, 16) >> 8, parseInt(hex[1]!, 16) & 255, parseInt(hex[2]!, 16) >> 8, parseInt(hex[2]!, 16) & 255].join("."));
+}
+
+/** On the desktop: whether `url`'s host resolves to a private address. A name that doesn't resolve isn't, and fails on its own. */
+async function resolvesInward(url: string) {
+  if (typeof Bun === "undefined") return false;
+  const host = new URL(url).hostname;
+  if (privateHost(host)) return true;
+  try {
+    const { lookup } = await import("node:dns/promises");
+    return (await lookup(host.replace(/^\[|\]$/g, ""), { all: true })).some((r) => privateHost(r.address));
+  } catch { return false; }
+}
+
 /** One try: POST it and log the answer. Says how many seconds until the next try, or null when there's none. */
 async function attempt(env: Env, d: Delivery, url: string, secret: string, github: boolean) {
   const send = (env.HOOK_FETCH as typeof fetch | undefined) ?? fetch;
   let code = 0, response = "";
   try {
+    if (await resolvesInward(url)) throw new Error("refused: the hook's host is a private address");
     const res = await send(url, {
       method: "POST",
       body: d.payload,
@@ -153,7 +195,7 @@ export async function deliverHooks(batch: { messages: readonly { body: HookMessa
 function checkUrl(u: unknown) {
   try {
     const url = new URL(String(u));
-    return (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password ? url.toString() : null;
+    return (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password && !privateHost(url.hostname) ? url.toString() : null;
   } catch { return null; }
 }
 
@@ -173,7 +215,7 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
   if (!id && req.method === "POST") {
     const b = (await req.json().catch(() => ({}))) as { url?: string; events?: string[]; secret?: string; github_compat?: boolean };
     const url = checkUrl(b.url);
-    if (!url) return json({ error: "url: an http(s) URL, without a password in it" }, 400);
+    if (!url) return json({ error: "url: an http(s) URL out on the internet (not a private or loopback address), without a password in it" }, 400);
     const events = b.events ?? [...EVENTS];
     if (!Array.isArray(events) || !events.length || events.some((e) => !EVENTS.includes(e as Event))) return json({ error: `events: some of ${EVENTS.join(", ")}` }, 400);
     if (b.secret !== undefined && (typeof b.secret !== "string" || b.secret.length < 16)) return json({ error: "secret: at least 16 characters, or leave it out for one made for you" }, 400);
@@ -183,6 +225,7 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
     const hook = { id: crypto.randomUUID().slice(0, 8), url, events: [...new Set(events)], secret: b.secret ?? hex(crypto.getRandomValues(new Uint8Array(24)).buffer), github_compat: b.github_compat ?? false, created_at: Date.now() };
     await env.DB.prepare("INSERT INTO webhooks (id, owner, repo, url, secret, events, github_compat, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(hook.id, owner, repo, hook.url, hook.secret, hook.events.join(","), hook.github_compat ? 1 : 0, hook.created_at).run();
+    await audit(env, req, { actor: user, action: "hook.create", owner, repo, target: hook.id, detail: new URL(hook.url).host });
     return json(hook, 201);
   }
 
@@ -193,6 +236,7 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
       env.DB.prepare("DELETE FROM webhooks WHERE id = ?").bind(id),
       env.DB.prepare("DELETE FROM webhook_deliveries WHERE hook = ?").bind(id),
     ]);
+    await audit(env, req, { actor: user, action: "hook.delete", owner, repo, target: id, detail: new URL(hook.url as string).host });
     return json({ ok: true });
   }
   if (p[6] === "deliveries" && !p[7] && req.method === "GET") {

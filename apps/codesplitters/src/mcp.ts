@@ -10,8 +10,10 @@
 // Or sign in with OAuth (oauth.ts): with no header, the 401 points the client at
 // /.well-known/oauth-protected-resource/api/mcp, and it opens a sign-in page.
 //
-// A read token lists only the reads. Risky operations (openapi.ts `risky`) are marked
-// destructive, so a client asks a person before it calls them. No sessions and no
+// A read token lists only the reads. Risky operations (openapi.ts `risky`: what changes
+// who can get in or see what, can't be undone, or ships code) are marked destructive, so
+// a client asks a person before it calls them. The hint is the client's to heed; the
+// routes check who may call them all the same. No sessions and no
 // server-sent stream: each POST is one JSON-RPC request, answered as JSON.
 
 import { json } from "./env.ts";
@@ -28,7 +30,7 @@ export interface Tool {
 const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const INSTRUCTIONS = "codeSplitters is a code host where every line is its own record with a stable id. "
   + "Read a file with read_file to get its line ids and revs, then edit_lines by id (a set or delete names the line's rev as base; a 409 means read again). "
-  + "Files are addressed by owner, repo and path. Given an invite link (…/invite/csi_…), claim it with claim_invite, as: agent, then connect again with the token it gives you. Tools marked destructive can't be undone or ship code: ask the person first.";
+  + "Files are addressed by owner, repo and path. Given an invite link (…/invite/csi_…), claim it with claim_invite, as: agent, then connect again with the token it gives you. Tools marked destructive change who can get in or see what, can't be undone, or ship code: ask the person first.";
 
 /** Inline every $ref, so each tool's schema stands alone. */
 const inline = (s: unknown, defs: Record<string, Schema>): any => {
@@ -60,7 +62,7 @@ export function tools(): Tool[] {
       const risky = !!op["x-codesplitters-risky"], read = method === "get";
       out.push({
         name: op.operationId, title: op.summary, tag: op.tags[0], risky,
-        description: [op.summary, op.description, `(${method.toUpperCase()} /api${path})`, risky && "Can't be undone, or ships code: ask the person first."].filter(Boolean).join(" "),
+        description: [op.summary, op.description, `(${method.toUpperCase()} /api${path})`, risky && "Changes who can get in or see what, can't be undone, or ships code: ask the person first."].filter(Boolean).join(" "),
         inputSchema: { type: "object", properties, ...(required.length && { required }), additionalProperties: false },
         annotations: { title: op.summary, readOnlyHint: read, destructiveHint: risky, idempotentHint: read || method === "put", openWorldHint: false },
         method: method.toUpperCase(), path, pathParams, queryParams, hasBody: !!body,

@@ -29,6 +29,7 @@ import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
 import { bearer, tokenRoutes } from "./tokens.ts";
+import { audit, auditRoutes, via } from "./audit.ts";
 import { invitePage, inviteRoutes, pendingInvites, repoInviteRoutes } from "./invites.ts";
 import { openapi } from "./openapi.ts";
 import { catalogue, mcp } from "./mcp.ts";
@@ -103,11 +104,15 @@ async function route(req: Request, env: Env): Promise<Response> {
   const user = token ? token.user : await identify(req, env);
   const admin = !token && isAdmin(env, user);
   callers.set(req, user);
+  via.set(req, actingAs.has(req) ? "job" : token ? (token.oauth ? "oauth" : "token") : "cookie");
   if (token && p[1] === "session") return json({ mode: "token", user, token: { id: token.id, label: token.label, scope: token.scope, expires_at: token.expires_at } });
   const slow = byIp ? null : await limit(req, env, rule, user, admin);
   if (slow) return slow;
   const tokens = await tokenRoutes(req, env, p, user);
   if (tokens) return tokens;
+  // GET /api/tokens/audit, /api/repos/:o/:r/audit  the security audit log, yours or a repo's; a deleted repo's too (audit.ts)
+  const trail = await auditRoutes(req, env, p, user);
+  if (trail) return trail;
   // /api/invites[/:token|/claim]  an invite, and coming in through it as a person or an agent (invites.ts)
   const invites = await inviteRoutes(req, env, p, user);
   if (invites) return invites;
@@ -234,7 +239,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       // Where the fork's git lives: a bare repo on this machine, or Cloudflare Artifacts.
       const home = h ? (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(art?.remote ?? h.remote) ? "local" : "cloud") : null;
       // The owner sees who's invited but not in yet, beside the crew.
-      const invites = user === owner ? { invites: await pendingInvites(env, req, owner, repo) } : {};
+      const invites = user === owner ? { invites: await pendingInvites(env, owner, repo) } : {};
       return json({ ...r, mirror: !!r?.mirror, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home, ...invites });
     }
     // PUT /api/repos/:o/:r {visibility}  (owner only)
@@ -243,6 +248,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       const { visibility } = await body<{ visibility: string }>();
       if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
       await env.DB.prepare("UPDATE repos SET visibility = ? WHERE owner = ? AND name = ?").bind(visibility, owner, repo).run();
+      await audit(env, req, { actor: user, action: "repo.visibility", owner, repo, detail: visibility });
       return json({ visibility });
     }
     // DELETE /api/repos/:o/:r?confirm=:r  (owner only) the repo and everything of it here: rows, file DOs, git.
@@ -251,6 +257,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (user !== owner) return json({ error: "owner only" }, 403);
       if (url.searchParams.get("confirm") !== repo) return json({ error: `to delete it, confirm with its name: ?confirm=${repo}` }, 400);
       await evict(env, owner, repo);
+      await audit(env, req, { actor: user, action: "repo.delete", owner, repo });
       return json({ deleted: `${owner}/${repo}` });
     }
     // POST /api/repos/:o/:r/shares {path, from, to, note}  a live link to some lines
@@ -315,7 +322,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       // agent- handles are ours to give (no person can pick one): a hosted agent comes in this way.
       if (isAgentHandle(name)) await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
       else if (!(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(name).first())) return json({ error: `no one's @${name} here yet: send them an invite link` }, 404);
-      await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
+      const r = await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
+      if (r.meta?.changes) await audit(env, req, { actor: user, action: "crew.add", owner, repo, target: name });
       return json({ ok: true });
     }
     // DELETE /api/repos/:o/:r/collaborators/:name  (owner only) out of the crew; what they wrote stays theirs
@@ -325,6 +333,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (!r.meta?.changes) return json({ error: `@${p[5]} isn't in the crew` }, 404);
       // An agent's token for this repo goes with it.
       await env.DB.prepare("DELETE FROM api_tokens WHERE name = ? AND repo = ?").bind(p[5], `${owner}/${repo}`).run();
+      await audit(env, req, { actor: user, action: "crew.remove", owner, repo, target: p[5] });
       return json({ ok: true });
     }
     // /api/repos/:o/:r/invites[/:token]  invite by handle, email or a bare link; the pending ones; revoke (invites.ts)

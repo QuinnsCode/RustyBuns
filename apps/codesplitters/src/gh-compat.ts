@@ -11,13 +11,14 @@
 // sha's ref is the one its runs or its push upstream were on, else main.
 //
 // A CI token reaches one repo's checks and nothing else. The owner makes and
-// revokes them; only the SHA-256 is kept, and the secret is shown once. It's sent
+// revokes them; only the SHA-256 is kept, and the secret is shown once. Each
+// expires, 90 days out unless it was made with days (1 to 365), and is then a 401. It's sent
 // as `Authorization: token …` or `Bearer …`, as tools send a GitHub PAT. Each
 // token's calls count against the `ci` rate limit (limits.ts), and its label is
 // the runner_label of the runs it reports, so the checks pill names the CI.
 //
 //   GET    /api/repos/:o/:r/checks/tokens       the repo's CI tokens, without their secrets (owner only)
-//   POST   /api/repos/:o/:r/checks/tokens {label}  make one: the secret is shown this once (owner only)
+//   POST   /api/repos/:o/:r/checks/tokens {label, days?}  make one: the secret is shown this once (owner only)
 //   DELETE /api/repos/:o/:r/checks/tokens/:id   revoke it (owner only)
 //
 //   POST   /api/gh/v3/repos/:o/:r/statuses/:sha      {state, context?, target_url?, description?}
@@ -27,11 +28,13 @@
 //   GET    /api/gh/v3/repos/:o/:r/commits/:sha/check-runs   {total_count, check_runs}
 
 import { DONE, fromCheckRun, fromState, get, recordRun, shaped, updateRun, type CheckRun, type Status } from "./checks.ts";
+import { audit } from "./audit.ts";
 import { json, type Env } from "./env.ts";
 import { limit } from "./limits.ts";
-import { b64url, hash } from "./tokens.ts";
+import { b64url, DAY, hash, MAX_DAYS } from "./tokens.ts";
 
 const MAX_TOKENS = 20;
+export const CI_TOKEN_DAYS = 90;
 const DOCS = "https://docs.github.com/rest";
 /** GitHub's errors are {message, documentation_url}; clients read message. */
 const fail = (message: string, status: number, headers?: Record<string, string>) => json({ message, documentation_url: DOCS }, status, headers);
@@ -41,33 +44,39 @@ export async function ciTokenRoutes(req: Request, env: Env, p: string[], owner: 
   if (p[4] !== "checks" || p[5] !== "tokens") return null;
   if (user !== owner) return json({ error: "owner only" }, 403);
   if (!p[6] && req.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT id, label, last4, created_by, created_at, last_used_at FROM ci_tokens WHERE owner = ? AND repo = ? ORDER BY created_at DESC").bind(owner, repo).all();
-    return json(results);
+    const { results } = await env.DB.prepare("SELECT id, label, last4, created_by, created_at, expires_at, last_used_at FROM ci_tokens WHERE owner = ? AND repo = ? ORDER BY created_at DESC").bind(owner, repo).all();
+    return json(results.map((t: any) => ({ ...t, expired: t.expires_at <= Date.now() })));
   }
   if (!p[6] && req.method === "POST") {
-    const b = (await req.json().catch(() => ({}))) as { label?: string };
+    const b = (await req.json().catch(() => ({}))) as { label?: string; days?: number };
     const label = String(b.label ?? "").trim().slice(0, 60);
     if (!label) return json({ error: "label: which CI it's for, like jenkins" }, 400);
+    const days = b.days ?? CI_TOKEN_DAYS;
+    if (!Number.isInteger(days) || days < 1 || days > MAX_DAYS) return json({ error: `days: 1 to ${MAX_DAYS}` }, 400);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM ci_tokens WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     if ((n?.n as number ?? 0) >= MAX_TOKENS) return json({ error: `at most ${MAX_TOKENS} CI tokens a repo: revoke one first` }, 400);
     const secret = "csci_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
-    const t = { id: crypto.randomUUID().slice(0, 8), label, last4: secret.slice(-4), created_by: user, created_at: Date.now() };
-    await env.DB.prepare("INSERT INTO ci_tokens (id, owner, repo, label, hash, last4, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(t.id, owner, repo, t.label, await hash(secret), t.last4, t.created_by, t.created_at).run();
+    const now = Date.now();
+    const t = { id: crypto.randomUUID().slice(0, 8), label, last4: secret.slice(-4), created_by: user, created_at: now, expires_at: now + days * DAY };
+    await env.DB.prepare("INSERT INTO ci_tokens (id, owner, repo, label, hash, last4, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(t.id, owner, repo, t.label, await hash(secret), t.last4, t.created_by, t.created_at, t.expires_at).run();
+    await audit(env, req, { actor: user, action: "ci_token.create", owner, repo, target: t.id, detail: label });
     return json({ ...t, token: secret }, 201);
   }
   if (p[6] && !p[7] && req.method === "DELETE") {
     const r = await env.DB.prepare("DELETE FROM ci_tokens WHERE id = ? AND owner = ? AND repo = ?").bind(p[6], owner, repo).run();
-    return r.meta?.changes ? json({ ok: true }) : json({ error: "no such token" }, 404);
+    if (!r.meta?.changes) return json({ error: "no such token" }, 404);
+    await audit(env, req, { actor: user, action: "ci_token.revoke", owner, repo, target: p[6] });
+    return json({ ok: true });
   }
   return null;
 }
 
-/** The repo's CI token a request carries, as `token …` or `Bearer …`, or null. */
+/** The repo's live CI token a request carries, as `token …` or `Bearer …`, or null (an expired one too). */
 async function ciToken(req: Request, env: Env, owner: string, repo: string) {
   const secret = /^(?:token|bearer)\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1];
   if (!secret) return null;
-  const t = await env.DB.prepare("SELECT id, label, last_used_at FROM ci_tokens WHERE hash = ? AND owner = ? AND repo = ?").bind(await hash(secret), owner, repo).first() as { id: string; label: string; last_used_at: number | null } | null;
+  const t = await env.DB.prepare("SELECT id, label, last_used_at FROM ci_tokens WHERE hash = ? AND owner = ? AND repo = ? AND expires_at > ?").bind(await hash(secret), owner, repo, Date.now()).first() as { id: string; label: string; last_used_at: number | null } | null;
   // Last used, to the minute.
   if (t && (!t.last_used_at || Date.now() - t.last_used_at > 60_000)) await env.DB.prepare("UPDATE ci_tokens SET last_used_at = ? WHERE id = ?").bind(Date.now(), t.id).run();
   return t;

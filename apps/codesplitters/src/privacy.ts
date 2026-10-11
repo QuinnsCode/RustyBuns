@@ -54,6 +54,8 @@ export async function exportFor(env: Env, handle: string) {
     agent_runs: await all(env, "SELECT r.owner, r.repo, r.path, r.harness, r.task, r.model, r.status, r.started FROM agent_runs r JOIN repos o ON o.owner = r.owner AND o.name = r.repo WHERE o.owner = ?", handle),
     api_tokens: await all(env, "SELECT label, scope, last4, created_at, expires_at, last_used_at FROM api_tokens WHERE name = ? AND grant_id IS NULL", handle),
     connected_apps: await all(env, "SELECT client_name, scope, created_at, last_used_at FROM oauth_grants WHERE name = ?", handle),
+    // The security audit log (audit.ts): what you did, and what was done in your repos.
+    audit: await all(env, "SELECT at, actor, via, action, owner, repo, target, detail, country FROM audit WHERE actor = ? OR owner = ? ORDER BY id", handle, handle),
     // What the insights page counts (insights.ts): your requests per day, and the first and last time you did each step.
     usage: await all(env, "SELECT day, kind, via, hits, errors, first_at, last_at, ua FROM traffic WHERE who = ? ORDER BY day", `@${handle}`),
     steps: await all(env, "SELECT step, first_at, last_at, n FROM user_steps WHERE name = ?", handle),
@@ -120,6 +122,7 @@ export async function eraseUser(env: Env, handle: string): Promise<string[]> {
     by("DELETE FROM traffic WHERE who = ?", `@${handle}`),
     by("DELETE FROM user_steps WHERE name = ?", handle),
     by("DELETE FROM line_events WHERE who = ?", handle),
+    by("DELETE FROM audit WHERE actor = ? OR owner = ?", handle, handle),
     by("DELETE FROM feed_digests WHERE name = ?", handle),
     // evict leaves these: agent runs (the tasks you gave) and the limits counted against you.
     by("DELETE FROM agent_runs WHERE owner = ?", handle),

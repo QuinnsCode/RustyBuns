@@ -828,7 +828,7 @@ async function jobsBadge() {
 }
 // Invites to your handle (GET /api/invites), so you hear of them without the owner sending the link:
 // a badge in the top bar, straight to the invite when there's one, and a box on your profile.
-const inviteRow = (i) => `<a href="#/i/${esc(i.token)}" title="ends ${new Date(i.expires_at).toLocaleDateString()}">${icon("mail")}<span><b>${esc(i.owner)}/${esc(i.repo)}</b> <span class="muted">from @${esc(i.by)}${i.note ? `: “${esc(i.note)}”` : ""}</span></span><span class="when">${ago(i.created_at)}</span></a>`;
+const inviteRow = (i) => `<a href="#/i/${esc(i.id)}" title="ends ${new Date(i.expires_at).toLocaleDateString()}">${icon("mail")}<span><b>${esc(i.owner)}/${esc(i.repo)}</b> <span class="muted">from @${esc(i.by)}${i.note ? `: “${esc(i.note)}”` : ""}</span></span><span class="when">${ago(i.created_at)}</span></a>`;
 async function invitesBadge() {
   const el = $("#invited");
   if (!el) return;
@@ -883,8 +883,10 @@ async function wireTokens(made) {
     <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for, like a deploy script" required>
       <div style="display:flex;flex-wrap:wrap;gap:6px"><select name="scope" style="flex:1;min-width:0"><option value="read">Read only</option><option value="write">Read and write</option></select>
       <select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select>
-      <button class="btn primary">${icon("plus")}Make</button></div></form>`;
+      <button class="btn primary">${icon("plus")}Make</button></div></form>
+    <details id="my-audit" style="margin-top:10px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("shield")} Audit log: tokens, crews, invites and keys you changed</summary><div></div></details>`;
   icons();
+  $("#my-audit").addEventListener("toggle", (e) => { if (e.target.open) wireAudit(e.target.lastElementChild, "/tokens/audit", true); }, { once: true });
   $("#connect-cmd").addEventListener("click", () => copy(mcpSignIn(), "Command copied"));
   $("#connect-url").addEventListener("click", () => copy(mcpUrl(), "URL copied"));
   $("#token-copy")?.addEventListener("click", () => copy(made.token, "Token copied"));
@@ -900,6 +902,22 @@ async function wireTokens(made) {
   el.querySelectorAll("[data-signout]").forEach((b) => b.addEventListener("click", async () => {
     await api(`/oauth/grants/${b.dataset.signout}`, undefined, "DELETE"); toast("App signed out"); wireTokens();
   }));
+}
+// The security audit log (GET /api/tokens/audit, /api/repos/:o/:r/audit; src/audit.ts): who did what, signed in how, from where.
+const AUDIT_SAID = {
+  "token.create": "made API token", "token.revoke": "revoked API token", "ci_token.create": "made CI token", "ci_token.revoke": "revoked CI token",
+  "crew.add": "added to the crew", "crew.remove": "took out of the crew", "invite.create": "invited", "invite.revoke": "revoked invite", "invite.claim": "came in by invite",
+  "repo.visibility": "made it", "repo.delete": "deleted the repo", "hook.create": "added webhook", "hook.delete": "deleted webhook",
+  "deploy_key.set": "set deploy key", "deploy_key.delete": "removed deploy key",
+};
+async function wireAudit(el, path, showRepo) {
+  const rows = await api(path).catch(() => null);
+  if (!rows) { el.innerHTML = '<span class="muted" style="font-size:12px">unavailable</span>'; return; }
+  el.innerHTML = rows.length ? `<div class="list">${rows.map((a) => `<div class="row" style="flex-wrap:nowrap;font-size:12px" title="${esc(new Date(a.at).toLocaleString())}">
+      <span style="flex:1;min-width:0">${a.actor ? `<a href="#/u/${esc(a.actor)}">@${esc(a.actor)}</a>` : "someone"} ${esc(AUDIT_SAID[a.action] ?? a.action)}
+      ${[a.target, a.detail].filter(Boolean).map((x) => `<code>${esc(x)}</code>`).join(" ")}${showRepo && a.repo ? ` <span class="muted">in ${esc(a.owner)}/${esc(a.repo)}</span>` : ""}
+      <span class="muted">· ${esc(a.via)}${a.country ? ` · ${esc(a.country)}` : ""}</span></span><span class="when">${ago(a.at)}</span></div>`).join("")}</div>`
+    : '<span class="muted" style="font-size:12px">Nothing yet.</span>';
 }
 const app = $("#app");
 let socket = null;
@@ -2297,6 +2315,7 @@ const views = {
       + (owner === me() ? sec("send", "Deploy", `<div id="deploy"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("webhook", "Webhooks", `<div id="hooks"><span class="muted">…</span></div>`) : "")
+      + (owner === me() ? sec("shield", "Audit log", `<details id="audit"><summary class="muted" style="font-size:12px;cursor:pointer">tokens, crew, invites, visibility, webhooks and deploy keys: who changed them</summary><div></div></details>`) : "")
       + (owner === me() ? sec("trash-2", "Delete this repo", `<form id="delrepo" style="display:grid;gap:6px;font-size:13px"><span class="muted" style="font-size:12px">Gone for good here: its files, branches, cuts, shares, logs and git. GitHub never hears, and a stack it deployed stays up.</span>
         <input name="name" placeholder="type ${esc(repo)} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete ${esc(owner)}/${esc(repo)}</button></div></form>`) : "");
   },
@@ -2719,17 +2738,16 @@ const views = {
     }));
     icons();
   },
-  /** The owner's pending invites, under the crew: copy a link again, or revoke it. */
+  /** The owner's pending invites, under the crew: revoke one. Its link was shown once, when it was made (only its hash is kept). */
   async wireInvites(owner, repo, list) {
     const el = $("#pending");
     if (!el) return;
     list ??= await api(`/repos/${owner}/${repo}/invites`).catch(() => []);
-    el.innerHTML = list.length ? `<p class="muted" style="font-size:12px;margin-bottom:4px">Invited, not in yet</p>${list.map((i) => `<div style="display:flex;align-items:center;gap:4px;font-size:13px" data-token="${esc(i.token)}" title="${esc([i.note, `ends ${new Date(i.expires_at).toLocaleDateString()}`].filter(Boolean).join(" · "))}">
+    el.innerHTML = list.length ? `<p class="muted" style="font-size:12px;margin-bottom:4px">Invited, not in yet</p>${list.map((i) => `<div style="display:flex;align-items:center;gap:4px;font-size:13px" data-id="${esc(i.id)}" title="${esc([i.note, `…${i.last4}`, `ends ${new Date(i.expires_at).toLocaleDateString()}`].filter(Boolean).join(" · "))}">
       ${icon(i.kind === "email" ? "mail" : i.kind === "handle" ? "at-sign" : "link")}<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.kind === "link" ? "a link, person or agent" : esc(i.kind === "handle" ? "@" + i.target : i.target)}</span>
-      <button class="btn ghost" data-copy="${esc(i.link)}" title="copy the link">${icon("copy")}</button><button class="btn ghost" data-revoke title="revoke it">${icon("x")}</button></div>`).join("")}` : "";
-    el.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", () => copy(b.dataset.copy, "Invite link copied")));
+      <button class="btn ghost" data-revoke title="revoke it">${icon("x")}</button></div>`).join("")}` : "";
     el.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
-      await api(`/repos/${owner}/${repo}/invites/${b.closest("[data-token]").dataset.token}`, undefined, "DELETE");
+      await api(`/repos/${owner}/${repo}/invites/${b.closest("[data-id]").dataset.id}`, undefined, "DELETE");
       toast("Invite revoked"); views.wireInvites(owner, repo);
     }));
     icons();
@@ -2761,6 +2779,7 @@ const views = {
     views.wirePreview(owner, repo);
     views.wireDeploy(owner, repo);
     views.wireHooks(owner, repo);
+    $("#audit")?.addEventListener("toggle", (e) => { if (e.target.open) wireAudit(e.target.lastElementChild, `/repos/${owner}/${repo}/audit`); }, { once: true });
     $("#delrepo")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try { await deleteRepo(owner, repo, e.target.name.value.trim()); } catch (err) { toast(err.message); }
@@ -4112,15 +4131,16 @@ async function wireCiTokens(owner, repo, made) {
       <div class="copyline"><input readonly value="${esc(masked(made.token))}" title="hidden: copy it with the button"><button class="btn" id="citoken-copy" title="copy the token">${icon("copy")}</button></div></div>` : "";
   el.innerHTML = `<div style="display:grid;gap:4px;margin:6px 0"><span class="muted" style="font-size:12px">Set your CI's GitHub API URL (the GitHub Enterprise option) to this, and its statuses and check runs land here, gating merges like any other check.</span>
       <div class="copyline"><input readonly value="${esc(ghBase())}"><button class="btn" id="ghbase-copy" title="copy the URL">${icon("copy")}</button></div></div>` + fresh
-    + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon("server")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· …${esc(t.last4)} · made ${ago(t.created_at)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : " · never used"}</span></span>
+    + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon("server")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· …${esc(t.last4)} · ${t.expired ? "expired" : `expires ${new Date(t.expires_at).toLocaleDateString()}`}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : " · never used"}</span></span>
       <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("")}</div>
-    <form id="newcitoken" style="display:flex;gap:6px;margin:8px 0 4px"><input name="label" placeholder="which CI, like jenkins" maxlength="60" required style="flex:1;min-width:0"><button class="btn primary">${icon("plus")}Make</button></form>`;
+    <form id="newcitoken" style="display:flex;gap:6px;margin:8px 0 4px"><input name="label" placeholder="which CI, like jenkins" maxlength="60" required style="flex:1;min-width:0">
+      <select name="days" title="how long it lasts"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="365">1 year</option></select><button class="btn primary">${icon("plus")}Make</button></form>`;
   icons();
   $("#ghbase-copy").addEventListener("click", () => copy(ghBase(), "URL copied"));
   $("#citoken-copy")?.addEventListener("click", () => copy(made.token, "Token copied"));
   $("#newcitoken").addEventListener("submit", async (e) => {
     e.preventDefault();
-    try { wireCiTokens(owner, repo, await api(base, { label: e.target.elements.label.value })); } catch (err) { toast(err.message); }
+    try { wireCiTokens(owner, repo, await api(base, { label: e.target.elements.label.value, days: Number(e.target.elements.days.value) })); } catch (err) { toast(err.message); }
   });
   el.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
     try { await api(`${base}/${b.dataset.revoke}`, undefined, "DELETE"); toast("CI token revoked"); wireCiTokens(owner, repo); } catch (err) { toast(err.message); }

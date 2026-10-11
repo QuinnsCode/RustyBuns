@@ -2,8 +2,10 @@
 // (Claude Code, or a gateway like Executor that turns a spec into tools) can drive
 // codeSplitters with a personal API token (tokens.ts). It covers every ⌘K palette
 // command (client.html commands()) and the reads each view makes. Operations that
-// can't be undone, or ship code, carry `x-codesplitters-risky: true`: a gateway's
-// policy should ask a person before it calls them. An agent can sign in with OAuth
+// change who can get in or see what (tokens, invites, the crew, visibility, private
+// lines, shares), can't be undone, or ship code carry `x-codesplitters-risky: true`:
+// a gateway's policy should ask a person before it calls them. That's advice: the
+// server's own checks are what hold. An agent can sign in with OAuth
 // instead of a copied token (the `oauth` scheme, oauth.ts).
 //
 // Written by hand, next to the routes: a route that changes shape changes here too
@@ -28,7 +30,7 @@ interface Op {
   body?: Schema; ok?: Schema; status?: number;
   /** Needs no token: public reads answer anyone. */
   open?: true;
-  /** Can't be undone, or ships code. */
+  /** Changes who can get in or see what, can't be undone, or ships code. */
   risky?: true;
 }
 
@@ -97,7 +99,7 @@ const OPS: Record<string, Record<string, Op>> = {
     ok: obj({ owner: str(), name: str(), visibility: str() }), status: 201 } },
   [repo]: {
     get: { id: "get_repo", summary: "A repo: visibility, crew, whether you can write, and a git clone command with an hour-long read token", tag: "Repos", open: true, ok: ref("Repo") },
-    put: { id: "set_repo_visibility", summary: "Make a repo public or private (owner only)", tag: "Repos",
+    put: { id: "set_repo_visibility", summary: "Make a repo public or private (owner only)", tag: "Repos", risky: true,
       body: obj({ visibility: { type: "string", enum: ["public", "private"] } }, ["visibility"]), ok: obj({ visibility: str() }) },
     delete: { id: "delete_repo", summary: "Delete a repo and everything of it here, for good (owner only)", tag: "Repos", risky: true,
       description: "Its files, branches, cuts, shares, logs and git. GitHub never hears, and a stack it deployed stays up.",
@@ -124,7 +126,7 @@ const OPS: Record<string, Record<string, Op>> = {
     query: filePath, body: obj({ message: str() }), ok: { allOf: [ref("Commit"), obj({ git: loose("{commit, parent} or {error}") })] } } },
   [`${repo}/do/private`]: {
     get: { id: "private_lines", summary: "The ids of a file's private lines", tag: "Files", open: true, query: filePath, ok: arr(str()) },
-    post: { id: "set_private_lines", summary: "Hide lines from everyone but the crew, git included (the crew), or show them again (the owner only)", tag: "Files",
+    post: { id: "set_private_lines", summary: "Hide lines from everyone but the crew, git included (the crew), or show them again (the owner only)", tag: "Files", risky: true,
       query: filePath, body: obj({ lines: arr(str("line id")), private: bool() }, ["lines", "private"]), ok: arr(str()) },
   },
   [`${repo}/shares`]: { post: { id: "share_lines", summary: "A live link to some lines, even from a private repo", tag: "Sharing",
@@ -132,7 +134,7 @@ const OPS: Record<string, Record<string, Op>> = {
     ok: obj({ id: str("open it at /#/s/{id}"), from: int(), to: int() }), status: 201 } },
   "/shares/{id}": {
     get: { id: "get_share", summary: "Shared lines as they are now", tag: "Sharing", open: true, ok: loose("{id, owner, repo, path, note, by, from, to, lines: [{id, n, text, by, rev, private?}], gone?}") },
-    delete: { id: "delete_share", summary: "Revoke a share (whoever shared it, or the repo's owner)", tag: "Sharing", ok: ref("Ok") },
+    delete: { id: "delete_share", summary: "Revoke a share (whoever shared it, or the repo's owner)", tag: "Sharing", risky: true, ok: ref("Ok") },
   },
   [`${repo}/stamps`]: {
     get: { id: "list_stamps", summary: "A file's stamps, line by line", tag: "Sharing", open: true, query: filePath,
@@ -149,17 +151,18 @@ const OPS: Record<string, Record<string, Op>> = {
   "/cuts/{id}": { get: { id: "get_cut", summary: "A cut: its files, each line with where it came from on main, and its last test run", tag: "Cuts", open: true,
     ok: loose("{id, owner, repo, branch, note, paths, files: [{path, lines: [{id, text, by, rev, n}]}], run, can_run}") } },
   "/cuts/{id}/run": { post: { id: "run_cut", summary: "Run bun test on a cut (the repo's owner)", tag: "Cuts", ok: loose("{code, out, report?}") } },
-  [`${repo}/collaborators`]: { post: { id: "invite", summary: "Add someone, or an agent, who already has a handle straight to the crew (owner only)", tag: "Repos",
+  [`${repo}/audit`]: { get: { id: "repo_audit", summary: "A repo's security audit log, newest first: tokens, crew, invites, visibility, webhooks, deploy keys (owner only)", tag: "Repos", ok: arr(ref("AuditEntry")) } },
+  [`${repo}/collaborators`]: { post: { id: "invite", summary: "Add someone, or an agent, who already has a handle straight to the crew (owner only)", tag: "Repos", risky: true,
     body: obj({ name: str("their handle") }, ["name"]), ok: ref("Ok") } },
-  [`${repo}/collaborators/{name}`]: { delete: { id: "remove_collaborator", summary: "Take someone out of the crew; the lines they wrote stay theirs (owner only)", tag: "Repos", ok: ref("Ok") } },
+  [`${repo}/collaborators/{name}`]: { delete: { id: "remove_collaborator", summary: "Take someone out of the crew; the lines they wrote stay theirs (owner only)", tag: "Repos", risky: true, ok: ref("Ok") } },
   [`${repo}/invites`]: {
     get: { id: "list_invites", summary: "A repo's pending invites (owner only)", tag: "Invites", ok: arr(ref("Invite")) },
-    post: { id: "create_invite", summary: "Invite someone to the crew by handle, by email, or with a bare link to pass on (owner only)", tag: "Invites",
-      description: "Give a handle or an email, or neither for a bare link. Only a bare link lets an agent in. The link works once, for 7 days unless days says otherwise; an email invite is mailed when the site sends mail.",
+    post: { id: "create_invite", summary: "Invite someone to the crew by handle, by email, or with a bare link to pass on (owner only)", tag: "Invites", risky: true,
+      description: "Give a handle or an email, or neither for a bare link. Only a bare link lets an agent in. The link works once, for 7 days unless days says otherwise; an email invite is mailed when the site sends mail. The link is in this answer only: just its hash is kept.",
       body: obj({ handle: str(), email: str(), note: str("shown on the invite"), days: int("1 to 30") }), ok: ref("Invite"), status: 201 },
   },
-  [`${repo}/invites/{token}`]: { delete: { id: "revoke_invite", summary: "Revoke a pending invite (owner only)", tag: "Invites", ok: ref("Ok") } },
-  "/invites": { get: { id: "my_invites", summary: "Pending invites to your handle, with their links", tag: "Invites", ok: arr(ref("Invite")) } },
+  [`${repo}/invites/{id}`]: { delete: { id: "revoke_invite", summary: "Revoke a pending invite (owner only)", tag: "Invites", risky: true, ok: ref("Ok") } },
+  "/invites": { get: { id: "my_invites", summary: "Pending invites to your handle: open or claim one by its id", tag: "Invites", ok: arr(ref("Invite")) } },
   "/invites/{token}": { get: { id: "get_invite", summary: "An invite: the repo, who invited and their note, and which doors it opens", tag: "Invites", open: true,
     ok: loose("{owner, repo, visibility, by, note, kind, for, emailed, expires_at, doors, you?, member?}") } },
   "/invites/claim": { post: { id: "claim_invite", summary: "Claim an invite link: join the crew as yourself, or as a new agent with its own handle and token", tag: "Invites",
@@ -210,11 +213,11 @@ const OPS: Record<string, Record<string, Op>> = {
   },
   [`${repo}/checks/tokens`]: {
     get: { id: "list_ci_tokens", summary: "The repo's CI tokens, without their secrets (owner only)", tag: "Checks", ok: arr(ref("CiToken")) },
-    post: { id: "create_ci_token", summary: "Make a CI token for external CI to report checks with (owner only)", tag: "Checks",
-      description: "Set the CI's GitHub API base URL to /api/gh/v3 on this site and give it this token as its GitHub token: its commit statuses and check runs land in the repo's checks as external runs, labelled with the token's label. It reaches this repo's checks and nothing else. The secret is in this answer only. At most 20 a repo.",
-      body: obj({ label: str("which CI it's for, like jenkins") }, ["label"]), ok: obj({ id: str(), label: str(), last4: str(), created_by: str(), created_at: int("ms"), token: str("the secret, shown this once") }), status: 201 },
+    post: { id: "create_ci_token", summary: "Make a CI token for external CI to report checks with (owner only)", tag: "Checks", risky: true,
+      description: "Set the CI's GitHub API base URL to /api/gh/v3 on this site and give it this token as its GitHub token: its commit statuses and check runs land in the repo's checks as external runs, labelled with the token's label. It reaches this repo's checks and nothing else, until it expires. The secret is in this answer only. At most 20 a repo.",
+      body: obj({ label: str("which CI it's for, like jenkins"), days: int("how long it lasts, 1 to 365; 90 if left out") }, ["label"]), ok: obj({ id: str(), label: str(), last4: str(), created_by: str(), created_at: int("ms"), expires_at: int("ms"), token: str("the secret, shown this once") }), status: 201 },
   },
-  [`${repo}/checks/tokens/{id}`]: { delete: { id: "revoke_ci_token", summary: "Revoke a CI token: the CI's next report is a 401 (owner only)", tag: "Checks", ok: ref("Ok") } },
+  [`${repo}/checks/tokens/{id}`]: { delete: { id: "revoke_ci_token", summary: "Revoke a CI token: the CI's next report is a 401 (owner only)", tag: "Checks", risky: true, ok: ref("Ok") } },
   [`${repo}/checks/{id}`]: {
     get: { id: "get_check", summary: "One check run, with its log", tag: "Checks", open: true, ok: loose("a check run, plus {log, junit}") },
     put: { id: "update_check", summary: "Report on a check run: its status, its log (the runner that claimed it, or the owner)", tag: "Checks",
@@ -233,7 +236,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: { id: "start_agent", summary: "Give a coding agent a task on a file (owner only)", tag: "Agents",
       body: obj({ path: str(), harness: str("one GET /agents lists"), task: str(), model: str() }, ["path", "harness", "task"]), ok: loose("the run"), status: 202 },
   },
-  [`${repo}/agents/stop`]: { post: { id: "stop_agents", summary: "Stop running coding agents: by run, file, harness or the lines they claimed (owner only)", tag: "Agents",
+  [`${repo}/agents/stop`]: { post: { id: "stop_agents", summary: "Stop running coding agents: by run, file, harness or the lines they claimed (owner only)", tag: "Agents", risky: true,
     description: "Every filter given must match; with none, every running agent on the repo stops. The CLI is killed (a hosted run's container destroyed within a few seconds), nothing more it does lands, and its claim on lines is lifted.",
     body: obj({ ids: arr(int()), path: str(), harness: str(), lines: arr(str("a line id")) }), ok: obj({ stopped: arr(int()) }) } },
   [`${repo}/agents/{id}/notes`]: { post: { id: "tell_agent", summary: "Tell a running coding agent something, for its next run (owner only)", tag: "Agents",
@@ -276,14 +279,16 @@ const SCHEMAS: Record<string, Schema> = {
   Follow: obj({ id: int("unfollow by this"), kind: { type: "string", enum: ["user", "agent", "repo", "lines"] }, name: str("user or agent: the handle"),
     owner: str(), repo: str(), path: str("lines: the file"), ids: arr(str("lines: every line id in the range when followed")),
     from_line: int("lines: where the range began when followed"), to_line: int(), created_at: int("ms") }, ["id", "kind", "created_at"]),
-  Invite: obj({ token: str("csi_…"), link: str("…/invite/csi_…"), kind: str("handle, email or link"), target: { type: ["string", "null"] }, note: str(), by: str(), created_at: int(), expires_at: int(),
+  Invite: obj({ id: str("revoke it, or (invited by handle) open and claim it, by this"), last4: str("the token's last four characters"), token: str("csi_…, when it's made only"), link: str("…/invite/csi_…, when it's made only"), kind: str("handle, email or link"), target: { type: ["string", "null"] }, note: str(), by: str(), created_at: int(), expires_at: int(),
     owner: str(), repo: str(), mailed: bool("an email invite: whether it went out") }),
+  AuditEntry: obj({ id: int(), at: int("ms"), actor: { type: ["string", "null"] }, via: str("cookie, token, oauth, job or invite"), action: str("like token.create or crew.remove"),
+    owner: { type: ["string", "null"] }, repo: { type: ["string", "null"] }, target: { type: ["string", "null"], description: "what it was done to" }, detail: { type: ["string", "null"] }, country: { type: ["string", "null"] } }),
   Stamp: obj({ owner: str(), repo: str(), path: str(), line: str("line id"), stamp: str(), by: str("who stamped it"), author: str("who wrote the line, person or agent"), created_at: int("ms") }),
   CheckStatus: { type: "string", enum: ["queued", "running", "passed", "failed", "cancelled"] },
   CheckRun: obj({ id: int(), ref: str("main or a branch"), sha: str(), name: str(), runner: { type: "string", enum: ["desktop", "container", "github", "external"] }, status: ref("CheckStatus"),
     started_at: { type: ["integer", "null"] }, finished_at: { type: ["integer", "null"] }, url: { type: ["string", "null"], description: "GitHub's page, for an imported job" },
     runner_label: { type: ["string", "null"], description: "the runner that claimed it, or the CI token an external run came in on" }, created_at: int() }),
-  CiToken: obj({ id: str(), label: str("which CI it's for"), last4: str("the secret's last four characters"), created_by: str(), created_at: int("ms"), last_used_at: { type: ["integer", "null"], description: "ms, to the minute" } }),
+  CiToken: obj({ id: str(), label: str("which CI it's for"), last4: str("the secret's last four characters"), created_by: str(), created_at: int("ms"), expires_at: int("ms"), expired: bool(), last_used_at: { type: ["integer", "null"], description: "ms, to the minute" } }),
   RequiredCheck: { description: "a check's name (* for all), or one scoped to paths and with a command for our runners", oneOf: [str(), obj({ name: str(), paths: arr(str("a directory, file or glob")), command: str() }, ["name"])] },
   CheckSettings: obj({ where: { type: ["string", "null"], description: "here, github or both; null runs none (a GitHub mirror defaults to github)" }, required: arr(obj({ name: str(), paths: arr(str()), command: str() }, ["name"])), post_statuses: bool(), github: { type: ["string", "null"], description: "owner/name, when the repo mirrors GitHub" },
     offline: bool("the mirror can't reach GitHub right now"), down_since: { type: ["integer", "null"] }, here: bool("whether our own checks run: asked for, or in GitHub's place while it's down") }),
@@ -325,7 +330,7 @@ export function openapi(origin: string) {
       description: "A code host where every line is its own record. Make a personal API token on your profile page and send it as `Authorization: Bearer cst_…`: "
         + "it acts as you, counts against your rate limits, and expires. read tokens make GET requests only. Tokens never reach admin routes, sign-in, or token management. "
         + "Or sign in with OAuth (authorization code with PKCE; public clients, so no secret): an app on your own computer may use any client_id with a http://127.0.0.1 or localhost redirect, anything else registers at /api/oauth/register first. "
-        + "Operations marked `x-codesplitters-risky` can't be undone or ship code: ask a person before calling them.",
+        + "Operations marked `x-codesplitters-risky` change who can get in or see what, can't be undone, or ship code: ask a person before calling them.",
     },
     servers: [{ url: `${origin}/api` }],
     components: {
