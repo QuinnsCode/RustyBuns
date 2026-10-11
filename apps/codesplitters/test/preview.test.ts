@@ -157,7 +157,7 @@ test("the config read says which of a Hetzner box's crates would have to compile
   expect(plain).toEqual({ adopt: false, edge: false, box: true, native: null });
 });
 
-test("a hosted deploy refuses a box whose crates need compiling, before anything is created", async () => {
+test("a hosted deploy refuses a box whose crates need compiling for arm64, before anything is created", async () => {
   const native = 'RB {"adopt":false,"edge":true,"box":true,"native":{"arch":"linux-arm64","crates":["fast"]}}\n';
   const steps = () => (["clone", "install", "deploy", "check"] as const).map((key) => ({ key, status: "waiting" as const, out: "" }));
   const { mkdtempSync, rmSync } = await import("node:fs"), { join } = await import("node:path"), { tmpdir } = await import("node:os");
@@ -165,7 +165,7 @@ test("a hosted deploy refuses a box whose crates need compiling, before anything
   try {
     const hosted = fake({ "bun -e": { out: native } });
     const run: Run = { id: "a", at: Date.now(), stage: "prod", steps: steps(), done: false };
-    await preview({ ...hosted.runner, noRust: true, workdir: work }, "https://git.example/r.git", run, { keep: true });
+    await preview({ ...hosted.runner, nativeArches: ["linux-x64"], workdir: work }, "https://git.example/r.git", run, { keep: true });
     expect(Object.fromEntries(run.steps.map((s) => [s.key, s.status]))).toEqual({ clone: "done", install: "done", deploy: "failed", check: "skipped" });
     expect(run.steps[2]!.out).toContain("fast");
     expect(run.note).toContain("desktop");
@@ -175,6 +175,11 @@ test("a hosted deploy refuses a box whose crates need compiling, before anything
     const run2: Run = { id: "b", at: Date.now(), stage: "prod", steps: steps(), done: false };
     await preview({ ...desk.runner, workdir: work }, "https://git.example/r.git", run2, { keep: true });
     expect(desk.ran.some((l) => l.includes("rustybuns deploy"))).toBe(true);
+    // An x86 box's crates build with the container's own cargo, so a hosted deploy goes ahead too.
+    const x86 = fake({ "bun -e": { out: native.replace("linux-arm64", "linux-x64") }, "rustybuns deploy": { out: 'url: "https://x.workers.dev"' } });
+    const run3: Run = { id: "c", at: Date.now(), stage: "prod", steps: steps(), done: false };
+    await preview({ ...x86.runner, nativeArches: ["linux-x64"], workdir: work }, "https://git.example/r.git", run3, { keep: true });
+    expect(x86.ran.some((l) => l.includes("rustybuns deploy"))).toBe(true);
   } finally { rmSync(work, { recursive: true, force: true }); }
 });
 

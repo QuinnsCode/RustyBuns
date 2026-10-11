@@ -8,7 +8,8 @@
     "cli": "bun cli.ts",
     "test": "bun test --parallel test",
     "test:watch": "bun test --watch test",
-    "desktop": "bun ../../packages/cli/src/index.ts build desktop --dev && bun ../../packages/cli/src/index.ts run desktop"
+    "desktop": "bun ../../packages/cli/src/index.ts build desktop --dev && bun ../../packages/cli/src/index.ts run desktop",
+    "desktop:watch": "bun ../../packages/cli/src/index.ts run desktop --watch"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",

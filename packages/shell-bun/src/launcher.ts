@@ -7,6 +7,10 @@
 // launch code instead (shell.launchCode()). The token URL is printed only
 // when there is no browser to open (RB_NO_BROWSER, or the spawn failed).
 // Local tools find a running app through <data>/desktop.json instead (writeDesktopFile).
+//
+// Under `rustybuns run desktop --watch` (RB_WATCH) the first host's window outlives the host,
+// and a restarted host (RB_WATCH=again) opens none: it has the same port and token, so a reload
+// of that window reaches it.
 
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -75,6 +79,7 @@ export function mintToken(): string {
 export async function openBrowser(opts: LaunchOptions): Promise<void> {
   const withToken = opts.token ? `${opts.url}/?token=${opts.token}` : opts.url;
   const fallback = () => console.log(`[rustybuns] could not open a browser. Open this yourself:\n  ${withToken}`);
+  if (process.env["RB_WATCH"] === "again") { console.log(`[rustybuns] restarted: reload ${opts.url}`); return; }
   if (process.env["RB_NO_BROWSER"]) { console.log(`[rustybuns] open ${withToken}`); return; }
   // Without a code the token still has to ride the URL; a code is the safe path.
   const target = opts.code ? `${opts.url}/?rb_launch=${opts.code}` : withToken;
@@ -88,7 +93,7 @@ export async function openBrowser(opts: LaunchOptions): Promise<void> {
   try {
     child = Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" });
   } catch { fallback(); return; }
-  children.push(child);
+  if (!process.env["RB_WATCH"]) children.push(child);
   // open/xdg-open/start hand off and exit; a non-zero exit means nothing opened.
   if (!chromium) void child.exited.then((code) => { if (code !== 0) fallback(); });
 }

@@ -6,7 +6,7 @@ import { openBrowser, writeDesktopFile } from "../src/launcher.ts";
 
 const logs: string[] = [];
 const log = console.log;
-afterEach(() => { console.log = log; logs.length = 0; delete process.env["RB_NO_BROWSER"]; });
+afterEach(() => { console.log = log; logs.length = 0; delete process.env["RB_NO_BROWSER"]; delete process.env["RB_WATCH"]; });
 const capture = () => { console.log = (...a: unknown[]) => { logs.push(a.join(" ")); }; };
 
 test("openBrowser: the token stays out of stdout and the browser's argv", async () => {
@@ -29,6 +29,13 @@ test("openBrowser: with RB_NO_BROWSER the token URL is printed, since nothing el
   capture();
   await openBrowser({ url: "http://127.0.0.1:9", token: "SECRET", code: "once" });
   expect(logs).toEqual(["[rustybuns] open http://127.0.0.1:9/?token=SECRET"]);
+});
+
+test("openBrowser: a host restarted by --watch opens no window and prints no token", async () => {
+  process.env["RB_WATCH"] = "again";
+  capture();
+  await openBrowser({ url: "http://127.0.0.1:9", token: "SECRET", code: "once", browser: "/nonexistent/browser" });
+  expect(logs).toEqual(["[rustybuns] restarted: reload http://127.0.0.1:9"]);
 });
 
 test("openBrowser: a browser that cannot start falls back to printing the token URL", async () => {

@@ -14,6 +14,9 @@ import type { Provider } from "./deploy-keys.ts";
 /** The package registries an install reaches: npm's, and yarn's (corepack fetches pnpm and yarn from them too). */
 export const REGISTRIES = ["registry.npmjs.org", "registry.yarnpkg.com", "repo.yarnpkg.com"];
 
+/** crates.io's sparse index and downloads, for cargo building an x86 Hetzner box's native/ crates (#373). */
+export const CRATES = ["index.crates.io", "static.crates.io"];
+
 /** Each provider's API, for the deploy holding its key. */
 export const PROVIDER_HOSTS: Record<Provider, string[]> = {
   cloudflare: ["api.cloudflare.com"],

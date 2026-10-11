@@ -36,7 +36,7 @@ import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unseal
 import { json, type Env } from "./env.ts";
 import { preview, type Run, type Runner } from "./preview.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
-import { gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
+import { CRATES, gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
 
 interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; again?: string; started?: number }
 
@@ -178,14 +178,16 @@ export class DeployRunner {
       const remote = await remoteFor(this.env, owner, repo);
       if (!remote) throw new Error("this repo has no git remote yet");
       // Only the clone, the registries and the APIs of the providers it holds keys for (#681, src/egress.ts).
-      // Hetzner's deploy reaches its server over SSH, so that one keeps other ports open.
-      const hosts = hostList([hostOf(remote)], REGISTRIES, ...Object.keys(keys).map((p) => PROVIDER_HOSTS[p as Provider]));
+      // Hetzner's deploy reaches its server over SSH, so that one keeps other ports open, and
+      // may compile an x86 box's native/ crates, so it reaches crates.io too.
+      const hosts = hostList([hostOf(remote)], REGISTRIES, ...Object.keys(keys).map((p) => PROVIDER_HOSTS[p as Provider]), keys.hetzner ? CRATES : []);
       await gate(c, this.ctx.exports, hosts);
       c.start({ env: { ...keyEnv(keys), CI: "1" }, enableInternet: !!keys.hetzner });
       const secrets = Object.values(keys).map((k) => k.token);
       const runner: Runner = {
         workdir: `/work/${run.id}`,
-        noRust: true,
+        // The image has cargo (deploy-sandbox/Dockerfile) and no Docker: x86 crates build, arm64 ones can't.
+        nativeArches: ["linux-x64"],
         exec: async (cmd, cwd, out) => {
           const left = deadline - Date.now();
           if (left <= 0) throw new Error(`out of time: a hosted deploy gets ${Math.round(this.budgetMs / 60_000)} minutes`);
