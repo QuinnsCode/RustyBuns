@@ -312,8 +312,11 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   for (const src of [desk, box]) expect(src).toContain('launchCheck(typeof RB_RUSTYBUNS === "string" ? RB_RUSTYBUNS : undefined');
   expect(desk).toContain("await openBrowser");
   expect(desk).not.toContain("/health");
-  expect(desk).not.toContain("memWatch");
+  // The desktop watches itself too: /__rb/mem for the local player only, a ceiling only from RB_MEM_MAX_MB.
+  expect(desk).toContain('if (url.pathname === "/__rb/mem" && !guest) return Response.json(mem.stats());');
+  expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "railway", memMaxMb: 400 } } })).toContain("RB_MEM_MAX_MB) || 0");
   expect(desk).not.toContain("/__rb/prof");
+  expect(desk).not.toContain("cpuProfile");
 });
 
 test("desktop.advisories: the host checks the app's own version and serves the notice in /__rb/info", () => {
@@ -446,6 +449,8 @@ test("artifacts: wrangler, alchemy and the desktop host all get the binding", ()
   expect(host).toContain(`ARTIFACTS: local.artifacts("codesplitters"),`);
   expect(host).toContain(`open: { "/__rb/git/": (req: Request) => gitHttp(req, [env.ARTIFACTS as any]) },`);
   expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
+  // Worker mode watches its memory as well, ahead of the Worker's own routes.
+  expect(host).toContain(`=== "/__rb/mem" ? Response.json(mem.stats()) : (worker as any).fetch(req, e, ctx)`);
 });
 
 test("images: wrangler, alchemy and the desktop host all get the binding; wrangler's carries over", () => {

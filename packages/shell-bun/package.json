@@ -22,6 +22,7 @@
     "./advisories": "./src/advisories.ts",
     "./client": "./src/client.ts",
     "./intro": "./src/intro.tsx",
+    "./memwatch": "./src/memwatch.ts",
     "./shims": "./src/shims.ts"
   },
   "files": [
