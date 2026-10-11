@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { LiveGitHub, touches, type Deps } from "../live/github.ts";
+import { createHmac } from "node:crypto";
+import { Forward, heard, LiveGitHub, signed, touches, type Deps, type Touch } from "../live/github.ts";
 
 test("a worker's gh writes and pushes touch the boards; reads don't", () => {
   expect(touches("gh issue close 12 --reason completed")).toEqual({ issues: true, pulls: false });
@@ -94,4 +95,56 @@ test("a worker's gh command looks again once it settles, and once more after", a
   await Bun.sleep(5_100);
   expect(looked).toEqual({ issues: 2, pulls: 0 });
   l.stop();
+}, 10_000);
+
+test("webhook events touch the boards they can change; a ping doesn't", () => {
+  expect(heard("issues")).toEqual({ issues: true, pulls: false });
+  expect(heard("pull_request")).toEqual({ issues: true, pulls: true });
+  expect(heard("check_suite")).toEqual({ issues: false, pulls: true });
+  expect(heard("ping")).toBeUndefined();
+  expect(heard(null)).toBeUndefined();
+  expect(signed("s", "{}", `sha256=${createHmac("sha256", "s").update("{}").digest("hex")}`)).toBe(true);
+  expect(signed("s", "{}", "sha256=00")).toBe(false);
+  expect(signed("s", "{}", null)).toBe(false);
+});
+
+test("while webhooks are forwarded, the watch stands down", async () => {
+  const gh = fakeGitHub();
+  const { l } = live(gh);
+  l.pushed = true;
+  await l.watch();
+  expect(gh.asked).toEqual([]);
+});
+
+test("the forwarder's signed deliveries reach the boards, and it comes up and goes down with gh", async () => {
+  const got: Touch[] = [];
+  const ups: boolean[] = [];
+  let url = "";
+  let secret = "";
+  const f = new Forward({
+    repo: async () => "o/r",
+    cwd: ".",
+    heard: (t) => got.push(t),
+    up: (on) => ups.push(on),
+    // stands in for `gh webhook forward`: says it's up, then waits
+    command: (repo, u, s) => {
+      expect(repo).toBe("o/r");
+      url = u;
+      secret = s;
+      return ["bun", "-e", "console.error('Forwarding Webhook events from GitHub...'); await Bun.sleep(60_000)"];
+    },
+  });
+  await f.start();
+  for (let i = 0; i < 50 && !ups.length; i++) await Bun.sleep(100);
+  expect(ups).toEqual([true]);
+
+  const send = (event: string, body: string, sig = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`) =>
+    fetch(url, { method: "POST", body, headers: { "x-github-event": event, "x-hub-signature-256": sig } });
+  expect((await send("pull_request", "{}")).status).toBe(204);
+  expect((await send("ping", "{}")).status).toBe(204);
+  expect((await send("issues", "{}", "sha256=forged")).status).toBe(401);
+  expect(got).toEqual([{ issues: true, pulls: true }]);
+
+  f.stop();
+  expect(ups.at(-1)).toBe(false);
 }, 10_000);
