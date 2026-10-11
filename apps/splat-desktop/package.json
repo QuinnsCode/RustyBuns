@@ -9,8 +9,8 @@
     "editor": "bun scripts/build-editor.ts",
     "licenses": "bun scripts/licenses.ts",
     "test": "bun test",
-    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
-    "desktop:build": "rustybuns build desktop"
+    "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
     "@rustybuns/shell-bun": "workspace:*",
