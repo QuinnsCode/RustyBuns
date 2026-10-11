@@ -188,6 +188,8 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 
 [`advisories.json`](advisories.json) lists releases to move off, and which way to go (`upgrade`, or `downgrade` to a given version). Each command checks the installed version against it and against npm's latest at most once a day (cached in `~/.cache/rustybuns/`, 1.5 s timeout). On a listed version it prints how to move before running. It never fails a command, and it is off in CI and with `RUSTYBUNS_NO_UPDATE_CHECK=1`. To flag a release, add an entry, merge it, then run `bun run deprecate:bad` (needs your npm login) so installs warn too.
 
+A built desktop app checks too: `build desktop` stamps the RustyBuns version into it, and at launch the host checks that version the same way (once a day, never blocking the start). A dev host (`run desktop`, `build desktop --dev`) prints how to rebuild; a release binary or box logs one `[rustybuns]` line, so the app's users never get a notice they can't act on. Same off switches.
+
 ## Config
 
 `rustybuns.config.ts` is the one file you own. `init` writes it, and every generated file comes from it.

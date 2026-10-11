@@ -298,6 +298,8 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(desk).not.toContain("not_on_box");
   expect(desk).toContain("version_mismatch");
   expect(desk).toContain("const token = mintToken();");
+  // Both hosts check the RustyBuns they were built with, after they start serving.
+  for (const src of [desk, box]) expect(src).toContain('launchCheck(typeof RB_RUSTYBUNS === "string" ? RB_RUSTYBUNS : undefined');
   expect(desk).toContain("await openBrowser");
   expect(desk).not.toContain("/health");
 });

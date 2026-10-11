@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ADVISORIES_URL, advise, checkDisabled, checkVersion, matching, validRange, type Advisory } from "../src/advisories.ts";
+import { ADVISORIES_URL, advise, adviseBuilt, checkDisabled, checkVersion, launchCheck, matching, validRange, type Advisory } from "../src/advisories.ts";
 
 const bad: Advisory[] = [
   { versions: "0.1.6", do: "upgrade", to: "latest", why: "stale deps" },
@@ -36,6 +36,36 @@ test("advise: a bad release says which way to go, an old one gets a line, a curr
   expect(advise("0.1.8", { advisories: bad, latest: "0.1.10" })).toBe("rustybuns 0.1.10 is out (you have 0.1.8): bun add -d @rustybuns/cli@latest");
   expect(advise("0.1.10", { advisories: bad, latest: "0.1.10" })).toBeNull();
   expect(advise("0.1.11", { advisories: bad, latest: "0.1.10" })).toBeNull();
+});
+
+test("adviseBuilt: a bad build says what to rebuild with; an old-but-fine one says nothing", () => {
+  const up = adviseBuilt("0.1.6", { advisories: bad, latest: "0.1.10" })!;
+  expect(up).toContain("built with RustyBuns 0.1.6, a known-bad release");
+  expect(up).toContain("rebuild with 0.1.10: bun add -d @rustybuns/cli@0.1.10 && rustybuns build desktop");
+  expect(adviseBuilt("0.2.1", { advisories: bad, latest: "0.2.2" })).toContain("rebuild with 0.1.10");
+  expect(adviseBuilt("0.1.8", { advisories: bad, latest: "0.1.10" })).toBeNull();
+});
+
+test("launchCheck: the notice in a dev build, one log line in a release build, off in CI", async () => {
+  const path = join(mkdtempSync(join(tmpdir(), "rb-adv-")), "check.json");
+  const fetcher = fakeFetch(bad, "0.1.10");
+  const warn = console.warn;
+  const said: string[] = [];
+  console.warn = (m: string) => { said.push(m); };
+  try {
+    const dev = (await launchCheck("0.1.6", { dev: true, path, fetcher, env: {} }))!;
+    expect(dev.split("\n").length).toBeGreaterThan(2);
+    const release = (await launchCheck("0.1.6", { dev: false, path, fetcher, env: {} }))!;
+    expect(release).not.toContain("\n");
+    expect(release).toContain("[rustybuns] this app was built with RustyBuns 0.1.6, a known-bad release. · stale deps · rebuild with 0.1.10");
+    expect(said).toEqual([dev, release]);
+    expect(await launchCheck("0.1.8", { dev: true, path, fetcher, env: {} })).toBeNull();
+    expect(await launchCheck(undefined, { dev: true, path, fetcher, env: {} })).toBeNull();
+    expect(await launchCheck("0.1.6", { dev: true, path, fetcher, env: { CI: "true" } })).toBeNull();
+    expect(said.length).toBe(2);
+  } finally {
+    console.warn = warn;
+  }
 });
 
 test("checkVersion: fetches once a day, keeps the cache when offline", async () => {
