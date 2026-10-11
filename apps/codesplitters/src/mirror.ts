@@ -525,18 +525,26 @@ const heads = (lsRemote: string) => lsRemote.trim().split("\n").filter(Boolean).
  * lines (main's, for a file the branch hadn't touched) where those moved on too
  * (sync.ts merge3; where they touch the same lines, upstream wins). New files
  * are new on the branch. A file the branch hasn't touched that's already as
- * main has it stays main's. Files deleted, and binary ones, can't be branch
- * copies: they're listed as skipped.
+ * main has it stays main's. A file upstream deleted is deleted on the branch
+ * (one only the branch had just goes). Binary ones can't be branch copies:
+ * they're listed as skipped.
  */
 async function take(env: Env, owner: string, repo: string, s: Setup, b: string, from: string, to: string) {
-  const { materializeOn, createOn } = await import("./branches.ts");
-  const { results } = await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, b).all();
-  const onBranch = new Set((results as { path: string }[]).map((f) => f.path));
-  const files: string[] = [], skipped: string[] = [];
+  const { materializeOn, createOn, deleteOn } = await import("./branches.ts");
+  const { results } = await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, b).all();
+  const onBranch = new Map((results as { path: string; deleted: number }[]).map((f) => [f.path, !!f.deleted]));
+  const files: string[] = [], deleted: string[] = [], skipped: string[] = [];
   const changed = (await must(["diff", "--name-status", "-z", "--no-renames", from, to], s.dir)).split("\0").filter(Boolean);
+  const onMain = (path: string) => git(["cat-file", "-e", `refs/heads/${s.main}:${path}`], s.dir).then((r) => !r.code);
   for (let i = 0; i < changed.length; i += 2) {
     const [kind, path] = [changed[i]!, changed[i + 1]!];
-    const text = kind === "D" ? null : await show(s.dir, to, path);
+    if (kind === "D") {
+      // Gone upstream: gone here too, unless it's gone already (from the branch, or main).
+      if (onBranch.get(path) || (!onBranch.has(path) && !await onMain(path))) continue;
+      ((await deleteOn(env, owner, repo, b, path)).ok ? deleted : skipped).push(path);
+      continue;
+    }
+    const text = await show(s.dir, to, path);
     if (text === null || !isText(text)) { skipped.push(path); continue; }
     if (!onBranch.has(path) && text === await show(s.dir, `refs/heads/${s.main}`, path)) continue;
     const next = fromDisk(text);
@@ -553,13 +561,13 @@ async function take(env: Env, owner: string, repo: string, s: Setup, b: string, 
     if (ops.length) await toFile(env, owner, repo, path, "upstream", "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: doc.rev }) }, "", b);
     files.push(path);
   }
-  return { files, skipped };
+  return { files, deleted, skipped };
 }
 
 /** Branch `name` takes upstream's `ref` up to `theirs`: what it got since the branch here last took it in or pushed. */
 async function catchUp(env: Env, owner: string, repo: string, s: Setup, name: string, ref: string, theirs: string) {
   const from = await taken(s, ref) ?? await forkPoint(s, theirs);
-  const got = from === theirs ? { files: [], skipped: [] } : await take(env, owner, repo, s, name, from, theirs);
+  const got = from === theirs ? { files: [], deleted: [], skipped: [] } : await take(env, owner, repo, s, name, from, theirs);
   await must(["update-ref", tracking(ref), theirs], s.dir);
   return got;
 }
@@ -631,17 +639,24 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   }
 
   // The branch's files, as they are, over that tree.
-  const { results } = await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all();
+  const { results } = await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all();
   const idx = join(tmpdir(), `codesplitters-branch-${crypto.randomUUID()}.index`), e = { GIT_INDEX_FILE: idx };
   let tree: string;
   try {
     await must(["read-tree", baseTree], dir, e);
-    for (const { path } of results as { path: string }[]) {
+    const gone: string[] = [];
+    for (const { path, deleted } of results as { path: string; deleted: number }[]) {
+      if (deleted) { gone.push(path); continue; }
       const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", name)).json()) as Doc;
       const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(toDisk(doc.lines)), stdout: "pipe", stderr: "pipe" });
       const [, hash] = await Promise.all([put.exited, new Response(put.stdout).text()]);
       const mode = (await must(["ls-tree", baseTree, "--", path], dir)).split(" ")[0] || "100644";
       await must(["update-index", "--add", "--cacheinfo", `${mode},${hash.trim()},${path}`], dir, e);
+    }
+    // The ones it deleted: a zero entry takes each out (a bare repo has no work tree for --force-remove).
+    if (gone.length) {
+      const rm = Bun.spawn(["git", "update-index", "-z", "--index-info"], { cwd: dir, env: { ...process.env, ...e }, stdin: new TextEncoder().encode(gone.map((p) => `0 ${"0".repeat(40)}\t${p}\0`).join("")), stdout: "ignore", stderr: "pipe" });
+      if (await rm.exited) throw new Error(await new Response(rm.stderr).text() || "git update-index exited");
     }
     tree = await must(["write-tree"], dir, e);
   } finally { rmSync(idx, { force: true }); }

@@ -1126,6 +1126,41 @@ describe("shares", () => {
     expect((await ops("agent-a", q, [{ kind: "insert", after: null, text: "late" }])).status).toBe(404);
   });
 
+  test("a branch deletes a file, and merging deletes it from main and its git (#440)", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/collaborators", { name: "agent-a" });
+    for (const path of ["a.js", "b.js"]) {
+      await post(call, "ana", "/api/repos/ana/r/files", { path, content: `// ${path}` });
+      expect((await post(call, "ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: path })).status).toBe(200);
+    }
+    await post(call, "agent-a", "/api/repos/ana/r/branches", { name: "prune" });
+    const del = (user: string, path: string) => call(user, `/api/repos/ana/r/branches/prune/files?path=${path}`, { method: "DELETE" });
+    expect((await del("bo", "a.js")).status).toBe(403);
+    expect((await del("agent-a", "nope.js")).status).toBe(404);
+    // One main has, and one that's only on the branch (that one just goes).
+    expect((await del("agent-a", "a.js")).status).toBe(200);
+    expect((await del("agent-a", "a.js")).status).toBe(404);
+    await post(call, "agent-a", "/api/repos/ana/r/files", { path: "tmp.js", content: "x", branch: "prune" });
+    expect((await del("agent-a", "tmp.js")).status).toBe(200);
+    // Gone on the branch, still on main.
+    expect((await call("agent-a", "/api/repos/ana/r/do/file?path=a.js&branch=prune")).status).toBe(404);
+    expect((await call("agent-a", "/api/repos/ana/r/do/file?path=a.js")).status).toBe(200);
+    // Made again and deleted again on the branch: still a deletion.
+    expect((await post(call, "agent-a", "/api/repos/ana/r/files", { path: "a.js", content: "back", branch: "prune" })).status).toBe(201);
+    expect(text(await (await call("agent-a", "/api/repos/ana/r/do/file?path=a.js&branch=prune")).json() as Doc)).toBe("back");
+    expect((await del("agent-a", "a.js")).status).toBe(200);
+
+    const review = await (await call("ana", "/api/repos/ana/r/branches/prune")).json() as any;
+    expect(review.files).toEqual([{ path: "a.js", merged: false, build: false, deleted: true, ops: [], conflicts: [] }]);
+    const merged = await post(call, "ana", "/api/repos/ana/r/branches/prune/merge", {});
+    expect(await merged.json()).toMatchObject({ status: "merged", merged: [{ path: "a.js", deleted: true }] });
+    // Main has no a.js, and its git doesn't either (or reading it would dig it up again).
+    expect((await call("ana", "/api/repos/ana/r/do/file?path=a.js")).status).toBe(404);
+    expect((await (await call("ana", "/api/repos/ana/r/tree?path=")).json() as any).entries.map((e: any) => e.path)).toEqual(["b.js"]);
+  });
+
   test("a merge with a conflict lands nothing until each line is settled", async () => {
     const call = await local();
     await post(call, "ana", "/api/login", { name: "ana" });

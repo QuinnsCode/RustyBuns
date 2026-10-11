@@ -191,6 +191,28 @@ export async function pushCatalogue(env: Env, owner: string, repo: string, path:
   return crewed.status === "rejected" ? { ...pub.value, crewError: (crewed.reason as Error).message } : pub.value;
 }
 
+/**
+ * Take `path` out of the repo's git (and the crew's, if it has one), as one
+ * commit. If it doesn't land, it waits in git_pending like a commit does.
+ */
+export async function uncatalogue(env: Env, owner: string, repo: string, path: string, author: string, message: string) {
+  const [h, crew] = await Promise.all([handleFor(env, owner, repo), handleFor(env, owner, repo, true)]);
+  if (!h) return null;
+  if (await env.DB.prepare("SELECT 1 FROM fresh_starts WHERE owner = ? AND repo = ? AND state IN ('walking', 'copying')").bind(owner, repo).first()) {
+    await pend(env, owner, repo, [path]);
+    throw new Error("git is moving to a fresh start; this deletion lands when it's done");
+  }
+  const [pub] = await Promise.allSettled([
+    (async () => pushChanges(env, owner, repo, h, { ...(await pendingChanges(env, owner, repo)), [path]: null }, author, message))(),
+    crew?.crew ? (async () => {
+      const a = await access(crew.handle, crew.remote, "write", 300);
+      return push(a.remote, a.token, { changes: { [path]: null }, ...(await byline(env, owner, repo, author, message)), branch: crew.branch, base: crew.handle });
+    })() : null,
+  ]);
+  if (pub.status === "rejected") throw pub.reason;
+  return pub.value;
+}
+
 /** Push the files still waiting, if any, as one commit. */
 export async function flushPending(env: Env, owner: string, repo: string) {
   const h = await handleFor(env, owner, repo), changes = await pendingChanges(env, owner, repo);
@@ -205,7 +227,7 @@ async function byline(env: Env, owner: string, repo: string, author: string, mes
 }
 
 type Handle = NonNullable<Awaited<ReturnType<typeof handleFor>>>;
-async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, string>, author: string, message: string) {
+async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, string | null>, author: string, message: string) {
   try {
     const a = await access(h.handle, h.remote, "write", 300);
     const r = await push(a.remote, a.token, { changes, ...(await byline(env, owner, repo, author, message)), branch: h.branch, base: h.handle });
@@ -224,11 +246,12 @@ async function pushChanges(env: Env, owner: string, repo: string, h: Handle, cha
 const pend = (env: Env, owner: string, repo: string, paths: string[]) =>
   env.DB.batch(paths.map((p) => env.DB.prepare("INSERT OR IGNORE INTO git_pending (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, p)));
 
-/** Each waiting file as it was last catalogued, private lines blank, as git gets it. */
-async function pendingChanges(env: Env, owner: string, repo: string): Promise<Record<string, string>> {
+/** Each waiting file as it was last catalogued, private lines blank, as git gets it; null for one deleted since. */
+async function pendingChanges(env: Env, owner: string, repo: string): Promise<Record<string, string | null>> {
   const { results } = await env.DB.prepare("SELECT path FROM git_pending WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-  const out: Record<string, string> = {};
+  const out: Record<string, string | null> = {};
   for (const { path } of results as { path: string }[]) {
+    if (!(await env.DB.prepare("SELECT 1 FROM files WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).first())) { out[path] = null; continue; }
     const [last] = (await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json()) as { rev: number }[];
     if (!last) continue;
     const doc = (await (await toFile(env, owner, repo, path, "codesplitters", "at", { headers: { "x-codesplitters-crew": "0" } }, `?rev=${last.rev}`)).json()) as { lines: { text: string }[] };
