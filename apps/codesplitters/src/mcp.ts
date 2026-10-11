@@ -18,7 +18,7 @@ import { json } from "./env.ts";
 import { openapi } from "./openapi.ts";
 
 type Schema = Record<string, any>;
-interface Tool {
+export interface Tool {
   name: string; title: string; description: string; tag: string; risky: boolean;
   inputSchema: Schema;
   annotations: { title: string; readOnlyHint: boolean; destructiveHint: boolean; idempotentHint: boolean; openWorldHint: boolean };
@@ -81,15 +81,24 @@ const rpcError = (id: unknown, code: number, message: string, status = 200) => j
 const unauthorized = (why: string, origin: string) => json({ error: why }, 401,
   { "www-authenticate": `Bearer realm="codeSplitters", error="invalid_token", resource_metadata="${origin}/.well-known/oauth-protected-resource/api/mcp"` });
 
-/** One tool call: the HTTP call it stands for, as the token that made it. */
-async function call(t: Tool, args: Record<string, unknown>, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>) {
-  for (const k of t.inputSchema.required ?? []) if (args[k] === undefined || args[k] === "") return { content: [{ type: "text", text: `${k} is required` }], isError: true };
+/** A tool by name (the CLI, cli.ts, calls them too). */
+export const tool = (name: string) => all().find((t) => t.name === name);
+
+/** The HTTP call a tool stands for, or what's missing from its arguments. */
+export function toRequest(t: Tool, args: Record<string, unknown>, origin: string, headers: Record<string, string>): Request | string {
+  for (const k of t.inputSchema.required ?? []) if (args[k] === undefined || args[k] === "") return `${k} is required`;
   const path = t.path.replace(/\{(\w+)\}/g, (_, k) => encodeURIComponent(String(args[k])));
   const url = new URL(`${origin}/api${path}`);
   for (const k of t.queryParams) if (args[k] !== undefined && args[k] !== null) url.searchParams.set(k, String(args[k]));
-  const headers: Record<string, string> = { authorization: auth };
-  if (t.hasBody) headers["content-type"] = "application/json";
-  const res = await dispatch(new Request(url, { method: t.method, headers, ...(t.hasBody && { body: JSON.stringify(args.body ?? {}) }) }));
+  if (t.hasBody) headers = { ...headers, "content-type": "application/json" };
+  return new Request(url, { method: t.method, headers, ...(t.hasBody && { body: JSON.stringify(args.body ?? {}) }) });
+}
+
+/** One tool call: the HTTP call it stands for, as the token that made it. */
+async function call(t: Tool, args: Record<string, unknown>, origin: string, auth: string, dispatch: (r: Request) => Promise<Response>) {
+  const req = toRequest(t, args, origin, { authorization: auth });
+  if (typeof req === "string") return { content: [{ type: "text", text: req }], isError: true };
+  const res = await dispatch(req);
   const text = await res.text();
   // A 202 is a queued request or a run that's started: an answer, not an error.
   return { content: [{ type: "text", text: res.ok ? text : `${res.status}: ${text}` }], isError: !res.ok };

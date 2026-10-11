@@ -32,6 +32,7 @@ describe("classify", () => {
     expect(classify(req({ ...browser, "user-agent": CHROME.replace("Chrome/", "HeadlessChrome/") }), ["api", "session"])).toEqual({ kind: "agent", via: "headless" });
     expect(classify(req({ "user-agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" }), ["api", "session"])).toEqual({ kind: "bot", via: "crawler" });
     expect(classify(req(browser), ["api", "mcp"])).toEqual({ kind: "agent", via: "mcp" });
+    expect(classify(req({ authorization: "Bearer cst_x", "user-agent": "codesplitters-cli/1" }), ["api", "session"])).toEqual({ kind: "agent", via: "cli" });
   });
 });
 

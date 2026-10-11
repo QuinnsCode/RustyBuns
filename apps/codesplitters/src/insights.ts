@@ -5,7 +5,7 @@
 // Every request from the internet (Cloudflare stamps those with cf-connecting-ip,
 // like limits.ts counts) is tallied per day, per caller, by what it looks like:
 //   person  a browser: a Mozilla user agent that sends the sec-fetch-* headers browsers add
-//   agent   an API token or OAuth app, MCP, a script (curl, python, node…), or a
+//   agent   an API token or OAuth app, MCP, the CLI (cli.ts), a script (curl, python, node…), or a
 //           "browser" without the headers a real one sends (headless, or a spoofed agent)
 //   bot     a crawler or uptime checker that says so
 // A signed-in caller counts as their @handle; a signed-out one as a hash of their
@@ -42,6 +42,7 @@ const SCRIPT = /^(curl|wget|httpie|python|aiohttp|httpx|go-http|okhttp|java|ruby
 export function classify(req: Request, p: string[]): { kind: Kind; via: string } {
   const ua = req.headers.get("user-agent") ?? "";
   if (p[1] === "mcp") return { kind: "agent", via: "mcp" };
+  if (ua.startsWith("codesplitters-cli/")) return { kind: "agent", via: "cli" };
   if (/^bearer /i.test(req.headers.get("authorization") ?? "")) return { kind: "agent", via: "token" };
   if (BOT.test(ua)) return { kind: "bot", via: "crawler" };
   if (HEADLESS.test(ua)) return { kind: "agent", via: "headless" };
