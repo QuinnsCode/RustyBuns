@@ -25,7 +25,6 @@ test("admins get every card with live readings; nobody else does", async () => {
 
   const db = call.env.DB;
   await db.prepare("INSERT INTO repo_search (owner, repo, files, text_bytes, size_bytes, big_path, big_bytes, big_lines, updated_at) VALUES ('ryan', 'lab', 1, 2000, 8192, 'big.ts', 2000, 1001, 0)").run();
-  await db.prepare("INSERT INTO file_search (owner, repo, path, content) VALUES ('ryan', 'old', 'a.ts', 'x')").run();
   await db.prepare("INSERT INTO limit_hits (rule, who, win, count) VALUES ('edit', 'ryan', ?, 120)").bind(Date.now() - 60_000).run();
   await db.prepare(`INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES ('ryan', 'lab', 'big.ts', 'claude', 't', 'agent-claude', 'running', ?)`).bind(Date.now()).run();
   await db.prepare(`INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES ('ryan', 'lab', 'big.ts', 'claude', 't', 'agent-claude', 'running', ?)`).bind(Date.now()).run();
@@ -41,7 +40,6 @@ test("admins get every card with live readings; nobody else does", async () => {
   expect(card("big-file").reading.note).toContain("1,001 lines");
   expect(card("search").reading).toMatchObject({ value: 8192, limit: 10 * 1024 ** 3 });
   expect(card("search").reading.note).toContain("ryan/lab");
-  expect(card("search").reading.note).toContain("1 files still in D1's old index");
   expect(card("d1-size").reading.value).toBeGreaterThan(0);
   // Two runs on a cap of two: critical, and the page leads with it.
   expect(card("agents")).toMatchObject({ state: "bad", reading: { value: 2, limit: 2 } });

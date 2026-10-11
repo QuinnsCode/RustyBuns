@@ -15,8 +15,6 @@
 // A commit embeds its file as it's indexed. What's left over (files from before the index,
 // a repo whose visibility changed, an embed that failed) is counted in repo_search.stale,
 // and the hourly cron embeds it (embedDue), as does POST /api/admin/scale/search-embed.
-//
-// What was in D1's file_search before moves over with POST /api/admin/scale/search-move.
 
 import { json, type Env } from "./env.ts";
 
@@ -134,16 +132,12 @@ const call = async <T>(env: Env, owner: string, repo: string, path: string, body
   return (await res.json()) as T;
 };
 
-/** Note the repo's index sizes in D1; `paths` also leave the old D1 index, so a move never brings back a stale copy. */
-async function noteSize(env: Env, owner: string, repo: string, s: Size, paths: string[]) {
-  await env.DB.batch([
-    env.DB.prepare(`INSERT INTO repo_search (owner, repo, files, text_bytes, size_bytes, big_path, big_bytes, big_lines, stale, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+/** Note the repo's index sizes in D1. */
+async function noteSize(env: Env, owner: string, repo: string, s: Size) {
+  await env.DB.prepare(`INSERT INTO repo_search (owner, repo, files, text_bytes, size_bytes, big_path, big_bytes, big_lines, stale, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (owner, repo) DO UPDATE SET files = excluded.files, text_bytes = excluded.text_bytes, size_bytes = excluded.size_bytes,
         big_path = excluded.big_path, big_bytes = excluded.big_bytes, big_lines = excluded.big_lines, stale = excluded.stale, updated_at = excluded.updated_at`)
-      .bind(owner, repo, s.files, s.text, s.size, s.big_path, s.big_bytes, s.big_lines, s.stale, Date.now()),
-    // Until file_search is dropped (after the move): see the file's header.
-    ...paths.map((p) => env.DB.prepare("DELETE FROM file_search WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, p)),
-  ]);
+      .bind(owner, repo, s.files, s.text, s.size, s.big_path, s.big_bytes, s.big_lines, s.stale, Date.now()).run();
 }
 
 // ---- the vector index across repos ----
@@ -199,7 +193,7 @@ async function embedFiles(env: Env, owner: string, repo: string, files: ToEmbed[
   }
   await dropVectors(env, gone);
   const done = each.map((f) => ({ path: f.path, chunks: Math.max(0, ...f.chunks.map((c) => c.i + 1)) }));
-  await noteSize(env, owner, repo, await call<Size>(env, owner, repo, "/embedded", { files: done }), []);
+  await noteSize(env, owner, repo, await call<Size>(env, owner, repo, "/embedded", { files: done }));
 }
 
 /** Embed up to `limit` of a repo's stale files. */
@@ -225,7 +219,7 @@ export async function embedDue(env: Env, budget = 200) {
 /** The repo's visibility changed: the next embedDue tags its vectors again. Until then D1 hides what went private. */
 export async function restaleSearch(env: Env, owner: string, repo: string) {
   if (!vectorsOn(env)) return;
-  await noteSize(env, owner, repo, await call<Size>(env, owner, repo, "/restale", {}), []);
+  await noteSize(env, owner, repo, await call<Size>(env, owner, repo, "/restale", {}));
 }
 
 // ---- each repo's index ----
@@ -233,7 +227,7 @@ export async function restaleSearch(env: Env, owner: string, repo: string) {
 /** Index what was committed to `path` (private lines already blank). */
 export async function indexFile(env: Env, owner: string, repo: string, path: string, content: string) {
   const s = await call<Size & { was: Record<string, number> }>(env, owner, repo, "/put", { files: [{ path, content }] });
-  await noteSize(env, owner, repo, s, [path]);
+  await noteSize(env, owner, repo, s);
   // An embed that fails stays stale for the cron; the commit goes on.
   if (vectorsOn(env)) await embedFiles(env, owner, repo, [{ path, content, was: s.was[path] ?? 0 }]).catch(() => null);
 }
@@ -241,7 +235,7 @@ export async function indexFile(env: Env, owner: string, repo: string, path: str
 /** `path` is gone from main: out of the index too. */
 export async function unindexFile(env: Env, owner: string, repo: string, path: string) {
   const s = await call<Size & { chunks: number }>(env, owner, repo, "/drop", { path });
-  await noteSize(env, owner, repo, s, [path]);
+  await noteSize(env, owner, repo, s);
   if (vectorsOn(env)) await dropVectors(env, await vids(owner, repo, path, s.chunks)).catch(() => null);
 }
 
@@ -332,28 +326,7 @@ async function fanOut(env: Env, user: string | null, q: string, limit: number): 
   return each.flat().sort((a, b) => a.rank - b.rank).slice(0, limit).map(strip);
 }
 
-/** Admins: move up to `batch` rows of D1's old file_search into the repos' own indexes. Call until `left` is 0. */
-export async function moveSearch(env: Env, batch = 50) {
-  const { results } = await env.DB.prepare("SELECT rowid, owner, repo, path, content FROM file_search LIMIT ?").bind(batch).all();
-  const byRepo = new Map<string, { owner: string; repo: string; files: { path: string; content: string }[] }>();
-  for (const r of results as { owner: string; repo: string; path: string; content: string }[]) {
-    const k = `${r.owner}/${r.repo}`;
-    if (!byRepo.has(k)) byRepo.set(k, { owner: r.owner, repo: r.repo, files: [] });
-    byRepo.get(k)!.files.push({ path: r.path, content: r.content });
-  }
-  for (const { owner, repo, files } of byRepo.values()) {
-    await noteSize(env, owner, repo, await call<Size>(env, owner, repo, "/put", { files }), files.map((f) => f.path));
-  }
-  const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM file_search").first();
-  return { moved: results.length, repos: byRepo.size, left: Number(left?.n ?? 0) };
-}
-
 export async function searchRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
-  if (p[1] === "admin" && p[2] === "scale" && p[3] === "search-move") {
-    if (!admin) return json({ error: "admins only" }, 403);
-    if (req.method !== "POST") return json({ error: "POST only" }, 405);
-    return json(await moveSearch(env));
-  }
   // POST /api/admin/scale/search-embed  one round of the cron's embedding; call until `left` is 0.
   if (p[1] === "admin" && p[2] === "scale" && p[3] === "search-embed") {
     if (!admin) return json({ error: "admins only" }, 403);
