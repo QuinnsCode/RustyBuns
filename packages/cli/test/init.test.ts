@@ -63,19 +63,19 @@ test("init: wrangler keys that cannot be carried over are reported, and adopt re
   const p = project({
     "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5" } }),
     "wrangler.jsonc": `{ "name": "r", "main": "src/worker.ts", // comment
-      "ai": { "binding": "AI" }, "triggers": { "crons": ["* * * * *"] }, "env": { "staging": {} },
+      "vectorize": [{ "binding": "V", "index_name": "v" }], "triggers": { "crons": ["* * * * *"] }, "env": { "staging": {} },
       "d1_databases": [{ "binding": "DB", "database_name": "d" }] }`,
     "src/worker.ts": "export default {}",
   });
   const r = p.run("init");
   expect(r.code).toBe(0);
-  expect(r.out).toMatch(/not carried over: ai, env/);
+  expect(r.out).toMatch(/not carried over: vectorize, env/);
   expect(r.out).toMatch(/adopt will refuse/);
-  expect(p.read("wrangler.jsonc")).toContain('"ai"');
+  expect(p.read("wrangler.jsonc")).toContain('"vectorize"');
   const adopt = p.run("adopt");
   expect(adopt.code).toBe(1);
-  expect(adopt.out).toMatch(/adopt would delete from wrangler\.jsonc: ai, env/);
-  expect(p.read("wrangler.jsonc")).toContain('"ai"');
+  expect(adopt.out).toMatch(/adopt would delete from wrangler\.jsonc: vectorize, env/);
+  expect(p.read("wrangler.jsonc")).toContain('"vectorize"');
   expect(p.run("adopt", "--force").code).toBe(0);
   expect(p.read("rustybuns.config.ts")).toMatch(/"crons": \[\s*"\* \* \* \* \*"\s*\]/);   // Cron Triggers carry over
 });
@@ -126,8 +126,9 @@ test("package manager: lockfiles, then packageManager field", () => {
 });
 
 test("wrangler toml parse and dropped keys", () => {
-  const w = parseWranglerToml('name = "x"\n[ai]\nbinding = "AI"\n[triggers]\ncrons = ["* * * * *"]\n');
-  expect(droppedWranglerKeys(w)).toEqual(["ai"]);
+  // A Vectorize index's dimensions aren't in wrangler's config, so it can't be carried over; Workers AI can.
+  const w = parseWranglerToml('name = "x"\n[ai]\nbinding = "AI"\n[[vectorize]]\nbinding = "V"\nindex_name = "v"\n[triggers]\ncrons = ["* * * * *"]\n');
+  expect(droppedWranglerKeys(w)).toEqual(["vectorize"]);
 });
 
 test("add deploy writes overrides at the workspace root, where bun reads them", () => {

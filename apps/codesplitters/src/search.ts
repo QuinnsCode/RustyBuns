@@ -354,7 +354,7 @@ export async function searchRoutes(req: Request, env: Env, p: string[], admin: b
     if (req.method !== "POST") return json({ error: "POST only" }, 405);
     return json(await moveSearch(env));
   }
-  // POST /api/admin/scale/search-embed: one round of the cron's embedding; call until `left` is 0.
+  // POST /api/admin/scale/search-embed  one round of the cron's embedding; call until `left` is 0.
   if (p[1] === "admin" && p[2] === "scale" && p[3] === "search-embed") {
     if (!admin) return json({ error: "admins only" }, 403);
     if (req.method !== "POST") return json({ error: "POST only" }, 405);
