@@ -9,9 +9,11 @@
 // stay there under your handle, the way commits stay in git; the handle is retired
 // so no one can pick it up and pass as you. Asked to (?scrub=1, or an admin later:
 // POST /api/admin/scrub {handle}), @ghost takes its place there instead (#514).
+// The scrub finds repos by D1's authors, which each file DO fills the first time it
+// wakes after #748; POST /api/admin/scrub/backfill wakes the ones nobody opens (#770).
 
 import { evict, openToken } from "./github.ts";
-import { fileStub } from "./archive.ts";
+import { fileStub, toFile } from "./archive.ts";
 import { listFollows } from "./follows.ts";
 import { json, type Env } from "./env.ts";
 
@@ -220,11 +222,47 @@ export async function privacyRoutes(req: Request, env: Env, p: string[], url: UR
   return res;
 }
 
-/** POST /api/admin/scrub {handle}  put @ghost where a deleted account's handle still shows. Admins only. */
+/** Where the authors backfill stopped: the last file row it woke, main's (files) or a branch's (branch_files). */
+export type BackfillCursor = { owner: string; repo: string; path: string; branch?: string };
+
+/** How many file DOs one backfill call wakes. */
+export const BACKFILL_PAGE = 50;
+
+/**
+ * Wake a page of file DOs, main's copies (files) then each branch's (branch_files), in
+ * key order after `after`, so each puts its lines' authors into D1's authors (#770): a
+ * file nobody has opened since #748 never noted them, and the scrub would miss its repo.
+ * `next` is where to go on from, null when every file has been woken.
+ */
+export async function backfillAuthors(env: Env, after: BackfillCursor | null = null, page = BACKFILL_PAGE) {
+  const rows: BackfillCursor[] = [];
+  if (!after || after.branch === undefined) {
+    const [o, r, p] = after ? [after.owner, after.repo, after.path] : ["", "", ""];
+    rows.push(...await all(env, `SELECT owner, repo, path FROM files WHERE (owner, repo, path) > (?1, ?2, ?3)
+      ORDER BY owner, repo, path LIMIT ?4`, o, r, p, page) as BackfillCursor[]);
+  }
+  if (rows.length < page) {
+    const [o, r, b, p] = after?.branch !== undefined ? [after.owner, after.repo, after.branch, after.path] : ["", "", "", ""];
+    rows.push(...await all(env, `SELECT owner, repo, branch, path FROM branch_files WHERE (owner, repo, branch, path) > (?1, ?2, ?3, ?4)
+      ORDER BY owner, repo, branch, path LIMIT ?5`, o, r, b, p, page - rows.length) as BackfillCursor[]);
+  }
+  await Promise.all(rows.map((f) => toFile(env, f.owner, f.repo, f.path, "backfill", "authors", { method: "POST" }, "", f.branch).then((res) => res.body?.cancel())));
+  return { woken: rows.length, next: rows.length < page ? null : rows.at(-1)! };
+}
+
+/**
+ * POST /api/admin/scrub {handle}  put @ghost where a deleted account's handle still shows.
+ * POST /api/admin/scrub/backfill {after?}  wake a page of file DOs to note their authors; call with `next` until it's null.
+ * Admins only.
+ */
 export async function scrubRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
-  if (p[1] !== "admin" || p[2] !== "scrub" || p[3]) return null;
+  if (p[1] !== "admin" || p[2] !== "scrub" || (p[3] && p[3] !== "backfill") || p[4]) return null;
   if (!admin) return json({ error: "admins only" }, 403);
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  if (p[3]) {
+    const { after = null } = (await req.json().catch(() => ({}))) as { after?: BackfillCursor | null };
+    return json(await backfillAuthors(env, after));
+  }
   const { handle = "" } = (await req.json().catch(() => ({}))) as { handle?: string };
   const grant = await env.DB.prepare("SELECT email FROM handle_grants WHERE handle = ?").bind(handle).first();
   if (handle === GHOST || grant?.email !== `retired:${handle}`) return json({ error: `@${handle} isn't a deleted account's handle` }, 404);
