@@ -31,7 +31,7 @@ export const CARDS: Card[] = [
     id: "d1-writes", name: "One D1 for the whole site", where: "D1: limit_hits, line_events, traffic",
     wall: "~500 writes/s sitewide (one writer per database), about 500 people typing at once, less the traffic rows",
     shows: "Edits lag everywhere at once, even on different files; D1 overloaded errors and 5xx on Insights",
-    here: "Yes. Edits are counted in the file's DO and tallied to D1 once a second per typist, off the edit path (#623); next, tally traffic in Analytics Engine",
+    here: "Yes. Edits are counted in the file's DO and tallied to D1 once a second per typist, off the edit path (#623); next, tally traffic in Analytics Engine (#638)",
     box: "SQLite on local NVMe takes 10–100× the writes, no network hop",
     next: "Tally traffic (insights.ts) in Analytics Engine instead of a D1 row per request",
   },
