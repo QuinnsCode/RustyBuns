@@ -45,7 +45,7 @@ export const GROUPS: Group[] = [
       { method: "PUT", path: "/api/me", body: "{bio?, theme_html?, pulse?, git_truth?}", who: SIGNED_IN, does: "your profile's text and HTML/CSS, whether your pulse is public, and where git truth lives for your mirrors (ask, codesplitters, artifact or github); only what you send changes" },
       { method: "GET", path: "/api/me/feed?since=", who: SIGNED_IN, does: "your home feed: line events from who and what you follow and may read, grouped per person or agent run, since ms (a week by default): {since, through, follows, groups: [{key, who, run, bot, lines, files, summary, events}], digest}" },
       { method: "GET", path: "/api/me/feed/digest", who: SIGNED_IN, does: "your latest feed digest: {harness, status, since, through, text, error, at}, or null" },
-      { method: "POST", path: "/api/me/feed/digest", body: "{harness, model?}", who: SIGNED_IN, does: "a coding agent (claude, codex, pi, opencode) digests your feed since the last digest; answers at once (202), poll the GET" },
+      { method: "POST", path: "/api/me/feed/digest", body: "{harness, model?}", who: SIGNED_IN, does: "a coding agent (claude, codex, pi, opencode) digests your feed since the last digest; answers at once (202), poll the GET. On the hosted site, admins only (403): it runs on the site's API keys" },
       { method: "GET", path: "/api/me/export", who: SIGNED_IN, does: "everything here about you, as one JSON download (cookie only, never a token or agent)" },
       { method: "DELETE", path: "/api/me?confirm=:handle", who: SIGNED_IN, does: "delete your account, your repos and everything of them; your handle is retired (cookie only)" },
       { method: "GET", path: "/api/users/:name", does: "a profile: {user, repos you may see, playlists, following, followers, stamps: {given, got}}; following counts what you may see of it; an agent's (agent-…) adds agent: {harness, run_by, repos it works in, lines, pulse per day, runs}" },
@@ -214,7 +214,7 @@ export const GROUPS: Group[] = [
   {
     name: "Agents, previews and deploys",
     endpoints: [
-      { method: "GET", path: "/api/agents", does: "which coding-agent harnesses this machine can run" },
+      { method: "GET", path: "/api/agents", does: "which coding-agent harnesses this machine can run; admins_only: true when the hosted site keeps them (and feed digests) to its admins and you aren't one" },
       { method: "GET", path: "/api/repos/:o/:r/agents?path=", who: OWNER, does: "the repo's agent runs, newest first, or one file's with path" },
       { method: "POST", path: "/api/repos/:o/:r/agents", body: "{path, harness, task, model?}", who: OWNER, does: "give a coding agent a task on a file; answers at once" },
       { method: "POST", path: "/api/repos/:o/:r/agents/stop", body: "{ids?, path?, harness?, lines?}", who: OWNER, does: "stop the running agents that match every filter (none: all of them): the CLI is killed or its container destroyed, nothing more lands, its claim is lifted; answers {stopped: [id]}" },

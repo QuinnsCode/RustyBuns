@@ -96,6 +96,12 @@ export function agentsUnavailable(env: Env): string | null {
   return null;
 }
 
+/** Hosted runs (coding agents and feed digests) bill the site's own API keys, and
+ *  anyone can sign up, so a per-person rate limit wouldn't cap the bill: only the
+ *  handles in ADMINS may start one (#575). Off the hosted site, nothing is held back. */
+export const adminsOnly = (env: Env, user: string | null) => !!env.AGENT_SANDBOX && !(env.ADMINS && isAdmin(env, user));
+export const ADMINS_ONLY = "hosted agents are limited to this site's admins (ADMINS)";
+
 /** The harnesses whose CLI is on PATH (all of them when a test swaps the CLI out). */
 export const installedHarnesses = (env: Env) => env.AGENT_EXEC || env.AGENT_SANDBOX ? HARNESSES : HARNESSES.filter((h) => Bun.which(harnessCommand(h, "").bin));
 
@@ -104,7 +110,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   self: (req: Request) => Promise<Response>): Promise<Response | null> {
   if (p[1] === "agents" && !p[2]) {
     const why = agentsUnavailable(env);
-    return json({ available: !why, why, harnesses: why ? [] : installedHarnesses(env), all: HARNESSES });
+    return json({ available: !why, why, harnesses: why ? [] : installedHarnesses(env), all: HARNESSES, admins_only: adminsOnly(env, user) });
   }
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "agents")) return null;
   const [owner, repo] = [p[2], p[3]];
@@ -136,9 +142,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   const why = agentsUnavailable(env);
   if (why) return json({ error: why }, 501);
   if (user !== owner) return json({ error: "only the repo's owner can start a coding agent" }, 403);
-  // Hosted runs bill the site's own API keys, and anyone can sign up and own a
-  // repo, so only the handles in ADMINS may start one.
-  if (env.AGENT_SANDBOX && !(env.ADMINS && isAdmin(env, user))) return json({ error: "hosted agents are limited to this site's admins (ADMINS)" }, 403);
+  if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
   const { path, harness, task, model, lines } = (await req.json()) as { path?: string; harness?: Harness; task?: string; model?: string; lines?: string[] };
   if (lines !== undefined && !(Array.isArray(lines) && lines.every((l) => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
   if (!path) return json({ error: "path required" }, 400);

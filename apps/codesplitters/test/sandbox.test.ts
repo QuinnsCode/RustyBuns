@@ -176,6 +176,19 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     expect((await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "claude", path: "src/a.js", task: "x" })).status).toBe(403);
   });
 
+  test("a feed digest is for admins too: it bills the site's keys, while everyone keeps the raw feed (#575)", async () => {
+    const { call, post, runs } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
+    expect(await (await call("sam-sample", "/api/agents")).json()).toMatchObject({ available: true, admins_only: true });
+    expect(await (await call("ryan-quinn", "/api/agents")).json()).toMatchObject({ available: true, admins_only: false });
+    const res = await post("sam-sample", "/api/me/feed/digest", { harness: "claude" });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as any).error).toContain("ADMINS");
+    expect(await (await call("sam-sample", "/api/me/feed/digest")).json()).toBeNull();
+    expect((await call("sam-sample", "/api/me/feed")).status).toBe(200);
+    expect((await post("ryan-quinn", "/api/me/feed/digest", { harness: "claude" })).status).toBe(202);
+    expect(runs).toEqual([]);   // ryan follows nobody: a digest of nothing needs no agent
+  });
+
   test("with accounts off, nothing runs: anyone could claim an admin's handle by alias", async () => {
     const call = await boot({ GH_CLI: "off", ADMINS: "ryan" });
     opened.push(call);

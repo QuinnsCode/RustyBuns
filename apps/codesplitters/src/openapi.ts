@@ -70,6 +70,7 @@ const OPS: Record<string, Record<string, Op>> = {
   "/me/feed/digest": {
     get: { id: "feed_digest", summary: "Your latest feed digest, written by the coding agent you picked", tag: "Following", ok: loose("{harness, status, since, through, text, error, at}, or null") },
     post: { id: "digest_feed", summary: "Have a coding agent digest your feed since the last digest", tag: "Following",
+      description: "On the hosted site this runs on the site's API keys, so only its admins may (403 otherwise).",
       body: obj({ harness: { type: "string", enum: ["claude", "codex", "pi", "opencode"] }, model: str() }, ["harness"]), ok: loose("the digest, status running"), status: 202 },
   },
   "/users/{name}/pulse": { get: { id: "get_pulse", summary: "A person's or agent's pulse: lines they landed each hour over the last week", tag: "Account", open: true,
