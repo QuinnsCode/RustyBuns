@@ -21,8 +21,10 @@
     ".": "./src/index.ts",
     "./advisories": "./src/advisories.ts",
     "./client": "./src/client.ts",
+    "./cpuprof": "./src/cpuprof.ts",
     "./intro": "./src/intro.tsx",
     "./memwatch": "./src/memwatch.ts",
+    "./profsummary": "./src/profsummary.ts",
     "./shims": "./src/shims.ts"
   },
   "files": [
