@@ -311,6 +311,9 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   // Both hosts check the RustyBuns they were built with, after they start serving.
   for (const src of [desk, box]) expect(src).toContain('launchCheck(typeof RB_RUSTYBUNS === "string" ? RB_RUSTYBUNS : undefined');
   expect(desk).toContain("await openBrowser");
+  // Only the desktop leaves <data>/desktop.json for local tools; a box has no launch token.
+  expect(desk).toContain("writeDesktopFile(dataDir, shell.url, token);");
+  expect(box).not.toContain("writeDesktopFile(dataDir");
   expect(desk).not.toContain("/health");
   // The desktop watches itself too: /__rb/mem for the local player only, a ceiling only from RB_MEM_MAX_MB.
   expect(desk).toContain('if (url.pathname === "/__rb/mem" && !guest) return Response.json(mem.stats());');

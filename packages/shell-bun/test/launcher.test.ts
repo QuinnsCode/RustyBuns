@@ -1,8 +1,8 @@
 import { test, expect, afterEach } from "bun:test";
-import { mkdtempSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, chmodSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { openBrowser } from "../src/launcher.ts";
+import { openBrowser, writeDesktopFile } from "../src/launcher.ts";
 
 const logs: string[] = [];
 const log = console.log;
@@ -35,4 +35,23 @@ test("openBrowser: a browser that cannot start falls back to printing the token 
   capture();
   await openBrowser({ url: "http://127.0.0.1:9", token: "SECRET", code: "once", browser: "/nonexistent/browser" });
   expect(logs.at(-1)).toContain("Open this yourself:\n  http://127.0.0.1:9/?token=SECRET");
+});
+
+test("writeDesktopFile: {url, token} for this user alone, replacing a looser older file; nothing without a token", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rb-desktop-"));
+  writeFileSync(join(dir, "desktop.json"), "stale", { mode: 0o644 });
+  const file = writeDesktopFile(dir, "http://127.0.0.1:9", "SECRET")!;
+  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ url: "http://127.0.0.1:9", token: "SECRET", pid: process.pid });
+  if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
+  expect(writeDesktopFile(mkdtempSync(join(tmpdir(), "rb-desktop-")), "http://127.0.0.1:9", undefined)).toBeUndefined();
+});
+
+test("writeDesktopFile: gone when the app exits, unless another copy took it over", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rb-desktop-"));
+  const run = (then: string) => Bun.spawnSync(["bun", "-e",
+    `const { writeDesktopFile } = await import(${JSON.stringify(join(import.meta.dir, "../src/launcher.ts"))}); const f = writeDesktopFile(${JSON.stringify(dir)}, "http://x", "t"); ${then}`]);
+  expect(run("").exitCode).toBe(0);
+  expect(await Bun.file(join(dir, "desktop.json")).exists()).toBe(false);
+  expect(run(`require("node:fs").writeFileSync(f, "theirs");`).exitCode).toBe(0);
+  expect(readFileSync(join(dir, "desktop.json"), "utf8")).toBe("theirs");
 });
