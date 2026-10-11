@@ -14,8 +14,11 @@ for (const p of PKGS) {
   if (got !== want) bad.push(`${p}: package.json ${want}, bun.lock ${got ?? "missing"}`);
 }
 if (versions.size > 1) bad.push(`packages disagree on version: ${[...versions].join(", ")}`);
+// The README banner names the release ("Alpha, `0.1.9`."), and was left behind once.
+const banner = readFileSync("README.md", "utf8").match(/Alpha, `([^`]+)`/)?.[1];
+if (versions.size === 1 && banner !== [...versions][0]) bad.push(`README.md says ${banner ?? "no version"}, packages are ${[...versions][0]}`);
 if (bad.length) {
-  console.error(`release check failed (run bun install and commit bun.lock):\n  ${bad.join("\n  ")}`);
+  console.error(`release check failed (run bun install and commit bun.lock; update the README banner):\n  ${bad.join("\n  ")}`);
   process.exit(1);
 }
 console.log(`release check ok: ${[...versions][0]}`);
