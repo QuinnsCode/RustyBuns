@@ -505,6 +505,19 @@ export async function mirrorRepoRoute(req: Request, env: Env, owner: string, rep
 // out of the default branch's way (refs/upstream/main and refs/upstream/main/x can't both be).
 
 const tracking = (ref: string) => `refs/upstream-branches/${ref}`;
+/** A ref that keeps a branch's binary file (a blob) from a gc while the branch is open (#446). */
+const pinned = (blob: string) => `refs/branch-blobs/${blob}`;
+/** The blob at `rev:path`, or null. */
+const blobAt = async (dir: string, rev: string, path: string) => { const r = await git(["rev-parse", "--verify", "--quiet", `${rev}:${path}`], dir); return r.code ? null : r.out.trim(); };
+
+/** A branch's binary file's bytes, from the mirror's git (#446): null if it isn't a mirror or git lost it. */
+export async function blobBytes(env: Env, owner: string, repo: string, blob: string): Promise<Uint8Array | null> {
+  const r = await row(env, owner, repo), lg = localGit(env);
+  if (!r || !lg || !/^[0-9a-f]{40,64}$/.test(blob)) return null;
+  const p = Bun.spawn(["git", "cat-file", "blob", blob], { cwd: await syncedDir(lg, r), stdout: "pipe", stderr: "ignore" });
+  const [code, bytes] = await Promise.all([p.exited, new Response(p.stdout).arrayBuffer()]);
+  return code ? null : new Uint8Array(bytes);
+}
 const isText = (s: string) => !s.includes("\0");
 type Setup = { r: Row; dir: string; main: string; net: Record<string, string> };
 type BranchRow = { name: string; by: string; status: string; upstream_ref: string | null };
@@ -585,13 +598,14 @@ const heads = (lsRemote: string) => lsRemote.trim().split("\n").filter(Boolean).
  * (sync.ts merge3; where they touch the same lines, upstream wins). New files
  * are new on the branch. A file the branch hasn't touched that's already as
  * main has it stays main's. A file upstream deleted is deleted on the branch
- * (one only the branch had just goes). Binary ones can't be branch copies:
- * they're listed as skipped.
+ * (one only the branch had just goes). A binary one comes over as its git blob
+ * (#446), pinned so a gc keeps it until the branch merges or goes up.
  */
 async function take(env: Env, owner: string, repo: string, s: Setup, b: string, from: string, to: string) {
   const { materializeOn, createOn, deleteOn } = await import("./branches.ts");
-  const { results } = await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, b).all();
-  const onBranch = new Map((results as { path: string; deleted: number }[]).map((f) => [f.path, !!f.deleted]));
+  const { results } = await env.DB.prepare("SELECT path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, b).all();
+  const rows = new Map((results as { path: string; deleted: number; blob: string | null }[]).map((f) => [f.path, f]));
+  const onBranch = new Map([...rows].map(([p, f]) => [p, !!f.deleted]));
   const files: string[] = [], deleted: string[] = [], skipped: string[] = [];
   const changed = (await must(["diff", "--name-status", "-z", "--no-renames", from, to], s.dir)).split("\0").filter(Boolean);
   const onMain = (path: string) => git(["cat-file", "-e", `refs/heads/${s.main}:${path}`], s.dir).then((r) => !r.code);
@@ -604,8 +618,24 @@ async function take(env: Env, owner: string, repo: string, s: Setup, b: string, 
       continue;
     }
     const text = await show(s.dir, to, path);
-    if (text === null || !isText(text)) { skipped.push(path); continue; }
+    if (text === null) { skipped.push(path); continue; }
+    if (!isText(text)) {
+      const [mode, , blob] = (await must(["ls-tree", to, "--", path], s.dir)).split(/\s+/) as [string, string, string];
+      if (!onBranch.has(path) && blob === await blobAt(s.dir, `refs/heads/${s.main}`, path)) continue;
+      await must(["update-ref", pinned(blob), blob], s.dir);
+      const was = rows.get(path);
+      if (was && !was.deleted && !was.blob) await toFile(env, owner, repo, path, "upstream", "wipe", { method: "POST" }, "", b);
+      await env.DB.prepare(`INSERT INTO branch_files (owner, repo, branch, path, blob, mode) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (owner, repo, branch, path) DO UPDATE SET blob = excluded.blob, mode = excluded.mode, deleted = 0, merged = 0`).bind(owner, repo, b, path, blob, mode).run();
+      files.push(path);
+      continue;
+    }
     if (!onBranch.has(path) && text === await show(s.dir, `refs/heads/${s.main}`, path)) continue;
+    if (rows.get(path)?.blob) {
+      // Binary on the branch, text now: its copy starts over as lines.
+      ((await createOn(env, owner, repo, b, path, text.replace(/\n$/, ""), "upstream")).ok ? files : skipped).push(path);
+      continue;
+    }
     const next = fromDisk(text);
     const m = await materializeOn(env, owner, repo, b, path);
     if ("error" in m) {
@@ -703,14 +733,16 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   }
 
   // The branch's files, as they are, over that tree.
-  const { results } = await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all();
+  const { results } = await env.DB.prepare("SELECT path, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all();
   const idx = join(tmpdir(), `codesplitters-branch-${crypto.randomUUID()}.index`), e = { GIT_INDEX_FILE: idx };
   let tree: string;
   try {
     await must(["read-tree", baseTree], dir, e);
     const gone: string[] = [];
-    for (const { path, deleted } of results as { path: string; deleted: number }[]) {
+    for (const { path, deleted, blob, mode: binMode } of results as { path: string; deleted: number; blob: string | null; mode: string | null }[]) {
       if (deleted) { gone.push(path); continue; }
+      // A binary file is a blob this git has already.
+      if (blob) { await must(["update-index", "--add", "--cacheinfo", `${binMode ?? "100644"},${blob},${path}`], dir, e); continue; }
       const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", name)).json()) as Doc;
       const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(toDisk(doc.lines)), stdout: "pipe", stderr: "pipe" });
       const [, hash] = await Promise.all([put.exited, new Response(put.stdout).text()]);

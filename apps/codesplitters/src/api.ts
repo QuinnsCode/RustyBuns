@@ -123,7 +123,7 @@ export const GROUPS: Group[] = [
     endpoints: [
       { method: "GET", path: "/api/repos/:o/:r/branches", does: "the repo's branches" },
       { method: "POST", path: "/api/repos/:o/:r/branches", body: "{name}", who: CREW, does: "open a branch, named as git allows (slashes, dots, capitals; no spaces, no ..); edit on it with ?branch=name" },
-      { method: "GET", path: "/api/repos/:o/:r/branches/:b", does: "the review: each file's ops against main now, its conflicts, and any build-time changes; a file the branch deleted says deleted: true" },
+      { method: "GET", path: "/api/repos/:o/:r/branches/:b", does: "the review: each file's ops against main now, its conflicts, and any build-time changes; a file the branch deleted says deleted: true, and a binary one a mirror branch took from upstream says binary: true with its git blob" },
       { method: "GET", path: "/api/repos/:o/:r/branches/:b/hunks?path=", does: "what the branch changed in one file since it forked, a stretch at a time: {path, hunks: [{key, at, from, del: [{id, text}], add: [{id, text}], before}]} (the review has each file's hunks too)" },
       { method: "POST", path: "/api/repos/:o/:r/branches/:b/hunks/reject", body: "{path, key}", who: CREW, does: "reject one hunk: the branch's copy goes back to how it read where the branch forked, there and nowhere else. {path, key, rev}; 404 when the hunk is gone, 409 when the file moved under you" },
       { method: "DELETE", path: "/api/repos/:o/:r/branches/:b/files?path=", who: CREW, does: "delete a file on the branch: merging deletes it from main (and its git). Text, binary or too big, all can go; making it again on the branch brings it back" },
