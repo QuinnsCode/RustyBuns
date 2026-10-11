@@ -1,7 +1,8 @@
 # Everyday app tests, on PRs only: one Linux job per app the PR touched (every app if
 # packages/ or the lockfile moved), plus the packages' own tests when packages/ moved and the
 # agent guard hook's tests when .claude/ moved.
-# No binaries here; those come from desktop-drop.yml when you ask for them.
+# An app with a smoke row in scripts/ci-apps.ts (agent-office) also builds its binary on each Mac and Linux
+# runner and checks it starts; those binaries are thrown away. The ones handed out come from desktop-drop.yml.
 name: apps
 on:
   pull_request:
@@ -23,6 +24,8 @@ jobs:
       any: ${{ steps.p.outputs.any }}
       packages: ${{ steps.p.outputs.packages }}
       hooks: ${{ steps.p.outputs.hooks }}
+      smoke: ${{ steps.p.outputs.smoke }}
+      smokes: ${{ steps.p.outputs.smokes }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -83,14 +86,34 @@ jobs:
       # the test count goes on the check run as an annotation, for the office's PR health bar
       - run: bun ../../scripts/ci-test-count.ts "${{ matrix.test }}"
 
+  # The app's own binary, built for the runner it's on and started: linux-x64, linux-arm64, darwin-arm64, darwin-x64.
+  smoke:
+    needs: plan
+    if: needs.plan.outputs.smokes == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.smoke) }}
+    name: smoke ${{ matrix.app }} ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: ${{ matrix.smoke }}
+
   # One check for the ruleset on main to require (.github/rulesets/main.json): the jobs above only run for the
   # apps a PR touched, so their names come and go. This passes when none of them failed or got cancelled.
   apps:
-    needs: [plan, packages, hooks, test]
+    needs: [plan, packages, hooks, test, smoke]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - env: { RESULTS: "${{ join(needs.*.result, ' ') }}" }
         run: |
-          echo "plan, packages, hooks, test: $RESULTS"
+          echo "plan, packages, hooks, test, smoke: $RESULTS"
           case " $RESULTS " in *" failure "*|*" cancelled "*) exit 1 ;; esac

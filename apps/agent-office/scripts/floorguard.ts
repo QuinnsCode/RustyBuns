@@ -1,11 +1,16 @@
 // #644: the guards of live/floorguard.ts (built to server/rb-floorguard.js), in the handler every agent-to-agent
 // path lands in: the MCP tools, the office-workers command and a bare curl to the hook port.
+import { ASK_MS } from "../live/floorguard.ts";
 
-/** server/hooks/office-workers.js: people-only actions, forced send-homes that keep work, and tell_worker marked as from its worker. */
+/** server/hooks/office-workers.js: people-only actions, ask-first ones held for a person (#727), forced send-homes that keep work, and tell_worker marked as from its worker. */
 export function floorGuardHooks(js: string) {
   const rel = "hooks/office-workers.js";
   const refused = "        return send(res, 405, { error: 'GET /office/workers, or POST to /office/workers, /office/workers/home, /office/workers/tell or /office/workers/pr' });\n";
   js = once(js, rel, refused, refused + "    const __rbLocked = __rbGuard.peopleOnly(action);\n    if (__rbLocked)\n        return send(res, 403, { error: __rbLocked });\n");
+  js = once(js, rel, "        return send(res, 400, { error: 'Send JSON' });\n    }\n",
+    "        return send(res, 400, { error: 'Send JSON' });\n    }\n" +
+    "    const __rbNo = await __rbGuard.askFirst(action, floor.id, who, body, (m) => ctx.toastFloor(floor, m));\n" +
+    "    if (__rbNo)\n        return send(res, 403, { error: __rbNo });\n");
   js = once(js, rel, "            const { note, error } = await floor.sendHome(w.id, ask.cleanup);\n",
     "            const __rbHeld = await __rbGuard.forcedHome(floor, w, ask.cleanup, __rbDescribeWork);\n" +
     "            if (__rbHeld)\n                ctx.toastFloor(floor, __rbHeld, 'warn');\n" +
@@ -21,6 +26,13 @@ export function floorGuardHooks(js: string) {
     "        ctx.toastFloor(floor, __rbGuard.toldToast(who, w.name, text));\n" +
     "        return send(res, 200, { ok: true, worker: row(w.id) });\n");
   return "import * as __rbGuard from '../rb-floorguard.js';\nimport { describeWork as __rbDescribeWork } from '../worktrees.js';\n" + js;
+}
+
+/** bin/office-workers.js: an ask-first office holds a request for up to ASK_MS, so the command waits that much longer. */
+export function floorGuardBin(js: string) {
+  const timeouts = "const TIMEOUT_MS = { list: 15_000, tell: 15_000, pr: 45_000, hire: 90_000, home: 300_000 };\n";
+  return once(js, "bin/office-workers.js", timeouts,
+    timeouts + `if (process.env.AGENT_OFFICE_ASK_FIRST)\n  for (const k of ['tell', 'pr', 'hire', 'home']) TIMEOUT_MS[k] += ${ASK_MS};\n`);
 }
 
 function once(s: string, rel: string, from: string, to: string) {

@@ -19,7 +19,7 @@ import path from "node:path";
 import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
 import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
-import { floorGuardHooks } from "./floorguard.ts";
+import { floorGuardBin, floorGuardHooks } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
@@ -40,7 +40,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board guard` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board guard asks` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -165,6 +165,13 @@ async function prepare(tag: string) {
   // 12b. the agent-to-agent endpoint stops trusting every worker on the floor (#644, live/floorguard.ts): a forced
   // send_home keeps another worker's uncommitted work, tell_worker says who it's from, AGENT_OFFICE_PEOPLE_ONLY
   writeFileSync(path.join(srv, "hooks/office-workers.js"), floorGuardHooks(readFileSync(path.join(srv, "hooks/office-workers.js"), "utf8")));
+  // and AGENT_OFFICE_ASK_FIRST holds an agent's request for a person's Allow / Deny (#727): asked at /__rb/asks
+  // (the card is a page script, asks/), with the office-workers command waiting long enough for the answer
+  const bin = path.resolve(srv, "../../../bin/office-workers.js");
+  writeFileSync(bin, floorGuardBin(readFileSync(bin, "utf8")));
+  prepend("http/router.js", "import { asksRoute as __rbAsks } from '../rb-floorguard.js';\n");
+  patch("http/router.js", "const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url)",
+    "const __rb = p.startsWith('/__rb/') && (__rbAsks(req.method, url, req.headers['x-rb-ask'] === '1', session.account?.name) ?? await __rbCsRoute(req.method, url)");
 
   // 13. a per-frame hook in the 3D office, for either skin: the forest and the codeSplitters tiles both hang off it
   officeTicks();
@@ -175,7 +182,7 @@ async function prepare(tag: string) {
   // 14. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board guard\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board guard asks\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -281,6 +288,8 @@ async function buildPageScripts() {
   await buildPageScript("triage/index.ts", "rb-triage", ["index", "lite"]);
   // the codeSplitters mark by the boards, off until Settings › You turns it on
   await buildPageScript("codesplitters/index.ts", "rb-codesplitters", ["index", "lite"]);
+  // AGENT_OFFICE_ASK_FIRST's Allow / Deny card, for an agent's request waiting on a person (#727)
+  await buildPageScript("asks/index.ts", "rb-asks", ["index", "lite"]);
 }
 
 async function buildPageScript(entry: string, prefix: string, pages: string[]) {
