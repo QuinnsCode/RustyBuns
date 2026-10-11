@@ -484,6 +484,21 @@ test("send_email: wrangler and alchemy bind it; the desktop host leaves it out; 
   expect(wranglerToConfig({ name: "g", send_email: [{ name: "MAIL" }] }).bindings).toEqual({ MAIL: { type: "send_email" } });
 });
 
+test("ratelimit: wrangler and alchemy bind it; the desktop host leaves it out; wrangler's carries over", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { THROTTLE: { type: "ratelimit", namespaceId: "1001", simple: { limit: 10, period: 60 } } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, "")).ratelimits).toEqual([{ name: "THROTTLE", namespace_id: "1001", simple: { limit: 10, period: 60 } }]);
+  const a = generateAlchemy(c);
+  expect(a).toContain(`export const THROTTLE = Cloudflare.RateLimit("THROTTLE", { namespaceId: "1001", simple: {"limit":10,"period":60} });`);
+  expect(a).toContain(`THROTTLE: THROTTLE`);
+  expect(desktopEntry(c)).toContain(`// THROTTLE: Workers Rate Limiting has no local twin`);
+  expect(wranglerToConfig({ name: "g", ratelimits: [{ name: "RL", namespace_id: "7", simple: { limit: 5, period: 10 } }] }).bindings)
+    .toEqual({ RL: { type: "ratelimit", namespaceId: "7", simple: { limit: 5, period: 10 } } });
+});
+
 test("queue: wrangler and alchemy bind the producer and the consumer; the desktop host runs both; wrangler's carries over", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },

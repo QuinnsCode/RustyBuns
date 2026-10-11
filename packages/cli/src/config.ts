@@ -19,6 +19,19 @@ export type Binding =
    */
   | { type: "send_email"; allowedSenderAddresses?: string[] }
   /**
+   * Workers Rate Limiting: `await env.NAME.limit({ key })` answers `{ success }`,
+   * counted per Cloudflare location in memory, so a check costs no storage write.
+   * Free, and no resource behind it. Edge only: the desktop has no twin, so the
+   * binding is left out there and the app runs without it.
+   */
+  | {
+      type: "ratelimit";
+      /** A positive integer, as a string, unique in the account: Workers sharing one share its counts. */
+      namespaceId: string;
+      /** `limit` requests per key in each `period` of 10 or 60 seconds. */
+      simple: { limit: number; period: 10 | 60 };
+    }
+  /**
    * Cloudflare Containers: a Durable Object class exported by `main` with a
    * container image behind it (the class reaches it through `ctx.container`).
    * Edge only: the desktop has no twin, so the binding is left out there and

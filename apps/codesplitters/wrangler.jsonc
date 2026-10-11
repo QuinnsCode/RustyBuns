@@ -45,6 +45,16 @@
       "namespace": "codesplitters"
     }
   ],
+  "ratelimits": [
+    {
+      "name": "AUTH_LIMIT",
+      "namespace_id": "6470",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    }
+  ],
   "queues": {
     "producers": [
       {

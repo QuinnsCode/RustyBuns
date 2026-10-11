@@ -38,6 +38,9 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
     case "send_email":
       // Worker-only too: the domain is onboarded to Email Sending outside the stack.
       return `export const ${id} = Cloudflare.Email.SendEmail("${name}"${b.allowedSenderAddresses ? `, { allowedSenderAddresses: ${JSON.stringify(b.allowedSenderAddresses)} }` : ""});`;
+    case "ratelimit":
+      // Worker-only as well: the counters live in Cloudflare's network, not in a resource.
+      return `export const ${id} = Cloudflare.RateLimit("${name}", { namespaceId: ${JSON.stringify(b.namespaceId)}, simple: ${JSON.stringify(b.simple)} });`;
     case "durable_object":
       // Async Workers bind a DO exported by `main` with Cloudflare.DurableObject
       // in `env` (src/Cloudflare/Workers/DurableObject.ts, "Async Workers").

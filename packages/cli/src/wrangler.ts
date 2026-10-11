@@ -22,6 +22,7 @@ export interface WranglerJson {
   limits?: { cpu_ms?: number };
   images?: { binding: string };
   send_email?: { name: string; allowed_sender_addresses?: string[] }[];
+  ratelimits?: { name: string; namespace_id: string; simple: { limit: number; period: 10 | 60 } }[];
   queues?: {
     producers?: { binding: string; queue: string }[];
     consumers?: { queue: string; max_batch_size?: number; max_batch_timeout?: number; max_retries?: number; retry_delay?: number; max_concurrency?: number }[];
@@ -41,7 +42,7 @@ export function parseWranglerToml(src: string): WranglerJson {
 /** Top-level keys that Rusty Buns reads. Anything else in a wrangler file is not carried into the config. */
 const HANDLED = new Set([
   "$schema", "name", "main", "compatibility_date", "compatibility_flags", "assets",
-  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "queues",
+  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "ratelimits", "queues",
 ]);
 
 /** Wrangler keys (bindings, routes, per-env overrides) that `init` cannot represent yet. */
@@ -64,6 +65,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
   for (const o of w.durable_objects?.bindings ?? []) bindings[o.name] = { type: "durable_object", className: o.class_name, scriptName: o.script_name };
   if (w.images?.binding) bindings[w.images.binding] = { type: "images" };
   for (const e of w.send_email ?? []) bindings[e.name] = { type: "send_email", ...(e.allowed_sender_addresses ? { allowedSenderAddresses: e.allowed_sender_addresses } : {}) };
+  for (const l of w.ratelimits ?? []) bindings[l.name] = { type: "ratelimit", namespaceId: String(l.namespace_id), simple: l.simple };
   for (const q of w.queues?.producers ?? []) {
     const c = w.queues?.consumers?.find((c) => c.queue === q.queue);
     bindings[q.binding] = { type: "queue", queueName: q.queue, ...(c ? { consumer: JSON.parse(JSON.stringify({

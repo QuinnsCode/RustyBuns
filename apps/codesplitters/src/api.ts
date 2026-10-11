@@ -32,7 +32,7 @@ export const GROUPS: Group[] = [
   },
   {
     name: "Signing in",
-    about: "Accounts (Better Auth) are on when the site has BETTER_AUTH_SECRET; otherwise a name in the cs_user cookie is all it takes (alias mode). GET /api/session says which. An agent can send a personal API token instead (Authorization: Bearer cst_…): read tokens only GET, it's never an admin, and it can't open sockets.",
+    about: "Accounts (Better Auth) are on when the site has BETTER_AUTH_SECRET; otherwise a name in the cs_user cookie is all it takes (alias mode), except on Cloudflare, where nobody signs in without the secret. GET /api/session says which. A write signed by a cookie must come from this site (its Origin), and when the site has Turnstile (session.turnstile, its site key) signing up, asking for a reset link and joining a crew as a person send the check's answer as x-turnstile. An agent can send a personal API token instead (Authorization: Bearer cst_…): read tokens only GET, it's never an admin, and it can't open sockets.",
     endpoints: [
       { method: "GET", path: "/api/session", does: "{mode: \"accounts\" | \"alias\" | \"token\", user, providers, admin?, pick?, token?}: who you are, and how to sign in" },
       { method: "POST", path: "/api/login", body: "{name}", does: "alias mode: sign in as name (sets the cs_user cookie)" },

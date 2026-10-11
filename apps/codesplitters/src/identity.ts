@@ -13,8 +13,19 @@
 import { betterAuth } from "better-auth";
 import { json, NAME, type Env } from "./env.ts";
 import { privacyNotice } from "./privacy.ts";
+import { turnstileOn } from "./security.ts";
 
 export const accountsOn = (env: Env) => !!env.BETTER_AUTH_SECRET;
+
+/** Running on Cloudflare (workerd says so), not the desktop or the tests under Bun. */
+export const onCloudflare = () => globalThis.navigator?.userAgent === "Cloudflare-Workers";
+
+/**
+ * Alias mode is for one person on their own machine. On Cloudflare without BETTER_AUTH_SECRET
+ * (varlock requires it, but a deploy could still get here) nobody signs in, rather than anyone
+ * as anyone, the site's owner included (#647).
+ */
+export const aliasesClosed = (env: Env) => !accountsOn(env) && onCloudflare();
 
 export function providers(env: Env) {
   const out = ["email"];
@@ -80,7 +91,7 @@ function authFor(req: Request, env: Env) {
   return auth;
 }
 
-const aliasOf = (req: Request) => /(?:^|;\s*)cs_user=([a-z0-9-]+)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? null;
+const aliasOf = (req: Request, env: Env) => aliasesClosed(env) ? null : /(?:^|;\s*)cs_user=([a-z0-9-]+)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? null;
 
 /**
  * agent-<harness> is the collaborator a coding agent edits as (agent-routes.ts),
@@ -156,7 +167,7 @@ export const actingAs = new WeakMap<Request, string>();
 export async function identify(req: Request, env: Env): Promise<string | null> {
   const inner = actingAs.get(req);
   if (inner !== undefined) return inner;
-  if (!accountsOn(env)) return aliasOf(req);
+  if (!accountsOn(env)) return aliasOf(req, env);
   return (await account(req, env))?.handle ?? null;
 }
 
@@ -218,8 +229,8 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
     const notice = privacyNotice(env.PRIVACY_NOTICE);
     const privacy = { ...(env.PRIVACY_EMAIL ? { privacy: env.PRIVACY_EMAIL } : {}), ...(notice ? { notice } : {}) };
     if (!accountsOn(env)) {
-      const user = aliasOf(req);
-      return json({ mode: "alias", user, providers: [], ...(isAdmin(env, user) ? { admin: true } : {}), ...privacy });
+      const user = aliasOf(req, env);
+      return json({ mode: "alias", user, providers: [], ...(isAdmin(env, user) ? { admin: true } : {}), ...(aliasesClosed(env) ? { closed: true } : {}), ...privacy });
     }
     // Signed in but no handle yet: the page asks for one, with a free one to start from.
     const a = await account(req, env);
@@ -228,11 +239,14 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
     const unverified = mailOn(env) && a && a.user.email && !a.user.emailVerified ? { unverified: a.user.email } : {};
     return json({ mode: "accounts", user, providers: providers(env), ...(isAdmin(env, user) ? { admin: true } : {}),
       ...(mailOn(env) ? { mail: true } : {}), ...unverified, ...privacy,
+      // turnstile: the site key for the bot check on sign-up, reset and joining a crew (security.ts).
+      ...(turnstileOn(env) ? { turnstile: env.TURNSTILE_SITE_KEY } : {}),
       ...(a && !a.handle ? { pick: { suggest: await suggest(env, a.user), email: a.user.email } } : {}) });
   }
   if (accountsOn(env) && p[1] === "handle") return handleRoutes(req, env, new URL(req.url));
   if (accountsOn(env)) return p[1] === "login" ? json({ error: "sign in with an account" }, 404) : null;
   if (p[1] === "login" && req.method === "POST") {
+    if (aliasesClosed(env)) return json({ error: "sign-in is off: this site runs on Cloudflare without BETTER_AUTH_SECRET" }, 503);
     const { name } = (await req.json()) as { name: string };
     if (!NAME.test(name ?? "")) return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
     if (isAgentHandle(name)) return json({ error: "agent- handles are for coding agents" }, 400);

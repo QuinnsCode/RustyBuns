@@ -79,6 +79,16 @@ export interface Env {
    */
   EMAIL?: { send(m: { from: string | { email: string; name?: string }; to: string; subject: string; text: string; html?: string }): Promise<unknown> };
   EMAIL_FROM?: string;
+  /**
+   * Cloudflare Turnstile, the bot check on sign-up, password reset and joining a crew
+   * (security.ts). On with both; the page gets the site key from GET /api/session.
+   */
+  TURNSTILE_SITE_KEY?: string;
+  TURNSTILE_SECRET?: string;
+  /** Tests only: stands in for fetch when Turnstile's answer is checked (see security.ts). */
+  TURNSTILE_FETCH?: unknown;
+  /** Workers Rate Limiting in front of the per-IP rules (security.ts); edge only. */
+  AUTH_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   BETTER_AUTH_URL?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
