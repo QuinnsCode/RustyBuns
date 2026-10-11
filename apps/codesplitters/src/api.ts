@@ -210,7 +210,7 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/github/active", body: "{id}", who: SIGNED_IN, does: "dig and list as this one of your linked GitHubs" },
       { method: "POST", path: "/api/github/agent", body: "{id|null}", who: SIGNED_IN, does: "your hosted agents work as this one of your linked GitHubs (GH_TOKEN in their container); null: none" },
       { method: "GET", path: "/api/github/search?q=", does: "public repos on GitHub, best match first" },
-      { method: "POST", path: "/api/github/dig", body: "{repo, name?, visibility?}", who: SIGNED_IN, does: "fork a GitHub repo into one you own here" },
+      { method: "POST", path: "/api/github/dig", body: "{repo, name?, visibility?, path?}", who: SIGNED_IN, does: "fork a GitHub repo into one you own here; a folder's URL (github.com/o/r/tree/<branch>/<path>) or a path digs up just that folder, as the new repo's root" },
       { method: "POST", path: "/api/mirrors", body: "{url, name?, visibility?}", who: SIGNED_IN, does: "desktop only: clone any git remote (GitHub, GitLab, an ssh or https URL) as a mirror that keeps in step with it, pulling its commits and pushing yours back" },
       { method: "GET", path: "/api/jobs", who: SIGNED_IN, does: "your queued requests from the last week" },
       { method: "GET", path: "/api/jobs/:id", does: "a queued request: its place in line, or the answer it had once it ran" },

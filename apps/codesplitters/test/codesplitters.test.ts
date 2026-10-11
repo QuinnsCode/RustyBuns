@@ -929,6 +929,20 @@ describe("github", () => {
     for (const s of ["hono", "https://gitlab.com/a/b", "not a repo"]) expect(parseRepo(s)).toBeNull();
   });
 
+  test("a folder out of a GitHub folder URL, split at the longest branch the repo has (#381)", async () => {
+    const { parseFolder, branchAndPath } = await import("../src/github.ts");
+    expect(parseFolder("https://github.com/QuinnsCode/RustyBuns/tree/main/apps/example/")).toBe("main/apps/example");
+    expect(parseFolder("github.com/o/r/tree/feat%2Fx/a%20b?tab=x")).toBe("feat/x/a b");
+    for (const s of ["o/r", "https://github.com/o/r", "https://github.com/o/r/blob/main/a.ts"]) expect(parseFolder(s)).toBeNull();
+    const real = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(`0000${"a".repeat(40)} refs/heads/main\n${"b".repeat(40)} refs/heads/feat/x\n0000`)) as unknown as typeof fetch;
+    try {
+      expect(await branchAndPath("o/r", "feat/x/apps/example")).toEqual({ branch: "feat/x", path: "apps/example" });
+      expect(await branchAndPath("o/r", "main/apps")).toEqual({ branch: "main", path: "apps" });
+      expect(await branchAndPath("o/r", "main")).toEqual({ branch: "main", path: "" });
+    } finally { globalThis.fetch = real; }
+  });
+
   test("search GitHub; a visitor's dig expires in a day, and the oldest goes once too many are live", async () => {
     const call = await local({ GH_CLI: "off", ADMINS: "boss", DIG_CAP: "2" });
     const real = globalThis.fetch, searched: string[] = [];

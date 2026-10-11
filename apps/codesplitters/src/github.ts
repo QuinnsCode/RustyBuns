@@ -92,6 +92,36 @@ export function parseRepo(s: string): string | null {
   return null;
 }
 
+/**
+ * The `<branch>/<path>` of a GitHub folder URL (`.../tree/main/apps/example`), still run together,
+ * since either may hold slashes (`branchAndPath` splits it). Null for anything else (#381).
+ */
+export function parseFolder(s: string): string | null {
+  const m = /github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9._-]+\/tree\/([^?#\s]+)/.exec(s);
+  if (!m) return null;
+  const rest = m[1]!.split("/").filter(Boolean).map((w) => { try { return decodeURIComponent(w); } catch { return w; } }).join("/");
+  return rest || null;
+}
+
+/** Split a folder URL's `<branch>/<path>` at the longest branch `repo` has, or its first slash if GitHub won't list them. */
+export async function branchAndPath(repo: string, rest: string, token?: string): Promise<{ branch: string; path: string }> {
+  const words = rest.split("/");
+  if (words.length > 1) {
+    let heads: Set<string> | null = null;
+    const advert = await gitAdvert(repo).catch(() => null);
+    if (advert) heads = new Set([...advert.matchAll(/[0-9a-f]{40} refs\/heads\/([^\0\n]+)/g)].map((m) => m[1]!.trim()));
+    else if (token) {
+      const res = await gh(`/repos/${repo}/branches?per_page=100`, token);
+      if (res.ok) heads = new Set(((await res.json()) as { name: string }[]).map((b) => b.name));
+    }
+    for (let i = words.length; i > 1 && heads; i--) {
+      const branch = words.slice(0, i).join("/");
+      if (heads.has(branch)) return { branch, path: words.slice(i).join("/") };
+    }
+  }
+  return { branch: words[0]!, path: words.slice(1).join("/") };
+}
+
 /** Forget a repo: its rows, its files' Durable Objects, and its git. An expired dig goes this way, and so does a repo its owner deletes. */
 export async function evict(env: Env, owner: string, name: string) {
   const r = await env.DB.prepare("SELECT artifact, crew_artifact, old_artifacts FROM repos WHERE owner = ? AND name = ?").bind(owner, name).first();
@@ -290,16 +320,18 @@ export const githubTarball = (repo: string, sha: string, token?: string) =>
  * 40 MB import cap, which depth 1 can't get under, it comes from GitHub's
  * tarball instead, as one commit (tarball.ts).
  */
-export async function importRepo(env: Env, src: { repo: string; branch: string; token?: string; private?: boolean },
+export async function importRepo(env: Env, src: { repo: string; branch: string; token?: string; private?: boolean; folder?: string },
   target: { name: string; opts?: { description?: string; readOnly?: boolean } }) {
   const ns = env.ARTIFACTS!;
   try {
+    // One folder (#381) comes from the tarball, only its files kept, so the rest never lands in git.
+    if (src.folder) throw Object.assign(new Error("one folder"), { code: "FOLDER" });
     return await ns.import({ source: { url: `https://github.com/${src.repo}.git`, branch: src.branch, depth: 1, ...(src.private ? { token: src.token } : {}) }, target });
   } catch (e) {
-    if (!tooBigToImport(e)) throw e;
+    if (!src.folder && !tooBigToImport(e)) throw e;
     const c = await githubHead(src.repo, src.branch, src.token);
     return importTarball(ns, {
-      tarball: () => githubTarball(src.repo, c.sha, src.token), submodules: () => submodules(src.repo, c.sha, src.token), repo: src.repo, sha: c.sha, branch: src.branch, target,
+      tarball: () => githubTarball(src.repo, c.sha, src.token), submodules: () => submodules(src.repo, c.sha, src.token), repo: src.repo, sha: c.sha, branch: src.branch, target, folder: src.folder,
       message: c.message, author: (c.author?.name ?? src.repo.split("/")[0]!).replace(/[<>\n]/g, ""),
       email: c.author?.email?.replace(/[<>\n\s]/g, "") || undefined, at: Date.parse(c.author?.date ?? "") || undefined,
     });
@@ -371,10 +403,14 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   if (p[2] === "dig" && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
     if (!env.ARTIFACTS) return json({ error: "no Artifacts binding" }, 501);
-    const b = (await req.json().catch(() => ({}))) as { repo?: string; name?: string; visibility?: string };
+    const b = (await req.json().catch(() => ({}))) as { repo?: string; name?: string; visibility?: string; path?: string };
     const full = parseRepo(b.repo ?? "");
     if (!full) return json({ error: "give a GitHub repo as owner/name or its URL" }, 400);
-    const name = b.name || full.split("/")[1]!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    // A folder's URL (or a path) digs up just that folder, at the branch the URL names (#381).
+    const tree = parseFolder(b.repo ?? "");
+    const at = tree ? await branchAndPath(full, tree, t?.token) : null;
+    const folder = (b.path ?? at?.path ?? "").split("/").filter((w) => w && w !== "." && w !== "..").join("/");
+    const name = b.name || (folder.split("/").at(-1) || full.split("/")[1]!).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
     const visibility = b.visibility ?? "public";
     const expires = isAdmin(env, user) ? null : Date.now() + DIG_TTL;
@@ -400,6 +436,14 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
       sha = refs.sha;
     }
 
+    if (at && at.branch !== info.default_branch) {
+      const c = await githubHead(info.full_name, at.branch, t?.token).catch(() => null);
+      if (!c) return json({ error: `GitHub has no ${at.branch} branch on ${info.full_name}` }, 404);
+      info = { ...info, default_branch: at.branch };
+      sha = c.sha;
+    }
+    const upstream = `github:${info.full_name}${folder ? `/tree/${info.default_branch}/${folder}` : ""}`;
+
     if (expires) await makeRoom(env, 1);
 
     // Shallow, like the levels; writable, because it's yours now.
@@ -408,14 +452,14 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
       // No row owns this name (checked above), so an Artifact under it is an orphan: an import cut
       // off halfway stays "being imported" on Cloudflare and would block the name for good (#348).
       await env.ARTIFACTS.delete?.(`${user}--${name}`).catch(() => false);
-      art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: t?.token, private: info.private },
-        { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}` } });
+      art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: t?.token, private: info.private, folder: folder || undefined },
+        { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}${folder ? `'s ${folder}` : ""}` } });
     } catch (e) {
       return json({ error: `couldn't dig up ${info.full_name}: ${String((e as Error).message ?? e)}` }, 502);
     }
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, `github:${info.full_name}`, sha, expires).run();
-    return json({ owner: user, name, upstream: `github:${info.full_name}`, commit: sha, ...(expires ? { expires_at: expires } : {}) }, 201);
+      .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, upstream, sha, expires).run();
+    return json({ owner: user, name, upstream, commit: sha, ...(expires ? { expires_at: expires } : {}) }, 201);
   }
   return null;
 }
