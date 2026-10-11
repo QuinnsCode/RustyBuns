@@ -60,7 +60,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
 
   // GET /api/repos/:o/:r/branches
   if (!name && req.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT name, by, status, created_at, merged_by, merged_at FROM branches WHERE owner = ? AND repo = ? ORDER BY created_at DESC").bind(owner, repo).all();
+    const { results } = await env.DB.prepare("SELECT name, by, status, created_at, merged_by, merged_at, upstream_ref FROM branches WHERE owner = ? AND repo = ? ORDER BY created_at DESC").bind(owner, repo).all();
     return json(results);
   }
   // POST /api/repos/:o/:r/branches {name}
