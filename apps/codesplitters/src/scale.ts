@@ -1,4 +1,4 @@
-// The scale sideboard, for admins (#/admin/scale, GET /api/admin/scale): every
+// The scale sideboard, for admins: the dig site (#/admin/scale, GET /api/admin/scale): every
 // wall codeSplitters hits as it grows, like a sideboard guide. Each card says
 // what breaks, where, at about what number, how it shows, the fix on Cloudflare,
 // what moving to one box (Hetzner or Railway, the same code on shell-bun) would
