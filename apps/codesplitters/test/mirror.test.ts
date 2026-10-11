@@ -397,6 +397,50 @@ describe("mirrors", () => {
     expect(await upShow("src/a.ts")).toBe("export const a = 10");
   });
 
+  test("primary here: this copy leads, commits made here or pushed to its git reach upstream on the next sync (#464)", async () => {
+    const call = await mirrored("lead");
+    expect(await sync(call)).toMatchObject({ state: "ok", primary: "upstream" });
+    expect((await post(call, "/api/repos/ana/up/mirror", { primary: "sideways" })).status).toBe(400);
+    expect(await sync(call, { primary: "here" })).toMatchObject({ state: "ok", primary: "here", ahead: 0 });
+
+    // A commit here goes up first thing.
+    await editHere(call, "README", 1, "hello, led from here");
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
+    expect(await upShow("README")).toBe("hello, led from here\nworld");
+
+    // Your own tools use the desktop's git as a remote: clone it, commit, push back.
+    const repo = await get(call, "/api/repos/ana/up");
+    expect(repo.home).toBe("local");
+    const work = mkdtempSync(join(root, "tool-"));
+    await sh(`git clone -q ${repo.clone.split(" ")[2]} .`, work);
+    await sh(`${repo.push} && git config user.name Ana && git config user.email ana@example.com`, work);
+    writeFileSync(join(work, "TOOLS.md"), "from a terminal\n");
+    await sh(`git add -A && git commit -qm "from a terminal" && git push -q codesplitters main`, work);
+    // Upstream is a commit behind until the next sync, and the panel says so.
+    expect(await get(call, "/api/repos/ana/up/mirror")).toMatchObject({ primary: "here", ahead: 1 });
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect(await upLog("%s")).toBe("from a terminal");
+    expect(await upShow("TOOLS.md")).toBe("from a terminal");
+
+    // Upstream moved too: the push is turned away, so it merges upstream's in and pushes that.
+    await upstreamCommit({ "src/b.ts": "export const b = 2\n" }, "bo adds b");
+    await editHere(call, "src/a.ts", 1, "export const a = 3");
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect(await upShow("src/a.ts")).toBe("export const a = 3");
+    expect(await upShow("src/b.ts")).toBe("export const b = 2");
+    expect(await upLog("%P")).toContain(" ");   // a merge commit
+
+    // Both changed the same lines: it still asks, even with this copy leading.
+    await upstreamCommit({ README: "bo's hello\nworld\n" }, "bo's readme");
+    await editHere(call, "README", 1, "ana's hello");
+    expect(await sync(call)).toMatchObject({ state: "clash", clash: ["README"], primary: "here" });
+    expect(await sync(call, { resolve: "mine" })).toMatchObject({ state: "ok" });
+    expect(await upShow("README")).toBe("ana's hello\nworld");
+
+    // Only the owner gets a remote that writes.
+    expect((await (await call("bo", "/api/repos/ana/up")).json() as any).push).toBeUndefined();
+  });
+
   test("takes any git URL on the desktop, and says what's wrong with a bad one", async () => {
     const call = await boot();
     opened.push(call);

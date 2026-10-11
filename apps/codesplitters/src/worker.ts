@@ -46,6 +46,7 @@ import { embedDue, indexFile, restaleSearch, searchAll, searchRepo, searchRoutes
 import { pulseRoutes } from "./pulse.ts";
 import { installScript } from "./install.ts";
 import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
+import { worktreeRoute } from "./worktrees.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue, TRUTHS, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -256,9 +257,13 @@ async function route(req: Request, env: Env): Promise<Response> {
       const crewClone = crewArt && `git clone ${crewArt.remote.replace("://", `://x:${crewArt.token.split("?")[0]}@`)} ${repo}`;
       // Where the fork's git lives: a bare repo on this machine, or Cloudflare Artifacts.
       const home = h ? (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(art?.remote ?? h.remote) ? "local" : "cloud") : null;
+      // On the desktop the owner can push back too (#464): the bare repo is a remote for their own tools, with a
+      // day-long write token (gone when the app restarts). Not with private lines, which that git holds blank.
+      const wa = home === "local" && user === owner && !ch?.crew ? await artifactAccess(h!.handle, h!.remote, "write", 86400).catch(() => null) : null;
+      const push = wa && `git remote add codesplitters ${wa.remote.replace("://", `://x:${wa.token.split("?")[0]}@`)}`;
       // The owner sees who's invited but not in yet, beside the crew.
       const invites = user === owner ? { invites: await pendingInvites(env, owner, repo) } : {};
-      return json({ ...r, mirror: !!r?.mirror, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home, ...invites });
+      return json({ ...r, mirror: !!r?.mirror, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home, ...(push && { push }), ...invites });
     }
     // PUT /api/repos/:o/:r {visibility}  (owner only)
     if (!p[4] && req.method === "PUT") {
@@ -339,6 +344,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "mirror" && !p[5]) return mirrorRepoRoute(req, env, owner, repo, user);
     // GET|POST /api/repos/:o/:r/mirror/branches[/:b/pull|push]  upstream's branches, opened here; ours, pushed there
     if (p[4] === "mirror") { const r = await mirrorBranchRoute(req, env, p, owner, repo, user); if (r) return r; }
+    // GET|POST /api/repos/:o/:r/worktrees, DELETE .../worktrees/:name  real checkouts off the desktop's bare git (worktrees.ts)
+    if (p[4] === "worktrees") { const r = await worktreeRoute(req, env, p, owner, repo, user); if (r) return r; }
     const fresh = await freshRoutes(req, env, p, url, owner, repo, user);
     if (fresh) return fresh;
     const branches = await branchRoutes(req, env, p, owner, repo, user, a);
