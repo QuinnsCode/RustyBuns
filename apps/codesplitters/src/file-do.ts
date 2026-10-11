@@ -21,7 +21,7 @@
 import type { Env } from "./env.ts";
 import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
-import { countHit } from "./limits.ts";
+import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { apply, empty, merge, replay, sha, text, type Applied, type Doc, type Line, type Op } from "./lines.ts";
 
@@ -65,8 +65,11 @@ export class FileDurableObject {
   /** Each writer's line event still being folded into, and the writes to D1, one after another. */
   recent = new Map<string, Recent>();
   logging: Promise<unknown> = Promise.resolve();
+  /** Its sockets' edits, counted against the edit limit without waiting on D1. */
+  edits: Tally;
 
   constructor(private ctx: any, private env: Env) {
+    this.edits = new Tally(env, "edit");
     ctx.blockConcurrencyWhile(async () => {
       this.doc = (await ctx.storage.get("doc")) ?? empty();
       this.commits = (await ctx.storage.get("commits")) ?? 0;
@@ -247,7 +250,7 @@ export class FileDurableObject {
     if (msg.type !== "ops" || !Array.isArray(msg.ops)) return;
     const who = (ws.deserializeAttachment() ?? {}) as { user?: string; write?: boolean; limitAs?: string | null; stepAs?: string | null };
     if (!who.write) return ws.send(JSON.stringify({ type: "nack", id: msg.id, error: "no write access" }));
-    const over = who.limitAs ? await countHit(this.env, "edit", who.limitAs) : null;
+    const over = who.limitAs ? await this.edits.hit(who.limitAs) : null;
     if (over) return ws.send(JSON.stringify({ type: "nack", id: msg.id, error: over.error, retryAfter: over.wait }));
     const r = await this.edit(who.user ?? "anon", msg.ops, msg.ifRev, msg.claim);
     if (r.ok && who.stepAs) {

@@ -32,7 +32,8 @@
 //
 // Edits sent over a file's WebSocket skip the Worker, so the Worker works out
 // who a socket counts as when it opens (or that it isn't counted) and the
-// file's DO counts each edit with countHit.
+// file's DO counts each edit with a Tally: in memory, written to D1 in the
+// background, so a keystroke never waits on D1.
 
 import { json, type Env } from "./env.ts";
 import { actingAs } from "./identity.ts";
@@ -130,13 +131,7 @@ export function counted(req: Request, rule: string | null, user: string | null, 
   return r.per === "user" && user ? `@${user}` : ip;
 }
 
-/** Count one hit against the rule for `who`; when that's over the limit and the rule rejects, why, and how many seconds to wait. */
-export async function countHit(env: Env, rule: string, who: string): Promise<{ error: string; wait: number } | null> {
-  const over = await hit(env, rule, who, false);
-  return over && "error" in over ? over : null;
-}
-
-/** countHit, but with `queue` a queueing rule says so (and which window it was) instead of rejecting. */
+/** Count one hit against the rule for `who`; when that's over the limit and the rule rejects, why, and how many seconds to wait, or with `queue` a queueing rule says so (and which window it was) instead. */
 async function hit(env: Env, rule: string, who: string, queue: boolean): Promise<{ error: string; wait: number } | { queue: Rule; win: number } | null> {
   const r = (await rules(env)).get(rule);
   if (!r?.enabled) return null;
@@ -151,8 +146,69 @@ async function hit(env: Env, rule: string, who: string, queue: boolean): Promise
     await env.DB.prepare("INSERT INTO limit_events (rule, who, win, action, at) VALUES (?, ?, ?, ?, ?)").bind(rule, who, win, r.on_fail, Date.now()).run();
   if (r.on_fail === "queue" && r.queueable && queue) return { queue: r, win };
   if (r.on_fail !== "reject" && r.on_fail !== "queue") return null;
-  const wait = Math.ceil((win + span - Date.now()) / 1000);
+  return slowDown(r, win);
+}
+
+function slowDown(r: Rule, win: number) {
+  const wait = Math.ceil((win + r.window_s * 1000 - Date.now()) / 1000);
   return { error: `Slow down: ${r.label.toLowerCase()} is limited to ${r.max} per ${every(r.window_s)}. Try again in ${every(wait)}.`, wait };
+}
+
+/** How often a Tally writes what it has counted. */
+export const TALLY_MS = 1000;
+
+/**
+ * A rule's count for the hot path, without waiting on D1: a file's DO counts its sockets' edits
+ * in memory, decides from that, and adds them to limit_hits in the background, one write
+ * per caller every TALLY_MS. Each write hands back the caller's count across every file
+ * and the POST route, so other files' edits catch up within a tally; until then a caller
+ * editing several files at once can run a little over. A write that fails is tried again
+ * with the next one. Never queues (line edits can't).
+ */
+export class Tally {
+  private seen = new Map<string, { who: string; win: number; known: number; sending: number; pending: number }>();
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  constructor(private env: Env, private rule: string) {}
+
+  async hit(who: string): Promise<{ error: string; wait: number } | null> {
+    const r = (await rules(this.env)).get(this.rule);
+    if (!r?.enabled) return null;
+    const span = r.window_s * 1000, win = Math.floor(Date.now() / span) * span, key = `${who} ${win}`;
+    let s = this.seen.get(key);
+    if (!s) this.seen.set(key, s = { who, win, known: 0, sending: 0, pending: 0 });
+    s.pending++;
+    this.timer ??= setTimeout(() => void this.flush(), TALLY_MS);
+    if (s.known + s.sending + s.pending <= r.max || (r.on_fail !== "reject" && r.on_fail !== "queue")) return null;
+    return slowDown(r, win);
+  }
+
+  /** Write what's been counted since the last tally; the first write over the max goes in the log. */
+  async flush() {
+    this.timer = null;
+    const r = (await rules(this.env)).get(this.rule);
+    const now = Date.now();
+    await Promise.all([...this.seen].map(async ([key, s]) => {
+      if (!s.pending) {
+        if (!s.sending && r && s.win + r.window_s * 1000 <= now) this.seen.delete(key);
+        return;
+      }
+      const n = s.pending;
+      s.pending = 0, s.sending += n;
+      try {
+        const row = await this.env.DB.prepare(
+          "INSERT INTO limit_hits (rule, who, win, count) VALUES (?, ?, ?, ?) ON CONFLICT (rule, who, win) DO UPDATE SET count = count + excluded.count RETURNING count")
+          .bind(this.rule, s.who, s.win, n).first();
+        const count = row?.count as number;
+        s.known = count;
+        if (r && count > r.max && count - n <= r.max)
+          await this.env.DB.prepare("INSERT INTO limit_events (rule, who, win, action, at) VALUES (?, ?, ?, ?, ?)").bind(this.rule, s.who, s.win, r.on_fail, Date.now()).run();
+      } catch (e) {
+        s.pending += n;
+        console.error("codeSplitters: edit tally failed", String((e as Error)?.message ?? e));
+      } finally { s.sending -= n; }
+    }));
+    if ([...this.seen.values()].some((s) => s.pending)) this.timer ??= setTimeout(() => void this.flush(), TALLY_MS);
+  }
 }
 
 /** A 429 when this caller is over the rule's limit, or a 202 when it queues them; else null (and the hit is counted). */

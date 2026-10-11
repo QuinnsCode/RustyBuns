@@ -9,6 +9,7 @@
 // load tests. Readings are cheap queries over D1, taken when the page asks.
 
 import { json, type Env } from "./env.ts";
+import { TALLY_MS } from "./limits.ts";
 
 export type State = "ok" | "warn" | "bad" | "unmeasured";
 export interface Card {
@@ -28,11 +29,11 @@ const MB = 1024 * 1024, GB = 1024 * MB;
 export const CARDS: Card[] = [
   {
     id: "d1-writes", name: "One D1 for the whole site", where: "D1: limit_hits, line_events, traffic",
-    wall: "~500 writes/s sitewide (one writer per database), about 100 people typing at once",
+    wall: "~500 writes/s sitewide (one writer per database), about 500 people typing at once, less the traffic rows",
     shows: "Edits lag everywhere at once, even on different files; D1 overloaded errors and 5xx on Insights",
-    here: "Yes. Count edits in a per-user DO or the Rate Limiting binding, tally traffic in Analytics Engine: the edit path stops waiting on D1",
+    here: "Yes. Edits are counted in the file's DO and tallied to D1 once a second per typist, off the edit path (#623); next, tally traffic in Analytics Engine",
     box: "SQLite on local NVMe takes 10–100× the writes, no network hop",
-    next: "Take the edit rate limit (countHit in file-do.ts) off D1",
+    next: "Tally traffic (insights.ts) in Analytics Engine instead of a D1 row per request",
   },
   {
     id: "d1-size", name: "D1's 10 GB cap", where: "D1, the whole database",
@@ -115,8 +116,8 @@ async function dbBytes(env: Env): Promise<number | null> {
 /** Live readings for the cards that can be measured from D1. */
 export async function readings(env: Env, now = Date.now()): Promise<Record<string, Reading>> {
   const first = async (sql: string, ...args: unknown[]) => ((await env.DB.prepare(sql).bind(...args).first()) ?? {}) as Record<string, unknown>;
-  // The busiest edit window in the last day: every edit is a D1 write (its count), before the feed's and traffic's.
-  const edits = await first("SELECT MAX(c) AS peak FROM (SELECT SUM(count) AS c FROM limit_hits WHERE rule = 'edit' AND win >= ? GROUP BY win)", now - 86_400_000);
+  // The busiest edit window in the last day, in D1 writes: a file's Tally writes each typist's edits once every TALLY_MS at most, before the feed's and traffic's.
+  const edits = await first("SELECT MAX(c) AS peak FROM (SELECT SUM(MIN(count, ?)) AS c FROM limit_hits WHERE rule = 'edit' AND win >= ? GROUP BY win)", 60_000 / TALLY_MS, now - 86_400_000);
   // The biggest committed file: its text, plus ~70 bytes a line of id, rev, author and time in the doc.
   const big = await first("SELECT owner, repo, path, length(content) AS bytes, length(content) - length(replace(content, char(10), '')) + 1 AS lines FROM file_search ORDER BY length(content) DESC LIMIT 1");
   const search = await first("SELECT SUM(length(content)) AS bytes FROM file_search");
@@ -127,7 +128,7 @@ export async function readings(env: Env, now = Date.now()): Promise<Record<strin
   const size = await dbBytes(env);
   const where = (r: Record<string, unknown>) => r.path ? `${r.owner ? `${r.owner}/${r.repo}/` : ""}${r.path}` : "";
   return {
-    "d1-writes": { value: n(edits.peak) / 60, limit: 500, unit: "writes/s", note: "busiest minute of edits in the last day; traffic and feed writes come on top" },
+    "d1-writes": { value: n(edits.peak) / 60, limit: 500, unit: "writes/s", note: "edit tallies in the busiest minute of the last day; traffic and feed writes come on top" },
     "d1-size": { value: size, limit: 10 * GB, unit: "bytes", note: size === null ? "D1 didn't say" : "the whole database" },
     "search": { value: n(search.bytes), limit: 4 * GB, unit: "bytes", note: "text of every file's last commit" },
     "big-file": { value: n(big.bytes) + n(big.lines) * 70, limit: 2 * MB, unit: "bytes", note: big.path ? `${where(big)}, ${n(big.lines).toLocaleString()} lines` : "no files yet" },
