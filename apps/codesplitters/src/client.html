@@ -13,7 +13,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>codeSplitters</title>
 <link href="/fonts/geist.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<script src="/vendor/lucide.min.js"></script>
 <style>
   /* GitHub's shape in black and white, written like a staff engineer's blog:
      hairlines, lots of white, one orange. Buttons are small paper tiles
@@ -1650,7 +1650,7 @@ const views = {
         </tbody></table></div>
 
       <h2>Trenches that came up empty</h2>
-      <p>We dug where the usual stuff hides and found nothing: no analytics, no advertising, no third-party cookies, no tracking pixels, no session replays, no data brokers. Our fonts are served from our own server, so Google doesn't hear about your visit either. We don't use your code or your data to train AI models, ours or anyone's.</p>
+      <p>We dug where the usual stuff hides and found nothing: no analytics, no advertising, no third-party cookies, no tracking pixels, no session replays, no data brokers. Our fonts, icons and the game's 3D engine are served from our own server, so neither Google nor a public CDN hears about your visit. We don't use your code or your data to train AI models, ours or anyone's.</p>
 
       <h2>Cookies: one jar, no biscuits for anyone else</h2>
       <p>The only cookies here keep you signed in: <code>better-auth.session_token</code> (and a short-lived <code>session_data</code> copy that saves a database trip), or <code>cs_user</code> on the desktop app. They're strictly necessary, so there's no banner to click through; there's nothing optional to say no to. The site also remembers a few layout choices, like how wide you like the sidebar or which notice you've dismissed, in your browser's local storage. That never leaves your device.</p>
@@ -1661,7 +1661,6 @@ const views = {
         <li><b>Cloudflare</b> hosts everything: the site, the database, your files, git storage and our account email. <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Their policy</a>.</li>
         <li><b>GitHub</b> and <b>Google</b>, only if you sign in with them, and GitHub when you fork a repo from it.</li>
         <li><b>AI model providers</b> (Anthropic, OpenAI, Google and others), only when you start a hosted agent: the file it edits and your task go to the model behind the harness you picked.</li>
-        <li><b>jsDelivr</b>, the public CDN our icons and the game's 3D engine load from, sees your IP address when your browser fetches them.</li>
       </ul>
 
       <h2>Why we're allowed to</h2>
