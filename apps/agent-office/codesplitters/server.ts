@@ -3,9 +3,10 @@
 // and codeSplitters needn't allow another origin.
 //
 // Where and as whom: CODESPLITTERS_URL and CODESPLITTERS_TOKEN (a cst_ token from your profile page), else what
-// `codesplitters login` saved, else the live site, signed out. The desktop app takes a cst_ token too, but sits
-// behind its own launch token: a URL like http://127.0.0.1:5199/?token=<it> (what RB_NO_BROWSER=1 prints) hands
-// that over as the cookie the desktop expects, and the token never reaches the page.
+// `codesplitters login` saved, else the desktop app if it's running, else the live site, signed out. The desktop
+// takes a cst_ token too, but sits behind its own launch token: a URL like http://127.0.0.1:5199/?token=<it> (what
+// RB_NO_BROWSER=1 prints, or what the running app leaves in ~/.codesplitters/desktop.json) hands that over as the
+// cookie the desktop expects, and the token never reaches the page.
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -22,7 +23,7 @@ export function site(env: Record<string, string | undefined> = process.env): Sit
   try {
     conf = JSON.parse(readFileSync(path.join(env.XDG_CONFIG_HOME ?? path.join(env.HOME ?? homedir(), ".config"), "codesplitters/config.json"), "utf8"));
   } catch {}
-  const u = new URL(env.CODESPLITTERS_URL ?? conf.url ?? LIVE);
+  const u = new URL(env.CODESPLITTERS_URL ?? conf.url ?? desktop(env.HOME ?? homedir()) ?? LIVE);
   const launch = u.searchParams.get("token");
   u.search = "";
   return {
@@ -30,6 +31,15 @@ export function site(env: Record<string, string | undefined> = process.env): Sit
     token: env.CODESPLITTERS_TOKEN ?? conf.token,
     ...(launch && { cookie: `rb_token_${u.port}=${launch}` }),
   };
+}
+
+/** The running desktop app's URL, launch token and all, from the 0600 file it keeps while it runs; else undefined. */
+export function desktop(home: string): string | undefined {
+  try {
+    const d = JSON.parse(readFileSync(path.join(home, ".codesplitters/desktop.json"), "utf8")) as { url: string; token: string; pid: number };
+    process.kill(d.pid, 0); // throws when the app is gone and left the file behind (a crash, kill -9)
+    return `${d.url}/?token=${encodeURIComponent(d.token)}`;
+  } catch { return undefined; }
 }
 
 /** The route; null for any other path. */

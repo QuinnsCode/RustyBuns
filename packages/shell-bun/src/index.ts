@@ -3,7 +3,7 @@
 // the same method names. No container, no decorators, no magic.
 
 export { serve, type ServeOptions, type BunShell } from "./serve.ts";
-export { openBrowser, findChromium, mintToken, type LaunchOptions } from "./launcher.ts";
+export { openBrowser, writeDesktopFile, findChromium, mintToken, type LaunchOptions } from "./launcher.ts";
 export { d1, D1Database, applyD1Migrations } from "./bindings/d1.ts";
 export { kv, KVNamespace } from "./bindings/kv.ts";
 export { storage, type StorageOptions } from "./bindings/storage.ts";

@@ -56,7 +56,9 @@ function hostParts(c: RustyBunsConfig, host: HostKind, desktopDataDir: string) {
       : `${JSON.stringify(desktopDataDir)}.replace(/^~/, homedir())`,
     token: box ? "undefined" : "mintToken()",
     listen: box ? `, hostname: "0.0.0.0", port: Number(process.env.PORT ?? 3000)` : `, hostname: listen.hostname, port: listen.port`,
-    launch: box ? "" : `await openBrowser({ url: shell.url, token, code: shell.launchCode(), window: ${JSON.stringify(c.targets.desktop?.window ?? "app")} });\n`,
+    launch: box ? "" : `// <data>/desktop.json (0600, gone on exit) is how local tools find this run without RB_NO_BROWSER.
+writeDesktopFile(dataDir, shell.url, token);
+await openBrowser({ url: shell.url, token, code: shell.launchCode(), window: ${JSON.stringify(c.targets.desktop?.window ?? "app")} });\n`,
   };
 }
 
@@ -119,7 +121,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute" : ""}${appImport(c)}, type GuestState } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute" : ""}${appImport(c)}, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
@@ -383,7 +385,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
-import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
