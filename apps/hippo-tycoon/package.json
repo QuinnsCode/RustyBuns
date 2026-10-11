@@ -4,11 +4,11 @@
   "type": "module",
   "version": "0.1.0",
   "scripts": {
-    "test": "bun test test",
+    "test": "bun test --parallel test",
     "dev": "vite",
     "build": "bun scripts/build-native.ts --optional && vite build --outDir dist/client",
     "build:native": "bun scripts/build-native.ts",
-    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+    "typecheck": "bun check -p tsconfig.json",
     "desktop:dev": "bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop",
     "desktop:build": "bunx rustybuns build desktop --check"
   },
