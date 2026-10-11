@@ -18,7 +18,7 @@ Agents write most of this repo, and codeSplitters lets other people's agents int
 
 **The weak spot is the laptop, not varlock.** Runtime injection only protects a secret that isn't already sitting somewhere else:
 
-- Agent Office passes its whole environment to every worker (#643). Anything exported in the shell that launched the office reaches all of them.
+- Agent Office passed its whole environment to every worker (#643). Secret-shaped names are now dropped (`apps/agent-office/live/env.ts`), but a secret under an innocent name still reaches them. The guard refuses `ps e` / `ps -E` (#642), but since an agent runs as you, a script can still read the office process's own environment; the fix is workers as their own user (#667).
 - Every agent runs as you. `gh auth token`, `~/.config`, Alchemy's plaintext state (`.alchemy/state`) and the office's session secret and pty token are all readable (#667).
 - Nothing stops an agent from running `op` while you're at the keyboard and approving Touch ID out of habit. The deny-list in #649 makes that a visible prompt instead of a habit.
 
@@ -41,7 +41,7 @@ The REFERENCE notes that the 1Password path "has not been run against a real vau
 | --- | --- |
 | Binds `127.0.0.1`, with a password and an HttpOnly signed cookie; WebSocket and uploads check Origin | **Any agent can read the pty-host token and the office session secret and password**. It can then type into any terminal, or sign in to the office. The guard hook refuses the reads, but a script still can; the fix is workers as their own user (#667) |
 | `workers.json` keeps hashes of the hook tokens, not the tokens, and the guard refuses `ps e` / `ps -E`, so a worker can't take another's token to act as it (#642) | |
-| The hook port needs each worker's own bearer token; agents can't send themselves home or message shells | Workers inherit the office's whole env (#643) |
+| The hook port needs each worker's own bearer token; agents can't send themselves home or message shells | Workers inherit the office's env less secret-shaped names; a secret under an innocent name still gets through (#643) |
 | No `--dangerously-skip-permissions`; hire/home/tell go through Claude Code's permission prompt | `send_home` with forced cleanup deletes another agent's uncommitted work. `tell_worker` passes prompts between agents unchecked. The `office-workers` CLI skips the MCP prompt (#644) |
 | Default `send_home` keeps a branch with unpushed commits. The Host header is allowlisted (DNS rebinding) and the unpacked client is checked against the binary's hash every start (#651) | Agents aren't confined to their worktree |
 
@@ -102,7 +102,7 @@ Only you can do these. Each is a `MANUAL RUN` issue with the clicks and a check:
 
 ## Order to fix the rest
 
-1. #667 and #643: agents can read the office's session secret and pty token, and the shell's secrets.
+1. #667: agents can read the office's session secret and pty token, and secrets under innocent names in the shell's environment (#643 drops the secret-shaped ones).
 2. #645 and #646: collaborator agents on codeSplitters reach private lines, checks and the owner's deploy key.
 3. #649: a committed deny-list and hook. It's a speed bump, not a sandbox, but it stops the casual leak.
 4. #647: headers, Origin checks, Turnstile and failing closed.
