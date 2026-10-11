@@ -179,7 +179,12 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "Each conflict is {line, base, main, branch, choices, suggestion?}: settle it in merge_branch's `resolve` by its `line` with one of its `choices` " +
       "(\"text\" meaning {\"text\": \"...\"}). `suggestion`, where there is one, keeps both sides' words: merge with {\"text\": suggestion} to take it. " +
       "suggest_resolution has a coding agent write one.",
-    ok: loose("the branch row, plus {deploys, files: [{path, merged, build, deleted?, ops, conflicts: [{line, base, main, branch, choices, suggestion?, doubled?, whole?, lint?}], lines?}]}") } },
+    ok: loose("the branch row, plus {deploys, files: [{path, merged, build, deleted?, ops, conflicts: [{line, base, main, branch, choices, suggestion?, doubled?, whole?, lint?}], hunks, lines?}]}; " +
+      "hunks are what the branch itself changed since it forked: [{key, at, from, del: [{id, text}], add: [{id, text}], before}]") } },
+  [`${repo}/branches/{branch}/hunks/reject`]: { post: { id: "reject_hunk", summary: "Reject one hunk of a branch: its copy of the file reads as it did where the branch forked, there only (the crew)", tag: "Branches",
+    description: "Name the hunk by the `key` review_branch lists for it. The rest of the branch stays. A 404 means the hunk changed or went: review again.",
+    body: obj({ path: str(), key: str("the hunk's key, as review_branch lists it") }, ["path", "key"]),
+    ok: obj({ path: str(), key: str(), rev: int() }) } },
   [`${repo}/branches/{branch}/conflicts/agent`]: { post: { id: "suggest_resolution", summary: "Have a coding agent write the settled text for one conflict; nothing lands (the crew)", tag: "Branches",
     description: "The agent sees the conflict as git's markers, with main's lines around it, and writes the lines that replace it. Merge with resolve {path: {line: {text}}} to take it. Waits for the agent, a minute or so.",
     body: obj({ path: str(), line: str("the conflict's line, as review_branch lists it"), harness: str("one GET /agents lists"), model: str() }, ["path", "line", "harness"]),

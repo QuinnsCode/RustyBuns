@@ -28,6 +28,7 @@ import { localSandbox, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, installedHarnesses } from "./agent-routes.ts";
 import { askAgent } from "./conflict-agent.ts";
+import { hunks, revertOps } from "./review.ts";
 
 const TEXT_MAX = 20_000;
 
@@ -127,6 +128,13 @@ async function mergeFile(env: Env, owner: string, repo: string, branch: { name: 
   return { status: res.status, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[] }) };
 }
 
+/** What the branch changed in `path`, as hunks against its fork point; private lines blank outside the crew. */
+async function fileHunks(env: Env, owner: string, repo: string, branch: string, path: string, user: string, crew: boolean) {
+  const read = async (op: string) => (await toFile(env, owner, repo, path, user, op, { headers: { "x-codesplitters-crew": crew ? "1" : "0" } }, "", branch)).json() as Promise<Doc | null>;
+  const [base, doc] = await Promise.all([read("base"), read("file")]);
+  return { doc: doc!, hunks: hunks(base ?? empty(), doc!) };
+}
+
 export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
   if (p[4] !== "branches") return null;
   const name = p[5];
@@ -178,9 +186,32 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
         conflicts = conflicts.map((c) => secret.has(c.line) ? { ...c, base: "", main: c.main === null ? null : "", branch: c.branch === null ? null : "" } : c);
       }
       const lines = build ? changedLines(await (await toFile(env, owner, repo, f.path, user ?? "anon", "file")).json() as Doc, ops) : undefined;
-      return { path: f.path, merged: false, build, ops, conflicts: conflicts.map(explain), ...(lines && { lines }) };
+      // What the branch itself changed, a stretch at a time, to accept or reject (#735).
+      const changed = (await fileHunks(env, owner, repo, name, f.path, user ?? "anon", a.write)).hunks;
+      return { path: f.path, merged: false, build, ops, conflicts: conflicts.map(explain), hunks: changed, ...(lines && { lines }) };
     }));
     return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out });
+  }
+
+  // GET /api/repos/:o/:r/branches/:b/hunks?path=  what the branch changed in one file, as hunks against where it forked.
+  if (p[6] === "hunks" && !p[7] && req.method === "GET") {
+    const path = new URL(req.url).searchParams.get("path") ?? "";
+    const f = (await files()).find((x) => x.path === path && !x.merged && !x.deleted);
+    if (!f) return json({ path, hunks: [] });
+    return json({ path, hunks: (await fileHunks(env, owner, repo, name, path, user ?? "anon", a.write)).hunks });
+  }
+  // POST /api/repos/:o/:r/branches/:b/hunks/reject {path, key}  put one hunk back as it was where the branch forked.
+  if (p[6] === "hunks" && p[7] === "reject" && req.method === "POST") {
+    if (!a.write) return json({ error: "no write access" }, 403);
+    if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
+    const b = (await req.json().catch(() => ({}))) as { path?: string; key?: string };
+    const f = b.path && (await files()).find((x) => x.path === b.path && !x.merged && !x.deleted);
+    const got = f && await fileHunks(env, owner, repo, name, f.path, user!, true);
+    const h = got && got.hunks.find((x) => x.key === b.key);
+    if (!got || !h) return json({ error: `no change ${b.key} in ${b.path} on ${name}: read the review again` }, 404);
+    const res = await toFile(env, owner, repo, b.path!, user!, "ops", { method: "POST", body: JSON.stringify({ ops: revertOps(got.doc, h), ifRev: got.doc.rev }) }, "", name);
+    const out = await res.json() as { rev: number };
+    return res.ok ? json({ path: b.path, key: h.key, rev: out.rev }) : json({ error: "the branch changed under you: read the review again", ...out }, 409);
   }
 
   // POST /api/repos/:o/:r/branches/:b/conflicts/agent {path, line, harness, model?}

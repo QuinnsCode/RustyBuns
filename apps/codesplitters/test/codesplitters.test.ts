@@ -1315,6 +1315,38 @@ describe("shares", () => {
     expect((await (await call("ana", "/api/repos/ana/r/tree?path=")).json() as any).entries.map((e: any) => e.path)).toEqual(["b.js"]);
   });
 
+  test("on a branch, the tree is the branch's, and a reviewer rejects one hunk of it (#735)", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/collaborators", { name: "agent-a" });
+    for (const path of ["a.js", "src/b.js"]) await post(call, "ana", "/api/repos/ana/r/files", { path, content: "one\ntwo\nthree\nfour" });
+    await post(call, "agent-a", "/api/repos/ana/r/branches", { name: "feat/x" });
+    const b = encodeURIComponent("feat/x"), q = `?path=a.js&branch=${b}`;
+    await post(call, "agent-a", "/api/repos/ana/r/files", { path: "src/new.js", content: "fresh", branch: "feat/x" });
+    await call("agent-a", `/api/repos/ana/r/branches/${b}/files?path=src/b.js`, { method: "DELETE" });
+    const tree = async (dir: string, branch?: string) => ((await (await call("ana", `/api/repos/ana/r/tree?path=${dir}${branch ? `&branch=${branch}` : ""}`)).json()) as any).entries.map((e: any) => e.path).sort();
+    expect(await tree("src")).toEqual(["src/b.js"]);
+    expect(await tree("src", b)).toEqual(["src/new.js"]);
+    expect(await tree("", b)).toEqual(["a.js", "src"]);
+
+    // Two stretches changed in a.js: the review has them as hunks, and the reviewer rejects the second.
+    expect((await post(call, "agent-a", `/api/repos/ana/r/do/ops${q}`, { ops: [{ kind: "set", line: "L1", base: 1, text: "ONE" }, { kind: "delete", line: "L4", base: 4 }] })).status).toBe(200);
+    const review = await (await call("ana", `/api/repos/ana/r/branches/${b}`)).json() as any;
+    const a = review.files.find((f: any) => f.path === "a.js");
+    expect(a.hunks.map((h: any) => [h.key, h.del.map((l: any) => l.text), h.add.map((l: any) => l.text)])).toEqual([["L1", ["one"], ["ONE"]], ["L4", ["four"], []]]);
+    expect(review.files.find((f: any) => f.path === "src/new.js").hunks).toMatchObject([{ add: [{ text: "fresh" }] }]);
+    const reject = (user: string, key: string) => post(call, user, `/api/repos/ana/r/branches/${b}/hunks/reject`, { path: "a.js", key });
+    expect((await reject("bo", "L4")).status).toBe(403);
+    expect((await reject("ana", "L9")).status).toBe(404);
+    expect((await reject("ana", "L4")).status).toBe(200);
+    expect(text(await (await call("ana", `/api/repos/ana/r/do/file${q}`)).json() as Doc)).toBe("ONE\ntwo\nthree\nfour");
+    expect(((await (await call("ana", `/api/repos/ana/r/branches/${b}/hunks?path=a.js`)).json()) as any).hunks.map((h: any) => h.key)).toEqual(["L1"]);
+    // Merged, main gets the hunk that stayed.
+    expect((await post(call, "ana", `/api/repos/ana/r/branches/${b}/merge`, {})).status).toBe(200);
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.js")).json() as Doc)).toBe("ONE\ntwo\nthree\nfour");
+  });
+
   test("a merge with a conflict lands nothing until each line is settled", async () => {
     const call = await local();
     await post(call, "ana", "/api/login", { name: "ana" });
