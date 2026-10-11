@@ -1,6 +1,6 @@
 // Checks: one place to see whether a change is good, wherever it ran. A check run
 // is one record (migrations/0038_check_runs.sql): a name, the ref and sha it ran
-// on, its runner and its status. Three things write them:
+// on, its runner and its status. Four things write them:
 //
 //   - our own runners (#463): a commit to main, a branch pushed upstream or pulled
 //     from it, or someone pressing Run queues `desktop` or `container` runs, which a
@@ -8,6 +8,8 @@
 //   - GitHub Actions: a sha the mirror sent up is watched, and its check runs and
 //     commit statuses come back in as `github` runs (the cron polls; POST .../checks/github
 //     polls now). Our own results can go the other way, as `codesplitters/<name>` statuses;
+//   - other CI, through the GitHub-shaped API under /api/gh/v3 with a repo's CI token,
+//     as `external` runs (gh-compat.ts);
 //   - anyone in the crew, by hand, with POST .../checks.
 //
 // The repo's setting says where they run: here, github or both. A GitHub mirror
@@ -32,10 +34,10 @@ import { json, type Env } from "./env.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
 
-export const RUNNERS = ["desktop", "container", "github"] as const;
+export const RUNNERS = ["desktop", "container", "github", "external"] as const;
 export const STATUSES = ["queued", "running", "passed", "failed", "cancelled"] as const;
-type Runner = (typeof RUNNERS)[number];
-type Status = (typeof STATUSES)[number];
+export type Runner = (typeof RUNNERS)[number];
+export type Status = (typeof STATUSES)[number];
 type Where = "here" | "github" | "both";
 
 export interface CheckRun {
@@ -43,7 +45,7 @@ export interface CheckRun {
   started_at: number | null; finished_at: number | null; log: string; junit: string | null; url: string | null; external_id: string | null; created_at: number;
 }
 
-const DONE = new Set<Status>(["passed", "failed", "cancelled"]);
+export const DONE = new Set<Status>(["passed", "failed", "cancelled"]);
 /** How long a sha sent up is polled for GitHub's results. */
 const WATCH = 2 * 3600_000;
 /** A log keeps its last this-many characters. */
@@ -84,7 +86,7 @@ async function gh(env: Env, owner: string, path: string, init: RequestInit = {})
 }
 
 /** A run, shaped like GitHub's check_run object. */
-const shaped = (r: CheckRun) => ({
+export const shaped = (r: CheckRun) => ({
   id: r.id, name: r.name, head_sha: r.sha,
   status: r.status === "queued" ? "queued" : r.status === "running" ? "in_progress" : "completed",
   conclusion: r.status === "passed" ? "success" : r.status === "failed" ? "failure" : r.status === "cancelled" ? "cancelled" : null,
@@ -93,7 +95,7 @@ const shaped = (r: CheckRun) => ({
   html_url: r.url, check_suite: { head_branch: r.ref, head_sha: r.sha }, app: { slug: r.runner === "github" ? "github-actions" : "codesplitters" },
 });
 
-const get = (env: Env, id: number) => env.DB.prepare("SELECT * FROM check_runs WHERE id = ?").bind(id).first() as Promise<CheckRun | null>;
+export const get = (env: Env, id: number) => env.DB.prepare("SELECT * FROM check_runs WHERE id = ?").bind(id).first() as Promise<CheckRun | null>;
 
 /** A run started or finished: the webhook, and (when asked for) our own result on GitHub. */
 async function told(env: Env, run: CheckRun, action: "created" | "completed", by: string) {
@@ -178,11 +180,11 @@ export async function watchGithub(env: Env, owner: string, repo: string, ref: st
 }
 
 /** GitHub's check-run and commit-status states, as ours. */
-const fromCheckRun = (c: { status: string; conclusion: string | null }): Status =>
+export const fromCheckRun = (c: { status: string; conclusion: string | null }): Status =>
   c.status !== "completed" ? (c.status === "in_progress" ? "running" : "queued")
   : c.conclusion === "cancelled" ? "cancelled"
   : ["success", "neutral", "skipped"].includes(c.conclusion ?? "") ? "passed" : "failed";
-const fromState = (s: string): Status => s === "success" ? "passed" : s === "pending" ? "running" : "failed";
+export const fromState = (s: string): Status => s === "success" ? "passed" : s === "pending" ? "running" : "failed";
 
 /**
  * Bring GitHub's results for one sha in: each check run (Actions jobs) and commit

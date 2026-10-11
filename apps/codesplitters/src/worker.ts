@@ -29,6 +29,7 @@ import { catalogue, mcp } from "./mcp.ts";
 import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
 import { checkRoutes, pollGithub, startChecks } from "./checks.ts";
+import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic } from "./insights.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
@@ -74,6 +75,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/mcp/tools  every MCP tool, in words, for the /mcp page
   if (p[1] === "mcp" && p[2] === "tools" && !p[3] && req.method === "GET") return json(catalogue());
   if (p[1] === "mcp" && !p[2]) return mcp(req, url.origin, (r) => app.fetch(r, env));
+  // /api/gh/v3/repos/:o/:r/*  GitHub's status and check-run API for external CI, with a repo's CI token, not a personal one (gh-compat.ts)
+  const gh = await ghCompatRoutes(req, env, p, url);
+  if (gh) return gh;
   // /api/oauth/*  an app signs in as you, and gets tokens like the ones below (oauth.ts)
   const oauth = await oauthRoutes(req, env, p, url);
   if (oauth) return oauth;
@@ -249,6 +253,9 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (fresh) return fresh;
     const branches = await branchRoutes(req, env, p, owner, repo, user, a);
     if (branches) return branches;
+    // /api/repos/:o/:r/checks/tokens[/:id]  the repo's CI tokens, for external CI (gh-compat.ts)
+    const ciTokens = await ciTokenRoutes(req, env, p, owner, repo, user);
+    if (ciTokens) return ciTokens;
     // /api/repos/:o/:r/checks[/run|github|settings|:id[/cancel]]  check runs, ours and GitHub's (checks.ts)
     const checks = await checkRoutes(req, env, p, url, owner, repo, user, a);
     if (checks) return checks;
