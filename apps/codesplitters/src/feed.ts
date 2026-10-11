@@ -10,6 +10,8 @@
 // Bring your own summarizer: one of the coding agents (harness.ts) reads your feed
 // and writes the digest, which is what the home page shows first; the events sit
 // one click behind each group. The agent gets the feed as you may read it, nothing more.
+// On the hosted site the agent bills the site's keys, so only ADMINS may ask for a
+// digest (#575); everyone still gets the raw feed.
 //
 //   GET  /api/me/feed?since=           {since, through, groups, stamps, digest}; since is ms, a week ago by default
 //   GET  /api/me/feed/digest           your latest digest: {harness, status, since, through, text?, error?, at} or null
@@ -21,8 +23,7 @@ import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, type Exec, type Sandbox } from "./agent-run.ts";
 import { KEEP_MS } from "./line-events.ts";
 import { containerSandbox } from "./sandbox.ts";
-import { agentsUnavailable, installedHarnesses } from "./agent-routes.ts";
-import { isAdmin } from "./identity.ts";
+import { ADMINS_ONLY, adminsOnly, agentsUnavailable, installedHarnesses } from "./agent-routes.ts";
 
 const WEEK = 7 * 24 * 3600_000;
 /** Events one feed read looks at. */
@@ -182,8 +183,8 @@ export async function feedRoutes(req: Request, env: Env, p: string[], url: URL, 
   if (req.method !== "POST") return null;
   const why = agentsUnavailable(env);
   if (why) return json({ error: why }, 501);
-  // Hosted agents bill the site's own keys: admins only, as with coding agents.
-  if (env.AGENT_SANDBOX && !(env.ADMINS && isAdmin(env, user))) return json({ error: "hosted agents are limited to this site's admins (ADMINS)" }, 403);
+  // Hosted digests bill the site's own keys: admins only, as with coding agents.
+  if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
   const { harness, model } = (await req.json().catch(() => ({}))) as { harness?: Harness; model?: string };
   if (!harness || !HARNESSES.includes(harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
   if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
