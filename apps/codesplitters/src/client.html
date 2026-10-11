@@ -418,6 +418,16 @@
   .prof-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
   .prof-head h1 { margin: 0; font: 600 20px/1.2 var(--sans); letter-spacing: -0.02em; display: flex; align-items: center; gap: 6px; align-self: center; }
   .prof-head .stat { font: 12px var(--mono); color: var(--faint); }
+  /* Pulse: lines landed per hour over the week; it beats while they're typing. */
+  .pulse { display: inline-block; vertical-align: middle; color: var(--accent); }
+  .pulse rect { fill: currentColor; } .pulse .base { fill: var(--border); }
+  .beat-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+  .live .beat-dot, .beat-dot.live { background: var(--accent); animation: heartbeat 1.1s ease-in-out infinite; }
+  @keyframes heartbeat { 0%, 60%, 100% { transform: scale(1); } 15% { transform: scale(1.5); } 30% { transform: scale(1.1); } 45% { transform: scale(1.35); } }
+  .who.beat { animation: heartbeat .6s ease-out; }
+  .pulse-box .body { display: grid; gap: 8px; } .pulse-box svg.pulse { width: 100%; height: 56px; }
+  .crew-pulse { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; } .crew-pulse svg.pulse { width: 56px; height: 14px; }
+  @media (prefers-reduced-motion: reduce) { .live .beat-dot, .beat-dot.live, .who.beat { animation: none; } }
   .prof-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
   .prof-grid .box > .body { padding: 8px 12px; }
   .prof-grid .box > .body > p:first-child { margin-top: 0; }
@@ -650,6 +660,28 @@ const hueOf = (s) => {
   h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
   return `hsl(${(h >>> 0) % 360} 70% 46%)`;
 };
+/** Someone who landed a line this recently is typing now (pulse.ts LIVE_MS). */
+const LIVE_MS = 2 * 60_000;
+const isLive = (p) => !!p?.live_at && Date.now() - p.live_at < LIVE_MS;
+/** A pulse (GET /api/users/:name/pulse) as bars, a week of hours, oldest on the left. */
+const pulseSvg = (p) => {
+  const n = p.hours.length, max = Math.max(1, ...p.hours);
+  return `<svg class="pulse" viewBox="0 0 ${n} 20" preserveAspectRatio="none" role="img" aria-label="${p.total} lines landed this week"><rect class="base" x="0" y="19.5" width="${n}" height=".5"/>${p.hours.map((v, i) => v ? `<rect x="${i}" y="${20 - Math.max(1.5, 19 * v / max)}" width=".85" height="${Math.max(1.5, 19 * v / max)}"/>` : "").join("")}</svg>`;
+};
+/** Fill each [data-pulse=name] under `root` with its pulse, all in one request. Off or quiet ones stay empty. */
+async function fillPulses(root = document) {
+  const els = [...root.querySelectorAll("[data-pulse]")];
+  const names = [...new Set(els.map((e) => e.dataset.pulse))];
+  if (!names.length) return;
+  const { pulses } = await api(`/pulse?names=${encodeURIComponent(names.join(","))}`).catch(() => ({ pulses: [] }));
+  const by = new Map(pulses.map((p) => [p.name, p]));
+  for (const e of els) {
+    const p = by.get(e.dataset.pulse);
+    if (!p || !p.total) continue;
+    e.innerHTML = `<span class="beat-dot${isLive(p) ? " live" : ""}"></span>${pulseSvg(p)}`;
+    e.title = `${p.total} line${p.total === 1 ? "" : "s"} landed this week${isLive(p) ? ", typing now" : ""}`;
+  }
+}
 // Who you are comes from the server: an alias (desktop, demos) or a Better Auth account.
 let session = { mode: "alias", user: null, providers: [] };
 const me = () => session.user;
@@ -1621,6 +1653,7 @@ const views = {
         <tbody>
         ${row("Account", "Your email, name and avatar (from GitHub or Google, if you sign in with them), and your password as a one-way hash", "Signing you in, and the one email you asked for (verify, reset). No newsletters, ever.", "Until you delete your account")}
         ${row("Handle and page", "Your @handle, your bio and your page's HTML and CSS", "Your public profile", "Until you delete your account")}
+        ${row("Pulse", "Your feed's line events, counted per hour over the last week", "The pulse on your profile and crew lists. Private repos count only on your own view of it, and you can turn the public one off on your profile.", "A week, from the feed's 30 days")}
         ${row("Your code", "Repos, files, every line's history with the handle that wrote it, branches, collections, shares and deploy logs", "That's the product. Public repos are public, to everyone.", "Until you delete it or your account")}
         ${row("Sessions", "The IP address and browser of each signed-in session", "Keeping you signed in, and spotting a stolen session", "Until the session ends; swept every hour after")}
         ${row("Linked GitHub", "Your GitHub account id and its access token, encrypted at rest", "Forking the repos you choose", "Until you unlink it or delete your account")}
@@ -1683,7 +1716,8 @@ const views = {
 
   async u(name) {
     const mine = name === me();
-    const [{ user, repos, playlists, following = 0, followers = 0 }, { jobs }, follows] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : []]);
+    const pulseOf = () => api(`/users/${encodeURIComponent(name)}/pulse`).catch(() => null);
+    const [{ user, repos, playlists, following = 0, followers = 0 }, { jobs }, follows, pulse] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : [], pulseOf()]);
     ctx = { view: "u", name };
     const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
     app.innerHTML = `<div class="wrap prof">
@@ -1696,6 +1730,7 @@ const views = {
         <textarea name="theme_html" rows="5" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
         <div><button class="btn primary">Save</button></div></div></form>` : ""}
       <div class="prof-grid"><div>
+        ${pulse ? `<div class="box pulse-box" id="pulse-box"></div>` : ""}
         <div class="box"><div class="bar">${icon("book-marked")}<b>Repos</b>
           ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn primary">${icon("plus")}Create</button></form>` : ""}</div>
           <div class="body list">${repos.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet</span>'}</div></div>
@@ -1710,6 +1745,26 @@ const views = {
         ${mine ? dataBox() : ""}
       </aside></div></div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
+    // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
+    const share = `${location.origin}/api/users/${encodeURIComponent(name)}/share`;
+    const drawPulse = (p) => {
+      const box = $("#pulse-box");
+      if (!box || !p) return;
+      box.classList.toggle("live", isLive(p));
+      box.innerHTML = `<div class="bar"><span class="beat-dot"></span><b>Pulse</b><span class="muted">${p.total ? `${p.total} line${p.total === 1 ? "" : "s"} landed this week` : "quiet this week"}${isLive(p) ? " · typing now" : p.live_at ? ` · last line ${ago(p.live_at)}` : ""}</span><span class="grow"></span>
+        ${mine ? `<label class="muted" style="font-size:12px" title="off: only you see your pulse"><input type="checkbox" id="pulse-public"${user.pulse ? " checked" : ""}> public</label>` : ""}
+        ${!mine || user.pulse ? `<a class="btn ghost" href="https://x.com/intent/post?text=${encodeURIComponent(`@${name}'s pulse on codeSplitters`)}&url=${encodeURIComponent(share)}" target="_blank" rel="noopener" title="share the pulse card on X">${icon("share-2")}</a>` : ""}</div>
+        <div class="body">${pulseSvg(p)}${mine ? `<span class="muted" style="font-size:12px">${user.pulse ? "Everyone sees the lines you land in public repos; private repos count only here, for you." : "Only you see your pulse."}</span>` : ""}</div>`;
+      $("#pulse-public")?.addEventListener("change", async (e) => { user.pulse = e.target.checked ? 1 : 0; await api("/me", { pulse: e.target.checked }, "PUT"); drawPulse(p); toast(e.target.checked ? "Your pulse is public" : "Only you see your pulse now"); });
+      icons();
+    };
+    drawPulse(pulse);
+    if (pulse) {
+      const timer = setInterval(async () => {
+        if (ctx.view !== "u" || ctx.name !== name || !$("#pulse-box")) return clearInterval(timer);
+        if (!document.hidden && !$("#pulse-box").contains(document.activeElement)) drawPulse(await pulseOf());
+      }, 15_000);
+    }
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
     $("#newrepo")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api("/repos", { name: f.name.value, visibility: f.visibility.value }); location.hash = `#/r/${me()}/${f.name.value}`; });
     wireDig();
@@ -1777,7 +1832,7 @@ const views = {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
     return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p>`)
       + (owner === me() && r.mirror ? sec("refresh-cw", "Upstream", `<div id="mirror"><span class="muted">…</span></div>`) : "")
-      + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<a href="#/u/${esc(c)}">@${esc(c)}</a>`).join(" ")}</p>`)
+      + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>`)
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<div id="deps"><span class="muted">…</span></div>`) : "")
@@ -2160,6 +2215,7 @@ const views = {
     icons();
   },
   wireRepoHead(owner, repo, r) {
+    fillPulses();
     if ($("#invite")) {
       popover($("#invite"));
       $("#invite-form").addEventListener("submit", async (e) => { e.preventDefault(); await api(`/repos/${owner}/${repo}/collaborators`, { name: e.target.name.value }); toast(`${e.target.name.value} joined the crew`); route(); });
@@ -2387,9 +2443,11 @@ const views = {
       const ls = selLines(), letGo = ls.length > 0 && ls.every((l) => mine(claimOf.get(l.id)));
       $("#hold span").textContent = letGo ? "Let go" : "Hold";
     };
+    // Whoever just landed lines beats, live off the socket: their pulse (pulse.ts) between its looks.
+    const beating = new Map();
     const face = (c, who) => {
       const bot = c ? c.bot : who.startsWith("agent-"), name = c ? nameOf(c) : who;
-      return `<button class="who" style="--who:${hueOf(c?.bot ? c.id : who ?? c.who)}"${c ? ` data-claim="${esc(c.id)}"` : ""} title="${esc(c ? `${bot ? "agent" : "@" + c.who} on ${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? `: ${c.task}` : ""}` : `@${who} has this file open`)}">${glyph(bot ? "bot" : "user")}<span>${esc(name)}</span></button>`;
+      return `<button class="who${(beating.get(c ? c.who : who) ?? 0) > Date.now() ? " beat" : ""}" style="--who:${hueOf(c?.bot ? c.id : who ?? c.who)}"${c ? ` data-claim="${esc(c.id)}"` : ""} title="${esc(c ? `${bot ? "agent" : "@" + c.who} on ${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? `: ${c.task}` : ""}` : `@${who} has this file open`)}">${glyph(bot ? "bot" : "user")}<span>${esc(name)}</span></button>`;
     };
     const FACES = 6, LISTED = 200;
     const drawCrew = () => {
@@ -2701,6 +2759,7 @@ const views = {
       else if (msg.rev > doc.rev) doc = await api(`${base}/file${q}`);
       const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
       logOps(msg.applied);
+      for (const a of msg.applied) if (a.op.kind !== "delete") beating.set(a.by, Date.now() + 600);
       schedule(msg.applied.map((a) => a.line));
     };
   },
