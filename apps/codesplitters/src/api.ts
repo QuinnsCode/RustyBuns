@@ -204,6 +204,7 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/admin/limits/reset", body: "{who, rule?}", who: ADMINS, does: "clear a caller's counts" },
       { method: "GET", path: "/api/admin/handles", who: ADMINS, does: "handles granted to emails" },
       { method: "POST", path: "/api/admin/handles", body: "{handle, email}", who: ADMINS, does: "give a handle to whoever signs in with that email" },
+      { method: "GET", path: "/api/admin/insights?days=7", who: ADMINS, does: "people vs agents vs bots by day, the site's health, recent people and how far each got, the last day's callers" },
       { method: "GET", path: "/api/admin/deploy-keys", who: ADMINS, does: "{rotating, keys}" },
       { method: "POST", path: "/api/admin/deploy-keys/reseal", who: ADMINS, does: "reseal stored deploy keys under the current key" },
     ],
