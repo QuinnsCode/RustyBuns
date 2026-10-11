@@ -127,7 +127,8 @@
   .ghwho { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 8px 10px; margin: 0 0 8px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--canvas); }
   .ghwho.on { border-color: var(--del-edge); background: var(--accent-soft); } .ghwho svg.lucide { margin-top: 2px; }
   .ghwho { flex-wrap: wrap; } .ghaccts { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
-  .ghacct { display: inline-flex; } .ghacct .btn:first-child { border-radius: 5px 0 0 5px; } .ghacct .btn:last-child { border-radius: 0 5px 5px 0; border-left: 0; padding-inline: 6px; }
+  .ghacct { display: inline-flex; } .ghacct .btn:first-child { border-radius: 5px 0 0 5px; } .ghacct .btn:not(:first-child) { border-radius: 0; border-left: 0; padding-inline: 6px; } .ghacct .btn:last-child { border-radius: 0 5px 5px 0; }
+  .ghacct .btn[data-gh-agent]:not(.on) { opacity: .55; }
   .ghacct.on .btn:first-child { opacity: 1; font-weight: 600; }
   .flow { display: flex; align-items: center; margin: 6px 0 4px; }
   .flow .ln { flex: 1; height: 2px; background: var(--border-2); min-width: 6px; } .flow .ln.done { background: #2f9e44; }
@@ -1061,10 +1062,11 @@ function wireDig() {
       : `${icon("github")}<span><b>Not logged in to GitHub.</b> Only public repos can be searched. ${g.privateOk ? "Run <code>gh auth login</code> on this machine to see your own." : g.accounts && session.providers.includes("github") ? "Connect your GitHub to see your own." : "Sign in with GitHub to see your own."}</span>`;
     // Accounts mode: every GitHub linked to this sign-in, to switch between, plus one more to connect.
     if (g.accounts && session.providers.includes("github")) {
-      const chips = g.accounts.map((a) => `<span class="ghacct${a.active ? " on" : ""}"><button type="button" class="btn" data-gh-use="${esc(a.id)}"${a.active ? " disabled" : ""} title="${a.active ? "digging as this one" : "dig as this one"}">${a.active ? icon("check") : ""}@${esc(a.login ?? "unknown")}</button><button type="button" class="btn" data-gh-unlink="${esc(a.id)}" title="unlink this GitHub">${icon("x")}</button></span>`).join("");
+      const chips = g.accounts.map((a) => `<span class="ghacct${a.active ? " on" : ""}"><button type="button" class="btn" data-gh-use="${esc(a.id)}"${a.active ? " disabled" : ""} title="${a.active ? "digging as this one" : "dig as this one"}">${a.active ? icon("check") : ""}@${esc(a.login ?? "unknown")}</button><button type="button" class="btn${a.agent ? " on" : ""}" data-gh-agent="${a.agent ? "" : esc(a.id)}" title="${a.agent ? "your hosted agents work as this one: click for none" : "let your hosted agents work as this one (a bot account keeps theirs apart from yours)"}">${icon(a.agent ? "bot" : "bot-off")}</button><button type="button" class="btn" data-gh-unlink="${esc(a.id)}" title="unlink this GitHub">${icon("x")}</button></span>`).join("");
       who.insertAdjacentHTML("beforeend", `<div class="ghaccts">${chips}<button type="button" class="btn" id="ghlink">${icon("plus")}${g.accounts.length ? "Connect another GitHub" : "Connect GitHub"}</button></div>`);
       const act = (el, fn) => el.addEventListener("click", async () => { try { await fn(); loadGh(); } catch (e) { msg.textContent = e.message; } });
       for (const b of who.querySelectorAll("[data-gh-use]")) act(b, () => api("/github/active", { id: b.dataset.ghUse }));
+      for (const b of who.querySelectorAll("[data-gh-agent]")) act(b, () => api("/github/agent", { id: b.dataset.ghAgent || null }));
       for (const b of who.querySelectorAll("[data-gh-unlink]")) act(b, () => api("/auth/unlink-account", { accountId: b.dataset.ghUnlink }));
       $("#ghlink").addEventListener("click", async () => {
         try { const r = await api("/auth/link-social", { provider: "github", callbackURL: location.href }); location.href = r.url; } catch (e) { msg.textContent = e.message; }
