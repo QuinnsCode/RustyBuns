@@ -39,7 +39,12 @@ export function commitsBehindMain(projectDir: string): number | null {
 
 /** Logical ids the generated stack declares: the first string argument of each resource call. */
 export function declaredIds(stack: string): Set<string> {
-  return new Set([...stack.matchAll(/\b(?:Cloudflare|Hetzner|Railway|Command)\.[\w.]+\("([^"]+)"/g)].map((m) => m[1]));
+  return new Set(declaredProviders(stack).keys());
+}
+
+/** Each declared logical id with its provider, so a Hetzner "Data" isn't taken for Railway's. */
+function declaredProviders(stack: string): Map<string, string> {
+  return new Map([...stack.matchAll(/\b(Cloudflare|Hetzner|Railway|Command)\.[\w.]+\("([^"]+)"/g)].map((m) => [m[2]!, m[1]!]));
 }
 
 /**
@@ -50,13 +55,13 @@ export function declaredIds(stack: string): Set<string> {
 export function statefulDeletes(projectDir: string, cfg: Pick<RustyBunsConfig, "name" | "bindings">, stage: string, stack: string): string[] {
   const dir = join(projectDir, ".alchemy", "state", cfg.name, stage);
   if (!existsSync(dir)) return [];
-  const declared = declaredIds(stack);
+  const declared = declaredProviders(stack);
   const read = (f: string) => { try { return JSON.parse(readFileSync(join(dir, f), "utf8")); } catch { return null; } };
   const out: string[] = [];
   for (const f of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
     const s = read(f);
     const kind = s && STATEFUL[s.resourceType];
-    if (!kind || declared.has(s.logicalId)) continue;
+    if (!kind || declared.get(s.logicalId) === s.resourceType.split(".")[0]) continue;
     const name = s.attr?.bucketName ?? s.attr?.databaseName ?? s.attr?.queueName ?? s.props?.name;
     out.push(`${kind} ${s.logicalId}${name && name !== s.logicalId ? ` (${name})` : ""}`);
   }
