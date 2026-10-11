@@ -42,7 +42,7 @@ async function access(env: Env, owner: string, repo: string, user: string | null
 }
 
 // What a page or agent may ask a file's DO directly; forks and merges go through the branch routes.
-const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private"]);
+const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private", "claims"]);
 
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
 const ftsQuery = (q: string) => q.split(/\s+/).filter(Boolean).map((w) => `"${w.replace(/"/g, '""')}"`).join(" ");
@@ -257,7 +257,7 @@ const app = {
         await toFile(env, owner, repo, path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: fromText(content) }) });
         return json({ path }, 201);
       }
-      // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws)?path=...&branch=...  -> the file's DO, or its copy on a branch
+      // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws|private|claims)?path=...&branch=...  -> the file's DO, or its copy on a branch
       if (p[4] === "do" && DO_ROUTES.has(p[5] ?? "")) {
         const path = url.searchParams.get("path") ?? "", branch = url.searchParams.get("branch") || undefined;
         if (branch && !(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
@@ -266,7 +266,7 @@ const app = {
         if (branch && p[5] === "private") return json({ error: "mark lines private on main" }, 400);
         const m = branch ? await materializeOn(env, owner, repo, branch, path) : await materialize(env, owner, repo, path);
         if ("error" in m) return json({ error: m.error }, m.status);
-        const writes = p[5] === "ops" || p[5] === "commit" || (p[5] === "private" && req.method === "POST");
+        const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims") && req.method === "POST");
         if (writes && !a.write) return json({ error: "no write access" }, 403);
         if (p[5] === "ws") {
           // The DO learns who this socket is, and whether it may write, from us.

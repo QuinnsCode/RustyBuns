@@ -193,3 +193,77 @@ describe("runAgent", () => {
     expect(text(doc)).toBe("a");
   });
 });
+
+describe("claims", () => {
+  const file = "/api/repos/ryan/r1/do", q = "?path=a.js";
+  const post = (call: Call, user: string, route: string, body: unknown) => call(user, `${file}/${route}${q}`, { method: "POST", body: JSON.stringify(body) });
+  const doc = async (call: Call) => await (await call("ryan", `${file}/file${q}`)).json() as Doc;
+  const claims = async (call: Call) => await (await call("ryan", `${file}/claims${q}`)).json() as { id: string; who: string; bot: boolean; lines: string[] }[];
+
+  test("an agent given lines holds them while it works, and lets go when it's done", async () => {
+    const call = await local();
+    await setup(call, "a\nb\nc");
+    let during: Response | undefined;
+    const r = await runAgent(call, {
+      user: "agent-x", owner: "ryan", repo: "r1", path: "a.js", harness: "claude", task: "uppercase a", lines: ["L1"], claim: "run-1",
+      exec: async (_cmd, cwd) => {
+        during = await post(call, "ryan", "ops", { ops: [{ kind: "set", line: "L1", base: 1, text: "mine" }] });
+        writeFileSync(join(cwd, "a.js"), "A\nb\nc\n");
+        return { code: 0, out: "" };
+      },
+    });
+    expect(during!.status).toBe(409);
+    expect(((await during!.json()) as any).conflicts[0]).toMatchObject({ reason: "held by @agent-x: uppercase a", claim: "run-1" });
+    expect(r.applied).toBe(1);
+    expect(text(await doc(call))).toBe("A\nb\nc");
+    expect(await claims(call)).toEqual([]);
+  });
+
+  test("a person's hold keeps an agent off those lines; its other edits land, and it doesn't re-run for them", async () => {
+    const call = await local();
+    await setup(call, "a\nb");
+    expect((await post(call, "ryan", "claims", { lines: ["L1"] })).status).toBe(201);
+    const r = await runAgent(call, {
+      user: "agent-x", owner: "ryan", repo: "r1", path: "a.js", harness: "codex", task: "uppercase",
+      exec: editor("a.js", "A\nB\n"),
+    });
+    expect(r.runs).toBe(1);
+    expect(r.conflicts).toMatchObject([{ held: "held by @ryan", now: { text: "a" } }]);
+    expect(text(await doc(call))).toBe("a\nB");
+  });
+
+  test("an agent can't start on lines someone holds", async () => {
+    const call = await local();
+    await setup(call, "a\nb");
+    await post(call, "ryan", "claims", { lines: ["L2"] });
+    await expect(runAgent(call, {
+      user: "agent-x", owner: "ryan", repo: "r1", path: "a.js", harness: "pi", task: "x", lines: ["L1", "L2"],
+      exec: editor("a.js", "x\n"),
+    })).rejects.toThrow("held by @ryan");
+  });
+
+  test("a claim follows its lines, any of the crew can lift it, and two agents of one harness can't write in each other's", async () => {
+    const call = await local();
+    await setup(call, "a\nb\nc");
+    const one = await (await post(call, "agent-x", "claims", { id: "run-1", lines: ["L1", "L2"] })).json() as any;
+    expect(one).toMatchObject({ who: "agent-x", bot: true, until: expect.any(Number) });
+    expect((await post(call, "agent-x", "claims", { id: "run-2", lines: ["L2", "L3"] })).status).toBe(409);
+    // Same name, no claim id: someone else's run.
+    expect((await post(call, "agent-x", "ops", { ops: [{ kind: "set", line: "L1", base: 1, text: "x" }] })).status).toBe(409);
+    expect((await post(call, "agent-x", "ops", { claim: "run-1", ops: [{ kind: "insert", after: "L1", text: "new" }, { kind: "delete", line: "L2", base: 2 }] })).status).toBe(200);
+    expect((await claims(call))[0]!.lines.sort()).toEqual(["L1", "L4"]);
+    expect(await (await post(call, "ryan", "claims", { id: "run-1", release: true })).json()).toEqual({ released: true });
+    expect(await claims(call)).toEqual([]);
+  });
+
+  test("a thousand agents each on a line of their own", async () => {
+    const call = await local();
+    await setup(call, Array.from({ length: 1000 }, (_, i) => `line ${i}`).join("\n"));
+    const ids = (await doc(call)).lines.map((l) => l.id);
+    const res = await Promise.all(ids.map((id, i) => post(call, "agent-x", "claims", { id: `run-${i}`, lines: [id] })));
+    expect(res.every((r) => r.status === 201)).toBe(true);
+    const edits = await Promise.all(ids.map((id, i) => post(call, "agent-x", "ops", { claim: `run-${i}`, ops: [{ kind: "set", line: id, base: i + 1, text: `agent ${i}` }] })));
+    expect(edits.every((r) => r.ok)).toBe(true);
+    expect((await claims(call)).length).toBe(1000);
+  });
+});

@@ -94,7 +94,9 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/repos/:o/:r/do/commits?path=", does: "the file's commits, newest first" },
       { method: "GET", path: "/api/repos/:o/:r/do/private?path=", does: "the ids of its private lines" },
       { method: "POST", path: "/api/repos/:o/:r/do/private?path=", body: "{lines: [id], private: boolean}", who: CREW, does: "make lines private (crew only) or public again" },
-      { method: "WS", path: "/api/repos/:o/:r/do/ws?path=", does: "live: send {type: \"ops\", id, ops, ifRev?} and get {type: \"ack\", id, rev} or {type: \"nack\", id, rev?, conflicts?, error?, retryAfter?}; everyone gets {type: \"ops\", rev, applied}, {type: \"presence\", who}, {type: \"commit\", commit} and {type: \"private\", lines, private}. A gap in revs means refetch the file" },
+      { method: "GET", path: "/api/repos/:o/:r/do/claims?path=", does: "who is working on which lines: [{id, who, bot, lines: [id], task?, at, until}]; until null stands until lifted" },
+      { method: "POST", path: "/api/repos/:o/:r/do/claims?path=", body: "{lines: [id], id?, task?, ttl?} | {id, release: true}", who: CREW, does: "claim lines so only you edit them (an agent's lapses in 30 minutes, a person's hold stands), renew your claim by id, or lift any claim; 409 {error, claims} when they're held. An agent's ops name their claim: {ops, claim}" },
+      { method: "WS", path: "/api/repos/:o/:r/do/ws?path=", does: "live: send {type: \"ops\", id, ops, ifRev?} and get {type: \"ack\", id, rev} or {type: \"nack\", id, rev?, conflicts?, error?, retryAfter?}; everyone gets {type: \"ops\", rev, applied}, {type: \"presence\", who}, {type: \"commit\", commit}, {type: \"private\", lines, private}, {type: \"claim\", claim} and {type: \"unclaim\", id}. A gap in revs means refetch the file" },
     ],
   },
   {

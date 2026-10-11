@@ -15,7 +15,8 @@
 // phone that drops the request doesn't drop the run.
 //
 //   GET  /api/agents                                     which harnesses this machine can run
-//   POST /api/repos/:o/:r/agents {path, harness, task, model?}  start one; answers at once (202)
+//   POST /api/repos/:o/:r/agents {path, harness, task, model?, lines?}  start one; answers at once (202).
+//        With lines (ids), the run claims them: nobody else edits them till it's done.
 //   GET  /api/repos/:o/:r/agents?path=                   this file's runs (the repo's without path), newest first (owner only)
 
 import { json, type Env } from "./env.ts";
@@ -42,6 +43,8 @@ export interface Run {
   error?: string;
   /** When a hosted run is cut off: the queue consumer's 15 minutes. A local run has none. */
   deadline?: number;
+  /** The lines it was given and claimed, if any. */
+  lines?: string[];
 }
 
 /** A queue consumer's wall time, so a hosted run's limit. */
@@ -116,7 +119,8 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   // Hosted runs bill the site's own API keys, and anyone can sign up and own a
   // repo, so only the handles in ADMINS may start one.
   if (env.AGENT_SANDBOX && !(env.ADMINS && isAdmin(env, user))) return json({ error: "hosted agents are limited to this site's admins (ADMINS)" }, 403);
-  const { path, harness, task, model } = (await req.json()) as { path?: string; harness?: Harness; task?: string; model?: string };
+  const { path, harness, task, model, lines } = (await req.json()) as { path?: string; harness?: Harness; task?: string; model?: string; lines?: string[] };
+  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l) => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
   if (!path) return json({ error: "path required" }, 400);
   if (!harness || !HARNESSES.includes(harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
   if (!installed(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
@@ -128,8 +132,9 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!added.ok) return json({ error: `adding ${agent}: ${await added.text()}` }, 500);
 
   const model_ = model?.trim() || null;
-  const row = await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, model, agent, status, started) VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?) RETURNING *")
-    .bind(owner, repo, path, harness, task.trim().slice(0, 2000), model_, agent, Date.now()).first() as Row;
+  // The lines ride in the result until the run's own result replaces them.
+  const row = await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, model, agent, status, started, result) VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?) RETURNING *")
+    .bind(owner, repo, path, harness, task.trim().slice(0, 2000), model_, agent, Date.now(), lines?.length ? JSON.stringify({ lines: lines.slice(0, 5000) }) : null).first() as Row;
   await env.DB.prepare(`DELETE FROM agent_runs WHERE owner = ? AND repo = ? AND id NOT IN (SELECT id FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id DESC LIMIT ${KEEP})`)
     .bind(owner, repo, owner, repo).run();
   if (env.AGENT_SANDBOX) await env.JOBS.send({ agent: row.id, origin });
@@ -154,7 +159,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   if (!row) return;
   const { owner, repo, path, harness, agent } = row;
   const call = caller(self, origin);
-  const extra: Partial<Run> = {};
+  const { lines } = row.result ? JSON.parse(row.result) as Partial<Run> : {};
+  const extra: Partial<Run> = lines ? { lines } : {};
   try {
     let sandbox = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
     // A hosted agent works on GitHub as the account its owner picked for agents (a bot,
@@ -169,7 +175,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const log: string[] = JSON.parse(row.log);
     let logged = Promise.resolve();
     const r = await runAgent(call, {
-      user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox,
+      user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`,
       log: (s) => {
         log.push(s);
         const tail = JSON.stringify(log.slice(-LOG_LINES));

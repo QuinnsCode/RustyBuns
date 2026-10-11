@@ -9,6 +9,7 @@
 //   commit:<n>     a snapshot: sha, parent, rev, message
 //   base           on a branch's copy of a file: main's doc when it forked
 //   private        ids of lines only the crew may read (in a public repo too)
+//   claim:<id>     who is working on which lines right now (see Claim), one key each
 //
 // Private lines: the Worker says whether the caller is crew
 // (`x-codesplitters-crew: 1`); everyone else gets each private line as a
@@ -30,12 +31,32 @@ const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { sta
 
 type Shown = Line & { private?: true };
 
+/**
+ * Lines someone is working on. While a claim stands only its holder edits
+ * those lines: an agent's claim keeps people off the lines it is rewriting,
+ * a person's (a hold) keeps agents off theirs. A line is in one claim at most.
+ * Every agent of a harness edits as the same `agent-<harness>`, so an agent's
+ * ops name their claim's id; a person's claim is theirs by name alone.
+ * Lines the holder inserts inside its claim join it; deleted ones leave it.
+ */
+export interface Claim { id: string; who: string; bot: boolean; lines: string[]; task?: string; at: number; until: number | null }
+
+/** An agent's claim lapses after this unless it says otherwise, so a run that dies doesn't hold lines forever. */
+const CLAIM_MS = 30 * 60_000;
+/** Presence goes out at most this often, so a thousand sockets opening at once isn't a million messages. */
+const PRESENCE_MS = 250;
+
 export class FileDurableObject {
   doc: Doc = empty();
   base: Doc | null = null;
   secret = new Set<string>();
   commits = 0;
   queue: Promise<unknown> = Promise.resolve();
+  claims = new Map<string, Claim>();
+  /** Line id -> the claim it is in. */
+  claimOf = new Map<string, Claim>();
+  presenceTimer: ReturnType<typeof setTimeout> | null = null;
+  leaving = new Set<unknown>();
 
   constructor(private ctx: any, private env: Env) {
     ctx.blockConcurrencyWhile(async () => {
@@ -43,6 +64,7 @@ export class FileDurableObject {
       this.commits = (await ctx.storage.get("commits")) ?? 0;
       this.base = (await ctx.storage.get("base")) ?? null;
       this.secret = new Set((await ctx.storage.get("private")) ?? []);
+      for (const c of ((await ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
     });
   }
 
@@ -64,8 +86,8 @@ export class FileDurableObject {
     }
     if (req.method === "GET" && route === "file") return json(this.shown(this.doc, crew));
     if (req.method === "POST" && route === "ops") {
-      const { ops, ifRev } = (await req.json()) as { ops: Op[]; ifRev?: number };
-      const r = await this.edit(by, ops, ifRev);
+      const { ops, ifRev, claim } = (await req.json()) as { ops: Op[]; ifRev?: number; claim?: string };
+      const r = await this.edit(by, ops, ifRev, claim);
       return r.ok ? json({ rev: r.rev, applied: r.applied }) : json({ rev: r.rev, conflicts: r.conflicts }, 409);
     }
     if (req.method === "GET" && route === "log") return json(this.hide(await this.log(Number(url.searchParams.get("since") ?? 0)), crew));
@@ -81,11 +103,19 @@ export class FileDurableObject {
       this.broadcast({ type: "private", lines, private: on });
       return json([...this.secret]);
     }
+    if (req.method === "GET" && route === "claims") return json(this.live());
+    if (req.method === "POST" && route === "claims") {
+      // Crew only (the Worker checks). Any of the crew may lift any claim: that's how a person steers an agent off lines.
+      const b = (await req.json()) as { id?: string; lines?: string[]; task?: string; ttl?: number | null; release?: boolean };
+      if (b.release) return json({ released: await this.release(b.id ?? "") });
+      return this.claim(by, b);
+    }
     if (req.method === "POST" && route === "wipe") {
       // Its repo was evicted: forget everything.
       const all: Map<string, unknown> = await this.ctx.storage.list();
       await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
       [this.doc, this.base, this.commits, this.secret] = [empty(), null, 0, new Set()];
+      this.claims.clear(); this.claimOf.clear();
       return json({ ok: true });
     }
     if (req.method === "POST" && route === "fork") {
@@ -145,9 +175,13 @@ export class FileDurableObject {
    * interleave; then persisted, then broadcast as the exact applied ops, so
    * every open page updates in place without refetching.
    */
-  async edit(by: string | string[], ops: Op[], ifRev?: number) {
+  async edit(by: string | string[], ops: Op[], ifRev?: number, claim?: string) {
+    // A merge (one author per op) lands whole: claims guard live edits, not a branch coming home.
+    const held = typeof by === "string" ? this.held(by, ops, claim) : [];
+    if (held.length) return { ok: false as const, rev: this.doc.rev, conflicts: held };
     const r = apply(this.doc, ops, by, Date.now(), ifRev);
     if (!r.ok) return { ok: false as const, rev: this.doc.rev, conflicts: r.conflicts };
+    if (this.claimOf.size) await this.follow(typeof by === "string" ? by : "", r.applied, claim);
     const doc = structuredClone(this.doc);
     await Promise.all([this.ctx.storage.put("doc", doc), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad(a.rev), a))]);
     const msg = (crew: boolean) => JSON.stringify({ type: "ops", rev: this.doc.rev, applied: this.hide(r.applied, crew) });
@@ -181,23 +215,103 @@ export class FileDurableObject {
 
   /** Edits over the socket: {type:"ops", id, ops, ifRev?} -> {type:"ack"|"nack", id, ...}. */
   async webSocketMessage(ws: any, raw: string | ArrayBuffer) {
-    let msg: { type?: string; id?: number; ops?: Op[]; ifRev?: number };
+    let msg: { type?: string; id?: number; ops?: Op[]; ifRev?: number; claim?: string };
     try { msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw)); } catch { return; }
     if (msg.type !== "ops" || !Array.isArray(msg.ops)) return;
     const who = (ws.deserializeAttachment() ?? {}) as { user?: string; write?: boolean; limitAs?: string | null };
     if (!who.write) return ws.send(JSON.stringify({ type: "nack", id: msg.id, error: "no write access" }));
     const over = who.limitAs ? await countHit(this.env, "edit", who.limitAs) : null;
     if (over) return ws.send(JSON.stringify({ type: "nack", id: msg.id, error: over.error, retryAfter: over.wait }));
-    const r = await this.edit(who.user ?? "anon", msg.ops, msg.ifRev);
+    const r = await this.edit(who.user ?? "anon", msg.ops, msg.ifRev, msg.claim);
     ws.send(JSON.stringify(r.ok ? { type: "ack", id: msg.id, rev: r.rev } : { type: "nack", id: msg.id, rev: r.rev, conflicts: r.conflicts }));
   }
   webSocketClose(ws: any) { try { ws.close(); } catch {} this.presence(ws); }
   webSocketError(ws: any) { this.presence(ws); }
 
-  /** Who has this file open, sent to everyone in it. */
+  /** Who has this file open, sent to everyone in it, at most every PRESENCE_MS. */
   presence(leaving?: unknown) {
-    const who = new Set<string>();
-    for (const ws of this.ctx.getWebSockets()) if (ws !== leaving) who.add((ws.deserializeAttachment?.() ?? {}).user ?? "anon");
-    this.broadcast({ type: "presence", who: [...who].sort() });
+    if (leaving) this.leaving.add(leaving);
+    if (this.presenceTimer) return;
+    this.presenceTimer = setTimeout(() => {
+      this.presenceTimer = null;
+      const who = new Set<string>();
+      for (const ws of this.ctx.getWebSockets()) if (!this.leaving.has(ws)) who.add((ws.deserializeAttachment?.() ?? {}).user ?? "anon");
+      this.leaving.clear();
+      this.broadcast({ type: "presence", who: [...who].sort() });
+    }, PRESENCE_MS);
+  }
+
+  /** The claims still standing; lapsed ones go. */
+  live(): Claim[] {
+    const now = Date.now();
+    for (const c of this.claims.values()) if (c.until !== null && c.until <= now) void this.release(c.id);
+    return [...this.claims.values()];
+  }
+
+  index(c: Claim) {
+    this.claims.set(c.id, c);
+    for (const id of c.lines) this.claimOf.set(id, c);
+  }
+
+  /** Lay a claim on lines, or renew one (same id, same holder). 409 names the claims in the way. */
+  async claim(by: string, b: { id?: string; lines?: string[]; task?: string; ttl?: number | null }) {
+    this.live();
+    const old = b.id ? this.claims.get(b.id) : undefined;
+    if (old && old.who !== by) return json({ error: `claim ${b.id} is ${old.who}'s` }, 409);
+    const have = new Set(this.doc.lines.map((l) => l.id));
+    const lines = [...new Set(b.lines ?? old?.lines ?? [])].filter((id) => have.has(id));
+    if (!lines.length) return json({ error: "lines required: ids of lines in the file" }, 400);
+    const clash = [...new Set(lines.map((id) => this.claimOf.get(id)).filter((c) => c && c !== old))] as Claim[];
+    if (clash.length) return json({ error: `held by ${clash.map((c) => "@" + c.who).join(", ")}`, claims: clash }, 409);
+    const bot = by.startsWith("agent-"), now = Date.now();
+    // An agent's claim lapses; a person's hold stands until they lift it, unless they give it a ttl.
+    const ttl = b.ttl === undefined ? (bot ? CLAIM_MS : null) : b.ttl;
+    const c: Claim = { id: b.id ?? `c${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`, who: by, bot, lines, ...(b.task ? { task: b.task.slice(0, 200) } : {}), at: old?.at ?? now, until: ttl === null ? null : now + ttl };
+    if (old) for (const id of old.lines) this.claimOf.delete(id);
+    this.index(c);
+    await this.ctx.storage.put("claim:" + c.id, c);
+    this.broadcast({ type: "claim", claim: c });
+    return json(c, old ? 200 : 201);
+  }
+
+  async release(id: string) {
+    const c = this.claims.get(id);
+    if (!c) return false;
+    this.claims.delete(id);
+    for (const l of c.lines) if (this.claimOf.get(l) === c) this.claimOf.delete(l);
+    await this.ctx.storage.delete("claim:" + id);
+    this.broadcast({ type: "unclaim", id });
+    return true;
+  }
+
+  /** The ops that land on someone else's claim, as conflicts. An insert lands on the line it goes after. */
+  held(by: string, ops: Op[], claim?: string) {
+    if (!this.claimOf.size) return [];
+    const now = Date.now(), out: { index: number; reason: string; claim: string }[] = [];
+    ops.forEach((op, index) => {
+      const c = this.claimOf.get(op.kind === "insert" ? op.after ?? "" : op.line);
+      if (!c || (c.until !== null && c.until <= now)) return;
+      if (c.who === by && (!c.bot || claim === c.id)) return;
+      out.push({ index, reason: `held by @${c.who}${c.task ? `: ${c.task}` : ""}`, claim: c.id });
+    });
+    return out;
+  }
+
+  /** Keep claims on the lines they cover: the holder's inserts inside join, deleted lines leave. */
+  async follow(by: string, applied: Applied[], claim?: string) {
+    const changed = new Set<Claim>();
+    for (const a of applied) {
+      if (a.op.kind === "delete") {
+        const c = this.claimOf.get(a.line);
+        if (c) { c.lines = c.lines.filter((id) => id !== a.line); this.claimOf.delete(a.line); changed.add(c); }
+      } else if (a.op.kind === "insert" && a.op.after) {
+        const c = this.claimOf.get(a.op.after);
+        if (c && c.who === by && (!c.bot || claim === c.id)) { c.lines.push(a.line); this.claimOf.set(a.line, c); changed.add(c); }
+      }
+    }
+    for (const c of changed) {
+      if (!c.lines.length) await this.release(c.id);
+      else { await this.ctx.storage.put("claim:" + c.id, c); this.broadcast({ type: "claim", claim: c }); }
+    }
   }
 }
