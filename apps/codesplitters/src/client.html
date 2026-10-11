@@ -135,6 +135,9 @@
   .sec p { margin: 0 0 6px; } .sec .btn { margin: 2px 4px 2px 0; }
   .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
   .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent); } .sec .run .st.failed { color: var(--del-fg); }
+  .sec .run .tell { display: flex; align-items: center; gap: 4px; margin-top: 2px; } .sec .run .tell input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px; }
+  .sec .run > .row { flex-wrap: nowrap; } .sec .run > .row b { white-space: nowrap; } .sec .run .btn.stop { margin: 0 0 0 auto; padding: 1px 8px; font-size: 12px; }
+  .sec .bulk { display: flex; flex-wrap: wrap; gap: 2px; padding-bottom: 6px; }
   /* A run's clock (ticker()): fixed-width tabular digits, so ticking never shifts what's beside it. */
   .tick { display: inline-flex; align-items: center; gap: 4px; font: 500 11px/1.4 var(--mono); color: var(--muted); white-space: nowrap; }
   .tick .tick-n { display: inline-block; min-width: 5ch; text-align: right; font-variant-numeric: tabular-nums; }
@@ -1182,13 +1185,53 @@ const runTicker = (run) => run && !run.done ? `<p style="margin:4px 0">${ticker(
 /** One coding agent's run: who, how it's going, its task, and its output. With file, which file it's on. */
 const agentRun = (x, file) => {
   const result = x.status === "running" ? esc(x.log[x.log.length - 1] ?? "starting…")
-    : x.status === "failed" ? esc(x.error.split("\n")[0])
+    : x.status === "failed" || x.status === "stopped" ? esc((x.error ?? "stopped").split("\n")[0])
     : (x.applied ? `${x.applied} line ops landed at r${x.rev}` : "no changes") + (x.runs > 1 ? ` after ${x.runs} runs` : "")
       + (x.conflicts.length ? `; ${x.conflicts.length} edit${x.conflicts.length > 1 ? "s" : ""} kept someone else's version` : "");
   return `<div class="run"><div class="row"><b>${esc(x.agent)}</b><span class="st ${x.status}">${x.status}</span>${x.status === "running" ? ticker(x.started, x.deadline, x.deadline
     ? "Time left before this hosted run is cut off. It runs off the site's job queue, which gives a run 15 minutes from when it was started."
-    : "How long this agent has been working. It runs on this machine, so there's no time limit.") : ""}</div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
+    : "How long this agent has been working. It runs on this machine, so there's no time limit.") : ""}${x.status === "running" ? `<button type="button" class="btn stop" data-stop="${x.id}" title="stop it: its CLI is killed, what it left is dropped, and its lines are freed">${icon("square")}Stop</button>` : ""}</div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${x.notes?.length ? `<span class="muted" style="font-size:12px" title="${esc(x.notes.map((n) => n.text).join("\n"))}">${icon("message-square")}told it ${x.notes.length === 1 ? "once" : `${x.notes.length} times`}: ${esc(x.notes[x.notes.length - 1].text)}</span>` : ""}${x.status === "running" ? `<form class="tell" data-note="${x.id}"><input name="text" maxlength="2000" placeholder="tell it something" title="A running agent can't take messages, so this goes into the prompt of its next run: when this one ends, it goes round again with it" autocomplete="off"><button class="btn" title="send it">${icon("send")}</button></form>` : ""}${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
 };
+/**
+ * A list of runs, with Stop and "tell it" on the running ones and, with a crowd going, Stop for a
+ * harness, for the selected lines (`lines()`, on a file page) or for all. `scope` narrows bulk Stop
+ * to what the list shows ({path} on a file page). The poll doesn't redraw under a note being typed.
+ */
+function drawRuns(el, rs, { owner, repo, file, scope = {}, lines, refresh, empty }) {
+  // Someone typing a note: leave the list be till they're done, so no keystroke lands in a box being replaced.
+  if (el.contains(document.activeElement) && document.activeElement.matches("[data-note] input")) return;
+  const drafts = Object.fromEntries([...el.querySelectorAll("[data-note]")].map((f) => [f.dataset.note, f.text.value]));
+  const running = rs.filter((x) => x.status === "running"), harnesses = [...new Set(running.map((x) => x.harness))];
+  const sel = lines?.() ?? [], onSel = sel.length ? running.filter((x) => x.lines?.some((l) => sel.includes(l))) : [];
+  const bulk = running.length > 1 || onSel.length ? `<div class="bulk">${running.length > 1 ? `<button class="btn" data-stop-all title="stop every agent running here">${icon("square")}Stop all ${running.length}</button>` : ""}${harnesses.length > 1 ? harnesses.map((h) => `<button class="btn" data-stop-h="${h}" title="stop every ${h} agent running here">${h} ${running.filter((x) => x.harness === h).length}</button>`).join("") : ""}${onSel.length ? `<button class="btn" data-stop-sel title="stop the agents holding any of the selected lines">${icon("hand")}On selected lines ${onSel.length}</button>` : ""}</div>` : "";
+  el.innerHTML = rs.length ? bulk + rs.map((x) => agentRun(x, file)).join("") : empty;
+  for (const f of el.querySelectorAll("[data-note]")) if (drafts[f.dataset.note]) f.text.value = drafts[f.dataset.note];
+  icons();
+  const base = `/repos/${owner}/${repo}/agents`;
+  const stop = async (body) => {
+    try { const { stopped } = await api(`${base}/stop`, { ...scope, ...body }); toast(stopped.length ? `Stopped ${stopped.length} agent${stopped.length > 1 ? "s" : ""}` : "Nothing was running"); }
+    catch (err) { toast(err.message); }
+    refresh();
+  };
+  el.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.stop) stop({ ids: [Number(b.dataset.stop)] });
+    else if (b.hasAttribute("data-stop-all")) stop({});
+    else if (b.dataset.stopH) stop({ harness: b.dataset.stopH });
+    else if (b.hasAttribute("data-stop-sel")) stop({ lines: lines() });
+  };
+  el.onsubmit = async (e) => {
+    const f = e.target.closest("[data-note]");
+    if (!f) return;
+    e.preventDefault();
+    const text = f.text.value.trim();
+    if (!text) return;
+    try { await api(`${base}/${f.dataset.note}/notes`, { text }); f.text.value = ""; toast("It gets that on its next run"); }
+    catch (err) { toast(err.message); }
+    refresh();
+  };
+}
 const readmeOf = (tree) => tree.entries.find((e) => e.type === "file" && /^readme(\.|$)/i.test(e.name)) ?? tree.entries.find((e) => e.type === "file");
 function table(tree, href) {
   if (!tree.entries.length) return '<div class="body muted">Nothing unearthed yet.</div>';
@@ -1920,8 +1963,7 @@ const views = {
       const rs = await api(`/repos/${owner}/${repo}/agents`).catch(() => []);
       const el = $("#m-runs");
       if (!el) return;
-      el.innerHTML = rs.map((x) => agentRun(x, true)).join("") || '<span class="muted">No agents yet. Pick a file and give one a task.</span>';
-      icons();
+      drawRuns(el, rs, { owner, repo, file: true, refresh: poll, empty: '<span class="muted">No agents yet. Pick a file and give one a task.</span>' });
       if (rs.some((x) => x.status === "running")) agentTimer = setTimeout(poll, 2000);
     };
     poll();
@@ -2221,8 +2263,8 @@ const views = {
         clearTimeout(agentTimer);
         const rs = await api(`/repos/${owner}/${repo}/agents?path=${encodeURIComponent(path)}`).catch(() => []);
         if (!runsEl.isConnected) return;
-        runsEl.innerHTML = rs.map((x) => agentRun(x)).join("")
-          || '<span class="muted">No agents on this file yet. Press Agent to give one a task.</span>';
+        drawRuns(runsEl, rs, { owner, repo, scope: { path }, lines: () => selLines().map((l) => l.id), refresh: pollAgents,
+          empty: '<span class="muted">No agents on this file yet. Press Agent to give one a task.</span>' });
         if (rs.some((x) => x.status === "running")) agentTimer = setTimeout(pollAgents, 1500);
       };
       pollAgents();
@@ -2828,6 +2870,9 @@ async function commands() {
     for (const h of c.agents?.harnesses ?? []) add("This file", "bot", `Give ${h} a task on this file`, `POST /api/repos/${c.owner}/${c.repo}/agents`, async (task) => {
       await api(`/repos/${c.owner}/${c.repo}/agents`, { path: c.path, harness: h, task }); toast(`agent-${h} is on it`); c.pollAgents?.();
     }, "the task");
+    if (c.agents?.harnesses?.length) add("This file", "square", "Stop every agent on this file", `POST /api/repos/${c.owner}/${c.repo}/agents/stop`, async () => {
+      const { stopped } = await api(`/repos/${c.owner}/${c.repo}/agents/stop`, { path: c.path }); toast(stopped.length ? `Stopped ${stopped.length} agent${stopped.length > 1 ? "s" : ""}` : "Nothing was running"); c.pollAgents?.();
+    });
   }
   if (c.view === "f" || c.view === "r") {
     if (c.canWrite) add("This repo", "file-plus", "Add a file", `POST /api/repos/${c.owner}/${c.repo}/files`, async (p) => {

@@ -48,6 +48,11 @@ export class AgentSandbox {
   async fetch(req: Request): Promise<Response> {
     const c = this.ctx.container;
     if (!c) return json({ error: "this Durable Object has no container" }, 501);
+    // Stop on a run: the container goes, so the agent's /run answers with an error.
+    if (new URL(req.url).pathname === "/stop") {
+      if (c.running) await c.destroy("stopped").catch(() => {});
+      return json({ stopped: true });
+    }
     const body = await req.text();
     if (!c.running) {
       const env: Record<string, string> = {};
@@ -65,10 +70,16 @@ export class AgentSandbox {
   }
 }
 
-/** A Sandbox backed by the AgentSandbox binding: one container per run. */
-export const containerSandbox = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Sandbox => async (cmd, file) => {
+/** A Sandbox backed by the AgentSandbox binding: one container per run. `signal` aborting destroys it. */
+export const containerSandbox = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Sandbox => async (cmd, file, signal) => {
+  signal?.throwIfAborted();
   const stub = ns.get(ns.idFromName(crypto.randomUUID()));
-  const res = await stub.fetch(new Request("http://sandbox/run", { method: "POST", body: JSON.stringify({ cmd, ...file }) }));
-  if (!res.ok) throw new Error(`sandbox: ${res.status} ${await res.text()}`);
-  return (await res.json()) as { code: number; out: string; text: string | null };
+  const stop = () => { void stub.fetch(new Request("http://sandbox/stop", { method: "POST" })).catch(() => {}); };
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    const res = await stub.fetch(new Request("http://sandbox/run", { method: "POST", body: JSON.stringify({ cmd, ...file }) }));
+    signal?.throwIfAborted();
+    if (!res.ok) throw new Error(`sandbox: ${res.status} ${await res.text()}`);
+    return (await res.json()) as { code: number; out: string; text: string | null };
+  } finally { signal?.removeEventListener("abort", stop); }
 };
