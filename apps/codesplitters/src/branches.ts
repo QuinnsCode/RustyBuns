@@ -19,6 +19,7 @@ import { settings as deploySettings } from "./deploy.ts";
 import { json, NAME, type Env } from "./env.ts";
 import { emit } from "./hooks.ts";
 import { diffToOps } from "./sync.ts";
+import { unindexFile } from "./search.ts";
 
 type Pick = "branch" | "main";
 interface Access { read: boolean; write: boolean }
@@ -83,7 +84,8 @@ export async function deleteOn(env: Env, owner: string, repo: string, branch: st
 /** Main loses `path`: its copy, its rows, and its place in git (and the mirror's upstream, at the next sync). */
 async function deleteOnMain(env: Env, owner: string, repo: string, path: string, user: string, message: string) {
   await toFile(env, owner, repo, path, user, "wipe", { method: "POST" });
-  await env.DB.batch(["files", "file_search", "git_pending"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE owner = ? AND repo = ? AND path = ?`).bind(owner, repo, path)));
+  await env.DB.batch(["files", "git_pending"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE owner = ? AND repo = ? AND path = ?`).bind(owner, repo, path)));
+  await unindexFile(env, owner, repo, path);
   const git = await uncatalogue(env, owner, repo, path, user, message).catch(() => null);
   if (git) {
     const { kickMirror } = await import("./mirror.ts");

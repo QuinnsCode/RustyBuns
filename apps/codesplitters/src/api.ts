@@ -96,7 +96,7 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/repos/:o/:r/fresh", does: "where a fresh start of git stands; takes a step while one is running" },
       { method: "POST", path: "/api/repos/:o/:r/fresh", who: OWNER, does: "start git fresh (a new Artifact holding only the current files), or retry one that failed" },
       { method: "DELETE", path: "/api/repos/:o/:r/fresh?artifact=", who: OWNER, does: "delete the old git a fresh start moved off" },
-      { method: "GET", path: "/api/search?q=", does: "committed code you may see: [{owner, repo, path, snippet}], best 20" },
+      { method: "GET", path: "/api/search?q=&repo=", does: "committed code you may see: [{owner, repo, path, snippet}], best 20. With repo=owner/name, just that repo; without, your repos first, then the 50 most recently committed" },
     ],
   },
   {
@@ -256,6 +256,8 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/admin/handles", who: ADMINS, does: "handles granted to emails" },
       { method: "POST", path: "/api/admin/handles", body: "{handle, email}", who: ADMINS, does: "give a handle to whoever signs in with that email" },
       { method: "GET", path: "/api/admin/insights?days=7", who: ADMINS, does: "people vs agents vs bots by day, the site's health, recent people and how far each got, the last day's callers" },
+      { method: "GET", path: "/api/admin/scale", who: ADMINS, does: "the scale sideboard: every wall the site hits as it grows, each with a live reading where one can be taken. {generated_at, worst, cards}" },
+      { method: "POST", path: "/api/admin/scale/search-move", who: ADMINS, does: "move up to 50 files of D1's old search index into their repos' own; call until left is 0. {moved, repos, left}" },
       { method: "GET", path: "/api/admin/deploy-keys", who: ADMINS, does: "{rotating, keys}" },
       { method: "POST", path: "/api/admin/deploy-keys/reseal", who: ADMINS, does: "reseal stored deploy keys under the current key" },
     ],

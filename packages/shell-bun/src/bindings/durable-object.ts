@@ -14,7 +14,9 @@
 // alarm) constructs a fresh instance from them. Tests use it to exercise the
 // restore path, which never runs otherwise because the shell never evicts.
 
+import { Database } from "bun:sqlite";
 import type { StoragePort } from "@rustybuns/ports";
+import { sqlStorage } from "./sql.ts";
 
 // ---- local WebSocket ends ----------------------------------------------------
 
@@ -260,6 +262,7 @@ export function memoryStorage(): StoragePort {
   const m = new Map<string, unknown>();
   let alarm: ReturnType<typeof setTimeout> | null = null;
   return {
+    sql: sqlStorage(() => new Database(":memory:")),
     async get<T>(k: string) { return m.get(k) as T | undefined; },
     async put(k, v) { m.set(k, structuredClone(v)); },
     async delete(k) { return m.delete(k); },

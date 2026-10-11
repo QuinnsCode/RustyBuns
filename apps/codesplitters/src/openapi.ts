@@ -81,7 +81,7 @@ const OPS: Record<string, Record<string, Op>> = {
   "/jobs/{id}": { get: { id: "get_job", summary: "A queued request: its place in line, or its answer once it ran", tag: "Account", ok: loose("{id, rule, state, place?, eta?, status?, result?}") } },
 
   "/search": { get: { id: "search_code", summary: "Search committed code you're allowed to see", tag: "Search", open: true,
-    query: { q: { ...str("words to look for"), required: true } },
+    query: { q: { ...str("words to look for"), required: true }, repo: str("owner/name: search just this repo (else your repos first, then the 50 most recently committed)") },
     ok: arr(obj({ owner: str(), repo: str(), path: str(), snippet: str("matches marked «like this»") })) } },
 
   "/levels": { get: { id: "list_levels", summary: "Every level (an imported open-source repo) and whether it's ready", tag: "Levels", open: true, ok: arr(loose("{slug, title, repo, status, …}")) } },

@@ -57,6 +57,7 @@ import { startChecks, upstreamMoved } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { json, NAME, type Env } from "./env.ts";
 import type { Doc } from "./lines.ts";
+import { indexFile, unindexFile } from "./search.ts";
 
 /** How often a mirror that's in step looks again, and the longest a failing one waits. */
 export const EVERY = 5 * 60_000, MAX_WAIT = 15 * 60_000;
@@ -434,7 +435,8 @@ async function land(env: Env, owner: string, repo: string, p: Plan, tip: string)
   if (p.next === null) {
     // Upstream deleted it: the file goes here too.
     await toFile(env, owner, repo, p.path, "upstream", "wipe", { method: "POST" });
-    await env.DB.batch(["files", "file_search", "git_pending"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE owner = ? AND repo = ? AND path = ?`).bind(owner, repo, p.path)));
+    await env.DB.batch(["files", "git_pending"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE owner = ? AND repo = ? AND path = ?`).bind(owner, repo, p.path)));
+    await unindexFile(env, owner, repo, p.path);
     return;
   }
   const ops = diffToOps(p.doc.lines, p.next);
@@ -445,10 +447,7 @@ async function land(env: Env, owner: string, repo: string, p: Plan, tip: string)
   if (!p.clean) return;
   const c = await toFile(env, owner, repo, p.path, "upstream", "commit", { method: "POST", body: JSON.stringify({ message: `upstream ${tip.slice(0, 7)}` }) });
   const { published } = (await c.json()) as { published: string };
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM file_search WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, p.path),
-    env.DB.prepare("INSERT INTO file_search (owner, repo, path, content) VALUES (?, ?, ?, ?)").bind(owner, repo, p.path, published),
-  ]);
+  await indexFile(env, owner, repo, p.path, published);
 }
 
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
