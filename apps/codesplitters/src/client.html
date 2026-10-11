@@ -584,6 +584,19 @@
   .limits .tag, .jobs .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
   #mirror .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
   #mirror .tag.ok { color: var(--accent); border-color: var(--accent); } #mirror .tag.fail { color: var(--del-fg); border-color: var(--del-fg); }
+  /* A git action, drawn before you press it (#693): each side's commits, before → after. */
+  .gitpic { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; }
+  .gitpic .side { display: grid; grid-template-columns: auto auto; gap: 3px 8px; align-items: center; } .gitpic .side.after { grid-template-columns: auto; } .gitpic .gl { display: contents; } .gitpic .arrow { color: var(--muted); }
+  .gitpic .gl > span:first-child:not(.dots) { color: var(--muted); font: 500 11px var(--mono); max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gitpic .dots { display: flex; align-items: center; height: 12px; } .gitpic .dots i { box-sizing: border-box; width: 10px; height: 10px; border-radius: 50%; flex: none; margin-right: 6px; position: relative; background: var(--border-2); }
+  .gitpic .dots i + i::before { content: ""; position: absolute; right: calc(100% + 1px); top: calc(50% - 1px); width: 5px; height: 2px; background: var(--border-2); }
+  .gitpic .dots i.u { background: var(--fg); } .gitpic .dots i.m { background: var(--accent); }
+  .gitpic .dots i.x { background: none; border: 1.5px dashed var(--accent); opacity: .6; } .gitpic .dots i.p { background: var(--bg); border: 3px solid var(--accent); }
+  .gitpic .dots i.k, .gitpic .dots i.w { border-radius: 2px; transform: rotate(45deg) scale(.85); } .gitpic .dots i.k { background: var(--accent); } .gitpic .dots i.w { background: var(--fg); }
+  .gitpic .dots i.k::before, .gitpic .dots i.w::before { display: none; }
+  .gitpic .say { flex-basis: 100%; color: var(--muted); }
+  #mirror .gitpic { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); }
+  #gitpop { position: fixed; z-index: 60; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--bg); box-shadow: 0 4px 16px rgb(0 0 0 / .12); pointer-events: none; max-width: min(420px, calc(100vw - 32px)); }
   .limits .tag.reject, .jobs .tag.failed { color: var(--del-fg); } .limits .tag.flag, .limits .tag.queue, .jobs .tag.waiting, .jobs .tag.running { color: var(--accent); border-color: var(--accent); }
   .insights .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 12px; }
   .insights .tile { border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; display: grid; gap: 2px; } .insights .tile b { font: 600 22px var(--mono); } .insights .tile span { color: var(--muted); font-size: 12px; }
@@ -2350,23 +2363,30 @@ const views = {
     const waiting = m.ahead ? `${m.ahead} commit${m.ahead === 1 ? "" : "s"} waiting to go up` : "nothing waiting to go up";
     const retry = m.nextAt ? (m.nextAt <= Date.now() ? "trying again in a moment" : `trying again in ${Math.max(1, Math.round((m.nextAt - Date.now()) / 60_000))}m`) : "";
     const said = m.error ? `<pre class="muted" style="white-space:pre-wrap;font-size:12px;margin:4px 0">${esc(m.error)}</pre>` : "";
+    const clashed = m.clash?.length ? ` in ${m.clash.map((p) => `<a href="#/f/${owner}/${repo}/${encodeURIComponent(p)}"><code>${esc(p)}</code></a>`).join(", ")}` : "";
     const head = {
       ok: `<span class="tag ok">in step</span> with <code>${esc(m.url)}</code> ${esc(m.branch)}, checked ${m.syncedAt ? ago(m.syncedAt) : "never"}.`,
-      down: `<span class="tag fail">upstream down</span> <code>${esc(m.url)}</code> hasn't answered since ${new Date(m.downSince).toLocaleString()}. Keep working: ${waiting}, ${retry}.`,
-      refused: `<span class="tag fail">upstream said no</span> <code>${esc(m.url)}</code> answered but didn't take the push. Your work stays here: ${waiting}, ${retry}.`,
-      held: `<span class="tag">held</span> Pulling from <code>${esc(m.url)}</code>, but not pushing: this repo has private lines, which its git holds blank. Pushing the crew's copy sends their real text upstream instead.`,
-      rewritten: `<span class="tag fail">rewritten</span> Upstream's history was rewritten (a force-push), so there's nothing to merge with${m.clash.length ? `, and replaying this copy's commits clashed in ${m.clash.map((p) => `<code>${esc(p)}</code>`).join(", ")}` : ""}. Nothing moved on either side. Re-base puts this copy's own commits on top of upstream's; Take upstream's drops them.`,
-      clash: `<span class="tag fail">clash</span> Upstream and this copy changed the same lines${m.clash.length ? ` in ${m.clash.map((p) => `<a href="#/f/${owner}/${repo}/${encodeURIComponent(p)}"><code>${esc(p)}</code></a>`).join(", ")}` : ""}. Nothing moved on either side. Pick whose lines win in those files; everything else merges as usual.`,
+      down: `<span class="tag fail">upstream down</span> since ${new Date(m.downSince).toLocaleString()}. Keep working: ${waiting}, ${retry}.`,
+      refused: `<span class="tag fail">upstream said no</span> to the push. Your work stays here: ${waiting}, ${retry}.`,
+      held: `<span class="tag">held</span> Pulling, not pushing: this repo has private lines, which its git holds blank.`,
+      rewritten: `<span class="tag fail">rewritten</span> Upstream's history was force-pushed${clashed}. Nothing moved yet: pick one.`,
+      clash: `<span class="tag fail">clash</span> Both sides changed the same lines${clashed}. Nothing moved yet: pick whose lines win.`,
     }[m.state] ?? esc(m.state);
-    const pickSide = m.state === "clash" && m.clash.length ? `<div class="row" style="gap:6px"><button class="btn" data-resolve="mine">${icon("user")}Keep mine</button><button class="btn" data-resolve="upstream">${icon("download")}Take upstream's</button></div>`
-      : m.state === "rewritten" ? `<div class="row" style="gap:6px"><button class="btn" data-resolve="rebase">${icon("git-merge")}Re-base on upstream</button><button class="btn" data-resolve="upstream">${icon("download")}Take upstream's</button></div>` : "";
+    // What pressing the main button would do, drawn; pointing at any button here draws that one instead.
+    const sync = picAttr("sync", { ahead: m.ahead, behind: m.behind });
+    const pickSide = m.state === "clash" && m.clash.length ? `<button class="btn" data-resolve="mine"${picAttr("keep")}>${icon("user")}Keep mine</button><button class="btn" data-resolve="upstream"${picAttr("theirs")}>${icon("download")}Take upstream's</button>`
+      : m.state === "rewritten" ? `<button class="btn" data-resolve="rebase"${picAttr("rebase")}>${icon("git-merge")}Re-base on upstream</button><button class="btn" data-resolve="upstream"${picAttr("drop")}>${icon("download")}Take upstream's</button>` : "";
+    const first = pickSide ? (m.state === "clash" ? ["keep"] : ["rebase"]) : m.state === "held" ? ["crew"] : ["sync", { ahead: m.ahead, behind: m.behind }];
     // Private lines: hold the repo back, or push the crew's copy (real text) upstream.
     const crew = m.private ? (m.pushCrew
-      ? `<p class="muted" style="font-size:12px">${icon("lock")}The crew's copy goes upstream, private lines' real text and all. <a href="#" data-crew="0">Hold it back</a></p>`
-      : `<button class="btn" data-crew="1">${icon("lock")}Push the crew's copy</button>`) : "";
-    const who = m.identity ? `Commits go up as <b>${esc(m.identity.name)}</b> &lt;${esc(m.identity.email)}&gt; (this machine's git config).` : `No git identity on this machine: set <code>git config --global user.name</code> and <code>user.email</code>.`;
-    el.innerHTML = `<p>${head}</p>${m.state === "ok" && (m.ahead || m.behind) ? `<p class="muted">${waiting}; ${m.behind} to take.</p>` : ""}${m.state !== "ok" && m.state !== "held" && !(m.state === "rewritten" && !m.error?.includes(": ")) ? said : ""}${pickSide}
-      <div class="row" style="gap:6px;margin-top:6px"><button class="btn" id="mirror-sync">${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}<p class="muted" style="font-size:12px">${who} ${m.truth && m.truth !== "ask" ? `Clashes settle themselves: ${esc(TRUTHS[m.truth]?.[0] ?? m.truth)} wins.` : "Clashes wait for you."} <a href="#/u/${esc(me())}">Where git truth lives</a>: your history never goes extinct either way.</p><div id="mirror-branches"></div>`;
+      ? `<p class="muted" style="font-size:12px">${icon("lock")}The crew's copy goes upstream, private lines' real text and all. <a href="#" data-crew="0"${picAttr("hold")}>Hold it back</a></p>`
+      : `<button class="btn" data-crew="1"${picAttr("crew")}>${icon("lock")}Push the crew's copy</button>`) : "";
+    const who = m.identity ? `Commits go up as <b>${esc(m.identity.name)}</b> &lt;${esc(m.identity.email)}&gt;.` : `No git identity on this machine: set <code>git config --global user.name</code> and <code>user.email</code>.`;
+    el.dataset.pics = "";
+    el.innerHTML = `<p>${head}</p>${m.state !== "ok" && m.state !== "held" && !(m.state === "rewritten" && !m.error?.includes(": ")) ? said : ""}
+      <div class="gitpic-slot" data-pic="${esc(JSON.stringify(first))}">${gitPic(first)}</div>
+      <div class="row" style="gap:6px;flex-wrap:wrap">${pickSide}<button class="btn" id="mirror-sync"${sync}>${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}
+      <p class="muted" style="font-size:12px">${who} ${m.truth && m.truth !== "ask" ? `Clashes settle themselves: ${esc(TRUTHS[m.truth]?.[0] ?? m.truth)} wins.` : "Clashes wait for you."} <a href="#/u/${esc(me())}">Where git truth lives</a>: your history never goes extinct either way.</p><div id="mirror-branches"></div>`;
     icons();
     $("#mirror-sync").addEventListener("click", () => { el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, {}); });
     el.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => { el.querySelector("p").textContent = "settling…"; views.wireMirror(owner, repo, { resolve: b.dataset.resolve }); }));
@@ -2385,7 +2405,7 @@ const views = {
     if (!el || !list.length) return;
     el.innerHTML = `<p class="muted" style="font-size:12px;margin-bottom:4px">Upstream's branches</p>` + list.map((b) => `<div class="row" style="gap:6px;font-size:13px"><code>${esc(b.ref)}</code>${b.branch
       ? `<span class="muted">${b.status === "open" ? `open here as <code>${esc(b.branch)}</code>` : `${esc(b.status)} here`}</span>`
-      : `<button class="btn" data-open-ref="${esc(b.ref)}">${icon("download")}Open here</button>`}</div>`).join("");
+      : `<button class="btn" data-open-ref="${esc(b.ref)}"${picAttr("open", { ref: b.ref })}>${icon("download")}Open here</button>`}</div>`).join("");
     icons();
     el.querySelectorAll("[data-open-ref]").forEach((btn) => btn.addEventListener("click", async () => {
       btn.disabled = true;
@@ -2715,8 +2735,8 @@ const views = {
         ${r.canWrite ? `<span class="muted">${settles(clash) && !full
           ? `<a class="btn primary" href="#/b/${esc(owner)}/${esc(repo)}/${encodeURIComponent(b.name)}" title="settle each conflict, then merge">${icon("git-merge")}Settle ${settles(clash)}</a>`
           : settles(clash)
-          ? `<button class="btn primary" data-merge="${esc(b.name)}" data-left>${icon("git-merge")}Merge</button> <button class="btn ghost" data-all="main" data-for="${esc(b.name)}" title="settle every conflict as main's version">All main</button><button class="btn ghost" data-all="branch" data-for="${esc(b.name)}" title="settle every conflict as the branch's version">All branch</button>`
-          : `<button class="btn primary" data-merge="${esc(b.name)}"${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${r.canWrite ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now, on this machine: no GitHub needed">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}">${icon("upload")}Push upstream</button>${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}" title="Take what upstream's ${esc(b.upstream_ref)} got since">${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
+          ? `<button class="btn primary" data-merge="${esc(b.name)}" data-left${picAttr("merge", { branch: b.name })}>${icon("git-merge")}Merge</button> <button class="btn ghost" data-all="main" data-for="${esc(b.name)}" title="settle every conflict as main's version">All main</button><button class="btn ghost" data-all="branch" data-for="${esc(b.name)}" title="settle every conflict as the branch's version">All branch</button>`
+          : `<button class="btn primary" data-merge="${esc(b.name)}"${picAttr("merge", { branch: b.name })}${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${r.canWrite ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now, on this machine: no GitHub needed">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}"${picAttr("push", { branch: b.name, ref: b.upstream_ref ?? b.name })}>${icon("upload")}Push upstream</button>${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}"${picAttr("pull", { branch: b.name, ref: b.upstream_ref })}>${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
     }).join("");
     const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`), anyway = (name) => el.querySelector(`[data-anyway="${CSS.escape(name)}"]`);
     // A merge button waits on every box its branch shows, and every conflict card being settled.
@@ -3862,6 +3882,63 @@ const stackLogos = (label) => label.split(/, | \+ | \/ /).map((w) => LOGOS[w]
 
 // Your data (privacy.ts): download all of it, or delete your account once your handle is typed back.
 // On your profile and on #/privacy.
+// Every git action on the site, drawn before you press it (#693): each side's commits, before → after.
+// A dot is a commit: o both sides have it, u upstream's (or main's), m this copy's (or the branch's), p this copy's
+// with private lines in it, x off the branch but kept by a ref; k and w are merges where yours or upstream's lines win.
+const GITPICS = {
+  sync: ({ ahead, behind, up = "upstream", here = "this copy" }) => {
+    const U = "u".repeat(Math.min(3, behind ?? 1)), M = "m".repeat(Math.min(3, ahead ?? 1));
+    return [[[up, "oo" + U], [here, "oo" + M]], [[up, "oo" + U + M], [here, "oo" + U + M]],
+      U || M ? `${U ? "Upstream's commits come here" : ""}${U && M ? ", and " : ""}${M ? "this copy's go up" : ""}.` : "Already in step: nothing moves."];
+  },
+  keep: () => [[["upstream", "oouu"], ["this copy", "oomm"]], [["upstream", "oouummk"], ["this copy", "oouummk"]], "Both sides' commits meet in a merge, and in the clashing lines yours win."],
+  theirs: () => [[["upstream", "oouu"], ["this copy", "oomm"]], [["upstream", "oouummw"], ["this copy", "oouummw"]], "Both sides' commits meet in a merge, and in the clashing lines upstream's win."],
+  rebase: () => [[["upstream (rewritten)", "uuu"], ["this copy", "oomm"]], [["upstream", "uuumm"], ["this copy", "uuumm"]], "This copy's own commits go on top of upstream's new history."],
+  drop: () => [[["upstream (rewritten)", "uuu"], ["this copy", "oomm"]], [["upstream", "uuu"], ["this copy", "uuuxx"]], "This copy becomes upstream's history; its own commits leave the branch, and a ref keeps them."],
+  crew: () => [[["upstream", "oo"], ["this copy", "oopp"]], [["upstream", "oopp"], ["this copy", "oopp"]], "This copy's commits go up, private lines' real text and all: upstream will see it."],
+  hold: () => [[["upstream", "oo"], ["this copy", "oopp"]], [["upstream", "oo"], ["this copy", "oopp"]], "This copy's commits stay here: upstream keeps what it has, and gets more only once you push the crew's copy again."],
+  open: ({ ref }) => [[[`upstream's ${ref}`, "oouu"], ["here", ""]], [[`upstream's ${ref}`, "oouu"], [ref, "oouu"]], `Upstream's ${ref} opens here as a branch, its commits and all.`],
+  merge: ({ branch }) => [[["main", "oou"], [branch, "oomm"]], [["main", "oouk"], [branch, "oomm"]], "The branch's lines land on main. Commit the files to put them in git."],
+  push: ({ branch, ref }) => [[[`upstream's ${ref}`, "oo"], [branch, "oomm"]], [[`upstream's ${ref}`, "oomm"], [branch, "oomm"]], `${branch}'s commits go up as upstream's ${ref}.`],
+  pull: ({ branch, ref }) => [[[`upstream's ${ref}`, "oouu"], [branch, "oomm"]], [[`upstream's ${ref}`, "oouu"], [branch, "oouumm"]], `What upstream's ${ref} got since comes onto ${branch}.`],
+};
+const GITDOT = { o: "a commit both sides have", u: "upstream's commit", m: "this copy's commit", p: "a commit with private lines", x: "off the branch, kept by a ref", k: "a merge: your lines win", w: "a merge: upstream's lines win" };
+/** The picture for `data-pic` (a [kind, options] pair, as JSON). */
+const gitPic = (pic) => {
+  const [kind, o = {}] = typeof pic === "string" ? JSON.parse(pic) : pic;
+  const [before, after, say] = GITPICS[kind](o);
+  const side = (lanes, names) => `<div class="side${names ? "" : " after"}">${lanes.map(([name, dots]) => `<div class="gl">${names ? `<span title="${esc(name)}">${esc(name)}</span>` : ""}<span class="dots">${[...dots].map((c) => `<i class="${c}" title="${GITDOT[c]}"></i>`).join("")}</span></div>`).join("")}</div>`;
+  return `<div class="gitpic" role="img" aria-label="${esc(say)}">${side(before, true)}<span class="arrow">→</span>${side(after)}<span class="say">${esc(say)}</span></div>`;
+};
+const picAttr = (kind, o = {}) => ` data-pic="${esc(JSON.stringify([kind, o]))}"`;
+// Point at (or tab to) a git action and see its picture: in its box's own slot when it has one, else floating by it.
+{
+  let pop;
+  const show = (e) => {
+    const btn = e.target.closest?.("[data-pic]");
+    if (!btn) return;
+    const slot = btn.closest("[data-pics]")?.querySelector(".gitpic-slot");
+    if (slot) return void (slot.innerHTML = gitPic(btn.dataset.pic));
+    pop ??= Object.assign(document.body.appendChild(document.createElement("div")), { id: "gitpop" });
+    pop.innerHTML = gitPic(btn.dataset.pic);
+    pop.hidden = false;
+    const r = btn.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+    pop.style.left = `${Math.max(16, Math.min(r.left, innerWidth - w - 16))}px`;
+    pop.style.top = `${r.bottom + 6 + h > innerHeight ? r.top - h - 6 : r.bottom + 6}px`;
+  };
+  const hide = (e) => {
+    const btn = e.target.closest?.("[data-pic]");
+    if (!btn || btn.contains(e.relatedTarget)) return;
+    const slot = btn.closest("[data-pics]")?.querySelector(".gitpic-slot");
+    if (slot) slot.innerHTML = gitPic(slot.dataset.pic);
+    else if (pop) pop.hidden = true;
+  };
+  document.addEventListener("mouseover", show); document.addEventListener("focusin", show);
+  document.addEventListener("mouseout", hide); document.addEventListener("focusout", hide);
+  // A button that redraws (or a page that changes) under the pointer never says it was left.
+  for (const ev of ["hashchange", "click"]) addEventListener(ev, () => { if (pop) pop.hidden = true; });
+}
+
 // Where git truth lives (PUT /api/me {git_truth}): whose side a mirror takes when it and upstream disagree.
 const TRUTHS = {
   ask: ["Ask me", "Stop at a clash or a rewritten upstream, and wait for you to pick."],
