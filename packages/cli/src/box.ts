@@ -124,8 +124,11 @@ ${volumeSize > 0 ? `  // Hetzner automounts an attached Volume at /mnt/HC_Volume
   process.exit(1);` : `  return ${JSON.stringify(`/var/lib/${c.name}`)};`}
 }
 
-const child = spawn(bin, process.argv.slice(2), { stdio: "inherit", env: { ...process.env, DATA_DIR: await dataDir() } });
+const env = { ...process.env, DATA_DIR: await dataDir() };
+// Handlers first: a stop that lands while the host starts still reaches it.
+let child;
 for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => child.kill(sig));
+child = spawn(bin, process.argv.slice(2), { stdio: "inherit", env });
 child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
 `;
 }
