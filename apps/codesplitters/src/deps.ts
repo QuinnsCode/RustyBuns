@@ -9,6 +9,13 @@
 // pulled within days), never past the level the owner allows, and never
 // anything on the ignore list.
 //
+// It also asks OSV (osv.dev, which carries GitHub's and npm's advisories) whether
+// the version each range starts at has a known vulnerability. One that does is
+// moved to the first release that fixes it, past the level and the minimum age
+// (the advisory, not the release, says which version is safe), and raising the
+// range makes every install take it, whatever the lockfile held. One with no
+// fixed release yet is listed in the report as exposed, ignored or not.
+//
 // The repo's lockfile says which package manager it uses (bun, npm, pnpm or
 // yarn), and the lockfile goes on the branch too, regenerated in a throwaway
 // clone with install scripts off, so nothing of the repo's runs.
@@ -61,8 +68,44 @@ export interface Update {
   /** A fixer's go at it: who, how many tries, and the files its passing fix changed (none if it gave up). */
   fix?: { by: string; tries: number; files: string[] };
   path?: string;
+  /** The advisories this update fixes. */
+  fixes?: string[];
 }
-export interface Report { at: number; checked: number; updates: Update[]; branch?: string; lock?: string; note?: string }
+/** A dependency whose version has a known vulnerability that no release fixes yet (or that's on the ignore list). */
+export interface Exposed { name: string; version: string; ids: string[]; path?: string }
+export interface Report { at: number; checked: number; updates: Update[]; exposed?: Exposed[]; branch?: string; lock?: string; note?: string }
+
+/** A known vulnerability, and the versions that fix it (on each line it affects). */
+export interface Vuln { id: string; summary: string; fixed: string[] }
+/** Which of these exact versions have known vulnerabilities, keyed `name@version`. */
+export type Advisories = (pkgs: { name: string; version: string }[]) => Promise<Map<string, Vuln[]>>;
+
+const OSV = "https://api.osv.dev/v1";
+/** OSV's batch query says which versions are hit; each hit's details say which versions fix it. */
+export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (pkgs) => {
+  const out = new Map<string, Vuln[]>();
+  if (!pkgs.length) return out;
+  const res = await get(`${OSV}/querybatch`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ queries: pkgs.map((p) => ({ package: { name: p.name, ecosystem: "npm" }, version: p.version })) }) });
+  if (!res.ok) throw new Error(`osv.dev: ${res.status}`);
+  const { results } = (await res.json()) as { results: { vulns?: { id: string }[] }[] };
+  const details = new Map<string, Promise<any>>();
+  const detail = (id: string) => {
+    if (!details.has(id)) details.set(id, get(`${OSV}/vulns/${encodeURIComponent(id)}`).then((r) => r.ok ? r.json() : null).catch(() => null));
+    return details.get(id)!;
+  };
+  await Promise.all(pkgs.map(async (p, i) => {
+    const ids = (results[i]?.vulns ?? []).map((v) => v.id);
+    if (!ids.length) return;
+    out.set(`${p.name}@${p.version}`, await Promise.all(ids.map(async (id) => {
+      const v = await detail(id);
+      const fixed = (v?.affected ?? []).filter((a: any) => a.package?.ecosystem === "npm" && a.package?.name === p.name)
+        .flatMap((a: any) => (a.ranges ?? []).flatMap((r: any) => (r.events ?? []).map((e: any) => e.fixed).filter(Boolean)));
+      return { id, summary: v?.summary ?? "", fixed };
+    })));
+  }));
+  return out;
+};
 
 /** What npm says about a package: its versions and when each was published. */
 export type Registry = (name: string) => Promise<{ versions: string[]; time: Record<string, string> } | null>;
@@ -173,13 +216,38 @@ function allows(r: { prefix: string; v: V }, v: V): boolean {
 
 const levelOf = (from: V, to: V): Level => to[0] !== from[0] ? "major" : to[1] !== from[1] ? "minor" : "patch";
 
-/** The updates worth proposing for one package.json, newest allowed version each. Paths are the caller's to add. */
-export async function outdated(pkg: Record<string, any>, s: Settings, registry: Registry, now = Date.now()) {
+/** The version each movable range starts at, the one a vulnerability check asks about. */
+export function floors(pkg: Record<string, any>): { name: string; version: string }[] {
+  return Object.entries({ ...pkg.dependencies, ...pkg.devDependencies } as Record<string, string>)
+    .flatMap(([name, spec]) => { const r = range(spec); return r ? [{ name, version: r.v.join(".") }] : []; });
+}
+
+/**
+ * The updates worth proposing for one package.json, newest allowed version each,
+ * and at least the first release that fixes each of `vulns` (keyed name@floor).
+ * Paths are the caller's to add.
+ */
+export async function outdated(pkg: Record<string, any>, s: Settings, registry: Registry, now = Date.now(), vulns = new Map<string, Vuln[]>()) {
   const deps: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
   const found: Omit<Update, "status">[] = [];
-  const checks = Object.entries(deps).filter(([name]) => !s.ignore.includes(name)).map(async ([name, spec]) => {
+  const exposed: Exposed[] = [];
+  const checks = Object.entries(deps).map(async ([name, spec]) => {
     const r = range(spec);
     if (!r) return 0;   // workspace:, file:, git, tags, wider ranges
+    const hits = vulns.get(`${name}@${r.v.join(".")}`) ?? [];
+    if (s.ignore.includes(name)) {
+      if (hits.length) exposed.push({ name, version: r.v.join("."), ids: hits.map((h) => h.id) });
+      return 0;
+    }
+    // Each advisory's first fix past this version; the update has to reach the latest of them.
+    let need: V | null = null;
+    const unfixed: string[] = [];
+    for (const h of hits) {
+      const fix = h.fixed.map(parse).filter((v): v is V => !!v && cmp(v, r.v) > 0).sort(cmp)[0];
+      if (!fix) unfixed.push(h.id);
+      else if (!need || cmp(fix, need) > 0) need = fix;
+    }
+    if (unfixed.length) exposed.push({ name, version: r.v.join("."), ids: unfixed });
     const meta = await registry(name).catch(() => null);
     if (!meta) return 0;
     const ripe = now - s.min_age_days * 86_400_000;
@@ -192,11 +260,18 @@ export async function outdated(pkg: Record<string, any>, s: Settings, registry: 
       if (!(published <= ripe)) continue;
       if (!best || cmp(v, best) > 0) best = v;
     }
-    if (best) found.push({ name, from: spec, to: r.prefix + best.join("."), level: levelOf(r.v, best) });
+    // Short of the fix, the first published release that has it, however new or far.
+    if (need && (!best || cmp(best, need) < 0)) {
+      best = meta.versions.map(parse).filter((v): v is V => !!v && cmp(v, need!) >= 0).sort(cmp)[0] ?? best;
+      if (!best || cmp(best, need) < 0) exposed.push({ name, version: r.v.join("."), ids: hits.filter((h) => !unfixed.includes(h.id)).map((h) => h.id) });
+    }
+    const fixes = hits.filter((h) => !unfixed.includes(h.id)).map((h) => h.id);
+    if (best) found.push({ name, from: spec, to: r.prefix + best.join("."), level: levelOf(r.v, best), ...(fixes.length && need && cmp(best, need) >= 0 ? { fixes } : {}) });
     return 1;
   });
   const checked = (await Promise.all(checks)).reduce((a: number, b) => a + b, 0);
-  return { checked, updates: found.sort((a, b) => a.name.localeCompare(b.name)) };
+  const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+  return { checked, updates: found.sort(byName), exposed: exposed.sort(byName) };
 }
 
 /** package.json with these updates applied, line by line, so everything else stays as written. */
@@ -406,14 +481,15 @@ export async function runDoctor(env: Env, call: Call, owner: string, repo: strin
   const beat = setInterval(() => {
     void env.DB.prepare("UPDATE dep_watches SET running_since = ? WHERE owner = ? AND repo = ? AND running_since IS NOT NULL").bind(Date.now(), owner, repo).run().catch(() => {});
   }, opts.beatMs ?? BEAT);
-  const report = await check(env, call, owner, repo, s, opts.registry ?? (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, now, opts.deadline)
+  const advisories = (env.DEPS_ADVISORIES as Advisories | undefined) ?? osvAdvisories();
+  const report = await check(env, call, owner, repo, s, opts.registry ?? (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, advisories, now, opts.deadline)
     .catch((e: Error): Report => ({ at: now, checked: 0, updates: [], note: `failed: ${e.message}` }))
     .finally(() => clearInterval(beat));
   await env.DB.prepare("UPDATE dep_watches SET last_run = ?, last_report = ?, running_since = NULL WHERE owner = ? AND repo = ?").bind(now, JSON.stringify(report), owner, repo).run();
   return report;
 }
 
-async function check(env: Env, call: Call, owner: string, repo: string, s: Settings, registry: Registry, now: number, deadline?: number): Promise<Report> {
+async function check(env: Env, call: Call, owner: string, repo: string, s: Settings, registry: Registry, advisories: Advisories, now: number, deadline?: number): Promise<Report> {
   const base = `/api/repos/${owner}/${repo}`;
   const fileQ = (path: string, branch?: string) => `?path=${encodeURIComponent(path)}${branch ? `&branch=${branch}` : ""}`;
   const read = async (path: string) => { const r = await call(owner, `${base}/do/file${fileQ(path)}`); return r.ok ? (await r.json()) as Doc : null; };
@@ -448,14 +524,22 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   const once: Registry = (name) => { if (!asked.has(name)) asked.set(name, registry(name)); return asked.get(name)!; };
   // A workspace's own packages are the repo's, not the registry's.
   const own = new Set([...manifests.values()].map((m) => m.pkg.name).filter(Boolean));
+  // Known vulnerabilities, all manifests in one ask. If the database can't be reached, the run goes on without it.
+  let note: string | undefined;
+  const asks = new Map([...manifests.values()].flatMap((m) => floors(m.pkg)).filter((p) => !own.has(p.name)).map((p) => [`${p.name}@${p.version}`, p]));
+  const vulns = await advisories([...asks.values()]).catch((e: Error) => { note = `couldn't check for known vulnerabilities (${e.message})`; return new Map<string, Vuln[]>(); });
   let checked = 0;
   const found: (Omit<Update, "status"> & { path: string })[] = [];
+  const exposed: Exposed[] = [];
   for (const [path, m] of manifests) {
-    const r = await outdated(m.pkg, { ...s, ignore: [...s.ignore, ...own] }, once, now);
+    const r = await outdated(m.pkg, { ...s, ignore: [...s.ignore, ...own] }, once, now, vulns);
     checked += r.checked;
     found.push(...r.updates.map((u) => ({ ...u, path })));
+    exposed.push(...r.exposed.filter((x) => !own.has(x.name)).map((x) => ({ ...x, path })));
   }
-  if (!found.length) return { at: now, checked, updates: [], note: "everything is up to date" };
+  const also = exposed.length ? { exposed } : {};
+  if (exposed.length) note = [note, `${exposed.length} dependenc${exposed.length === 1 ? "y has a known vulnerability" : "ies have known vulnerabilities"} no update here fixes`].filter(Boolean).join("; ");
+  if (!found.length) return { at: now, checked, updates: [], ...also, note: note ?? "everything is up to date" };
 
   const { pm, lock } = packageManager(top, root);
   const filesFor = (us: Update[]) => Object.fromEntries([...manifests].filter(([path]) => us.some((u) => (u.path ?? "package.json") === path))
@@ -474,12 +558,12 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   // Try them together, and only one by one when that breaks.
   const tester = testerFor(env, s, owner);
   let updates: Update[] = found.map((u) => ({ ...u, status: "untested" }));
-  let note = tester ? undefined : s.run_tests ? (env.AGENT_SANDBOX ? "tests on Cloudflare are limited to this site's admins (ADMINS)" : "tests only run on the desktop app") : undefined;
+  if (!tester && s.run_tests) note = [note, env.AGENT_SANDBOX ? "tests on Cloudflare are limited to this site's admins (ADMINS)" : "tests only run on the desktop app"].filter(Boolean).join("; ");
   let tested = false;
   let edits: Edit[] = [];
   if (tester) {
     const r = await remoteFor();
-    if (!r) note = "no git remote to test against";
+    if (!r) note = [note, "no git remote to test against"].filter(Boolean).join("; ");
     else {
       tested = true;
       // With a deadline (the cron's time limit), a try only starts if there's room for one as slow as the slowest so far.
@@ -501,11 +585,11 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
         const again = kept.length > 1 ? await tryWith(kept) : { ok: true };
         if (!again?.ok) for (const u of kept) u.status = "untested";
         if (again && !again.ok) {
-          note = "each of these passes alone but not together; nothing was put on a branch";
-          return { at: now, checked, updates, note };
+          note = [note, "each of these passes alone but not together; nothing was put on a branch"].filter(Boolean).join("; ");
+          return { at: now, checked, updates, ...also, note };
         }
       }
-      if (short) note = "ran out of time before every test ran; only what passed went on a branch, and the next run tries the rest";
+      if (short) note = [note, "ran out of time before every test ran; only what passed went on a branch, and the next run tries the rest"].filter(Boolean).join("; ");
       // An agent takes each broken update in turn, on top of what's kept and fixed so far.
       const fixer = fixerFor(env, s, owner);
       for (const u of fixer ? updates.filter((u) => u.status === "broke") : []) {
@@ -525,7 +609,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   }
   // Once tests ran, only what passed them goes on the branch.
   const take = updates.filter((u) => tested ? (u.status === "kept" || u.status === "fixed") : u.status !== "broke");
-  if (!take.length) return { at: now, checked, updates, note: note ?? "every update broke the tests; nothing was put on a branch" };
+  if (!take.length) return { at: now, checked, updates, ...also, note: [note, "every update broke the tests; nothing was put on a branch"].filter(Boolean).join("; ") };
 
   // The lockfile to match, from the install that passed, else one made for it.
   let locked: string | undefined;
@@ -570,7 +654,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
     if (merged.length) note = [note, `the fix was merged into live edits, untested together: ${merged.join(", ")}`].filter(Boolean).join("; ");
     if (skipped.length) note = [note, `left out of the fix, its live edits touch the same lines: ${skipped.join(", ")}`].filter(Boolean).join("; ");
   }
-  return { at: now, checked, updates, branch, ...(locked !== undefined ? { lock: lock! } : {}), ...(note ? { note } : {}) };
+  return { at: now, checked, updates, ...also, branch, ...(locked !== undefined ? { lock: lock! } : {}), ...(note ? { note } : {}) };
 }
 
 /**

@@ -90,8 +90,9 @@ export interface Env {
   GH_CLI?: string;
   /** Tests only: stands in for running a coding agent's CLI (see agent-run.ts). */
   AGENT_EXEC?: unknown;
-  /** Tests only: stand in for npm, the install-and-test run and the fixer (see deps.ts). */
+  /** Tests only: stand in for npm, osv.dev, the install-and-test run and the fixer (see deps.ts). */
   DEPS_REGISTRY?: unknown;
+  DEPS_ADVISORIES?: unknown;
   DEPS_TESTER?: unknown;
   DEPS_FIXER?: unknown;
   /** Where desktop deploys keep each repo's Alchemy state (deploy.ts); ~/.codesplitters/alchemy if unset. */
