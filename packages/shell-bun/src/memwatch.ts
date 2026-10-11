@@ -4,6 +4,7 @@
 // numbers. With a ceiling set, crossing it writes a V8 heap snapshot to the
 // data dir (open it in Chrome DevTools > Memory, or diff two of them) and exits
 // non-zero, so Railway or systemd restarts the box before the OOM killer does.
+// `beforeRestart` gets a turn first: a box takes a few seconds of CPU profile.
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -32,6 +33,8 @@ export interface MemWatchOptions {
   maxMb?: number;
   /** Where the heap snapshot goes. Unset: no snapshot. */
   snapshotDir?: string;
+  /** Runs over the ceiling before the snapshot, e.g. a short CPU profile of what the box was doing. Failures are logged. */
+  beforeRestart?: () => Promise<unknown>;
   log?: (line: string) => void;
   exit?: (code: number) => void;
   sample?: () => { rss: number; heap: number };
@@ -82,14 +85,17 @@ export function memWatch(o: MemWatchOptions = {}) {
     if (maxMb && st.rssMb > maxMb && !tripped) {
       tripped = true;
       log(`[mem] rss ${st.rssMb}MB over the ${maxMb}MB ceiling: restarting`);
-      if (o.snapshotDir) {
+      const snapshot = () => {
+        if (!o.snapshotDir) return exit(1);
         try {
           mkdirSync(o.snapshotDir, { recursive: true });
           const file = join(o.snapshotDir, `heap-${new Date(s.at).toISOString().replace(/[:.]/g, "-")}.heapsnapshot`);
           Bun.write(file, Bun.generateHeapSnapshot("v8")).then(() => log(`[mem] heap snapshot ${file}`))
             .finally(() => exit(1));
         } catch (err) { log(`[mem] heap snapshot failed: ${(err as Error).message}`); exit(1); }
-      } else exit(1);
+      };
+      if (o.beforeRestart) o.beforeRestart().catch((err) => log(`[mem] before restart: ${(err as Error).message}`)).finally(snapshot);
+      else snapshot();
     }
   }
 
