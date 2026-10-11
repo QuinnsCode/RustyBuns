@@ -266,9 +266,13 @@ export function memoryStorage(): StoragePort {
     async get<T>(k: string) { return m.get(k) as T | undefined; },
     async put(k, v) { m.set(k, structuredClone(v)); },
     async delete(k) { return m.delete(k); },
-    async list<T>(o?: { prefix?: string; limit?: number }) {
+    async list<T>(o?: { prefix?: string; start?: string; end?: string; limit?: number }) {
       const out = new Map<string, T>();
-      for (const [k, v] of [...m.entries()].sort()) if (k.startsWith(o?.prefix ?? "")) { out.set(k, v as T); if (o?.limit && out.size >= o.limit) break; }
+      for (const [k, v] of [...m.entries()].sort()) {
+        if (!k.startsWith(o?.prefix ?? "") || (o?.start !== undefined && k < o.start) || (o?.end !== undefined && k >= o.end)) continue;
+        out.set(k, v as T);
+        if (o?.limit && out.size >= o.limit) break;
+      }
       return out;
     },
     async setAlarm() {}, async deleteAlarm() { if (alarm) clearTimeout(alarm); },

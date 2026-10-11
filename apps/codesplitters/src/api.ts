@@ -107,8 +107,8 @@ export const GROUPS: Group[] = [
     endpoints: [
       { method: "GET", path: "/api/repos/:o/:r/do/file?path=", does: "the file now, with blame: {rev, lines: [{id, text, by, rev, private?}]}" },
       { method: "POST", path: "/api/repos/:o/:r/do/ops?path=", body: "{ops: Op[], ifRev?}", who: CREW, does: "edit, all or nothing: {rev, applied}, or 409 {rev, conflicts}" },
-      { method: "GET", path: "/api/repos/:o/:r/do/log?path=&since=", does: "every op after rev since: [{rev, by, at, op, line}]" },
-      { method: "GET", path: "/api/repos/:o/:r/do/at?path=&rev=", does: "time travel: the file as it was at rev, with blame" },
+      { method: "GET", path: "/api/repos/:o/:r/do/log?path=&since=", does: "every op after rev since: [{rev, by, at, op, line}]; 410 {from} if since is before where history starts" },
+      { method: "GET", path: "/api/repos/:o/:r/do/at?path=&rev=", does: "time travel: the file as it was at rev, with blame; 410 {from} before where history starts" },
       { method: "POST", path: "/api/repos/:o/:r/do/commit?path=", body: "{message}", who: CREW, does: "commit the file on main: indexed for search and pushed to git ({…commit, git})" },
       { method: "GET", path: "/api/repos/:o/:r/do/commits?path=", does: "the file's commits, newest first" },
       { method: "GET", path: "/api/repos/:o/:r/do/private?path=", does: "the ids of its private lines" },
