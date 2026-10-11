@@ -12,7 +12,9 @@
     "@babel/parser": "7.28.5",
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
-    "better-auth": "1.7.7"
+    "better-auth": "1.7.7",
+    "lucide": "0.469.0",
+    "three": "0.160.0"
   },
   "devDependencies": {
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
