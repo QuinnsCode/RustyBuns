@@ -90,6 +90,9 @@ function checkBash(cmd: string, cwd: string, branchOf: BranchOf): string | null 
     if (!c) continue;
     if (c === "printenv") return "print the environment (printenv)";
     if (c === "export" && (!a1 || a1 === "-p")) return "print the environment (export)";
+    // BSD-style `ps e` and macOS `ps -E` print each process's env, other workers' AGENT_OFFICE_HOOK_TOKEN among it (#642)
+    if (c === "ps" && ((a1 && /^[a-z]*e[a-z]*$/i.test(a1)) || t.some((x) => /^-[a-zA-Z]*E/.test(x))))
+      return "print other processes' environment (ps e / ps -E)";
     if (c === "op") return "1Password CLI: deploy secrets resolve through varlock, not agents";
     if (c === "gh" && a1 === "auth" && a2 === "token") return "print the GitHub token";
     if (c === "wrangler" && a1 === "secret") return "wrangler secret";
