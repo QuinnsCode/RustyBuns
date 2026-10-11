@@ -46,6 +46,7 @@ export const RULES: Rule[] = [
   { name: "signup", label: "Create account", what: "new email accounts", group: "Accounts", per: "ip", max: 5, window_s: HOUR, on_fail: "reject" },
   { name: "mail", label: "Account email", what: "verification and password reset emails sent", group: "Accounts", per: "ip", max: 5, window_s: HOUR, on_fail: "reject" },
   { name: "oauth", label: "App sign-ins", what: "OAuth token swaps, refreshes and app registrations", group: "Accounts", per: "ip", max: 30, window_s: 10 * MIN, on_fail: "reject" },
+  { name: "join", label: "Join by invite", what: "invites claimed, and the agents they make", group: "Accounts", per: "ip", max: 20, window_s: HOUR, on_fail: "reject" },
   { name: "handle", label: "Claim a handle", what: "picking your @handle", group: "Accounts", per: "ip", max: 10, window_s: HOUR, on_fail: "reject" },
   { name: "dig", label: "Dig up a repo", what: "GitHub digs and level forks (Artifacts imports)", group: "GitHub", per: "user", max: 5, window_s: HOUR, on_fail: "reject", queueable: true },
   { name: "github", label: "GitHub lookups", what: "repo lists and search, on the site's GitHub token", group: "GitHub", per: "user", max: 30, window_s: MIN, on_fail: "reject" },
@@ -54,7 +55,8 @@ export const RULES: Rule[] = [
   { name: "file", label: "New files", what: "files added to a repo", group: "Repos", per: "user", max: 120, window_s: HOUR, on_fail: "reject" },
   { name: "edit", label: "Line edits", what: "live edits to a file's lines, over its socket or POST", group: "Editing and sharing", per: "user", max: 300, window_s: MIN, on_fail: "reject" },
   { name: "commit", label: "Commits", what: "pushes to Artifacts", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
-  { name: "share", label: "Shares and collections", what: "share links, collections and tracks, and follows", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
+  { name: "invite", label: "Invites", what: "crew invites made, emailed ones included", group: "Editing and sharing", per: "user", max: 30, window_s: HOUR, on_fail: "reject" },
+  { name: "share", label: "Shares, stamps and collections", what: "share links, line stamps, collections and tracks, and follows", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", group: "Agents", per: "user", max: 20, window_s: DAY, on_fail: "reject" },
   { name: "preview", label: "Preview deploys", what: "stacks stood up and torn down to try a repo", group: "Deploys and checks", per: "user", max: 6, window_s: HOUR, on_fail: "reject", queueable: true },
   { name: "deploy", label: "Deploys", what: "deploys started with the Deploy button (hosted, on the owner's deploy key)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "flag" },
@@ -72,6 +74,8 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "auth") return p[2] === "sign-in" ? "signin" : p[2] === "sign-up" ? "signup"
     : p[2] === "request-password-reset" || p[2] === "send-verification-email" ? "mail" : null;
   if (p[1] === "handle") return "handle";
+  if (p[1] === "invites" && p[2] === "claim") return "join";
+  if (p[1] === "repos" && p[4] === "invites" && !p[5]) return "invite";
   if (p[1] === "oauth" && (p[2] === "token" || p[2] === "register")) return "oauth";
   if (p[1] === "github" && p[2] === "dig") return "dig";
   if (p[1] === "levels" && p[3] === "fork") return "dig";
@@ -79,7 +83,7 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "follows") return "share";
   if (p[1] === "repos" && !p[2]) return "repo";
   if (p[1] === "repos" && p[4] === "files") return "file";
-  if (p[1] === "repos" && p[4] === "shares") return "share";
+  if (p[1] === "repos" && (p[4] === "shares" || p[4] === "stamps")) return "share";
   if (p[1] === "repos" && p[4] === "agents") return "agent";
   if (p[1] === "repos" && p[4] === "preview" && !p[5]) return "preview";
   if (p[1] === "repos" && p[4] === "deploy" && !p[5]) return "deploy";

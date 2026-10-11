@@ -12,6 +12,7 @@
 
 import { betterAuth } from "better-auth";
 import { json, NAME, type Env } from "./env.ts";
+import { privacyNotice } from "./privacy.ts";
 
 export const accountsOn = (env: Env) => !!env.BETTER_AUTH_SECRET;
 
@@ -29,9 +30,9 @@ export const mailOn = (env: Env) => !!(env.EMAIL && env.EMAIL_FROM);
  * One account email. A failure is logged, not thrown: a reset request answers the
  * same whether the address has an account or not, so an error mustn't tell them apart.
  */
-async function mail(env: Env, to: string, subject: string, lines: string[], link: string) {
-  const text = [...lines, "", link, "", "If this wasn't you, ignore this email."].join("\n");
-  const html = `${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}<p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p><p style="color:#57606a">If this wasn't you, ignore this email.</p>`;
+export async function mail(env: Env, to: string, subject: string, lines: string[], link: string, foot = "If this wasn't you, ignore this email.") {
+  const text = [...lines, "", link, "", foot].join("\n");
+  const html = `${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}<p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p><p style="color:#57606a">${escapeHtml(foot)}</p>`;
   try { await env.EMAIL!.send({ from: { email: env.EMAIL_FROM!, name: "codeSplitters" }, to, subject, text, html }); }
   catch (e) { console.error("codeSplitters: account email failed", (e as { code?: string }).code ?? "", String((e as Error)?.message ?? e)); }
 }
@@ -213,8 +214,9 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
   if (grants) return grants;
   if (p[1] === "auth") return accountsOn(env) ? authFor(req, env).handler(req) : json({ error: "accounts are off; this app uses aliases" }, 404);
   if (p[1] === "session") {
-    // privacy: who to write to about your data, on the #/privacy page.
-    const privacy = env.PRIVACY_EMAIL ? { privacy: env.PRIVACY_EMAIL } : {};
+    // privacy: who to write to about your data, on the #/privacy page. notice: a change to it that's coming.
+    const notice = privacyNotice(env.PRIVACY_NOTICE);
+    const privacy = { ...(env.PRIVACY_EMAIL ? { privacy: env.PRIVACY_EMAIL } : {}), ...(notice ? { notice } : {}) };
     if (!accountsOn(env)) return json({ mode: "alias", user: aliasOf(req), providers: [], ...privacy });
     // Signed in but no handle yet: the page asks for one, with a free one to start from.
     const a = await account(req, env);

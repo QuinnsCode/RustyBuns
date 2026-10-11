@@ -70,15 +70,21 @@ There's no downloadable build yet; that's one command from source.
 
 - **Blame and time travel for free.** The op log replays any file at any rev, so every line knows who wrote it and when.
 - **Live sync.** Edits go over each file's WebSocket. Every open page patches itself in place, and presence shows who else is there, people and agents apart. An agent holds the lines it was given while it works, you can hold lines of your own, and you can lift any claim.
+- **Agents have faces, lines take stamps.** An agent's profile (`#/u/agent-claude`) says who runs it, on which harness, the repos it works in, its runs and a 30-day pulse of its line edits. Stamp a line, not a pull request: a reaction that stays on the line by id through edits, shows on its blame and on both people's profiles, whoever wrote it, person or agent.
 - **Dig it up = fork it.** Any level, or any public GitHub repo, becomes a git repo you own. Paste a URL, a remote or a `gh repo clone` line.
 - **Levels.** Loved open-source repos to browse and fork: mitt, Hono, Preact, Cloudflare's own (Agents, workerd, PartyKit, Sandbox SDK and more), and the stack this is built on (RedwoodSDK, Effect, React, Alchemy, Bun).
 - **Cut some lines out.** Select lines, and the cut follows what they use across files. Run its tests alone, share a card of it on X, and merge it back line by line.
 - **The dependency doctor.** It proposes updates on a branch on your schedule, skips releases too new to trust, tests them in a throwaway clone, and can hand a breaking one to a coding agent to fix.
 - **Webhooks for CI/CD.** GitHub-shaped, HMAC-signed, retried on a queue.
-- **Checks, ours and GitHub's, in one panel.** A commit to main or a branch pushed upstream starts check runs here, on GitHub Actions, or both. A mirror pulls the Actions jobs for each sha it sent up back in, beside codeSplitters' own, and can post its own results to GitHub as `codesplitters/<name>` statuses. Required checks gate Merge, and agents watch them with the `checks` MCP tool the way they'd run `gh pr checks`. GitHub is the backup, not a dependency: running checks here is always on offer, and while GitHub is down the desktop checks here in its place, merges on its own checks passing, and lets GitHub's verdict catch up on main once the mirror syncs.
+- **Checks, ours and GitHub's, in one panel.** A commit to main or a branch pushed upstream starts check runs here, on GitHub Actions, or both. A mirror pulls the Actions jobs for each sha it sent up back in, beside codeSplitters' own, and can post its own results to GitHub as `codesplitters/<name>` statuses. Bring your own runners: they pull work (`POST …/checks/claim`), so one behind a firewall or on a laptop works, and `scripts/runner.ts` is the whole loop to wrap around any build. Required checks gate Merge, scoped by path when you like (a change in `apps/a` doesn't wait on `b-tests`), and agents watch them with the `checks` MCP tool the way they'd run `gh pr checks`. GitHub is the backup, not a dependency: running checks here is always on offer, and while GitHub is down the desktop checks here in its place, merges on its own checks passing, and lets GitHub's verdict catch up on main once the mirror syncs.
 - **Build changes are flagged.** A branch that touches `package.json`, a lockfile, a Dockerfile, CI or the deploy config shows every changed line, and its merge waits for a person to say they've read them. Agents can be prompt-injected; this is where it gets caught.
 - **Accounts and limits.** GitHub, Google or email sign-in. Rate limits on everything that costs money, which an admin can set to reject, log, flag or queue.
 - **The game.** Every repo is a level: the backrooms of the codebase, where the lines tear off the walls as paper birds and you swat them with the rolled-up README. Bop your friends in the lobby.
+
+### Point your CI here
+
+Make a CI token for the repo (`POST /api/repos/:owner/:repo/checks/tokens`), then set your CI's GitHub API base URL (the GitHub Enterprise option) to `https://<this site>/api/gh/v3` and use that token as its GitHub token.
+Its commit statuses and check runs show up in the repo's checks as `external` runs, and required ones gate Merge.
 
 ## Hard to copy
 

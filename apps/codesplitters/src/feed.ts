@@ -11,7 +11,7 @@
 // and writes the digest, which is what the home page shows first; the events sit
 // one click behind each group. The agent gets the feed as you may read it, nothing more.
 //
-//   GET  /api/me/feed?since=           {since, through, groups, digest}; since is ms, a week ago by default
+//   GET  /api/me/feed?since=           {since, through, groups, stamps, digest}; since is ms, a week ago by default
 //   GET  /api/me/feed/digest           your latest digest: {harness, status, since, through, text?, error?, at} or null
 //   POST /api/me/feed/digest {harness, model?}  an agent digests what's new since the last one (202)
 
@@ -27,6 +27,11 @@ import { isAdmin } from "./identity.ts";
 const WEEK = 7 * 24 * 3600_000;
 /** Events one feed read looks at. */
 const EVENTS = 500;
+/** Stamps one feed read shows. */
+const STAMPS = 50;
+
+/** A stamp on a line (stamps.ts): `by` stamped `author`'s line. */
+export interface FeedStamp { owner: string; repo: string; path: string; line: string; stamp: string; by: string; author: string; created_at: number }
 
 export interface LineEvent {
   id: number; owner: string; repo: string; path: string;
@@ -78,14 +83,21 @@ function summarize(g: Omit<Group, "summary">) {
 export async function feedFor(env: Env, handle: string, since: number, follows?: Follow[]) {
   const now = Date.now();
   follows ??= await listFollows(env.DB, handle);
-  const empty = { since, through: now, follows: follows.length, groups: [] as Group[] };
-  if (!follows.length) return empty;
+  if (!follows.length) return { since, through: now, follows: 0, groups: [] as Group[], stamps: [] as FeedStamp[] };
   const names = follows.flatMap((f) => f.kind === "user" || f.kind === "agent" ? [f.name] : []);
   const repos = follows.flatMap((f) => f.kind === "repo" ? [`${f.owner}/${f.repo}`] : []);
   const files = follows.flatMap((f) => f.kind === "lines" ? [`${f.owner}/${f.repo}/${f.path}`] : []);
   // Readable is checked here, against the repo as it is now: a repo gone private drops out of feeds that aren't its crew's.
   const readable = `JOIN repos r ON r.owner = e.owner AND r.name = e.repo AND (r.expires_at IS NULL OR r.expires_at > ?1)
     AND (r.visibility = 'public' OR r.owner = ?2 OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = e.owner AND c.repo = e.repo AND c.name = ?2))`;
+  // Stamps (stamps.ts): given by, or on lines written by, who you follow; in the repos you follow; on the lines you follow.
+  const { results: stamped } = await env.DB.prepare(`SELECT e.owner, e.repo, e.path, e.line, e.stamp, e.by, e.author, e.created_at FROM stamps e ${readable}
+    WHERE e.created_at > ?3 AND e.by != ?2 AND (e.by IN (SELECT value FROM json_each(?4)) OR e.author IN (SELECT value FROM json_each(?4))
+      OR (e.owner || '/' || e.repo) IN (SELECT value FROM json_each(?5)) OR (e.owner || '/' || e.repo || '/' || e.path) IN (SELECT value FROM json_each(?6)))
+    ORDER BY e.created_at DESC LIMIT ${STAMPS}`).bind(now, handle, since, JSON.stringify(names), JSON.stringify(repos), JSON.stringify(files)).all();
+  const stamps = (stamped as FeedStamp[]).filter((s) => names.includes(s.by) || names.includes(s.author) || repos.includes(`${s.owner}/${s.repo}`)
+    || follows!.some((f) => f.kind === "lines" && f.owner === s.owner && f.repo === s.repo && f.path === s.path && f.ids.includes(s.line)));
+  const empty = { since, through: now, follows: follows.length, groups: [] as Group[], stamps };
   const { results } = await env.DB.prepare(`SELECT e.* FROM line_events e ${readable}
     WHERE e.last_at > ?3 AND e.who != ?2 AND (e.who IN (SELECT value FROM json_each(?4)) OR (e.owner || '/' || e.repo) IN (SELECT value FROM json_each(?5))
       OR (e.owner || '/' || e.repo || '/' || e.path) IN (SELECT value FROM json_each(?6)))
@@ -138,6 +150,7 @@ export function feedText(feed: Awaited<ReturnType<typeof feedFor>>) {
       ...g.events.map((e) => `  - ${at(e.first_at)}–${at(e.last_at).slice(11)} ${e.owner}/${e.repo}/${e.path}: ${e.sets} edited, ${e.inserts} added, ${e.deletes} removed`),
       "",
     ]),
+    ...(feed.stamps.length ? ["## Stamps", ...feed.stamps.map((s) => `- ${at(s.created_at)} @${s.by} stamped ${s.stamp} on @${s.author}'s line in ${s.owner}/${s.repo}/${s.path}`), ""] : []),
   ].join("\n");
 }
 

@@ -190,6 +190,15 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 
 A built desktop app checks too: `build desktop` stamps the RustyBuns version into it, and at launch the host checks that version the same way (once a day, never blocking the start). A dev host (`run desktop`, `build desktop --dev`) prints how to rebuild; a release binary or box logs one `[rustybuns]` line, so the app's users never get a notice they can't act on. Same off switches.
 
+An app can list its own bad releases the same way. Point `targets.desktop.advisories` at a JSON file you host (a raw GitHub URL works):
+
+```json
+{ "latest": "1.4.0", "download": "https://example.com/app",
+  "advisories": [{ "versions": "1.3.0", "do": "upgrade", "to": "latest", "why": "saves are lost on quit", "issue": "https://example.com/bug/7" }] }
+```
+
+At launch the host checks the app's `package.json` version against it, with the same range rules and daily cache. That notice is for the app's users, so release builds show it too: one `[<app>]` log line, and on the desktop `/__rb/info` returns it as `update` (null when there is nothing to say) for the page to show. `to: "latest"` means the file's `latest`. Same off switches.
+
 ## Config
 
 `rustybuns.config.ts` is the one file you own. `init` writes it, and every generated file comes from it.

@@ -7,7 +7,7 @@
 // parameter, since paths have slashes). A [bracketed] part is optional.
 
 export interface Endpoint {
-  method: "GET" | "POST" | "PUT" | "DELETE" | "WS";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "WS";
   path: string;
   /** The JSON body it takes, as a sketch. */
   body?: string;
@@ -48,7 +48,7 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/me/feed/digest", body: "{harness, model?}", who: SIGNED_IN, does: "a coding agent (claude, codex, pi, opencode) digests your feed since the last digest; answers at once (202), poll the GET" },
       { method: "GET", path: "/api/me/export", who: SIGNED_IN, does: "everything here about you, as one JSON download (cookie only, never a token or agent)" },
       { method: "DELETE", path: "/api/me?confirm=:handle", who: SIGNED_IN, does: "delete your account, your repos and everything of them; your handle is retired (cookie only)" },
-      { method: "GET", path: "/api/users/:name", does: "a profile: {user, repos you may see, playlists, following, followers}; following counts what you may see of it" },
+      { method: "GET", path: "/api/users/:name", does: "a profile: {user, repos you may see, playlists, following, followers, stamps: {given, got}}; following counts what you may see of it; an agent's (agent-…) adds agent: {harness, run_by, repos it works in, lines, pulse per day, runs}" },
       { method: "GET", path: "/api/users/:name/pulse", does: "their pulse: {name, hours: [168 hourly line counts, oldest first], from, total, live_at}. Private repos count only on your own; 404 when they turned it off" },
       { method: "GET", path: "/api/users/:name/pulse.png", does: "their public pulse as a 1200x630 card" },
       { method: "GET", path: "/api/users/:name/share", does: "a page for link previews (og:image is the pulse card), sending people on to the profile" },
@@ -76,7 +76,11 @@ export const GROUPS: Group[] = [
       { method: "DELETE", path: "/api/repos/:o/:r?confirm=:r", who: OWNER, does: "delete it here: rows, files, branches, git. GitHub never hears" },
       { method: "GET", path: "/api/repos/:o/:r/tree?path=dir", does: "one folder: {commit, entries: [{name, path, type: \"file\" | \"dir\"}]}, git's plus files written here but not committed yet; 202 {forking} while a dig is landing" },
       { method: "POST", path: "/api/repos/:o/:r/files", body: "{path, content?, branch?}", who: CREW, does: "a new file (on a branch, with branch)" },
-      { method: "POST", path: "/api/repos/:o/:r/collaborators", body: "{name}", who: OWNER, does: "add someone to the crew (this is how agents get in)" },
+      { method: "POST", path: "/api/repos/:o/:r/collaborators", body: "{name}", who: OWNER, does: "add someone who already has a handle straight to the crew (hosted agents get in this way)" },
+      { method: "DELETE", path: "/api/repos/:o/:r/collaborators/:name", who: OWNER, does: "take someone out of the crew; the lines they wrote stay theirs" },
+      { method: "POST", path: "/api/repos/:o/:r/invites", body: "{handle? | email?, note?, days?: 1-30}", who: OWNER, does: "invite someone to the crew: a handle, an email (mailed the link when the site sends mail; mailed says whether it did) or, with neither, a bare link to pass on. {token, link, kind, target, note, expires_at}; 7 days by default" },
+      { method: "GET", path: "/api/repos/:o/:r/invites", who: OWNER, does: "the pending invites (GET /api/repos/:o/:r has them too, as invites, for the owner)" },
+      { method: "DELETE", path: "/api/repos/:o/:r/invites/:token", who: OWNER, does: "revoke a pending invite" },
       { method: "GET", path: "/api/repos/:o/:r/fit?dir=", does: "how easily Rusty Buns could ship it (or, with dir, one app in it): ready, likely, needs work or poor, with reasons" },
       { method: "GET", path: "/api/repos/:o/:r/limits", does: "git's size against its cap, files waiting for git, and where you stand on your rate limits" },
       { method: "GET", path: "/api/repos/:o/:r/mirror", does: "a mirror's standing with upstream: {state: ok | down | refused | clash | held | rewritten, url, branch, ahead, behind, downSince, syncedAt, nextAt, clash, error, private, pushCrew}" },
@@ -122,23 +126,50 @@ export const GROUPS: Group[] = [
     name: "Checks",
     about: "Check runs say whether a change is good, wherever it ran: ours (desktop or container) and GitHub Actions jobs for the shas a mirror sent up. A run is {id, ref, sha, name, runner, status: queued | running | passed | failed | cancelled, started_at, finished_at, url}. Each one that starts or finishes is a check_run webhook.",
     endpoints: [
-      { method: "GET", path: "/api/repos/:o/:r/checks?ref=", does: "a ref's runs (main by default) on its latest sha, the newest of each name, and the merge gate: {required, ok, passed, waiting, failed, deferred}; while GitHub is down (offline), GitHub-only required checks are deferred once ours pass" },
+      { method: "GET", path: "/api/repos/:o/:r/checks?ref=", does: "a ref's runs (main by default) on its latest sha, the newest of each name, and the merge gate: {required, ok, passed, waiting, failed, deferred, skipped}; skipped are required checks scoped to paths the branch doesn't touch; while GitHub is down (offline), GitHub-only required checks are deferred once ours pass" },
       { method: "POST", path: "/api/repos/:o/:r/checks", body: "{ref, sha, name, runner?, status?, url?}", who: CREW, does: "record a run, by hand or from a runner" },
       { method: "POST", path: "/api/repos/:o/:r/checks/run", body: "{ref?}", who: CREW, does: "queue our own checks on main or an open branch as it is now, whatever where says: running here is always on offer" },
       { method: "POST", path: "/api/repos/:o/:r/checks/github", body: "{ref?}", who: CREW, does: "fetch GitHub's check runs and commit statuses for the shas sent up, now rather than at the next poll" },
+      { method: "POST", path: "/api/repos/:o/:r/checks/claim", body: "{runner_label, names?}", who: CREW, does: "a runner of your own takes the oldest queued run of ours (of names, if given) and it's running: {id, ref, sha, name, clone_url, command?, stale_after_s}, or 204 when there's none. Each PUT on it is a heartbeat; quiet for stale_after_s, it's queued again. scripts/runner.ts is the loop" },
       { method: "GET", path: "/api/repos/:o/:r/checks/settings", does: "{where: here | github | both | null, required, post_statuses, github, offline, down_since, here}: here says whether our own checks run, which they do in GitHub's place while it's down" },
-      { method: "PUT", path: "/api/repos/:o/:r/checks/settings", body: "{where?, required?: [name] or [\"*\"], post_statuses?}", who: OWNER, does: "where checks run, which ones a merge waits on, and whether ours go to GitHub as codesplitters/<name> statuses" },
+      { method: "PUT", path: "/api/repos/:o/:r/checks/settings", body: "{where?, required?: [name or {name, paths?, command?}] or [\"*\"], post_statuses?}", who: OWNER, does: "where checks run, which ones a merge waits on (one with paths only on a branch touching them; one with a command is queued for runners), and whether ours go to GitHub as codesplitters/<name> statuses" },
       { method: "GET", path: "/api/repos/:o/:r/checks/:id", does: "one run, with its log and JUnit report" },
-      { method: "PUT", path: "/api/repos/:o/:r/checks/:id", body: "{status?, log?, append?, junit?}", who: CREW, does: "a runner reports: move it on, replace or add to its log; a finished run stays finished" },
+      { method: "PUT", path: "/api/repos/:o/:r/checks/:id", body: "{status?, log?, append?, junit?, runner_label?}", who: CREW, does: "a runner reports, which is also its heartbeat: move it on, replace or add to its log; a finished run stays finished, and one claimed by another label is a 409" },
       { method: "POST", path: "/api/repos/:o/:r/checks/:id/cancel", who: CREW, does: "stop one of ours that's queued or running; GitHub's are cancelled on GitHub" },
+      { method: "GET", path: "/api/repos/:o/:r/checks/tokens", who: OWNER, does: "the repo's CI tokens, without their secrets: {id, label, last4, created_by, created_at, last_used_at}" },
+      { method: "POST", path: "/api/repos/:o/:r/checks/tokens", body: "{label}", who: OWNER, does: "make a CI token, for external CI to send as its GitHub token to /api/gh/v3: it reaches this repo's checks and nothing else, and the secret is shown this once" },
+      { method: "DELETE", path: "/api/repos/:o/:r/checks/tokens/:id", who: OWNER, does: "revoke a CI token" },
     ],
   },
   {
-    name: "Shares, cuts and playlists",
+    name: "GitHub-shaped checks, for external CI",
+    about: "Set your CI's GitHub API base URL (the GitHub Enterprise option) to /api/gh/v3 on this site and give it a CI token (Authorization: token … or Bearer …): what it reports lands in the repo's checks as external runs, gating merges like any other. Only these calls, shaped like GitHub's: errors are {message}, a missing or wrong token is 404 or 401.",
+    endpoints: [
+      { method: "POST", path: "/api/gh/v3/repos/:o/:r/statuses/:sha", body: "{state: pending | success | failure | error, context?, target_url?, description?}", who: "a CI token", does: "a commit status: one run per context, pending running, success passed, failure and error failed; the same context again moves it on, or starts it again once it's finished" },
+      { method: "GET", path: "/api/gh/v3/repos/:o/:r/commits/:sha/status", who: "a CI token", does: "the sha's combined status: {state, sha, total_count, statuses}" },
+      { method: "POST", path: "/api/gh/v3/repos/:o/:r/check-runs", body: "{name, head_sha, status?, conclusion?, details_url?, external_id?, started_at?, completed_at?, output?}", who: "a CI token", does: "a check run, shaped like GitHub's; its output is its log" },
+      { method: "PATCH", path: "/api/gh/v3/repos/:o/:r/check-runs/:id", body: "{status?, conclusion?, details_url?, output?}", who: "a CI token", does: "move a check run on; a finished one stays finished (422)" },
+      { method: "GET", path: "/api/gh/v3/repos/:o/:r/commits/:sha/check-runs", who: "a CI token", does: "the sha's check runs: {total_count, check_runs}" },
+    ],
+  },
+  {
+    name: "Invites",
+    about: "An invite link is /invite/:token: a browser goes to its page, anything else gets the steps to claim it as text. The owner makes them (Repos, above). An invite works once, and a handle or email invite only lets a person in.",
+    endpoints: [
+      { method: "GET", path: "/api/invites/:token", does: "anyone with the link: {owner, repo, visibility, by, note, kind, for, emailed, expires_at, doors: [\"person\", \"agent\"?]}, and signed in, you and member; 410 once used or expired" },
+      { method: "POST", path: "/api/invites/claim", body: "{invite: link or csi_ token, as: \"person\" | \"agent\", name?, harness?}", does: "come in. person: as the signed-in handle. agent: a new agent-<name>-xxxx handle and a write API token for it (shown once, 30 days), with mcp, the line that connects claude, codex, pi or opencode; an agent calling with its own token joins as itself" },
+      { method: "GET", path: "/api/invites", who: SIGNED_IN, does: "pending invites to your handle, with their links" },
+    ],
+  },
+  {
+    name: "Shares, stamps, cuts and playlists",
     endpoints: [
       { method: "POST", path: "/api/repos/:o/:r/shares", body: "{path, from, to, note?}", who: SIGNED_IN, does: "a live link to some lines (from/to are line numbers now; the share follows them by id)" },
       { method: "GET", path: "/api/shares/:id", does: "the shared lines as they are now, for anyone with the link" },
       { method: "DELETE", path: "/api/shares/:id", who: "whoever shared it, or the repo's owner", does: "revoke it" },
+      { method: "POST", path: "/api/repos/:o/:r/stamps", body: "{path, stamp, lines? | from, to?}", who: SIGNED_IN, does: "stamp lines (ids, or line numbers now) with +1, heart, binoculars, shovel, gem, skull or lgtm; the stamp follows each line by id" },
+      { method: "GET", path: "/api/repos/:o/:r/stamps?path=", does: "the file's stamps: [{line, n, stamps: {stamp: [who]}}]; a private line's only for the crew" },
+      { method: "DELETE", path: "/api/repos/:o/:r/stamps?path=&line=&stamp=", who: SIGNED_IN, does: "take your stamp off a line" },
       { method: "POST", path: "/api/repos/:o/:r/cuts", body: "{pieces: [{path, from, to}], note?}", who: CREW, does: "cut some lines out, with what they use, as a branch cut-<id>" },
       { method: "GET", path: "/api/cuts/:id", does: "its files, each line with where it came from on main, and the last run" },
       { method: "POST", path: "/api/cuts/:id/run", who: OWNER, does: "bun test on the cut alone" },

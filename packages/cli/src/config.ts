@@ -186,6 +186,16 @@ export interface DesktopTarget {
   r2?: Record<string, string>;
   /** DO storage codec: "json" (readable) or "v8" (structured clone, keeps TypedArrays). */
   storageCodec?: "json" | "v8";
+  /**
+   * URL of this app's own advisories.json: releases of the app to move off.
+   * At launch (once a day, never blocking) the host checks the app's version
+   * (package.json) against it and, on a listed one, tells the app's users how
+   * to move, in release builds too: one log line, and `update` in /__rb/info.
+   *   { "latest": "1.4.0", "download": "https://example.com/app",
+   *     "advisories": [{ "versions": "1.3.0", "do": "upgrade", "to": "latest", "why": "saves are lost on quit" }] }
+   * Same range rules as RustyBuns' own advisories.json.
+   */
+  advisories?: string;
   /** Extra --define values baked into the binary (RB_VERSION is always set). */
   define?: Record<string, string>;
 }
