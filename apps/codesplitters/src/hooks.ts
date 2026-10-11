@@ -8,6 +8,7 @@
 //   branch.opened    a branch was opened (GitHub's `create`)
 //   branch.merged    a branch merged into main (a merged `pull_request`)
 //   deploy.finished  a real deploy finished, either way (`deployment_status`)
+//   check_run        a check run started or finished, here or on GitHub (`check_run`, checks.ts)
 //
 // Every delivery is logged, and every try is a message on the HOOKS queue
 // (Cloudflare Queues; sqlite in the desktop's own process): the first goes out
@@ -22,7 +23,7 @@
 
 import { json, type Env } from "./env.ts";
 
-export const EVENTS = ["commit", "branch.opened", "branch.merged", "deploy.finished"] as const;
+export const EVENTS = ["commit", "branch.opened", "branch.merged", "deploy.finished", "check_run"] as const;
 export type Event = (typeof EVENTS)[number];
 /** Minutes to wait after each failed try; past the last one, the delivery is given up. */
 const BACKOFF = [1, 5, 30, 120];

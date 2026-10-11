@@ -151,9 +151,10 @@ describe("GET /api/openapi.json", () => {
     const share = await (await send("ryan", "/api/repos/ryan/lab/shares", { path: "a.ts", from: 1, to: 2 })).json() as { id: string };
     const cut = await (await send("ryan", "/api/repos/ryan/lab/cuts", { pieces: [{ path: "a.ts", from: 1, to: 1 }] })).json() as { id: string };
     const pl = await (await send("ryan", "/api/playlists", { title: "faves" })).json() as { id: number };
+    const run = await (await send("ryan", "/api/repos/ryan/lab/checks", { ref: "b", sha: "a".repeat(40), name: "test" })).json() as { id: number };
     const s = await spec(call);
     const fill: Record<string, string> = { owner: "ryan", repo: "lab", name: "ryan", branch: "b", slug: "mitt", id: "" };
-    const ids: Record<string, string> = { "/shares/{id}": share.id, "/cuts/{id}": cut.id, "/playlists/{id}": String(pl.id), "/jobs/{id}": "1" };
+    const ids: Record<string, string> = { "/shares/{id}": share.id, "/cuts/{id}": cut.id, "/playlists/{id}": String(pl.id), "/jobs/{id}": "1", "/repos/{owner}/{repo}/checks/{id}": String(run.id) };
     const query: Record<string, string> = { path: "a.ts", rev: "1", q: "one", since: "0" };
     const answers: Record<string, number> = {};
     for (const [path, methods] of Object.entries(s.paths) as [string, any][]) {

@@ -44,6 +44,7 @@ import { join } from "node:path";
 import { toFile } from "./archive.ts";
 import { fromDisk, toDisk } from "./agent-run.ts";
 import { githubToken, parseRepo } from "./github.ts";
+import { startChecks, upstreamMoved } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { json, NAME, type Env } from "./env.ts";
 import type { Doc } from "./lines.ts";
@@ -155,6 +156,8 @@ async function settled(env: Env, r: Row, tip: string, state: "ok" | "held" = "ok
   const now = Date.now();
   await env.DB.prepare("UPDATE repos SET mirror_state = ?, mirror_error = ?, mirror_clash = NULL, mirror_down_since = NULL, mirror_fails = 0, mirror_synced_at = ?, mirror_next_at = ?, upstream_commit = ? WHERE owner = ? AND name = ?")
     .bind(state, error, now, now + EVERY, tip, r.owner, r.name).run();
+  // GitHub runs its Actions on upstream's new tip: watch for the results (checks.ts).
+  if (tip !== r.upstream_commit) await upstreamMoved(env, r.owner, r.name, "main", tip);
   return state;
 }
 
@@ -602,6 +605,7 @@ export async function openUpstreamBranch(env: Env, owner: string, repo: string, 
   await must(["update-ref", tracking(ref), theirs], s.dir);
   const { emit } = await import("./hooks.ts");
   await emit(env, owner, repo, "branch.opened", user, { ref: b, ref_type: "branch", master_branch: "main" });
+  await startChecks(env, owner, repo, b, theirs, user);
   return json({ name: b, ref, commit: theirs, ...got }, 201);
 }
 
@@ -615,7 +619,10 @@ export async function pullBranch(env: Env, owner: string, repo: string, name: st
   if (!br.upstream_ref) return json({ error: "it hasn't been upstream: push it first" }, 409);
   const theirs = await fetchBranch(s, br.upstream_ref);
   if (!theirs) return json({ error: `upstream has no branch ${br.upstream_ref} any more` }, 404);
-  return json({ ref: br.upstream_ref, commit: theirs, ...await catchUp(env, owner, repo, s, name, br.upstream_ref, theirs) });
+  const got = await catchUp(env, owner, repo, s, name, br.upstream_ref, theirs);
+  // What it took is upstream's commit, which GitHub may be checking already.
+  if (got.files.length) await startChecks(env, owner, repo, name, theirs, br.by);
+  return json({ ref: br.upstream_ref, commit: theirs, ...got });
 }
 
 /**
@@ -685,6 +692,8 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   }
   await must(["update-ref", track, c], dir);
   if (!br.upstream_ref) await env.DB.prepare("UPDATE branches SET upstream_ref = ? WHERE owner = ? AND repo = ? AND name = ?").bind(ref, owner, repo, name).run();
+  // A branch pushed upstream gets checked, here and on GitHub, as that commit.
+  await startChecks(env, owner, repo, name, c, br.by);
   return json({ ref, commit: c, pushed: true, took });
 }
 

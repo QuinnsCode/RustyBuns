@@ -120,6 +120,31 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/branches/{branch}/files`]: { delete: { id: "delete_branch_file", summary: "Delete a file on a branch: merging the branch deletes it from main (the crew)", tag: "Branches",
     description: "Making the file again on the branch (add_file with branch) brings it back.",
     query: { path: { ...str(), required: true } }, ok: obj({ path: str(), branch: str(), deleted: bool() }) } },
+  [`${repo}/checks`]: {
+    get: { id: "checks", summary: "A ref's check runs, ours and GitHub Actions', and whether a merge may go", tag: "Checks", open: true,
+      description: "Like `gh pr checks`: the newest run of each name on the ref's latest sha. gate.ok false means merging waits: on gate.waiting, or for gate.failed to be fixed.",
+      query: { ref: str("main or a branch's name; main by default") },
+      ok: obj({ ref: str(), sha: { type: ["string", "null"] }, where: { type: ["string", "null"] }, runs: arr(ref("CheckRun")),
+        gate: obj({ required: arr(str()), ok: bool(), passed: arr(str()), waiting: arr(str()), failed: arr(str()) }) }) },
+    post: { id: "record_check", summary: "Record a check run, by hand or from a runner (the crew)", tag: "Checks",
+      body: obj({ ref: str(), sha: str(), name: str(), runner: { type: "string", enum: ["desktop", "container", "github"] }, status: ref("CheckStatus"), url: str() }, ["ref", "sha", "name"]),
+      ok: ref("CheckRun"), status: 201 },
+  },
+  [`${repo}/checks/run`]: { post: { id: "run_checks", summary: "Queue our own checks on main or an open branch as it is now (the crew)", tag: "Checks",
+    body: obj({ ref: str("main by default") }), ok: loose("the ref's checks, as `checks` answers"), status: 202 } },
+  [`${repo}/checks/github`]: { post: { id: "import_github_checks", summary: "Fetch GitHub's results for the shas sent up, now (the crew)", tag: "Checks",
+    body: obj({ ref: str("just this ref's") }), ok: loose("{polled: [{sha, imported, done} or {error}]}") } },
+  [`${repo}/checks/settings`]: {
+    get: { id: "check_settings", summary: "Where a repo's checks run, and which ones a merge waits on", tag: "Checks", open: true, ok: ref("CheckSettings") },
+    put: { id: "set_check_settings", summary: "Set where checks run, which are required, and whether ours go to GitHub (owner only)", tag: "Checks",
+      body: obj({ where: { type: ["string", "null"], enum: ["here", "github", "both", null] }, required: arr(str("a check's name, or * for all")), post_statuses: bool() }), ok: ref("CheckSettings") },
+  },
+  [`${repo}/checks/{id}`]: {
+    get: { id: "get_check", summary: "One check run, with its log", tag: "Checks", open: true, ok: loose("a check run, plus {log, junit}") },
+    put: { id: "update_check", summary: "Report on a check run: its status, its log (the crew, or a runner)", tag: "Checks",
+      body: obj({ status: ref("CheckStatus"), log: str("the whole log"), append: str("more log"), junit: str("a JUnit XML report") }), ok: loose("the run") },
+  },
+  [`${repo}/checks/{id}/cancel`]: { post: { id: "cancel_check", summary: "Stop one of our check runs that's queued or running (the crew)", tag: "Checks", ok: loose("the run") } },
   [`${repo}/branches/{branch}/merge`]: { post: { id: "merge_branch", summary: "Merge a branch into main (the crew)", tag: "Branches", risky: true,
     description: "Conflicts merge nothing (409); settle each conflicting line with `resolve`. A branch that changes build or deploy files needs `build_ok` when commits deploy.",
     body: obj({ resolve: loose("{path: {lineId: \"branch\" | \"main\"}}"), build_ok: bool() }),
@@ -169,6 +194,10 @@ const SCHEMAS: Record<string, Schema> = {
   Commit: obj({ n: int(), sha: str(), parent: { type: ["string", "null"] }, rev: int(), by: str(), at: int(), message: str() }),
   Branch: obj({ name: str(), by: str(), status: str("open or merged"), created_at: int(), merged_by: { type: ["string", "null"] }, merged_at: { type: ["integer", "null"] } }),
   Playlist: obj({ id: int(), owner: str(), title: str() }),
+  CheckStatus: { type: "string", enum: ["queued", "running", "passed", "failed", "cancelled"] },
+  CheckRun: obj({ id: int(), ref: str("main or a branch"), sha: str(), name: str(), runner: { type: "string", enum: ["desktop", "container", "github"] }, status: ref("CheckStatus"),
+    started_at: { type: ["integer", "null"] }, finished_at: { type: ["integer", "null"] }, url: { type: ["string", "null"], description: "GitHub's page, for an imported job" }, created_at: int() }),
+  CheckSettings: obj({ where: { type: ["string", "null"], description: "here, github or both; null runs none (a GitHub mirror defaults to github)" }, required: arr(str()), post_statuses: bool(), github: { type: ["string", "null"], description: "owner/name, when the repo mirrors GitHub" } }),
 };
 
 const params = (path: string, query: Op["query"] = {}) => [

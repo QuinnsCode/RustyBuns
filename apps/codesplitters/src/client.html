@@ -259,6 +259,9 @@
   .buildiff { grid-column: 2; min-width: 0; margin: 4px 0; font: 12px/1.5 var(--mono); border: 1px solid var(--border-2); border-radius: 4px; overflow-x: auto; }
   .buildiff div { padding: 0 8px; white-space: pre; } .buildiff .d { background: var(--del); color: var(--del-fg); } .buildiff .a { background: var(--add); }
   .buildiff .h { padding: 3px 8px; color: var(--muted); border-bottom: 1px solid var(--border-2); }
+  .checks { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; margin: 2px 0; }
+  .check { display: inline-flex; align-items: center; gap: 4px; } .check a { color: inherit; } .check.failed, .check.cancelled { color: var(--del-fg); } .check.running svg { animation: spin 1.2s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .legend { display: inline-flex; gap: 10px; font: 500 11.5px var(--mono); color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .legend .d { background: var(--del); box-shadow: inset 0 0 0 1px var(--del-edge); } .legend .a { background: var(--add); box-shadow: inset 0 0 0 1px var(--add-edge); }
@@ -1892,15 +1895,16 @@ const views = {
           : `main <code class="pre">${esc(c.main ?? "deleted")}</code>, branch <code class="pre">${esc(c.branch ?? "deleted")}</code>`}</span>`).join("")}
         ${build.length ? `<span class="muted">${icon("triangle-alert")} Changes what runs at build or deploy time${b.deploys ? ", and your next commit to main ships it" : ""}:</span>
           ${build.map((f) => `<div class="buildiff"><div class="h">${esc(f.path)}</div>${(f.lines ?? []).map((l) => `<div class="${l[0] === "-" ? "d" : "a"}">${esc(l)}</div>`).join("")}</div>`).join("")}` : ""}
+        ${checkRow(b.checks)}
         ${r.canWrite && gate ? `<span class="muted"><label><input type="checkbox" data-read="${esc(b.name)}"> I've read the build changes</label></span>` : ""}
         ${r.canWrite && broken ? `<span class="muted"><label><input type="checkbox" data-anyway="${esc(b.name)}"> Land it anyway, though it won't build</label></span>` : ""}
         ${r.canWrite ? `<span class="muted">${clash.some((c) => !c.lint)
           ? `<button class="btn" data-merge="${esc(b.name)}" data-keep="branch">Merge, keep the branch's lines</button> <button class="btn" data-merge="${esc(b.name)}" data-keep="main">Merge, keep main's</button>`
-          : `<button class="btn primary" data-merge="${esc(b.name)}">${icon("git-merge")}Merge</button>`}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}">${icon("upload")}Push upstream</button>${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}" title="Take what upstream's ${esc(b.upstream_ref)} got since">${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
+          : `<button class="btn primary" data-merge="${esc(b.name)}"${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${b.checks?.where === "here" || b.checks?.where === "both" ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}">${icon("upload")}Push upstream</button>${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}" title="Take what upstream's ${esc(b.upstream_ref)} got since">${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
     }).join("");
     const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`), anyway = (name) => el.querySelector(`[data-anyway="${CSS.escape(name)}"]`);
     // A merge button waits on every box its branch shows.
-    const gate = (name) => el.querySelectorAll(`[data-merge="${CSS.escape(name)}"]`).forEach((btn) => { btn.disabled = [read(name), anyway(name)].some((box) => box && !box.checked); });
+    const gate = (name) => el.querySelectorAll(`[data-merge="${CSS.escape(name)}"]`).forEach((btn) => { btn.disabled = reviews.find((x) => x.name === name)?.checks?.gate.ok === false || [read(name), anyway(name)].some((box) => box && !box.checked); });
     reviews.forEach((b) => gate(b.name));
     el.querySelectorAll("[data-read], [data-anyway]").forEach((box) => box.addEventListener("change", () => gate(box.dataset.read ?? box.dataset.anyway)));
     el.querySelectorAll("[data-merge]").forEach((btn) => btn.addEventListener("click", async () => {
@@ -1912,6 +1916,12 @@ const views = {
       try { await api(`${base}/${b.name}/merge`, { resolve, build_ok: !!read(b.name)?.checked }); toast(`Merged ${b.name}. Commit the files to push them to git.`); }
       catch (e) { toast(`Not merged: ${e.message}`); }
       route();
+    }));
+    // Our own checks, queued for a runner on the branch as it is now.
+    el.querySelectorAll("[data-checks]").forEach((btn) => btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try { await api(`/repos/${owner}/${repo}/checks/run`, { ref: btn.dataset.checks }); toast(`Checks queued on ${btn.dataset.checks}`); route(); }
+      catch (e) { toast(`Not queued: ${e.message}`); btn.disabled = false; }
     }));
     // A mirror's branch goes upstream as a real git branch, the one it came from or one of its name.
     el.querySelectorAll("[data-push]").forEach((btn) => btn.addEventListener("click", async () => {
@@ -2944,6 +2954,18 @@ function intro(stage, phases) {
 
 // ---- the command palette ---------------------------------------------------------------
 // Commands depend on where you are. Each names the one API call it makes.
+/** A branch's (or main's) check runs as a row of pills, ours and GitHub's, and why a merge waits on them. */
+const CHECK_ICONS = { queued: "circle-dashed", running: "loader", passed: "circle-check", failed: "circle-x", cancelled: "circle-slash" };
+function checkRow(c) {
+  if (!c || (!c.runs.length && !c.gate.required.length && !c.where)) return "";
+  const runs = c.runs.map((r) => {
+    const label = `${icon(CHECK_ICONS[r.status])}${esc(r.name)} <span class="muted">${r.runner === "github" ? "GitHub" : esc(r.runner)} · ${r.status}</span>`;
+    return `<span class="check ${r.status}" title="${esc(r.name)}: ${r.status}">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${label}</a>` : label}</span>`;
+  }).join("");
+  const g = c.gate, why = g.ok ? "" : [g.failed.length && `${g.failed.join(", ")} failed`, g.waiting.length && `waiting on ${g.waiting.join(", ")}`].filter(Boolean).join("; ");
+  return `<span class="checks">${icon("list-checks")}${runs || '<span class="muted">No checks yet</span>'}${c.sha ? `<code class="muted">${esc(c.sha.slice(0, 7))}</code>` : ""}</span>${why ? `<span class="muted">${icon("shield-alert")} Merge waits for required checks: ${esc(why)}</span>` : ""}`;
+}
+
 async function commands() {
   const out = [], add = (group, ic, title, apiCall, run, ask) => out.push({ group, ic, title, api: apiCall, run, ask });
   const c = ctx, u = me();
@@ -2989,6 +3011,16 @@ async function commands() {
       try { await api(`/repos/${c.owner}/${c.repo}/branches/${encodeURIComponent(name)}/merge`, {}); toast(`Merged ${name}`); } catch (e) { toast(`Not merged: ${e.message}`); }
       route();
     }, "branch name");
+    if (c.canWrite) add("This repo", "list-checks", "Run checks", `POST /api/repos/${c.owner}/${c.repo}/checks/run`, async (ref) => {
+      try { await api(`/repos/${c.owner}/${c.repo}/checks/run`, { ref: ref.trim() || "main" }); toast(`Checks queued on ${ref.trim() || "main"}`); route(); } catch (e) { toast(`Not queued: ${e.message}`); }
+    }, "main or a branch's name");
+    add("This repo", "list-checks", "Show checks", `GET /api/repos/${c.owner}/${c.repo}/checks?ref=`, async (ref) => {
+      const k = await api(`/repos/${c.owner}/${c.repo}/checks?ref=${encodeURIComponent(ref.trim() || "main")}`);
+      toast(k.runs.length ? `${k.ref}: ${k.runs.map((r) => `${r.name} ${r.status}`).join(", ")}${k.gate.ok ? "" : " · merge waits"}` : `No checks on ${k.ref} yet`);
+    }, "main or a branch's name");
+    if (c.canWrite) add("This repo", "github", "Fetch GitHub's checks now", `POST /api/repos/${c.owner}/${c.repo}/checks/github`, async () => {
+      try { const p = await api(`/repos/${c.owner}/${c.repo}/checks/github`, {}); toast(p.polled.length ? `Fetched ${p.polled.reduce((n, x) => n + (x.imported ?? 0), 0)} GitHub jobs` : "No shas waiting on GitHub"); route(); } catch (e) { toast(e.message); }
+    });
     if (c.view !== "m") add("This repo", "smartphone", "Phone view: agents and branches", `GET /api/repos/${c.owner}/${c.repo}/agents`, () => (location.hash = `#/m/${c.owner}/${c.repo}`));
     if (u) add("This repo", "gauge", "Show this repo's limits", `GET /api/repos/${c.owner}/${c.repo}/limits`, () => { const b = $("#limits"); if (b) { b.click(); } });
     if (c.clone) add("This repo", "terminal", "Copy the git clone command", `GET /api/repos/${c.owner}/${c.repo}`, () => copy(c.clone, "Clone command copied"));

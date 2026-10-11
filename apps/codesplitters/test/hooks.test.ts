@@ -48,7 +48,7 @@ test("only the owner manages hooks; the secret is shown once", async () => {
 
   const made = await (await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook" })).json();
   expect(made.secret).toMatch(/^[0-9a-f]{48}$/);
-  expect(made.events).toEqual(["commit", "branch.opened", "branch.merged", "deploy.finished"]);
+  expect(made.events).toEqual(["commit", "branch.opened", "branch.merged", "deploy.finished", "check_run"]);
   const list = await (await call("ryan", "/api/repos/ryan/lab/hooks")).json();
   expect(list.hooks).toHaveLength(1);
   expect(list.hooks[0].secret).toBeUndefined();

@@ -9,10 +9,12 @@
 // would no longer build (lint.ts) is a conflict too. Git hears about it when
 // main is catalogued. A branch can delete a file too: its row is marked
 // deleted, and merging deletes it from main, and from git there and then.
+// A merge also waits for the repo's required checks to pass on the branch (checks.ts).
 
 import { empty, fromText, type Conflict, type Doc, type Op } from "./lines.ts";
 import { materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
+import { mergeBlock, refChecks } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { json, NAME, type Env } from "./env.ts";
 import { emit } from "./hooks.ts";
@@ -148,7 +150,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       const lines = build ? changedLines(await (await toFile(env, owner, repo, f.path, user ?? "anon", "file")).json() as Doc, ops) : undefined;
       return { path: f.path, merged: false, build, ops, conflicts, ...(lines && { lines }) };
     }));
-    return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, files: out });
+    return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out });
   }
 
   // POST /api/repos/:o/:r/branches/:b/merge {resolve?: {path: {lineId: "branch"|"main"}}}
@@ -160,6 +162,9 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     // Build or deploy files on a merge the owner's next commit would ship: read them first.
     const build = todo.map((f) => f.path).filter(isBuildFile);
     if (build.length && !build_ok && (await deploySettings(env, owner, repo)).on_commit) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok", build }, 409);
+    // Required checks that failed, or haven't finished, hold it, as a GitHub branch protection rule would.
+    const held = await mergeBlock(env, owner, repo, name);
+    if (held) return json(held, 409);
     // A dry run first, so a conflict anywhere merges nothing. A deletion never conflicts.
     const dry = await Promise.all(todo.filter((f) => !f.deleted).map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user!, resolve[f.path], true)) })));
     const blocked = dry.filter((d) => d.conflicts.length).map(({ path, conflicts }) => ({ path, conflicts }));
