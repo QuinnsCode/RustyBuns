@@ -450,7 +450,9 @@ describe("accounts", () => {
     // Wait until the first is stuck: started together, a cold second one could reach the trap first.
     void session(cookie);
     await isStuck;
-    const next = await Promise.race([session(cookie), Bun.sleep(3000).then(() => "hung")]);
+    // A hang waits forever, so the budget only has to beat the 20s test timeout. It is roomy because
+    // an honest lookup took just over 3s on the 4-core CI runner under --parallel (#504).
+    const next = await Promise.race([session(cookie), Bun.sleep(10_000).then(() => "hung")]);
     expect(next).toMatchObject({ user: "stuckone" });
   });
 

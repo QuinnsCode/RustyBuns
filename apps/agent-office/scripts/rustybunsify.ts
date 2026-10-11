@@ -4,6 +4,7 @@
 //   bun scripts/rustybunsify.ts                  fetch the pinned release into ./office, swap node-pty for the Bun shim
 //   bun scripts/rustybunsify.ts compile          ...then build ./dist/agent-office-<os>-<arch>, one self-contained file
 //   bun scripts/rustybunsify.ts compile --all    ...for darwin-arm64, darwin-x64, linux-x64 and linux-arm64
+//   --check                                      type check our code (tsconfig.json) first; nothing is built on errors
 //
 // The release is pinned below, with its tarball's sha256, since it's compiled into the binary we hand out.
 // AGENT_OFFICE_TAG=v0.1.212 AGENT_OFFICE_SHA256=<its agent-office.tgz digest> tries another; bump PINNED once it works.
@@ -28,6 +29,10 @@ const sha256 = process.env.AGENT_OFFICE_SHA256 ?? (tag === PINNED.tag ? PINNED.s
 if (!sha256) {
   throw new Error(`AGENT_OFFICE_TAG=${tag} needs AGENT_OFFICE_SHA256 too: ` +
     `gh release view ${tag} -R ${REPO} --json assets --jq '.assets[]|select(.name=="agent-office.tgz").digest'`);
+}
+if (process.argv.includes("--check")) {
+  const r = await $`bun check -p ${path.join(root, "tsconfig.json")} --no-pretty`.nothrow();
+  if (r.exitCode !== 0) throw new Error("type errors; nothing was built. Drop --check to build anyway.");
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
