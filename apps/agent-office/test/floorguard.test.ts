@@ -2,22 +2,27 @@ import { afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test"
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { fromWorker, peopleOnly } from "../live/floorguard.ts";
-import { floorGuardHooks } from "../scripts/floorguard.ts";
+import { askFirst, asksRoute, fromWorker, pendingAsks, peopleOnly } from "../live/floorguard.ts";
+import { floorGuardBin, floorGuardHooks } from "../scripts/floorguard.ts";
 import { unpackPinned } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
 setDefaultTimeout(60_000);
 
 let officeWorkers: (ctx: unknown, req: unknown, res: unknown, url: URL) => Promise<void>;
+let pkg: string;
 beforeAll(async () => {
-  const srv = path.join(await unpackPinned(), "dist/server/server");
+  pkg = await unpackPinned();
+  const srv = path.join(pkg, "dist/server/server");
   const file = path.join(srv, "hooks/office-workers.js");
   writeFileSync(file, floorGuardHooks(readFileSync(file, "utf8")));
   writeFileSync(path.join(srv, "rb-floorguard.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../live/floorguard.ts"))};\n`);
   ({ officeWorkers } = await import(file));
 });
-afterEach(() => delete process.env.AGENT_OFFICE_PEOPLE_ONLY);
+afterEach(() => {
+  delete process.env.AGENT_OFFICE_PEOPLE_ONLY;
+  delete process.env.AGENT_OFFICE_ASK_FIRST;
+});
 
 const worker = (id: string, name: string) =>
   ({ id, name, kind: "agent", deskId: "", status: "idle", viewers: [], createdAt: 0, createdBy: "you" }) as Record<string, unknown>;
@@ -93,4 +98,68 @@ test("AGENT_OFFICE_PEOPLE_ONLY keeps hire, tell, home and pr to people", async (
   expect(peopleOnly("/pr", "all")).toContain("keeps pr to people");
   expect(peopleOnly("/home", "")).toBe("");
   expect(peopleOnly("/nope", "all")).toBe("");
+});
+
+const answer = (id: string, allow: 0 | 1) =>
+  asksRoute("POST", new URL(`http://x/__rb/asks/${id}?allow=${allow}`), true, "Ryan")!;
+const waiting = async () => {
+  for (let i = 0; i < 100 && !pendingAsks().length; i++) await Bun.sleep(5);
+  return pendingAsks();
+};
+
+test("AGENT_OFFICE_ASK_FIRST holds an agent's tell until a person allows it", async () => {
+  process.env.AGENT_OFFICE_ASK_FIRST = "tell";
+  const { ctx, seen } = office(0);
+  const told = call(ctx, "/tell", { worker: "Sprocket", prompt: "rebase onto main" });
+  const [ask, ...more] = await waiting();
+  expect(more).toEqual([]);
+  expect(ask).toMatchObject({ floor: "f", who: "Pixel", what: "tell", detail: "tell Sprocket: rebase onto main" });
+  expect(seen.toasts[0]).toStartWith("✋ Pixel asks to tell Sprocket: rebase onto main");
+  expect(seen.told).toEqual([]);
+  expect(answer(ask!.id, 1)).toEqual({ status: 200, body: { ok: true } });
+  expect((await told).status).toBe(200);
+  expect(seen.told).toEqual([fromWorker("Pixel", "rebase onto main")]);
+  expect(pendingAsks()).toEqual([]);
+  // answered once is answered
+  expect(answer(ask!.id, 0).status).toBe(404);
+});
+
+test("a person's Deny turns the agent down, and the actions not on the list never wait", async () => {
+  process.env.AGENT_OFFICE_ASK_FIRST = "hire, home";
+  const { ctx, seen } = office(0);
+  const going = call(ctx, "/home", { workers: ["Sprocket"], cleanup: "all" });
+  const [ask] = await waiting();
+  expect(ask!.detail).toBe("send Sprocket home (cleanup: all)");
+  answer(ask!.id, 0);
+  const res = await going;
+  expect(res.status).toBe(403);
+  expect(res.body.error).toBe("Ryan in the office said no to: send Sprocket home (cleanup: all)");
+  expect(seen.homes).toEqual([]);
+  expect((await call(ctx, "/tell", { worker: "Sprocket", prompt: "hi" })).status).toBe(200);
+});
+
+test("nobody answering turns it down when the time's up", async () => {
+  const toasts: string[] = [];
+  const why = await askFirst("", "f", "Pixel", { prompt: "fix it", issue: 7 }, (m) => toasts.push(m), { setting: "all", ms: 30 });
+  expect(why).toContain("Nobody in the office answered");
+  expect(toasts).toEqual(["✋ Pixel asks to hire a worker for issue #7: fix it (Allow or Deny it in the office)"]);
+  expect(pendingAsks()).toEqual([]);
+  expect(await askFirst("/pr", "f", "Pixel", {}, () => {}, { setting: "tell" })).toBe("");
+});
+
+test("/__rb/asks lists the questions, and an answer needs its header", async () => {
+  const held = askFirst("/pr", "f", "Pixel", { pr: 12, worker: "Sprocket" }, () => {}, { setting: "pr" });
+  const list = asksRoute("GET", new URL("http://x/__rb/asks"), false)!;
+  const [ask] = (list.body as { asks: { id: string; detail: string }[] }).asks;
+  expect(ask!.detail).toBe("say PR #12 is Sprocket's");
+  expect(asksRoute("POST", new URL(`http://x/__rb/asks/${ask!.id}?allow=1`), false)!.status).toBe(403);
+  expect(asksRoute("POST", new URL(`http://x/__rb/asks/${ask!.id}`), true)!.status).toBe(400);
+  expect(asksRoute("GET", new URL("http://x/__rb/mem"), true)).toBeNull();
+  expect(answer(ask!.id, 1).status).toBe(200);
+  expect(await held).toBe("");
+});
+
+test("the office-workers command waits out an ask-first office", () => {
+  const js = floorGuardBin(readFileSync(path.join(pkg, "bin/office-workers.js"), "utf8"));
+  expect(js).toContain("if (process.env.AGENT_OFFICE_ASK_FIRST)\n  for (const k of ['tell', 'pr', 'hire', 'home']) TIMEOUT_MS[k] += 120000;");
 });
