@@ -1,6 +1,6 @@
 # Adopting Rusty Buns
 
-Rusty Buns is a dev dependency. It never ships in your app: it boxes and deploys the app you already have. Everything it asks you to adopt is a plain shape you'd want anyway, so leaving is a `git rm`, not a rewrite. What it is and why: the [README](README.md#the-questions-everyone-asks).
+Rusty Buns is a dev dependency. It never ships in your app: it boxes and deploys the app you already have. Everything it asks you to adopt is a plain shape you'd want anyway, so leaving is a `git rm`, not a rewrite. What it is and why: the [README](README.md#features).
 
 ## Who it's for
 

@@ -1,6 +1,6 @@
 # Getting started
 
-Four steps: set up, desktop, Cloudflare, a server. Each step builds on the one before, and you can stop after any of them. Why this and not Electron or Tauri: see the [README](README.md#the-questions-everyone-asks).
+Four steps: set up, desktop, Cloudflare, a server. Each step builds on the one before, and you can stop after any of them. Why this and not Electron or Tauri: see the [README](README.md#a-one-file-desktop-app-in-real-chrome).
 
 You need **Bun 1.4+** and an app that builds with `vite build`. For Cloudflare you also need a `wrangler.jsonc`.
 

@@ -21,8 +21,10 @@ So locally:
 ## Docs heal themselves
 
 `bun run docs` fixes the README's version banner and examples table (a row per `apps/*`) and checks
-every relative link in the root docs. CI runs `bun run docs --check`. If it fails, run `bun run docs`,
-then rewrite any row it added in your own words before you commit.
+every relative link and #anchor in the root docs. The README is a list of features: each `###` under
+`## Features` is one short line, then the long version in `<details><summary>More</summary>`. Ship a
+feature, add or update its entry. CI runs `bun run docs --check`. If it fails, run `bun run docs`, then
+rewrite any row it added in your own words before you commit.
 
 ## Secrets and pushes
 

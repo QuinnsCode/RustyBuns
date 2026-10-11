@@ -15,7 +15,15 @@ That's the whole product. Rusty Buns is a dev dependency: it never edits `src/` 
 
 > **Alpha, `0.1.10`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live.
 
-## The idea in one paragraph
+## Features
+
+Each feature is one line. Click **More** for the long version.
+
+### One config, three targets
+
+Your app runs as a desktop binary, a Cloudflare Worker and a Linux server, all from `rustybuns.config.ts`.
+
+<details><summary>More</summary>
 
 Every app is five things: **http, comms, storage, memory, identity**. Cloudflare already gave them good, small shapes: a `fetch` handler, Durable Objects, D1, KV, R2. Rusty Buns gives every one of those a local twin (sqlite and the filesystem) and runs your `fetch` handler under Bun. Once your app runs on a laptop that way, it runs on any Linux box too, and the cloud deploy is generated from the same binding list. Three targets, one config, nothing to drift.
 
@@ -27,23 +35,31 @@ Every app is five things: **http, comms, storage, memory, identity**. Cloudflare
   one binary        your vite build         Railway or Hetzner
 ```
 
-## The questions everyone asks
+`rustybuns.config.ts` is the only file you own. `init` reads your app and writes it; the host, the wrangler config and the infrastructure are all generated from it. More in [The five primitives](ADOPTION.md#the-five-primitives) and [How it works](REFERENCE.md#how-it-works).
 
-### Why not Electron?
+</details>
 
-Electron makes you write two programs (a Node main process and a renderer) that talk over IPC, and it ships a whole Chromium with every app. Your backend is Node glued to a window, so it can't go to the edge, and moving it to a server is a rewrite.
+### A one-file desktop app in real Chrome
 
-Rusty Buns has no main process. Your backend is a plain `fetch` handler, the same one Cloudflare runs. On a laptop it serves your page to the Chrome you already have. On a server it serves it to everyone.
+`build desktop` gives you one double-clickable file per OS. Your backend runs on a local Bun host and the UI opens in the user's Chrome.
 
-### Why not Tauri?
+<details><summary>More</summary>
 
-Tauri is lighter, but your backend becomes Rust commands, and your UI runs in whatever webview the OS has: WebKit on macOS and Linux, WebView2 on Windows, each with its own gaps (WebGPU, codecs, audio). So you now test three browsers and maintain a Rust backend that also can't go to the edge.
+**Why not Electron?** Electron makes you write two programs (a Node main process and a renderer) that talk over IPC, and it ships a whole Chromium with every app. Your backend is Node glued to a window, so it can't go to the edge, and moving it to a server is a rewrite. Rusty Buns has no main process. Your backend is a plain `fetch` handler, the same one Cloudflare runs. On a laptop it serves your page to the Chrome you already have. On a server it serves it to everyone.
 
-Rusty Buns keeps the backend in TypeScript and renders in real Chrome, so `SharedArrayBuffer`, WebGPU, AudioWorklets and Web MIDI just work. Rust is still there, as an opt-in for the hot path, never a requirement.
+**Why not Tauri?** Tauri is lighter, but your backend becomes Rust commands, and your UI runs in whatever webview the OS has: WebKit on macOS and Linux, WebView2 on Windows, each with its own gaps (WebGPU, codecs, audio). So you now test three browsers and maintain a Rust backend that also can't go to the edge. Rusty Buns keeps the backend in TypeScript and renders in real Chrome, so `SharedArrayBuffer`, WebGPU, AudioWorklets and Web MIDI just work.
 
-### Why Bun?
+The host binds to `127.0.0.1`, gates every request on a per-launch token, and keeps your data in `~/.<app-name>/`. Your users never install Bun: it's inside the binary. Details in [The host](REFERENCE.md#the-host).
 
-Because Bun is the one runtime that has every piece built in:
+</details>
+
+### Every Cloudflare binding has a local twin
+
+D1, KV, R2 and Durable Objects run on sqlite and a folder on your disk, so the whole stack boots with no cloud account and no bill.
+
+<details><summary>More</summary>
+
+Bun is the one runtime that has every piece built in:
 
 | Bun gives us | So you get |
 |---|---|
@@ -52,39 +68,95 @@ Because Bun is the one runtime that has every piece built in:
 | `Bun.serve` with WebSockets | Durable Objects with hibernating sockets, in-process |
 | `bun:ffi` | Rust cdylibs called directly, nanosecond calls, with a TypeScript fallback |
 | `Bun.spawn` with a terminal | real PTYs without node-gyp (see [agent-office](apps/agent-office/README.md)) |
-| TypeScript with no build step, `bun test`, `bun check` | a full desktop build in under a second, and a typecheck in milliseconds once `bun check` ships (Bun 1.4.3; canary only so far, tsc-rs or `tsc` until then) |
 
-Your users never install Bun. It's inside the binary.
+D1 migrations apply at boot, and `"use server"` functions run for real against sqlite. It adds up to [a full-stack framework, by accident](REFERENCE.md#a-full-stack-framework-by-accident).
 
-### Why Rust, then?
+</details>
 
-Only when TypeScript isn't fast enough. Every Rust engine in this repo ships with a TypeScript twin that gives the same answer, and the app falls back to it if Rust can't load. Several examples race the two side by side so you can see what Rust buys you before you commit to it.
+### Plan before anything costs money
 
-### What's the catch?
+`plan` typechecks the generated stack and shows what it would create and bill. `deploy` refuses to run without a plan for that exact config, then asks.
 
-Honestly:
+<details><summary>More</summary>
+
+The deploy side is a typed Alchemy + Effect stack: Cloudflare, Hetzner and Railway are each a typed Layer, so swapping a target is one line of config and the compiler tells you what's missing before anything is created. `plan` and `deploy` print every billable resource, marked fixed or usage, and a large Hetzner box is refused unless the config says so. `destroy` removes everything it created. See [Typed deploys](REFERENCE.md#typed-deploys-thanks-to-effect), [Deploy to Hetzner](REFERENCE.md#deploy-to-hetzner), [Deploy to Railway](REFERENCE.md#deploy-to-railway) and [COSTS.md](COSTS.md).
+
+</details>
+
+### Rust when you need it, TypeScript always
+
+Drop in a Rust engine for the hot path. It ships with a TypeScript twin that gives the same answer, and the app falls back to it if Rust can't load.
+
+<details><summary>More</summary>
+
+Only reach for Rust when TypeScript isn't fast enough. `@rustybuns/native` loads a cdylib over `bun:ffi` on the host (or you ship it as wasm in the page), and returns null when it can't, so you take the TypeScript path. Several examples race the two side by side so you can see what Rust buys you before you commit: [tscircuit-desktop](apps/tscircuit-desktop/README.md) (up to 22x), [fm-daw](apps/fm-daw/README.md) (bit-identical audio) and [auto-rig](apps/auto-rig/README.md).
+
+</details>
+
+### LAN multiplayer with no server
+
+A desktop app can host its world for other copies of itself on the same network, turned on and off from the page at runtime.
+
+<details><summary>More</summary>
+
+Each guest runs its own binary and opens one WebSocket to the host machine. Nothing else crosses the network: the page, assets and server actions stay behind the host's token. Hosting takes a passphrase of at least 12 characters off loopback. [Hippo Tycoon](apps/hippo-tycoon/README.md) plays solo, couch, LAN party and online rooms from one game class. See [Multiplayer on a LAN](REFERENCE.md#multiplayer-on-a-lan).
+
+</details>
+
+### A fast loop, and it tells you how fast
+
+A desktop build takes about a second, and every build and deploy prints how long each step took and what changed since last time.
+
+<details><summary>More</summary>
+
+`build desktop --check` typechecks before the client build, so a type error costs well under a second. The checker is picked for you: `bun check` (Bun 1.4.3, canary only so far), else tsc-rs, else `tsc`. Step timings are saved to `.rustybuns/profile/`, so you can see what a checker or Bun upgrade actually saved. See [Type checking and per-step timing](REFERENCE.md#type-checking-and-per-step-timing).
+
+</details>
+
+### Built for coding agents
+
+One language top to bottom, one config file, the whole stack running locally, and a UI agents can already drive in Chrome.
+
+<details><summary>More</summary>
+
+- **One language.** TypeScript in the page, the backend, the config and the deploy. No IPC bridge, no Rust command layer, no YAML.
+- **One file to reason about.** An agent changes one line of `rustybuns.config.ts` and the rest is generated.
+- **Runs locally.** sqlite stands in for every cloud binding, so an agent can boot, test and break the real app with no cloud account.
+- **It can see the app.** It renders in Chrome, which agents already drive: click, screenshot, read the console.
+- **Guard rails.** `plan` and `deploy` catch an agent's mistake before a server exists.
+- **Rust without risk.** An agent can write the Rust engine and prove it matches the TypeScript one, sample by sample.
+
+Nearly every commit in this repo is co-authored by Claude Code, some of them written at desks in [Agent Office](apps/agent-office/README.md), which is itself one of the examples below.
+
+</details>
+
+### Keys you can take back (experimental)
+
+Test stacks mint their own secrets on create and drop them on destroy. Prod secrets come from 1Password behind your Touch ID.
+
+<details><summary>More</summary>
+
+Set `experimental.wheel` to `"agent"` and CI and agents can spin stacks up as often as they like with nothing to rotate. Set it to `"human"` and prod secrets resolve from 1Password at deploy time. Either way a committed `.env.schema` lists every secret by name, never value, so any machine or agent knows what's needed. The 1Password path is untested so far; see [Who holds the keys](REFERENCE.md#who-holds-the-keys-experimental) for why it's safe and what it doesn't cover.
+
+</details>
+
+### Leaving is a `git rm`
+
+Rusty Buns is a dev dependency. It never edits `src/`, never ships in your bundle, and everything you adopt is a shape Cloudflare already standardized.
+
+<details><summary>More</summary>
+
+There's no framework API to unwind: your app stays a `fetch` handler with D1, KV, R2 and Durable Object bindings. Adopt it one target at a time, and drop it the same way. See [Adopting it in steps](ADOPTION.md#adopting-it-in-steps).
+
+</details>
+
+## What's the catch?
 
 - **No native menus, tray, installers, signing or auto-update yet.** If you need a native-feeling window today, use Electron or Tauri.
 - **The binary is about 60 to 110 MB**, depending on the app, because Bun is inside it. It's one file with no install step, but it isn't small.
 - **It renders in the user's Chrome** (or default browser), not a bundled one.
 
 If what you have is a web app with a backend, and you want it on a laptop, on the edge *and* on a server, nothing else does all three from one codebase.
-
-## Why this is built for the agentic era
-
-Coding agents are now writing most of the code. Rusty Buns is shaped for how they work best:
-
-- **One language, top to bottom.** TypeScript in the page, the backend, the config and the deploy. No IPC bridge, no Rust command layer, no YAML. Agents are best at TypeScript, so they stay in it.
-- **One file to reason about.** `rustybuns.config.ts` is the only file you own. The host, the wrangler config and the infrastructure are all generated from it, so an agent changes one line and the rest follows.
-- **The whole stack runs locally.** sqlite stands in for every cloud binding, so an agent can boot, test and break the real app with no cloud account and no bill.
-- **The app is a web page, so an agent can see it.** It renders in Chrome, which agents already drive: click, screenshot, read the console. No custom harness for a native window.
-- **The loop is fast.** A desktop build takes about a second, and `bun check` (Bun 1.4.3, canary only so far) will typecheck in milliseconds. Agents iterate dozens of times; each loop should be cheap.
-- **Guard rails before anything costs money.** `plan` typechecks the generated stack and shows the diff. `deploy` refuses to run without a plan for that exact config, then asks. The compiler catches an agent's mistake before a server exists.
-- **Agents get keys you can take back (experimental).** Set `experimental.wheel` to `"agent"` and a test stack mints its own secrets on create and drops them on destroy, so CI and agents can spin stacks up as often as they like with nothing to rotate. Set it to `"human"` and prod secrets come from 1Password behind your Touch ID. Either way a committed `.env.schema` lists every secret by name, never value, so any machine or agent knows what's needed. The 1Password path is untested so far; see [REFERENCE.md](REFERENCE.md#who-holds-the-keys-experimental) for why it's safe and what it doesn't cover.
-- **Rust without risk.** An agent can write the Rust engine and prove it matches the TypeScript one, sample by sample, and the TypeScript path keeps working if it doesn't.
-- **Leaving is a `git rm`.** Everything you adopt is a shape Cloudflare already standardized. No lock-in for you or your agent to untangle later.
-
-It's not theory. Nearly every commit in this repo is co-authored by Claude Code, some of them written at desks in [Agent Office](apps/agent-office/README.md), which is itself one of the examples below.
 
 ## See it work
 
