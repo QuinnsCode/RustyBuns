@@ -8,6 +8,9 @@ await copyFile("src/client.html", "dist/client/index.html");
 await copyFile("src/play.html", "dist/client/play.html");
 // The game's code city mode, which play.html loads on #c/<name>.
 await copyFile("src/city.js", "dist/client/city.js");
+// The QR code for the desktop's phone pairing link, drawn here so a desktop offline still makes one.
+const qr = await Bun.build({ entrypoints: ["src/qr.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "qr.js" });
+if (!qr.success) { for (const l of qr.logs) console.error(l); process.exit(1); }
 await copyFile("src/features.html", "dist/client/features.html");
 await copyFile("src/features.json", "dist/client/features.json");
 // Not api.html: Cloudflare serves that at /api, over the Worker's JSON.

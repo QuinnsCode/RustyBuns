@@ -400,6 +400,7 @@
   .pop { position: relative; }
   .pop > .panel { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 340px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px -8px rgba(0,0,0,.14); display: grid; gap: 9px; }
   .pop > .panel[hidden] { display: none; }
+  .pair-qr { width: min(220px, 100%); margin: 0 auto 10px; border-radius: 8px; overflow: hidden; } .pair-qr svg { display: block; width: 100%; height: auto; }
   .copyline { display: flex; gap: 6px; } .copyline input { flex: 1; min-width: 0; font: 12px var(--mono); }
 
   /* The hero: plain white, a dot grid, one big confident line. */
@@ -1133,17 +1134,20 @@ function phoneDrawer(link = "") {
   drawer.open("Phone", `
     <h2 id="drawer-title">Pair a phone</h2>
     <p class="muted lede">Your phone gets this desktop, Agent button and all, as you. It stays on 127.0.0.1; a tunnel carries it, and only a device you pair here gets in.</p>
-    <p class="small"><b>1.</b> Put it on your tailnet (Tailscale on this Mac and the phone). The port changes each launch unless you start with <code>RB_LISTEN=127.0.0.1:4800</code>.</p>
+    <p class="small"><b>1.</b> Put it on your tailnet (Tailscale on this Mac and the phone). The port changes each launch unless you start with <code>RB_LISTEN=127.0.0.1:4800</code>. Or run <code>bun run phone</code> in <code>apps/codesplitters</code>: it does this step and prints a code to scan.</p>
     <div class="copyline" style="margin-bottom:14px"><input readonly value="${esc(serveCmd)}"><button class="btn" id="serve-cmd" title="copy the command">${icon("copy")}</button></div>
     <form id="pair">
       <label class="field"><span><b>2.</b> Its address, as the phone sees it</span><input name="addr" type="url" required placeholder="https://your-mac.your-tailnet.ts.net" value="${esc(at)}"></label>
       <button class="btn primary wide">${icon("link")}Make a pairing link</button>
     </form>
-    ${link ? `<p class="small"><b>3.</b> Open this on the phone. It works once, for five minutes.</p>
+    ${link ? `<p class="small"><b>3.</b> Scan it with the phone's camera, or open the link there. It works once, for five minutes.</p>
+    <div class="pair-qr" id="pair-qr" role="img" aria-label="QR code of the pairing link" hidden></div>
     <div class="copyline"><input readonly value="${esc(link.replace(/(rb_launch=)(.+)$/, (_, k, c) => k + masked(c)))}" title="hidden: copy it with the button"><button class="btn" id="pair-copy" title="copy the link">${icon("copy")}</button></div>` : ""}
     <p class="muted small">Restarting the desktop signs paired phones out. Pair again after.</p>`);
   $("#serve-cmd").addEventListener("click", () => copy(serveCmd, "Command copied"));
   $("#pair-copy")?.addEventListener("click", () => copy(link, "Link copied"));
+  // Drawn here (/qr.js, built from src/qr.ts), so it works with the desktop offline.
+  if (link) import("/qr.js").then(({ qrSvg }) => { const el = $("#pair-qr"); if (el) { el.innerHTML = qrSvg(link); el.hidden = false; } }).catch(() => {});
   $("#pair").addEventListener("submit", async (e) => {
     e.preventDefault();
     const origin = e.target.elements.addr.value.trim().replace(/\/+$/, "");

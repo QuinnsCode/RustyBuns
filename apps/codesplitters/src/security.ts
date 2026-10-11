@@ -65,13 +65,20 @@ export function secured(res: Response): Response {
 
 const UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+/**
+ * `origin` is this site. Behind an HTTPS tunnel (Tailscale Serve, cloudflared) to the desktop a
+ * request arrives as http://<host> while the browser says https://<host>: the same host, over a
+ * stronger scheme, so it counts (#456). Never the other way round.
+ */
+export const ownOrigin = (origin: string, url: URL) => origin === url.origin || (url.protocol === "http:" && origin === `https://${url.host}`);
+
 /** A cookie-signed write from another site: refuse it. Without an Origin header, Sec-Fetch-Site says; with neither, it isn't a browser. */
 export function crossSite(req: Request, env: Env): Response | null {
   if (!UNSAFE.has(req.method) || !req.headers.get("cookie")) return null;
   if (/^(Bearer|token)\s/i.test(req.headers.get("authorization") ?? "")) return null;
   const origin = req.headers.get("origin");
-  const ours = new Set([new URL(req.url).origin, ...(env.BETTER_AUTH_URL ? [new URL(env.BETTER_AUTH_URL).origin] : [])]);
-  const foreign = origin ? !ours.has(origin) : req.headers.get("sec-fetch-site") === "cross-site";
+  const ours = (o: string) => ownOrigin(o, new URL(req.url)) || (!!env.BETTER_AUTH_URL && o === new URL(env.BETTER_AUTH_URL).origin);
+  const foreign = origin ? !ours(origin) : req.headers.get("sec-fetch-site") === "cross-site";
   return foreign ? json({ error: "cross-site request refused: send it from this site, or with Authorization: Bearer" }, 403) : null;
 }
 

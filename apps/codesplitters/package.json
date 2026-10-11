@@ -5,6 +5,7 @@
   "scripts": {
     "build": "bun run build.ts",
     "agents": "bun agents.ts",
+    "phone": "bun scripts/phone.ts",
     "cli": "bun cli.ts",
     "test": "bun test --parallel test",
     "test:watch": "bun test --watch test",
