@@ -1,7 +1,7 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
 import worker from "../src/worker.ts";
-import { changedSince, hitsIn, malFrom, scheduledWatch, STATUS_PAGES } from "../src/watch.ts";
+import { changedSince, hitsIn, malFrom, NEWS_EVERY, newsFrom, scheduledWatch, STATUS_PAGES } from "../src/watch.ts";
 
 // End to end with real git and an in-process D1: a busy machine can stretch one past bun's 5s default.
 setDefaultTimeout(20_000);
@@ -117,4 +117,59 @@ test("a sweep out of time picks up where it stopped next hour", async () => {
   expect((await (await call("ryan", "/api/watch")).json()).hits).toEqual([]);
   await scheduledWatch(call.env, self, NOW + 3_600_000);   // nothing new, but the sweep goes on
   expect((await (await call("ryan", "/api/watch")).json()).hits.map((h: any) => h.repo).sort()).toEqual(["a", "b"]);
+});
+
+test("newsFrom: only incidents a search turned up, tidied", () => {
+  const seen = new Set(["https://example.com/a", "javascript:alert(1)"]);
+  const got = newsFrom({ incidents: [
+    { title: "nx hijacked", url: "https://example.com/a", packages: ["nx", ""], summary: "Malicious 21.5.0.", published: "2026-10-09" },
+    { title: "dupe", url: "https://example.com/a", packages: [], summary: "", published: "" },
+    { title: "made up", url: "https://example.com/never-searched", packages: ["left-pad"], summary: "", published: "" },
+    { title: "bad scheme", url: "javascript:alert(1)", packages: [], summary: "", published: "" },
+  ] }, seen, NOW);
+  expect(got).toEqual([{ url: "https://example.com/a", title: "nx hijacked", packages: ["nx"], summary: "Malicious 21.5.0.", published: "2026-10-09", at: NOW }]);
+  expect(newsFrom(null, seen, NOW)).toEqual([]);
+});
+
+test("the news search: off unless asked for, once a day, a search's pause carried on, unverified news only", async () => {
+  const call = await boot({ GH_CLI: "off" });
+  opened.push(call);
+  const asks: any[] = [];
+  const msg = (content: unknown[], stop_reason: string) => Response.json({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5-5", content, stop_reason, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } });
+  const net = internet(() => "", {});
+  call.env.WATCH_FETCH = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!String(input).includes("api.anthropic.com")) return net(input, init);
+    const body = JSON.parse(String(init?.body));
+    asks.push(body);
+    // The first turn searches and pauses; the second reports, once with a url it never saw.
+    if (asks.length % 2) return msg([
+      { type: "server_tool_use", id: "srv_1", name: "web_search", input: { query: "compromised npm package" } },
+      { type: "web_search_tool_result", tool_use_id: "srv_1", content: [{ type: "web_search_result", url: "https://example.com/nx", title: "nx", encrypted_content: "x", page_age: null }] },
+    ], "pause_turn");
+    return msg([{ type: "tool_use", id: "tu_1", name: "report", input: { incidents: [
+      { title: "nx packages published with a credential stealer", url: "https://example.com/nx", packages: ["nx"], summary: "Versions 21.5.0 and 20.9.0 stole tokens.", published: "2026-10-09" },
+      { title: "invented", url: "https://example.com/invented", packages: ["chalk"], summary: "", published: "" },
+    ] } }], "tool_use");
+  }) as typeof fetch;
+  const self = (r: Request) => worker.fetch(r, call.env);
+
+  await scheduledWatch(call.env, self, NOW);
+  expect(asks.length).toBe(0);   // WATCH_NEWS isn't set
+  call.env.WATCH_NEWS = "1";
+  await scheduledWatch(call.env, self, NOW);
+  expect(asks.length).toBe(0);   // nor is a key
+  call.env.ANTHROPIC_API_KEY = "sk-test";
+  await scheduledWatch(call.env, self, NOW);
+  expect(asks.length).toBe(2);
+  expect(asks[0].tools.map((t: any) => t.type ?? t.name)).toEqual(["web_search_20260209", "report"]);
+  expect(asks[1].messages.at(-1).role).toBe("assistant");   // carried on from the pause
+  const w = await (await call(null, "/api/watch")).json();
+  expect(w.news).toEqual([{ url: "https://example.com/nx", title: "nx packages published with a credential stealer", packages: ["nx"], summary: "Versions 21.5.0 and 20.9.0 stole tokens.", published: "2026-10-09", at: NOW }]);
+
+  // An hour later it doesn't search again; a day later it does, and the story keeps the day it was first found.
+  await scheduledWatch(call.env, self, NOW + 3_600_000);
+  expect(asks.length).toBe(2);
+  await scheduledWatch(call.env, self, NOW + NEWS_EVERY);
+  expect(asks.length).toBe(4);
+  expect((await (await call(null, "/api/watch")).json()).news.map((n: any) => n.at)).toEqual([NOW]);
 });

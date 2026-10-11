@@ -124,7 +124,9 @@ export interface Env {
   DEPS_FIXER?: unknown;
   /** Tests only: stands in for emailing or notifying the owner about a run (see deps.ts). */
   DEPS_NOTIFY?: unknown;
-  /** Tests only: stands in for fetch to the status pages and osv.dev (see watch.ts). */
+  /** "1" turns on the supply-chain watch's daily news search, which needs ANTHROPIC_API_KEY (watch.ts). */
+  WATCH_NEWS?: string;
+  /** Tests only: stands in for fetch to the status pages, osv.dev and the news search (see watch.ts). */
   WATCH_FETCH?: unknown;
   /** Where desktop deploys keep each repo's Alchemy state (deploy.ts); ~/.codesplitters/alchemy if unset. */
   DEPLOY_STATE_DIR?: string;

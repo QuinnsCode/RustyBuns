@@ -11,12 +11,16 @@ import { defineConfig } from "@rustybuns/cli/config";
 //                           DEPLOY_SECRETS_KEY (1Password, like the rest)
 //   CODESPLITTERS_VECTORS=1 search across repos through one Vectorize index, embedded with
 //                           Workers AI (src/search.ts); billed by use, see REFERENCE.md
+//   CODESPLITTERS_WATCH_NEWS=1 the supply-chain watch's daily news search for compromised
+//                           packages (src/watch.ts): one Claude run with web search a day,
+//                           on ANTHROPIC_API_KEY; billed by use, see REFERENCE.md
 // Account email (verification and password reset) is opt-in the same way, once the
 // sender's domain is onboarded to Cloudflare Email Sending (Workers Paid):
 //   CODESPLITTERS_MAIL_FROM=accounts@your-domain  binds EMAIL and sends from it
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
 const deploys = process.env.CODESPLITTERS_DEPLOYS === "1";
 const vectors = process.env.CODESPLITTERS_VECTORS === "1";
+const news = process.env.CODESPLITTERS_WATCH_NEWS === "1";
 const mailFrom = process.env.CODESPLITTERS_MAIL_FROM?.trim();
 // A change to the privacy page that matters goes here first, as "YYYY-MM-DD what changes"
 // (the day it applies), and ships before that day: the site shows it as a banner (src/privacy.ts).
@@ -92,6 +96,8 @@ export default defineConfig({
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
     // The desktop has no twin and runs the CLIs on the machine instead.
     ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
+    // The watch's news search: on, with the Anthropic key (also the agents' when they're on).
+    ...(news ? { WATCH_NEWS: { type: "var", value: "1" } as const, ANTHROPIC_API_KEY: op("anthropic/api-key", true) } : {}),
     // Optional: only the items you've made in 1Password are bound.
     ...(agents ? {
       ANTHROPIC_API_KEY: op("anthropic/api-key", true),
