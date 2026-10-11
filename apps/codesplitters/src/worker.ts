@@ -37,6 +37,7 @@ import { REFERENCE } from "./api.ts";
 import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts";
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
+import { scaleRoutes } from "./scale.ts";
 import { pulseRoutes } from "./pulse.ts";
 import { installScript } from "./install.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue, TRUTHS, type Truth } from "./mirror.ts";
@@ -116,6 +117,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/admin/insights  people vs agents, the site's health, how far each person got (insights.ts)
   const insights = await insightRoutes(req, env, p, url, admin);
   if (insights) return insights;
+  // GET /api/admin/scale  the scale sideboard: each wall, how close we are, the next step (scale.ts)
+  const scale = await scaleRoutes(req, env, p, admin);
+  if (scale) return scale;
   const job = await jobRoutes(req, env, p, user, admin, (r) => app.fetch(r, env));
   if (job) return job;
   const body = async <T>() => (await req.json()) as T;

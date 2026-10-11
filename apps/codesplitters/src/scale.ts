@@ -1,0 +1,149 @@
+// The scale sideboard, for admins (#/admin/scale, GET /api/admin/scale): every
+// wall codeSplitters hits as it grows, like a sideboard guide. Each card says
+// what breaks, where, at about what number, how it shows, the fix on Cloudflare,
+// what moving to one box (Hetzner or Railway, the same code on shell-bun) would
+// do instead, and the one next step. Where the app can measure how close it is,
+// the card carries a live reading against its wall.
+//
+// The walls are estimates from the code and Cloudflare's published limits, not
+// load tests. Readings are cheap queries over D1, taken when the page asks.
+
+import { json, type Env } from "./env.ts";
+
+export type State = "ok" | "warn" | "bad" | "unmeasured";
+export interface Card {
+  id: string;
+  name: string;
+  where: string;
+  wall: string;
+  shows: string;
+  here: string;
+  box: string;
+  next: string;
+}
+export interface Reading { value: number | null; limit: number; unit: string; note: string }
+
+const MB = 1024 * 1024, GB = 1024 * MB;
+
+export const CARDS: Card[] = [
+  {
+    id: "d1-writes", name: "One D1 for the whole site", where: "D1: limit_hits, line_events, traffic",
+    wall: "~500 writes/s sitewide (one writer per database), about 100 people typing at once",
+    shows: "Edits lag everywhere at once, even on different files; D1 overloaded errors and 5xx on Insights",
+    here: "Yes. Count edits in a per-user DO or the Rate Limiting binding, tally traffic in Analytics Engine: the edit path stops waiting on D1",
+    box: "SQLite on local NVMe takes 10–100× the writes, no network hop",
+    next: "Take the edit rate limit (countHit in file-do.ts) off D1",
+  },
+  {
+    id: "d1-size", name: "D1's 10 GB cap", where: "D1, the whole database",
+    wall: "10 GB per database",
+    shows: "Writes start failing: new repos, digs, commits, sign-ins",
+    here: "Yes. Move search out of D1, keep line_events short, split per owner if it comes to that",
+    box: "Disk is the cap: hundreds of GB for a few euros",
+    next: "Move search out of D1 (the search card)",
+  },
+  {
+    id: "search", name: "Search keeps every file", where: "D1: file_search (FTS5)",
+    wall: "~4 GB of text (the index roughly doubles it, inside D1's 10)",
+    shows: "Digging up a big repo eats the database; search slows down",
+    here: "Yes. Per-repo FTS in a repo DO for in-repo search; AI Search or Vectorize for across repos",
+    box: "Same FTS5, plenty of disk; one box still runs out eventually",
+    next: "File search per repo, in a repo coordinator DO",
+  },
+  {
+    id: "big-file", name: "A file is one storage key", where: "file-do.ts: put(\"doc\") on every edit",
+    wall: "2 MB per value, ~15–20k lines in one file",
+    shows: "Edits to that one file stop saving; big files get slower to edit as they grow",
+    here: "Yes. Store the doc in chunks (or a row per line) and write only what changed",
+    box: "No cap on the value, but it still rewrites the whole file per edit",
+    next: "Chunk the doc in FileDurableObject",
+  },
+  {
+    id: "op-log", name: "The op log is read whole", where: "file-do.ts: log(since) lists every op:",
+    wall: "~300k ops on one file (the 128 MB isolate)",
+    shows: "Reconnects and time travel on a long-lived hot file get slow, then crash the file's DO",
+    here: "Yes. Read from op:<since> with a range, snapshot and trim old ops",
+    box: "More memory buys time; the fix is the same",
+    next: "Range-read the log from since",
+  },
+  {
+    id: "hot-file", name: "One hot file", where: "One FileDurableObject per file",
+    wall: "~1,000 requests/s on a single file",
+    shows: "A swarm of agents on one file queues up; everyone else is fine",
+    here: "Partly. Claims already split who writes what; past that, split the file",
+    box: "One process, same single writer: no better",
+    next: "Nothing yet; watch swarms on one file",
+  },
+  {
+    id: "agents", name: "Hosted agent runs", where: "AgentSandbox containers (rustybuns.config.ts)",
+    wall: "maxInstances 2: two hosted agent runs at once, sitewide",
+    shows: "Agent runs wait for a sandbox",
+    here: "Yes, it's config: raise maxInstances, and pay per running container",
+    box: "Docker on the box: as many as the cores hold, no per-second bill",
+    next: "Raise maxInstances when runs start waiting",
+  },
+  {
+    id: "deploys", name: "Deploys and previews", where: "DeployRunner container (rustybuns.config.ts)",
+    wall: "maxInstances 1: one deploy or preview at once, sitewide",
+    shows: "A second deploy waits or gets a 409",
+    here: "Yes, it's config: raise maxInstances",
+    box: "Docker on the box",
+    next: "Raise maxInstances when deploys start waiting",
+  },
+];
+
+/** How close a reading is to its wall: under half is fine, past 80% is critical. */
+export function stateOf(r: Reading | undefined): State {
+  if (!r || r.value === null) return "unmeasured";
+  const f = r.value / r.limit;
+  return f >= 0.8 ? "bad" : f >= 0.5 ? "warn" : "ok";
+}
+
+const n = (x: unknown) => Number(x ?? 0);
+
+/** D1's size: Cloudflare reports it on every result; the local twin answers the pragmas. */
+async function dbBytes(env: Env): Promise<number | null> {
+  const r: any = await env.DB.prepare("SELECT 1").run().catch(() => null);
+  if (typeof r?.meta?.size_after === "number") return r.meta.size_after;
+  try {
+    const pages = n((await env.DB.prepare("PRAGMA page_count").first() as any)?.page_count);
+    const size = n((await env.DB.prepare("PRAGMA page_size").first() as any)?.page_size);
+    return pages && size ? pages * size : null;
+  } catch { return null; }
+}
+
+/** Live readings for the cards that can be measured from D1. */
+export async function readings(env: Env, now = Date.now()): Promise<Record<string, Reading>> {
+  const first = async (sql: string, ...args: unknown[]) => ((await env.DB.prepare(sql).bind(...args).first()) ?? {}) as Record<string, unknown>;
+  // The busiest edit window in the last day: every edit is a D1 write (its count), before the feed's and traffic's.
+  const edits = await first("SELECT MAX(c) AS peak FROM (SELECT SUM(count) AS c FROM limit_hits WHERE rule = 'edit' AND win >= ? GROUP BY win)", now - 86_400_000);
+  // The biggest committed file: its text, plus ~70 bytes a line of id, rev, author and time in the doc.
+  const big = await first("SELECT owner, repo, path, length(content) AS bytes, length(content) - length(replace(content, char(10), '')) + 1 AS lines FROM file_search ORDER BY length(content) DESC LIMIT 1");
+  const search = await first("SELECT SUM(length(content)) AS bytes FROM file_search");
+  // The most edited file in the 30 days of line_events: ops added to its log.
+  const hot = await first("SELECT owner, repo, path, SUM(sets + inserts + deletes) AS ops FROM line_events GROUP BY owner, repo, path ORDER BY ops DESC LIMIT 1");
+  const runs = await first("SELECT COUNT(*) AS c FROM agent_runs WHERE status = 'running'");
+  const deploys = await first("SELECT COUNT(*) AS c FROM deploys WHERE status = 'running'");
+  const size = await dbBytes(env);
+  const where = (r: Record<string, unknown>) => r.path ? `${r.owner ? `${r.owner}/${r.repo}/` : ""}${r.path}` : "";
+  return {
+    "d1-writes": { value: n(edits.peak) / 60, limit: 500, unit: "writes/s", note: "busiest minute of edits in the last day; traffic and feed writes come on top" },
+    "d1-size": { value: size, limit: 10 * GB, unit: "bytes", note: size === null ? "D1 didn't say" : "the whole database" },
+    "search": { value: n(search.bytes), limit: 4 * GB, unit: "bytes", note: "text of every file's last commit" },
+    "big-file": { value: n(big.bytes) + n(big.lines) * 70, limit: 2 * MB, unit: "bytes", note: big.path ? `${where(big)}, ${n(big.lines).toLocaleString()} lines` : "no files yet" },
+    "op-log": { value: n(hot.ops), limit: 300_000, unit: "ops", note: hot.path ? `${where(hot)}, ops in the last 30 days (the log keeps all of them)` : "no edits yet" },
+    "agents": { value: n(runs.c), limit: 2, unit: "runs", note: "running now" },
+    "deploys": { value: n(deploys.c), limit: 1, unit: "deploys", note: "running now" },
+  };
+}
+
+export async function scaleRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
+  if (p[1] !== "admin" || p[2] !== "scale" || p[3]) return null;
+  if (!admin) return json({ error: "admins only" }, 403);
+  if (req.method !== "GET") return json({ error: "GET only" }, 405);
+  const r = await readings(env);
+  const cards = CARDS.map((c) => ({ ...c, reading: r[c.id] ?? null, state: stateOf(r[c.id]) }));
+  const order: State[] = ["bad", "warn", "ok", "unmeasured"];
+  const worst = order.find((s) => cards.some((c) => c.state === s)) ?? "unmeasured";
+  return json({ generated_at: Date.now(), worst, cards });
+}

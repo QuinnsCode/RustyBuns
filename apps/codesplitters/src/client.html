@@ -546,6 +546,17 @@
   .insights .steps { display: inline-flex; gap: 3px; } .insights .steps i { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--border-2); } .insights .steps i.on { background: var(--accent); border-color: var(--accent); }
   .insights .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); } .insights .tag.person { color: var(--accent); border-color: var(--accent); }
   @media (max-width: 720px) { .insights .tiles, .insights .cols { grid-template-columns: 1fr; } .insights .way > div { grid-template-columns: 110px 1fr 56px; } }
+  .scale .verdict { border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin: 0 0 14px; display: flex; align-items: center; gap: 12px; }
+  .scale .verdict b { font: 600 20px var(--mono); } .scale .verdict.bad { border-color: var(--del-fg); } .scale .verdict.bad b { color: var(--del-fg); } .scale .verdict.warn b { color: var(--accent); }
+  .scale .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .scale .card { border: 1px solid var(--border); border-radius: 8px; display: grid; grid-template-rows: auto auto 1fr auto; overflow: hidden; }
+  .scale .card.bad { border-color: var(--del-fg); box-shadow: 0 0 0 2px color-mix(in srgb, var(--del-fg) 20%, transparent); } .scale .card.warn { border-color: var(--accent); }
+  .scale .card header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); } .scale .card header b { font-weight: 600; } .scale .card header .tag { margin-left: auto; }
+  .scale .card .reading { padding: 10px 14px; display: grid; gap: 6px; font-size: 12px; border-bottom: 1px solid var(--border); }
+  .scale .card .reading .num { font: 600 15px var(--mono); font-variant-numeric: tabular-nums; } .scale .card.bad .meter i { background: var(--del-fg); } .scale .card.warn .meter i { background: var(--accent); }
+  .scale .card dl { margin: 0; padding: 10px 14px; display: grid; grid-template-columns: 72px 1fr; gap: 6px 10px; font-size: 13px; } .scale .card dt { color: var(--muted); font-size: 12px; } .scale .card dd { margin: 0; }
+  .scale .card .next { padding: 10px 14px; border-top: 1px solid var(--border); background: var(--canvas); font-size: 13px; } .scale .card .next b { color: var(--accent); }
+  .scale .tag.bad { color: var(--del-fg); border-color: var(--del-fg); } .scale .tag.warn { color: var(--accent); border-color: var(--accent); }
   .switch { position: relative; width: 30px; height: 18px; margin-left: auto; flex: none; }
   .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
   .switch i { position: absolute; inset: 0; border-radius: 9px; background: var(--border-2); transition: background .15s; pointer-events: none; }
@@ -890,7 +901,7 @@ function landHome() {
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a><a class="btn ghost" href="#/admin/scale" title="scale sideboard: where the app breaks next">${icon("layers")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
@@ -1223,6 +1234,37 @@ async function insightsPage(days = 7) {
   </div>`;
   $("#ins-days").addEventListener("change", (e) => insightsPage(Number(e.target.value)));
   icons();
+}
+// The scale sideboard (admins, src/scale.ts): every wall the app hits as it grows, the most
+// critical first, each with how close we are, the fix here, the box alternative, and the next step.
+const VERDICT = { bad: ["Critical", "Something is past 80% of its wall. Board in its next step now."], warn: ["Sweating", "Something is past half its wall. Plan its next step."], ok: ["Fine", "Everything measured is under half its wall."], unmeasured: ["Unknown", "Nothing measured yet."] };
+const STATE_LABEL = { bad: "critical", warn: "watch", ok: "fine", unmeasured: "not measured" };
+function scaleNum(v, unit) {
+  if (unit === "bytes") return v >= 1 << 30 ? `${(v / (1 << 30)).toFixed(2)} GB` : v >= 1 << 20 ? `${(v / (1 << 20)).toFixed(1)} MB` : `${Math.round(v / 1024).toLocaleString()} KB`;
+  return `${Number(v.toFixed(v < 10 && v % 1 ? 1 : 0)).toLocaleString()} ${v === 1 ? unit.replace(/s$/, "") : unit}`;
+}
+async function scalePage() {
+  const d = await api("/admin/scale");
+  const frac = (c) => c.reading?.value == null ? -1 : c.reading.value / c.reading.limit;
+  const cards = [...d.cards].sort((a, b) => frac(b) - frac(a));
+  const [title, line] = VERDICT[d.worst];
+  app.innerHTML = `<div class="wrap limits insights scale" style="padding-top:24px">
+    <h2 style="margin:0 0 6px;font-weight:600">${icon("layers")} Scale sideboard<span class="grow"></span><span class="muted small">updated ${ago(d.generated_at)} · every 30s</span></h2>
+    <p class="muted" style="margin:0 0 18px">Every wall codeSplitters hits as it grows, the closest first: where it breaks, how it shows, the fix on Cloudflare, what one box (Hetzner or Railway) would do instead, and what to board in next. Walls are estimates from the code and Cloudflare's limits, not load tests.</p>
+    <div class="verdict ${d.worst}">${icon(d.worst === "bad" ? "flame" : d.worst === "warn" ? "triangle-alert" : "shield-check")}<b>${title}</b><span class="muted">${line}</span></div>
+    <div class="cards">${cards.map((c) => { const r = c.reading;
+      return `<div class="card ${c.state}">
+        <header><b>${esc(c.name)}</b><span class="tag ${c.state}">${STATE_LABEL[c.state]}</span></header>
+        <div class="reading">${r && r.value != null
+          ? `<div><span class="num">${scaleNum(r.value, r.unit)}</span> <span class="muted">of ${scaleNum(r.limit, r.unit)} · ${Math.round((r.value / r.limit) * 100)}%</span></div><span class="meter"><i style="width:${Math.min(100, (r.value / r.limit) * 100)}%"></i></span><span class="muted">${esc(r.note)}</span>`
+          : `<span class="muted">${r ? esc(r.note) : "Not measured yet."}</span>`}</div>
+        <dl><dt>Where</dt><dd><code>${esc(c.where)}</code></dd><dt>Wall</dt><dd>${esc(c.wall)}</dd><dt>Shows as</dt><dd>${esc(c.shows)}</dd><dt>Fix here</dt><dd>${esc(c.here)}</dd><dt>On a box</dt><dd>${esc(c.box)}</dd></dl>
+        <div class="next"><b>Next:</b> ${esc(c.next)}</div></div>`; }).join("")}</div>
+  </div>`;
+  icons();
+  // Live while it's up: look again every 30 seconds, and stop once the page is gone.
+  clearTimeout(scalePage.timer);
+  scalePage.timer = setTimeout(() => { if (ctx.view === "admin" && $(".scale")) scalePage().catch(() => {}); }, 30_000);
 }
 // Hosted deploys' sealing key (src/deploy-keys.ts): after a rotation, seal what the old key sealed under the new one.
 async function sealBox() {
@@ -3119,6 +3161,7 @@ const views = {
     if (!session.admin) throw new Error("Admins only.");
     if (section === "limits") return limitsPage();
     if (section === "insights") return insightsPage();
+    if (section === "scale") return scalePage();
     location.hash = "#/admin/limits";
   },
   async search(q) {
@@ -3721,6 +3764,7 @@ async function commands() {
   if (u) add("Anywhere", "rss", "Your feed", "GET /api/me/feed", () => (location.hash = "#/feed"));
   if (session.admin) add("Admin", "activity", "Insights", "GET /api/admin/insights", () => (location.hash = "#/admin/insights"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
+  if (session.admin) add("Admin", "layers", "Scale sideboard", "GET /api/admin/scale", () => (location.hash = "#/admin/scale"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
   return out;
