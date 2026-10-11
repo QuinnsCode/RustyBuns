@@ -22,15 +22,12 @@ async function app() {
   await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "bob" });
   await post("ryan", "/api/repos/ryan/lab/files", { path: "a.ts", content: "one\ntwo" });
   await post("ryan", "/api/repos/ryan/vault/files", { path: "s.ts", content: "secret" });
-  const follow = (who: string, kind: string, f: Record<string, unknown>) => call.env.DB.prepare(
-    "INSERT INTO follows (follower, kind, target, owner, repo, path, ids, from_line, to_line, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(who, kind, f.target, f.owner ?? null, f.repo ?? null, f.path ?? null, f.ids ? JSON.stringify(f.ids) : null, f.from ?? null, f.to ?? null, Date.now()).run();
-  const lines = async (repo: string, path: string) => (await (await call("ryan", `/api/repos/ryan/${repo}/do/file?path=${path}`)).json()).lines as { id: string; text: string }[];
+  const follow = async (who: string, body: Record<string, unknown>) => expect((await post(who, "/api/follows", body)).status).toBeLessThan(300);
   const add = (user: string, repo: string, path: string, text: string) => post(user, `/api/repos/ryan/${repo}/do/ops?path=${path}`, { ops: [{ kind: "insert", after: null, text }] });
   const feed = async (user: string) => (await (await call(user, `/api/me/feed?since=0`)).json()) as any;
   // The DO writes events after the edit answers.
   const settled = async (n: number) => { for (const end = performance.now() + 5000; performance.now() < end;) { if (((await call.env.DB.prepare("SELECT COUNT(*) AS n FROM line_events").first()) as any).n >= n) return; await Bun.sleep(10); } };
-  return { call, post, follow, lines, add, feed, settled };
+  return { call, post, follow, add, feed, settled };
 }
 
 test("a burst of edits is one event, blamed and counted, never the text", async () => {
@@ -50,8 +47,8 @@ test("the feed groups who you follow, says who came after, and keeps private rep
   await add("ryan", "vault", "s.ts", "more");
   await add("bob", "lab", "a.ts", "bob was here");
   await settled(3);
-  await follow("ana", "user", { target: "ryan", name: "ryan" });
-  await follow("carol", "user", { target: "ryan" });
+  await follow("ana", { name: "ryan" });
+  await follow("carol", { name: "ryan" });
 
   const a = await feed("ana");
   expect(a.groups.map((g: any) => g.key)).toEqual(["ryan"]);
@@ -69,12 +66,11 @@ test("the feed groups who you follow, says who came after, and keeps private rep
 });
 
 test("repo and line follows, and signed out", async () => {
-  const { call, follow, lines, add, feed, settled } = await app();
+  const { call, follow, add, feed, settled } = await app();
   await settled(2);
-  const [first] = await lines("lab", "a.ts");
-  await follow("ana", "lines", { target: "x", owner: "ryan", repo: "lab", path: "a.ts", ids: [first!.id], from: 1, to: 1 });
+  await follow("ana", { owner: "ryan", repo: "lab", path: "a.ts", from: 2, to: 2 });
   expect((await feed("ana")).groups.map((g: any) => g.who)).toEqual(["ryan"]);
-  await follow("carol", "repo", { target: "ryan/lab", owner: "ryan", repo: "lab" });
+  await follow("carol", { owner: "ryan", repo: "lab" });
   await add("bob", "lab", "a.ts", "hi");
   await settled(3);
   expect((await feed("carol")).groups.map((g: any) => g.who)).toEqual(["bob", "ryan"]);
@@ -87,7 +83,7 @@ test("your agent digests the feed, seeing only what you may read", async () => {
   const { call, post, follow, add, settled } = await app();
   await add("ryan", "vault", "s.ts", "more");
   await settled(2);
-  await follow("ana", "user", { target: "ryan", name: "ryan" });
+  await follow("ana", { name: "ryan" });
   let seen = "";
   call.env.AGENT_EXEC = (async (cmd, cwd) => {
     seen = readFileSync(join(cwd, "FEED.md"), "utf8");
