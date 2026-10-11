@@ -1145,7 +1145,7 @@ async function limitsPage() {
       ${stat("low", "low", "the quietest busy window")}${stat("p50", "med", "half of callers' windows were at or under this")}${stat("mean", "avg", "the average")}${stat("p90", "p90", "9 in 10 windows at or under")}${stat("p95", "p95", "19 in 20 windows at or under")}${stat("p99", "p99", "99 in 100 windows at or under")}${stat("worst", "worst", "the busiest a caller has been in one window")}<span>of ${r.max}${sp.over ? ` · <span class="hot"><b>${sp.over}</b> over</span>` : ""}</span></div>` : "";
     const used = `${r.now.hits} hit${r.now.hits === 1 ? "" : "s"} · ${r.now.callers} caller${r.now.callers === 1 ? "" : "s"}${r.now.blocked ? ` · <span class="hot">${r.now.blocked} over</span>` : ""}`;
     return `<div class="rule${r.enabled ? "" : " off"}" data-name="${r.name}">
-      <label class="rhead"><span class="switch"><input type="checkbox" name="enabled"${r.enabled ? " checked" : ""} aria-label="limit ${esc(r.label)}"><i></i></span><b>${esc(r.label)}</b><span class="per">${r.per === "ip" ? "IP" : "handle"}</span><span class="use" title="this ${every(r.window_s)}">${used}</span></label>
+      <label class="rhead"><span class="switch"><input type="checkbox" name="enabled"${r.enabled ? " checked" : ""} aria-label="limit ${esc(r.label)}"><i></i></span><b>${esc(r.label)}</b><span class="per">${r.per === "ip" ? "IP" : r.per === "token" ? "CI token" : "handle"}</span><span class="use" title="this ${every(r.window_s)}">${used}</span></label>
       <span class="what" title="${esc(r.what)}">${esc(r.what)}</span>${spread}
       <div class="ctl"><input name="max" type="number" min="1" max="100000" value="${r.max}" aria-label="most allowed"><span>/</span><select name="window_s" aria-label="window">${opts}</select><span>then</span><select name="on_fail" aria-label="when a caller goes over">${ON_FAIL.filter(([v]) => v !== "queue" || r.queueable).map(([v, l, t]) => `<option value="${v}" title="${t}"${v === r.on_fail ? " selected" : ""}>${l}</option>`).join("")}</select>
         ${changed ? `<button type="button" class="btn ghost small" data-default title="back to the default: ${d.max} per ${every(d.window_s)}, ${d.on_fail}">${icon("rotate-ccw")}</button>` : ""}</div>
@@ -3572,7 +3572,7 @@ const CHECK_ICONS = { queued: "circle-dashed", running: "loader", passed: "circl
 function checkRow(c) {
   if (!c || (!c.runs.length && !c.gate.required.length && !c.where)) return "";
   const runs = c.runs.map((r) => {
-    const label = `${icon(CHECK_ICONS[r.status])}${esc(r.name)} <span class="muted">${r.runner === "github" ? "GitHub" : esc(r.runner)} · ${r.status}</span>`;
+    const label = `${icon(CHECK_ICONS[r.status])}${esc(r.name)} <span class="muted">${r.runner === "github" ? "GitHub" : esc(r.runner === "external" && r.runner_label || r.runner)} · ${r.status}</span>`;
     return `<span class="check ${r.status}" title="${esc(r.name)}: ${r.status}">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${label}</a>` : label}</span>`;
   }).join("");
   const g = c.gate, why = g.ok ? "" : [g.failed.length && `${g.failed.join(", ")} failed`, g.waiting.length && `waiting on ${g.waiting.join(", ")}`].filter(Boolean).join("; ");
@@ -3595,12 +3595,40 @@ async function wireCheckHead(el, owner, repo, r) {
   const down = s.offline ? `<span class="muted">${icon("cloud-off")} GitHub has been down${s.down_since ? ` since ${new Date(s.down_since).toLocaleTimeString()}` : ""}. Keep going: commits, branches and merges work here, checks run on this machine, and everything syncs to GitHub when it's back.</span>` : "";
   const mainRow = main?.runs.length ? `<div class="commit"><code>main</code><span class="muted">checks on the latest commit${s.github ? ", GitHub's included once it has them" : ""}</span>${checkRow(main)}</div>` : "";
   if (!pick && !down && !mainRow) return;
-  el.insertAdjacentHTML("beforebegin", `<div id="checkhead" class="commit" style="display:block">${pick}${down ? `<div>${down}</div>` : ""}${mainRow}</div>`);
+  const ci = isOwner ? `<details id="citokens" style="margin-top:6px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("key-round")} CI tokens: report checks from Jenkins, CircleCI or any CI that talks to GitHub</summary><div class="body"></div></details>` : "";
+  el.insertAdjacentHTML("beforebegin", `<div id="checkhead" class="commit" style="display:block">${pick}${down ? `<div>${down}</div>` : ""}${mainRow}${ci}</div>`);
+  $("#citokens")?.addEventListener("toggle", (e) => { if (e.target.open) wireCiTokens(owner, repo); }, { once: true });
   $("#check-where")?.addEventListener("change", async (e) => {
     try { await api(`/repos/${owner}/${repo}/checks/settings`, { where: e.target.value || null }, "PUT"); toast(e.target.value === "here" ? "Checks run here now: local first" : "Saved"); route(); }
     catch (err) { toast(err.message); }
   });
   icons();
+}
+
+// A repo's CI tokens (GET|POST /api/repos/:o/:r/checks/tokens, DELETE …/:id; src/gh-compat.ts), in the checks head, for its owner.
+// External CI points its GitHub API base URL at /api/gh/v3 and sends one as its GitHub token. A new one's secret shows once, masked.
+const ghBase = () => `${location.origin}/api/gh/v3`;
+async function wireCiTokens(owner, repo, made) {
+  const el = $("#citokens .body");
+  if (!el) return;
+  const base = `/repos/${owner}/${repo}/checks/tokens`, list = await api(base).catch(() => []);
+  const fresh = made ? `<div style="display:grid;gap:4px;margin:6px 0"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again. Give it to your CI as its GitHub token.</span>
+      <div class="copyline"><input readonly value="${esc(masked(made.token))}" title="hidden: copy it with the button"><button class="btn" id="citoken-copy" title="copy the token">${icon("copy")}</button></div></div>` : "";
+  el.innerHTML = `<div style="display:grid;gap:4px;margin:6px 0"><span class="muted" style="font-size:12px">Set your CI's GitHub API URL (the GitHub Enterprise option) to this, and its statuses and check runs land here, gating merges like any other check.</span>
+      <div class="copyline"><input readonly value="${esc(ghBase())}"><button class="btn" id="ghbase-copy" title="copy the URL">${icon("copy")}</button></div></div>` + fresh
+    + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon("server")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· …${esc(t.last4)} · made ${ago(t.created_at)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : " · never used"}</span></span>
+      <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("")}</div>
+    <form id="newcitoken" style="display:flex;gap:6px;margin:8px 0 4px"><input name="label" placeholder="which CI, like jenkins" maxlength="60" required style="flex:1;min-width:0"><button class="btn primary">${icon("plus")}Make</button></form>`;
+  icons();
+  $("#ghbase-copy").addEventListener("click", () => copy(ghBase(), "URL copied"));
+  $("#citoken-copy")?.addEventListener("click", () => copy(made.token, "Token copied"));
+  $("#newcitoken").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try { wireCiTokens(owner, repo, await api(base, { label: e.target.elements.label.value })); } catch (err) { toast(err.message); }
+  });
+  el.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
+    try { await api(`${base}/${b.dataset.revoke}`, undefined, "DELETE"); toast("CI token revoked"); wireCiTokens(owner, repo); } catch (err) { toast(err.message); }
+  }));
 }
 
 async function commands() {

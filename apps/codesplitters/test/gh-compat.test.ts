@@ -59,7 +59,8 @@ test("POST statuses/:sha: a run per context, moved on, read back, and in GET /ch
   const posted = await github(`/statuses/${SHA}`, { state: "pending", context: "ci/jenkins", target_url: "https://ci.example/1", description: "building" });
   expect(posted.status).toBe(201);
   expect(await posted.json()).toMatchObject({ context: "ci/jenkins", state: "pending", target_url: "https://ci.example/1", description: "building" });
-  expect((await checks()).runs).toMatchObject([{ name: "ci/jenkins", runner: "external", status: "running", sha: SHA, url: "https://ci.example/1" }]);
+  // The token's label names the CI in the checks pill.
+  expect((await checks()).runs).toMatchObject([{ name: "ci/jenkins", runner: "external", runner_label: "jenkins", status: "running", sha: SHA, url: "https://ci.example/1" }]);
 
   await github(`/statuses/${SHA}`, { state: "success", context: "ci/jenkins", description: "all good" });
   await github(`/statuses/${SHA}`, { state: "error", context: "ci/lint" });
@@ -129,7 +130,7 @@ test("an external run waiting in the queue is never a bring-your-own runner's to
   const queued = await (await github("/check-runs", { name: "test", head_sha: SHA, status: "queued" })).json() as any;
   expect((await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box-a" })).status).toBe(204);
   expect((await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box-a", names: ["test"] })).status).toBe(204);
-  expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${queued.id}`)).json()).toMatchObject({ runner: "external", status: "queued", runner_label: null });
+  expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${queued.id}`)).json()).toMatchObject({ runner: "external", status: "queued", runner_label: "jenkins" });   // the CI token's, not box-a
 });
 
 test("0043_ci_tokens widens check_runs.runner and keeps the rows, columns and indexes 0041_check_claims added", async () => {
@@ -169,4 +170,30 @@ test("0043_ci_tokens widens check_runs.runner and keeps the rows, columns and in
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("each CI token counts against the ci rate limit, from the internet", async () => {
+  const { call, send, made } = await app();
+  await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('ci', 2, 3600, 1, 'reject')").run();
+  const report = (token: string, ip = "203.0.113.7") => call(null, `${GH}/statuses/${SHA}`, { method: "POST", headers: { authorization: `token ${token}`, "cf-connecting-ip": ip }, body: JSON.stringify({ state: "pending" }) });
+  expect((await report(made.token)).status).toBe(201);
+  expect((await report(made.token, "198.51.100.1")).status).toBe(201);
+  const over = await report(made.token);
+  expect(over.status).toBe(429);
+  expect(Number(over.headers.get("retry-after"))).toBeGreaterThan(0);
+  expect(await over.json()).toMatchObject({ message: expect.stringMatching(/ci reports is limited to 2 per hour/) });
+  // Another token has its own count, and runs from the desktop and tests (no cf-connecting-ip) aren't counted.
+  const other = await (await send("ryan", "/api/repos/ryan/lab/checks/tokens", { label: "circle" })).json() as { token: string };
+  expect((await report(other.token)).status).toBe(201);
+  expect((await call(null, `${GH}/statuses/${SHA}`, { method: "POST", headers: { authorization: `token ${made.token}` }, body: JSON.stringify({ state: "success" }) })).status).toBe(201);
+});
+
+test("CI tokens are MCP tools", async () => {
+  const { call } = await app();
+  const tools = (await (await call(null, "/api/mcp/tools")).json()) as { name: string; http: string }[];
+  expect(tools.filter((t) => t.name.includes("ci_token")).map((t) => `${t.name} ${t.http}`).sort()).toEqual([
+    "create_ci_token POST /api/repos/{owner}/{repo}/checks/tokens",
+    "list_ci_tokens GET /api/repos/{owner}/{repo}/checks/tokens",
+    "revoke_ci_token DELETE /api/repos/{owner}/{repo}/checks/tokens/{id}",
+  ]);
 });

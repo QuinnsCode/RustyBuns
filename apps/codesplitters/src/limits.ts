@@ -1,7 +1,8 @@
 // Rate limits on what costs money or invites abuse: signing in and up, digging
 // up repos (Artifacts imports), the GitHub calls the site's token pays for,
 // commits (Artifacts pushes), live line edits, and the things a spammer would
-// make by the thousand. Each rule counts per caller (their handle, else their IP) in fixed
+// make by the thousand, and external CI's reports. Each rule counts per caller (their
+// handle, else their IP; a CI token for external CI's reports) in fixed
 // windows, in D1. Admins tune them on the rate limits page (#/admin/limits,
 // GET|PUT /api/admin/limits): each rule's cap and window, and what happens to a
 // caller over it: reject (a 429), log (let it through, note it), flag (let it
@@ -38,7 +39,7 @@ import { actingAs } from "./identity.ts";
 
 export const ACTIONS = ["reject", "log", "flag", "queue"] as const;
 export type Action = (typeof ACTIONS)[number];
-export interface Rule { name: string; label: string; what: string; group: string; per: "ip" | "user"; max: number; window_s: number; on_fail: Action; queueable?: true }
+export interface Rule { name: string; label: string; what: string; group: string; per: "ip" | "user" | "token"; max: number; window_s: number; on_fail: Action; queueable?: true }
 
 const MIN = 60, HOUR = 3600, DAY = 86400;
 export const RULES: Rule[] = [
@@ -60,6 +61,7 @@ export const RULES: Rule[] = [
   { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", group: "Agents", per: "user", max: 20, window_s: DAY, on_fail: "reject" },
   { name: "preview", label: "Preview deploys", what: "stacks stood up and torn down to try a repo", group: "Deploys and checks", per: "user", max: 6, window_s: HOUR, on_fail: "reject", queueable: true },
   { name: "deploy", label: "Deploys", what: "deploys started with the Deploy button (hosted, on the owner's deploy key)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "flag" },
+  { name: "ci", label: "CI reports", what: "statuses and check runs external CI sends to /api/gh/v3, counted per CI token", group: "Deploys and checks", per: "token", max: 600, window_s: HOUR, on_fail: "reject" },
   { name: "doctor", label: "Dependency checks", what: "dependency-doctor runs started by hand (registry lookups, installs and tests)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "reject", queueable: true },
 ];
 
@@ -120,10 +122,11 @@ export async function usage(env: Env, user: string) {
 
 const ipOf = (req: Request) => req.headers.get("cf-connecting-ip");
 
-/** Who a request counts as under a rule, or null when it isn't counted (not from the internet, an admin, or no such rule). */
+/** Who a request counts as under a rule, or null when it isn't counted (not from the internet, an admin, or no such rule). A `token` rule's `user` is the CI token. */
 export function counted(req: Request, rule: string | null, user: string | null, admin: boolean): string | null {
   const ip = ipOf(req), r = RULES.find((d) => d.name === rule);
   if (!r || !ip || admin) return null;
+  if (r.per === "token") return user ? `ci:${user}` : ip;
   return r.per === "user" && user ? `@${user}` : ip;
 }
 

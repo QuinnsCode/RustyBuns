@@ -147,7 +147,7 @@ export const GROUPS: Group[] = [
   },
   {
     name: "GitHub-shaped checks, for external CI",
-    about: "Set your CI's GitHub API base URL (the GitHub Enterprise option) to /api/gh/v3 on this site and give it a CI token (Authorization: token … or Bearer …): what it reports lands in the repo's checks as external runs, gating merges like any other. Only these calls, shaped like GitHub's: errors are {message}, a missing or wrong token is 404 or 401.",
+    about: "Set your CI's GitHub API base URL (the GitHub Enterprise option) to /api/gh/v3 on this site and give it a CI token (Authorization: token … or Bearer …): what it reports lands in the repo's checks as external runs, gating merges like any other. Only these calls, shaped like GitHub's: errors are {message}, a missing or wrong token is 404 or 401. Each token's calls count against the `ci` rate limit, a 429 with retry-after past it; its label names the runs it reports (runner_label).",
     endpoints: [
       { method: "POST", path: "/api/gh/v3/repos/:o/:r/statuses/:sha", body: "{state: pending | success | failure | error, context?, target_url?, description?}", who: "a CI token", does: "a commit status: one run per context, pending running, success passed, failure and error failed; the same context again moves it on, or starts it again once it's finished" },
       { method: "GET", path: "/api/gh/v3/repos/:o/:r/commits/:sha/status", who: "a CI token", does: "the sha's combined status: {state, sha, total_count, statuses}" },
