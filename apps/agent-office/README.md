@@ -22,6 +22,47 @@ network you don't trust: the office runs shells and agents as you, and over plai
 cookie cross the wire in the clear. For HTTPS, voice and teams, follow its README; its `deploy/` scripts
 install Node and `npm ci`, and this binary can stand in for that step.
 
+## 📱 From your phone
+
+Agent Office already has a phone view: **`/lite`** is the office without the 3D. It shows every worker and what
+it's waiting on, its terminal (with the keys a phone keyboard lacks, so you can read the prompt and answer it), the
+📌 issues, 🔀 PRs and 📋 queue boards, and ✨ New task to put a worker at a desk. What it lacks is a way for your phone
+to reach the office on your Mac, which listens on `127.0.0.1` only. `office:phone` adds an HTTPS tunnel to it and
+prints the link:
+
+```sh
+bun run office                       # the office, as usual
+bun run office:phone                 # Tailscale: https://<this-mac>.<tailnet>.ts.net/lite
+bun run office:phone -- --off        # stop serving it
+```
+
+| | Tailscale (default) | Cloudflare Tunnel + Access | Cloudflare quick tunnel (`--public`) |
+|---|---|---|---|
+| Who can reach the login | your devices on your tailnet | only people Access lets in (e.g. a one-time code to your email) | anyone with the link |
+| Setup | Tailscale on the Mac and the phone, HTTPS on in the tailnet (Serve prompts the first time) | `cloudflared`, a domain on Cloudflare, a named tunnel and an Access app | `brew install cloudflared` |
+| Link | fixed | fixed, your own domain | new every run |
+| Cost | free (personal plan) | free (Zero Trust, up to 50 users) | free |
+
+**Use Tailscale.** Nothing is on the internet, the phone app keeps you connected, and the link never changes.
+Cloudflare suits a phone or a teammate you can't put on the tailnet:
+
+```sh
+cloudflared tunnel login && cloudflared tunnel create office
+cloudflared tunnel route dns office office.example.com
+# Zero Trust → Access → Applications: a self-hosted app on office.example.com, allowing your email
+bun run office:phone -- --cloudflare --tunnel office --hostname office.example.com
+```
+
+**Passwords.** The tunnel only carries traffic. The office's own sign-in still guards every page and socket. The
+link opens `/login?next=/lite`; sign in with the office password once and the session cookie lasts on the phone. Better,
+make yourself an account in **☰ → 🔑 Accounts**, then turn the shared password off (upstream's
+[Add users](https://github.com/AgentSystemLabs/agent-office#add-users) guide). With Tailscale or Access in
+front, that's two locks: the network, and the office. A `--public` quick tunnel leaves only the office's password and
+its 10-tries-per-window login limit, and behind a tunnel every visitor shares that limit, so an attacker can lock you
+out. Keep quick tunnels short.
+
+Tip: add `/lite` to your phone's home screen and it opens like an app.
+
 ## How
 
 Nothing is forked. `scripts/rustybunsify.ts` downloads a pinned release tarball and checks its sha256
