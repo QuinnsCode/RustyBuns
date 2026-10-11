@@ -1,7 +1,7 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
 
-// created_at / updated_at come from migration 0060's triggers (#747), end to end (in-process D1).
+// created_at / updated_at come from migration 0062's triggers (#747), end to end (in-process D1).
 setDefaultTimeout(20_000);
 
 const opened: { close(): void }[] = [];
@@ -12,7 +12,7 @@ async function app() {
   opened.push(call);
   for (const u of ["boss", "ryan", "mia"]) await call(u, "/api/login", { method: "POST", body: JSON.stringify({ name: u }) });
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
-  const row = (sql: string, ...args: unknown[]) => call.env.DB.prepare(sql).bind(...args).first<any>();
+  const row = (sql: string, ...args: unknown[]) => call.env.DB.prepare(sql).bind(...args).first() as Promise<any>;
   return { call, send, row };
 }
 
