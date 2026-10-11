@@ -63,7 +63,8 @@ export interface StoragePort {
   get<T = unknown>(key: string): Promise<T | undefined>;
   put<T = unknown>(key: string, value: T): Promise<void>;
   delete(key: string): Promise<boolean>;
-  list<T = unknown>(opts?: { prefix?: string; limit?: number }): Promise<Map<string, T>>;
+  /** Keys in order. `start` is the first key it may return, `end` the first it may not (Cloudflare's range). */
+  list<T = unknown>(opts?: { prefix?: string; start?: string; end?: string; limit?: number }): Promise<Map<string, T>>;
   setAlarm(at: number): Promise<void>;
   deleteAlarm(): Promise<void>;
   /** SQLite, as Cloudflare's `ctx.storage.sql` (SQLite-backed DOs). */

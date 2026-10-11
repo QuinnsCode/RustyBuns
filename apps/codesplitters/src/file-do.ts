@@ -5,7 +5,9 @@
 // Storage is the plain key/value API (get, single-key put, prefix list) so the same class runs on
 // Cloudflare and in-process under Bun with sqlite behind it.
 //   doc, doc:<n>   the current lines, a manifest and runs of lines (doc-store.ts)
-//   op:<rev>       one applied op per key (the log)
+//   op:<rev>       one applied op per key (the log), read by key range, never whole
+//   snap:<rev>     the doc as it was at rev, every SNAP_EVERY ops, chunked like the doc; `snaps` lists them
+//   trimmed        the rev history starts after: older ops and snapshots are gone (#625)
 //   commit:<n>     a snapshot: sha, parent, rev, message, and who edited the file since the last one
 //   base, base:<n> on a branch's copy of a file: main's doc when it forked, chunked the same way
 //   private        ids of lines only the crew may read (in a public repo too)
@@ -32,6 +34,15 @@ interface Commit { n: number; sha: string; parent: string | null; rev: number; b
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 
 const pad = (n: number) => String(n).padStart(10, "0");
+/** One read of the log takes this many ops at most, so no read holds the whole log in memory. */
+const OP_PAGE = 1000;
+/** The doc is snapshotted every this many ops, so time travel replays at most this many. */
+export const SNAP_EVERY = 2000;
+/** Snapshots kept: history reaches back KEEP_SNAPS * SNAP_EVERY ops; the ops before the oldest go. */
+export const KEEP_SNAPS = 10;
+
+/** Asked for history from before `trimmed`. */
+class Trimmed extends Error { constructor(readonly from: number) { super(`history before rev ${from} is trimmed: read the file instead`); } }
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
 
 type Shown = Line & { private?: true };
@@ -72,6 +83,11 @@ export class FileDurableObject {
   /** Where the doc and the base sit in storage, in chunks, so an edit writes only what it touched. */
   docs: DocStore;
   bases: DocStore;
+  /** Revs the doc was snapshotted at, oldest first, and the rev history starts after. */
+  snaps: number[] = [];
+  trimmed = 0;
+  /** Old ops still being deleted, a page per edit. */
+  sweeping: Promise<unknown> = Promise.resolve();
 
   constructor(private ctx: any, private env: Env) {
     this.edits = new Tally(env, "edit");
@@ -83,6 +99,10 @@ export class FileDurableObject {
       this.base = await this.bases.load();
       this.secret = new Set((await ctx.storage.get("private")) ?? []);
       this.where = (await ctx.storage.get("where")) ?? null;
+      this.snaps = (await ctx.storage.get("snaps")) ?? [];
+      this.trimmed = (await ctx.storage.get("trimmed")) ?? 0;
+      // A sweep the object was evicted in the middle of picks up where it stopped.
+      if (this.trimmed) this.sweeping = this.sweep().catch(() => {});
       for (const c of ((await ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
     });
   }
@@ -115,8 +135,13 @@ export class FileDurableObject {
       const r = await this.edit(by, ops, ifRev, claim);
       return r.ok ? json({ rev: r.rev, applied: r.applied }) : json({ rev: r.rev, conflicts: r.conflicts }, 409);
     }
-    if (req.method === "GET" && route === "log") return json(this.hide(await this.log(Number(url.searchParams.get("since") ?? 0)), crew));
-    if (req.method === "GET" && route === "at") return json(this.shown(replay(await this.log(0), Number(url.searchParams.get("rev")), this.base ?? empty()), crew));
+    try {
+      if (req.method === "GET" && route === "log") return json(this.hide(await this.log(Number(url.searchParams.get("since") ?? 0)), crew));
+      if (req.method === "GET" && route === "at") return json(this.shown(await this.at(Number(url.searchParams.get("rev"))), crew));
+    } catch (e) {
+      if (e instanceof Trimmed) return json({ error: e.message, from: e.from }, 410);
+      throw e;
+    }
     if (req.method === "GET" && route === "base") return json(this.base && this.shown(this.base, crew));
     if (req.method === "GET" && route === "private") return json([...this.secret]);
     if (req.method === "POST" && route === "private") {
@@ -146,7 +171,7 @@ export class FileDurableObject {
       // Its repo was evicted: forget everything.
       const all: Map<string, unknown> = await this.ctx.storage.list();
       await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
-      [this.doc, this.base, this.commits, this.secret, this.where] = [empty(), null, 0, new Set(), null];
+      [this.doc, this.base, this.commits, this.secret, this.where, this.snaps, this.trimmed] = [empty(), null, 0, new Set(), null, [], 0];
       this.docs.clear(); this.bases.clear();
       this.claims.clear(); this.claimOf.clear(); this.recent.clear();
       return json({ ok: true });
@@ -194,7 +219,7 @@ export class FileDurableObject {
     const commit: Commit = {
       n: this.commits + 1, sha: await sha((prev?.sha ?? "") + "\n" + content), parent: prev?.sha ?? null,
       rev: this.doc.rev, by, at: Date.now(), message: message || "commit",
-      writers: [...new Set((await this.log(prev?.rev ?? 0)).map((a) => a.by))].sort(),
+      writers: await this.writers(prev?.rev ?? 0),
     };
     this.commits = commit.n;
     await Promise.all([this.ctx.storage.put("commit:" + pad(commit.n), commit), this.ctx.storage.put("commits", this.commits)]);
@@ -217,6 +242,7 @@ export class FileDurableObject {
     if (!r.ok) return { ok: false as const, rev: this.doc.rev, conflicts: r.conflicts };
     if (this.claimOf.size) await this.follow(typeof by === "string" ? by : "", r.applied, claim);
     await Promise.all([...this.docs.save(this.doc, r.applied.map((a) => a.line)), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad(a.rev), a))]);
+    if (this.doc.rev - (this.snaps.at(-1) ?? this.base?.rev ?? 0) >= SNAP_EVERY) await this.snapshot();
     const msg = (crew: boolean) => JSON.stringify({ type: "ops", rev: this.doc.rev, applied: this.hide(r.applied, crew) });
     const [toCrew, toOthers] = [msg(true), msg(false)];
     for (const ws of this.ctx.getWebSockets()) try { ws.send(ws.deserializeAttachment?.()?.write ? toCrew : toOthers); } catch {}
@@ -228,10 +254,63 @@ export class FileDurableObject {
     return { ok: true as const, rev: this.doc.rev, applied: r.applied };
   }
 
+  /** Every op after rev `since` (up to `until`), a page at a time by key range, so a long log is never read whole. */
+  async *ops(since: number, until = Infinity): AsyncGenerator<Applied> {
+    if (since < this.trimmed) throw new Trimmed(this.trimmed);
+    let from = since + 1;
+    while (from <= until) {
+      const m: Map<string, Applied> = await this.ctx.storage.list({ prefix: "op:", start: "op:" + pad(from), limit: OP_PAGE });
+      for (const a of m.values()) { if (a.rev > until) return; yield a; from = a.rev + 1; }
+      if (m.size < OP_PAGE) return;
+    }
+  }
+
   async log(since: number): Promise<Applied[]> {
-    // Only prefix lists: that is the storage shape both Cloudflare and the local twin share.
-    const m: Map<string, Applied> = await this.ctx.storage.list({ prefix: "op:" });
-    return [...m.values()].filter((a) => a.rev > since);
+    const out: Applied[] = [];
+    for await (const a of this.ops(since)) out.push(a);
+    return out;
+  }
+
+  /** Who edited after rev `since`; what was trimmed counts from where history starts. */
+  async writers(since: number): Promise<string[]> {
+    const who = new Set<string>();
+    for await (const a of this.ops(Math.max(since, this.trimmed))) who.add(a.by);
+    return [...who].sort();
+  }
+
+  /** Time travel: the doc as it was at rev, from the last snapshot at or before it, or from the start. */
+  async at(rev: number): Promise<Doc> {
+    if (rev < this.trimmed) throw new Trimmed(this.trimmed);
+    const snap = this.snaps.findLast((n) => n <= rev);
+    const from = snap === undefined ? this.base ?? empty() : (await new DocStore(this.ctx.storage, "snap:" + pad(snap)).load()) ?? empty();
+    const log: Applied[] = [];
+    for await (const a of this.ops(snap ?? 0, rev)) log.push(a);
+    return replay(log, rev, from);
+  }
+
+  /**
+   * Snapshot the doc as it is now, and past KEEP_SNAPS let the oldest go with every op up to the
+   * one after it: history then starts at that snapshot. The ops themselves go a page at a time.
+   */
+  async snapshot() {
+    const rev = this.doc.rev;
+    this.snaps.push(rev);
+    const drop = this.snaps.length > KEEP_SNAPS ? this.snaps.shift()! : null;
+    if (drop !== null) this.trimmed = this.snaps[0];
+    await Promise.all([...new DocStore(this.ctx.storage, "snap:" + pad(rev)).replace(this.doc), this.ctx.storage.put("snaps", this.snaps), this.ctx.storage.put("trimmed", this.trimmed)]);
+    if (drop === null) return;
+    const gone: Map<string, unknown> = await this.ctx.storage.list({ prefix: "snap:" + pad(drop) });
+    await Promise.all([...gone.keys()].map((k) => this.ctx.storage.delete(k)));
+    this.sweeping = this.sweeping.then(() => this.sweep()).catch(() => {});
+  }
+
+  /** Delete the ops history no longer reaches, a page at a time. */
+  async sweep() {
+    for (;;) {
+      const m: Map<string, unknown> = await this.ctx.storage.list({ prefix: "op:", end: "op:" + pad(this.trimmed + 1), limit: OP_PAGE });
+      await Promise.all([...m.keys()].map((k) => this.ctx.storage.delete(k)));
+      if (m.size < OP_PAGE) return;
+    }
   }
 
   /** The doc as this reader may see it: private lines flagged, and blank unless they're crew. */

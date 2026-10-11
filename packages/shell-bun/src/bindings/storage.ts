@@ -39,9 +39,9 @@ export function storage(path: string = ":memory:", opts: StorageOptions | (() =>
     async delete(key) {
       return db.query("DELETE FROM storage WHERE key = ?").run(key).changes > 0;
     },
-    async list<T>(opts?: { prefix?: string; limit?: number }) {
-      const rows = db.query("SELECT key, value FROM storage WHERE key LIKE ? ORDER BY key LIMIT ?")
-        .all((opts?.prefix ?? "") + "%", opts?.limit ?? 10_000) as { key: string; value: string | Uint8Array }[];
+    async list<T>(opts?: { prefix?: string; start?: string; end?: string; limit?: number }) {
+      const rows = db.query("SELECT key, value FROM storage WHERE key LIKE ? AND (?2 IS NULL OR key >= ?2) AND (?3 IS NULL OR key < ?3) ORDER BY key LIMIT ?4")
+        .all((opts?.prefix ?? "") + "%", opts?.start ?? null, opts?.end ?? null, opts?.limit ?? 10_000) as { key: string; value: string | Uint8Array }[];
       return new Map(rows.map((r) => [r.key, dec<T>(r.value)]));
     },
     async setAlarm(at) {
