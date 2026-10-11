@@ -10,11 +10,19 @@ the office itself, on Bun, as **one file** you can copy to any Mac or Linux box.
 ```sh
 cd apps/agent-office
 bun run office                 # fetch the pinned release, Bun-ify it, open the office
-bun run office:update          # git pull, rebuild, then start it (or reload the page if it's up)
+bun run office:update          # git pull, rebuild, then swap the running office for the new one
+bun run office:update -- --watch   # the same, then keep watching like office:mama
+bun run office:mama            # run the office; rebuild and swap it when bun, bun.lock or the release move
 bun run desktop:build          # dist/agent-office-<os>-<arch>
 bun run desktop:build:all      # + darwin-x64, linux-x64, linux-arm64
 bun run desktop:smoke          # start that binary on a temp floor, check /__rb/mem sees it and its pty host
 ```
+
+The swap is a SIGTERM, which upstream treats as a restart: the workers' terminals live in a detached pty host,
+so they keep running and the new office shows them with their scrollback. (Ctrl+C is different: it closes the
+office and its workers.) A failed pull or build leaves the old office up, and `office:update` leaves alone an
+office on the port that isn't this checkout's. One caveat: a new Agent Office release that bumps `PTY_PROTOCOL`
+makes the new office stop the old pty host, and Claude workers are then resumed rather than kept.
 
 Then copy `./dist/agent-office-linux-x64` to a server and run it there, with all of Agent Office's own flags.
 Like upstream, it listens on `127.0.0.1` behind the office password, so reach it with
