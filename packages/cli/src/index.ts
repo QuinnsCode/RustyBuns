@@ -23,6 +23,7 @@ import { adoptNote, alchemyStage, linkSharedState, lockState, unlinkSharedState 
 import { commitsBehindMain, statefulDeletes } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
+import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { PROF_SECRET, boxUrl, fetchProfile, secretProblem } from "./prof.ts";
 import { TRIAGE_USAGE, triage } from "./triage.ts";
@@ -377,6 +378,9 @@ function underVarlock(cfg: RustyBunsConfig, cmd: string[], env: Record<string, s
   return [...varlockCli(), "run", "--path", ENV_SCHEMA, "--", ...cmd];
 }
 
+/** The Cloudflare API token the last runAlchemy handed Alchemy, if it had one; the post-deploy settings use it too. */
+let cloudflareToken: string | undefined;
+
 /** Run the project-local alchemy with the terminal attached, so its prompts work. */
 async function runAlchemy(args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}): Promise<number> {
   let cmd = [...alchemyCli(), ...args];
@@ -386,6 +390,7 @@ async function runAlchemy(args: string[], cfg?: RustyBunsConfig, extra: Record<s
   if (cfg?.targets.edge) {
     const w = wranglerCli();
     Object.assign(env, (await cloudflareEnv(cfg, env, w && realWrangler(w), console.log, Boolean(process.stdin.isTTY && process.stdout.isTTY))) ?? {});
+    cloudflareToken = env.CLOUDFLARE_API_TOKEN;
   }
   if (cfg?.experimental?.wheel && existsSync(ENV_SCHEMA)) cmd = underVarlock(cfg, cmd, env);
   const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"], env });
@@ -494,9 +499,27 @@ async function alchemy(sub: string, rawArgs: string[]) {
   const code = await prof.step(`alchemy ${sub}`, () => runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args], cfg, buildEnv));
   if (profiled) await prof.finish();
   if (code !== 0) process.exit(code);
+  if (sub === "deploy" && edgeOn(cfg) && cfg.worker?.redactQueryStrings) await redactAfterDeploy(cfg, alchemyStage(args));
   if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"
     ? "\nthe box bills by usage from now on (less while asleep); `rustybuns destroy` stops it."
     : "\nthe box bills hourly from now on; `rustybuns destroy` stops it.");
+}
+
+/** worker.redactQueryStrings: the upload just reset it, so set it again (src/redact.ts). A miss warns; the deploy itself went out. */
+async function redactAfterDeploy(cfg: RustyBunsConfig, stage: string) {
+  const manual = "Deploy again with CLOUDFLARE_API_TOKEN set, or PATCH the Worker's script-settings with observability.redact_query_string: true.";
+  const w = deployedWorker(process.cwd(), cfg.name, stage);
+  if (!w || !cloudflareToken) {
+    console.warn(`\nwarning: worker.redactQueryStrings: ${w ? "no Cloudflare API token (Alchemy used its own profile)" : `no Worker in the Alchemy state for stage ${stage}`}, so Workers Logs may keep query strings. ${manual}`);
+    return;
+  }
+  try {
+    const r = await redactQueryStrings({ ...w, token: cloudflareToken });
+    console.log(r === "off" ? `\n${w.workerName} has no Workers Logs settings, so there are no query strings to redact.`
+      : `\nWorkers Logs for ${w.workerName} keep URLs without their query strings${r === "already" ? " (already on)" : ""}.`);
+  } catch (e) {
+    console.warn(`\nwarning: worker.redactQueryStrings: ${(e as Error).message}. ${manual}`);
+  }
 }
 
 /** `rustybuns prof`: sample the deployed box's CPU and save the .cpuprofile here. */
