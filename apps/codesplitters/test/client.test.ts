@@ -114,6 +114,17 @@ describe("what changed since you were last here", () => {
     const localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
     return new Function("localStorage", `${src}; return { lastRevKey, lastRev, sawRev, changedRuns, LAST_REVS };`)(localStorage);
   };
+  /** The account's copy (#779), with fetch and the clock stubbed. */
+  const account = () => {
+    const sent: unknown[] = [], timers = new Map<number, () => void>();
+    let n = 0;
+    const fetch = async (url: string, init: RequestInit) => void sent.push([url, init.method, JSON.parse(init.body as string)]);
+    const setTimeout = (f: () => void) => (timers.set(++n, f), n);
+    const clearTimeout = (id: number) => timers.delete(id);
+    const fns = new Function("localStorage", "fetch", "setTimeout", "clearTimeout", `${src}; return { tellSeen, flushSeen };`)({}, fetch, setTimeout, clearTimeout);
+    const tick = () => { const all = [...timers.values()]; timers.clear(); for (const f of all) f(); };
+    return { ...fns, sent, tick, settle: () => new Promise((ok) => queueMicrotask(() => queueMicrotask(ok))) };
+  };
 
   test("a file's last-seen rev is kept per repo, branch and path", () => {
     const { lastRevKey, lastRev, sawRev } = make();
@@ -140,5 +151,29 @@ describe("what changed since you were last here", () => {
     const now = [{ id: "a", text: "1" }, { id: "b", text: "two" }, { id: "x", text: "new" }, { id: "c", text: "3" }, { id: "e", text: "five" }];
     expect(changedRuns(was, now)).toEqual({ runs: [["b", "x"], ["e"]], gone: 1 });
     expect(changedRuns(was, [...was].map(([id, text]) => ({ id, text })))).toEqual({ runs: [], gone: 0 });
+  });
+
+  test("signed in, a file's rev goes up to the account once it settles, after the account's was read", async () => {
+    const { tellSeen, flushSeen, sent, tick, settle } = account();
+    let read!: () => void;
+    const accountRead = new Promise<void>((ok) => (read = ok));
+    tellSeen("a", 3, accountRead);
+    tellSeen("a", 4, accountRead);
+    tellSeen("b", 1);
+    tick();
+    await settle();
+    // b went; a waits on the read, and goes once, at its latest rev.
+    expect(sent).toEqual([["/api/me/seen", "PUT", { key: "b", rev: 1 }]]);
+    read();
+    await settle();
+    expect(sent.slice(1)).toEqual([["/api/me/seen", "PUT", { key: "a", rev: 4 }]]);
+    // The tab hiding sends what's waiting at once.
+    tellSeen("c", 7);
+    flushSeen();
+    await settle();
+    expect(sent.at(-1)).toEqual(["/api/me/seen", "PUT", { key: "c", rev: 7 }]);
+    tick();
+    await settle();
+    expect(sent).toHaveLength(3);
   });
 });

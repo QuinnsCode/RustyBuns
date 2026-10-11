@@ -63,6 +63,8 @@ export async function exportFor(env: Env, handle: string) {
     steps: await all(env, "SELECT step, first_at, last_at, n FROM user_steps WHERE name = ?", handle),
     // What the home feed shows others of your edits (feed.ts), and your latest digest.
     line_events: await all(env, "SELECT owner, repo, path, sets, inserts, deletes, lines, first_at, last_at FROM line_events WHERE who = ?", handle),
+    // The rev of each file you last saw (seen.ts).
+    last_seen: await all(env, "SELECT key, rev, at FROM last_seen WHERE name = ? ORDER BY at DESC", handle),
     feed_digest: await env.DB.prepare("SELECT harness, status, since, through, text, at FROM feed_digests WHERE name = ?").bind(handle).first(),
   };
 }
@@ -175,6 +177,7 @@ export async function eraseUser(env: Env, handle: string, { scrub = false } = {}
     by("DELETE FROM line_events WHERE who = ?", handle),
     by("DELETE FROM audit WHERE actor = ? OR owner = ?", handle, handle),
     by("DELETE FROM feed_digests WHERE name = ?", handle),
+    by("DELETE FROM last_seen WHERE name = ?", handle),
     // evict leaves these: agent runs (the tasks you gave) and the limits counted against you.
     by("DELETE FROM agent_runs WHERE owner = ?", handle),
     by("DELETE FROM limit_hits WHERE who = ?", `@${handle}`),
