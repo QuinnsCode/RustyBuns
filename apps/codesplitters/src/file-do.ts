@@ -13,6 +13,7 @@
 //   private        ids of lines only the crew may read (in a public repo too)
 //   claim:<id>     who is working on which lines right now (see Claim), one key each
 //   where          [owner, repo, path] on main's copy, so its edits reach the home feed (feed.ts)
+//   branch         [owner, repo, branch] on a branch's copy, so its edits mark the branch changed (checks.ts)
 //
 // Private lines: the Worker says whether the caller is crew
 // (`x-codesplitters-crew: 1`); everyone else gets each private line as a
@@ -23,6 +24,7 @@
 import type { Env } from "./env.ts";
 import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
+import { branchEdited } from "./checks.ts";
 import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
@@ -75,6 +77,8 @@ export class FileDurableObject {
   leaving = new Set<unknown>();
   /** Main's copy knows where it lives (the Worker says so), so its edits go into the feed's line events. */
   where: [string, string, string] | null = null;
+  /** A branch's copy knows which branch it is, so an edit marks the branch changed since its checks. */
+  onBranch: [string, string, string] | null = null;
   /** Each writer's line event still being folded into, and the writes to D1, one after another. */
   recent = new Map<string, Recent>();
   logging: Promise<unknown> = Promise.resolve();
@@ -99,6 +103,7 @@ export class FileDurableObject {
       this.base = await this.bases.load();
       this.secret = new Set((await ctx.storage.get("private")) ?? []);
       this.where = (await ctx.storage.get("where")) ?? null;
+      this.onBranch = (await ctx.storage.get("branch")) ?? null;
       this.snaps = (await ctx.storage.get("snaps")) ?? [];
       this.trimmed = (await ctx.storage.get("trimmed")) ?? 0;
       // A sweep the object was evicted in the middle of picks up where it stopped.
@@ -116,6 +121,11 @@ export class FileDurableObject {
     if (where && decodeURIComponent(where) !== JSON.stringify(this.where)) {
       this.where = JSON.parse(decodeURIComponent(where));
       await this.ctx.storage.put("where", this.where);
+    }
+    const onBranch = req.headers.get("x-codesplitters-branch");
+    if (onBranch && decodeURIComponent(onBranch) !== JSON.stringify(this.onBranch)) {
+      this.onBranch = JSON.parse(decodeURIComponent(onBranch));
+      await this.ctx.storage.put("branch", this.onBranch);
     }
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
@@ -171,7 +181,7 @@ export class FileDurableObject {
       // Its repo was evicted: forget everything.
       const all: Map<string, unknown> = await this.ctx.storage.list();
       await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
-      [this.doc, this.base, this.commits, this.secret, this.where, this.snaps, this.trimmed] = [empty(), null, 0, new Set(), null, [], 0];
+      [this.doc, this.base, this.commits, this.secret, this.where, this.onBranch, this.snaps, this.trimmed] = [empty(), null, 0, new Set(), null, null, [], 0];
       this.docs.clear(); this.bases.clear();
       this.claims.clear(); this.claimOf.clear(); this.recent.clear();
       return json({ ok: true });
@@ -255,6 +265,11 @@ export class FileDurableObject {
     if (this.where) {
       const [owner, repo, path] = this.where;
       this.logging = this.logging.then(() => recordEdits(this.env, { owner, repo, path }, r.applied, this.recent, claim)).catch(() => {});
+    }
+    // A branch's edit: the branch has changed since its checks ran, and may queue a run of them.
+    if (this.onBranch) {
+      const [owner, repo, branch] = this.onBranch, at = r.applied.at(-1)?.at ?? Date.now();
+      this.logging = this.logging.then(() => branchEdited(this.env, owner, repo, branch, at, typeof by === "string" ? by : by[0] ?? "upstream")).catch(() => {});
     }
     return { ok: true as const, rev: this.doc.rev, applied: r.applied };
   }

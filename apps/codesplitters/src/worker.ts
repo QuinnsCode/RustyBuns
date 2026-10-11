@@ -37,7 +37,7 @@ import { openapi } from "./openapi.ts";
 import { catalogue, mcp } from "./mcp.ts";
 import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
-import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts";
+import { checkRoutes, expireQueued, pollGithub, requeueStale, startChecks } from "./checks.ts";
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
 import { scaleRoutes } from "./scale.ts";
@@ -404,6 +404,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         h.set("x-codesplitters-write", a.write ? "1" : "0");
         h.set("x-codesplitters-crew", a.write ? "1" : "0");
         branch ? h.delete("x-codesplitters-file") : h.set("x-codesplitters-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
+        // A branch's copy learns which branch it is, to stamp when the branch last changed (checks.ts).
+        branch ? h.set("x-codesplitters-branch", encodeURIComponent(JSON.stringify([owner, repo, branch]))) : h.delete("x-codesplitters-branch");
         // Its edits count against the edit limit, as the HTTP ones do (the DO counts them).
         const as = a.write ? counted(req, "edit", user, admin) : null;
         as ? h.set("x-codesplitters-limit-as", as) : h.delete("x-codesplitters-limit-as");
@@ -533,7 +535,8 @@ const app = {
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(advanceAll(env, Date.now() + 10 * 60_000));
     // Check runs a runner claimed and then went quiet on go back in the queue (a claim does this too).
-    ctx.waitUntil(requeueStale(env));
+    // and ones no runner has picked up in hours are cancelled, so the merge gate isn't left waiting on them.
+    ctx.waitUntil(requeueStale(env).then(() => expireQueued(env)));
     // Files the vector index doesn't have as committed yet (search.ts); nothing without it.
     ctx.waitUntil(embedDue(env).catch(() => null));
   },
