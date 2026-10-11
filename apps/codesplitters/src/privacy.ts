@@ -102,10 +102,11 @@ export async function revokeSignIns(env: Env, authId: string): Promise<string[]>
 /** Who stands in for a deleted account in other people's repos, like GitHub's @ghost. Retired by migration 0056. */
 export const GHOST = "ghost";
 
-/** Other people's repos `handle` may be named in: crew of, edited, branched, merged, deployed, cut or invited in. */
+/** Other people's repos `handle` may be named in: crew of, edited, branched, merged, deployed, cut or invited in, or on lines copied there (#748). */
 async function touched(env: Env, handle: string): Promise<[string, string][]> {
   const rows = await all(env, `SELECT owner, repo FROM collaborators WHERE name = ?1
     UNION SELECT owner, repo FROM line_events WHERE who = ?1
+    UNION SELECT owner, repo FROM authors WHERE handle = ?1
     UNION SELECT owner, repo FROM branches WHERE by = ?1 OR merged_by = ?1
     UNION SELECT owner, repo FROM deploys WHERE by = ?1
     UNION SELECT owner, repo FROM cuts WHERE by = ?1
@@ -136,6 +137,8 @@ export async function scrubHandle(env: Env, handle: string) {
   await env.DB.batch([
     set("branches", "by"), set("branches", "merged_by"), set("deploys", "by"), set("cuts", "by"),
     set("invites", "by"), set("invites", "target"), set("invites", "claimed_by"),
+    env.DB.prepare("INSERT OR IGNORE INTO authors (owner, repo, handle) SELECT owner, repo, ?1 FROM authors WHERE handle = ?2").bind(GHOST, handle),
+    env.DB.prepare("DELETE FROM authors WHERE handle = ?").bind(handle),
     env.DB.prepare(`INSERT INTO retired_handles (handle, repos, retired_at, scrubbed_at) VALUES (?, '[]', ?, ?)
       ON CONFLICT (handle) DO UPDATE SET repos = '[]', scrubbed_at = excluded.scrubbed_at`).bind(handle, now, now),
   ]);

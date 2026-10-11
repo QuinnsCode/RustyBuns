@@ -14,6 +14,7 @@
 //   claim:<id>     who is working on which lines right now (see Claim), one key each
 //   where          [owner, repo, path] on main's copy, so its edits reach the home feed (feed.ts)
 //   branch         [owner, repo, branch] on a branch's copy, so its edits mark the branch changed (checks.ts)
+//   authors        who is named here that D1's authors already has for the repo, so a scrub finds it (#748)
 //
 // Private lines: the Worker says whether the caller is crew
 // (`x-codesplitters-crew: 1`); everyone else gets each private line as a
@@ -92,6 +93,8 @@ export class FileDurableObject {
   trimmed = 0;
   /** Old ops still being deleted, a page per edit. */
   sweeping: Promise<unknown> = Promise.resolve();
+  /** Handles D1's authors has for this file's repo; null until this copy has noted its lines' (#748). */
+  authors: Set<string> | null = null;
 
   constructor(private ctx: any, private env: Env) {
     this.edits = new Tally(env, "edit");
@@ -106,6 +109,8 @@ export class FileDurableObject {
       this.onBranch = (await ctx.storage.get("branch")) ?? null;
       this.snaps = (await ctx.storage.get("snaps")) ?? [];
       this.trimmed = (await ctx.storage.get("trimmed")) ?? 0;
+      const authors: string[] | undefined = await ctx.storage.get("authors");
+      this.authors = authors ? new Set(authors) : null;
       // A sweep the object was evicted in the middle of picks up where it stopped.
       if (this.trimmed) this.sweeping = this.sweep().catch(() => {});
       for (const c of ((await ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
@@ -127,6 +132,8 @@ export class FileDurableObject {
       this.onBranch = JSON.parse(decodeURIComponent(onBranch));
       await this.ctx.storage.put("branch", this.onBranch);
     }
+    // A file from before #748: its lines' authors, once, now that it knows its repo.
+    if (!this.authors) this.noteAuthors([...this.doc.lines, ...this.base?.lines ?? []].map((l) => l.by));
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
       // The Worker vouches for who this is and whether they may write; the
@@ -184,7 +191,7 @@ export class FileDurableObject {
       // Its repo was evicted: forget everything.
       const all: Map<string, unknown> = await this.ctx.storage.list();
       await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
-      [this.doc, this.base, this.commits, this.secret, this.where, this.onBranch, this.snaps, this.trimmed] = [empty(), null, 0, new Set(), null, null, [], 0];
+      [this.doc, this.base, this.commits, this.secret, this.where, this.onBranch, this.snaps, this.trimmed, this.authors] = [empty(), null, 0, new Set(), null, null, [], 0, new Set()];
       this.docs.clear(); this.bases.clear();
       this.claims.clear(); this.claimOf.clear(); this.recent.clear();
       return json({ ok: true });
@@ -202,6 +209,7 @@ export class FileDurableObject {
         for (const l of doc.lines) if (l.private) { this.secret.add(l.id); delete l.private; }
         this.base = doc; this.doc = structuredClone(doc);
         await Promise.all([...this.bases.replace(doc), ...this.docs.replace(this.doc), this.ctx.storage.put("private", [...this.secret])]);
+        this.noteAuthors(doc.lines.map((l) => l.by));
       }
       return json(this.doc);
     }
@@ -241,6 +249,7 @@ export class FileDurableObject {
     };
     this.commits = commit.n;
     await Promise.all([this.ctx.storage.put("commit:" + pad(commit.n), commit), this.ctx.storage.put("commits", this.commits)]);
+    this.noteAuthors([by]);
     this.broadcast({ type: "commit", commit });
     // What git and search get: private lines blank.
     return { commit, content, published: text(this.shown(this.doc, false)) };
@@ -259,6 +268,7 @@ export class FileDurableObject {
     const r = apply(this.doc, ops, by, Date.now(), ifRev);
     if (!r.ok) return { ok: false as const, rev: this.doc.rev, conflicts: r.conflicts };
     if (this.claimOf.size) await this.follow(typeof by === "string" ? by : "", r.applied, claim);
+    this.noteAuthors(r.applied.map((a) => a.by));
     await Promise.all([...this.docs.save(this.doc, r.applied.map((a) => a.line)), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad(a.rev), a))]);
     if (this.doc.rev - (this.snaps.at(-1) ?? this.base?.rev ?? 0) >= SNAP_EVERY) await this.snapshot();
     const msg = (crew: boolean) => JSON.stringify({ type: "ops", rev: this.doc.rev, applied: this.hide(r.applied, crew) });
@@ -303,6 +313,8 @@ export class FileDurableObject {
       start = [...m.keys()].at(-1)! + "\0";
     }
     if (!changed) return 0;
+    // D1's authors the scrub swaps itself (privacy.ts).
+    if (this.authors?.delete(from)) { this.authors.add(to); await this.ctx.storage.put("authors", [...this.authors]); }
     this.docs = new DocStore(this.ctx.storage, "doc");
     this.bases = new DocStore(this.ctx.storage, "base");
     this.doc = (await this.docs.load()) ?? empty();
@@ -310,6 +322,25 @@ export class FileDurableObject {
     this.claims.clear(); this.claimOf.clear();
     for (const c of ((await this.ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
     return changed;
+  }
+
+  /**
+   * Put anyone in `who` new to this file's repo into D1's authors, so a scrub of their
+   * handle finds the repo even if they never edited it themselves: a line can come in
+   * with its author, by a cut or a merge (#748). Behind the edit, like the feed's events.
+   */
+  noteAuthors(who: string[]) {
+    const repo = this.where ?? this.onBranch;
+    if (!repo || !this.env.DB) return;
+    const known = this.authors ??= new Set();
+    const fresh = [...new Set(who)].filter((w) => w && !known.has(w));
+    if (!fresh.length) return;
+    for (const w of fresh) known.add(w);
+    const [owner, name] = repo, db = this.env.DB;
+    this.logging = this.logging.then(async () => {
+      if (fresh.length) await db.batch(fresh.map((w) => db.prepare("INSERT OR IGNORE INTO authors (owner, repo, handle) VALUES (?, ?, ?)").bind(owner, name, w)));
+      await this.ctx.storage.put("authors", [...known]);
+    }).catch(() => { for (const w of fresh) known.delete(w); });
   }
 
   /** Every op after rev `since` (up to `until`), a page at a time by key range, so a long log is never read whole. */
