@@ -5,7 +5,7 @@
   "scripts": {
     "build": "bun run build.ts",
     "agents": "bun agents.ts",
-    "test": "bun test test",
+    "test": "bun test --parallel test",
     "desktop": "bun ../../packages/cli/src/index.ts build desktop --dev && bun ../../packages/cli/src/index.ts run desktop"
   },
   "dependencies": {
