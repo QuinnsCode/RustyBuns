@@ -20,6 +20,7 @@
 
 import type { Env } from "./env.ts";
 import { recordEdits, type Recent } from "./line-events.ts";
+import { noteStep } from "./insights.ts";
 import { countHit } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { apply, empty, merge, replay, sha, text, type Applied, type Doc, type Line, type Op } from "./lines.ts";
@@ -92,8 +93,9 @@ export class FileDurableObject {
       // socket carries that across hibernation.
       const [client, server] = Object.values(new WebSocketPair()) as [unknown, any];
       this.ctx.acceptWebSocket(server);
-      // and who its edits count as under the edit limit, if they're counted at all.
-      server.serializeAttachment({ user: by, write: req.headers.get("x-codesplitters-write") === "1", limitAs: req.headers.get("x-codesplitters-limit-as") });
+      // and who its edits count as under the edit limit, if they're counted at all,
+      // and whose "wrote code" step its first edit is (insights.ts), if anyone's.
+      server.serializeAttachment({ user: by, write: req.headers.get("x-codesplitters-write") === "1", limitAs: req.headers.get("x-codesplitters-limit-as"), stepAs: req.headers.get("x-codesplitters-step-as") });
       this.presence();
       return new Response(null, { status: 101, webSocket: client } as ResponseInit);
     }
@@ -236,11 +238,15 @@ export class FileDurableObject {
     let msg: { type?: string; id?: number; ops?: Op[]; ifRev?: number; claim?: string };
     try { msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw)); } catch { return; }
     if (msg.type !== "ops" || !Array.isArray(msg.ops)) return;
-    const who = (ws.deserializeAttachment() ?? {}) as { user?: string; write?: boolean; limitAs?: string | null };
+    const who = (ws.deserializeAttachment() ?? {}) as { user?: string; write?: boolean; limitAs?: string | null; stepAs?: string | null };
     if (!who.write) return ws.send(JSON.stringify({ type: "nack", id: msg.id, error: "no write access" }));
     const over = who.limitAs ? await countHit(this.env, "edit", who.limitAs) : null;
     if (over) return ws.send(JSON.stringify({ type: "nack", id: msg.id, error: over.error, retryAfter: over.wait }));
     const r = await this.edit(who.user ?? "anon", msg.ops, msg.ifRev, msg.claim);
+    if (r.ok && who.stepAs) {
+      ws.serializeAttachment({ ...who, stepAs: null });
+      await noteStep(this.env, who.stepAs, "code");
+    }
     ws.send(JSON.stringify(r.ok ? { type: "ack", id: msg.id, rev: r.rev } : { type: "nack", id: msg.id, rev: r.rev, conflicts: r.conflicts }));
   }
   webSocketClose(ws: any) { try { ws.close(); } catch {} this.presence(ws); }
