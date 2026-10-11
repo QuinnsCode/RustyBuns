@@ -7,7 +7,7 @@
 // parameter, since paths have slashes). A [bracketed] part is optional.
 
 export interface Endpoint {
-  method: "GET" | "POST" | "PUT" | "DELETE" | "WS";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "WS";
   path: string;
   /** The JSON body it takes, as a sketch. */
   body?: string;
@@ -132,6 +132,20 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/repos/:o/:r/checks/:id", does: "one run, with its log and JUnit report" },
       { method: "PUT", path: "/api/repos/:o/:r/checks/:id", body: "{status?, log?, append?, junit?, runner_label?}", who: CREW, does: "a runner reports, which is also its heartbeat: move it on, replace or add to its log; a finished run stays finished, and one claimed by another label is a 409" },
       { method: "POST", path: "/api/repos/:o/:r/checks/:id/cancel", who: CREW, does: "stop one of ours that's queued or running; GitHub's are cancelled on GitHub" },
+      { method: "GET", path: "/api/repos/:o/:r/checks/tokens", who: OWNER, does: "the repo's CI tokens, without their secrets: {id, label, last4, created_by, created_at, last_used_at}" },
+      { method: "POST", path: "/api/repos/:o/:r/checks/tokens", body: "{label}", who: OWNER, does: "make a CI token, for external CI to send as its GitHub token to /api/gh/v3: it reaches this repo's checks and nothing else, and the secret is shown this once" },
+      { method: "DELETE", path: "/api/repos/:o/:r/checks/tokens/:id", who: OWNER, does: "revoke a CI token" },
+    ],
+  },
+  {
+    name: "GitHub-shaped checks, for external CI",
+    about: "Set your CI's GitHub API base URL (the GitHub Enterprise option) to /api/gh/v3 on this site and give it a CI token (Authorization: token … or Bearer …): what it reports lands in the repo's checks as external runs, gating merges like any other. Only these calls, shaped like GitHub's: errors are {message}, a missing or wrong token is 404 or 401.",
+    endpoints: [
+      { method: "POST", path: "/api/gh/v3/repos/:o/:r/statuses/:sha", body: "{state: pending | success | failure | error, context?, target_url?, description?}", who: "a CI token", does: "a commit status: one run per context, pending running, success passed, failure and error failed; the same context again moves it on, or starts it again once it's finished" },
+      { method: "GET", path: "/api/gh/v3/repos/:o/:r/commits/:sha/status", who: "a CI token", does: "the sha's combined status: {state, sha, total_count, statuses}" },
+      { method: "POST", path: "/api/gh/v3/repos/:o/:r/check-runs", body: "{name, head_sha, status?, conclusion?, details_url?, external_id?, started_at?, completed_at?, output?}", who: "a CI token", does: "a check run, shaped like GitHub's; its output is its log" },
+      { method: "PATCH", path: "/api/gh/v3/repos/:o/:r/check-runs/:id", body: "{status?, conclusion?, details_url?, output?}", who: "a CI token", does: "move a check run on; a finished one stays finished (422)" },
+      { method: "GET", path: "/api/gh/v3/repos/:o/:r/commits/:sha/check-runs", who: "a CI token", does: "the sha's check runs: {total_count, check_runs}" },
     ],
   },
   {

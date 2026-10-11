@@ -81,6 +81,11 @@ There's no downloadable build yet; that's one command from source.
 - **Accounts and limits.** GitHub, Google or email sign-in. Rate limits on everything that costs money, which an admin can set to reject, log, flag or queue.
 - **The game.** Every repo is a level: the backrooms of the codebase, where the lines tear off the walls as paper birds and you swat them with the rolled-up README. Bop your friends in the lobby.
 
+### Point your CI here
+
+Make a CI token for the repo (`POST /api/repos/:owner/:repo/checks/tokens`), then set your CI's GitHub API base URL (the GitHub Enterprise option) to `https://<this site>/api/gh/v3` and use that token as its GitHub token.
+Its commit statuses and check runs show up in the repo's checks as `external` runs, and required ones gate Merge.
+
 ## Hard to copy
 
 What would take someone else the longest to build:
