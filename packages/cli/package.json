@@ -21,7 +21,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
-    "./fit": "./src/glue/fit.ts"
+    "./fit": "./src/glue/fit.ts",
+    "./triage": "./src/triage.ts"
   },
   "files": [
     "src",

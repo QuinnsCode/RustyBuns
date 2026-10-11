@@ -31,6 +31,7 @@ The highest-value things, in order:
    curl -fsSL https://codesplitters.notryanquinn.workers.dev/install.sh | sh
    codesplitters login     # paste a token from your profile page
    codesplitters tools     # every MCP tool, as a command
+   codesplitters triage    # something broke? your coding agent asks what, digs in, drafts the issue
    ```
 6. **Deploy it.** Every repo says how easily [Rusty Buns](../../README.md) could ship it, then ships it: to Cloudflare, to a Railway or Hetzner box, from your desktop or from the site with a write-only, sealed deploy key.
 
