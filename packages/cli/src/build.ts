@@ -60,6 +60,10 @@ function hostParts(c: RustyBunsConfig, host: HostKind, desktopDataDir: string) {
   };
 }
 
+// At launch the host checks the RustyBuns it was built with (RB_RUSTYBUNS)
+// against advisories.json, once a day, without holding up the start.
+const LAUNCH_CHECK = `launchCheck(typeof RB_RUSTYBUNS === "string" ? RB_RUSTYBUNS : undefined, { dev: typeof RB_DEV === "boolean" && RB_DEV });\n`;
+
 const ALL_OS: DesktopOs[] = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64"];
 
 /** spa mode: your Vite SPA + your world class. No worker, no RSC, no shims. */
@@ -90,14 +94,14 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, type GuestState } from "@rustybuns/shell-bun";
+import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
 import { mkdirSync, existsSync${h.box ? ", statSync, readFileSync, writeFileSync" : ""} } from "node:fs";
 import { basename, join, isAbsolute } from "node:path";
 
-declare const RB_VERSION: string;
+declare const RB_VERSION: string, RB_RUSTYBUNS: string, RB_DEV: boolean;
 // What a guest on the LAN would type: this machine's non-loopback IPv4 addresses.
 const lanAddresses = (): string[] => Object.values(networkInterfaces()).flatMap((l) => l ?? [])
   .filter((i) => (i.family === "IPv4" || (i.family as unknown) === 4) && !i.internal).map((i) => i.address);
@@ -304,7 +308,7 @@ ${h.box ? `    // Actions run as the desktop's one host identity. A box has no t
 }, env);
 
 console.log(\`[${c.name} \${typeof RB_VERSION === "string" ? RB_VERSION : "dev"}] serving \${shell.url}\`);
-${h.launch}`;
+${LAUNCH_CHECK}${h.launch}`;
 }
 
 
@@ -349,12 +353,13 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
-import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
+import { serve, openBrowser, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
 import { basename, join, isAbsolute } from "node:path";
 
+declare const RB_RUSTYBUNS: string, RB_DEV: boolean;
 // Compiled: --asset embeds the dir at /$bunfs/root/<basename>. Dev: use the real path.
 function assetDir(rel: string): string | undefined {
   if (!rel) return undefined;
@@ -402,7 +407,7 @@ console.log(\`[${c.name}] serving \${shell.url}\`);${crons.length ? `
 schedule(${JSON.stringify(crons)}, (controller) => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} }));` : ""}${consumers.map(([n, s]) => `
 // Queue consumer: the edge hands ${n}'s batches to queue(); here an in-process loop does.
 (env.${n} as any).consume((batch: unknown) => (worker as any).queue?.(batch, env, { waitUntil() {}, passThroughOnException() {} }), ${JSON.stringify(s)});`).join("")}
-${h.launch}`;
+${LAUNCH_CHECK}${h.launch}`;
 }
 
 import { sourceLayout } from "./glue/source.ts";
@@ -537,7 +542,13 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   }];
   const version = (await Bun.file("package.json").json().catch(() => ({})))?.version ?? "0.0.0";
   const sha = (await $`git rev-parse --short HEAD`.quiet().nothrow().text()).trim() || "nogit";
-  const defineMap: Record<string, string> = { RB_VERSION: JSON.stringify(`${version}+${sha}`) };
+  const rustybuns = (await Bun.file(new URL("../package.json", import.meta.url)).json()).version as string;
+  const defineMap: Record<string, string> = {
+    RB_VERSION: JSON.stringify(`${version}+${sha}`),
+    // The RustyBuns this was built with, and whether it is a dev host: see launchCheck.
+    RB_RUSTYBUNS: JSON.stringify(rustybuns),
+    RB_DEV: JSON.stringify(!!opts.noCompile),
+  };
   for (const [k, v] of Object.entries(d.define ?? {})) defineMap[k] = JSON.stringify(v);
 
   if (opts.noCompile) {
