@@ -29,6 +29,7 @@
 
 import { json, type Env } from "./env.ts";
 import { identify } from "./identity.ts";
+import { ownOrigin } from "./security.ts";
 import { b64url, DAY, hash, MAX_DAYS } from "./tokens.ts";
 
 export const OAUTH_SCOPES = { read: "read what you can read", write: "read, and change what you can change" } as const;
@@ -181,7 +182,7 @@ async function authorizePage(req: Request, env: Env, url: URL) {
 
 async function authorizeForm(req: Request, env: Env, url: URL) {
   const origin = req.headers.get("origin");
-  if (req.headers.has("authorization") || (origin && origin !== url.origin)) return page("Can't sign in", "<h1>Say yes on codeSplitters itself</h1>", 403);
+  if (req.headers.has("authorization") || (origin && !ownOrigin(origin, url))) return page("Can't sign in", "<h1>Say yes on codeSplitters itself</h1>", 403);
   const f = await fields(req);
   const user = await identify(req, env);
   const r = user && f.request ? await env.DB.prepare("SELECT * FROM oauth_requests WHERE id = ? AND name = ? AND code_hash IS NULL AND expires_at > ?").bind(f.request, user, Date.now()).first() as { id: string; redirect_uri: string; state: string | null } | null : null;

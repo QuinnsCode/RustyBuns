@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
+import { ownOrigin } from "../src/security.ts";
 
 // These run the app end to end (in-process D1): fine alone, but a full run on a
 // busy machine can stretch one past bun's 5s default.
@@ -153,7 +154,17 @@ describe("OAuth sign-in", () => {
     expect((await post("ryan", "https://evil.example")).status).toBe(403);
     expect((await post("someone", "http://codesplitters.local")).status).toBe(400);
     expect((await post(null, "http://codesplitters.local")).status).toBe(400);
+    // Through an HTTPS tunnel to the desktop, the browser's Origin is https:// on the same host (#456).
+    expect((await post("ryan", "https://codesplitters.local.evil.example")).status).toBe(403);
+    expect((await post("ryan", "https://codesplitters.local")).status).toBe(303);
     // Signed out, the page asks you to sign in first.
     expect(await (await call(null, `/api/oauth/authorize?${new URLSearchParams({ response_type: "code", client_id: "executor", redirect_uri: REDIRECT, code_challenge: "c".repeat(43), code_challenge_method: "S256" })}`)).text()).toContain("Sign in to codeSplitters first");
   });
+});
+
+test("an https Origin on the same host counts behind a tunnel; an http one on an https site doesn't", () => {
+  expect(ownOrigin("https://mac.tail1.ts.net", new URL("http://mac.tail1.ts.net/api/oauth/authorize"))).toBe(true);
+  expect(ownOrigin("http://127.0.0.1:4800", new URL("http://127.0.0.1:4800/x"))).toBe(true);
+  expect(ownOrigin("https://127.0.0.1:4801", new URL("http://127.0.0.1:4800/x"))).toBe(false);
+  expect(ownOrigin("http://codesplitters.dev", new URL("https://codesplitters.dev/x"))).toBe(false);
 });

@@ -58,6 +58,8 @@ describe("Origin check", () => {
     expect((await repo("four", { origin: ORIGIN })).status).toBe(201);
     expect((await repo("five", { "sec-fetch-site": "same-origin" })).status).toBe(201);
     expect((await repo("six", {})).status).toBe(201);
+    // The desktop behind an HTTPS tunnel: the page says https://, the request arrives as http:// (#456).
+    expect((await repo("seven", { origin: ORIGIN.replace("http:", "https:") })).status).toBe(201);
     // Reads aren't writes, and nothing signed by a cookie has nothing to forge.
     expect((await call("ryan", "/api/session", { headers: { origin: "https://evil.example" } })).status).toBe(200);
     expect((await call(null, "/api/login", post({ name: "sam" }, { origin: "https://evil.example" }))).status).toBe(200);
