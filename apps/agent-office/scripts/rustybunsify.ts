@@ -19,6 +19,7 @@ import path from "node:path";
 import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
 import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
+import { floorGuardHooks } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
@@ -39,7 +40,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board guard` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -161,6 +162,10 @@ async function prepare(tag: string) {
   for (const [rel, change] of [["workers/util.js", hookTokensUtil], ["workers/persist.js", hookTokensPersist], ["workers/manager.js", hookTokensManager]] as const)
     writeFileSync(path.join(srv, rel), change(readFileSync(path.join(srv, rel), "utf8")));
 
+  // 12b. the agent-to-agent endpoint stops trusting every worker on the floor (#644, live/floorguard.ts): a forced
+  // send_home keeps another worker's uncommitted work, tell_worker says who it's from, AGENT_OFFICE_PEOPLE_ONLY
+  writeFileSync(path.join(srv, "hooks/office-workers.js"), floorGuardHooks(readFileSync(path.join(srv, "hooks/office-workers.js"), "utf8")));
+
   // 13. a per-frame hook in the 3D office, for either skin: the forest and the codeSplitters tiles both hang off it
   officeTicks();
 
@@ -170,7 +175,7 @@ async function prepare(tag: string) {
   // 14. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board guard\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -252,7 +257,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["checks/server.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
     ["codesplitters/server.ts", "rb-codesplitters.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
