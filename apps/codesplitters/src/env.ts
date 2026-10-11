@@ -102,6 +102,8 @@ export interface Env {
   JOBS: { send(body: { job: number } | { agent: number; origin: string }, opts?: { delaySeconds?: number }): Promise<void> };
   /** Tests only: stands in for fetch when a webhook is delivered (see hooks.ts). */
   HOOK_FETCH?: unknown;
+  /** Tests only: stands in for fetch when checks talk to GitHub's API (see checks.ts). */
+  GITHUB_FETCH?: unknown;
   /** Tests only: stands in for running `bun test` on a cut (see cuts.ts). */
   CUT_TESTER?: unknown;
 }

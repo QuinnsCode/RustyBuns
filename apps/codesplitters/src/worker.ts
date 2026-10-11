@@ -26,6 +26,7 @@ import { openapi } from "./openapi.ts";
 import { catalogue, mcp } from "./mcp.ts";
 import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
+import { checkRoutes, pollGithub, startChecks } from "./checks.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -234,6 +235,9 @@ const app = {
       if (fresh) return fresh;
       const branches = await branchRoutes(req, env, p, owner, repo, user, a);
       if (branches) return branches;
+      // /api/repos/:o/:r/checks[/run|github|settings|:id[/cancel]]  check runs, ours and GitHub's (checks.ts)
+      const checks = await checkRoutes(req, env, p, url, owner, repo, user, a);
+      if (checks) return checks;
       // POST /api/repos/:o/:r/collaborators {name}  (owner only; this is how agents get in)
       if (p[4] === "collaborators" && req.method === "POST") {
         if (user !== owner) return json({ error: "owner only" }, 403);
@@ -310,6 +314,7 @@ const app = {
               head_commit: { id: git.commit, message: commit.message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: git.parent ? [] : [path], modified: git.parent ? [path] : [], removed: [] },
             });
             await deployOnCommit(env, owner, repo, user);
+            await startChecks(env, owner, repo, "main", git.commit, user!);
             // A mirror hands the commit upstream now, if upstream's there to take it.
             await kickMirror(env, owner, repo);
           }
@@ -382,7 +387,8 @@ const app = {
   // whose message went missing runs if its line has room.
   async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
     // Every five minutes on the desktop, mirrors whose turn has come sync with upstream (mirror.ts).
-    if (c.cron === MIRRORS) { if (mirrorsOn(env)) ctx.waitUntil(syncDue(env)); return; }
+    // Shas sent up to GitHub get their Actions results polled in (checks.ts).
+    if (c.cron === MIRRORS) { if (mirrorsOn(env)) ctx.waitUntil(syncDue(env).then(() => pollGithub(env))); return; }
     if (c.cron !== HOURLY) return;
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(sweepLimits(env));

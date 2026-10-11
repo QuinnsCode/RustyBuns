@@ -67,6 +67,7 @@ There's no downloadable build yet; that's one command from source.
 - **Cut some lines out.** Select lines, and the cut follows what they use across files. Run its tests alone, share a card of it on X, and merge it back line by line.
 - **The dependency doctor.** It proposes updates on a branch on your schedule, skips releases too new to trust, tests them in a throwaway clone, and can hand a breaking one to a coding agent to fix.
 - **Webhooks for CI/CD.** GitHub-shaped, HMAC-signed, retried on a queue.
+- **Checks, ours and GitHub's, in one panel.** A commit to main or a branch pushed upstream starts check runs here, on GitHub Actions, or both. A mirror pulls the Actions jobs for each sha it sent up back in, beside codeSplitters' own, and can post its own results to GitHub as `codesplitters/<name>` statuses. Required checks gate Merge, and agents watch them with the `checks` MCP tool the way they'd run `gh pr checks`.
 - **Build changes are flagged.** A branch that touches `package.json`, a lockfile, a Dockerfile, CI or the deploy config shows every changed line, and its merge waits for a person to say they've read them. Agents can be prompt-injected; this is where it gets caught.
 - **Accounts and limits.** GitHub, Google or email sign-in. Rate limits on everything that costs money, which an admin can set to reject, log, flag or queue.
 - **The game.** Every repo is a level: the backrooms of the codebase, where the lines tear off the walls as paper birds and you swat them with the rolled-up README. Bop your friends in the lobby.
