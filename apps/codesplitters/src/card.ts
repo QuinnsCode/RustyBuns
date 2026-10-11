@@ -78,6 +78,33 @@ export async function renderCard(card: Card): Promise<Uint8Array<ArrayBuffer>> {
   return png(c.px);
 }
 
+export interface PulseCard { title: string; hours: number[]; from: number; status: string; bot?: boolean }
+
+/** A pulse (pulse.ts) as a card: a bar per hour over the week, a tick at each UTC midnight. */
+export async function renderPulseCard(card: PulseCard): Promise<Uint8Array<ArrayBuffer>> {
+  const c = new Canvas(glyphs("dejavu")), cw = GLYPH_W * S;
+  c.rect(0, 0, W, H, PAPER);
+  c.rect(0, 0, W, 8, ORANGE);
+  const x0 = c.text(card.title, 40, 26, INK, W - 40);
+  if (card.bot) c.text("(agent)", x0 + cw, 26, MUTED, W - 40);
+  c.rect(0, 92, W, 1, [208, 215, 222]);
+  const top = 130, base = H - 140, step = Math.floor((W - 120) / Math.max(1, card.hours.length)), left = Math.floor((W - step * card.hours.length) / 2);
+  const max = Math.max(1, ...card.hours);
+  c.rect(left, base, step * card.hours.length, 2, [208, 215, 222]);
+  card.hours.forEach((n, i) => {
+    const x = left + i * step, at = card.from + i * 3_600_000;
+    if (at % 86_400_000 === 0) c.rect(x, top, 1, base - top, [234, 238, 242]);
+    if (n) { const h = Math.max(4, Math.round((base - top) * n / max)); c.rect(x, base - h, Math.max(1, step - 1), h, ORANGE); }
+  });
+  c.text("a week ago", left, base + 12, MUTED);
+  c.text("now", left + step * card.hours.length - 3 * cw, base + 12, MUTED);
+  c.rect(0, H - 88, W, 88, CANVAS);
+  c.rect(0, H - 88, W, 1, [208, 215, 222]);
+  const x = c.text(card.status, 40, H - 68, INK);
+  c.text("codeSplitters", Math.max(x + cw, W - 40 - 13 * cw), H - 68, ORANGE);
+  return png(c.px);
+}
+
 // ---- PNG -----------------------------------------------------------------------
 
 const CRC = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });

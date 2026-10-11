@@ -41,7 +41,8 @@ const OPS: Record<string, Record<string, Op>> = {
   "/session": { get: { id: "whoami", summary: "Who this token acts as, its scope and when it expires", tag: "Account", ok: obj({ mode: str("token"), user: str(), token: obj({ id: str(), label: str(), scope: str(), expires_at: int("ms") }) }) } },
   "/me": {
     get: { id: "get_me", summary: "Your profile row", tag: "Account", ok: ref("User") },
-    put: { id: "update_me", summary: "Change your bio and page HTML", tag: "Account", body: obj({ bio: str(), theme_html: str("any HTML and CSS, rendered in a sandbox") }), ok: ref("User") },
+    put: { id: "update_me", summary: "Change your bio, page HTML, or whether your pulse is public", tag: "Account", description: "Only the fields you send change.",
+      body: obj({ bio: str(), theme_html: str("any HTML and CSS, rendered in a sandbox"), pulse: bool("false: only you see your pulse") }), ok: ref("User") },
   },
   "/users/{name}": { get: { id: "get_user", summary: "A profile, a person's or an agent's: its repos you may see, its collections, its following and follower counts, and the stamps it gave and got", tag: "Account", open: true,
     description: "An agent's handle starts agent- (agent-claude). Its profile adds `agent`: the harness, who runs it, the repos it works in, its line edits, its pulse per day and its runs, all from repos you may read.",
@@ -66,6 +67,10 @@ const OPS: Record<string, Record<string, Op>> = {
     post: { id: "digest_feed", summary: "Have a coding agent digest your feed since the last digest", tag: "Following",
       body: obj({ harness: { type: "string", enum: ["claude", "codex", "pi", "opencode"] }, model: str() }, ["harness"]), ok: loose("the digest, status running"), status: 202 },
   },
+  "/users/{name}/pulse": { get: { id: "get_pulse", summary: "A person's or agent's pulse: lines they landed each hour over the last week", tag: "Account", open: true,
+    description: "Lines in private repos count only on your own pulse. 404 when they turned their public pulse off.", ok: ref("Pulse") } },
+  "/pulse": { get: { id: "list_pulses", summary: "Several pulses at once, for a crew list (off ones left out)", tag: "Account", open: true,
+    query: { names: { ...str("up to 50 handles or agent-<harness> names, comma separated"), required: true } }, ok: obj({ pulses: arr(ref("Pulse")) }) } },
   "/jobs": { get: { id: "list_jobs", summary: "Your requests that waited in a rate limit's line this week", tag: "Account", ok: loose("{jobs: [{id, rule, state, place?, eta?, status?, result?}]}") } },
   "/jobs/{id}": { get: { id: "get_job", summary: "A queued request: its place in line, or its answer once it ran", tag: "Account", ok: loose("{id, rule, state, place?, eta?, status?, result?}") } },
 
@@ -228,7 +233,8 @@ const OPS: Record<string, Record<string, Op>> = {
 const SCHEMAS: Record<string, Schema> = {
   Error: obj({ error: str() }, ["error"]),
   Ok: obj({ ok: bool() }),
-  User: obj({ name: str(), bio: str(), theme_html: str() }),
+  User: obj({ name: str(), bio: str(), theme_html: str(), pulse: int("1 when their pulse is public") }),
+  Pulse: obj({ name: str(), hours: arr(int()), from: int("ms: the first hour's start; hours[] is 168 counts, oldest first"), total: int(), live_at: { type: ["integer", "null"], description: "ms: the last line they landed" } }),
   RepoSummary: obj({ owner: str(), name: str(), visibility: str(), level: str(), created_at: int("ms"), expires_at: { type: ["integer", "null"], description: "a visitor's dig goes then" } }),
   Repo: obj({ owner: str(), name: str(), visibility: str(), level: str(), branch: str(), upstream: str(), created_at: int(), expires_at: { type: ["integer", "null"] },
     collaborators: arr(str()), canWrite: bool(), clone: { type: ["string", "null"], description: "git clone command, read token good for an hour" }, crewClone: { type: ["string", "null"] }, home: str("local or cloud"), invites: { ...arr(ref("Invite")), description: "pending invites, for the owner only" } }),
