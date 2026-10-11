@@ -41,6 +41,7 @@ import { checkRoutes, expireQueued, pollGithub, requeueStale, startChecks } from
 import { desktopRuns, kickQueued } from "./ci-runner.ts";
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
+import { actionsRoutes } from "./actions-bill.ts";
 import { scaleRoutes } from "./scale.ts";
 import { embedDue, indexFile, restaleSearch, searchAll, searchRepo, searchRoutes } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
@@ -138,6 +139,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/admin/insights  people vs agents, the site's health, how far each person got (insights.ts)
   const insights = await insightRoutes(req, env, p, url, admin);
   if (insights) return insights;
+  // GET /api/admin/actions  this month's GitHub Actions bill: free while it says $0 (actions-bill.ts)
+  const actions = await actionsRoutes(req, env, p, user, admin);
+  if (actions) return actions;
   // POST /api/admin/scrub {handle}  put @ghost where a deleted account's handle still shows (privacy.ts)
   // POST /api/admin/scrub/backfill {after?}  wake a page of file DOs to note their authors (#770)
   const scrub = await scrubRoutes(req, env, p, admin);

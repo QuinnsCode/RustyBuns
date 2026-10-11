@@ -1433,6 +1433,7 @@ async function insightsPage(days = 7) {
       <div class="box"><div class="bar">${icon("heart-pulse")}<b>Health</b><span class="muted">the last 24 hours</span></div>
         ${d.health.checks.map((c) => `<div class="chk"><span class="dot ${c.state}" title="${c.state}"></span><b>${esc(c.name)}</b><span class="muted">${esc(c.detail)}</span></div>`).join("")}</div>
     </div>
+    <div class="box" id="ins-actions"><div class="bar">${icon("github")}<b>GitHub Actions</b><span class="muted">this month, on your GitHub account</span></div><div class="body muted small">Asking GitHub…</div></div>
     <div class="box"><div class="bar">${icon("footprints")}<b>The way in</b><span class="muted">of ${fmt(d.total_users)} people, how many reached each step</span></div>
       <div class="way" style="padding:6px 0">${d.steps.map((s) => `<div><span>${esc(s.label)}</span><span class="meter"><i style="width:${d.total_users ? (s.people / d.total_users) * 100 : 0}%"></i></span><span class="muted" style="text-align:right">${fmt(s.people)}</span></div>`).join("")}</div></div>
     <div class="box"><div class="bar">${icon("users")}<b>Recent people</b><span class="muted">most recently here, with how far each got; requests over the range above</span></div>
@@ -1448,6 +1449,21 @@ async function insightsPage(days = 7) {
   </div>`;
   $("#ins-days").addEventListener("change", (e) => insightsPage(Number(e.target.value)));
   icons();
+  actionsBox();
+}
+// What GitHub Actions cost this month (src/actions-bill.ts): public repos on standard runners
+// should come to $0. Asked after the page is up, so a slow GitHub never holds Insights.
+async function actionsBox() {
+  const box = $("#ins-actions .body");
+  if (!box) return;
+  const b = await api("/admin/actions").catch((e) => ({ ok: false, reason: String(e.message || e), link: "https://github.com/settings/billing" }));
+  if (!b.ok) { box.innerHTML = `${esc(b.reason)}. <a href="${esc(b.link)}" target="_blank" rel="noopener">Check the billing page</a>`; return; }
+  const usd = (n) => `$${Number(n).toFixed(2)}`, fmt = (n) => Number(n || 0).toLocaleString();
+  const row = (name, s) => `<tr><td>${esc(name)}</td><td>${fmt(s.minutes)}</td><td class="muted">${usd(s.gross)}</td><td class="muted">${usd(s.discount)}</td><td>${s.net > 0 ? `<b class="hot">${usd(s.net)}</b>` : usd(s.net)}</td></tr>`;
+  box.classList.remove("muted", "small");
+  box.innerHTML = `<div class="chk"><span class="dot ${b.total.net > 0 ? "bad" : "ok"}" title="${b.total.net > 0 ? "paying" : "free"}"></span><b>${b.total.net > 0 ? `${usd(b.total.net)} owed` : "Free"}</b><span class="muted">${fmt(b.total.minutes)} minutes in ${esc(b.month)} as @${esc(b.login)}, worth ${usd(b.total.gross)} before discounts</span></div>
+    ${b.repos.length ? `<div class="scroll"><table><thead><tr><th>Repo</th><th>Minutes</th><th>Worth</th><th>Discount</th><th>Owed</th></tr></thead><tbody>${b.repos.map((r) => row(r.repo, r)).join("")}</tbody></table></div>
+    <div class="scroll"><table><thead><tr><th>Runner</th><th>Minutes</th><th>Worth</th><th>Discount</th><th>Owed</th></tr></thead><tbody>${b.runners.map((r) => row(r.sku, r)).join("")}</tbody></table></div>` : '<p class="muted small">No Actions minutes yet this month.</p>'}`;
 }
 // The dig site (admins, src/scale.ts): the scale sideboard, dug like a repo. Every wall the app
 // hits as it grows is bedrock; each card shows how deep we've dug toward it, deepest first, with
