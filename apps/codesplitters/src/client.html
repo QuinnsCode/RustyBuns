@@ -718,6 +718,18 @@ async function jobsBadge() {
   el.hidden = !n;
   el.querySelector("span").textContent = `${n} queued`;
 }
+// Invites to your handle (GET /api/invites), so you hear of them without the owner sending the link:
+// a badge in the top bar, straight to the invite when there's one, and a box on your profile.
+const inviteRow = (i) => `<a href="#/i/${esc(i.token)}" title="ends ${new Date(i.expires_at).toLocaleDateString()}">${icon("mail")}<span><b>${esc(i.owner)}/${esc(i.repo)}</b> <span class="muted">from @${esc(i.by)}${i.note ? `: “${esc(i.note)}”` : ""}</span></span><span class="when">${ago(i.created_at)}</span></a>`;
+async function invitesBadge() {
+  const el = $("#invited");
+  if (!el) return;
+  const list = await api("/invites").catch(() => []);
+  el.hidden = !list.length;
+  el.href = list.length === 1 ? `#/i/${list[0].token}` : `#/u/${me()}`;
+  el.title = list.length === 1 ? `@${list[0].by} invited you to ${list[0].owner}/${list[0].repo}` : "invites to your crews";
+  el.querySelector("span").textContent = `${list.length} invite${list.length === 1 ? "" : "s"}`;
+}
 // Your personal API tokens (GET|POST /api/tokens, DELETE /api/tokens/:id), on your profile. A new one's secret shows once.
 // Apps signed in with OAuth (GET /api/oauth/grants, DELETE /api/oauth/grants/:id) list beside them, to sign out.
 // A new token's secret never goes in the page: the box shows it masked, and only the copy buttons use it.
@@ -728,6 +740,15 @@ const maskedUrl = (line) => line.replace(/(:\/\/[^:/@\s]+:)([^@\s]+)@/, (_, pre,
 const mcpUrl = () => `${location.origin}/api/mcp`;
 const mcpSignIn = () => `claude mcp add --scope user --transport http codesplitters ${mcpUrl()}`;
 const mcpAdd = (token) => `claude mcp add --scope user --transport http codesplitters ${location.origin}/api/mcp --header "Authorization: Bearer ${token}"`;
+// Invites (POST /api/repos/:o/:r/invites): a handle, an email, or nothing for a bare link.
+const invite = (owner, repo, who = "", note = "") => {
+  who = who.trim();
+  return api(`/repos/${owner}/${repo}/invites`, { ...(who.includes("@", 1) ? { email: who } : who ? { handle: who.replace(/^@/, "") } : {}), note });
+};
+const inviteSaid = (i) => i.kind === "email" ? (i.mailed ? `Emailed ${i.target}.` : `Send ${i.target} this link: this site doesn't send mail.`)
+  : i.kind === "handle" ? `Only @${i.target} can use it.` : "Anyone with it can join once, a person or an agent.";
+// An agent's MCP line for each harness, from POST /api/invites/claim; the token in it stays masked here.
+const HARNESS_HOW = { claude: "Claude Code: run", codex: "Codex: run", opencode: "opencode: add to opencode.json", pi: "pi (0.99 or later): add to ~/.pi/agent/mcp.json" };
 async function wireTokens(made) {
   const el = $("#tokens .body");
   if (!el) return;
@@ -810,22 +831,27 @@ document.addEventListener("click", async (e) => {
 });
 
 async function refreshSession() { session = await api("/session").catch(() => session); }
-/** Just signed in: off to your own page (or wherever you are, while there's no handle yet). */
+// An invite you left to sign in (#/i/:token): where signing in, picking a handle or a verified email brings you back to.
+const INVITE_KEY = "cs_invite";
+const heldInvite = () => { try { return localStorage.getItem(INVITE_KEY); } catch { return null; } };
+const holdInvite = (token) => { try { token ? localStorage.setItem(INVITE_KEY, token) : localStorage.removeItem(INVITE_KEY); } catch {} };
+/** Just signed in: off to your own page (or wherever you are, while there's no handle yet), or back to the invite you came from. */
 function landHome() {
   header();
   if (!me()) return route();
-  const to = `#/u/${me()}`;
+  const held = heldInvite();
+  const to = held ? `#/i/${held}` : `#/u/${me()}`;
   if (location.hash === to) route(); else location.hash = to;
 }
 
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
-    jobsBadge();
+    jobsBadge(); invitesBadge();
     return icons();
   }
   if (session.mode === "alias") {
@@ -1012,6 +1038,7 @@ function mailedLink() {
   if (!q.has("verified") && !q.has("reset")) return;
   history.replaceState(null, "", location.pathname + location.hash);
   const err = q.get("error");
+  if (q.has("verified") && !err && heldInvite() && location.hash !== `#/i/${heldInvite()}`) location.hash = `#/i/${heldInvite()}`;
   if (q.has("verified")) return toast(err ? "That link has expired. Sign in and send a new one." : "Email verified");
   if (err || !q.get("token")) return toast("That reset link has expired. Ask for a new one.");
   resetDrawer(q.get("token"));
@@ -1718,7 +1745,7 @@ const views = {
 
   async u(name) {
     const mine = name === me();
-    const [{ user, repos, playlists, following = 0, followers = 0, stamps, agent }, { jobs }, follows] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : []]);
+    const [{ user, repos, playlists, following = 0, followers = 0, stamps, agent }, { jobs }, follows, invites] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : [], mine ? api("/invites").catch(() => []) : []]);
     ctx = { view: "u", name };
     const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
     const stampRow = (s, who) => `<a href="#/f/${s.owner}/${s.repo}/${encodeURIComponent(s.path)}">${stampFace(s.stamp)}<span>${who} <span class="muted">${esc(s.repo)}/${esc(s.path.split("/").pop())}</span></span><span class="when">${ago(s.created_at)}</span></a>`;
@@ -1739,6 +1766,7 @@ const views = {
         <textarea name="theme_html" rows="5" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
         <div><button class="btn primary">Save</button></div></div></form>` : ""}
       <div class="prof-grid"><div>
+        ${invites.length ? `<div class="box" id="invites"><div class="bar">${icon("mail")}<b>Invited to</b><span class="muted">crews waiting on you: open one to look, then join</span></div><div class="body list">${invites.map(inviteRow).join("")}</div></div>` : ""}
         ${agentBoxes}
         <div class="box"><div class="bar">${icon("book-marked")}<b>${agent ? "Works in" : "Repos"}</b>
           ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn primary">${icon("plus")}Create</button></form>` : ""}</div>
@@ -1776,7 +1804,7 @@ const views = {
       ${playButton(`r/${owner}/${repo}`)}
       ${followButton({ owner, repo })}
       <a class="btn" href="#/m/${owner}/${repo}" title="this repo's agents and branches, laid out for a phone">${icon("smartphone")}Phone</a>
-      ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. Agents join the same way.</span><div class="copyline"><input name="name" placeholder="agent-linter or a person's handle" required><button class="btn primary">Invite</button></div></form></div>` : ""}
+      ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. A handle or an email lets that person in; leave it empty for a link anyone can use once, a person or an agent.</span><input name="who" placeholder="@handle, email, or empty for a link"><input name="note" placeholder="a note for them (optional)" maxlength="280"><button class="btn primary">${icon("link")}Make the invite</button><div id="invite-made"></div></form></div>` : ""}
       ${me() ? `<div class="pop"><button class="btn" id="limits" title="what this repo and you may do, and how close you are">${icon("gauge")}Limits</button><div class="panel" id="limits-panel" hidden style="width:380px;max-height:70vh;overflow:auto"><span class="muted">…</span></div></div>` : ""}
       ${r.clone ? `<div class="pop"><button class="btn primary" id="clone">${icon("code")}Clone</button><div class="panel" hidden><b>${icon("terminal")} Clone with git</b><span class="muted" style="font-size:13px">A real git remote in Cloudflare Artifacts. The token in it is read-only and lasts an hour.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.clone))}" title="the token is hidden: the button copies it whole"><button class="btn" id="clone-copy">${icon("copy")}</button></div>${r.crewClone ? `<b>${icon("lock")} The crew's remote</b><span class="muted" style="font-size:13px">Private lines are blank in the remote above. This one has their real text, for the crew only; previews and deploys clone it.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.crewClone))}" title="the token is hidden: the button copies it whole"><button class="btn" id="crew-clone-copy">${icon("copy")}</button></div>` : ""}</div></div>` : ""}
     </div>`;
@@ -1822,7 +1850,7 @@ const views = {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
     return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p>`)
       + (owner === me() && r.mirror ? sec("refresh-cw", "Upstream", `<div id="mirror"><span class="muted">…</span></div>`) : "")
-      + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<a href="#/u/${esc(c)}">@${esc(c)}</a>`).join(" ")}</p>`)
+      + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<a href="#/u/${esc(c)}">@${esc(c)}</a>`).join(" ")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<div id="deps"><span class="muted">…</span></div>`) : "")
@@ -2204,11 +2232,37 @@ const views = {
     }));
     icons();
   },
+  /** The owner's pending invites, under the crew: copy a link again, or revoke it. */
+  async wireInvites(owner, repo, list) {
+    const el = $("#pending");
+    if (!el) return;
+    list ??= await api(`/repos/${owner}/${repo}/invites`).catch(() => []);
+    el.innerHTML = list.length ? `<p class="muted" style="font-size:12px;margin-bottom:4px">Invited, not in yet</p>${list.map((i) => `<div style="display:flex;align-items:center;gap:4px;font-size:13px" data-token="${esc(i.token)}" title="${esc([i.note, `ends ${new Date(i.expires_at).toLocaleDateString()}`].filter(Boolean).join(" · "))}">
+      ${icon(i.kind === "email" ? "mail" : i.kind === "handle" ? "at-sign" : "link")}<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.kind === "link" ? "a link, person or agent" : esc(i.kind === "handle" ? "@" + i.target : i.target)}</span>
+      <button class="btn ghost" data-copy="${esc(i.link)}" title="copy the link">${icon("copy")}</button><button class="btn ghost" data-revoke title="revoke it">${icon("x")}</button></div>`).join("")}` : "";
+    el.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", () => copy(b.dataset.copy, "Invite link copied")));
+    el.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
+      await api(`/repos/${owner}/${repo}/invites/${b.closest("[data-token]").dataset.token}`, undefined, "DELETE");
+      toast("Invite revoked"); views.wireInvites(owner, repo);
+    }));
+    icons();
+  },
   wireRepoHead(owner, repo, r) {
     if ($("#invite")) {
       popover($("#invite"));
-      $("#invite-form").addEventListener("submit", async (e) => { e.preventDefault(); await api(`/repos/${owner}/${repo}/collaborators`, { name: e.target.name.value }); toast(`${e.target.name.value} joined the crew`); route(); });
+      $("#invite-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        try {
+          const i = await invite(owner, repo, f.who.value, f.note.value);
+          f.who.value = f.note.value = "";
+          $("#invite-made").innerHTML = `<span class="muted" style="font-size:12px">${inviteSaid(i)}</span><div class="copyline"><input readonly value="${esc(i.link)}"><button class="btn" type="button" id="invite-copy">${icon("copy")}</button></div>`;
+          $("#invite-copy").addEventListener("click", () => copy(i.link, "Invite link copied"));
+          icons(); views.wireInvites(owner, repo);
+        } catch (err) { toast(err.message); }
+      });
     }
+    views.wireInvites(owner, repo, r.invites);
     if ($("#limits")) { popover($("#limits")); $("#limits").addEventListener("click", () => { if (!$("#limits-panel").hidden) views.wireLimits(owner, repo); }); }
     if ($("#clone")) { popover($("#clone")); $("#clone-copy").addEventListener("click", () => copy(r.clone, "Clone command copied")); $("#crew-clone-copy")?.addEventListener("click", () => copy(r.crewClone, "Crew clone command copied")); }
     $("#flip")?.addEventListener("click", async () => { await api(`/repos/${owner}/${repo}`, { visibility: r.visibility === "private" ? "public" : "private" }, "PUT"); route(); });
@@ -2782,6 +2836,59 @@ const views = {
       logOps(msg.applied);
       schedule(msg.applied.map((a) => a.line));
     };
+  },
+
+  // An invite: the repo, who invited you and why, for anyone with the link. Two doors in: as yourself, or for your agent.
+  async i(token) {
+    ctx = { view: "i", token };
+    let inv;
+    try { inv = await api("/invites/" + encodeURIComponent(token)); }
+    catch (err) {
+      if (heldInvite() === token) holdInvite(null);
+      app.innerHTML = `<div class="wrap" style="max-width:760px;padding-top:28px"><div class="box"><div class="bar">${icon("mail-x")}<b>Invite</b></div><div class="body">${esc(err.message)}</div></div></div>`;
+      return icons();
+    }
+    const u = me(), where = `${esc(inv.owner)}/${esc(inv.repo)}`, link = `${location.origin}/invite/${token}`;
+    const person = inv.member ? `<p>You're in the crew already, @${esc(u)}.</p><a class="btn primary" href="#/r/${esc(inv.owner)}/${esc(inv.repo)}">${icon("book")}Open ${where}</a>`
+      : u ? `<p>Come in as <b>@${esc(u)}</b>.${inv.for && inv.for !== u ? ` This invite is for @${esc(inv.for)}, though.` : ""}</p><button class="btn primary" id="join">${icon("log-in")}Join the crew</button>`
+      : session.pick ? `<p>Pick your handle, then come back to join.</p><button class="btn primary" id="door-pick">${icon("at-sign")}Pick your handle</button>`
+      : session.mode === "alias" ? `<p>Sign in with an alias at the top right, then join.</p>`
+      : `<p>Sign in, or make an account and pick your handle. You'll come back here to join.</p><div class="row" style="gap:6px"><button class="btn primary" id="door-up">${icon("user-plus")}Make an account</button><button class="btn" id="door-in">${icon("log-in")}Sign in</button></div>`;
+    const agent = inv.doors.includes("agent") ? `<div class="box"><div class="bar">${icon("bot")}<b>I'm an agent</b></div><div class="body" style="display:grid;gap:8px">
+        <p style="margin:0">Your agent gets a handle of its own and an API token, so the lines it writes are blamed on it. Give it this link and it can claim the invite itself:</p>
+        <div class="copyline"><input readonly value="${esc(link)}"><button class="btn" id="agent-link">${icon("copy")}</button></div>
+        <p class="muted" style="margin:0;font-size:13px" id="agent-or">Or make it here, and give it the line for its harness:</p>
+        <form id="agent-door" class="row" style="gap:6px"><select name="harness">${["claude", "codex", "pi", "opencode"].map((h) => `<option>${h}</option>`).join("")}</select><input name="name" placeholder="its name, like linter" maxlength="28" style="flex:1"><button class="btn">${icon("bot")}Make the agent</button></form>
+        <div id="agent-made"></div></div></div>` : "";
+    app.innerHTML = `<div class="wrap" style="max-width:760px;padding-top:28px;display:grid;gap:14px">
+      <div class="box"><div class="bar">${icon("user-plus")}<b>@${esc(inv.by)} invited ${inv.for ? `@${esc(inv.for)}` : "you"} to ${where}</b><span class="grow"></span>${inv.visibility === "private" ? `<span class="badge">${icon("lock")}private</span>` : `<a class="btn" href="#/r/${esc(inv.owner)}/${esc(inv.repo)}">${icon("book")}Look around</a>`}</div>
+        ${inv.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">“${esc(inv.note)}” <span class="muted">· @${esc(inv.by)}</span></div>` : ""}
+        <div class="body muted" style="font-size:13px">The crew edits, commits and shares the repo's code. The invite works once, until ${new Date(inv.expires_at).toLocaleDateString()}.</div></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start">
+        <div class="box"><div class="bar">${icon("user")}<b>I'm a person</b></div><div class="body" style="display:grid;gap:8px">${person}</div></div>
+        ${agent}
+      </div></div>`;
+    $("#door-up")?.addEventListener("click", () => { holdInvite(token); signInDrawer("up"); });
+    $("#door-in")?.addEventListener("click", () => { holdInvite(token); signInDrawer(); });
+    $("#door-pick")?.addEventListener("click", () => { holdInvite(token); handleDrawer(); });
+    $("#join")?.addEventListener("click", async () => {
+      try { await api("/invites/claim", { invite: token, as: "person" }); } catch (err) { return toast(err.message); }
+      holdInvite(null); invitesBadge(); toast(`You're in the crew of ${inv.owner}/${inv.repo}`); location.hash = `#/r/${inv.owner}/${inv.repo}`;
+    });
+    $("#agent-link")?.addEventListener("click", () => copy(link, "Invite link copied: paste it to your agent"));
+    $("#agent-door")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = e.target, harness = f.harness.value;
+      let a;
+      try { a = await api("/invites/claim", { invite: token, as: "agent", harness, ...(f.name.value.trim() && { name: f.name.value.trim() }) }); } catch (err) { return toast(err.message); }
+      f.remove(); $("#agent-or").remove(); $("#agent-link").closest(".copyline").remove();
+      const lines = [harness, ...Object.keys(a.mcp).filter((h) => h !== harness)];
+      $("#agent-made").innerHTML = `<p style="margin:0">It's <b>@${esc(a.joined)}</b>, in the crew. Its token (write, ${Math.round((a.expires_at - Date.now()) / 86400000)} days) is in these lines and shows only this once: copy the one you need now.</p>
+        ${lines.map((h) => `<span class="muted" style="font-size:12px">${esc(HARNESS_HOW[h] ?? h)}</span><div class="copyline"><input readonly value="${esc(a.mcp[h].replace(a.token, masked(a.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" data-h="${h}">${icon("copy")}</button></div>`).join("")}`;
+      $("#agent-made").querySelectorAll("[data-h]").forEach((b) => b.addEventListener("click", () => copy(a.mcp[b.dataset.h], `${b.dataset.h} line copied`)));
+      icons();
+    });
+    icons();
   },
 
   // A shared range: just those lines, live, for anyone with the link.
@@ -3379,9 +3486,9 @@ async function commands() {
     if (c.canWrite) add("This repo", "file-plus", "Add a file", `POST /api/repos/${c.owner}/${c.repo}/files`, async (p) => {
       await api(`/repos/${c.owner}/${c.repo}/files`, { path: p, content: "" }); location.hash = `#/f/${c.owner}/${c.repo}/${encodeURIComponent(p)}`;
     }, "path, like src/hello.ts");
-    if (c.isOwner) add("This repo", "user-plus", "Invite someone to the crew", `POST /api/repos/${c.owner}/${c.repo}/collaborators`, async (name) => {
-      await api(`/repos/${c.owner}/${c.repo}/collaborators`, { name }); toast(`${name} joined the crew`); route();
-    }, "their handle");
+    if (c.isOwner) add("This repo", "user-plus", "Invite someone to the crew", `POST /api/repos/${c.owner}/${c.repo}/invites`, async (who) => {
+      const i = await invite(c.owner, c.repo, who); await copy(i.link, `${inviteSaid(i)} Link copied`); route();
+    }, "@handle or email");
     if (c.isOwner) add("This repo", c.visibility === "private" ? "globe" : "lock", c.visibility === "private" ? "Make this repo public" : "Make this repo private", `PUT /api/repos/${c.owner}/${c.repo}`, async () => {
       await api(`/repos/${c.owner}/${c.repo}`, { visibility: c.visibility === "private" ? "public" : "private" }, "PUT"); route();
     });

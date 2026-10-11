@@ -30,9 +30,9 @@ export const mailOn = (env: Env) => !!(env.EMAIL && env.EMAIL_FROM);
  * One account email. A failure is logged, not thrown: a reset request answers the
  * same whether the address has an account or not, so an error mustn't tell them apart.
  */
-async function mail(env: Env, to: string, subject: string, lines: string[], link: string) {
-  const text = [...lines, "", link, "", "If this wasn't you, ignore this email."].join("\n");
-  const html = `${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}<p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p><p style="color:#57606a">If this wasn't you, ignore this email.</p>`;
+export async function mail(env: Env, to: string, subject: string, lines: string[], link: string, foot = "If this wasn't you, ignore this email.") {
+  const text = [...lines, "", link, "", foot].join("\n");
+  const html = `${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}<p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p><p style="color:#57606a">${escapeHtml(foot)}</p>`;
   try { await env.EMAIL!.send({ from: { email: env.EMAIL_FROM!, name: "codeSplitters" }, to, subject, text, html }); }
   catch (e) { console.error("codeSplitters: account email failed", (e as { code?: string }).code ?? "", String((e as Error)?.message ?? e)); }
 }

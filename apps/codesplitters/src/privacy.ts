@@ -46,6 +46,7 @@ export async function exportFor(env: Env, handle: string) {
     shares: await all(env, "SELECT * FROM shares WHERE by = ?", handle),
     // Who and what you follow; a private repo's only while you're its crew, as in the app.
     following: await listFollows(env.DB, handle),
+    invites_to_you: await all(env, "SELECT owner, repo, by, note, created_at, expires_at, claimed_at FROM invites WHERE target = ? OR claimed_by = ?", handle, handle),
     stamps: await all(env, "SELECT owner, repo, path, line, stamp, created_at FROM stamps WHERE by = ?", handle),
     branches: await all(env, "SELECT owner, repo, name, status, created_at, merged_at FROM branches WHERE by = ?", handle),
     cuts: await all(env, "SELECT * FROM cuts WHERE by = ?", handle),
@@ -73,6 +74,7 @@ export async function eraseUser(env: Env, handle: string) {
     by("DELETE FROM collaborators WHERE name = ?", handle),
     by("DELETE FROM shares WHERE by = ?", handle),
     by("DELETE FROM follows WHERE follower = ? OR (kind IN ('user', 'agent') AND target = ?)", handle, handle),
+    by("DELETE FROM invites WHERE target = ? AND claimed_by IS NULL", handle),
     by("DELETE FROM stamps WHERE by = ?", handle),
     by("DELETE FROM api_tokens WHERE name = ?", handle),
     by("DELETE FROM oauth_grants WHERE name = ?", handle),
