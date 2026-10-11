@@ -21,6 +21,8 @@ export function toFile(env: Env, owner: string, repo: string, path: string, user
   const headers = new Headers(init.headers);
   headers.set("x-codesplitters-user", user);
   if (!headers.has("x-codesplitters-crew")) headers.set("x-codesplitters-crew", "1");
+  // Main's copy learns where it lives, for the feed; a branch's edits reach it when the branch merges.
+  if (!branch) headers.set("x-codesplitters-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
   return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 

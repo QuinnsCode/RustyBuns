@@ -54,6 +54,15 @@ const OPS: Record<string, Record<string, Op>> = {
       owner: str(), repo: str(), path: str("a file in the repo, to follow lines in it"), from: int("first line number, from 1"), to: int("last line number") }),
     ok: ref("Follow"), status: 201 } },
   "/follows/{id}": { delete: { id: "unfollow", summary: "Stop following something (its follow id, from list_following)", tag: "Following", ok: ref("Ok") } },
+  "/me/feed": { get: { id: "feed", summary: "Your home feed: line edits from the people, agents, repos and lines you follow, grouped per person or agent run, with your latest digest", tag: "Following",
+    description: "Only repos you may read. Each group has a one-line summary, its files, and its raw events (who, where, how many lines, when; never the text).",
+    query: { since: int("ms since the epoch; a week ago by default, 30 days at most") },
+    ok: loose("{since, through, follows, groups: [{key, who, run, bot, lines, sets, inserts, deletes, first_at, last_at, files: [{owner, repo, path, lines, after: {people, agents}}], summary, events}], digest}") } },
+  "/me/feed/digest": {
+    get: { id: "feed_digest", summary: "Your latest feed digest, written by the coding agent you picked", tag: "Following", ok: loose("{harness, status, since, through, text, error, at}, or null") },
+    post: { id: "digest_feed", summary: "Have a coding agent digest your feed since the last digest", tag: "Following",
+      body: obj({ harness: { type: "string", enum: ["claude", "codex", "pi", "opencode"] }, model: str() }, ["harness"]), ok: loose("the digest, status running"), status: 202 },
+  },
   "/jobs": { get: { id: "list_jobs", summary: "Your requests that waited in a rate limit's line this week", tag: "Account", ok: loose("{jobs: [{id, rule, state, place?, eta?, status?, result?}]}") } },
   "/jobs/{id}": { get: { id: "get_job", summary: "A queued request: its place in line, or its answer once it ran", tag: "Account", ok: loose("{id, rule, state, place?, eta?, status?, result?}") } },
 
