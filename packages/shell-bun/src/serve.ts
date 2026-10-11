@@ -13,6 +13,9 @@
 // Everything else stays token-only. The mounted handler learns which it got
 // from the `x-rb-principal` request header ("host" | "guest"), which the shell
 // strips from incoming requests before setting it.
+//
+// Pairing: POST /__rb/pair from the host's own page mints a five-minute launch
+// code, so a phone that reaches this host through an HTTPS tunnel can sign in.
 
 import type { Server, ServerWebSocket } from "bun";
 import type { CommsPort, ExecutionContext, FetchHandler, Reporter, Socket, SocketHandlers } from "@rustybuns/ports";
@@ -177,6 +180,10 @@ export interface BunShell<Env> {
   stop(): Promise<void>;
 }
 
+/** POST here from the host's own page: a launch code for another device (a phone, through a tunnel). */
+const PAIR_PATH = "/__rb/pair";
+const PAIR_TTL_MS = 5 * 60_000;
+
 /** Equal-length compare that does not short-circuit on the first differing byte. */
 const same = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length > 0 && x.length === y.length && timingSafeEqual(x, y); };
 /** p is root or under it; a bare prefix test would let /srv/dist-old pass for /srv/dist. */
@@ -210,6 +217,11 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   };
   // Launch codes -> expiry (ms since epoch). Each is deleted when used or found expired.
   const codes = new Map<string, number>();
+  const mintCode = (ttlMs: number) => {
+    const c = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString("base64url");
+    codes.set(c, Date.now() + ttlMs);
+    return c;
+  };
   const redeem = (given: string) => {
     const now = Date.now();
     for (const [c, exp] of codes) {
@@ -217,6 +229,12 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       if (same(given, c)) { codes.delete(c); return true; }
     }
     return false;
+  };
+  // https too: a phone reaches the desktop through an HTTPS tunnel (Tailscale Serve,
+  // cloudflared) that keeps the Host header, and only this server answers on that host.
+  const ownOrigin = (req: Request, origin: string) => {
+    const host = req.headers.get("host");
+    return origin === `http://${host}` || origin === `https://${host}`;
   };
   const gate = (req: Request, url: URL): Response | Principal => {
     if (!opts.token) return "host";
@@ -226,7 +244,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       // page's fetch or WebSocket would carry this cookie. Browsers always send
       // Origin on those, so anything not from this server's own host is refused.
       const origin = req.headers.get("origin");
-      if (origin !== null && origin !== `http://${req.headers.get("host")}`) return new Response("forbidden", { status: 403 });
+      if (origin !== null && !ownOrigin(req, origin)) return new Response("forbidden", { status: 403 });
       return "host";
     }
     const q = url.searchParams.get("token");
@@ -294,6 +312,13 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
         if (url.pathname.startsWith(prefix)) return withHeaders(await route(raw));
       const who = gate(raw, url);
       if (who instanceof Response) return who;
+      // Pairing a phone: the host's own page (a POST, so the browser sends Origin) asks for a
+      // launch code to open on another device. It works once, within five minutes.
+      if (url.pathname === PAIR_PATH) {
+        const origin = raw.headers.get("origin");
+        if (raw.method !== "POST" || who !== "host" || origin === null || !ownOrigin(raw, origin)) return new Response("forbidden", { status: 403 });
+        return Response.json({ code: mintCode(PAIR_TTL_MS), ttlMs: PAIR_TTL_MS });
+      }
       // Vouch the principal to the handler; never trust the client's copy.
       const h = new Headers(raw.headers);
       for (const k of [...h.keys()]) if (k.startsWith("x-rb-")) h.delete(k);
@@ -390,12 +415,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       port = server.port!;
       return { hostname: server.hostname!, port };
     },
-    launchCode(ttlMs = 60_000) {
-      if (!opts.token) return undefined;
-      const c = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString("base64url");
-      codes.set(c, Date.now() + ttlMs);
-      return c;
-    },
+    launchCode(ttlMs = 60_000) { return opts.token ? mintCode(ttlMs) : undefined; },
     async stop() { await server.stop(true); },
   };
 }

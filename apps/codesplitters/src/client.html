@@ -639,8 +639,9 @@ function landHome() {
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a><button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
+    $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
     jobsBadge();
     return icons();
@@ -660,6 +661,43 @@ function header() {
   $("#who").innerHTML = `<button class="btn primary" id="signin">${icon("log-in")}Sign in</button>`;
   $("#signin").addEventListener("click", () => signInDrawer());
   icons();
+}
+
+/** The desktop app, opened on this machine (aliases, served on loopback): the one place a phone can be paired from. */
+const onDesktop = () => session.mode === "alias" && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname);
+
+/**
+ * Pair a phone with the desktop. Every request here needs the desktop's launch token, so a
+ * tunnel alone lets nobody in: the phone opens a one-time link (five minutes) minted by this
+ * page, which trades for the token like the desktop's own launch does.
+ */
+function phoneDrawer(link = "") {
+  let at = "";
+  try { at = localStorage.getItem("cs_phone_origin") ?? ""; } catch {}
+  const serveCmd = `tailscale serve --bg http://127.0.0.1:${location.port}`;
+  drawer.open("Phone", `
+    <h2 id="drawer-title">Pair a phone</h2>
+    <p class="muted lede">Your phone gets this desktop, Agent button and all, as you. It stays on 127.0.0.1; a tunnel carries it, and only a device you pair here gets in.</p>
+    <p class="small"><b>1.</b> Put it on your tailnet (Tailscale on this Mac and the phone). The port changes each launch unless you start with <code>RB_LISTEN=127.0.0.1:4800</code>.</p>
+    <div class="copyline" style="margin-bottom:14px"><input readonly value="${esc(serveCmd)}"><button class="btn" id="serve-cmd" title="copy the command">${icon("copy")}</button></div>
+    <form id="pair">
+      <label class="field"><span><b>2.</b> Its address, as the phone sees it</span><input name="addr" type="url" required placeholder="https://your-mac.your-tailnet.ts.net" value="${esc(at)}"></label>
+      <button class="btn primary wide">${icon("link")}Make a pairing link</button>
+    </form>
+    ${link ? `<p class="small"><b>3.</b> Open this on the phone. It works once, for five minutes.</p>
+    <div class="copyline"><input readonly value="${esc(link.replace(/(rb_launch=)(.+)$/, (_, k, c) => k + masked(c)))}" title="hidden: copy it with the button"><button class="btn" id="pair-copy" title="copy the link">${icon("copy")}</button></div>` : ""}
+    <p class="muted small">Restarting the desktop signs paired phones out. Pair again after.</p>`);
+  $("#serve-cmd").addEventListener("click", () => copy(serveCmd, "Command copied"));
+  $("#pair-copy")?.addEventListener("click", () => copy(link, "Link copied"));
+  $("#pair").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const origin = e.target.elements.addr.value.trim().replace(/\/+$/, "");
+    try { localStorage.setItem("cs_phone_origin", origin); } catch {}
+    const r = await fetch("/__rb/pair", { method: "POST" });
+    if (!r.ok) return toast("Couldn't make a link: pairing is for the desktop app");
+    const { code } = await r.json();
+    phoneDrawer(`${origin}/?rb_launch=${code}`);
+  });
 }
 
 /** The sheet on the right. `body` is HTML; `foot`, if any, is a bar along the bottom. */

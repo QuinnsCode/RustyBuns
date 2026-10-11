@@ -181,6 +181,36 @@ test("serve: another local page's request carries the cookie but not our Origin,
   await shell.stop();
 });
 
+test("serve: through an HTTPS tunnel that keeps the Host, our own https Origin passes", async () => {
+  const shell = serve({ token: "t0k" });
+  shell.mount({ async fetch() { return new Response("ok"); } }, {});
+  const cookie = (await fetch(shell.url + "/x?token=t0k", { redirect: "manual" })).headers.get("set-cookie")!;
+  const post = (host: string, origin: string) => fetch(shell.url + "/__rb/action", { method: "POST", headers: { cookie, host, origin }, body: "{}" });
+  expect((await post("mac.tail.ts.net", "https://mac.tail.ts.net")).status).toBe(200);
+  expect((await post("mac.tail.ts.net", "https://evil.example")).status).toBe(403);
+  await shell.stop();
+});
+
+test("serve: the host's page mints a pairing code that signs a phone in once", async () => {
+  const shell = serve({ token: "t0k" });
+  shell.mount({ async fetch() { return new Response("in"); } }, {});
+  const cookie = (await fetch(shell.url + "/x?token=t0k", { redirect: "manual" })).headers.get("set-cookie")!;
+  const pair = (init: RequestInit) => fetch(shell.url + "/__rb/pair", init);
+  expect((await pair({ method: "POST", headers: { origin: shell.url } })).status).toBe(403);             // no cookie
+  expect((await pair({ method: "POST", headers: { cookie } })).status).toBe(403);                        // no Origin: not the page
+  expect((await pair({ method: "GET", headers: { cookie, origin: shell.url } })).status).toBe(403);
+  expect((await pair({ method: "POST", headers: { cookie, origin: "http://127.0.0.1:1" } })).status).toBe(403);
+  const r = await pair({ method: "POST", headers: { cookie, origin: shell.url } });
+  const { code, ttlMs } = await r.json() as { code: string; ttlMs: number };
+  expect(ttlMs).toBe(5 * 60_000);
+  // The phone, through the tunnel: a foreign Host, no cookie yet.
+  const phone = await fetch(shell.url + "/?rb_launch=" + code, { redirect: "manual", headers: { host: "mac.tail.ts.net" } });
+  expect(phone.status).toBe(302);
+  expect(phone.headers.get("set-cookie")).toContain("=t0k;");
+  expect((await fetch(shell.url + "/?rb_launch=" + code, { redirect: "manual" })).status).toBe(403);   // once
+  await shell.stop();
+});
+
 test("paths stay inside their root, not just under a name that starts the same", async () => {
   const { r2, serve: mk } = await import("../src/index.ts");
   const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
