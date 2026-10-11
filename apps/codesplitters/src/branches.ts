@@ -4,14 +4,17 @@
 // Durable Object, forked from main's with every line id and rev intact, so a
 // merge is a three-way merge by line id (`merge` in lines.ts) that main's
 // file applies in one batch, each line keeping its author. Lines only one
-// side changed never conflict; a line both changed is settled per line,
-// keeping the branch's or main's. A merged JavaScript or TypeScript file that
+// side changed never conflict; a line both changed is settled per line:
+// main's, the branch's, both, or a text of the merger's (Pick in lines.ts).
+// The review says which picks each conflict takes, and suggests a text where
+// both sides only added words at one spot; a coding agent can write one too
+// (POST .../conflicts/agent, conflict-agent.ts). A merged JavaScript or TypeScript file that
 // would no longer build (lint.ts) is a conflict too. Git hears about it when
 // main is catalogued. A branch can delete a file too: its row is marked
 // deleted, and merging deletes it from main, and from git there and then.
 // A merge also waits for the repo's required checks to pass on the branch (checks.ts).
 
-import { empty, fromText, type Conflict, type Doc, type Op } from "./lines.ts";
+import { empty, explain, fromText, PICKS, type Conflict, type Doc, type Op, type Pick, type Resolve } from "./lines.ts";
 import { materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { mergeBlock, refChecks } from "./checks.ts";
@@ -20,8 +23,31 @@ import { json, NAME, type Env } from "./env.ts";
 import { emit } from "./hooks.ts";
 import { diffToOps } from "./sync.ts";
 import { unindexFile } from "./search.ts";
+import { HARNESSES, type Harness } from "./harness.ts";
+import { localSandbox, type Exec } from "./agent-run.ts";
+import { containerSandbox } from "./sandbox.ts";
+import { ADMINS_ONLY, adminsOnly, agentsUnavailable, installedHarnesses } from "./agent-routes.ts";
+import { askAgent } from "./conflict-agent.ts";
 
-type Pick = "branch" | "main";
+const TEXT_MAX = 20_000;
+
+/** `resolve` as a merge sends it, {path: {line: pick}}, checked; or what's wrong with it. */
+export function parseResolve(raw: unknown): Record<string, Resolve> | string {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== "object" || Array.isArray(raw)) return "resolve: {path: {line: pick}}";
+  const out: Record<string, Resolve> = {};
+  for (const [path, lines] of Object.entries(raw)) {
+    if (!lines || typeof lines !== "object" || Array.isArray(lines)) return `resolve.${path}: {line: pick}`;
+    out[path] = {};
+    for (const [line, v] of Object.entries(lines as Record<string, unknown>)) {
+      const ok = (PICKS as readonly unknown[]).includes(v) ||
+        (!!v && typeof v === "object" && typeof (v as { text?: unknown }).text === "string" && (v as { text: string }).text.length <= TEXT_MAX);
+      if (!ok) return `resolve.${path}.${line}: ${PICKS.map((p) => JSON.stringify(p)).join(", ")} or {"text": "..."} (up to ${TEXT_MAX} characters)`;
+      out[path]![line] = (typeof v === "object" ? { text: (v as { text: string }).text.replace(/\r\n?/g, "\n") } : v) as Pick;
+    }
+  }
+  return out;
+}
 interface Access { read: boolean; write: boolean }
 
 export async function openBranch(env: Env, owner: string, repo: string, name: string) {
@@ -94,9 +120,10 @@ async function deleteOnMain(env: Env, owner: string, repo: string, path: string,
 }
 
 /** Ask main's copy of `path` to merge the branch's: a dry run, or for real. */
-async function mergeFile(env: Env, owner: string, repo: string, branch: { name: string; by: string }, path: string, user: string, resolve: Record<string, Pick> | undefined, dry: boolean) {
+async function mergeFile(env: Env, owner: string, repo: string, branch: { name: string; by: string }, path: string, user: string, resolve: Resolve | undefined, dry: boolean) {
   const [base, doc] = await Promise.all(["base", "file"].map(async (op) => (await toFile(env, owner, repo, path, user, op, {}, "", branch.name)).json() as Promise<Doc>));
-  const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by, path }) });
+  // Text the merger writes is theirs; deleted lines are the branch's doing.
+  const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by, path, writer: user }) });
   return { status: res.status, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[] }) };
 }
 
@@ -150,16 +177,40 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
         conflicts = conflicts.map((c) => secret.has(c.line) ? { ...c, base: "", main: c.main === null ? null : "", branch: c.branch === null ? null : "" } : c);
       }
       const lines = build ? changedLines(await (await toFile(env, owner, repo, f.path, user ?? "anon", "file")).json() as Doc, ops) : undefined;
-      return { path: f.path, merged: false, build, ops, conflicts, ...(lines && { lines }) };
+      return { path: f.path, merged: false, build, ops, conflicts: conflicts.map(explain), ...(lines && { lines }) };
     }));
     return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out });
   }
 
-  // POST /api/repos/:o/:r/branches/:b/merge {resolve?: {path: {lineId: "branch"|"main"}}}
+  // POST /api/repos/:o/:r/branches/:b/conflicts/agent {path, line, harness, model?}
+  // A coding agent writes the settled text for one conflict: {text}, to merge with as {text}. Nothing lands.
+  if (p[6] === "conflicts" && p[7] === "agent" && req.method === "POST") {
+    if (!a.write) return json({ error: "no write access" }, 403);
+    const why = agentsUnavailable(env);
+    if (why) return json({ error: why }, 501);
+    if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
+    const b = (await req.json().catch(() => ({}))) as { path?: string; line?: string; harness?: Harness; model?: string };
+    if (!b.harness || !HARNESSES.includes(b.harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
+    if (!installedHarnesses(env).includes(b.harness)) return json({ error: `${b.harness} isn't installed on this machine` }, 400);
+    if (!b.path || !b.line) return json({ error: "path and line: a conflict the review lists" }, 400);
+    const f = (await files()).find((x) => x.path === b.path && !x.merged && !x.deleted);
+    const c = f && (await mergeFile(env, owner, repo, branch, f.path, user!, undefined, true)).conflicts.find((x) => x.line === b.line);
+    if (!c) return json({ error: `no conflict ${b.line} in ${b.path} on ${name}` }, 404);
+    if (!explain(c).choices.includes("text")) return json({ error: "this conflict only takes main or branch" }, 400);
+    const main = await (await toFile(env, owner, repo, b.path, user!, "file")).json() as Doc;
+    const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
+    const r = await askAgent(box, { harness: b.harness, model: b.model?.trim() || undefined, path: b.path, branch: name, conflict: c, main }, req.signal);
+    return "error" in r ? json({ error: r.error }, 502) : json({ path: b.path, line: b.line, harness: b.harness, text: r.text });
+  }
+
+  // POST /api/repos/:o/:r/branches/:b/merge {resolve?: {path: {lineId: pick}}}, a pick being
+  // "main", "branch", "both", "both:branch-first" or {text}
   if (p[6] === "merge" && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
-    const { resolve = {}, build_ok } = (await req.json().catch(() => ({}))) as { resolve?: Record<string, Record<string, Pick>>; build_ok?: boolean };
+    const body = (await req.json().catch(() => ({}))) as { resolve?: unknown; build_ok?: boolean };
+    const resolve = parseResolve(body.resolve), build_ok = body.build_ok;
+    if (typeof resolve === "string") return json({ error: resolve }, 400);
     const todo = (await files()).filter((f) => !f.merged);
     // Build or deploy files on a merge the owner's next commit would ship: read them first.
     const build = todo.map((f) => f.path).filter(isBuildFile);
@@ -169,7 +220,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (held) return json(held, 409);
     // A dry run first, so a conflict anywhere merges nothing. A deletion never conflicts.
     const dry = await Promise.all(todo.filter((f) => !f.deleted).map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user!, resolve[f.path], true)) })));
-    const blocked = dry.filter((d) => d.conflicts.length).map(({ path, conflicts }) => ({ path, conflicts }));
+    const blocked = dry.filter((d) => d.conflicts.length).map(({ path, conflicts }) => ({ path, conflicts: conflicts.map(explain) }));
     // Settling a stretch can leave code that won't build: say so, as the review (settling nothing) can't show it.
     const broken = blocked.flatMap((b) => b.conflicts.filter((c) => c.lint).map((c) => `${b.path}: ${c.lint}`));
     if (blocked.length) return json({ error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked }, 409);
