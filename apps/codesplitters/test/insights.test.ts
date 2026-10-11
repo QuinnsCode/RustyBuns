@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
 import { classify } from "../src/insights.ts";
+import worker from "../src/worker.ts";
 
 // End to end (in-process D1), like privacy.test.ts.
 setDefaultTimeout(20_000);
@@ -105,6 +106,28 @@ describe("insights", () => {
     expect((await edit("y")).type).toBe("ack");
     expect((await edit("z")).type).toBe("ack");
     expect((await steps()).code).toMatchObject({ n: 1 });
+  });
+
+  test("on Workers, an isolate's tallies go to D1 as one batch, a row per caller (#638)", async () => {
+    const { call } = await app();
+    const { env } = call;
+    const writes: number[] = [], batch = env.DB.batch.bind(env.DB);
+    env.DB.batch = (stmts: unknown[]) => (writes.push(stmts.length), batch(stmts));
+    const held: Promise<unknown>[] = [], ctx = { waitUntil: (p: Promise<unknown>) => void held.push(p) };
+    const hit = (user: string, headers: Record<string, string>, path = "/api/session", body?: unknown) => worker.fetch(new Request(`http://codesplitters.local${path}`,
+      { method: body ? "POST" : "GET", headers: { ...headers, cookie: `cs_user=${user}` }, ...(body ? { body: JSON.stringify(body) } : {}) }), env, ctx);
+    for (let i = 0; i < 5; i++) await hit("ryan", browser);
+    await hit("ryan", browser, "/api/repos", { name: "lab" });
+    await hit("mia", curl);
+    await hit("mia", curl);
+    expect(writes).toEqual([]);
+    await Promise.all(held);
+    // ryan's and mia's hits, each joined, and ryan's repo step: five upserts in one batch, not eight batches.
+    expect(writes).toEqual([5]);
+    const d = (await (await call("boss", "/api/admin/insights")).json()) as any;
+    expect(d.traffic.callers.find((c: any) => c.who === "@ryan")).toMatchObject({ kind: "person", hits: 6 });
+    expect(d.traffic.callers.find((c: any) => c.who === "@mia")).toMatchObject({ kind: "agent", hits: 2 });
+    expect(d.users.find((u: any) => u.name === "ryan").steps.repo).toMatchObject({ n: 1 });
   });
 
   test("a failed request isn't a step", async () => {

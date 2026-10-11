@@ -472,8 +472,8 @@ const app = {
   async fetch(req: Request, env: Env, ctx?: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
     let res: Response;
     try { res = await route(req, env); }
-    catch (e) { if (tallied(req)) await record(env, req, 500); throw e; }
-    if (tallied(req)) { const t = record(env, req, res.status); if (ctx) ctx.waitUntil(t); else await t; }
+    catch (e) { if (tallied(req)) { const t = record(env, req, 500, !!ctx); if (ctx) ctx.waitUntil(t); else await t; } throw e; }
+    if (tallied(req)) { const t = record(env, req, res.status, !!ctx); if (ctx) ctx.waitUntil(t); else await t; }
     return res;
   },
 
