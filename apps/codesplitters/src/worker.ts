@@ -11,6 +11,7 @@ import { levelRoutes, runDigs } from "./levels.ts";
 import { evict, githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
+import { followers, followRoutes, listFollows } from "./follows.ts";
 import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes, runQueuedAgents, type AgentMessage } from "./agent-routes.ts";
@@ -122,6 +123,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (deploy) return deploy;
   const hooks = await hookRoutes(req, env, p, user);
   if (hooks) return hooks;
+  // POST /api/follows, DELETE /api/follows/:id, GET /api/me/following (follows.ts)
+  const follows = await followRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
+  if (follows) return follows;
 
   // GET /api/me/export and DELETE /api/me: take your data, or bury it (privacy.ts)
   const privacy = await privacyRoutes(req, env, p, url, user, !token && !actingAs.has(req));
@@ -137,14 +141,15 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first());
   }
 
-  // GET /api/users/:name  profile, the repos you may see, playlists
+  // GET /api/users/:name  profile, the repos you may see, playlists, and how many it follows and are following it
   if (p[1] === "users" && p[2]) {
     const u = await env.DB.prepare("SELECT name, bio, theme_html FROM users WHERE name = ?").bind(p[2]).first();
     if (!u) return json({ error: "no such user" }, 404);
     const { results: repos } = await env.DB.prepare(
       "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
     const { results: playlists } = await env.DB.prepare("SELECT * FROM playlists WHERE owner = ? ORDER BY id DESC").bind(p[2]).all();
-    return json({ user: u, repos, playlists });
+    // What it follows in a private repo counts only for that repo's crew.
+    return json({ user: u, repos, playlists, following: (await listFollows(env.DB, p[2], user)).length, followers: await followers(env.DB, p[2]) });
   }
 
   // POST /api/repos {name, visibility}

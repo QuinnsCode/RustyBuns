@@ -65,6 +65,7 @@
   .btn.ghost { background: transparent; border-color: transparent; }
   .btn.ghost:hover { background: var(--grain), var(--paper); border-color: var(--border-2); }
   .btn[disabled] { opacity: .4; cursor: default; transform: none; }
+  .btn.follow[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--grain), var(--accent-soft); }
   .btn .count { background: rgba(10,10,10,.06); border-radius: 4px; padding: 1px 5px; font-size: 11.5px; }
   .badge { display: inline-flex; align-items: center; gap: 5px; font: 500 12px/18px var(--sans); color: var(--muted); border: 1px solid var(--border-2); border-radius: 5px; padding: 1px 7px; background: var(--grain), var(--paper); }
   button.badge { cursor: pointer; } button.badge:hover { border-color: #a8a8a8; color: var(--fg); }
@@ -746,6 +747,36 @@ async function copy(text, what = "Copied") {
   try { await navigator.clipboard.writeText(text); toast(what); } catch { if (!agentCall) toast("The browser wouldn't copy it: press the button again"); }
 }
 
+// Follow buttons (follows.ts): data-follow is what to follow, a name or {owner, repo[, path, from, to]};
+// for lines, first and last are the line ids shown, so a follow that keeps those lines counts.
+// Your follows are fetched once a page, the first time it draws a button.
+let followed = null, fetchingFollows = null;
+const followButton = (t) => !me() || t.name === me() ? "" : `<button class="btn follow" type="button" data-follow="${esc(JSON.stringify(t))}" aria-pressed="false" title="follow ${t.name ? "@" + esc(t.name) : t.path ? "these lines, by id, as they move" : "this repo"}">${icon("eye")}<span>Follow</span></button>`;
+const followOf = (t) => (followed ?? []).find((f) => t.name ? f.name === t.name
+  : f.owner === t.owner && f.repo === t.repo && (t.path ? f.kind === "lines" && f.path === t.path && f.ids.includes(t.first) && f.ids.includes(t.last) : f.kind === "repo"));
+/** One of your follows, as a link to it. */
+const followLink = (f) => f.kind === "user" || f.kind === "agent" ? `<a href="#/u/${esc(f.name)}">${icon(f.kind === "agent" ? "bot" : "user")}@${esc(f.name)}</a>`
+  : f.kind === "repo" ? `<a href="#/r/${esc(f.owner)}/${esc(f.repo)}">${icon("book")}${esc(f.owner)}/${esc(f.repo)}</a>`
+  : `<a href="#/f/${esc(f.owner)}/${esc(f.repo)}/${encodeURIComponent(f.path)}">${icon("file-text")}${esc(f.owner)}/${esc(f.repo)}/${esc(f.path)}<span class="when">lines ${f.from_line}–${f.to_line} when followed</span></a>`;
+async function wireFollows(root = document) {
+  const btns = [...root.querySelectorAll("[data-follow]")];
+  if (!btns.length) return;
+  followed ??= await (fetchingFollows ??= api("/me/following").catch(() => []));
+  for (const b of btns) { const on = !!followOf(JSON.parse(b.dataset.follow)); b.setAttribute("aria-pressed", on); b.querySelector("span").textContent = on ? "Following" : "Follow"; }
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-follow]");
+  if (!b) return;
+  const { first, last, ...t } = JSON.parse(b.dataset.follow), f = followOf({ first, last, ...t });
+  b.disabled = true;
+  try {
+    if (f) { await api(`/follows/${f.id}`, undefined, "DELETE"); followed = followed.filter((x) => x !== f); toast("Unfollowed"); }
+    else { followed = [await api("/follows", t), ...(followed ?? [])]; toast(t.name ? `Following @${t.name}` : t.path ? "Following these lines" : `Following ${t.owner}/${t.repo}`); }
+  } catch (err) { toast(err.message); }
+  b.disabled = false;
+  wireFollows();
+});
+
 async function refreshSession() { session = await api("/session").catch(() => session); }
 /** Just signed in: off to your own page (or wherever you are, while there's no handle yet). */
 function landHome() {
@@ -1285,7 +1316,7 @@ const agentRun = (x, file) => {
     : x.status === "failed" || x.status === "stopped" ? esc((x.error ?? "stopped").split("\n")[0])
     : (x.applied ? `${x.applied} line ops landed at r${x.rev}` : "no changes") + (x.runs > 1 ? ` after ${x.runs} runs` : "")
       + (x.conflicts.length ? `; ${x.conflicts.length} edit${x.conflicts.length > 1 ? "s" : ""} kept someone else's version` : "");
-  return `<div class="run"><div class="row"><b>${esc(x.agent)}</b><span class="st ${x.status}">${x.status}</span>${x.status === "running" ? ticker(x.started, x.deadline, x.deadline
+  return `<div class="run"><div class="row"><b><a href="#/u/${esc(x.agent)}">${esc(x.agent)}</a></b><span class="st ${x.status}">${x.status}</span>${followButton({ name: x.agent, kind: "agent" })}${x.status === "running" ? ticker(x.started, x.deadline, x.deadline
     ? "Time left before this hosted run is cut off. It runs off the site's job queue, which gives a run 15 minutes from when it was started."
     : "How long this agent has been working. It runs on this machine, so there's no time limit.") : ""}${x.status === "running" ? `<button type="button" class="btn stop" data-stop="${x.id}" title="stop it: its CLI is killed, what it left is dropped, and its lines are freed">${icon("square")}Stop</button>` : ""}</div>${file ? `<a class="muted" style="font-size:12px" href="#/f/${x.owner}/${x.repo}/${encodeURIComponent(x.path)}">${icon("file")}${esc(x.path)}</a>` : ""}<span>${esc(x.task)}</span><span class="muted" style="font-size:12px">${result}</span>${x.notes?.length ? `<span class="muted" style="font-size:12px" title="${esc(x.notes.map((n) => n.text).join("\n"))}">${icon("message-square")}told it ${x.notes.length === 1 ? "once" : `${x.notes.length} times`}: ${esc(x.notes[x.notes.length - 1].text)}</span>` : ""}${x.status === "running" ? `<form class="tell" data-note="${x.id}"><input name="text" maxlength="2000" placeholder="tell it something" title="A running agent can't take messages, so this goes into the prompt of its next run: when this one ends, it goes round again with it" autocomplete="off"><button class="btn" title="send it">${icon("send")}</button></form>` : ""}${x.output || x.error ? `<details><summary class="muted" style="font-size:12px">output</summary><pre>${esc(x.error ?? x.output)}</pre></details>` : ""}</div>`;
 };
@@ -1302,6 +1333,7 @@ function drawRuns(el, rs, { owner, repo, file, scope = {}, lines, refresh, empty
   const sel = lines?.() ?? [], onSel = sel.length ? running.filter((x) => x.lines?.some((l) => sel.includes(l))) : [];
   const bulk = running.length > 1 || onSel.length ? `<div class="bulk">${running.length > 1 ? `<button class="btn" data-stop-all title="stop every agent running here">${icon("square")}Stop all ${running.length}</button>` : ""}${harnesses.length > 1 ? harnesses.map((h) => `<button class="btn" data-stop-h="${h}" title="stop every ${h} agent running here">${h} ${running.filter((x) => x.harness === h).length}</button>`).join("") : ""}${onSel.length ? `<button class="btn" data-stop-sel title="stop the agents holding any of the selected lines">${icon("hand")}On selected lines ${onSel.length}</button>` : ""}</div>` : "";
   el.innerHTML = rs.length ? bulk + rs.map((x) => agentRun(x, file)).join("") : empty;
+  wireFollows(el);
   for (const f of el.querySelectorAll("[data-note]")) if (drafts[f.dataset.note]) f.text.value = drafts[f.dataset.note];
   icons();
   const base = `/repos/${owner}/${repo}/agents`;
@@ -1639,12 +1671,13 @@ const views = {
 
   async u(name) {
     const mine = name === me();
-    const [{ user, repos, playlists }, { jobs }] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }]);
+    const [{ user, repos, playlists, following = 0, followers = 0 }, { jobs }, follows] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : []]);
     ctx = { view: "u", name };
     const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
     app.innerHTML = `<div class="wrap prof">
       <div class="prof-head"><h1>${icon("user")}@${esc(name)}</h1><span class="muted">${esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
-        <span class="stat">${n(repos.length, "repo")} · ${n(playlists.length, "collection")}</span>
+        <span class="stat">${n(repos.length, "repo")} · ${n(playlists.length, "collection")} · ${following} following · ${n(followers, "follower")}</span>
+        ${followButton({ name, kind: name.startsWith("agent-") ? "agent" : "user" })}
         ${mine ? `<button class="btn ghost" id="editpage">${icon("palette")}Edit page</button>` : ""}</div>
       ${mine ? `<form id="theme" class="box" hidden><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">any HTML and CSS, rendered in a sandbox (no scripts)</span></div><div class="body" style="display:grid;gap:8px">
         <input name="bio" placeholder="a line about you" value="${esc(user.bio)}">
@@ -1660,6 +1693,7 @@ const views = {
         ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
         <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
+        ${mine ? `<div class="box"><div class="bar">${icon("eye")}<b>Following</b><span class="muted">people, agents, repos and lines</span></div><div class="body list">${follows.map(followLink).join("") || '<span class="muted">nothing yet: Follow is on profiles, repos, agent runs, shares and collections</span>'}</div></div>` : ""}
         ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("plug")}<b>Connect your AI</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
         ${mine ? dataBox() : ""}
       </aside></div></div>`;
@@ -1683,6 +1717,7 @@ const views = {
       ${visBadge(r.visibility, isOwner)}
       <span class="grow"></span>
       ${playButton(`r/${owner}/${repo}`)}
+      ${followButton({ owner, repo })}
       <a class="btn" href="#/m/${owner}/${repo}" title="this repo's agents and branches, laid out for a phone">${icon("smartphone")}Phone</a>
       ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. Agents join the same way.</span><div class="copyline"><input name="name" placeholder="agent-linter or a person's handle" required><button class="btn primary">Invite</button></div></form></div>` : ""}
       ${me() ? `<div class="pop"><button class="btn" id="limits" title="what this repo and you may do, and how close you are">${icon("gauge")}Limits</button><div class="panel" id="limits-panel" hidden style="width:380px;max-height:70vh;overflow:auto"><span class="muted">…</span></div></div>` : ""}
@@ -2666,11 +2701,12 @@ const views = {
       const where = `${esc(s.owner)}/${esc(s.repo)} · ${esc(s.path)}`;
       app.innerHTML = `<div class="wrap" style="max-width:980px;padding-top:28px">
         <div class="box"><div class="bar">${icon("share-2")}<b>${where}</b>${s.gone ? "" : `<span class="muted">· lines ${s.from}–${s.to}</span>`}<span class="grow"></span>
-          <span class="badge" title="refreshes every few seconds">${icon("radio")}live</span>${s.visibility === "private" ? `<span class="badge">${icon("lock")}from a private repo</span>` : `<a class="btn" href="#/f/${s.owner}/${s.repo}/${encodeURIComponent(s.path)}">${icon("file-code")}Open the file</a>`}
+          <span class="badge" title="refreshes every few seconds">${icon("radio")}live</span>${s.gone ? "" : followButton({ owner: s.owner, repo: s.repo, path: s.path, from: s.from, to: s.to, first: s.lines[0].id, last: s.lines.at(-1).id })}${s.visibility === "private" ? `<span class="badge">${icon("lock")}from a private repo</span>` : `<a class="btn" href="#/f/${s.owner}/${s.repo}/${encodeURIComponent(s.path)}">${icon("file-code")}Open the file</a>`}
           ${s.by === me() || s.owner === me() ? `<button class="btn" id="revoke">${icon("link-2-off")}Revoke</button>` : ""}</div>
           ${s.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">${esc(s.note)} <span class="muted">· shared by @${esc(s.by)}</span></div>` : ""}
           ${s.gone ? '<div class="body muted">These lines are gone: every one of them was deleted.</div>' : `<div class="code">${codeRows(s.lines)}</div>`}</div>
         <p class="muted" style="font-size:12px">${s.visibility === "private" ? "Only these lines are shared. The rest of the repo stays private." : "A live share: it follows these lines as they change."}</p></div>`;
+      wireFollows(app);
       $("#revoke")?.addEventListener("click", async () => { await api("/shares/" + id, undefined, "DELETE"); clearInterval(timer); toast("Link revoked"); location.hash = "#/"; });
       icons();
     };
@@ -2748,7 +2784,7 @@ const views = {
     const pl = await api("/playlists/" + id);
     ctx = { view: "p", id };
     app.innerHTML = `<div class="repohead"><div class="wrap"><h1>${icon("library")}<b>${esc(pl.title)}</b></h1><div class="sub">a collection by <a href="#/u/${pl.owner}">@${esc(pl.owner)}</a></div></div></div>
-      <div class="wrap cards">${pl.tracks.map((t, i) => `<div class="box"><div class="bar"><b>${i + 1}.</b><a href="#/f/${t.owner}/${t.repo}/${encodeURIComponent(t.path)}">${esc(t.owner)}/${esc(t.repo)}/${esc(t.path)}</a><span class="muted">lines ${t.from_line}–${t.to_line}</span></div>
+      <div class="wrap cards">${pl.tracks.map((t, i) => `<div class="box"><div class="bar"><b>${i + 1}.</b><a href="#/f/${t.owner}/${t.repo}/${encodeURIComponent(t.path)}">${esc(t.owner)}/${esc(t.repo)}/${esc(t.path)}</a><span class="muted">lines ${t.from_line}–${t.to_line}</span><span class="grow"></span>${t.lines.length ? followButton({ owner: t.owner, repo: t.repo, path: t.path, from: t.from_line, to: t.to_line, first: t.lines[0].id, last: t.lines.at(-1).id }) : ""}</div>
         ${t.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">${esc(t.note)}</div>` : ""}<div class="code">${codeRows(t.lines, { start: t.from_line })}</div></div>`).join("") || '<div class="box"><div class="body muted">Nothing collected yet. Open any file, select some lines, and Collect.</div></div>'}</div>`;
     icons();
   },
@@ -3398,6 +3434,7 @@ const FIXED = { f: 2, r: 2, l: 1 };
 let routing = Promise.resolve();
 async function route() {
   let drawn; routing = new Promise((r) => (drawn = r));
+  followed = fetchingFollows = null;
   socket?.close(); socket = null;
   clearTimeout(agentTimer);
   stopIntro();
@@ -3411,6 +3448,7 @@ async function route() {
   try { await (views[view] && view !== "repoHead" && view !== "wireRepoHead" ? views[view] : views.home)(...parts); }
   catch (err) { app.innerHTML = `<div class="wrap" style="padding-top:24px"><div class="box"><div class="body">${esc(err.message)}</div></div></div>`; }
   window.scrollTo(0, 0);
+  wireFollows();
   await webTools();
   drawn();
 }

@@ -47,5 +47,5 @@ export async function shareRoutes(req: Request, env: Env, p: string[], user: str
   const out = { id: s.id, owner: s.owner, repo: s.repo, path: s.path, by: s.by, note: s.note, created_at: s.created_at, visibility: repo?.visibility ?? "public" };
   if (!hit.length) return json({ ...out, lines: [], gone: true });
   const a = hit[0]!, b = hit[hit.length - 1]!;
-  return json({ ...out, from: a + 1, to: b + 1, lines: lines.slice(a, b + 1).map((l, k) => ({ n: a + k + 1, text: l.text, by: l.by, rev: l.rev, ...(l.private && { private: true }) })) });
+  return json({ ...out, from: a + 1, to: b + 1, lines: lines.slice(a, b + 1).map((l, k) => ({ id: l.id, n: a + k + 1, text: l.text, by: l.by, rev: l.rev, ...(l.private && { private: true }) })) });
 }
