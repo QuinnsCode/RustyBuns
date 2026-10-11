@@ -8,7 +8,7 @@
 <style>
   /* The API reference, drawn from GET /api (src/api.ts): every read and action
      the site's own page uses, for anyone building their own UI or agent on it. */
-  :root { --bg: #fff; --border: #e6e6e6; --fg: #0a0a0a; --muted: #6b6b6b; --accent: #e8590c; --accent-soft: #fff4ec; --paper: #fcfbf8;
+  :root { --bg: #fff; --border: #e6e6e6; --fg: #0a0a0a; --muted: #6b6b6b; --accent: #e8590c; --accent-ink: #c2410c; --accent-soft: #fff4ec; --paper: #fcfbf8;
     --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
@@ -22,11 +22,11 @@
   ul { list-style: none; margin: 10px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--paper); }
   li { display: grid; grid-template-columns: 64px 1fr; gap: 2px 12px; padding: 10px 12px; border-top: 1px solid var(--border); }
   li:first-child { border-top: 0; }
-  .m { font: 500 11px/20px var(--mono); color: var(--accent); }
+  .m { font: 500 11px/20px var(--mono); color: var(--accent-ink); }
   .p { font: 500 13px/20px var(--mono); overflow-wrap: anywhere; }
   .d { grid-column: 2; color: var(--muted); font-size: 13px; }
   .b { font: 12px var(--mono); color: var(--fg); background: var(--accent-soft); padding: 0 4px; border-radius: 3px; }
-  .who { font-size: 12px; color: var(--accent); }
+  .who { font-size: 12px; color: var(--accent-ink); }
   @media (max-width: 560px) { .wrap { padding: 20px 16px 48px; } li { grid-template-columns: 1fr; } .d { grid-column: 1; } }
 </style>
 </head>

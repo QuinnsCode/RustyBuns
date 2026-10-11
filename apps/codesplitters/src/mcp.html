@@ -8,7 +8,7 @@
 <style>
   /* The MCP server in words: how to connect, and every tool, drawn from
      GET /api/mcp/tools (src/mcp.ts), which builds them from the OpenAPI spec. */
-  :root { --bg: #fff; --border: #e6e6e6; --fg: #0a0a0a; --muted: #6b6b6b; --accent: #e8590c; --accent-soft: #fff4ec; --paper: #fcfbf8;
+  :root { --bg: #fff; --border: #e6e6e6; --fg: #0a0a0a; --muted: #6b6b6b; --accent: #e8590c; --accent-ink: #c2410c; --accent-soft: #fff4ec; --paper: #fcfbf8;
     --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
@@ -26,13 +26,13 @@
   .tool:first-child { border-top: 0; }
   .name { font: 500 13px/20px var(--mono); }
   .tag { font: 500 11px/18px var(--mono); padding: 0 6px; border-radius: 3px; margin-left: 6px; border: 1px solid var(--border); color: var(--muted); }
-  .tag.risky { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .tag.risky { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
   .d { color: var(--muted); font-size: 13px; margin-top: 2px; }
   .http { font: 11.5px var(--mono); color: var(--muted); }
   .args { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12.5px; }
   .args li { padding: 1px 0; color: var(--muted); }
   .args b { font: 500 12px var(--mono); color: var(--fg); }
-  .args i { font-style: normal; color: var(--accent); font-size: 11px; }
+  .args i { font-style: normal; color: var(--accent-ink); font-size: 11px; }
   .copy { position: relative; } .copy pre { padding-right: 64px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .copy button { position: absolute; top: 6px; right: 6px; font: 500 12px var(--sans); padding: 3px 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--fg); cursor: pointer; }
   .copy button:hover { border-color: var(--accent); color: var(--accent); }
