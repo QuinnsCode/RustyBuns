@@ -118,10 +118,10 @@
   <ul id="lobby-players"></ul>
   <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><span class="muted" id="lobby-msg"></span></div>
   <div class="keys touch-only">left stick: walk (push it all the way to run) · drag anywhere else: look · <b>swat</b>: tap to swat, hold to press the README into a line · <b>jump</b><br>scraps on the floor split again when you swat them · walk into a doorway to go into that folder</div>
-  <div class="keys mouse-only"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swat · <kbd>hold</kbd> press the README into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
+  <div class="keys mouse-only"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swat · <kbd>hold</kbd> press the README into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>no mouse? <kbd>↑</kbd><kbd>↓</kbd> walk · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>PgUp</kbd><kbd>PgDn</kbd> look · <kbd>space</kbd> swat (hold to press) · <kbd>J</kbd> jump<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
   <p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p>
 </div></div>
-<div class="panel" id="lock" hidden style="background:transparent;align-items:flex-end;justify-content:center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;margin:0 16px;padding:12px 18px"><button id="lock-go" class="primary">Click to roll up the README</button> <span class="muted">· Esc lets go</span><p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p></div></div>
+<div class="panel" id="lock" hidden style="background:transparent;align-items:flex-end;justify-content:center;padding-bottom:12vh;cursor:pointer"><div class="card" style="width:auto;margin:0 16px;padding:12px 18px"><button id="lock-go" class="primary">Click to roll up the README</button> <span class="muted">· Esc lets go · or just press an arrow key to play from the keyboard</span><p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p></div></div>
 <div class="panel" id="over" hidden><div class="card">
   <div class="label">the round is over</div><h1 id="over-title">Swatted flat.</h1>
   <ul id="over-players"></ul>
@@ -491,21 +491,37 @@ async function enter(path, from, built) {
 const EYE = 1.6;
 const player = { pos: new THREE.Vector3(0, EYE, 0), vel: new THREE.Vector3(), vy: 0, yaw: 0, pitch: 0, hp: 100, score: 0, combo: 1, comboT: 0, alive: false };
 const keys = new Set();
+// Keyboard only: arrows walk and turn, Page Up/Down look, Space swats (hold it to press), J jumps.
+// With the mouse locked in, Space stays jump, since a click swats.
+const GAME_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Space", "KeyJ"]);
+let kbd = false, keySwat = false;
+const locked = () => document.pointerLockElement === renderer.domElement;
 addEventListener("keydown", (e) => {
   keys.add(e.code);
-  if (e.code === "Space" && playing) { e.preventDefault(); jump(); }
+  if (!playing || !GAME_KEYS.has(e.code)) return;
+  e.preventDefault();
+  if (!locked() && !kbd) { kbd = true; $("#lock").hidden = true; }
+  if (e.repeat) return;
+  if (e.code === "KeyJ" || (e.code === "Space" && locked())) jump();
+  else if (e.code === "Space") { sound.init(); keySwat = held = true; swing(); }
 });
-addEventListener("keyup", (e) => keys.delete(e.code));
+addEventListener("keyup", (e) => {
+  keys.delete(e.code);
+  if (e.code === "Space" && keySwat) { keySwat = held = false; if (pin) letGo(); }
+});
 addEventListener("mousemove", (e) => {
   if (document.pointerLockElement !== renderer.domElement) return;
   player.yaw -= e.movementX * 0.0022;
   player.pitch = Math.max(-1.4, Math.min(1.4, player.pitch - e.movementY * 0.0022));
 });
-document.addEventListener("pointerlockchange", () => { $("#lock").hidden = touch || !playing || document.pointerLockElement === renderer.domElement; });
+document.addEventListener("pointerlockchange", () => { $("#lock").hidden = touch || kbd || !playing || locked(); });
 $("#lock").addEventListener("click", (e) => { if (!e.target.closest("a")) renderer.domElement.requestPointerLock(); });
 let held = false;
-renderer.domElement.addEventListener("mousedown", () => { if (document.pointerLockElement === renderer.domElement) { held = true; swing(); } });
-addEventListener("mouseup", () => { if ($("#t-swat").classList.contains("on")) return; held = false; if (pin) letGo(); });
+renderer.domElement.addEventListener("mousedown", () => {
+  if (locked()) { held = true; swing(); }
+  else if (playing && !touch) renderer.domElement.requestPointerLock?.()?.catch?.(() => {});
+});
+addEventListener("mouseup", () => { if (keySwat || $("#t-swat").classList.contains("on")) return; held = false; if (pin) letGo(); });
 
 // Touch: no pointer lock on a phone. A stick walks, a drag anywhere else looks, and buttons swat and jump.
 let touch = matchMedia("(pointer: coarse)").matches;
@@ -1097,7 +1113,10 @@ function hurt(n, by, why) {
 
 let transit = false;
 function updatePlayer(dt) {
-  const f = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0) - stick.y, s = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0) + stick.x;
+  const k = (...codes) => (codes.some((c) => keys.has(c)) ? 1 : 0);
+  const f = k("KeyW", "ArrowUp") - k("KeyS", "ArrowDown") - stick.y, s = k("KeyD") - k("KeyA") + stick.x;
+  player.yaw += (k("ArrowLeft") - k("ArrowRight")) * 2.6 * dt;
+  player.pitch = Math.max(-1.4, Math.min(1.4, player.pitch + (k("PageUp") - k("PageDown")) * 1.6 * dt));
   // Pressing the README into a line pins you down to a shuffle.
   const speed = (keys.has("ShiftLeft") || keys.has("ShiftRight") || Math.hypot(stick.x, stick.y) > 0.95 ? 8 : 4.8) * (pin ? 0.45 : 1);
   const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
@@ -1321,8 +1340,11 @@ async function begin(seed, startAt) {
     return;
   }
   for (const l of here.lines) if (!l.mesh.parent) l.wall.add(l.mesh);
+  // Whatever started the round (a button pressed with Enter, say) lets go of focus, so Space swats.
+  document.activeElement?.blur?.();
+  keySwat = held = false;
   renderer.domElement.requestPointerLock?.()?.catch?.(() => {});
-  $("#lock").hidden = touch || document.pointerLockElement === renderer.domElement;
+  $("#lock").hidden = touch || kbd || locked();
   const tick = () => {
     const left = Math.ceil((startAt - Date.now()) / 1000);
     if (left > 0) { banner(String(left), "roll up the README"); setTimeout(tick, 250); return; }
