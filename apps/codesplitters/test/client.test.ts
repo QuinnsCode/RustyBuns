@@ -177,3 +177,22 @@ describe("what changed since you were last here", () => {
     expect(sent).toHaveLength(3);
   });
 });
+
+// axe's leftovers from the accessibility pass (#768).
+describe("headings and landmarks", () => {
+  test("a repo's side panels are h2s under the page's h1, not h3s", () => {
+    expect(html).toContain(`<h2 draggable="true">\${icon(ic)}\${title}`);
+    expect(html).not.toMatch(/<h3\b/);
+  });
+
+  test("the workbench's two asides have their own names", () => {
+    expect(html).toContain(`<aside class="explorer" aria-label="Explorer">`);
+    expect(html).toContain(`<aside class="details" aria-label="Details">`);
+  });
+
+  test("the feed, search, admin, invite, share, cut and error pages each open with an h1", () => {
+    for (const h of [`<h1>\${icon("rss")} Your feed`, `<h1 class="page-h" style="margin:0 0 14px">\${icon("search")}`, `<h1>\${icon("gauge")} Rate limits`,
+      `<h1>\${icon("activity")} Insights`, `<h1>\${icon("shovel")} Dig site`, `\${icon("mail-x")}<h1>Invite</h1>`, `\${icon("user-plus")}<h1>`,
+      `\${icon("share-2")}<h1>`, `\${icon("scissors")}<h1>`, `<h1 class="sr">Couldn't open this page</h1>`]) expect(html).toContain(h);
+  });
+});
