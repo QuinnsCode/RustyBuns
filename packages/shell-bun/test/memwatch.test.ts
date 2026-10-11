@@ -51,3 +51,11 @@ test("memWatch: over the ceiling it snapshots the heap once and exits 1", async 
   expect(lines.some((l) => l.includes("over the 180MB ceiling"))).toBe(true);
   expect(readdirSync(dir).filter((f) => f.endsWith(".heapsnapshot"))).toHaveLength(1);
 });
+
+test("memWatch: onSample gets the stats after every sample", () => {
+  const seen: number[] = [];
+  const w = memWatch({ everyMs: 3_600_000, log: () => {}, sample: () => ({ rss: 50 * MB, heap: 10 * MB }), onSample: (s) => seen.push(s.rssMb) });
+  w.tick(); w.tick();
+  w.stop();
+  expect(seen).toEqual([50, 50]);
+});

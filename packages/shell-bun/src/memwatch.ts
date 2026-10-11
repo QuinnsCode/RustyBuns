@@ -33,6 +33,8 @@ export interface MemWatchOptions {
   /** Where the heap snapshot goes. Unset: no snapshot. */
   snapshotDir?: string;
   log?: (line: string) => void;
+  /** Called with the stats after every sample, e.g. to hand them to another process. */
+  onSample?: (stats: MemStats) => void;
   exit?: (code: number) => void;
   sample?: () => { rss: number; heap: number };
   now?: () => number;
@@ -79,6 +81,7 @@ export function memWatch(o: MemWatchOptions = {}) {
     log(`[mem] rss ${st.rssMb}MB heap ${st.heapMb}MB peak ${st.peakRssMb}MB` +
       (st.slopeMbPerHour === null ? "" : ` ${st.slopeMbPerHour >= 0 ? "+" : ""}${st.slopeMbPerHour}MB/h`) +
       (st.hoursToMax === null ? "" : ` ~${st.hoursToMax}h to ${maxMb}MB`));
+    o.onSample?.(st);
     if (maxMb && st.rssMb > maxMb && !tripped) {
       tripped = true;
       log(`[mem] rss ${st.rssMb}MB over the ${maxMb}MB ceiling: restarting`);
