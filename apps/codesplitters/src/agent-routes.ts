@@ -22,10 +22,11 @@
 //        (none: every one on the repo). Its CLI is killed or its container destroyed, and its claim lifted.
 //   POST /api/repos/:o/:r/agents/:id/notes {text}         tell a running one something. A CLI can't take messages
 //        while it runs, so the note goes into the prompt of its next run: when this one ends, it goes round again.
-//   POST /api/repos/:o/:r/agents/:id/accept   land its batch, waiting on main (below), now
-//   POST /api/repos/:o/:r/agents/:id/hold     stop its batch's clock: it lands when accepted
-//   POST /api/repos/:o/:r/agents/:id/look     someone's reading its batch: it waits a few seconds more
-//   POST /api/repos/:o/:r/agents/:id/reject   throw its batch away
+//   GET  /api/repos/:o/:r/agents/waiting?path=           this file's batches waiting on main, and lines that kept yours (anyone who reads it)
+//   POST /api/repos/:o/:r/agents/:id/accept               land its waiting batch now (owner only)
+//   POST /api/repos/:o/:r/agents/:id/hold                 stop its clock till someone accepts it (crew)
+//   POST /api/repos/:o/:r/agents/:id/look                 someone's reading it: put the landing off a little (crew)
+//   POST /api/repos/:o/:r/agents/:id/reject               throw it away (owner only)
 //
 // A run's batch doesn't land on main as it's written (#745). The agent works on a branch of its own,
 // agent-run-<id>, and when it ends the batch waits there for AGENT_REVIEW_MS (8 seconds by default),
@@ -135,7 +136,7 @@ export const ADMINS_ONLY = "hosted agents are limited to this site's admins (ADM
 export const installedHarnesses = (env: Env) => env.AGENT_EXEC || env.AGENT_SANDBOX ? HARNESSES : HARNESSES.filter((h) => Bun.which(harnessCommand(h, "").bin));
 
 export async function agentRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null,
-  canRead: (owner: string, repo: string) => Promise<boolean>,
+  access: (owner: string, repo: string) => Promise<{ read: boolean; write: boolean }>,
   self: (req: Request) => Promise<Response>): Promise<Response | null> {
   if (p[1] === "agents" && !p[2]) {
     const why = agentsUnavailable(env);
@@ -144,14 +145,18 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "agents")) return null;
   const [owner, repo] = [p[2], p[3]];
   const stop = p[5] === "stop" && !p[6], one = !!p[5] && /^\d+$/.test(p[5]) && !p[7];
-  const note = one && p[6] === "notes", review = one && REVIEWS.includes(p[6] ?? "");
-  if (p[5] && !stop && !note && !review) return null;
-  if (!(await canRead(owner, repo))) return json({ error: "not found" }, 404);
+  const note = one && p[6] === "notes", review = one && REVIEWS.includes(p[6] ?? ""), waiting = p[5] === "waiting" && !p[6];
+  if (p[5] && !stop && !note && !review && !waiting) return null;
+  const a = await access(owner, repo);
+  if (!a.read) return json({ error: "not found" }, 404);
+  if (waiting) return req.method === "GET" ? waitingOn(env, self, url, owner, repo, user, a.write) : null;
   if (stop || note || review) {
     if (req.method !== "POST") return null;
-    if (user !== owner) return json({ error: "only the repo's owner can stop, tell or review its coding agents" }, 403);
-    if (review) return reviewRun(env, self, url.origin, owner, repo, Number(p[5]), p[6]!, user);
-    return stop ? stopRuns(req, env, owner, repo, user, caller(self, url.origin)) : tell(req, env, owner, repo, Number(p[5]));
+    // The crew can put a batch off (look) or stop its clock (hold); landing or binning it is the owner's.
+    const crewMay = review && (p[6] === "look" || p[6] === "hold");
+    if (crewMay ? !a.write : user !== owner) return json({ error: crewMay ? "only the repo's crew can hold or look at an agent's batch" : "only the repo's owner can stop, tell, accept or reject its coding agents" }, 403);
+    if (review) return reviewRun(env, self, url.origin, owner, repo, Number(p[5]), p[6]!, user!);
+    return stop ? stopRuns(req, env, owner, repo, user!, caller(self, url.origin)) : tell(req, env, owner, repo, Number(p[5]));
   }
 
   if (req.method === "GET") {
@@ -167,11 +172,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
       await finish(env, r.id, "failed", { error });
       Object.assign(r, { status: "failed", result: JSON.stringify({ error }) });
     }
-    // A batch whose landing was lost (the app quit with it queued) goes round again.
-    for (const r of rows) {
-      const p = resultOf(r).pending;
-      if (p?.until != null && p.until < Date.now() - 5000) await landLater(env, r.id, url.origin, 0);
-    }
+    await relaunch(env, rows, url.origin);
     return json(rows.map((r) => toRun(r, env)));
   }
   if (req.method !== "POST") return null;
@@ -252,6 +253,40 @@ export async function runQueuedAgents(messages: readonly { body: AgentMessage; a
 }
 
 const resultOf = (r: Row | null): Partial<Run> => r?.result ? JSON.parse(r.result) : {};
+
+/** A batch whose landing was lost (the app quit with it queued) goes round again. */
+async function relaunch(env: Env, rows: Row[], origin: string) {
+  for (const r of rows) {
+    const p = resultOf(r).pending;
+    if (p?.until != null && p.until < Date.now() - 5000) await landLater(env, r.id, origin, 0);
+  }
+}
+
+/** A batch waiting on main, as anyone who reads the file sees it: no task, log or output, which can quote the agent's chatter. */
+export interface Waiting { id: number; agent: string; started: number; pending: NonNullable<Run["pending"]>; hunks: unknown[] }
+
+/**
+ * Path's batches waiting on main (#757), each with its branch's hunks (private lines blank
+ * outside the crew, as the hunks route has them), and for the crew the lines a landing in
+ * the last day kept theirs on, with what the agent wanted.
+ */
+async function waitingOn(env: Env, self: (req: Request) => Promise<Response>, url: URL, owner: string, repo: string, user: string | null, crew: boolean) {
+  const path = url.searchParams.get("path");
+  if (!path) return json({ error: "path is required" }, 400);
+  const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND path = ? ORDER BY id DESC LIMIT ${KEEP}`).bind(owner, repo, path).all();
+  const rows = results as Row[], day = Date.now() - 86_400_000;
+  await relaunch(env, rows, url.origin);
+  const call = caller(self, url.origin);
+  const waiting: Waiting[] = await Promise.all(rows.flatMap((r) => {
+    const p = resultOf(r).pending;
+    return p ? [(async () => {
+      const res = await call(user, `/api/repos/${owner}/${repo}/branches/${encodeURIComponent(p.branch)}/hunks?path=${encodeURIComponent(path)}`);
+      return { id: r.id, agent: r.agent, started: r.started, pending: p, hunks: res.ok ? ((await res.json()) as { hunks: unknown[] }).hunks : [] };
+    })()] : [];
+  }));
+  const kept = crew ? rows.flatMap((r) => { const x = resultOf(r); return x.landed && x.landed.at > day ? (x.kept ?? []).map((k) => ({ ...k, agent: r.agent })) : []; }) : [];
+  return json({ waiting, kept });
+}
 const landLater = (env: Env, id: number, origin: string, ms: number) => env.JOBS.send({ agent: id, origin, land: true }, { delaySeconds: Math.max(0, Math.ceil(ms / 1000)) });
 /** Sets a run's result if its batch is still waiting as `was` read it; false if something else got there first. */
 const swap = async (env: Env, id: number, was: Partial<Run>, now: Partial<Run>) =>
