@@ -45,6 +45,9 @@ const api = (path: string, body: unknown, method = "POST") => fetch(`${base}/api
   headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(launch && { cookie: `rb_token_${u.port}=${launch}` }) },
 });
 
+// The command is repo code, maybe an agent's: it doesn't get our write token, or the URL (it can carry the desktop launch token).
+const { CODESPLITTERS_TOKEN: _token, CODESPLITTERS_URL: _url, ...commandEnv } = process.env;
+
 /** One run, start to finish. */
 async function work(job: { id: number; sha: string; name: string; clone_url: string | null; command?: string }) {
   const report = (b: object) => api(`/${job.id}`, { runner_label: o.label, ...b }, "PUT");
@@ -60,7 +63,7 @@ async function work(job: { id: number; sha: string; name: string; clone_url: str
     if (!/^[0-9a-f]{40}$/.test(job.sha) || git("checkout", "--quiet", job.sha).exitCode) throw new Error(`${job.sha} isn't a commit in the repo's git`);
     const command = job.command ?? o.command ?? "bun test";
     out = `$ ${command}\n`;
-    const p = Bun.spawn(["sh", "-c", command], { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...process.env, CI: "1" } });
+    const p = Bun.spawn(["sh", "-c", command], { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...commandEnv, CI: "1" } });
     const pump = async (s: ReadableStream<Uint8Array>) => { for await (const t of s.pipeThrough(new TextDecoderStream())) out += t; };
     const tick = setInterval(() => flush().catch(() => p.kill()), 2000);
     const [code] = await Promise.all([p.exited, pump(p.stdout), pump(p.stderr)]).finally(() => clearInterval(tick));

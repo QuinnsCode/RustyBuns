@@ -326,12 +326,12 @@ test("a required check scoped to paths: a change in apps/a doesn't wait on b-tes
   expect((await checks("main")).gate).toMatchObject({ required: ["lint", "a-tests", "b-tests"], skipped: [] });
 });
 
-test("the reference runner claims a run, clones, runs a real bun test and reports it passed", async () => {
+test("the reference runner claims a run, clones, runs a real bun test and reports it passed, without handing the command its token (#618)", async () => {
   const { call, send } = await app();
   const server = Bun.serve({ port: 0, fetch: (req) => worker.fetch(req, call.env) });
   opened.push({ close: () => server.stop(true) });
   const { token: secret } = await (await send("ryan", "/api/tokens", { label: "runner", scope: "write" })).json();
-  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: [{ name: "test", command: "bun test ./math.test.ts" }] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: [{ name: "test", command: 'bun test ./math.test.ts && echo "seen: token=${CODESPLITTERS_TOKEN-unset} url=${CODESPLITTERS_URL-unset} ci=$CI"' }] }, "PUT");
   await send("ryan", "/api/repos/ryan/lab/files", { path: "math.test.ts", content: 'import { expect, test } from "bun:test";\ntest("adds", () => expect(1 + 1).toBe(2));' });
   const c = await (await send("ryan", "/api/repos/ryan/lab/do/commit?path=math.test.ts", { message: "a test" })).json();
 
@@ -348,6 +348,8 @@ test("the reference runner claims a run, clones, runs a real bun test and report
   expect(log).toContain("$ bun test ./math.test.ts");
   expect(log).toContain("1 pass");
   expect(log).toContain("exit 0");
+  expect(log).toContain("seen: token=unset url=unset ci=1");
+  expect(log).not.toContain(secret);
 });
 
 test("a collaborator can't pass a check it didn't run: only the claimer or the owner says how it went (#645)", async () => {
