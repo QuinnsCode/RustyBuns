@@ -69,3 +69,15 @@ jobs:
         run: ${{ matrix.prep }}
       # the test count goes on the check run as an annotation, for the office's PR health bar
       - run: bun ../../scripts/ci-test-count.ts "${{ matrix.test }}"
+
+  # One check for the ruleset on main to require (.github/rulesets/main.json): the jobs above only run for the
+  # apps a PR touched, so their names come and go. This passes when none of them failed or got cancelled.
+  apps:
+    needs: [plan, packages, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env: { RESULTS: "${{ join(needs.*.result, ' ') }}" }
+        run: |
+          echo "plan, packages, test: $RESULTS"
+          case " $RESULTS " in *" failure "*|*" cancelled "*) exit 1 ;; esac
