@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { local as boot, type Call } from "../src/local.ts";
 import { seal, sealState, unseal, unsealState } from "../src/deploy-keys.ts";
 import { DeployRunner, hider, readExec } from "../src/deploy-runner.ts";
+import { review, textDiff } from "../src/deploy-review.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the deploy image
 import { exec, state } from "../deploy-sandbox/server.mjs";
@@ -41,7 +42,9 @@ const origin = "http://codesplitters.local";
 function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
   const seen = { env: [] as Record<string, string>[], ran: [] as string[], limits: [] as number[], destroyed: 0, stacks: [] as string[],
     /** Set, the deploy streams its output in two pieces with this between them, as a real one does. */
-    gate: null as Promise<void> | null };
+    gate: null as Promise<void> | null,
+    /** The commit the clone lands on: the remote's tip, once hosted() knows the app. */
+    head: async () => SHA };
   const make = (): ContainerApi => {
     let running = false;
     // Its disk: .alchemy/state, gone when it's destroyed.
@@ -62,7 +65,7 @@ function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
           seen.ran.push(line);
           seen.limits.push(limit_ms);
           let out = "";
-          if (line.includes("rev-parse")) out = SHA + "\n";
+          if (line.includes("rev-parse")) out = (await seen.head()) + "\n";
           if (line.includes("bun -e")) out = `RB ${JSON.stringify(cfg)}\n`;
           if (line.includes("rustybuns deploy")) {
             // Like Alchemy: with no state, a new stack under a new name; with it, the same one.
@@ -122,6 +125,7 @@ async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: boolean
   const booted = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "ryan-quinn", DEPLOY_SECRETS_KEY: SECRETS, ...extra });
   opened.push(booted);
   const c = fakeContainers(cfg);
+  c.seen.head = async () => (await review(booted.env, "ryan-quinn", "lab")).tip ?? SHA;
   booted.env.DEPLOY_RUNNER = runnerNamespace(booted.env, c.make, budgetMs);
   const cookies: Record<string, string> = {};
   for (const name of ["Ryan Quinn", "Pat Person", "Sam Sample"]) {
@@ -231,7 +235,7 @@ describe("a hosted deploy", () => {
     expect(seen.ran.find((l) => l.includes("rustybuns deploy"))).toContain("--stage prod");
     expect(d.run.steps.map((s: any) => s.status)).toEqual(["done", "done", "done", "done"]);
     expect(checked).toContain("https://lab.ryan.workers.dev");
-    expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "button", status: "done", runner: "hosted", key_last4: "…WXYZ", commit_hash: SHA, url: "https://lab.ryan.workers.dev" });
+    expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "button", status: "done", runner: "hosted", key_last4: "…WXYZ", commit_hash: await seen.head(), url: "https://lab.ryan.workers.dev" });
     expect(JSON.stringify(d)).not.toContain(TOKEN);
     expect(d.history[0].out).toContain("<deploy key>");
   });
@@ -240,13 +244,13 @@ describe("a hosted deploy", () => {
     const { call, send, seen } = await hosted();
     await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
     await send("ryan-quinn", D, { on_commit: true }, "PUT");
-    await send("pat-person", "/api/repos/ryan-quinn/lab/do/commit?path=package.json", { message: "crew" });
-    await Bun.sleep(30);
-    expect(seen.env).toEqual([]);
     await send("ryan-quinn", "/api/repos/ryan-quinn/lab/do/commit?path=package.json", { message: "mine" });
     const d = await settle(call);
     expect(d.history).toHaveLength(1);
     expect(d.history[0]).toMatchObject({ by: "ryan-quinn", trigger: "commit", runner: "hosted", status: "done" });
+    await send("pat-person", "/api/repos/ryan-quinn/lab/do/commit?path=package.json", { message: "crew" });
+    await Bun.sleep(30);
+    expect(seen.env).toHaveLength(1);
   });
 
   test("a removed key fails the run instead of deploying", async () => {
@@ -500,4 +504,89 @@ describe("the deploy container's server", () => {
       expect((await exec({ cmd: ["sleep", "5"], cwd: "run", limit_ms: 200 }, root)).out).toContain("killed after 200 ms");
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
+});
+
+describe("code that isn't the owner's waits for them (#646)", () => {
+  type Send = (u: string, url: string, b: unknown) => Promise<Response>;
+  const edit = (send: Send, who: string, text: string, path = "rustybuns.config.ts") => send(who, "/api/repos/ryan-quinn/lab/files", { path, content: text });
+  const commit = (send: Send, who: string, path = "rustybuns.config.ts") => send(who, `/api/repos/ryan-quinn/lab/do/commit?path=${path}`, { message: `${who}'s ${path}` });
+
+  test("a crew commit holds the deploy, keys sealed, until the owner approves the diff at that tip", async () => {
+    const { call, send, seen } = await hosted();
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    await send("ryan-quinn", D, { on_commit: true }, "PUT");
+    await edit(send, "pat-person", "export default { exfiltrate: true }");
+    await commit(send, "pat-person");
+    // Not even the owner's next commit ships it: the crew's is still under it.
+    await send("ryan-quinn", "/api/repos/ryan-quinn/lab/do/commit?path=package.json", { message: "mine" });
+    await Bun.sleep(30);
+    expect(seen.env).toEqual([]);
+
+    const pressed = await send("ryan-quinn", D, {});
+    expect(pressed.status).toBe(409);
+    const waiting = (await pressed.json()) as any;
+    expect(waiting.error).toContain("waiting for you");
+    expect(waiting.review.commits.map((c: any) => c.message)).toEqual(["pat-person's rustybuns.config.ts"]);
+    expect(waiting.review.cleared).toBe(false);
+    const d0 = (await (await call("ryan-quinn", D)).json()) as any;
+    expect(d0.review).toMatchObject({ cleared: false, tip: waiting.review.tip });
+
+    // The diff since the last approval (none yet: from the start), the crew's line in it.
+    const r = (await (await call("ryan-quinn", `${D}/review`)).json()) as any;
+    expect(r.diff.files.find((f: any) => f.path === "rustybuns.config.ts")).toMatchObject({ note: "new file", lines: expect.arrayContaining(["+ export default { exfiltrate: true }"]) });
+    expect((await call("pat-person", `${D}/review`)).status).toBe(403);
+    expect(seen.env).toEqual([]);
+
+    // Approving a tip that isn't main's any more doesn't approve anything.
+    expect((await send("ryan-quinn", D, { approve: "f".repeat(40) })).status).toBe(409);
+    expect((await send("ryan-quinn", D, { approve: waiting.review.tip })).status).toBe(202);
+    const d = await settle(call);
+    expect(d.history[0]).toMatchObject({ status: "done", commit_hash: waiting.review.tip });
+    expect(seen.env).toHaveLength(1);
+
+    // Cleared from there: the owner's own commit ships with no question.
+    await edit(send, "ryan-quinn", "export const mine = 1", "src/app.ts");
+    await commit(send, "ryan-quinn", "src/app.ts");
+    expect((await settle(call, 2)).history[0]).toMatchObject({ trigger: "commit", status: "done" });
+  });
+
+  test("the owner's commit of a file someone else edited since its last commit waits too", async () => {
+    const { send, seen } = await hosted();
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    await edit(send, "pat-person", "export default { theirs: true }");
+    await commit(send, "ryan-quinn");
+    const res = await send("ryan-quinn", D, {});
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as any).review.commits).toHaveLength(1);
+    expect(seen.env).toEqual([]);
+  });
+
+  test("the runner checks again before it unseals the keys, and won't deploy a clone of another commit", async () => {
+    const { call, send, seen, env } = await hosted();
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    // A crew commit lands between the press and the run.
+    const stub = env.DEPLOY_RUNNER.get("ryan-quinn/lab");
+    const alarm = stub.alarm.bind(stub);
+    stub.alarm = async () => { await edit(send, "pat-person", "x"); await commit(send, "pat-person"); stub.alarm = alarm; return alarm(); };
+    await send("ryan-quinn", D, {});
+    const d = await settle(call);
+    expect(d.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("waiting for you") });
+    expect(seen.env).toEqual([]);
+
+    // Approved, but main moves before the clone: the clone isn't what was checked, so nothing runs.
+    const tip = ((await (await call("ryan-quinn", D)).json()) as any).review.tip;
+    seen.head = async () => "e".repeat(40);
+    await send("ryan-quinn", D, { approve: tip });
+    const d2 = await settle(call, 2);
+    expect(d2.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("main moved") });
+    expect(seen.ran.some((l) => l.includes("bun install"))).toBe(false);
+  });
+});
+
+test("the review's diff: what goes, what comes, two lines of context, where each hunk starts", () => {
+  const a = ["1", "2", "3", "4", "5", "6", "7", "8", "9"].join("\n") + "\n";
+  const b = ["1", "2", "3", "four", "5", "6", "7", "8", "9", "10"].join("\n") + "\n";
+  expect(textDiff(a, b)).toEqual(["@@ 2", "  2", "  3", "- 4", "+ four", "  5", "  6", "@@ 8", "  8", "  9", "+ 10"]);
+  expect(textDiff("", "x\n")).toEqual(["@@ 1", "+ x"]);
+  expect(textDiff("same\n", "same\n")).toEqual([]);
 });

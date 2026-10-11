@@ -25,6 +25,7 @@ import { advanceAll, freshRoutes, startIfFull } from "./fresh.ts";
 import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, runJobs, sweepLimits, type JobMessage } from "./limits.ts";
 import { previewRoutes } from "./preview.ts";
 import { deployOnCommit, deployRoutes } from "./deploy.ts";
+import { clearOwn } from "./deploy-review.ts";
 import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
@@ -407,7 +408,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (p[5] === "commit" && res.ok) {
         // Index what was committed, not every keystroke; git and search get private lines blank,
         // the crew's remote the real text.
-        const { commit, content, published } = (await res.json()) as { commit: { message: string }; content: string; published: string };
+        const { commit, content, published } = (await res.json()) as { commit: { message: string; writers?: string[] }; content: string; published: string };
         await indexFile(env, owner, repo, path, published);
         // The catalogue entry stands even if the push fails; the next push that lands carries it,
         // and if git is full, it starts fresh (fresh.ts) and the file lands there.
@@ -419,6 +420,8 @@ async function route(req: Request, env: Env): Promise<Response> {
             ref: "refs/heads/main", before: git.parent ?? "0".repeat(40), after: git.commit, created: !git.parent, pusher: { name: user },
             head_commit: { id: git.commit, message: commit.message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: git.parent ? [] : [path], modified: git.parent ? [path] : [], removed: [] },
           });
+          // The owner's commit of a file only they edited since its last commit: a hosted deploy may run it (deploy-review.ts).
+          if (user === owner && !user.startsWith("agent-") && git.deployCommit && commit.writers?.every((w) => w === owner)) await clearOwn(env, owner, repo, git.deployCommit);
           await deployOnCommit(env, owner, repo, user);
           await startChecks(env, owner, repo, "main", git.commit, user!);
           // A mirror hands the commit upstream now, if upstream's there to take it.

@@ -17,17 +17,24 @@
 // resources under their real names, so it's refused unless the owner has
 // said this repo is production.
 //
+// A hosted deploy runs the repo's code with the owner's stored keys, so code
+// that isn't the owner's own since their last approved deploy waits for them
+// to read the diff and approve it (deploy-review.ts). A button press answers
+// 409 with what's waiting; an owner's commit doesn't start one until then.
+//
 // `dir` is the app's folder in a monorepo ('' for the root): install, the config
 // read and rustybuns deploy run there. Previews use it too.
 //
 //   GET  /api/repos/:o/:r/deploy   settings, the run going now, the last 20 deploys (owner only)
 //   PUT  /api/repos/:o/:r/deploy   {stage, dir, on_commit, production}
-//   POST /api/repos/:o/:r/deploy   ship it now
+//   POST /api/repos/:o/:r/deploy   ship it now; {approve: sha}: approve main up to sha (its tip) first
+//   GET  /api/repos/:o/:r/deploy/review   what a hosted deploy waits on, with the diff since the last approval
 //   .../deploy/key[/:provider]     the stored deploy keys (deploy-keys.ts)
 
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { json, type Env } from "./env.ts";
 import { deployKeyRoutes, hostedWhy, keysInfo } from "./deploy-keys.ts";
+import { approve, diff, isCleared, review, waitingNote, type Review } from "./deploy-review.ts";
 import { emit } from "./hooks.ts";
 import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 
@@ -79,20 +86,31 @@ export async function finish(env: Env, run: Run) {
 
 const hostedStub = (env: Env, owner: string, repo: string) => env.DEPLOY_RUNNER!.get(env.DEPLOY_RUNNER!.idFromName(`${owner}/${repo}`));
 
-type Started = { run?: Run; queued?: boolean; error?: string; status?: number };
+type Started = { run?: Run; queued?: boolean; error?: string; status?: number; review?: Review };
+
+/** A review as the panel gets it, without the handle it walked. */
+const shown = ({ tip, base, commits, more }: Review) => ({ tip, base, commits, more, cleared: isCleared({ tip, base, commits, more }) });
 
 /**
  * Start a deploy, or, if one is running, ship once more when it's done. On the
  * desktop it runs here with this machine's logins; on the site it runs in its
  * own container with the repo's stored deploy key (deploy-runner.ts).
  */
-async function start(env: Env, owner: string, repo: string, by: string, trigger: "button" | "commit"): Promise<Started> {
+async function start(env: Env, owner: string, repo: string, by: string, trigger: "button" | "commit", approved?: string): Promise<Started> {
   const runner = runnerFor(env);
   if (!runner) {
     if (!env.DEPLOY_RUNNER) return { error: "deploys run on the desktop app, with your own logins", status: 400 };
     const why = hostedWhy(env, by);
     if (why) return { error: why, status: 403 };
     if (!Object.values(await keysInfo(env, owner, repo)).some((k) => k.set)) return { error: "set a deploy key first", status: 400 };
+    // The runner checks again before it unseals the keys; this answers the panel with what's waiting.
+    let r = await review(env, owner, repo);
+    if (approved && !isCleared(r)) {
+      if (approved !== r.tip) return { error: "main moved since you read it: read the diff again", status: 409, review: shown(r) };
+      await approve(env, owner, repo, approved);
+      r = await review(env, owner, repo);
+    }
+    if (!isCleared(r)) return { error: waitingNote(r), status: 409, review: shown(r) };
     const res = await hostedStub(env, owner, repo).fetch(new Request("http://deploy/start", { method: "POST", body: JSON.stringify({ owner, repo, by, trigger }) }));
     return (await res.json()) as Started;
   }
@@ -129,18 +147,27 @@ export async function deployOnCommit(env: Env, owner: string, repo: string, user
 export async function deployRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "deploy")) return null;
   if (p[5] === "key" && !p[7]) return deployKeyRoutes(req, env, p, user);
-  if (p[5]) return null;
+  if (p[5] && !(p[5] === "review" && !p[6])) return null;
   const [owner, repo] = [p[2], p[3]];
   // It ships with this machine's logins and shows the repo's output: the owner's alone.
   if (!user || user !== owner || user.startsWith("agent-")) return json({ error: "only the repo's owner can deploy it" }, 403);
   if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
+  const hosted = !runnerFor(env) && !!env.DEPLOY_RUNNER;
+
+  if (p[5] === "review") {
+    if (req.method !== "GET") return null;
+    if (!hosted) return json({ error: "only hosted deploys wait on a review" }, 400);
+    const r = await review(env, owner, repo);
+    return json({ ...shown(r), diff: r.handle && r.tip && !isCleared(r) ? await diff(r.handle, r.base, r.tip) : { files: [], more: false } });
+  }
 
   if (req.method === "GET") {
     const desktop = !!runnerFor(env), why = desktop ? null : hostedWhy(env, user);
     const run = async () => desktop ? live.get(`${owner}/${repo}`)?.run ?? null
       : env.DEPLOY_RUNNER ? ((await (await hostedStub(env, owner, repo).fetch(new Request("http://deploy/run"))).json()) as { run: Run | null }).run : null;
     const keys = await keysInfo(env, owner, repo);
-    return json({ settings: await settings(env, owner, repo), can_run: desktop || (!why && Object.values(keys).some((k) => k.set)), hosted: !desktop && !!env.DEPLOY_RUNNER, why, keys, ...(await history(env, owner, repo, false, run)) });
+    return json({ settings: await settings(env, owner, repo), can_run: desktop || (!why && Object.values(keys).some((k) => k.set)), hosted, why, keys,
+      ...(hosted && !why && { review: shown(await review(env, owner, repo)) }), ...(await history(env, owner, repo, false, run)) });
   }
   if (req.method === "PUT") {
     const s = { ...(await settings(env, owner, repo)), ...((await req.json()) as Partial<Settings>) };
@@ -154,8 +181,9 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     return json(await settings(env, owner, repo));
   }
   if (req.method === "POST") {
-    const r = await start(env, owner, repo, user, "button");
-    return r.error ? json({ error: r.error }, r.status ?? (r.error.includes("already") ? 409 : 400)) : json({ run: r.run }, 202);
+    const { approve: sha } = (await req.json().catch(() => ({}))) as { approve?: unknown };
+    const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined);
+    return r.error ? json({ error: r.error, ...(r.review && { review: r.review }) }, r.status ?? (r.error.includes("already") ? 409 : 400)) : json({ run: r.run }, 202);
   }
   return null;
 }

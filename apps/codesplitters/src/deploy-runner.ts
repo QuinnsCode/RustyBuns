@@ -12,6 +12,10 @@
 // outlives the request that started it; every use is in the deploy log. A
 // command's output streams back as it runs, so the panel shows it live.
 //
+// The keys run whatever is on main, so before they're unsealed the run checks
+// that everything since the owner's last approval is the owner's own
+// (deploy-review.ts), and the clone has to be the commit it checked.
+//
 // An alarm gets 15 minutes of wall time, so a run gets RUN_BUDGET_MS: each
 // command is sent the time left and the container kills it when that's up,
 // leaving time to destroy the container and log the result. If the alarm is cut
@@ -27,6 +31,7 @@
 //   POST /reseal {owner, repo}               seal the kept state under the current DEPLOY_SECRETS_KEY (deploy-keys.ts)
 
 import { begin, finish, remoteFor, stateSuffix } from "./deploy.ts";
+import { isCleared, review, waitingNote } from "./deploy-review.ts";
 import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState } from "./deploy-keys.ts";
 import { json, type Env } from "./env.ts";
 import { preview, type Run, type Runner } from "./preview.ts";
@@ -164,6 +169,8 @@ export class DeployRunner {
       const deadline = run.deadline = job.started + this.budgetMs;
       await this.save();
       if (!c) throw new Error("this Durable Object has no container");
+      const checked = await review(this.env, owner, repo);
+      if (!isCleared(checked)) throw new Error(waitingNote(checked));
       const keys = await deployKeys(this.env, owner, repo);
       if (!Object.keys(keys).length) throw new Error("every deploy key was removed");
       const remote = await remoteFor(this.env, owner, repo);
@@ -199,7 +206,7 @@ export class DeployRunner {
           },
         },
       };
-      await preview(runner, remote, run, { keep: true, allowAdopt: job.production, dir: job.dir });
+      await preview(runner, remote, run, { keep: true, allowAdopt: job.production, dir: job.dir, expect: checked.tip! });
       if (run.note?.includes("wasn't logged in")) run.note = "the deploy wasn't logged in: store a deploy key for each provider its targets use (Cloudflare, Railway, Hetzner)";
     } catch (e) {
       run.note = `failed: ${(e as Error).message}`;

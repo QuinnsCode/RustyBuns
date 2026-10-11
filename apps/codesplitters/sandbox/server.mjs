@@ -12,23 +12,59 @@
 // filled in each try) patches the code and the tests run again, until they pass
 // or the tries run out (answers {ok, tries, out, edits: [{path, before, after}]}).
 // Plain Node, no dependencies.
+//
+// The container's env holds the agent's logins, and the repo's own code (its
+// install scripts, its tests) is collaborators' code, so the two never run as
+// the same user (#646). In the container the server runs as root and starts
+// the agent CLI as `node`, with the logins, and git, installs and tests as
+// `runner`, without them. Another user's /proc/<pid>/environ is closed to
+// `runner`, and so is /home/node; both share the `work` group, so each can
+// write the clone the other works in. And the server answers one request and
+// then stops listening (one container per request, see src/sandbox.ts), so
+// code a run starts can't ask it for another as the agent.
 
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, chown, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 
 /** An agent that runs longer than this is killed and reported as failed. */
 const LIMIT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 10 * 60_000);
 
+/** The agents' logins: the repo's install and tests never see them. */
+const LOGINS = { ANTHROPIC_API_KEY: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined, OPENAI_API_KEY: undefined, CODEX_API_KEY: undefined };
+
+/**
+ * Who runs what (the users sandbox/Dockerfile makes): `agent` the CLI, with the
+ * logins; `code` the repo's git, install and tests, without. Not under root (the
+ * tests, a dev box), everything runs as whoever started the server.
+ */
+const WORK = 1500;
+export const USERS = process.getuid?.() === 0
+  ? { agent: { uid: 1000, gid: WORK, env: { HOME: "/home/node", USER: "node" } }, code: { uid: 1001, gid: WORK, env: { HOME: "/home/runner", USER: "runner", ...LOGINS } } }
+  : { agent: { env: {} }, code: { env: LOGINS } };
+
+/** A fresh directory the user `as` works in (and, through the group, the other one too). */
+async function workdir(prefix, as) {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  if (as.uid !== undefined) { await chown(dir, as.uid, as.gid); await chmod(dir, 0o2770); }
+  return dir;
+}
+
+/** What the server (root) wrote under `dir` goes to `as`, so it can change it. */
+async function hand(dir, as) {
+  if (as.uid !== undefined) await exec("chown", ["-R", `${as.uid}:${as.gid}`, dir], dir, {}, { env: {} });
+}
+
 export async function run({ cmd, path, text }) {
-  const dir = await mkdtemp(join(tmpdir(), "agent-"));
+  const dir = await workdir("agent-", USERS.agent);
   try {
     const at = join(dir, path);
     if (relative(dir, at).startsWith("..")) return { code: 2, out: `bad path: ${path}`, text: null };
     await mkdir(dirname(at), { recursive: true });
     await writeFile(at, text);
+    await hand(dir, USERS.agent);
     const { code, out } = await exec(cmd.bin, cmd.args, dir, cmd.env);
     const left = await readFile(at, "utf8").catch(() => null);
     return { code, out, text: left };
@@ -37,10 +73,10 @@ export async function run({ cmd, path, text }) {
   }
 }
 
-/** Runs one command in `cwd` and collects what it printed, killed after LIMIT_MS. */
-function exec(bin, args, cwd, env = {}) {
+/** Runs one command in `cwd` as `as` (the agent unless said) and collects what it printed, killed after LIMIT_MS. */
+function exec(bin, args, cwd, env = {}, as = USERS.agent) {
   return new Promise((done) => {
-    const p = spawn(bin, args, { cwd, env: { ...process.env, ...env, PWD: cwd }, stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(bin, args, { cwd, env: { ...process.env, ...env, ...as.env, PWD: cwd }, ...(as.uid !== undefined && { uid: as.uid, gid: as.gid }), stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     p.stdout.on("data", (b) => { out += b; });
     p.stderr.on("data", (b) => { out += b; });
@@ -53,14 +89,11 @@ function exec(bin, args, cwd, env = {}) {
 /** The dependency doctor's run (src/deps.ts): a clone with an update swapped in, installed and tested. */
 const INSTALL = { bun: ["bun", "install"], npm: ["npm", "install"], pnpm: ["corepack", "pnpm", "install", "--no-frozen-lockfile"], yarn: ["corepack", "yarn", "install"] };
 
-/** The agents' logins: the repo's install and tests never see them. */
-const LOGINS = { ANTHROPIC_API_KEY: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined, OPENAI_API_KEY: undefined, CODEX_API_KEY: undefined };
-
 /** A clone of `remote` (`depth` 0: all of its history) with `files` swapped in, handed to `work`, then deleted. */
 async function inClone(remote, files, depth, work) {
-  const dir = await mkdtemp(join(tmpdir(), "deps-"));
+  const dir = await workdir("deps-", USERS.code);
   const run = async (bin, args, cwd = join(dir, "repo")) => {
-    const r = await exec(bin, args, cwd, { CI: "1", ...LOGINS });
+    const r = await exec(bin, args, cwd, { CI: "1" }, USERS.code);
     return { code: r.code, out: `$ ${[bin, ...args].join(" ")}\n${r.out}`.replaceAll(remote, "<remote>") };
   };
   try {
@@ -73,6 +106,7 @@ async function inClone(remote, files, depth, work) {
       await mkdir(dirname(at), { recursive: true });
       await writeFile(at, text);
     }
+    await hand(repo, USERS.code);
     return await work(repo, run);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -148,7 +182,7 @@ export async function depsFix({ cmd, remote, files, pm = "bun", name, out = "", 
 
 /** A cut's files in a fresh directory, and `bun test` over them. */
 export async function test({ files }) {
-  const dir = await mkdtemp(join(tmpdir(), "cut-"));
+  const dir = await workdir("cut-", USERS.code);
   try {
     for (const [path, text] of Object.entries(files ?? {})) {
       const at = join(dir, path);
@@ -156,15 +190,9 @@ export async function test({ files }) {
       await mkdir(dirname(at), { recursive: true });
       await writeFile(at, text);
     }
-    const ran = await new Promise((done) => {
-      const p = spawn("bun", ["test", "--reporter=junit", "--reporter-outfile=.cut-report.xml"], { cwd: dir, env: { ...process.env, CI: "1", PWD: dir }, stdio: ["ignore", "pipe", "pipe"] });
-      let out = "";
-      p.stdout.on("data", (b) => { out += b; });
-      p.stderr.on("data", (b) => { out += b; });
-      const timer = setTimeout(() => { out += `\nkilled after ${LIMIT_MS} ms`; p.kill("SIGKILL"); }, LIMIT_MS);
-      p.on("error", (e) => { clearTimeout(timer); done({ code: 127, out: String(e) }); });
-      p.on("close", (code) => { clearTimeout(timer); done({ code: code ?? 1, out }); });
-    });
+    // The cut's own files, and bun writing its report beside them.
+    await hand(dir, USERS.code);
+    const ran = await exec("bun", ["test", "--reporter=junit", "--reporter-outfile=.cut-report.xml"], dir, { CI: "1" }, USERS.code);
     return { ...ran, report: await readFile(join(dir, ".cut-report.xml"), "utf8").catch(() => "") };
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -174,7 +202,11 @@ export async function test({ files }) {
 const ROUTES = { "/run": run, "/test": test, "/deps-test": depsTest, "/deps-fix": depsFix };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  createServer(async (req, res) => {
+  // The repo's code and the agent share a group, never a user; anything either makes, the other can write.
+  if (USERS.agent.uid !== undefined) process.umask(0o002);
+  const server = createServer(async (req, res) => {
+    // One request per container: once it's in, nobody else (no process it starts) gets one.
+    server.close();
     const handle = ROUTES[req.url];
     if (req.method !== "POST" || !handle) { res.writeHead(404).end(); return; }
     let body = "";
@@ -185,5 +217,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     } catch (e) {
       res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: String(e) }));
     }
-  }).listen(8080);
+  });
+  server.listen(8080);
 }

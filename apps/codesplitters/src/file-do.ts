@@ -6,7 +6,7 @@
 // Cloudflare and in-process under Bun with sqlite behind it.
 //   doc, doc:<n>   the current lines, a manifest and runs of lines (doc-store.ts)
 //   op:<rev>       one applied op per key (the log)
-//   commit:<n>     a snapshot: sha, parent, rev, message
+//   commit:<n>     a snapshot: sha, parent, rev, message, and who edited the file since the last one
 //   base, base:<n> on a branch's copy of a file: main's doc when it forked, chunked the same way
 //   private        ids of lines only the crew may read (in a public repo too)
 //   claim:<id>     who is working on which lines right now (see Claim), one key each
@@ -26,7 +26,8 @@ import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { apply, empty, merge, replay, sha, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
 
-interface Commit { n: number; sha: string; parent: string | null; rev: number; by: string; at: number; message: string }
+/** `writers`: everyone whose edits since the file's last commit this one carries (a hosted deploy asks about others', deploy.ts). */
+interface Commit { n: number; sha: string; parent: string | null; rev: number; by: string; at: number; message: string; writers: string[] }
 
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 
@@ -193,6 +194,7 @@ export class FileDurableObject {
     const commit: Commit = {
       n: this.commits + 1, sha: await sha((prev?.sha ?? "") + "\n" + content), parent: prev?.sha ?? null,
       rev: this.doc.rev, by, at: Date.now(), message: message || "commit",
+      writers: [...new Set((await this.log(prev?.rev ?? 0)).map((a) => a.by))].sort(),
     };
     this.commits = commit.n;
     await Promise.all([this.ctx.storage.put("commit:" + pad(commit.n), commit), this.ctx.storage.put("commits", this.commits)]);
