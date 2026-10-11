@@ -5,7 +5,8 @@
 //   <key>:<n>         a run of lines, in file order
 // An edit rewrites the chunks its lines are in, and the manifest. A chunk is a run of
 // neighbouring lines: an inserted line joins the chunk of the line before it, so runs stay
-// runs, and a chunk that grows past CHUNK_LINES or CHUNK_CHARS splits. Plain get, put and
+// runs, a chunk that grows past CHUNK_LINES or CHUNK_CHARS splits, and one an edit shrinks
+// under a quarter of CHUNK_LINES folds into a neighbour. Plain get, put and
 // prefix list, so it runs on Cloudflare and on the shell-bun twin alike.
 //
 // A doc stored the old way (one key, lines and all) loads as it is and is rewritten in chunks.
@@ -107,27 +108,44 @@ export class DocStore {
     }
     for (const id of gone) this.chunkOf.delete(id);
 
-    const writes: Promise<unknown>[] = [];
-    const chunks: number[] = [];
+    // The new layout, in file order; `write` marks the chunks to put.
+    const out: { n: number; lines: Line[]; write: boolean }[] = [];
     // Lines with no chunk to join: the file was empty.
     if (lead.length) for (const run of fill(lead)) {
       const n = this.next++;
-      chunks.push(n);
       for (const l of run) this.chunkOf.set(l.id, n);
-      writes.push(this.storage.put(this.chunkKey(n), run));
+      out.push({ n, lines: run, write: true });
     }
     for (const n of order) {
       const run = runs.get(n)!;
-      if (!dirty.has(n)) { chunks.push(n); continue; }
+      if (!dirty.has(n)) { out.push({ n, lines: run, write: false }); continue; }
       const parts = tooBig(run) ? fill(run) : [run];
       parts.forEach((part, i) => {
         const k = i ? this.next++ : n;
         if (i) for (const l of part) this.chunkOf.set(l.id, k);
-        chunks.push(k);
-        writes.push(this.storage.put(this.chunkKey(k), part));
+        out.push({ n: k, lines: part, write: true });
       });
     }
-    // Chunks whose lines all went.
+    // A written chunk under a quarter of CHUNK_LINES folds into the chunk before it (or after
+    // it, if that won't fit), so deleting doesn't leave a trail of tiny chunks (#685).
+    for (let i = 0; i < out.length; i++) {
+      const c = out[i]!;
+      if (!c.write || c.lines.length >= CHUNK_LINES / 4) continue;
+      const j = [i - 1, i + 1].find((j) => out[j] && !tooBig([...out[Math.min(i, j)]!.lines, ...out[Math.max(i, j)]!.lines]));
+      if (j === undefined) continue;
+      const [a, b] = j < i ? [out[j]!, c] : [c, out[j]!];
+      a.lines = [...a.lines, ...b.lines];
+      a.write = true;
+      for (const l of b.lines) this.chunkOf.set(l.id, a.n);
+      out.splice(out.indexOf(b), 1);
+      // Look at the merged chunk again: it may still be small.
+      i = out.indexOf(a) - 1;
+    }
+
+    const writes: Promise<unknown>[] = [];
+    const chunks = out.map((c) => c.n);
+    for (const c of out) if (c.write) writes.push(this.storage.put(this.chunkKey(c.n), c.lines));
+    // Chunks whose lines all went, or that were folded into another.
     const kept = new Set(chunks);
     for (const n of this.chunks) if (!kept.has(n)) writes.push(this.storage.delete(this.chunkKey(n)));
     this.chunks = chunks;
