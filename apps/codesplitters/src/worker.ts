@@ -34,7 +34,9 @@ import { catalogue, mcp } from "./mcp.ts";
 import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
 import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts";
+import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
+import { pulseRoutes } from "./pulse.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -81,6 +83,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/mcp/tools  every MCP tool, in words, for the /mcp page
   if (p[1] === "mcp" && p[2] === "tools" && !p[3] && req.method === "GET") return json(catalogue());
   if (p[1] === "mcp" && !p[2]) return mcp(req, url.origin, (r) => { viaMcp.set(r, req); return app.fetch(r, env); });
+  // /api/gh/v3/repos/:o/:r/*  GitHub's status and check-run API for external CI, with a repo's CI token, not a personal one (gh-compat.ts)
+  const gh = await ghCompatRoutes(req, env, p, url);
+  if (gh) return gh;
   // /api/oauth/*  an app signs in as you, and gets tokens like the ones below (oauth.ts)
   const oauth = await oauthRoutes(req, env, p, url);
   if (oauth) return oauth;
@@ -149,16 +154,23 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p[1] === "me") {
     if (!user) return json({ error: "sign in first" }, 401);
     if (req.method === "PUT") {
-      const { bio = "", theme_html = "" } = await body<{ bio?: string; theme_html?: string }>();
-      await env.DB.prepare("UPDATE users SET bio = ?, theme_html = ? WHERE name = ?").bind(bio, theme_html, user).run();
+      // Only what's sent changes, so turning the pulse off leaves the bio be.
+      const b = await body<{ bio?: string; theme_html?: string; pulse?: boolean }>();
+      if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
+      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse) WHERE name = ?")
+        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, user).run();
     }
     return json(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first());
   }
 
+  // GET /api/users/:name/(pulse|pulse.png|share) and /api/pulse: heartbeats (pulse.ts)
+  const pulse = await pulseRoutes(req, env, p, url, user);
+  if (pulse) return pulse;
+
   // GET /api/users/:name  profile, the repos you may see, playlists, how many it follows and are following it, the stamps it gave and got;
   // an agent's (agent-…) also says who runs it, where, and its runs (actors.ts)
   if (p[1] === "users" && p[2]) {
-    const u = await env.DB.prepare("SELECT name, bio, theme_html FROM users WHERE name = ?").bind(p[2]).first();
+    const u = await env.DB.prepare("SELECT name, bio, theme_html, pulse FROM users WHERE name = ?").bind(p[2]).first();
     if (!u) return json({ error: "no such user" }, 404);
     const { results: repos } = await env.DB.prepare(
       "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
@@ -271,6 +283,9 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (fresh) return fresh;
     const branches = await branchRoutes(req, env, p, owner, repo, user, a);
     if (branches) return branches;
+    // /api/repos/:o/:r/checks/tokens[/:id]  the repo's CI tokens, for external CI (gh-compat.ts)
+    const ciTokens = await ciTokenRoutes(req, env, p, owner, repo, user);
+    if (ciTokens) return ciTokens;
     // /api/repos/:o/:r/checks[/run|github|settings|:id[/cancel]]  check runs, ours and GitHub's (checks.ts)
     const checks = await checkRoutes(req, env, p, url, owner, repo, user, a);
     if (checks) return checks;

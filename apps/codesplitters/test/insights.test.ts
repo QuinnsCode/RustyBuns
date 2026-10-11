@@ -120,6 +120,20 @@ describe("insights", () => {
     expect((await call(null, "/api/admin/insights")).status).toBe(403);
   });
 
+  test("the alias session says admin, so the page shows the admin links (#511)", async () => {
+    const session = async (call: Awaited<ReturnType<typeof boot>>, user: string | null) => (await (await call(user, "/api/session")).json()) as any;
+    const { call } = await app();   // ADMINS: "boss"
+    expect(await session(call, "boss")).toMatchObject({ mode: "alias", user: "boss", admin: true });
+    expect(await session(call, "ryan")).not.toHaveProperty("admin");
+    expect(await session(call, null)).not.toHaveProperty("admin");
+    // No ADMINS: your own desktop, so you're the admin.
+    const desk = await boot({ GH_CLI: "off" });
+    opened.push(desk);
+    await desk("ryan", "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan" }) });
+    expect(await session(desk, "ryan")).toMatchObject({ user: "ryan", admin: true });
+    expect(await session(desk, null)).not.toHaveProperty("admin");
+  });
+
   test("your usage is in your export, and goes when you do", async () => {
     const { call, send } = await app();
     await send("ryan", "/api/repos", browser, { name: "lab" });
