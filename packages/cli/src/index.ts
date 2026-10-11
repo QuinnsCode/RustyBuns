@@ -353,12 +353,13 @@ function alchemyCli(): string[] {
 /** Alchemy's provider names, for `rustybuns login <provider>`. */
 const PROVIDERS: Record<string, string> = { cloudflare: "Cloudflare", hetzner: "Hetzner", railway: "Railway" };
 
-/** varlock from the project, the workspace root, PATH, or the copy the CLI ships with. */
+/**
+ * The varlock the CLI ships with: it's the process that receives the 1Password
+ * values, so a project's node_modules/.bin or PATH doesn't get to swap it out.
+ * RUSTYBUNS_VARLOCK names another one on purpose.
+ */
 function varlockCli(): string[] {
-  const root = workspaceRoot(process.cwd());
-  const found = [join("node_modules", ".bin", "varlock"), root && join(root, "node_modules", ".bin", "varlock")]
-    .find((p) => p && existsSync(p)) || Bun.which("varlock");
-  if (found) return [found];
+  if (process.env.RUSTYBUNS_VARLOCK) return [process.env.RUSTYBUNS_VARLOCK];
   // A dependency of the CLI, so every install has it; its bin isn't always linked.
   return [process.execPath, join(dirname(fileURLToPath(import.meta.resolve("varlock/package.json"))), "bin", "cli.js")];
 }

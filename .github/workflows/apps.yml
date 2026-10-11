@@ -22,21 +22,22 @@ jobs:
       any: ${{ steps.p.outputs.any }}
       packages: ${{ steps.p.outputs.packages }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { fetch-depth: 0 }
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - id: p
         # A manual run has no PR base: diff against the root commit, so every app runs.
-        run: bun scripts/ci-apps.ts test "${{ github.event.pull_request.base.sha || '$(git rev-list --max-parents=0 HEAD)' }}" >> "$GITHUB_OUTPUT"
+        env: { BASE: "${{ github.event.pull_request.base.sha }}" }
+        run: bun scripts/ci-apps.ts test "${BASE:-$(git rev-list --max-parents=0 HEAD)}" >> "$GITHUB_OUTPUT"
 
   packages:
     needs: plan
     if: needs.plan.outputs.packages == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
       - run: bun scripts/ci-test-count.ts "bun test packages"
@@ -53,14 +54,14 @@ jobs:
       run:
         working-directory: apps/${{ matrix.app }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - if: matrix.prep
-        uses: dtolnay/rust-toolchain@stable
-        with: { targets: wasm32-unknown-unknown }
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master; the toolchain is the input below
+        with: { toolchain: stable, targets: wasm32-unknown-unknown }
       - if: matrix.prep
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with: { workspaces: "${{ matrix.cargo }}" }
       - run: bun install --frozen-lockfile
         working-directory: .

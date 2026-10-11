@@ -31,7 +31,7 @@
   "dependencies": {
     "@rustybuns/shell-bun": "workspace:*",
     "@rustybuns/ports": "workspace:*",
-    "varlock": "1.21.1"
+    "varlock": "1.22.0"
   },
   "keywords": [
     "rustybuns",

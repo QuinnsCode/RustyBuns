@@ -1,0 +1,4 @@
+[install]
+# Skip any release younger than three days, so a hijacked publish is usually
+# caught and pulled before an install here picks it up.
+minimumReleaseAge = 259200

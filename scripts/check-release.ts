@@ -1,4 +1,4 @@
-// Run before publish:all. bun publish rewrites workspace:* from bun.lock, not
+// Run before publishing (npm-publish.yml runs it). bun pm pack rewrites workspace:* from bun.lock, not
 // from each package.json, so a version bump without `bun install` publishes
 // packages that depend on the previous release (0.1.6 shipped that way).
 import { readFileSync } from "node:fs";

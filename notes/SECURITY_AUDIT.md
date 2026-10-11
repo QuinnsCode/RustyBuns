@@ -32,8 +32,8 @@ The REFERENCE notes that the 1Password path "has not been run against a real vau
 | --- | --- |
 | Workflows use `pull_request`, never `pull_request_target`, so fork PRs get no secrets | **`main` has no protection or ruleset.** Any agent with your `gh` login can push, force-push or delete it (#652) |
 | Default token is read-only at the repo level; **this PR** also says `permissions: contents: read` in each workflow | `*-v*` tag pushes do a real drop and a public release; tags aren't restricted (#652) |
-| `--frozen-lockfile` everywhere, Bun pinned, no install scripts or `trustedDependencies` | Actions pinned by tag, `rust-toolchain@stable` is a moving branch (#650) |
-| **Fixed in this PR:** a branch PR that edited `scripts/drop.ts` ran it with the R2 token and `DROP_SECRET` in env, since `--dry` was only a flag the script could ignore. PR runs now get no secrets, and the plan's JSON reaches the shell through `env:` instead of being pasted into it | No CODEOWNERS, no Dependabot for actions, npm publishes from a laptop without provenance (#650) |
+| `--frozen-lockfile` everywhere, Bun pinned, no install scripts or `trustedDependencies` | ~~Actions pinned by tag, `rust-toolchain@stable` is a moving branch~~ Fixed in #650: pinned by SHA, Dependabot keeps them current; installs skip releases under 3 days old |
+| **Fixed in this PR:** a branch PR that edited `scripts/drop.ts` ran it with the R2 token and `DROP_SECRET` in env, since `--dry` was only a flag the script could ignore. PR runs now get no secrets, and the plan's JSON reaches the shell through `env:` instead of being pasted into it | ~~No CODEOWNERS, no Dependabot for actions, npm publishes from a laptop without provenance~~ Fixed in #650: CODEOWNERS (bites once the ruleset requires owner review), `npm-publish.yml` with trusted publishing and `--provenance` |
 
 ### Agent Office (local desktop app)
 
