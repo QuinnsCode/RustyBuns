@@ -98,7 +98,7 @@ export async function evict(env: Env, owner: string, name: string) {
     .bind(owner, name, owner, name).all();
   await Promise.all((files as { path: string; branch: string | null }[]).map((f) =>
     fileStub(env, owner, name, f.path, f.branch ?? undefined).fetch(new Request("https://file/wipe", { method: "POST" })).catch(() => null)));
-  await env.DB.batch(["repos|owner = ? AND name = ?", "collaborators", "files", "file_search", "branches", "branch_files", "shares", "tracks", "webhooks", "webhook_deliveries",
+  await env.DB.batch(["repos|owner = ? AND name = ?", "collaborators", "files", "file_search", "branches", "branch_files", "shares", "stamps", "tracks", "webhooks", "webhook_deliveries",
     "cuts", "deploys", "deploy_settings", "deploy_keys", "dep_watches", "fit_cache", "check_runs", "check_settings", "check_watches", "follows", "line_events"].map((t) => {
     const [table, where = "owner = ? AND repo = ?"] = t.split("|");
     return env.DB.prepare(`DELETE FROM ${table} WHERE ${where}`).bind(owner, name);
