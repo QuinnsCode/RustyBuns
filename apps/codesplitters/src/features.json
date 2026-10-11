@@ -14,6 +14,7 @@
   { "id": "desktop", "icon": "laptop", "title": "Runs on a laptop too", "what": "The same app runs as a desktop binary, with sqlite standing in for D1 and git on disk standing in for Artifacts." },
   { "id": "file-is-a-do", "icon": "box", "title": "A file is a Durable Object", "what": "Each file has one writer, so every edit from every person and agent lands in one order." },
   { "id": "presence", "icon": "users", "title": "See who's here", "what": "Presence shows who else has the file open, as they type." },
+  { "id": "claims", "icon": "hand", "title": "Hold lines, steer agents", "what": "An agent holds the lines it was given while it works; hold your own and agents leave them be. Lift any claim to take lines back." },
   { "id": "blame", "icon": "user-round-pen", "title": "Every line knows who wrote it", "what": "Author and time on every line, people and agents alike." },
   { "id": "branches", "icon": "git-branch", "title": "Branches and merges, by line", "what": "A three-way merge by line id: moved blocks keep their edits, and real conflicts are named one stretch at a time." },
   { "id": "build-changes", "icon": "shield-alert", "title": "Build changes get a second look", "what": "A branch that touches package.json, lockfiles or deploy config waits for “I've read the build changes”." },

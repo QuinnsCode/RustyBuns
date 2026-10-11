@@ -50,6 +50,8 @@ export interface Conflict {
   op: Op;
   /** The line as it is now; null if it was deleted. */
   now: Line | null;
+  /** Why it couldn't land, when someone holds the line: "held by @ana". */
+  held?: string;
 }
 
 export interface Result {
@@ -73,6 +75,10 @@ export const fromDisk = (s: string) => s === "" ? [] : s.replace(/\n$/, "").spli
 export async function runAgent(call: Call, opts: {
   user: string; owner: string; repo: string; path: string;
   harness: Harness; task: string; model?: string; commit?: string;
+  /** The lines it was given (ids): claimed for the run, so nobody else edits them meanwhile. */
+  lines?: string[];
+  /** The claim's id; one run's claim, since every agent of a harness edits under one name. */
+  claim?: string;
   /** Re-runs allowed when lines change under the agent (default 2; 0 keeps the other writer's lines at once). */
   retries?: number;
   /** Where the agent runs (default: a scratch dir here, running `exec`). */
@@ -93,6 +99,15 @@ export async function runAgent(call: Call, opts: {
   // that line is held back and the agent runs again on the file as it is now,
   // told which lines moved under it. Whatever still conflicts after the last
   // run keeps the other writer's version and comes back in `conflicts`.
+  const claim = opts.lines?.length ? opts.claim ?? `run-${Date.now().toString(36)}` : undefined;
+  if (claim) {
+    const res = await call(user, `${file}/claims${q}`, { method: "POST", body: JSON.stringify({ id: claim, lines: opts.lines, task: opts.task }) });
+    if (!res.ok) throw new Error(`claiming its lines: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? res.status}`);
+  }
+  try { return await work(); }
+  finally { if (claim) await call(user, `${file}/claims${q}`, { method: "POST", body: JSON.stringify({ id: claim, release: true }) }).catch(() => {}); }
+
+  async function work(): Promise<Result> {
   const maxRuns = 1 + (opts.retries ?? 2);
   let applied = 0, changed = false, runs = 0, conflicts: Conflict[] = [], rev = 0, output = "";
   while (runs < maxRuns) {
@@ -113,22 +128,29 @@ export async function runAgent(call: Call, opts: {
     if (!ops.length) break;
     changed = true;
     // Post the ops whose lines are unchanged since the snapshot; retry on a race.
+    // Ops on lines someone holds are left out, and come back as conflicts that say so.
     let landed = false;
-    for (let attempt = 0; attempt < 3 && !landed; attempt++) {
+    const held = new Map<Op, string>();
+    const lineOf = (op: Op) => op.kind === "insert" ? op.after : op.line;
+    for (let attempt = 0; attempt < 4 && !landed; attempt++) {
       const current = await get();
-      const r = rebase(ops, current);
-      conflicts = r.skipped.map((op) => ({ op, now: current.lines.find((l) => l.id === (op.kind === "insert" ? op.after : op.line)) ?? null }));
+      const r = rebase(ops.filter((op) => !held.has(op)), current);
+      const now = (op: Op) => current.lines.find((l) => l.id === lineOf(op)) ?? null;
+      conflicts = [...r.skipped.map((op) => ({ op, now: now(op) })), ...[...held].map(([op, why]) => ({ op, now: now(op), held: why }))];
       if (!r.ops.length) { rev = current.rev; landed = true; break; }
-      const res = await call(user, `${file}/ops${q}`, { method: "POST", body: JSON.stringify({ ops: r.ops }) });
+      const res = await call(user, `${file}/ops${q}`, { method: "POST", body: JSON.stringify({ ops: r.ops, ...(claim ? { claim } : {}) }) });
       if (res.ok) {
         const body = (await res.json()) as { rev: number; applied: unknown[] };
         applied += body.applied.length;
         rev = body.rev;
         landed = true;
       } else if (res.status !== 409) throw new Error(`ops: ${res.status} ${await res.text()}`);
+      else for (const c of ((await res.json()) as { conflicts?: { index: number; reason: string; claim?: string }[] }).conflicts ?? [])
+        if (c.claim && r.ops[c.index]) held.set(r.ops[c.index]!, c.reason);
     }
     if (!landed) throw new Error(`${path} kept changing while ${opts.harness} worked; nothing was posted`);
-    if (!conflicts.length) break;
+    // Held lines stay held, so running again won't land them.
+    if (!conflicts.some((c) => !c.held)) break;
     log(`${opts.harness}: ${conflicts.length} line(s) changed by someone else while it worked`);
   }
   if (opts.commit && applied) {
@@ -136,4 +158,5 @@ export async function runAgent(call: Call, opts: {
     if (!res.ok) throw new Error(`commit: ${res.status} ${await res.text()}`);
   }
   return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output };
+  }
 }

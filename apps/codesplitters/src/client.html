@@ -203,7 +203,27 @@
   .code.plain .ln { grid-template-columns: 52px minmax(0, 1fr); }
   .ln.sel { background: var(--select); } .ln.sel .n { color: var(--fg); box-shadow: inset 2px 0 0 var(--fg); }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
-  .ln.claim .t { box-shadow: inset 2px 0 0 var(--accent); }
+  /* Claimed lines: the holder's colour down the edge, and their name in the blame column. An agent's shimmer while it works. */
+  .ln.claim .t { box-shadow: inset 3px 0 0 var(--who); background: color-mix(in srgb, var(--who) 7%, transparent); }
+  .ln.claim .by { color: var(--who); font-weight: 500; display: flex; align-items: center; gap: 4px; }
+  .ln.claim .by svg { width: 12px; height: 12px; flex: none; }
+  .ln.claim.bot .t { background: linear-gradient(90deg, transparent 0 30%, color-mix(in srgb, var(--who) 12%, transparent) 50%, transparent 70%) 0 0 / 300% 100%, color-mix(in srgb, var(--who) 6%, transparent); animation: shimmer 2.4s linear infinite; }
+  @keyframes shimmer { from { background-position: 100% 0, 0 0; } to { background-position: -50% 0, 0 0; } }
+  @media (prefers-reduced-motion: reduce) { .ln.claim.bot .t { animation: none; } }
+  /* Who's in the file, over the code: a few faces, then counts, so a thousand agents is still one row. */
+  .crew { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 12px; min-height: 30px; box-sizing: border-box; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 12px; overflow: hidden; }
+  .crew .faces { display: flex; gap: 4px; min-width: 0; overflow: hidden; flex: 0 1 auto; }
+  .who { display: inline-flex; align-items: center; gap: 4px; max-width: 150px; padding: 1px 7px 1px 5px; border: 1px solid color-mix(in srgb, var(--who) 45%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--who) 10%, transparent); color: var(--fg); font: 500 11.5px/18px var(--sans); white-space: nowrap; cursor: pointer; flex: none; }
+  .who span { overflow: hidden; text-overflow: ellipsis; }
+  .who svg { width: 12px; height: 12px; color: var(--who); flex: none; }
+  .crew .counts { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font: 500 11.5px/1 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .crew .counts span { display: inline-flex; align-items: center; gap: 3px; } .crew .counts svg { width: 12px; height: 12px; }
+  .crew .above { margin-left: auto; padding: 1px 8px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); color: var(--accent); font: 500 11.5px/18px var(--sans); cursor: pointer; white-space: nowrap; }
+  .here-list { display: grid; gap: 2px; max-height: 320px; overflow: auto; margin-top: 6px; }
+  .here-list .row { display: flex; align-items: center; gap: 6px; min-height: 24px; }
+  .here-list .row .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+  .here-list .btn { padding: 0 6px; font-size: 11.5px; margin: 0; }
+  #here-filter { width: 100%; box-sizing: border-box; font: inherit; padding: 3px 6px; }
   .ln.priv .n { box-shadow: inset 2px 0 0 var(--faint); } .ln .ph { color: var(--faint); font-style: italic; }
   /* The crew reads private lines, blurred until hovered or edited, so a screen share doesn't show them. */
   .ln.priv .t :is(.secret, input) { transition: filter .15s; } .ln.priv:not(:hover):not(:focus-within) .t :is(.secret, input) { filter: blur(5px); }
@@ -550,6 +570,19 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const icon = (name, cls = "") => `<i data-lucide="${name}"${cls ? ` class="${cls}"` : ""}></i>`;
 const icons = () => { try { lucide.createIcons(); } catch {} };
+/** A Lucide icon as inline SVG, built once: for markup redrawn too often (every line of a busy file) to wait on createIcons(). */
+const glyphs = {};
+const glyph = (name) => glyphs[name] ??= (() => {
+  try { return lucide.createElement(lucide.icons[name.replace(/(^|-)(\w)/g, (_, __, c) => c.toUpperCase())]).outerHTML; } catch { return ""; }
+})();
+/** A steady colour for whoever this is: a person by name, an agent by its run, so a crowd of one harness still tells apart. */
+const hueOf = (s) => {
+  // Mixed well enough that run-1 and run-2 land far apart on the wheel.
+  let h = 2166136261;
+  for (const ch of s) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+  return `hsl(${(h >>> 0) % 360} 70% 46%)`;
+};
 // Who you are comes from the server: an alias (desktop, demos) or a Better Auth account.
 let session = { mode: "alias", user: null, providers: [] };
 const me = () => session.user;
@@ -1994,11 +2027,12 @@ const views = {
         ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
         ${r.canWrite ? `<div class="pop"><button class="btn" id="cut" disabled title="select lines first: click a line number, shift-click another">${icon("scissors")}Cut</button><form class="panel" id="cut-form" hidden style="width:380px"><b>Cut <span id="cut-range"></span> out</b><span class="muted" style="font-size:13px">Just these lines and what they use, followed through imports into the repo's other files, as a tiny repo on a branch of its own: run its tests, share it, merge a fix back.</span><textarea name="more" rows="3" placeholder="add these lines too, a range a line:&#10;test/sum.test.ts:10-24"></textarea><input name="note" placeholder="what it shows (optional)"><button class="btn primary">${icon("scissors")}Cut</button></form></div>` : ""}
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
+        ${r.canWrite ? `<button class="btn" id="hold" disabled title="select lines first. Held lines are yours alone: agents and everyone else leave them be till you let go">${icon("hand")}<span>Hold</span></button>` : ""}
         ${r.canWrite ? `<button class="btn" id="lock" disabled title="select lines first. Only the crew reads a private line; everyone else, git and search get it blank">${icon("lock")}<span>Make private</span></button>` : ""}
-        ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
+        ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><label id="agent-only" class="muted" style="font-size:13px" hidden><input type="checkbox" name="only" checked> Only <span></span>: they're held for it while it works</label><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
         ${r.canWrite ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
-      body: `<div class="code" id="lines"></div>`,
-      details: sec("radio", "Here now", `<p id="who-here" class="muted">just you</p>`)
+      body: `<div class="crew" id="crew"></div><div class="code" id="lines"></div>`,
+      details: sec("radio", "Here now", `<p id="who-here" class="muted">just you</p><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div>`)
         + (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, then share it.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
         + (owner === me() && r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
         + sec("scroll-text", "Commits", `<div id="commits"></div>`)
@@ -2019,13 +2053,23 @@ const views = {
         return;
       }
       $("#smash").hidden = true;
+      const keep = anchor();
       box.innerHTML = codeRows(d.lines);
+      if (claimOf.size) for (const el of box.children) {
+        const c = claimOf.get(el.dataset.id);
+        if (!c) continue;
+        el.classList.add("claim", c.bot ? "bot" : "hold");
+        el.style.setProperty("--who", hueOf(c.bot ? c.id : c.who));
+        const by = $(".by", el);
+        if (by) { by.innerHTML = glyph(c.bot ? "bot" : "hand") + esc(c.bot ? "#" + c.id.replace(/^run-/, "") : c.who); by.title = `${c.bot ? `${nameOf(c)} is working on this line` : `@${c.who} is holding this line`}${c.task ? `: ${c.task}` : ""}`; }
+      }
       if (r.upstream) {
         box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("mod", d.lines[k].by !== "upstream"));
         const n = d.lines.filter((l) => l.by !== "upstream").length;
         $("#modded").textContent = n ? `${n} lines modded` : "as cloned";
       }
       fresh.forEach((id) => box.querySelector(`[data-id="${id}"]`)?.classList.add("flash"));
+      keep(fresh);
       if (sel) box.querySelectorAll(".ln").forEach((el, k) => el.classList.toggle("sel", k >= sel[0] - 1 && k <= sel[1] - 1));
       $("#revl").textContent = live ? `${d.lines.length} lines · r${doc.rev}` : `viewing r${viewing} of ${doc.rev}`;
       if (live && r.canWrite) for (const el of box.querySelectorAll(".ln")) el.addEventListener("dblclick", () => edit(el));
@@ -2033,18 +2077,114 @@ const views = {
     selectable(box, (range) => {
       sel = range;
       const label = range[0] === range[1] ? `line ${range[0]}` : `lines ${range[0]}–${range[1]}`;
-      for (const b of ["#share", "#collect", "#lock", "#cut"]) if ($(b)) $(b).disabled = false;
+      for (const b of ["#share", "#collect", "#lock", "#cut", "#hold"]) if ($(b)) $(b).disabled = false;
       if ($("#lock")) $("#lock span").textContent = selPrivate() ? "Make public" : "Make private";
+      holdLabel();
+      if ($("#agent-only")) { $("#agent-only").hidden = false; $("#agent-only span").textContent = label; }
       for (const b of ["#share-range", "#cut-range"]) if ($(b)) $(b).textContent = label;
       $("#st-sel").textContent = range[0] === range[1] ? `Ln ${range[0]}` : `Ln ${range[0]}–${range[1]}`;
     });
     const selLines = () => sel ? doc.lines.slice(sel[0] - 1, sel[1]) : [];
     const selPrivate = () => selLines().length > 0 && selLines().every((l) => l.private);
+
+    // Who's here and who holds what. People come from the socket's presence; agents
+    // from their claims, one per run, so a thousand runs of one harness are a thousand
+    // faces. Built for a crowd: a few faces, then counts, and the whole list under
+    // Here now with a filter; every redraw waits for the next frame and lands once.
+    let people = [], claims = new Map(), above = new Set();
+    const claimOf = new Map();
+    const nameOf = (c) => c.bot ? `${c.who.replace(/^agent-/, "")} #${c.id.replace(/^run-/, "")}` : c.who;
+    const setClaims = (list) => { claims = new Map(list.map((c) => [c.id, c])); reindex(); };
+    const reindex = () => { claimOf.clear(); for (const c of claims.values()) for (const id of c.lines) claimOf.set(id, c); };
+    const mine = (c) => c && !c.bot && c.who === me();
+    const standing = () => { const now = Date.now(); return [...claims.values()].filter((c) => c.until === null || c.until > now); };
+    const holdLabel = () => {
+      if (!$("#hold")) return;
+      const ls = selLines(), letGo = ls.length > 0 && ls.every((l) => mine(claimOf.get(l.id)));
+      $("#hold span").textContent = letGo ? "Let go" : "Hold";
+    };
+    const face = (c, who) => {
+      const bot = c ? c.bot : who.startsWith("agent-"), name = c ? nameOf(c) : who;
+      return `<button class="who" style="--who:${hueOf(c?.bot ? c.id : who ?? c.who)}"${c ? ` data-claim="${esc(c.id)}"` : ""} title="${esc(c ? `${bot ? "agent" : "@" + c.who} on ${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? `: ${c.task}` : ""}` : `@${who} has this file open`)}">${glyph(bot ? "bot" : "user")}<span>${esc(name)}</span></button>`;
+    };
+    const FACES = 6, LISTED = 200;
+    const drawCrew = () => {
+      const cs = standing(), bots = cs.filter((c) => c.bot), holds = cs.filter((c) => !c.bot);
+      const humans = people.filter((w) => !w.startsWith("agent-")), openBots = people.filter((w) => w.startsWith("agent-"));
+      const nBots = bots.length + openBots.length;
+      const faces = [...humans.map((w) => face(null, w)), ...bots.map((c) => face(c)), ...openBots.map((w) => face(null, w))];
+      $("#crew").innerHTML = `<span class="faces">${faces.slice(0, FACES).join("")}</span>`
+        + `<span class="counts" title="people with the file open · agents working on it">${faces.length > FACES ? `<span>+${faces.length - FACES}</span>` : ""}<span>${glyph("user")}${humans.length}</span><span>${glyph("bot")}${nBots}</span>${holds.length ? `<span title="lines people are holding">${glyph("hand")}${holds.reduce((n, c) => n + c.lines.length, 0)}</span>` : ""}</span>`
+        + (above.size ? `<button class="above" id="above">↑ ${above.size} change${above.size > 1 ? "s" : ""} above</button>` : "");
+      $("#who-here").textContent = humans.length > 1 || nBots ? `${humans.length} ${humans.length === 1 ? "person" : "people"}, ${nBots} agent${nBots === 1 ? "" : "s"}${holds.length ? `, ${holds.length} hold${holds.length > 1 ? "s" : ""}` : ""}` : "just you";
+      const f = $("#here-filter"), needle = f.value.trim().toLowerCase();
+      f.hidden = cs.length + humans.length < 12;
+      const rows = [...cs.map((c) => ({ c, key: `${nameOf(c)} ${c.task ?? ""}`.toLowerCase() })), ...humans.filter((w) => !cs.some((c) => c.who === w)).map((w) => ({ w, key: w.toLowerCase() }))]
+        .filter((x) => !needle || x.key.includes(needle));
+      $("#here-list").innerHTML = rows.slice(0, LISTED).map(({ c, w }) => `<div class="row">${face(c, w)}<span class="what">${c ? `${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? ` · ${esc(c.task)}` : ""}` : "looking"}</span>${c && r.canWrite ? `<button class="btn" data-lift="${esc(c.id)}" title="${mine(c) ? "let go of these lines" : "lift this claim: the lines are free again, and the agent's edits to them won't land"}">${mine(c) ? "Let go" : "Lift"}</button>` : ""}</div>`).join("")
+        + (rows.length > LISTED ? `<p class="muted">and ${rows.length - LISTED} more: type to find one</p>` : "");
+    };
+    // Redraws are batched to one a frame: a crowd of agents landing at once is one repaint, not hundreds.
+    let queued = null;
+    const schedule = (fresh = [], lines = true) => {
+      queued ??= { fresh: new Set(), lines: false };
+      fresh.forEach((id) => queued.fresh.add(id));
+      queued.lines ||= lines;
+      if (queued.raf) return;
+      queued.raf = requestAnimationFrame(() => {
+        const q = queued; queued = null;
+        if (q.lines && viewing === null && !box.querySelector(".ln input")) draw(doc, q.fresh);
+        drawCrew();
+      });
+    };
+    // Keep your place: whatever line is at the top of the view stays put when lines land
+    // above it, and those changes are counted in the strip instead.
+    const scroller = () => { const sc = box.closest(".scroll"); return sc && sc.scrollHeight > sc.clientHeight ? sc : null; };
+    const topOfView = () => { const sc = scroller(); return (sc ? sc.getBoundingClientRect().top : 0) + $("#crew").offsetHeight; };
+    const firstVisible = (top) => {
+      const els = box.children;
+      let lo = 0, hi = els.length - 1, at = null;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (els[mid].getBoundingClientRect().bottom > top) { at = els[mid]; hi = mid - 1; } else lo = mid + 1; }
+      return at;
+    };
+    const anchor = () => {
+      const top = topOfView(), el = firstVisible(top);
+      const ids = [], was = el?.getBoundingClientRect().top;
+      for (let x = el; x && ids.length < 20; x = x.nextElementSibling) ids.push(x.dataset.id);
+      return (fresh = new Set()) => {
+        const now = ids.map((id) => box.querySelector(`[data-id="${id}"]`)).find(Boolean);
+        if (!now || was === undefined || (scroller()?.scrollTop ?? scrollY) === 0) return;
+        const d = now.getBoundingClientRect().top - was;
+        if (d) { const sc = scroller(); sc ? sc.scrollTop += d : scrollBy(0, d); }
+        for (const id of fresh) { const e = box.querySelector(`[data-id="${id}"]`); if (e && e.getBoundingClientRect().bottom <= topOfView()) above.add(id); }
+      };
+    };
+    $("#crew").addEventListener("click", (e) => {
+      const go = (el) => { if (!el) return; el.scrollIntoView({ block: "center" }); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); };
+      if (e.target.closest("#above")) {
+        const els = [...above].map((id) => box.querySelector(`[data-id="${id}"]`)).filter(Boolean);
+        above.clear(); drawCrew();
+        return go(els.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0]);
+      }
+      const c = claims.get(e.target.closest("[data-claim]")?.dataset.claim);
+      if (c) go([...box.children].find((el) => claimOf.get(el.dataset.id) === c));
+    });
+    $("#here-list").addEventListener("click", async (e) => {
+      const lift = e.target.closest("[data-lift]");
+      if (lift) { lift.disabled = true; try { await api(`${base}/claims${q}`, { id: lift.dataset.lift, release: true }); } catch (err) { toast(err.message); lift.disabled = false; } return; }
+      const c = claims.get(e.target.closest("[data-claim]")?.dataset.claim);
+      if (c) [...box.children].find((el) => claimOf.get(el.dataset.id) === c)?.scrollIntoView({ block: "center" });
+    });
+    $("#here-filter").addEventListener("input", drawCrew);
+    (box.closest(".scroll") ?? window).addEventListener("scroll", () => { if (above.size && (scroller()?.scrollTop ?? scrollY) === 0) { above.clear(); drawCrew(); } }, { passive: true });
+    setClaims(await api(`${base}/claims${q}`).catch(() => []));
     // The game's "smash the removed lines": a revision pair of this file.
     const smashHref = (from, to) => `/play.html#r/${owner}/${repo}?path=${encodeURIComponent(path)}&from=${from}&to=${to}`;
     // Newest first, so a commit's parent is the next one down.
     const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c, i) => `<div class="commit"><code>${c.sha.slice(0, 7)}</code><span>${esc(c.message)}</span><span class="muted">@${esc(c.by)} · r${c.rev}${c.rev > (cs[i + 1]?.rev ?? 0) ? ` · <a href="${smashHref(cs[i + 1]?.rev ?? 0, c.rev)}" title="smash the lines this commit took out">smash</a>` : ""}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
     const edit = (el) => {
+      const held = claimOf.get(el.dataset.id);
+      if (held && !mine(held)) return toast(held.bot ? `An agent is working on this line${held.task ? `: ${held.task}` : ""}. Lift its claim under Here now to take it back` : `@${held.who} is holding this line`);
       const line = doc.lines.find((l) => l.id === el.dataset.id);
       const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}">`;
       const inp = $("input", t); inp.focus();
@@ -2058,7 +2198,7 @@ const views = {
         try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = /^Slow down/.test(err.message) ? err.message : "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
       });
     };
-    draw(doc); drawCommits(commits);
+    draw(doc); drawCrew(); drawCommits(commits);
     popover($("#hist"));
     $("#rev").addEventListener("input", async (e) => {
       const v = Number(e.target.value);
@@ -2097,12 +2237,25 @@ const views = {
       f.addEventListener("submit", async (e) => {
         e.preventDefault(); go.disabled = true;
         try {
-          await api(`/repos/${owner}/${repo}/agents`, { path, harness: f.harness.value, task: f.task.value, model: f.model.value });
+          const lines = sel && f.only.checked ? selLines().map((l) => l.id) : undefined;
+          await api(`/repos/${owner}/${repo}/agents`, { path, harness: f.harness.value, task: f.task.value, model: f.model.value, lines });
           toast(`agent-${f.harness.value} is on it`); f.task.value = ""; f.hidden = true; pollAgents();
         } catch (err) { toast(err.message); }
         finally { go.disabled = false; }
       });
     }
+    $("#hold")?.addEventListener("click", async () => {
+      const ls = selLines();
+      try {
+        if ($("#hold span").textContent === "Let go") {
+          for (const c of new Set(ls.map((l) => claimOf.get(l.id)))) await api(`${base}/claims${q}`, { id: c.id, release: true });
+          toast("Let go: those lines are free again");
+        } else {
+          await api(`${base}/claims${q}`, { lines: ls.map((l) => l.id) });
+          toast("Holding those lines: agents and everyone else leave them be till you let go");
+        }
+      } catch (err) { toast(err.message); }
+    });
     $("#lock")?.addEventListener("click", async () => {
       const on = !selPrivate();
       await api(`${base}/private${q}`, { lines: selLines().map((l) => l.id), private: on });
@@ -2162,7 +2315,12 @@ const views = {
         const p = pending.get(msg.id); pending.delete(msg.id);
         return msg.type === "ack" ? p?.ok(msg) : p?.fail(new Error(msg.error || msg.conflicts?.[0]?.reason || "conflict"));
       }
-      if (msg.type === "presence") return $("#who-here").textContent = msg.who.length > 1 ? msg.who.map((w) => "@" + w).join(", ") : "just you";
+      if (msg.type === "presence") { people = msg.who; return schedule([], false); }
+      if (msg.type === "claim" || msg.type === "unclaim") {
+        msg.type === "claim" ? claims.set(msg.claim.id, msg.claim) : claims.delete(msg.id);
+        reindex(); holdLabel();
+        return schedule();
+      }
       if (msg.type === "commit") return drawCommits(await api(`${base}/commits${q}`));
       // Lines went private or public: the server says what this reader may see.
       if (msg.type === "private") {
@@ -2176,7 +2334,7 @@ const views = {
       if (msg.applied[0]?.rev === doc.rev + 1) msg.applied.forEach(applyLocal);
       else if (msg.rev > doc.rev) doc = await api(`${base}/file${q}`);
       const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
-      if (viewing === null && !box.querySelector(".ln input")) draw(doc, new Set(msg.applied.map((a) => a.line)));
+      schedule(msg.applied.map((a) => a.line));
     };
   },
 

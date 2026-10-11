@@ -52,7 +52,7 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
  * worked; their version is already in the file and the agent must keep it.
  */
 export function taskPrompt(path: string, task: string, conflicts: Conflict[] = []): string {
-  const moved = conflicts.map(({ op, now }) =>
+  const moved = conflicts.filter((c) => !c.held).map(({ op, now }) =>
     now === null ? `- a line you ${op.kind === "insert" ? "anchored an insert to" : "changed"} was deleted by someone else`
     : `- ${JSON.stringify(now.text)} (changed by ${now.by}; you had ${op.kind === "set" ? JSON.stringify(op.text) : op.kind === "delete" ? "deleted it" : `inserted ${JSON.stringify(op.text)} after it`})`);
   return [
