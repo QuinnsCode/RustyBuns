@@ -64,6 +64,57 @@ describe("your data", () => {
   });
 });
 
+describe("GitHub and Google grants (#515)", () => {
+  const origin = "http://codesplitters.local", key = "test-secret-".padEnd(40, "x");
+  /** ana, signed up with email and a handle, with a GitHub and a Google sign-in linked; `fetch` answers GitHub and Google. */
+  async function linked(fetch: (url: string, init: RequestInit) => Response, extra: Record<string, unknown> = { GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret" }) {
+    const call = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: key, BETTER_AUTH_URL: origin, ...extra });
+    opened.push(call);
+    const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
+      body: JSON.stringify({ email: "ana@example.com", password: "correct horse battery", name: "ana" }) });
+    const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+    expect((await call(null, "/api/handle", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "ana-digger" }) })).status).toBe(201);
+    const { symmetricEncrypt } = await import("better-auth/crypto");
+    const authId = (await call.env.DB.prepare("SELECT auth_id FROM users WHERE name = 'ana-digger'").first())!.auth_id as string;
+    const link = async (provider: string, access: string, refresh: string | null) => call.env.DB.prepare(`INSERT INTO account (id, accountId, providerId, userId, accessToken, refreshToken, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, '2026-01-01', '2026-01-01')`)
+      .bind(provider, provider + "-id", provider, authId, await symmetricEncrypt({ key, data: access }), refresh && await symmetricEncrypt({ key, data: refresh })).run();
+    await link("github", "gho_ana", null);
+    await link("google", "ya29.ana", "1//refresh-ana");
+    const calls: { url: string; method?: string; auth?: string | null; body: string }[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (u: string, init: RequestInit = {}) => {
+      calls.push({ url: String(u), method: init.method, auth: new Headers(init.headers).get("authorization"), body: String(init.body) });
+      return fetch(String(u), init);
+    }) as any;
+    try { return { calls, res: await call(null, "/api/me?confirm=ana-digger", { method: "DELETE", headers: { cookie } }), db: call.env.DB }; }
+    finally { globalThis.fetch = real; }
+  }
+
+  test("deleting the account revokes them at GitHub and Google, before the tokens go", async () => {
+    const { calls, res, db } = await linked(() => new Response(null, { status: 204 }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ deleted: "ana-digger" });
+    const gh = calls.find((c) => c.url.includes("github"))!;
+    expect([gh.url, gh.method, gh.auth, JSON.parse(gh.body)]).toEqual(["https://api.github.com/applications/cid/grant", "DELETE", `Basic ${btoa("cid:csecret")}`, { access_token: "gho_ana" }]);
+    const google = calls.find((c) => c.url.includes("google"))!;
+    // The refresh token, decrypted: revoking it drops the whole grant.
+    expect([google.url, google.method, new URLSearchParams(google.body).get("token")]).toEqual(["https://oauth2.googleapis.com/revoke", "POST", "1//refresh-ana"]);
+    expect(await db.prepare("SELECT 1 FROM account").first()).toBeNull();
+  });
+
+  test("a grant already gone counts as revoked; one that won't go is the person's to revoke, and the delete still happens", async () => {
+    let r = await linked((u) => new Response(null, { status: u.includes("github") ? 404 : 400 }));
+    expect(await r.res.json()).toEqual({ deleted: "ana-digger" });
+    r = await linked((u) => { if (u.includes("google")) throw new Error("offline"); return new Response(null, { status: 500 }); });
+    expect(await r.res.json()).toEqual({ deleted: "ana-digger", revoke_yourself: ["github", "google"] });
+    expect(await r.db.prepare("SELECT 1 FROM users WHERE name = 'ana-digger'").first()).toBeNull();
+    // Without GitHub's app keys there's nothing to call it with.
+    r = await linked(() => new Response(null, { status: 200 }), {});
+    expect((await r.res.json() as any).revoke_yourself).toEqual(["github"]);
+    expect(r.calls.map((c) => c.url)).toEqual(["https://oauth2.googleapis.com/revoke"]);
+  });
+});
+
 describe("the change notice", () => {
   test("PRIVACY_NOTICE reaches the page through /api/session, dated", async () => {
     const call = await boot({ GH_CLI: "off", PRIVACY_NOTICE: "2026-11-01  We'll keep request logs 3 days, not 7." });
