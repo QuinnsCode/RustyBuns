@@ -48,6 +48,8 @@ export default defineConfig({
     // Workers Logs drop each URL's query string (OAuth codes, ?confirm= handles), as #/privacy
     // says. Each upload resets it, so rustybuns deploy sets it again after (#553).
     redactQueryStrings: true,
+    // build.ts minifies the Worker; its source map goes up with it so traces still read (#612).
+    sourceMaps: true,
   },
   bindings: {
     // Profiles, repos, playlists and the search index.

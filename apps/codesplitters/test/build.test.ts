@@ -44,3 +44,21 @@ test("_headers enforces the CSP and lets every page's inline scripts run by hash
     for (const h of hashes) expect(scriptSrc).toContain(`'${h}'`);
   }
 }, 60_000);
+
+// The Worker ships minified with a linked source map (#612), which goes up to Cloudflare with
+// it (worker.sourceMaps) so Workers Logs traces name the source. The map carries the source
+// itself, so it may hold only the repo's own tracked code and packages: no machine paths,
+// 1Password references or keys, and it never lands in the public assets.
+test("the Worker is minified, its source map is linked and leaks nothing", async () => {
+  const p = Bun.spawn(["bun", "run", "build.ts"], { cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe" });
+  expect(await p.exited).toBe(0);
+  const dist = `${import.meta.dir}/../dist`;
+  const out = await Bun.file(`${dist}/worker/worker.js`).text();
+  expect(out).toEndWith("//# sourceMappingURL=worker.js.map\n");
+  expect(out.split("\n").length).toBeLessThan(5_000);   // unminified, it's tens of thousands
+  const map = await Bun.file(`${dist}/worker/worker.js.map`).json();
+  for (const s of map.sources as string[]) expect(s).not.toMatch(/^\/|^[A-Za-z]:|\.env|\.dev\.vars|\.alchemy|\.agent-office/);
+  const all = (map.sourcesContent as string[]).join("\n");
+  expect(all).not.toMatch(/\/Users\/|\/home\/[a-z]|op:\/\/|sk-ant-|ghp_[A-Za-z0-9]{20}|github_pat_|AKIA[0-9A-Z]{16}/);
+  expect(await Bun.file(`${dist}/client/worker.js.map`).exists()).toBe(false);
+}, 60_000);

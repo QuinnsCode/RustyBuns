@@ -33,7 +33,10 @@ for (const [from, to] of [
 // (nodejs_compat). Without it Better Auth takes its browser build, whose stand-in
 // AsyncLocalStorage is one slot shared by every request: overlapping requests
 // clear each other's state and getSession throws "No request state found".
-const r = await Bun.build({ entrypoints: ["src/worker.ts"], outdir: "dist/worker", target: "browser", conditions: ["workerd", "worker"], external: ["node:*"], format: "esm", naming: "worker.js" });
+const r = await Bun.build({ entrypoints: ["src/worker.ts"], outdir: "dist/worker", target: "browser", conditions: ["workerd", "worker"], external: ["node:*"], format: "esm", naming: "worker.js",
+  // Minified, so a cold isolate parses less; the linked map (uploaded with it, worker.sourceMaps)
+  // keeps Workers Logs traces naming the source.
+  minify: true, sourcemap: "linked" });
 if (!r.success) { for (const l of r.logs) console.error(l); process.exit(1); }
 // The CLI as one file for Bun or Node, so anyone can install it from the site (GET /install.sh
 // fetches it and adds the shebang). Tree-shaking leaves just the tool list and the HTTP call.
