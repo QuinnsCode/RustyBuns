@@ -55,6 +55,9 @@ export async function exportFor(env: Env, handle: string) {
     // What the insights page counts (insights.ts): your requests per day, and the first and last time you did each step.
     usage: await all(env, "SELECT day, kind, via, hits, errors, first_at, last_at, ua FROM traffic WHERE who = ? ORDER BY day", `@${handle}`),
     steps: await all(env, "SELECT step, first_at, last_at, n FROM user_steps WHERE name = ?", handle),
+    // What the home feed shows others of your edits (feed.ts), and your latest digest.
+    line_events: await all(env, "SELECT owner, repo, path, sets, inserts, deletes, lines, first_at, last_at FROM line_events WHERE who = ?", handle),
+    feed_digest: await env.DB.prepare("SELECT harness, status, since, through, text, at FROM feed_digests WHERE name = ?").bind(handle).first(),
   };
 }
 
@@ -75,6 +78,8 @@ export async function eraseUser(env: Env, handle: string) {
     by("DELETE FROM limit_jobs WHERE user = ?", handle),
     by("DELETE FROM traffic WHERE who = ?", `@${handle}`),
     by("DELETE FROM user_steps WHERE name = ?", handle),
+    by("DELETE FROM line_events WHERE who = ?", handle),
+    by("DELETE FROM feed_digests WHERE name = ?", handle),
     // evict leaves these: agent runs (the tasks you gave) and the limits counted against you.
     by("DELETE FROM agent_runs WHERE owner = ?", handle),
     by("DELETE FROM limit_hits WHERE who = ?", `@${handle}`),

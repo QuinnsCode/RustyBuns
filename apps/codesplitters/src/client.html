@@ -489,6 +489,17 @@
   .limits .rgroups { columns: 3 340px; column-gap: 12px; }
   .limits .rgroups > .box { break-inside: avoid; margin: 0 0 12px; }
   .limits h2 { display: flex; align-items: center; gap: 8px; }
+  /* The home feed (#/feed): the digest first, then one row per person or agent run, its raw events one click behind. */
+  .feed { max-width: 820px; } .feed h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-weight: 600; }
+  .feed .digest .body { white-space: pre-wrap; line-height: 1.5; }
+  .feed .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
+  .feed details.grp { border: 1px solid var(--border); border-radius: 6px; margin: 0 0 8px; }
+  .feed details.grp > summary { display: flex; gap: 8px; align-items: center; padding: 8px 12px; cursor: pointer; list-style: none; }
+  .feed details.grp > summary svg { width: 14px; height: 14px; color: var(--who); flex: none; }
+  .feed details.grp > summary .what { flex: 1; min-width: 0; }
+  .feed details.grp > summary .age { flex: none; color: var(--muted); font: 500 12px var(--mono); }
+  .feed .evs { border-top: 1px solid var(--border); padding: 6px 12px 8px 34px; font-size: 13px; display: grid; gap: 2px; }
+  .feed .evs a { overflow-wrap: anywhere; }
   .limits .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 0; margin-bottom: 16px; background: var(--bg); border-top: 1px solid var(--border); }
   .limits .ev .btn { margin-left: auto; }
   .limits .ev, .jobs .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
@@ -789,7 +800,7 @@ function landHome() {
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
@@ -1615,6 +1626,7 @@ const views = {
         ${row("Linked GitHub", "Your GitHub account id and its access token, encrypted at rest", "Forking the repos you choose", "Until you unlink it or delete your account")}
         ${row("Tokens and apps", "API token labels and last four characters, apps you connected, and when each was last used. The secrets are stored only as hashes.", "Letting your scripts, agents and apps act as you", "Until they expire or you revoke them")}
         ${row("Agent runs", "The task you gave an agent, the model and a short log", "Showing you what your agent did", "With the repo")}
+        ${row("Feed", "Which files you edited, how many lines and when (never the text), shown in the feeds of people who follow you or the repo and can read it; and the digest your agent last wrote of your own feed", "Your followers' home feeds, and yours", "30 days; the digest until the next one")}
         ${row("Rate limits", "Your IP address, counted against sign-in and sign-up attempts", "Keeping bots out", "An hour; a blocked attempt is noted for 7 days")}
         ${row("Usage", "A daily count of your requests (by handle, or signed out by a hash of your IP that changes every day), whether they came from a browser or a script, your browser's name, and the first time you did each thing here (made a repo, committed, deployed)", "Seeing whether people or bots use the site, and where people get stuck", "Daily counts 30 days; the firsts until you delete your account")}
         </tbody></table></div>
@@ -2789,6 +2801,37 @@ const views = {
     icons();
   },
 
+  // #/feed: your home feed (src/feed.ts). Your agent's digest first; each group's raw events open underneath it.
+  async feed(days = "7") {
+    ctx = { view: "feed" };
+    if (!me()) throw new Error("Sign in to see your feed.");
+    const span = [1, 7, 30].includes(Number(days)) ? Number(days) : 7;
+    const [f, agents] = await Promise.all([api(`/me/feed?since=${Date.now() - span * 86400000}`), api("/agents").catch(() => ({ available: false, harnesses: [] }))]);
+    const d = f.digest;
+    const digest = !d ? `<p class="muted">No digest yet. Pick a coding agent and it reads your feed and writes you one. It only ever sees what you can read.</p>`
+      : d.status === "running" ? `<p class="muted">${glyph("bot")} ${esc(d.harness)} is reading your feed…</p>`
+      : d.status === "failed" ? `<p class="muted">${esc(d.harness)} couldn't write it: ${esc(d.error ?? "")}</p>`
+      : `${esc(d.text ?? "")}\n\n<span class="muted small">by ${esc(d.harness)}, covering ${ago(d.since)} to ${ago(d.through)}</span>`;
+    const where = (x) => `<a href="#/f/${esc(x.owner)}/${esc(x.repo)}/${encodeURIComponent(x.path)}">${esc(x.owner)}/${esc(x.repo)}/${esc(x.path)}</a>`;
+    app.innerHTML = `<div class="wrap limits feed" style="padding-top:24px">
+      <h2>${icon("rss")} Your feed<span class="grow"></span><span class="seg" id="feed-span">${[1, 7, 30].map((n) => `<a class="btn ghost${n === span ? " on" : ""}" href="#/feed/${n}">${n === 1 ? "today" : `${n} days`}</a>`).join("")}</span></h2>
+      <p class="muted" style="margin:0 0 14px">Line by line, from the people, agents, repos and lines you follow: who landed what, and who came along after. Private repos show only to their crew.</p>
+      <div class="box digest"><div class="bar">${icon("sparkles")}<b>Digest</b><span class="grow"></span>
+        ${agents.available ? `<select id="dg-harness" aria-label="which agent writes it">${agents.harnesses.map((h) => `<option${h === d?.harness ? " selected" : ""}>${esc(h)}</option>`).join("")}</select><button class="btn" id="dg-go"${d?.status === "running" ? " disabled" : ""}>${icon("bot")}Digest what's new</button>` : `<span class="muted small" title="${esc(agents.why ?? "")}">agents run on the desktop app</span>`}</div>
+        <div class="body">${digest}</div></div>
+      <div id="groups">${f.groups.map((g, i) => `<details class="grp" style="--who:${hueOf(g.bot && g.run ? g.run : g.who)}"><summary>${glyph(g.bot ? "bot" : "user")}<span class="what">${esc(g.summary)}</span><span class="age" data-at="${g.last_at}">${ago(g.last_at)}</span></summary>
+        <div class="evs">${g.events.map((e) => `<div>${where(e)} <span class="muted">${e.inserts ? `+${e.inserts} ` : ""}${e.sets ? `~${e.sets} ` : ""}${e.deletes ? `−${e.deletes} ` : ""}· ${ago(e.last_at)}</span></div>`).join("")}</div></details>`).join("")
+        || `<p class="muted">${f.follows ? "Nothing new from who and what you follow." : "You don't follow anyone yet. Follow people, agents, repos or a few lines and their edits land here."}</p>`}</div>
+    </div>`;
+    icons();
+    $("#dg-go")?.addEventListener("click", async () => {
+      try { await api("/me/feed/digest", { harness: $("#dg-harness").value }); views.feed(String(span)); }
+      catch (e) { toast(e.message); }
+    });
+    // A digest being written: look again in a few seconds, while this page is still up.
+    if (d?.status === "running") setTimeout(() => { if (ctx.view === "feed") views.feed(String(span)); }, 3000);
+  },
+
   async admin(section) {
     ctx = { view: "admin" };
     if (!session.admin) throw new Error("Admins only.");
@@ -3296,6 +3339,7 @@ async function commands() {
   add("Anywhere", "shield-check", "Privacy: what we keep, and your data", "", () => (location.hash = "#/privacy"));
   add("Anywhere", "book-open", "API reference", "GET /api", () => (location.href = "/reference"));
   add("Anywhere", "plug", "Connect your AI (MCP)", "", () => (location.href = "/mcp"));
+  if (u) add("Anywhere", "rss", "Your feed", "GET /api/me/feed", () => (location.hash = "#/feed"));
   if (session.admin) add("Admin", "activity", "Insights", "GET /api/admin/insights", () => (location.hash = "#/admin/insights"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());

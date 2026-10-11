@@ -10,6 +10,7 @@
 //   base           on a branch's copy of a file: main's doc when it forked
 //   private        ids of lines only the crew may read (in a public repo too)
 //   claim:<id>     who is working on which lines right now (see Claim), one key each
+//   where          [owner, repo, path] on main's copy, so its edits reach the home feed (feed.ts)
 //
 // Private lines: the Worker says whether the caller is crew
 // (`x-codesplitters-crew: 1`); everyone else gets each private line as a
@@ -18,6 +19,7 @@
 // for git and search, so the real text never leaves the app.
 
 import type { Env } from "./env.ts";
+import { recordEdits, type Recent } from "./line-events.ts";
 import { countHit } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { apply, empty, merge, replay, sha, text, type Applied, type Doc, type Line, type Op } from "./lines.ts";
@@ -57,6 +59,11 @@ export class FileDurableObject {
   claimOf = new Map<string, Claim>();
   presenceTimer: ReturnType<typeof setTimeout> | null = null;
   leaving = new Set<unknown>();
+  /** Main's copy knows where it lives (the Worker says so), so its edits go into the feed's line events. */
+  where: [string, string, string] | null = null;
+  /** Each writer's line event still being folded into, and the writes to D1, one after another. */
+  recent = new Map<string, Recent>();
+  logging: Promise<unknown> = Promise.resolve();
 
   constructor(private ctx: any, private env: Env) {
     ctx.blockConcurrencyWhile(async () => {
@@ -64,6 +71,7 @@ export class FileDurableObject {
       this.commits = (await ctx.storage.get("commits")) ?? 0;
       this.base = (await ctx.storage.get("base")) ?? null;
       this.secret = new Set((await ctx.storage.get("private")) ?? []);
+      this.where = (await ctx.storage.get("where")) ?? null;
       for (const c of ((await ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
     });
   }
@@ -73,6 +81,11 @@ export class FileDurableObject {
     const by = req.headers.get("x-codesplitters-user") ?? "anon";
     const route = url.pathname.split("/").pop();
     const crew = req.headers.get("x-codesplitters-crew") === "1";
+    const where = req.headers.get("x-codesplitters-file");
+    if (where && decodeURIComponent(where) !== JSON.stringify(this.where)) {
+      this.where = JSON.parse(decodeURIComponent(where));
+      await this.ctx.storage.put("where", this.where);
+    }
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
       // The Worker vouches for who this is and whether they may write; the
@@ -114,8 +127,8 @@ export class FileDurableObject {
       // Its repo was evicted: forget everything.
       const all: Map<string, unknown> = await this.ctx.storage.list();
       await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
-      [this.doc, this.base, this.commits, this.secret] = [empty(), null, 0, new Set()];
-      this.claims.clear(); this.claimOf.clear();
+      [this.doc, this.base, this.commits, this.secret, this.where] = [empty(), null, 0, new Set(), null];
+      this.claims.clear(); this.claimOf.clear(); this.recent.clear();
       return json({ ok: true });
     }
     if (req.method === "POST" && route === "fork") {
@@ -187,6 +200,11 @@ export class FileDurableObject {
     const msg = (crew: boolean) => JSON.stringify({ type: "ops", rev: this.doc.rev, applied: this.hide(r.applied, crew) });
     const [toCrew, toOthers] = [msg(true), msg(false)];
     for (const ws of this.ctx.getWebSockets()) try { ws.send(ws.deserializeAttachment?.()?.write ? toCrew : toOthers); } catch {}
+    // Into the feed, after the edit has landed and gone out: an edit never waits on it, and a failed write loses an event, not the edit.
+    if (this.where) {
+      const [owner, repo, path] = this.where;
+      this.logging = this.logging.then(() => recordEdits(this.env, { owner, repo, path }, r.applied, this.recent, claim)).catch(() => {});
+    }
     return { ok: true as const, rev: this.doc.rev, applied: r.applied };
   }
 

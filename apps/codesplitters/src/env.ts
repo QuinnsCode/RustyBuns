@@ -101,7 +101,7 @@ export interface Env {
   /** Level digs (levels.ts, swarm.ts): a dig's first step, then a big level's parts, side by side. Unset, an import runs in its request. */
   LEVEL_DIGS?: { send(body: DigMessage): Promise<void>; sendBatch(messages: Iterable<{ body: DigMessage; delaySeconds?: number }>): Promise<void> };
   /** Queued requests, one message each (limits.ts), delayed until the caller's window has room, and hosted agent runs (agent-routes.ts): the same Worker's queue() consumes it. */
-  JOBS: { send(body: { job: number } | { agent: number; origin: string }, opts?: { delaySeconds?: number }): Promise<void> };
+  JOBS: { send(body: { job: number } | { agent: number; origin: string } | { digest: string }, opts?: { delaySeconds?: number }): Promise<void> };
   /** Tests only: stands in for fetch when a webhook is delivered (see hooks.ts). */
   HOOK_FETCH?: unknown;
   /** Tests only: stands in for fetch when checks talk to GitHub's API (see checks.ts). */

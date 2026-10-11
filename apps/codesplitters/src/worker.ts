@@ -7,6 +7,8 @@ import { ensureCrewRemote, fileStub, handleFor, access as artifactAccess, listDi
 import { code, json, NAME, type DigMessage, type Env } from "./env.ts";
 import { accountsOn, actingAs, identityRoutes, identify, isAdmin } from "./identity.ts";
 import { privacyRoutes, sweepSessions } from "./privacy.ts";
+import { feedRoutes, runQueuedDigests, type DigestMessage } from "./feed.ts";
+import { sweepLineEvents } from "./line-events.ts";
 import { levelRoutes, runDigs } from "./levels.ts";
 import { evict, githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
@@ -126,6 +128,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/follows, DELETE /api/follows/:id, GET /api/me/following (follows.ts)
   const follows = await followRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
   if (follows) return follows;
+
+  // GET /api/me/feed and its digest (feed.ts)
+  const feed = await feedRoutes(req, env, p, url, user);
+  if (feed) return feed;
 
   // GET /api/me/export and DELETE /api/me: take your data, or bury it (privacy.ts)
   const privacy = await privacyRoutes(req, env, p, url, user, !token && !actingAs.has(req));
@@ -292,6 +298,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         h.set("x-codesplitters-user", user ?? "anon");
         h.set("x-codesplitters-write", a.write ? "1" : "0");
         h.set("x-codesplitters-crew", a.write ? "1" : "0");
+        branch ? h.delete("x-codesplitters-file") : h.set("x-codesplitters-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
         // Its edits count against the edit limit, as the HTTP ones do (the DO counts them).
         const as = a.write ? counted(req, "edit", user, admin) : null;
         as ? h.set("x-codesplitters-limit-as", as) : h.delete("x-codesplitters-limit-as");
@@ -417,6 +424,7 @@ const app = {
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(sweepTraffic(env));
+    ctx.waitUntil(sweepLineEvents(env));
     ctx.waitUntil(sweepOAuth(env));
     if (accountsOn(env)) ctx.waitUntil(sweepSessions(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
@@ -428,11 +436,12 @@ const app = {
   // messages, since a stage's queues may be named otherwise.
   async queue(batch: { messages: readonly { body: unknown; ack(): void }[] }, env: Env) {
     if (batch.messages.some((m) => typeof (m.body as DigMessage)?.dig === "string")) await runDigs(batch as Parameters<typeof runDigs>[0], env);
-    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number")) {
-      // JOBS: hosted agent runs (agent-routes.ts) beside queued requests.
+    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number" || typeof (m.body as DigestMessage)?.digest === "string")) {
+      // JOBS: hosted agent runs (agent-routes.ts) and feed digests (feed.ts) beside queued requests.
       const agents = batch.messages.filter((m) => typeof (m.body as AgentMessage)?.agent === "number") as { body: AgentMessage; ack(): void }[];
       const jobs = batch.messages.filter((m) => typeof (m.body as JobMessage)?.job === "number") as { body: JobMessage; ack(): void }[];
-      await Promise.all([runQueuedAgents(agents, env, (r) => app.fetch(r, env)), runJobs({ messages: jobs }, env, (r) => app.fetch(r, env))]);
+      const digests = batch.messages.filter((m) => typeof (m.body as DigestMessage)?.digest === "string") as { body: DigestMessage; ack(): void }[];
+      await Promise.all([runQueuedAgents(agents, env, (r) => app.fetch(r, env)), runJobs({ messages: jobs }, env, (r) => app.fetch(r, env)), runQueuedDigests(digests, env)]);
     }
     else await deliverHooks(batch as { messages: readonly { body: HookMessage; ack(): void }[] }, env);
   },
