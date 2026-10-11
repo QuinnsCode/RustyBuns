@@ -2,7 +2,7 @@
 // are districts and their files are buildings (city.ts lays them out): height is
 // line count, orange windows are lines that landed lately, white stone is people's
 // code and black glass is agents'. Kamino's clean white halls out in Blade Runner's
-// rain. Whoever landed lines in the last few minutes walks the streets, and the
+// rain. Whoever has one of its files open walks the streets, and the
 // owner and their followers can walk them together (a GameRoom, "c/<name>").
 import * as THREE from "three";
 
