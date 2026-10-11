@@ -35,6 +35,9 @@
   .args li { padding: 1px 0; color: var(--muted); }
   .args b { font: 500 12px var(--mono); color: var(--fg); }
   .args i { font-style: normal; color: var(--accent); font-size: 11px; }
+  .copy { position: relative; } .copy pre { padding-right: 64px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .copy button { position: absolute; top: 6px; right: 6px; font: 500 12px var(--sans); padding: 3px 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--fg); cursor: pointer; }
+  .copy button:hover { border-color: var(--accent); color: var(--accent); }
   @media (max-width: 560px) { .wrap { padding: 20px 16px 48px; } }
 </style>
 </head>
@@ -42,18 +45,18 @@
 <div class="wrap">
   <a class="label" href="/">← codeSplitters</a>
   <h1>The <em>MCP</em> server</h1>
-  <p>Agents outside the browser (Claude Code, Claude Desktop, any MCP client) can use codeSplitters through these tools. Each one is a call in the <a href="/reference">API</a>, made as you with your token.</p>
+  <p>Your AI (Claude Code, Claude Desktop, claude.ai, Cursor, any MCP client) can use codeSplitters through these tools. Each one is a call in the <a href="/reference">API</a>, made as you.</p>
 
-  <h2>Connect</h2>
-  <ol>
-    <li>Sign in, open your profile page, and make a token in the <b>API tokens</b> box: <b>Read only</b> or <b>Read and write</b>.</li>
-    <li>Copy the <b>claude mcp add</b> line it hands you, or this one with your token in it:</li>
-  </ol>
-  <pre id="add"></pre>
-  <p>Other clients: a Streamable HTTP server at <code id="url"></code>, with the header <code>Authorization: Bearer cst_…</code>. No sessions, no OAuth.</p>
+  <h2>Connect your AI</h2>
+  <p><b>Claude Code:</b> run this, then <code>/mcp</code> → codesplitters → <b>Authenticate</b>.</p>
+  <div class="copy"><pre id="add"></pre><button data-copy="add">Copy</button></div>
+  <p><b>Any other MCP client:</b> add a remote (Streamable HTTP) server with this URL. It's usually called a custom connector or MCP server.</p>
+  <div class="copy"><pre id="url"></pre><button data-copy="url">Copy</button></div>
+  <p>Either way, a codeSplitters page opens and asks you to say yes: <b>Read only</b> or <b>Read and write</b>. No token to copy. The app then shows under <b>Apps signed in</b> on your profile page, where you can sign it out any time.</p>
 
-  <h2>What a token may do</h2>
-  <p>It acts as you and counts against your rate limits, until it expires (1 to 365 days). A <b>read</b> token only sees the read tools. Tools marked <span class="tag risky">asks first</span> can't be undone or ship code (delete a repo, commit, merge, deploy), so your client asks you before calling them. A token never reaches admin routes, sign-in, or other tokens. Revoke it on your profile page any time.</p>
+  <h2>What it may do</h2>
+  <p>It acts as you and counts against your rate limits. Read only sees just the read tools. Tools marked <span class="tag risky">asks first</span> can't be undone or ship code (delete a repo, commit, merge, deploy), so your client asks you before calling them. It never reaches admin routes, your sign-in, or your tokens.</p>
+  <p><b>No browser</b> (scripts, CI, a server)? Make a personal API token on your profile page and send it as the header <code>Authorization: Bearer cst_…</code> instead.</p>
 
   <div id="groups"><p>Loading…</p></div>
 </div>
@@ -61,7 +64,11 @@
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const url = `${location.origin}/api/mcp`;
 document.getElementById("url").textContent = url;
-document.getElementById("add").textContent = `claude mcp add --scope user --transport http codesplitters ${url} \\\n  --header "Authorization: Bearer cst_…"`;
+document.getElementById("add").textContent = `claude mcp add --scope user --transport http codesplitters ${url}`;
+document.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
+  await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
+  b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500);
+}));
 const type = (s = {}) => s.enum ? s.enum.join(" | ") : Array.isArray(s.type) ? s.type.join(" | ") : s.type === "array" ? `${type(s.items)}[]` : s.type ?? (s.oneOf ? "one of several" : "");
 /** A tool's inputs; a body's fields one level down. */
 const args = (schema) => {

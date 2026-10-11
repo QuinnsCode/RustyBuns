@@ -567,25 +567,35 @@ async function jobsBadge() {
 // Apps signed in with OAuth (GET /api/oauth/grants, DELETE /api/oauth/grants/:id) list beside them, to sign out.
 // A new token's secret never goes in the page: the box shows it masked, and only the copy buttons use it.
 const masked = (token) => `${token.slice(0, 4)}${"•".repeat(12)}${token.slice(-4)}`;
+// Connecting an AI needs no token: the MCP client signs in with OAuth (src/oauth.ts) and you say yes.
+const mcpUrl = () => `${location.origin}/api/mcp`;
+const mcpSignIn = () => `claude mcp add --scope user --transport http codesplitters ${mcpUrl()}`;
 const mcpAdd = (token) => `claude mcp add --scope user --transport http codesplitters ${location.origin}/api/mcp --header "Authorization: Bearer ${token}"`;
 async function wireTokens(made) {
   const el = $("#tokens .body");
   if (!el) return;
   const [list, apps] = await Promise.all([api("/tokens").catch(() => []), api("/oauth/grants").catch(() => [])]);
   const when = (t) => t.expired ? "expired" : `expires ${new Date(t.expires_at).toLocaleDateString()}`;
-  el.innerHTML = (made ? `<div style="display:grid;gap:4px;margin-bottom:8px"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again.</span>
+  const connect = `<div style="display:grid;gap:4px;margin-bottom:10px"><span class="muted" style="font-size:12px">Run this in Claude Code, then <b>/mcp</b> → Authenticate. Or add the URL to any MCP client. It asks you to sign in here, no token needed.</span>
+      <div class="copyline"><input readonly value="${esc(mcpSignIn())}"><button class="btn" id="connect-cmd" title="copy the command">${icon("copy")}</button></div>
+      <div class="copyline"><input readonly value="${esc(mcpUrl())}"><button class="btn" id="connect-url" title="copy the server URL">${icon("copy")}</button></div></div>`;
+  const signedIn = apps.length ? `<div class="muted" style="font-size:12px">Apps signed in</div><div class="list">${apps.map((g) => `<div class="row" style="flex-wrap:nowrap">${icon("app-window")}<span style="flex:1;min-width:0">${esc(g.client_name)} <span class="muted">· ${g.scope === "write" ? "read and write" : "read"} · signed in ${ago(g.created_at)}${g.last_used_at ? ` · used ${ago(g.last_used_at)}` : ""}</span></span>
+      <button class="btn ghost" data-signout="${esc(g.id)}" title="sign it out">${icon("log-out")}</button></div>`).join("")}</div>` : "";
+  const fresh = made ? `<div style="display:grid;gap:4px;margin-bottom:8px"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again.</span>
       <div class="copyline"><input readonly value="${esc(masked(made.token))}" title="hidden: copy it with the button"><button class="btn" id="token-copy" title="copy the token">${icon("copy")}</button></div>
-      <span class="muted" style="font-size:12px">Add it to Claude Code as an MCP server:</span>
-      <div class="copyline"><input readonly value="${esc(mcpAdd(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-mcp" title="copy the command">${icon("copy")}</button></div></div>` : "")
+      <span class="muted" style="font-size:12px">Or add it to Claude Code with the token as a header:</span>
+      <div class="copyline"><input readonly value="${esc(mcpAdd(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-mcp" title="copy the command">${icon("copy")}</button></div></div>` : "";
+  el.innerHTML = connect + signedIn
+    + `<div class="muted" style="font-size:12px;margin-top:10px">${icon("key-round")} Tokens, for scripts and CI (no browser)</div>` + fresh
     + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon(t.scope === "write" ? "pencil" : "eye")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· ${t.scope === "write" ? "read and write" : "read"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}</span></span>
-      <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("") || '<span class="muted" style="font-size:13px">Lets Claude Code, scripts and MCP clients act as you, until it expires.</span>'}</div>
-    ${apps.length ? `<div class="muted" style="font-size:12px;margin-top:8px">Apps signed in</div><div class="list">${apps.map((g) => `<div class="row" style="flex-wrap:nowrap">${icon("app-window")}<span style="flex:1;min-width:0">${esc(g.client_name)} <span class="muted">· ${g.scope === "write" ? "read and write" : "read"} · signed in ${ago(g.created_at)}${g.last_used_at ? ` · used ${ago(g.last_used_at)}` : ""}</span></span>
-      <button class="btn ghost" data-signout="${esc(g.id)}" title="sign it out">${icon("log-out")}</button></div>`).join("")}</div>` : ""}
-    <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for, like claude code" required>
-      <div style="display:flex;gap:6px"><select name="scope" style="flex:1;min-width:0"><option value="read">Read only</option><option value="write">Read and write</option></select>
+      <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("")}</div>
+    <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for, like a deploy script" required>
+      <div style="display:flex;flex-wrap:wrap;gap:6px"><select name="scope" style="flex:1;min-width:0"><option value="read">Read only</option><option value="write">Read and write</option></select>
       <select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select>
       <button class="btn primary">${icon("plus")}Make</button></div></form>`;
   icons();
+  $("#connect-cmd").addEventListener("click", () => copy(mcpSignIn(), "Command copied"));
+  $("#connect-url").addEventListener("click", () => copy(mcpUrl(), "URL copied"));
   $("#token-copy")?.addEventListener("click", () => copy(made.token, "Token copied"));
   $("#token-mcp")?.addEventListener("click", () => copy(mcpAdd(made.token), "Command copied"));
   $("#newtoken").addEventListener("submit", async (e) => {
@@ -1198,7 +1208,7 @@ const views = {
         ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
         <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
-        ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("key-round")}<b>API tokens</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
+        ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("plug")}<b>Connect your AI</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
       </aside></div></div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
@@ -2491,6 +2501,7 @@ async function commands() {
   add("Anywhere", "home", "Home", "", () => (location.hash = "#/"));
   add("Anywhere", "info", "About codeSplitters", "", () => (location.hash = "#/about"));
   add("Anywhere", "book-open", "API reference", "GET /api", () => (location.href = "/reference"));
+  add("Anywhere", "plug", "Connect your AI (MCP)", "POST /api/mcp", () => (location.href = "/mcp"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
