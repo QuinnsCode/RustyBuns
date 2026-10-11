@@ -2,6 +2,7 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
 import { sign } from "../src/hooks.ts";
 import type { Runner } from "../src/preview.ts";
+import { review } from "../src/deploy-review.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -193,24 +194,25 @@ test("the queue sends a delivery once, however often it hands the message out", 
 });
 
 test("a finished deploy is announced as a deployment status", async () => {
+  const { send, got, call } = await app();
+  // The clone lands on the remote's tip, as a real one would: a deploy checks it's the commit it reviewed.
   const runner: Runner = {
     exec: async (cmd, _cwd, out) => {
       const line = cmd.join(" ");
-      if (line.includes("rev-parse")) out("0123456789abcdef0123456789abcdef01234567\n");
+      if (line.includes("rev-parse")) out(`${(await review(call.env, "ryan", "lab")).tip}\n`);
       if (line.includes("bun -e")) out(`RB ${JSON.stringify({ adopt: false, edge: true, box: false })}\n`);
       if (line.includes("rustybuns deploy")) out('url: "https://lab.ryan.workers.dev"\n');
       return 0;
     },
     fetch: async () => ({ status: 200 }),
   };
-  const { send, got, call } = await app();
   call.env.PREVIEW_RUNNER = runner;
   await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
   await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", events: ["deploy.finished"] });
   await send("ryan", "/api/repos/ryan/lab/deploy", {});
   await arrived(got, 1);
   expect(got[0]!.body).toMatchObject({
-    deployment: { environment: "prod", task: "button", creator: { login: "ryan" } },
+    deployment: { environment: "prod", task: "button", creator: { login: "ryan" }, sha: (await review(call.env, "ryan", "lab")).tip },
     deployment_status: { state: "success", environment_url: "https://lab.ryan.workers.dev" },
   });
 });
