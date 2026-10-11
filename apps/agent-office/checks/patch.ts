@@ -1,4 +1,4 @@
-// Where the health bar plugs into the release: the server's PR list gains checkTally (built from checks/tally.ts
+// Where the health bar plugs into the release: the server's PR list gains checkTally (built from checks/server.ts
 // into rb-checks.js), and the card's checks dot (km[e.checks] in assets/ask-*.js) gives way to the bar when there is one.
 
 /** server/github.js */
