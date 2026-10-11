@@ -1,21 +1,14 @@
-import { $ } from "bun";
 import { beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PULLS_FOLLOW_UP, pullsFollowUpClient, pullsFollowUpServer } from "../scripts/briefs.ts";
-import { PINNED, releaseTarball } from "../scripts/release.ts";
+import { askOf, unpackPinned } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
 setDefaultTimeout(60_000);
 
 let pkg = "";
-beforeAll(async () => {
-  const tgz = await releaseTarball(PINNED.tag, PINNED.sha256, path.join(import.meta.dir, "../.cache"));
-  const dir = mkdtempSync(path.join(tmpdir(), "rb-briefs-"));
-  await $`tar -xzf ${tgz} -C ${dir}`.quiet();
-  pkg = path.join(dir, "package");
-});
+beforeAll(async () => { pkg = await unpackPinned(); });
 
 const BRIEFS = ["station.issues", "station.pulls", "station.queue"];
 const DONE = "When you've done what was asked";
@@ -33,8 +26,7 @@ test("the pinned release's server prompts give only the PR agent the follow-up, 
 });
 
 test("the pinned release's client bundle, which the prompt settings show defaults from, gets the same paragraph", () => {
-  const [ask] = [...new Bun.Glob("dist/public/assets/ask-*.js").scanSync({ cwd: pkg })];
-  const js = readFileSync(path.join(pkg, ask!), "utf8");
+  const js = readFileSync(askOf(pkg), "utf8");
   const patched = pullsFollowUpClient(js);
   expect(patched.split(JSON.stringify(PULLS_FOLLOW_UP)).length).toBe(2);
   expect(patched).toContain(`,cn,...(e === 'pulls' ? [${JSON.stringify(PULLS_FOLLOW_UP)}] : []),\`\${t?\`When you've queued it`);
@@ -47,7 +39,6 @@ test("a moved target fails loudly instead of leaving the brief as it was", () =>
   expect(() => pullsFollowUpServer("export const PROMPTS = {};")).toThrow(/Agent Office changed: patch target moved in shared\/prompts\.js/);
   expect(() => pullsFollowUpClient("function ln(x){let t=x===`queue`;return[]}")).toThrow(/Agent Office changed: patch target moved in assets\/ask-\*\.js/);
   // so does patching twice, rather than adding the paragraph again
-  const [ask] = [...new Bun.Glob("dist/public/assets/ask-*.js").scanSync({ cwd: pkg })];
-  const client = pullsFollowUpClient(readFileSync(path.join(pkg, ask!), "utf8"));
+  const client = pullsFollowUpClient(readFileSync(askOf(pkg), "utf8"));
   expect(() => pullsFollowUpClient(client)).toThrow(/patch target moved/);
 });
