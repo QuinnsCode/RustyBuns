@@ -155,11 +155,11 @@ async function postStatus(env: Env, run: CheckRun) {
 }
 
 /** Record a run. Its webhook goes out; one that's finished already says so too. */
-export async function recordRun(env: Env, r: { owner: string; repo: string; ref: string; sha: string; name: string; runner: Runner; status?: Status; url?: string | null; external_id?: string | null; started_at?: number | null; finished_at?: number | null }, by: string) {
+export async function recordRun(env: Env, r: { owner: string; repo: string; ref: string; sha: string; name: string; runner: Runner; status?: Status; url?: string | null; external_id?: string | null; started_at?: number | null; finished_at?: number | null; runner_label?: string | null }, by: string) {
   const now = Date.now(), status = r.status ?? "queued";
   const started = r.started_at ?? (status === "queued" ? null : now), finished = r.finished_at ?? (DONE.has(status) ? now : null);
-  const res = await env.DB.prepare("INSERT INTO check_runs (owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id")
-    .bind(r.owner, r.repo, r.ref, r.sha, r.name, r.runner, status, started, finished, r.url ?? null, r.external_id ?? null, now).first();
+  const res = await env.DB.prepare("INSERT INTO check_runs (owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at, runner_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id")
+    .bind(r.owner, r.repo, r.ref, r.sha, r.name, r.runner, status, started, finished, r.url ?? null, r.external_id ?? null, now, r.runner_label ?? null).first();
   const run = (await get(env, res!.id as number))!;
   await told(env, run, "created", by);
   if (DONE.has(status)) await told(env, run, "completed", by);
@@ -224,7 +224,7 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
 export async function requeueStale(env: Env, now = Date.now(), only?: { owner: string; repo: string }) {
   const { results } = await env.DB.prepare(`UPDATE check_runs SET status = 'queued', started_at = NULL, heartbeat_at = NULL, runner_label = NULL,
       log = substr(log || char(10) || 'no word from ' || runner_label || ' in ${STALE / 60_000} minutes: back in the queue' || char(10), -${MAX_LOG})
-    WHERE status = 'running' AND runner_label IS NOT NULL AND heartbeat_at < ?${only ? " AND owner = ? AND repo = ?" : ""} RETURNING *`)
+    WHERE status = 'running' AND runner IN ('desktop', 'container') AND runner_label IS NOT NULL AND heartbeat_at < ?${only ? " AND owner = ? AND repo = ?" : ""} RETURNING *`)
     .bind(now - STALE, ...(only ? [only.owner, only.repo] : [])).all();
   for (const run of results as unknown as CheckRun[]) await postStatus(env, run).catch(() => null);
   return results.length;

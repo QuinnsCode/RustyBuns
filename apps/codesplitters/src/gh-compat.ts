@@ -12,7 +12,9 @@
 //
 // A CI token reaches one repo's checks and nothing else. The owner makes and
 // revokes them; only the SHA-256 is kept, and the secret is shown once. It's sent
-// as `Authorization: token …` or `Bearer …`, as tools send a GitHub PAT.
+// as `Authorization: token …` or `Bearer …`, as tools send a GitHub PAT. Each
+// token's calls count against the `ci` rate limit (limits.ts), and its label is
+// the runner_label of the runs it reports, so the checks pill names the CI.
 //
 //   GET    /api/repos/:o/:r/checks/tokens       the repo's CI tokens, without their secrets (owner only)
 //   POST   /api/repos/:o/:r/checks/tokens {label}  make one: the secret is shown this once (owner only)
@@ -26,12 +28,13 @@
 
 import { DONE, fromCheckRun, fromState, get, recordRun, shaped, updateRun, type CheckRun, type Status } from "./checks.ts";
 import { json, type Env } from "./env.ts";
+import { limit } from "./limits.ts";
 import { b64url, hash } from "./tokens.ts";
 
 const MAX_TOKENS = 20;
 const DOCS = "https://docs.github.com/rest";
 /** GitHub's errors are {message, documentation_url}; clients read message. */
-const fail = (message: string, status: number) => json({ message, documentation_url: DOCS }, status);
+const fail = (message: string, status: number, headers?: Record<string, string>) => json({ message, documentation_url: DOCS }, status, headers);
 
 /** /api/repos/:o/:r/checks/tokens: the owner's to make and revoke. */
 export async function ciTokenRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null): Promise<Response | null> {
@@ -111,6 +114,9 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
   const t = await ciToken(req, env, owner, repo);
   // A token for another repo, or none, can't tell this one exists.
   if (!t) return req.headers.get("authorization") ? fail("Bad credentials", 401) : fail("Not Found", 404);
+  // Each token counts on its own, so a leaked one can only flood so far before it's revoked.
+  const slow = await limit(req, env, "ci", `${owner}/${repo}#${t.id}`, false);
+  if (slow) return fail((await slow.json() as { error: string }).error, 429, { "retry-after": slow.headers.get("retry-after") ?? "60" });
   const by = `ci:${t.label}`, base = `${url.origin}/api/gh/v3/repos/${owner}/${repo}`;
   const body = async () => (await req.json().catch(() => null)) as Record<string, any> | null;
 
@@ -124,7 +130,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
       .bind(owner, repo, sha, `status:${context}`).first() as CheckRun | null;
     const run = had && !DONE.has(had.status)
       ? await updateRun(env, had, { status, url: target, log: about }, by)
-      : await recordRun(env, { owner, repo, ref: await refOf(env, owner, repo, sha), sha, name: context, runner: "external", status, url: target, external_id: `status:${context}` }, by)
+      : await recordRun(env, { owner, repo, ref: await refOf(env, owner, repo, sha), sha, name: context, runner: "external", runner_label: t.label, status, url: target, external_id: `status:${context}` }, by)
         .then((r) => about ? updateRun(env, r, { log: about }, by) : r);
     return json(asStatus(run!, base), 201);
   }
@@ -137,7 +143,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
     if ("error" in s) return fail(s.error, 422);
     const sha = b.head_sha;
     let run = await recordRun(env, {
-      owner, repo, ref: await refOf(env, owner, repo, sha), sha, name: b.name, runner: "external", status: s.status,
+      owner, repo, ref: await refOf(env, owner, repo, sha), sha, name: b.name, runner: "external", runner_label: t.label, status: s.status,
       url: typeof b.details_url === "string" ? b.details_url : null, external_id: typeof b.external_id === "string" ? `check:${b.external_id}` : null,
       started_at: ms(b.started_at), finished_at: ms(b.completed_at),
     }, by);

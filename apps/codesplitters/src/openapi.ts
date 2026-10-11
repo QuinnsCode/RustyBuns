@@ -200,6 +200,13 @@ const OPS: Record<string, Record<string, Op>> = {
     put: { id: "set_check_settings", summary: "Set where checks run, which are required, and whether ours go to GitHub (owner only)", tag: "Checks",
       body: obj({ where: { type: ["string", "null"], enum: ["here", "github", "both", null] }, required: arr(ref("RequiredCheck")), post_statuses: bool() }), ok: ref("CheckSettings") },
   },
+  [`${repo}/checks/tokens`]: {
+    get: { id: "list_ci_tokens", summary: "The repo's CI tokens, without their secrets (owner only)", tag: "Checks", ok: arr(ref("CiToken")) },
+    post: { id: "create_ci_token", summary: "Make a CI token for external CI to report checks with (owner only)", tag: "Checks",
+      description: "Set the CI's GitHub API base URL to /api/gh/v3 on this site and give it this token as its GitHub token: its commit statuses and check runs land in the repo's checks as external runs, labelled with the token's label. It reaches this repo's checks and nothing else. The secret is in this answer only. At most 20 a repo.",
+      body: obj({ label: str("which CI it's for, like jenkins") }, ["label"]), ok: obj({ id: str(), label: str(), last4: str(), created_by: str(), created_at: int("ms"), token: str("the secret, shown this once") }), status: 201 },
+  },
+  [`${repo}/checks/tokens/{id}`]: { delete: { id: "revoke_ci_token", summary: "Revoke a CI token: the CI's next report is a 401 (owner only)", tag: "Checks", ok: ref("Ok") } },
   [`${repo}/checks/{id}`]: {
     get: { id: "get_check", summary: "One check run, with its log", tag: "Checks", open: true, ok: loose("a check run, plus {log, junit}") },
     put: { id: "update_check", summary: "Report on a check run: its status, its log (the crew, or a runner)", tag: "Checks",
@@ -265,7 +272,8 @@ const SCHEMAS: Record<string, Schema> = {
   CheckStatus: { type: "string", enum: ["queued", "running", "passed", "failed", "cancelled"] },
   CheckRun: obj({ id: int(), ref: str("main or a branch"), sha: str(), name: str(), runner: { type: "string", enum: ["desktop", "container", "github", "external"] }, status: ref("CheckStatus"),
     started_at: { type: ["integer", "null"] }, finished_at: { type: ["integer", "null"] }, url: { type: ["string", "null"], description: "GitHub's page, for an imported job" },
-    runner_label: { type: ["string", "null"], description: "the runner that claimed it" }, created_at: int() }),
+    runner_label: { type: ["string", "null"], description: "the runner that claimed it, or the CI token an external run came in on" }, created_at: int() }),
+  CiToken: obj({ id: str(), label: str("which CI it's for"), last4: str("the secret's last four characters"), created_by: str(), created_at: int("ms"), last_used_at: { type: ["integer", "null"], description: "ms, to the minute" } }),
   RequiredCheck: { description: "a check's name (* for all), or one scoped to paths and with a command for our runners", oneOf: [str(), obj({ name: str(), paths: arr(str("a directory, file or glob")), command: str() }, ["name"])] },
   CheckSettings: obj({ where: { type: ["string", "null"], description: "here, github or both; null runs none (a GitHub mirror defaults to github)" }, required: arr(obj({ name: str(), paths: arr(str()), command: str() }, ["name"])), post_statuses: bool(), github: { type: ["string", "null"], description: "owner/name, when the repo mirrors GitHub" },
     offline: bool("the mirror can't reach GitHub right now"), down_since: { type: ["integer", "null"] }, here: bool("whether our own checks run: asked for, or in GitHub's place while it's down") }),
