@@ -1617,6 +1617,29 @@ const acceptHunk = (owner, repo, branch, path, h, on = true) => {
   seenMem.set(seenKey(owner, repo, branch), all);
   try { localStorage.setItem(seenKey(owner, repo, branch), JSON.stringify(all)); } catch {}
 };
+// ---- what changed since you were last here (#758) --------------------------------
+// The rev of each file you last saw, kept in this browser (the newest LAST_REVS files), so the file page
+// can step through what landed since, not only what landed while its tab was hidden.
+const LAST_REVS = 500, lastRevMem = new Map();
+const lastRevKey = (owner, repo, branch, path) => `${owner}/${repo}:${branch ?? ""}:${path}`;
+const lastRevs = () => { try { const o = JSON.parse(localStorage.getItem("cs_last_rev") || "{}"); return o && typeof o === "object" ? o : {}; } catch { return Object.fromEntries(lastRevMem); } };
+const lastRev = (key) => { const v = lastRevs()[key]; return Number.isInteger(v) ? v : null; };
+const sawRev = (key, rev) => {
+  const all = lastRevs();
+  delete all[key]; all[key] = rev;
+  const keys = Object.keys(all);
+  for (const k of keys.slice(0, Math.max(0, keys.length - LAST_REVS))) delete all[k];
+  lastRevMem.delete(key); lastRevMem.set(key, rev);
+  try { localStorage.setItem("cs_last_rev", JSON.stringify(all)); } catch {}
+};
+/** What changed between `was` (line id -> text) and `lines`: runs of changed or new line ids, and how many went. */
+const changedRuns = (was, lines) => {
+  const runs = [];
+  let cur = null;
+  for (const l of lines) if (was.get(l.id) !== l.text) (cur ??= (runs.push([]), runs.at(-1))).push(l.id); else cur = null;
+  const now = new Set(lines.map((l) => l.id));
+  return { runs, gone: [...was.keys()].filter((id) => !now.has(id)).length };
+};
 const rejectHunk = (owner, repo, branch, path, h) => api(`/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}/hunks/reject`, { path, key: h.key });
 const hunkStat = (hs) => { const d = hs.reduce((n, h) => n + h.del.length, 0), a = hs.reduce((n, h) => n + h.add.length, 0); return `<span class="diffstat"><b class="minus">−${d}</b> <b class="plus">+${a}</b></span>`; };
 /** One file's hunks, each with Accept / Reject (the crew's), as a review shows them. */
@@ -3473,7 +3496,12 @@ const views = {
       }
     };
     // Back after a while away: what changed meanwhile, a stretch at a time, instead of the file having moved silently.
-    let caught = [], caughtAt = -1, caughtGone = 0, away = null;
+    // Away is the tab hidden 20s or more, or the page closed: the rev you last saw here is kept in this browser (#758).
+    const revKey = lastRevKey(owner, repo, branch, path), lastSeen = lastRev(revKey);
+    let savedRev = lastSeen;
+    /** You've seen the file at `rev` once it's drawn live, on this page (not one you've left), in a tab that shows. */
+    const seenNow = (rev) => { if (rev !== savedRev && viewing === null && box.isConnected && document.visibilityState === "visible") sawRev(revKey, savedRev = rev); };
+    let caught = [], caughtAt = -1, caughtGone = 0, caughtSince = null, away = null;
     const catchBar = () => {
       let bar = $("#caught");
       if (!caught.length) return bar?.remove();
@@ -3490,25 +3518,32 @@ const views = {
           catchBar();
         });
       }
-      bar.innerHTML = `${icon("history")}<span>Changed while you were away${caughtGone ? ` · ${caughtGone} line${caughtGone > 1 ? "s" : ""} went` : ""}</span><button class="btn" data-step="-1" title="the change before" aria-label="previous change">${icon("chevron-up")}</button><span class="n">${caughtAt < 0 ? "–" : caughtAt + 1}/${caught.length}</span><button class="btn" data-step="1" title="the next change" aria-label="next change">${icon("chevron-down")}</button><button class="btn" data-step="0" title="done: stop marking them" aria-label="done">${icon("x")}</button>`;
+      bar.innerHTML = `${icon("history")}<span>Changed ${caughtSince === null ? "while you were away" : `since you were last here (r${caughtSince})`}${caughtGone ? ` · ${caughtGone} line${caughtGone > 1 ? "s" : ""} went` : ""}</span><button class="btn" data-step="-1" title="the change before" aria-label="previous change">${icon("chevron-up")}</button><span class="n">${caughtAt < 0 ? "–" : caughtAt + 1}/${caught.length}</span><button class="btn" data-step="1" title="the next change" aria-label="next change">${icon("chevron-down")}</button><button class="btn" data-step="0" title="done: stop marking them" aria-label="done">${icon("x")}</button>`;
       icons();
     };
     const onVisible = () => {
       if (!box.isConnected) return document.removeEventListener("visibilitychange", onVisible);
       if (document.hidden) { away = { at: Date.now(), lines: new Map(doc.lines.map((l) => [l.id, l.text])) }; return; }
       const was = away; away = null;
+      seenNow(doc.rev);
       if (!was || Date.now() - was.at < 20_000) return;
-      const runs = [];
-      let cur = null;
-      for (const l of doc.lines) if (was.lines.get(l.id) !== l.text) (cur ??= (runs.push([]), runs.at(-1))).push(l.id); else cur = null;
-      const now = new Set(doc.lines.map((l) => l.id));
-      caughtGone = [...was.lines.keys()].filter((id) => !now.has(id)).length;
-      if (!runs.length && !caughtGone) return;
-      caught = runs.length ? runs : [[]]; caughtAt = -1;
+      catchUp(was.lines, null);
+    };
+    const catchUp = (was, since) => {
+      const { runs, gone } = changedRuns(was, doc.lines);
+      if (!runs.length && !gone) return;
+      caught = runs.length ? runs : [[]]; caughtAt = -1; caughtGone = gone; caughtSince = since;
       if (viewing === null && !box.querySelector(".ln input")) draw(doc);
       catchBar();
     };
     document.addEventListener("visibilitychange", onVisible);
+    // Opened again after landings since your last visit: the file as you last saw it, against now.
+    // Too far back (history trimmed past it, a 410) or gone, and the page just opens as it is.
+    const sinceLast = async () => {
+      if (lastSeen === null || lastSeen >= doc.rev) return;
+      const then = await api(`${base}/at${q}&rev=${lastSeen}`).catch(() => null);
+      if (then?.lines && box.isConnected && !caught.length) catchUp(new Map(then.lines.map((l) => [l.id, l.text])), lastSeen);
+    };
     const draw = (d, fresh = new Set()) => {
       const live = viewing === null;
       if (!live) {
@@ -3521,6 +3556,7 @@ const views = {
         return;
       }
       $("#smash").hidden = true;
+      seenNow(d.rev);
       const keep = anchor(), before = [...box.querySelectorAll(".ln[data-id]")];
       box.innerHTML = codeRows(d.lines);
       if (branch) ghosts(d);
@@ -3791,7 +3827,7 @@ const views = {
         }
       });
     };
-    draw(doc); drawCrew(); drawActs(); drawCommits(commits); loadStamps();
+    draw(doc); drawCrew(); drawActs(); drawCommits(commits); loadStamps(); sinceLast();
     popover($("#hist"));
     $("#rev").addEventListener("input", async (e) => {
       const v = Number(e.target.value);

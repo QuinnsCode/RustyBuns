@@ -105,3 +105,40 @@ describe("branch names", () => {
     expect(tidyBranch("feature/login")).toBe("feature/login");
   });
 });
+
+// The file page catches you up on what landed since your last visit, not only while the tab was hidden (#758).
+describe("what changed since you were last here", () => {
+  const src = html.slice(html.indexOf("const LAST_REVS"), html.indexOf("const rejectHunk"));
+  const make = () => {
+    const store = new Map<string, string>();
+    const localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
+    return new Function("localStorage", `${src}; return { lastRevKey, lastRev, sawRev, changedRuns, LAST_REVS };`)(localStorage);
+  };
+
+  test("a file's last-seen rev is kept per repo, branch and path", () => {
+    const { lastRevKey, lastRev, sawRev } = make();
+    const main = lastRevKey("ann", "app", null, "a.ts"), fix = lastRevKey("ann", "app", "fix", "a.ts");
+    expect(lastRev(main)).toBeNull();
+    sawRev(main, 12);
+    sawRev(fix, 3);
+    expect([lastRev(main), lastRev(fix)]).toEqual([12, 3]);
+  });
+
+  test("only the newest files are kept", () => {
+    const { lastRev, sawRev, LAST_REVS } = make();
+    for (let i = 0; i <= LAST_REVS; i++) sawRev(`f${i}`, i);
+    sawRev("f1", 99);
+    sawRev("new", 1);
+    expect(lastRev("f0")).toBeNull();
+    expect(lastRev("f2")).toBeNull();
+    expect(lastRev("f1")).toBe(99);
+  });
+
+  test("changes fold into runs of changed or new lines, and gone ones are counted", () => {
+    const { changedRuns } = make();
+    const was = new Map([["a", "1"], ["b", "2"], ["c", "3"], ["d", "4"], ["e", "5"]]);
+    const now = [{ id: "a", text: "1" }, { id: "b", text: "two" }, { id: "x", text: "new" }, { id: "c", text: "3" }, { id: "e", text: "five" }];
+    expect(changedRuns(was, now)).toEqual({ runs: [["b", "x"], ["e"]], gone: 1 });
+    expect(changedRuns(was, [...was].map(([id, text]) => ({ id, text })))).toEqual({ runs: [], gone: 0 });
+  });
+});
