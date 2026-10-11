@@ -160,6 +160,46 @@ describe("mirrors", () => {
     expect((await get(call, "/api/repos/ana/up/tree")).entries.map((e: any) => e.name)).toEqual(["README"]);
   });
 
+  test("where git truth lives settles clashes and rewrites without asking, and keeps what it drops", async () => {
+    const call = await mirrored("truth");
+    const truth = (git_truth: string) => call("ana", "/api/me", { method: "PUT", body: JSON.stringify({ git_truth }) });
+    expect((await truth("gitlab")).status).toBe(400);
+    expect(await sync(call)).toMatchObject({ truth: "ask" });
+
+    // GitHub: upstream's lines win a clash.
+    expect((await (await truth("github")).json()).git_truth).toBe("github");
+    await upstreamCommit({ "README": "hello from bo\nworld\n" }, "bo");
+    await editHere(call, "README", 1, "hello from ana");
+    expect(await sync(call)).toMatchObject({ state: "ok", truth: "github", ahead: 0, behind: 0 });
+    expect(await upShow("README")).toBe("hello from bo\nworld");
+
+    // codeSplitters: the edits here win, even ones not committed yet.
+    await truth("codesplitters");
+    await upstreamCommit({ "src/a.ts": "export const a = 2\n" }, "bo's a");
+    await editHere(call, "src/a.ts", 1, "export const a = 99", false);
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    expect((await file(call, "src/a.ts")).lines.map((l: any) => l.text)).toEqual(["export const a = 99"]);
+    expect((await post(call, `/api/repos/ana/up/do/commit?path=${encodeURIComponent("src/a.ts")}`, { message: "a" })).status).toBe(200);
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
+    expect(await upShow("src/a.ts")).toBe("export const a = 99");
+
+    // The artifact: commits win, but an edit not committed yet still asks.
+    await truth("artifact");
+    await upstreamCommit({ "src/a.ts": "export const a = 3\n" }, "bo's a again");
+    await editHere(call, "src/a.ts", 1, "export const a = 100", false);
+    expect(await sync(call)).toMatchObject({ state: "clash", clash: ["src/a.ts"] });
+    expect(await sync(call, { resolve: "mine" })).toMatchObject({ state: "ok" });
+
+    // GitHub again, and upstream rewrites its history: upstream's is taken, and this copy's commit is kept under refs/kept.
+    await truth("github");
+    await upstreamRewrite({ "README": "brand\nnew\n" }, "start over");
+    await editHere(call, "README", 1, "mine, unpushed");
+    const mine = await sh(`git --git-dir ${call.artifacts.path("ana--up")} rev-parse main`);
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect(await sh(`git --git-dir ${up} log --format=%s main`)).toBe("start over");
+    expect(await sh(`git --git-dir ${call.artifacts.path("ana--up")} for-each-ref --format='%(objectname)' refs/kept`)).toBe(mine);
+  });
+
   test("a force-pushed upstream is fetched only as far back as the last commit both sides agreed on", async () => {
     const call = await mirrored("shallow");
     // Upstream starts over with a long-ago past: a dozen old commits under a new tip.
