@@ -123,7 +123,8 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/repos/:o/:r/branches", body: "{name}", who: CREW, does: "open a branch; edit on it with ?branch=name" },
       { method: "GET", path: "/api/repos/:o/:r/branches/:b", does: "the review: each file's ops against main now, its conflicts, and any build-time changes; a file the branch deleted says deleted: true" },
       { method: "DELETE", path: "/api/repos/:o/:r/branches/:b/files?path=", who: CREW, does: "delete a file on the branch: merging deletes it from main (and its git). Text, binary or too big, all can go; making it again on the branch brings it back" },
-      { method: "POST", path: "/api/repos/:o/:r/branches/:b/merge", body: "{resolve?: {path: {lineId: \"branch\" | \"main\"}}, build_ok?}", who: CREW, does: "merge into main by line; 409 with the conflicts merges nothing, and 409 when a required check failed or hasn't finished" },
+      { method: "POST", path: "/api/repos/:o/:r/branches/:b/conflicts/agent", body: "{path, line, harness, model?}", who: CREW, does: "a coding agent writes the settled text for one conflict, from git's markers; nothing lands until a merge takes it as {text}" },
+      { method: "POST", path: "/api/repos/:o/:r/branches/:b/merge", body: "{resolve?: {path: {line: \"main\" | \"branch\" | \"both\" | \"both:branch-first\" | {text}}}, build_ok?}", who: CREW, does: "merge into main by line; 409 with the conflicts (and each one's choices) merges nothing, and 409 when a required check failed or hasn't finished" },
     ],
   },
   {

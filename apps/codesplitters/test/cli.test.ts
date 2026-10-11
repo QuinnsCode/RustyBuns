@@ -52,6 +52,15 @@ describe("bun cli.ts", () => {
     expect(stale).toMatchObject({ code: 1, err: expect.stringMatching(/^409/) });
   });
 
+  test("the desktop app's launch URL goes as its cookie, beside the token", async () => {
+    const { cli, seen, token } = await app();
+    expect((await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { CODESPLITTERS_URL: "http://127.0.0.1:5199/?token=launch", CODESPLITTERS_TOKEN: token })).code).toBe(0);
+    expect(seen[0]!.url).toStartWith("http://127.0.0.1:5199/api/");
+    expect(seen[0]!.url).not.toContain("launch");
+    expect(seen[0]!.headers.get("cookie")).toBe("rb_token_5199=launch");
+    expect(seen[0]!.headers.get("authorization")).toBe(`Bearer ${token}`);
+  });
+
   test("says what's missing", async () => {
     const { cli } = await app();
     expect((await cli(["read_file", "--owner", "ryan", "--repo", "lab"])).err).toContain("path is required");
