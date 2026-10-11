@@ -296,6 +296,7 @@ describe("mirrors", () => {
     await sh(`git clone -q ${up} . && git config user.name Bo && git config user.email bo@example.com && git checkout -qb Feature/Shiny && printf 'hello\\nworld\\nshiny\\n' > README && printf 'new\\n' > NEW && git add -A && git commit -qm shiny && git push -q origin Feature/Shiny`, work);
     const list = await get(call, "/api/repos/ana/up/mirror/branches");
     expect(list.map((b: any) => [b.ref, b.branch])).toEqual([["Feature/Shiny", null], ["tidy", "tidy"]]);
+    expect(list.every((b: any) => b.at > 0)).toBe(true);
     expect((await post(call, "/api/repos/ana/up/mirror/branches", { ref: "nope" })).status).toBe(404);
     const made = await post(call, "/api/repos/ana/up/mirror/branches", { ref: "Feature/Shiny" });
     expect(made.status).toBe(201);

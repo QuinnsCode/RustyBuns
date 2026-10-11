@@ -48,3 +48,28 @@ describe("git action pictures", () => {
       expect(html).toMatch(new RegExp(`${b}[^>]*\\$\\{(picAttr|sync)`));
   });
 });
+
+// Line picks come as runs (#710): ⌘-click and gutter drags make gaps.
+describe("picked lines as runs", () => {
+  const src = html.slice(html.indexOf("/** Picked line indexes"), html.indexOf("// The game's door"));
+  const { runsOf, runsLabel } = new Function(`${src}; return { runsOf, runsLabel };`)();
+
+  test("indexes fold into 1-based runs, in order", () => {
+    expect(runsOf(new Set([9, 2, 4, 3]))).toEqual([[3, 5], [10, 10]]);
+    expect(runsOf(new Set())).toEqual([]);
+  });
+
+  test("labels say a line, a run, or several, and cut a long list short", () => {
+    expect(runsLabel([[4, 4]])).toBe("line 4");
+    expect(runsLabel([[4, 9]])).toBe("lines 4–9");
+    expect(runsLabel([[4, 9], [12, 12], [20, 22]])).toBe("lines 4–9, 12, 20–22");
+    expect(runsLabel([[1, 1], [3, 3], [5, 5], [7, 7], [9, 9]])).toBe("lines 1, 3, 5 and 2 more");
+  });
+});
+
+// A pressed Follow button read as a warning in orange (#710): only its eye turns orange.
+test("Following keeps the button neutral", () => {
+  const pressed = rulesFor("follow").filter((r) => r.sel.includes('aria-pressed="true"'));
+  expect(pressed.map((r) => r.sel)).toEqual(['.btn.follow[aria-pressed="true"] svg']);
+  expect(pressed[0]!.body).not.toMatch(/border|background/);
+});
