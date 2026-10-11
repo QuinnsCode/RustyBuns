@@ -4,10 +4,10 @@
 //
 // Storage is the plain key/value API (get, single-key put, prefix list) so the same class runs on
 // Cloudflare and in-process under Bun with sqlite behind it.
-//   doc            the current lines
+//   doc, doc:<n>   the current lines, a manifest and runs of lines (doc-store.ts)
 //   op:<rev>       one applied op per key (the log)
 //   commit:<n>     a snapshot: sha, parent, rev, message
-//   base           on a branch's copy of a file: main's doc when it forked
+//   base, base:<n> on a branch's copy of a file: main's doc when it forked, chunked the same way
 //   private        ids of lines only the crew may read (in a public repo too)
 //   claim:<id>     who is working on which lines right now (see Claim), one key each
 //   where          [owner, repo, path] on main's copy, so its edits reach the home feed (feed.ts)
@@ -23,6 +23,7 @@ import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
 import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
+import { DocStore } from "./doc-store.ts";
 import { apply, empty, merge, replay, sha, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
 
 interface Commit { n: number; sha: string; parent: string | null; rev: number; by: string; at: number; message: string }
@@ -67,13 +68,18 @@ export class FileDurableObject {
   logging: Promise<unknown> = Promise.resolve();
   /** Its sockets' edits, counted against the edit limit without waiting on D1. */
   edits: Tally;
+  /** Where the doc and the base sit in storage, in chunks, so an edit writes only what it touched. */
+  docs: DocStore;
+  bases: DocStore;
 
   constructor(private ctx: any, private env: Env) {
     this.edits = new Tally(env, "edit");
+    this.docs = new DocStore(ctx.storage, "doc");
+    this.bases = new DocStore(ctx.storage, "base");
     ctx.blockConcurrencyWhile(async () => {
-      this.doc = (await ctx.storage.get("doc")) ?? empty();
+      this.doc = (await this.docs.load()) ?? empty();
       this.commits = (await ctx.storage.get("commits")) ?? 0;
-      this.base = (await ctx.storage.get("base")) ?? null;
+      this.base = await this.bases.load();
       this.secret = new Set((await ctx.storage.get("private")) ?? []);
       this.where = (await ctx.storage.get("where")) ?? null;
       for (const c of ((await ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
@@ -140,6 +146,7 @@ export class FileDurableObject {
       const all: Map<string, unknown> = await this.ctx.storage.list();
       await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
       [this.doc, this.base, this.commits, this.secret, this.where] = [empty(), null, 0, new Set(), null];
+      this.docs.clear(); this.bases.clear();
       this.claims.clear(); this.claimOf.clear(); this.recent.clear();
       return json({ ok: true });
     }
@@ -150,7 +157,7 @@ export class FileDurableObject {
       if (!this.base && !this.doc.rev) {
         for (const l of doc.lines) if (l.private) { this.secret.add(l.id); delete l.private; }
         this.base = doc; this.doc = structuredClone(doc);
-        await Promise.all([this.ctx.storage.put("base", doc), this.ctx.storage.put("doc", this.doc), this.ctx.storage.put("private", [...this.secret])]);
+        await Promise.all([...this.bases.replace(doc), ...this.docs.replace(this.doc), this.ctx.storage.put("private", [...this.secret])]);
       }
       return json(this.doc);
     }
@@ -207,8 +214,7 @@ export class FileDurableObject {
     const r = apply(this.doc, ops, by, Date.now(), ifRev);
     if (!r.ok) return { ok: false as const, rev: this.doc.rev, conflicts: r.conflicts };
     if (this.claimOf.size) await this.follow(typeof by === "string" ? by : "", r.applied, claim);
-    const doc = structuredClone(this.doc);
-    await Promise.all([this.ctx.storage.put("doc", doc), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad(a.rev), a))]);
+    await Promise.all([...this.docs.save(this.doc, r.applied.map((a) => a.line)), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad(a.rev), a))]);
     const msg = (crew: boolean) => JSON.stringify({ type: "ops", rev: this.doc.rev, applied: this.hide(r.applied, crew) });
     const [toCrew, toOthers] = [msg(true), msg(false)];
     for (const ws of this.ctx.getWebSockets()) try { ws.send(ws.deserializeAttachment?.()?.write ? toCrew : toOthers); } catch {}
