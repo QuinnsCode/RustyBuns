@@ -108,6 +108,7 @@ The launcher exists because Alchemy's `Hetzner.Service` always starts `node <mai
 | `image` | `ubuntu-24.04` | |
 | `port` | `3000` | |
 | `volumeSize` | `10` | GB, minimum 10. `0` keeps data on the server's own disk in `/var/lib/<name>`. |
+| `memMaxMb` | none | RSS ceiling in MB: above it the box saves a CPU profile and a heap snapshot, then restarts. `RB_MEM_MAX_MB` overrides. See `/__rb/mem` below. |
 
 Current limits on the box:
 
@@ -156,6 +157,7 @@ Railway's upload is a Docker context capped at 32 MiB, and a compiled Bun binary
 | `region` | Railway's | `us-west2`, `us-east4`, `europe-west4`, `asia-southeast1` |
 | `port` | `3000` | |
 | `volume` | `true` | `false` keeps data in the container, lost on every redeploy |
+| `memMaxMb` | none | RSS ceiling in MB: above it the box saves a CPU profile and a heap snapshot, then restarts. `RB_MEM_MAX_MB` overrides. See `/__rb/mem` below. |
 | `sleep` | `true` | sleeps when idle, so a quiet box costs close to nothing; the first request wakes it, and in-memory world state starts fresh (sqlite doesn't) |
 
 HTTPS comes with the Railway domain. Identity works the same as on Hetzner.
@@ -187,6 +189,7 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 | `login <cloudflare\|hetzner\|railway>` | connect a provider account to your Alchemy profile (`~/.alchemy`, shared by every app), through this project's pinned Alchemy |
 | `plan` / `deploy [--yes]` / `destroy` | Alchemy against the generated stack; `deploy` refuses without a plan for this exact config |
 | `dev` | `alchemy dev`: workerd and local simulators for the edge |
+| `prof [--seconds N] [--url U]` | sample the deployed box's CPU and save a `.cpuprofile` (a flame graph) in `.rustybuns/prof/`; needs `RB_PROF_SECRET`, see [the box limits](#deploy-to-hetzner) |
 | `eject` | copy `alchemy.run.ts` to the project root; from then on you own it |
 | `version` | print the version, and say whether it is a known-bad release or out of date |
 
@@ -244,11 +247,11 @@ export default defineConfig({
 | Key | Values |
 |---|---|
 | `source` | `dir`, `aliases`, `ignore` (inferred from tsconfig paths) |
-| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `send_email` (+ `allowedSenderAddresses`), `queue` (+ `queueName`, `consumer`: the Worker's `queue()` gets its batches; a sqlite queue in the host process off the edge), `var`, `secret` (+ `op`) |
+| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `send_email` (+ `allowedSenderAddresses`), `queue` (+ `queueName`, `consumer`: the Worker's `queue()` gets its batches; a sqlite queue in the host process off the edge), `var`, `secret` (+ `op`, `optional`, `boxOnly`) |
 | `state` | `shared` (default) \| `project`, see below |
 | `experimental` | `wheel` (`agent` \| `human`), see below |
 | `targets.edge` | `provider: "cloudflare"`, `domain`, `adopt` |
-| `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize` |
+| `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize`, `memMaxMb`; or `provider: "railway"`, `region`, `port`, `volume`, `sleep`, `memMaxMb` |
 | `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world` (or `false`), `worldPath`, `identity`, `listen` (`hostname`, `port`), `guests` (`join`, `max`, `version`), `host`, `headers`, `native`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define` |
 
 **`targets.edge.adopt`** names the Worker, D1 databases and R2 buckets exactly as the config does (`name`, `databaseName`, `bucketName`) and takes over ones that already exist under those names, instead of making new ones beside them. Turn it on for an app first deployed with wrangler, or one whose Alchemy state was lost. Without it Alchemy picks its own `<app>-<id>-<stage>-<random>` names. Leave it off for a stack Alchemy already deployed: its names would change, so those resources would be replaced. On a fresh state, `plan` lists the Worker as a create even with `adopt`, because its bindings aren't known until deploy. It is still uploaded under the config's name, over the existing Worker.
