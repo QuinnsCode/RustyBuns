@@ -41,6 +41,12 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
     case "ratelimit":
       // Worker-only as well: the counters live in Cloudflare's network, not in a resource.
       return `export const ${id} = Cloudflare.RateLimit("${name}", { namespaceId: ${JSON.stringify(b.namespaceId)}, simple: ${JSON.stringify(b.simple)} });`;
+    case "vectorize":
+      // Its metadata indexes are made in the stack below, once the index exists.
+      return `export const ${id} = Cloudflare.Vectorize.Index("${name}", { ${adopt ? `name: ${JSON.stringify(b.indexName)}, ` : ""}dimensions: ${b.dimensions}, metric: ${JSON.stringify(b.metric ?? "cosine")} });`;
+    case "ai":
+      // Worker-only: Workers AI has no resource to provision.
+      return `export const ${id} = Cloudflare.Workers.AI(${JSON.stringify(name)});`;
     case "durable_object":
       // Async Workers bind a DO exported by `main` with Cloudflare.DurableObject
       // in `env` (src/Cloudflare/Workers/DurableObject.ts, "Async Workers").
@@ -234,6 +240,13 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   lines.push(`  { providers: ${providers}, state: Alchemy.localState() },`);
   lines.push(`  Effect.gen(function* () {`);
   if (edge && w.build) lines.push(`    yield* Build;`);
+  // Vectorize metadata indexes: the properties a query may filter on. Before the Worker:
+  // Vectorize only indexes metadata of vectors written after the metadata index exists.
+  for (const [name, b] of edge ? Object.entries(bindings) : []) {
+    if (b.type !== "vectorize") continue;
+    for (const [prop, type] of Object.entries(b.metadataIndexes ?? {}))
+      lines.push(`    yield* Cloudflare.Vectorize.MetadataIndex(${JSON.stringify(`${name}_${prop}`)}, { indexName: (yield* ${ident(name)}).indexName, propertyName: ${JSON.stringify(prop)}, indexType: ${JSON.stringify(type)} });`);
+  }
   if (edge) lines.push(`    const worker = yield* Worker;`);
   // Queues this Worker consumes: its queue() handler gets their batches.
   for (const [name, b] of edge ? Object.entries(bindings) : []) {

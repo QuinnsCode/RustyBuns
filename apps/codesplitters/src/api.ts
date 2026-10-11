@@ -261,6 +261,7 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/admin/handles", body: "{handle, email}", who: ADMINS, does: "give a handle to whoever signs in with that email" },
       { method: "GET", path: "/api/admin/insights?days=7", who: ADMINS, does: "people vs agents vs bots by day, the site's health, recent people and how far each got, the last day's callers" },
       { method: "GET", path: "/api/admin/scale", who: ADMINS, does: "the scale sideboard: every wall the site hits as it grows, each with a live reading where one can be taken. {generated_at, worst, cards}" },
+      { method: "POST", path: "/api/admin/scale/search-embed", who: ADMINS, does: "embed up to 200 files the vector index across repos doesn't have as committed (the hourly cron does too); call until left is 0. 409 without the index. {embedded, left}" },
       { method: "POST", path: "/api/admin/scale/search-move", who: ADMINS, does: "move up to 50 files of D1's old search index into their repos' own; call until left is 0. {moved, repos, left}" },
       { method: "GET", path: "/api/admin/deploy-keys", who: ADMINS, does: "{rotating, keys}" },
       { method: "POST", path: "/api/admin/deploy-keys/reseal", who: ADMINS, does: "reseal stored deploy keys under the current key" },

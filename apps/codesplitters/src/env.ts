@@ -25,6 +25,14 @@ export interface Artifacts {
   import(params: { source: { url: string; branch?: string; depth?: number; token?: string }; target: { name: string; opts?: { description?: string; readOnly?: boolean } } }): Promise<{ name: string; remote: string; defaultBranch: string }>;
 }
 
+/** The slice of a Vectorize index that search.ts uses. */
+export interface VectorIndex {
+  upsert(vectors: { id: string; values: number[]; metadata?: Record<string, string | number | boolean> }[]): Promise<unknown>;
+  query(values: number[], opts: { topK: number; filter?: Record<string, unknown>; returnMetadata?: "none" | "indexed" | "all" }): Promise<{ matches: { id: string; score: number; metadata?: Record<string, unknown> }[] }>;
+  getByIds(ids: string[]): Promise<{ id: string; metadata?: Record<string, unknown> }[]>;
+  deleteByIds(ids: string[]): Promise<unknown>;
+}
+
 /** The slice of an R2 bucket that chunks.ts uses. */
 /** A LEVEL_DIGS message: a level's first step (`again`: replacing its Artifact), or one part of a big level's swarm (swarm.ts). */
 export interface DigMessage { dig: string; user: string | null; again?: boolean; part?: { sha: string; n: number; files: [string, string, number][] } }
@@ -43,6 +51,13 @@ export interface Env {
   GAMES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One code search index per repo (search.ts). */
   SEARCH: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /**
+   * One vector index across every repo's committed code, and Workers AI to embed for it
+   * (search.ts). With both, search across repos asks the index which repos to search instead
+   * of fanning out. Bound only with CODESPLITTERS_VECTORS=1; the desktop has neither.
+   */
+  VECTORS?: VectorIndex;
+  AI?: { run(model: string, inputs: { text: string[] }): Promise<{ data: number[][] }> };
   /** Containers that run hosted coding agents (Cloudflare only; the desktop runs the CLIs itself). */
   AGENT_SANDBOX?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One Durable Object per repo that runs hosted deploys, each in its own container (deploy-runner.ts). Bound only with CODESPLITTERS_DEPLOYS=1. */

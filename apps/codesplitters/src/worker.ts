@@ -40,7 +40,7 @@ import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts"
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
 import { scaleRoutes } from "./scale.ts";
-import { indexFile, searchAll, searchRepo, searchRoutes } from "./search.ts";
+import { embedDue, indexFile, restaleSearch, searchAll, searchRepo, searchRoutes } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
 import { installScript } from "./install.ts";
 import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
@@ -257,6 +257,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       const { visibility } = await body<{ visibility: string }>();
       if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
       await env.DB.prepare("UPDATE repos SET visibility = ? WHERE owner = ? AND name = ?").bind(visibility, owner, repo).run();
+      // The vector index's tags follow on the next hourly embed; search checks D1 till then.
+      await restaleSearch(env, owner, repo).catch(() => null);
       await audit(env, req, { actor: user, action: "repo.visibility", owner, repo, detail: visibility });
       return json({ visibility });
     }
@@ -515,6 +517,8 @@ const app = {
     ctx.waitUntil(advanceAll(env, Date.now() + 10 * 60_000));
     // Check runs a runner claimed and then went quiet on go back in the queue (a claim does this too).
     ctx.waitUntil(requeueStale(env));
+    // Files the vector index doesn't have as committed yet (search.ts); nothing without it.
+    ctx.waitUntil(embedDue(env).catch(() => null));
   },
 
   // The queues (rustybuns.config.ts): JOBS runs queued requests whose turn has come, and hosted agent runs;

@@ -45,11 +45,11 @@ export const CARDS: Card[] = [
   },
   {
     id: "search", name: "Search keeps every file", where: "RepoSearch: FTS5 in one Durable Object per repo (search.ts)",
-    wall: "10 GB per repo's index (a Durable Object's SQLite), ~4 GB of text; across repos, a search asks at most 50",
-    shows: "One huge repo stops indexing commits; a search across repos misses repos past the 50 it asks",
-    here: "Done for one repo. Across repos, AI Search or Vectorize in place of the fan-out",
-    box: "Same FTS5, plenty of disk; one box still runs out eventually",
-    next: "Search across repos without the fan-out: AI Search or Vectorize",
+    wall: "10 GB per repo's index (a Durable Object's SQLite), ~4 GB of text; across repos, Vectorize's 10M vectors (16 chunks of 40 lines a file), or without it a fan-out to 50 repos",
+    shows: "One huge repo stops indexing commits; without the vector index, a search across repos misses repos past the 50 it asks",
+    here: "Yes, with CODESPLITTERS_VECTORS=1: one Vectorize index across repos picks the 10 to ask (#636). Without it, the fan-out",
+    box: "Same FTS5, plenty of disk, and the fan-out: no Vectorize off Cloudflare",
+    next: "Embed whole big files, past 640 lines, if search across repos misses what's deep in them",
   },
   {
     id: "big-file", name: "A file lives in one object's memory", where: "file-do.ts: the whole doc in memory; doc-store.ts writes it in chunks",

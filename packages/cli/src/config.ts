@@ -32,6 +32,27 @@ export type Binding =
       simple: { limit: number; period: 10 | 60 };
     }
   /**
+   * Cloudflare Vectorize: `env.NAME.upsert(vectors)`, `.query(values, { topK, filter })`,
+   * `.getByIds(ids)` and `.deleteByIds(ids)`. `metadataIndexes` are the metadata properties
+   * a query can filter on. Edge only: the desktop has no twin, so the binding is left out there.
+   */
+  | {
+      type: "vectorize";
+      /** The index's name on Cloudflare (with targets.edge.adopt; Alchemy names it otherwise). */
+      indexName: string;
+      /** Each vector's length: the embedding model's (bge-small-en-v1.5 makes 384). Fixed at creation. */
+      dimensions: number;
+      /** @default "cosine" */
+      metric?: "cosine" | "euclidean" | "dot-product";
+      /** Property name -> its type, for each property a query filters on. */
+      metadataIndexes?: Record<string, "string" | "number" | "boolean">;
+    }
+  /**
+   * Workers AI: `await env.NAME.run(model, inputs)`, e.g. embeddings for a vectorize
+   * binding. No resource behind it. Edge only: the desktop has no twin.
+   */
+  | { type: "ai" }
+  /**
    * Cloudflare Containers: a Durable Object class exported by `main` with a
    * container image behind it (the class reaches it through `ctx.container`).
    * Edge only: the desktop has no twin, so the binding is left out there and

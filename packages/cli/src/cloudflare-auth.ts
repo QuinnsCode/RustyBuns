@@ -24,6 +24,9 @@ const BY_BINDING: Record<string, string[]> = {
   artifacts: ["artifacts:write"],
   send_email: ["email_sending:write"],
   container: ["containers:write", "cloudchamber:write"],
+  // Wrangler's OAuth list has no Vectorize scope; its vectorize commands run on ai:write.
+  vectorize: ["ai:write"],
+  ai: ["ai:write"],
 };
 
 /** The wrangler OAuth scopes this app's edge stack needs, and no others. */

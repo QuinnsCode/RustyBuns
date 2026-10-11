@@ -32,6 +32,8 @@ export function billables(c: RustyBunsConfig): Billable[] {
       if (b.type === "container") out.push({ what: `Container ${name} (${b.instanceType ?? "lite"}, at most ${b.maxInstances ?? 1})`, kind: "usage", note: "Workers Paid only; CPU, memory and disk by the 10 ms while an instance runs, past the monthly included hours" });
       if (b.type === "send_email") out.push({ what: `Email Sending ${name}`, kind: "usage", note: "Workers Paid only; 3,000 emails a month included, then $0.35 per 1k" });
       if (b.type === "ratelimit") out.push({ what: `Rate limit ${name}`, kind: "usage", note: "free: counted in memory at each location, no storage" });
+      if (b.type === "vectorize") out.push({ what: `Vectorize ${name} (${b.dimensions} dims)`, kind: "usage", note: "Workers Paid: 10M stored + 50M queried dimensions a month included, then $0.05 per 100M stored and $0.01 per 1M queried" });
+      if (b.type === "ai") out.push({ what: `Workers AI ${name}`, kind: "usage", note: "10,000 neurons a day free, then $0.011 per 1k; bge-small embeddings are about 1.8k neurons per million tokens" });
       if (b.type === "queue") out.push({ what: `Queue ${name}`, kind: "usage", note: "10k operations a day free, 1M a month on Workers Paid, then $0.40 per million; a message is about three (write, read, delete)" });
       if (b.type === "images") out.push({ what: `Images ${name}`, kind: "usage", note: "5,000 unique transformations a month free, then $0.50 per 1k" });
       if (b.type === "r2") out.push({ what: `R2 ${name}`, kind: "usage", note: "storage + operations (egress is free)" });
