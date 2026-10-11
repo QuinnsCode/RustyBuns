@@ -117,8 +117,12 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     lines.push(``);
 
     if (w.build) {
+      // rustybuns plan/deploy build before Alchemy hashes the bundle (#362) and set
+      // RUSTYBUNS_BUILT, so this only records dist instead of rebuilding it under the
+      // upload (#424). The resource stays: dropping it would delete dist.
       lines.push(`// Build the app (RWSDK: vite build -> dist/worker + dist/client) before deploy.`);
-      lines.push(`export const Build = Command.Build("Build", { command: ${JSON.stringify(w.build)}, outdir: "dist" });`);
+      lines.push(`// Under rustybuns plan/deploy the app is already built (RUSTYBUNS_BUILT), so this only records dist.`);
+      lines.push(`export const Build = Command.Build("Build", { command: process.env.RUSTYBUNS_BUILT ? "true" : ${JSON.stringify(w.build)}, outdir: "dist" });`);
       lines.push(``);
     }
 
@@ -211,9 +215,9 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     lines.push(``);
   }
 
-  // Box secrets and optional Worker secrets are read from the deploying shell. The
+  // Box secrets, optional Worker secrets and RUSTYBUNS_BUILT are read from the deploying shell. The
   // stack is checked with types: [], so declare the one piece of node it touches.
-  const optional = edge && Object.values(bindings).some((b) => b.type === "secret" && b.optional);
+  const optional = edge && (!!w.build || Object.values(bindings).some((b) => b.type === "secret" && b.optional));
   if (((box || rail) && secrets.length) || optional)
     lines.splice(lines.findIndex((l) => l === ""), 0, `declare const process: { env: Record<string, string | undefined> };`);
 
