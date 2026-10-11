@@ -203,6 +203,12 @@
   .ln .by { color: var(--faint); font-size: 11.5px; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-right: 1px solid var(--border); user-select: none; }
   .ln .t { white-space: pre; padding: 0 16px; }
   .code.plain .ln { grid-template-columns: 52px minmax(0, 1fr); }
+  /* Stamps on a line: small chips after its text, yours filled in. */
+  .ln .stamps { display: inline-flex; gap: 4px; margin-left: 14px; vertical-align: 1px; user-select: none; font: 500 11px/16px var(--sans); }
+  .ln .stamp { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--muted); cursor: pointer; font: inherit; }
+  .ln .stamp svg { width: 11px; height: 11px; }
+  .ln .stamp.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .stamp-pick .row { display: flex; gap: 4px; flex-wrap: wrap; }
   .ln.sel { background: var(--select); } .ln.sel .n { color: var(--fg); box-shadow: inset 2px 0 0 var(--fg); }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   /* Claimed lines: the holder's colour down the edge, and their name in the blame column. An agent's shimmer while it works. */
@@ -422,6 +428,10 @@
   .prof-grid .box > .body { padding: 8px 12px; }
   .prof-grid .box > .body > p:first-child { margin-top: 0; }
   .prof-grid aside .photo iframe { height: 160px; }
+  /* An agent's pulse: a bar per day, its line edits, 30 days. */
+  .pulse { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; align-items: end; height: 48px; }
+  .pulse i { display: block; min-height: 2px; border-radius: 2px; background: var(--border); }
+  .pulse i.on { background: var(--accent); }
   .list .when { margin-left: auto; font: 12px var(--mono); color: var(--faint); white-space: nowrap; }
   .bar .barform { margin-left: auto; display: flex; gap: 6px; }
   .bar .barform input, .bar .barform select { padding: 2px 8px; font-size: 12.5px; } .bar .barform input { width: 150px; } .bar .barform .btn { padding: 2px 8px; font-size: 12.5px; }
@@ -642,6 +652,9 @@ const glyphs = {};
 const glyph = (name) => glyphs[name] ??= (() => {
   try { return lucide.createElement(lucide.icons[name.replace(/(^|-)(\w)/g, (_, __, c) => c.toUpperCase())]).outerHTML; } catch { return ""; }
 })();
+/** Stamps: reactions on a line (stamps.ts), each with its icon and what it says. */
+const STAMP_KINDS = [["+1", "thumbs-up", "+1"], ["heart", "heart", "love it"], ["fire", "flame", "fire"], ["eyes", "eye", "looking into it"], ["rocket", "rocket", "ship it"], ["tada", "party-popper", "tada"]];
+const stampKind = (k) => STAMP_KINDS.find((x) => x[0] === k) ?? [k, "stamp", k];
 /** A steady colour for whoever this is: a person by name, an agent by its run, so a crowd of one harness still tells apart. */
 const hueOf = (s) => {
   // Mixed well enough that run-1 and run-2 land far apart on the wheel.
@@ -1621,7 +1634,7 @@ const views = {
         <tbody>
         ${row("Account", "Your email, name and avatar (from GitHub or Google, if you sign in with them), and your password as a one-way hash", "Signing you in, and the one email you asked for (verify, reset). No newsletters, ever.", "Until you delete your account")}
         ${row("Handle and page", "Your @handle, your bio and your page's HTML and CSS", "Your public profile", "Until you delete your account")}
-        ${row("Your code", "Repos, files, every line's history with the handle that wrote it, branches, collections, shares and deploy logs", "That's the product. Public repos are public, to everyone.", "Until you delete it or your account")}
+        ${row("Your code", "Repos, files, every line's history with the handle that wrote it, branches, collections, shares, stamps and deploy logs", "That's the product. Public repos are public, to everyone.", "Until you delete it or your account")}
         ${row("Sessions", "The IP address and browser of each signed-in session", "Keeping you signed in, and spotting a stolen session", "Until the session ends; swept every hour after")}
         ${row("Linked GitHub", "Your GitHub account id and its access token, encrypted at rest", "Forking the repos you choose", "Until you unlink it or delete your account")}
         ${row("Tokens and apps", "API token labels and last four characters, apps you connected, and when each was last used. The secrets are stored only as hashes.", "Letting your scripts, agents and apps act as you", "Until they expire or you revoke them")}
@@ -1683,12 +1696,20 @@ const views = {
 
   async u(name) {
     const mine = name === me();
-    const [{ user, repos, playlists, following = 0, followers = 0 }, { jobs }, follows] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : []]);
+    const [{ user, repos, playlists, following = 0, followers = 0, stamps, agent }, { jobs }, follows] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : []]);
     ctx = { view: "u", name };
     const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
+    const stampRow = (s, who) => `<a href="#/f/${s.owner}/${s.repo}/${encodeURIComponent(s.path)}">${icon(stampKind(s.stamp)[1])}<span>${who} <span class="muted">${esc(s.repo)}/${esc(s.path.split("/").pop())}</span></span><span class="when">${ago(s.created_at)}</span></a>`;
+    const stampBox = stamps && (stamps.given.length || stamps.got.length) ? `<div class="box"><div class="bar">${icon("stamp")}<b>Stamps</b><span class="muted">reactions on lines</span></div><div class="body list">
+      ${stamps.got.map((s) => stampRow(s, `@${esc(s.by)} stamped a line`)).join("")}${stamps.given.map((s) => stampRow(s, `stamped @${esc(s.author)}'s line`)).join("")}</div></div>` : "";
+    // An agent's face: who runs it, on what, where, its pulse and its runs.
+    const peak = agent ? Math.max(1, ...agent.pulse.map((d) => d.lines)) : 1;
+    const agentBoxes = agent ? `<div class="box"><div class="bar">${icon("activity")}<b>Pulse</b><span class="muted">line edits a day, the last 30 days</span></div><div class="body"><div class="pulse">${agent.pulse.map((d) => `<i${d.runs ? ' class="on"' : ""} style="height:${Math.round((d.lines / peak) * 100)}%" title="${new Date(d.day).toISOString().slice(0, 10)}: ${n(d.runs, "run")}, ${n(d.lines, "line edit")}"></i>`).join("")}</div></div></div>
+        <div class="box"><div class="bar">${icon("play")}<b>Runs</b><span class="muted">${n(agent.run_count, "run")} you can see</span></div><div class="body list">${agent.runs.map((r) => `<a href="#/f/${r.owner}/${r.repo}/${encodeURIComponent(r.path)}">${icon(r.status === "done" ? "check" : r.status === "running" ? "loader" : "x")}<span>${esc(r.owner)}/${esc(r.repo)} <span class="muted">${esc(r.path)}${r.applied ? ` · ${n(r.applied, "line edit")}` : ""}${r.task ? ` · ${esc(r.task.slice(0, 80))}` : ""}</span></span><span class="when">${ago(r.started)}</span></a>`).join("") || '<span class="muted">no runs you can see</span>'}</div></div>` : "";
+    const shown = agent ? agent.repos : repos;
     app.innerHTML = `<div class="wrap prof">
-      <div class="prof-head"><h1>${icon("user")}@${esc(name)}</h1><span class="muted">${esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
-        <span class="stat">${n(repos.length, "repo")} · ${n(playlists.length, "collection")} · ${following} following · ${n(followers, "follower")}</span>
+      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}</h1><span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
+        <span class="stat">${agent ? `${n(shown.length, "repo")} · ${n(agent.run_count, "run")} · ${n(agent.lines, "line edit")}` : `${n(repos.length, "repo")} · ${n(playlists.length, "collection")}`} · ${following} following · ${n(followers, "follower")}</span>
         ${followButton({ name, kind: name.startsWith("agent-") ? "agent" : "user" })}
         ${mine ? `<button class="btn ghost" id="editpage">${icon("palette")}Edit page</button>` : ""}</div>
       ${mine ? `<form id="theme" class="box" hidden><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">any HTML and CSS, rendered in a sandbox (no scripts)</span></div><div class="body" style="display:grid;gap:8px">
@@ -1696,15 +1717,17 @@ const views = {
         <textarea name="theme_html" rows="5" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
         <div><button class="btn primary">Save</button></div></div></form>` : ""}
       <div class="prof-grid"><div>
-        <div class="box"><div class="bar">${icon("book-marked")}<b>Repos</b>
+        ${agentBoxes}
+        <div class="box"><div class="bar">${icon("book-marked")}<b>${agent ? "Works in" : "Repos"}</b>
           ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn primary">${icon("plus")}Create</button></form>` : ""}</div>
-          <div class="body list">${repos.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet</span>'}</div></div>
+          <div class="body list">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet</span>'}</div></div>
         ${mine ? digBox("Fork any public GitHub repo into one you own here, then mod it line by line. Upstream never hears about it.") : ""}
+        ${stampBox}
         ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">this week's digs, previews and checks that waited in line</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       </div><aside>
         ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
-        <div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
-          ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>
+        ${agent ? "" : `<div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || '<span class="muted">nothing collected yet</span>'}
+          ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>`}
         ${mine ? `<div class="box"><div class="bar">${icon("eye")}<b>Following</b><span class="muted">people, agents, repos and lines</span></div><div class="body list">${follows.map(followLink).join("") || '<span class="muted">nothing yet: Follow is on profiles, repos, agent runs, shares and collections</span>'}</div></div>` : ""}
         ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("plug")}<b>Connect your AI</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
         ${mine ? dataBox() : ""}
@@ -2308,6 +2331,7 @@ const views = {
       bar: `${crumbs(`#/r/${owner}/${repo}`, repo, path)}<span class="grow"></span>
         <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit. Older revisions show as a diff against now.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"><span class="legend"><span><i class="d"></i>taken out</span><span><i class="a"></i>put in</span></span><a class="btn" id="smash" hidden title="the lines this took out, as furniture in the backrooms">${icon("hammer")}Smash what it took out</a></div></div>
         ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
+        <div class="pop"><button class="btn" id="stamp" disabled title="select lines first, then stamp them: a reaction that stays on each line through edits">${icon("stamp")}Stamp</button><div class="panel stamp-pick" id="stamp-pick" hidden><b>Stamp <span id="stamp-range"></span></b><span class="muted" style="font-size:13px">It stays on each line as the file is edited, whoever wrote it, person or agent.</span><div class="row">${STAMP_KINDS.map(([k, ic, t]) => `<button class="btn" type="button" data-stamp="${k}" title="${t}">${icon(ic)}</button>`).join("")}</div></div></div>
         ${r.canWrite ? `<div class="pop"><button class="btn" id="cut" disabled title="select lines first: click a line number, shift-click another">${icon("scissors")}Cut</button><form class="panel" id="cut-form" hidden style="width:380px"><b>Cut <span id="cut-range"></span> out</b><span class="muted" style="font-size:13px">Just these lines and what they use, followed through imports into the repo's other files, as a tiny repo on a branch of its own: run its tests, share it, merge a fix back.</span><textarea name="more" rows="3" placeholder="add these lines too, a range a line:&#10;test/sum.test.ts:10-24"></textarea><input name="note" placeholder="what it shows (optional)"><button class="btn primary">${icon("scissors")}Cut</button></form></div>` : ""}
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
         ${r.canWrite ? `<button class="btn" id="hold" disabled title="select lines first. Held lines are yours alone: agents and everyone else leave them be till you let go">${icon("hand")}<span>Hold</span></button>` : ""}
@@ -2326,6 +2350,13 @@ const views = {
     mountExplorer($("#tree"), `r/${owner}/${repo}`, (d) => api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(d)}`), href, path);
     views.wireRepoHead(owner, repo, r);
     const box = $("#lines");
+    // Line id -> {stamp: [who]}, from GET .../stamps (stamps.ts).
+    let stampsOf = new Map();
+    const loadStamps = async () => {
+      stampsOf = new Map((await api(`/repos/${owner}/${repo}/stamps${q}`).catch(() => [])).map((s) => [s.line, s.stamps]));
+      if (viewing === null && !box.querySelector(".ln input")) draw(doc);
+    };
+    ctx.loadStamps = loadStamps;
     const draw = (d, fresh = new Set()) => {
       const live = viewing === null;
       if (!live) {
@@ -2339,6 +2370,13 @@ const views = {
       $("#smash").hidden = true;
       const keep = anchor();
       box.innerHTML = codeRows(d.lines);
+      if (stampsOf.size) for (const el of box.children) {
+        const st = stampsOf.get(el.dataset.id), t = st && $(".t", el);
+        if (!t) continue;
+        t.insertAdjacentHTML("beforeend", `<span class="stamps">${Object.entries(st).map(([k, who]) => `<button type="button" class="stamp${who.includes(me()) ? " on" : ""}" data-stamp="${esc(k)}" title="${esc(stampKind(k)[2])}: ${esc(who.map((w) => "@" + w).join(", "))}">${glyph(stampKind(k)[1])}${who.length}</button>`).join("")}</span>`);
+        const by = $(".by", el);
+        if (by) by.title += ` · ${Object.entries(st).map(([k, who]) => `${stampKind(k)[2]} ×${who.length}`).join(", ")}`;
+      }
       if (claimOf.size) for (const el of box.children) {
         const c = claimOf.get(el.dataset.id);
         if (!c) continue;
@@ -2361,11 +2399,11 @@ const views = {
     selectable(box, (range) => {
       sel = range;
       const label = range[0] === range[1] ? `line ${range[0]}` : `lines ${range[0]}–${range[1]}`;
-      for (const b of ["#share", "#collect", "#lock", "#cut", "#hold"]) if ($(b)) $(b).disabled = false;
+      for (const b of ["#share", "#stamp", "#collect", "#lock", "#cut", "#hold"]) if ($(b)) $(b).disabled = false;
       if ($("#lock")) $("#lock span").textContent = selPrivate() ? "Make public" : "Make private";
       holdLabel();
       if ($("#agent-only")) { $("#agent-only").hidden = false; $("#agent-only span").textContent = label; }
-      for (const b of ["#share-range", "#cut-range"]) if ($(b)) $(b).textContent = label;
+      for (const b of ["#share-range", "#stamp-range", "#cut-range"]) if ($(b)) $(b).textContent = label;
       $("#st-sel").textContent = range[0] === range[1] ? `Ln ${range[0]}` : `Ln ${range[0]}–${range[1]}`;
     });
     const selLines = () => sel ? doc.lines.slice(sel[0] - 1, sel[1]) : [];
@@ -2561,7 +2599,7 @@ const views = {
         try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = /^Slow down/.test(err.message) ? err.message : "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
       });
     };
-    draw(doc); drawCrew(); drawActs(); drawCommits(commits);
+    draw(doc); drawCrew(); drawActs(); drawCommits(commits); loadStamps();
     popover($("#hist"));
     $("#rev").addEventListener("input", async (e) => {
       const v = Number(e.target.value);
@@ -2634,6 +2672,25 @@ const views = {
       });
       $("#share-copy").addEventListener("click", () => copy($("#share-out input").value, "Link copied"));
     }
+    if ($("#stamp")) {
+      const pick = popover($("#stamp"));
+      pick.querySelectorAll("[data-stamp]").forEach((b) => b.addEventListener("click", async () => {
+        try { await api(`/repos/${owner}/${repo}/stamps`, { path, stamp: b.dataset.stamp, lines: selLines().map((l) => l.id) }); pick.hidden = true; await loadStamps(); }
+        catch (err) { toast(err.message); }
+      }));
+    }
+    // A chip on a line: yours takes your stamp off, anyone else's adds yours.
+    box.addEventListener("dblclick", (e) => { if (e.target.closest(".stamps")) e.stopPropagation(); }, true);
+    box.addEventListener("click", async (e) => {
+      const b = e.target.closest(".stamp"); if (!b) return;
+      if (!me()) return toast("Sign in to stamp lines");
+      const line = b.closest(".ln").dataset.id, stamp = b.dataset.stamp;
+      try {
+        if (b.classList.contains("on")) await api(`/repos/${owner}/${repo}/stamps${q}&line=${encodeURIComponent(line)}&stamp=${encodeURIComponent(stamp)}`, undefined, "DELETE");
+        else await api(`/repos/${owner}/${repo}/stamps`, { path, stamp, lines: [line] });
+        await loadStamps();
+      } catch (err) { toast(err.message); }
+    });
     if ($("#cut")) {
       popover($("#cut"));
       $("#cut-form").addEventListener("submit", async (e) => {
@@ -2823,6 +2880,7 @@ const views = {
       <div id="groups">${f.groups.map((g, i) => `<details class="grp" style="--who:${hueOf(g.bot && g.run ? g.run : g.who)}"><summary>${glyph(g.bot ? "bot" : "user")}<span class="what">${esc(g.summary)}</span><span class="age" data-at="${g.last_at}">${ago(g.last_at)}</span></summary>
         <div class="evs">${g.events.map((e) => `<div>${where(e)} <span class="muted">${e.inserts ? `+${e.inserts} ` : ""}${e.sets ? `~${e.sets} ` : ""}${e.deletes ? `−${e.deletes} ` : ""}· ${ago(e.last_at)}</span></div>`).join("")}</div></details>`).join("")
         || `<p class="muted">${f.follows ? "Nothing new from who and what you follow." : "You don't follow anyone yet. Follow people, agents, repos or a few lines and their edits land here."}</p>`}</div>
+      ${f.stamps?.length ? `<div class="box" style="margin-top:14px"><div class="bar">${icon("stamp")}<b>Stamps</b><span class="muted">reactions on lines, people's and agents'</span></div><div class="evs">${f.stamps.map((s) => `<div>${glyph(stampKind(s.stamp)[1])} <a href="#/u/${esc(s.by)}">@${esc(s.by)}</a> stamped <a href="#/u/${esc(s.author)}">@${esc(s.author)}</a>'s line in ${where(s)} <span class="muted">· ${ago(s.created_at)}</span></div>`).join("")}</div></div>` : ""}
     </div>`;
     icons();
     $("#dg-go")?.addEventListener("click", async () => {
@@ -3271,6 +3329,11 @@ async function commands() {
       const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
       const s = await api(`/repos/${c.owner}/${c.repo}/shares`, { path: c.path, from, to: to || from });
       copy(`${location.origin}/#/s/${s.id}`, `Link to lines ${s.from}–${s.to} copied`);
+    }, c.sel ? null : "which lines, like 4-12");
+    if (u) add("This file", "thumbs-up", range ? `Stamp ${range} +1` : "Stamp lines +1…", `POST /api/repos/${c.owner}/${c.repo}/stamps`, async (arg) => {
+      const [from, to] = c.sel ?? String(arg).split(/[-–, ]+/).map(Number);
+      await api(`/repos/${c.owner}/${c.repo}/stamps`, { path: c.path, stamp: "+1", from, to: to || from });
+      await c.loadStamps?.();
     }, c.sel ? null : "which lines, like 4-12");
     if (c.canWrite && range) add("This file", "lock", `${$("#lock span")?.textContent ?? "Make private"}: ${range}`, `POST /api/repos/${c.owner}/${c.repo}/do/private`, async () => $("#lock").click());
     if (c.canWrite) add("This file", "scissors", range ? `Cut ${range} out` : "Cut lines out…", `POST /api/repos/${c.owner}/${c.repo}/cuts`, async (arg) => {

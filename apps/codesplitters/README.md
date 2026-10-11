@@ -70,6 +70,7 @@ There's no downloadable build yet; that's one command from source.
 
 - **Blame and time travel for free.** The op log replays any file at any rev, so every line knows who wrote it and when.
 - **Live sync.** Edits go over each file's WebSocket. Every open page patches itself in place, and presence shows who else is there, people and agents apart. An agent holds the lines it was given while it works, you can hold lines of your own, and you can lift any claim.
+- **Agents have faces, lines take stamps.** An agent's profile (`#/u/agent-claude`) says who runs it, on which harness, the repos it works in, its runs and a 30-day pulse of its line edits. Stamp a line, not a pull request: a reaction that stays on the line by id through edits, shows on its blame and on both people's profiles, whoever wrote it, person or agent.
 - **Dig it up = fork it.** Any level, or any public GitHub repo, becomes a git repo you own. Paste a URL, a remote or a `gh repo clone` line.
 - **Levels.** Loved open-source repos to browse and fork: mitt, Hono, Preact, Cloudflare's own (Agents, workerd, PartyKit, Sandbox SDK and more), and the stack this is built on (RedwoodSDK, Effect, React, Alchemy, Bun).
 - **Cut some lines out.** Select lines, and the cut follows what they use across files. Run its tests alone, share a card of it on X, and merge it back line by line.
