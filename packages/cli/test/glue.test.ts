@@ -591,6 +591,17 @@ test("cpuMs: limits.cpu_ms on the edge, both ways through wrangler.jsonc", () =>
   expect(wranglerToConfig({ name: "g", limits: { cpu_ms: 60_000 } }).worker!.cpuMs).toBe(60_000);
 });
 
+test("sourceMaps: a prebuilt Worker uploads its .map files, and only when asked", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", builtMain: "dist/worker/worker.js", compatibilityDate: "2026-06-01", compatibilityFlags: [], sourceMaps: true },
+    bindings: {}, targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  const a = generateAlchemy(c);
+  expect(a).toContain(`{ globs: ["**/*.map"] }`);
+  expect(a).toContain(`{ globs: ["**/*.js", "**/*.mjs"] }`);   // the defaults it replaces stay
+  expect(generateAlchemy({ ...c, worker: { ...c.worker, sourceMaps: undefined } })).not.toContain("rules:");
+});
+
 test("desktopCrates: only crates that would be embedded count against cross targets", async () => {
   const { desktopCrates, shippingCrates } = await import("../src/build.ts");
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");

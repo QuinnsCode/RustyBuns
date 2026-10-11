@@ -346,6 +346,13 @@ export interface RustyBunsConfig {
      * `rustybuns deploy` sets it after every deploy (src/redact.ts).
      */
     redactQueryStrings?: boolean;
+    /**
+     * Upload the `.map` files beside builtMain with the script (wrangler's
+     * `upload_source_maps`), so Workers Logs traces of a minified bundle name the
+     * source. Alchemy's `bundle: false` leaves maps out unless asked. Cloudflare
+     * keeps them for remapping traces; they aren't served.
+     */
+    sourceMaps?: boolean;
   };
   bindings: Record<string, Binding>;
   targets: {

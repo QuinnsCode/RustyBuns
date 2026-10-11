@@ -140,6 +140,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     // No main: assets-only, and Cloudflare's asset layer answers every request.
     if (w.builtMain ?? w.main) wb.push(`  main: ${JSON.stringify(w.builtMain ?? w.main)},`);
     if (w.builtMain) wb.push(`  bundle: false,  // vite already produced a runtime-ready ESM bundle`);
+    // Alchemy's default module rules with the source maps added: given rules, it uses only those.
+    if (w.builtMain && w.sourceMaps) wb.push(`  rules: [{ globs: ["**/*.js", "**/*.mjs"] }, { globs: ["**/*.wasm"] }, { globs: ["**/*.txt", "**/*.html", "**/*.sql"] }, { globs: ["**/*.bin"] }, { globs: ["**/*.map"] }],  // worker.sourceMaps`);
     if (w.assets) {
       wb.push(`  assets: {`);
       wb.push(`    directory: ${JSON.stringify(w.assets)},`);
