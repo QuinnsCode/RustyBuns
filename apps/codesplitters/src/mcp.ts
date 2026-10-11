@@ -28,7 +28,7 @@ interface Tool {
 const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const INSTRUCTIONS = "codeSplitters is a code host where every line is its own record with a stable id. "
   + "Read a file with read_file to get its line ids and revs, then edit_lines by id (a set or delete names the line's rev as base; a 409 means read again). "
-  + "Files are addressed by owner, repo and path. Tools marked destructive can't be undone or ship code: ask the person first.";
+  + "Files are addressed by owner, repo and path. Given an invite link (…/invite/csi_…), claim it with claim_invite, as: agent, then connect again with the token it gives you. Tools marked destructive can't be undone or ship code: ask the person first.";
 
 /** Inline every $ref, so each tool's schema stands alone. */
 const inline = (s: unknown, defs: Record<string, Schema>): any => {

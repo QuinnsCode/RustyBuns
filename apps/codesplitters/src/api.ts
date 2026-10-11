@@ -69,7 +69,11 @@ export const GROUPS: Group[] = [
       { method: "DELETE", path: "/api/repos/:o/:r?confirm=:r", who: OWNER, does: "delete it here: rows, files, branches, git. GitHub never hears" },
       { method: "GET", path: "/api/repos/:o/:r/tree?path=dir", does: "one folder: {commit, entries: [{name, path, type: \"file\" | \"dir\"}]}, git's plus files written here but not committed yet; 202 {forking} while a dig is landing" },
       { method: "POST", path: "/api/repos/:o/:r/files", body: "{path, content?, branch?}", who: CREW, does: "a new file (on a branch, with branch)" },
-      { method: "POST", path: "/api/repos/:o/:r/collaborators", body: "{name}", who: OWNER, does: "add someone to the crew (this is how agents get in)" },
+      { method: "POST", path: "/api/repos/:o/:r/collaborators", body: "{name}", who: OWNER, does: "add someone who already has a handle straight to the crew (hosted agents get in this way)" },
+      { method: "DELETE", path: "/api/repos/:o/:r/collaborators/:name", who: OWNER, does: "take someone out of the crew; the lines they wrote stay theirs" },
+      { method: "POST", path: "/api/repos/:o/:r/invites", body: "{handle? | email?, note?, days?: 1-30}", who: OWNER, does: "invite someone to the crew: a handle, an email (mailed the link when the site sends mail; mailed says whether it did) or, with neither, a bare link to pass on. {token, link, kind, target, note, expires_at}; 7 days by default" },
+      { method: "GET", path: "/api/repos/:o/:r/invites", who: OWNER, does: "the pending invites (GET /api/repos/:o/:r has them too, as invites, for the owner)" },
+      { method: "DELETE", path: "/api/repos/:o/:r/invites/:token", who: OWNER, does: "revoke a pending invite" },
       { method: "GET", path: "/api/repos/:o/:r/fit?dir=", does: "how easily Rusty Buns could ship it (or, with dir, one app in it): ready, likely, needs work or poor, with reasons" },
       { method: "GET", path: "/api/repos/:o/:r/limits", does: "git's size against its cap, files waiting for git, and where you stand on your rate limits" },
       { method: "GET", path: "/api/repos/:o/:r/mirror", does: "a mirror's standing with upstream: {state: ok | down | refused | clash | held | rewritten, url, branch, ahead, behind, downSince, syncedAt, nextAt, clash, error, private, pushCrew}" },
@@ -124,6 +128,15 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/repos/:o/:r/checks/:id", does: "one run, with its log and JUnit report" },
       { method: "PUT", path: "/api/repos/:o/:r/checks/:id", body: "{status?, log?, append?, junit?}", who: CREW, does: "a runner reports: move it on, replace or add to its log; a finished run stays finished" },
       { method: "POST", path: "/api/repos/:o/:r/checks/:id/cancel", who: CREW, does: "stop one of ours that's queued or running; GitHub's are cancelled on GitHub" },
+    ],
+  },
+  {
+    name: "Invites",
+    about: "An invite link is /invite/:token: a browser goes to its page, anything else gets the steps to claim it as text. The owner makes them (Repos, above). An invite works once, and a handle or email invite only lets a person in.",
+    endpoints: [
+      { method: "GET", path: "/api/invites/:token", does: "anyone with the link: {owner, repo, visibility, by, note, kind, for, emailed, expires_at, doors: [\"person\", \"agent\"?]}, and signed in, you and member; 410 once used or expired" },
+      { method: "POST", path: "/api/invites/claim", body: "{invite: link or csi_ token, as: \"person\" | \"agent\", name?, harness?}", does: "come in. person: as the signed-in handle. agent: a new agent-<name>-xxxx handle and a write API token for it (shown once, 30 days), with mcp, the line that connects claude, codex, pi or opencode; an agent calling with its own token joins as itself" },
+      { method: "GET", path: "/api/invites", who: SIGNED_IN, does: "pending invites to your handle, with their links" },
     ],
   },
   {

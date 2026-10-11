@@ -61,6 +61,15 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   return { id: t.id, user: t.user, scope: t.scope, label: t.label, expires_at: t.expires_at };
 }
 
+/** A new token for `user`, its secret in `token` this once. */
+export async function mint(env: Env, user: string, label: string, scope: Scope, days: number) {
+  const secret = "cst_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
+  const t = { id: crypto.randomUUID().slice(0, 8), label, scope, last4: secret.slice(-4), created_at: Date.now(), expires_at: Date.now() + days * DAY };
+  await env.DB.prepare("INSERT INTO api_tokens (id, name, label, hash, last4, scope, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(t.id, user, t.label, await hash(secret), t.last4, t.scope, t.created_at, t.expires_at).run();
+  return { ...t, token: secret };
+}
+
 /** /api/tokens: the signed-in person's own, by cookie (bearer() keeps tokens out). */
 export async function tokenRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] !== "tokens") return null;
@@ -78,11 +87,7 @@ export async function tokenRoutes(req: Request, env: Env, p: string[], user: str
     if (!Number.isInteger(days) || days < 1 || days > MAX_DAYS) return json({ error: `days: 1 to ${MAX_DAYS}` }, 400);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM api_tokens WHERE name = ? AND grant_id IS NULL AND expires_at > ?").bind(user, Date.now()).first();
     if ((n?.n as number ?? 0) >= MAX_TOKENS) return json({ error: `at most ${MAX_TOKENS} live tokens: revoke one first` }, 400);
-    const secret = "cst_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
-    const t = { id: crypto.randomUUID().slice(0, 8), label, scope: b.scope as Scope, last4: secret.slice(-4), created_at: Date.now(), expires_at: Date.now() + days * DAY };
-    await env.DB.prepare("INSERT INTO api_tokens (id, name, label, hash, last4, scope, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(t.id, user, t.label, await hash(secret), t.last4, t.scope, t.created_at, t.expires_at).run();
-    return json({ ...t, token: secret }, 201);
+    return json(await mint(env, user, label, b.scope as Scope, days), 201);
   }
   if (p[2] && !p[3] && req.method === "DELETE") {
     const r = await env.DB.prepare("DELETE FROM api_tokens WHERE id = ? AND name = ? AND grant_id IS NULL").bind(p[2], user).run();
