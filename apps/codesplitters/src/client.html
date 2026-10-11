@@ -209,6 +209,9 @@
   .ln .stamp svg { width: 11px; height: 11px; }
   .ln .stamp.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .stamp-pick .row { display: flex; gap: 4px; flex-wrap: wrap; }
+  .st { display: inline-flex; align-items: center; } .st svg { width: 14px; height: 14px; } .ln .st svg { width: 11px; height: 11px; }
+  .st-heart svg { fill: var(--accent); stroke: var(--accent); }
+  .st-lgtm { font: 700 10px/1 var(--sans); letter-spacing: .04em; }
   .ln.sel { background: var(--select); } .ln.sel .n { color: var(--fg); box-shadow: inset 2px 0 0 var(--fg); }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   /* Claimed lines: the holder's colour down the edge, and their name in the blame column. An agent's shimmer while it works. */
@@ -653,8 +656,10 @@ const glyph = (name) => glyphs[name] ??= (() => {
   try { return lucide.createElement(lucide.icons[name.replace(/(^|-)(\w)/g, (_, __, c) => c.toUpperCase())]).outerHTML; } catch { return ""; }
 })();
 /** Stamps: reactions on a line (stamps.ts), each with its icon and what it says. */
-const STAMP_KINDS = [["+1", "thumbs-up", "+1"], ["heart", "heart", "love it"], ["fire", "flame", "fire"], ["eyes", "eye", "looking into it"], ["rocket", "rocket", "ship it"], ["tada", "party-popper", "tada"]];
+const STAMP_KINDS = [["+1", "flame", "+1"], ["heart", "heart", "love it"], ["binoculars", "binoculars", "watching"], ["shovel", "shovel", "dug into it"], ["gem", "gem", "gem"], ["skull", "skull", "skull"], ["lgtm", null, "looks good to me"]];
 const stampKind = (k) => STAMP_KINDS.find((x) => x[0] === k) ?? [k, "stamp", k];
+/** How a stamp looks: its icon (the heart filled orange), or LGTM in letters. */
+const stampFace = (k) => { const [key, ic] = stampKind(k); return ic ? `<span class="st st-${key === "+1" ? "plus" : esc(key)}">${glyph(ic)}</span>` : `<b class="st st-lgtm">LGTM</b>`; };
 /** A steady colour for whoever this is: a person by name, an agent by its run, so a crowd of one harness still tells apart. */
 const hueOf = (s) => {
   // Mixed well enough that run-1 and run-2 land far apart on the wheel.
@@ -1699,7 +1704,7 @@ const views = {
     const [{ user, repos, playlists, following = 0, followers = 0, stamps, agent }, { jobs }, follows] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : []]);
     ctx = { view: "u", name };
     const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
-    const stampRow = (s, who) => `<a href="#/f/${s.owner}/${s.repo}/${encodeURIComponent(s.path)}">${icon(stampKind(s.stamp)[1])}<span>${who} <span class="muted">${esc(s.repo)}/${esc(s.path.split("/").pop())}</span></span><span class="when">${ago(s.created_at)}</span></a>`;
+    const stampRow = (s, who) => `<a href="#/f/${s.owner}/${s.repo}/${encodeURIComponent(s.path)}">${stampFace(s.stamp)}<span>${who} <span class="muted">${esc(s.repo)}/${esc(s.path.split("/").pop())}</span></span><span class="when">${ago(s.created_at)}</span></a>`;
     const stampBox = stamps && (stamps.given.length || stamps.got.length) ? `<div class="box"><div class="bar">${icon("stamp")}<b>Stamps</b><span class="muted">reactions on lines</span></div><div class="body list">
       ${stamps.got.map((s) => stampRow(s, `@${esc(s.by)} stamped a line`)).join("")}${stamps.given.map((s) => stampRow(s, `stamped @${esc(s.author)}'s line`)).join("")}</div></div>` : "";
     // An agent's face: who runs it, on what, where, its pulse and its runs.
@@ -2331,7 +2336,7 @@ const views = {
       bar: `${crumbs(`#/r/${owner}/${repo}`, repo, path)}<span class="grow"></span>
         <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit. Older revisions show as a diff against now.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"><span class="legend"><span><i class="d"></i>taken out</span><span><i class="a"></i>put in</span></span><a class="btn" id="smash" hidden title="the lines this took out, as furniture in the backrooms">${icon("hammer")}Smash what it took out</a></div></div>
         ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="select lines first: click a line number, shift-click another">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
-        <div class="pop"><button class="btn" id="stamp" disabled title="select lines first, then stamp them: a reaction that stays on each line through edits">${icon("stamp")}Stamp</button><div class="panel stamp-pick" id="stamp-pick" hidden><b>Stamp <span id="stamp-range"></span></b><span class="muted" style="font-size:13px">It stays on each line as the file is edited, whoever wrote it, person or agent.</span><div class="row">${STAMP_KINDS.map(([k, ic, t]) => `<button class="btn" type="button" data-stamp="${k}" title="${t}">${icon(ic)}</button>`).join("")}</div></div></div>
+        <div class="pop"><button class="btn" id="stamp" disabled title="select lines first, then stamp them: a reaction that stays on each line through edits">${icon("stamp")}Stamp</button><div class="panel stamp-pick" id="stamp-pick" hidden><b>Stamp <span id="stamp-range"></span></b><span class="muted" style="font-size:13px">It stays on each line as the file is edited, whoever wrote it, person or agent.</span><div class="row">${STAMP_KINDS.map(([k, , t]) => `<button class="btn" type="button" data-stamp="${k}" title="${t}">${stampFace(k)}</button>`).join("")}</div></div></div>
         ${r.canWrite ? `<div class="pop"><button class="btn" id="cut" disabled title="select lines first: click a line number, shift-click another">${icon("scissors")}Cut</button><form class="panel" id="cut-form" hidden style="width:380px"><b>Cut <span id="cut-range"></span> out</b><span class="muted" style="font-size:13px">Just these lines and what they use, followed through imports into the repo's other files, as a tiny repo on a branch of its own: run its tests, share it, merge a fix back.</span><textarea name="more" rows="3" placeholder="add these lines too, a range a line:&#10;test/sum.test.ts:10-24"></textarea><input name="note" placeholder="what it shows (optional)"><button class="btn primary">${icon("scissors")}Cut</button></form></div>` : ""}
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
         ${r.canWrite ? `<button class="btn" id="hold" disabled title="select lines first. Held lines are yours alone: agents and everyone else leave them be till you let go">${icon("hand")}<span>Hold</span></button>` : ""}
@@ -2373,7 +2378,7 @@ const views = {
       if (stampsOf.size) for (const el of box.children) {
         const st = stampsOf.get(el.dataset.id), t = st && $(".t", el);
         if (!t) continue;
-        t.insertAdjacentHTML("beforeend", `<span class="stamps">${Object.entries(st).map(([k, who]) => `<button type="button" class="stamp${who.includes(me()) ? " on" : ""}" data-stamp="${esc(k)}" title="${esc(stampKind(k)[2])}: ${esc(who.map((w) => "@" + w).join(", "))}">${glyph(stampKind(k)[1])}${who.length}</button>`).join("")}</span>`);
+        t.insertAdjacentHTML("beforeend", `<span class="stamps">${Object.entries(st).map(([k, who]) => `<button type="button" class="stamp${who.includes(me()) ? " on" : ""}" data-stamp="${esc(k)}" title="${esc(stampKind(k)[2])}: ${esc(who.map((w) => "@" + w).join(", "))}">${stampFace(k)}${who.length}</button>`).join("")}</span>`);
         const by = $(".by", el);
         if (by) by.title += ` · ${Object.entries(st).map(([k, who]) => `${stampKind(k)[2]} ×${who.length}`).join(", ")}`;
       }
@@ -2880,7 +2885,7 @@ const views = {
       <div id="groups">${f.groups.map((g, i) => `<details class="grp" style="--who:${hueOf(g.bot && g.run ? g.run : g.who)}"><summary>${glyph(g.bot ? "bot" : "user")}<span class="what">${esc(g.summary)}</span><span class="age" data-at="${g.last_at}">${ago(g.last_at)}</span></summary>
         <div class="evs">${g.events.map((e) => `<div>${where(e)} <span class="muted">${e.inserts ? `+${e.inserts} ` : ""}${e.sets ? `~${e.sets} ` : ""}${e.deletes ? `−${e.deletes} ` : ""}· ${ago(e.last_at)}</span></div>`).join("")}</div></details>`).join("")
         || `<p class="muted">${f.follows ? "Nothing new from who and what you follow." : "You don't follow anyone yet. Follow people, agents, repos or a few lines and their edits land here."}</p>`}</div>
-      ${f.stamps?.length ? `<div class="box" style="margin-top:14px"><div class="bar">${icon("stamp")}<b>Stamps</b><span class="muted">reactions on lines, people's and agents'</span></div><div class="evs">${f.stamps.map((s) => `<div>${glyph(stampKind(s.stamp)[1])} <a href="#/u/${esc(s.by)}">@${esc(s.by)}</a> stamped <a href="#/u/${esc(s.author)}">@${esc(s.author)}</a>'s line in ${where(s)} <span class="muted">· ${ago(s.created_at)}</span></div>`).join("")}</div></div>` : ""}
+      ${f.stamps?.length ? `<div class="box" style="margin-top:14px"><div class="bar">${icon("stamp")}<b>Stamps</b><span class="muted">reactions on lines, people's and agents'</span></div><div class="evs">${f.stamps.map((s) => `<div>${stampFace(s.stamp)} <a href="#/u/${esc(s.by)}">@${esc(s.by)}</a> stamped <a href="#/u/${esc(s.author)}">@${esc(s.author)}</a>'s line in ${where(s)} <span class="muted">· ${ago(s.created_at)}</span></div>`).join("")}</div></div>` : ""}
     </div>`;
     icons();
     $("#dg-go")?.addEventListener("click", async () => {

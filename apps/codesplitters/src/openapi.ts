@@ -127,7 +127,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: { id: "list_stamps", summary: "A file's stamps, line by line", tag: "Sharing", open: true, query: filePath,
       ok: arr(obj({ line: str("line id"), n: int("line number now"), stamps: loose("{stamp: [who stamped it]}") })) },
     post: { id: "stamp_lines", summary: "Stamp lines, a person's or an agent's: a reaction that follows each line by id", tag: "Sharing",
-      body: obj({ path: str(), stamp: { type: "string", enum: ["+1", "heart", "fire", "eyes", "rocket", "tada"] }, lines: arr(str("line id")), from: int("or the first line number"), to: int("the last line number") }, ["path", "stamp"]),
+      body: obj({ path: str(), stamp: { type: "string", enum: ["+1", "heart", "binoculars", "shovel", "gem", "skull", "lgtm"] }, lines: arr(str("line id")), from: int("or the first line number"), to: int("the last line number") }, ["path", "stamp"]),
       ok: obj({ stamp: str(), lines: arr(str()) }), status: 201 },
     delete: { id: "unstamp_line", summary: "Take your stamp off a line", tag: "Sharing",
       query: { ...filePath, line: { ...str("line id"), required: true }, stamp: { ...str(), required: true } }, ok: ref("Ok") },

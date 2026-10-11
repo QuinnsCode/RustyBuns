@@ -27,20 +27,20 @@ describe("stamps", () => {
   test("a stamp goes on a line, an agent's too, and follows it by id through edits", async () => {
     const { send, lines, stamps } = await app();
     const [one, two] = await lines();
-    expect((await send("bo", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "rocket", from: 2 })).status).toBe(201);
-    expect((await send("ana", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "rocket", lines: [two!.id] })).status).toBe(201);
+    expect((await send("bo", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "shovel", from: 2 })).status).toBe(201);
+    expect((await send("ana", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "shovel", lines: [two!.id] })).status).toBe(201);
     // Stamping twice is still one stamp.
-    await send("bo", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "rocket", lines: [two!.id] });
+    await send("bo", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "shovel", lines: [two!.id] });
     await send("bo", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "+1", lines: [one!.id] });
-    expect(await stamps(null)).toEqual([{ line: one!.id, n: 1, stamps: { "+1": ["bo"] } }, { line: two!.id, n: 2, stamps: { rocket: ["bo", "ana"] } }]);
+    expect(await stamps(null)).toEqual([{ line: one!.id, n: 1, stamps: { "+1": ["bo"] } }, { line: two!.id, n: 2, stamps: { shovel: ["bo", "ana"] } }]);
 
     // A line put in above moves it down; the stamp goes with it, and goes when the line does.
     await send("ana", "/api/repos/ana/pub/do/ops?path=a.ts", { ops: [{ kind: "insert", after: null, text: "zero" }, { kind: "delete", line: one!.id, base: one!.rev }] });
-    expect(await stamps(null)).toEqual([{ line: two!.id, n: 2, stamps: { rocket: ["bo", "ana"] } }]);
+    expect(await stamps(null)).toEqual([{ line: two!.id, n: 2, stamps: { shovel: ["bo", "ana"] } }]);
 
     // Taking yours off leaves everyone else's.
-    expect((await send("bo", `/api/repos/ana/pub/stamps?path=a.ts&line=${two!.id}&stamp=rocket`, undefined, "DELETE")).status).toBe(200);
-    expect((await stamps(null))[0]!.stamps).toEqual({ rocket: ["ana"] });
+    expect((await send("bo", `/api/repos/ana/pub/stamps?path=a.ts&line=${two!.id}&stamp=shovel`, undefined, "DELETE")).status).toBe(200);
+    expect((await stamps(null))[0]!.stamps).toEqual({ shovel: ["ana"] });
   });
 
   test("signed out, a stamp that isn't one, or a line that isn't there, is refused", async () => {
@@ -54,7 +54,7 @@ describe("stamps", () => {
   test("a private line is the crew's to stamp and see stamped; a private repo's, nobody else's", async () => {
     const { call, send, lines, stamps } = await app();
     const [one] = await lines();
-    await send("ana", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "eyes", lines: [one!.id] });
+    await send("ana", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "binoculars", lines: [one!.id] });
     await send("ana", "/api/repos/ana/pub/do/private?path=a.ts", { lines: [one!.id], private: true });
     expect((await stamps("ana")).map((s) => s.n)).toEqual([1]);
     expect(await stamps("bo")).toEqual([]);
@@ -79,7 +79,7 @@ describe("agent profiles", () => {
     await run("ana", "pub", "whisper", 2, now - 2 * 86_400_000);
     await run("bo", "hidden", "secret plans", 9, now);
     const [, two] = await lines();
-    await send("bo", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "fire", lines: [two!.id] });
+    await send("bo", "/api/repos/ana/pub/stamps", { path: "a.ts", stamp: "gem", lines: [two!.id] });
 
     const look = async (who: string | null) => (await (await call(who, "/api/users/agent-claude")).json()) as any;
     const ana = await look("ana");
@@ -89,8 +89,8 @@ describe("agent profiles", () => {
     expect(ana.agent.pulse).toHaveLength(30);
     expect(ana.agent.pulse.slice(-3).map((d: any) => d.lines)).toEqual([2, 0, 3]);
     // Stamps on its lines show on its profile, as on a person's.
-    expect(ana.stamps.got).toMatchObject([{ by: "bo", author: "agent-claude", stamp: "fire" }]);
-    expect((await (await call(null, "/api/users/bo")).json() as any).stamps.given).toMatchObject([{ author: "agent-claude", stamp: "fire" }]);
+    expect(ana.stamps.got).toMatchObject([{ by: "bo", author: "agent-claude", stamp: "gem" }]);
+    expect((await (await call(null, "/api/users/bo")).json() as any).stamps.given).toMatchObject([{ author: "agent-claude", stamp: "gem" }]);
 
     // bo sees their own private repo's run, and its task; not ana's tasks.
     const bo = await look("bo");

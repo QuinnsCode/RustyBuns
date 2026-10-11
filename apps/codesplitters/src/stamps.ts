@@ -10,7 +10,7 @@
 import { materialize, toFile } from "./archive.ts";
 import { json, type Env } from "./env.ts";
 
-export const STAMPS = ["+1", "heart", "fire", "eyes", "rocket", "tada"] as const;
+export const STAMPS = ["+1", "heart", "binoculars", "shovel", "gem", "skull", "lgtm"] as const;
 /** How many lines one stamp may go on at once. */
 const MAX_LINES = 100;
 

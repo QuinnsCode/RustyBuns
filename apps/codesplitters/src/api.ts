@@ -135,7 +135,7 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/repos/:o/:r/shares", body: "{path, from, to, note?}", who: SIGNED_IN, does: "a live link to some lines (from/to are line numbers now; the share follows them by id)" },
       { method: "GET", path: "/api/shares/:id", does: "the shared lines as they are now, for anyone with the link" },
       { method: "DELETE", path: "/api/shares/:id", who: "whoever shared it, or the repo's owner", does: "revoke it" },
-      { method: "POST", path: "/api/repos/:o/:r/stamps", body: "{path, stamp, lines? | from, to?}", who: SIGNED_IN, does: "stamp lines (ids, or line numbers now) with +1, heart, fire, eyes, rocket or tada; the stamp follows each line by id" },
+      { method: "POST", path: "/api/repos/:o/:r/stamps", body: "{path, stamp, lines? | from, to?}", who: SIGNED_IN, does: "stamp lines (ids, or line numbers now) with +1, heart, binoculars, shovel, gem, skull or lgtm; the stamp follows each line by id" },
       { method: "GET", path: "/api/repos/:o/:r/stamps?path=", does: "the file's stamps: [{line, n, stamps: {stamp: [who]}}]; a private line's only for the crew" },
       { method: "DELETE", path: "/api/repos/:o/:r/stamps?path=&line=&stamp=", who: SIGNED_IN, does: "take your stamp off a line" },
       { method: "POST", path: "/api/repos/:o/:r/cuts", body: "{pieces: [{path, from, to}], note?}", who: CREW, does: "cut some lines out, with what they use, as a branch cut-<id>" },

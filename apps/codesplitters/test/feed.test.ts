@@ -114,12 +114,12 @@ test("stamps from who you follow, and on their lines, land in the feed; a privat
   await follow("ana", { name: "bob" });
   await follow("carol", { name: "bob" });
   await follow("carol", { owner: "ryan", repo: "vault" });
-  await post("bob", "/api/repos/ryan/lab/stamps", { path: "a.ts", stamp: "fire", from: 1 });
-  await post("carol", "/api/repos/ryan/vault/stamps", { path: "s.ts", stamp: "eyes", from: 1 });
+  await post("bob", "/api/repos/ryan/lab/stamps", { path: "a.ts", stamp: "gem", from: 1 });
+  await post("carol", "/api/repos/ryan/vault/stamps", { path: "s.ts", stamp: "binoculars", from: 1 });
   await post("ana", "/api/repos/ryan/lab/stamps", { path: "a.ts", stamp: "+1", from: 2 });
 
   // ana follows bob: his stamp, not her own.
-  expect((await feed("ana")).stamps).toMatchObject([{ by: "bob", author: "ryan", stamp: "fire", repo: "lab" }]);
+  expect((await feed("ana")).stamps).toMatchObject([{ by: "bob", author: "ryan", stamp: "gem", repo: "lab" }]);
   // carol follows the vault, too; her own stamp there isn't news to her.
   expect((await feed("carol")).stamps.map((s: any) => s.by)).toEqual(["bob"]);
   await follow("ana", { owner: "ryan", repo: "lab" });
