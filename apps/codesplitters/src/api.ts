@@ -180,7 +180,7 @@ export const GROUPS: Group[] = [
       { method: "PUT", path: "/api/repos/:o/:r/deps", body: "{on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries}", who: OWNER, does: "the doctor's settings" },
       { method: "POST", path: "/api/repos/:o/:r/deps/run", who: OWNER, does: "check now" },
       { method: "GET", path: "/api/repos/:o/:r/hooks", who: OWNER, does: "the webhooks, each with its last delivery" },
-      { method: "POST", path: "/api/repos/:o/:r/hooks", body: "{url, events?, secret?}", who: OWNER, does: "add a webhook; its secret is shown this once" },
+      { method: "POST", path: "/api/repos/:o/:r/hooks", body: "{url, events?, secret?, github_compat?}", who: OWNER, does: "add a webhook; its secret is shown this once. github_compat: GitHub's event names, headers and fields, for receivers built for GitHub" },
       { method: "DELETE", path: "/api/repos/:o/:r/hooks/:id", who: OWNER, does: "remove it" },
       { method: "GET", path: "/api/repos/:o/:r/hooks/:id/deliveries", who: OWNER, does: "its last 20 deliveries" },
       { method: "POST", path: "/api/repos/:o/:r/hooks/:id/deliveries/:d/redeliver", who: OWNER, does: "send one again" },
