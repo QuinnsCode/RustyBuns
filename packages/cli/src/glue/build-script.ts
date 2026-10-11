@@ -40,16 +40,38 @@ export function inferStaticBuild(scripts: Record<string, string>): { pre: string
       // inline "<pm> run x" so the command doesn't depend on a package manager
       const ref = p.match(/^(?:pnpm|npm|bun|yarn)\s+(?:run\s+)?([\w:.-]+)$/)?.[1];
       if (ref && scripts[ref] && ref !== name && depth < 3) { out.push(...steps(`pre${ref}`, depth + 1), ...steps(ref, depth + 1)); continue; }
+      // a script runner (create-vue: run-p type-check "build-only {@}" --) is followed into
+      // the script that reaches vite build; its siblings (type-check) are left out
+      const via = runnerScripts(p).find((s) => s !== name && depth < 3 && steps(s, depth + 1).some(isViteBuild));
+      if (via) { out.push(...steps(`pre${via}`, depth + 1), ...steps(via, depth + 1)); continue; }
       out.push(p);
     }
     return out;
   };
   const build = steps("build");
-  const at = build.findIndex((p) => /(?:^|\s)vite\s+build\b/.test(p));
+  const at = build.findIndex(isViteBuild);
   const vite = at >= 0 ? build[at]! : "";
   const pre = [...steps("prebuild"), ...(at >= 0 ? build.slice(0, at) : [])]
     // cleans are for the app's own dist; ours is emptied by --emptyOutDir
     .filter((p) => !/^(?:rm\s+-r|rimraf\b)/.test(p) && !(/\bclean(:\w+)?\b/.test(p) && /^(pnpm|npm|bun|yarn)\b/.test(p)));
   const config = vite.match(/\s(?:--config|-c)(?:=|\s+)(["']?)([^\s"']+)\1/)?.[2] ?? null;
   return { pre, config };
+}
+
+const isViteBuild = (p: string) => /(?:^|\s)vite\s+build\b/.test(p);
+
+// The script names a run-p / run-s / npm-run-all step runs, minus flags, `{@}`-style
+// arg placeholders and everything from `--` on.
+//   run-p type-check "build-only {@}" --  ->  ["type-check", "build-only"]
+function runnerScripts(step: string): string[] {
+  const words = step.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+  if (!/^(?:run-p|run-s|npm-run-all)$/.test(words[0] ?? "")) return [];
+  const names: string[] = [];
+  for (const w of words.slice(1)) {
+    if (w === "--") break;
+    if (w.startsWith("-")) continue;
+    const name = w.replace(/^["']|["']$/g, "").split(/\s+/)[0]!;
+    if (name && !/^\{[^}]*\}$/.test(name)) names.push(name);
+  }
+  return names;
 }

@@ -307,6 +307,11 @@ test("init: a static build runs the app's prebuild steps, reads its non-default 
     .toEqual({ pre: ["node gen.js", "node icons.js"], config: "vite.app.config.ts" });
   expect(inferStaticBuild({ build: "tsc -b && vite build --config=vite.web.config.mjs" })).toEqual({ pre: ["tsc -b"], config: "vite.web.config.mjs" });
   expect(inferStaticBuild({ build: "webpack" })).toEqual({ pre: [], config: null });
+  // create-vue's stock scripts: run-p is followed into build-only, type-check is left out
+  expect(inferStaticBuild({ build: 'run-p type-check "build-only {@}" --', "build-only": "node scripts/gen.mjs && vite build", "type-check": "vue-tsc --build" }))
+    .toEqual({ pre: ["node scripts/gen.mjs"], config: null });
+  expect(inferStaticBuild({ build: "npm-run-all -s lint build:web", lint: "eslint .", "prebuild:web": "node icons.js", "build:web": "vite build -c vite.web.config.ts" }))
+    .toEqual({ pre: ["node icons.js"], config: "vite.web.config.ts" });
 
   const p = project({
     "package.json": JSON.stringify({ name: "yacht", scripts: { prebuild: "node gen-config.js", build: "vite build --config vite.app.config.ts", test: "vitest" }, dependencies: { vite: "^5", vue: "^3" } }),
