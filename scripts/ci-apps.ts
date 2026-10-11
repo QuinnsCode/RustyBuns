@@ -23,7 +23,7 @@ export const APPS: Record<string, App> = {
   "park-hide-seek":    { test: "bun test" },
   "splat-desktop":     { test: "bun test" },
   "splat-rooms":       { test: "bun test test" },
-  "splat-spray":       { test: "bun test" },
+  "splat-spray":       { test: "bun test --parallel" },
   "tscircuit-desktop": { test: "bun test", prep: "bun run native", perOs: true },
 };
 
