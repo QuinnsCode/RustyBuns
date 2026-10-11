@@ -602,6 +602,18 @@ test("sourceMaps: a prebuilt Worker uploads its .map files, and only when asked"
   expect(generateAlchemy({ ...c, worker: { ...c.worker, sourceMaps: undefined } })).not.toContain("rules:");
 });
 
+test("placement: Smart Placement on the edge, both ways through wrangler.jsonc", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], placement: { mode: "smart" } },
+    bindings: {}, targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*\n/gm, "")).placement).toEqual({ mode: "smart" });
+  expect(generateAlchemy(c)).toContain(`  placement: {"mode":"smart"},`);
+  expect(generateAlchemy({ ...c, worker: { ...c.worker, placement: undefined } })).not.toContain("placement");
+  expect(wranglerToConfig({ name: "g", placement: { mode: "smart" } }).worker!.placement).toEqual({ mode: "smart" });
+  expect(wranglerToConfig({ name: "g" }).worker!.placement).toBeUndefined();
+});
+
 test("desktopCrates: only crates that would be embedded count against cross targets", async () => {
   const { desktopCrates, shippingCrates } = await import("../src/build.ts");
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = require("node:fs");

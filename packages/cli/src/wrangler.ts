@@ -20,6 +20,7 @@ export interface WranglerJson {
   vars?: Record<string, string>;
   triggers?: { crons?: string[] };
   limits?: { cpu_ms?: number };
+  placement?: { mode?: string };
   images?: { binding: string };
   send_email?: { name: string; allowed_sender_addresses?: string[] }[];
   ratelimits?: { name: string; namespace_id: string; simple: { limit: number; period: 10 | 60 } }[];
@@ -43,7 +44,7 @@ export function parseWranglerToml(src: string): WranglerJson {
 /** Top-level keys that Rusty Buns reads. Anything else in a wrangler file is not carried into the config. */
 const HANDLED = new Set([
   "$schema", "name", "main", "compatibility_date", "compatibility_flags", "assets",
-  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "ratelimits", "ai", "queues",
+  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "ratelimits", "ai", "queues", "placement",
 ]);
 
 /** Wrangler keys (bindings, routes, per-env overrides) that `init` cannot represent yet. */
@@ -90,6 +91,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
       ...(() => { const b = inferWorkerBuild(scripts, built ? "vite build" : null).build; return b ? { build: b } : {}; })(),
       ...(w.triggers?.crons?.length ? { crons: w.triggers.crons } : {}),
       ...(w.limits?.cpu_ms ? { cpuMs: w.limits.cpu_ms } : {}),
+      ...(w.placement?.mode === "smart" ? { placement: { mode: "smart" as const } } : {}),
     },
     bindings,
     targets: {

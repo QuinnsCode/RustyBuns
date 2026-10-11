@@ -149,6 +149,9 @@
   "limits": {
     "cpu_ms": 300000
   },
+  "placement": {
+    "mode": "smart"
+  },
   "triggers": {
     "crons": [
       "0 * * * *",
