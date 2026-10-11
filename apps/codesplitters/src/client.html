@@ -224,6 +224,17 @@
   .here-list .row .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
   .here-list .btn { padding: 0 6px; font-size: 11.5px; margin: 0; }
   #here-filter { width: 100%; box-sizing: border-box; font: inherit; padding: 3px 6px; }
+  /* Activity: who changed what, newest first, one slim row each; a row jumps to its lines. */
+  .act-bar { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+  .act-bar .seg { grid-template-columns: repeat(4, auto); padding: 1px; flex: none; } .act-bar .seg button { font-size: 11.5px; padding: 2px 6px; }
+  #act-find { flex: 1; min-width: 0; box-sizing: border-box; font: inherit; font-size: 12px; padding: 2px 6px; }
+  .acts { display: grid; max-height: 360px; overflow: auto; }
+  .act { display: flex; align-items: center; gap: 5px; min-height: 22px; padding: 1px 4px; border: 0; border-radius: 4px; background: none; color: var(--muted); font: 12px/1.4 var(--sans); text-align: left; cursor: pointer; }
+  .act:hover { background: var(--select); }
+  .act svg { width: 12px; height: 12px; color: var(--who); flex: none; }
+  .act b { color: var(--fg); font-weight: 500; flex: none; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act .age { flex: none; font: 500 11px/1 var(--mono); font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; }
   .ln.priv .n { box-shadow: inset 2px 0 0 var(--faint); } .ln .ph { color: var(--faint); font-style: italic; }
   /* The crew reads private lines, blurred until hovered or edited, so a screen share doesn't show them. */
   .ln.priv .t :is(.secret, input) { transition: filter .15s; } .ln.priv:not(:hover):not(:focus-within) .t :is(.secret, input) { filter: blur(5px); }
@@ -2033,6 +2044,7 @@ const views = {
         ${r.canWrite ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
       body: `<div class="crew" id="crew"></div><div class="code" id="lines"></div>`,
       details: sec("radio", "Here now", `<p id="who-here" class="muted">just you</p><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div>`)
+        + sec("activity", "Activity", `<div class="act-bar"><div class="seg" id="act-kinds">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who"></div><div class="acts" id="acts"></div>`)
         + (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, then share it.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
         + (owner === me() && r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
         + sec("scroll-text", "Commits", `<div id="commits"></div>`)
@@ -2124,6 +2136,84 @@ const views = {
       $("#here-list").innerHTML = rows.slice(0, LISTED).map(({ c, w }) => `<div class="row">${face(c, w)}<span class="what">${c ? `${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? ` · ${esc(c.task)}` : ""}` : "looking"}</span>${c && r.canWrite ? `<button class="btn" data-lift="${esc(c.id)}" title="${mine(c) ? "let go of these lines" : "lift this claim: the lines are free again, and the agent's edits to them won't land"}">${mine(c) ? "Let go" : "Lift"}</button>` : ""}</div>`).join("")
         + (rows.length > LISTED ? `<p class="muted">and ${rows.length - LISTED} more: type to find one</p>` : "");
     };
+    // Activity: who changed what, newest first, from the socket's ops and claims alone.
+    // Built for a crowd: one author's (or run's) ops fold into one row while they keep going,
+    // only the last ACTS rows are kept, and the rail filters to people, agents, holds or a name.
+    // An agent's ops name its run when it has exactly one claim here, so "claude #12", else "claude".
+    const ACTS = 200, FOLD_MS = 8000;
+    let acts = [], actKind = "all";
+    const actor = (by) => {
+      if (!by.startsWith("agent-")) return { who: by, bot: false, key: by, name: by === me() ? "you" : "@" + by };
+      const runs = standing().filter((c) => c.bot && c.who === by);
+      return runs.length === 1 ? { who: by, bot: true, key: runs[0].id, name: nameOf(runs[0]) } : { who: by, bot: true, key: by, name: by.replace(/^agent-/, "") };
+    };
+    const logAct = (x) => { acts.unshift(x); if (acts.length > ACTS) acts.length = ACTS; };
+    const logOps = (applied) => {
+      const now = Date.now();
+      for (const a of applied) {
+        // Still going (a recent row of theirs): it folds in and comes back to the top, so agents interleaving stay one row each.
+        const who = actor(a.by), k = acts.findIndex((x) => x.kind === "edit" && x.key === who.key && now - x.last < FOLD_MS);
+        if (k > 0) acts.unshift(...acts.splice(k, 1));
+        else if (k < 0) logAct({ kind: "edit", ...who, lines: new Set(), n: { set: 0, insert: 0, delete: 0 }, at: now });
+        const e = acts[0];
+        e.lines.add(a.line); e.n[a.op.kind]++; e.last = now;
+      }
+    };
+    const logClaim = (c, on) => {
+      const who = c.bot ? { who: c.who, bot: true, key: c.id, name: nameOf(c) } : { who: c.who, bot: false, key: c.who, name: c.who === me() ? "you" : "@" + c.who };
+      logAct({ kind: on ? "hold" : "free", ...who, lines: new Set(c.lines), task: c.task, at: Date.now() });
+    };
+    // Line numbers as they stand now: "L12", "L40–52", "L3, L9–11 +2".
+    const spans = (ids, at) => {
+      const ns = [...ids].map((id) => at.get(id)).filter((n) => n !== undefined).sort((x, y) => x - y);
+      const runs = [];
+      for (const n of ns) { const last = runs.at(-1); last && n === last[1] + 1 ? (last[1] = n) : runs.push([n, n]); }
+      const t = runs.slice(0, 2).map(([x, y]) => x === y ? `L${x}` : `L${x}–${y}`).join(", ");
+      return runs.length > 2 ? `${t} +${runs.length - 2}` : t;
+    };
+    const verb = (e) => {
+      const { set, insert, delete: del } = e.n ?? {};
+      if (e.kind === "hold") return e.bot ? "took" : "held";
+      if (e.kind === "free") return e.bot ? "is done with" : "let go of";
+      if (!set && !insert) return `removed ${del} line${del > 1 ? "s" : ""}`;
+      if (!del && !insert) return e.lines.size > 1 ? "rewrote" : "edited";
+      if (!del && !set) return "added";
+      return "rewrote";
+    };
+    const shortAge = (t) => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h`; };
+    const actShown = () => {
+      const needle = $("#act-find").value.trim().toLowerCase().replace(/^@/, "");
+      return acts.filter((e) => (actKind === "all" || (actKind === "people" ? !e.bot && e.kind === "edit" : actKind === "agents" ? e.bot : !e.bot && e.kind !== "edit"))
+        && (!needle || `${e.who} ${e.name}`.toLowerCase().includes(needle)));
+    };
+    const drawActs = () => {
+      const at = new Map(doc.lines.map((l, i) => [l.id, i + 1])), shown = actShown();
+      $("#acts").innerHTML = shown.map((e) => {
+        const where = spans(e.lines, at);
+        return `<button class="act" data-act="${acts.indexOf(e)}" style="--who:${hueOf(e.bot && e.key.startsWith("run-") ? e.key : e.who)}" title="${esc(`${e.name} ${verb(e)}${where ? " " + where : ""}${e.task ? `: ${e.task}` : ""} · ${ago(e.last ?? e.at)}`)}">${glyph(e.kind === "edit" ? (e.bot ? "bot" : "user") : e.kind === "hold" ? "hand" : "lock-open")}<b>${esc(e.name)}</b><span class="what">${verb(e)}${where ? " " + where : ""}${e.task && e.kind === "hold" ? ` · ${esc(e.task)}` : ""}</span><span class="age" data-at="${e.last ?? e.at}">${shortAge(e.last ?? e.at)}</span></button>`;
+      }).join("") || `<p class="muted">${acts.length ? "Nothing matches." : "Edits and holds land here as they happen. Click one to jump to its lines."}</p>`;
+    };
+    $("#act-kinds").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-k]");
+      if (!b) return;
+      actKind = b.dataset.k;
+      for (const x of $("#act-kinds").children) x.classList.toggle("on", x === b);
+      drawActs();
+    });
+    $("#act-find").addEventListener("input", drawActs);
+    $("#acts").addEventListener("click", (e) => {
+      const x = acts[e.target.closest("[data-act]")?.dataset.act];
+      if (!x) return;
+      const els = [...box.children].filter((el) => x.lines.has(el.dataset.id));
+      if (!els.length) return toast("Those lines are gone now");
+      els[0].scrollIntoView({ block: "center" });
+      for (const el of els) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+    });
+    // Ages tick on their own; the rail redraws only when something lands.
+    const actClock = setInterval(() => {
+      if (!document.body.contains($("#acts"))) return clearInterval(actClock);
+      for (const t of $("#acts").querySelectorAll(".age")) t.textContent = shortAge(+t.dataset.at);
+    }, 1000);
     // Redraws are batched to one a frame: a crowd of agents landing at once is one repaint, not hundreds.
     let queued = null;
     const schedule = (fresh = [], lines = true) => {
@@ -2135,6 +2225,7 @@ const views = {
         const q = queued; queued = null;
         if (q.lines && viewing === null && !box.querySelector(".ln input")) draw(doc, q.fresh);
         drawCrew();
+        drawActs();
       });
     };
     // Keep your place: whatever line is at the top of the view stays put when lines land
@@ -2198,7 +2289,7 @@ const views = {
         try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = /^Slow down/.test(err.message) ? err.message : "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
       });
     };
-    draw(doc); drawCrew(); drawCommits(commits);
+    draw(doc); drawCrew(); drawActs(); drawCommits(commits);
     popover($("#hist"));
     $("#rev").addEventListener("input", async (e) => {
       const v = Number(e.target.value);
@@ -2317,6 +2408,9 @@ const views = {
       }
       if (msg.type === "presence") { people = msg.who; return schedule([], false); }
       if (msg.type === "claim" || msg.type === "unclaim") {
+        // A new claim or one ending goes on the rail; a claim following its lines as they move doesn't.
+        if (msg.type === "claim" && !claims.has(msg.claim.id)) logClaim(msg.claim, true);
+        if (msg.type === "unclaim" && claims.has(msg.id)) logClaim(claims.get(msg.id), false);
         msg.type === "claim" ? claims.set(msg.claim.id, msg.claim) : claims.delete(msg.id);
         reindex(); holdLabel();
         return schedule();
@@ -2334,6 +2428,7 @@ const views = {
       if (msg.applied[0]?.rev === doc.rev + 1) msg.applied.forEach(applyLocal);
       else if (msg.rev > doc.rev) doc = await api(`${base}/file${q}`);
       const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
+      logOps(msg.applied);
       schedule(msg.applied.map((a) => a.line));
     };
   },
