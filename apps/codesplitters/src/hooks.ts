@@ -10,13 +10,19 @@
 //   deploy.finished  a real deploy finished, either way (`deployment_status`)
 //   check_run        a check run started or finished, here or on GitHub (`check_run`, checks.ts)
 //
+// A hook made with `github_compat: true` speaks GitHub instead, so a receiver
+// built for GitHub (Jenkins, Buildkite, Argo Events, Tekton) triggers on it as
+// is: GitHub's event names in `X-GitHub-Event`, `X-GitHub-Delivery`, the
+// signature in `X-Hub-Signature-256`, and the fields those receivers read
+// (`commits`, `repository.clone_url` at our git remote, `pull_request.state`).
+//
 // Every delivery is logged, and every try is a message on the HOOKS queue
 // (Cloudflare Queues; sqlite in the desktop's own process): the first goes out
 // at once, and a failed one books the next on the queue after 1, 5, 30 and 120
 // minutes, then is given up.
 //
 //   GET    /api/repos/:o/:r/hooks                           the hooks, each with its last delivery (owner only)
-//   POST   /api/repos/:o/:r/hooks                           {url, events?, secret?}: the secret is shown this once
+//   POST   /api/repos/:o/:r/hooks                           {url, events?, secret?, github_compat?}: the secret is shown this once
 //   DELETE /api/repos/:o/:r/hooks/:id
 //   GET    /api/repos/:o/:r/hooks/:id/deliveries            the last 20
 //   POST   /api/repos/:o/:r/hooks/:id/deliveries/:d/redeliver
@@ -28,6 +34,10 @@ export type Event = (typeof EVENTS)[number];
 /** Minutes to wait after each failed try; past the last one, the delivery is given up. */
 const BACKOFF = [1, 5, 30, 120];
 const MAX_HOOKS = 10;
+/** What GitHub calls each event, for a hook in GitHub mode. */
+export const GITHUB_EVENT: Record<Event, string> = {
+  commit: "push", "branch.opened": "create", "branch.merged": "pull_request", "deploy.finished": "deployment_status", check_run: "check_run",
+};
 
 /** A message on the queue: try `id` again, as its try number `n + 1`. */
 export interface HookMessage { id: string; n: number }
@@ -42,14 +52,20 @@ export async function sign(secret: string, body: string) {
 interface Delivery { id: string; event: string; payload: string; attempts: number }
 
 /** One try: POST it and log the answer. Says how many seconds until the next try, or null when there's none. */
-async function attempt(env: Env, d: Delivery, url: string, secret: string) {
+async function attempt(env: Env, d: Delivery, url: string, secret: string, github: boolean) {
   const send = (env.HOOK_FETCH as typeof fetch | undefined) ?? fetch;
   let code = 0, response = "";
   try {
     const res = await send(url, {
       method: "POST",
       body: d.payload,
-      headers: {
+      headers: github ? {
+        "content-type": "application/json",
+        "user-agent": "GitHub-Hookshot/codeSplitters",
+        "x-github-event": d.event,
+        "x-github-delivery": d.id,
+        "x-hub-signature-256": await sign(secret, d.payload),
+      } : {
         "content-type": "application/json",
         "user-agent": "codeSplitters-Hookshot",
         "x-codesplitters-event": d.event,
@@ -72,22 +88,39 @@ async function attempt(env: Env, d: Delivery, url: string, secret: string) {
   return wait;
 }
 
+/**
+ * `data` the way GitHub would send it: the fields receivers built for GitHub read
+ * that the native payload leaves out. A commit is the one commit of its push.
+ */
+function githubShaped(event: Event, data: Record<string, any>, repository: Record<string, unknown>): Record<string, unknown> {
+  if (event === "commit") {
+    const head = data.head_commit && { ...data.head_commit, tree_id: null, distinct: true, committer: data.head_commit.author };
+    return { ...data, deleted: false, forced: false, base_ref: null, compare: null, commits: head ? [head] : [], head_commit: head ?? null };
+  }
+  if (event === "branch.opened") return { ...data, pusher_type: "user", description: null };
+  if (event === "branch.merged") {
+    const pr = data.pull_request;
+    return { ...data, pull_request: { ...pr, state: "closed", title: pr.head.ref, head: { ...pr.head, repo: repository }, base: { ...pr.base, repo: repository } } };
+  }
+  return data;
+}
+
 /** Something happened in owner/repo: log a delivery to every hook that wants it, and queue their first tries. */
 export async function emit(env: Env, owner: string, repo: string, event: Event, sender: string, data: Record<string, unknown>) {
   try {
-    const { results } = await env.DB.prepare("SELECT id, url, secret, events FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-    const hooks = (results as { id: string; url: string; secret: string; events: string }[]).filter((h) => h.events.split(",").includes(event));
+    const { results } = await env.DB.prepare("SELECT id, url, secret, events, github_compat FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+    const hooks = (results as { id: string; url: string; secret: string; events: string; github_compat: number }[]).filter((h) => h.events.split(",").includes(event));
     if (!hooks.length) return;
-    const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
-    const payload = JSON.stringify({
-      ...data,
-      repository: { name: repo, full_name: `${owner}/${repo}`, owner: { login: owner }, private: r?.visibility === "private", default_branch: "main" },
-      sender: { login: sender },
-    });
+    const r = await env.DB.prepare("SELECT visibility, artifact_remote FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+    const repository = { name: repo, full_name: `${owner}/${repo}`, owner: { login: owner }, private: r?.visibility === "private", default_branch: "main" };
+    const payload = JSON.stringify({ ...data, repository, sender: { login: sender } });
+    // GitHub's receivers fetch the sha from `clone_url`: our git remote (a private repo's wants a token).
+    const ghRepo = { ...repository, master_branch: "main", clone_url: (r?.artifact_remote as string | null) ?? null, git_url: (r?.artifact_remote as string | null) ?? null };
+    const ghPayload = hooks.some((h) => h.github_compat) ? JSON.stringify({ ...githubShaped(event, data, ghRepo), repository: ghRepo, sender: { login: sender } }) : "";
     const now = Date.now();
     const ids = hooks.map(() => crypto.randomUUID());
     await env.DB.batch(hooks.map((hook, i) => env.DB.prepare("INSERT INTO webhook_deliveries (id, hook, owner, repo, event, payload, status, next_at, at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
-      .bind(ids[i], hook.id, owner, repo, event, payload, now, now)));
+      .bind(ids[i], hook.id, owner, repo, hook.github_compat ? GITHUB_EVENT[event] : event, hook.github_compat ? ghPayload : payload, now, now)));
     await env.HOOKS.sendBatch(ids.map((id) => ({ body: { id, n: 0 } satisfies HookMessage })));
   } catch {
     // A hook never gets in the way of what happened.
@@ -103,13 +136,13 @@ export async function emit(env: Env, owner: string, repo: string, event: Event, 
 export async function deliverHooks(batch: { messages: readonly { body: HookMessage; ack(): void }[] }, env: Env) {
   await Promise.all(batch.messages.map(async (m) => {
     const { id, n } = m.body;
-    const d = await env.DB.prepare(`SELECT d.id, d.event, d.payload, d.attempts, d.next_at, h.url, h.secret FROM webhook_deliveries d
-      LEFT JOIN webhooks h ON h.id = d.hook WHERE d.id = ? AND d.status = 'pending' AND d.attempts = ?`).bind(id, n).first() as (Delivery & { next_at: number | null; url: string | null; secret: string | null }) | null;
+    const d = await env.DB.prepare(`SELECT d.id, d.event, d.payload, d.attempts, d.next_at, h.url, h.secret, h.github_compat FROM webhook_deliveries d
+      LEFT JOIN webhooks h ON h.id = d.hook WHERE d.id = ? AND d.status = 'pending' AND d.attempts = ?`).bind(id, n).first() as (Delivery & { next_at: number | null; url: string | null; secret: string | null; github_compat: number | null }) | null;
     if (d && !d.url) await env.DB.prepare("UPDATE webhook_deliveries SET status = 'failed', next_at = NULL, response = 'hook deleted' WHERE id = ?").bind(id).run();
     else if (d && d.next_at !== null) {
       const claim = await env.DB.prepare("UPDATE webhook_deliveries SET next_at = NULL WHERE id = ? AND attempts = ? AND next_at = ? AND status = 'pending'").bind(id, n, d.next_at).run();
       if (claim.meta?.changes) {
-        const wait = await attempt(env, d, d.url!, d.secret!);
+        const wait = await attempt(env, d, d.url!, d.secret!, !!d.github_compat);
         if (wait !== null) await env.HOOKS.send({ id, n: n + 1 } satisfies HookMessage, { delaySeconds: wait });
       }
     }
@@ -132,23 +165,24 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
   if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
 
   if (!id && req.method === "GET") {
-    const { results } = await env.DB.prepare(`SELECT h.id, h.url, h.events, h.created_at,
+    const { results } = await env.DB.prepare(`SELECT h.id, h.url, h.events, h.github_compat, h.created_at,
       (SELECT json_object('event', d.event, 'status', d.status, 'code', d.code, 'at', d.at) FROM webhook_deliveries d WHERE d.hook = h.id ORDER BY d.at DESC LIMIT 1) AS last
       FROM webhooks h WHERE h.owner = ? AND h.repo = ? ORDER BY h.created_at`).bind(owner, repo).all();
-    return json({ events: EVENTS, hooks: (results as any[]).map((h) => ({ ...h, events: h.events.split(","), last: h.last ? JSON.parse(h.last) : null })) });
+    return json({ events: EVENTS, hooks: (results as any[]).map((h) => ({ ...h, events: h.events.split(","), github_compat: !!h.github_compat, last: h.last ? JSON.parse(h.last) : null })) });
   }
   if (!id && req.method === "POST") {
-    const b = (await req.json().catch(() => ({}))) as { url?: string; events?: string[]; secret?: string };
+    const b = (await req.json().catch(() => ({}))) as { url?: string; events?: string[]; secret?: string; github_compat?: boolean };
     const url = checkUrl(b.url);
     if (!url) return json({ error: "url: an http(s) URL, without a password in it" }, 400);
     const events = b.events ?? [...EVENTS];
     if (!Array.isArray(events) || !events.length || events.some((e) => !EVENTS.includes(e as Event))) return json({ error: `events: some of ${EVENTS.join(", ")}` }, 400);
     if (b.secret !== undefined && (typeof b.secret !== "string" || b.secret.length < 16)) return json({ error: "secret: at least 16 characters, or leave it out for one made for you" }, 400);
+    if (b.github_compat !== undefined && typeof b.github_compat !== "boolean") return json({ error: "github_compat: true or false" }, 400);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     if ((n?.n ?? 0) >= MAX_HOOKS) return json({ error: `a repo has at most ${MAX_HOOKS} webhooks` }, 400);
-    const hook = { id: crypto.randomUUID().slice(0, 8), url, events: [...new Set(events)], secret: b.secret ?? hex(crypto.getRandomValues(new Uint8Array(24)).buffer), created_at: Date.now() };
-    await env.DB.prepare("INSERT INTO webhooks (id, owner, repo, url, secret, events, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .bind(hook.id, owner, repo, hook.url, hook.secret, hook.events.join(","), hook.created_at).run();
+    const hook = { id: crypto.randomUUID().slice(0, 8), url, events: [...new Set(events)], secret: b.secret ?? hex(crypto.getRandomValues(new Uint8Array(24)).buffer), github_compat: b.github_compat ?? false, created_at: Date.now() };
+    await env.DB.prepare("INSERT INTO webhooks (id, owner, repo, url, secret, events, github_compat, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(hook.id, owner, repo, hook.url, hook.secret, hook.events.join(","), hook.github_compat ? 1 : 0, hook.created_at).run();
     return json(hook, 201);
   }
 
