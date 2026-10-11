@@ -32,10 +32,11 @@
 
 import { begin, finish, remoteFor, stateSuffix } from "./deploy.ts";
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
-import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState } from "./deploy-keys.ts";
+import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState, type Provider } from "./deploy-keys.ts";
 import { json, type Env } from "./env.ts";
 import { preview, type Run, type Runner } from "./preview.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
+import { gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
 
 interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; again?: string; started?: number }
 
@@ -103,6 +104,7 @@ export function hider(secrets: string[], out: (s: string) => void) {
 /** The slice of a Durable Object's state we use. */
 export interface RunnerState {
   container?: ContainerApi;
+  exports?: GateExports;
   storage: {
     get<T>(k: string): Promise<T | undefined>; put(k: string, v: unknown): Promise<void>; setAlarm(at: number): Promise<void>;
     list<T>(o: { prefix: string }): Promise<Map<string, T>>;
@@ -175,7 +177,11 @@ export class DeployRunner {
       if (!Object.keys(keys).length) throw new Error("every deploy key was removed");
       const remote = await remoteFor(this.env, owner, repo);
       if (!remote) throw new Error("this repo has no git remote yet");
-      c.start({ env: { ...keyEnv(keys), CI: "1" }, enableInternet: true });
+      // Only the clone, the registries and the APIs of the providers it holds keys for (#681, src/egress.ts).
+      // Hetzner's deploy reaches its server over SSH, so that one keeps other ports open.
+      const hosts = hostList([hostOf(remote)], REGISTRIES, ...Object.keys(keys).map((p) => PROVIDER_HOSTS[p as Provider]));
+      await gate(c, this.ctx.exports, hosts);
+      c.start({ env: { ...keyEnv(keys), CI: "1" }, enableInternet: !!keys.hetzner });
       const secrets = Object.values(keys).map((k) => k.token);
       const runner: Runner = {
         workdir: `/work/${run.id}`,

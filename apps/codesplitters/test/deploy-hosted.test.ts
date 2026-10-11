@@ -7,6 +7,7 @@ import { seal, sealState, unseal, unsealState } from "../src/deploy-keys.ts";
 import { DeployRunner, hider, readExec } from "../src/deploy-runner.ts";
 import { review, textDiff } from "../src/deploy-review.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
+import { gated, gateExports } from "./fake-gate.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the deploy image
 import { exec, state } from "../deploy-sandbox/server.mjs";
 
@@ -40,7 +41,7 @@ const origin = "http://codesplitters.local";
 
 /** A deploy container: its server answers each command like deploy.test.ts's fake machine, echoing the token once to check it's hidden. */
 function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
-  const seen = { env: [] as Record<string, string>[], ran: [] as string[], limits: [] as number[], destroyed: 0, stacks: [] as string[],
+  const seen = { env: [] as Record<string, string>[], lists: [] as string[][], internet: [] as (boolean | undefined)[], ran: [] as string[], limits: [] as number[], destroyed: 0, stacks: [] as string[],
     /** Set, the deploy streams its output in two pieces with this between them, as a real one does. */
     gate: null as Promise<void> | null,
     /** The commit the clone lands on: the remote's tip, once hosted() knows the app. */
@@ -49,9 +50,9 @@ function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
     let running = false;
     // Its disk: .alchemy/state, gone when it's destroyed.
     let files: Record<string, string> = {};
-    return {
+    return gated<ContainerApi>({
       get running() { return running; },
-      start(o) { running = true; seen.env.push(o?.env ?? {}); },
+      start(o) { running = true; seen.env.push(o?.env ?? {}); seen.internet.push(o?.enableInternet); },
       async destroy() { running = false; seen.destroyed++; files = {}; },
       getTcpPort: () => ({
         async fetch(u, init) {
@@ -91,7 +92,7 @@ function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
           return Response.json({ code: 0, out });
         },
       }),
-    };
+    }, seen.lists).container;
   };
   return { seen, make };
 }
@@ -106,6 +107,7 @@ function runnerNamespace(env: any, make: () => ContainerApi, budgetMs?: number) 
         const data = new Map<string, unknown>();
         const ctx = {
           container: make(),
+          exports: gateExports,
           storage: {
             get: async (k: string) => structuredClone(data.get(k)) as any,
             put: async (k: string, v: unknown) => { data.set(k, structuredClone(v)); },
@@ -231,6 +233,11 @@ describe("a hosted deploy", () => {
     expect((await send("ryan-quinn", D, {})).status).toBe(202);
     const d = await settle(call);
     expect(seen.env).toEqual([{ CLOUDFLARE_API_TOKEN: TOKEN, CLOUDFLARE_ACCOUNT_ID: ACCOUNT, CI: "1" }]);
+    // The internet off, and through the gate only the clone, the registries and Cloudflare's API (#681).
+    expect(seen.internet).toEqual([false]);
+    expect(seen.lists).toHaveLength(1);
+    expect(seen.lists[0]).toEqual(expect.arrayContaining(["registry.npmjs.org", "api.cloudflare.com"]));
+    expect(seen.lists[0]!.some((h) => /railway|hetzner/.test(h))).toBe(false);
     expect(seen.destroyed).toBe(1);
     expect(seen.ran.find((l) => l.includes("rustybuns deploy"))).toContain("--stage prod");
     expect(d.run.steps.map((s: any) => s.status)).toEqual(["done", "done", "done", "done"]);
@@ -331,6 +338,9 @@ describe("more providers", () => {
     await send("ryan-quinn", D, {});
     const d = await settle(call);
     expect(seen.env).toEqual([{ CLOUDFLARE_API_TOKEN: TOKEN, CLOUDFLARE_ACCOUNT_ID: ACCOUNT, RAILWAY_API_TOKEN: RAIL, HCLOUD_TOKEN: HET, CI: "1" }]);
+    // Hetzner's deploy SSHes to its server, so other ports stay open; HTTP and HTTPS still go through the gate.
+    expect(seen.internet).toEqual([true]);
+    expect(seen.lists[0]).toEqual(expect.arrayContaining(["api.cloudflare.com", "backboard.railway.com", "api.hetzner.cloud"]));
     expect(d.history[0]).toMatchObject({ status: "done", key_last4: "…WXYZ, railway …RAIL, hetzner …HETZ" });
     const all = JSON.stringify(d);
     for (const t of [TOKEN, RAIL, HET]) expect(all).not.toContain(t);
@@ -447,7 +457,7 @@ test("an agent container never gets the deploy secrets", async () => {
   let started: Record<string, string> | undefined;
   const c: ContainerApi = { running: false, start(o) { started = o?.env; }, async destroy() {}, getTcpPort: () => ({ fetch: async () => Response.json({ code: 0, out: "", text: "" }) }) };
   const env: any = { DEPLOY_SECRETS_KEY: SECRETS, ANTHROPIC_API_KEY: "sk-a" };
-  await new AgentSandbox({ container: c }, env).fetch(new Request("http://sandbox/run", { method: "POST", body: JSON.stringify({ cmd: { bin: "claude", args: [] }, path: "a.js", text: "" }) }));
+  await new AgentSandbox(gated(c), env).fetch(new Request("http://sandbox/run", { method: "POST", body: JSON.stringify({ cmd: { bin: "claude", args: [] }, path: "a.js", text: "" }) }));
   expect(started).toEqual({ ANTHROPIC_API_KEY: "sk-a" });
 });
 

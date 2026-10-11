@@ -7,6 +7,7 @@
 
 import type { Sandbox } from "./agent-run.ts";
 import { json, type Env } from "./env.ts";
+import { gate, GITHUB_HOSTS, HARNESS_HOSTS, hostList, hostOf, REGISTRIES, type GateExports, type Interceptor } from "./egress.ts";
 
 /** The CLIs' logins, passed into the container from the Worker's secrets when set. */
 export const LOGINS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"] as const;
@@ -21,7 +22,7 @@ const KEYS: Record<string, readonly (typeof LOGINS)[number][]> = {
 };
 
 /** The slice of the Workers container API we use (`ctx.container` on a container-backed DO). */
-export interface ContainerApi {
+export interface ContainerApi extends Interceptor {
   readonly running: boolean;
   start(opts?: { env?: Record<string, string>; enableInternet?: boolean }): void;
   destroy(reason?: unknown): Promise<void>;
@@ -42,8 +43,22 @@ export async function portFetch(c: ContainerApi, path: string, body: string): Pr
   }
 }
 
+/**
+ * Where a run's container may go (#681, src/egress.ts): its CLI's LLM API, GitHub
+ * when it has a GH_TOKEN, and with a clone (the doctor's runs) the git remote, the
+ * registries and any the repo's .npmrc names (`hosts`, from src/deps.ts). A cut's
+ * tests get none.
+ */
+export function sandboxHosts(body: { cmd?: { bin?: string; env?: Record<string, string> }; remote?: string; hosts?: string[] }): string[] {
+  return hostList(
+    HARNESS_HOSTS[body.cmd?.bin ?? ""] ?? [],
+    body.cmd?.env?.GH_TOKEN ? GITHUB_HOSTS : [],
+    body.remote ? [hostOf(body.remote), ...REGISTRIES, ...(body.hosts ?? [])] : [],
+  );
+}
+
 export class AgentSandbox {
-  constructor(private ctx: { container?: ContainerApi }, private env: Env) {}
+  constructor(private ctx: { container?: ContainerApi; exports?: GateExports }, private env: Env) {}
 
   async fetch(req: Request): Promise<Response> {
     const c = this.ctx.container;
@@ -56,10 +71,11 @@ export class AgentSandbox {
     const body = await req.text();
     if (!c.running) {
       const env: Record<string, string> = {};
-      let bin = "";
-      try { bin = String(JSON.parse(body)?.cmd?.bin ?? ""); } catch {}
-      for (const k of KEYS[bin] ?? []) if (this.env[k]) env[k] = this.env[k]!;
-      c.start({ env, enableInternet: true });
+      let parsed: Parameters<typeof sandboxHosts>[0] = {};
+      try { parsed = JSON.parse(body) ?? {}; } catch {}
+      for (const k of KEYS[String(parsed.cmd?.bin ?? "")] ?? []) if (this.env[k]) env[k] = this.env[k]!;
+      try { await gate(c, this.ctx.exports, sandboxHosts(parsed)); } catch (e) { return json({ error: (e as Error).message }, 503); }
+      c.start({ env, enableInternet: false });
     }
     try {
       // /run: an agent on a file; /test: bun test on a cut's files (cuts.ts); /deps-test and /deps-fix: the dependency doctor's runs (deps.ts).

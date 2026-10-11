@@ -2,6 +2,7 @@ import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { AgentSandbox, LOGINS, type ContainerApi } from "../src/sandbox.ts";
+import { gated } from "./fake-gate.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { run, test as testCut } from "../sandbox/server.mjs";
 
@@ -54,7 +55,7 @@ describe("AgentSandbox", () => {
   test("starts the container, waits for its server, and stops it after the run", async () => {
     const { c, seen } = fakeContainer(run, 2);
     const env: any = { ANTHROPIC_API_KEY: "sk-a", OPENAI_API_KEY: "", GITHUB_TOKEN: "not-for-agents" };
-    const res = await new AgentSandbox({ container: c }, env).fetch(new Request("http://sandbox/run", {
+    const res = await new AgentSandbox(gated(c), env).fetch(new Request("http://sandbox/run", {
       method: "POST", body: JSON.stringify({ cmd: { bin: "sh", args: ["-c", "echo B >> a.js"] }, path: "a.js", text: "A\n" }),
     }));
     expect(await res.json()).toEqual({ code: 0, out: "", text: "A\nB\n" });
@@ -67,7 +68,7 @@ describe("AgentSandbox", () => {
     const env: any = { ANTHROPIC_API_KEY: "sk-a", CLAUDE_CODE_OAUTH_TOKEN: "oat", OPENAI_API_KEY: "sk-o", CODEX_API_KEY: "" };
     const started = async (bin: string) => {
       const { c, seen } = fakeContainer(async () => ({ code: 0, out: "", text: "" }));
-      await new AgentSandbox({ container: c }, env).fetch(new Request("http://sandbox/run", { method: "POST", body: JSON.stringify({ cmd: { bin, args: [] }, path: "a.js", text: "" }) }));
+      await new AgentSandbox(gated(c), env).fetch(new Request("http://sandbox/run", { method: "POST", body: JSON.stringify({ cmd: { bin, args: [] }, path: "a.js", text: "" }) }));
       return seen.started?.env;
     };
     expect(await started("claude")).toEqual({ ANTHROPIC_API_KEY: "sk-a", CLAUDE_CODE_OAUTH_TOKEN: "oat" });
@@ -87,7 +88,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
       get: () => {
         const { c, seen } = fakeContainer(async (b) => { runs.push(b); return server(b); });
         containers.push(seen);
-        return new AgentSandbox({ container: c }, booted.env);
+        return new AgentSandbox(gated(c), booted.env);
       },
     };
     // Each handle's session cookie, from signing up and claiming it.

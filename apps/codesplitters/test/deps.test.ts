@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { bump, localFixer, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, whatsNew, DEFAULTS, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
+import { bump, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, whatsNew, DEFAULTS, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
+import { gated } from "./fake-gate.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { depsFix as containerFix, depsTest as containerTest } from "../sandbox/server.mjs";
 
@@ -428,6 +429,8 @@ registry = "https://mirror.example/"
   expect(registryUrl([home, repo], "@acme/ui")).toEqual({ url: "https://npm.acme.dev/api/@acme%2fui", token: "s3cret" });
   expect(registryUrl([home, repo], "mitt")).toEqual({ url: "https://mirror.example/mitt" });
   expect(registryUrl([home], "mitt")).toEqual({ url: "https://registry.npmjs.org/mitt", token: "npm_x" });
+  // Its registries are what a container's install may reach besides npm's (#681).
+  expect(npmrcHosts([home, repo])).toEqual(["mirror.example", "npm.acme.dev"]);
 });
 
 test("the lockfile says which package manager, unless packageManager does", () => {
@@ -457,7 +460,7 @@ test("workspaces are checked too, and the lockfile goes on the branch with them"
   // mitt's update is in range; kleur's isn't; `lab` is the repo's own package, never the registry's.
   expect(report.updates.map((u: any) => [u.path, u.name, u.to])).toEqual([["apps/web/package.json", "kleur", "^4.1.5"]]);
   expect(report.lock).toBe("pnpm-lock.yaml");
-  expect(runs).toEqual([{ files: ["apps/web/package.json"], opts: { pm: "pnpm", lock: "pnpm-lock.yaml", test: false } }]);
+  expect(runs).toEqual([{ files: ["apps/web/package.json"], opts: { pm: "pnpm", lock: "pnpm-lock.yaml", test: false, hosts: [] } }]);
   const lock = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=pnpm-lock.yaml&branch=${report.branch}`)).json();
   expect(lock.lines.map((l: any) => l.text)).toEqual(["lockfileVersion: '9.0'", `apps/web/package.json: {"kleur":"^4.1.5","lab":"^1.0.0"}`, ""]);
   expect(lock.lines[0].by).toBe("ryan");   // an unchanged line keeps its author
@@ -515,7 +518,7 @@ describe("on Cloudflare, tests run in an AGENT_SANDBOX container", () => {
             return Response.json(server(path, body));
           } }),
         };
-        return new AgentSandbox({ container: c }, call.env);
+        return new AgentSandbox(gated(c), call.env);
       },
     };
     return { call, send, seen };

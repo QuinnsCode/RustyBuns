@@ -51,6 +51,7 @@ export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
 export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
+export { EgressGate } from "./egress.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   // A visitor's dig that has expired is gone, swept or not.

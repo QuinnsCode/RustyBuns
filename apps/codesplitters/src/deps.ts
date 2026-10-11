@@ -145,6 +145,10 @@ export function registryUrl(rcs: Npmrc[], name: string): { url: string; token?: 
   return { url: base + name.replace("/", "%2f"), ...(host ? { token: tokens[host] } : {}) };
 }
 
+/** The registry hosts .npmrc files name, which a container's install has to reach (#681). */
+export const npmrcHosts = (rcs: Npmrc[]): string[] =>
+  [...new Set(rcs.flatMap((rc) => [rc.registry, ...Object.values(rc.scopes)]).map((u) => u && URL.canParse(u) ? new URL(u).hostname : "").filter(Boolean))];
+
 export const npmrcRegistry = (rcs: Npmrc[]): Registry => async (name) => {
   const { url, token } = registryUrl(rcs, name);
   const res = await fetch(url, { headers: { accept: "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
@@ -180,14 +184,14 @@ export function packageManager(top: string[], pkg: Record<string, any>): { pm: P
  * is regenerated, install scripts off. ok: it all passed (or there is no test
  * script). `lock` is the lockfile afterwards, when it's text.
  */
-export type Tester = (remote: string, files: Record<string, string>, opts: { pm: PM; lock: string | null; test: boolean }) => Promise<{ ok: boolean; out: string; lock?: string }>;
+export type Tester = (remote: string, files: Record<string, string>, opts: { pm: PM; lock: string | null; test: boolean; hosts?: string[] }) => Promise<{ ok: boolean; out: string; lock?: string }>;
 
 /**
  * One update for a coding agent to make work: the clone has `files` swapped in
  * and fails its tests with `out`. With `until` (the cron's deadline), a try only
  * starts if there's room for one as slow as the slowest so far.
  */
-export interface FixJob { remote: string; files: Record<string, string>; pm: PM; update: Update; out: string; harness: Harness; tries: number; until?: number }
+export interface FixJob { remote: string; files: Record<string, string>; pm: PM; update: Update; out: string; harness: Harness; tries: number; until?: number; hosts?: string[] }
 
 /** A file the fix changed: its text at the commit cloned (null: new) and after. */
 export interface Edit { path: string; before: string | null; after: string }
@@ -447,9 +451,9 @@ const onDesktop = (env: Env) => typeof Bun !== "undefined" && !env.BETTER_AUTH_S
 const installerFor = (env: Env): Tester | null => (env.DEPS_TESTER as Tester | undefined) ?? (onDesktop(env) ? localTester() : null);
 
 /** The same run in a container of its own (sandbox/server.mjs, POST /deps-test), torn down after. */
-export const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester => async (remote, files, { pm, lock, test }) => {
+export const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester => async (remote, files, { pm, lock, test, hosts }) => {
   const stub = ns.get(ns.idFromName(crypto.randomUUID()));
-  const res = await stub.fetch(new Request("http://sandbox/deps-test", { method: "POST", body: JSON.stringify({ remote, files, pm, lock, test }) }));
+  const res = await stub.fetch(new Request("http://sandbox/deps-test", { method: "POST", body: JSON.stringify({ remote, files, pm, lock, test, hosts }) }));
   if (!res.ok) return { ok: false, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(remote, "<remote>")}` };
   return (await res.json()) as { ok: boolean; out: string; lock?: string };
 };
@@ -470,7 +474,7 @@ const testerFor = (env: Env, s: Settings, owner: string): Tester | null => s.run
 export const containerFixer = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Fixer => async (job) => {
   const stub = ns.get(ns.idFromName(crypto.randomUUID()));
   const cmd = harnessCommand(job.harness, fixPrompt(job.update, job.tries));
-  const body = { cmd, remote: job.remote, files: job.files, pm: job.pm, name: job.update.name, out: job.out, tries: job.tries, until: job.until };
+  const body = { cmd, remote: job.remote, files: job.files, pm: job.pm, name: job.update.name, out: job.out, tries: job.tries, until: job.until, hosts: job.hosts };
   const res = await stub.fetch(new Request("http://sandbox/deps-fix", { method: "POST", body: JSON.stringify(body) }));
   if (!res.ok) return { ok: false, tries: 0, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(job.remote, "<remote>")}`, edits: [] };
   return (await res.json()) as Awaited<ReturnType<Fixer>>;
@@ -594,9 +598,12 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   const { manifests, top, read, base, fileQ } = repoFiles;
 
   // The registry the repo's .npmrc names, with the owner's tokens on the desktop. A test's fake registry wins.
+  // Its hosts are what a container's install may reach besides npm's (#681).
+  let hosts: string[] = [];
   if (registry === npmRegistry) {
-    const rcs = [await homeNpmrc(env), top.includes(".npmrc") ? parseNpmrc((await read(".npmrc"))?.lines.map((l) => l.text).join("\n") ?? "") : null];
-    registry = npmrcRegistry(rcs.filter((x): x is Npmrc => !!x));
+    const rcs = [await homeNpmrc(env), top.includes(".npmrc") ? parseNpmrc((await read(".npmrc"))?.lines.map((l) => l.text).join("\n") ?? "") : null].filter((x): x is Npmrc => !!x);
+    registry = npmrcRegistry(rcs);
+    hosts = npmrcHosts(rcs);
   }
   const asked = new Map<string, ReturnType<Registry>>();
   const once: Registry = (name) => { if (!asked.has(name)) asked.set(name, registry(name)); return asked.get(name)!; };
@@ -649,7 +656,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
       const tryWith = async (us: Update[]) => {
         if (deadline && Date.now() + slowest > deadline) { short = true; return null; }
         const t0 = Date.now();
-        const t = await tester(r, filesFor(us), { pm, lock, test: true });
+        const t = await tester(r, filesFor(us), { pm, lock, test: true, hosts });
         slowest = Math.max(slowest, Date.now() - t0);
         tried.set(key(us), t);
         return t;
@@ -673,7 +680,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
       for (const u of fixer ? updates.filter((u) => u.status === "broke") : []) {
         const taken = updates.filter((x) => x === u || x.status === "kept" || x.status === "fixed");
         const files = { ...Object.fromEntries(edits.map((e) => [e.path, e.after])), ...filesFor(taken) };
-        const f = await fixer!({ remote: r, files, pm, update: u, out: u.out ?? "", harness: s.fix_with!, tries: s.fix_tries, ...(deadline ? { until: deadline } : {}) });
+        const f = await fixer!({ remote: r, files, pm, update: u, out: u.out ?? "", harness: s.fix_with!, tries: s.fix_tries, hosts, ...(deadline ? { until: deadline } : {}) });
         const by = `agent-${s.fix_with}`;
         if (f.ok) {
           for (const e of f.edits) {
@@ -696,7 +703,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   else if (lock && !installer && !tried.has(key(take))) lockNote(`isn't updated here: run \`${pm} install\` on the branch, or check from the desktop app`);
   else if (lock) {
     const r = await remoteFor();
-    const t = tried.get(key(take)) ?? (r ? await installer!(r, filesFor(take), { pm, lock, test: false }) : null);
+    const t = tried.get(key(take)) ?? (r ? await installer!(r, filesFor(take), { pm, lock, test: false, hosts }) : null);
     if (t?.ok && t.lock !== undefined) locked = t.lock;
     else lockNote(`couldn't be regenerated${t ? `: ${tail(t.out).slice(-300)}` : ": no git remote"}`);
   }
