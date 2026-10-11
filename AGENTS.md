@@ -18,6 +18,12 @@ So locally:
   rerun just its test locally.
 - Don't kick off native builds (`build:native`, cargo) or `desktop-drop.yml` unless the change needs it.
 
+## Docs heal themselves
+
+`bun run docs` fixes the README's version banner and examples table (a row per `apps/*`) and checks
+every relative link in the root docs. CI runs `bun run docs --check`. If it fails, run `bun run docs`,
+then rewrite any row it added in your own words before you commit.
+
 ## Secrets and pushes
 
 Secret values live in 1Password and resolve through varlock at deploy time, behind the owner's
