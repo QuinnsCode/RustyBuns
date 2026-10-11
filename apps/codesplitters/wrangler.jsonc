@@ -92,6 +92,10 @@
         "class_name": "GameRoom"
       },
       {
+        "name": "SEARCH",
+        "class_name": "RepoSearch"
+      },
+      {
         "name": "AGENT_SANDBOX",
         "class_name": "AgentSandbox"
       },
@@ -119,6 +123,12 @@
       "tag": "v3",
       "new_sqlite_classes": [
         "AgentSandbox"
+      ]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": [
+        "RepoSearch"
       ]
     }
   ],

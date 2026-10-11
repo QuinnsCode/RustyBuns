@@ -5,13 +5,14 @@ import { LocalArtifacts, applyD1Migrations, d1, durableObject, gitHttp, installC
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import worker, { FileDurableObject, GameRoom } from "./worker.ts";
+import worker, { FileDurableObject, GameRoom, RepoSearch } from "./worker.ts";
 
 export async function local(extra: Record<string, unknown> = {}) {
   installCloudflareGlobals();
   const env: any = { DB: d1(":memory:"), ...extra };
   env.FILES = durableObject(FileDurableObject as any, env);
   env.GAMES = durableObject(GameRoom as any, env);
+  env.SEARCH = durableObject(RepoSearch as any, env);
   // Webhook tries, consumed in-process as the desktop host does.
   env.HOOKS = queue(":memory:", "codesplitters-hooks");
   const stopHooks = env.HOOKS.consume((batch: any) => worker.queue(batch, env));

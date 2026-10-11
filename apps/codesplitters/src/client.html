@@ -160,18 +160,66 @@
   .flow .failed { color: var(--del-fg); } .flow .failed .dot { border-color: var(--del-fg); background: var(--del-fg); color: #fff; }
   .flow .skipped .dot { border-style: dashed; opacity: .5; }
   @keyframes pulse { 50% { box-shadow: 0 0 0 4px var(--accent-soft); } }
+  /* A merge conflict, one card each: base, main and the branch with their changed words marked, then the picks. */
+  .sec .commit .clash { grid-column: 2; border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin: 6px 0; background: var(--bg); font-size: 12px; min-width: 0; }
+  .merge-page .sec .commit .clash { grid-column: 1 / -1; }
+  .clash.settled { border-color: var(--accent); }
+  .clash .cl-h { display: flex; gap: 6px; align-items: center; white-space: nowrap; min-width: 0; overflow: hidden; margin-bottom: 4px; }
+  .clash .cl-h code { overflow: hidden; text-overflow: ellipsis; min-width: 3em; }
+  .clash .cl-h .cl-what { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .clash .cl-h .cl-state { margin-left: auto; font: 500 11px var(--mono); color: var(--muted); }
+  .clash.settled .cl-h .cl-state { color: var(--accent); }
+  .clash .cl-side { display: grid; grid-template-columns: 56px 1fr; gap: 6px; align-items: start; padding: 1px 0; }
+  .clash .cl-who { font: 500 11px/18px var(--mono); text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  .clash .cl-main .cl-who { color: #1f6feb; } .clash .cl-branch .cl-who { color: var(--accent); }
+  .clash code.pre { white-space: pre-wrap; word-break: break-word; display: block; }
+  .clash mark { background: var(--accent-soft); color: inherit; border-radius: 2px; box-shadow: inset 0 -1px var(--accent); }
+  .clash .cl-main mark { background: #e7f0ff; box-shadow: inset 0 -1px #1f6feb; }
+  .clash .cl-ctx code { color: var(--faint); }
+  .clash .cl-picks { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; align-items: center; }
+  .clash .cl-picks .btn { white-space: nowrap; padding: 2px 8px; font-size: 12px; }
+  .clash .cl-picks .btn[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--grain), var(--accent-soft); }
+  .clash .cl-picks select { font-size: 12px; padding: 1px 4px; }
+  .clash .cl-out { margin-top: 6px; } .clash .cl-out[hidden] { display: none; }
+  .clash .cl-out textarea { width: 100%; box-sizing: border-box; font: 12px/1.5 var(--mono); min-height: 3.2em; max-height: 24em; resize: vertical; field-sizing: content; }
   .sec .commit { display: grid; grid-template-columns: auto 1fr; gap: 0 6px; padding: 3px 0; } .sec .commit .muted { grid-column: 2; font-size: 12px; } .sec .commit code.pre { white-space: pre-wrap; display: inline-block; vertical-align: top; }
   .status { display: flex; align-items: center; gap: 14px; flex: none; height: 24px; padding: 0 12px; background: var(--fg); color: #e6e6e6; font: 400 12px var(--mono); white-space: nowrap; overflow: hidden; }
   .status span { display: inline-flex; align-items: center; gap: 4px; } .status svg.lucide { width: 13px; height: 13px; vertical-align: 0; }
   .status .grow { flex: 1; }
   .status .diffstat .plus { color: var(--faint); }
+  /* Sheets: the repos you were in, as tabs along the bottom like a workbook's. The one you're on
+     is white with an orange edge; click it again for the wire map of its folders. */
+  .sheets { display: flex; align-items: stretch; flex: none; height: 28px; background: var(--canvas); border-top: 1px solid var(--border); padding: 0 6px; overflow-x: auto; scrollbar-width: none; }
+  .sheets::-webkit-scrollbar { display: none; }
+  .sheet { display: flex; align-items: center; gap: 6px; max-width: 200px; padding: 0 6px 0 10px; margin-top: -1px; font: 400 12.5px var(--sans); color: var(--muted); text-decoration: none; white-space: nowrap; border: 1px solid transparent; border-top: 0; border-radius: 0 0 5px 5px; cursor: pointer; }
+  .sheet:hover { color: var(--fg); background: var(--grain), var(--paper); border-color: var(--border-2); }
+  .sheet.on { color: var(--fg); background: var(--bg); border-color: var(--border-2); box-shadow: inset 0 -2px var(--accent); font-weight: 500; }
+  .sheet .nm { overflow: hidden; text-overflow: ellipsis; }
+  .sheet .x { display: inline-flex; padding: 2px; border-radius: 3px; color: var(--faint); visibility: hidden; }
+  .sheet:hover .x, .sheet.on .x { visibility: visible; } .sheet .x:hover { color: var(--fg); background: var(--select); }
+  .sheet .x svg.lucide { width: 12px; height: 12px; }
+  .sheets .add { display: flex; align-items: center; padding: 0 8px; color: var(--muted); background: none; border: 0; cursor: pointer; } .sheets .add:hover { color: var(--fg); }
+  /* The wire map: the repo's top folders left to right, and each folder you open
+     rising out of it as a column, wired to its files and folders. */
+  .wiremap { position: fixed; left: 8px; right: 8px; z-index: 30; max-height: 72vh; display: flex; flex-direction: column; background: var(--grain), var(--paper); border: 1px solid var(--border-2); border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.12); }
+  .wiremap .wm-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--border); }
+  .wiremap .wm-scroll { overflow: auto; min-height: 0; }
+  .wm-stage { position: relative; padding: 16px; }
+  .wm-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .wm-wires path { fill: none; stroke: var(--border-2); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  .wm-wires path.hot { stroke: var(--accent); stroke-width: 1.6; }
+  .wm-root { display: flex; gap: 8px; width: max-content; }
+  .wm-col { position: absolute; display: flex; flex-direction: column; gap: 3px; max-height: 44vh; overflow-y: auto; padding: 2px 4px 2px 0; }
+  .wm-item { display: inline-flex; align-items: center; gap: 6px; font: 400 12.5px var(--mono); color: var(--fg); white-space: nowrap; background: var(--bg); border: 1px solid var(--border-2); border-radius: 5px; padding: 4px 8px; cursor: pointer; }
+  .wm-item:hover { border-color: #a8a8a8; background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); }
+  .wm-item.dir svg.lucide { color: var(--muted); } .wm-item.on { border-color: var(--accent); } .wm-item.on svg.lucide { color: var(--accent); }
   @media (max-width: 1199px) {
     body.ide-mode { height: auto; overflow: visible; display: block; } body.ide-mode main { display: block; }
     .wb { grid-template-columns: 230px minmax(0, 1fr); } .wb > * { overflow: visible; }
     .explorer { grid-row: span 2; } .editor { overflow: visible; } .editor .scroll { overflow-x: auto; }
     .details { border-left: 0; border-top: 1px solid var(--border); grid-column: 2; }
     .dgrip, .drail .dw { display: none; } .drail { position: static; }
-    .status { position: sticky; bottom: 0; }
+    .status { position: sticky; bottom: 0; } .sheets { position: sticky; bottom: 24px; z-index: 5; }
   }
   .box { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; background: var(--bg); }
   .box > .bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; background: var(--canvas); border-bottom: 1px solid var(--border); font-size: 13px; }
@@ -652,9 +700,9 @@
     .jump { min-width: 0; flex: 1; } .jump span { display: none; } .ln { grid-template-columns: 44px minmax(0, 1fr); } .ln .by { display: none; }
     .wrap { padding: 0 16px; } .top { padding: 10px 16px; } .hero .wrap { padding-top: 40px; }
   }
-  /* Phones: the header keeps its icons and the handle, and drops the ⌘K hint and Play's label. */
+  /* Phones: the header keeps its icons and the handle, and drops the ⌘K hint, Play's label and the wordmark beside the logo. */
   @media (max-width: 480px) {
-    .top { gap: 6px; } #who { gap: 2px; } .top .btn.ghost { padding: 7px 6px 6px; }
+    .top { gap: 6px; } #who { gap: 2px; } .top .btn.ghost { padding: 7px 6px 6px; } .brand { font-size: 0; gap: 0; }
     .jump { flex: none; padding: 6px 7px; } .jump kbd { display: none; } #topplay { font-size: 0; gap: 0; }
   }
 </style>
@@ -1349,10 +1397,128 @@ function mountExplorer(el, key, load, href, current) {
 /** A repo or level page: header, then explorer | editor | details, then the status bar. */
 function workbench(head, { tab, bar, body, details, status }) {
   document.body.classList.add("ide-mode");
-  queueMicrotask(dock);
+  queueMicrotask(dock); queueMicrotask(sheets);
   return `${head}<div class="wb"><aside class="explorer"><div class="label pad">Explorer</div><nav class="tree" id="tree"></nav></aside>
     <section class="editor">${tab ? `<div class="tabs"><span class="tab">${tab}</span></div>` : ""}<div class="crumbbar">${bar}</div><div class="scroll">${body}</div></section>
-    <aside class="details">${details}</aside></div><footer class="status">${status}</footer>`;
+    <aside class="details">${details}</aside></div><nav class="sheets" id="sheets" aria-label="Recent repos"></nav><footer class="status">${status}</footer>`;
+}
+// ---- sheets: the repos you were in, as tabs along the bottom -------------------------
+/** This browser's recent repos, in the order they were first opened, each with the page you were last on. */
+const SHEETS_MAX = 12;
+const sheetList = () => { try { const a = JSON.parse(localStorage.getItem("cs_sheets") ?? "[]"); return Array.isArray(a) ? a : []; } catch { return []; } };
+const saveSheets = (a) => { try { localStorage.setItem("cs_sheets", JSON.stringify(a)); } catch {} };
+/** Draw the tabs, putting the repo you're in among them (a new one at the end, like a new sheet, so the others never move). */
+function sheets() {
+  const el = $("#sheets"); if (!el) return;
+  const here = ctx.view === "r" || ctx.view === "f" ? ctx : null;
+  const same = (s) => here && s.owner === here.owner && s.repo === here.repo;
+  let list = sheetList();
+  if (here) {
+    const s = list.find(same);
+    if (s) s.hash = location.hash; else list.push({ owner: here.owner, repo: here.repo, hash: location.hash });
+    // Over the cap, the oldest tab you aren't on goes.
+    while (list.length > SHEETS_MAX) list.splice(list.findIndex((x) => !same(x)), 1);
+    saveSheets(list);
+  }
+  el.innerHTML = list.map((s, i) => `<a class="sheet${same(s) ? " on" : ""}" href="${esc(s.hash)}" data-i="${i}" title="${esc(s.owner)}/${esc(s.repo)}${same(s) ? ": click for the wire map" : ""}">${icon(same(s) ? "network" : "book-marked")}<span class="nm">${esc(s.repo)}</span><span class="x" data-x="${i}" title="close tab">${icon("x")}</span></a>`).join("")
+    + `<button class="add" type="button" title="open a repo (⌘K)">${icon("plus")}</button>`;
+  icons();
+  el.querySelector(".sheet.on")?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  el.onclick = (e) => {
+    if (e.target.closest(".add")) { e.preventDefault(); return $("#jump").click(); }
+    const x = e.target.closest("[data-x]");
+    if (x) {
+      e.preventDefault();
+      const i = +x.dataset.x, gone = list.splice(i, 1)[0]; saveSheets(list);
+      // Closing the tab you're on moves you to its neighbour, as a workbook does.
+      if (same(gone)) { $("#wiremap")?.shut(); location.hash = (list[i] ?? list[i - 1])?.hash ?? "#/"; } else sheets();
+      return;
+    }
+    const a = e.target.closest(".sheet.on");
+    if (a) { e.preventDefault(); e.stopPropagation(); wireMap(here); }
+  };
+}
+/** The wire map of the repo you're in: its top level along the bottom, left to right, and each folder
+ *  you open rising out of it as a column, wired to what's inside. It opens on the way to where you are. */
+function wireMap(c) {
+  if ($("#wiremap")) return $("#wiremap").shut();
+  const { owner, repo } = c, at = c.view === "f" ? c.path : c.dir || "";
+  const segs = at.split("/").filter(Boolean), dirs = c.view === "f" ? segs.slice(0, -1) : segs;
+  let trail = dirs.map((_, i) => dirs.slice(0, i + 1).join("/"));
+  const kids = {};
+  const load = (d) => kids[d] ??= api(`/repos/${owner}/${repo}/tree?path=${encodeURIComponent(d)}`).then((t) => t.entries ?? []).catch(() => []);
+  const el = document.createElement("div");
+  el.className = "wiremap"; el.id = "wiremap"; el.shut = () => close();
+  el.innerHTML = `<div class="wm-head">${icon("network")}<b>${esc(owner)}/${esc(repo)}</b><span class="muted">click a folder to wire out what's in it, a file to open it</span><span class="grow"></span><button class="btn ghost" id="wm-x" title="close (esc)">${icon("x")}</button></div><div class="wm-scroll"><div class="wm-stage" id="wm-stage"></div></div>`;
+  document.body.append(el);
+  const place = () => { const t = $("#sheets")?.getBoundingClientRect().top ?? innerHeight; el.style.bottom = Math.max(8, innerHeight - t + 6) + "px"; };
+  place();
+  const item = (e) => `<button class="wm-item ${e.type === "dir" ? "dir" : "file"}${trail.includes(e.path) || e.path === at ? " on" : ""}" data-path="${esc(e.path)}" data-type="${e.type}" title="${esc(e.path)}">${icon(e.type === "dir" ? (trail.includes(e.path) ? "folder-open" : "folder") : "file")}${esc(e.name)}</button>`;
+  const stage = () => $("#wm-stage");
+  const draw = async () => {
+    const cols = await Promise.all(["", ...trail].map(load));
+    if (!el.isConnected) return;
+    const st = stage();
+    st.innerHTML = `<svg class="wm-wires"></svg>${cols.slice(1).map((es, i) => `<div class="wm-col" data-col="${i}">${es.map(item).join("") || '<span class="muted">empty</span>'}</div>`).join("")}<div class="wm-root">${cols[0].map(item).join("") || '<span class="muted">nothing here yet</span>'}</div>`;
+    icons();
+    layout();
+  };
+  // Columns sit above the top row: the first over the folder it came from, each next one to the right of its parent.
+  const layout = () => {
+    const st = stage(), root = st.querySelector(".wm-root"), colEls = [...st.querySelectorAll(".wm-col")];
+    const find = (scope, p) => [...scope.querySelectorAll(".wm-item")].find((b) => b.dataset.path === p);
+    let x = 0, tallest = 0, right = root.offsetLeft + root.offsetWidth;
+    colEls.forEach((col, i) => {
+      const from = i === 0 ? find(root, trail[0]) : null;
+      x = i === 0 ? (from?.offsetLeft ?? 16) + 22 : x + colEls[i - 1].offsetWidth + 36;
+      col.style.left = x + "px";
+      tallest = Math.max(tallest, col.offsetHeight);
+      right = Math.max(right, x + col.offsetWidth);
+    });
+    st.style.paddingTop = 16 + (colEls.length ? tallest + 28 : 0) + "px";
+    st.style.width = right + 16 + "px";
+    colEls.forEach((col) => (col.style.bottom = root.offsetHeight + 16 + 28 + "px"));
+    wires();
+  };
+  // Each column hangs off one trunk: up from the folder's tile (or out of its row), with a tick to every row.
+  const wires = () => {
+    const st = stage(), svg = st.querySelector(".wm-wires"); if (!svg) return;
+    const box = st.getBoundingClientRect(), r = (n) => { const b = n.getBoundingClientRect(); return { l: b.left - box.left, r: b.right - box.left, t: b.top - box.top, b: b.bottom - box.top, m: (b.top + b.bottom) / 2 - box.top }; };
+    const root = st.querySelector(".wm-root"), colEls = [...st.querySelectorAll(".wm-col")];
+    const find = (scope, p) => [...scope.querySelectorAll(".wm-item")].find((b) => b.dataset.path === p);
+    let d = "", hot = "";
+    colEls.forEach((col, i) => {
+      const from = find(i === 0 ? root : colEls[i - 1], trail[i]); if (!from) return;
+      const f = r(from), c = r(col), tx = c.l - 12;
+      const rows = [...col.children].map(r).filter((y) => y.m >= c.t && y.m <= c.b);
+      if (!rows.length) return;
+      const top = Math.min(...rows.map((y) => y.m)), low = Math.max(...rows.map((y) => y.m));
+      const lead = i === 0 ? `M${tx} ${f.t}V${low}` : `M${f.r} ${f.m}H${tx}M${tx} ${Math.min(f.m, low)}V${Math.max(f.m, low)}`;
+      d += lead + `M${tx} ${low}V${top}` + rows.map((y) => `M${tx} ${y.m}H${y.l}`).join("");
+      // The way to where you are, in orange.
+      const next = [...col.children].find((n) => n.dataset?.path === (trail[i + 1] ?? at)), n = next && r(next);
+      const start = i === 0 ? `M${tx} ${f.t}` : `M${f.r} ${f.m}H${tx}`;
+      hot += n && n.m >= c.t && n.m <= c.b ? start + `V${n.m}H${n.l}` : lead;
+    });
+    svg.innerHTML = `<path d="${d}"/><path class="hot" d="${hot}"/>`;
+  };
+  el.addEventListener("scroll", wires, true);
+  el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (e.target.closest("#wm-x")) return close();
+    const b = e.target.closest(".wm-item"); if (!b) return;
+    const p = b.dataset.path;
+    if (b.dataset.type !== "dir") { close(); location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(p)}`; return; }
+    // A folder in column i opens column i+1; opening it again folds it and everything right of it.
+    const i = b.closest(".wm-col") ? +b.closest(".wm-col").dataset.col + 1 : 0;
+    trail = trail[i] === p ? trail.slice(0, i) : [...trail.slice(0, i), p];
+    draw();
+  });
+  el.addEventListener("dblclick", (e) => { const b = e.target.closest(".wm-item.dir"); if (b) { close(); location.hash = `#/r/${owner}/${repo}/${encodeURIComponent(b.dataset.path)}`; } });
+  const off = (e) => { if (e.key === "Escape" || e.type === "click") close(); };
+  const close = () => { el.remove(); removeEventListener("keydown", off); removeEventListener("click", off); removeEventListener("resize", place); };
+  addEventListener("keydown", off); addEventListener("click", off); addEventListener("resize", place);
+  return draw();
 }
 /** This browser's layout of the details side: its width (px, "66.667%" or "full"), the panels' order, and which are folded. */
 const dockPrefs = () => { try { return { w: "", order: [], shut: [], ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", order: [], shut: [] }; } };
@@ -1452,6 +1618,132 @@ const tickText = (from, deadline) => {
  * else up from `from`; the i says what it counts. One interval ticks them all.
  */
 const ticker = (from, deadline, tip) => `<span class="tick${deadline && deadline - Date.now() < 60_000 ? " low" : ""}" data-from="${from}" data-deadline="${deadline ?? ""}"><span class="tick-n">${tickText(from, deadline)}</span>${deadline ? "left" : ""}<button type="button" class="tick-i" data-tip="${esc(tip)}" aria-label="${esc(tip)}">i</button></span>`;
+// ---- merge conflicts, one card each (the branch review on the repo page) ----
+// Each card's conflict and how it's settled, by card id; the merge sends them as `resolve`.
+const clashes = new Map();
+// Why a branch's last merge was refused, by repo and branch, kept on its merge page until the next try.
+const mergeRefused = new Map();
+// Encoded parts, space-joined: it goes in an attribute, where the parser would mangle a control character.
+const clashId = (...parts) => parts.map(encodeURIComponent).join(" ");
+const toks = (s) => s.match(/\s+|\w+|[^\s\w]/g) ?? [];
+/** `s` with the words it changed from `base` marked, by a longest common run of words. */
+function markWords(base, s) {
+  const a = toks(base ?? ""), b = toks(s);
+  if (!base || a.length * b.length > 250_000) return esc(s);
+  const n = a.length, m = b.length, L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  let out = "", i = 0, j = 0, run = "";
+  // The spaces around a changed word stay outside its mark.
+  const flush = () => { const [, lead, word, tail] = /^(\s*)([\s\S]*?)(\s*)$/.exec(run); out += esc(lead) + (word ? `<mark>${esc(word)}</mark>` : "") + esc(tail); run = ""; };
+  while (j < m) {
+    if (i < n && a[i] === b[j]) { flush(); out += esc(b[j]); i++; j++; }
+    else if (i < n && L[i + 1][j] >= L[i][j + 1]) i++;
+    else run += b[j++];
+  }
+  flush();
+  return out;
+}
+/** How many of a branch's conflicts take a card (the rest are code that won't build, settled by a box). */
+const settles = (clash) => clash.filter((c) => !c.lint).length;
+/** What a conflict is, in a few words. */
+function clashWhat(c) {
+  if (c.whole) return "a lockfile both changed: keep one, then regenerate it";
+  if (c.doubled) return "added on both sides: it would land twice";
+  if (c.line.startsWith("key:")) return `config key ${c.line.slice(4)} defined on both sides`;
+  if (c.branch === null) return "the branch deleted it, main changed it";
+  if (c.main === null) return "main deleted it, the branch changed it";
+  return [c.base, c.main, c.branch].some((x) => x?.includes("\n")) ? "lines both sides reshaped" : "a line both sides changed";
+}
+/** The picks a card offers, with their one-word labels and the sentence for screen readers and agents. */
+function clashPicks(c) {
+  const lbl = c.doubled ? { main: ["Once", "keep main's copy only"], branch: ["Twice", "land the branch's copy too"] }
+    : { main: ["Main", "keep main's version"], branch: ["Branch", "keep the branch's version"] };
+  return [
+    ...(c.suggestion !== undefined ? [{ pick: "suggestion", icon: "sparkles", label: "Suggested", say: "take the suggestion, which keeps both sides' words" }] : []),
+    { pick: "main", icon: "", label: lbl.main[0], say: lbl.main[1] },
+    { pick: "branch", icon: "", label: lbl.branch[0], say: lbl.branch[1] },
+    ...(c.choices.includes("both") ? [{ pick: "both", icon: "", label: "Both", say: "keep both, main's first" }] : []),
+    ...(c.choices.includes("text") ? [{ pick: "text", icon: "pencil", label: "Write", say: "write the lines yourself" }] : []),
+  ];
+}
+/** The text a pick lands as, for the card's preview; null for a deletion. */
+function clashLands(st) {
+  const { c, pick, text } = st;
+  if (pick === "main") return c.main;
+  if (pick === "branch") return c.doubled ? `${c.main}\n${c.branch}` : c.branch;
+  if (pick === "both") return [c.main, c.branch].filter((x) => x !== null).join("\n");
+  if (pick === "both:branch-first") return [c.branch, c.main].filter((x) => x !== null).join("\n");
+  if (pick === "text" || pick === "suggestion") return text;
+  return undefined;
+}
+/** The pick as the merge's `resolve` takes it. */
+const clashResolve = (st) => st.pick === "text" || st.pick === "suggestion" ? { text: st.text } : st.pick;
+function clashCard(owner, repo, branch, c, canWrite, agents) {
+  // The repo is in the id: two repos can have the very same conflict, and a pick in one isn't a pick in the other.
+  const id = clashId(owner, repo, branch, c.path, c.line);
+  // A pick made before a redraw stays, unless the conflict itself changed under it.
+  const was = clashes.get(id), same = was && JSON.stringify(was.c) === JSON.stringify(c);
+  clashes.set(id, { owner, repo, branch, c, pick: same ? was.pick : undefined, text: same ? was.text : c.suggestion ?? c.main ?? c.branch ?? "" });
+  const side = (who, s) => `<div class="cl-side cl-${who}"><span class="cl-who">${who}</span><code class="pre">${s === null ? '<i class="muted">deleted</i>' : who === "base" ? esc(s) : markWords(c.base, s)}</code></div>`;
+  const where = /^(L\d+)$/.test(c.line) ? c.line : c.line.replace(/^(key|lint):/, "");
+  const ask = canWrite && agents?.length && c.choices.includes("text")
+    ? `<button class="btn" data-ask title="have a coding agent write the settled lines: nothing lands until you merge" aria-label="ask a coding agent to settle ${esc(c.path)} ${esc(where)}">${icon("bot")}Ask</button>${agents.length > 1 ? `<select data-harness aria-label="which coding agent">${agents.map((h) => `<option>${esc(h)}</option>`).join("")}</select>` : `<input type="hidden" data-harness value="${esc(agents[0])}">`}`
+    : "";
+  return `<div class="clash" data-clash="${esc(id)}" role="group" aria-label="conflict in ${esc(c.path)} at ${esc(where)}">
+    <div class="cl-h">${icon("git-merge")}<code>${esc(c.path)}</code><span class="muted">${esc(where)}</span><span class="cl-what" title="${esc(clashWhat(c))}">${esc(clashWhat(c))}</span><span class="cl-state" aria-live="polite"></span></div>
+    <div class="cl-ctx" data-before></div>
+    ${c.base && !c.doubled ? side("base", c.base) : ""}${c.whole ? "" : side("main", c.main) + side("branch", c.branch)}
+    <div class="cl-ctx" data-after></div>
+    ${canWrite ? `<div class="cl-picks">${clashPicks(c).map((p) => `<button class="btn" data-pick="${p.pick}" aria-pressed="false" title="${esc(p.say)}" aria-label="${esc(p.say)} (${esc(c.path)} ${esc(where)})">${p.icon ? icon(p.icon) : ""}${p.label}</button>`).join("")}${c.choices.includes("both") ? `<button class="btn ghost" data-order hidden title="the branch's lines first" aria-label="put the branch's lines first">${icon("arrow-up-down")}</button>` : ""}${ask}<span data-asking></span></div>
+    <div class="cl-out" hidden><span class="cl-who">lands as</span><textarea data-text spellcheck="false" aria-label="the settled lines for ${esc(c.path)} ${esc(where)}"></textarea></div>` : ""}
+  </div>`;
+}
+/** Draw a card's state: which pick is pressed, the order toggle, and what it lands as. */
+function clashDraw(card) {
+  const st = clashes.get(card.dataset.clash);
+  if (!st) return;
+  const shown = st.pick === "both:branch-first" ? "both" : st.pick;
+  card.querySelectorAll("[data-pick]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.pick === shown)));
+  const order = card.querySelector("[data-order]");
+  if (order) { order.hidden = shown !== "both"; order.setAttribute("aria-pressed", String(st.pick === "both:branch-first")); }
+  const out = card.querySelector(".cl-out"), ta = card.querySelector("[data-text]"), lands = clashLands(st);
+  if (out) {
+    out.hidden = lands === undefined;
+    const typing = st.pick === "text" || st.pick === "suggestion";
+    ta.readOnly = !typing;
+    if (document.activeElement !== ta) ta.value = lands ?? "";
+    ta.rows = Math.min(12, Math.max(2, (lands ?? "").split("\n").length));
+  }
+  const label = st.c.doubled ? { main: "once", branch: "twice", text: "written" }[st.pick] : { main: "main's", branch: "the branch's", both: "both, main's first", "both:branch-first": "both, the branch's first", text: "written", suggestion: "the suggestion" }[st.pick];
+  card.querySelector(".cl-state").textContent = label ? `✓ ${label}` : "to settle";
+  card.classList.toggle("settled", !!st.pick);
+}
+/** Settle a card, as clicking would: by a person, or an agent over WebMCP. */
+function clashSet(card, pick, text) {
+  const st = clashes.get(card.dataset.clash);
+  if (!st) return;
+  if (pick === "suggestion") st.text = st.c.suggestion;
+  if (text !== undefined) st.text = text;
+  st.pick = pick;
+  clashDraw(card);
+  card.dispatchEvent(new CustomEvent("clash", { bubbles: true }));
+}
+/** Main's lines around each card's conflict, from main's copy of its file. */
+async function clashContext(el, owner, repo) {
+  const cards = [...el.querySelectorAll("[data-clash]")], files = new Map();
+  for (const card of cards) {
+    const { c } = clashes.get(card.dataset.clash);
+    if (!/^L\d+$/.test(c.line) || c.doubled) continue;
+    if (!files.has(c.path)) files.set(c.path, api(`/repos/${owner}/${repo}/do/file?path=${encodeURIComponent(c.path)}`).catch(() => null));
+    const doc = await files.get(c.path), i = doc?.lines.findIndex((l) => l.id === c.line) ?? -1;
+    if (i < 0) continue;
+    const span = c.main === null ? 0 : c.main.split("\n").length;
+    const lines = (from, to) => doc.lines.slice(Math.max(0, from), Math.max(0, to)).map((l) => `<div class="cl-side"><span class="cl-who"></span><code class="pre">${esc(l.text)}</code></div>`).join("");
+    card.querySelector("[data-before]").innerHTML = lines(i - 2, i);
+    card.querySelector("[data-after]").innerHTML = lines(i + span, i + span + 2);
+  }
+}
+
 setInterval(() => {
   for (const t of document.querySelectorAll(".tick")) {
     const deadline = +t.dataset.deadline || null;
@@ -2307,12 +2599,22 @@ const views = {
     poll();
   },
   /** Open branches, each reviewed against main as it is now, with a merge button. */
-  async wireBranches(owner, repo, r) {
+  /**
+   * Open branches, each reviewed against main as it is now. In the repo's panel a branch with conflicts
+   * links to its merge page (`full`, #/b/owner/repo/branch), where each conflict is a card wide enough to read.
+   */
+  async wireBranches(owner, repo, r, { only, full = false } = {}) {
     const el = $("#branches"), base = `/repos/${owner}/${repo}/branches`;
-    const open = (await api(base).catch(() => [])).filter((b) => b.status === "open");
+    const open = (await api(base).catch(() => [])).filter((b) => b.status === "open" && (!only || b.name === only));
     await wireCheckHead(el, owner, repo, r);
-    if (!open.length) return;
+    if (!open.length) {
+      if (only) el.innerHTML = `<p class="muted">${esc(only)} isn't open: merged, or gone. <a href="#/r/${esc(owner)}/${esc(repo)}">Back to ${esc(repo)}</a></p>`;
+      return;
+    }
     const reviews = await Promise.all(open.map((b) => api(`${base}/${b.name}`)));
+    // Which coding agents can write a conflict's settled lines here, for each card's Ask.
+    const agents = full && r.canWrite && reviews.some((b) => b.files.some((f) => f.conflicts.length))
+      ? await api("/agents").then((a) => a.available && !a.admins_only ? a.harnesses : []).catch(() => []) : [];
     el.innerHTML = reviews.map((b) => {
       const files = b.files.filter((f) => !f.merged), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
       const ops = files.reduce((n, f) => n + f.ops.length, 0), build = files.filter((f) => f.build), gone = files.filter((f) => f.deleted);
@@ -2323,35 +2625,71 @@ const views = {
       const broken = clash.some((c) => c.lint);
       return `<div class="commit"><code>${esc(b.name)}</code><span>@${esc(b.by)} · ${files.length} file${files.length === 1 ? "" : "s"}, ${ops} line op${ops === 1 ? "" : "s"}</span>
         ${gone.length ? `<span class="muted">Deletes ${gone.map((f) => `<code>${esc(f.path)}</code>`).join(", ")}</span>` : ""}
-        ${clash.map((c) => `<span class="muted">${esc(c.path)} ${esc(c.line)}: ${c.lint
-          ? `merged, it wouldn't build: ${esc(c.lint)}`
-          : c.whole
-          ? `a lockfile both sides changed: keep one, then regenerate it`
-          : c.doubled
-          ? `added on both sides, it would land twice: <code>${esc(c.branch)}</code>`
-          : `main <code class="pre">${esc(c.main ?? "deleted")}</code>, branch <code class="pre">${esc(c.branch ?? "deleted")}</code>`}</span>`).join("")}
+        ${clash.filter((c) => c.lint).map((c) => `<span class="muted">${esc(c.path)}: merged, it wouldn't build: ${esc(c.lint)}</span>`).join("")}
+        ${full ? clash.filter((c) => !c.lint).map((c) => clashCard(owner, repo, b.name, c, r.canWrite, agents)).join("")
+          : settles(clash) ? `<span class="muted">${icon("git-merge")} ${settles(clash)} conflict${settles(clash) > 1 ? "s" : ""} with main: ${esc([...new Set(clash.filter((c) => !c.lint).map((c) => c.path))].join(", "))}</span>` : ""}
         ${build.length ? `<span class="muted">${icon("triangle-alert")} Changes what runs at build or deploy time${b.deploys ? ", and your next commit to main ships it" : ""}:</span>
           ${build.map((f) => `<div class="buildiff"><div class="h">${esc(f.path)}</div>${(f.lines ?? []).map((l) => `<div class="${l[0] === "-" ? "d" : "a"}">${esc(l)}</div>`).join("")}</div>`).join("")}` : ""}
         ${checkRow(b.checks)}
+        ${full && mergeRefused.get(clashId(owner, repo, b.name)) ? `<span class="muted" style="color:var(--del-fg)" role="alert">${icon("triangle-alert")} Not merged: ${esc(mergeRefused.get(clashId(owner, repo, b.name)))}. Settle it another way, then merge again.</span>` : ""}
         ${r.canWrite && gate ? `<span class="muted"><label><input type="checkbox" data-read="${esc(b.name)}"> I've read the build changes</label></span>` : ""}
         ${r.canWrite && broken ? `<span class="muted"><label><input type="checkbox" data-anyway="${esc(b.name)}"> Land it anyway, though it won't build</label></span>` : ""}
-        ${r.canWrite ? `<span class="muted">${clash.some((c) => !c.lint)
-          ? `<button class="btn" data-merge="${esc(b.name)}" data-keep="branch">Merge, keep the branch's lines</button> <button class="btn" data-merge="${esc(b.name)}" data-keep="main">Merge, keep main's</button>`
+        ${r.canWrite ? `<span class="muted">${settles(clash) && !full
+          ? `<a class="btn primary" href="#/b/${esc(owner)}/${esc(repo)}/${encodeURIComponent(b.name)}" title="settle each conflict, then merge">${icon("git-merge")}Settle ${settles(clash)}</a>`
+          : settles(clash)
+          ? `<button class="btn primary" data-merge="${esc(b.name)}" data-left>${icon("git-merge")}Merge</button> <button class="btn ghost" data-all="main" data-for="${esc(b.name)}" title="settle every conflict as main's version">All main</button><button class="btn ghost" data-all="branch" data-for="${esc(b.name)}" title="settle every conflict as the branch's version">All branch</button>`
           : `<button class="btn primary" data-merge="${esc(b.name)}"${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${r.canWrite ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now, on this machine: no GitHub needed">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}">${icon("upload")}Push upstream</button>${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}" title="Take what upstream's ${esc(b.upstream_ref)} got since">${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
     }).join("");
     const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`), anyway = (name) => el.querySelector(`[data-anyway="${CSS.escape(name)}"]`);
-    // A merge button waits on every box its branch shows.
-    const gate = (name) => el.querySelectorAll(`[data-merge="${CSS.escape(name)}"]`).forEach((btn) => { btn.disabled = reviews.find((x) => x.name === name)?.checks?.gate.ok === false || [read(name), anyway(name)].some((box) => box && !box.checked); });
+    // A merge button waits on every box its branch shows, and every conflict card being settled.
+    const unsettled = (name) => [...clashes.values()].filter((st) => st.owner === owner && st.repo === repo && st.branch === name && el.querySelector(`[data-clash="${CSS.escape(clashId(owner, repo, name, st.c.path, st.c.line))}"]`) && (!st.pick || ((st.pick === "text" || st.pick === "suggestion") && !st.text.trim()))).length;
+    const gate = (name) => el.querySelectorAll(`[data-merge="${CSS.escape(name)}"]`).forEach((btn) => {
+      const left = unsettled(name);
+      btn.disabled = reviews.find((x) => x.name === name)?.checks?.gate.ok === false || [read(name), anyway(name)].some((box) => box && !box.checked) || left > 0;
+      if (btn.hasAttribute("data-left")) { btn.innerHTML = left ? `${icon("git-merge")}Settle ${left} more` : `${icon("git-merge")}Merge`; icons(); btn.title = left ? `${left} conflict${left > 1 ? "s" : ""} to settle first` : "merge it, as settled"; }
+    });
+    // The cards: a pick, the order of both, a written text, a whole branch at once, or a coding agent's answer.
+    el.querySelectorAll("[data-clash]").forEach((card) => {
+      clashDraw(card);
+      const st = clashes.get(card.dataset.clash);
+      card.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => {
+        clashSet(card, b.dataset.pick);
+        if (b.dataset.pick === "text") card.querySelector("[data-text]")?.focus();
+      }));
+      card.querySelector("[data-order]")?.addEventListener("click", () => clashSet(card, st.pick === "both:branch-first" ? "both" : "both:branch-first"));
+      card.querySelector("[data-text]")?.addEventListener("input", (e) => { if (st.pick === "suggestion") st.pick = "text"; st.text = e.target.value; clashDraw(card); gate(st.branch); });
+      card.querySelector("[data-ask]")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget, harness = card.querySelector("[data-harness]").value, at = card.querySelector("[data-asking]");
+        btn.disabled = true;
+        at.innerHTML = ticker(Date.now(), null, `${harness} is writing the settled lines; usually under a minute. Nothing lands until you merge.`);
+        try {
+          const a = await api(`${base}/${encodeURIComponent(st.branch)}/conflicts/agent`, { path: st.c.path, line: st.c.line, harness });
+          clashSet(card, "text", a.text);
+          toast(`${harness} wrote it: check it, then merge`);
+        } catch (err) { toast(`${harness} couldn't: ${err.message}`); }
+        at.innerHTML = "";
+        btn.disabled = false;
+      });
+    });
+    el.addEventListener("clash", (e) => gate(clashes.get(e.target.dataset.clash)?.branch));
+    el.querySelectorAll("[data-all]").forEach((b) => b.addEventListener("click", () => {
+      el.querySelectorAll("[data-clash]").forEach((card) => { if (clashes.get(card.dataset.clash)?.branch === b.dataset.for) clashSet(card, b.dataset.all); });
+    }));
+    void clashContext(el, owner, repo);
     reviews.forEach((b) => gate(b.name));
     el.querySelectorAll("[data-read], [data-anyway]").forEach((box) => box.addEventListener("change", () => gate(box.dataset.read ?? box.dataset.anyway)));
     el.querySelectorAll("[data-merge]").forEach((btn) => btn.addEventListener("click", async () => {
       const b = reviews.find((x) => x.name === btn.dataset.merge), resolve = {};
       for (const f of b.files) for (const c of f.conflicts) {
-        const pick = c.lint ? anyway(b.name)?.checked && "branch" : btn.dataset.keep;
+        const pick = c.lint ? anyway(b.name)?.checked && "branch" : clashResolve(clashes.get(clashId(owner, repo, b.name, f.path, c.line)) ?? {});
         if (pick) (resolve[f.path] ??= {})[c.line] = pick;
       }
-      try { await api(`${base}/${b.name}/merge`, { resolve, build_ok: !!read(b.name)?.checked }); toast(`Merged ${b.name}. Commit the files to push them to git.`); }
-      catch (e) { toast(`Not merged: ${e.message}`); }
+      try {
+        await api(`${base}/${b.name}/merge`, { resolve, build_ok: !!read(b.name)?.checked });
+        mergeRefused.delete(clashId(owner, repo, b.name));
+        toast(`Merged ${b.name}. Commit the files to push them to git.`);
+        if (full) return void (location.hash = `#/r/${owner}/${repo}`);
+      } catch (e) { mergeRefused.set(clashId(owner, repo, b.name), e.message); toast(`Not merged: ${e.message}`); }
       route();
     }));
     // Our own checks, queued for a runner on the branch as it is now.
@@ -2428,6 +2766,18 @@ const views = {
   },
 
   /** The repo on a phone: its coding agents (start one, see each one's task and how it's going) and its branches to review and merge. */
+  /** A branch's merge page: its review, with a card for each conflict, wide enough to read. */
+  async b(owner, repo, branch) {
+    const r = await api(`/repos/${owner}/${repo}`);
+    ctx = { view: "b", owner, repo, branch, canWrite: r.canWrite, visibility: r.visibility };
+    app.innerHTML = `<div class="wrap merge-page" style="padding-top:20px;padding-bottom:40px">
+      <h1 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:20px">${icon("git-merge")}<span>Merge <code>${esc(branch)}</code> into main</span><span class="muted" style="font-size:14px"><a href="#/r/${esc(owner)}/${esc(repo)}">${esc(owner)}/${esc(repo)}</a></span></h1>
+      <p class="muted" style="margin:4px 0 12px">Both sides changed these lines since the branch began. Settle each one: main's, the branch's, both, or lines of your own. Nothing lands until you press Merge.</p>
+      <div class="sec"><div id="branches"><span class="muted">Reading the branch…</span></div></div>
+    </div>`;
+    icons();
+    await views.wireBranches(owner, repo, r, { only: branch, full: true });
+  },
   async m(owner, repo) {
     const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=`).catch(() => ({ entries: [] }))]);
     const isOwner = owner === me();
@@ -3111,7 +3461,11 @@ const views = {
       });
       $("#cut-merge")?.addEventListener("click", async () => {
         try { await api(`/repos/${c.owner}/${c.repo}/branches/${c.branch}/merge`, {}); toast("Merged into main"); }
-        catch (err) { toast(err.message === "conflicts" ? "Main changed these lines too: settle it under Branches on the repo page" : err.message); }
+        catch (err) {
+          // Main changed these lines too: its merge page settles them, a card each.
+          if (err.message === "conflicts") { toast("Main changed these lines too: settle each one, then merge"); location.hash = `#/b/${c.owner}/${c.repo}/${encodeURIComponent(c.branch)}`; }
+          else toast(err.message);
+        }
         load();
       });
       icons();
@@ -3868,7 +4222,7 @@ const fileArgs = (a) => ({ owner: a.owner || ctx.owner, repo: a.repo || ctx.repo
 const readTools = () => [
   { name: "current_page", title: "Where am I", description: "What the page shows now: its view (home, r repo, f file, l level, c cut, s share, u profile, search…), the repo, file or level, the selected lines, what you may do there, and who is signed in.",
     inputSchema: noInput, annotations: { readOnlyHint: true }, execute: async () => where() },
-  { name: "open_page", title: "Open a page", description: "Go to a page by its hash: #/ home, #/r/owner/repo[/dir], #/f/owner/repo/path/to/file, #/l/level-slug[/path], #/u/handle, #/m/owner/repo (agents and branches, for a phone), #/search/query, #/about. Answers with the new page.",
+  { name: "open_page", title: "Open a page", description: "Go to a page by its hash: #/ home, #/r/owner/repo[/dir], #/f/owner/repo/path/to/file, #/l/level-slug[/path], #/u/handle, #/m/owner/repo (agents and branches, for a phone), #/b/owner/repo/branch (a branch's merge page, a card per conflict), #/search/query, #/about. Answers with the new page.",
     inputSchema: { type: "object", properties: { hash: { type: "string", description: "like #/f/owner/repo/src/app.ts" } }, required: ["hash"] },
     annotations: { readOnlyHint: true }, execute: ({ hash }) => asAgent(() => { history.pushState(null, "", "#" + hash.replace(/^#?\/?/, "/")); return route(); }) },
   { name: "list_files", title: "List files", description: "A repo folder's files and folders. Defaults to the repo and folder on screen.",
@@ -3881,6 +4235,25 @@ const readTools = () => [
       const f = fileArgs(a), doc = await api(`/repos/${f.owner}/${f.repo}/do/file?path=${encodeURIComponent(f.path)}`);
       return { rev: doc.rev, lines: doc.lines.map((l, i) => ({ n: i + 1, text: l.text, by: l.by, ...(l.private ? { private: true } : {}) })) };
     } },
+  { name: "list_conflicts", title: "List merge conflicts", description: "On a branch's merge page (#/b/owner/repo/branch; the repo page's Branches links to it), its merge conflicts as their cards show them: branch, path, line, base, main, branch_text, the picks it takes, the suggestion if any, and how it's settled so far.",
+    inputSchema: noInput, annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: async () => {
+      await routing;
+      return [...document.querySelectorAll("[data-clash]")].map((card) => {
+        const { branch, c, pick, text } = clashes.get(card.dataset.clash);
+        return { branch, path: c.path, line: c.line, what: clashWhat(c), base: c.base, main: c.main, branch_text: c.branch, choices: c.choices, ...(c.suggestion !== undefined && { suggestion: c.suggestion }), settled: pick ? { pick, ...(pick === "text" || pick === "suggestion" ? { text } : {}) } : null };
+      });
+    } },
+  { name: "settle_conflict", title: "Settle a merge conflict", description: "Settle one conflict card on a branch's merge page, as clicking would: pick main, branch, both, both:branch-first, suggestion, or text (with `text`, the lines that replace it). Nothing lands until the branch's Merge button is pressed.",
+    inputSchema: { type: "object", properties: { branch: { type: "string" }, path: { type: "string" }, line: { type: "string", description: "the conflict's line, as list_conflicts says" },
+      pick: { type: "string", enum: ["main", "branch", "both", "both:branch-first", "suggestion", "text"] }, text: { type: "string", description: "with pick text: the settled lines" } }, required: ["branch", "path", "line", "pick"] },
+    execute: ({ branch, path, line, pick, text }) => asAgent(() => {
+      const card = document.querySelector(`[data-clash="${CSS.escape(clashId(ctx.owner, ctx.repo, branch, path, line))}"]`);
+      if (!card) throw new Error("no such conflict on this page: list_conflicts says which there are");
+      const { c } = clashes.get(card.dataset.clash), base = pick === "both:branch-first" ? "both" : pick;
+      if (!(base === "suggestion" ? c.suggestion !== undefined : c.choices.includes(base))) throw new Error(`this conflict takes ${c.choices.join(", ")}`);
+      if (pick === "text" && typeof text !== "string") throw new Error("pick text needs text");
+      clashSet(card, pick, pick === "text" ? text : undefined);
+    }) },
   { name: "select_lines", title: "Select lines", description: "Select lines on the file on screen, as clicking their numbers would, so the line commands (share, cut, make private) act on them.",
     inputSchema: { type: "object", properties: { from: { type: "integer", minimum: 1 }, to: { type: "integer", minimum: 1 } }, required: ["from"] },
     execute: ({ from, to = from }) => asAgent(() => {
@@ -3915,7 +4288,7 @@ async function webTools() {
 }
 
 // Views and how many plain segments come before a path tail: #/f/owner/repo/<path>.
-const FIXED = { f: 2, r: 2, l: 1 };
+const FIXED = { f: 2, r: 2, l: 1, b: 2 };
 // Settles when the page has drawn, so an agent's tool call can answer with where it landed.
 let routing = Promise.resolve();
 async function route() {
@@ -3929,6 +4302,7 @@ async function route() {
   stopWord();
   clearTimeout(levelPoll);
   document.body.classList.remove("ide-mode");
+  $("#wiremap")?.shut();
   const [, view = "home", ...args] = location.hash.replace(/^#/, "").split("/");
   const n = FIXED[view];
   const parts = n === undefined ? args.map(decodeURIComponent) : [...args.slice(0, n).map(decodeURIComponent), decodeURIComponent(args.slice(n).join("/"))];

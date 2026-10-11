@@ -60,11 +60,15 @@ export async function main(argv: string[], env: Record<string, string | undefine
     } else if (k in t.inputSchema.properties) args[k] = value;
     else return fail(`${name} takes no --${k}: codesplitters help ${name}`);
   }
-  const url = opts.url ?? env.CODESPLITTERS_URL, token = opts.token ?? env.CODESPLITTERS_TOKEN, as = opts.as ?? env.CODESPLITTERS_AS;
-  if (!url) return fail("set CODESPLITTERS_URL (or --url)");
+  const site = opts.url ?? env.CODESPLITTERS_URL, token = opts.token ?? env.CODESPLITTERS_TOKEN, as = opts.as ?? env.CODESPLITTERS_AS;
+  if (!site) return fail("set CODESPLITTERS_URL (or --url)");
   if (!token && !as) return fail("set CODESPLITTERS_TOKEN (or --token), or run codesplitters login");
+  // The desktop app sits behind its launch token too: a URL like http://127.0.0.1:5199/?token=<it>
+  // (what RB_NO_BROWSER=1 prints) sends it as the cookie the desktop expects.
+  const u = new URL(site), launch = u.searchParams.get("token"), url = u.origin + u.pathname;
+  const cookie = [launch && `rb_token_${u.port}=${launch}`, !token && `cs_user=${as}`].filter(Boolean).join("; ");
   // Its own user agent, so the admins' insights page shows CLI calls apart from other token calls.
-  const headers: Record<string, string> = { "user-agent": "codesplitters-cli/1", ...(token ? { authorization: `Bearer ${token}` } : { cookie: `cs_user=${as}` }) };
+  const headers: Record<string, string> = { "user-agent": "codesplitters-cli/1", ...(token && { authorization: `Bearer ${token}` }), ...(cookie && { cookie }) };
   const req = toRequest(t, args, url.replace(/\/$/, ""), headers);
   if (typeof req === "string") return fail(`${req}: codesplitters help ${name}`);
   const res = await send(req);
