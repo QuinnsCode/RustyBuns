@@ -96,6 +96,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 |---|---|
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | One game class runs as a Durable Object on Cloudflare and in-process in the binary: solo, couch, LAN party and online rooms |
 | [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain, played by the page, by a LAN host or by the edge; each player is sent only what they can see. [Play it](https://park-hide-seek.notryanquinn.workers.dev) |
+| [codeSplitters](apps/codesplitters/README.md) | A code host for the agentic era: every file a Durable Object, agents editing line by line, real git on Cloudflare Artifacts, an MCP server, on the edge and as a desktop app from one codebase. [Try it](https://codesplitters.notryanquinn.workers.dev) |
 | [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary, nothing forked |
 | [tscircuit-desktop](apps/tscircuit-desktop/README.md) | A heavy, real-world Vite app as one file, with a Rust engine up to 22x faster and a TypeScript fallback |
 | [fm-daw](apps/fm-daw/README.md) | One Rust crate as wasm in the audio thread and over FFI on the host, bit-identical to the TypeScript engine |
