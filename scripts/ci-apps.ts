@@ -20,7 +20,7 @@ export const APPS: Record<string, App> = {
   "auto-rig":          { test: "bun test test", prep: "bun run build:native", perOs: true },
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true },
   "codesplitters":     { test: "bun test --parallel test" },
-  "hippo-tycoon":      { test: "bun test test", prep: "bun run build:native", check: true },
+  "hippo-tycoon":      { test: "bun test --parallel test", prep: "bun run build:native", check: true },
   "meshy-studio":      { test: "bun test --parallel tests", check: true },
   "motion-midi":       { test: "bun test test", prep: "bun run build:native", perOs: true, check: true },
   "park-hide-seek":    { test: "bun test" },
