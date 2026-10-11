@@ -157,6 +157,40 @@ describe("insights", () => {
     expect(await session(desk, null)).not.toHaveProperty("admin");
   });
 
+  test("the admins' own browsing isn't counted (#512)", async () => {
+    const { call, send } = await app();   // ADMINS: "boss"
+    await send("boss", "/api/session", browser);
+    await send("boss", "/api/repos", browser, { name: "hq" });
+    await send("ryan", "/api/session", browser);
+    const d = (await (await call("boss", "/api/admin/insights")).json()) as any;
+    expect(d.traffic.callers.map((c: any) => c.who)).toEqual(["@ryan"]);
+    expect(d.users.find((u: any) => u.name === "boss").steps).toEqual({});
+  });
+
+  test("everyone has a join date, from when their handle was made (#512)", async () => {
+    const { call } = await app();
+    // mia signed in, but never through the internet, so she has no steps: her row says when.
+    const d = (await (await call("boss", "/api/admin/insights")).json()) as any;
+    const mia = d.users.find((u: any) => u.name === "mia");
+    expect(mia.steps).toEqual({});
+    expect(Math.abs(mia.joined - Date.now())).toBeLessThan(60_000);
+  });
+
+  test("migration 0056 dates accounts from before by Better Auth's createdAt, ISO text or a number", async () => {
+    const { call } = await app();
+    const db = call.env.DB;
+    await db.prepare(`INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") VALUES ('a1', 'Old', 'old@example.com', 1, '2025-03-04T05:06:07.890Z', '2025-03-04'), ('a2', 'Num', 'num@example.com', 1, 1700000000000, 1700000000000)`).run();
+    await db.prepare("INSERT INTO users (name, auth_id) VALUES ('old-timer', 'a1'), ('numbers', 'a2'), ('later', NULL)").run();
+    // old-timer came back after #509, so has a later 'joined' already; numbers has none.
+    await db.prepare("INSERT INTO user_steps (name, step, first_at, last_at, n) VALUES ('old-timer', 'joined', 1800000000000, 1800000000000, 1)").run();
+    const sql = await Bun.file(`${import.meta.dir}/../migrations/0056_join_dates_and_ghost.sql`).text();
+    for (const stmt of sql.replace(/--.*$/gm, "").split(";").map((x) => x.trim()).filter((x) => /^(UPDATE users|INSERT INTO user_steps)/.test(x))) await db.prepare(stmt).run();
+    const joined = async (name: string) => (await db.prepare("SELECT first_at FROM user_steps WHERE name = ? AND step = 'joined'").bind(name).first())?.first_at;
+    expect(await joined("old-timer")).toBe(Date.parse("2025-03-04T05:06:07.890Z"));
+    expect(await joined("numbers")).toBe(1700000000000);
+    expect(await joined("later")).toBeUndefined();
+  });
+
   test("your usage is in your export, and goes when you do", async () => {
     const { call, send } = await app();
     await send("ryan", "/api/repos", browser, { name: "lab" });

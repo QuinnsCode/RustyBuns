@@ -2375,7 +2375,7 @@ const views = {
       <p>You can also complain to your data protection authority. We'd love the chance to fix it first.</p>
 
       <h2>What a deletion leaves behind</h2>
-      <p>Lines and branches you wrote in other people's repos stay there under your handle, the way commits stay in git, because they're part of someone else's work. Your handle is retired so nobody can pick it up and pass as you. Copies someone already cloned are theirs. Our database's point-in-time backups roll off within 30 days.</p>
+      <p>Lines and branches you wrote in other people's repos stay there under your handle, the way commits stay in git, because they're part of someone else's work. Your handle is retired so nobody can pick it up and pass as you. If you'd rather your handle went too, tick the box when you delete, or write to us after: we put @ghost on those lines, branches, deploys and invites in its place. Git commits and copies someone already cloned keep the handle they were made with. Our database's point-in-time backups roll off within 30 days.</p>
 
       <h2>Small print, large font</h2>
       <p>codeSplitters isn't meant for anyone under 16. If this page changes in a way that matters, we'll say so on the site before it applies. Last carbon-dated <b>11 October 2026</b>.</p>
@@ -4254,6 +4254,7 @@ const dataBox = (fold = false) => `${boxTop(fold, "yourdata", `${icon("archive")
   <div><a class="btn" href="/api/me/export" download>${icon("download")}Download everything</a> <span class="muted" style="font-size:12px">one JSON file; clone your repos for the code</span></div>
   <details><summary class="muted" style="cursor:pointer;font-size:12px">Delete my account</summary><form id="delme" style="display:grid;gap:6px;margin-top:8px">
     <span class="muted" style="font-size:12px">Gone for good: your repos (files, branches, git), collections, shares, tokens, connected apps, sessions and sign-in, and codeSplitters' access to your GitHub and Google. Lines you wrote in other people's repos stay under @${esc(me())}, which is retired.</span>
+    <label class="muted" style="font-size:12px"><input type="checkbox" name="scrub"> Put @ghost on them instead of @${esc(me())}</label>
     <input name="name" placeholder="type ${esc(me())} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete @${esc(me())} for good</button></div></form></details>
 </div>${boxEnd(fold)}`;
 function wireData() {
@@ -4262,7 +4263,7 @@ function wireData() {
     const typed = e.target.name.value.trim();
     if (typed !== me()) return toast(`Type ${me()} to delete your account`);
     let out;
-    try { out = await api(`/me?confirm=${encodeURIComponent(typed)}`, undefined, "DELETE"); }
+    try { out = await api(`/me?confirm=${encodeURIComponent(typed)}${e.target.scrub.checked ? "&scrub=1" : ""}`, undefined, "DELETE"); }
     catch (err) { return toast(err.message); }
     // The grants we couldn't take back at GitHub or Google (privacy.ts revokeSignIns): theirs to revoke.
     const left = (out.revoke_yourself || []).map((p) => ({ github: "GitHub (Settings > Applications)", google: "Google (myaccount.google.com/connections)" })[p] || p);

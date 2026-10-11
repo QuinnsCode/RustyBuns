@@ -145,7 +145,7 @@ async function newAgent(env: Env, name: string) {
   const base = slug(name).slice(0, 28).replace(/-+$/, "") || "guest";
   for (let n = 0; n < 8; n++) {
     const handle = `agent-${base}-${crypto.getRandomValues(new Uint32Array(1))[0]!.toString(36).padStart(4, "0").slice(-4)}`;
-    const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(handle).run();
+    const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, created_at) VALUES (?, ?)").bind(handle, Date.now()).run();
     if (r.meta?.changes) return handle;
   }
   throw new Error("couldn't find a free agent handle");

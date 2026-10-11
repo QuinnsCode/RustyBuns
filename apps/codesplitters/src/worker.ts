@@ -6,7 +6,7 @@ import { fromText } from "./lines.ts";
 import { ensureCrewRemote, fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
 import { code, json, NAME, type DigMessage, type Env } from "./env.ts";
 import { accountsOn, actingAs, identityRoutes, identify, isAdmin, isAgentHandle } from "./identity.ts";
-import { privacyRoutes, sweepSessions } from "./privacy.ts";
+import { privacyRoutes, scrubRoutes, sweepSessions } from "./privacy.ts";
 import { feedRoutes, runQueuedDigests, type DigestMessage } from "./feed.ts";
 import { sweepLineEvents } from "./line-events.ts";
 import { levelRoutes, runDigs } from "./levels.ts";
@@ -134,6 +134,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/admin/insights  people vs agents, the site's health, how far each person got (insights.ts)
   const insights = await insightRoutes(req, env, p, url, admin);
   if (insights) return insights;
+  // POST /api/admin/scrub {handle}  put @ghost where a deleted account's handle still shows (privacy.ts)
+  const scrub = await scrubRoutes(req, env, p, admin);
+  if (scrub) return scrub;
   // GET /api/admin/scale  the scale sideboard: each wall, how close we are, the next step (scale.ts)
   const scale = await scaleRoutes(req, env, p, admin);
   if (scale) return scale;
@@ -343,7 +346,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (!NAME.test(name ?? "")) return json({ error: "bad name" }, 400);
       // A person has to have signed up first, so adding one never takes a handle nobody chose.
       // agent- handles are ours to give (no person can pick one): a hosted agent comes in this way.
-      if (isAgentHandle(name)) await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
+      if (isAgentHandle(name)) await env.DB.prepare("INSERT OR IGNORE INTO users (name, created_at) VALUES (?, ?)").bind(name, Date.now()).run();
       else if (!(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(name).first())) return json({ error: `no one's @${name} here yet: send them an invite link` }, 404);
       const r = await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
       if (r.meta?.changes) await audit(env, req, { actor: user, action: "crew.add", owner, repo, target: name });
