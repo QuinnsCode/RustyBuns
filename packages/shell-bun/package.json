@@ -19,6 +19,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./advisories": "./src/advisories.ts",
     "./client": "./src/client.ts",
     "./intro": "./src/intro.tsx",
     "./shims": "./src/shims.ts"

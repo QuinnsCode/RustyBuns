@@ -188,6 +188,17 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 
 [`advisories.json`](advisories.json) lists releases to move off, and which way to go (`upgrade`, or `downgrade` to a given version). Each command checks the installed version against it and against npm's latest at most once a day (cached in `~/.cache/rustybuns/`, 1.5 s timeout). On a listed version it prints how to move before running. It never fails a command, and it is off in CI and with `RUSTYBUNS_NO_UPDATE_CHECK=1`. To flag a release, add an entry, merge it, then run `bun run deprecate:bad` (needs your npm login) so installs warn too.
 
+A built desktop app checks too: `build desktop` stamps the RustyBuns version into it, and at launch the host checks that version the same way (once a day, never blocking the start). A dev host (`run desktop`, `build desktop --dev`) prints how to rebuild; a release binary or box logs one `[rustybuns]` line, so the app's users never get a notice they can't act on. Same off switches.
+
+An app can list its own bad releases the same way. Point `targets.desktop.advisories` at a JSON file you host (a raw GitHub URL works):
+
+```json
+{ "latest": "1.4.0", "download": "https://example.com/app",
+  "advisories": [{ "versions": "1.3.0", "do": "upgrade", "to": "latest", "why": "saves are lost on quit", "issue": "https://example.com/bug/7" }] }
+```
+
+At launch the host checks the app's `package.json` version against it, with the same range rules and daily cache. That notice is for the app's users, so release builds show it too: one `[<app>]` log line, and on the desktop `/__rb/info` returns it as `update` (null when there is nothing to say) for the page to show. `to: "latest"` means the file's `latest`. Same off switches.
+
 ## Config
 
 `rustybuns.config.ts` is the one file you own. `init` writes it, and every generated file comes from it.

@@ -1,6 +1,8 @@
 -- External CI (src/gh-compat.ts): tools that report to GitHub's API can point at ours instead.
 -- Their runs are `external`, told apart from `github` and our own runners. SQLite can't widen a
--- CHECK in place, so check_runs is copied into a table that allows it.
+-- CHECK in place, so check_runs is copied into a table that allows it. The copy is the table as
+-- it stands after every earlier migration: 0038 made it, 0041_check_claims added runner_label,
+-- heartbeat_at and the check_runs_queued index. A column or index left out here is lost.
 CREATE TABLE check_runs_next (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   owner TEXT NOT NULL, repo TEXT NOT NULL,
@@ -14,14 +16,17 @@ CREATE TABLE check_runs_next (
   junit TEXT,
   url TEXT,
   external_id TEXT,                 -- GitHub's id for an imported job, or status:<context> for an external one
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  runner_label TEXT,                -- who claimed it, as the runner named itself
+  heartbeat_at INTEGER              -- the claimer's last word
 );
-INSERT INTO check_runs_next (id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, log, junit, url, external_id, created_at)
-  SELECT id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, log, junit, url, external_id, created_at FROM check_runs;
+INSERT INTO check_runs_next (id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, log, junit, url, external_id, created_at, runner_label, heartbeat_at)
+  SELECT id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, log, junit, url, external_id, created_at, runner_label, heartbeat_at FROM check_runs;
 DROP TABLE check_runs;
 ALTER TABLE check_runs_next RENAME TO check_runs;
 CREATE INDEX check_runs_by_ref ON check_runs (owner, repo, ref, id);
 CREATE INDEX check_runs_by_sha ON check_runs (owner, repo, sha, external_id);
+CREATE INDEX check_runs_queued ON check_runs (owner, repo, status, id);
 
 -- A repo's CI tokens: what an external CI sends as its GitHub token. Each reaches one repo's
 -- checks and nothing else. Only the SHA-256 is kept; the secret is shown once.

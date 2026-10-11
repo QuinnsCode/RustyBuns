@@ -5,13 +5,17 @@
 import { fromText } from "./lines.ts";
 import { ensureCrewRemote, fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
 import { code, json, NAME, type DigMessage, type Env } from "./env.ts";
-import { accountsOn, actingAs, identityRoutes, identify, isAdmin } from "./identity.ts";
+import { accountsOn, actingAs, identityRoutes, identify, isAdmin, isAgentHandle } from "./identity.ts";
 import { privacyRoutes, sweepSessions } from "./privacy.ts";
+import { feedRoutes, runQueuedDigests, type DigestMessage } from "./feed.ts";
+import { sweepLineEvents } from "./line-events.ts";
 import { levelRoutes, runDigs } from "./levels.ts";
 import { evict, githubRoutes } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
 import { followers, followRoutes, listFollows } from "./follows.ts";
+import { recentStamps, stampRoutes } from "./stamps.ts";
+import { agentProfile } from "./actors.ts";
 import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes, runQueuedAgents, type AgentMessage } from "./agent-routes.ts";
@@ -24,11 +28,12 @@ import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
 import { bearer, tokenRoutes } from "./tokens.ts";
+import { invitePage, inviteRoutes, pendingInvites, repoInviteRoutes } from "./invites.ts";
 import { openapi } from "./openapi.ts";
 import { catalogue, mcp } from "./mcp.ts";
 import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
-import { checkRoutes, pollGithub, startChecks } from "./checks.ts";
+import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts";
 import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
 import { callers, insightRoutes, record, sweepTraffic } from "./insights.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
@@ -60,6 +65,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /.well-known/oauth-*  where apps and MCP clients find OAuth sign-in (oauth.ts)
   const known = wellKnown(req, p, url.origin);
   if (known) return known;
+  // GET /invite/:token  an invite link: the page for a browser, the steps as text for an agent (invites.ts)
+  if (p[0] === "invite" && p[1] && !p[2] && req.method === "GET") return invitePage(req, env, p[1]);
   if (p[0] !== "api") return new Response("not found", { status: 404 });
   // GET /api  the API reference (src/api.ts), for anyone building their own UI or agent
   if (!p[1] && req.method === "GET") return json(REFERENCE);
@@ -94,6 +101,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (slow) return slow;
   const tokens = await tokenRoutes(req, env, p, user);
   if (tokens) return tokens;
+  // /api/invites[/:token|/claim]  an invite, and coming in through it as a person or an agent (invites.ts)
+  const invites = await inviteRoutes(req, env, p, user);
+  if (invites) return invites;
   const limits = await limitRoutes(req, env, p, admin);
   if (limits) return limits;
   const reseal = await resealRoutes(req, env, p, admin);
@@ -131,6 +141,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   const follows = await followRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
   if (follows) return follows;
 
+  // GET /api/me/feed and its digest (feed.ts)
+  const feed = await feedRoutes(req, env, p, url, user);
+  if (feed) return feed;
+
   // GET /api/me/export and DELETE /api/me: take your data, or bury it (privacy.ts)
   const privacy = await privacyRoutes(req, env, p, url, user, !token && !actingAs.has(req));
   if (privacy) return privacy;
@@ -145,15 +159,18 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first());
   }
 
-  // GET /api/users/:name  profile, the repos you may see, playlists, and how many it follows and are following it
+  // GET /api/users/:name  profile, the repos you may see, playlists, how many it follows and are following it, the stamps it gave and got;
+  // an agent's (agent-…) also says who runs it, where, and its runs (actors.ts)
   if (p[1] === "users" && p[2]) {
     const u = await env.DB.prepare("SELECT name, bio, theme_html FROM users WHERE name = ?").bind(p[2]).first();
     if (!u) return json({ error: "no such user" }, 404);
     const { results: repos } = await env.DB.prepare(
       "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
     const { results: playlists } = await env.DB.prepare("SELECT * FROM playlists WHERE owner = ? ORDER BY id DESC").bind(p[2]).all();
+    const [given, got, agent] = await Promise.all([recentStamps(env, user, p[2], "by"), recentStamps(env, user, p[2], "author"),
+      isAgentHandle(p[2]) ? agentProfile(env, p[2], user) : null]);
     // What it follows in a private repo counts only for that repo's crew.
-    return json({ user: u, repos, playlists, following: (await listFollows(env.DB, p[2], user)).length, followers: await followers(env.DB, p[2]) });
+    return json({ user: u, repos, playlists, following: (await listFollows(env.DB, p[2], user)).length, followers: await followers(env.DB, p[2]), stamps: { given, got }, ...(agent && { agent }) });
   }
 
   // POST /api/repos {name, visibility}
@@ -191,7 +208,9 @@ async function route(req: Request, env: Env): Promise<Response> {
       const crewClone = crewArt && `git clone ${crewArt.remote.replace("://", `://x:${crewArt.token.split("?")[0]}@`)} ${repo}`;
       // Where the fork's git lives: a bare repo on this machine, or Cloudflare Artifacts.
       const home = h ? (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(art?.remote ?? h.remote) ? "local" : "cloud") : null;
-      return json({ ...r, mirror: !!r?.mirror, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home });
+      // The owner sees who's invited but not in yet, beside the crew.
+      const invites = user === owner ? { invites: await pendingInvites(env, req, owner, repo) } : {};
+      return json({ ...r, mirror: !!r?.mirror, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home, ...invites });
     }
     // PUT /api/repos/:o/:r {visibility}  (owner only)
     if (!p[4] && req.method === "PUT") {
@@ -214,6 +233,9 @@ async function route(req: Request, env: Env): Promise<Response> {
       const v = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
       return createShare(env, owner, repo, user, a, v?.visibility === "private", await body());
     }
+    // GET|POST|DELETE /api/repos/:o/:r/stamps  react to lines, by id (stamps.ts)
+    const stamps = await stampRoutes(req, env, p, url, owner, repo, user, a);
+    if (stamps) return stamps;
     // POST /api/repos/:o/:r/cuts {pieces: [{path, from, to}], note}  some lines and their imports, as a branch to run and merge back
     if (p[4] === "cuts" && req.method === "POST") return createCut(env, owner, repo, user, a.write, await body());
     // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
@@ -268,6 +290,15 @@ async function route(req: Request, env: Env): Promise<Response> {
       await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
       return json({ ok: true });
     }
+    // DELETE /api/repos/:o/:r/collaborators/:name  (owner only) out of the crew; what they wrote stays theirs
+    if (p[4] === "collaborators" && p[5] && !p[6] && req.method === "DELETE") {
+      if (user !== owner) return json({ error: "owner only" }, 403);
+      const r = await env.DB.prepare("DELETE FROM collaborators WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, p[5]).run();
+      return r.meta?.changes ? json({ ok: true }) : json({ error: `@${p[5]} isn't in the crew` }, 404);
+    }
+    // /api/repos/:o/:r/invites[/:token]  invite by handle, email or a bare link; the pending ones; revoke (invites.ts)
+    const invites = await repoInviteRoutes(req, env, p, owner, repo, user);
+    if (invites) return invites;
     // POST /api/repos/:o/:r/files {path, content, branch?}
     if (p[4] === "files" && req.method === "POST") {
       if (!a.write) return json({ error: "no write access" }, 403);
@@ -299,6 +330,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         h.set("x-codesplitters-user", user ?? "anon");
         h.set("x-codesplitters-write", a.write ? "1" : "0");
         h.set("x-codesplitters-crew", a.write ? "1" : "0");
+        branch ? h.delete("x-codesplitters-file") : h.set("x-codesplitters-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
         // Its edits count against the edit limit, as the HTTP ones do (the DO counts them).
         const as = a.write ? counted(req, "edit", user, admin) : null;
         as ? h.set("x-codesplitters-limit-as", as) : h.delete("x-codesplitters-limit-as");
@@ -424,10 +456,13 @@ const app = {
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(sweepTraffic(env));
+    ctx.waitUntil(sweepLineEvents(env));
     ctx.waitUntil(sweepOAuth(env));
     if (accountsOn(env)) ctx.waitUntil(sweepSessions(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(advanceAll(env, Date.now() + 10 * 60_000));
+    // Check runs a runner claimed and then went quiet on go back in the queue (a claim does this too).
+    ctx.waitUntil(requeueStale(env));
   },
 
   // The queues (rustybuns.config.ts): JOBS runs queued requests whose turn has come, and hosted agent runs;
@@ -435,11 +470,12 @@ const app = {
   // messages, since a stage's queues may be named otherwise.
   async queue(batch: { messages: readonly { body: unknown; ack(): void }[] }, env: Env) {
     if (batch.messages.some((m) => typeof (m.body as DigMessage)?.dig === "string")) await runDigs(batch as Parameters<typeof runDigs>[0], env);
-    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number")) {
-      // JOBS: hosted agent runs (agent-routes.ts) beside queued requests.
+    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number" || typeof (m.body as DigestMessage)?.digest === "string")) {
+      // JOBS: hosted agent runs (agent-routes.ts) and feed digests (feed.ts) beside queued requests.
       const agents = batch.messages.filter((m) => typeof (m.body as AgentMessage)?.agent === "number") as { body: AgentMessage; ack(): void }[];
       const jobs = batch.messages.filter((m) => typeof (m.body as JobMessage)?.job === "number") as { body: JobMessage; ack(): void }[];
-      await Promise.all([runQueuedAgents(agents, env, (r) => app.fetch(r, env)), runJobs({ messages: jobs }, env, (r) => app.fetch(r, env))]);
+      const digests = batch.messages.filter((m) => typeof (m.body as DigestMessage)?.digest === "string") as { body: DigestMessage; ack(): void }[];
+      await Promise.all([runQueuedAgents(agents, env, (r) => app.fetch(r, env)), runJobs({ messages: jobs }, env, (r) => app.fetch(r, env)), runQueuedDigests(digests, env)]);
     }
     else await deliverHooks(batch as { messages: readonly { body: HookMessage; ack(): void }[] }, env);
   },

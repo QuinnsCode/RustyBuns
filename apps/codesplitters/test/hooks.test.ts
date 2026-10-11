@@ -86,6 +86,61 @@ test("a commit sends a signed, push-shaped payload; branches open and merge", as
   expect(merged[0]!.body).toMatchObject({ pull_request: { merged: true, head: { ref: "tidy" }, base: { ref: "main" } }, files: ["a.ts"] });
 });
 
+test("a GitHub-mode hook speaks GitHub: its event names, headers, signature and fields", async () => {
+  const { call, send, got } = await app();
+  expect((await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", github_compat: "yes" })).status).toBe(400);
+  const gh = await (await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://jenkins.example/github-webhook/", secret: SECRET, github_compat: true })).json();
+  expect(gh.github_compat).toBe(true);
+  await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", secret: SECRET });
+  expect((await (await call("ryan", "/api/repos/ryan/lab/hooks")).json()).hooks.map((h: any) => h.github_compat)).toEqual([true, false]);
+
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
+  await arrived(got, 2);
+  const push = got.find((g) => g.url.startsWith("https://jenkins"))!;
+  const native = got.find((g) => g.url.startsWith("https://ci"))!;
+  expect(native.headers.get("x-codesplitters-event")).toBe("commit");
+  expect(native.headers.get("x-github-event")).toBeNull();
+
+  expect(push.headers.get("x-github-event")).toBe("push");
+  expect(push.headers.get("x-github-delivery")).toMatch(/^[0-9a-f-]{36}$/);
+  expect(push.headers.get("user-agent")).toStartWith("GitHub-Hookshot/");
+  expect(push.headers.get("x-codesplitters-signature")).toBeNull();
+  // GitHub's own check: HMAC-SHA256 of the raw body with the hook's secret, hex, behind "sha256=".
+  const hmac = new Bun.CryptoHasher("sha256", SECRET).update(push.raw).digest("hex");
+  expect(push.headers.get("x-hub-signature-256")).toBe(`sha256=${hmac}`);
+  expect(push.body.commits).toEqual([push.body.head_commit]);
+  expect(push.body.head_commit.id).toBe(push.body.after);
+  const cloneUrl = push.body.repository.clone_url;
+  expect(cloneUrl).toMatch(/^https?:\/\//);
+  expect(push.body).toMatchObject({
+    ref: "refs/heads/main", before: "0".repeat(40), after: expect.stringMatching(/^[0-9a-f]{40}$/), created: true, deleted: false, forced: false,
+    head_commit: { message: "first", added: ["a.ts"], committer: { name: "ryan" } },
+    repository: { full_name: "ryan/lab", default_branch: "main", master_branch: "main", clone_url: cloneUrl },
+    sender: { login: "ryan" },
+  });
+
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "tidy" });
+  await arrived(got, 4);
+  const create = got.slice(2).find((g) => g.url.startsWith("https://jenkins"))!;
+  expect(create.headers.get("x-github-event")).toBe("create");
+  expect(create.body).toMatchObject({ ref: "tidy", ref_type: "branch", master_branch: "main", pusher_type: "user" });
+
+  const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.ts&branch=tidy")).json();
+  await send("ryan", "/api/repos/ryan/lab/do/ops?path=a.ts&branch=tidy", { ops: [{ kind: "set", line: doc.lines[0].id, text: "ONE", base: doc.lines[0].rev }] });
+  expect((await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {})).status).toBe(200);
+  await arrived(got, 6);
+  const pr = got.slice(4).find((g) => g.url.startsWith("https://jenkins"))!;
+  expect(pr.headers.get("x-github-event")).toBe("pull_request");
+  expect(pr.body).toMatchObject({
+    action: "closed",
+    pull_request: { state: "closed", merged: true, head: { ref: "tidy", repo: { full_name: "ryan/lab", clone_url: cloneUrl } }, base: { ref: "main" } },
+  });
+
+  // The delivery log names it the way it went out.
+  const log = await (await call("ryan", `/api/repos/ryan/lab/hooks/${gh.id}/deliveries`)).json();
+  expect(log.map((d: any) => d.event)).toEqual(["pull_request", "create", "push"]);
+});
+
 test("a failed delivery is logged and retried on the queue; redeliver starts over", async () => {
   const { call, send, got, answer } = await app();
   const hook = await (await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", events: ["branch.opened"] })).json();

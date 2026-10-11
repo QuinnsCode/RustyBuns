@@ -46,6 +46,8 @@ export async function exportFor(env: Env, handle: string) {
     shares: await all(env, "SELECT * FROM shares WHERE by = ?", handle),
     // Who and what you follow; a private repo's only while you're its crew, as in the app.
     following: await listFollows(env.DB, handle),
+    invites_to_you: await all(env, "SELECT owner, repo, by, note, created_at, expires_at, claimed_at FROM invites WHERE target = ? OR claimed_by = ?", handle, handle),
+    stamps: await all(env, "SELECT owner, repo, path, line, stamp, created_at FROM stamps WHERE by = ?", handle),
     branches: await all(env, "SELECT owner, repo, name, status, created_at, merged_at FROM branches WHERE by = ?", handle),
     cuts: await all(env, "SELECT * FROM cuts WHERE by = ?", handle),
     deploys: await all(env, "SELECT owner, repo, stage, trigger, status, commit_hash, url, at FROM deploys WHERE by = ?", handle),
@@ -55,6 +57,9 @@ export async function exportFor(env: Env, handle: string) {
     // What the insights page counts (insights.ts): your requests per day, and the first and last time you did each step.
     usage: await all(env, "SELECT day, kind, via, hits, errors, first_at, last_at, ua FROM traffic WHERE who = ? ORDER BY day", `@${handle}`),
     steps: await all(env, "SELECT step, first_at, last_at, n FROM user_steps WHERE name = ?", handle),
+    // What the home feed shows others of your edits (feed.ts), and your latest digest.
+    line_events: await all(env, "SELECT owner, repo, path, sets, inserts, deletes, lines, first_at, last_at FROM line_events WHERE who = ?", handle),
+    feed_digest: await env.DB.prepare("SELECT harness, status, since, through, text, at FROM feed_digests WHERE name = ?").bind(handle).first(),
   };
 }
 
@@ -69,12 +74,16 @@ export async function eraseUser(env: Env, handle: string) {
     by("DELETE FROM collaborators WHERE name = ?", handle),
     by("DELETE FROM shares WHERE by = ?", handle),
     by("DELETE FROM follows WHERE follower = ? OR (kind IN ('user', 'agent') AND target = ?)", handle, handle),
+    by("DELETE FROM invites WHERE target = ? AND claimed_by IS NULL", handle),
+    by("DELETE FROM stamps WHERE by = ?", handle),
     by("DELETE FROM api_tokens WHERE name = ?", handle),
     by("DELETE FROM oauth_grants WHERE name = ?", handle),
     by("DELETE FROM oauth_requests WHERE name = ?", handle),
     by("DELETE FROM limit_jobs WHERE user = ?", handle),
     by("DELETE FROM traffic WHERE who = ?", `@${handle}`),
     by("DELETE FROM user_steps WHERE name = ?", handle),
+    by("DELETE FROM line_events WHERE who = ?", handle),
+    by("DELETE FROM feed_digests WHERE name = ?", handle),
     // evict leaves these: agent runs (the tasks you gave) and the limits counted against you.
     by("DELETE FROM agent_runs WHERE owner = ?", handle),
     by("DELETE FROM limit_hits WHERE who = ?", `@${handle}`),
@@ -123,4 +132,15 @@ export async function sweepSessions(env: Env, now = Date.now()) {
   const expired = `(typeof("expiresAt") IN ('integer', 'real') AND "expiresAt" < ?1) OR (typeof("expiresAt") = 'text' AND "expiresAt" < ?2)`;
   await env.DB.batch(["session", "verification"].map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE ${expired}`).bind(now, new Date(now).toISOString())))
     .catch((e: unknown) => console.error("codeSplitters: session sweep failed", String((e as Error)?.message ?? e)));
+}
+
+/**
+ * The "we'll say so before it applies" promise on #/privacy: PRIVACY_NOTICE is
+ * "YYYY-MM-DD what changes", the date the change applies. /api/session hands it to
+ * the page as a banner people can dismiss; a new date brings it back. Unset, or
+ * anything else, and there's no banner.
+ */
+export function privacyNotice(raw?: string): { date: string; text: string } | null {
+  const m = raw?.trim().match(/^(\d{4}-\d{2}-\d{2})\s+(\S[\s\S]*)$/);
+  return m && !Number.isNaN(Date.parse(m[1]!)) ? { date: m[1]!, text: m[2]!.trim() } : null;
 }
