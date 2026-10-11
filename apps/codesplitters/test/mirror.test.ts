@@ -204,8 +204,23 @@ describe("mirrors", () => {
     expect(await sh(`git --git-dir ${pub} cat-file -e ${await upLog("%H")} 2>&1 || echo missing`)).toBe("missing");
     expect((await file(call, "README")).lines.map((l: any) => l.text)).toEqual(["hello from here", "token=s3cret", "more"]);
 
-    // And back to held.
-    expect(await sync(call, { pushCrew: false })).toMatchObject({ pushCrew: false });
+    // And back to held: upstream has the secret's real text, the repo's own git has it blank. That's no clash:
+    // nothing goes up while held, so the private-lined README keeps the repo's own copy.
+    expect(await sync(call, { pushCrew: false })).toMatchObject({ state: "ok", pushCrew: false, clash: [] });
+    expect(await sh(`git --git-dir ${pub} show main:README`)).toBe("hello from here");
+    expect(await sh(`git --git-dir ${pub} show main:src/a.ts`)).toBe("export const a = 2");
+    expect((await file(call, "README")).lines.map((l: any) => l.text)).toEqual(["hello from here", "token=s3cret", "more"]);
+    expect(await upShow("README")).toBe("hello from here\ntoken=s3cret\nmore");
+    // Upstream moves on while held: its other files still come in.
+    await upstreamCommit({ "src/a.ts": "export const a = 3\n" }, "bo's next change");
+    expect(await sync(call)).toMatchObject({ state: "ok", clash: [] });
+    expect(await sh(`git --git-dir ${pub} show main:src/a.ts`)).toBe("export const a = 3");
+    expect(await sh(`git --git-dir ${pub} show main:README`)).toBe("hello from here");
+    expect(await sh(`git --git-dir ${pub} cat-file -e ${await upLog("%H")} 2>&1 || echo missing`)).toBe("missing");
+    // A commit here while held stays here.
+    await editHere(call, "src/a.ts", 1, "export const a = 4");
+    expect(await sync(call)).toMatchObject({ state: "held", ahead: 1, clash: [] });
+    expect(await upShow("src/a.ts")).toBe("export const a = 3");
   });
 
   test("branches: push one upstream as a git branch, open upstream's here", async () => {

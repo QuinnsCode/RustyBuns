@@ -28,6 +28,8 @@
 // (real text): then that's the git kept in step with upstream, and the repo's
 // own git follows it file by file, its private-lined files left as they are, so
 // none of upstream's objects (which hold the real text by then) land in it.
+// Held back again after that, the crew's copy stays the one that pulls; it just
+// isn't pushed.
 //
 //   POST /api/mirrors {url, name?, visibility?}  clone any git remote as a mirror you own (desktop only)
 //   GET  /api/repos/:o/:r/mirror                 where it stands with upstream
@@ -124,9 +126,20 @@ const row = (env: Env, owner: string, repo: string) =>
 type State = "ok" | "down" | "refused" | "clash" | "held" | "rewritten";
 export type Resolve = "mine" | "upstream" | "rebase";
 
-/** The git that's kept in step with upstream: the crew's copy when the owner pushes it, else the repo's own. */
-const syncedDir = (lg: LocalGit, r: { artifact: string; crew_artifact: string | null; mirror_push_crew: number | null }) =>
-  lg.path(r.crew_artifact && r.mirror_push_crew ? r.crew_artifact : r.artifact);
+/**
+ * Whether the crew's copy is the git kept in step with upstream: when the owner
+ * pushes it, and once it has gone up, while it's held back again too. Upstream
+ * has private lines' real text by then (the last commit both sides agreed on
+ * isn't in the repo's own git), so the repo's own git keeps following the crew's
+ * copy file by file rather than merging upstream's commits, and nothing's pushed.
+ */
+async function crewSynced(lg: LocalGit, r: { artifact: string; crew_artifact: string | null; mirror_push_crew: number | null; upstream_commit: string | null }) {
+  if (!r.crew_artifact) return false;
+  if (r.mirror_push_crew) return true;
+  return !!r.upstream_commit && (await git(["cat-file", "-e", `${r.upstream_commit}^{commit}`], lg.path(r.artifact))).code !== 0;
+}
+/** The git that's kept in step with upstream: the crew's copy (see crewSynced), else the repo's own. */
+const syncedDir = async (lg: LocalGit, r: Parameters<typeof crewSynced>[1]) => lg.path(await crewSynced(lg, r) ? r.crew_artifact! : r.artifact);
 
 /** A try that didn't work: say why, and back off (1, 2, 4… minutes, up to MAX_WAIT). */
 async function failed(env: Env, r: Row, state: Exclude<State, "ok">, error: string, clash: string[] = []) {
@@ -185,8 +198,8 @@ export async function syncDue(env: Env, now = Date.now()) {
 async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolve }): Promise<State | null> {
   const r = await row(env, owner, repo), lg = localGit(env);
   if (!r || !lg) return null;
-  const crew = !!(r.crew_artifact && r.mirror_push_crew);
-  const dir = syncedDir(lg, r), branch = r.branch ?? "main", heads = `refs/heads/${branch}`, up = `refs/upstream/${branch}`;
+  const crew = await crewSynced(lg, r), held = !!r.crew_artifact && !r.mirror_push_crew;
+  const dir = lg.path(crew ? r.crew_artifact! : r.artifact), branch = r.branch ?? "main", heads = `refs/heads/${branch}`, up = `refs/upstream/${branch}`;
   const net = await remoteEnv(env, owner, r.mirror_url);
   try {
     // The crew's copy was forked from the repo's own git, which may have synced upstream since: fetch that agreed commit from it.
@@ -250,7 +263,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
 
     // 3. Hand upstream what we have that it doesn't.
     if (ours !== theirs && !(await isAncestor(dir, ours, theirs))) {
-      if (r.crew_artifact && !crew) return settled(env, r, theirs, "held", "this repo has private lines, and its git holds them blank, so nothing goes upstream");
+      if (held) return settled(env, r, theirs, "held", "this repo has private lines, and its git holds them blank, so nothing goes upstream");
       const p = await git(["push", "--porcelain", r.mirror_url, `${heads}:${heads}`], dir, net);
       if (p.code) {
         const said = [p.err, p.out].filter(Boolean).join("\n");
@@ -417,7 +430,7 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
   const lg = localGit(env);
   if (!r || !lg) return null;
   const branch = (r.branch ?? "main") as string;
-  const counts = await git(["rev-list", "--left-right", "--count", `refs/heads/${branch}...refs/upstream/${branch}`], syncedDir(lg, r as unknown as Row));
+  const counts = await git(["rev-list", "--left-right", "--count", `refs/heads/${branch}...refs/upstream/${branch}`], await syncedDir(lg, r as unknown as Row));
   const [ahead, behind] = counts.code ? [0, 0] : counts.out.trim().split(/\s+/).map(Number);
   return {
     url: shownUrl(r.mirror_url as string), branch, state: (r.mirror_state ?? "ok") as State, error: r.mirror_error ?? null,
@@ -476,7 +489,7 @@ const refused = (error: string, status: number) => Object.assign(new Error(error
 async function branchSetup(env: Env, owner: string, repo: string) {
   const r = await row(env, owner, repo), lg = localGit(env);
   if (!r || !lg) return { error: json({ error: "not a mirror" }, 404) } as const;
-  return { r, dir: syncedDir(lg, r), main: r.branch ?? "main", net: await remoteEnv(env, owner, r.mirror_url) } as const;
+  return { r, dir: await syncedDir(lg, r), main: r.branch ?? "main", net: await remoteEnv(env, owner, r.mirror_url) } as const;
 }
 const branchRow = (env: Env, owner: string, repo: string, name: string) =>
   env.DB.prepare("SELECT name, by, status, upstream_ref FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first() as Promise<BranchRow | null>;
