@@ -1,7 +1,10 @@
 # Changes here need the owner's review once the main ruleset turns on
 # "Require review from Code Owners". These are the files that run with secrets,
-# publish, or decide who someone is.
+# publish, decide who someone is, or set what agents may do.
 .github/                                         @QuinnsCode
+.claude/                                         @QuinnsCode
+AGENTS.md                                        @QuinnsCode
+CLAUDE.md                                        @QuinnsCode
 scripts/                                         @QuinnsCode
 bunfig.toml                                      @QuinnsCode
 **/.env.schema                                   @QuinnsCode

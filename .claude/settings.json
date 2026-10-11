@@ -29,7 +29,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Read|Grep",
+        "matcher": "Bash|Read|Grep|Write|Edit",
         "hooks": [{ "type": "command", "command": "bun \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard.ts\"" }]
       }
     ]
