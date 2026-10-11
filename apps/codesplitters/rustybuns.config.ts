@@ -15,6 +15,10 @@ import { defineConfig } from "@rustybuns/cli/config";
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
 const deploys = process.env.CODESPLITTERS_DEPLOYS === "1";
 const mailFrom = process.env.CODESPLITTERS_MAIL_FROM?.trim();
+// A change to the privacy page that matters goes here first, as "YYYY-MM-DD what changes"
+// (the day it applies), and ships before that day: the site shows it as a banner (src/privacy.ts).
+// Empty means no banner.
+const privacyNotice = "";
 const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitters/${ref}`, optional });
 
 export default defineConfig({
@@ -94,6 +98,7 @@ export default defineConfig({
     ADMIN_EMAIL: op("admin/email"),
     // Where privacy requests go, shown on #/privacy (src/privacy.ts). Optional: without it the page offers the export and delete buttons only.
     PRIVACY_EMAIL: op("privacy/email", true),
+    ...(privacyNotice ? { PRIVACY_NOTICE: { type: "var", value: privacyNotice } as const } : {}),
     // Verification and reset links for email accounts (src/identity.ts).
     ...(mailFrom ? {
       EMAIL: { type: "send_email", allowedSenderAddresses: [mailFrom] } as const,
