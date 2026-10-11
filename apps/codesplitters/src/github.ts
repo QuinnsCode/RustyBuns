@@ -44,16 +44,28 @@ export async function githubToken(env: Env, user: string | null): Promise<{ toke
 }
 
 /**
- * The GitHub accounts linked to `user`'s sign-in, oldest first, and which one digs:
- * the one they picked (users.github_account), else the one linked last. Tokens stay
+ * The GitHub accounts linked to `user`'s sign-in, oldest first, which one digs: the
+ * one they picked (users.github_account), else the one linked last; and which one
+ * their hosted agents work as (users.agent_github), if they picked one. Tokens stay
  * encrypted until asked for; ones stored before encryption was on read as they are.
  */
 export async function githubAccounts(env: Env, user: string) {
-  const { results } = await env.DB.prepare(`SELECT a.id, a.accessToken, u.github_account AS pick FROM account a JOIN users u ON u.auth_id = a.userId
+  const { results } = await env.DB.prepare(`SELECT a.id, a.accessToken, u.github_account AS pick, u.agent_github AS agent FROM account a JOIN users u ON u.auth_id = a.userId
     WHERE u.name = ? AND a.providerId = 'github' AND a.accessToken IS NOT NULL ORDER BY a.createdAt, a.id`).bind(user).all();
-  const rows = results as { id: string; accessToken: string; pick: string | null }[];
+  const rows = results as { id: string; accessToken: string; pick: string | null; agent: string | null }[];
   const active = rows.find((r) => r.id === r.pick)?.id ?? rows.at(-1)?.id;
-  return rows.map((r) => ({ id: r.id, active: r.id === active, token: () => openToken(env, r.accessToken) }));
+  return rows.map((r) => ({ id: r.id, active: r.id === active, agent: r.id === r.agent, token: () => openToken(env, r.accessToken) }));
+}
+
+/**
+ * The token `owner`'s hosted agents work on GitHub with: the linked GitHub they picked
+ * for agents, never the one they dig as unless they picked that too. Null when none is
+ * picked (or it was unlinked), so an agent stays off GitHub as its human.
+ */
+export async function agentGithubToken(env: Env, owner: string): Promise<string | null> {
+  if (!accountsOn(env)) return null;
+  const a = (await githubAccounts(env, owner)).find((x) => x.agent);
+  return a ? a.token() : null;
 }
 
 /** Better Auth's encrypted token ($ba$ envelope, or hex from older versions) back to the token. */
@@ -313,7 +325,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     // Every GitHub linked to this sign-in, by login, so the page can switch between them.
     const accounts = accountsOn(env) && user ? await Promise.all((await githubAccounts(env, user)).map(async (a) => {
       const me = await gh("/user", await a.token());
-      return { id: a.id, active: a.active, login: me.ok ? ((await me.json()) as { login: string }).login : null };
+      return { id: a.id, active: a.active, agent: a.agent, login: me.ok ? ((await me.json()) as { login: string }).login : null };
     })) : undefined;
     const more = accounts ? { accounts } : {};
     if (!t) return json({ via: null, login: null, repos: [], privateOk, ...temp, ...more });
@@ -330,6 +342,16 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     const { id } = (await req.json().catch(() => ({}))) as { id?: string };
     if (!(await githubAccounts(env, user)).some((a) => a.id === id)) return json({ error: "that GitHub isn't linked to you" }, 404);
     await env.DB.prepare("UPDATE users SET github_account = ? WHERE name = ?").bind(id, user).run();
+    return json({ id });
+  }
+
+  // POST /api/github/agent {id|null}  your hosted agents work as this one of your linked GitHubs
+  // (a bot account, say), so theirs and yours stay apart on GitHub; null: as none.
+  if (p[2] === "agent" && req.method === "POST") {
+    if (!user || !accountsOn(env)) return json({ error: "sign in first" }, 401);
+    const { id = null } = (await req.json().catch(() => ({}))) as { id?: string | null };
+    if (id !== null && !(await githubAccounts(env, user)).some((a) => a.id === id)) return json({ error: "that GitHub isn't linked to you" }, 404);
+    await env.DB.prepare("UPDATE users SET agent_github = ? WHERE name = ?").bind(id, user).run();
     return json({ id });
   }
 

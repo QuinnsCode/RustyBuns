@@ -8,6 +8,7 @@
 // run shell commands, so only the person whose machine it is may start one. In a
 // container it can't reach the host, but it bills the site's keys, so accounts
 // must be on: with aliases anyone can claim an admin's handle. Owner only either way.
+// On GitHub it is the account its owner picked for agents (POST /api/github/agent), if any.
 // A container run answers when it is done (200), since an isolate's memory is
 // not where the next poll lands; a local one answers at once (202).
 //
@@ -20,6 +21,7 @@ import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, runAgent, type Conflict, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
+import { agentGithubToken } from "./github.ts";
 
 export interface Run {
   id: number;
@@ -32,6 +34,8 @@ export interface Run {
   log: string[];
   applied?: number; rev?: number; runs?: number;
   conflicts?: Conflict[];
+  /** Whether it ran with the GitHub its owner picked for agents. */
+  github?: boolean;
   output?: string;
   error?: string;
 }
@@ -96,7 +100,15 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   const run: Run = { id: nextId++, owner, repo, path, harness, task: task.trim().slice(0, 2000), agent, status: "running", started: Date.now(), log: [] };
   runs.push(run);
   if (runs.length > 50) runs.splice(0, runs.length - 50);
-  const sandbox = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
+  let sandbox = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
+  // A hosted agent works on GitHub as the account its owner picked for agents (a bot,
+  // say), not as the one they dig as; with none picked it gets no GitHub token at all.
+  const gh = env.AGENT_SANDBOX ? await agentGithubToken(env, owner).catch(() => null) : null;
+  if (gh) {
+    const inner = sandbox;
+    sandbox = (cmd, file) => inner({ ...cmd, env: { ...cmd.env, GH_TOKEN: gh, GITHUB_TOKEN: gh } }, file);
+    run.github = true;
+  }
   const done = runAgent(call, {
     user: agent, owner, repo, path, harness, task: run.task, model: model?.trim() || undefined,
     sandbox, log: (s) => run.log.push(s),

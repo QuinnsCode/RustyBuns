@@ -870,7 +870,7 @@ describe("github", () => {
       // The one linked last digs until they pick.
       let g = await repos();
       expect([g.via, g.login, g.repos[0].repo]).toEqual(["account", "ana-at-work", "tok-work/r"]);
-      expect(g.accounts).toEqual([{ id: "personal", active: false, login: "ana-gh" }, { id: "work", active: true, login: "ana-at-work" }]);
+      expect(g.accounts).toEqual([{ id: "personal", active: false, agent: false, login: "ana-gh" }, { id: "work", active: true, agent: false, login: "ana-at-work" }]);
       const pick = (id: string) => call(null, "/api/github/active", { method: "POST", headers: { cookie }, body: JSON.stringify({ id }) });
       expect((await pick("personal")).status).toBe(200);
       g = await repos();
