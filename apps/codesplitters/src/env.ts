@@ -152,5 +152,28 @@ export const json = (v: unknown, status = 200, headers: Record<string, string> =
 // Single dashes only, so "owner--repo" names an artifact unambiguously.
 export const NAME = /^(?=.{1,39}$)[a-z0-9]+(-[a-z0-9]+)*$/;
 
+/**
+ * What's wrong with `name` as a branch name, or null: git's rule (`git check-ref-format
+ * --branch`), so slashes, dots, underscores and capitals are fine, up to 255 bytes. "main"
+ * is taken. The web page carries a copy of this (client.html), and a test keeps them alike.
+ */
+export function branchNameError(name: string): string | null {
+  if (!name) return "a branch needs a name";
+  if (name === "main") return "main is the branch everything merges into";
+  if (new TextEncoder().encode(name).length > 255) return "a branch name is at most 255 bytes";
+  const bad = name.match(/[\s~^:?*[\\\x00-\x1f\x7f]/)?.[0];
+  if (bad) return /\s/.test(bad) ? "no spaces in a branch name: use - instead" : `a branch name can't have ${/[\x00-\x1f\x7f]/.test(bad) ? "a control character" : `"${bad}"`} in it`;
+  if (name === "@") return `a branch can't be just "@"`;
+  if (name.includes("@{")) return `a branch name can't have "@{" in it`;
+  if (name.includes("..")) return `a branch name can't have ".." in it`;
+  if (name.startsWith("-")) return `a branch name can't start with "-"`;
+  if (name.startsWith("/") || name.endsWith("/")) return `a branch name can't start or end with "/"`;
+  if (name.includes("//")) return `a branch name can't have "//" in it`;
+  if (name.endsWith(".")) return `a branch name can't end with "."`;
+  if (name.split("/").some((s) => s.startsWith("."))) return `no part of a branch name can start with "."`;
+  if (name.split("/").some((s) => s.endsWith(".lock"))) return `no part of a branch name can end with ".lock"`;
+  return null;
+}
+
 /** An ArtifactsError's code, if that's what this is. */
 export const code = (e: unknown) => (e as { code?: string })?.code ?? String((e as Error)?.message ?? e).split(":")[0];

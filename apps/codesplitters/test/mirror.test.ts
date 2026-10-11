@@ -265,7 +265,7 @@ describe("mirrors", () => {
 
   test("branches: push one upstream as a git branch, open upstream's here", async () => {
     const call = await mirrored("branches");
-    const q = (path: string, b: string) => `?path=${encodeURIComponent(path)}&branch=${b}`;
+    const q = (path: string, b: string) => `?path=${encodeURIComponent(path)}&branch=${encodeURIComponent(b)}`;
     // An agent's branch: an edit to README and a new file.
     expect((await post(call, "/api/repos/ana/up/collaborators", { name: "agent-a" })).status).toBe(200);
     expect((await call("agent-a", "/api/repos/ana/up/branches", { method: "POST", body: JSON.stringify({ name: "tidy" }) })).status).toBe(201);
@@ -291,7 +291,7 @@ describe("mirrors", () => {
     expect(await sh(`git --git-dir ${up} log -1 --format=%P tidy`)).toBe(`${pushed.commit} ${await upLog("%H")}`);
     expect(await sh(`git --git-dir ${up} show tidy:src/a.ts`)).toBe("export const a = 2");
 
-    // Somebody's branch upstream: listed, then opened here with what it changed.
+    // Somebody's branch upstream: listed, then opened here with what it changed, under its own name (#701).
     const work = mkdtempSync(join(root, "work-"));
     await sh(`git clone -q ${up} . && git config user.name Bo && git config user.email bo@example.com && git checkout -qb Feature/Shiny && printf 'hello\\nworld\\nshiny\\n' > README && printf 'new\\n' > NEW && git add -A && git commit -qm shiny && git push -q origin Feature/Shiny`, work);
     const list = await get(call, "/api/repos/ana/up/mirror/branches");
@@ -300,36 +300,36 @@ describe("mirrors", () => {
     expect((await post(call, "/api/repos/ana/up/mirror/branches", { ref: "nope" })).status).toBe(404);
     const made = await post(call, "/api/repos/ana/up/mirror/branches", { ref: "Feature/Shiny" });
     expect(made.status).toBe(201);
-    expect(await made.json()).toMatchObject({ name: "feature-shiny", files: ["NEW", "README"], skipped: [] });
+    expect(await made.json()).toMatchObject({ name: "Feature/Shiny", files: ["NEW", "README"], skipped: [] });
     expect((await post(call, "/api/repos/ana/up/mirror/branches", { ref: "Feature/Shiny" })).status).toBe(409);
-    const review = await get(call, "/api/repos/ana/up/branches/feature-shiny");
+    const review = await get(call, "/api/repos/ana/up/branches/Feature%2FShiny");
     expect(review.files.map((f: any) => [f.path, f.ops.length, f.conflicts.length])).toEqual([["NEW", 1, 0], ["README", 1, 0]]);
-    expect((await get(call, "/api/repos/ana/up/mirror/branches")).find((b: any) => b.ref === "Feature/Shiny")).toMatchObject({ branch: "feature-shiny", status: "open" });
+    expect((await get(call, "/api/repos/ana/up/mirror/branches")).find((b: any) => b.ref === "Feature/Shiny")).toMatchObject({ branch: "Feature/Shiny", status: "open" });
 
     // Bo carries on upstream: the next sync brings it here. Pull says there's nothing more.
     const text = async (path: string, b: string) => (await get(call, `/api/repos/ana/up/do/file${q(path, b)}`)).lines.map((l: any) => l.text).join("\n");
     await sh(`printf 'new\\nnewer\\n' > NEW && git commit -qam newer && git push -q origin Feature/Shiny`, work);
     expect(await sync(call)).toMatchObject({ state: "ok" });
-    expect(await text("NEW", "feature-shiny")).toBe("new\nnewer");
-    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/feature-shiny/pull")).json()).toMatchObject({ ref: "Feature/Shiny", files: [] });
-    expect((await post(call, "/api/repos/ana/up/mirror/branches/feature-shiny/nope")).status).toBe(404);
+    expect(await text("NEW", "Feature/Shiny")).toBe("new\nnewer");
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/Feature%2FShiny/pull")).json()).toMatchObject({ ref: "Feature/Shiny", files: [] });
+    expect((await post(call, "/api/repos/ana/up/mirror/branches/Feature%2FShiny/nope")).status).toBe(404);
 
     // Edited here, it goes back to the branch it came from, on top of Bo's commit.
-    const shiny = (await get(call, `/api/repos/ana/up/do/file${q("README", "feature-shiny")}`)).lines[2];
-    expect((await post(call, `/api/repos/ana/up/do/ops${q("README", "feature-shiny")}`, { ops: [{ kind: "set", line: shiny.id, base: shiny.rev, text: "shinier" }] })).status).toBe(200);
+    const shiny = (await get(call, `/api/repos/ana/up/do/file${q("README", "Feature/Shiny")}`)).lines[2];
+    expect((await post(call, `/api/repos/ana/up/do/ops${q("README", "Feature/Shiny")}`, { ops: [{ kind: "set", line: shiny.id, base: shiny.rev, text: "shinier" }] })).status).toBe(200);
     const bo = await sh(`git --git-dir ${up} rev-parse Feature/Shiny`);
-    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/feature-shiny/push")).json()).toMatchObject({ ref: "Feature/Shiny", pushed: true, took: [] });
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/Feature%2FShiny/push")).json()).toMatchObject({ ref: "Feature/Shiny", pushed: true, took: [] });
     expect(await sh(`git --git-dir ${up} log -1 --format=%P Feature/Shiny`)).toBe(bo);
     expect(await sh(`git --git-dir ${up} show Feature/Shiny:README`)).toBe("hello\nworld\nshinier");
 
     // Bo again, before any sync: a push takes it in first rather than writing over it.
     await sh(`git pull -q origin Feature/Shiny && printf 'new\\nnewer\\nnewest\\n' > NEW && git commit -qam newest && git push -q origin Feature/Shiny`, work);
-    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/feature-shiny/push")).json()).toMatchObject({ pushed: false, took: ["NEW"] });
-    expect(await text("NEW", "feature-shiny")).toBe("new\nnewer\nnewest");
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/Feature%2FShiny/push")).json()).toMatchObject({ pushed: false, took: ["NEW"] });
+    expect(await text("NEW", "Feature/Shiny")).toBe("new\nnewer\nnewest");
     expect(await sh(`git --git-dir ${up} show Feature/Shiny:README`)).toBe("hello\nworld\nshinier");
 
     // Merged here, its upstream branch stays until main's commit holds all of it, then goes.
-    expect((await post(call, "/api/repos/ana/up/branches/feature-shiny/merge")).status).toBe(200);
+    expect((await post(call, "/api/repos/ana/up/branches/Feature%2FShiny/merge")).status).toBe(200);
     const shinyUp = () => sh(`git --git-dir ${up} rev-parse --verify --quiet refs/heads/Feature/Shiny || echo gone`);
     expect(await sync(call)).toMatchObject({ state: "ok" });
     expect(await shinyUp()).not.toBe("gone");
@@ -342,7 +342,7 @@ describe("mirrors", () => {
 
   test("branches carry deletions both ways, and merging one deletes upstream too (#440)", async () => {
     const call = await mirrored("deletes");
-    const q = (path: string, b: string) => `?path=${encodeURIComponent(path)}&branch=${b}`;
+    const q = (path: string, b: string) => `?path=${encodeURIComponent(path)}&branch=${encodeURIComponent(b)}`;
     // Upstream's branch deletes src/a.ts and adds a binary file.
     const work = mkdtempSync(join(root, "work-"));
     await sh(`git clone -q ${up} . && git config user.name Bo && git config user.email bo@example.com && git checkout -qb prune && git rm -q src/a.ts && printf 'a\\000b' > logo.bin && git add -A && git commit -qm prune && git push -q origin prune`, work);

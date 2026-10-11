@@ -86,3 +86,22 @@ describe("the profile's tokens", () => {
     expect(html).toContain('<details class="more" id="tokens-more"${open ? " open" : ""}>');
   });
 });
+
+// Branch names follow git, not the handle rule (#701); the page checks them as you type, as the server does.
+describe("branch names", () => {
+  const src = html.slice(html.indexOf("/** What's wrong with a branch name"), html.indexOf("/** Under a branch-name box"));
+  const { branchNameError, tidyBranch } = new Function(`${src}; return { branchNameError, tidyBranch };`)();
+
+  test("the page's rule says what the server's says", async () => {
+    const server = (await import("../src/env.ts")).branchNameError;
+    const names = ["feature/login", "Fix-Login", "v1.2", "under_score", "cs checks test", "tab\there", "a..b", "a~b", "a^b", "a:b", "a?b", "a*b", "a[b", "a\\b",
+      "a@{b", "@", "-a", "/a", "a/", "a//b", "a.", "a/.b", ".a", "a.lock", "a.lock/b", "main", "", "x".repeat(255), "x".repeat(256), "é".repeat(128), "bell\x07"];
+    for (const n of names) expect([n, branchNameError(n)]).toEqual([n, server(n)]);
+    expect(names.filter((n) => !server(n))).toEqual(["feature/login", "Fix-Login", "v1.2", "under_score", "x".repeat(255)]);
+  });
+
+  test("spaces turn into dashes as you type", () => {
+    expect(tidyBranch("cs checks  test")).toBe("cs-checks-test");
+    expect(tidyBranch("feature/login")).toBe("feature/login");
+  });
+});

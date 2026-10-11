@@ -172,7 +172,7 @@ const OPS: Record<string, Record<string, Op>> = {
     ok: loose("{owner, repo, url, joined, door, and for a new agent: token, expires_at, mcp: {claude, codex, pi, opencode}, next}"), status: 201 } },
   [`${repo}/branches`]: {
     get: { id: "list_branches", summary: "A repo's branches", tag: "Branches", open: true, ok: arr(ref("Branch")) },
-    post: { id: "start_branch", summary: "Open a branch: edit its files with ?branch=, then merge it (the crew)", tag: "Branches",
+    post: { id: "start_branch", summary: "Open a branch, named as git allows (slashes, dots, capitals; no spaces): edit its files with ?branch=, then merge it (the crew)", tag: "Branches",
       body: obj({ name: str() }, ["name"]), ok: ref("Branch"), status: 201 },
   },
   [`${repo}/branches/{branch}`]: { get: { id: "review_branch", summary: "A branch's review: each file's ops against main now, and its conflicts", tag: "Branches", open: true,

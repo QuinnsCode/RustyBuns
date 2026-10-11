@@ -1253,6 +1253,33 @@ describe("shares", () => {
     expect((await ops("agent-a", q, [{ kind: "insert", after: null, text: "late" }])).status).toBe(404);
   });
 
+  test("a branch takes any name git would, and says which character it can't (#701)", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "x/a.js", content: "main" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "a.js", content: "main" });
+    const start = async (name: string) => { const r = await post(call, "ana", "/api/repos/ana/r/branches", { name }); return [r.status, (await r.json() as any).error]; };
+    for (const name of ["feature/login", "Fix-Login", "v1.2", "codesplitters/city-presence-576", "feat", "under_score"]) expect(await start(name)).toEqual([201, undefined]);
+    expect(await start("cs checks test")).toEqual([400, "bad branch name: no spaces in a branch name: use - instead"]);
+    expect(await start("a..b")).toEqual([400, `bad branch name: a branch name can't have ".." in it`]);
+    expect(await start("what?")).toEqual([400, `bad branch name: a branch name can't have "?" in it`]);
+    expect(await start("main")).toEqual([400, "bad branch name: main is the branch everything merges into"]);
+    expect(await start("x".repeat(256))).toEqual([400, "bad branch name: a branch name is at most 255 bytes"]);
+
+    // feat/x's a.js and feat's x/a.js are two copies, not one.
+    const at = (path: string, b: string) => `/api/repos/ana/r/do/ops?path=${encodeURIComponent(path)}&branch=${encodeURIComponent(b)}`;
+    const file = async (path: string, b: string) => text(await (await call("ana", `/api/repos/ana/r/do/file?path=${encodeURIComponent(path)}&branch=${encodeURIComponent(b)}`)).json() as Doc);
+    expect(await start("feat/x")).toEqual([201, undefined]);
+    expect((await post(call, "ana", at("a.js", "feat/x"), { ops: [{ kind: "set", line: "L1", base: 1, text: "feat/x" }] })).status).toBe(200);
+    expect(await file("x/a.js", "feat")).toBe("main");
+    expect(await file("a.js", "feat/x")).toBe("feat/x");
+    const review = await (await call("ana", `/api/repos/ana/r/branches/${encodeURIComponent("feat/x")}`)).json() as any;
+    expect(review).toMatchObject({ name: "feat/x", files: [{ path: "a.js" }] });
+    expect((await post(call, "ana", `/api/repos/ana/r/branches/${encodeURIComponent("feat/x")}/merge`, {})).status).toBe(200);
+    expect(await (async () => text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.js")).json() as Doc))()).toBe("feat/x");
+  });
+
   test("a branch deletes a file, and merging deletes it from main and its git (#440)", async () => {
     const call = await local();
     await post(call, "ana", "/api/login", { name: "ana" });

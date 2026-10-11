@@ -55,7 +55,7 @@ import { fromDisk, toDisk } from "./agent-run.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { startChecks, upstreamMoved } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
-import { json, NAME, type Env } from "./env.ts";
+import { branchNameError, json, NAME, type Env } from "./env.ts";
 import type { Doc } from "./lines.ts";
 import { indexFile, unindexFile } from "./search.ts";
 
@@ -636,8 +636,9 @@ export async function openUpstreamBranch(env: Env, owner: string, repo: string, 
   const s = await branchSetup(env, owner, repo);
   if ("error" in s) return s.error;
   if (!ref || ref === s.main || (await git(["check-ref-format", "--branch", ref])).code) return json({ error: "bad upstream branch" }, 400);
-  const b = name ?? ref.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 39).replace(/-+$/, "");
-  if (!NAME.test(b) || b === "main") return json({ error: "bad branch name: give one with name" }, 400);
+  // It keeps upstream's name: git took it, so we do too.
+  const b = name ?? ref, bad = branchNameError(b);
+  if (bad) return json({ error: `bad branch name: ${bad}${name ? "" : "; give one with name"}` }, 400);
   const theirs = await fetchBranch(s, ref);
   if (!theirs) return json({ error: `upstream has no branch ${ref}` }, 404);
   const base = await forkPoint(s, theirs);
