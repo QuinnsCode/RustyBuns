@@ -473,6 +473,57 @@ describe("accounts", () => {
   });
 });
 
+describe("ADMIN_EMAIL", () => {
+  /** The app with ADMIN_EMAIL set, and a signup whose email can be marked verified (as GitHub, Google or a mailed link would). */
+  async function site() {
+    const a = await accounts({ ADMINS: "quinn,boss-person", ADMIN_EMAIL: " Quinn@Example.com " });
+    const db = a.call.env.DB;
+    const authId = async (email: string) => (await db.prepare(`SELECT id FROM "user" WHERE email = ?`).bind(email).first())!.id as string;
+    const signup = async (email: string, verified: boolean) => {
+      const cookie = await a.signup(email, "Quinn");
+      if (verified) await db.prepare(`UPDATE "user" SET "emailVerified" = 1 WHERE email = ?`).bind(email).run();
+      return cookie;
+    };
+    const quinnRow = () => db.prepare("SELECT auth_id FROM users WHERE name = 'quinn'").first();
+    return { ...a, db, authId, signup, quinnRow };
+  }
+
+  test("a verified ADMIN_EMAIL gets the first ADMINS handle, short as it is, on first sight", async () => {
+    const { session, signup, authId, quinnRow } = await site();
+    const cookie = await signup("quinn@example.com", true);
+    expect(await session(cookie)).toMatchObject({ user: "quinn", admin: true });
+    expect(await quinnRow()).toEqual({ auth_id: await authId("quinn@example.com") });
+    expect((await session(cookie)).user).toBe("quinn");                                   // and keeps it
+  });
+
+  test("an unverified email that matches ADMIN_EMAIL gets nothing", async () => {
+    const { session, signup, quinnRow } = await site();
+    const cookie = await signup("quinn@example.com", false);
+    const s = await session(cookie);
+    expect(s.user).toBeNull();
+    expect(s).not.toHaveProperty("admin");
+    expect(await quinnRow()).toBeNull();
+  });
+
+  test("a quinn row alias mode left behind (no auth_id) is taken over", async () => {
+    const { db, session, signup, authId, quinnRow } = await site();
+    await db.prepare("INSERT INTO users (name) VALUES ('quinn')").run();
+    const cookie = await signup("quinn@example.com", true);
+    expect((await session(cookie)).user).toBe("quinn");
+    expect(await quinnRow()).toEqual({ auth_id: await authId("quinn@example.com") });
+  });
+
+  test("a quinn row another account owns is left alone, and ADMIN_EMAIL gets no handle", async () => {
+    const { db, session, signup, quinnRow } = await site();
+    await db.prepare("INSERT INTO users (name, auth_id) VALUES ('quinn', 'someone-else')").run();
+    const cookie = await signup("quinn@example.com", true);
+    const s = await session(cookie);
+    expect(s.user).toBeNull();
+    expect(s).not.toHaveProperty("admin");
+    expect(await quinnRow()).toEqual({ auth_id: "someone-else" });
+  });
+});
+
 describe("account email", () => {
   /** A stand-in for the send_email binding: what was sent, and the link in the last one to `to`. */
   const outbox = () => {
