@@ -43,13 +43,14 @@ const arrived = async <T>(got: T[], n: number) => {
 
 test("settings: none by default, the owner's to change", async () => {
   const { call, send } = await app();
-  expect(await (await call("ryan", "/api/repos/ryan/lab/checks/settings")).json()).toEqual({ where: null, required: [], post_statuses: false, github: null });
+  expect(await (await call("ryan", "/api/repos/ryan/lab/checks/settings")).json()).toEqual({ where: null, required: [], post_statuses: false, github: null, offline: false, down_since: null, here: false });
   await send("ana", "/api/login", { name: "ana" });
   expect((await send("ana", "/api/repos/ryan/lab/checks/settings", { where: "here" }, "PUT")).status).toBe(403);
   expect((await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "everywhere" }, "PUT")).status).toBe(400);
   expect((await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["a,b"] }, "PUT")).status).toBe(400);
-  // Nothing runs here until the owner says so.
+  // Running here is on offer whatever the setting; main just needs a commit to run on.
   expect((await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" })).status).toBe(409);
+  expect((await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "nope" })).status).toBe(404);
   const s = await (await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "both", required: ["test"] }, "PUT")).json();
   expect(s).toMatchObject({ where: "both", required: ["test"], post_statuses: false });
   // Leaving a field out keeps it.
@@ -124,7 +125,7 @@ test("a required check gates the merge: missing waits, failed blocks, passed let
   const lint = (review.checks.runs as any[]).find((r) => r.name === "lint");
   await send("ryan", `/api/repos/ryan/lab/checks/${lint.id}`, { status: "passed" }, "PUT");
   await send("ryan", "/api/repos/ryan/lab/checks", { ref: "tidy", sha: SHA, name: "test", status: "passed" });
-  expect((await checks("tidy")).gate).toEqual({ required: ["test", "lint"], ok: true, passed: ["test", "lint"], waiting: [], failed: [] });
+  expect((await checks("tidy")).gate).toEqual({ required: ["test", "lint"], ok: true, passed: ["test", "lint"], waiting: [], failed: [], deferred: [] });
   expect((await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {})).status).toBe(200);
 });
 
@@ -193,4 +194,47 @@ test("a watch whose time is up stops; a repo that doesn't mirror GitHub has noth
   await call.env.DB.prepare("UPDATE repos SET mirror_url = NULL WHERE owner = 'ryan' AND name = 'lab'").run();
   await watchGithub(call.env, "ryan", "lab", "main", SHA);
   expect(await (await send("ryan", "/api/repos/ryan/lab/checks/github", {})).json()).toEqual({ polled: [{ error: "this repo doesn't mirror a GitHub repo" }] });
+});
+
+test("GitHub down: checks run here instead, and a merge goes on ours with GitHub's deferred", async () => {
+  const { call, send, checks } = await app();
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "tidy" });
+  const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.ts&branch=tidy")).json();
+  await send("ryan", "/api/repos/ryan/lab/do/ops?path=a.ts&branch=tidy", { ops: [{ kind: "set", line: doc.lines[0].id, text: "ONE", base: doc.lines[0].rev }] });
+  const down = Date.now() - 60_000;
+  await call.env.DB.prepare("UPDATE repos SET mirror_url = 'https://github.com/o/r.git', mirror_state = 'down', mirror_down_since = ? WHERE owner = 'ryan' AND name = 'lab'").bind(down).run();
+  // GitHub first (the default for a mirror), and GitHub required.
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["typecheck"] }, "PUT");
+  expect(await (await call("ryan", "/api/repos/ryan/lab/checks/settings")).json()).toMatchObject({ where: "github", offline: true, down_since: down, here: true });
+
+  // The branch is checked here in GitHub's place.
+  await startChecks(call.env, "ryan", "lab", "tidy", SHA, "ryan");
+  let k = await checks("tidy");
+  expect(k.runs).toMatchObject([{ name: "test", runner: "desktop", status: "queued" }]);
+  expect((await (await call("ryan", `/api/repos/ryan/lab/checks/${k.runs[0].id}`)).json()).log).toContain("GitHub is down");
+  expect(k.gate).toMatchObject({ ok: false, waiting: ["typecheck"], deferred: [] });
+  const m = await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {});
+  expect(m.status).toBe(409);
+  expect((await m.json()).error).toContain("GitHub is down: run checks here");
+
+  // Ours pass: GitHub's required check is put off, and the merge goes.
+  await send("ryan", `/api/repos/ryan/lab/checks/${k.runs[0].id}`, { status: "passed" }, "PUT");
+  k = await checks("tidy");
+  expect(k.gate).toMatchObject({ ok: true, waiting: [], deferred: ["typecheck"] });
+  expect((await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {})).status).toBe(200);
+
+  // GitHub's back: it's GitHub's turn again, and nothing more queues here.
+  await call.env.DB.prepare("UPDATE repos SET mirror_state = 'ok', mirror_down_since = NULL WHERE owner = 'ryan' AND name = 'lab'").run();
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "next" });
+  await startChecks(call.env, "ryan", "lab", "next", "b".repeat(40), "ryan");
+  expect((await checks("next")).runs).toEqual([]);
+  expect(await call.env.DB.prepare("SELECT ref FROM check_watches WHERE sha = ?").bind("b".repeat(40)).first()).toEqual({ ref: "next" });
+});
+
+test("a failing check of ours isn't deferred, GitHub down or not", async () => {
+  const { call, send, checks } = await app();
+  await call.env.DB.prepare("UPDATE repos SET mirror_url = 'https://github.com/o/r.git', mirror_state = 'down' WHERE owner = 'ryan' AND name = 'lab'").run();
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["typecheck", "test"] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/checks", { ref: "x", sha: SHA, name: "test", status: "failed" });
+  expect((await checks("x")).gate).toMatchObject({ ok: false, failed: ["test"], waiting: ["typecheck"], deferred: [] });
 });

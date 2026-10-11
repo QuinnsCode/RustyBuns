@@ -122,15 +122,16 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { path: { ...str(), required: true } }, ok: obj({ path: str(), branch: str(), deleted: bool() }) } },
   [`${repo}/checks`]: {
     get: { id: "checks", summary: "A ref's check runs, ours and GitHub Actions', and whether a merge may go", tag: "Checks", open: true,
-      description: "Like `gh pr checks`: the newest run of each name on the ref's latest sha. gate.ok false means merging waits: on gate.waiting, or for gate.failed to be fixed.",
+      description: "Like `gh pr checks`: the newest run of each name on the ref's latest sha. gate.ok false means merging waits: on gate.waiting, or for gate.failed to be fixed. While GitHub is down (offline), required checks only GitHub runs are deferred once our own have passed.",
       query: { ref: str("main or a branch's name; main by default") },
       ok: obj({ ref: str(), sha: { type: ["string", "null"] }, where: { type: ["string", "null"] }, runs: arr(ref("CheckRun")),
-        gate: obj({ required: arr(str()), ok: bool(), passed: arr(str()), waiting: arr(str()), failed: arr(str()) }) }) },
+        here: bool("whether our own checks run"), offline: bool("the mirror can't reach GitHub"),
+        gate: obj({ required: arr(str()), ok: bool(), passed: arr(str()), waiting: arr(str()), failed: arr(str()), deferred: arr(str("GitHub's, put off while it's down")) }) }) },
     post: { id: "record_check", summary: "Record a check run, by hand or from a runner (the crew)", tag: "Checks",
       body: obj({ ref: str(), sha: str(), name: str(), runner: { type: "string", enum: ["desktop", "container", "github"] }, status: ref("CheckStatus"), url: str() }, ["ref", "sha", "name"]),
       ok: ref("CheckRun"), status: 201 },
   },
-  [`${repo}/checks/run`]: { post: { id: "run_checks", summary: "Queue our own checks on main or an open branch as it is now (the crew)", tag: "Checks",
+  [`${repo}/checks/run`]: { post: { id: "run_checks", summary: "Queue our own checks on main or an open branch as it is now, whatever the setting (the crew)", tag: "Checks",
     body: obj({ ref: str("main by default") }), ok: loose("the ref's checks, as `checks` answers"), status: 202 } },
   [`${repo}/checks/github`]: { post: { id: "import_github_checks", summary: "Fetch GitHub's results for the shas sent up, now (the crew)", tag: "Checks",
     body: obj({ ref: str("just this ref's") }), ok: loose("{polled: [{sha, imported, done} or {error}]}") } },
@@ -197,7 +198,8 @@ const SCHEMAS: Record<string, Schema> = {
   CheckStatus: { type: "string", enum: ["queued", "running", "passed", "failed", "cancelled"] },
   CheckRun: obj({ id: int(), ref: str("main or a branch"), sha: str(), name: str(), runner: { type: "string", enum: ["desktop", "container", "github"] }, status: ref("CheckStatus"),
     started_at: { type: ["integer", "null"] }, finished_at: { type: ["integer", "null"] }, url: { type: ["string", "null"], description: "GitHub's page, for an imported job" }, created_at: int() }),
-  CheckSettings: obj({ where: { type: ["string", "null"], description: "here, github or both; null runs none (a GitHub mirror defaults to github)" }, required: arr(str()), post_statuses: bool(), github: { type: ["string", "null"], description: "owner/name, when the repo mirrors GitHub" } }),
+  CheckSettings: obj({ where: { type: ["string", "null"], description: "here, github or both; null runs none (a GitHub mirror defaults to github)" }, required: arr(str()), post_statuses: bool(), github: { type: ["string", "null"], description: "owner/name, when the repo mirrors GitHub" },
+    offline: bool("the mirror can't reach GitHub right now"), down_since: { type: ["integer", "null"] }, here: bool("whether our own checks run: asked for, or in GitHub's place while it's down") }),
 };
 
 const params = (path: string, query: Op["query"] = {}) => [
