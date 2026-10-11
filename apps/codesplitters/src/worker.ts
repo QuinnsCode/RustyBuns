@@ -42,6 +42,7 @@ import { scaleRoutes } from "./scale.ts";
 import { indexFile, searchAll, searchRepo, searchRoutes } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
 import { installScript } from "./install.ts";
+import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue, TRUTHS, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -76,14 +77,21 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /install.sh  the CLI in one line, fetched from /cli.js on this site (install.ts)
   if (p[0] === "install.sh" && !p[1] && req.method === "GET") return installScript(url.origin);
   if (p[0] !== "api") return new Response("not found", { status: 404 });
+  // A cookie-signed write from another site goes no further (security.ts).
+  const foreign = crossSite(req, env);
+  if (foreign) return foreign;
   // GET /api  the API reference (src/api.ts), for anyone building their own UI or agent
   if (!p[1] && req.method === "GET") return json(REFERENCE);
 
   // Rules counted by IP (signing in, signing up, claiming a handle) go before
   // anyone is known; the rest count against the handle.
   const rule = ruleFor(req.method, p), byIp = RULES.find((r) => r.name === rule)?.per === "ip";
-  const early = byIp ? await limit(req, env, rule, null, false) : null;
+  // The edge's in-memory count goes first, so a flood never reaches D1's (security.ts).
+  const early = byIp ? (await edgeLimit(req, env, rule!)) ?? (await limit(req, env, rule, null, false)) : null;
   if (early) return early;
+  // Sign-up and reset links want Turnstile's answer, when the site has it.
+  const bot = wantsTurnstile(req.method, p) ? await turnstile(req, env) : null;
+  if (bot) return bot;
   // GET /api/openapi.json  this API, for agents and their gateways (openapi.ts)
   if (p[1] === "openapi.json" && !p[2] && req.method === "GET") return json(openapi(url.origin));
   // POST /api/mcp  the same operations as an MCP server's tools, for a personal API token (mcp.ts)
@@ -480,7 +488,7 @@ const app = {
   // Each answer to the internet is tallied for the admins' insights page (insights.ts), after it's sent.
   async fetch(req: Request, env: Env, ctx?: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
     let res: Response;
-    try { res = await route(req, env); }
+    try { res = secured(await route(req, env)); }
     catch (e) { if (tallied(req)) { const t = record(env, req, 500, !!ctx); if (ctx) ctx.waitUntil(t); else await t; } throw e; }
     if (tallied(req)) { const t = record(env, req, res.status, !!ctx); if (ctx) ctx.waitUntil(t); else await t; }
     return res;

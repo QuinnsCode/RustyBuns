@@ -383,6 +383,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
         break;
       }
       case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
+      case "ratelimit": bind.push(`  // ${name}: Workers Rate Limiting has no local twin; the app runs without it`); break;
       case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;
       case "durable_object":
         if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);

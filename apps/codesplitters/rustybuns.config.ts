@@ -19,6 +19,10 @@ const mailFrom = process.env.CODESPLITTERS_MAIL_FROM?.trim();
 // (the day it applies), and ships before that day: the site shows it as a banner (src/privacy.ts).
 // Empty means no banner.
 const privacyNotice = "";
+// Cloudflare Turnstile's site key (public) for the widget on sign-up, password reset and joining a
+// crew (src/security.ts). Set it once the widget exists for this hostname; its secret is then
+// required from 1Password (codesplitters/turnstile/secret). Empty means no bot check.
+const turnstileSiteKey = "";
 const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitters/${ref}`, optional });
 
 export default defineConfig({
@@ -104,6 +108,13 @@ export default defineConfig({
     // Where privacy requests go, shown on #/privacy (src/privacy.ts). Optional: without it the page offers the export and delete buttons only.
     PRIVACY_EMAIL: op("privacy/email", true),
     ...(privacyNotice ? { PRIVACY_NOTICE: { type: "var", value: privacyNotice } as const } : {}),
+    // Bursts of sign-ins, sign-ups and account mail are turned away at the edge, in memory,
+    // before D1's counters write a row (src/security.ts). Free; the namespace is any id unique in the account.
+    AUTH_LIMIT: { type: "ratelimit", namespaceId: "6470", simple: { limit: 20, period: 60 } },
+    ...(turnstileSiteKey ? {
+      TURNSTILE_SITE_KEY: { type: "var", value: turnstileSiteKey } as const,
+      TURNSTILE_SECRET: op("turnstile/secret"),
+    } : {}),
     // Verification and reset links for email accounts (src/identity.ts).
     ...(mailFrom ? {
       EMAIL: { type: "send_email", allowedSenderAddresses: [mailFrom] } as const,

@@ -69,7 +69,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     w["assets"] = { ...(c.worker.main ? { binding: "ASSETS" } : {}), directory: c.worker.assets, ...(c.worker.runWorkerFirst ? { run_worker_first: c.worker.runWorkerFirst } : {}),
       ...(c.worker.notFoundHandling ? { not_found_handling: c.worker.notFoundHandling } : {}) };
   }
-  const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [], sendEmail: unknown[] = [];
+  const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [], sendEmail: unknown[] = [], ratelimits: unknown[] = [];
   const producers: unknown[] = [], consumers: unknown[] = [];
   const vars: Record<string, string> = {};
   const sqliteClasses: string[] = [];
@@ -86,6 +86,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     // Wrangler takes one Images binding, as an object.
     if (b.type === "images") w["images"] = { binding: name };
     if (b.type === "send_email") sendEmail.push({ name, ...(b.allowedSenderAddresses ? { allowed_sender_addresses: b.allowedSenderAddresses } : {}) });
+    if (b.type === "ratelimit") ratelimits.push({ name, namespace_id: b.namespaceId, simple: b.simple });
     if (b.type === "queue") {
       producers.push({ binding: name, queue: b.queueName });
       if (b.consumer !== false) consumers.push(wranglerConsumer(b.queueName, b.consumer ?? {}));
@@ -102,6 +103,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   if (r2.length) w["r2_buckets"] = r2;
   if (artifacts.length) w["artifacts"] = artifacts;
   if (sendEmail.length) w["send_email"] = sendEmail;
+  if (ratelimits.length) w["ratelimits"] = ratelimits;
   if (producers.length) w["queues"] = { producers, ...(consumers.length ? { consumers } : {}) };
   if (dos.length) w["durable_objects"] = { bindings: dos };
   const migrations = doMigrations(sqliteClasses, previousMigrations(previous), c.worker.migrations);

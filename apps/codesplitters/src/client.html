@@ -782,8 +782,8 @@ async function fillPulses(root = document) {
 // Who you are comes from the server: an alias (desktop, demos) or a Better Auth account.
 let session = { mode: "alias", user: null, providers: [] };
 const me = () => session.user;
-const api = async (path, body, method) => {
-  const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+const api = async (path, body, method, headers = {}) => {
+  const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || j.message || r.status);
   // A place in a limit's line is an object; a deploy's own {queued: true} (a commit landing mid-run) isn't one.
@@ -1077,6 +1077,23 @@ addEventListener("keydown", (e) => { if (e.key === "Escape" && !drawer.el.hidden
 
 const GOOGLE = `<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M21.6 12.23c0-.71-.06-1.4-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-2 3.02v2.5h3.24c1.9-1.75 2.98-4.32 2.98-7.35Z"/><path fill="currentColor" opacity=".75" d="M12 22c2.7 0 4.97-.9 6.62-2.42l-3.24-2.5c-.9.6-2.04.95-3.38.95-2.6 0-4.8-1.75-5.59-4.11H3.07v2.58A10 10 0 0 0 12 22Z"/><path fill="currentColor" opacity=".55" d="M6.41 13.92a6 6 0 0 1 0-3.84V7.5H3.07a10 10 0 0 0 0 9l3.34-2.58Z"/><path fill="currentColor" opacity=".9" d="M12 5.98c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.62 9.62 0 0 0 12 2 10 10 0 0 0 3.07 7.5l3.34 2.58C7.2 7.73 9.4 5.98 12 5.98Z"/></svg>`;
 
+// Cloudflare Turnstile, the bot check on sign-up, reset links and joining a crew, when the site has
+// it (session.turnstile is its site key). Its script loads only when a form that needs it opens.
+let turnstileJs = null;
+/** Put the check in `el`; the promise gives the headers for one request (each answer works once). */
+async function botCheck(el) {
+  if (!session.turnstile || !el) return () => ({});
+  turnstileJs ??= new Promise((ok, no) => {
+    const s = document.createElement("script");
+    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    s.onload = ok; s.onerror = () => { turnstileJs = null; no(new Error("the bot check didn't load")); };
+    document.head.append(s);
+  });
+  try { await turnstileJs; } catch { return () => ({}); }
+  const id = turnstile.render(el, { sitekey: session.turnstile, size: "flexible" });
+  return () => { const t = turnstile.getResponse(id); turnstile.reset(id); return t ? { "x-turnstile": t } : {}; };
+}
+
 function signInDrawer(mode = "in") {
   const up = mode === "up";
   const social = { github: `${icon("github")}Continue with GitHub`, google: `${GOOGLE}Continue with Google` };
@@ -1090,6 +1107,7 @@ function signInDrawer(mode = "in") {
     <form id="email">
       <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email" placeholder="you@example.com"></label>
       <label class="field"><span>Password${up ? " · 8 or more characters" : ""}</span><input name="password" type="password" required minlength="8" autocomplete="${up ? "new-password" : "current-password"}"></label>
+      ${up ? `<div class="bot"></div>` : ""}
       <p class="formmsg" id="authmsg"></p>
       <button class="btn primary wide">${up ? "Create account" : "Sign in"}</button>
       ${up ? `<p class="muted small" style="margin:8px 0 0">We keep only what it takes to run your account. <a href="#/privacy">What we keep, and why</a>.</p>` : ""}
@@ -1102,6 +1120,7 @@ function signInDrawer(mode = "in") {
       try { const r = await api("/auth/sign-in/social", { provider: b.dataset.provider, callbackURL: location.origin + "/#/me" }); location.href = r.url; }
       catch (err) { $("#authmsg").textContent = String(err.message || err); }
     });
+  const bot = up ? botCheck($("#email .bot")) : null;
   $("#email").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target, btn = f.querySelector("button.primary");
@@ -1109,7 +1128,8 @@ function signInDrawer(mode = "in") {
     try {
       // Better Auth wants a display name; the handle is picked next.
       await api(up ? "/auth/sign-up/email" : "/auth/sign-in/email",
-        up ? { email: f.email.value, password: f.password.value, name: f.email.value.split("@")[0], callbackURL: "/?verified=1" } : { email: f.email.value, password: f.password.value });
+        up ? { email: f.email.value, password: f.password.value, name: f.email.value.split("@")[0], callbackURL: "/?verified=1" } : { email: f.email.value, password: f.password.value },
+        undefined, up ? (await bot)() : {});
       await refreshSession(); landHome();
       if (!session.pick) drawer.close();
       if (up && session.mail) toast(`Check ${f.email.value} for a link to verify it`);
@@ -1124,17 +1144,19 @@ function forgotDrawer(email = "") {
     <p class="muted lede">We'll email a link to pick a new one. It works for an hour.</p>
     <form id="forgotform">
       <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email" value="${esc(email)}" autofocus></label>
+      <div class="bot"></div>
       <p class="formmsg" id="forgotmsg"></p>
       <button class="btn primary wide">${icon("mail")}Send the link</button>
     </form>
     <p class="muted small" style="margin:0"><a href="#" id="backin">Back to sign in</a></p>`);
   $("#backin").addEventListener("click", (e) => { e.preventDefault(); signInDrawer(); });
+  const bot = botCheck($("#forgotform .bot"));
   $("#forgotform").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = e.target, btn = f.querySelector("button.primary");
     btn.disabled = true;
     try {
-      await api("/auth/request-password-reset", { email: f.email.value, redirectTo: "/?reset=1" });
+      await api("/auth/request-password-reset", { email: f.email.value, redirectTo: "/?reset=1" }, undefined, (await bot)());
       // The same answer whether or not the address has an account.
       $("#forgotmsg").textContent = `If ${f.email.value} has an account here, a link is on its way.`;
     } catch (err) { $("#forgotmsg").textContent = String(err.message || err); btn.disabled = false; }
@@ -2135,7 +2157,7 @@ const views = {
       <h2>Who else handles a piece</h2>
       <p>Cloudflare processes your data for us under its data processing addendum. GitHub, Google and the AI providers only get what you choose to send them, under their own terms. Some of these are in the US; transfers rely on the EU-US Data Privacy Framework and the EU's standard contractual clauses.</p>
       <ul>
-        <li><b>Cloudflare</b> hosts everything: the site, the database, your files, git storage and our account email. <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Their policy</a>.</li>
+        <li><b>Cloudflare</b> hosts everything: the site, the database, your files, git storage and our account email. Its Turnstile bot check, on making an account, asking for a reset link and joining a crew, loads from challenges.cloudflare.com and sees your IP address and browser. <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Their policy</a>.</li>
         <li><b>GitHub</b> and <b>Google</b>, only if you sign in with them, and GitHub when you fork a repo from it.</li>
         <li><b>AI model providers</b> (Anthropic, OpenAI, Google and others), only when you start a hosted agent: the file it edits and your task go to the model behind the harness you picked.</li>
       </ul>
@@ -3418,7 +3440,7 @@ const views = {
     }
     const u = me(), where = `${esc(inv.owner)}/${esc(inv.repo)}`, link = `${location.origin}/invite/${token}`;
     const person = inv.member ? `<p>You're in the crew already, @${esc(u)}.</p><a class="btn primary" href="#/r/${esc(inv.owner)}/${esc(inv.repo)}">${icon("book")}Open ${where}</a>`
-      : u ? `<p>Come in as <b>@${esc(u)}</b>.${inv.for && inv.for !== u ? ` This invite is for @${esc(inv.for)}, though.` : ""}</p><button class="btn primary" id="join">${icon("log-in")}Join the crew</button>`
+      : u ? `<p>Come in as <b>@${esc(u)}</b>.${inv.for && inv.for !== u ? ` This invite is for @${esc(inv.for)}, though.` : ""}</p><div class="bot"></div><button class="btn primary" id="join">${icon("log-in")}Join the crew</button>`
       : session.pick ? `<p>Pick your handle, then come back to join.</p><button class="btn primary" id="door-pick">${icon("at-sign")}Pick your handle</button>`
       : session.mode === "alias" ? `<p>Sign in with an alias at the top right, then join.</p>`
       : `<p>Sign in, or make an account and pick your handle. You'll come back here to join.</p><div class="row" style="gap:6px"><button class="btn primary" id="door-up">${icon("user-plus")}Make an account</button><button class="btn" id="door-in">${icon("log-in")}Sign in</button></div>`;
@@ -3439,8 +3461,9 @@ const views = {
     $("#door-up")?.addEventListener("click", () => { holdInvite(token); signInDrawer("up"); });
     $("#door-in")?.addEventListener("click", () => { holdInvite(token); signInDrawer(); });
     $("#door-pick")?.addEventListener("click", () => { holdInvite(token); handleDrawer(); });
+    const bot = $("#join") ? botCheck($("#join").previousElementSibling) : null;
     $("#join")?.addEventListener("click", async () => {
-      try { await api("/invites/claim", { invite: token, as: "person" }); } catch (err) { return toast(err.message); }
+      try { await api("/invites/claim", { invite: token, as: "person" }, undefined, (await bot)()); } catch (err) { return toast(err.message); }
       holdInvite(null); invitesBadge(); toast(`You're in the crew of ${inv.owner}/${inv.repo}`); location.hash = `#/r/${inv.owner}/${inv.repo}`;
     });
     $("#agent-link")?.addEventListener("click", () => copy(link, "Invite link copied: paste it to your agent"));

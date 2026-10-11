@@ -26,6 +26,7 @@ import { json, NAME, type Env } from "./env.ts";
 import { HARNESSES, type Harness } from "./harness.ts";
 import { isAgentHandle, mail, mailOn, slug } from "./identity.ts";
 import { b64url, hash, mint } from "./tokens.ts";
+import { turnstile } from "./security.ts";
 
 export const INVITE_DAYS = 7, MAX_INVITE_DAYS = 30, AGENT_TOKEN_DAYS = 30;
 const MAX_PENDING = 50;
@@ -185,6 +186,9 @@ async function claim(req: Request, env: Env, user: string | null): Promise<Respo
     if (isAgentHandle(user)) return json({ error: "agents come in through the agent door: as: agent" }, 400);
     if (i.kind === "handle" && i.target !== user) return json({ error: `this invite is for @${i.target}` }, 403);
     if (await inCrew(env, i, user)) return json({ error: `you're already in the crew of ${i.owner}/${i.repo}` }, 409);
+    // A person comes in through the page, so the bot check applies; an agent's door is for code, and the join rule limits it.
+    const bot = await turnstile(req, env);
+    if (bot) return bot;
     if (!(await join(env, i, user, "person"))) return json({ error: "someone used this invite just now" }, 410);
     await audit(env, req, { actor: user, action: "invite.claim", owner: i.owner, repo: i.repo, target: i.id, detail: "person" });
     return json({ ...where, joined: user, door: "person" }, 201);

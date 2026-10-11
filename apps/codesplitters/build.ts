@@ -1,6 +1,7 @@
 // Bundle the Worker (the fetch handler and the file Durable Object) and copy
 // the pages: the site, the game, the feature list the home page's strip reads, the API reference and the MCP page. No framework.
-import { mkdir, copyFile } from "node:fs/promises";
+import { mkdir, copyFile, writeFile } from "node:fs/promises";
+import { headersFile } from "./src/security.ts";
 
 await mkdir("dist/client", { recursive: true });
 await copyFile("src/client.html", "dist/client/index.html");
@@ -12,6 +13,8 @@ await copyFile("src/features.json", "dist/client/features.json");
 // Not api.html: Cloudflare serves that at /api, over the Worker's JSON.
 await copyFile("src/api.html", "dist/client/reference.html");
 await copyFile("src/mcp.html", "dist/client/mcp.html");
+// The pages' security headers, the same ones the Worker puts on its answers (src/security.ts).
+await writeFile("dist/client/_headers", headersFile());
 // Geist, served from here (no Google Fonts call): the stylesheet, both variable fonts and their license.
 await mkdir("dist/client/fonts", { recursive: true });
 for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2", "LICENSE.txt"]) await copyFile(`src/fonts/${f}`, `dist/client/fonts/${f}`);
