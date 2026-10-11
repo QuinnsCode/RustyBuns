@@ -8,7 +8,8 @@
 //   - GitHub Actions: a sha the mirror sent up is watched, and its check runs and
 //     commit statuses come back in as `github` runs (the cron polls; POST .../checks/github
 //     polls now). Our own results can go the other way, as `codesplitters/<name>` statuses;
-//   - anyone in the crew, by hand, with POST .../checks;
+//   - anyone in the crew, by hand, with POST .../checks: labelled so, and only the owner's
+//     may say how it went (a collaborator's is queued, for a runner to claim);
 //   - other CI, through the GitHub-shaped API under /api/gh/v3 with a repo's CI token,
 //     as `external` runs (gh-compat.ts);
 //   - a runner of your own, wherever it lives (#534): it pulls work rather than being
@@ -25,17 +26,19 @@
 // main. Required checks gate a merge, the way build-file changes wait for a
 // person (branches.ts). A required check can name paths: it's required only on a
 // branch that touches one of them, so a change in apps/a doesn't wait on b-tests.
-// One with a command is queued here too, for a runner to claim. Every run that starts or finishes is a `check_run`
+// One with a command is queued here too, for a runner to claim. Only whoever claimed a run, or the
+// owner, says how it went, so a collaborator (an agent too) can't pass a check it didn't run (#645).
+// Every run that starts or finishes is a `check_run`
 // webhook, shaped like GitHub's.
 //
 //   GET  /api/repos/:o/:r/checks[?ref=]        the ref's runs (main by default) on its latest sha, and the merge gate
-//   POST /api/repos/:o/:r/checks {ref, sha, name, runner?, status?}  record a run (the crew, or a runner)
+//   POST /api/repos/:o/:r/checks {ref, sha, name, runner?, status?}  record a run by hand (the crew queues one; the owner may say how it went)
 //   POST /api/repos/:o/:r/checks/run {ref}     queue our own checks on a ref as it is now, whatever the setting (the crew)
 //   POST /api/repos/:o/:r/checks/github {ref?}  fetch GitHub's results for the shas sent up now (the crew)
 //   POST /api/repos/:o/:r/checks/claim {runner_label, names?}  a runner takes the oldest queued run, or a 204 (the crew)
 //   GET|PUT /api/repos/:o/:r/checks/settings   where checks run, which are required, and whether ours go to GitHub
 //   GET  /api/repos/:o/:r/checks/:id           one run, with its log
-//   PUT  /api/repos/:o/:r/checks/:id {status?, log?, append?, junit?, runner_label?}  a runner reports, and says it's alive (the crew)
+//   PUT  /api/repos/:o/:r/checks/:id {status?, log?, append?, junit?, runner_label?}  a runner reports, and says it's alive (whoever claimed it, or the owner)
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
 import { json, type Env } from "./env.ts";
@@ -51,7 +54,7 @@ type Where = "here" | "github" | "both";
 export interface CheckRun {
   id: number; owner: string; repo: string; ref: string; sha: string; name: string; runner: Runner; status: Status;
   started_at: number | null; finished_at: number | null; log: string; junit: string | null; url: string | null; external_id: string | null; created_at: number;
-  runner_label: string | null; heartbeat_at: number | null;
+  runner_label: string | null; heartbeat_at: number | null; claimed_by: string | null;
 }
 
 /** A check a merge waits on: on every branch, or only on one that touches `paths`. One with a `command` is queued for our runners. */
@@ -222,7 +225,7 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
 
 /** Claimed runs nobody's heard from in STALE go back in the queue, for another runner (one repo's, or every repo's for the cron). */
 export async function requeueStale(env: Env, now = Date.now(), only?: { owner: string; repo: string }) {
-  const { results } = await env.DB.prepare(`UPDATE check_runs SET status = 'queued', started_at = NULL, heartbeat_at = NULL, runner_label = NULL,
+  const { results } = await env.DB.prepare(`UPDATE check_runs SET status = 'queued', started_at = NULL, heartbeat_at = NULL, runner_label = NULL, claimed_by = NULL,
       log = substr(log || char(10) || 'no word from ' || runner_label || ' in ${STALE / 60_000} minutes: back in the queue' || char(10), -${MAX_LOG})
     WHERE status = 'running' AND runner IN ('desktop', 'container') AND runner_label IS NOT NULL AND heartbeat_at < ?${only ? " AND owner = ? AND repo = ?" : ""} RETURNING *`)
     .bind(now - STALE, ...(only ? [only.owner, only.repo] : [])).all();
@@ -243,12 +246,12 @@ async function cloneUrl(env: Env, owner: string, repo: string) {
  * external CI's), of `names` when it only runs some, as `label`. One UPDATE marks it
  * running, so of two runners racing for it only one gets it. null when there's nothing to do.
  */
-export async function claimRun(env: Env, owner: string, repo: string, label: string, names: string[] = [], now = Date.now()) {
+export async function claimRun(env: Env, owner: string, repo: string, label: string, names: string[] = [], now = Date.now(), by: string | null = null) {
   await requeueStale(env, now, { owner, repo });
   const only = names.length ? ` AND name IN (${names.map(() => "?").join(", ")})` : "";
-  const run = await env.DB.prepare(`UPDATE check_runs SET status = 'running', started_at = ?, runner_label = ?, heartbeat_at = ?
+  const run = await env.DB.prepare(`UPDATE check_runs SET status = 'running', started_at = ?, runner_label = ?, heartbeat_at = ?, claimed_by = ?
     WHERE id = (SELECT id FROM check_runs WHERE owner = ? AND repo = ? AND status = 'queued' AND runner IN ('desktop', 'container')${only} ORDER BY id LIMIT 1) AND status = 'queued' RETURNING *`)
-    .bind(now, label, now, owner, repo, ...names).first() as CheckRun | null;
+    .bind(now, label, now, by, owner, repo, ...names).first() as CheckRun | null;
   if (!run) return null;
   await postStatus(env, run).catch(() => null);
   const command = (await checkSettings(env, owner, repo)).required.find((r) => r.name === run.name)?.command;
@@ -386,7 +389,10 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     if (!b.ref || !b.sha || !b.name || b.name.length > 100) return json({ error: "ref, sha and name, please" }, 400);
     if (b.runner && !RUNNERS.includes(b.runner)) return json({ error: `runner: one of ${RUNNERS.join(", ")}` }, 400);
     if (b.status && !STATUSES.includes(b.status)) return json({ error: `status: one of ${STATUSES.join(", ")}` }, 400);
-    return json(await recordRun(env, { owner, repo, ref: b.ref, sha: b.sha, name: b.name, runner: b.runner ?? "desktop", status: b.status, url: b.url }, user!), 201);
+    if (b.status && b.status !== "queued" && user !== owner) return json({ error: "only a runner says how a check went: record it queued for one to claim, or report through a CI token" }, 403);
+    const run = await recordRun(env, { owner, repo, ref: b.ref, sha: b.sha, name: b.name, runner: b.runner ?? "desktop", status: b.status, url: b.url, runner_label: `by hand: @${user}` }, user!);
+    await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(`recorded by hand by @${user}\n`, run.id).run();
+    return json(await get(env, run.id), 201);
   }
   if (p[5] === "run" && req.method === "POST") {
     const no = crew(); if (no) return no;
@@ -411,7 +417,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const b = await body<{ runner_label?: string; names?: string[] }>();
     if (typeof b.runner_label !== "string" || !b.runner_label.trim() || b.runner_label.length > 100) return json({ error: "runner_label, please: what this runner calls itself" }, 400);
     if (b.names !== undefined && (!Array.isArray(b.names) || b.names.some((n) => typeof n !== "string"))) return json({ error: "names: a list of check names" }, 400);
-    const got = await claimRun(env, owner, repo, b.runner_label.trim(), b.names);
+    const got = await claimRun(env, owner, repo, b.runner_label.trim(), b.names, Date.now(), user);
     return got ? json(got) : new Response(null, { status: 204 });
   }
   if (p[5] === "settings" && req.method === "GET") return json(await checkSettings(env, owner, repo));
@@ -442,6 +448,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const b = await body<{ status?: Status; log?: string; append?: string; junit?: string; runner_label?: string }>();
     if (b.status && !STATUSES.includes(b.status)) return json({ error: `status: one of ${STATUSES.join(", ")}` }, 400);
     if (run.runner === "github") return json({ error: "GitHub's runs come from GitHub" }, 409);
+    if (b.status && b.status !== run.status && user !== owner && run.claimed_by !== user) return json({ error: "only the runner that claimed it says how it went: POST .../checks/claim first" }, 403);
     // A runner that went quiet and lost its claim stops: the run is someone else's now.
     if (b.runner_label && b.runner_label !== run.runner_label && !DONE.has(run.status)) return json({ error: run.runner_label ? `${run.runner_label} has it now` : "it went back in the queue: no word from you in time" }, 409);
     const after = await updateRun(env, run, b, user!);

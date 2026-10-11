@@ -75,7 +75,7 @@ describe("invites", () => {
     const { call, send, invite, crew } = await app();
     const first = (await (await send(null, "/api/invites/claim", { invite: (await invite({})).token, as: "agent" })).json()) as any;
     expect(first.joined).toMatch(/^agent-guest-/);
-    // A second repo's invite: the agent comes in as the handle it already has, and gets no new token.
+    // A second repo's invite: the agent comes in as the handle it already has, with a token for that repo (its first is held to lab).
     await send("ryan", "/api/repos", { name: "lab2" });
     const second = (await (await send("ryan", "/api/repos/ryan/lab2/invites", {})).json()) as { link: string };
     const res = await call(null, "/api/mcp", { method: "POST", headers: { authorization: `Bearer ${first.token}` },
@@ -83,12 +83,38 @@ describe("invites", () => {
     const out = (await res.json()) as any;
     expect(out.result.isError).toBe(false);
     expect(JSON.parse(out.result.content[0].text)).toMatchObject({ joined: first.joined, door: "agent" });
-    expect(JSON.parse(out.result.content[0].text).token).toBeUndefined();
+    const lab2 = JSON.parse(out.result.content[0].text).token as string;
+    expect(lab2).toMatch(/^cst_/);
     expect(((await (await call("ryan", "/api/repos/ryan/lab2")).json()) as any).collaborators).toEqual([first.joined]);
+    const file = (token: string) => call(null, "/api/repos/ryan/lab2/files", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ path: `${token.slice(-6)}.txt`, content: "x" }) });
+    expect((await file(first.token)).status).toBe(403);
+    expect((await file(lab2)).status).toBe(201);
     // Already in lab: a claim there is turned away and leaves the invite pending.
     const third = await invite({});
     expect((await call(null, "/api/invites/claim", { method: "POST", headers: { authorization: `Bearer ${first.token}` }, body: JSON.stringify({ invite: third.token, as: "agent" }) })).status).toBe(409);
     expect((await crew()).invites.map((x) => x.token)).toEqual([third.token]);
+  });
+
+  test("an agent's token reaches its repo only, can't show private lines again, and goes when it leaves the crew (#645)", async () => {
+    const { call, send, invite } = await app();
+    const a = (await (await send(null, "/api/invites/claim", { invite: (await invite({})).token, as: "agent" })).json()) as any;
+    const as = (url: string, body?: unknown, method = "POST") => call(null, url, { ...(body !== undefined && { method, body: JSON.stringify(body) }), headers: { authorization: `Bearer ${a.token}` } });
+    // Another repo of ryan's it's in the crew of, without coming through an invite there: still out of reach.
+    await send("ryan", "/api/repos", { name: "other" });
+    await send("ryan", "/api/repos/ryan/other/collaborators", { name: a.joined });
+    expect((await as("/api/repos/ryan/other/files", { path: "x.ts", content: "x" })).status).toBe(403);
+    expect((await as("/api/repos", { name: "mine" })).status).toBe(403);
+    expect((await as("/api/repos/ryan/lab/files", { path: "b.ts", content: "b" })).status).toBe(201);
+    // It may hide lines, but showing them again is ryan's.
+    const doc = (await (await as("/api/repos/ryan/lab/do/file?path=a.ts")).json()) as { lines: { id: string }[] };
+    const lines = [doc.lines[0]!.id];
+    expect((await as("/api/repos/ryan/lab/do/private?path=a.ts", { lines, private: true })).status).toBe(200);
+    expect((await as("/api/repos/ryan/lab/do/private?path=a.ts", { lines, private: false })).status).toBe(403);
+    expect(await (await call(null, "/api/repos/ryan/lab/do/private?path=a.ts", { headers: { authorization: `Bearer ${a.token}` } })).json()).toEqual(lines);
+    expect((await send("ryan", "/api/repos/ryan/lab/do/private?path=a.ts", { lines, private: false })).status).toBe(200);
+    // Out of the crew, its token for lab is gone too.
+    expect((await call("ryan", `/api/repos/ryan/lab/collaborators/${a.joined}`, { method: "DELETE" })).status).toBe(200);
+    expect((await as("/api/session")).status).toBe(401);
   });
 
   test("a handle invite is that person's alone, and never an agent's", async () => {

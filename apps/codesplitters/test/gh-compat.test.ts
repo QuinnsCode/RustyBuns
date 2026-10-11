@@ -158,7 +158,7 @@ test("0043_ci_tokens widens check_runs.runner and keeps the rows, columns and in
     const rows = () => db.sqlite.query("SELECT * FROM check_runs ORDER BY id").all();
     const had = rows();
 
-    for (const f of files.filter((f) => f >= "0042")) copyFileSync(join(all, f), join(dir, f));
+    for (const f of files.filter((f) => f >= "0042" && f < "0044")) copyFileSync(join(all, f), join(dir, f));
     expect(await applyD1Migrations(db, dir)).toContain("0043_ci_tokens.sql");
     expect(shape()).toEqual(before);
     expect(rows()).toEqual(had);

@@ -311,7 +311,10 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (user !== owner) return json({ error: "owner only" }, 403);
       const { name } = await body<{ name: string }>();
       if (!NAME.test(name ?? "")) return json({ error: "bad name" }, 400);
-      await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
+      // A person has to have signed up first, so adding one never takes a handle nobody chose.
+      // agent- handles are ours to give (no person can pick one): a hosted agent comes in this way.
+      if (isAgentHandle(name)) await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
+      else if (!(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(name).first())) return json({ error: `no one's @${name} here yet: send them an invite link` }, 404);
       await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
       return json({ ok: true });
     }
@@ -319,7 +322,10 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "collaborators" && p[5] && !p[6] && req.method === "DELETE") {
       if (user !== owner) return json({ error: "owner only" }, 403);
       const r = await env.DB.prepare("DELETE FROM collaborators WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, p[5]).run();
-      return r.meta?.changes ? json({ ok: true }) : json({ error: `@${p[5]} isn't in the crew` }, 404);
+      if (!r.meta?.changes) return json({ error: `@${p[5]} isn't in the crew` }, 404);
+      // An agent's token for this repo goes with it.
+      await env.DB.prepare("DELETE FROM api_tokens WHERE name = ? AND repo = ?").bind(p[5], `${owner}/${repo}`).run();
+      return json({ ok: true });
     }
     // /api/repos/:o/:r/invites[/:token]  invite by handle, email or a bare link; the pending ones; revoke (invites.ts)
     const invites = await repoInviteRoutes(req, env, p, owner, repo, user);
@@ -349,6 +355,13 @@ async function route(req: Request, env: Env): Promise<Response> {
       if ("error" in m) return json({ error: m.error }, m.status);
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims") && req.method === "POST");
       if (writes && !a.write) return json({ error: "no write access" }, 403);
+      // Hiding lines is the crew's; showing them again (to git and search on the next commit) the owner's.
+      const sent = writes ? await req.text() : undefined;
+      if (p[5] === "private" && req.method === "POST") {
+        const on = (() => { try { return (JSON.parse(sent!) as { private?: unknown }).private; } catch { return undefined; } })();
+        if (typeof on !== "boolean") return json({ error: "{lines, private: true|false}, please" }, 400);
+        if (!on && user !== owner) return json({ error: "only the owner makes private lines public" }, 403);
+      }
       if (p[5] === "ws") {
         // The DO learns who this socket is, and whether it may write, from us.
         const h = new Headers(req.headers);
@@ -364,7 +377,6 @@ async function route(req: Request, env: Env): Promise<Response> {
         return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
       }
       // Only the crew reads private lines; everyone else gets placeholders.
-      const sent = writes ? await req.text() : undefined;
       const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitters-crew": a.write ? "1" : "0" } },
         url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "", branch);
       if (p[5] === "private" && req.method === "POST" && res.ok) {

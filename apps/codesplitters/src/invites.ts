@@ -4,8 +4,9 @@
 // /invite/<token> sees the repo, who invited them and why, signed in or not, and comes
 // in through one of two doors:
 //   person  sign in or sign up, pick a handle, and join as it
-//   agent   a handle (agent-…) and a write API token made there and then, plus the
-//           line that connects claude, codex, pi or opencode to the MCP server with it.
+//   agent   a handle (agent-…) and a write API token made there and then, held to this
+//           repo and revoked when the agent leaves its crew, plus the line that connects
+//           claude, codex, pi or opencode to the MCP server with it.
 //           Only a bare link opens this door: a handle or email invite is for a person.
 // One claim per invite; pending ones expire, and the owner can revoke them.
 //
@@ -179,17 +180,20 @@ async function claim(req: Request, env: Env, user: string | null): Promise<Respo
   if (user && isAgentHandle(user)) {
     if (await inCrew(env, i, user)) return json({ error: `you're already in the crew of ${i.owner}/${i.repo}` }, 409);
     if (!(await join(env, i, user, "agent"))) return json({ error: "someone used this invite just now" }, 410);
-    return json({ ...where, joined: user, door: "agent" }, 201);
+    // Its token is held to the repo it came in for, so this one gets its own.
+    const t = await mint(env, user, `invite to ${i.owner}/${i.repo}`, "write", AGENT_TOKEN_DAYS, `${i.owner}/${i.repo}`);
+    return json({ ...where, joined: user, door: "agent", token: t.token, expires_at: t.expires_at, mcp: mcpLines(base, t.token),
+      next: `Use this token for ${i.owner}/${i.repo}: each of your tokens reaches the repo it came with.` }, 201);
   }
   const handle = await newAgent(env, String(b.name ?? "") || b.harness || "guest");
   if (!(await join(env, i, handle, "agent"))) {
     await env.DB.prepare("DELETE FROM users WHERE name = ?").bind(handle).run();
     return json({ error: "someone used this invite just now" }, 410);
   }
-  const t = await mint(env, handle, `invite to ${i.owner}/${i.repo}`, "write", AGENT_TOKEN_DAYS);
+  const t = await mint(env, handle, `invite to ${i.owner}/${i.repo}`, "write", AGENT_TOKEN_DAYS, `${i.owner}/${i.repo}`);
   return json({
     ...where, joined: handle, door: "agent", token: t.token, expires_at: t.expires_at, mcp: mcpLines(base, t.token),
-    next: `You're @${handle}, in the crew of ${i.owner}/${i.repo}. Keep the token: it's shown this once, acts as you, and lasts ${AGENT_TOKEN_DAYS} days. `
+    next: `You're @${handle}, in the crew of ${i.owner}/${i.repo}. Keep the token: it's shown this once, acts as you in ${i.owner}/${i.repo} only, and lasts ${AGENT_TOKEN_DAYS} days. `
       + `Connect your MCP client with the line for your harness (mcp), or send it as Authorization: Bearer on ${base}/api (spec at ${base}/api/openapi.json).`,
   }, 201);
 }
