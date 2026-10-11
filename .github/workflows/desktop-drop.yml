@@ -37,6 +37,10 @@ on:
 concurrency:
   group: desktop-drop-${{ github.ref }}
 
+# Read-only token by default; a job that needs more says so.
+permissions:
+  contents: read
+
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -125,11 +129,14 @@ jobs:
         run: |
           # A half-built app (say, Windows failed) isn't dropped; its artifacts are still on the run.
           ls -la bins
-          want=$(bun -e 'const m=JSON.parse(process.argv[1]).include.filter(e=>e.app===process.argv[2]);console.log(m.length)' '${{ needs.plan.outputs.build }}' '${{ matrix.app }}')
-          got=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq "[.artifacts[].name | select(startswith(\"${{ matrix.app }}-\"))] | length")
+          want=$(bun -e 'const m=JSON.parse(process.argv[1]).include.filter(e=>e.app===process.argv[2]);console.log(m.length)' "$BUILD" "$APP")
+          got=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq "[.artifacts[].name | select(startswith(\"$APP-\"))] | length")
           echo "artifacts: $got of $want"
           [ "$got" = "$want" ]
-        env: { GH_TOKEN: "${{ github.token }}" }
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          BUILD: ${{ needs.plan.outputs.build }}   # through env, not pasted into the script: a PR writes this table
+          APP: ${{ matrix.app }}
       - name: Drop
         run: |
           v="${{ needs.plan.outputs.version }}"
@@ -140,8 +147,10 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: c2d417e655e0ef55de8fe2d07874f521
           R2_BUCKET: rustybuns-drops
           R2_PUBLIC_URL: ${{ vars.DROPS_PUBLIC_URL }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.DROPS_CLOUDFLARE_API_TOKEN }}  # R2 token: Object Read & Write on rustybuns-drops only
-          DROP_SECRET: ${{ secrets.DROP_SECRET }}
+          # A PR runs its own drop.ts, which could ignore --dry, so a PR gets no secrets at all
+          # (a dry run fills in placeholders).
+          CLOUDFLARE_API_TOKEN: ${{ github.event_name != 'pull_request' && secrets.DROPS_CLOUDFLARE_API_TOKEN || '' }}  # R2 token: Object Read & Write on rustybuns-drops only
+          DROP_SECRET: ${{ github.event_name != 'pull_request' && secrets.DROP_SECRET || '' }}
       - name: GitHub Release
         if: github.event_name == 'push' && needs.plan.outputs.channel == 'stable'
         run: |
