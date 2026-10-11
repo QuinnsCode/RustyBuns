@@ -862,6 +862,29 @@ describe("rate limits", () => {
       expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
     } finally { setSystemTime(); }
   });
+
+  test("every edit over the socket gets an answer, even when something breaks on the way (#659)", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "r" });
+    await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
+    // From the internet, so its edits are counted, and the count reads D1.
+    const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...ip } })) as any).webSocket, got: any[] = [];
+    ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+    ws.queue.splice(0);
+    const edit = async (id: number, ops: unknown) => {
+      ws.onMessage(JSON.stringify({ type: "ops", id, ops }));
+      for (const end = performance.now() + 15_000; performance.now() < end;) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
+    };
+    // An op that makes the file throw is a nack saying why, not silence.
+    expect(await edit(1, [null])).toMatchObject({ type: "nack", error: expect.stringMatching(/couldn't take it/) });
+    // D1 down under the edit limit: the edit still lands.
+    const prepare = call.env.DB.prepare.bind(call.env.DB);
+    call.env.DB.prepare = (sql: string) => { if (/limit_rules/.test(sql)) throw new Error("D1 is down"); return prepare(sql); };
+    try {
+      expect(await edit(2, [{ kind: "insert", after: null, text: "still lands" }])).toMatchObject({ type: "ack", rev: 2 });
+    } finally { call.env.DB.prepare = prepare; }
+    expect((await (await call("ana", "/api/repos/ana/r/do/file?path=a")).json() as any).lines.map((l: any) => l.text)).toEqual(["still lands", "x"]);
+  });
 });
 
 describe("github", () => {

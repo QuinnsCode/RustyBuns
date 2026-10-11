@@ -242,6 +242,10 @@
   .ln .n:hover { color: var(--fg); }
   .ln .by { color: var(--faint); font-size: 11.5px; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-right: 1px solid var(--border); user-select: none; }
   .ln .t { white-space: pre; padding: 0 16px; }
+  /* A line being saved says so, over the right end of its box; one that didn't land says why, under it (#659). */
+  .ln .t:has(> input) { position: relative; }
+  .ln .saving { position: absolute; right: 24px; top: 0; font: 500 11.5px/20px var(--sans); color: var(--muted); pointer-events: none; }
+  .ln .saving.failed { position: static; display: block; white-space: normal; color: var(--del-fg); }
   .code.plain .ln { grid-template-columns: 52px minmax(0, 1fr); }
   /* Stamps on a line: small chips after its text, yours filled in. */
   .ln .stamps { display: inline-flex; gap: 4px; margin-left: 14px; vertical-align: 1px; user-select: none; font: 500 11px/16px var(--sans); }
@@ -530,9 +534,9 @@
   .drawer .btn.wide { width: 100%; justify-content: center; padding: 10px 12px 9px; }
   .or { display: flex; align-items: center; gap: 10px; font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
   .or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
-  .seg { display: grid; grid-template-columns: 1fr 1fr; padding: 2px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--canvas); }
-  .seg button { font: 500 13px var(--sans); color: var(--muted); background: transparent; border: 0; border-radius: 4px; padding: 6px; cursor: pointer; }
-  .seg button.on { color: var(--fg); background: var(--grain), var(--paper); box-shadow: 0 0 0 1px var(--border-2); }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; white-space: nowrap; padding: 2px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--canvas); }
+  .seg button, .seg a { font: 500 13px var(--sans); color: var(--muted); background: transparent; border: 0; border-radius: 4px; padding: 6px; cursor: pointer; text-align: center; text-decoration: none; }
+  .seg button.on, .seg a.on { color: var(--fg); background: var(--grain), var(--paper); box-shadow: 0 0 0 1px var(--border-2); }
   .field { display: grid; gap: 5px; } .field > span { font: 500 12px var(--sans); color: var(--muted); }
   .at { display: flex; align-items: center; border: 1px solid var(--border-2); border-radius: 5px; background: var(--bg); }
   .at:focus-within { border-color: var(--fg); box-shadow: 0 0 0 3px rgba(10,10,10,.06); }
@@ -563,7 +567,7 @@
   .limits .rgroups > .box { break-inside: avoid; margin: 0 0 12px; }
   .limits h2 { display: flex; align-items: center; gap: 8px; }
   /* The home feed (#/feed): the digest first, then one row per person or agent run, its raw events one click behind. */
-  .feed { max-width: 820px; } .feed h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-weight: 600; }
+  .feed { max-width: 820px; } .feed h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-weight: 600; } .feed h2 .seg { flex: none; } .feed h2 .seg a { padding: 3px 10px; font-size: 12.5px; }
   .feed .digest .body { white-space: pre-wrap; line-height: 1.5; }
   .feed .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
   .feed details.grp { border: 1px solid var(--border); border-radius: 6px; margin: 0 0 8px; }
@@ -3184,16 +3188,33 @@ const views = {
       const held = claimOf.get(el.dataset.id);
       if (held && !mine(held)) return toast(held.bot ? `An agent is working on this line${held.task ? `: ${held.task}` : ""}. Lift its claim under Here now to take it back` : `@${held.who} is holding this line`);
       const line = doc.lines.find((l) => l.id === el.dataset.id);
-      const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}">`;
-      const inp = $("input", t); inp.focus();
+      const t = $(".t", el); t.innerHTML = `<input value="${esc(line.text)}"><span class="saving" hidden></span>`;
+      const inp = $("input", t), note = $(".saving", t); inp.focus();
+      // The rev this edit is based on: the line's when the box opened, or, once a save failed
+      // because someone else changed it, theirs (you've been told, and Enter saves yours over it).
+      let baseRev = line.rev, busy = false;
+      const say = (text, failed) => { note.hidden = false; note.classList.toggle("failed", failed); note.textContent = text; };
       inp.addEventListener("keydown", async (e) => {
         if (e.key === "Escape") return draw(doc);
-        if (e.key !== "Enter") return;
+        if (e.key !== "Enter" || busy) return;
         const ops = e.shiftKey ? [{ kind: "insert", after: line.id, text: "" }]
-          : inp.value === "" ? [{ kind: "delete", line: line.id, base: line.rev }]
-          : [{ kind: "set", line: line.id, base: line.rev, text: inp.value }];
-        // The broadcast has already updated `doc`; close the editor and show it.
-        try { await send(ops); draw(doc); } catch (err) { $(".t", el).textContent = /^Slow down/.test(err.message) ? err.message : "conflict: " + err.message + " (reloaded)"; setTimeout(() => draw(doc), 1500); }
+          : inp.value === "" ? [{ kind: "delete", line: line.id, base: baseRev }]
+          : [{ kind: "set", line: line.id, base: baseRev, text: inp.value }];
+        // A save is never silent: it says it's going, and stays open with your text until it lands (#659).
+        busy = true; inp.readOnly = true; say("saving…", false);
+        try { await send(ops); return draw(doc); }
+        catch (err) {
+          // Only the answer may have been lost: look at the file before saying it didn't land.
+          doc = await api(`${base}/file${q}`).catch(() => doc);
+          const now = doc.lines.find((l) => l.id === line.id);
+          if (ops[0].kind === "set" ? now?.text === inp.value && now.rev !== baseRev : ops[0].kind === "delete" && !now) return draw(doc);
+          busy = false; inp.readOnly = false; inp.focus();
+          if (now && now.rev !== baseRev && !/^Slow down/.test(err.message)) {
+            baseRev = now.rev;
+            return say(`Not saved: @${now.by} changed this line meanwhile${now.text ? ` to “${now.text}”` : ""}. Enter saves yours over it, Esc keeps theirs.`, true);
+          }
+          say(`Not saved: ${err.message}. Enter tries again, Esc drops it.`, true);
+        }
       });
     };
     draw(doc); drawCrew(); drawActs(); drawCommits(commits); loadStamps();
@@ -3306,16 +3327,23 @@ const views = {
     }
     icons();
     // Live: every applied op from every editor arrives here, and is applied in
-    // place. Our own edits go out on the same socket and wait for an ack.
-    let seq = 0;
+    // place. Our own edits go out on the same socket and wait for an ack. This view's own
+    // socket (`ws`), so an answer always finds the edit that asked; one that drops fails
+    // what's waiting on it and comes back by itself.
+    let seq = 0, ws = null, drops = 0;
     const pending = new Map();
     const send = (ops) => {
-      if (socket?.readyState !== WebSocket.OPEN) return api(`${base}/ops${q}`, { ops });
+      // No socket: POST it, and show what landed, since no broadcast will.
+      if (ws?.readyState !== WebSocket.OPEN) return api(`${base}/ops${q}`, { ops }).then(async (r) => {
+        if (r.applied?.[0]?.rev === doc.rev + 1) r.applied.forEach(applyLocal);
+        else if (r.rev > doc.rev) doc = await api(`${base}/file${q}`);
+        return r;
+      });
       const id = ++seq;
-      socket.send(JSON.stringify({ type: "ops", id, ops }));
+      ws.send(JSON.stringify({ type: "ops", id, ops }));
       return new Promise((ok, fail) => {
         pending.set(id, { ok, fail });
-        setTimeout(() => { if (pending.delete(id)) fail(new Error("no answer from the file; reload")); }, 8000);
+        setTimeout(() => { if (pending.delete(id)) fail(new Error("no answer from the file")); }, 8000);
       });
     };
     const applyLocal = (a) => {
@@ -3325,8 +3353,23 @@ const views = {
       else doc.lines.splice(i, 1);
       doc.rev = a.rev;
     };
-    socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws${q}`);
-    socket.onmessage = async (m) => {
+    const connect = () => {
+      const s = socket = ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws${q}`);
+      s.onmessage = onMessage;
+      s.onopen = async () => {
+        // Back after a drop: whatever landed meanwhile comes with the whole file.
+        if (!drops) return;
+        drops = 0;
+        doc = await api(`${base}/file${q}`).catch(() => doc);
+        if (viewing === null && !box.querySelector(".ln input")) draw(doc);
+      };
+      s.onclose = () => {
+        for (const [id, p] of pending) { pending.delete(id); p.fail(new Error("the connection to the file dropped")); }
+        // Still this page's socket (leaving the page clears it first): open another, backing off.
+        if (socket === s) setTimeout(() => { if (socket === s) connect(); }, Math.min(30_000, 1000 * 2 ** drops++));
+      };
+    };
+    const onMessage = async (m) => {
       const msg = JSON.parse(m.data);
       if (msg.type === "ack" || msg.type === "nack") {
         const p = pending.get(msg.id); pending.delete(msg.id);
@@ -3360,6 +3403,7 @@ const views = {
       for (const a of msg.applied) if (a.op.kind !== "delete") beating.set(a.by, Date.now() + 600);
       schedule(msg.applied.map((a) => a.line));
     };
+    connect();
   },
 
   // An invite: the repo, who invited you and why, for anyone with the link. Two doors in: as yourself, or for your agent.
@@ -3529,7 +3573,7 @@ const views = {
       : `${esc(d.text ?? "")}\n\n<span class="muted small">by ${esc(d.harness)}, covering ${ago(d.since)} to ${ago(d.through)}</span>`;
     const where = (x) => `<a href="#/f/${esc(x.owner)}/${esc(x.repo)}/${encodeURIComponent(x.path)}">${esc(x.owner)}/${esc(x.repo)}/${esc(x.path)}</a>`;
     app.innerHTML = `<div class="wrap limits feed" style="padding-top:24px">
-      <h2>${icon("rss")} Your feed<span class="grow"></span><span class="seg" id="feed-span">${[1, 7, 30].map((n) => `<a class="btn ghost${n === span ? " on" : ""}" href="#/feed/${n}">${n === 1 ? "today" : `${n} days`}</a>`).join("")}</span></h2>
+      <h2>${icon("rss")} Your feed<span class="grow"></span><span class="seg" id="feed-span" role="group" aria-label="how far back">${[1, 7, 30].map((n) => { const say = n === 1 ? "today" : `last ${n} days`; return `<a${n === span ? ' class="on" aria-current="page"' : ""} href="#/feed/${n}" title="${say}" aria-label="${say}">${n}d</a>`; }).join("")}</span></h2>
       <p class="muted" style="margin:0 0 14px">Line by line, from the people, agents, repos and lines you follow: who landed what, and who came along after. Private repos show only to their crew.</p>
       <div class="box digest"><div class="bar">${icon("sparkles")}<b>Digest</b><span class="grow"></span>
         ${agents.available && agents.admins_only ? `<span class="muted small" title="Digests run on this site's API keys">digests are for this site's admins</span>`
@@ -4055,15 +4099,22 @@ async function wireCheckHead(el, owner, repo, r) {
   document.getElementById("checkhead")?.remove();
   const isOwner = owner === me();
   const opts = [...(s.github ? [["github", "On GitHub, here when it's down"]] : []), ["here", "Here, on this machine"], ...(s.github ? [["both", "Here and on GitHub"]] : [])];
-  const pick = isOwner ? `<label class="muted" style="font-size:12px">${icon("list-checks")} Checks run <select id="check-where">${s.where ? "" : `<option value="" selected>nowhere yet</option>`}${opts.map(([v, t]) => `<option value="${v}"${s.where === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>` : "";
+  const pick = isOwner ? `<label class="muted" style="font-size:12px">${icon("list-checks")} Checks run <select id="check-where" autocomplete="off">${s.where ? "" : `<option value="" selected>nowhere yet</option>`}${opts.map(([v, t]) => `<option value="${v}"${s.where === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
+    <span id="check-where-save" hidden><button class="btn primary" title="save where checks run">${icon("check")}Save</button><button class="btn ghost" title="put it back">${icon("x")}</button></span>` : "";
   const down = s.offline ? `<span class="muted">${icon("cloud-off")} GitHub has been down${s.down_since ? ` since ${new Date(s.down_since).toLocaleTimeString()}` : ""}. Keep going: commits, branches and merges work here, checks run on this machine, and everything syncs to GitHub when it's back.</span>` : "";
   const mainRow = main?.runs.length ? `<div class="commit"><code>main</code><span class="muted">checks on the latest commit${s.github ? ", GitHub's included once it has them" : ""}</span>${checkRow(main)}</div>` : "";
   if (!pick && !down && !mainRow) return;
   const ci = isOwner ? `<details id="citokens" style="margin-top:6px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("key-round")} CI tokens: report checks from Jenkins, CircleCI or any CI that talks to GitHub</summary><div class="body"></div></details>` : "";
   el.insertAdjacentHTML("beforebegin", `<div id="checkhead" class="commit" style="display:block">${pick}${down ? `<div>${down}</div>` : ""}${mainRow}${ci}</div>`);
   $("#citokens")?.addEventListener("toggle", (e) => { if (e.target.open) wireCiTokens(owner, repo); }, { once: true });
-  $("#check-where")?.addEventListener("change", async (e) => {
-    try { await api(`/repos/${owner}/${repo}/checks/settings`, { where: e.target.value || null }, "PUT"); toast(e.target.value === "here" ? "Checks run here now: local first" : "Saved"); route(); }
+  // Picking an option only stages it: a focused select also changes on a stray key (type-ahead,
+  // arrows) or a scroll, so nothing is saved until Save is clicked (#657).
+  const sel = $("#check-where"), save = $("#check-where-save"), saved = s.where ?? "";
+  sel?.addEventListener("change", () => { save.hidden = sel.value === saved; });
+  save?.lastElementChild.addEventListener("click", () => { sel.value = saved; save.hidden = true; });
+  save?.firstElementChild.addEventListener("click", async (e) => {
+    if (!e.isTrusted || sel.value === saved) return;
+    try { await api(`/repos/${owner}/${repo}/checks/settings`, { where: sel.value || null }, "PUT"); toast(sel.value === "here" ? "Checks run here now: local first" : "Saved"); route(); }
     catch (err) { toast(err.message); }
   });
   icons();

@@ -11,6 +11,9 @@
 // A signed-in caller counts as their @handle; a signed-out one as a hash of their
 // IP salted with the day (and BETTER_AUTH_SECRET), so no IP is kept and no one is
 // followed from one day to the next. Days older than 30 are swept every hour.
+// Each isolate gathers its tallies for a second (TRAFFIC_MS) and writes them as
+// one upsert per caller, so D1 takes a write per caller a second, not one per
+// request (#638). Insights can lag by that second.
 //
 // A person's steps (made a repo, wrote code, committed, shared, ran an agent,
 // deployed) are noted the first and last time a request for one succeeds.
@@ -80,8 +83,33 @@ export async function noteStep(env: Env, user: string, step: string, now = Date.
   ]).catch(failed("step"));
 }
 
-/** Tally one answered request (only those from the internet; not the Worker's own calls). */
-export async function record(env: Env, req: Request, status: number) {
+/** How long an isolate gathers traffic before writing it: a row per caller a second, not one per request. */
+export const TRAFFIC_MS = 1000;
+
+type Hits = { day: number; who: string; kind: Kind; via: string; hits: number; errors: number; first_at: number; last_at: number; ua: string | null };
+type Steps = { name: string; step: string; first_at: number; last_at: number; n: number };
+/** What an isolate has counted and not yet written, and the write that will take it. */
+type Batch = { hits: Map<string, Hits>; steps: Map<string, Steps>; joined: Map<string, number>; done?: Promise<void> };
+const batches = new WeakMap<Env, Batch>();
+
+/** Write a batch, one upsert per caller and per person's step, in one D1 batch. */
+async function write(env: Env, b: Batch) {
+  const out = [...b.hits.values()].map((h) => env.DB.prepare(`INSERT INTO traffic (day, who, kind, via, hits, errors, first_at, last_at, ua) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (day, who, kind, via) DO UPDATE SET hits = hits + excluded.hits, errors = errors + excluded.errors, last_at = MAX(last_at, excluded.last_at), ua = excluded.ua`)
+    .bind(h.day, h.who, h.kind, h.via, h.hits, h.errors, h.first_at, h.last_at, h.ua));
+  for (const [name, at] of b.joined) out.push(env.DB.prepare("INSERT OR IGNORE INTO user_steps (name, step, first_at, last_at, n) VALUES (?, 'joined', ?, ?, 1)").bind(name, at, at));
+  for (const s of b.steps.values()) out.push(env.DB.prepare(`INSERT INTO user_steps (name, step, first_at, last_at, n) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (name, step) DO UPDATE SET last_at = MAX(last_at, excluded.last_at), n = n + excluded.n`).bind(s.name, s.step, s.first_at, s.last_at, s.n));
+  if (out.length) await env.DB.batch(out).catch(failed("traffic tally"));
+}
+
+/**
+ * Tally one answered request (only those from the internet; not the Worker's own calls).
+ * It joins the isolate's batch, which is written TRAFFIC_MS after the batch's first request
+ * when `later` (the Worker holds each request open for it with waitUntil), else straight away.
+ * Settles once it's written.
+ */
+export async function record(env: Env, req: Request, status: number, later = false): Promise<void> {
   const outer = viaMcp.get(req);
   if (outer) {
     // An MCP tool's request: the MCP call itself is the hit, counted as whoever the token is; this is only its step.
@@ -103,15 +131,32 @@ export async function record(env: Env, req: Request, status: number) {
   const { kind, via } = classify(req, p);
   const who = user ? `@${user}` : `ip:${await ipHash(env, ip, day)}`;
   const ua = (req.headers.get("user-agent") ?? "").slice(0, 160) || null;
-  const out = [env.DB.prepare(`INSERT INTO traffic (day, who, kind, via, hits, errors, first_at, last_at, ua) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
-    ON CONFLICT (day, who, kind, via) DO UPDATE SET hits = hits + 1, errors = errors + excluded.errors, last_at = excluded.last_at, ua = excluded.ua`)
-    .bind(day, who, kind, via, status >= 500 ? 1 : 0, now, now, ua)];
+  const error = status >= 500 ? 1 : 0;
+
+  let b = batches.get(env);
+  if (!b) batches.set(env, b = { hits: new Map(), steps: new Map(), joined: new Map() });
+  const key = `${day} ${who} ${kind} ${via}`, h = b.hits.get(key);
+  if (h) h.hits++, h.errors += error, h.last_at = now, h.ua = ua;
+  else b.hits.set(key, { day, who, kind, via, hits: 1, errors: error, first_at: now, last_at: now, ua });
   if (user) {
-    out.push(env.DB.prepare("INSERT OR IGNORE INTO user_steps (name, step, first_at, last_at, n) VALUES (?, 'joined', ?, ?, 1)").bind(user, now, now));
+    if (!b.joined.has(user)) b.joined.set(user, now);
     const step = status < 300 ? STEP_OF[ruleFor(req.method, p) ?? ""] : undefined;
-    if (step) out.push(stepSql(env, user, step, now));
+    const s = step ? b.steps.get(`${user} ${step}`) : undefined;
+    if (s) s.n++, s.last_at = now;
+    else if (step) b.steps.set(`${user} ${step}`, { name: user, step, first_at: now, last_at: now, n: 1 });
   }
-  await env.DB.batch(out).catch(failed("traffic tally"));
+  // Written now: this batch goes, and the next request starts another.
+  if (!later) {
+    batches.delete(env);
+    return b.done ?? write(env, b);
+  }
+  // The first request in a batch books its write; the rest wait on it too, so each keeps the isolate up till it's written.
+  const batch = b;
+  batch.done ??= new Promise<void>((ok) => setTimeout(ok, TRAFFIC_MS)).then(() => {
+    if (batches.get(env) === batch) batches.delete(env);
+    return write(env, batch);
+  });
+  return batch.done;
 }
 
 /** Hourly: traffic older than 30 days. */

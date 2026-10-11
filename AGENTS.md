@@ -34,4 +34,5 @@ Claude Code enforces this with `.claude/settings.json` (a deny-list) and `.claud
 (a PreToolUse hook, tested by `bun test ./.claude/hooks`). On other harnesses, follow these rules
 yourself. The hook is a speed bump, not a sandbox: it parses shell roughly, so a heredoc that just
 mentions one of these commands can trip it (write such text with your editor tool). The GitHub
-ruleset on `main` is what actually stops a push.
+ruleset on `main` (`.github/rulesets/main.json`: PRs only, and the `typecheck` and `apps` checks must pass) is
+what actually stops a push. It's also what makes `gh pr merge --auto` (the office's ⏱ Merge when ready) wait for CI.
