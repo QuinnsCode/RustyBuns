@@ -178,6 +178,8 @@
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   .ln.claim .t { box-shadow: inset 2px 0 0 var(--accent); }
   .ln.priv .n { box-shadow: inset 2px 0 0 var(--faint); } .ln .ph { color: var(--faint); font-style: italic; }
+  /* The crew reads private lines, blurred until hovered or edited, so a screen share doesn't show them. */
+  .ln.priv .t :is(.secret, input) { transition: filter .15s; } .ln.priv:not(:hover):not(:focus-within) .t :is(.secret, input) { filter: blur(5px); }
   .ln.priv .t::after { content: "private"; margin-left: 10px; padding: 0 6px; border: 1px solid var(--border-2); border-radius: 9px; font-size: 10.5px; color: var(--faint); }
   /* A cut's gutter: each test's line, and the lines a failure points at. */
   .ln.pass .n { color: #2f9e44; box-shadow: inset 3px 0 #2f9e44; } .ln.fail .n { color: #cf222e; box-shadow: inset 3px 0 #cf222e; }
@@ -618,9 +620,10 @@ let agentTimer = null;
 let ctx = {};
 function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 2400); }
 async function copy(text, what = "Copied") {
-  // An agent's call isn't a click, so the clipboard may refuse it: hand it the text instead of a prompt() that blocks the page.
+  // An agent's call isn't a click, so the clipboard may refuse it: hand it the text instead.
   if (agentCall) agentCall.copied = text;
-  try { await navigator.clipboard.writeText(text); toast(what); } catch { if (!agentCall) prompt("Copy this:", text); }
+  // No prompt() fallback: it would show a token or secret in full on screen.
+  try { await navigator.clipboard.writeText(text); toast(what); } catch { if (!agentCall) toast("The browser wouldn't copy it: press the button again"); }
 }
 
 async function refreshSession() { session = await api("/session").catch(() => session); }
@@ -977,7 +980,7 @@ function table(tree, href) {
 }
 function codeRows(lines, { blame = true, start = 1 } = {}) {
   // A private line reaches people outside the crew blank: say so instead of showing nothing.
-  return lines.map((l, i) => `<div class="ln${l.private ? " priv" : ""}" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${l.private && !l.text ? '<span class="ph">private line: only the crew can read it</span>' : esc(l.text) || " "}</span></div>`).join("");
+  return lines.map((l, i) => `<div class="ln${l.private ? " priv" : ""}" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${l.private && !l.text ? '<span class="ph">private line: only the crew can read it</span>' : l.private ? `<span class="secret">${esc(l.text) || " "}</span>` : esc(l.text) || " "}</span></div>`).join("");
 }
 /** Cut lines out: the picked pieces, plus "path:from-to" lines from the "add these lines too" box. */
 function cutLines(owner, repo, pieces, more = "", note = "") {
