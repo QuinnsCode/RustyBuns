@@ -8,7 +8,12 @@
 //   - GitHub Actions: a sha the mirror sent up is watched, and its check runs and
 //     commit statuses come back in as `github` runs (the cron polls; POST .../checks/github
 //     polls now). Our own results can go the other way, as `codesplitters/<name>` statuses;
-//   - anyone in the crew, by hand, with POST .../checks.
+//   - anyone in the crew, by hand, with POST .../checks;
+//   - a runner of your own, wherever it lives (#534): it pulls work rather than being
+//     pushed to, so it can sit behind a firewall or on a laptop. POST .../checks/claim
+//     takes the oldest queued run, PUT .../checks/:id streams its log and finishes it,
+//     and each PUT is a heartbeat: a claimed run nobody's heard from in STALE goes back
+//     in the queue. scripts/runner.ts is the loop, to wrap around any build.
 //
 // The repo's setting says where they run: here, github or both. A GitHub mirror
 // starts on github, and here is always on offer. GitHub is the backup, not a
@@ -16,16 +21,19 @@
 // and a merge goes on our own checks passing, with GitHub's required ones
 // deferred. When GitHub's back, the mirror pushes and its results come in on
 // main. Required checks gate a merge, the way build-file changes wait for a
-// person (branches.ts). Every run that starts or finishes is a `check_run`
+// person (branches.ts). A required check can name paths: it's required only on a
+// branch that touches one of them, so a change in apps/a doesn't wait on b-tests.
+// One with a command is queued here too, for a runner to claim. Every run that starts or finishes is a `check_run`
 // webhook, shaped like GitHub's.
 //
 //   GET  /api/repos/:o/:r/checks[?ref=]        the ref's runs (main by default) on its latest sha, and the merge gate
 //   POST /api/repos/:o/:r/checks {ref, sha, name, runner?, status?}  record a run (the crew, or a runner)
 //   POST /api/repos/:o/:r/checks/run {ref}     queue our own checks on a ref as it is now, whatever the setting (the crew)
 //   POST /api/repos/:o/:r/checks/github {ref?}  fetch GitHub's results for the shas sent up now (the crew)
+//   POST /api/repos/:o/:r/checks/claim {runner_label, names?}  a runner takes the oldest queued run, or a 204 (the crew)
 //   GET|PUT /api/repos/:o/:r/checks/settings   where checks run, which are required, and whether ours go to GitHub
 //   GET  /api/repos/:o/:r/checks/:id           one run, with its log
-//   PUT  /api/repos/:o/:r/checks/:id {status?, log?, append?, junit?}  a runner reports (the crew)
+//   PUT  /api/repos/:o/:r/checks/:id {status?, log?, append?, junit?, runner_label?}  a runner reports, and says it's alive (the crew)
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
 import { json, type Env } from "./env.ts";
@@ -41,14 +49,46 @@ type Where = "here" | "github" | "both";
 export interface CheckRun {
   id: number; owner: string; repo: string; ref: string; sha: string; name: string; runner: Runner; status: Status;
   started_at: number | null; finished_at: number | null; log: string; junit: string | null; url: string | null; external_id: string | null; created_at: number;
+  runner_label: string | null; heartbeat_at: number | null;
 }
+
+/** A check a merge waits on: on every branch, or only on one that touches `paths`. One with a `command` is queued for our runners. */
+export interface Required { name: string; paths?: string[]; command?: string }
 
 const DONE = new Set<Status>(["passed", "failed", "cancelled"]);
 /** How long a sha sent up is polled for GitHub's results. */
 const WATCH = 2 * 3600_000;
 /** A log keeps its last this-many characters. */
 const MAX_LOG = 256 * 1024;
-const COLUMNS = "id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at";
+/** A claimed run whose runner hasn't been heard from in this long goes back in the queue. */
+export const STALE = 10 * 60_000;
+const COLUMNS = "id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at, runner_label";
+
+/** The setting as stored: JSON, or the comma-separated names it used to be. */
+const parseRequired = (raw: string): Required[] => {
+  if (raw.trim().startsWith("[")) { try { return JSON.parse(raw); } catch { return []; } }
+  return raw.split(",").map((x) => x.trim()).filter(Boolean).map((name) => ({ name }));
+};
+
+/** Whether `path` falls under `pattern`: a directory or file (`apps/a`), or a glob (`*` within a segment, `**` across them). */
+export function pathMatches(pattern: string, path: string) {
+  const p = pattern.replace(/^\.?\//, "");
+  if (!/[*?]/.test(p)) { const d = p.replace(/\/+$/, ""); return path === d || path.startsWith(d + "/"); }
+  const re = p.split(/(\*\*\/?|\*|\?)/).map((x) =>
+    x === "**/" ? "(?:.*/)?" : x === "**" ? ".*" : x === "*" ? "[^/]*" : x === "?" ? "[^/]" : x.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("");
+  return new RegExp(`^${re}$`).test(path);
+}
+
+/** The required checks that apply when `paths` changed: all but those whose paths it misses. null, not knowing what changed (main), is all of them. */
+export const requiredFor = (required: Required[], paths: string[] | null) =>
+  required.filter((r) => !r.paths?.length || !paths || paths.some((f) => r.paths!.some((p) => pathMatches(p, f))));
+
+/** The files a branch touches, or null for main or a ref that isn't a branch. */
+async function touched(env: Env, owner: string, repo: string, ref: string) {
+  if (ref === "main" || !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, ref).first())) return null;
+  const { results } = await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, ref).all();
+  return results.map((r: any) => r.path as string);
+}
 
 /** owner/name on GitHub when the repo mirrors a GitHub repo, else null. */
 async function githubOf(env: Env, owner: string, repo: string) {
@@ -65,7 +105,7 @@ export async function checkSettings(env: Env, owner: string, repo: string) {
   const m = github ? await env.DB.prepare("SELECT mirror_state, mirror_down_since FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() : null;
   const offline = m?.mirror_state === "down";
   return {
-    where, required: String(s?.required ?? "").split(",").map((x) => x.trim()).filter(Boolean), post_statuses: !!s?.post_statuses, github,
+    where, required: parseRequired(String(s?.required ?? "")), post_statuses: !!s?.post_statuses, github,
     offline, down_since: offline ? (m?.mirror_down_since as number | null) ?? null : null,
     /** Whether our own checks run: asked for, or standing in while GitHub is down. */
     here: where === "here" || where === "both" || (where === "github" && offline),
@@ -129,8 +169,8 @@ export async function updateRun(env: Env, run: CheckRun, u: { status?: Status; l
   if (DONE.has(run.status) && u.status && u.status !== run.status) return null;
   const status = u.status ?? run.status, now = Date.now();
   const log = (u.log ?? run.log + (u.append ?? "")).slice(-MAX_LOG);
-  await env.DB.prepare("UPDATE check_runs SET status = ?, log = ?, junit = COALESCE(?, junit), url = COALESCE(?, url), started_at = COALESCE(started_at, ?), finished_at = COALESCE(finished_at, ?) WHERE id = ?")
-    .bind(status, log, u.junit ?? null, u.url ?? null, status === "queued" ? null : now, DONE.has(status) ? now : null, run.id).run();
+  await env.DB.prepare("UPDATE check_runs SET status = ?, log = ?, junit = COALESCE(?, junit), url = COALESCE(?, url), started_at = COALESCE(started_at, ?), finished_at = COALESCE(finished_at, ?), heartbeat_at = ? WHERE id = ?")
+    .bind(status, log, u.junit ?? null, u.url ?? null, status === "queued" ? null : now, DONE.has(status) ? now : null, now, run.id).run();
   const after = (await get(env, run.id))!;
   if (status !== run.status) {
     if (DONE.has(status)) await told(env, after, "completed", by);
@@ -161,13 +201,56 @@ export async function upstreamMoved(env: Env, owner: string, repo: string, ref: 
   } catch {}
 }
 
-/** Our own checks on `ref` at `sha`: one `test` run, on this machine or in a container, for a runner to pick up. */
+/**
+ * Our own checks on `ref` at `sha`, on this machine or in a container, for a runner to
+ * claim: each required check with a command that the ref's changes call for, or one
+ * `test` run when none do. One that's queued or running already isn't queued again.
+ */
 async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "") {
   const runner: Runner = typeof Bun !== "undefined" ? "desktop" : "container";
-  const live = await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND runner = ? AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, runner).first();
-  if (live) return;
-  const run = await recordRun(env, { owner, repo, ref, sha, name: "test", runner }, by);
-  if (why) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(why, run.id).run();
+  const s = await checkSettings(env, owner, repo);
+  const ours = requiredFor(s.required.filter((r) => r.command && r.name !== "*"), await touched(env, owner, repo, ref)).map((r) => r.name);
+  for (const name of ours.length ? ours : ["test"]) {
+    const live = await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND name = ? AND runner != 'github' AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, name).first();
+    if (live) continue;
+    const run = await recordRun(env, { owner, repo, ref, sha, name, runner }, by);
+    if (why) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(why, run.id).run();
+  }
+}
+
+/** Claimed runs nobody's heard from in STALE go back in the queue, for another runner (one repo's, or every repo's for the cron). */
+export async function requeueStale(env: Env, now = Date.now(), only?: { owner: string; repo: string }) {
+  const { results } = await env.DB.prepare(`UPDATE check_runs SET status = 'queued', started_at = NULL, heartbeat_at = NULL, runner_label = NULL,
+      log = substr(log || char(10) || 'no word from ' || runner_label || ' in ${STALE / 60_000} minutes: back in the queue' || char(10), -${MAX_LOG})
+    WHERE status = 'running' AND runner_label IS NOT NULL AND heartbeat_at < ?${only ? " AND owner = ? AND repo = ?" : ""} RETURNING *`)
+    .bind(now - STALE, ...(only ? [only.owner, only.repo] : [])).all();
+  for (const run of results as unknown as CheckRun[]) await postStatus(env, run).catch(() => null);
+  return results.length;
+}
+
+/** A remote that clones the repo with real text, good for an hour: the crew's when there is one. */
+async function cloneUrl(env: Env, owner: string, repo: string) {
+  const { access, handleFor } = await import("./archive.ts");
+  const h = await handleFor(env, owner, repo, true).catch(() => null);
+  const art = h && await access(h.handle, h.remote, "read", 3600).catch(() => null);
+  return art ? art.remote.replace("://", `://x:${art.token.split("?")[0]}@`) : null;
+}
+
+/**
+ * A runner takes the oldest queued run of ours (of `names`, when it only runs some),
+ * as `label`. One UPDATE marks it running, so of two runners racing for it only one
+ * gets it. null when there's nothing to do.
+ */
+export async function claimRun(env: Env, owner: string, repo: string, label: string, names: string[] = [], now = Date.now()) {
+  await requeueStale(env, now, { owner, repo });
+  const only = names.length ? ` AND name IN (${names.map(() => "?").join(", ")})` : "";
+  const run = await env.DB.prepare(`UPDATE check_runs SET status = 'running', started_at = ?, runner_label = ?, heartbeat_at = ?
+    WHERE id = (SELECT id FROM check_runs WHERE owner = ? AND repo = ? AND status = 'queued' AND runner != 'github'${only} ORDER BY id LIMIT 1) AND status = 'queued' RETURNING *`)
+    .bind(now, label, now, owner, repo, ...names).first() as CheckRun | null;
+  if (!run) return null;
+  await postStatus(env, run).catch(() => null);
+  const command = (await checkSettings(env, owner, repo)).required.find((r) => r.name === run.name)?.command;
+  return { id: run.id, ref: run.ref, sha: run.sha, name: run.name, clone_url: await cloneUrl(env, owner, repo), ...(command && { command }), stale_after_s: STALE / 1000 };
 }
 
 /** A sha that went up to GitHub: poll it for its Actions results for a while. */
@@ -231,6 +314,7 @@ export async function pollGithub(env: Env, now = Date.now()) {
  * A ref's checks: the runs on its latest sha (the newest of each name), and whether
  * a merge may go. A required check that hasn't run, or is still going, holds it;
  * one that failed or was cancelled blocks it. `*` requires every check that ran.
+ * One scoped to paths the branch doesn't touch isn't required here: it's `skipped`.
  * While GitHub is down, a required check only GitHub runs is deferred, not waited
  * on, once our own checks on the sha have all passed: work carries on, and GitHub's
  * verdict comes in on main when it's back.
@@ -245,7 +329,9 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
   const latest = new Map<string, Omit<CheckRun, "log" | "junit">>();
   for (const r of results as CheckRun[]) latest.set(r.name, r);
   const runs = [...latest.values()];
-  const wanted = s.required.includes("*") ? (runs.length ? runs.map((r) => r.name) : ["*"]) : s.required;
+  const applies = requiredFor(s.required, await touched(env, owner, repo, ref)).map((r) => r.name);
+  const skipped = s.required.map((r) => r.name).filter((n) => !applies.includes(n));
+  const wanted = applies.includes("*") ? (runs.length ? runs.map((r) => r.name) : ["*"]) : applies;
   const passed: string[] = [], waiting: string[] = [], failed: string[] = [], deferred: string[] = [];
   const ours = runs.filter((r) => r.runner !== "github"), oursPassed = ours.length > 0 && ours.every((r) => r.status === "passed");
   for (const name of new Set(wanted)) {
@@ -257,7 +343,7 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
   }
   return {
     ref, sha, where: s.where, here: s.here, offline: s.offline, runs,
-    gate: { required: s.required, ok: !waiting.length && !failed.length, passed, waiting, failed, deferred },
+    gate: { required: applies, ok: !waiting.length && !failed.length, passed, waiting, failed, deferred, skipped },
   };
 }
 
@@ -318,16 +404,30 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     for (const w of results as { ref: string; sha: string }[]) out.push(await importGithub(env, owner, repo, w.ref, w.sha));
     return json({ polled: out });
   }
+  if (p[5] === "claim" && req.method === "POST") {
+    const no = crew(); if (no) return no;
+    const b = await body<{ runner_label?: string; names?: string[] }>();
+    if (typeof b.runner_label !== "string" || !b.runner_label.trim() || b.runner_label.length > 100) return json({ error: "runner_label, please: what this runner calls itself" }, 400);
+    if (b.names !== undefined && (!Array.isArray(b.names) || b.names.some((n) => typeof n !== "string"))) return json({ error: "names: a list of check names" }, 400);
+    const got = await claimRun(env, owner, repo, b.runner_label.trim(), b.names);
+    return got ? json(got) : new Response(null, { status: 204 });
+  }
   if (p[5] === "settings" && req.method === "GET") return json(await checkSettings(env, owner, repo));
   if (p[5] === "settings" && req.method === "PUT") {
     if (user !== owner) return json({ error: "owner only" }, 403);
-    const b = await body<{ where?: Where | null; required?: string[]; post_statuses?: boolean }>();
+    const b = await body<{ where?: Where | null; required?: (string | Required)[]; post_statuses?: boolean }>();
     if (b.where != null && !["here", "github", "both"].includes(b.where)) return json({ error: "where: here, github or both" }, 400);
-    if (b.required !== undefined && (!Array.isArray(b.required) || b.required.some((n) => typeof n !== "string" || !n.trim() || n.includes(",")))) return json({ error: "required: a list of check names, or [\"*\"] for all" }, 400);
+    const required = b.required === undefined ? undefined : Array.isArray(b.required) ? b.required.map((r) => typeof r === "string" ? { name: r } : r) : null;
+    const bad = (r: Required) => !r || typeof r.name !== "string" || !r.name.trim() || r.name.includes(",")
+      || (r.paths !== undefined && (!Array.isArray(r.paths) || r.paths.some((x) => typeof x !== "string" || !x.trim())))
+      || (r.command !== undefined && (typeof r.command !== "string" || r.command.length > 1000));
+    if (required === null || required?.some(bad)) return json({ error: "required: a list of check names or {name, paths?, command?}, or [\"*\"] for all" }, 400);
     const now = await checkSettings(env, owner, repo);
     const had = await env.DB.prepare("SELECT run_where FROM check_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     await env.DB.prepare("INSERT INTO check_settings (owner, repo, run_where, required, post_statuses) VALUES (?, ?, ?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET run_where = excluded.run_where, required = excluded.required, post_statuses = excluded.post_statuses")
-      .bind(owner, repo, b.where !== undefined ? b.where : (had?.run_where ?? null), (b.required ?? now.required).map((n) => n.trim()).join(","), (b.post_statuses ?? now.post_statuses) ? 1 : 0).run();
+      .bind(owner, repo, b.where !== undefined ? b.where : (had?.run_where ?? null), JSON.stringify((required ?? now.required).map((r) => ({
+        name: r.name.trim(), ...(r.paths?.length && { paths: r.paths.map((x) => x.trim()) }), ...(r.command && { command: r.command }),
+      }))), (b.post_statuses ?? now.post_statuses) ? 1 : 0).run();
     return json(await checkSettings(env, owner, repo));
   }
 
@@ -337,9 +437,11 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!p[6] && req.method === "GET") return json(run);
   if (!p[6] && req.method === "PUT") {
     const no = crew(); if (no) return no;
-    const b = await body<{ status?: Status; log?: string; append?: string; junit?: string }>();
+    const b = await body<{ status?: Status; log?: string; append?: string; junit?: string; runner_label?: string }>();
     if (b.status && !STATUSES.includes(b.status)) return json({ error: `status: one of ${STATUSES.join(", ")}` }, 400);
     if (run.runner === "github") return json({ error: "GitHub's runs come from GitHub" }, 409);
+    // A runner that went quiet and lost its claim stops: the run is someone else's now.
+    if (b.runner_label && b.runner_label !== run.runner_label && !DONE.has(run.status)) return json({ error: run.runner_label ? `${run.runner_label} has it now` : "it went back in the queue: no word from you in time" }, 409);
     const after = await updateRun(env, run, b, user!);
     return after ? json(after) : json({ error: `it's ${run.status} already` }, 409);
   }
