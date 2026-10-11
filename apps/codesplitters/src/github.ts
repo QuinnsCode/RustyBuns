@@ -6,7 +6,7 @@
 import { symmetricDecrypt } from "better-auth/crypto";
 import { accountsOn, isAdmin } from "./identity.ts";
 import { fileStub } from "./archive.ts";
-import { json, NAME, type Env } from "./env.ts";
+import { json, NAME, type Env, readBody } from "./env.ts";
 import { importTarball, tooBigToImport } from "./tarball.ts";
 import { mirrorsOn } from "./mirror.ts";
 
@@ -339,7 +339,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   // Linking and unlinking are Better Auth's (/api/auth/link-social, /api/auth/unlink-account).
   if (p[2] === "active" && req.method === "POST") {
     if (!user || !accountsOn(env)) return json({ error: "sign in first" }, 401);
-    const { id } = (await req.json().catch(() => ({}))) as { id?: string };
+    const { id } = await readBody<"id">(req);
     if (!(await githubAccounts(env, user)).some((a) => a.id === id)) return json({ error: "that GitHub isn't linked to you" }, 404);
     await env.DB.prepare("UPDATE users SET github_account = ? WHERE name = ?").bind(id, user).run();
     return json({ id });
@@ -349,7 +349,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   // (a bot account, say), so theirs and yours stay apart on GitHub; null: as none.
   if (p[2] === "agent" && req.method === "POST") {
     if (!user || !accountsOn(env)) return json({ error: "sign in first" }, 401);
-    const { id = null } = (await req.json().catch(() => ({}))) as { id?: string | null };
+    const { id = null } = await readBody<"id">(req);
     if (id !== null && !(await githubAccounts(env, user)).some((a) => a.id === id)) return json({ error: "that GitHub isn't linked to you" }, 404);
     await env.DB.prepare("UPDATE users SET agent_github = ? WHERE name = ?").bind(id, user).run();
     return json({ id });
@@ -369,9 +369,10 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   if (p[2] === "dig" && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
     if (!env.ARTIFACTS) return json({ error: "no Artifacts binding" }, 501);
-    const b = (await req.json().catch(() => ({}))) as { repo?: string; name?: string; visibility?: string };
-    const full = parseRepo(b.repo ?? "");
+    const b = await readBody<"repo" | "name" | "visibility">(req);
+    const full = typeof b.repo === "string" ? parseRepo(b.repo) : null;
     if (!full) return json({ error: "give a GitHub repo as owner/name or its URL" }, 400);
+    if (b.name !== undefined && typeof b.name !== "string") return json({ error: "bad repo name" }, 400);
     const name = b.name || full.split("/")[1]!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
     const visibility = b.visibility ?? "public";

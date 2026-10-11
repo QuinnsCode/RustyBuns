@@ -42,7 +42,7 @@ import { access as artifactAccess, handleFor } from "./archive.ts";
 import { actingAs, isAdmin } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { harnessCommand, HARNESSES, type Harness } from "./harness.ts";
 
@@ -101,8 +101,9 @@ export const npmrcRegistry = (rcs: Npmrc[]): Registry => async (name) => {
   const { url, token } = registryUrl(rcs, name);
   const res = await fetch(url, { headers: { accept: "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
   if (!res.ok) return null;
-  const doc = (await res.json()) as { versions?: Record<string, unknown>; time?: Record<string, string> };
-  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {} };
+  // A registry from the owner's .npmrc can answer anything: keep only the dates that are strings.
+  const doc = (await res.json().catch(() => null)) as { versions?: Record<string, unknown>; time?: Record<string, unknown> } | null;
+  return { versions: Object.keys(doc?.versions ?? {}), time: Object.fromEntries(Object.entries(doc?.time ?? {}).filter((e): e is [string, string] => typeof e[1] === "string")) };
 };
 
 export const npmRegistry: Registry = npmrcRegistry([]);
@@ -645,18 +646,20 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner) });
   }
   if (!p[5] && req.method === "PUT") {
-    const b = (await req.json()) as Partial<Settings>;
-    const s = { ...(await settings(env, owner, repo)), ...b };
-    if (!LEVELS.includes(s.max_level)) return json({ error: "max_level: patch, minor or major" }, 400);
+    // Only what's sent changes; each field is checked before it lands in the settings.
+    const b = await readBody<keyof Settings>(req), now = await settings(env, owner, repo);
+    const s = { ...now, ...b };
+    const level = LEVELS.find((l) => l === s.max_level);
+    if (!level) return json({ error: "max_level: patch, minor or major" }, 400);
     const every = Math.round(Number(s.every_hours)), age = Math.round(Number(s.min_age_days));
     if (!(every >= 1 && every <= 24 * 30)) return json({ error: "every_hours: 1 to 720" }, 400);
     if (!(age >= 0 && age <= 90)) return json({ error: "min_age_days: 0 to 90" }, 400);
-    const fixWith = s.fix_with || null, tries = Math.round(Number(s.fix_tries));
-    if (fixWith && !HARNESSES.includes(fixWith)) return json({ error: `fix_with: ${HARNESSES.join(", ")} or null` }, 400);
+    const fixWith = s.fix_with ? HARNESSES.find((h) => h === s.fix_with) : null, tries = Math.round(Number(s.fix_tries));
+    if (fixWith === undefined) return json({ error: `fix_with: ${HARNESSES.join(", ")} or null` }, 400);
     if (!(tries >= 1 && tries <= 5)) return json({ error: "fix_tries: 1 to 5" }, 400);
-    const ignore = (Array.isArray(s.ignore) ? s.ignore : String(s.ignore).split(",")).map((x) => x.trim()).filter(Boolean).join(",");
+    const ignore = (Array.isArray(s.ignore) ? s.ignore.map(String) : String(s.ignore).split(",")).map((x) => x.trim()).filter(Boolean).join(",");
     await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ? WHERE owner = ? AND repo = ?")
-      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, owner, repo).run();
+      .bind(s.on ? 1 : 0, every, level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, owner, repo).run();
     return json(await settings(env, owner, repo));
   }
   if (p[5] === "run" && req.method === "POST") {

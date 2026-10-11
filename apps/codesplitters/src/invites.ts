@@ -17,7 +17,7 @@
 //   POST   /api/invites/claim {invite, as: person|agent, name?, harness?}  come in; invite is the link or its token
 //   GET    /invite/:token  (not under /api) a browser goes to the page; an agent gets these steps as text
 
-import { json, NAME, type Env } from "./env.ts";
+import { json, NAME, type Env, readBody } from "./env.ts";
 import { HARNESSES, type Harness } from "./harness.ts";
 import { isAgentHandle, mail, mailOn, slug } from "./identity.ts";
 import { b64url, mint } from "./tokens.ts";
@@ -68,11 +68,11 @@ export async function repoInviteRoutes(req: Request, env: Env, p: string[], owne
     return r.meta?.changes ? json({ ok: true }) : json({ error: "no such pending invite" }, 404);
   }
   if (p[5] || req.method !== "POST") return null;
-  const b = (await req.json().catch(() => ({}))) as { handle?: string; email?: string; note?: string; days?: number };
+  const b = await readBody<"handle" | "email" | "note" | "days">(req);
   const handle = String(b.handle ?? "").trim().replace(/^@/, "").toLowerCase(), email = String(b.email ?? "").trim().toLowerCase();
   if (handle && email) return json({ error: "a handle or an email, not both (neither makes a bare link)" }, 400);
   const days = b.days ?? INVITE_DAYS;
-  if (!Number.isInteger(days) || days < 1 || days > MAX_INVITE_DAYS) return json({ error: `days: 1 to ${MAX_INVITE_DAYS}` }, 400);
+  if (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > MAX_INVITE_DAYS) return json({ error: `days: 1 to ${MAX_INVITE_DAYS}` }, 400);
   if (handle) {
     if (!NAME.test(handle)) return json({ error: "handle: lowercase letters and digits, single dashes between" }, 400);
     if (handle === owner) return json({ error: "it's your repo" }, 400);
@@ -156,7 +156,7 @@ export async function inviteRoutes(req: Request, env: Env, p: string[], user: st
 }
 
 async function claim(req: Request, env: Env, user: string | null): Promise<Response> {
-  const b = (await req.json().catch(() => ({}))) as { invite?: string; as?: string; name?: string; harness?: string };
+  const b = await readBody<"invite" | "as" | "name" | "harness">(req);
   const token = tokenIn(String(b.invite ?? ""));
   if (!token) return json({ error: "invite: the link, or its csi_… token" }, 400);
   if (b.as !== "person" && b.as !== "agent") return json({ error: "as: person or agent" }, 400);
@@ -174,14 +174,15 @@ async function claim(req: Request, env: Env, user: string | null): Promise<Respo
   }
 
   if (!doors(i).includes("agent")) return json({ error: `this invite is for ${i.kind === "handle" ? `@${i.target}` : "a person"}: ask @${i.by} for a link an agent can use` }, 403);
-  if (b.harness !== undefined && !HARNESSES.includes(b.harness as Harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
+  const harness = HARNESSES.find((x) => x === b.harness);
+  if (b.harness !== undefined && !harness) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
   // An agent already here (calling with its own token) joins as itself.
   if (user && isAgentHandle(user)) {
     if (await inCrew(env, i, user)) return json({ error: `you're already in the crew of ${i.owner}/${i.repo}` }, 409);
     if (!(await join(env, i, user, "agent"))) return json({ error: "someone used this invite just now" }, 410);
     return json({ ...where, joined: user, door: "agent" }, 201);
   }
-  const handle = await newAgent(env, String(b.name ?? "") || b.harness || "guest");
+  const handle = await newAgent(env, String(b.name ?? "") || harness || "guest");
   if (!(await join(env, i, handle, "agent"))) {
     await env.DB.prepare("DELETE FROM users WHERE name = ?").bind(handle).run();
     return json({ error: "someone used this invite just now" }, 410);

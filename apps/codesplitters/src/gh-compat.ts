@@ -27,7 +27,7 @@
 //   GET    /api/gh/v3/repos/:o/:r/commits/:sha/check-runs   {total_count, check_runs}
 
 import { DONE, fromCheckRun, fromState, get, recordRun, shaped, updateRun, type CheckRun, type Status } from "./checks.ts";
-import { json, type Env } from "./env.ts";
+import { json, type Env, readBody } from "./env.ts";
 import { limit } from "./limits.ts";
 import { b64url, hash } from "./tokens.ts";
 
@@ -45,7 +45,7 @@ export async function ciTokenRoutes(req: Request, env: Env, p: string[], owner: 
     return json(results);
   }
   if (!p[6] && req.method === "POST") {
-    const b = (await req.json().catch(() => ({}))) as { label?: string };
+    const b = await readBody<"label">(req);
     const label = String(b.label ?? "").trim().slice(0, 60);
     if (!label) return json({ error: "label: which CI it's for, like jenkins" }, 400);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM ci_tokens WHERE owner = ? AND repo = ?").bind(owner, repo).first();
@@ -92,12 +92,13 @@ const asStatus = (r: CheckRun, base: string) => ({
 });
 
 /** GitHub's check-run status and conclusion as ours (none when it gave neither), or what's wrong with them. */
-function checkStatus(b: { status?: string; conclusion?: string | null }): { status?: Status } | { error: string } {
-  if (b.conclusion) return { status: fromCheckRun({ status: "completed", conclusion: b.conclusion }) };
+function checkStatus(b: { status?: unknown; conclusion?: unknown }): { status?: Status } | { error: string } {
+  if (typeof b.conclusion === "string" && b.conclusion) return { status: fromCheckRun({ status: "completed", conclusion: b.conclusion }) };
+  if (b.conclusion) return { error: "conclusion: a GitHub check-run conclusion" };
   if (b.status === undefined) return {};
-  if (!["queued", "in_progress", "completed"].includes(b.status)) return { error: "status: queued, in_progress or completed" };
   if (b.status === "completed") return { error: "conclusion: required when status is completed" };
-  return { status: fromCheckRun({ status: b.status, conclusion: null }) };
+  const status = (["queued", "in_progress"] as const).find((s) => s === b.status);
+  return status ? { status: fromCheckRun({ status, conclusion: null }) } : { error: "status: queued, in_progress or completed" };
 }
 
 /** A check run's output, as its log: title, summary and text. */
@@ -118,13 +119,14 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
   const slow = await limit(req, env, "ci", `${owner}/${repo}#${t.id}`, false);
   if (slow) return fail((await slow.json() as { error: string }).error, 429, { "retry-after": slow.headers.get("retry-after") ?? "60" });
   const by = `ci:${t.label}`, base = `${url.origin}/api/gh/v3/repos/${owner}/${repo}`;
-  const body = async () => (await req.json().catch(() => null)) as Record<string, any> | null;
+  const body = () => readBody<"state" | "context" | "target_url" | "description" | "name" | "head_sha" | "status" | "conclusion" | "details_url" | "external_id" | "started_at" | "completed_at" | "output">(req);
 
   // POST statuses/:sha: one run per context, moved on or (once finished) started again.
   if (rest[0] === "statuses" && rest[1] && !rest[2] && req.method === "POST") {
     const b = await body(), sha = rest[1];
-    if (!b || !["pending", "success", "failure", "error"].includes(b.state)) return fail("state: pending, success, failure or error", 422);
-    const context = String(b.context ?? "default").slice(0, 100), status = fromState(b.state);
+    const state = (["pending", "success", "failure", "error"] as const).find((x) => x === b.state);
+    if (!state) return fail("state: pending, success, failure or error", 422);
+    const context = String(b.context ?? "default").slice(0, 100), status = fromState(state);
     const target = typeof b.target_url === "string" ? b.target_url : null, about = typeof b.description === "string" ? b.description.slice(0, 140) : "";
     const had = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND sha = ? AND external_id = ? AND runner = 'external' ORDER BY id DESC LIMIT 1")
       .bind(owner, repo, sha, `status:${context}`).first() as CheckRun | null;
@@ -138,7 +140,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
   // POST check-runs: a new run.
   if (rest[0] === "check-runs" && !rest[1] && req.method === "POST") {
     const b = await body();
-    if (!b || typeof b.name !== "string" || !b.name || b.name.length > 100 || typeof b.head_sha !== "string" || !b.head_sha) return fail("name and head_sha, please", 422);
+    if (typeof b.name !== "string" || !b.name || b.name.length > 100 || typeof b.head_sha !== "string" || !b.head_sha) return fail("name and head_sha, please", 422);
     const s = checkStatus(b);
     if ("error" in s) return fail(s.error, 422);
     const sha = b.head_sha;
@@ -157,7 +159,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
     const id = Number(rest[1]);
     const run = Number.isInteger(id) && id > 0 ? await get(env, id) : null;
     if (!run || run.owner !== owner || run.repo !== repo || run.runner !== "external") return fail("Not Found", 404);
-    const b = (await body()) ?? {};
+    const b = await body();
     const s = checkStatus(b);
     if ("error" in s) return fail(s.error, 422);
     const after = await updateRun(env, run, { status: s.status, url: typeof b.details_url === "string" ? b.details_url : null, log: outputLog(b.output) }, by);

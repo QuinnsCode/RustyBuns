@@ -20,7 +20,7 @@
 //   POST   /api/tokens       {label, scope: read|write, days?}: the secret is shown this once
 //   DELETE /api/tokens/:id   revoke it
 
-import { json, type Env } from "./env.ts";
+import { json, type Env, readBody } from "./env.ts";
 import { actingAs } from "./identity.ts";
 
 export const SCOPES = ["read", "write"] as const;
@@ -79,15 +79,16 @@ export async function tokenRoutes(req: Request, env: Env, p: string[], user: str
     return json(results.map((t: any) => ({ ...t, expired: t.expires_at <= Date.now() })));
   }
   if (!p[2] && req.method === "POST") {
-    const b = (await req.json().catch(() => ({}))) as { label?: string; scope?: string; days?: number };
+    const b = await readBody<"label" | "scope" | "days">(req);
     const label = String(b.label ?? "").trim().slice(0, 60);
     if (!label) return json({ error: "label: what it's for, like executor" }, 400);
-    if (!SCOPES.includes(b.scope as Scope)) return json({ error: "scope: read or write" }, 400);
+    const scope = SCOPES.find((s) => s === b.scope);
+    if (!scope) return json({ error: "scope: read or write" }, 400);
     const days = b.days ?? 30;
-    if (!Number.isInteger(days) || days < 1 || days > MAX_DAYS) return json({ error: `days: 1 to ${MAX_DAYS}` }, 400);
+    if (typeof days !== "number" || !Number.isInteger(days) || days < 1 || days > MAX_DAYS) return json({ error: `days: 1 to ${MAX_DAYS}` }, 400);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM api_tokens WHERE name = ? AND grant_id IS NULL AND expires_at > ?").bind(user, Date.now()).first();
     if ((n?.n as number ?? 0) >= MAX_TOKENS) return json({ error: `at most ${MAX_TOKENS} live tokens: revoke one first` }, 400);
-    return json(await mint(env, user, label, b.scope as Scope, days), 201);
+    return json(await mint(env, user, label, scope, days), 201);
   }
   if (p[2] && !p[3] && req.method === "DELETE") {
     const r = await env.DB.prepare("DELETE FROM api_tokens WHERE id = ? AND name = ? AND grant_id IS NULL").bind(p[2], user).run();

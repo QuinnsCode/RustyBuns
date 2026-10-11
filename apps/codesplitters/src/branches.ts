@@ -16,7 +16,7 @@ import { materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { mergeBlock, refChecks } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
-import { json, NAME, type Env } from "./env.ts";
+import { json, NAME, type Env, readBody } from "./env.ts";
 import { emit } from "./hooks.ts";
 import { diffToOps } from "./sync.ts";
 
@@ -110,8 +110,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   // POST /api/repos/:o/:r/branches {name}
   if (!name && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
-    const { name: b } = (await req.json()) as { name: string };
-    if (!NAME.test(b ?? "") || b === "main") return json({ error: "bad branch name" }, 400);
+    const { name: b } = await readBody<"name">(req);
+    if (typeof b !== "string" || !NAME.test(b) || b === "main") return json({ error: "bad branch name" }, 400);
     const r = await env.DB.prepare("INSERT OR IGNORE INTO branches (owner, repo, name, by, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)").bind(owner, repo, b, user, Date.now()).run();
     if (!r.meta?.changes) return json({ error: "branch exists" }, 409);
     await emit(env, owner, repo, "branch.opened", user!, { ref: b, ref_type: "branch", master_branch: "main" });
@@ -157,7 +157,10 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   if (p[6] === "merge" && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
-    const { resolve = {}, build_ok } = (await req.json().catch(() => ({}))) as { resolve?: Record<string, Record<string, Pick>>; build_ok?: boolean };
+    const body = await readBody<"resolve" | "build_ok">(req), build_ok = body.build_ok;
+    // path → line → "branch" | "main", rebuilt from what came in: anything else in it settles nothing.
+    const resolve: Record<string, Record<string, Pick>> = Object.fromEntries(Object.entries(Object(body.resolve)).map(([path, lines]) =>
+      [path, Object.fromEntries(Object.entries(Object(lines)).filter((e): e is [string, Pick] => e[1] === "branch" || e[1] === "main"))]));
     const todo = (await files()).filter((f) => !f.merged);
     // Build or deploy files on a merge the owner's next commit would ship: read them first.
     const build = todo.map((f) => f.path).filter(isBuildFile);

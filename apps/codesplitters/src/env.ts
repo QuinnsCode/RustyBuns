@@ -115,6 +115,10 @@ export interface Env {
 export const json = (v: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json", ...headers } });
 
+/** A client's JSON body: the fields a route reads, each unknown until the route checks it. Bad JSON or a non-object just has none. */
+export type Body<K extends string> = { [k in K]?: unknown };
+export const readBody = async <K extends string>(req: Request): Promise<Body<K>> => (await req.json().catch(() => null)) ?? {};
+
 // Single dashes only, so "owner--repo" names an artifact unambiguously.
 export const NAME = /^(?=.{1,39}$)[a-z0-9]+(-[a-z0-9]+)*$/;
 

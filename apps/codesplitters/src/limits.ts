@@ -34,7 +34,7 @@
 // who a socket counts as when it opens (or that it isn't counted) and the
 // file's DO counts each edit with countHit.
 
-import { json, type Env } from "./env.ts";
+import { json, type Body, type Env, readBody } from "./env.ts";
 import { actingAs } from "./identity.ts";
 
 export const ACTIONS = ["reject", "log", "flag", "queue"] as const;
@@ -339,8 +339,9 @@ export async function limitRoutes(req: Request, env: Env, p: string[], admin: bo
   if (p[1] !== "admin" || p[2] !== "limits") return null;
   if (!admin) return json({ error: "admins only" }, 403);
   if (p[3] === "reset" && req.method === "POST") {
-    const b = (await req.json().catch(() => ({}))) as { who?: string; rule?: string };
-    if (!b.who) return json({ error: "who required" }, 400);
+    const b = await readBody<"who" | "rule">(req);
+    if (typeof b.who !== "string" || !b.who) return json({ error: "who required" }, 400);
+    if (b.rule !== undefined && typeof b.rule !== "string") return json({ error: "rule: a rule's name" }, 400);
     const only = b.rule ? " AND rule = ?" : "", args = b.rule ? [b.who, b.rule] : [b.who];
     await env.DB.batch([
       env.DB.prepare("DELETE FROM limit_hits WHERE who = ?" + only).bind(...args),
@@ -350,16 +351,20 @@ export async function limitRoutes(req: Request, env: Env, p: string[], admin: bo
   }
   if (p[3]) return null;
   if (req.method === "PUT") {
-    const b = (await req.json().catch(() => ({}))) as { rules?: { name: string; max: number; window_s: number; enabled: boolean; on_fail?: string }[] };
-    for (const r of b.rules ?? []) {
-      if (!RULES.some((d) => d.name === r.name)) return json({ error: `no rule ${r.name}` }, 400);
-      if (!(Number.isInteger(r.max) && r.max >= 1 && r.max <= 100_000)) return json({ error: `${r.name}: max is a whole number, 1 to 100000` }, 400);
-      if (!(Number.isInteger(r.window_s) && r.window_s >= 1 && r.window_s <= 30 * DAY)) return json({ error: `${r.name}: the window is 1 second to 30 days` }, 400);
+    const b = await readBody<"rules">(req);
+    if (b.rules !== undefined && !Array.isArray(b.rules)) return json({ error: "rules: a list" }, 400);
+    const set: { name: string; max: number; window_s: number; enabled: boolean; on_fail?: Action }[] = [];
+    for (const r of (b.rules ?? []) as (Body<"name" | "max" | "window_s" | "enabled" | "on_fail"> | null)[]) {
+      const d = RULES.find((d) => d.name === r?.name);
+      if (!r || !d) return json({ error: `no rule ${r?.name}` }, 400);
+      if (!(typeof r.max === "number" && Number.isInteger(r.max) && r.max >= 1 && r.max <= 100_000)) return json({ error: `${r.name}: max is a whole number, 1 to 100000` }, 400);
+      if (!(typeof r.window_s === "number" && Number.isInteger(r.window_s) && r.window_s >= 1 && r.window_s <= 30 * DAY)) return json({ error: `${r.name}: the window is 1 second to 30 days` }, 400);
       if (r.on_fail !== undefined && !isAction(r.on_fail)) return json({ error: `${r.name}: on_fail is ${ACTIONS.join(", ")}` }, 400);
-      if (r.on_fail === "queue" && !RULES.find((d) => d.name === r.name)!.queueable) return json({ error: `${r.name}: only slow, costly jobs can queue` }, 400);
+      if (r.on_fail === "queue" && !d.queueable) return json({ error: `${r.name}: only slow, costly jobs can queue` }, 400);
+      set.push({ name: d.name, max: r.max, window_s: r.window_s, enabled: !!r.enabled, on_fail: r.on_fail });
     }
     const current = await rules(env);
-    await env.DB.batch((b.rules ?? []).map((r) => env.DB.prepare("INSERT OR REPLACE INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES (?, ?, ?, ?, ?)")
+    await env.DB.batch(set.map((r) => env.DB.prepare("INSERT OR REPLACE INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES (?, ?, ?, ?, ?)")
       .bind(r.name, r.max, r.window_s, r.enabled ? 1 : 0, r.on_fail ?? current.get(r.name)!.on_fail)));
     cache = null;
   } else if (req.method !== "GET") return null;

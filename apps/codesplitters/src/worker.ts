@@ -4,7 +4,7 @@
 
 import { fromText } from "./lines.ts";
 import { ensureCrewRemote, fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
-import { code, json, NAME, type DigMessage, type Env } from "./env.ts";
+import { code, json, NAME, readBody, type DigMessage, type Env } from "./env.ts";
 import { accountsOn, actingAs, identityRoutes, identify, isAdmin, isAgentHandle } from "./identity.ts";
 import { privacyRoutes, sweepSessions } from "./privacy.ts";
 import { feedRoutes, runQueuedDigests, type DigestMessage } from "./feed.ts";
@@ -118,7 +118,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (insights) return insights;
   const job = await jobRoutes(req, env, p, user, admin, (r) => app.fetch(r, env));
   if (job) return job;
-  const body = async <T>() => (await req.json()) as T;
+  const body = <K extends string = never>() => readBody<K>(req);
 
   const levels = await levelRoutes(req, env, p, url, user, admin);
   if (levels) return levels;
@@ -163,9 +163,10 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (!user) return json({ error: "sign in first" }, 401);
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
-      const b = await body<{ bio?: string; theme_html?: string; pulse?: boolean; git_truth?: string }>();
+      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth">();
       if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
       if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
+      if ((b.bio !== undefined && typeof b.bio !== "string") || (b.theme_html !== undefined && typeof b.theme_html !== "string")) return json({ error: "bio and theme_html: text" }, 400);
       await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth) WHERE name = ?")
         .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, user).run();
     }
@@ -193,8 +194,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/repos {name, visibility}
   if (p[1] === "repos" && !p[2] && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
-    const { name, visibility = "public" } = await body<{ name: string; visibility?: string }>();
-    if (!NAME.test(name ?? "")) return json({ error: "bad repo name" }, 400);
+    const { name, visibility = "public" } = await body<"name" | "visibility">();
+    if (typeof name !== "string" || !NAME.test(name)) return json({ error: "bad repo name" }, 400);
     if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, branch) VALUES (?, ?, ?, ?, 'main')").bind(user, name, visibility, Date.now()).run();
     if (env.ARTIFACTS) {
@@ -232,7 +233,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     // PUT /api/repos/:o/:r {visibility}  (owner only)
     if (!p[4] && req.method === "PUT") {
       if (user !== owner) return json({ error: "owner only" }, 403);
-      const { visibility } = await body<{ visibility: string }>();
+      const { visibility } = await body<"visibility">();
       if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
       await env.DB.prepare("UPDATE repos SET visibility = ? WHERE owner = ? AND name = ?").bind(visibility, owner, repo).run();
       return json({ visibility });
@@ -301,8 +302,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     // POST /api/repos/:o/:r/collaborators {name}  (owner only; this is how agents get in)
     if (p[4] === "collaborators" && req.method === "POST") {
       if (user !== owner) return json({ error: "owner only" }, 403);
-      const { name } = await body<{ name: string }>();
-      if (!NAME.test(name ?? "")) return json({ error: "bad name" }, 400);
+      const { name } = await body<"name">();
+      if (typeof name !== "string" || !NAME.test(name)) return json({ error: "bad name" }, 400);
       await env.DB.prepare("INSERT OR IGNORE INTO users (name) VALUES (?)").bind(name).run();
       await env.DB.prepare("INSERT OR IGNORE INTO collaborators (owner, repo, name) VALUES (?, ?, ?)").bind(owner, repo, name).run();
       return json({ ok: true });
@@ -319,8 +320,9 @@ async function route(req: Request, env: Env): Promise<Response> {
     // POST /api/repos/:o/:r/files {path, content, branch?}
     if (p[4] === "files" && req.method === "POST") {
       if (!a.write) return json({ error: "no write access" }, 403);
-      const { path, content = "", branch } = await body<{ path: string; content?: string; branch?: string }>();
-      if (!path || path.length > 200 || path.includes("..") || path.startsWith("/")) return json({ error: "bad path" }, 400);
+      const { path, content = "", branch } = await body<"path" | "content" | "branch">();
+      if (typeof path !== "string" || !path || path.length > 200 || path.includes("..") || path.startsWith("/")) return json({ error: "bad path" }, 400);
+      if (typeof content !== "string" || (branch !== undefined && typeof branch !== "string")) return json({ error: "content and branch: text" }, 400);
       if (branch) {
         if (!(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
         return createOn(env, owner, repo, branch, path, content, user!);
@@ -412,8 +414,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/playlists {title}
   if (p[1] === "playlists" && !p[2] && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
-    const { title } = await body<{ title: string }>();
-    if (!title?.trim()) return json({ error: "title required" }, 400);
+    const { title } = await body<"title">();
+    if (typeof title !== "string" || !title.trim()) return json({ error: "title required" }, 400);
     const r = await env.DB.prepare("INSERT INTO playlists (owner, title) VALUES (?, ?) RETURNING id").bind(user, title.trim().slice(0, 80)).first();
     return json({ id: r.id, owner: user, title }, 201);
   }
@@ -421,7 +423,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p[1] === "playlists" && p[2] && p[3] === "tracks" && req.method === "POST") {
     const pl = await env.DB.prepare("SELECT * FROM playlists WHERE id = ?").bind(Number(p[2])).first();
     if (!pl || pl.owner !== user) return json({ error: "not your playlist" }, 403);
-    const t = await body<{ owner: string; repo: string; path: string; from: number; to: number; note?: string }>();
+    const t = await body<"owner" | "repo" | "path" | "from" | "to" | "note">();
+    if (typeof t.owner !== "string" || typeof t.repo !== "string" || typeof t.path !== "string" || typeof t.from !== "number" || typeof t.to !== "number"
+      || (t.note !== undefined && typeof t.note !== "string")) return json({ error: "owner, repo, path, from and to required" }, 400);
     if (!(await access(env, t.owner, t.repo, user)).read) return json({ error: "not found" }, 404);
     const m = await materialize(env, t.owner, t.repo, t.path);
     if ("error" in m) return json({ error: m.error }, m.status);

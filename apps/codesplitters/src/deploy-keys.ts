@@ -24,7 +24,7 @@
 //   GET    /api/admin/deploy-keys                    {rotating, keys} (admins)
 //   POST   /api/admin/deploy-keys/reseal             {keys, states, failed}
 
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 import { accountsOn, isAdmin } from "./identity.ts";
 
 export interface DeployKey { token: string; account_id?: string }
@@ -150,7 +150,7 @@ export async function deployKeyRoutes(req: Request, env: Env, p: string[], user:
   if (req.method === "PUT") {
     const why = hostedWhy(env, user);
     if (why) return json({ error: why }, 403);
-    const { token, account_id } = (await req.json().catch(() => ({}))) as Partial<DeployKey>;
+    const { token, account_id } = await readBody<keyof DeployKey>(req);
     const t = String(token ?? "").trim(), a = String(account_id ?? "").trim().toLowerCase();
     if (!/^[A-Za-z0-9_-]{20,200}$/.test(t)) return json({ error: `token: ${PROVIDERS[provider].token}` }, 400);
     if (provider === "cloudflare" && !ACCOUNT.test(a)) return json({ error: "account_id: the 32-character Cloudflare account ID the token is scoped to" }, 400);

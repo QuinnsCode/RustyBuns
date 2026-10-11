@@ -38,7 +38,7 @@
 //   PUT  /api/repos/:o/:r/checks/:id {status?, log?, append?, junit?, runner_label?}  a runner reports, and says it's alive (the crew)
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
 
@@ -376,21 +376,25 @@ interface Access { read: boolean; write: boolean }
 
 export async function checkRoutes(req: Request, env: Env, p: string[], url: URL, owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
   if (p[4] !== "checks") return null;
-  const body = async <T>() => (await req.json().catch(() => ({}))) as T;
+  const body = <K extends string = never>() => readBody<K>(req);
   const crew = () => a.write ? null : json({ error: "no write access" }, 403);
 
   if (!p[5] && req.method === "GET") return json(await refChecks(env, owner, repo, url.searchParams.get("ref") || "main"));
   if (!p[5] && req.method === "POST") {
     const no = crew(); if (no) return no;
-    const b = await body<{ ref?: string; sha?: string; name?: string; runner?: Runner; status?: Status; url?: string }>();
-    if (!b.ref || !b.sha || !b.name || b.name.length > 100) return json({ error: "ref, sha and name, please" }, 400);
-    if (b.runner && !RUNNERS.includes(b.runner)) return json({ error: `runner: one of ${RUNNERS.join(", ")}` }, 400);
-    if (b.status && !STATUSES.includes(b.status)) return json({ error: `status: one of ${STATUSES.join(", ")}` }, 400);
-    return json(await recordRun(env, { owner, repo, ref: b.ref, sha: b.sha, name: b.name, runner: b.runner ?? "desktop", status: b.status, url: b.url }, user!), 201);
+    const b = await body<"ref" | "sha" | "name" | "runner" | "status" | "url">();
+    if (typeof b.ref !== "string" || typeof b.sha !== "string" || typeof b.name !== "string" || !b.ref || !b.sha || !b.name || b.name.length > 100) return json({ error: "ref, sha and name, please" }, 400);
+    // find() hands back the list's own value, typed, or undefined when the client's isn't on it.
+    const runner = RUNNERS.find((r) => r === b.runner), status = STATUSES.find((s) => s === b.status);
+    if (b.runner && !runner) return json({ error: `runner: one of ${RUNNERS.join(", ")}` }, 400);
+    if (b.status && !status) return json({ error: `status: one of ${STATUSES.join(", ")}` }, 400);
+    if (b.url !== undefined && b.url !== null && typeof b.url !== "string") return json({ error: "url: text" }, 400);
+    return json(await recordRun(env, { owner, repo, ref: b.ref, sha: b.sha, name: b.name, runner: runner ?? "desktop", status, url: b.url }, user!), 201);
   }
   if (p[5] === "run" && req.method === "POST") {
     const no = crew(); if (no) return no;
-    const { ref = "main" } = await body<{ ref?: string }>();
+    const { ref = "main" } = await body<"ref">();
+    if (typeof ref !== "string") return json({ error: "ref: a branch name" }, 400);
     // Running here is always on offer, whatever the setting: local first, GitHub as the backup.
     if (ref !== "main" && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, ref).first())) return json({ error: "no open branch " + ref }, 404);
     const sha = await headOf(env, owner, repo, ref);
@@ -400,7 +404,8 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (p[5] === "github" && req.method === "POST") {
     const no = crew(); if (no) return no;
-    const { ref } = await body<{ ref?: string }>();
+    const { ref } = await body<"ref">();
+    if (ref !== undefined && typeof ref !== "string") return json({ error: "ref: a branch name" }, 400);
     const { results } = await env.DB.prepare(`SELECT ref, sha FROM check_watches WHERE owner = ? AND repo = ?${ref ? " AND ref = ?" : ""}`).bind(...[owner, repo, ...(ref ? [ref] : [])]).all();
     const out = [];
     for (const w of results as { ref: string; sha: string }[]) out.push(await importGithub(env, owner, repo, w.ref, w.sha));
@@ -408,7 +413,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (p[5] === "claim" && req.method === "POST") {
     const no = crew(); if (no) return no;
-    const b = await body<{ runner_label?: string; names?: string[] }>();
+    const b = await body<"runner_label" | "names">();
     if (typeof b.runner_label !== "string" || !b.runner_label.trim() || b.runner_label.length > 100) return json({ error: "runner_label, please: what this runner calls itself" }, 400);
     if (b.names !== undefined && (!Array.isArray(b.names) || b.names.some((n) => typeof n !== "string"))) return json({ error: "names: a list of check names" }, 400);
     const got = await claimRun(env, owner, repo, b.runner_label.trim(), b.names);
@@ -417,9 +422,10 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   if (p[5] === "settings" && req.method === "GET") return json(await checkSettings(env, owner, repo));
   if (p[5] === "settings" && req.method === "PUT") {
     if (user !== owner) return json({ error: "owner only" }, 403);
-    const b = await body<{ where?: Where | null; required?: (string | Required)[]; post_statuses?: boolean }>();
-    if (b.where != null && !["here", "github", "both"].includes(b.where)) return json({ error: "where: here, github or both" }, 400);
-    const required = b.required === undefined ? undefined : Array.isArray(b.required) ? b.required.map((r) => typeof r === "string" ? { name: r } : r) : null;
+    const b = await body<"where" | "required" | "post_statuses">();
+    const where = (["here", "github", "both"] as const).find((w) => w === b.where);
+    if (b.where != null && !where) return json({ error: "where: here, github or both" }, 400);
+    const required: Required[] | null | undefined = b.required === undefined ? undefined : Array.isArray(b.required) ? b.required.map((r) => typeof r === "string" ? { name: r } : r) : null;
     const bad = (r: Required) => !r || typeof r.name !== "string" || !r.name.trim() || r.name.includes(",")
       || (r.paths !== undefined && (!Array.isArray(r.paths) || r.paths.some((x) => typeof x !== "string" || !x.trim())))
       || (r.command !== undefined && (typeof r.command !== "string" || r.command.length > 1000));
@@ -427,7 +433,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const now = await checkSettings(env, owner, repo);
     const had = await env.DB.prepare("SELECT run_where FROM check_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     await env.DB.prepare("INSERT INTO check_settings (owner, repo, run_where, required, post_statuses) VALUES (?, ?, ?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET run_where = excluded.run_where, required = excluded.required, post_statuses = excluded.post_statuses")
-      .bind(owner, repo, b.where !== undefined ? b.where : (had?.run_where ?? null), JSON.stringify((required ?? now.required).map((r) => ({
+      .bind(owner, repo, b.where !== undefined ? (where ?? null) : (had?.run_where ?? null), JSON.stringify((required ?? now.required).map((r) => ({
         name: r.name.trim(), ...(r.paths?.length && { paths: r.paths.map((x) => x.trim()) }), ...(r.command && { command: r.command }),
       }))), (b.post_statuses ?? now.post_statuses) ? 1 : 0).run();
     return json(await checkSettings(env, owner, repo));
@@ -439,12 +445,15 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!p[6] && req.method === "GET") return json(run);
   if (!p[6] && req.method === "PUT") {
     const no = crew(); if (no) return no;
-    const b = await body<{ status?: Status; log?: string; append?: string; junit?: string; runner_label?: string }>();
-    if (b.status && !STATUSES.includes(b.status)) return json({ error: `status: one of ${STATUSES.join(", ")}` }, 400);
+    const b = await body<"status" | "log" | "append" | "junit" | "runner_label" | "url">();
+    const status = STATUSES.find((s) => s === b.status);
+    if (b.status && !status) return json({ error: `status: one of ${STATUSES.join(", ")}` }, 400);
+    const text = (v: unknown) => typeof v === "string" ? v : undefined;
+    if ([b.log, b.append, b.junit, b.runner_label, b.url].some((v) => v !== undefined && text(v) === undefined)) return json({ error: "log, append, junit, runner_label and url: text" }, 400);
     if (run.runner === "github") return json({ error: "GitHub's runs come from GitHub" }, 409);
     // A runner that went quiet and lost its claim stops: the run is someone else's now.
     if (b.runner_label && b.runner_label !== run.runner_label && !DONE.has(run.status)) return json({ error: run.runner_label ? `${run.runner_label} has it now` : "it went back in the queue: no word from you in time" }, 409);
-    const after = await updateRun(env, run, b, user!);
+    const after = await updateRun(env, run, { status, log: text(b.log), append: text(b.append), junit: text(b.junit), url: text(b.url) }, user!);
     return after ? json(after) : json({ error: `it's ${run.status} already` }, 409);
   }
   if (p[6] === "cancel" && req.method === "POST") {

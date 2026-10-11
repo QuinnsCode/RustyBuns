@@ -8,7 +8,7 @@
 // to stamp and see stamped, like its text.
 
 import { materialize, toFile } from "./archive.ts";
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 
 export const STAMPS = ["+1", "heart", "binoculars", "shovel", "gem", "skull", "lgtm"] as const;
 /** How many lines one stamp may go on at once. */
@@ -23,8 +23,9 @@ const stamped = (env: Env, owner: string, repo: string, path: string) => toFile(
 
 export async function stampRoutes(req: Request, env: Env, p: string[], url: URL, owner: string, repo: string, user: string | null, a: { read: boolean; write: boolean }): Promise<Response | null> {
   if (p[4] !== "stamps" || p[5]) return null;
-  const q = req.method === "POST" ? ((await req.json().catch(() => ({}))) as Record<string, unknown>) : Object.fromEntries(url.searchParams);
+  const q = req.method === "POST" ? await readBody<"path" | "line" | "lines" | "stamp" | "from" | "to">(req) : Object.fromEntries(url.searchParams);
   const path = String(q.path ?? "");
+  if (!path) return json({ error: "path required" }, 400);
   const m = await materialize(env, owner, repo, path);
   if ("error" in m) return json({ error: m.error }, m.status);
   const lines = await fileLines(env, owner, repo, path, a.write);

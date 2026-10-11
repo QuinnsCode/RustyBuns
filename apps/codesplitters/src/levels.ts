@@ -6,7 +6,7 @@
 
 import { listDir, readText } from "./archive.ts";
 import { chunkRepo, importChunks } from "./chunks.ts";
-import { code, json, NAME, type ArtifactsRepo, type DigMessage, type Env } from "./env.ts";
+import { code, json, NAME, type ArtifactsRepo, type DigMessage, type Env, readBody } from "./env.ts";
 import { githubHead, githubTarball, githubToken, importRepo, submodules } from "./github.ts";
 import { tooBigToImport, whenFree } from "./tarball.ts";
 import { digPart, Later, planSwarm, progress } from "./swarm.ts";
@@ -207,8 +207,8 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
   if (p[3] === "fork" && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
     if (r.r2) return json({ error: `${level.title} is too big for Artifacts, so it has no git to fork here: browse it, play it, or clone ${level.repo} from GitHub` }, 409);
-    const { name = slug } = (await req.json().catch(() => ({}))) as { name?: string };
-    if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
+    const { name = slug } = await readBody<"name">(req);
+    if (typeof name !== "string" || !NAME.test(name)) return json({ error: "bad repo name" }, 400);
     if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
     const art = await r.handle.fork(`${user}--${name}`, { description: `${user}'s dig of ${level.title}`, defaultBranchOnly: true });
     const [tip] = await r.handle.log({ ref: level.branch, limit: 1 });
