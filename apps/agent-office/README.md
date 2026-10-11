@@ -66,7 +66,7 @@ Tip: add `/lite` to your phone's home screen and it opens like an app.
 ## How
 
 Nothing is forked. `scripts/rustybunsify.ts` downloads a pinned release tarball and checks its sha256
-(`PINNED` in the script; `AGENT_OFFICE_TAG` with `AGENT_OFFICE_SHA256` tries another), installs it with Bun, and patches the copy in `./office`. Every patch fails loudly if its target moves.
+(`PINNED` in `scripts/release.ts`; `AGENT_OFFICE_TAG` with `AGENT_OFFICE_SHA256` tries another), installs it with Bun, and patches the copy in `./office`. Every patch fails loudly if its target moves.
 
 | What | Why |
 |---|---|

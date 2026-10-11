@@ -16,10 +16,9 @@
 import { $ } from "bun";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
+import { PINNED, REPO, releaseTarball } from "./release.ts";
 
-const PINNED = { tag: "v0.1.211", sha256: "d9b3af07a55005239550ca0cec9c0f1f86aee409d8122b12d99794ee0f18231a" };
-
-const REPO = "AgentSystemLabs/agent-office";
 const root = path.dirname(import.meta.dir);
 const office = path.join(root, "office");
 const srv = path.join(office, "dist/server/server");
@@ -36,7 +35,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -52,19 +51,7 @@ async function prepare(tag: string) {
 
   // 1. the release tarball, cached, and checked against its sha256 every time
   const cache = path.join(root, ".cache");
-  const tgz = path.join(cache, `agent-office-${tag}.tgz`);
-  if (!existsSync(tgz)) {
-    mkdirSync(cache, { recursive: true });
-    const res = await fetch(`https://github.com/${REPO}/releases/download/${tag}/agent-office.tgz`);
-    if (!res.ok) throw new Error(`download of ${tag} failed (${res.status})`);
-    await Bun.write(`${tgz}.part`, res);
-    renameSync(`${tgz}.part`, tgz);
-  }
-  const got = new Bun.CryptoHasher("sha256").update(readFileSync(tgz)).digest("hex");
-  if (got !== sha256!.replace(/^sha256:/, "").toLowerCase()) {
-    rmSync(tgz, { force: true });
-    throw new Error(`Agent Office ${tag} tarball has sha256 ${got}, expected ${sha256}; refusing to build from it`);
-  }
+  const tgz = await releaseTarball(tag, sha256!, cache);
   rmSync(office, { recursive: true, force: true });
   const tmp = `${office}.tmp`;
   rmSync(tmp, { recursive: true, force: true });
@@ -125,10 +112,13 @@ async function prepare(tag: string) {
   // 9. the time on the issues and PR boards, in front of "Updated …" (its setting is a page script, clock/)
   clockOnBoards();
 
-  // 10. the Druids Curse skin
+  // 10. the PR agent's brief: follow up with workers once their pull requests merge (briefs.ts)
+  pullsFollowUp();
+
+  // 11. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -227,6 +217,17 @@ function clockOnBoards() {
   for (const v of ["l", "t"])
     patch(path.join(pub, ask), `${v}.fetchedAt?\`Updated \${c(${v}.fetchedAt)}\``,
       `${v}.fetchedAt?\`\${globalThis.__rbClock?.(${v}.fetchedAt)??\`\`}Updated \${c(${v}.fetchedAt)}\``);
+  rehash(pub, ask);
+}
+
+// The PR agent's brief, in the server and in the client bundle the prompt settings show its default from.
+function pullsFollowUp() {
+  const shared = path.join(office, "dist/server/shared/prompts.js");
+  writeFileSync(shared, pullsFollowUpServer(readFileSync(shared, "utf8")));
+  const pub = path.join(office, "dist/public");
+  const [ask, ...more] = [...new Bun.Glob("assets/ask-*.js").scanSync({ cwd: pub })];
+  if (!ask || more.length) throw new Error(`Agent Office changed: expected one assets/ask-*.js, found ${more.length + (ask ? 1 : 0)}`);
+  writeFileSync(path.join(pub, ask), pullsFollowUpClient(readFileSync(path.join(pub, ask), "utf8")));
   rehash(pub, ask);
 }
 
