@@ -16,9 +16,11 @@ test("blocks reading secret files, not their schema", () => {
 test("blocks secret reads and env dumps inside shell commands", () => {
   for (const c of ["cat .env", "cd apps/a && head -n 3 .env.production", "bun x.ts < .dev.vars", "source apps/a/.env",
     "env", "env | grep KEY", "FOO=1 env -0", "printenv", "echo $(printenv TOKEN)", "cat /proc/self/environ", "export -p",
-    "op read op://vault/item", "ls && op item get x", "gh auth token", "bunx wrangler secret put X"])
+    "op read op://vault/item", "ls && op item get x", "gh auth token", "bunx wrangler secret put X",
+    "ps eww", "ps auxe", "ps -E -p 123", "ps -axE"])
     expect(bash(c)).not.toBeNull();
-  for (const c of ["env FOO=1 bun test", "cat apps/codesplitters/.env.schema", "echo .env >> .gitignore", "export FOO=1", "gh pr view", "bun test"])
+  for (const c of ["env FOO=1 bun test", "cat apps/codesplitters/.env.schema", "echo .env >> .gitignore", "export FOO=1", "gh pr view", "bun test",
+    "ps aux", "ps -ef", "ps -e -o pid,user", "ps -p 123 -o command"])
     expect(bash(c)).toBeNull();
 });
 

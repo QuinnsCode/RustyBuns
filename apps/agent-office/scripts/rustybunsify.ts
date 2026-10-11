@@ -18,6 +18,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, r
 import path from "node:path";
 import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
+import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
 
@@ -37,7 +38,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -151,10 +152,14 @@ async function prepare(tag: string) {
   prepend("github.js", SERVER_IMPORT);
   patchAsk(checksBarClient);
 
-  // 12. the Druids Curse skin
+  // 12. workers.json keeps a hash of each worker's hook token, not the token, so a worker can't read another's (#642)
+  for (const [rel, change] of [["workers/util.js", hookTokensUtil], ["workers/persist.js", hookTokensPersist], ["workers/manager.js", hookTokensManager]] as const)
+    writeFileSync(path.join(srv, rel), change(readFileSync(path.join(srv, rel), "utf8")));
+
+  // 13. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
