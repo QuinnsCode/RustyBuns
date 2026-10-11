@@ -24,6 +24,7 @@
 //   GET    /api/admin/deploy-keys                    {rotating, keys} (admins)
 //   POST   /api/admin/deploy-keys/reseal             {keys, states, failed}
 
+import { audit } from "./audit.ts";
 import { json, type Env } from "./env.ts";
 import { accountsOn, isAdmin } from "./identity.ts";
 
@@ -144,7 +145,8 @@ export async function deployKeyRoutes(req: Request, env: Env, p: string[], user:
 
   if (req.method === "GET") return json({ ...(await keyInfo(env, owner, repo, provider)), hosted: !hostedWhy(env, user), why: hostedWhy(env, user) });
   if (req.method === "DELETE") {
-    await env.DB.prepare("DELETE FROM deploy_keys WHERE owner = ? AND repo = ? AND provider = ?").bind(owner, repo, provider).run();
+    const r = await env.DB.prepare("DELETE FROM deploy_keys WHERE owner = ? AND repo = ? AND provider = ?").bind(owner, repo, provider).run();
+    if (r.meta?.changes) await audit(env, req, { actor: user, action: "deploy_key.delete", owner, repo, target: provider });
     return json(await keyInfo(env, owner, repo, provider));
   }
   if (req.method === "PUT") {
@@ -158,6 +160,7 @@ export async function deployKeyRoutes(req: Request, env: Env, p: string[], user:
     await env.DB.prepare(`INSERT INTO deploy_keys (owner, repo, provider, sealed, last4, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (owner, repo, provider) DO UPDATE SET sealed = excluded.sealed, last4 = excluded.last4, set_by = excluded.set_by, set_at = excluded.set_at`)
       .bind(owner, repo, provider, sealed, t.slice(-4), user, Date.now()).run();
+    await audit(env, req, { actor: user, action: "deploy_key.set", owner, repo, target: provider, detail: `…${t.slice(-4)}` });
     return json(await keyInfo(env, owner, repo, provider));
   }
   return null;

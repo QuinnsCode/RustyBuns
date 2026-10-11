@@ -22,13 +22,15 @@
 //   GET    /api/tokens       yours, without their secrets (cookie only)
 //   POST   /api/tokens       {label, scope: read|write, days?}: the secret is shown this once
 //   DELETE /api/tokens/:id   revoke it
+//   GET    /api/tokens/audit what you did that the audit log keeps (audit.ts)
 
 import { json, type Env } from "./env.ts";
+import { audit } from "./audit.ts";
 import { actingAs } from "./identity.ts";
 
 export const SCOPES = ["read", "write"] as const;
 export type Scope = (typeof SCOPES)[number];
-export interface Token { id: string; user: string; scope: Scope; label: string; expires_at: number; repo: string | null }
+export interface Token { id: string; user: string; scope: Scope; label: string; expires_at: number; repo: string | null; oauth: boolean }
 
 export const DAY = 86_400_000, MAX_DAYS = 365;
 const MAX_TOKENS = 20;
@@ -54,7 +56,7 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   const secret = bearerOf(req);
   if (secret === null) return null;
   const now = Date.now();
-  const t = secret && await env.DB.prepare("SELECT id, name AS user, scope, label, expires_at, last_used_at, repo FROM api_tokens WHERE hash = ?").bind(await hash(secret)).first() as (Token & { last_used_at: number | null }) | null;
+  const t = secret && await env.DB.prepare("SELECT id, name AS user, scope, label, expires_at, last_used_at, repo, grant_id IS NOT NULL AS oauth FROM api_tokens WHERE hash = ?").bind(await hash(secret)).first() as (Token & { last_used_at: number | null }) | null;
   if (!t || t.expires_at <= now) return json({ error: "this API token is expired, revoked or wrong: make one on your profile page" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
   if (COOKIE_ONLY.has(p[1] ?? "")) return json({ error: "API tokens can't reach this: sign in on the site" }, 403);
   if (p.at(-1) === "ws") return json({ error: "API tokens don't open live sockets: use the HTTP routes" }, 403);
@@ -62,7 +64,7 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   if (t.scope !== "write" && req.method !== "GET" && req.method !== "HEAD") return json({ error: "this API token is read-only" }, 403, { "www-authenticate": 'Bearer error="insufficient_scope", scope="write"' });
   // Last used, to the minute: one write a minute at most, not one a request.
   if (!t.last_used_at || now - t.last_used_at > 60_000) await env.DB.prepare("UPDATE api_tokens SET last_used_at = ? WHERE id = ?").bind(now, t.id).run();
-  return { id: t.id, user: t.user, scope: t.scope, label: t.label, expires_at: t.expires_at, repo: t.repo };
+  return { id: t.id, user: t.user, scope: t.scope, label: t.label, expires_at: t.expires_at, repo: t.repo, oauth: !!t.oauth };
 }
 
 /** Whether a token held to `repo` (owner/name) reaches this route: that repo, claiming an invite, or reading what isn't a repo. */
@@ -96,11 +98,15 @@ export async function tokenRoutes(req: Request, env: Env, p: string[], user: str
     if (!Number.isInteger(days) || days < 1 || days > MAX_DAYS) return json({ error: `days: 1 to ${MAX_DAYS}` }, 400);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM api_tokens WHERE name = ? AND grant_id IS NULL AND expires_at > ?").bind(user, Date.now()).first();
     if ((n?.n as number ?? 0) >= MAX_TOKENS) return json({ error: `at most ${MAX_TOKENS} live tokens: revoke one first` }, 400);
-    return json(await mint(env, user, label, b.scope as Scope, days), 201);
+    const t = await mint(env, user, label, b.scope as Scope, days);
+    await audit(env, req, { actor: user, action: "token.create", target: t.id, detail: `${t.scope}: ${label}` });
+    return json(t, 201);
   }
   if (p[2] && !p[3] && req.method === "DELETE") {
     const r = await env.DB.prepare("DELETE FROM api_tokens WHERE id = ? AND name = ? AND grant_id IS NULL").bind(p[2], user).run();
-    return r.meta?.changes ? json({ ok: true }) : json({ error: "no such token" }, 404);
+    if (!r.meta?.changes) return json({ error: "no such token" }, 404);
+    await audit(env, req, { actor: user, action: "token.revoke", target: p[2] });
+    return json({ ok: true });
   }
   return null;
 }

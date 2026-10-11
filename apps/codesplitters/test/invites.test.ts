@@ -19,9 +19,9 @@ async function app() {
   const invite = async (body: unknown) => {
     const r = await send("ryan", "/api/repos/ryan/lab/invites", body);
     expect(r.status).toBe(201);
-    return (await r.json()) as { token: string; link: string; kind: string; target: string | null; mailed?: boolean };
+    return (await r.json()) as { id: string; token: string; link: string; kind: string; target: string | null; mailed?: boolean };
   };
-  const crew = async () => ((await (await call("ryan", "/api/repos/ryan/lab")).json()) as { collaborators: string[]; invites: { token: string }[] });
+  const crew = async () => ((await (await call("ryan", "/api/repos/ryan/lab")).json()) as { collaborators: string[]; invites: { id: string; token?: string; link?: string }[] });
   return { call, send, invite, crew, sent };
 }
 
@@ -31,7 +31,17 @@ describe("invites", () => {
     const i = await invite({ note: "come fix the parser" });
     expect(i).toMatchObject({ kind: "link", target: null });
     expect(i.link).toBe(`http://codesplitters.local/invite/${i.token}`);
-    expect((await crew()).invites.map((x) => x.token)).toEqual([i.token]);
+    // The link is shown once: the pending list has the id, never the token, and only its hash is stored (#648).
+    const pending = (await crew()).invites;
+    expect(pending.map((x) => x.id)).toEqual([i.id]);
+    expect(pending[0]).not.toHaveProperty("token");
+    expect(pending[0]).not.toHaveProperty("link");
+    const row = await call.env.DB.prepare("SELECT * FROM invites WHERE id = ?").bind(i.id).first();
+    expect(JSON.stringify(row)).not.toContain(i.token);
+    expect(row.hash).toMatch(/^[0-9a-f]{64}$/);
+    // Its id isn't a key to it: only the one it's made out to by handle opens it by id.
+    expect((await call(null, `/api/invites/${i.id}`)).status).toBe(404);
+    expect((await send("sam", "/api/invites/claim", { invite: i.id, as: "person" })).status).toBe(404);
     // Signed out, the private repo is hidden, but the invite to it isn't.
     expect((await call(null, "/api/repos/ryan/lab")).status).toBe(404);
     expect(await (await call(null, `/api/invites/${i.token}`)).json()).toMatchObject({ owner: "ryan", repo: "lab", by: "ryan", note: "come fix the parser", doors: ["person", "agent"] });
@@ -92,7 +102,7 @@ describe("invites", () => {
     // Already in lab: a claim there is turned away and leaves the invite pending.
     const third = await invite({});
     expect((await call(null, "/api/invites/claim", { method: "POST", headers: { authorization: `Bearer ${first.token}` }, body: JSON.stringify({ invite: third.token, as: "agent" }) })).status).toBe(409);
-    expect((await crew()).invites.map((x) => x.token)).toEqual([third.token]);
+    expect((await crew()).invites.map((x) => x.id)).toEqual([third.id]);
   });
 
   test("an agent's token reaches its repo only, can't show private lines again, and goes when it leaves the crew (#645)", async () => {
@@ -126,9 +136,12 @@ describe("invites", () => {
     expect((await (await call(null, `/api/invites/${i.token}`)).json())).toMatchObject({ for: "sam", doors: ["person"] });
     expect((await send(null, "/api/invites/claim", { invite: i.token, as: "agent" })).status).toBe(403);
     expect((await send("mia", "/api/invites/claim", { invite: i.token, as: "person" })).status).toBe(403);
-    // sam sees it waiting.
-    expect(((await (await call("sam", "/api/invites")).json()) as any[]).map((x) => x.token)).toEqual([i.token]);
-    expect((await send("sam", "/api/invites/claim", { invite: i.token, as: "person" })).status).toBe(201);
+    // sam sees it waiting, by id (the link went to ryan, once), and opens and claims it by that.
+    expect(((await (await call("sam", "/api/invites")).json()) as any[]).map((x) => x.id)).toEqual([i.id]);
+    expect((await (await call("sam", `/api/invites/${i.id}`)).json())).toMatchObject({ for: "sam", owner: "ryan", repo: "lab" });
+    expect((await call("mia", `/api/invites/${i.id}`)).status).toBe(404);
+    expect((await send("mia", "/api/invites/claim", { invite: i.id, as: "person" })).status).toBe(404);
+    expect((await send("sam", "/api/invites/claim", { invite: i.id, as: "person" })).status).toBe(201);
     expect((await send("ryan", "/api/repos/ryan/lab/invites", { handle: "sam" })).status).toBe(409);
   });
 
@@ -150,10 +163,11 @@ describe("invites", () => {
     expect((await send("sam", "/api/repos/ryan/open/invites", {})).status).toBe(403);
     expect((await send("ryan", "/api/repos/ryan/lab/invites", { days: 99 })).status).toBe(400);
     const gone = await invite({});
-    expect((await send("ryan", `/api/repos/ryan/lab/invites/${gone.token}`, undefined, "DELETE")).status).toBe(200);
+    expect((await send("ryan", `/api/repos/ryan/lab/invites/${gone.token}`, undefined, "DELETE")).status).toBe(404);   // by id, not the secret
+    expect((await send("ryan", `/api/repos/ryan/lab/invites/${gone.id}`, undefined, "DELETE")).status).toBe(200);
     expect((await call(null, `/api/invites/${gone.token}`)).status).toBe(404);
     const old = await invite({});
-    await call.env.DB.prepare("UPDATE invites SET expires_at = ? WHERE token = ?").bind(Date.now() - 1, old.token).run();
+    await call.env.DB.prepare("UPDATE invites SET expires_at = ? WHERE id = ?").bind(Date.now() - 1, old.id).run();
     expect((await send("sam", "/api/invites/claim", { invite: old.token, as: "person" })).status).toBe(410);
     expect((await crew()).invites).toEqual([]);
     // And the owner can take someone back out.
