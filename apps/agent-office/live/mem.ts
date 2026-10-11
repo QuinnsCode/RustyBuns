@@ -6,7 +6,7 @@
 // for the office to read. Signed in, /__rb/mem returns them all. AGENT_OFFICE_MEM_MAX_MB sets a ceiling for
 // each: over it, that process writes a V8 heap snapshot to its data dir's heap/ and exits (the pty host
 // outlives an office that exits, as it does a restart). Unset, they only watch.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { memWatch, type MemStats } from "@rustybuns/shell-bun/memwatch";
 
@@ -40,11 +40,19 @@ export function officeMem(dataDir: string, floors: () => Iterable<{ id: string; 
   });
 }
 
-/** The pty host's latest sample, or null before its first one (or with no pty host). */
+/** The pty host's latest sample, or null before its first one, with no pty host, or once the one that wrote it is gone. */
 export function readPtyHostMem(dataDir: string): PtyHostMem | null {
   const file = path.join(dataDir, PTY_MEM_FILE);
   if (!existsSync(file)) return null;
-  try { return JSON.parse(readFileSync(file, "utf8")); } catch { return null; }
+  let mem: PtyHostMem;
+  try { mem = JSON.parse(readFileSync(file, "utf8")); } catch { return null; }
+  return alive(mem.pid) ? mem : null;
+}
+
+/** Whether a process is running: signal 0 checks without sending anything (EPERM means it runs as someone else). */
+function alive(pid: unknown): boolean {
+  if (typeof pid !== "number" || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (err) { return (err as NodeJS.ErrnoException).code === "EPERM"; }
 }
 
 /** The pty host's watch: its log is stderr (pty-host.log), and each sample lands next to its info file. */
@@ -56,6 +64,11 @@ export function ptyHostMem(infoPath: string | undefined, now = Date.now) {
     try { writeFileSync(file, JSON.stringify({ ...s, pid: process.pid, at: now() }), { mode: 0o600 }); } catch {}
   };
   const watch = memWatch({ maxMb: ceiling(), snapshotDir: path.join(dataDir, "heap"), log: (l) => console.error(l), onSample: write });
+  // an orphaned, unclaimed or stopped pty host takes its numbers with it (a killed one is caught by readPtyHostMem)
+  const clear = () => {
+    try { if (JSON.parse(readFileSync(file, "utf8")).pid === process.pid) rmSync(file); } catch {}
+  };
+  process.on("exit", clear);
   watch.tick();
-  return watch;
+  return { ...watch, stop: () => { watch.stop(); process.off("exit", clear); } };
 }
