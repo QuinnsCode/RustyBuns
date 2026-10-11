@@ -42,7 +42,8 @@ export function mcpLines(base: string, token: string): Record<Harness, string> {
   return {
     claude: `claude mcp add --scope user --transport http codesplitters ${url} --header "Authorization: Bearer ${token}"`,
     codex: `export CODESPLITTERS_TOKEN=${token} && codex mcp add codesplitters --url ${url} --bearer-token-env-var CODESPLITTERS_TOKEN`,
-    // pi and opencode take a config file entry, not a command.
+    // pi and opencode take a config file entry, not a command. pi's is its built-in MCP's
+    // (0.99+, ~/.pi/agent/mcp.json, https://pi.dev/docs/latest/mcp): a url picks streamable HTTP.
     pi: JSON.stringify({ mcpServers: { codesplitters: { url, headers } } }),
     opencode: JSON.stringify({ mcp: { codesplitters: { type: "remote", url, headers } } }),
   };

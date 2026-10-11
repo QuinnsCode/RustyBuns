@@ -697,6 +697,18 @@ async function jobsBadge() {
   el.hidden = !n;
   el.querySelector("span").textContent = `${n} queued`;
 }
+// Invites to your handle (GET /api/invites), so you hear of them without the owner sending the link:
+// a badge in the top bar, straight to the invite when there's one, and a box on your profile.
+const inviteRow = (i) => `<a href="#/i/${esc(i.token)}" title="ends ${new Date(i.expires_at).toLocaleDateString()}">${icon("mail")}<span><b>${esc(i.owner)}/${esc(i.repo)}</b> <span class="muted">from @${esc(i.by)}${i.note ? `: “${esc(i.note)}”` : ""}</span></span><span class="when">${ago(i.created_at)}</span></a>`;
+async function invitesBadge() {
+  const el = $("#invited");
+  if (!el) return;
+  const list = await api("/invites").catch(() => []);
+  el.hidden = !list.length;
+  el.href = list.length === 1 ? `#/i/${list[0].token}` : `#/u/${me()}`;
+  el.title = list.length === 1 ? `@${list[0].by} invited you to ${list[0].owner}/${list[0].repo}` : "invites to your crews";
+  el.querySelector("span").textContent = `${list.length} invite${list.length === 1 ? "" : "s"}`;
+}
 // Your personal API tokens (GET|POST /api/tokens, DELETE /api/tokens/:id), on your profile. A new one's secret shows once.
 // Apps signed in with OAuth (GET /api/oauth/grants, DELETE /api/oauth/grants/:id) list beside them, to sign out.
 // A new token's secret never goes in the page: the box shows it masked, and only the copy buttons use it.
@@ -715,7 +727,7 @@ const invite = (owner, repo, who = "", note = "") => {
 const inviteSaid = (i) => i.kind === "email" ? (i.mailed ? `Emailed ${i.target}.` : `Send ${i.target} this link: this site doesn't send mail.`)
   : i.kind === "handle" ? `Only @${i.target} can use it.` : "Anyone with it can join once, a person or an agent.";
 // An agent's MCP line for each harness, from POST /api/invites/claim; the token in it stays masked here.
-const HARNESS_HOW = { claude: "Claude Code: run", codex: "Codex: run", opencode: "opencode: add to opencode.json", pi: "pi, or any MCP client: its MCP config" };
+const HARNESS_HOW = { claude: "Claude Code: run", codex: "Codex: run", opencode: "opencode: add to opencode.json", pi: "pi (0.99 or later): add to ~/.pi/agent/mcp.json" };
 async function wireTokens(made) {
   const el = $("#tokens .body");
   if (!el) return;
@@ -814,11 +826,11 @@ function landHome() {
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
-    jobsBadge();
+    jobsBadge(); invitesBadge();
     return icons();
   }
   if (session.mode === "alias") {
@@ -1698,7 +1710,7 @@ const views = {
 
   async u(name) {
     const mine = name === me();
-    const [{ user, repos, playlists, following = 0, followers = 0 }, { jobs }, follows] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : []]);
+    const [{ user, repos, playlists, following = 0, followers = 0 }, { jobs }, follows, invites] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : [], mine ? api("/invites").catch(() => []) : []]);
     ctx = { view: "u", name };
     const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
     app.innerHTML = `<div class="wrap prof">
@@ -1711,6 +1723,7 @@ const views = {
         <textarea name="theme_html" rows="5" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
         <div><button class="btn primary">Save</button></div></div></form>` : ""}
       <div class="prof-grid"><div>
+        ${invites.length ? `<div class="box" id="invites"><div class="bar">${icon("mail")}<b>Invited to</b><span class="muted">crews waiting on you: open one to look, then join</span></div><div class="body list">${invites.map(inviteRow).join("")}</div></div>` : ""}
         <div class="box"><div class="bar">${icon("book-marked")}<b>Repos</b>
           ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn primary">${icon("plus")}Create</button></form>` : ""}</div>
           <div class="body list">${repos.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet</span>'}</div></div>
@@ -2781,7 +2794,7 @@ const views = {
     $("#door-pick")?.addEventListener("click", () => { holdInvite(token); handleDrawer(); });
     $("#join")?.addEventListener("click", async () => {
       try { await api("/invites/claim", { invite: token, as: "person" }); } catch (err) { return toast(err.message); }
-      holdInvite(null); toast(`You're in the crew of ${inv.owner}/${inv.repo}`); location.hash = `#/r/${inv.owner}/${inv.repo}`;
+      holdInvite(null); invitesBadge(); toast(`You're in the crew of ${inv.owner}/${inv.repo}`); location.hash = `#/r/${inv.owner}/${inv.repo}`;
     });
     $("#agent-link")?.addEventListener("click", () => copy(link, "Invite link copied: paste it to your agent"));
     $("#agent-door")?.addEventListener("submit", async (e) => {
