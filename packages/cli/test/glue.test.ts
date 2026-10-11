@@ -304,6 +304,18 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(desk).not.toContain("/health");
 });
 
+test("desktop.advisories: the host checks the app's own version and serves the notice in /__rb/info", () => {
+  const url = "https://example.com/advisories.json";
+  const c = { name: "tsci", bindings: {}, targets: { desktop: { mode: "spa", world: false, advisories: url } } } as any;
+  const desk = spaEntry(c);
+  expect(desk).toContain(", appLaunchCheck,");
+  expect(desk).toContain(`appLaunchCheck("tsci", typeof RB_VERSION === "string" ? RB_VERSION : undefined, "${url}").then((n) => { appUpdate = n; });`);
+  expect(desk).toContain("update: appUpdate });");
+  // Without the setting, neither the import nor the call is generated.
+  const plain = spaEntry({ ...c, targets: { desktop: { mode: "spa", world: false } } });
+  expect(plain).not.toContain("appLaunchCheck(");
+});
+
 test("box: honors desktop.host and headers; a box-only app needs no worker section", () => {
   const c = { name: "tsci", bindings: {}, targets: { box: { provider: "hetzner" }, desktop: { mode: "spa", world: false, host: "desktop/host.ts", headers: { "Cross-Origin-Embedder-Policy": "credentialless" } } } } as any;
   const box = spaEntry(c, "box");

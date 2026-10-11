@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ADVISORIES_URL, advise, adviseBuilt, checkDisabled, checkVersion, launchCheck, matching, validRange, type Advisory } from "../src/advisories.ts";
+import { ADVISORIES_URL, advise, adviseApp, adviseBuilt, appLaunchCheck, checkDisabled, checkVersion, launchCheck, matching, validRange, type Advisory } from "../src/advisories.ts";
 
 const bad: Advisory[] = [
   { versions: "0.1.6", do: "upgrade", to: "latest", why: "stale deps" },
@@ -89,6 +89,51 @@ test("the check is off in CI and with RUSTYBUNS_NO_UPDATE_CHECK", () => {
   expect(checkDisabled({ CI: "true" })).toBe(true);
   expect(checkDisabled({ RUSTYBUNS_NO_UPDATE_CHECK: "1" })).toBe(true);
   expect(checkDisabled({})).toBe(false);
+});
+
+test("adviseApp: tells the app's users which version to move to, and where", () => {
+  const app = [
+    { versions: "1.3.0", do: "upgrade", to: "latest", why: "saves are lost on quit", issue: "https://example.com/bug/7" },
+    { versions: ">=2.0.0 <2.0.2", do: "downgrade", to: "1.4.0", why: "crashes at start" },
+  ] satisfies Advisory[];
+  expect(adviseApp("tsci", "1.3.0", { advisories: app, latest: "1.4.0", download: "https://example.com/app" }))
+    .toBe("tsci 1.3.0 is a known-bad release.\n  saves are lost on quit (https://example.com/bug/7)\n  update to 1.4.0 from https://example.com/app");
+  expect(adviseApp("tsci", "2.0.1", { advisories: app })).toContain("go back to 1.4.0");
+  expect(adviseApp("tsci", "1.3.0", { advisories: app })).toContain("update to the latest version");
+  // An old-but-fine app says nothing; only a listed release does.
+  expect(adviseApp("tsci", "1.2.0", { advisories: app, latest: "1.4.0" })).toBeNull();
+});
+
+test("appLaunchCheck: the app's file, cached a day, shown in release builds, off in CI", async () => {
+  const path = join(mkdtempSync(join(tmpdir(), "rb-app-")), "app.json");
+  const calls: string[] = [];
+  const url = "https://example.com/advisories.json";
+  const fetcher = (async (u: string) => {
+    calls.push(String(u));
+    return Response.json({ latest: "1.4.0", advisories: [{ versions: "1.3.0", do: "upgrade", to: "latest", why: "saves are lost" }] });
+  }) as unknown as typeof fetch;
+  const warn = console.warn;
+  const said: string[] = [];
+  console.warn = (m: string) => { said.push(m); };
+  try {
+    const now = 1_000_000;
+    // RB_VERSION carries the git sha after "+"; the check reads the version before it.
+    const notice = await appLaunchCheck("tsci", "1.3.0+abc123", url, { path, fetcher, now, env: {} });
+    expect(notice).toBe("tsci 1.3.0 is a known-bad release.\n  saves are lost\n  update to 1.4.0");
+    expect(said).toEqual(["[tsci] tsci 1.3.0 is a known-bad release. · saves are lost · update to 1.4.0"]);
+    expect(await appLaunchCheck("tsci", "1.4.0+abc123", url, { path, fetcher, now: now + 1000, env: {} })).toBeNull();
+    expect(calls).toEqual([url]);
+    await appLaunchCheck("tsci", "1.4.0", url, { path, fetcher, now: now + 25 * 3600 * 1000, env: {} });
+    expect(calls.length).toBe(2);
+    expect(await appLaunchCheck("tsci", undefined, url, { path, fetcher, now, env: {} })).toBeNull();
+    expect(await appLaunchCheck("tsci", "1.3.0", url, { path, fetcher, now, env: { CI: "true" } })).toBeNull();
+    // Offline: no notice, no throw.
+    const offline = (async () => { throw new Error("offline"); }) as unknown as typeof fetch;
+    const fresh = join(mkdtempSync(join(tmpdir(), "rb-app-")), "app.json");
+    expect(await appLaunchCheck("tsci", "1.3.0", url, { path: fresh, fetcher: offline, now, env: {} })).toBeNull();
+  } finally {
+    console.warn = warn;
+  }
 });
 
 test("advisories.json: every entry is well formed", () => {
