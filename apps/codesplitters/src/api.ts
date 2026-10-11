@@ -53,7 +53,7 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/users/:name/pulse.png", does: "their public pulse as a 1200x630 card" },
       { method: "GET", path: "/api/users/:name/share", does: "a page for link previews (og:image is the pulse card), sending people on to the profile" },
       { method: "GET", path: "/api/pulse?names=a,b", does: "up to 50 pulses at once, for crew lists: {pulses}" },
-      { method: "GET", path: "/api/users/:name/city", does: "a person's code city, laid out: {name, public, districts: [{repo, x, z, size, buildings: [{path, lines, agent (0 to 1: how much agents wrote), last, glow, x, z, w, h}]}], present: [{who, repo, path, at}], files, lines, visit}; public repos only; 404 once its owner switched it off (to anyone but them)" },
+      { method: "GET", path: "/api/users/:name/city", does: "a person's code city, laid out: {name, public, districts: [{repo, x, z, size, buildings: [{path, lines, agent (0 to 1: how much agents wrote), last, glow, x, z, w, h}]}], present: [{who, repo, path, at}] (who has a file open now, and since when), files, lines, visit}; public repos only; 404 once its owner switched it off (to anyone but them)" },
       { method: "GET", path: "/api/users/:name/city.png", does: "the code city's postcard, 1200x630" },
       { method: "WS", path: "/api/users/:name/city/ws", who: "its owner and their followers", does: "walk the city with others: send {t: \"pos\", p: [x, y, z], yaw}, get the others' {t: \"pos\", id, user, p, yaw} and {t: \"lobby\", players}" },
       { method: "PUT", path: "/api/me/city", body: "{public: boolean}", who: SIGNED_IN, does: "switch your public city off, or back on" },

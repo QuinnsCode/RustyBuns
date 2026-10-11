@@ -1,8 +1,8 @@
 // Code city: every person gets a city instead of a contributions chart. Their
 // public repos are districts and the files are buildings: height is line count,
 // light is how recently lines landed there, and a building agents mostly wrote
-// is another material from one people wrote. Whoever landed lines in the last
-// few minutes walks its streets. play.html#c/:name renders it, as a mode of the game.
+// is another material from one people wrote. Whoever has one of its files open
+// right now walks its streets. play.html#c/:name renders it, as a mode of the game.
 //   GET /api/users/:name/city       the city, laid out
 //   GET /api/users/:name/city.png   its postcard (card.ts)
 //   WS  /api/users/:name/city/ws    walk it with others: its owner and their followers (a GameRoom, "c/:name")
@@ -15,8 +15,6 @@ import { json, type Env } from "./env.ts";
 
 /** Districts and buildings a city holds at most, and how many files of a repo's git it looks through. */
 const DISTRICTS = 9, BUILDINGS = 36, WALK = 400;
-/** Who landed lines this recently is in town. */
-export const PRESENT_MS = 15 * 60_000;
 /** Lit fades by half about every five days without new lines. */
 const FADE_MS = 7 * 86_400_000;
 /** The street grid: a building's cell and footprint, and the street between districts. */
@@ -98,6 +96,32 @@ async function buildings(env: Env, owner: string, repo: string, now: number) {
   return out.filter((b) => b.lines > 0);
 }
 
+/**
+ * Who's in town: whoever has a file of these repos open now (file-do.ts keeps
+ * the presence rows), at the file they opened last. Each file's DO says who is
+ * really there, so a row a dropped socket left behind is cleared, not walked.
+ */
+async function presentIn(env: Env, owner: string, repos: string[]): Promise<City["present"]> {
+  if (!repos.length) return [];
+  const { results } = await env.DB.prepare(
+    `SELECT who, repo, path, at FROM presence WHERE owner = ? AND repo IN (${repos.map(() => "?").join(",")}) ORDER BY at DESC`).bind(owner, ...repos).all();
+  const rows = results as City["present"], files = new Map<string, Promise<string[] | null>>();
+  for (const r of rows) {
+    const key = `${r.repo}\n${r.path}`;
+    if (!files.has(key)) files.set(key, toFile(env, owner, r.repo, r.path, "codesplitters", "here").then((res) => res.ok ? res.json() as Promise<string[]> : null).catch(() => null));
+  }
+  const out: City["present"] = [];
+  for (const r of rows) {
+    const here = await files.get(`${r.repo}\n${r.path}`)!;
+    if (here && !here.includes(r.who)) {
+      await env.DB.prepare("DELETE FROM presence WHERE owner = ? AND repo = ? AND path = ? AND who = ?").bind(owner, r.repo, r.path, r.who).run();
+      continue;
+    }
+    if (!out.some((o) => o.who === r.who)) out.push(r);
+  }
+  return out;
+}
+
 /** Lay the districts out on a square grid of blocks, each its buildings on a square grid of cells, centred on the origin. */
 export function layout(repos: { repo: string; buildings: Omit<Building, "x" | "z" | "w" | "h">[] }[]): District[] {
   const cols = Math.ceil(Math.sqrt(repos.length)), rows = Math.ceil(repos.length / cols);
@@ -123,10 +147,7 @@ export async function cityOf(env: Env, name: string, viewer: string | null): Pro
   const repos = (results as { name: string }[]).map((r) => r.name);
   const built = await Promise.all(repos.map(async (repo) => ({ repo, buildings: await buildings(env, name, repo, now) })));
   const districts = layout(built.filter((d) => d.buildings.length));
-  // Who's in town: anyone who landed lines here lately, at the last place they did.
-  const present = repos.length ? ((await env.DB.prepare(
-    `SELECT who, repo, path, last_at AS at FROM line_events WHERE owner = ? AND repo IN (${repos.map(() => "?").join(",")}) AND last_at > ? ORDER BY last_at DESC`)
-    .bind(name, ...repos, now - PRESENT_MS).all()).results as City["present"]).filter((e, i, all) => all.findIndex((o) => o.who === e.who) === i) : [];
+  const present = await presentIn(env, name, repos);
   const all = districts.flatMap((d) => d.buildings);
   return { name, public: !!u.city_public, districts, present, files: all.length, lines: all.reduce((n, b) => n + b.lines, 0) };
 }

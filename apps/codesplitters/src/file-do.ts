@@ -118,6 +118,7 @@ export class FileDurableObject {
       this.broadcast({ type: "private", lines, private: on });
       return json([...this.secret]);
     }
+    if (req.method === "GET" && route === "here") return json(this.here());
     if (req.method === "GET" && route === "claims") return json(this.live());
     if (req.method === "POST" && route === "claims") {
       // Crew only (the Worker checks). Any of the crew may lift any claim: that's how a person steers an agent off lines.
@@ -258,11 +259,21 @@ export class FileDurableObject {
     if (this.presenceTimer) return;
     this.presenceTimer = setTimeout(() => {
       this.presenceTimer = null;
-      const who = new Set<string>();
-      for (const ws of this.ctx.getWebSockets()) if (!this.leaving.has(ws)) who.add((ws.deserializeAttachment?.() ?? {}).user ?? "anon");
+      const who = this.here();
       this.leaving.clear();
-      this.broadcast({ type: "presence", who: [...who].sort() });
+      this.broadcast({ type: "presence", who });
+      if (this.where) {
+        const [owner, repo, path] = this.where;
+        this.logging = this.logging.then(() => notePresence(this.env, owner, repo, path, who)).catch(() => {});
+      }
     }, PRESENCE_MS);
+  }
+
+  /** Who has this file open, sorted, leaving out sockets that are closing. */
+  here(): string[] {
+    const who = new Set<string>();
+    for (const ws of this.ctx.getWebSockets()) if (!this.leaving.has(ws)) who.add((ws.deserializeAttachment?.() ?? {}).user ?? "anon");
+    return [...who].sort();
   }
 
   /** The claims still standing; lapsed ones go. */
@@ -338,4 +349,14 @@ export class FileDurableObject {
       else { await this.ctx.storage.put("claim:" + c.id, c); this.broadcast({ type: "claim", claim: c }); }
     }
   }
+}
+
+/** Main's copy of a file keeps D1's presence rows for it in step with who has it open (signed in: not "anon"), for the code city. */
+async function notePresence(env: Env, owner: string, repo: string, path: string, who: string[]) {
+  if (!env.DB) return;
+  const named = who.filter((w) => w !== "anon");
+  await env.DB.prepare(`DELETE FROM presence WHERE owner = ? AND repo = ? AND path = ?${named.length ? ` AND who NOT IN (${named.map(() => "?").join(",")})` : ""}`)
+    .bind(owner, repo, path, ...named).run();
+  const now = Date.now();
+  for (const w of named) await env.DB.prepare("INSERT OR IGNORE INTO presence (owner, repo, path, who, at) VALUES (?, ?, ?, ?, ?)").bind(owner, repo, path, w, now).run();
 }

@@ -41,10 +41,33 @@ test("public repos are districts, files are buildings: height from lines, materi
   expect(b).toMatchObject({ path: "b.ts", lines: 3, agent: 0.67 });
   expect(a.glow).toBeGreaterThan(0.9);
   expect(body).toMatchObject({ files: 2, lines: 6, visit: false });
-  // Everyone who just landed lines is in town; nothing from the private repo is.
-  expect(body.present.map((p: any) => p.who).sort()).toEqual(["agent-claude", "ryan"]);
+  // Landing lines isn't being here: nobody has a file open yet. Nothing from the private repo is in it.
+  expect(body.present).toEqual([]);
   expect(JSON.stringify(body)).not.toContain("vault");
   expect(JSON.stringify(body)).not.toContain("secret");
+});
+
+test("whoever has a file open walks the streets, at that file, until they close it", async () => {
+  const { call, city } = await app();
+  const open = async (user: string, path: string) => ((await call(user, `/api/repos/ryan/lab/do/ws?path=${path}`, { headers: { upgrade: "websocket" } })) as any).webSocket;
+  const present = async (want: number) => {
+    // The DO notes who's here a beat after a socket comes or goes.
+    for (const end = performance.now() + 5000; ; await Bun.sleep(20)) {
+      const p = (await city(null)).body.present;
+      if (p.length === want || performance.now() > end) return p.map((x: any) => [x.who, x.path]).sort();
+    }
+  };
+  const ana = await open("ana", "a.ts");
+  await open("bob", "b.ts");
+  // Reading without signing in leaves no one walking.
+  await open(null as any, "a.ts");
+  expect(await present(2)).toEqual([["ana", "a.ts"], ["bob", "b.ts"]]);
+  ana.close();
+  expect(await present(1)).toEqual([["bob", "b.ts"]]);
+  // A row a dropped socket left behind is checked against the file and cleared.
+  await call.env.DB.prepare("INSERT INTO presence (owner, repo, path, who, at) VALUES ('ryan', 'lab', 'a.ts', 'ghost', ?)").bind(Date.now()).run();
+  expect(await present(1)).toEqual([["bob", "b.ts"]]);
+  expect(await call.env.DB.prepare("SELECT who FROM presence WHERE who = 'ghost'").first()).toBeNull();
 });
 
 test("the postcard is a PNG; the owner can switch the public city off", async () => {

@@ -159,7 +159,7 @@ const walkers = city.present.map((p, i) => {
 });
 function updateWalkers(time) {
   for (const w of walkers) {
-    // A slow lap of the building where their lines last landed.
+    // A slow lap of the building they have open.
     const a = w.phase + (still ? 0 : time * w.speed);
     w.g.position.set(w.cx + Math.cos(a) * w.r, 0.12, w.cz + Math.sin(a) * w.r);
     w.g.rotation.y = -a;
