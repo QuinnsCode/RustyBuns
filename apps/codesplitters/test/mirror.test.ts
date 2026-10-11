@@ -30,9 +30,9 @@ async function editHere(call: Call, path: string, n: number, text: string, commi
   if (commit) expect((await post(call, `/api/repos/ana/up/do/commit?path=${encodeURIComponent(path)}`, { message: `edit ${path}` })).status).toBe(200);
 }
 /** Upstream starts over: one new commit of `files`, force-pushed over its history. */
-async function upstreamRewrite(files: Record<string, string>, message: string) {
-  const work = mkdtempSync(join(root, "work-"));
-  await sh(`git init -q -b main . && git config user.name Bo && git config user.email bo@example.com`, work);
+async function upstreamRewrite(files: Record<string, string>, message: string, work?: string) {
+  if (!work) { work = mkdtempSync(join(root, "work-")); await sh(`git init -q -b main .`, work); }
+  await sh(`git config user.name Bo && git config user.email bo@example.com`, work);
   for (const [p, c] of Object.entries(files)) { await sh(`mkdir -p "$(dirname ${p})"`, work); writeFileSync(join(work, p), c); }
   await sh(`git add -A && git commit -qm "${message}" && git push -qf ${up} main`, work);
 }
@@ -158,6 +158,24 @@ describe("mirrors", () => {
     expect(await sh(`git --git-dir ${up} log --format=%s main`)).toBe("start over again");
     expect((await file(call, "README")).lines.map((l: any) => l.text)).toEqual(["brand", "new"]);
     expect((await get(call, "/api/repos/ana/up/tree")).entries.map((e: any) => e.name)).toEqual(["README"]);
+  });
+
+  test("a force-pushed upstream is fetched only as far back as the last commit both sides agreed on", async () => {
+    const call = await mirrored("shallow");
+    // Upstream starts over with a long-ago past: a dozen old commits under a new tip.
+    const work = mkdtempSync(join(root, "work-"));
+    await sh(`git init -q -b main . && for i in $(seq 1 12); do echo $i > old; git add old; GIT_COMMITTER_DATE="2001-01-$i 12:00" git commit -qm "old $i"; done`, work);
+    await upstreamRewrite({ "README": "brand\nnew\n" }, "start over", work);
+    expect(await sync(call)).toMatchObject({ state: "rewritten" });
+    const { artifact } = await call.env.DB.prepare("SELECT artifact FROM repos WHERE owner = 'ana' AND name = 'up'").first() as { artifact: string };
+    expect(await sh(`git --git-dir ${call.artifacts.path(artifact)} rev-list --count refs/upstream/main`)).toBe("1");
+
+    expect(await sync(call, { resolve: "upstream" })).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect((await file(call, "README")).lines.map((l: any) => l.text)).toEqual(["brand", "new"]);
+    // Upstream winds back to one of those old commits: nothing newer to fetch, so it's fetched the plain way.
+    await sh(`git push -qf ${up} HEAD~1:main`, work);
+    expect(await sync(call, { resolve: "upstream" })).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect((await get(call, "/api/repos/ana/up/tree")).entries.map((e: any) => e.name)).toEqual(["old"]);
   });
 
   test("private lines: held, until the owner pushes the crew's copy", async () => {
