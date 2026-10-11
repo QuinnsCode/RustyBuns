@@ -196,3 +196,16 @@ describe("headings and landmarks", () => {
       `\${icon("share-2")}<h1>`, `\${icon("scissors")}<h1>`, `<h1 class="sr">Couldn't open this page</h1>`]) expect(html).toContain(h);
   });
 });
+
+// The live contrast sweep (#784): text the sweep caught below 4.5:1.
+describe("text contrast", () => {
+  test("orange letters on the dark flap tiles use the light orange", () => {
+    expect(rulesFor("flap-cell").filter((r) => r.body.includes("--accent-ink"))).toEqual([]);
+    expect(rulesFor("st").find((r) => r.sel === ".flap-cell.st b")?.body).toContain("var(--accent-glow)");
+  });
+
+  test("the hero's phases and the city door fade by colour, not by opacity", () => {
+    expect(rulesFor("phases").find((r) => r.sel === ".phases li")?.body).not.toContain("opacity");
+    expect(rulesFor("city-door").find((r) => r.sel === ".city-door a")?.body).not.toContain("opacity");
+  });
+});
