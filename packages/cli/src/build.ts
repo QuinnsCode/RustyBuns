@@ -101,8 +101,14 @@ mem.tick();
 ${box ? `// POST /__rb/prof?s=10 with Authorization: Bearer $RB_PROF_SECRET samples the CPU
 // and answers with a .cpuprofile (also kept in <data>/prof). No secret, no route.
 const prof = profRoute({ secret: process.env.RB_PROF_SECRET, dir: join(dataDir, "prof"), history: hist });
+` : ""}${webmcpOn(c, box) ? `// targets.box.webmcp: every page gets a script that hands an agent in the browser
+// mem_stats, take_cpu_profile and mem_history over WebMCP. It's served here.
+const webmcp = webMcpRoute();
 ` : ""}`;
 }
+
+/** targets.box.webmcp, on a box host only. */
+const webmcpOn = (c: RustyBunsConfig, box: boolean) => box && c.targets.box?.webmcp === true;
 
 export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string {
   const d = c.targets.desktop ?? {};
@@ -131,7 +137,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${appImport(c)}, type GuestState } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
@@ -214,7 +220,7 @@ if (guests.join !== undefined && guests.join.length < JOIN_MIN && !LOOPBACK.test
   process.exit(1);
 }
 const token = ${h.token};
-const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${h.listen},
+const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${webmcpOn(c, h.box) ? ", head: WEBMCP_TAG" : ""}${h.listen},
   guest: { paths: [${JSON.stringify(worldPath)}], passphrase: () => guests.join } });
 const hostCtx = { env, dataDir, identity, reporter: stdoutReporter, shell, guests };
 
@@ -283,7 +289,7 @@ shell.mount({
   async fetch(req) {
     const url = new URL(req.url);
     const guest = ${h.box ? "true" : `req.headers.get("x-rb-principal") === "guest"`};
-${h.box ? `    if (url.pathname === "/health") return new Response("ok", { headers: { "X-RB-Data": dataMount, "X-RB-Boots": String(boots) } });\n    if (url.pathname === "/__rb/mem") return Response.json({ ...mem.stats(), boots });\n    const profiled = await prof(req);\n    if (profiled) return profiled;\n` : `    if (url.pathname === "/__rb/mem" && !guest) return Response.json(mem.stats());\n`}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
+${h.box ? `    if (url.pathname === "/health") return new Response("ok", { headers: { "X-RB-Data": dataMount, "X-RB-Boots": String(boots) } });\n    if (url.pathname === "/__rb/mem") return Response.json({ ...mem.stats(), boots });\n    const profiled = await prof(req);\n    if (profiled) return profiled;\n${webmcpOn(c, true) ? `    const script = webmcp(req);\n    if (script) return script;\n` : ""}` : `    if (url.pathname === "/__rb/mem" && !guest) return Response.json(mem.stats());\n`}    if (WORLD && url.pathname === ${JSON.stringify(worldPath)}) {
 ${h.box ? `      if (!wsAllowed(req.headers.get("X-Real-IP"), Date.now())) return reject(429, "too_many", { detail: "at most " + WS_PER_MIN + " connections a minute from one address" });
 ` : ""}      const h = new Headers(req.headers);
       let who = identity;
@@ -413,7 +419,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
@@ -452,7 +458,7 @@ const shell = serve<typeof env>({
   assets: assetDir(${JSON.stringify(c.worker!.assets ?? "")}),
   runWorkerFirst: ${JSON.stringify(c.worker!.runWorkerFirst ?? [])},
   token,
-  reporter: stdoutReporter${h.listen},${artifacts.length ? `
+  reporter: stdoutReporter${webmcpOn(c, h.box) ? ",\n  head: WEBMCP_TAG" : ""}${h.listen},${artifacts.length ? `
   // Artifacts remotes: git clients bring a repo token, not the host cookie.
   open: { "/__rb/git/": (req: Request) => gitHttp(req, [${artifacts.map((n) => `env.${n} as any`).join(", ")}]) },` : ""}
 });
@@ -460,7 +466,7 @@ ${artifacts.map((n) => `(env.${n} as any).remoteBase = shell.url;`).join("\n")}$
 // env.ASSETS, as the edge binds it: the Worker can fetch its own static files.
 env.ASSETS ??= shell.assets;` : ""}
 ${h.box
-  ? `shell.mount({ fetch: async (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/health" ? new Response("ok") : p === "/__rb/mem" ? Response.json(mem.stats()) : (await prof(req)) ?? (worker as any).fetch(req, e, ctx); } } as any, env);`
+  ? `shell.mount({ fetch: async (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/health" ? new Response("ok") : p === "/__rb/mem" ? Response.json(mem.stats()) : (await prof(req)) ?? ${webmcpOn(c, true) ? "webmcp(req) ?? " : ""}(worker as any).fetch(req, e, ctx); } } as any, env);`
   : `shell.mount({ fetch: (req: Request, e: any, ctx: any) => new URL(req.url).pathname === "/__rb/mem" ? Response.json(mem.stats()) : (worker as any).fetch(req, e, ctx) } as any, env);`}
 console.log(\`[${c.name}] serving \${shell.url}\`);${crons.length ? `
 // Cron Triggers: the edge runs scheduled() on these; here a minute timer does.

@@ -17,6 +17,7 @@ export { memWatch, slope, formatMemStats, type MemStats, type MemWatchOptions } 
 export { cpuProfile, profRoute, profiling, PROF_MAX_MS, type CpuProfileOptions } from "./cpuprof.ts";
 export { summarizeProfile, formatProfileSummary, listSaved, type CpuProfile, type ProfileSummary, type HotFrame, type SavedFile } from "./profsummary.ts";
 export { history, readHistory, historyRuns, formatHistory, type History, type HistoryEntry, type Run } from "./history.ts";
+export { webMcpRoute, webMcpScript, WEBMCP_PATH, WEBMCP_TAG } from "./webmcp.ts";
 export { schedule, parseCron, cronMatches, type ScheduledController } from "./cron.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
