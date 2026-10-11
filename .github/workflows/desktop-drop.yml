@@ -5,7 +5,8 @@
 # experimental and the stable before; older builds are deleted. Links are in each drop job's summary.
 # A stable tag also makes a public GitHub Release with the binaries: that's what the
 # README links. The R2 drops stay hidden, for beta testers.
-# A PR that changes this pipeline dry-runs every app, so a broken build shows before merge.
+# A PR that changes this pipeline dry-runs every app, so a broken build shows before merge;
+# one that only edits some apps' rows in scripts/ci-apps.ts dry-runs just those.
 #
 # Apps with Rust cdylibs (native/) build on one runner per OS; the rest cross-compile
 # every target from one Linux job. The table lives in scripts/ci-apps.ts.
@@ -44,8 +45,10 @@ jobs:
       apps: ${{ steps.p.outputs.apps }}
       version: ${{ steps.p.outputs.version }}
       channel: ${{ steps.p.outputs.channel }}
+      any: ${{ steps.p.outputs.any }}
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: "1.4.3" }
       - id: p
@@ -56,11 +59,16 @@ jobs:
             [[ "$version" == *-* ]] && channel=experimental || channel=stable
           fi
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          bun scripts/ci-apps.ts drop "$apps" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            bun scripts/ci-apps.ts drop pr "${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            bun scripts/ci-apps.ts drop "$apps" >> "$GITHUB_OUTPUT"
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   build:
     needs: plan
+    if: needs.plan.outputs.any == 'true'
     strategy:
       fail-fast: false      # one broken app shouldn't hide whether the rest build
       matrix: ${{ fromJSON(needs.plan.outputs.build) }}
@@ -96,7 +104,7 @@ jobs:
 
   drop:
     needs: [plan, build]
-    if: ${{ !cancelled() }}     # drop whichever apps built, even if another failed
+    if: ${{ !cancelled() && needs.plan.outputs.any == 'true' }}     # drop whichever apps built, even if another failed
     strategy:
       fail-fast: false
       matrix:
