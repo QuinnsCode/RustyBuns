@@ -4036,15 +4036,22 @@ async function wireCheckHead(el, owner, repo, r) {
   document.getElementById("checkhead")?.remove();
   const isOwner = owner === me();
   const opts = [...(s.github ? [["github", "On GitHub, here when it's down"]] : []), ["here", "Here, on this machine"], ...(s.github ? [["both", "Here and on GitHub"]] : [])];
-  const pick = isOwner ? `<label class="muted" style="font-size:12px">${icon("list-checks")} Checks run <select id="check-where">${s.where ? "" : `<option value="" selected>nowhere yet</option>`}${opts.map(([v, t]) => `<option value="${v}"${s.where === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>` : "";
+  const pick = isOwner ? `<label class="muted" style="font-size:12px">${icon("list-checks")} Checks run <select id="check-where" autocomplete="off">${s.where ? "" : `<option value="" selected>nowhere yet</option>`}${opts.map(([v, t]) => `<option value="${v}"${s.where === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
+    <span id="check-where-save" hidden><button class="btn primary" title="save where checks run">${icon("check")}Save</button><button class="btn ghost" title="put it back">${icon("x")}</button></span>` : "";
   const down = s.offline ? `<span class="muted">${icon("cloud-off")} GitHub has been down${s.down_since ? ` since ${new Date(s.down_since).toLocaleTimeString()}` : ""}. Keep going: commits, branches and merges work here, checks run on this machine, and everything syncs to GitHub when it's back.</span>` : "";
   const mainRow = main?.runs.length ? `<div class="commit"><code>main</code><span class="muted">checks on the latest commit${s.github ? ", GitHub's included once it has them" : ""}</span>${checkRow(main)}</div>` : "";
   if (!pick && !down && !mainRow) return;
   const ci = isOwner ? `<details id="citokens" style="margin-top:6px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("key-round")} CI tokens: report checks from Jenkins, CircleCI or any CI that talks to GitHub</summary><div class="body"></div></details>` : "";
   el.insertAdjacentHTML("beforebegin", `<div id="checkhead" class="commit" style="display:block">${pick}${down ? `<div>${down}</div>` : ""}${mainRow}${ci}</div>`);
   $("#citokens")?.addEventListener("toggle", (e) => { if (e.target.open) wireCiTokens(owner, repo); }, { once: true });
-  $("#check-where")?.addEventListener("change", async (e) => {
-    try { await api(`/repos/${owner}/${repo}/checks/settings`, { where: e.target.value || null }, "PUT"); toast(e.target.value === "here" ? "Checks run here now: local first" : "Saved"); route(); }
+  // Picking an option only stages it: a focused select also changes on a stray key (type-ahead,
+  // arrows) or a scroll, so nothing is saved until Save is clicked (#657).
+  const sel = $("#check-where"), save = $("#check-where-save"), saved = s.where ?? "";
+  sel?.addEventListener("change", () => { save.hidden = sel.value === saved; });
+  save?.lastElementChild.addEventListener("click", () => { sel.value = saved; save.hidden = true; });
+  save?.firstElementChild.addEventListener("click", async (e) => {
+    if (!e.isTrusted || sel.value === saved) return;
+    try { await api(`/repos/${owner}/${repo}/checks/settings`, { where: sel.value || null }, "PUT"); toast(sel.value === "here" ? "Checks run here now: local first" : "Saved"); route(); }
     catch (err) { toast(err.message); }
   });
   icons();
