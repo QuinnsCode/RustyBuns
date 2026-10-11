@@ -428,7 +428,7 @@ export async function limitRoutes(req: Request, env: Env, p: string[], admin: bo
       if (r.on_fail === "queue" && !RULES.find((d) => d.name === r.name)!.queueable) return json({ error: `${r.name}: only slow, costly jobs can queue` }, 400);
     }
     const current = await rules(env);
-    await env.DB.batch((b.rules ?? []).map((r) => env.DB.prepare("INSERT OR REPLACE INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES (?, ?, ?, ?, ?)")
+    await env.DB.batch((b.rules ?? []).map((r) => env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES (?, ?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET max = excluded.max, window_s = excluded.window_s, enabled = excluded.enabled, on_fail = excluded.on_fail")
       .bind(r.name, r.max, r.window_s, r.enabled ? 1 : 0, r.on_fail ?? current.get(r.name)!.on_fail)));
     cache = null;
   } else if (req.method !== "GET") return null;
