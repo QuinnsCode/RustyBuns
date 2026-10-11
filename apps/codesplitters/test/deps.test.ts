@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { bump, localFixer, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, DEFAULTS, type Fixer, type Registry, type Tester } from "../src/deps.ts";
+import { bump, localFixer, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, DEFAULTS, type Advisories, type Fixer, type Registry, type Tester, type Vuln } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { depsFix as containerFix, depsTest as containerTest } from "../sandbox/server.mjs";
@@ -58,6 +58,65 @@ test("outdated: only what the range doesn't allow, old enough, within the level,
   expect(minor.updates.map((u) => u.name)).toEqual(["hono"]);
 });
 
+test("outdated: a vulnerable version moves to its first fix, past the level and the minimum age", async () => {
+  const npm = registry({
+    mitt: { "3.0.0": 400, "3.0.1": 1, "3.0.2": 0 },     // the fix is a day old and inside the range
+    kleur: { "3.0.0": 900, "4.1.5": 30 },               // fixed only in a major
+    clsx: { "1.2.1": 500 },                             // no fix yet
+    hono: { "4.0.0": 90, "4.6.0": 10 },                 // the usual update already has the fix
+    ky: { "1.0.0": 300, "1.0.1": 200 },                 // ignored, so only reported
+  });
+  const v = (id: string, ...fixed: string[]): Vuln => ({ id, summary: "", fixed });
+  const vulns = new Map([
+    ["mitt@3.0.0", [v("GHSA-mitt", "2.0.9", "3.0.1")]],
+    ["kleur@3.0.0", [v("GHSA-kleur", "4.1.5")]],
+    ["clsx@1.2.1", [v("GHSA-clsx")]],
+    ["hono@4.0.0", [v("GHSA-hono", "4.2.0")]],
+    ["ky@1.0.0", [v("GHSA-ky", "1.0.1")]],
+  ]);
+  const { updates, exposed } = await outdated(JSON.parse(PKG), { ...DEFAULTS, max_level: "minor", ignore: ["ky"] }, npm, NOW, vulns);
+  expect(updates).toEqual([
+    { name: "hono", from: "4.0.0", to: "4.6.0", level: "minor", fixes: ["GHSA-hono"] },
+    { name: "kleur", from: "^3.0.0", to: "^4.1.5", level: "major", fixes: ["GHSA-kleur"] },
+    { name: "mitt", from: "^3.0.0", to: "^3.0.1", level: "patch", fixes: ["GHSA-mitt"] },
+  ]);
+  expect(exposed).toEqual([{ name: "clsx", version: "1.2.1", ids: ["GHSA-clsx"] }, { name: "ky", version: "1.0.0", ids: ["GHSA-ky"] }]);
+});
+
+test("osvAdvisories asks osv.dev in one batch, then each hit's fixed versions for that package", async () => {
+  const asked: string[] = [];
+  const get = (async (url: string, init?: RequestInit) => {
+    asked.push(url);
+    if (url.endsWith("/querybatch")) {
+      const { queries } = JSON.parse(String(init!.body));
+      expect(queries[0]).toEqual({ package: { name: "mitt", ecosystem: "npm" }, version: "3.0.0" });
+      return Response.json({ results: [{ vulns: [{ id: "GHSA-1" }] }, {}] });
+    }
+    return Response.json({ id: "GHSA-1", summary: "prototype pollution", affected: [
+      { package: { ecosystem: "npm", name: "mitt" }, ranges: [{ type: "SEMVER", events: [{ introduced: "0" }, { fixed: "3.0.1" }] }] },
+      { package: { ecosystem: "npm", name: "other" }, ranges: [{ type: "SEMVER", events: [{ fixed: "9.9.9" }] }] },
+    ] });
+  }) as typeof fetch;
+  const got = await osvAdvisories(get)([{ name: "mitt", version: "3.0.0" }, { name: "kleur", version: "3.0.0" }]);
+  expect([...got]).toEqual([["mitt@3.0.0", [{ id: "GHSA-1", summary: "prototype pollution", fixed: ["3.0.1"] }]]]);
+  expect(asked).toEqual(["https://api.osv.dev/v1/querybatch", "https://api.osv.dev/v1/vulns/GHSA-1"]);
+});
+
+test("a run reports what no update fixes, and goes on when osv.dev is down", async () => {
+  const hit: Advisories = async () => new Map([["kleur@3.0.0", [{ id: "GHSA-k", summary: "", fixed: [] }]]]);
+  const { send } = await app(undefined, undefined, PKG, { advisories: hit });
+  await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "patch", ignore: "ky" }, "PUT");
+  const report = await (await send("ryan", "/api/repos/ryan/lab/deps/run", {})).json();
+  expect(report.exposed).toEqual([{ name: "kleur", version: "3.0.0", ids: ["GHSA-k"], path: "package.json" }]);
+  expect(report.note).toContain("1 dependency has a known vulnerability");
+
+  const down = await app(undefined, undefined, PKG, { advisories: (async () => { throw new Error("503"); }) as Advisories });
+  await down.send("ryan", "/api/repos/ryan/lab/deps", { max_level: "minor", ignore: "ky" }, "PUT");
+  const r2 = await (await down.send("ryan", "/api/repos/ryan/lab/deps/run", {})).json();
+  expect(r2.branch).toBeTruthy();
+  expect(r2.note).toContain("couldn't check for known vulnerabilities (503)");
+});
+
 test("bump edits only the version strings, keeping the file as written", () => {
   const out = bump(PKG.split("\n"), [{ name: "kleur", from: "^3.0.0", to: "^4.1.5" }]);
   expect(out.join("\n")).toBe(PKG.replace(`"kleur": "^3.0.0"`, `"kleur": "^4.1.5"`));
@@ -74,9 +133,11 @@ const kleurTester = (seen: string[][] = []): Tester => async (remote, files) => 
 };
 
 async function app(tester?: Tester, fixer?: Fixer, pkg = PKG, extra: Record<string, unknown> = {}) {
-  const call = await boot({ GH_CLI: "off", ...extra });
+  const { advisories, ...env } = extra;
+  const call = await boot({ GH_CLI: "off", ...env });
   opened.push(call);
   call.env.DEPS_REGISTRY = NPM;
+  call.env.DEPS_ADVISORIES = (advisories as Advisories | undefined) ?? (async () => new Map());
   if (tester) call.env.DEPS_TESTER = tester;
   if (fixer) call.env.DEPS_FIXER = fixer;
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
