@@ -112,17 +112,26 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     return { call, post, runs, containers, env: booted.env };
   }
   const doc = async (call: Call) => await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/do/file?path=src/a.js")).json() as Doc;
+  /** Starts a run (it answers at once, the agent riding the JOBS queue) and waits for it to end, as the phone page polls. */
+  const finished = async (call: Call, body: unknown) => {
+    const res = await call("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { method: "POST", body: JSON.stringify(body) });
+    expect(res.status).toBe(202);
+    const { id } = (await res.json()) as { id: number };
+    for (const end = performance.now() + 15_000; performance.now() < end; await Bun.sleep(20)) {
+      const run = ((await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/agents")).json()) as any[]).find((r) => r.id === id);
+      if (run.status !== "running") return run;
+    }
+    throw new Error("the run never ended");
+  };
 
   test("every harness is offered, even where Bun can't run CLIs", async () => {
     const { call } = await hosted(async (b) => b);
     expect(await (await call(null, "/api/agents")).json()).toMatchObject({ available: true, harnesses: ["claude", "codex", "pi", "opencode"] });
   });
 
-  test("the owner gives an agent a task; it runs in a container, answers when done, and its lines are blamed on it", async () => {
-    const { call, post, runs } = await hosted(async (b) => ({ code: 0, out: "ok", text: b.text.replace("var", "let") }));
-    const res = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "opencode", path: "src/a.js", task: "use let" });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ agent: "agent-opencode", status: "done", applied: 1, conflicts: [] });
+  test("the owner gives an agent a task; it runs in a container off the queue, and its lines are blamed on it", async () => {
+    const { call, runs } = await hosted(async (b) => ({ code: 0, out: "ok", text: b.text.replace("var", "let") }));
+    expect(await finished(call, { harness: "opencode", path: "src/a.js", task: "use let" })).toMatchObject({ agent: "agent-opencode", status: "done", applied: 1, conflicts: [] });
     expect(runs[0].cmd.bin).toBe("opencode");
     expect(runs[0].cmd.env.OPENCODE_CONFIG_CONTENT).toContain("deny"); // the harness's own limits reach the container
     expect(runs[0].text).toBe("var x = 1\nf()\n");
@@ -136,7 +145,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     const authId = (await env.DB.prepare("SELECT auth_id FROM users WHERE name = 'ryan-quinn'").first())!.auth_id as string;
     for (const [id, at] of [["bot", "2026-01-01"], ["mine", "2026-02-01"]]) await env.DB.prepare(`INSERT INTO account (id, accountId, providerId, userId, accessToken, createdAt, updatedAt) VALUES (?, ?, 'github', ?, ?, ?, ?)`)
       .bind(id, id + "-gh", authId, `tok-${id}`, at, at).run();
-    const start = async () => (await (await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "claude", path: "src/a.js", task: "x" })).json()) as any;
+    const start = () => finished(call, { harness: "claude", path: "src/a.js", task: "x" });
     // None picked: no token, though "mine" digs.
     expect((await start()).github).toBeUndefined();
     expect(runs.at(-1).cmd.env?.GH_TOKEN).toBeUndefined();
@@ -213,9 +222,22 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
   });
 
   test("a CLI that fails in the container comes back as a failed run, and nothing lands", async () => {
-    const { call, post } = await hosted(async () => ({ code: 1, out: "not logged in", text: "junk" }));
-    const res = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "codex", path: "src/a.js", task: "x" });
-    expect(await res.json()).toMatchObject({ status: "failed" });
+    const { call } = await hosted(async () => ({ code: 1, out: "not logged in", text: "junk" }));
+    expect(await finished(call, { harness: "codex", path: "src/a.js", task: "x" })).toMatchObject({ status: "failed" });
     expect(text(await doc(call))).toBe("var x = 1\nf()");
+  });
+
+  test("runs are kept in D1, so any isolate sees them; a retry after a cut-off consumer fails the run rather than running it twice", async () => {
+    const { call, runs, env } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
+    const run = await finished(call, { harness: "claude", path: "src/a.js", task: "x" });
+    expect(await env.DB.prepare("SELECT status, picked FROM agent_runs WHERE id = ?").bind(run.id).first()).toEqual({ status: "done", picked: 1 });
+    // A run whose consumer was cut off mid-run: picked, still running. Its message comes again.
+    await env.DB.prepare("UPDATE agent_runs SET status = 'running', result = NULL WHERE id = ?").bind(run.id).run();
+    const before = runs.length;
+    await env.JOBS.send({ agent: run.id, origin: "http://codesplitters.local" });
+    let again: any;
+    for (const end = performance.now() + 15_000; performance.now() < end && (again = ((await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/agents")).json()) as any[])[0]).status === "running";) await Bun.sleep(20);
+    expect(again).toMatchObject({ status: "failed", error: "the agent was cut off before it finished" });
+    expect(runs.length).toBe(before);
   });
 });

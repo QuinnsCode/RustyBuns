@@ -12,7 +12,7 @@ import { gameRoutes } from "./game.ts";
 import { createShare, shareRoutes } from "./shares.ts";
 import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
-import { agentRoutes } from "./agent-routes.ts";
+import { agentRoutes, runQueuedAgents, type AgentMessage } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
 import { advanceAll, freshRoutes, startIfFull } from "./fresh.ts";
 import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, runJobs, sweepLimits, type JobMessage } from "./limits.ts";
@@ -391,12 +391,17 @@ const app = {
     ctx.waitUntil(advanceAll(env, Date.now() + 10 * 60_000));
   },
 
-  // The queues (rustybuns.config.ts): JOBS runs queued requests whose turn has come;
+  // The queues (rustybuns.config.ts): JOBS runs queued requests whose turn has come, and hosted agent runs;
   // HOOKS is one webhook try per message. A batch is all one queue's, told apart by its
   // messages, since a stage's queues may be named otherwise.
   async queue(batch: { messages: readonly { body: unknown; ack(): void }[] }, env: Env) {
     if (batch.messages.some((m) => typeof (m.body as DigMessage)?.dig === "string")) await runDigs(batch as Parameters<typeof runDigs>[0], env);
-    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number")) await runJobs(batch as { messages: readonly { body: JobMessage; ack(): void }[] }, env, (r) => app.fetch(r, env));
+    else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number")) {
+      // JOBS: hosted agent runs (agent-routes.ts) beside queued requests.
+      const agents = batch.messages.filter((m) => typeof (m.body as AgentMessage)?.agent === "number") as { body: AgentMessage; ack(): void }[];
+      const jobs = batch.messages.filter((m) => typeof (m.body as JobMessage)?.job === "number") as { body: JobMessage; ack(): void }[];
+      await Promise.all([runQueuedAgents(agents, env, (r) => app.fetch(r, env)), runJobs({ messages: jobs }, env, (r) => app.fetch(r, env))]);
+    }
     else await deliverHooks(batch as { messages: readonly { body: HookMessage; ack(): void }[] }, env);
   },
 };
