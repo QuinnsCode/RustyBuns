@@ -9,11 +9,14 @@ import { defineConfig } from "@rustybuns/cli/config";
 //   CODESPLITTERS_AGENTS=1  hosted coding agents (super experimental, see README)
 //   CODESPLITTERS_DEPLOYS=1 hosted deploys with each repo's stored deploy key, sealed under
 //                           DEPLOY_SECRETS_KEY (1Password, like the rest)
+//   CODESPLITTERS_VECTORS=1 search across repos through one Vectorize index, embedded with
+//                           Workers AI (src/search.ts); billed by use, see REFERENCE.md
 // Account email (verification and password reset) is opt-in the same way, once the
 // sender's domain is onboarded to Cloudflare Email Sending (Workers Paid):
 //   CODESPLITTERS_MAIL_FROM=accounts@your-domain  binds EMAIL and sends from it
 const agents = process.env.CODESPLITTERS_AGENTS === "1";
 const deploys = process.env.CODESPLITTERS_DEPLOYS === "1";
+const vectors = process.env.CODESPLITTERS_VECTORS === "1";
 const mailFrom = process.env.CODESPLITTERS_MAIL_FROM?.trim();
 // A change to the privacy page that matters goes here first, as "YYYY-MM-DD what changes"
 // (the day it applies), and ships before that day: the site shows it as a banner (src/privacy.ts).
@@ -58,6 +61,12 @@ export default defineConfig({
     GAMES: { type: "durable_object", className: "GameRoom" },
     // One code search index per repo, FTS5 in its SQLite (src/search.ts).
     SEARCH: { type: "durable_object", className: "RepoSearch" },
+    // Search across repos: one vector index over every repo's committed code, and Workers AI
+    // (bge-small-en-v1.5, 384 dimensions) to embed it. Without them, it fans out (src/search.ts).
+    ...(vectors ? {
+      VECTORS: { type: "vectorize", indexName: "codesplitters-vectors", dimensions: 384, metadataIndexes: { repo: "string", pub: "boolean" } } as const,
+      AI: { type: "ai" } as const,
+    } : {}),
     // Webhook tries, one message each; this Worker's queue() sends them and books the
     // retries with a delay (src/hooks.ts). The desktop runs it in-process on sqlite.
     HOOKS: { type: "queue", queueName: "codesplitters-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
