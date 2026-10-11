@@ -21,6 +21,7 @@ import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes, runQueuedAgents, type AgentMessage } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
+import { scheduledWatch, watchRoutes } from "./watch.ts";
 import { advanceAll, freshRoutes, startIfFull } from "./fresh.ts";
 import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, runJobs, sweepLimits, type JobMessage } from "./limits.ts";
 import { previewRoutes } from "./preview.ts";
@@ -158,6 +159,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (agents) return agents;
   const deps = await depRoutes(req, env, p, url, user, (r) => app.fetch(r, env));
   if (deps) return deps;
+  const watch = await watchRoutes(req, env, p, user);
+  if (watch) return watch;
   const preview = await previewRoutes(req, env, p, user);
   if (preview) return preview;
   const deploy = await deployRoutes(req, env, p, user);
@@ -500,7 +503,7 @@ const app = {
   },
 
   // The Cron Triggers (rustybuns.config.ts crons). Hourly: each repo's dependency doctor runs
-  // when it's due, each fresh start under way takes its steps, rate-limit windows that have ended are cleared out, and any queued request
+  // when it's due, the supply-chain watch looks around, each fresh start under way takes its steps, rate-limit windows that have ended are cleared out, and any queued request
   // whose message went missing runs if its line has room.
   async scheduled(c: { cron?: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
     // Every five minutes on the desktop, mirrors whose turn has come sync with upstream (mirror.ts).
@@ -508,6 +511,8 @@ const app = {
     if (c.cron === MIRRORS) { if (mirrorsOn(env)) ctx.waitUntil(syncDue(env).then(() => pollGithub(env))); return; }
     if (c.cron !== HOURLY) return;
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
+    // The supply-chain watch: agent platforms' status pages, and new malicious-package advisories against every repo (watch.ts).
+    ctx.waitUntil(scheduledWatch(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(sweepTraffic(env));
     ctx.waitUntil(sweepLineEvents(env));

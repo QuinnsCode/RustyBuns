@@ -126,6 +126,8 @@
   .sec p { margin: 0 0 6px; } .sec .btn { margin: 2px 4px 2px 0; }
   .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
   .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent); } .sec .run .st.failed { color: var(--del-fg); } .vuln { color: var(--del-fg); font-weight: 600; }
+  .watch { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } .watch .badge { white-space: nowrap; text-decoration: none; }
+  .watch .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); } .watch .none .dot { background: var(--fg); } .watch .unknown .dot { background: none; border: 1px solid var(--muted); } .watch .minor .dot { background: var(--accent); } .watch .major .dot, .watch .critical .dot { background: var(--del-fg); }
   .sec .run .tell { display: flex; align-items: center; gap: 4px; margin-top: 2px; } .sec .run .tell input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px; }
   .sec .run > .row { flex-wrap: nowrap; } .sec .run > .row b { white-space: nowrap; } .sec .run .btn.stop { margin: 0 0 0 auto; padding: 1px 8px; font-size: 12px; }
   .sec .bulk { display: flex; flex-wrap: wrap; gap: 2px; padding-bottom: 6px; }
@@ -2437,7 +2439,7 @@ const views = {
   async wireDeps(owner, repo) {
     const el = $("#deps"), base = `/repos/${owner}/${repo}/deps`;
     if (!el) return;
-    const d = await api(base).catch(() => null);
+    const [d, watch] = await Promise.all([api(base).catch(() => null), api("/watch").catch(() => null)]);
     if (!d) { el.innerHTML = '<span class="muted">unavailable</span>'; return; }
     const s = d.settings, rep = d.report;
     const opt = (v, label, cur) => `<option value="${v}"${String(cur) === String(v) ? " selected" : ""}>${label}</option>`;
@@ -2456,7 +2458,9 @@ const views = {
         ${rep.updates.map((u) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level}${u.fixes ? ` · <b class="vuln">fixes ${u.fixes.map(esc).join(", ")}</b>` : ""} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? "tests pass" : "untested"}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
         ${(rep.exposed ?? []).map((x) => `<span><b class="vuln">exposed</b> <code>${esc(x.name)}</code> ${esc(x.version)} <span class="muted">${x.ids.map(esc).join(", ")} · no update here fixes it</span></span>`).join("")}
         ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>${rep.lock ? `, with <code>${esc(rep.lock)}</code> to match` : ""}, ready to review above.</span>` : ""}
-        ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}`;
+        ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}
+      ${(d.malicious ?? []).length ? `<div class="run">${d.malicious.map((h) => `<span><b class="vuln">malicious</b> <code>${esc(h.name)}</code> ${esc(h.spec)} <span class="muted">${h.path !== "package.json" ? `${esc(h.path.replace(/\/package\.json$/, ""))} · ` : ""}<a href="https://osv.dev/vulnerability/${encodeURIComponent(h.id)}" target="_blank" rel="noopener">${esc(h.id)}</a>${h.summary ? ` · ${esc(h.summary)}` : ""} · remove it or pin a clean version</span></span>`).join("")}</div>` : ""}
+      ${watch?.status?.length ? `<div class="watch" title="Agent platforms' status pages, checked hourly">${watch.status.map((st) => `<a class="badge ${esc(st.indicator)}" href="${esc(st.url)}" target="_blank" rel="noopener" title="${esc(st.description)} · ${new Date(st.checked_at).toLocaleString()}"><span class="dot"></span>${esc(st.name)}</a>`).join("")}</div>` : ""}`;
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target;
       try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value }, "PUT"); toast("Saved"); }

@@ -56,6 +56,7 @@ import { diffToOps, merge3 } from "./sync.ts";
 import { json, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { FIX_HARNESSES, harnessCommand, type Harness } from "./harness.ts";
+import { hitsFor } from "./watch.ts";
 
 export type Level = "patch" | "minor" | "major";
 const LEVELS: Level[] = ["patch", "minor", "major"];
@@ -216,6 +217,13 @@ function allows(r: { prefix: string; v: V }, v: V): boolean {
   if (r.v[0] > 0) return v[0] === r.v[0];
   if (r.v[1] > 0) return v[0] === 0 && v[1] === r.v[1];
   return cmp(v, r.v) === 0;
+}
+
+/** Could an install of `spec` take `version`? Ranges too fancy to read, and tags like latest, count as yes. */
+export function mayTake(spec: string, version: string): boolean {
+  const v = parse(version), r = range(spec);
+  if (!r) return true;
+  return v ? allows(r, v) : spec.trim() === version;
 }
 
 const levelOf = (from: V, to: V): Level => to[0] !== from[0] ? "major" : to[1] !== from[1] ? "minor" : "patch";
@@ -475,7 +483,35 @@ const fixerFor = (env: Env, s: Settings, owner: string): Fixer | null =>
 
 // ---- a run ------------------------------------------------------------------
 
-type Call = (who: string | null, path: string, init?: RequestInit) => Promise<Response>;
+export type Call = (who: string | null, path: string, init?: RequestInit) => Promise<Response>;
+
+/** Every package.json in a repo: the top one, and each workspace's. A note says why there are none. */
+export async function readManifests(call: Call, owner: string, repo: string) {
+  const base = `/api/repos/${owner}/${repo}`;
+  const fileQ = (path: string, branch?: string) => `?path=${encodeURIComponent(path)}${branch ? `&branch=${branch}` : ""}`;
+  const read = async (path: string) => { const r = await call(owner, `${base}/do/file${fileQ(path)}`); return r.ok ? (await r.json()) as Doc : null; };
+  const list = async (dir: string) => {
+    const r = await call(owner, `${base}/tree?path=${encodeURIComponent(dir)}`);
+    return r.status === 200 ? ((await r.json()) as { entries: { path: string; type: string }[] }).entries : null;
+  };
+
+  const res = await call(owner, `${base}/do/file${fileQ("package.json")}`);
+  if (!res.ok) return { note: res.status === 404 ? "no package.json at the top of this repo" : `reading package.json: ${res.status}` };
+  const top = ((await list("")) ?? []).map((e) => e.path);
+  const manifests = new Map<string, { lines: string[]; pkg: Record<string, any> }>();
+  const add = (path: string, doc: Doc) => {
+    const lines = doc.lines.map((l) => l.text);
+    try { manifests.set(path, { lines, pkg: JSON.parse(lines.join("\n")) }); return true; } catch { return false; }
+  };
+  if (!add("package.json", (await res.json()) as Doc)) return { note: "package.json isn't valid JSON" };
+  const root = manifests.get("package.json")!.pkg;
+  const pnpmYaml = top.includes("pnpm-workspace.yaml") ? (await read("pnpm-workspace.yaml"))?.lines.map((l) => l.text).join("\n") ?? null : null;
+  for (const dir of await workspaceDirs(workspaceGlobs(root, pnpmYaml), list)) {
+    const doc = await read(`${dir}/package.json`);
+    if (doc) add(`${dir}/package.json`, doc);
+  }
+  return { manifests, top, read, base, fileQ };
+}
 
 /** Check one repo now, put what's worth taking on a branch, and keep the report. */
 export async function runDoctor(env: Env, call: Call, owner: string, repo: string, opts: { registry?: Registry; now?: number; deadline?: number; beatMs?: number } = {}): Promise<Report> {
@@ -553,30 +589,9 @@ const desktopNotify: Notify = async (_owner, subject, lines) => {
 };
 
 async function check(env: Env, call: Call, owner: string, repo: string, s: Settings, registry: Registry, advisories: Advisories, now: number, deadline?: number): Promise<Report> {
-  const base = `/api/repos/${owner}/${repo}`;
-  const fileQ = (path: string, branch?: string) => `?path=${encodeURIComponent(path)}${branch ? `&branch=${branch}` : ""}`;
-  const read = async (path: string) => { const r = await call(owner, `${base}/do/file${fileQ(path)}`); return r.ok ? (await r.json()) as Doc : null; };
-  const list = async (dir: string) => {
-    const r = await call(owner, `${base}/tree?path=${encodeURIComponent(dir)}`);
-    return r.status === 200 ? ((await r.json()) as { entries: { path: string; type: string }[] }).entries : null;
-  };
-
-  const res = await call(owner, `${base}/do/file${fileQ("package.json")}`);
-  if (!res.ok) return { at: now, checked: 0, updates: [], note: res.status === 404 ? "no package.json at the top of this repo" : `reading package.json: ${res.status}` };
-  const top = ((await list("")) ?? []).map((e) => e.path);
-  // Every package.json: the top one, and each workspace's.
-  const manifests = new Map<string, { lines: string[]; pkg: Record<string, any> }>();
-  const add = (path: string, doc: Doc) => {
-    const lines = doc.lines.map((l) => l.text);
-    try { manifests.set(path, { lines, pkg: JSON.parse(lines.join("\n")) }); return true; } catch { return false; }
-  };
-  if (!add("package.json", (await res.json()) as Doc)) return { at: now, checked: 0, updates: [], note: "package.json isn't valid JSON" };
-  const root = manifests.get("package.json")!.pkg;
-  const pnpmYaml = top.includes("pnpm-workspace.yaml") ? (await read("pnpm-workspace.yaml"))?.lines.map((l) => l.text).join("\n") ?? null : null;
-  for (const dir of await workspaceDirs(workspaceGlobs(root, pnpmYaml), list)) {
-    const doc = await read(`${dir}/package.json`);
-    if (doc) add(`${dir}/package.json`, doc);
-  }
+  const repoFiles = await readManifests(call, owner, repo);
+  if ("note" in repoFiles) return { at: now, checked: 0, updates: [], note: repoFiles.note };
+  const { manifests, top, read, base, fileQ } = repoFiles;
 
   // The registry the repo's .npmrc names, with the owner's tokens on the desktop. A test's fake registry wins.
   if (registry === npmRegistry) {
@@ -604,7 +619,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   if (exposed.length) note = [note, `${exposed.length} dependenc${exposed.length === 1 ? "y has a known vulnerability" : "ies have known vulnerabilities"} no update here fixes`].filter(Boolean).join("; ");
   if (!found.length) return { at: now, checked, updates: [], ...also, note: note ?? "everything is up to date" };
 
-  const { pm, lock } = packageManager(top, root);
+  const { pm, lock } = packageManager(top, manifests.get("package.json")!.pkg);
   const filesFor = (us: Update[]) => Object.fromEntries([...manifests].filter(([path]) => us.some((u) => (u.path ?? "package.json") === path))
     .map(([path, m]) => [path, bump(m.lines, us.filter((u) => (u.path ?? "package.json") === path)).join("\n") + "\n"]));
   let remote: string | null | undefined;
@@ -773,7 +788,7 @@ async function claim(env: Env, owner: string, repo: string, now = Date.now()) {
 }
 
 /** Calls into the app as someone, the way agent-routes does. */
-const caller = (self: (r: Request) => Promise<Response>, origin: string): Call => (who, path, init = {}) => {
+export const caller = (self: (r: Request) => Promise<Response>, origin: string): Call => (who, path, init = {}) => {
   const r = new Request(origin + path, init);
   if (who) actingAs.set(r, who);
   return self(r);
@@ -789,7 +804,7 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
 
   if (!p[5] && req.method === "GET") {
     const r = await env.DB.prepare("SELECT last_run, last_report, running_since FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-    return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner) });
+    return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), malicious: await hitsFor(env, owner, repo) });
   }
   if (!p[5] && req.method === "PUT") {
     const b = (await req.json()) as Partial<Settings>;
