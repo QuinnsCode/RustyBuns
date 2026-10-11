@@ -33,6 +33,18 @@ class Canvas {
     for (let j = Math.max(0, y); j < Math.min(H, y + h); j++)
       for (let i = Math.max(0, x); i < Math.min(W, x + w); i++) this.px.set(c, (j * W + i) * 3);
   }
+  /** Fill a convex polygon, row by row. */
+  poly(pts: [number, number][], c: RGB) {
+    const ys = pts.map((p) => p[1]);
+    for (let y = Math.max(0, Math.ceil(Math.min(...ys))); y < Math.min(H, Math.max(...ys)); y++) {
+      let lo = Infinity, hi = -Infinity;
+      pts.forEach(([x0, y0], i) => {
+        const [x1, y1] = pts[(i + 1) % pts.length]!;
+        if ((y0 <= y && y < y1) || (y1 <= y && y < y0)) { const x = x0 + ((y - y0) / (y1 - y0)) * (x1 - x0); lo = Math.min(lo, x); hi = Math.max(hi, x); }
+      });
+      if (lo <= hi) this.rect(Math.round(lo), y, Math.round(hi) - Math.round(lo) + 1, 1, c);
+    }
+  }
   /** Draw text from (x, y), clipped at `maxX`; returns where it stopped. */
   text(s: string, x: number, y: number, c: RGB, maxX = W) {
     for (const ch of s.replace(/\t/g, "  ")) {
@@ -101,6 +113,55 @@ export async function renderPulseCard(card: PulseCard): Promise<Uint8Array<Array
   c.rect(0, H - 88, W, 88, CANVAS);
   c.rect(0, H - 88, W, 1, [208, 215, 222]);
   const x = c.text(card.status, 40, H - 68, INK);
+  c.text("codeSplitters", Math.max(x + cw, W - 40 - 13 * cw), H - 68, ORANGE);
+  return png(c.px);
+}
+
+// ---- code city postcard (city.ts) ----------------------------------------------
+
+export interface CityCard {
+  name: string; files: number; lines: number;
+  districts: { x: number; z: number; size: number; buildings: { x: number; z: number; w: number; h: number; agent: number; glow: number }[] }[];
+}
+
+const mix = (a: RGB, b: RGB, t: number): RGB => [0, 1, 2].map((k) => Math.round(a[k]! + (b[k]! - a[k]!) * t)) as RGB;
+/** People's lines are white stone, agents' are black glass; each as its roof, left and right faces. */
+const STONE: RGB[] = [[252, 252, 250], [228, 231, 234], [204, 210, 215]], GLASS: RGB[] = [[74, 78, 84], [36, 39, 44], [18, 20, 23]];
+
+/** A city's postcard: its districts in isometric, roofs lit orange where lines landed lately. */
+export async function renderCity(city: CityCard): Promise<Uint8Array<ArrayBuffer>> {
+  const c = new Canvas(glyphs("geist")), cw = GLYPH_W * S;
+  c.rect(0, 0, W, H, PAPER);
+  // Kamino haze: the sky pales toward the street.
+  for (let y = 93; y < H - 88; y++) c.rect(0, y, W, 1, mix([226, 232, 236], PAPER, (y - 93) / (H - 181)));
+  c.rect(0, 0, W, 8, ORANGE);
+  c.text(`@${city.name}'s code city`, 40, 26, INK, W - 40);
+  c.rect(0, 92, W, 1, [208, 215, 222]);
+  const all = city.districts.flatMap((d) => d.buildings);
+  // Isometric: x runs down-right, z down-left, height straight up.
+  const iso = (x: number, z: number, y = 0): [number, number] => [(x - z) * 0.866, (x + z) * 0.5 - y];
+  const corners = city.districts.flatMap((d) => [iso(d.x, d.z), iso(d.x + d.size, d.z), iso(d.x, d.z + d.size), iso(d.x + d.size, d.z + d.size)])
+    .concat(all.map((b) => iso(b.x - b.w / 2, b.z - b.w / 2, b.h)));
+  if (!all.length) c.text("no public repos to build with yet", 40, H / 2 - 20, MUTED);
+  else {
+    const [x0, x1] = [Math.min(...corners.map((p) => p[0])), Math.max(...corners.map((p) => p[0]))];
+    const [y0, y1] = [Math.min(...corners.map((p) => p[1])), Math.max(...corners.map((p) => p[1]))];
+    const top = 112, bottom = H - 104, s = Math.min((W - 120) / Math.max(1, x1 - x0), (bottom - top) / Math.max(1, y1 - y0));
+    const at = (p: [number, number]): [number, number] => [W / 2 + (p[0] - (x0 + x1) / 2) * s, bottom - (y1 - p[1]) * s];
+    for (const d of city.districts) c.poly([iso(d.x, d.z), iso(d.x + d.size, d.z), iso(d.x + d.size, d.z + d.size), iso(d.x, d.z + d.size)].map(at), [221, 226, 230]);
+    // Back to front, so nearer towers stand in front of farther ones.
+    for (const b of [...all].sort((a, b) => a.x + a.z - (b.x + b.z))) {
+      const r = b.w / 2, [roof, left, right] = b.agent >= 0.5 ? GLASS : STONE;
+      const p = (dx: number, dz: number, y: number) => at(iso(b.x + dx, b.z + dz, y));
+      c.poly([p(-r, r, 0), p(r, r, 0), p(r, r, b.h), p(-r, r, b.h)], left!);
+      c.poly([p(r, -r, 0), p(r, r, 0), p(r, r, b.h), p(r, -r, b.h)], right!);
+      c.poly([p(-r, -r, b.h), p(r, -r, b.h), p(r, r, b.h), p(-r, r, b.h)], mix(roof!, ORANGE, b.glow));
+    }
+  }
+  c.rect(0, H - 88, W, 88, CANVAS);
+  c.rect(0, H - 88, W, 1, [208, 215, 222]);
+  const n = (k: number, w: string) => `${k.toLocaleString("en-US")} ${w}${k === 1 ? "" : "s"}`;
+  const x = c.text(`${n(city.districts.length, "district")}, ${n(city.files, "building")}, ${n(city.lines, "line")}`, 40, H - 68, MUTED);
   c.text("codeSplitters", Math.max(x + cw, W - 40 - 13 * cw), H - 68, ORANGE);
   return png(c.px);
 }

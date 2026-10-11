@@ -81,6 +81,15 @@
     #banner { font-size: 40px; } #tl .big, #tr .big { font-size: 16px; } .hud { font-size: 11px; }
     .card { padding: 20px 18px; } .card h1 { font-size: 26px; }
   }
+  /* The code city (city.js): its legend, what you're looking at, and its crosshair. */
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 14px 0; font: 400 12px var(--mono); color: var(--ink-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--edge); }
+  .legend .stone { background: #f4f5f5; } .legend .glass { background: #16191c; border-color: #16191c; } .legend .lit { background: var(--accent); border-color: var(--accent); }
+  a.btn { display: inline-flex; align-items: center; font: 500 13px/1 var(--sans); padding: 9px 12px 8px; border: 1px solid var(--edge); border-radius: 5px; background: var(--grain), var(--paper); color: var(--ink); text-decoration: none; }
+  a.btn:hover { background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); border-color: #a8a8a8; }
+  #city-what { bottom: 14px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px); background: rgba(255,255,255,.86); backdrop-filter: blur(6px); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 12px; text-align: center; }
+  #city-cross { top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px rgba(255,255,255,.8); }
   a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--edge); text-underline-offset: 3px; } a:hover { text-decoration-color: var(--accent); }
 </style>
 <script type="importmap">{ "imports": { "three": "/vendor/three.module.js" } }</script>
@@ -121,6 +130,9 @@
 
 <script type="module">
 import * as THREE from "three";
+
+// #c/<name> is someone's code city, a mode of its own (city.js): the backrooms never start.
+if (location.hash.startsWith("#c/")) { await import("/city.js"); await new Promise(() => {}); }
 
 // ---- where we are -------------------------------------------------------------
 // #l/<level> or #r/<owner>/<repo>, and for a diff to smash ?path=&from=&to=
