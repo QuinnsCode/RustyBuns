@@ -1,0 +1,71 @@
+// A runner of your own for codeSplitters checks (#534). It pulls work rather than being pushed
+// to, so it runs anywhere that can reach the site: behind a firewall, on a laptop, on a build box
+// with no inbound port. The loop: claim the oldest queued run, clone, run, report, again.
+//
+//   CODESPLITTERS_URL=https://codesplitters.notryanquinn.workers.dev \
+//   CODESPLITTERS_TOKEN=cst_… \
+//   bun scripts/runner.ts owner/repo [--label my-mac] [--names test,lint] [--command "bun test"] [--once]
+//
+// The token is a write token from your profile page, of someone in the repo's crew. The command
+// is the check's own (a required check's `command` in the settings), else --command, else
+// `bun test`, run with sh in a fresh clone checked out at the run's sha. Its output streams to
+// the run's log every couple of seconds, and each of those PUTs is the heartbeat: go quiet for
+// 10 minutes and the run goes back in the queue. Exit 0 passes it; anything else fails it. A
+// junit.xml left in the clone goes up as the report. To wrap Jenkins, Docker or anything else,
+// make --command the thing that starts it, or copy this loop: it's the whole protocol.
+
+import { mkdtemp, rm } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseArgs } from "node:util";
+
+const { values: o, positionals: [slug] } = parseArgs({ allowPositionals: true, options: {
+  label: { type: "string", default: `${process.env.USER ?? "runner"}@${hostname()}` },
+  names: { type: "string" }, command: { type: "string" }, once: { type: "boolean" }, idle: { type: "string", default: "10" },
+} });
+const base = process.env.CODESPLITTERS_URL, token = process.env.CODESPLITTERS_TOKEN;
+if (!slug?.includes("/") || !base || !token) throw new Error("usage: CODESPLITTERS_URL=… CODESPLITTERS_TOKEN=cst_… bun scripts/runner.ts owner/repo [--label] [--names a,b] [--command] [--once]");
+const api = (path: string, body: unknown, method = "POST") => fetch(`${base}/api/repos/${slug}/checks${path}`, {
+  method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body),
+});
+
+/** One run, start to finish. */
+async function work(job: { id: number; sha: string; name: string; clone_url: string | null; command?: string }) {
+  const report = (b: object) => api(`/${job.id}`, { runner_label: o.label, ...b }, "PUT");
+  const dir = await mkdtemp(join(tmpdir(), "cs-runner-"));
+  let out = "";
+  const flush = async () => { const append = out; out = ""; if ((await report({ append })).status === 409) throw new Error("lost the claim"); };
+  try {
+    if (!job.clone_url) throw new Error("the repo has no git to clone yet");
+    const git = (...a: string[]) => Bun.spawnSync(["git", ...a], { cwd: dir, stderr: "pipe" });
+    const cloned = git("clone", "--quiet", job.clone_url, ".");
+    if (cloned.exitCode) throw new Error(`git clone failed: ${cloned.stderr}`);
+    // A branch that hasn't gone up as a git commit has no sha to check out: there's nothing here to test.
+    if (!/^[0-9a-f]{40}$/.test(job.sha) || git("checkout", "--quiet", job.sha).exitCode) throw new Error(`${job.sha} isn't a commit in the repo's git`);
+    const command = job.command ?? o.command ?? "bun test";
+    out = `$ ${command}\n`;
+    const p = Bun.spawn(["sh", "-c", command], { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...process.env, CI: "1" } });
+    const pump = async (s: ReadableStream<Uint8Array>) => { for await (const t of s.pipeThrough(new TextDecoderStream())) out += t; };
+    const tick = setInterval(() => flush().catch(() => p.kill()), 2000);
+    const [code] = await Promise.all([p.exited, pump(p.stdout), pump(p.stderr)]).finally(() => clearInterval(tick));
+    const junit = await Bun.file(join(dir, "junit.xml")).text().catch(() => undefined);
+    await report({ append: out + `\nexit ${code}\n`, status: code === 0 ? "passed" : "failed", ...(junit && { junit }) });
+  } catch (e) {
+    await report({ append: `${out}\n${(e as Error).message}\n`, status: "failed" }).catch(() => null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+while (true) {
+  const res = await api("/claim", { runner_label: o.label, ...(o.names && { names: o.names.split(",") }) });
+  if (res.status === 200) {
+    const job = await res.json();
+    console.log(`${o.label}: ${job.name} on ${job.ref} at ${job.sha.slice(0, 7)} (run ${job.id})`);
+    await work(job);
+    continue;
+  }
+  if (res.status !== 204) console.error(`claim: ${res.status} ${await res.text()}`);
+  if (o.once) break;   // --once drains what's queued, then stops
+  await Bun.sleep(Number(o.idle) * 1000);
+}

@@ -30,7 +30,7 @@ import { openapi } from "./openapi.ts";
 import { catalogue, mcp } from "./mcp.ts";
 import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
-import { checkRoutes, pollGithub, startChecks } from "./checks.ts";
+import { checkRoutes, pollGithub, requeueStale, startChecks } from "./checks.ts";
 import { callers, insightRoutes, record, sweepTraffic } from "./insights.ts";
 import { kickMirror, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, syncDue } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
@@ -429,6 +429,8 @@ const app = {
     if (accountsOn(env)) ctx.waitUntil(sweepSessions(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));
     ctx.waitUntil(advanceAll(env, Date.now() + 10 * 60_000));
+    // Check runs a runner claimed and then went quiet on go back in the queue (a claim does this too).
+    ctx.waitUntil(requeueStale(env));
   },
 
   // The queues (rustybuns.config.ts): JOBS runs queued requests whose turn has come, and hosted agent runs;
