@@ -485,6 +485,23 @@
   #mirror .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
   #mirror .tag.ok { color: var(--accent); border-color: var(--accent); } #mirror .tag.fail { color: var(--del-fg); border-color: var(--del-fg); }
   .limits .tag.reject, .jobs .tag.failed { color: var(--del-fg); } .limits .tag.flag, .limits .tag.queue, .jobs .tag.waiting, .jobs .tag.running { color: var(--accent); border-color: var(--accent); }
+  .insights .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 12px; }
+  .insights .tile { border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; display: grid; gap: 2px; } .insights .tile b { font: 600 22px var(--mono); } .insights .tile span { color: var(--muted); font-size: 12px; }
+  .insights .tile.person b { color: var(--accent); }
+  .insights .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } .insights .cols > .box { margin: 0 0 12px; }
+  .insights .days { display: grid; gap: 6px; padding: 12px 16px; font-size: 12px; } .insights .days > div { display: grid; grid-template-columns: 52px 1fr 64px; gap: 10px; align-items: center; }
+  .insights .stack { display: flex; height: 10px; border-radius: 3px; overflow: hidden; background: var(--canvas); } .insights .stack i { display: block; height: 100%; }
+  .insights .k-person { background: var(--accent); } .insights .k-agent { background: var(--fg); } .insights .k-bot { background: var(--border-2); }
+  .insights .key { display: inline-flex; gap: 12px; } .insights .key i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+  .insights .chk { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; } .insights .chk:first-of-type { border-top: 0; }
+  .insights .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--border-2); } .insights .dot.ok { background: var(--fg); } .insights .dot.warn { background: var(--accent); } .insights .dot.bad { background: var(--del-fg); box-shadow: 0 0 0 3px color-mix(in srgb, var(--del-fg) 25%, transparent); }
+  .insights .chk .muted { margin-left: auto; text-align: right; }
+  .insights .way > div { display: grid; grid-template-columns: 150px 1fr 70px; gap: 10px; align-items: center; padding: 6px 16px; font-size: 13px; } .insights .way .meter i { background: var(--accent); }
+  .insights table { width: 100%; border-collapse: collapse; font-size: 13px; } .insights th, .insights td { text-align: left; padding: 7px 12px; border-top: 1px solid var(--border); white-space: nowrap; } .insights thead th { border-top: 0; color: var(--muted); font-weight: 500; font-size: 12px; }
+  .insights .scroll { overflow-x: auto; } .insights td.ua { max-width: 280px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+  .insights .steps { display: inline-flex; gap: 3px; } .insights .steps i { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--border-2); } .insights .steps i.on { background: var(--accent); border-color: var(--accent); }
+  .insights .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); } .insights .tag.person { color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 720px) { .insights .tiles, .insights .cols { grid-template-columns: 1fr; } .insights .way > div { grid-template-columns: 110px 1fr 56px; } }
   .switch { position: relative; width: 30px; height: 18px; margin-left: auto; flex: none; }
   .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
   .switch i { position: absolute; inset: 0; border-radius: 9px; background: var(--border-2); transition: background .15s; pointer-events: none; }
@@ -730,7 +747,7 @@ function landHome() {
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
@@ -1004,6 +1021,46 @@ async function limitsPage() {
   });
   icons();
   sealBox();
+}
+// Insights (admins, src/insights.ts): people vs agents vs bots by day, the site's
+// health over the last day, how far everyone has got, and who's been calling.
+const KINDS = [["person", "People", "browsers"], ["agent", "Agents", "API tokens, MCP, scripts, headless"], ["bot", "Bots", "crawlers and monitors"]];
+async function insightsPage(days = 7) {
+  const d = await api(`/admin/insights?days=${days}`);
+  const { kinds, by_day, by_via, callers } = d.traffic, fmt = (n) => Number(n || 0).toLocaleString();
+  const dayList = Array.from({ length: d.days }, (_, i) => d.from + i * 86400000);
+  const per = (day, k) => by_day.find((r) => r.day === day && r.kind === k)?.hits ?? 0;
+  const top = Math.max(1, ...dayList.map((day) => KINDS.reduce((s, [k]) => s + per(day, k), 0)));
+  const date = (t) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const stepIx = (s) => d.steps.findIndex((x) => x.step === s);
+  app.innerHTML = `<div class="wrap limits insights" style="padding-top:24px">
+    <h2 style="margin:0 0 6px;font-weight:600">${icon("activity")} Insights<span class="grow"></span>
+      <select id="ins-days" aria-label="how far back">${[1, 7, 30].map((n) => `<option value="${n}"${n === d.days ? " selected" : ""}>${n === 1 ? "today" : `last ${n} days`}</option>`).join("")}</select></h2>
+    <p class="muted" style="margin:0 0 18px">Who's really here. Requests from the internet, split by whether they look like a person in a browser, an agent, or a bot. Signed-out callers are a daily hash, never an IP. Kept 30 days.</p>
+    <div class="tiles">${KINDS.map(([k, label, what]) => `<div class="tile ${k}" title="${what}"><span>${label}</span><b>${fmt(kinds[k]?.callers)}</b><span>${fmt(kinds[k]?.hits)} requests${kinds[k]?.errors ? ` · <span class="hot">${fmt(kinds[k].errors)} 5xx</span>` : ""}</span></div>`).join("")}</div>
+    <div class="cols">
+      <div class="box"><div class="bar">${icon("chart-column")}<b>Requests by day</b><span class="grow"></span><span class="key muted small">${KINDS.map(([k, l]) => `<span><i class="k-${k}"></i>${l}</span>`).join("")}</span></div>
+        <div class="days">${dayList.map((day) => { const all = KINDS.reduce((s, [k]) => s + per(day, k), 0);
+          return `<div><span class="muted">${date(day)}</span><span class="stack" title="${KINDS.map(([k, l]) => `${l}: ${per(day, k)}`).join(", ")}" style="width:${Math.max(1, (all / top) * 100)}%">${KINDS.map(([k]) => per(day, k) ? `<i class="k-${k}" style="flex:${per(day, k)}"></i>` : "").join("")}</span><span class="muted" style="text-align:right">${fmt(all)}</span></div>`; }).join("")}</div>
+        <div class="body muted small" style="border-top:1px solid var(--border)">${by_via.map((v) => `${esc(v.via)} <b>${fmt(v.hits)}</b>`).join(" · ") || "No traffic from the internet yet."}</div></div>
+      <div class="box"><div class="bar">${icon("heart-pulse")}<b>Health</b><span class="muted">the last 24 hours</span></div>
+        ${d.health.checks.map((c) => `<div class="chk"><span class="dot ${c.state}" title="${c.state}"></span><b>${esc(c.name)}</b><span class="muted">${esc(c.detail)}</span></div>`).join("")}</div>
+    </div>
+    <div class="box"><div class="bar">${icon("footprints")}<b>The way in</b><span class="muted">of ${fmt(d.total_users)} people, how many reached each step</span></div>
+      <div class="way" style="padding:6px 0">${d.steps.map((s) => `<div><span>${esc(s.label)}</span><span class="meter"><i style="width:${d.total_users ? (s.people / d.total_users) * 100 : 0}%"></i></span><span class="muted" style="text-align:right">${fmt(s.people)}</span></div>`).join("")}</div></div>
+    <div class="box"><div class="bar">${icon("users")}<b>Recent people</b><span class="muted">most recently here, with how far each got; requests over the range above</span></div>
+      <div class="scroll"><table><thead><tr><th>Who</th><th>Joined</th><th>Last seen</th><th>Got as far as</th><th></th><th>As a person</th><th>Via agents</th></tr></thead><tbody>
+      ${d.users.map((u) => `<tr><td><a href="#/u/${esc(u.name)}">@${esc(u.name)}</a></td><td class="muted">${u.joined ? ago(u.joined) : "—"}</td><td class="muted">${u.last_seen ? ago(u.last_seen) : "—"}</td>
+        <td>${u.furthest ? esc(d.steps[stepIx(u.furthest)].label) : '<span class="muted">not yet</span>'}</td>
+        <td><span class="steps">${d.steps.map((s) => `<i class="${u.steps[s.step] ? "on" : ""}" title="${esc(s.label)}${u.steps[s.step] ? `: ${u.steps[s.step].n}×, first ${ago(u.steps[s.step].first_at)}` : ""}"></i>`).join("")}</span></td>
+        <td>${fmt(u.hits.person)}</td><td>${u.hits.agent ? `<b>${fmt(u.hits.agent)}</b>` : '<span class="muted">0</span>'}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">Nobody yet.</td></tr>'}</tbody></table></div></div>
+    <div class="box"><div class="bar">${icon("radio")}<b>Callers today</b><span class="muted">the last 24 hours, newest first</span></div>
+      <div class="scroll"><table><thead><tr><th>Caller</th><th>Looks like</th><th>Via</th><th>Requests</th><th>Last</th><th>User agent</th></tr></thead><tbody>
+      ${callers.map((c) => `<tr><td>${c.who.startsWith("@") ? `<a href="#/u/${esc(c.who.slice(1))}">${esc(c.who)}</a>` : `<span class="muted" title="signed out: a hash of their IP, for today only">${esc(c.who)}</span>`}</td>
+        <td><span class="tag ${c.kind}">${c.kind}</span></td><td class="muted">${esc(c.via)}</td><td>${fmt(c.hits)}${c.errors ? ` <span class="hot">· ${c.errors} 5xx</span>` : ""}</td><td class="muted">${ago(c.last_at)}</td><td class="ua" title="${esc(c.ua ?? "")}">${esc(c.ua ?? "none")}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">No one in the last day.</td></tr>'}</tbody></table></div></div>
+  </div>`;
+  $("#ins-days").addEventListener("change", (e) => insightsPage(Number(e.target.value)));
+  icons();
 }
 // Hosted deploys' sealing key (src/deploy-keys.ts): after a rotation, seal what the old key sealed under the new one.
 async function sealBox() {
@@ -1501,6 +1558,7 @@ const views = {
         ${row("Tokens and apps", "API token labels and last four characters, apps you connected, and when each was last used. The secrets are stored only as hashes.", "Letting your scripts, agents and apps act as you", "Until they expire or you revoke them")}
         ${row("Agent runs", "The task you gave an agent, the model and a short log", "Showing you what your agent did", "With the repo")}
         ${row("Rate limits", "Your IP address, counted against sign-in and sign-up attempts", "Keeping bots out", "An hour; a blocked attempt is noted for 7 days")}
+        ${row("Usage", "A daily count of your requests (by handle, or signed out by a hash of your IP that changes every day), whether they came from a browser or a script, your browser's name, and the first time you did each thing here (made a repo, committed, deployed)", "Seeing whether people or bots use the site, and where people get stuck", "Daily counts 30 days; the firsts until you delete your account")}
         </tbody></table></div>
 
       <h2>Trenches that came up empty</h2>
@@ -2672,6 +2730,7 @@ const views = {
     ctx = { view: "admin" };
     if (!session.admin) throw new Error("Admins only.");
     if (section === "limits") return limitsPage();
+    if (section === "insights") return insightsPage();
     location.hash = "#/admin/limits";
   },
   async search(q) {
@@ -3147,6 +3206,7 @@ async function commands() {
   add("Anywhere", "shield-check", "Privacy: what we keep, and your data", "", () => (location.hash = "#/privacy"));
   add("Anywhere", "book-open", "API reference", "GET /api", () => (location.href = "/reference"));
   add("Anywhere", "plug", "Connect your AI (MCP)", "", () => (location.href = "/mcp"));
+  if (session.admin) add("Admin", "activity", "Insights", "GET /api/admin/insights", () => (location.hash = "#/admin/insights"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
