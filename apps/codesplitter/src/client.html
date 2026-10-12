@@ -259,7 +259,7 @@
   .wm-item { display: inline-flex; align-items: center; gap: 6px; font: 400 12.5px var(--mono); color: var(--fg); white-space: nowrap; background: var(--bg); border: 1px solid var(--border-2); border-radius: 5px; padding: 4px 8px; cursor: pointer; }
   .wm-item:hover { border-color: #a8a8a8; background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); }
   .wm-item.dir svg.lucide { color: var(--muted); } .wm-item.on { border-color: var(--accent); } .wm-item.on svg.lucide { color: var(--accent-ink); }
-  /* The git map: where a repo came from, the repo, its branches, as paper tiles wired with soft
+  /* The vein: where a repo came from, the repo, its branches, as paper tiles wired with soft
      brown curves. Dashed was copied once; orange is moving, or waiting on you. */
   .gitmap { --brown: #8b5e3c; --brown-soft: #f5ede4; }
   .gitmap .gm-story { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
@@ -286,7 +286,9 @@
   .cg path, .cg-key path { fill: none; stroke: var(--border-2); stroke-width: 2; stroke-linecap: round; } .cg path.off { stroke-dasharray: 2 4; }
   .cg g, .cg-key .u, .cg-key .m { cursor: default; } .cg .u, .cg-key .u { fill: var(--fg); } .cg .m, .cg-key .m { fill: var(--accent); }
   .cg g:hover, .cg g:focus { outline: none; } .cg g:hover > *, .cg g:focus > *, .cg g.on > * { stroke: var(--accent-glow); stroke-width: 3; }
-  .cg g[data-hash] { cursor: pointer; }
+  .cg g[data-hash] { cursor: pointer; } .cg g.beat > * { stroke: var(--accent-glow); stroke-width: 3; }
+  /* The pulse travelling the vein: a glowing bead that runs into main's newest commit as the crew lands lines. */
+  .cg .bead, .cg-key .bead { fill: var(--accent-glow); } .cg .bead { filter: drop-shadow(0 0 3px var(--accent)); pointer-events: none; }
   .cg-pick { display: grid; gap: 6px; margin: 4px 12px 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); font-size: 12px; }
   .cg-pick .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; } .cg-pick .btn { white-space: nowrap; } .cg-pick select { max-width: 14em; }
   .cg-pick .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1138,7 +1140,7 @@ function landHome() {
 function header() {
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a><a class="btn ghost" href="#/admin/scale" title="dig site: how close each scaling wall is">${icon("shovel")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a><a class="btn ghost" href="#/admin/scale" title="survey: how close each scaling wall is">${icon("map")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
@@ -1521,7 +1523,7 @@ async function actionsBox() {
     ${b.repos.length ? `<div class="scroll"><table><thead><tr><th>Repo</th><th>Minutes</th><th>Worth</th><th>Discount</th><th>Owed</th></tr></thead><tbody>${b.repos.map((r) => row(r.repo, r)).join("")}</tbody></table></div>
     <div class="scroll"><table><thead><tr><th>Runner</th><th>Minutes</th><th>Worth</th><th>Discount</th><th>Owed</th></tr></thead><tbody>${b.runners.map((r) => row(r.sku, r)).join("")}</tbody></table></div>` : '<p class="muted small">No Actions minutes yet this month.</p>'}`;
 }
-// The dig site (admins, src/scale.ts): the scale sideboard, dug like a repo. Every wall the app
+// The survey (admins, src/scale.ts): the scale sideboard, surveyed like a dig site. Every wall the app
 // hits as it grows is bedrock; each card shows how deep we've dug toward it, deepest first, with
 // where it is, the cave-in it causes, how to shore it up here, a new site (one box) instead, and the next swing.
 const VERDICT = {
@@ -1531,7 +1533,7 @@ const VERDICT = {
   unmeasured: ["Unsurveyed", "map-pin", "Nothing measured yet."],
 };
 const STATE_LABEL = { bad: "bedrock", warn: "clay", ok: "topsoil", unmeasured: "unsurveyed" };
-const DIG_ROWS = [["where", "map-pin", "Dig site: where it breaks"], ["wall", "mountain", "Bedrock: about where it breaks"], ["shows", "triangle-alert", "Cave-in: how it shows"], ["here", "hammer", "Shore it up: the fix on Cloudflare"], ["box", "truck", "New site: on one box (Hetzner or Railway)"]];
+const DIG_ROWS = [["where", "map-pin", "Where it breaks"], ["wall", "mountain", "Bedrock: about where it breaks"], ["shows", "triangle-alert", "Cave-in: how it shows"], ["here", "hammer", "Shore it up: the fix on Cloudflare"], ["box", "truck", "New site: on one box (Hetzner or Railway)"]];
 function scaleNum(v, unit) {
   if (unit === "bytes") return v >= 1 << 30 ? `${(v / (1 << 30)).toFixed(2)} GB` : v >= 1 << 20 ? `${(v / (1 << 20)).toFixed(1)} MB` : `${Math.round(v / 1024).toLocaleString()} KB`;
   return `${Number(v.toFixed(v < 10 && v % 1 ? 1 : 0)).toLocaleString()} ${v === 1 ? unit.replace(/s$/, "") : unit}`;
@@ -1543,7 +1545,7 @@ async function scalePage() {
   const [title, glyph, line] = VERDICT[d.worst];
   const depth = ["unmeasured", "ok", "warn", "bad"].indexOf(d.worst);
   app.innerHTML = `<div class="wrap limits insights scale" style="padding-top:24px">
-    <h1>${icon("shovel")} Dig site<span class="grow"></span><span class="muted small">surveyed ${ago(d.generated_at)} · every 30s</span></h1>
+    <h1>${icon("map")} Survey<span class="grow"></span><span class="muted small">surveyed ${ago(d.generated_at)} · every 30s</span></h1>
     <p class="muted" style="margin:0 0 18px">How far we've dug toward every wall codeSplitter hits as it grows, deepest first. Bedrock is an estimate from the code and Cloudflare's limits, not a load test.</p>
     <div class="verdict ${d.worst}">${icon(glyph)}<b>${title}</b><span class="muted">${line}</span><span class="strata" title="topsoil, subsoil, clay, bedrock">${[1, 2, 3, 4].map((i) => `<i class="${i > depth ? "past" : ""}"></i>`).join("")}</span></div>
     <div class="cards">${cards.map((c) => { const r = c.reading;
@@ -1826,7 +1828,7 @@ function workbench(head, { tab, bar, body, details, status }) {
   queueMicrotask(dock); queueMicrotask(explorerGrip); queueMicrotask(sheets);
   return `${head}<div class="wb"><aside class="explorer" aria-label="Explorer"><div class="label pad" aria-hidden="true">Explorer</div><nav class="tree" id="tree" aria-label="Files"></nav></aside>
     <section class="editor">${tab ? `<div class="tabs"><span class="tab">${tab}</span></div>` : ""}<div class="crumbbar">${bar}</div><div class="scroll">${body}</div></section>
-    <aside class="details" aria-label="Details">${details}</aside></div><nav class="sheets" id="sheets" aria-label="Recent repos"></nav><footer class="status">${status}</footer>`;
+    <aside class="details" aria-label="Details">${details}</aside></div><nav class="sheets" id="sheets" aria-label="Recent repos"></nav><footer class="status"><span title="the dig site: this repo's files, its crew and its vein">${icon("shovel")}dig site</span>${status}</footer>`;
 }
 // ---- sheets: the repos you were in, as tabs along the bottom -------------------------
 /** This browser's recent repos, in the order they were first opened, each with the page you were last on. */
@@ -1876,7 +1878,7 @@ function wireMap(c) {
   const load = (d) => kids[d] ??= api(treeQ(owner, repo, d)).then((t) => t.entries ?? []).catch(() => []);
   const el = document.createElement("div");
   el.className = "wiremap"; el.id = "wiremap"; el.shut = () => close();
-  el.innerHTML = `<div class="wm-head">${icon("network")}<b>${esc(owner)}/${esc(repo)}</b><span class="muted">click a folder to wire out what's in it, a file to open it</span><span class="grow"></span><button class="btn ghost" id="wm-git" title="the git map: upstream, this repo, its branches">${icon("git-fork")}</button><button class="btn ghost" id="wm-x" title="close (esc)">${icon("x")}</button></div><div class="wm-scroll"><div class="wm-stage" id="wm-stage"></div></div>`;
+  el.innerHTML = `<div class="wm-head">${icon("network")}<b>${esc(owner)}/${esc(repo)}</b><span class="muted">click a folder to wire out what's in it, a file to open it</span><span class="grow"></span><button class="btn ghost" id="wm-git" title="the vein: upstream, this repo, its branches, its history">${icon("git-fork")}</button><button class="btn ghost" id="wm-x" title="close (esc)">${icon("x")}</button></div><div class="wm-scroll"><div class="wm-stage" id="wm-stage"></div></div>`;
   document.body.append(el);
   const place = () => { const t = $("#sheets")?.getBoundingClientRect().top ?? innerHeight; el.style.bottom = Math.max(8, innerHeight - t + 6) + "px"; };
   place();
@@ -1948,10 +1950,10 @@ function wireMap(c) {
   addEventListener("keydown", off); addEventListener("click", off); addEventListener("resize", place);
   return draw();
 }
-// The git map: a repo's family on one sheet, drawn so a kid could follow it. Tiles are git repos and
+// The vein: a repo's family and its history on one sheet, drawn so a kid could follow it. Tiles are git repos and
 // branches; curves are how commits travel between them. A solid curve keeps talking, a dashed one was
 // copied once and stopped listening, and orange is something moving or waiting on you.
-/** The git map's tiles, in three columns (where it came from, this repo, its branches), the curves between them, and the story in one line. */
+/** The vein's tiles, in three columns (where it came from, this repo, its branches), the curves between them, and the story in one line. */
 const gitMapModel = ({ owner, repo, r, branches = [], mirror = null, upBranches = [] }) => {
   const main = r.branch ?? "main", tiles = [], links = [];
   const where = r.home === "local" ? "git on your machine" : r.home === "cloud" ? "git in Cloudflare Artifacts" : "";
@@ -2001,7 +2003,7 @@ const gitCurve = (x1, y1, x2, y2, under) => {
   const dx = Math.max(40, Math.abs(x2 - x1) / 2), c1 = under ?? y1, c2 = under ?? y2;
   return { d: `M${x1} ${y1}C${x1 + dx} ${c1},${x2 - dx} ${c2},${x2} ${y2}`, mx: (x1 + x2) / 2, my: (y1 + 3 * c1 + 3 * c2 + y2) / 8 };
 };
-// The commit graph under the git map (#871): main's commits as a row of dots, oldest on the left, in gitPic's
+// The vein's history under its tiles (#871): main's commits as a row of dots, oldest on the left, in gitPic's
 // colours (black upstream's, orange this copy's, a diamond for a merge), and each branch merged into main in a
 // lane of its own below, leaving main where it started and landing back on the merge.
 /** Where each commit sits: its column (every parent left of its children) and lane (0 is main; a merged branch takes the lowest lane free over the stretch it ran), and the lines between them. */
@@ -2030,13 +2032,14 @@ const commitLanes = (commits, more = false) => {
   if (more && oldest) edges.push({ x1: -1, l1: 0, x2: oldest.x, l2: 0, off: true });
   return { dots, edges, lanes: Math.max(1, busy.length) };
 };
-/** The git map of a repo: who it listens to, who listens to it, and its branches, wired with curves. */
+/** The vein of a repo: who it listens to, who listens to it, its branches wired with curves, and its history,
+ *  which the pulse runs along as the crew lands lines (beat()). */
 async function gitMap(c) {
   if ($("#gitmap")) return $("#gitmap").shut();
   $("#wiremap")?.shut();
   const { owner, repo } = c;
   const el = document.createElement("div");
-  el.className = "wiremap gitmap"; el.id = "gitmap"; el.shut = () => close();
+  el.className = "wiremap gitmap"; el.id = "gitmap"; el.shut = () => close(); el.dataset.repo = `${owner}/${repo}`;
   el.innerHTML = `<div class="wm-head">${icon("git-fork")}<b>${esc(owner)}/${esc(repo)}</b><span class="muted gm-story">…</span><span class="grow"></span><button class="btn ghost" id="gm-files" title="the files' wire map">${icon("network")}</button><button class="btn ghost" id="gm-x" title="close (esc)">${icon("x")}</button></div><div class="wm-scroll"><div class="gm-stage" id="gm-stage"></div></div>
     <div class="gm-graph" id="gm-graph" hidden></div>
     <div class="gm-key muted"><span><svg viewBox="0 0 28 6"><path d="M1 3H27"/></svg>keeps listening</span><span><svg viewBox="0 0 28 6"><path class="fork" d="M1 3H27"/></svg>copied once</span><span><svg viewBox="0 0 28 6"><path class="hot" d="M1 3H27"/></svg>moving, or waiting on you</span><span>point at a label to see what it does</span></div>`;
@@ -2090,6 +2093,21 @@ async function gitMap(c) {
     g.commits = new Map(graph.commits.map((c) => [c.hash, c]));
   };
   drawGraph(graph);
+  // The pulse: lines landing here send a bead down the vein into main's newest commit, one at a time.
+  let beatAt = 0;
+  el.beat = () => {
+    const svg = el.querySelector(".cg"), tip = svg?.querySelector("g.tip");
+    if (!tip || Date.now() - beatAt < 900) return;
+    beatAt = Date.now();
+    const [x, y, from] = svg.dataset.tip.split(",");
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      svg.insertAdjacentHTML("beforeend", `<circle class="bead" r="3.5"><animateMotion dur=".8s" fill="freeze" begin="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".4 0 1 1" path="M${from} ${y}H${x}"/></circle>`);
+      const bead = svg.lastElementChild;
+      bead.firstElementChild.beginElement?.();
+      setTimeout(() => bead.remove(), 800);
+    }
+    setTimeout(() => { tip.classList.add("beat"); setTimeout(() => tip.classList.remove("beat"), 500); }, 700);
+  };
   // A dot, clicked: revert it on main, or cherry-pick it onto main or an open branch (#880).
   const open = branches.filter((b) => b.status === "open").map((b) => b.name);
   const pickCard = (hash) => {
@@ -2141,7 +2159,7 @@ async function gitMap(c) {
   const onSize = () => { place(); wires(); };
   addEventListener("keydown", off); addEventListener("click", off); addEventListener("resize", onSize);
 }
-/** The commit graph's sheet: a head saying what it shows, and the dots and lanes, scrolled sideways. */
+/** The vein's history: a head saying what it shows, and the dots and lanes, scrolled sideways. */
 const commitGraph = (g) => {
   const DX = 22, LH = 20, PAD = 14, { dots, edges, lanes } = commitLanes(g.commits, g.more);
   const X = (i) => PAD + 8 + i * DX, Y = (l) => PAD + l * LH;
@@ -2153,17 +2171,19 @@ const commitGraph = (g) => {
       : `M${x1} ${y1}H${x2 - DX}C${x2 - DX / 2} ${y1},${x2 - DX / 2} ${y2},${x2} ${y2}`;
     return `<path${e.off ? ' class="off"' : ""} d="${d}"/>`;
   };
+  // The tip is main's newest commit: where the pulse lands.
+  const tip = dots.filter((c) => c.lane === 0).at(-1);
   const dot = (c) => {
     const x = X(c.x), y = Y(c.lane);
     const say = `${c.hash.slice(0, 7)} ${c.message}\n${c.author}, ${new Date(c.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${c.up ? "upstream's" : "this copy's"}${c.merge ? " merge" : ""}`;
     const shape = c.merge ? `<rect x="${x - 4.5}" y="${y - 4.5}" width="9" height="9" rx="1.5" transform="rotate(45 ${x} ${y})"/>` : `<circle cx="${x}" cy="${y}" r="5"/>`;
-    return `<g class="${c.up ? "u" : "m"}" tabindex="0" data-hash="${esc(c.hash)}" aria-label="${esc(say)}"><title>${esc(say)}</title>${shape}</g>`;
+    return `<g class="${c.up ? "u" : "m"}${c === tip ? " tip" : ""}" tabindex="0" data-hash="${esc(c.hash)}" aria-label="${esc(say)}"><title>${esc(say)}</title>${shape}</g>`;
   };
   const main = dots.filter((c) => c.lane === 0).length, side = dots.length - main;
   const w = X(Math.max(0, dots.length - 1)) + PAD + 8, h = Y(lanes - 1) + PAD;
-  return `<div class="cg-head muted">${icon("git-commit-horizontal")}<span>${esc(g.branch)}: the last ${main} commit${main === 1 ? "" : "s"}${g.more ? " (older ones trail off left)" : ""}${side ? `, and ${side} on branches merged in` : ""}</span>
-    <span class="cg-key"><svg viewBox="0 0 10 10"><circle class="u" cx="5" cy="5" r="4"/></svg>upstream's</span><span class="cg-key"><svg viewBox="0 0 10 10"><circle class="m" cx="5" cy="5" r="4"/></svg>this copy's</span><span class="cg-key"><svg viewBox="0 0 10 10"><rect x="1.8" y="1.8" width="6.4" height="6.4" transform="rotate(45 5 5)"/></svg>a merge</span></div>
-    <div class="cg-scroll"><svg class="cg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(`${main} commits on ${g.branch}`)}">${edges.map(line).join("")}${dots.map(dot).join("")}</svg></div>`;
+  return `<div class="cg-head muted">${icon("git-commit-horizontal")}<span>The vein, ${esc(g.branch)}: the last ${main} commit${main === 1 ? "" : "s"}${g.more ? " (older ones trail off left)" : ""}${side ? `, and ${side} on branches merged in` : ""}</span>
+    <span class="cg-key"><svg viewBox="0 0 10 10"><circle class="u" cx="5" cy="5" r="4"/></svg>upstream's</span><span class="cg-key"><svg viewBox="0 0 10 10"><circle class="m" cx="5" cy="5" r="4"/></svg>this copy's</span><span class="cg-key"><svg viewBox="0 0 10 10"><rect x="1.8" y="1.8" width="6.4" height="6.4" transform="rotate(45 5 5)"/></svg>a merge</span><span class="cg-key" title="when the crew lands lines here, a bead runs down the vein into main's newest commit"><svg viewBox="0 0 10 10"><circle class="bead" cx="5" cy="5" r="3"/></svg>the pulse</span></div>
+    <div class="cg-scroll"><svg class="cg" width="${w}" height="${h}"${tip ? ` data-tip="${X(tip.x)},${Y(0)},${X(Math.max(0, tip.x - 8))}"` : ""} viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(`${main} commits on ${g.branch}`)}">${edges.map(line).join("")}${dots.map(dot).join("")}</svg></div>`;
 };
 /** This browser's layout of the details side: its width (px, "66.667%" or "full"), the panels' order, and which are folded. */
 const dockPrefs = () => { try { return { w: "", order: [], shut: [], ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", order: [], shut: [] }; } };
@@ -2837,7 +2857,7 @@ const views = {
         <div>${icon("download")}<b>It's yours.</b><span>Download all of it, or delete your account, any time, from your profile.</span></div>
       </div>
 
-      <h2>The dig site</h2>
+      <h2>Who runs the dig</h2>
       <p>codeSplitter is a code host run by <b>QNTBR</b>, who is the controller of your data under the GDPR and UK GDPR. Questions, requests or complaints: ${contact}. We answer within a month, usually much sooner.</p>
 
       <h2>What we found, layer by layer</h2>
@@ -3074,7 +3094,7 @@ const views = {
   /** The right-hand panel every repo page shares: where it came from, and who's in it. */
   repoDetails(owner, repo, r) {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
-    return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p><button class="btn" data-gitmap title="who this repo listens to, and its branches, wired up">${icon("git-fork")}Git map</button>`)
+    return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p><button class="btn" data-gitmap title="the vein: who this repo listens to, its branches and its history, with the crew's pulse running through it">${icon("git-fork")}Vein</button>`)
       + (owner === me() && r.mirror ? sec("refresh-cw", "Upstream", `<div id="mirror"><span class="muted">…</span></div>`) : "")
       + (!r.mirror && r.upstream?.startsWith("github:") && r.upstream_commit ? sec("git-fork", "Upstream", `<div id="listen" data-pics><span class="muted">…</span></div>`) : "")
       + (owner === me() && r.mirrorable ? sec("refresh-cw", "Mirror", `<div id="mirror-turn"><span class="muted">…</span></div>`) : "")
@@ -4596,6 +4616,8 @@ const views = {
       const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
       logOps(msg.applied);
       for (const a of msg.applied) if (a.op.kind !== "delete") beating.set(a.by, Date.now() + 600);
+      // The same beat runs down this repo's vein, if it's open.
+      if (msg.applied.some((a) => a.op.kind !== "delete") && $("#gitmap")?.dataset.repo === `${owner}/${repo}`) $("#gitmap").beat?.();
       schedule(msg.applied.map((a) => a.line));
     };
     connect();
@@ -5523,7 +5545,7 @@ async function commands() {
   if (u) add("Anywhere", "rss", "Your feed", "GET /api/me/feed", () => (location.hash = "#/feed"));
   if (session.admin) add("Admin", "activity", "Insights", "GET /api/admin/insights", () => (location.hash = "#/admin/insights"));
   if (session.admin) add("Admin", "gauge", "Rate limits", "GET /api/admin/limits", () => (location.hash = "#/admin/limits"));
-  if (session.admin) add("Admin", "shovel", "Dig site: scaling walls", "GET /api/admin/scale", () => (location.hash = "#/admin/scale"));
+  if (session.admin) add("Admin", "map", "Survey: scaling walls", "GET /api/admin/scale", () => (location.hash = "#/admin/scale"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
   return out;
