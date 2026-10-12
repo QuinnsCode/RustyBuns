@@ -10,7 +10,9 @@ import { addWin, winKey } from "../sim/heads.ts";
 import type { ZoneData } from "../sim/terrain.ts";
 import { Game, scopeSway, SHIELD_DELAY, stanceOf, type GameEvent, type Input } from "../sim/game.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
-import { KEYS, keyLabel, ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
+import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
+import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
+import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
 import { FIELD, place, play, VOICES } from "./audio.ts";
 import { BUILDS, type BuildId } from "./figure.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
@@ -146,10 +148,17 @@ $("place").onsubmit = async (e) => {
 // Remembered in this browser; a blocked storage just means the defaults every time.
 const saved = (k: string) => { try { return localStorage.getItem(`git-recon:${k}`); } catch { return null; } };
 const save = (k: string, v: string) => { try { localStorage.setItem(`git-recon:${k}`, v); } catch {} };
-const savedBuild = saved("build");
+const savedBuild = saved("build"), savedRole = saved("role");
 const me = {
   build: (savedBuild && savedBuild in BUILDS ? savedBuild : "average") as BuildId,
   head: headById(saved("head") ?? "ball"),
+  /** What you'll carry next round: set on the menu, the results screen, or with N mid-fight for your next life. */
+  role: (isRole(savedRole) ? savedRole : "committer") as RoleId,
+};
+const pickRole = (r: RoleId) => {
+  me.role = r, save("role", r);
+  if (current && current.game.status === "playing") current.game.nextRole = r === current.game.role ? null : r;
+  drawRoles();
 };
 if (!isOpen(me.head, wins.length)) me.head = HEADS[0]!;
 
@@ -175,10 +184,19 @@ function showHeads() {
 }
 showHeads();
 
+/** The role pickers, on the menu and the results screen: one button per role, its kit as the tooltip. */
+function drawRoles() {
+  for (const box of [$("roles"), $("results-roles")]) {
+    box.innerHTML = "";
+    radios(box, ROLE_ORDER, (r) => `${ROLES[r].name}: ${ROLES[r].blurb}`, (b, r) => (b.textContent = ROLES[r].name), (r) => r === me.role, pickRole);
+  }
+}
+drawRoles();
+
 function start(def: LevelDef) {
   const mission = missionFor(def.id), repo = chosen ?? def.repo;
-  const game = Game.fromRepo(def.ground(), repo, def.seed, mission);
-  const world = buildWorld(game.map, { head: me.head, build: me.build });
+  const game = Game.fromRepo(def.ground(), repo, def.seed, mission, me.role);
+  const world = buildWorld(game.map, { head: me.head, build: me.build }, repo.text);
   current = { def, repo, game, world, started: performance.now() };
   look.yaw = game.map.spawn.yaw, look.pitch = -0.05, prone = false, shake = 0, cam.ready = false;
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = false;
@@ -205,7 +223,7 @@ $("back").onclick = toMenu;
 
 const keys = new Set<string>();
 const look = { yaw: 0, pitch: 0 };
-let fire = false, zoom = false, jump = false, roll = false, prone = false, pick: WeaponId | undefined;
+let fire = false, zoom = false, jump = false, roll = false, prone = false, reload = false, use = false, pick: WeaponId | undefined;
 /** How hard the camera's shaking: blasts near you and heavy guns going off. */
 let shake = 0;
 
@@ -217,8 +235,12 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyZ" && !e.repeat) prone = !prone;
   if (e.code === "KeyC" || e.code === "ControlLeft") prone = false;
   if (e.code === "ShiftLeft" || e.code === "ShiftRight") roll = true;
-  const slot = KEYS.indexOf(e.code);
-  if (slot >= 0 && slot < ORDER.length) pick = ORDER[slot];
+  // The number keys pick from what your role carries, in its order.
+  const slot = KEYS.indexOf(e.code), kit = current.game.you().kit;
+  if (slot >= 0 && slot < kit.length) pick = kit[slot];
+  if (e.code === "KeyR" && !e.repeat) reload = true;
+  if (e.code === "KeyE" && !e.repeat) use = true;
+  if (e.code === "KeyN" && !e.repeat && current.game.status === "playing") pickRole(nextRole(current.game.nextRole ?? current.game.role ?? me.role));
   if (e.code === "Escape" && current.game.status !== "playing") toMenu();
 });
 window.addEventListener("keyup", (e) => keys.delete(e.code));
@@ -242,7 +264,7 @@ window.addEventListener("mousemove", (e) => {
 });
 window.addEventListener("wheel", (e) => {
   if (!current) return;
-  const you = current.game.you(), have = ORDER.filter((w) => you.ammo[w] !== 0);
+  const you = current.game.you(), have = you.kit.filter((w) => you.ammo[w] !== 0);
   const i = have.indexOf(you.weapon);
   pick = have[(i + (e.deltaY > 0 ? 1 : -1) + have.length) % have.length];
 });
@@ -289,8 +311,10 @@ function placeCamera(game: Game, dt: number) {
   const ease = (rate: number) => (cam.ready ? 1 - Math.exp(-rate * dt) : 1);
   const follow = ease(18);
   cam.x += (you.x - cam.x) * follow, cam.y += (you.y - cam.y) * ease(12), cam.z += (you.z - cam.z) * follow;
-  cam.height += ((you.prone ? 0.75 : you.crouch ? 1.3 : 1.7) - cam.height) * ease(9);
-  cam.back += ((sniping ? 0.4 : you.prone ? 4 : 5.2) - cam.back) * ease(sniping ? 30 : 8);
+  // In a vehicle the camera sits higher and further back, so you see it and round it.
+  const ride = game.vehicles.find((v) => v.id === you.vehicle);
+  cam.height += ((ride ? (ride.kind === "heli" ? 3.2 : 2.2) : you.prone ? 0.75 : you.crouch ? 1.3 : 1.7) - cam.height) * ease(9);
+  cam.back += ((ride ? (ride.kind === "heli" ? 13 : 8.5) : sniping ? 0.4 : you.prone ? 4 : 5.2) - cam.back) * ease(sniping ? 30 : 8);
   if (cam.ready && !you.grounded && you.vy < -6) cam.dip = Math.min(0.35, cam.dip + dt * 0.8);
   cam.dip *= Math.exp(-dt * (you.grounded ? 6 : 0.5));
   const run = Math.min(1, Math.hypot(you.vx, you.vz) / 7.5);
@@ -380,14 +404,31 @@ function hud(game: Game, aimingAt: Block | null) {
   $("progress").textContent = line;
   $("progress").title = tip;
   $("clock").textContent = clock(game.time);
-  $("stance").textContent = you.burn > 0 ? "on fire: roll!" : you.prone ? "prone" : you.crouch ? "crouched" : "";
-  $("stance").classList.toggle("hot", you.burn > 0);
-  // Weapons you have; git reset --hard only once you've found one.
-  $("weapons").innerHTML = ORDER.map((w, i) => {
-    const a = you.ammo[w];
-    if (w === "reset" && a === 0) return "";
-    return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${keyLabel(KEYS[i]!)}</kbd><code>${WEAPONS[w].cmd}</code><span>${a < 0 ? "∞" : a}</span></li>`;
-  }).join("");
+  const ride = game.vehicles.find((v) => v.id === you.vehicle), near = !ride && you.alive ? game.boardable(you) : null;
+  $("stance").textContent = ride ? `${vehicleName(ride.kind)} ${Math.ceil((ride.hp / ride.maxHp) * 100)}%` : you.burn > 0 ? "on fire: roll!" : you.reload > 0 ? "reloading" : you.prone ? "prone" : you.crouch ? "crouched" : "";
+  $("stance").classList.toggle("hot", you.burn > 0 || (!!ride && ride.hp < ride.maxHp * 0.3));
+  $("prompt").textContent = near ? `E · get in the ${vehicleName(near.kind)}` : ride ? `E · get out${ride.kind === "heli" ? " · Space up · C down · right click rockets" : ""}` : "";
+  // Kills, and what the next streak brings.
+  const next = STREAKS.find((st) => st.kills > game.kills);
+  $("kills").textContent = `${game.kills} kills${next ? ` · ${vehicleName(next.kind)} at ${next.kills}` : ""}`;
+  const role = game.role ? ROLES[game.role].name : "", after = game.nextRole ? ROLES[game.nextRole].name : "";
+  $("role").textContent = after ? `${role} · next life: ${after}` : role;
+  $("role").title = "N picks your role for your next life";
+  // What you carry: the magazine and what's left in all. In a vehicle, its guns.
+  if (ride) {
+    const spec = VEHICLES[ride.kind];
+    $("weapons").innerHTML = `<li class="on"><kbd title="click">L</kbd><code>${WEAPONS[spec.gun].cmd}</code><span>∞</span></li>` +
+      (spec.rockets ? `<li class="on"><kbd title="right click">R</kbd><code>${WEAPONS[spec.rockets].cmd}</code><span>∞</span></li>` : "");
+  } else {
+    $("weapons").innerHTML = you.kit.map((w, i) => {
+      const a = you.ammo[w], l = you.loaded[w];
+      return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${KEYS[i] ? keyLabel(KEYS[i]) : ""}</kbd><code>${WEAPONS[w].cmd}</code><span>${l}<small>/${a < 0 ? "∞" : a}</small></span></li>`;
+    }).join("");
+  }
+  // The crosshair rings round while a magazine goes in.
+  const c = $("crosshair");
+  c.classList.toggle("reloading", you.reload > 0);
+  c.style.setProperty("--reload", `${you.reload > 0 ? 1 - you.reload / WEAPONS[you.weapon].reload : 0}`);
   // What's under the crosshair, and how much of it is left.
   $("target").textContent = aimingAt ? `${aimingAt.path} · ${aimingAt.lines.toLocaleString()} lines` : "";
 }
@@ -408,6 +449,7 @@ function results(game: Game) {
     wins = got.wins, store.set("wins", wins);
     if (got.head) $("results-body").textContent += ` Unlocked a head: ${got.head.name.toLowerCase()}.`;
   }
+  drawRoles();
   $("results").hidden = false;
 }
 
@@ -454,14 +496,15 @@ function frame(now: number) {
     yaw: look.yaw,
     pitch: look.pitch,
     jump, roll, crouch: keys.has("KeyC") || keys.has("ControlLeft"), prone,
+    reload, use, up: keys.has("Space"), down: keys.has("KeyC") || keys.has("ControlLeft"),
     scope: zoom,
     fire: fire && document.pointerLockElement === canvas,
     aim: { x: aim.point.x, y: aim.point.y, z: aim.point.z },
     weapon: pick,
   };
   // Automatic guns fire while held; everything else once per click.
-  if (!WEAPONS[you.weapon].auto && fire) fire = false;
-  jump = roll = false, pick = undefined;
+  if (!WEAPONS[you.weapon].auto && fire && you.vehicle < 0) fire = false;
+  jump = roll = reload = use = false, pick = undefined;
   const before = game.status;
   shake *= Math.exp(-dt * 9);
   for (const e of game.step(dt, input)) {
@@ -487,10 +530,12 @@ function frame(now: number) {
       const c = game.map.compounds[e.compound]!;
       banner(`${c.folder} merged`);
       feed(`merged ${c.folder}: crates in the yard`);
-    } else if (e.kind === "pickup") feed(e.item === "health" ? "health crate: +40 hp" : e.item === "ammo" ? "ammo crate" : `found git reset --hard (${keyLabel(KEYS[ORDER.indexOf("reset")]!)})`, e.item === "reset");
+    } else if (e.kind === "pickup") feed(e.item === "health" ? "health crate: +40 hp" : e.item === "ammo" ? "ammo crate" : `found git reset --hard (${keyLabel(KEYS[game.you().kit.indexOf("reset")] ?? "")})`, e.item === "reset");
     else if (e.kind === "blamed") feed(`blamed ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "reverted") feed(`reverted ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "objective") banner(e.text), feed(e.text, true);
+    else if (e.kind === "streak") banner(`${e.kills} kills: ${vehicleName(e.vehicle)} inbound`), feed(`${vehicleName(e.vehicle)} dropping in beside you · E to get in`, true);
+    else if (e.kind === "wrecked") feed(`${vehicleName(e.vehicle)} wrecked`, true);
     else if (e.kind === "hit" && e.target === 0) {
       hitFrom(game, e.by);
       if (!e.shield) $("hud").classList.add("hurt"), setTimeout(() => $("hud").classList.remove("hurt"), 120);

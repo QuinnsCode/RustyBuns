@@ -130,3 +130,15 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .heads button { width: 34px; height: 34px; padding: 2px; }
 .heads canvas { width: 100%; height: 100%; display: block; }
 .chips button[aria-checked="true"], .heads button[aria-checked="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* kills, role, the vehicle prompt, reloading */
+.tl { position: absolute; top: 56px; left: 12px; display: grid; gap: 3px; justify-items: start; font-size: 12px; }
+.tl code { background: rgba(255, 255, 255, 0.9); padding: 2px 6px; border: 1px solid var(--hair); white-space: nowrap; }
+.tl code:empty { display: none; }
+.tl .role { color: var(--accent-ink); pointer-events: auto; cursor: help; }
+.prompt { position: absolute; left: 50%; top: calc(50% + 44px); transform: translateX(-50%); font: 600 13px var(--mono); background: var(--fg); color: #fff; padding: 3px 10px; white-space: nowrap; }
+.prompt:empty { display: none; }
+.weapons small { color: var(--muted); }
+.weapons li { grid-template-columns: 2ch 17ch 7ch; }
+.crosshair.reloading { border-color: var(--hair); background: conic-gradient(var(--accent) calc(var(--reload, 0) * 360deg), transparent 0) border-box; -webkit-mask: radial-gradient(circle, transparent 6px, #000 7px); mask: radial-gradient(circle, transparent 6px, #000 7px); }
+.results .look { margin: 12px 0 0; }

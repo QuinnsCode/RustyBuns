@@ -88,3 +88,21 @@ export function tally(files: RepoFile[], commits: { agent: boolean; paths: strin
     return t ? { ...f, churn: t.n, agent: Math.round((t.agent / t.n) * 100) / 100 } : f;
   });
 }
+
+/** How many files' text a snapshot keeps for the ground, how many lines of each, and how wide. */
+export const EXCERPT_FILES = 24, EXCERPT_LINES = 60, EXCERPT_WIDTH = 90;
+
+/**
+ * The opening lines of the biggest files read, for the ground to be printed with: the code
+ * itself, underfoot. Blank lines go, tabs become two spaces, long lines are cut.
+ */
+export function excerpts(sources: { path: string; text: string }[]): { path: string; lines: string[] }[] {
+  return [...sources]
+    .sort((a, b) => b.text.length - a.text.length || a.path.localeCompare(b.path))
+    .slice(0, EXCERPT_FILES)
+    .map((s) => ({
+      path: s.path,
+      lines: s.text.split("\n").map((l) => l.replace(/\t/g, "  ").replace(/\s+$/, "")).filter((l) => l.trim()).slice(0, EXCERPT_LINES).map((l) => l.slice(0, EXCERPT_WIDTH)),
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+}

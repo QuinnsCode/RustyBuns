@@ -146,6 +146,8 @@ function part(geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: numb
 /** A gun, paper white with ink lines so it reads on a black body and an orange one. */
 function buildGun(w: WeaponId): THREE.Group {
   const s = GUNS[w], g = group(`gun:${w}`);
+  // A size up from life, so you can see what's in the hands from over the shoulder.
+  g.scale.setScalar(1.3);
   // Receiver from the hand out, stock back along the forearm.
   g.add(part(new THREE.BoxGeometry(0.085, s.body, 0.13), paper, 0, -s.body / 2 + 0.06, 0.02));
   g.add(part(new THREE.BoxGeometry(0.07, 0.2, 0.1), paper, 0, 0.16, 0.05));
@@ -232,6 +234,8 @@ export interface PoseState {
   flinch?: number;
   flinchSide?: number;
   land?: number;
+  /** 0..1 through putting a fresh magazine in: the gun dips and the left hand goes down for it. */
+  reload?: number;
   /** How fast the joints ease to the pose, per second. Leave it out to snap. */
   blend?: number;
 }
@@ -323,6 +327,9 @@ export function pose(f: Figure, s: PoseState) {
     spine.rotation.set(0.15, 0, 0);
     head.rotation.x = 0.35;
   }
+  // Reloading: the gun tips down and the left hand drops to the magazine and back.
+  const rl = s.reload ? Math.sin(s.reload * Math.PI) : 0;
+  if (rl > 0 && s.pose !== "tuck" && s.pose !== "star" && s.pose !== "surrender") armR.rotation.x -= 0.55 * rl, armL.rotation.x -= 1.2 * rl, head.rotation.x -= 0.3 * rl;
   // Landing: the knees give and the body dips.
   const land = s.land ?? 0;
   if (land > 0 && s.pose !== "prone" && s.pose !== "tuck") {
