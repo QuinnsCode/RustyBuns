@@ -7,7 +7,9 @@
 // restart: a batch in flight when the process died comes back after its lease.
 //
 // Each batch is background work: it waits for a low slot on the host's scheduler (priority.ts)
-// before its messages are picked and leased. The consumer's `priority` says otherwise.
+// before its messages are picked and leased. The consumer's `priority` says otherwise. A batch
+// that hangs past `timeoutMs` (15 minutes, the lease) is stopped: its slot frees, its messages are
+// due again at once (the delivery counts), and whatever the handler says later is ignored.
 
 import { Database } from "bun:sqlite";
 import { deserialize, serialize } from "node:v8";
@@ -23,6 +25,8 @@ export interface QueueConsumerSettings {
   retryDelay?: number;
   /** The scheduler class each batch runs at. @default "low" */
   priority?: Priority;
+  /** How long a batch may run before it is stopped and its messages retried; 0 for no limit. @default 15 minutes */
+  timeoutMs?: number;
   /** @default the host's, hostScheduler() */
   scheduler?: Pick<Scheduler, "run">;
 }
@@ -144,10 +148,11 @@ export class LocalQueue<Body = unknown> {
   private deliver(until: number): Promise<number> {
     const c = this.consumer;
     if (!c) return Promise.resolve(0);
-    return (c.settings.scheduler ?? hostScheduler()).run(c.settings.priority ?? "low", () => this.deliverNow(until));
+    return (c.settings.scheduler ?? hostScheduler()).run(c.settings.priority ?? "low", (job) => this.deliverNow(until, job?.signal),
+      { timeoutMs: (c.settings.timeoutMs ?? LEASE_MS) || undefined });
   }
 
-  private async deliverNow(until: number): Promise<number> {
+  private async deliverNow(until: number, signal?: AbortSignal): Promise<number> {
     const c = this.consumer;
     if (!c) return 0;
     const rows = this.db.query(`SELECT id, body, attempts, sent_at FROM queue_messages WHERE queue = ? AND visible_at <= ? ORDER BY visible_at, rowid LIMIT ?`)
@@ -173,8 +178,12 @@ export class LocalQueue<Body = unknown> {
       ackAll: () => all({ ack: true }),
       retryAll: (o) => all({ ack: false, delaySeconds: o?.delaySeconds }),
     };
+    // Stopped (timed out): the batch is due again now, and its late verdicts don't count.
+    const due = this.db.query(`UPDATE queue_messages SET visible_at = ? WHERE id = ?`);
+    signal?.addEventListener("abort", () => this.db.transaction(() => { for (const r of rows) due.run(Date.now(), r.id); })(), { once: true });
     let threw = false;
-    try { await c.handler(batch); } catch (e) { threw = true; c.onError(e); }
+    try { await c.handler(batch); } catch (e) { threw = true; if (!signal?.aborted) c.onError(e); }
+    if (signal?.aborted) return rows.length;
 
     const drop = this.db.query(`DELETE FROM queue_messages WHERE id = ?`);
     const later = this.db.query(`UPDATE queue_messages SET visible_at = ? WHERE id = ?`);

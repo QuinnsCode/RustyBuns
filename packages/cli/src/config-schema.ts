@@ -5,6 +5,7 @@
 // docs state, and rejects unknown keys. It lives apart from config.ts so an app's config, which
 // imports defineConfig, never loads effect.
 import { Effect, Schema, SchemaAST, SchemaIssue } from "effect";
+import { PERSONAS, type Persona } from "@rustybuns/shell-bun/priority";
 import type { RustyBunsConfig } from "./config.ts";
 
 const opt = Schema.optional;
@@ -69,7 +70,7 @@ const DesktopTarget = Schema.Struct({
   advisories: opt(Str), define: opt(StrMap),
 });
 
-const BoxCommon = { memMaxMb: opt(int(64, 1_048_576)), webmcp: opt(Bool), region: opt(Str), port: opt(Port) };
+const BoxCommon = { memMaxMb: opt(int(64, 1_048_576)), webmcp: opt(Bool), persona: opt(Schema.Literals(Object.keys(PERSONAS) as [Persona, ...Persona[]])), region: opt(Str), port: opt(Port) };
 const BoxTarget = Schema.Union([
   Schema.Struct({ provider: Schema.Literal("hetzner"), ...BoxCommon, location: opt(Str), serverType: opt(Str), image: opt(Str), volumeSize: opt(int(10, 10_240)), allowLargeServer: opt(Bool) }),
   Schema.Struct({ provider: Schema.Literal("railway"), ...BoxCommon, volume: opt(Bool), sleep: opt(Bool) }),

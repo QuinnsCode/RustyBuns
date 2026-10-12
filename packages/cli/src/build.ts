@@ -85,7 +85,9 @@ function hostMemWatch(c: RustyBunsConfig, box: boolean): string {
   return `// RSS and heap every 5 minutes, with the growth rate; /__rb/mem serves them.
 // Over the ceiling (RB_MEM_MAX_MB${box ? ", else box.memMaxMb" : ""}) it writes a heap snapshot
 // to <data>/heap and exits 1, so ${box ? "the box restarts before it runs out" : "a leak stops before it takes the machine down"}.
-${box ? `// It takes 5 seconds of CPU profile into <data>/prof first.
+${box && c.targets.box?.persona ? `// Background work (crons, queue batches) shares the ${c.targets.box.persona} budget; RB_PERSONA overrides.
+process.env.RB_PERSONA ||= ${JSON.stringify(c.targets.box.persona)};
+` : ""}${box ? `// It takes 5 seconds of CPU profile into <data>/prof first.
 // <data>/history.jsonl keeps the samples, profile summaries and ceiling restarts
 // across restarts and deploys: GET /__rb/history, behind RB_PROF_SECRET, reads it.
 const hist = history({ file: join(dataDir, "history.jsonl") });
