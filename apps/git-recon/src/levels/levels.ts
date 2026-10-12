@@ -5,7 +5,7 @@
 import { heightmapTerrain, stampTerrain, type Terrain, type ZoneData } from "../sim/terrain.ts";
 import type { RepoSnapshot } from "../sim/codemap.ts";
 import elCapitan from "./data/el-capitan.json";
-import rustybuns from "./repos/rustybuns.json";
+import rustybunsSnapshot from "./repos/rustybuns.json";
 
 export interface LevelDef {
   id: string;
@@ -15,6 +15,9 @@ export interface LevelDef {
   repo: RepoSnapshot;
   seed: number;
 }
+
+// JSON infers links as plain arrays, not [a, b, n] tuples.
+const rustybuns = rustybunsSnapshot as RepoSnapshot;
 
 export const REPOS: Record<string, RepoSnapshot> = { rustybuns };
 

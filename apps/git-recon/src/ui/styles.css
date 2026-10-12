@@ -36,6 +36,21 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .level span { grid-column: 1; color: var(--muted); }
 .level code { grid-row: 1; grid-column: 2; font-size: 12px; color: var(--accent-ink); }
 .level em { grid-column: 1; font-style: normal; font-size: 12px; color: var(--accent-ink); }
+.repo-form { display: grid; grid-template-columns: auto 1fr auto auto; gap: 6px 8px; align-items: center; margin: 0 0 12px; }
+.repo-form label { font: 12px var(--mono); color: var(--muted); }
+.repo-form input { font: 13px var(--mono); padding: 7px 10px; border: 1px solid var(--line); border-radius: 3px; min-width: 0; }
+.repo-form input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.repo-form button { padding: 6px 12px; }
+.repo-status { grid-column: 1 / -1; margin: 0; min-height: 1.2em; font: 12px var(--mono); color: var(--muted); }
+.repo-status.err { color: var(--accent-ink); }
+.heads-row { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+.heads-row > span { font: 12px var(--mono); color: var(--muted); }
+.heads { display: flex; flex-wrap: wrap; gap: 4px; }
+.heads button { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; box-shadow: 0 1px 0 var(--line); }
+.heads button img { width: 32px; height: 32px; }
+.heads button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.heads button:disabled { opacity: 0.35; cursor: default; box-shadow: none; filter: grayscale(1); }
+.heads button.plain i { display: block; width: 8px; height: 22px; border-radius: 4px; background: var(--fg); }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 12px; }
 .keys dt { font-family: var(--mono); }
 .keys dd { margin: 0; color: var(--muted); }
@@ -80,6 +95,8 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 
 @media (max-width: 560px) {
   .card { padding: 18px; }
+  .repo-form { grid-template-columns: 1fr auto auto; }
+  .repo-form label { grid-column: 1 / -1; }
   h1 { font-size: 30px; }
   .health { width: 120px; }
 }

@@ -1,12 +1,15 @@
 // The look: codeSplitter's paper. White ground, white blocks drawn with black
-// hairlines, one orange. You are a smooth black pillar; the conflicts holding a
-// compound are orange ones, and a compound's lines go from orange to black when it's merged.
+// hairlines, one orange. You are a smooth black pillar, in a head you've unlocked
+// (characters.ts); the conflicts holding a compound are orange ones, and a compound's lines
+// go from orange to black when it's merged. Files agents mostly wrote are black glass, roads
+// join folders that import each other, and a compound with a failing check burns until it's merged.
 
 import * as THREE from "three";
 import type { CodeMap } from "../sim/codemap.ts";
 import type { Game } from "../sim/game.ts";
 import { bodyHeight, HEIGHT, ROLL_TIME } from "../sim/game.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS } from "../sim/missions.ts";
+import { headModel } from "./characters.ts";
 
 export const INK = 0x1f1f1f, ORANGE = 0xe8590c, PAPER = 0xffffff, GREY = 0xbdbdbd;
 
@@ -70,7 +73,7 @@ function pillar(color: number): THREE.Group {
   return g;
 }
 
-export function buildWorld(map: CodeMap): World {
+export function buildWorld(map: CodeMap, head: string | null = null): World {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(PAPER);
   scene.fog = new THREE.Fog(PAPER, 70, 230);
@@ -130,21 +133,22 @@ export function buildWorld(map: CodeMap): World {
   // Blocks: white boxes with hairline edges. Compound edges are orange until merged.
   const solids: THREE.Object3D[] = [terrainMesh];
   const boxMat = new THREE.MeshLambertMaterial({ color: PAPER });
-  const edgeInk = new THREE.LineBasicMaterial({ color: INK });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x16191c, roughness: 0.18, metalness: 0.6 });
+  const edgeInk = new THREE.LineBasicMaterial({ color: INK }), edgeGrey = new THREE.LineBasicMaterial({ color: GREY });
   const compoundEdges = map.compounds.map(() => new THREE.LineBasicMaterial({ color: ORANGE }));
   for (const b of map.blocks) {
     const box = new THREE.BoxGeometry(b.w, b.h, b.d);
-    const m = new THREE.Mesh(box, boxMat);
+    const m = new THREE.Mesh(box, b.agent ? glassMat : boxMat);
     m.position.set(b.x, b.y + b.h / 2, b.z);
     m.castShadow = m.receiveShadow = true;
     m.userData.path = b.path;
-    const e = new THREE.LineSegments(new THREE.EdgesGeometry(box), b.compound >= 0 ? compoundEdges[b.compound]! : edgeInk);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(box), b.compound >= 0 ? compoundEdges[b.compound]! : b.agent ? edgeGrey : edgeInk);
     m.add(e);
     scene.add(m);
     solids.push(m);
   }
   map.compounds.forEach((c) => {
-    const s = label(c.folder, `${c.files} files · ${c.lines.toLocaleString()} lines`);
+    const s = label(c.folder, `${c.files} files · ${c.lines.toLocaleString()} lines${c.burning ? " · checks failing" : ""}`);
     s.position.set(c.x, map.terrain.height(c.x, c.z) + 13, c.z);
     scene.add(s);
     // The yard: a hairline circle round the compound.
@@ -154,6 +158,51 @@ export function buildWorld(map: CodeMap): World {
       pts.push(new THREE.Vector3(x, map.terrain.height(x, z) + 0.06, z));
     }
     scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), compoundEdges[map.compounds.indexOf(c)]!));
+  });
+
+  // Roads: two grey hairlines and a dashed middle, yard edge to yard edge, laid on the ground.
+  // A road is wider the more files import across it.
+  const roadMat = new THREE.LineBasicMaterial({ color: GREY }), midMat = new THREE.LineDashedMaterial({ color: GREY, dashSize: 1, gapSize: 1.2 });
+  for (const road of map.roads ?? []) {
+    const a = map.compounds[road.a]!, b = map.compounds[road.b]!;
+    const dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz), ux = dx / len, uz = dz / len;
+    const from = a.r + 0.5, to = len - b.r - 0.5, half = 0.9 + Math.min(1.2, road.weight * 0.15);
+    if (to <= from) continue;
+    for (const off of [-half, 0, half]) {
+      const pts: THREE.Vector3[] = [];
+      for (let t = from; t <= to; t += 1) {
+        const x = a.x + ux * t - uz * off, z = a.z + uz * t + ux * off;
+        pts.push(new THREE.Vector3(x, map.terrain.height(x, z) + 0.08, z));
+      }
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), off ? roadMat : midMat);
+      if (!off) line.computeLineDistances();
+      scene.add(line);
+    }
+  }
+
+  // Fires: flames on a burning compound's tallest files and smoke above them, out once it's merged.
+  const flameGeo = new THREE.ConeGeometry(0.35, 1.2, 7), smokeGeo = new THREE.SphereGeometry(0.6, 10, 8);
+  const flameMat = new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0.85 });
+  const fires = map.compounds.map((c, ci) => {
+    const g = new THREE.Group();
+    if (c.burning) {
+      const tall = map.blocks.filter((b) => b.compound === ci).sort((p, q) => q.h - p.h).slice(0, 3);
+      tall.forEach((b, i) => {
+        for (let k = 0; k < 3; k++) {
+          const f = new THREE.Mesh(flameGeo, flameMat);
+          f.position.set(b.x + (k - 1) * b.w * 0.25, b.y + b.h + 0.5, b.z + ((k % 2) - 0.5) * b.d * 0.3);
+          f.userData.phase = i * 3 + k;
+          g.add(f);
+        }
+        for (let k = 0; k < 4; k++) {
+          const puff = new THREE.Mesh(smokeGeo, new THREE.MeshBasicMaterial({ color: GREY, transparent: true, opacity: 0.35, depthWrite: false }));
+          puff.userData = { smoke: true, base: b.y + b.h + 1.2, x: b.x, z: b.z, phase: k / 4 };
+          g.add(puff);
+        }
+      });
+    }
+    scene.add(g);
+    return g;
   });
 
   const bodies = new Map<number, THREE.Group>();
@@ -209,6 +258,8 @@ export function buildWorld(map: CodeMap): World {
         if (!g) {
           bodies.set(s.id, (g = pillar(s.team === "you" ? INK : ORANGE))), scene.add(g);
           if (s.heavy) g.scale.setScalar(1.25);
+          const hd = s.team === "you" ? headModel(head) : null;
+          if (hd) g.add(hd);
         }
         g.visible = s.alive;
         g.position.set(s.x, s.y, s.z);
@@ -218,6 +269,8 @@ export function buildWorld(map: CodeMap): World {
         const h = s.prone ? HEIGHT : bodyHeight(s);
         body.scale.y = h / HEIGHT;
         body.position.y = h / 2;
+        const hd = g.getObjectByName("head");
+        if (hd) hd.position.y = h - 0.12;
         (body.getObjectByName("ghost") as THREE.Mesh).visible = s.tagged > 0;
         // A dive-roll tips the pillar over in the direction it's going.
         g.rotation.x = s.prone ? -Math.PI / 2 + 0.15 : s.roll > 0 ? -Math.sin(((ROLL_TIME - s.roll) / ROLL_TIME) * Math.PI) * 1.3 : 0;
@@ -263,6 +316,19 @@ export function buildWorld(map: CodeMap): World {
       }
       for (const [id, m] of shotMeshes) if (!live.has(id)) scene.remove(m), shotMeshes.delete(id);
       cleared.forEach((done, i) => compoundEdges[i]!.color.setHex(done ? INK : ORANGE));
+      fires.forEach((g, i) => {
+        g.visible = !cleared[i];
+        if (!g.visible) return;
+        for (const m of g.children) {
+          const u = m.userData;
+          if (u.smoke) {
+            const k = (game.time * 0.25 + u.phase) % 1;
+            m.position.set(u.x + Math.sin(k * 6 + u.phase * 9) * 0.6, u.base + k * 7, u.z);
+            m.scale.setScalar(0.6 + k * 1.6);
+            ((m as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.35 * (1 - k);
+          } else m.scale.set(1, 0.7 + Math.abs(Math.sin(game.time * 9 + u.phase * 1.7)) * 0.6, 1);
+        }
+      });
       for (const b of booms) {
         b.t += dt;
         const k = b.t / 0.5;

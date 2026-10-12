@@ -15,7 +15,15 @@
         <p class="kicker">A Rusty Buns example</p>
         <h1>Git Recon</h1>
         <p class="lede">A codebase on real ground. Its biggest folders are compounds in conflict, its files are the buildings. Each level is a mission: merge every folder, carry a commit home, or hold main.</p>
+        <form id="repo-form" class="repo-form">
+          <label for="repo-slug">Fight any repo</label>
+          <input id="repo-slug" name="slug" placeholder="owner/repo" autocomplete="off" spellcheck="false" />
+          <button id="repo-load" type="submit">Load</button>
+          <button id="repo-reset" type="button" title="Back to Rusty Buns" hidden>×</button>
+          <p id="repo-status" class="repo-status" role="status"></p>
+        </form>
         <div id="levels" class="levels"></div>
+        <div class="heads-row"><span>Head</span><div id="heads" class="heads"></div></div>
         <dl class="keys">
           <dt>WASD · mouse</dt><dd>move · aim</dd>
           <dt>Click</dt><dd>fire</dd>

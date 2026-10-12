@@ -12,6 +12,24 @@ A toy-soldier third-person shooter, fought in a codebase. You're a smooth black 
 - **Missions.** *El Capitan*: carry a commit from the farthest yard back to HEAD (go down and you drop it). *The Backyard*: defend main for two minutes while the compounds raid it in waves; guards standing on it overwrite it.
 - **Sound.** Every weapon has its own synthesized voice, panned by where it was fired.
 - **Lives are the reflog.** Go down and you're back at the start, three times.
+- **Fight any repo.** Type `owner/repo` on the menu and any public GitHub repo becomes the level, read in the browser at play time.
+- **A richer map.** Folders that import each other are joined by roads. A folder that changed a lot lately holds more guards. Files agents mostly wrote are black glass, not paper. A failing check sets its folder's compound on fire until you merge it.
+- **Heads.** Every level you win (a level on a repo you haven't won it on) unlocks a head for the pillar. They're our own toy designs, nods to big names in open source, hosting and infra: no traced logos, no real faces.
+
+| Head | A nod to |
+|---|---|
+| Steamed bun | Bun |
+| Crab | Rust's unofficial crab mascot |
+| Penguin | Linux |
+| Whale with cargo | Docker |
+| Orange cloud | Cloudflare |
+| Black pyramid | Vercel |
+| Many-armed cat | GitHub's cat-octopus mascot |
+| Buck-toothed gopher | Go |
+| Elephant | PostgreSQL |
+| Ship's wheel | Kubernetes |
+| Two snakes | Python |
+| Hot-air balloon | Fly.io |
 
 Built with [Three.js](https://threejs.org) and [Rusty Buns](../../README.md).
 
@@ -22,7 +40,7 @@ cd apps/git-recon
 bun install
 bun run dev            # the browser
 bun run desktop:dev    # the desktop app
-bun test               # terrain, the repo mapping, movement, weapons, crates, guards, missions
+bun test               # terrain, the repo mapping, live loading, heads, movement, weapons, crates, guards, missions
 ```
 
 | | |
@@ -35,10 +53,13 @@ bun test               # terrain, the repo mapping, movement, weapons, crates, g
 ## How it works
 
 - `src/sim/terrain.ts` is the ground: Park Hide & Seek's heightmap format, or Druids Curse's noise and stamps, and `withPads()` to cut a level shelf where a compound stands.
-- `src/sim/codemap.ts` lays a repo onto the ground, like codeSplitter's code city lays repos onto streets. Files are grouped by folder (`apps/x` and `packages/x` count as their own); the biggest six become compounds, placed on flat ground you can walk to from the start, as far from each other as they fit. Their biggest files spiral out from a yard in the middle. Files from everywhere else are crates in the field.
+- `src/sim/codemap.ts` lays a repo onto the ground, like codeSplitter's code city lays repos onto streets. Files are grouped by folder (`apps/x` and `packages/x` count as their own); the biggest six become compounds, placed on flat ground you can walk to from the start, as far from each other as they fit. Their biggest files spiral out from a yard in the middle. Files from everywhere else are crates in the field. Imports between compounds become roads, a folder's share of recent changes adds up to two guards, a file whose recent commits were mostly agents' is glass, and a failing check whose name has a folder's name in it sets that compound on fire.
+- `src/sim/intel.ts` works out what a snapshot knows besides sizes: imports between folders (relative ones, and workspace packages by their `package.json` name), churn per file over recent commits, and which of those an agent made (a `Co-Authored-By` trailer or a bot author).
+- `src/levels/github.ts` loads any public repo: the repo, its last ten commits and their files, its tree, the check runs at the tip (about a dozen of the 60 API calls an hour GitHub gives a browser), plus the biggest scripts' text from `raw.githubusercontent.com` for imports. A load is kept in the browser for half an hour.
+- `src/sim/heads.ts` lists the heads and what unlocks them; `src/ui/characters.ts` builds each from a few primitives.
 - `src/sim/weapons.ts` is the arsenal, one table row per git command: damage, splash, speed, gravity, ammo, homing, and an effect (revert, stash, blame, reset) that `game.ts` carries out where the round lands.
 - `src/sim/game.ts` is the whole game with no rendering: movement and stances, shots, splash, crates, stashes, the guards (they watch, spot you or a stash, wait a beat, then hold or flank, shoot in bursts and take cover behind files) and the rules. Each guard keeps a three-second trail of where it has been, which is what `git revert` rewinds.
 - `src/sim/missions.ts` says what wins each level (clear, carry or defend); `game.ts` keeps the mission's state in `objective`.
 - `src/ui/` draws it in codeSplitter's paper style, feeds it the mouse and keys, and plays its events through `audio.ts`, a synthesized voice per weapon in Park Hide & Seek's style.
 
-The repo is a snapshot: `bun scripts/snapshot.ts <repo-dir> <name>` writes the path and line count of its biggest tracked source files to `src/levels/repos/<name>.json`. The levels use this repo, Rusty Buns itself.
+The repo is a snapshot: `bun scripts/snapshot.ts <repo-dir> <name>` writes the path and line count of its biggest tracked source files to `src/levels/repos/<name>.json`, with the imports between folders and the last hundred commits' churn. The levels use this repo, Rusty Buns itself.
