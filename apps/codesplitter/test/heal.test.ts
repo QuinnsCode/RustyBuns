@@ -78,6 +78,19 @@ test(`after ${MAX_ATTEMPTS} fix tasks the branch waits for a person, with the at
   expect(why.heal.attempts.length).toBe(MAX_ATTEMPTS);
 });
 
+test("the same failure twice: the next fix task starts from a note saying what was tried, or a person gets it (#1077)", async () => {
+  const { fail, runs, settled, prompts } = await app();
+  for (const c of ["a", "b"]) { await fail(sha(c)); await until(async () => (await runs()).length > (c === "a" ? 0 : 1)); await settled(); }
+  const [second, first] = await runs();
+  expect(second.task).toStartWith(`DONE: fix task ${first.id} edited a.ts\nBROKE: same failure after it\nDONT: that fix again; find the real cause\nTASK: Fix the failing check`);
+  expect(prompts[1]).toContain("DONT: that fix again");
+
+  const p = await app();
+  await p.send("ryan", "/api/repos/ryan/lab/files", { path: ".gitattributes", content: "a.ts codesplitter-over=escalate" });
+  for (const c of ["a", "b"]) { await p.fail(sha(c)); await p.settled(); }
+  expect((await p.runs()).length).toBe(1);
+});
+
 test("two failures at once open one fix task", async () => {
   const { send, runs, settled } = await app();
   await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test", "lint"] }, "PUT");
