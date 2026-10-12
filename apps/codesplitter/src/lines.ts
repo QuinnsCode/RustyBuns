@@ -4,7 +4,8 @@
 //
 // Ops name lines by id, never by index, so two agents editing different lines
 // never collide. Editing the same line is optimistic: `set` and `delete` carry
-// the line's `base` rev, and a stale base is a conflict the caller retries.
+// the line's `base` rev, and a stale base is a conflict the caller retries (unless
+// the file DO can rebase it word by word: file-do.ts `rebase`).
 // An edit that depends on other lines too (a rename, "is this ever
 // reassigned?") passes `ifRev`: the whole file must still be at that rev.
 

@@ -477,3 +477,41 @@ describe("claims", () => {
     expect((await claims(call)).length).toBe(1000);
   });
 });
+
+describe("word-level rebase (#928)", () => {
+  const file = "/api/repos/ryan/r1/do", q = "?path=a.js";
+  const post = (call: Call, user: string, body: unknown) => call(user, `${file}/ops${q}`, { method: "POST", body: JSON.stringify(body) });
+  const doc = async (call: Call) => await (await call("ryan", `${file}/file${q}`)).json() as Doc;
+  const set = (text: string, base = 1) => ({ ops: [{ kind: "set", line: "L1", base, text }] });
+
+  test("two agents changing different words of one line both land, the second blamed on its sender", async () => {
+    const call = await local();
+    await setup(call, "const total = add(a, b)\nnext");
+    expect((await post(call, "ryan", set("const sum = add(a, b)"))).status).toBe(200);
+    // agent-x still had rev 1: its edit is stale, but touches other words.
+    const res = await post(call, "agent-x", set("const total = add(a, c)"));
+    expect(res.status).toBe(200);
+    const d = await doc(call);
+    expect(text(d)).toBe("const sum = add(a, c)\nnext");
+    expect(d.lines[0]).toMatchObject({ by: "agent-x", rev: d.rev });
+  });
+
+  test("overlapping words, a pinned rev, or a line set twice in one batch: still a 409", async () => {
+    const call = await local();
+    await setup(call, "foo(1)\nnext");
+    expect((await post(call, "ryan", set("foo(2)"))).status).toBe(200);
+    const clash = await post(call, "agent-x", set("foo(3)"));
+    expect(clash.status).toBe(409);
+    expect((await clash.json() as any).conflicts[0].reason).toContain("not 1");
+    expect((await post(call, "agent-x", { ...set("bar(1)"), ifRev: 1 })).status).toBe(409);
+    expect((await post(call, "agent-x", { ops: [set("bar(1)").ops[0], { kind: "set", line: "L1", base: 1, text: "baz(1)" }] })).status).toBe(409);
+    expect(text(await doc(call))).toBe("foo(2)\nnext");
+  });
+
+  test("a rename on one side and a new use of the old name on the other is a conflict, not a blend", async () => {
+    const call = await local();
+    await setup(call, "f(a, b)");
+    expect((await post(call, "ryan", set("f(x, b)"))).status).toBe(200);
+    expect((await post(call, "agent-x", set("f(a, b, a)"))).status).toBe(409);
+  });
+});
