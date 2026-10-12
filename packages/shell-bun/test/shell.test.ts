@@ -342,3 +342,20 @@ test("serve: _redirects rules apply before assets, first match wins", async () =
   expect(await (await get("/_redirects")).text()).toBe("worker");
   await shell.stop();
 });
+
+test("serve: /page serves page.html when nothing sits at /page, as Cloudflare and GitHub Pages do", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync("/tmp/rb-assets-");
+  mkdirSync(join(dir, "apps"));
+  writeFileSync(join(dir, "apps", "ops.html"), "<p>ops</p>");
+  writeFileSync(join(dir, "data.json.html"), "<p>no</p>");
+  const shell = serve({ assets: dir });
+  const get = (p: string) => fetch(shell.url + p).then(async (r) => [r.status, r.status === 200 ? await r.text() : ""]);
+  expect(await get("/apps/ops")).toEqual([200, "<p>ops</p>"]);
+  expect(await get("/apps/ops.html")).toEqual([200, "<p>ops</p>"]);
+  expect((await get("/apps/nope"))[0]).toBe(404);
+  // a path with an extension is taken as asked
+  expect((await get("/data.json"))[0]).toBe(404);
+  shell.stop?.();
+});

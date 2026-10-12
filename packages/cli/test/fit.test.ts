@@ -87,3 +87,13 @@ test("red flags pull the verdict down", () => {
 test("no package.json is a poor fit", () => {
   expect(fit({ pkg: null, files: ["main.go"] })).toMatchObject({ verdict: "poor", typescript: false });
 });
+
+test("a static site with no app: plain HTML is ready, a generator's site likely", () => {
+  expect(fit({ pkg: null, files: ["index.html", "style.css"] })).toMatchObject({ verdict: "ready", label: "static HTML site" });
+  expect(fit({ pkg: null, files: ["README.md", "docs/index.html"] }).verdict).toBe("ready");
+  expect(fit({ pkg: null, files: ["_config.yml", "_layouts/default.html", "index.md"] })).toMatchObject({ verdict: "likely", label: "Jekyll site" });
+  expect(fit({ pkg: null, files: ["hugo.toml", "content/_index.md"] }).label).toBe("Hugo site");
+  expect(fit({ pkg: null, files: ["mkdocs.yml", "docs/index.md"] }).label).toBe("MkDocs site");
+  // a Vite app's index.html is the app's entry, not a static site
+  expect(fit({ pkg: { dependencies: { vite: "6" } }, files: ["index.html"] }).label).not.toContain("static");
+});

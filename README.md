@@ -79,6 +79,18 @@ The host binds to `127.0.0.1`, gates every request on a per-launch token, and ke
 
 </details>
 
+### Static sites box too, no app needed
+
+`rustybuns init` in a plain HTML, Jekyll, Hugo or MkDocs repo (a GitHub Pages site, say) boxes its build output for the desktop and the web.
+
+<details><summary>More</summary>
+
+There's no `package.json` to read, so `init` looks for the site itself: an `index.html` at the top or in `docs/`, `public/`, `site/` or `www/`, a Jekyll `_config.yml` with its `_layouts/`, a `hugo.toml`, or a `mkdocs.yml`. It writes a config whose build is the generator's own (`jekyll build`, `hugo`, `mkdocs build`), or `rustybuns copy-site` for hand-written HTML. It also writes a `package.json` that holds Rusty Buns as a dev dependency. The web side is an assets-only Worker with the nearest `404.html` for missing pages.
+
+Jekyll copies every file it doesn't exclude into the site, so `init` layers `_config.rustybuns.yml` over your config. It keeps `dist/`, `desktop/` and Rusty Buns' files out, and serves from `/` rather than a Pages `baseurl`. The generator itself still has to be installed. `init` says so when it isn't on your PATH, or when your Ruby is too old for Jekyll (macOS ships 2.6, and Jekyll needs 3 or later). Like Cloudflare and GitHub Pages, the host serves `/ops` from `ops.html`.
+
+</details>
+
 ### Every Cloudflare binding has a local twin
 
 D1, KV, R2 and Durable Objects run on sqlite and a folder on your disk, so the whole stack boots with no cloud account and no bill.

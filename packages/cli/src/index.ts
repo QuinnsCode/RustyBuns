@@ -20,6 +20,8 @@ import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, fl
 import { infer, readPackageJson } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
+import { jekyllExcludes, staticBuild, type StaticSite } from "./glue/static-site.ts";
+import { copySite, staticSiteAt } from "./glue/site-files.ts";
 import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
@@ -129,8 +131,11 @@ async function init() {
   const spa = rest.includes("--spa");
   const src = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].find((f) => existsSync(f)) ?? null;
   // Refuse before printing or writing anything.
-  if (!inf.hasPackageJson) throw new Error("no package.json here. Run `rustybuns init` from your app's directory.");
   if (existsSync("rustybuns.config.ts") && !force) throw new Error("rustybuns.config.ts already exists; init would overwrite it. Edit it directly, or pass --force to regenerate from scratch.");
+  // No JavaScript app, but a site: plain HTML or a generator's (a GitHub Pages repo, say).
+  const site = !src && inf.stack === "unknown" && !inf.scripts.build && !inf.vite.configPath && !inf.isWorkspaceRoot ? staticSiteAt(".") : null;
+  if (site) { await initStatic(inf, site); return; }
+  if (!inf.hasPackageJson) throw new Error("no package.json here, and no static site (index.html, Jekyll, Hugo or MkDocs) either. Run `rustybuns init` from your app's directory.");
   if (inf.isWorkspaceRoot && !src && !inf.vite.configPath && inf.framework === "unknown")
     throw new Error("this looks like a monorepo root (workspaces, no app here). cd into the package you want to ship and run init there.");
   if (rest.includes("--port-vite")) { await portVite(inf.stack, force); inf = infer(); }
@@ -299,6 +304,69 @@ async function initStart(inf: ReturnType<typeof infer>) {
   console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}`);
 }
 
+/** A static site: its build output is the UI, on the desktop and as an assets-only Worker on the web. */
+async function initStatic(inf: ReturnType<typeof infer>, site: StaticSite) {
+  const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
+  const name = (inf.hasPackageJson ? inf.name : process.cwd().split(/[\\/]/).pop()!).replace(/^@[^/]+\//, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+  console.log(`rustybuns ${VERSION}`);
+  console.log(`detected: ${site.label}${site.kind === "html" ? ` in ${site.dir === "." ? "the project root" : site.dir + "/"}` : ""}, no JavaScript app`);
+  const jekyllConfig = existsSync("_config.yml") ? "_config.yml" : "_config.yaml";
+  if (site.kind === "jekyll") {
+    // Jekyll copies every file it doesn't exclude into the site: our config, desktop/ and dist/ (binaries) too.
+    // A second config file layered on the app's own keeps them out, and serves from / instead of a Pages baseurl.
+    const cfgFile = jekyllConfig;
+    const own = (Bun as any).YAML.parse(readFileSync(cfgFile, "utf8")) ?? {};
+    await Bun.write("_config.rustybuns.yml", `# Written by rustybuns init: layered on ${cfgFile} for Rusty Buns builds only.\nbaseurl: ""\nexclude: ${JSON.stringify(jekyllExcludes(own.exclude))}\n`);
+    console.log(`wrote _config.rustybuns.yml (baseurl "", and Rusty Buns' files kept out of the site)`);
+  }
+  const bundler = site.kind === "jekyll" && existsSync("Gemfile");
+  const build = (out: string) => staticBuild(site, out, { bundler, jekyllConfig, exec: inf.execCmd });
+  const cfg = {
+    name,
+    source: { dir: inf.srcDir, aliases: inf.aliases },
+    worker: { assets: "dist/web", compatibilityDate: new Date().toISOString().slice(0, 10), compatibilityFlags: [], build: build("dist/web"), notFoundHandling: "404-page" },
+    bindings: {},
+    targets: {
+      edge: { provider: "cloudflare" },
+      desktop: { mode: "spa", clientBuild: build("dist/ui"), clientDir: "dist/ui", world: false, host: "desktop/host.ts", targets: [hostTag] },
+    },
+  };
+  await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
+  console.log(`wrote rustybuns.config.ts (the desktop, and the web as static files on Workers)`);
+  console.log(`build:    ${cfg.targets.desktop.clientBuild}`);
+  await writeHost();
+  // Rusty Buns is a dev dependency, so a site with no package.json gets one to hold it.
+  if (!inf.hasPackageJson) {
+    await Bun.write("package.json", JSON.stringify({ name, private: true, devDependencies: { "@rustybuns/cli": `^${VERSION}`, "@rustybuns/shell-bun": `^${VERSION}` } }, null, 2) + "\n");
+    console.log(`wrote package.json (Rusty Buns as a dev dependency)`);
+  }
+  // The generator lives outside npm: say so now, not halfway through a build.
+  const ruby = site.kind === "jekyll" && Bun.which("ruby") ? Bun.spawnSync(["ruby", "-e", "print RUBY_VERSION"]).stdout?.toString() ?? "" : "";
+  if (site.tool && !Bun.which(bundler ? "bundle" : site.tool)) {
+    const how = { jekyll: "Ruby 3+ and `gem install jekyll` (or `bundle install`)", hugo: "`brew install hugo` or gohugo.io", mkdocs: "`pip install mkdocs`" }[site.kind as "jekyll" | "hugo" | "mkdocs"];
+    console.log(`warning:  ${bundler ? "bundle" : site.tool} is not on PATH; the build needs ${how}`);
+  }
+  if (ruby && Number(ruby.split(".")[0]) < 3) console.log(`warning:  ruby ${ruby} is too old for current Jekyll (it needs 3+; macOS ships 2.6). Install a newer one: \`brew install ruby\``);
+  console.log(`\nnext: ${inf.hasPackageJson ? "" : `${inf.pm} install && `}${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}, or ${inf.execCmd("rustybuns plan")}`);
+}
+
+async function writeHost() {
+  if (await Bun.file("desktop/host.ts").exists()) return;
+  await Bun.write("desktop/host.ts", `// Your desktop backend. Runs in the Bun host next to your built SPA.
+// Return a Response for routes you own, null for everything else.
+import type { HostContext } from "@rustybuns/shell-bun";
+
+export default {
+  async fetch(req: Request, ctx: HostContext): Promise<Response | null> {
+    const url = new URL(req.url);
+    if (url.pathname === "/api/hello") return Response.json({ hello: ctx.identity["X-User-Name"], dataDir: ctx.dataDir });
+    return null;
+  },
+};
+`);
+  console.log("wrote desktop/host.ts");
+}
+
 async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   const astro = inf.framework === "astro";
@@ -343,21 +411,7 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   const what = astro ? "a static Astro site" : "no wrangler found";
   console.log(web ? `wrote rustybuns.config.ts (${what}: the desktop, and the web as static files on Workers, from ${web.assets})`
     : `wrote rustybuns.config.ts (desktop-only: it runs a Node server (${inf.serverDeps.join(", ")}), so its frontend alone can't go on the web)`);
-  if (!(await Bun.file("desktop/host.ts").exists())) {
-    await Bun.write("desktop/host.ts", `// Your desktop backend. Runs in the Bun host next to your built SPA.
-// Return a Response for routes you own, null for everything else.
-import type { HostContext } from "@rustybuns/shell-bun";
-
-export default {
-  async fetch(req: Request, ctx: HostContext): Promise<Response | null> {
-    const url = new URL(req.url);
-    if (url.pathname === "/api/hello") return Response.json({ hello: ctx.identity["X-User-Name"], dataDir: ctx.dataDir });
-    return null;
-  },
-};
-`);
-    console.log("wrote desktop/host.ts");
-  }
+  await writeHost();
   console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}${web ? `, or ${inf.execCmd("rustybuns plan")}` : ""}`);
 }
 
@@ -704,7 +758,7 @@ async function triageCommand(args: string[]) {
   });
 }
 
-const COMMANDS = ["init", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "build", "eject", "version"];
+const COMMANDS = ["init", "copy-site", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "build", "eject", "version"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -714,6 +768,11 @@ if (!isVersion && !checkDisabled()) {
 try {
   switch (cmd) {
     case "init": await init(); break;   // --spa forces the desktop-only path
+    case "copy-site": {
+      const [from, to] = rest;
+      if (!from || !to) throw new UsageError({ message: "usage: rustybuns copy-site <from> <to>" });
+      copySite(from, to); break;
+    }
     case "generate": await generate({ adopt: false }); break;
     case "adopt": await generate({ adopt: true }); break;
     case "deploy": await alchemy("deploy", rest); break;
@@ -786,6 +845,10 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              write rustybuns.config.ts + .rustybuns/alchemy.run.ts + wrangler.jsonc
                              (no wrangler, or --spa: desktop-only config + desktop/host.ts)
                              refuses to overwrite an existing config unless --force
+                             a static site (index.html, Jekyll, Hugo, MkDocs) with no app:
+                             its build output, on the desktop and as static files on Workers
+  copy-site <from> <to>      a hand-written site's files into <to>, leaving out dotfiles and
+                             Rusty Buns' own (the build init writes for plain HTML)
   init --port-vite           Create React App / Vue CLI: port to Vite first, then init;
                              custom webpack: list what to port
   add desktop [--entry F#C]  scaffold packages/desktop (index.html, main.tsx, world.ts) and

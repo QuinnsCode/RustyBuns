@@ -4,6 +4,8 @@
 // infer() uses the same framework detection, so there is one detector.
 
 /** Every stack we can name. SUPPORTED lists the ones `init` reads today. */
+import { staticSite } from "./static-site.ts";
+
 export type Stack =
   | "rwsdk" | "tanstack-start" | "vite-react" | "vite"
   | "next" | "astro" | "sveltekit" | "react-router" | "nuxt"
@@ -115,6 +117,14 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
   const typescript = !!(pkg?.devDependencies?.typescript || pkg?.dependencies?.typescript)
     || has("tsconfig.json") || files.some((f) => /\.(ts|tsx|mts)$/.test(f) && !f.endsWith(".d.ts"));
 
+  // A site with no app: plain HTML, or a generator's output (GitHub Pages). init boxes the output.
+  const site = staticSite(files);
+  if (site && (!pkg || stackOf({ ...pkg.dependencies, ...pkg.devDependencies }) === "unknown") && !files.some((f) => /^wrangler\.(jsonc?|toml)$/.test(f))) {
+    return { verdict: site.tool ? "likely" : "ready", stack: "unknown", label: site.label, typescript,
+      reasons: [site.tool
+        ? `A ${site.label}: \`rustybuns init\` builds it with ${site.tool} and boxes the output; ${site.tool} has to be installed.`
+        : "A static HTML site: `rustybuns init` boxes its files as they are."] };
+  }
   if (!pkg) {
     return { verdict: "poor", stack: "unknown", label: typescript ? "TypeScript" : "no package.json", typescript,
       reasons: ["No package.json at the top of the repo, so there's no JavaScript app to box."] };
