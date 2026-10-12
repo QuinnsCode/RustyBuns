@@ -34,11 +34,50 @@ export function hostEnv(env: Record<string, string | undefined>): Record<string,
 // build may read the app's .dev.vars, NPM_TOKEN for a private package, or GITHUB_SHA for a version.
 const DEPLOY_LOGIN = /^(CLOUDFLARE|CF|WRANGLER|ALCHEMY)_|^(HCLOUD|HETZNER|RAILWAY|OP|AWS|AZURE|GCP|VERCEL|DOCKER|GH|GITHUB)_.*(TOKEN|SECRET|PASSW|CREDENTIAL|KEY)/i;
 
-/** The environment plan and deploy build the Worker in: everything but the deploy's logins (#1114). */
+/** The environment plan, deploy and dev build the Worker in: everything but the deploy's logins (#1114). */
 export function buildEnv(env: Record<string, string | undefined>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) if (v !== undefined && !DEPLOY_LOGIN.test(k)) out[k] = v;
   return out;
+}
+
+// With --sandbox the build also gets an empty HOME (#1128), as scripts/trial-github.ts gives a stranger's
+// repo: no ~/.wrangler, ~/.alchemy, ~/.npmrc, ~/.config/gh or ~/.aws to read. The package caches and the
+// toolchains found through HOME point back at the real ones, so installs stay warm and rbenv, nvm, Volta,
+// asdf, mise and cargo still find their versions. Opt-in, like run desktop --sandbox: a build that needs a
+// login under HOME (a private registry in ~/.npmrc, Docker's context) loses it.
+const HOME_CACHES: [string, string][] = [
+  ["npm_config_cache", ".npm"],
+  ["npm_config_store_dir", process.platform === "darwin" ? "Library/pnpm/store" : ".local/share/pnpm/store"],
+  ["BUN_INSTALL", ".bun"],
+  ["BUN_INSTALL_CACHE_DIR", ".bun/install/cache"],
+  ["YARN_CACHE_FOLDER", process.platform === "darwin" ? "Library/Caches/Yarn" : ".cache/yarn"],
+  ["YARN_GLOBAL_FOLDER", ".yarn/berry"],
+  ["XDG_CACHE_HOME", ".cache"],
+  ["BUNDLE_USER_CACHE", ".bundle/cache"],
+  ["GEM_SPEC_CACHE", ".gem/specs"],
+  ["RBENV_ROOT", ".rbenv"],
+  ["NVM_DIR", ".nvm"],
+  ["VOLTA_HOME", ".volta"],
+  ["ASDF_DATA_DIR", ".asdf"],
+  ["MISE_DATA_DIR", ".local/share/mise"],
+  ["CARGO_HOME", ".cargo"],
+  ["RUSTUP_HOME", ".rustup"],
+];
+/** Variables that point a tool at a config or login file instead of HOME: unset under an empty HOME. */
+const HOME_POINTERS = /^(DOCKER_CONFIG|KUBECONFIG|CLOUDSDK_CONFIG|AWS_CONFIG_FILE|AWS_SHARED_CREDENTIALS_FILE|NPM_CONFIG_USERCONFIG|BUNDLE_USER_HOME|BUNDLE_USER_CONFIG|GNUPGHOME|XDG_DATA_HOME|XDG_STATE_HOME)$/i;
+
+/** buildEnv's result with HOME swapped for `home` (an empty folder), keeping the package caches under the real one. */
+export function emptyHome(env: Record<string, string>, home: string, realHome = homedir(), exists: (p: string) => boolean = existsSync): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) if (!HOME_POINTERS.test(k)) out[k] = v;
+  for (const [k, rel] of HOME_CACHES) if (!(k in out) && exists(join(realHome, rel))) out[k] = join(realHome, rel);
+  // Apple's system gitconfig still sets credential.helper=osxkeychain, and on a 401 git would ask a keychain
+  // this HOME doesn't have: macOS pops "Keychain Not Found" on screen. An empty helper (appended to any
+  // GIT_CONFIG_* list already set) and no prompt make it just fail.
+  const n = Number(out.GIT_CONFIG_COUNT) || 0;
+  Object.assign(out, { GIT_CONFIG_COUNT: String(n + 1), [`GIT_CONFIG_KEY_${n}`]: "credential.helper", [`GIT_CONFIG_VALUE_${n}`]: "", GIT_TERMINAL_PROMPT: "0" });
+  return { ...out, HOME: home, XDG_CONFIG_HOME: join(home, ".config"), GH_CONFIG_DIR: join(home, ".config/gh") };
 }
 
 /** Under $HOME: where credentials live. */

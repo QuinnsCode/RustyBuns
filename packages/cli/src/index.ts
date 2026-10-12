@@ -3,7 +3,7 @@
 
 import { $ } from "bun";
 import { mkdir, rm } from "node:fs/promises";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys } from "./wrangler.ts";
@@ -12,7 +12,7 @@ import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
 import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
-import { buildEnv, hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
+import { buildEnv, emptyHome, hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
 import type { RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
@@ -635,12 +635,21 @@ function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { 
 /** Edge is on when asked for, or when nothing else is (as in gen/alchemy.ts). */
 const edgeOn = (c: RustyBunsConfig) => !!c.targets.edge || !c.targets.box;
 
-/** Run the Worker's build command in the app, with the env the stack's Build gets, minus the deploy's logins. */
-const buildWorker = (build: string) => Effect.gen(function* () {
+/**
+ * Run the Worker's build command in the app, with the env the stack's Build gets, minus the deploy's logins.
+ * sandbox: HOME is .rustybuns/home, empty but for what the build leaves there, with the package caches kept (#1128).
+ */
+const buildWorker = (build: string, sandbox: boolean) => Effect.gen(function* () {
   // a monorepo app's unbuilt workspace packages first (glue/workspace-build.ts)
   const command = [...workspacePrebuild(process.cwd()), build].join(" && ");
-  console.log(`building the worker: ${command}`);
-  const code = yield* spawnScoped(["sh", "-c", command], { stdio: ["inherit", "inherit", "inherit"], env: buildEnv({ ...readDevVars(), ...process.env }) });
+  console.log(`building the worker${sandbox ? " (empty HOME)" : ""}: ${command}`);
+  let env = buildEnv({ ...readDevVars(), ...process.env });
+  if (sandbox) {
+    const home = join(process.cwd(), ".rustybuns/home");
+    mkdirSync(home, { recursive: true });
+    env = emptyHome(env, home);
+  }
+  const code = yield* spawnScoped(["sh", "-c", command], { stdio: ["inherit", "inherit", "inherit"], env });
   if (code !== 0) return yield* Effect.fail(new Error(`the worker build failed (exit ${code}): ${command}`));
 });
 
@@ -663,7 +672,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const { on: check, checker, rest: flagged } = checkFlags(rawArgs, profiled);
   // Ours, not Alchemy's: they waive the guards below.
   const force = flagged.includes("--force"), allowDelete = flagged.includes("--allow-delete");
-  const args = flagged.filter((a) => a !== "--force" && a !== "--allow-delete");
+  const { on: sandbox, args } = wantsSandbox(flagged.filter((a) => a !== "--force" && a !== "--allow-delete"));
   const prof = new Profiler(sub);
   yield* step(() => prof.step("generate", () => generate({ adopt: false })));
   let lockBase: string | null = null;
@@ -694,7 +703,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // stack's Build runs, so build it first or it ships the previous build (#362).
   // dev builds first too: the stack's Build would run it inside alchemy, with the Cloudflare token (#1121).
   const built = (profiled || sub === "dev") && edgeOn(cfg) && !!cfg.worker?.build;
-  if (built) yield* timed(prof, "build worker", buildWorker(cfg.worker!.build!));
+  if (built) yield* timed(prof, "build worker", buildWorker(cfg.worker!.build!, sandbox));
   // Name each map's module and give it app-relative sources, as wrangler does (#799).
   if (built && cfg.worker!.sourceMaps && cfg.worker!.builtMain) {
     const maps = tidySourceMaps(process.cwd(), cfg.worker!.builtMain);
@@ -947,6 +956,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   destroy                    alchemy destroy: removes everything the stack created
                              (--stage <name> passes through to all three)
   dev                        alchemy dev: workerd + local simulators for the edge column
+                             plan, deploy and dev build the Worker without the deploy's logins;
+         [--sandbox]         with an empty HOME too, package caches kept (or RB_SANDBOX=1)
   prof [--seconds N]         sample the deployed box's CPU for N seconds (default 10, at most 60),
        [--url U] [--json]    save a .cpuprofile in .rustybuns/prof/ (a flame graph in DevTools or
                              speedscope) and print its hottest functions (--json: as JSON);
