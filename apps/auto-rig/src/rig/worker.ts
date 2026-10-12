@@ -1,4 +1,5 @@
-// The TypeScript rigger off the main thread, for the plain browser build.
+// The TypeScript rigger off the main thread: a Web Worker in the page, and a
+// worker thread on the desktop host (src/actions/rig.ts). One message in, one answer out.
 import { analyze, type RigOptions } from "./analyze.ts";
 
 self.onmessage = (e: MessageEvent<{ pos: Float32Array; idx: Uint32Array; opts: Partial<RigOptions> }>) => {

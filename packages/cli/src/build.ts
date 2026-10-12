@@ -7,7 +7,7 @@
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, statSync, readFileSync, readdirSync } from "node:fs";
-import { join, dirname, normalize } from "node:path";
+import { join, dirname, normalize, relative, resolve } from "node:path";
 import type { DesktopOs, RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 import { Profiler } from "./profile.ts";
@@ -381,6 +381,35 @@ ${LAUNCH_CHECK}${appCheck(c, true)}${h.launch}`;
 /** import(`x`) with no ${...} in it, as import("x"), so the bundler resolves it statically. */
 export const plainDynamicImports = (js: string) => js.replace(/\bimport\(`([^`$\\]+)`\)/g, (_, spec: string) => `import(${JSON.stringify(spec)})`);
 
+/** desktop.workers: each module's absolute path -> its bundle's name in workers/ beside the host
+ *  (src/rig/worker.ts -> src-rig-worker.js). Bun.build leaves `new URL("./w.ts", import.meta.url)`
+ *  alone and doesn't emit the module, so each is bundled on its own. */
+export function workerBundles(cwd: string, workers: string[] = []): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const w of workers) {
+    const abs = resolve(cwd, w);
+    if (!existsSync(abs)) throw new Error(`desktop.workers: ${w} doesn't exist`);
+    const name = relative(cwd, abs).replace(/\.[cm]?[jt]sx?$/, "").replace(/[\\/]/g, "-") + ".js";
+    if ([...out.values()].includes(name)) throw new Error(`desktop.workers: two modules bundle to workers/${name}`);
+    out.set(abs, name);
+  }
+  return out;
+}
+
+const WORKER_URL = /new\s+URL\(\s*(["'`])(\.\.?\/[^"'`$\\]+)\1\s*,\s*import\.meta\.url\s*\)/g;
+/** Host code's `new URL("./w.ts", import.meta.url)` for a desktop.workers module, pointed at its
+ *  bundle beside the host (`./workers/<name>.js`: the dev bundle's dir, the binary's $bunfs root).
+ *  `unlisted` gets each script it names that isn't listed, which the binary won't have. */
+export function pointWorkerUrls(code: string, file: string, bundles: Map<string, string>, unlisted?: (path: string) => void): string {
+  return code.replace(WORKER_URL, (m, _q, rel: string) => {
+    const abs = resolve(dirname(file), rel);
+    const name = bundles.get(abs);
+    if (name) return `new URL(${JSON.stringify(`./workers/${name}`)}, import.meta.url)`;
+    if (/\.[cm]?[jt]sx?$/.test(abs)) unlisted?.(abs);
+    return m;
+  });
+}
+
 /** The Worker the host imports: builtMain, unless the build says otherwise. @cloudflare/vite-plugin
  *  writes a wrangler.json beside its output whose main names the real file (worker.js vs index.js). */
 export function builtEntry(c: RustyBunsConfig, cwd = process.cwd()): string | undefined {
@@ -638,6 +667,13 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
 
   const shimPath = Bun.resolveSync("@rustybuns/shell-bun/shims", process.cwd());
   const aliasEntries = Object.entries(src.aliases).sort((a, b) => b[0].length - a[0].length);
+  const workers = workerBundles(process.cwd(), d.workers);
+  const warned = new Set<string>();
+  const unlisted = (p: string) => {
+    if (warned.has(p) || !existsSync(p)) return;
+    warned.add(p);
+    console.warn(`[workers] host code starts ${relative(process.cwd(), p)} on a worker; list it in desktop.workers or the build won't ship it`);
+  };
   const plugins = [{
     name: "rustybuns-shims",
     setup(b: any) {
@@ -660,6 +696,14 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
           contents: plainDynamicImports(await Bun.file(args.path).text()), loader: "js",
         }));
       }
+      // The app's own code: a worker module it names by URL points at that worker's bundle.
+      b.onLoad({ filter: /\.[cm]?[jt]sx?$/ }, async (args: { path: string }) => {
+        if (args.path.includes("/node_modules/") || !args.path.startsWith(process.cwd())) return undefined;
+        const code = await Bun.file(args.path).text();
+        if (!code.includes("import.meta.url")) return undefined;
+        const ext = args.path.match(/\.[cm]?([jt]sx?)$/)![1]!;
+        return { contents: pointWorkerUrls(code, args.path, workers, unlisted), loader: ext as "js" | "jsx" | "ts" | "tsx" };
+      });
       // The app's aliases ("@/x", "~/x", "#lib/x"), resolved the way tsconfig/vite do.
       b.onResolve({ filter: /^[@~#]/ }, (args: { path: string }) => {
         for (const [alias, dir] of aliasEntries) {
@@ -684,14 +728,26 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     RB_COMPAT_FLAGS: JSON.stringify((c.worker?.compatibilityFlags ?? []).join(",")),
   };
   for (const [k, v] of Object.entries(d.define ?? {})) defineMap[k] = JSON.stringify(v);
+  const buildErrors = (r: any) => r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n");
+  // desktop.workers, each bundled into <dir>/workers/ next to the host's bundle.
+  const bundleWorkers = (dir: string, sourcemap: string) => step("bundle workers", async () => {
+    const out: string[] = [];
+    for (const [src, name] of workers) {
+      const r = await Bun.build({ entrypoints: [src], outdir: join(dir, "workers"), naming: name.replace(/\.js$/, ".[ext]"), target: "bun", define: defineMap, plugins, sourcemap, throw: false } as any);
+      if (!r.success) throw new Error(`desktop.workers ${relative(process.cwd(), src)}:\n${buildErrors(r)}`);
+      out.push(join(dir, "workers", name));
+    }
+    return out;
+  });
 
   if (opts.noCompile) {
     // Dev host: same bundle pipeline as the binary, minus --compile. Nothing
     // embedded; assets and migrations are read from the working tree.
     const outdir = opts.outdir ?? ".rustybuns/dev";
+    if (workers.size) await bundleWorkers(outdir, opts.outdir ? "none" : "linked");
     const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir, target: "bun", define: defineMap, plugins, sourcemap: opts.outdir ? "none" : "linked", throw: false } as any));
     await prof?.finish();
-    if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
+    if (!r.success) throw new Error(buildErrors(r));
     if (!opts.outdir) console.log(`dev host: rustybuns run desktop   (= bun .rustybuns/dev/desktop.js)`);
     return `${outdir}/${host}.js`;
   }
@@ -714,17 +770,19 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   // Embedded dirs are keyed by basename, so two mounts named the same collide.
   const names = [assets, ...migrationDirs, ...mountDirs].filter(Boolean).map((p) => basename(p!));
   if (new Set(names).size !== names.length) throw new Error(`embedded directories must have distinct basenames: ${names.join(", ")}`);
+  // Entrypoints beside .rustybuns/<host>.ts, so the binary has them at $bunfs/root/workers/.
+  const workerFiles = workers.size ? await bundleWorkers(".rustybuns", "none") : [];
   for (const t of targets) {
     const out = opts.outfile ?? `dist/${c.name}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
     const r = await step(`compile ${t}`, () => Bun.build({
-      entrypoints: [entry],
+      entrypoints: [entry, ...workerFiles],
       outdir: dirname(out),          // Bun.build places compile.outfile under outdir
       compile: { target: `bun-${t}`, outfile: basename(out), ...(assets || migrationDirs.length || mountDirs.length ? { assets: [assets, ...migrationDirs, ...mountDirs].filter(Boolean) } : {}) },
       define: defineMap,
       plugins,
       throw: false,
     } as any));
-    if (!r.success) throw new Error(r.logs.map((l: any) => `${l.level ?? ""} ${l.message ?? l}${l.position ? ` (${l.position.file}:${l.position.line})` : ""}`).join("\n"));
+    if (!r.success) throw new Error(buildErrors(r));
     outs.push(out);
   }
   await prof?.finish();

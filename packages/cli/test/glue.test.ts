@@ -791,6 +791,30 @@ test("plainDynamicImports: import(`x`) becomes import(\"x\") so the shim resolve
   expect(plainDynamicImports('import("rwsdk/worker")')).toBe('import("rwsdk/worker")');
 });
 
+test("desktop.workers: each module gets a bundle beside the host, and host code's URL for it points there", async () => {
+  const { workerBundles, pointWorkerUrls } = await import("../src/build.ts");
+  const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs");
+  const r = mkdtempSync(require("node:os").tmpdir() + "/rbwk-");
+  mkdirSync(r + "/src/rig", { recursive: true });
+  for (const f of ["src/rig/worker.ts", "src/rig-worker.ts"]) writeFileSync(`${r}/${f}`, "");
+  const b = workerBundles(r, ["src/rig/worker.ts"]);
+  expect([...b]).toEqual([[`${r}/src/rig/worker.ts`, "src-rig-worker.js"]]);
+  expect(() => workerBundles(r, ["src/nope.ts"])).toThrow(/doesn't exist/);
+  expect(() => workerBundles(r, ["src/rig/worker.ts", "src/rig-worker.ts"])).toThrow(/two modules/);
+
+  const unlisted: string[] = [];
+  const code = `const a = new URL("../rig/worker.ts", import.meta.url);
+const b = new URL( './other.ts' , import.meta.url );
+const c = new URL("./logo.png", import.meta.url);
+const d = new URL(\`./\${name}.ts\`, import.meta.url);`;
+  expect(pointWorkerUrls(code, `${r}/src/actions/rig.ts`, b, (p) => unlisted.push(p))).toBe(`const a = new URL("./workers/src-rig-worker.js", import.meta.url);
+const b = new URL( './other.ts' , import.meta.url );
+const c = new URL("./logo.png", import.meta.url);
+const d = new URL(\`./\${name}.ts\`, import.meta.url);`);
+  // A script it names but doesn't list is reported (the build warns); an asset isn't.
+  expect(unlisted).toEqual([`${r}/src/actions/other.ts`]);
+});
+
 test("startLayout: TanStack Start's server and static files, by Nitro setup", async () => {
   const { startLayout } = await import("../src/glue/start-layout.ts");
   expect(startLayout(`plugins: [tanstackStart(), viteReact()]`)).toEqual({ builtMain: "dist/server/server.js", assets: "dist/client", env: "" });
