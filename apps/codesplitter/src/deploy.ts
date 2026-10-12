@@ -35,7 +35,7 @@
 //   .../deploy/key[/:provider]     the stored deploy keys (deploy-keys.ts)
 
 import { access as artifactAccess, handleFor } from "./archive.ts";
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 import { deployKeyRoutes, hostedWhy, keysInfo } from "./deploy-keys.ts";
 import { approve, diff, isCleared, review, waitingNote, type Review } from "./deploy-review.ts";
 import { emit } from "./hooks.ts";
@@ -181,10 +181,12 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
       ...((desktop || (hosted && !why)) && { review: shown(await review(env, owner, repo)) }), ...(await history(env, owner, repo, false, run)) });
   }
   if (req.method === "PUT") {
-    const s = { ...(await settings(env, owner, repo)), ...((await req.json()) as Partial<Settings>) };
-    if (!STAGE.test(String(s.stage))) return json({ error: "stage: lowercase letters, digits and dashes" }, 400);
-    if (s.stage.startsWith("preview-")) return json({ error: "preview-* stages belong to preview deploys" }, 400);
-    s.dir = String(s.dir ?? "").trim().replace(/^\/+|\/+$/g, "");
+    // Only what's sent changes; each field is checked before it lands in the settings.
+    const b = await readBody<"stage" | "dir" | "on_commit" | "production">(req), now = await settings(env, owner, repo);
+    const stage = b.stage ?? now.stage;
+    if (typeof stage !== "string" || !STAGE.test(stage)) return json({ error: "stage: lowercase letters, digits and dashes" }, 400);
+    if (stage.startsWith("preview-")) return json({ error: "preview-* stages belong to preview deploys" }, 400);
+    const s: Settings = { stage, dir: String(b.dir ?? now.dir).trim().replace(/^\/+|\/+$/g, ""), on_commit: !!(b.on_commit ?? now.on_commit), production: !!(b.production ?? now.production) };
     if (!validDir(s.dir)) return json({ error: "folder: a path inside the repo, like apps/web, without . or .." }, 400);
     await env.DB.prepare(`INSERT INTO deploy_settings (owner, repo, stage, dir, on_commit, production) VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT (owner, repo) DO UPDATE SET stage = excluded.stage, dir = excluded.dir, on_commit = excluded.on_commit, production = excluded.production`)

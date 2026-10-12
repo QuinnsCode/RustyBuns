@@ -12,7 +12,7 @@
 // email account gets handle grants and ADMIN_EMAIL like GitHub and Google do.
 
 import { betterAuth } from "better-auth";
-import { json, NAME, type Env } from "./env.ts";
+import { json, NAME, type Env, readBody } from "./env.ts";
 import { privacyNotice } from "./privacy.ts";
 import { turnstileOn } from "./security.ts";
 
@@ -188,10 +188,10 @@ async function grantRoutes(req: Request, env: Env, p: string[]): Promise<Respons
   if (!isAdmin(env, await identify(req, env))) return json({ error: "admins only" }, 403);
   if (req.method === "GET") return json((await env.DB.prepare("SELECT handle, email FROM handle_grants ORDER BY handle").all()).results);
   if (req.method !== "POST") return null;
-  const b = (await req.json().catch(() => ({}))) as { handle?: string; email?: string };
+  const b = await readBody<"handle" | "email">(req);
   const email = String(b.email ?? "").trim().toLowerCase();
-  if (!NAME.test(b.handle ?? "")) return json({ error: "handle: lowercase letters and digits, single dashes between" }, 400);
-  if (isAgentHandle(b.handle!)) return json({ error: "agent- handles are for coding agents" }, 400);
+  if (typeof b.handle !== "string" || !NAME.test(b.handle)) return json({ error: "handle: lowercase letters and digits, single dashes between" }, 400);
+  if (isAgentHandle(b.handle)) return json({ error: "agent- handles are for coding agents" }, 400);
   if (!/^[^@\s]+@[^@\s]+$/.test(email)) return json({ error: "give an email" }, 400);
   if (await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(b.handle).first()) return json({ error: `${b.handle} is taken` }, 409);
   await env.DB.prepare("INSERT OR REPLACE INTO handle_grants (handle, email) VALUES (?, ?)").bind(b.handle, email).run();
@@ -212,7 +212,8 @@ async function handleRoutes(req: Request, env: Env, url: URL) {
   const a = await account(req, env);
   if (!a) return json({ error: "sign in first" }, 401);
   if (a.handle) return json({ error: `you're already @${a.handle}` }, 409);
-  const { name = "" } = (await req.json().catch(() => ({}))) as { name?: string };
+  const { name = "" } = await readBody<"name">(req);
+  if (typeof name !== "string") return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
   const why = await unclaimable(env, name);
   if (why) return json({ error: `@${name}: ${why}` }, why === "taken" ? 409 : 400);
   const r = await env.DB.prepare("INSERT OR IGNORE INTO users (name, auth_id, created_at) VALUES (?, ?, ?)").bind(name, a.user.id, Date.now()).run();
@@ -248,8 +249,8 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
   if (accountsOn(env)) return p[1] === "login" ? json({ error: "sign in with an account" }, 404) : null;
   if (p[1] === "login" && req.method === "POST") {
     if (aliasesClosed(env)) return json({ error: "sign-in is off: this site runs on Cloudflare without BETTER_AUTH_SECRET" }, 503);
-    const { name } = (await req.json()) as { name: string };
-    if (!NAME.test(name ?? "")) return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
+    const { name } = await readBody<"name">(req);
+    if (typeof name !== "string" || !NAME.test(name)) return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
     if (isAgentHandle(name)) return json({ error: "agent- handles are for coding agents" }, 400);
     // A deleted account's handle, and @ghost that stands in for them (privacy.ts), stay retired here too.
     const grant = await env.DB.prepare("SELECT email FROM handle_grants WHERE handle = ?").bind(name).first();

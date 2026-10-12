@@ -71,7 +71,7 @@ import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
-import { branchNameError, json, NAME, type Env } from "./env.ts";
+import { branchNameError, json, NAME, type Env, readBody } from "./env.ts";
 import type { Doc } from "./lines.ts";
 import { indexFile, unindexFile } from "./search.ts";
 import { byVersion, tagNameError } from "./tags.ts";
@@ -657,15 +657,16 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
 export async function mirrorRepoRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (req.method === "POST") {
     if (user !== owner) return json({ error: "owner only" }, 403);
-    const b = (await req.json().catch(() => ({}))) as { resolve?: string; pushCrew?: unknown; primary?: unknown; pullOnly?: unknown };
-    if (b.resolve !== undefined && !["mine", "upstream", "rebase"].includes(b.resolve)) return json({ error: "resolve: mine, upstream or rebase" }, 400);
+    const b = await readBody<"resolve" | "pushCrew" | "primary" | "pullOnly">(req);
+    const resolve = (["mine", "upstream", "rebase"] as const).find((r) => r === b.resolve);
+    if (b.resolve !== undefined && !resolve) return json({ error: "resolve: mine, upstream or rebase" }, 400);
     if (b.pushCrew !== undefined && typeof b.pushCrew !== "boolean") return json({ error: "pushCrew: true or false" }, 400);
     if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
     if (b.primary !== undefined && !PRIMARIES.includes(b.primary as Primary)) return json({ error: "primary: here or upstream" }, 400);
     if (b.primary !== undefined) await env.DB.prepare("UPDATE repos SET mirror_primary = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.primary === "here" ? "here" : null, owner, repo).run();
     if (b.pullOnly !== undefined) await env.DB.prepare("UPDATE repos SET mirror_pull_only = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pullOnly ? 1 : null, owner, repo).run();
     if (b.pushCrew !== undefined) await env.DB.prepare("UPDATE repos SET mirror_push_crew = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pushCrew ? 1 : null, owner, repo).run();
-    await syncMirror(env, owner, repo, { resolve: b.resolve as Resolve | undefined });
+    await syncMirror(env, owner, repo, { resolve });
   }
   const s = await mirrorStatus(env, owner, repo);
   return s ? json(s) : json({ error: "not a mirror" }, 404);
@@ -1029,7 +1030,7 @@ export async function mirrorBranchRoute(req: Request, env: Env, p: string[], own
   if (user !== owner) return json({ error: "owner only" }, 403);
   let run: () => Promise<Response | undefined>;
   if (!p[6]) {
-    const b = (await req.json().catch(() => ({}))) as { ref?: unknown; name?: unknown };
+    const b = await readBody<"ref" | "name">(req);
     if (typeof b.ref !== "string" || (b.name !== undefined && typeof b.name !== "string")) return json({ error: "give the upstream branch as ref" }, 400);
     run = () => openUpstreamBranch(env, owner, repo, b.ref as string, user, b.name as string | undefined);
   } else if (p[7] === "push" && !p[8]) run = () => pushBranch(env, owner, repo, p[6]!);
@@ -1148,9 +1149,10 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
   if (!user) return json({ error: "sign in first" }, 401);
   const lg = localGit(env);
   if (!lg) return json({ error: "mirrors need git on your machine: dig it up in the desktop app" }, 501);
-  const b = (await req.json().catch(() => ({}))) as { url?: string; name?: string; visibility?: string; pullOnly?: unknown };
-  const src = remoteOf(b.url ?? "");
+  const b = await readBody<"url" | "name" | "visibility" | "pullOnly">(req);
+  const src = typeof b.url === "string" ? remoteOf(b.url) : null;
   if (!src) return json({ error: "give a git remote: a GitHub owner/name, an https or ssh URL, or git@host:path" }, 400);
+  if (b.name !== undefined && typeof b.name !== "string") return json({ error: "bad repo name" }, 400);
   const name = b.name || src.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
   const visibility = b.visibility ?? "public";

@@ -66,9 +66,10 @@ export async function mcp(req: Request, origin: string, dispatch: (r: Request) =
   const auth = req.headers.get("authorization");
   if (!auth || !/^Bearer\s+cst_\S+$/i.test(auth)) return unauthorized("sign in with OAuth, or send a personal API token from your profile page: Authorization: Bearer cst_…", origin);
 
-  let msg: any;
+  // The client's message: each field unknown until checked. An array is a batch, which we don't take.
+  let msg: { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown } | null;
   try { msg = await req.json(); } catch { return rpcError(null, -32700, "parse error", 400); }
-  if (!msg || typeof msg !== "object" || Array.isArray(msg) || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") return rpcError(msg?.id, -32600, "one JSON-RPC 2.0 request per POST", 400);
+  if (Array.isArray(msg) || msg?.jsonrpc !== "2.0" || typeof msg.method !== "string") return rpcError(msg?.id, -32600, "one JSON-RPC 2.0 request per POST", 400);
   // Notifications (initialized, cancelled, …) need no answer.
   if (msg.id === undefined) return new Response(null, { status: 202 });
 
@@ -78,11 +79,11 @@ export async function mcp(req: Request, origin: string, dispatch: (r: Request) =
   const scope = ((await who.json().catch(() => ({}))) as { token?: { scope?: string } }).token?.scope;
   const mine = all().filter((t) => scope === "write" || t.method === "GET");
 
-  const { id, method, params = {} } = msg;
+  const { id, method } = msg, params = (msg.params ?? {}) as { protocolVersion?: unknown; name?: unknown; arguments?: unknown };
   switch (method) {
     case "initialize":
       return rpc(id, {
-        protocolVersion: VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : VERSIONS[0],
+        protocolVersion: VERSIONS.find((v) => v === params.protocolVersion) ?? VERSIONS[0],
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "codesplitter", title: "codeSplitter", version: "1" },
         instructions: INSTRUCTIONS,
@@ -94,7 +95,8 @@ export async function mcp(req: Request, origin: string, dispatch: (r: Request) =
     case "tools/call": {
       const t = mine.find((t) => t.name === params.name);
       if (!t) return rpcError(id, -32602, all().some((t) => t.name === params.name) ? `${params.name} needs a write token` : `no tool ${params.name}`);
-      return rpc(id, await call(t, params.arguments ?? {}, origin, auth, dispatch));
+      // toRequest only String()s or re-serializes each argument, and the API route it calls checks them.
+      return rpc(id, await call(t, (params.arguments ?? {}) as Record<string, unknown>, origin, auth, dispatch));
     }
     default:
       return rpcError(id, -32601, `no method ${method}`);
