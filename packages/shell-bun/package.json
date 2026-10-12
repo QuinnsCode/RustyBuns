@@ -36,7 +36,8 @@
     "README.md"
   ],
   "dependencies": {
-    "@rustybuns/ports": "workspace:*"
+    "@rustybuns/ports": "workspace:*",
+    "effect": "4.0.0-rc.112"
   },
   "peerDependencies": {
     "react": "*",

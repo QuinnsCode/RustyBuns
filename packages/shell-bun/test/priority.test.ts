@@ -1,4 +1,5 @@
 import { test, expect } from "bun:test";
+import { Effect } from "effect";
 import { adapt, JobStopped, lowPriorityCommand, machineLoad, memoryCapCommand, processTreeMb, scheduler, treeMb, type Load } from "../src/priority.ts";
 
 const BUDGET = { cpu: 0.6, memory: 0.5 };
@@ -144,6 +145,93 @@ test("scheduler: out of requeues, a job put out rejects", async () => {
   s.tick();
   expect((await stopped(second)).reason).toBe("evicted");
   first.release();
+});
+
+test("checkpoint: a low job gives its slot to waiting normal work and takes it back after", async () => {
+  const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });   // 1 slot
+  const order: string[] = [];
+  const step = gate();
+  const low = s.run("low", async (job) => {
+    order.push("low 1");
+    await job.checkpoint();                       // nothing waits: runs straight on
+    await step.fn();
+    await job.checkpoint();
+    order.push("low 2");
+  });
+  const normal = s.run("normal", () => { order.push("normal"); });
+  await settle();
+  expect(order).toEqual(["low 1"]);
+  step.release();
+  await Promise.all([low, normal]);
+  expect(order).toEqual(["low 1", "normal", "low 2"]);
+  expect(s.stats()).toMatchObject({ running: { low: 0, normal: 0 }, queued: { low: 0 }, parked: 0 });
+});
+
+test("checkpoint: a low job steps aside when the sampler cuts low below what's running", async () => {
+  const load: Load = { cpu: 0.1, memory: 0.9 };    // memory over the budget: CPU's is the whole machine here
+  const s = scheduler({ cores: 2, budget: { cpu: 1, reserve: 0 }, everyMs: 0, window: 1, sample: () => load });   // 2 slots
+  const a = gate(), b = gate();
+  const pass = (g: ReturnType<typeof gate>) => async (job: { checkpoint(): Promise<void> }) => { await g.fn(); await job.checkpoint(); return "done"; };
+  const ja = s.run("low", pass(a)), jb = s.run("low", pass(b));
+  s.tick();                                       // 2 -> 1
+  a.release(); await settle();
+  expect(s.stats()).toMatchObject({ running: { low: 1 }, parked: 1, queued: { low: 0 } });
+  b.release(); await jb;                          // 1 of 1: b goes on, and its slot passes to a
+  expect(await ja).toBe("done");
+});
+
+test("checkpoint: a stopped job throws there, parked or not, and holds no slot", async () => {
+  const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });
+  let steps = 0, threw: unknown;
+  const spinning = s.run("low", async (job) => {
+    try { for (;;) { steps++; await job.checkpoint(); await new Promise((r) => setTimeout(r, 1)); } } catch (e) { threw = e; }
+  }, { timeoutMs: 20 });
+  expect((await stopped(spinning)).reason).toBe("timeout");
+  await new Promise((r) => setTimeout(r, 5));
+  expect(threw).toBeInstanceOf(JobStopped);
+  const after = steps;
+  await new Promise((r) => setTimeout(r, 10));
+  expect(steps).toBe(after);                      // it really stopped
+
+  // parked behind a normal job that hangs, then timed out while waiting
+  const step = gate(), hang = gate();
+  let parkedThrew: unknown;
+  const low = s.run("low", async (job) => { await step.fn(); await job.checkpoint().catch((e) => { parkedThrew = e; throw e; }); }, { timeoutMs: 30 });
+  const normal = s.run("normal", hang.fn);
+  step.release(); await settle();
+  expect(s.stats()).toMatchObject({ running: { normal: 1, low: 0 }, parked: 1 });
+  expect((await stopped(low)).reason).toBe("timeout");
+  await settle();
+  expect(parkedThrew).toBeInstanceOf(JobStopped);
+  expect(s.stats()).toMatchObject({ running: { normal: 1, low: 0 }, parked: 0, queued: { low: 0 } });
+  hang.release(); await normal;
+  expect(s.stats().running).toMatchObject({ normal: 0, low: 0 });
+});
+
+test("runEffect: a stop interrupts the fiber and runs its finalizers; checkpoint yields like run's", async () => {
+  const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });
+  let released = false;
+  const hung = s.runEffect("low", () => Effect.acquireRelease(Effect.succeed(1), () => Effect.sync(() => { released = true; })).pipe(
+    Effect.andThen(Effect.never), Effect.scoped), { timeoutMs: 20 });
+  expect((await stopped(hung)).reason).toBe("timeout");
+  await settle();
+  expect(released).toBe(true);
+
+  const order: string[] = [];
+  const step = gate();
+  const low = s.runEffect("low", (job) => Effect.gen(function* () {
+    order.push("low 1");
+    yield* Effect.promise(step.fn);
+    yield* job.checkpoint;
+    order.push("low 2");
+    return 7;
+  }));
+  const normal = s.run("normal", () => { order.push("normal"); });
+  await settle();
+  step.release();
+  expect(await low).toBe(7);
+  await normal;
+  expect(order).toEqual(["low 1", "normal", "low 2"]);
 });
 
 test("scheduler.spawn: runs the command in a slot; a timeout kills the child", async () => {
