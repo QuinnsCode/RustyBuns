@@ -141,6 +141,16 @@ A desktop build takes about a second, and every build and deploy prints how long
 
 </details>
 
+### Background work that steps aside (experimental)
+
+Work on a host can be realtime, high, normal or low priority, and low work backs off while your machine is busy.
+
+<details><summary>More</summary>
+
+`scheduler()` in `@rustybuns/shell-bun/priority` runs normal and low jobs under a budget you set, like the default "60% of the CPU, 50% of the memory", or a persona: `power-user`, `background-beatdown` or `background-burner`. Realtime and high work never waits, and a core is kept free for it. When the machine stays over budget for about 30 seconds (a short spike doesn't count), the number of low jobs allowed at once is halved, down to none. Once the machine is quiet again it climbs back one at a time. A job can say how much memory it usually needs, and it only starts if that fits. Child processes of low jobs run at OS background priority (`taskpolicy -b` on macOS, `nice` on Linux). The GitHub trial harness is the first user: its installs, builds and hosts run as low work, so a laptop stays usable during a sweep (`--persona`, `--priority`).
+
+</details>
+
 ### Built for coding agents
 
 One language top to bottom, one config file, the whole stack running locally, and a UI agents can already drive in Chrome.

@@ -13,7 +13,13 @@
 //   --since <date>    keep only repos pushed to on or after this date (e.g. 2026-01-01)
 //   --local           test this checkout's cli and shell-bun instead of the npm release
 //   --modes spa,worker  desktop modes to try; worker swaps init's mode for the app's own Worker build
-//   --jobs <n>        apps at a time (default 2)
+//   --jobs <n>        apps at a time at most (default 2); fewer while the machine is busy, see --persona
+//   --persona <name>  the resource budget (packages/shell-bun/src/priority.ts, #955): balanced (default:
+//                     60% of CPU, 50% of memory), power-user, background-beatdown, background-burner.
+//                     Trials run as low priority: OS background priority for every install, build and
+//                     host, and fewer apps at once while the machine stays over the budget
+//   --priority <p>    low (default) or normal: normal skips the OS demotion. --prof implies normal, so
+//                     its timings measure the host, not the throttle
 //   --out <dir>       results.jsonl, summary.md, logs, clones (default .rustybuns-trial/, gitignored)
 //   --from <file>     the apps a saved --list printed, instead of searching again (no API calls)
 //   --fresh           ask GitHub again instead of <out>/gh-cache (search pages and repo meta keep a day,
@@ -34,6 +40,7 @@ import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSy
 import { join, resolve, dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { Cache, cacheKey, DAY, overBudget, parseRate, rateLine } from "./trial-github-cache.ts";
+import { scheduler, lowPriorityCommand, PERSONAS, type Persona } from "../packages/shell-bun/src/priority.ts";
 import { installedPackages, ownInstallScripts, parseDenials, treeUsage, malicious, flagLines, USUAL_INSTALL, IDLE_CPU, BIG_RSS_MB, type Flags, type Idle } from "./trial-flags.ts";
 
 const { values: o, positionals } = parseArgs({
@@ -42,12 +49,16 @@ const { values: o, positionals } = parseArgs({
     dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, sample: { type: "string" }, since: { type: "string" }, stable: { type: "boolean" }, local: { type: "boolean" },
     modes: { type: "string", default: "spa,worker" }, jobs: { type: "string", default: "2" },
     out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" }, list: { type: "boolean" }, from: { type: "string" }, fresh: { type: "boolean" },
+    persona: { type: "string", default: "balanced" }, priority: { type: "string" },
   },
 });
 const REPO = resolve(import.meta.dir, "..");
 const OUT = resolve(o.out!);
 const MODES = o.modes!.split(",") as ("spa" | "worker")[];
 const VERSION = "0.1.11";
+if (!(o.persona! in PERSONAS)) throw new Error(`--persona: one of ${Object.keys(PERSONAS).join(", ")}`);
+const PRIORITY = (o.priority ?? (o.prof ? "normal" : "low")) as "low" | "normal";
+if (PRIORITY !== "low" && PRIORITY !== "normal") throw new Error("--priority: low or normal");
 const cache = new Cache(join(OUT, "gh-cache"), o.fresh);
 for (const d of ["clones", "logs", "data", "sandbox"]) mkdirSync(join(OUT, d), { recursive: true });
 
@@ -186,7 +197,10 @@ function profile(net: Net, tag: string): string | undefined {
   PROFILES.set(key, f);
   return f;
 }
-const sandboxed = (cmd: string[], net: Net, tag = "") => { const f = profile(net, tag); return f ? ["sandbox-exec", "-f", f, ...cmd] : cmd; };
+const sandboxed = (cmd: string[], net: Net, tag = "") => {
+  const f = profile(net, tag), boxed = f ? ["sandbox-exec", "-f", f, ...cmd] : cmd;
+  return PRIORITY === "low" ? lowPriorityCommand(boxed) : boxed;
+};
 
 /** What the sandbox denied an app since `since`, from the unified log; undefined off macOS. */
 async function denials(tag: string, since: Date) {
@@ -528,13 +542,14 @@ if (import.meta.main) {
     console.log(`${apps.length} apps`);
     process.exit(0);
   }
-  console.log(`trying ${apps.length} apps, ${o.jobs} at a time, modes ${MODES.join(",")}; results in ${OUT}`);
+  const sched = scheduler({ persona: o.persona as Persona, max: Number(o.jobs), log: (l) => console.log(l) });
+  console.log(`trying ${apps.length} apps, up to ${sched.stats().slots} at a time (${o.persona}, ${PRIORITY} priority), modes ${MODES.join(",")}; results in ${OUT}`);
   const results: Result[] = [];
   // One worker per repo at a time: apps in the same clone would install over each other.
   const groups = [...Map.groupBy(apps, (a) => a.repo).values()];
-  await Promise.all(Array.from({ length: Number(o.jobs) }, async () => {
+  await Promise.all(Array.from({ length: sched.stats().slots }, async () => {
     for (let group; (group = groups.shift()); ) for (const app of group) {
-      const r = await trial(app).catch((e): Result => ({ ...app, error: String(e), modes: {} }));
+      const r = await sched.run(PRIORITY, () => trial(app)).catch((e): Result => ({ ...app, error: String(e), modes: {} }));
       results.push(r);
       appendFileSync(join(OUT, "results.jsonl"), JSON.stringify(r) + "\n");
       console.log(`[${results.length}/${apps.length}] ${r.repo}${r.sub ? `:${r.sub}` : ""}  ${MODES.map((m) => `${m} ${cell(r.modes[m]) || "❌"}`).join("  ")}${flagLines(r.flags).length ? "  ⚠️" : ""}  ${note(r)}`);
@@ -542,6 +557,7 @@ if (import.meta.main) {
   }));
   const order = new Map(apps.map((a, i) => [`${a.repo}:${a.sub}`, i]));
   results.sort((a, b) => order.get(`${a.repo}:${a.sub}`)! - order.get(`${b.repo}:${b.sub}`)!);
+  sched.stop();
   writeFileSync(join(OUT, "summary.md"), summary(results));
   console.log(`\n${join(OUT, "summary.md")}`);
 }

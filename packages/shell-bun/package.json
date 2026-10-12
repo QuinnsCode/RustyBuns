@@ -26,6 +26,7 @@
     "./intro": "./src/intro.tsx",
     "./memwatch": "./src/memwatch.ts",
     "./profsummary": "./src/profsummary.ts",
+    "./priority": "./src/priority.ts",
     "./shims": "./src/shims.ts",
     "./webmcp": "./src/webmcp.ts",
     "./workerd-global": "./src/workerd-global.ts"
