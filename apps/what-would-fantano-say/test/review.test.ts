@@ -4,7 +4,7 @@ import { take } from "../src/budget.ts";
 import { BOXES, boxById, pickBoxes } from "../src/boxes.ts";
 import { clefRequest, estimate, parseClef } from "../src/judge.ts";
 import { MAX_CLIP, parseRequest } from "../src/review.ts";
-import { scoreFor, verdictFor, writeReview } from "../src/write.ts";
+import { realReview, scoreFor, verdictFor, writeReview } from "../src/write.ts";
 
 const f: Features = { durationSec: 200, loudnessDb: -7, dynamicsDb: 4, bpm: 145, pulse: 0.6, bass: 0.6, brightness: 0.3, silence: 0 };
 const clip = "data:audio/wav;base64,UklGRiQAAABXQVZF";
@@ -15,6 +15,9 @@ describe("boxes", () => {
     for (const b of BOXES) {
       expect(b.scores[0]).toBeLessThanOrEqual(b.scores[1]);
       expect(b.tags.length).toBeGreaterThan(0);
+      expect(b.reviews).toBeGreaterThan(20);
+      expect(b.soundsLike.length).toBeGreaterThan(0);
+      expect(b.examples.length).toBeGreaterThan(2);
     }
   });
 
@@ -104,6 +107,14 @@ describe("write", () => {
     expect(a.review).not.toContain("{");
     expect(a.headline).toContain("Mixtape");
     expect(a.worstBit).toContain("sausage");
+    expect(a.review).toContain("For the record, he gave");
+  });
+
+  test("points at the real review nearest the score", () => {
+    const b = { ...box, examples: [{ artist: "A", title: "Low", year: 2015, score: 3 }, { artist: "B", title: "High", year: 2020, score: 8, take: "Great." }] };
+    expect(realReview(b, 4, 0)).toBe("For the record, he gave A's Low a 3 back in 2015.");
+    expect(realReview(b, 9, 0)).toBe(`For the record, he gave B's High an 8 back in 2020: "Great."`);
+    expect(realReview({ ...box, examples: [] }, 5, 0)).toBe("");
   });
 });
 
