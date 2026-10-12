@@ -15,6 +15,9 @@ export interface Voice {
 
 export const VOICES: Record<WeaponId, Voice> = {
   commit: { noise: 1800, seconds: 0.06, volume: 0.25 },
+  add: { noise: 700, tone: { wave: "sawtooth", from: 140, to: 45 }, seconds: 0.22, volume: 0.42 },
+  fetch: { noise: 1300, tone: { wave: "square", from: 220, to: 120 }, seconds: 0.05, volume: 0.2 },
+  clean: { noise: 450, seconds: 0.1, volume: 0.06 },
   push: { noise: 300, tone: { wave: "sawtooth", from: 180, to: 60 }, seconds: 0.4, volume: 0.35 },
   merge: { tone: { wave: "triangle", from: 520, to: 300 }, seconds: 0.15, volume: 0.2 },
   rebase: { noise: 900, tone: { wave: "square", from: 1400, to: 200 }, seconds: 0.25, volume: 0.3 },
@@ -29,6 +32,11 @@ export const FIELD = {
   boom: { noise: 150, tone: { wave: "sine", from: 110, to: 40 }, seconds: 0.7, volume: 0.4 },
   pickup: { tone: { wave: "triangle", from: 660, to: 990 }, seconds: 0.18, volume: 0.18 },
   hurt: { noise: 400, seconds: 0.12, volume: 0.25 },
+  /** You hit something: a dry tick, and a higher one when it goes down. */
+  hitmark: { tone: { wave: "square", from: 1900, to: 1600 }, seconds: 0.04, volume: 0.08 },
+  kill: { tone: { wave: "triangle", from: 900, to: 1800 }, seconds: 0.12, volume: 0.14 },
+  /** A file coming down. */
+  raze: { noise: 220, tone: { wave: "triangle", from: 160, to: 50 }, seconds: 0.55, volume: 0.32 },
   down: { tone: { wave: "sawtooth", from: 400, to: 90 }, seconds: 0.5, volume: 0.2 },
 } satisfies Record<string, Voice>;
 
