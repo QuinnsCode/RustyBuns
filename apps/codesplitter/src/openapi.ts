@@ -285,7 +285,7 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/checks/settings`]: {
     get: { id: "check_settings", summary: "Where a repo's checks run, and which ones a merge waits on", tag: "Checks", open: true, ok: ref("CheckSettings") },
     put: { id: "set_check_settings", summary: "Set where checks run, which are required, and whether ours go to GitHub (owner only)", tag: "Checks",
-      body: obj({ where: { type: ["string", "null"], enum: ["here", "github", "both", null] }, required: arr(ref("RequiredCheck")), post_statuses: bool() }), ok: ref("CheckSettings") },
+      body: obj({ where: { type: ["string", "null"], enum: ["here", "github", "both", null] }, required: arr(ref("RequiredCheck")), post_statuses: bool(), pinned: bool() }), ok: ref("CheckSettings") },
   },
   [`${repo}/checks/tokens`]: {
     get: { id: "list_ci_tokens", summary: "The repo's CI tokens, without their secrets (owner only)", tag: "Checks", ok: arr(ref("CiToken")) },
@@ -388,7 +388,7 @@ const SCHEMAS: Record<string, Schema> = {
     runner_label: { type: ["string", "null"], description: "the runner that claimed it, or the CI token an external run came in on" }, created_at: int() }),
   CiToken: obj({ id: str(), label: str("which CI it's for"), last4: str("the secret's last four characters"), created_by: str(), created_at: int("ms"), expires_at: int("ms"), expired: bool(), last_used_at: { type: ["integer", "null"], description: "ms, to the minute" } }),
   RequiredCheck: { description: "a check's name (* for all), or one scoped to paths and with a command for our runners", oneOf: [str(), obj({ name: str(), paths: arr(str("a directory, file or glob")), command: str() }, ["name"])] },
-  CheckSettings: obj({ where: { type: ["string", "null"], description: "here, github or both; null runs none (a GitHub mirror defaults to github)" }, required: arr(obj({ name: str(), paths: arr(str()), command: str() }, ["name"])), post_statuses: bool(), github: { type: ["string", "null"], description: "owner/name, when the repo mirrors GitHub" },
+  CheckSettings: obj({ where: { type: ["string", "null"], description: "here, github or both; null runs none (a GitHub mirror defaults to github)" }, required: arr(obj({ name: str(), paths: arr(str()), command: str() }, ["name"])), post_statuses: bool(), pinned: bool("only the required checks' commands run: codesplitter.ci and package.json's scripts at the ref are ignored"), github: { type: ["string", "null"], description: "owner/name, when the repo mirrors GitHub" },
     offline: bool("the mirror can't reach GitHub right now"), down_since: { type: ["integer", "null"] }, here: bool("whether our own checks run: asked for, or in GitHub's place while it's down") }),
 };
 

@@ -536,13 +536,15 @@ What the code backs up:
 
 The caveats:
 
-- **Merged code runs at home.** Review is the gate, so read what you merge, and a merge that edits `codesplitter.ci` or package.json's scripts changes what runs.
-  Run a runner as a separate macOS user with no logins and an empty `HOME`; the desktop's own queue runs as you.
+- **Merged code runs at home.** Review is the gate, so read what you merge.
+  A check gets none of your logins (#1010, `src/check-env.ts`): the desktop's queue and `scripts/runner.ts` run the clone and the command with only `PATH` and the locale from your environment, an empty `HOME` and `TMPDIR` of their own, and `CI=1`, so no `gh`, `wrangler`, npm or cloud token, and no SSH agent.
+  They still run as you, with your package caches, unless you give them a sandbox user: make a standard macOS user with no logins, allow `$USER ALL=(cs-checks) NOPASSWD: ALL` in `/etc/sudoers.d/cs-checks`, and set `CODESPLITTER_CHECKS_USER=cs-checks` for the desktop (or `--user cs-checks` for a runner); every run then goes through `sudo -n -u cs-checks`, in `/tmp`, with umask 000 so the app can still clean up.
+  Turn on the pin (the pin button by "Checks run", or `PUT …/checks/settings {pinned: true}`) and only the required checks with a `command` in the settings run: `codesplitter.ci` and package.json's scripts at the commit are ignored, a run queued without a command from the settings is cancelled at the claim rather than falling back to `bun test`, so a merged edit can't change the job on your machine.
 - **The mirror isn't one-way.** It pushes this copy's commits upstream, never forced.
   That's a way out, not a way in, but if you want codeSplitter never to write to GitHub, don't commit to main here.
 - **Merged main doesn't queue checks here yet.** When the mirror takes upstream's commits it watches GitHub's results for the new tip and queues nothing here; checks start here on a commit made here, a branch opened from upstream or pushed to it, or a beam.
 
-Still missing: checks here on the main commits a mirror takes (#1005), a pull-only mirror (#1006), and runs as a sandbox user with no credentials, with a setting to run only the commands in the repo's settings (#1007).
+Still missing: checks here on the main commits a mirror takes (#1005), and a pull-only mirror (#1006).
 
 ## Conventions
 
