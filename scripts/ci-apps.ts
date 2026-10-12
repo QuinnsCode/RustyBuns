@@ -46,9 +46,11 @@ const RUNNERS = [
 const cargo = (app: string) => `apps/${app}/native`;
 const CLI = "bun ../../packages/cli/src/index.ts build desktop";
 
-function buildCmd(a: App, targets: string[]) {
+// Each binary is named for the app's folder, which is what the upload looks for, even when the
+// config's name differs (codesplitter keeps the name codesplitters for its state).
+function buildCmd(app: string, a: App, targets: string[]) {
   if (a.build) return a.build;
-  return targets.map((t) => `${CLI}${a.check ? " --check" : ""} --target ${t}`).join(" && ");
+  return targets.map((t) => `${CLI}${a.check ? " --check" : ""} --target ${t} --outfile dist/${app}-${t}${t.startsWith("windows") ? ".exe" : ""}`).join(" && ");
 }
 
 const [cmd, arg = "", base = ""] = process.argv.slice(2);
@@ -83,9 +85,9 @@ if (cmd === "drop") {
   const include = names.flatMap((app) => {
     const a = APPS[app]!;
     const base = { app, prep: a.prep ?? "", cargo: cargo(app) };
-    if (a.perOs) return RUNNERS.map((r) => ({ ...base, ...r, test: a.test ?? "", build: buildCmd(a, [r.target]) }));
+    if (a.perOs) return RUNNERS.map((r) => ({ ...base, ...r, test: a.test ?? "", build: buildCmd(app, a, [r.target]) }));
     // Pure TS (or wasm, same on every OS): one Linux job builds every target.
-    return [{ ...base, runner: "ubuntu-latest", target: "all", test: "", build: buildCmd(a, RUNNERS.map((r) => r.target)) }];
+    return [{ ...base, runner: "ubuntu-latest", target: "all", test: "", build: buildCmd(app, a, RUNNERS.map((r) => r.target)) }];
   });
   out("build", { include });
   out("apps", names);
