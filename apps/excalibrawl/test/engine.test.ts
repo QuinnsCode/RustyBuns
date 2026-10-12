@@ -270,11 +270,14 @@ describe("Clef the referee", () => {
     const m = newMatch("m-7", "a very long cat", [{ model: "clef", name: "Clef" }, { model: "clef-flash", name: "Clef Flash" }], 1, 0);
     m.scenes = [[head], [{ ...head, id: "1-1", x: 450 }]];
     const calls: { model: string; input: { state: string; images: string[] } }[] = [];
-    let n = 0;
+    // Both sides are judged at once, so score by whose half the picture shows, not by call order.
+    const halves = await Promise.all(m.scenes.map((scene, side) => snapshot(scene, regionOf(m, side))));
+    expect(halves[0]).not.toBe(halves[1]);
     const deps = {
       run: async (model: string, input: unknown) => {
-        calls.push({ model, input: input as (typeof calls)[number]["input"] });
-        return { answers: { likeness: { score: n++ ? 3 : 1 }, craft: { score: 2 } } };
+        const call = { model, input: input as (typeof calls)[number]["input"] };
+        calls.push(call);
+        return { answers: { likeness: { score: [1, 3][halves.indexOf(call.input.images[0]!)] }, craft: { score: 2 } } };
       },
       take: async () => true,
     };
