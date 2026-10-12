@@ -85,3 +85,11 @@ test("changeCheck: a file that was only read is not a change; a write, a new fil
   rmSync(fresh);
   expect(moved(fresh)).toBe(true);
 });
+
+test("changeCheck: a new file whose mtime trails the start by a few ms still counts (#853)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rb-watch-")), fresh = join(dir, "new.ts");
+  // Linux's coarse mtime clock can stamp a file just behind Date.now(); a later `since` stands in for that.
+  const moved = changeCheck(Date.now() + 50);
+  writeFileSync(fresh, "x");
+  expect(moved(fresh)).toBe(true);
+});
