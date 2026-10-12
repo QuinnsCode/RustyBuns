@@ -1,4 +1,5 @@
-# Repo-wide typecheck: tsc over the root tsconfig (packages/) and every apps/*/tsconfig.json.
+# Repo-wide typecheck: tsc over the root tsconfig (packages/) and every apps/*/tsconfig.json,
+# plus the repo-wide checks: no conflict markers left in tracked files, and the docs and site.
 # Runs on every PR, no path filter, since a change in packages/ can break any app.
 name: typecheck
 on:
@@ -25,5 +26,7 @@ jobs:
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
+      - run: bun scripts/conflict-markers.ts
+      - run: bun test ./scripts/conflict-markers.test.ts
       - run: bun run docs --check
       - run: bun run site --check
