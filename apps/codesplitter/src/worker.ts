@@ -73,6 +73,7 @@ import {
   createOn,
   materializeOn,
   openBranch,
+  pathPolicy,
 } from "./branches.ts";
 import {
   agentRoutes,
@@ -647,12 +648,15 @@ async function route(req: Request, env: Env): Promise<Response> {
         const holding = b.wait && !b.soft ? await heldElsewhere(env, user, [owner, repo, path]) : [];
         if (holding.length) return json({ error: `you hold lines in ${holding.map((h) => h.path).join(", ")}: let go of them before you wait in line here, or work elsewhere`, holding }, 409);
       }
+      // How the path takes live edits (#1011), read as the merge reads it: main's .gitattributes over the defaults.
+      const live = (p[5] === "ops" || p[5] === "ws" || (p[5] === "claims" && req.method === "POST")) && a.write ? (await pathPolicy(env, owner, repo, path, user!)).live : undefined;
       if (p[5] === "ws") {
         // The DO learns who this socket is, and whether it may write, from us.
         const h = new Headers(req.headers);
         h.set("x-codesplitter-user", user ?? "anon");
         h.set("x-codesplitter-write", a.write ? "1" : "0");
         h.set("x-codesplitter-crew", a.write ? "1" : "0");
+        live ? h.set("x-codesplitter-live", live) : h.delete("x-codesplitter-live");
         branch ? h.delete("x-codesplitter-file") : h.set("x-codesplitter-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
         // A branch's copy learns which branch it is, to stamp when the branch last changed (checks.ts).
         branch ? h.set("x-codesplitter-branch", encodeURIComponent(JSON.stringify([owner, repo, branch]))) : h.delete("x-codesplitter-branch");
@@ -664,7 +668,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
       }
       // Only the crew reads private lines; everyone else gets placeholders.
-      const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0" } },
+      const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }) } },
         url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "", branch);
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
