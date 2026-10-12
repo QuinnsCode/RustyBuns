@@ -1,15 +1,20 @@
 // The look: codeSplitter's paper. White ground, white blocks drawn with black
-// hairlines, one orange. You are a smooth black pillar; the conflicts holding a
+// hairlines, one orange. You are a glossy black clay figure (figure.ts); the conflicts holding a
 // compound are orange ones, and a compound's lines go from orange to black when it's merged.
 
 import * as THREE from "three";
 import type { CodeMap } from "../sim/codemap.ts";
 import { contourStep } from "../sim/terrain.ts";
 import type { Game } from "../sim/game.ts";
-import { bodyHeight, HEIGHT, ROLL_TIME } from "../sim/game.ts";
+import { HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
+import { buildFigure, pose, setHead, type BuildId, type Figure, type Pose } from "./figure.ts";
+import { buildHead, HEADS, type HeadDef } from "./heads.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS } from "../sim/missions.ts";
 
 export const INK = 0x1f1f1f, ORANGE = 0xe8590c, PAPER = 0xffffff, GREY = 0xbdbdbd;
+
+/** What you picked on the menu: your head and build. */
+export interface Look { head: HeadDef; build: BuildId }
 
 export interface World {
   scene: THREE.Scene;
@@ -45,33 +50,27 @@ function label(text: string, sub: string): THREE.Sprite {
   return s;
 }
 
-function pillar(color: number): THREE.Group {
-  const g = new THREE.Group();
-  // Yaw first, then tip: a roll tumbles along the way it faces.
-  g.rotation.order = "YXZ";
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.42, HEIGHT - 0.84, 8, 24),
-    new THREE.MeshStandardMaterial({ color, roughness: color === INK ? 0.22 : 0.4, metalness: 0.05 }),
-  );
-  body.position.y = HEIGHT / 2;
-  body.castShadow = true;
-  body.name = "body";
-  // The gun: a short slab held at the right hip.
-  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.7), new THREE.MeshStandardMaterial({ color: INK, roughness: 0.5 }));
-  gun.position.set(0.32, 1.25, -0.35);
-  gun.castShadow = true;
-  gun.name = "gun";
-  // A git blame tag: the same body, drawn over everything, so you see it through walls.
-  const ghost = new THREE.Mesh(body.geometry, new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0.45, depthTest: false, depthWrite: false }));
-  ghost.renderOrder = 10;
-  ghost.visible = false;
-  ghost.name = "ghost";
-  body.add(ghost);
-  g.add(body, gun);
-  return g;
+/** How a soldier looks this frame, from what it's doing. */
+function poseOf(s: Soldier): Pose {
+  if (s.roll > 0 && !s.prone) return "tuck";
+  if (s.prone) return "prone";
+  if (!s.grounded && Math.hypot(s.vx, s.vz) > 9) return "star";
+  return s.crouch ? "kneel" : "stand";
 }
 
-export function buildWorld(map: CodeMap): World {
+/** A blame tag: a ghost the soldier's size, drawn over everything, so you see it through walls. */
+function ghost(): THREE.Mesh {
+  const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, HEIGHT - 0.8, 6, 16), new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0.45, depthTest: false, depthWrite: false }));
+  m.position.y = HEIGHT / 2;
+  m.renderOrder = 10;
+  m.visible = false;
+  return m;
+}
+
+/** How long a downed soldier kneels with its hands up, then sinks away. */
+const SURRENDER = 1.4, SINK = 0.8;
+
+export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "average" }): World {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(PAPER);
   scene.fog = new THREE.Fog(PAPER, 70, 230);
@@ -180,7 +179,7 @@ export function buildWorld(map: CodeMap): World {
     scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), compoundEdges[map.compounds.indexOf(c)]!));
   });
 
-  const bodies = new Map<number, THREE.Group>();
+  const bodies = new Map<number, { fig: Figure; tag: THREE.Mesh; down: number }>();
   const shotMeshes = new Map<number, THREE.Mesh>();
   const shotGeo = new THREE.SphereGeometry(0.09, 8, 6), bigShotGeo = new THREE.SphereGeometry(0.22, 12, 8);
   const shotMat = { you: new THREE.MeshBasicMaterial({ color: INK }), conflict: new THREE.MeshBasicMaterial({ color: ORANGE }) };
@@ -229,23 +228,31 @@ export function buildWorld(map: CodeMap): World {
     sync(game, dt) {
       const { soldiers, shots, cleared } = game;
       for (const s of soldiers) {
-        let g = bodies.get(s.id);
-        if (!g) {
-          bodies.set(s.id, (g = pillar(s.team === "you" ? INK : ORANGE))), scene.add(g);
-          if (s.heavy) g.scale.setScalar(1.25);
+        let b = bodies.get(s.id);
+        if (!b) {
+          // Guards come in all builds: a heavy is thick, the rest average or lank.
+          const build: BuildId = s.team === "you" ? you.build : s.heavy ? "thick" : s.id % 3 === 0 ? "lank" : "average";
+          const fig = buildFigure(s.team === "you" ? INK : ORANGE, s.team === "you" ? 0.22 : 0.45, build);
+          if (s.team === "you") setHead(fig, buildHead(you.head, fig.root.userData.mat, fig.head.userData.size));
+          if (s.heavy) fig.root.scale.setScalar(1.25);
+          const tag = ghost();
+          fig.root.add(tag);
+          bodies.set(s.id, (b = { fig, tag, down: -1 }));
+          scene.add(fig.root);
         }
-        g.visible = s.alive;
-        g.position.set(s.x, s.y, s.z);
-        g.rotation.y = s.yaw;
-        const body = g.getObjectByName("body")!;
-        // Prone lies the pillar down instead of shrinking it.
-        const h = s.prone ? HEIGHT : bodyHeight(s);
-        body.scale.y = h / HEIGHT;
-        body.position.y = h / 2;
-        (body.getObjectByName("ghost") as THREE.Mesh).visible = s.tagged > 0;
-        // A dive-roll tips the pillar over in the direction it's going.
-        g.rotation.x = s.prone ? -Math.PI / 2 + 0.15 : s.roll > 0 ? -Math.sin(((ROLL_TIME - s.roll) / ROLL_TIME) * Math.PI) * 1.3 : 0;
-        if (s.prone) g.position.y += 0.4;
+        const { fig } = b;
+        b.down = s.alive ? -1 : b.down < 0 ? 0 : b.down + dt;
+        fig.root.visible = s.alive || b.down < SURRENDER + SINK;
+        fig.root.position.set(s.x, s.y - Math.max(0, b.down - SURRENDER) * 2.2, s.z);
+        fig.root.rotation.y = s.yaw;
+        b.tag.visible = s.alive && s.tagged > 0;
+        pose(fig, {
+          pose: s.alive ? poseOf(s) : "surrender",
+          speed: Math.hypot(s.vx, s.vz),
+          dt,
+          roll: s.roll > 0 ? (ROLL_TIME - s.roll) / ROLL_TIME : 0,
+          pitch: s.team === "you" ? s.pitch * 0.8 : 0,
+        });
       }
       const have = new Set<number>();
       for (const p of game.pickups) {

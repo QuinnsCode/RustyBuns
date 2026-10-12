@@ -9,6 +9,8 @@ import { Game, scopeSway, stanceOf, type GameEvent, type Input } from "../sim/ga
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { FIELD, place, play, VOICES } from "./audio.ts";
+import { BUILDS, type BuildId } from "./figure.ts";
+import { headById, headCanvas, HEADS } from "./heads.ts";
 import { buildWorld, type World } from "./scene.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -85,10 +87,36 @@ $("place").onsubmit = async (e) => {
   }
 };
 
+/* ---------------- your soldier ---------------- */
+
+// Remembered in this browser; a blocked storage just means the defaults every time.
+const saved = (k: string) => { try { return localStorage.getItem(`git-recon:${k}`); } catch { return null; } };
+const save = (k: string, v: string) => { try { localStorage.setItem(`git-recon:${k}`, v); } catch {} };
+const savedBuild = saved("build");
+const me = {
+  build: (savedBuild && savedBuild in BUILDS ? savedBuild : "average") as BuildId,
+  head: headById(saved("head") ?? "ball"),
+};
+
+function radios<T>(box: HTMLElement, items: T[], label: (t: T) => string, fill: (b: HTMLButtonElement, t: T) => void, on: (t: T) => boolean, pick: (t: T) => void) {
+  const draw = () => box.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-checked", String(on(items[i]!))));
+  for (const t of items) {
+    const b = document.createElement("button");
+    b.setAttribute("role", "radio");
+    b.title = label(t);
+    fill(b, t);
+    b.onclick = () => (pick(t), draw());
+    box.append(b);
+  }
+  draw();
+}
+radios($("builds"), Object.keys(BUILDS) as BuildId[], (id) => BUILDS[id].name, (b, id) => (b.textContent = BUILDS[id].name), (id) => id === me.build, (id) => (me.build = id, save("build", id)));
+radios($("heads"), HEADS, (h) => h.name, (b, h) => b.append(headCanvas(h)), (h) => h.id === me.head.id, (h) => (me.head = h, save("head", h.id)));
+
 function start(def: LevelDef) {
   const mission = missionFor(def.id);
   const game = Game.fromRepo(def.ground(), def.repo, def.seed, mission);
-  const world = buildWorld(game.map);
+  const world = buildWorld(game.map, { head: me.head, build: me.build });
   current = { def, game, world, started: performance.now() };
   look.yaw = game.map.spawn.yaw, look.pitch = -0.05, prone = false;
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = false;
