@@ -22,6 +22,7 @@ import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
 import { jekyllDefaults, jekyllExcludes, staticBuild, type StaticSite } from "./glue/static-site.ts";
 import { copySite, staticSiteAt } from "./glue/site-files.ts";
+import { jekyllPlan, type JekyllEnv } from "./glue/jekyll.ts";
 import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
@@ -323,8 +324,7 @@ async function initStatic(inf: ReturnType<typeof infer>, site: StaticSite) {
       + (defaults.length ? `# GitHub Pages' default layouts (jekyll-default-layout), and the site's own defaults after them.\ndefaults: ${JSON.stringify(defaults)}\n` : ""));
     console.log(`wrote _config.rustybuns.yml (baseurl "", ${defaults.length ? "GitHub Pages' default layouts, " : ""}and Rusty Buns' files kept out of the site)`);
   }
-  const bundler = site.kind === "jekyll" && existsSync("Gemfile");
-  const build = (out: string) => staticBuild(site, out, { bundler, jekyllConfig, exec: inf.execCmd });
+  const build = (out: string) => staticBuild(site, out, { jekyllConfig, exec: inf.execCmd });
   const cfg = {
     name,
     source: { dir: inf.srcDir, aliases: inf.aliases },
@@ -345,13 +345,28 @@ async function initStatic(inf: ReturnType<typeof infer>, site: StaticSite) {
     console.log(`wrote package.json (Rusty Buns as a dev dependency)`);
   }
   // The generator lives outside npm: say so now, not halfway through a build.
-  const ruby = site.kind === "jekyll" && Bun.which("ruby") ? Bun.spawnSync(["ruby", "-e", "print RUBY_VERSION"]).stdout?.toString() ?? "" : "";
-  if (site.tool && !Bun.which(bundler ? "bundle" : site.tool)) {
-    const how = { jekyll: "Ruby 3+ and `gem install jekyll` (or `bundle install`)", hugo: "`brew install hugo` or gohugo.io", mkdocs: "`pip install mkdocs`" }[site.kind as "jekyll" | "hugo" | "mkdocs"];
-    console.log(`warning:  ${bundler ? "bundle" : site.tool} is not on PATH; the build needs ${how}`);
+  if (site.kind === "jekyll") {
+    const plan = jekyllPlan([], jekyllEnv());
+    if (plan.how === "none") console.log(`warning:  ${plan.why}`);
+    else if (plan.how === "docker") console.log(`jekyll:   no Ruby 3+ Jekyll here, so builds run in Docker (${plan.image}; the first one installs Jekyll)`);
+  } else if (site.tool && !Bun.which(site.tool)) {
+    const how = { hugo: "`brew install hugo` or gohugo.io", mkdocs: "`pip install mkdocs`" }[site.kind as "hugo" | "mkdocs"];
+    console.log(`warning:  ${site.tool} is not on PATH; the build needs ${how}`);
   }
-  if (ruby && Number(ruby.split(".")[0]) < 3) console.log(`warning:  ruby ${ruby} is too old for current Jekyll (it needs 3+; macOS ships 2.6). Install a newer one: \`brew install ruby\``);
   console.log(`\nnext: ${inf.hasPackageJson ? "" : `${inf.pm} install && `}${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}, or ${inf.execCmd("rustybuns plan")}`);
+}
+
+function jekyllEnv(): JekyllEnv {
+  const ruby = Bun.which("ruby") ? Bun.spawnSync(["ruby", "-e", "print RUBY_VERSION"]).stdout?.toString() ?? "" : "";
+  return { ruby, has: (bin) => !!Bun.which(bin), gemfile: existsSync("Gemfile"), cwd: process.cwd() };
+}
+
+/** `rustybuns jekyll <args>`: Jekyll on this machine's Ruby 3+, else in Docker. Exits with its code. */
+function jekyll(args: string[]) {
+  const plan = jekyllPlan(args, jekyllEnv());
+  if (plan.how === "none") throw new Error(plan.why);
+  if (plan.how === "docker") console.error(`rustybuns: no Ruby 3+ Jekyll here; running it in Docker (${plan.image})`);
+  process.exit(Bun.spawnSync(plan.argv, { stdio: ["inherit", "inherit", "inherit"] }).exitCode ?? 1);
 }
 
 async function writeHost() {
@@ -762,7 +777,7 @@ async function triageCommand(args: string[]) {
   });
 }
 
-const COMMANDS = ["init", "copy-site", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "build", "eject", "version"];
+const COMMANDS = ["init", "copy-site", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "build", "eject", "version"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -777,6 +792,7 @@ try {
       if (!from || !to) throw new UsageError({ message: "usage: rustybuns copy-site <from> <to>" });
       copySite(from, to); break;
     }
+    case "jekyll": jekyll(rest); break;
     case "generate": await generate({ adopt: false }); break;
     case "adopt": await generate({ adopt: true }); break;
     case "deploy": await alchemy("deploy", rest); break;
@@ -853,6 +869,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              its build output, on the desktop and as static files on Workers
   copy-site <from> <to>      a hand-written site's files into <to>, leaving out dotfiles and
                              Rusty Buns' own (the build init writes for plain HTML)
+  jekyll <args>              jekyll <args> on Ruby 3+ (bundle exec with a Gemfile), else in a
+                             ruby:3.3 Docker container (the build init writes for Jekyll)
   init --port-vite           Create React App / Vue CLI: port to Vite first, then init;
                              custom webpack: list what to port
   add desktop [--entry F#C]  scaffold packages/desktop (index.html, main.tsx, world.ts) and

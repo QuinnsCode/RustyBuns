@@ -171,13 +171,15 @@ test("past its path's budget a run hands off: a fresh agent starts from its ters
   const first = (await runsOf(call)).find((r) => r.id === run.id);
   expect(first).toMatchObject({ status: "done", runs: 1, applied: 2, handoff: { why: "context past 10 tokens", over: "handoff" }, pending: { until: null } });
   expect(first.spent).toBeGreaterThan(10);
-  expect(first.handoff.note).toBe("DONE: shouted a\nNEXT: shout b (a.js:2)\nBROKE: context past 10 tokens");
+  // The owner's note came in as it tripped, so the agent never read it: it leads NEXT (#1090).
+  expect(first.handoff.note).toBe('DONE: shouted a\nNEXT: owner says "and b", shout b (a.js:2)\nBROKE: context past 10 tokens');
   expect(cli.prompts[0]).toContain("caveman-terse");
   await cli.started(2);
-  // The fresh one gets the note and nothing else: not the old task, not the notes.
+  // The fresh one gets the note and nothing else: not the old task, and the owner's notes only through NEXT.
   expect(cli.prompts[1]).toContain("Fresh eyes on a.js: the last agent stopped (context past 10 tokens)");
-  expect(cli.prompts[1]).toContain("NEXT: shout b (a.js:2)");
-  expect(cli.prompts[1]).not.toContain("and b");
+  expect(cli.prompts[1]).toContain('NEXT: owner says "and b", shout b (a.js:2)');
+  expect(cli.prompts[1]).not.toContain("shout every line");
+  expect(cli.prompts[1]).not.toContain("told you");
   const next = (await runsOf(call)).find((r) => r.id === first.handoff.next);
   expect(next).toMatchObject({ from: run.id, hops: 1, branch: `agent-run-${run.id}` });
   cli.go();

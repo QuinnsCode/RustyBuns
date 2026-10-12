@@ -33,6 +33,8 @@
 // The summary puts a ⚠️ beside an app worth a human look (scripts/trial-flags.ts): uncommon install
 // scripts, network or home reads the sandbox blocked, a host busy or huge while idle, and dependencies
 // OSV lists as malicious. Nothing here is published either way.
+// A repo with no package.json (a GitHub Pages site) gets init first, then installs what init wrote; a
+// generator this machine lacks (jekyll, hugo, mkdocs) shows as 🧰 toolchain, not a failed build.
 // It runs each app's install scripts and build on this machine, with none of its logins (see ENV).
 // Each app's host keeps its data in <out>/data/<app>, so nothing lands in ~ and no two apps share sqlite.
 import { $ } from "bun";
@@ -41,6 +43,7 @@ import { join, resolve, dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { Cache, cacheKey, DAY, overBudget, parseRate, rateLine } from "./trial-github-cache.ts";
 import { scheduler, lowPriorityCommand, PERSONAS, type Persona } from "../packages/shell-bun/src/priority.ts";
+import { staticBuild, staticTool, toolchainError } from "./trial-static.ts";
 import { installedPackages, ownInstallScripts, parseDenials, treeUsage, malicious, flagLines, USUAL_INSTALL, IDLE_CPU, BIG_RSS_MB, type Flags, type Idle } from "./trial-flags.ts";
 
 const { values: o, positionals } = parseArgs({
@@ -403,40 +406,68 @@ async function trialSteps(app: App, slug: string, log: string, tag: string): Pro
   }
   r.traits = traits(dir, root);
   let { pm, at } = packageManager(dir, root);
-  let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3, "net", {}, tag);
+  // A site with no package.json (a GitHub Pages repo): init boxes it and writes a package.json holding
+  // Rusty Buns, so init goes first and install then fetches what it wrote.
+  const noPkg = !existsSync(join(dir, "package.json"));
+  const local = ["bun", join(REPO, "packages/cli/src/index.ts")];
+  let s: Awaited<ReturnType<typeof step>> | undefined, initOut = "";
+  if (noPkg) {
+    s = await step(log, dir, [...(o.local ? local : ["bunx", `@rustybuns/cli@${VERSION}`]), "init", "--force"], 120e3, o.local ? "offline" : "net", fakes, tag);
+    if (!s.ok) return { ...r, error: `init: ${s.tail}` };
+    initOut = s.out;
+    if (o.local) {
+      // this checkout's packages may be ahead of npm: they're linked below instead
+      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+      for (const p of ["cli", "shell-bun"]) delete pkg.devDependencies?.[`@rustybuns/${p}`];
+      writeFileSync(join(dir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+    }
+  }
+  s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3, "net", {}, tag);
   // an npm lockfile that npm itself can't install (peer conflicts): pnpm reads package.json alone
   if (!s.ok && pm === "npm") { pm = "pnpm"; s = await step(log, at, ["pnpm", "install", "--config.minimum-release-age=0"], 600e3, "net", {}, tag); }
   r.pm = pm;
   // what ran during install (or tried to): even a failed install ran scripts
   r.flags = await installFlags([dir, at], log);
   if (!s.ok) return { ...r, error: `install: ${s.tail}` };
-  const cli = o.local ? ["bun", join(REPO, "packages/cli/src/index.ts")] : [join(dir, "node_modules/.bin/rustybuns")];
+  const cli = o.local ? local : [join(dir, "node_modules/.bin/rustybuns")];
   if (o.local) {
-    // the app resolves @rustybuns/* (its config imports @rustybuns/cli/config) to this checkout
+    // the app resolves @rustybuns/* (its config imports @rustybuns/cli/config) to this checkout,
+    // and the bin too: a plain-HTML site's build runs `rustybuns copy-site`
     mkdirSync(join(dir, "node_modules/@rustybuns"), { recursive: true });
     for (const p of ["cli", "shell-bun"]) { rmSync(join(dir, "node_modules/@rustybuns", p), { recursive: true, force: true }); symlinkSync(join(REPO, "packages", p), join(dir, "node_modules/@rustybuns", p)); }
-  } else {
+    mkdirSync(join(dir, "node_modules/.bin"), { recursive: true });
+    rmSync(join(dir, "node_modules/.bin/rustybuns"), { force: true });
+    symlinkSync(join(REPO, "packages/cli/src/index.ts"), join(dir, "node_modules/.bin/rustybuns"));
+  } else if (!noPkg) {
     const add = pm === "npm" ? ["npm", "i", "-D"] : [pm, "add", "-D", ...(pm === "pnpm" ? ["--config.minimum-release-age=0"] : [])];
     s = await step(log, dir, [...add, `@rustybuns/cli@${VERSION}`, `@rustybuns/shell-bun@${VERSION}`], 300e3, "net", {}, tag);
     if (!s.ok) return { ...r, error: `add rustybuns: ${s.tail}` };
   }
-  s = await step(log, dir, [...cli, "init", "--force"], 120e3, "offline", fakes, tag);
-  if (!s.ok) return { ...r, error: `init: ${s.tail}` };
-  r.init = strip(s.out).match(/^detected: (.*)$/m)?.[1];
+  if (!noPkg) {
+    s = await step(log, dir, [...cli, "init", "--force"], 120e3, "offline", fakes, tag);
+    if (!s.ok) return { ...r, error: `init: ${s.tail}` };
+    initOut = s.out;
+  }
+  r.init = strip(initOut).match(/^detected: (.*)$/m)?.[1];
   const initCfg = readFileSync(join(dir, "rustybuns.config.ts"), "utf8");
   const initMode = initCfg.match(/"mode": "(\w+)"/)?.[1];
+  // a static site's build is the generator's: `add desktop` would scaffold a React UI over the site
+  const site = staticBuild(initCfg), tool = site && staticTool(site);
+  if (site) r.traits.push("static");
   for (const mode of MODES) {
     if (mode === "worker" && !/"builtMain"/.test(initCfg)) { r.modes[mode] = { stage: "skipped", error: "init found no Worker build" }; continue; }
     // init chose worker itself (TanStack Start's server, Astro's adapter): there is no SPA to try
     if (mode === "spa" && initMode === "worker") { r.modes[mode] = { stage: "skipped", error: "init chose worker mode" }; continue; }
+    // Jekyll, Hugo, MkDocs come from outside npm: this machine lacking one says nothing about the site
+    if (tool && !Bun.which(tool, { PATH: ENV.PATH })) { r.modes[mode] = { stage: "toolchain", error: `${tool} is not on PATH` }; continue; }
     writeFileSync(join(dir, "rustybuns.config.ts"), setMode(initCfg, mode, join(OUT, "data", slug, mode)));
     appendFileSync(log, `\n===== mode ${mode} =====\n`);
-    if (mode === "spa" && initMode === "spa" && !existsSync(join(dir, "vite.desktop.config.ts"))) {
+    if (mode === "spa" && initMode === "spa" && !site && !existsSync(join(dir, "vite.desktop.config.ts"))) {
       s = await step(log, dir, [...cli, "add", "desktop"], 300e3, "offline", fakes, tag);
       if (!s.ok) { r.modes[mode] = { stage: "add desktop", error: s.tail }; continue; }
     }
     s = await step(log, dir, [...cli, "build", "desktop", "--dev"], 600e3, "offline", fakes, tag);
-    r.modes[mode] = s.ok ? await boot(dir, log, tag, o.prof ? `${slug}.${mode}` : undefined, fakes) : { stage: "build", error: s.tail };
+    r.modes[mode] = s.ok ? await boot(dir, log, tag, o.prof ? `${slug}.${mode}` : undefined, fakes) : { stage: site && toolchainError(s.tail) ? "toolchain" : "build", error: s.tail };
   }
   if (!o.keep) for (const d of new Set([dir, at])) rmSync(join(d, "node_modules"), { recursive: true, force: true });
   return r;
@@ -478,7 +509,8 @@ export function traits(dir: string, root: string): string[] {
   return t;
 }
 
-const cell = (m?: ModeResult) => !m ? "" : m.stage === "works" ? `✅ ${m.status}` : m.stage === "skipped" ? "—" : `❌ ${m.stage}`;
+// toolchain: a static site's generator (jekyll, hugo, mkdocs) missing here, not a failure of the site or of Rusty Buns
+const cell = (m?: ModeResult) => !m ? "" : m.stage === "works" ? `✅ ${m.status}` : m.stage === "skipped" ? "—" : m.stage === "toolchain" ? "🧰 toolchain" : `❌ ${m.stage}`;
 const note = (r: Result) => (r.error ?? Object.values(r.modes).find((m) => m.error)?.error ?? "").split("\n").at(-1)!.replace(/\|/g, "\\|").replace(/\/[^\s"']*\/(clones|node_modules)\//g, "…/").slice(0, 140);
 /** Pass rates by trait (deploy target, auth, database, monorepo): which kinds of app lag. */
 function byTrait(rs: Result[]): string[] {

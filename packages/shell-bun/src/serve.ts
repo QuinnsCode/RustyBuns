@@ -167,6 +167,12 @@ export interface BunShell<Env> {
   /** The asset layer as a Fetcher, for env.ASSETS: the same files the shell serves before fetch(). */
   assets: { fetch(req: Request | URL | string): Promise<Response> };
   /**
+   * The answer for a path nothing served: the nearest `404.html` in the assets (the
+   * path's own folder, then each one above it), with status 404, as Cloudflare's
+   * `not_found_handling: "404-page"` and GitHub Pages do. Plain text without one.
+   */
+  notFound(url: URL): Response;
+  /**
    * Listen somewhere else without restarting the process: stops accepting on
    * the old address (open sockets stay up) and binds the new one. Keeping the
    * port is what lets the host's own page keep working across a rebind, since
@@ -306,6 +312,21 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     return applyHeaders(headerRules, url.pathname, new Response(Bun.file(p)));
   };
 
+  const notFound = (url: URL): Response => {
+    if (opts.assets) {
+      const root = normalize(opts.assets);
+      let dir = url.pathname.replace(/[^/]*$/, "");
+      try { dir = decodeURIComponent(dir); } catch {}
+      for (;;) {
+        const p = normalize(join(root, dir, "404.html"));
+        if (inside(root, p) && kind(p) === "file") return applyHeaders(headerRules, url.pathname, new Response(Bun.file(p), { status: 404 }));
+        if (dir === "/" || dir === "") break;
+        dir = dir.replace(/[^/]*\/$/, "");
+      }
+    }
+    return new Response("not found", { status: 404 });
+  };
+
   const wrap = (ws: ServerWebSocket<WsData>): Socket => ({
     send: (d) => { ws.send(d as any); },
     close: (code, reason) => ws.close(code, reason),
@@ -363,7 +384,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
         return new Response("internal error", { status: 500 });
       }
     }
-    return new Response("not found", { status: 404 });
+    return withHeaders(notFound(url));
   };
 
   const listen = (hostname: string, port: number) => Bun.serve<WsData>({
@@ -424,6 +445,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       broadcast: (d) => { for (const s of live) { try { s.send(d); } catch {} } },
     },
     mount(h, e) { handler = h; env = e; },
+    notFound,
     assets: { fetch: async (req) => (await asset(new URL(req instanceof Request ? req.url : req))) ?? new Response("not found", { status: 404 }) },
     rebind(o) {
       const hostname = o.hostname ?? server.hostname!, next = o.port ?? server.port!;

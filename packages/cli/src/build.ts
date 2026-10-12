@@ -368,7 +368,8 @@ ${h.box ? `    // Actions run as the desktop's one host identity. A box has no t
       const res = await host.fetch(req, hostCtx);
       if (res) return res;
     }
-    return new Response("not found", { status: 404 });
+    // A static site's own 404.html, the nearest one, as the web build serves with notFoundHandling "404-page".
+    return shell.notFound(url);
   },
 }, env);
 
