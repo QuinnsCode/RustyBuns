@@ -46,7 +46,7 @@ const SCRIPT = /^(curl|wget|httpie|python|aiohttp|httpx|go-http|okhttp|java|ruby
 export function classify(req: Request, p: string[]): { kind: Kind; via: string } {
   const ua = req.headers.get("user-agent") ?? "";
   if (p[1] === "mcp") return { kind: "agent", via: "mcp" };
-  if (/^codesplitters?-cli\//.test(ua)) return { kind: "agent", via: "cli" };
+  if (/^codesplitter-cli\//.test(ua)) return { kind: "agent", via: "cli" };
   if (/^bearer /i.test(req.headers.get("authorization") ?? "")) return { kind: "agent", via: "token" };
   if (BOT.test(ua)) return { kind: "bot", via: "crawler" };
   if (HEADLESS.test(ua)) return { kind: "agent", via: "headless" };

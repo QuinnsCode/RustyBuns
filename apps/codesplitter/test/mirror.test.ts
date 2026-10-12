@@ -183,8 +183,9 @@ describe("mirrors", () => {
     expect(await upShow("README")).toBe("hello from bo\nworld");
 
     // codeSplitter: the edits here win, even ones not committed yet.
-    // Sent by its name from before the rename (#805), it's kept as the new one.
-    expect((await (await truth("codesplitters")).json()).git_truth).toBe("codesplitter");
+    // Its name from before the rename (#805) is refused now (#837).
+    expect((await truth("codesplitters")).status).toBe(400);
+    expect((await (await truth("codesplitter")).json()).git_truth).toBe("codesplitter");
     await upstreamCommit({ "src/a.ts": "export const a = 2\n" }, "bo's a");
     await editHere(call, "src/a.ts", 1, "export const a = 99", false);
     expect(await sync(call)).toMatchObject({ state: "ok" });

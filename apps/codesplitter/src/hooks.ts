@@ -113,10 +113,6 @@ async function attempt(env: Env, d: Delivery, url: string, secret: string, githu
         "x-codesplitter-event": d.event,
         "x-codesplitter-delivery": d.id,
         "x-codesplitter-signature": await sign(secret, d.payload),
-        // The old names too, for receivers set up before the rename.
-        "x-codesplitters-event": d.event,
-        "x-codesplitters-delivery": d.id,
-        "x-codesplitters-signature": await sign(secret, d.payload),
       },
       redirect: "manual",
       signal: AbortSignal.timeout(10_000),

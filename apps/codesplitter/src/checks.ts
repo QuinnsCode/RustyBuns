@@ -174,11 +174,6 @@ async function told(env: Env, run: CheckRun, action: "created" | "completed", by
 
 /** The status context we post our runs under. */
 const CONTEXT = "codesplitter/";
-/**
- * Contexts that are ours when importing GitHub's statuses: `codesplitters/` is the name from before
- * the rename (#805), no longer posted (#821) but still on older commits.
- */
-const OURS = [CONTEXT, "codesplitters/"];
 
 /** Our own run as a commit status on GitHub, when the owner turned that on. */
 async function postStatus(env: Env, run: CheckRun) {
@@ -349,9 +344,8 @@ async function rootFiles(env: Env, owner: string, repo: string, ref: string) {
   return [...names];
 }
 
-/** The repo's codesplitter.ci, else the one it may still have under the old name. */
-const readCi = async (env: Env, owner: string, repo: string, ref: string) =>
-  (await readAt(env, owner, repo, ref, "codesplitter.ci").catch(() => null)) ?? readAt(env, owner, repo, ref, "codesplitters.ci").catch(() => null);
+/** The repo's codesplitter.ci. */
+const readCi = (env: Env, owner: string, repo: string, ref: string) => readAt(env, owner, repo, ref, "codesplitter.ci").catch(() => null);
 
 /** What runs here on `ref`, given what it touched: each required check with a command, then the repo's own, by name. */
 export async function planChecks(env: Env, owner: string, repo: string, ref: string, required: Required[], paths: string[] | null) {
@@ -481,7 +475,7 @@ export async function importGithub(env: Env, owner: string, repo: string, ref: s
       started_at: c.started_at ? Date.parse(c.started_at) : null, finished_at: c.completed_at ? Date.parse(c.completed_at) : null,
     })) ?? [],
     ...(statuses.ok ? ((await statuses.json()) as { statuses?: any[] }).statuses ?? [] : [])
-      .filter((s) => !OURS.some((p) => String(s.context).startsWith(p)))
+      .filter((s) => !String(s.context).startsWith(CONTEXT))
       .map((s) => ({
         external_id: `status:${s.context}`, name: String(s.context), status: fromState(s.state), url: s.target_url ?? null,
         started_at: s.created_at ? Date.parse(s.created_at) : null, finished_at: s.state !== "pending" && s.updated_at ? Date.parse(s.updated_at) : null,

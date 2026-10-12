@@ -68,9 +68,7 @@ test("a commit sends a signed, push-shaped payload; branches open and merge", as
   expect(push!.url).toBe("https://ci.example/hook");
   expect(push!.headers.get("x-codesplitter-event")).toBe("commit");
   expect(push!.headers.get("x-codesplitter-signature")).toBe(await sign(SECRET, push!.raw));
-  // and under the old names, for receivers set up before the rename
-  expect(push!.headers.get("x-codesplitters-event")).toBe("commit");
-  expect(push!.headers.get("x-codesplitters-signature")).toBe(push!.headers.get("x-codesplitter-signature"));
+  expect(push!.headers.get("x-codesplitters-event")).toBeNull();   // the pre-rename names are gone (#837)
   expect(push!.body).toMatchObject({
     ref: "refs/heads/main", after: expect.stringMatching(/^[0-9a-f]{40}$/), pusher: { name: "ryan" },
     head_commit: { message: "first", added: ["a.ts"] },
