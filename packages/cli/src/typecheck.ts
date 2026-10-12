@@ -61,9 +61,9 @@ export function pickChecker(want: CheckerName | "auto", tsconfig: string | null)
 
 /** No tsconfig: only bun check can run, with its defaults over the current directory. */
 export function checkCommand(c: Checker, tsconfig: string | null): string[] {
-  if (c.name === "bun") return tsconfig ? [c.bin, "check", "-p", tsconfig] : [c.bin, "check"];
+  if (c.name === "bun") return tsconfig ? [c.bin, "check", "-p", tsconfig, "--no-pretty"] : [c.bin, "check", "--no-pretty"];
   if (!tsconfig) throw new Error(`${c.name} needs a tsconfig.json to check against`);
-  return [c.bin, "-p", tsconfig, "--noEmit"];
+  return c.name === "tsc" ? [c.bin, "-p", tsconfig, "--noEmit", "--pretty", "false"] : [c.bin, "-p", tsconfig, "--noEmit"];
 }
 
 export async function runCheck(c: Checker, tsconfig: string | null): Promise<CheckResult> {
@@ -71,6 +71,24 @@ export async function runCheck(c: Checker, tsconfig: string | null): Promise<Che
   const p = Bun.spawn(checkCommand(c, tsconfig), { stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   return { checker: c.name, ok: code === 0, ms: performance.now() - t, output: (out + err).trim() };
+}
+
+/**
+ * Checker output cut down for an agent to act on: one line per diagnostic, starting with
+ * file(line,col) as `--no-pretty` prints it, each at most `width` characters, at most `max`
+ * of them, then how many were left out. A deep generic (an Effect, a Drizzle query) can make
+ * one message thousands of characters long, and the location is all that's needed to start.
+ */
+export function compactDiagnostics(output: string, max = 20, width = 300): string {
+  const diags: string[] = [];
+  for (const line of output.replace(/\x1b\[[0-9;]*m/g, "").split("\n")) {
+    if (!line.trim() || /^Found \d+ errors?\b/.test(line)) continue;
+    if (/^\s/.test(line) && diags.length) diags[diags.length - 1] += " " + line.trim();
+    else diags.push(line.trim());
+  }
+  const shown = diags.slice(0, max).map((d) => d.length > width ? d.slice(0, width - 1) + "…" : d);
+  if (diags.length > max) shown.push(`… +${diags.length - max} more`);
+  return shown.join("\n");
 }
 
 /** `--check`, `--no-check`, `--checker <name>` out of a flag list; the rest is returned untouched. */

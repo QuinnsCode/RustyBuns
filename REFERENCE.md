@@ -4,11 +4,13 @@ The details behind the [README](README.md): every command, every config key, how
 
 ## Typed deploys, thanks to Effect
 
-The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, Railway, soon Fly) is a typed Layer. Swap a target by changing one line of config, and the compiler tells you what's missing before anything is created. `plan` type checks the generated stack first, then shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
+The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, Railway, soon Fly) is a typed Layer. Swap a target by changing one line of config, and every command checks the config when it loads it (an Effect Schema, so `bindings.DB.databaseName: missing` instead of a failure halfway into a deploy) before anything is created. `plan` type checks the generated stack first, then shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
 
 ## Type checking and per-step timing
 
 `plan` and `deploy` type check the generated stack before Alchemy runs (`--no-check` skips). `build desktop --check` type checks your app before the client build, so a type error costs well under a second instead of a full build. The checker is picked automatically: [`bun check`](https://bun.com/docs/runtime/check) on Bun 1.4.3 or newer (not in a stable release yet: `bun upgrade --canary`), else [tsc-rs](https://github.com/pingdotgg/ts-rust), else `tsc`. tsc-rs goes first when the tsconfig enables `@effect/language-service`, because only tsc-rs runs Effect's diagnostics (a stack step written without `yield*` silently never runs; tsc-rs flags it as TS377001). `--checker bun|tsc-rs|tsc` picks one yourself.
+
+Type errors print one line each, starting with `file(line,col)`. Each line is cut to 300 characters and at most 20 are shown, followed by a count of the rest, so a deep generic (an Effect, a query builder) can't fill a screen or an agent's context. `bun run typecheck --full` prints everything.
 
 `build desktop`, `plan` and `deploy` print how long each step took and save it to `.rustybuns/profile/`. The next run shows the change per step, so you can see what a checker or Bun upgrade actually saved. An illustration of the shape (the numbers are what `bun check` is expected to give, not a measured run):
 
@@ -217,7 +219,7 @@ At launch the host checks the app's `package.json` version against it, with the 
 
 ## Config
 
-`rustybuns.config.ts` is the one file you own. `init` writes it, and every generated file comes from it.
+`rustybuns.config.ts` is the one file you own. `init` writes it, and every generated file comes from it. Every command checks it on load and lists each problem as one line naming the field: a missing key, a typo'd binding type or key, a value out of the range the docs below give.
 
 `worker` is only needed for the Cloudflare deploy. Leave it out for a desktop-only or box-only app.
 
@@ -313,6 +315,16 @@ Two limits. Minted secrets live in Alchemy's state (see `state` above), in plain
 The desktop host listens on `127.0.0.1` on a random port by default (`listen` in the config, `--listen host:port` or `RB_LISTEN` at launch), and every request needs the per-launch token. The browser it opens gets a one-time launch code (`?rb_launch=`, good for one use within 60 seconds) rather than the token, so the token stays out of the terminal log and `ps`; it is printed only with `RB_NO_BROWSER=1` or when no browser could be started. While it runs, the host also leaves `{url, token, pid}` in `desktop.json` in its data dir, readable by you alone (0600) and removed on exit, so local tools on the same machine can find it. It sets COOP/COEP so `SharedArrayBuffer` works. `/__rb/info` shows runtime info, and `/__rb/action` runs your `"use server"` functions against sqlite. `cloudflare:workers` and `rwsdk/worker` are shimmed, including rwsdk 1.x's `serverAction`, `serverQuery` and `registerServerFunctionWrap`. D1 migrations apply at boot and are tracked in `d1_migrations`. `RB_VERSION` is `<package version>+<git sha>`. Data lives in `~/.<app-name>/`.
 
 The box host is the same program, minus the token and the browser.
+
+### Running code you didn't write
+
+An agent boots examples and apps it didn't write, so the CLI starts every desktop host it built (`run desktop`, `run desktop --watch`, `scripts/boot.ts`) with locks that cost nothing, since the desktop host takes no secrets:
+
+- `bun --no-env-file`: Bun doesn't load the project's `.env` into it.
+- `bun --no-install`: a missing import fails instead of fetching from npm at run time.
+- A scrubbed environment: anything named like a token, key, password or cloud login (`*_TOKEN`, `*_SECRET`, `GITHUB_*`, `CLOUDFLARE_*`, `AWS_*`, `OP_*` and so on) is dropped. `RB_*`, `SSH_AUTH_SOCK` and `GIT_SSH_COMMAND` stay.
+
+`run desktop --sandbox` (or `RB_SANDBOX=1`) adds a macOS Seatbelt profile (`sandbox-exec`): the host and whatever it spawns can do anything (network, FFI, its data dir, the repo) except read or write `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.alchemy`, wrangler's and 1Password's config, `~/Library/Keychains`, and the project's `.env`, `.dev.vars` and `.alchemy/` (up to the repo root). It's opt-in because a host that pushes over SSH with your keys, like codeSplitter's mirrors, needs `~/.ssh`. `scripts/boot.ts` turns it on (`RB_SANDBOX=0` turns it off). Inside another Seatbelt sandbox, or off macOS, it says so and runs without one.
 
 ### Multiplayer on a LAN
 
