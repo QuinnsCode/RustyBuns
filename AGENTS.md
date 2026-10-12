@@ -29,6 +29,9 @@ rewrite any row it added in your own words before you commit.
 `bun run site` turns those docs into the docs site (`scripts/site/`): `latest/` from the working tree plus
 a folder per `v*` tag read from git, into `dist/site/`. CI runs `bun run site --check`, which fails on a
 site link that doesn't land. A new root guide goes in `GUIDES` in `scripts/site/rustybuns.ts`.
+codeSplitter's site (`scripts/site/codesplitter.ts`, tags `codesplitter-v*`) generates its API reference
+and MCP tool list from `apps/codesplitter/src/openapi.ts` and `src/mcp-tools.ts`, so an endpoint change
+updates its docs in the same PR. Those two files must keep importing nothing else.
 
 ## Secrets and pushes
 

@@ -115,7 +115,7 @@ function apiPages(api: Api, ref: string): Page[] {
     }
   const all = [...byTag.values()].flat();
   const risky = all.filter((o) => o.op["x-codesplitter-risky"]);
-  const errors = Object.entries(all[0]?.op.responses ?? {}).filter(([code]) => !code.startsWith("2"));
+  const errors = Object.entries((all[0]?.op.responses ?? {}) as Record<string, Schema>).filter(([code]) => !code.startsWith("2"));
   const opLink = (o: Op, here: string) => `[\`${o.op.operationId}\`](${here === tagPage(o.op.tags[0]) ? "" : tagPage(o.op.tags[0]).slice(4)}#${slug(o.op.operationId)})`;
 
   const overview = [
