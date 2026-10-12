@@ -31,8 +31,8 @@ import { json, type Env } from "./env.ts";
 import { identify } from "./identity.ts";
 import { ownOrigin } from "./security.ts";
 import { b64url, DAY, hash, MAX_DAYS } from "./tokens.ts";
+import { OAUTH_SCOPES } from "./openapi.ts";
 
-export const OAUTH_SCOPES = { read: "read what you can read", write: "read, and change what you can change" } as const;
 const HOUR = 3_600_000, CODE_MS = 10 * 60_000, REFRESH_MS = 30 * DAY, GRANT_MS = MAX_DAYS * DAY;
 
 const random = (prefix: string) => prefix + b64url(crypto.getRandomValues(new Uint8Array(32)));
