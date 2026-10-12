@@ -65,6 +65,7 @@ const DesktopTarget = Schema.Struct({
   clientBuild: opt(Str), clientDir: opt(Str),
   world: opt(Schema.Union([Str, Schema.Literal(false)])),
   host: opt(Str), headers: opt(StrMap),
+  server: opt(Schema.Struct({ entry: Str, paths: Strs.check(Schema.isMinLength(1)), port: opt(Port), env: opt(StrMap) })),
   native: opt(Schema.Union([Strs, Schema.Literal(false)])),
   worldPath: opt(Str), identity: opt(StrMap),
   listen: opt(Schema.Struct({ hostname: opt(Str), port: opt(Port) })),

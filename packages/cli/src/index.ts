@@ -460,6 +460,9 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
       : own ? [...inf.prebuild, `${inf.execCmd("vite")} build${inf.vite.buildConfig ? ` --config ${inf.vite.buildConfig}` : ""}`].join(" && ") : vite("dist/web"),
     notFoundHandling: astro ? "404-page" : "single-page-application",
   };
+  // One server beside the app that init can name the file of: the host runs it and proxies to it.
+  const servers = proxied.length ? siblingServers(".") : [];
+  const server = servers.length === 1 && servers[0]!.entry ? { entry: servers[0]!.entry, paths: proxied } : null;
   const cfg = {
     name: inf.name.replace(/^@[^/]+\//, ""),
     source: { dir: inf.srcDir, aliases: inf.aliases },
@@ -474,18 +477,20 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
         clientDir: "dist/ui",
         world: false,
         host: "desktop/host.ts",
+        ...(server ? { server } : {}),
         targets: [hostTag],
       },
     },
   };
   await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
   const what = astro ? "a static Astro site" : "no wrangler found";
-  const servers = proxied.length ? siblingServers(".") : [];
   console.log(web ? `wrote rustybuns.config.ts (${what}: the desktop, and the web as static files on Workers, from ${web.assets})`
     : inf.serverDeps.length ? `wrote rustybuns.config.ts (desktop-only: it runs a Node server (${inf.serverDeps.join(", ")}), so its frontend alone can't go on the web)`
     : `wrote rustybuns.config.ts (desktop-only: ${relative(".", inf.vite.configPath!)} proxies ${proxied.join(", ")} to a separate server in dev, so its frontend alone can't go on the web)`);
   if (proxied.length) {
-    console.log(servers.length
+    console.log(server
+      ? `backend:  ${servers[0]!.dir} (${servers[0]!.runs}) runs beside the desktop host: desktop.server proxies ${proxied.join(", ")} to it, with DATA_DIR in the app's data dir. Drop any of those paths that go to another server. The web can't run it, so the app stays off the edge`
+      : servers.length
       ? `backend:  ${servers.map((s) => `${s.dir} (${s.runs})`).join(", ")} ${servers.length > 1 ? "may be" : "looks like"} that server. Rusty Buns doesn't run it yet: answer ${proxied.join(", ")} in desktop/host.ts, or port the server to a Worker, before \`plan\``
       : `backend:  answer ${proxied.join(", ")} in desktop/host.ts, or port that server to a Worker, before \`plan\``);
   }
@@ -695,8 +700,12 @@ const timed = <A, E, R>(prof: Profiler, name: string, e: Effect.Effect<A, E, R>)
  */
 const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(function* () {
   const cfg = yield* step(loadConfig);
-  if (!cfg.worker && !cfg.targets.box) throw new Error("desktop-only app: no edge or box stack to plan or deploy");
+  const server = cfg.targets.desktop?.server;
+  // A Worker can't run a node:http server with files on disk: that's a port by hand, not a config line.
+  const serverNote = server ? ` Its own server (desktop.server, ${server.entry}) runs beside the desktop and box hosts only: a Worker can't run a Node server without porting it. Add targets.box to host it on a server.` : "";
+  if (!cfg.worker && !cfg.targets.box) throw new Error(`desktop-only app: no edge or box stack to plan or deploy.${serverNote}`);
   const profiled = sub === "plan" || sub === "deploy";
+  if (server && cfg.worker && profiled) console.warn(`[server] the edge doesn't run desktop.server (${server.entry}): on the web ${server.paths.join(", ")} reach the Worker, not that server.\n`);
   if (profiled) { checkBox(cfg); checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
   const { on: check, checker, rest: flagged } = checkFlags(rawArgs, profiled);
   // Ours, not Alchemy's: they waive the guards below.
