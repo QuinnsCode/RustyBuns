@@ -21,6 +21,7 @@ import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes, runQueuedAgents, type AgentMessage } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
+import { hearDue, listenRoute } from "./listen.ts";
 import { scheduledWatch, watchRoutes } from "./watch.ts";
 import { advanceAll, freshRoutes, startIfFull } from "./fresh.ts";
 import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, runJobs, sweepLimits, type JobMessage } from "./limits.ts";
@@ -259,7 +260,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
     // GET /api/repos/:o/:r
     if (!p[4] && req.method === "GET") {
-      const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, created_at, expires_at, mirror_url IS NOT NULL AS mirror FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, created_at, expires_at, mirror_url IS NOT NULL AS mirror FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
       const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
       // Anyone who can read the repo can clone its artifact, with an hour-long read token;
       // the crew also gets their own remote's, with private lines' real text, once there is one.
@@ -386,6 +387,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "mirror") { const r = await mirrorBranchRoute(req, env, p, owner, repo, user); if (r) return r; }
     // GET|POST /api/repos/:o/:r/mirror/tags[/:name/push]  upstream's tags, fetched here; ours, pushed there
     if (p[4] === "mirror") { const r = await mirrorTagRoute(req, env, p, owner, repo, user); if (r) return r; }
+    // GET /api/repos/:o/:r/upstream, POST .../upstream/hear|take  a dug fork listens to its upstream (listen.ts)
+    if (p[4] === "upstream") { const r = await listenRoute(req, env, p, owner, repo, user); if (r) return r; }
     // GET|POST /api/repos/:o/:r/worktrees, DELETE .../worktrees/:name  real checkouts off the desktop's bare git (worktrees.ts)
     if (p[4] === "worktrees") { const r = await worktreeRoute(req, env, p, owner, repo, user); if (r) return r; }
     const fresh = await freshRoutes(req, env, p, url, owner, repo, user);
@@ -596,6 +599,8 @@ const app = {
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     // The supply-chain watch: agent platforms' status pages, and new malicious-package advisories against every repo (watch.ts).
     ctx.waitUntil(scheduledWatch(env, (r) => app.fetch(r, env)));
+    // Each dug fork asks GitHub whether its upstream moved on (listen.ts).
+    ctx.waitUntil(hearDue(env));
     ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(sweepTraffic(env));
     ctx.waitUntil(sweepLineEvents(env));
