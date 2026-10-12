@@ -330,7 +330,7 @@ An agent boots examples and apps it didn't write, so the CLI starts every deskto
 
 `run desktop --sandbox` (or `RB_SANDBOX=1`) adds a macOS Seatbelt profile (`sandbox-exec`): the host and whatever it spawns can do anything (network, FFI, its data dir, the repo) except read or write `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.alchemy`, wrangler's and 1Password's config, `~/Library/Keychains`, and the project's `.env`, `.dev.vars` and `.alchemy/` (up to the repo root). It's opt-in because a host that pushes over SSH with your keys, like codeSplitter's mirrors, needs `~/.ssh`. `scripts/boot.ts` turns it on (`RB_SANDBOX=0` turns it off). Inside another Seatbelt sandbox, or off macOS, it says so and runs without one.
 
-`plan` and `deploy` build the Worker (`worker.build`, such as a `jekyll build` that runs the site's plugins) without the deploy's logins: every `CLOUDFLARE_*`, `CF_*`, `WRANGLER_*` and `ALCHEMY_*` variable, plus the tokens and keys of the other providers (Hetzner, Railway, 1Password, AWS, GitHub and so on). The rest of the environment and `.dev.vars` stay, so `NODE_ENV`, `VITE_*`, `NPM_TOKEN` and `GITHUB_SHA` still reach the build. Only Alchemy, which does the deploy, gets the Cloudflare token.
+`plan`, `deploy` and `dev` build the Worker (`worker.build`, such as a `jekyll build` that runs the site's plugins) without the deploy's logins: every `CLOUDFLARE_*`, `CF_*`, `WRANGLER_*` and `ALCHEMY_*` variable, plus the tokens and keys of the other providers (Hetzner, Railway, 1Password, AWS, GitHub and so on). The rest of the environment and `.dev.vars` stay, so `NODE_ENV`, `VITE_*`, `NPM_TOKEN` and `GITHUB_SHA` still reach the build. Only Alchemy, which does the deploy, gets the Cloudflare token.
 
 ### Multiplayer on a LAN
 

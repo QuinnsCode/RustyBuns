@@ -122,15 +122,15 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const r = mkdtempSync(tmpdir() + "/rbdeploy-");
-  // the worker build is a stub too: it logs, so the test sees it run before Alchemy (#362)
-  writeFileSync(r + "/package.json", JSON.stringify({ name: "g", scripts: { build: `echo BUILD worker >> ${r}/calls.log` }, dependencies: { vite: "6", react: "19" } }));
+  // the worker build is a stub too: it logs, so the test sees it run before Alchemy (#362), and whether it saw the token (#1114)
+  writeFileSync(r + "/package.json", JSON.stringify({ name: "g", scripts: { build: `echo BUILD worker\${CLOUDFLARE_API_TOKEN:+ LEAKED} >> ${r}/calls.log` }, dependencies: { vite: "6", react: "19" } }));
   writeFileSync(r + "/wrangler.jsonc", `{ "name": "g", "main": "src/worker.tsx", "compatibility_date": "2026-01-01" }`);
   mkdirSync(r + "/src"); writeFileSync(r + "/src/worker.tsx", "export default { fetch: () => new Response('') }");
   const cli = new URL("../src/index.ts", import.meta.url).pathname;
   // stub the project's alchemy so no real one runs; record what it was called with
   const bin = r + "/node_modules/.bin"; mkdirSync(bin, { recursive: true });
   writeFileSync(bin + "/alchemy", `#!/bin/sh\necho "STUB alchemy $@ built=$RUSTYBUNS_BUILT" >> ${r}/calls.log\n`); require("node:fs").chmodSync(bin + "/alchemy", 0o755);
-  const env = { ...process.env };
+  const env = { ...process.env, CLOUDFLARE_API_TOKEN: "test-token" };
   // --no-check on plan/deploy: the stub alchemy has no types, and on Bun >= 1.4.3 bun check is always there to fail on it
   const run = (...a: string[]) => Bun.spawnSync(["bun", cli, ...a, ...(a[0] === "plan" || a[0] === "deploy" ? ["--no-check"] : [])], { cwd: r, env, stdout: "pipe", stderr: "pipe" });
   // init needs @rustybuns/cli resolvable for the config import; link the package dir
@@ -150,6 +150,10 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   expect(calls.trim().split("\n").map((l) => l.split(" ").slice(0, 3).join(" "))).toEqual(["BUILD worker", "STUB alchemy plan", "BUILD worker", "STUB alchemy deploy"]);
   // and tell the stack's Build so, so it doesn't build again under the upload (#424)
   expect(calls).toMatch(/STUB alchemy deploy .*built=1/);
+  // dev builds first as well, without the token, so the stack's Build doesn't run it inside alchemy (#1121)
+  expect(run("dev").exitCode).toBe(0);
+  const dev = (await Bun.file(r + "/calls.log").text()).trim().split("\n").slice(-2);
+  expect(dev).toEqual(["BUILD worker", expect.stringMatching(/^STUB alchemy dev .*built=1/)]);
   const stack = await Bun.file(r + "/.rustybuns/alchemy.run.ts").text();
   expect(stack).toContain('command: process.env.RUSTYBUNS_BUILT ? "true" : "echo BUILD worker');
   expect(stack).toContain("declare const process");
