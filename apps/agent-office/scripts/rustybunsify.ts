@@ -49,7 +49,7 @@ const SHARED = ["codesplitter/index.ts", ...(skin === "druids" ? ["druids/index.
 let shared: Promise<Map<string, string>> | undefined;
 // (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks board guard asks` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks board guard asks brawl` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -153,6 +153,13 @@ async function prepare(tag: string) {
   prepend("workers/env.js", "import { workerEnv as __rbWorkerEnv } from '../rb-env.js';\n");
   patch("workers/env.js", "            env[k] = v;\n    return env;\n}", "            env[k] = v;\n    return __rbWorkerEnv(env);\n}");
 
+  // 7d. Excalibrawl on every floor's whiteboard (live/brawl.ts): replays most of the hour, the live fight on the
+  // hour, people's drawing put back after. AGENT_OFFICE_BRAWL=0 turns it off.
+  prepend("floor.js", "import { excalibrawl as __rbBrawl } from './rb-brawl.js';\n");
+  patch("floor.js", "        this.whiteboard = new Whiteboard(dataDir);\n",
+    "        this.whiteboard = new Whiteboard(dataDir);\n        this.__rbBrawl = __rbBrawl(this, (msg) => ctx.emit(this, msg), () => ctx.people(this) > 0);\n");
+  patch("floor.js", "        this.whiteboard.flush();", "        this.__rbBrawl?.stop();\n        this.whiteboard.flush();");
+
   // 8. Lucide icons for the emoji, on every page, a search box for the queue, and the codeSplitter mark (codesplitter/)
   await buildPageScripts();
 
@@ -191,7 +198,7 @@ async function prepare(tag: string) {
   // 14. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks board guard asks\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks board guard asks brawl\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -290,7 +297,7 @@ async function buildSkin(dir: string) {
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
   for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
-    ["codesplitter/server.ts", "rb-codesplitter.js"],
+    ["codesplitter/server.ts", "rb-codesplitter.js"], ["live/brawl.ts", "rb-brawl.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
     const built = await Bun.build({ entrypoints: [path.join(root, entry!)], target: "bun" });
