@@ -33,3 +33,22 @@ test("registerServerFunctionWrap runs around the handler and knows its type", as
     expect(types).toEqual(["query", "action"]);
   } finally { registerServerFunctionWrap(undefined as any); }
 });
+
+test("cloudflare:workers base classes exist to extend, RpcTarget too (capnweb extends it at load)", async () => {
+  const workers = await import("../src/shims.ts");
+  class Api extends workers.RpcTarget { hi() { return "hi"; } }
+  expect(new Api().hi()).toBe("hi");
+  for (const k of ["DurableObject", "WorkerEntrypoint", "WorkflowEntrypoint", "RpcTarget"] as const) expect(typeof workers[k]).toBe("function");
+});
+
+test("workerd-global: globalThis.Cloudflare.compatibilityFlags, true for the flags the app lists", async () => {
+  const g = globalThis as any;
+  const before = g.Cloudflare;
+  delete g.Cloudflare;
+  g.RB_COMPAT_FLAGS = "nodejs_compat,global_fetch_strictly_public";
+  try {
+    await import(`../src/workerd-global.ts?${Date.now()}`);
+    expect(g.Cloudflare.compatibilityFlags).toEqual({ nodejs_compat: true, global_fetch_strictly_public: true });
+    expect(g.Cloudflare.compatibilityFlags.enable_nodejs_process_v2).toBeUndefined();
+  } finally { delete g.RB_COMPAT_FLAGS; g.Cloudflare = before; }
+});

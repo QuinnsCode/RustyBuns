@@ -419,6 +419,8 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
+// First: workerd's globalThis.Cloudflare, read by nodejs_compat builds as they load.
+import "@rustybuns/shell-bun/workerd-global";
 import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
 // Bun's own process: a Worker built with nodejs_compat (unenv) swaps globalThis.process for
@@ -620,6 +622,8 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     // The RustyBuns this was built with, and whether it is a dev host: see launchCheck.
     RB_RUSTYBUNS: JSON.stringify(rustybuns),
     RB_DEV: JSON.stringify(!!opts.noCompile),
+    // globalThis.Cloudflare.compatibilityFlags on a worker-mode host (shell-bun/workerd-global).
+    RB_COMPAT_FLAGS: JSON.stringify((c.worker?.compatibilityFlags ?? []).join(",")),
   };
   for (const [k, v] of Object.entries(d.define ?? {})) defineMap[k] = JSON.stringify(v);
 

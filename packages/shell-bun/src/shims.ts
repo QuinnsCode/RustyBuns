@@ -17,6 +17,9 @@ export class DurableObject<E = unknown> {
   constructor(public ctx: any, public env: E) {}
 }
 export class WorkerEntrypoint<E = unknown> { constructor(public ctx: any, public env: E) {} }
+export class WorkflowEntrypoint<E = unknown> { constructor(public ctx: any, public env: E) {} }
+/** Base class for objects passed by reference over RPC; capnweb (in rwsdk) extends it at load. */
+export class RpcTarget {}
 
 /** rwsdk/worker's requestInfo, local edition. */
 export const requestInfo = {
