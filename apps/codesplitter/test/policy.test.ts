@@ -76,4 +76,39 @@ describe("policy per path (#938)", () => {
     const doc = await (await call("ana", "/api/repos/ana/r/do/file?path=CHANGELOG.md")).json() as Doc;
     expect(text(doc)).toBe("# Changes\n- two\n- three");
   });
+
+  test("live edits by the path's policy (#1011): on a `line` file an agent claims first, a locked file takes none", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    opened.push(call);
+    const post = (who: string, url: string, body: unknown) => call(who, url, { method: "POST", body: JSON.stringify(body) });
+    await post("ana", "/api/login", { name: "ana" });
+    await post("ana", "/api/repos", { name: "r" });
+    await post("ana", "/api/repos/ana/r/collaborators", { name: "agent-a" });
+    await post("ana", "/api/repos/ana/r/files", { path: ".gitattributes", content: "hot.json codesplitter-live=line" });
+    await post("ana", "/api/repos/ana/r/files", { path: "hot.json", content: '{\n  "a": 1\n}' });
+    await post("ana", "/api/repos/ana/r/files", { path: "bun.lock", content: "{}" });
+    await post("ana", "/api/repos/ana/r/files", { path: "free.json", content: "{}" });
+    // A line's rev starts as the file's rev that wrote it: L1 is 1, L2 is 2.
+    const set = (line: string, t: string) => ({ ops: [{ kind: "set", line, base: Number(line.slice(1)), text: t }] });
+
+    // An agent's edit without a claim is sent to claim first; a person's isn't held.
+    const r1 = await post("agent-a", "/api/repos/ana/r/do/ops?path=hot.json", set("L2", '  "a": 2'));
+    expect(r1.status).toBe(409);
+    expect((await r1.json() as any).error).toContain("claim_lines");
+    expect((await post("agent-a", "/api/repos/ana/r/do/ops?path=free.json", set("L1", "[]"))).status).toBe(200);
+    // Claimed, the agent edits those lines (naming its claim), and only those.
+    const claim = await (await post("agent-a", "/api/repos/ana/r/do/claims?path=hot.json", { lines: ["L2"] })).json() as any;
+    const barred = async (r: Response) => [r.status, ((await r.json()) as any).error];
+    expect(await barred(await post("agent-a", "/api/repos/ana/r/do/ops?path=hot.json", set("L2", '  "a": 2')))).toEqual([409, expect.stringContaining("claim_lines")]);
+    expect((await post("agent-a", "/api/repos/ana/r/do/ops?path=hot.json", { ...set("L2", '  "a": 2'), claim: claim.id })).status).toBe(200);
+    expect(await barred(await post("agent-a", "/api/repos/ana/r/do/ops?path=hot.json", { ...set("L1", "{ "), claim: claim.id }))).toEqual([409, expect.stringContaining("claim_lines")]);
+    expect((await post("ana", "/api/repos/ana/r/do/ops?path=hot.json", set("L3", "} "))).status).toBe(200);
+
+    // A lockfile is locked by default: no live edits from anyone, and no claims on it.
+    const r2 = await post("ana", "/api/repos/ana/r/do/ops?path=bun.lock", set("L1", "{ }"));
+    expect(r2.status).toBe(409);
+    expect((await r2.json() as any).error).toContain("locked");
+    expect((await post("agent-a", "/api/repos/ana/r/do/claims?path=bun.lock", { lines: ["L1"] })).status).toBe(409);
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=bun.lock")).json() as Doc)).toBe("{}");
+  });
 });

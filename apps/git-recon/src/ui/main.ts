@@ -5,12 +5,12 @@ import * as THREE from "three";
 import { loadRepoCached, LoadError, parseSlug } from "../levels/github.ts";
 import { LEVELS, placeLevel, type LevelDef } from "../levels/levels.ts";
 import { groundAt, parsePlace } from "../levels/place.ts";
-import type { RepoSnapshot } from "../sim/codemap.ts";
+import type { Block, RepoSnapshot } from "../sim/codemap.ts";
 import { addWin, winKey } from "../sim/heads.ts";
 import type { ZoneData } from "../sim/terrain.ts";
 import { Game, scopeSway, stanceOf, type GameEvent, type Input } from "../sim/game.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
-import { ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
+import { KEYS, keyLabel, ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { FIELD, place, play, VOICES } from "./audio.ts";
 import { BUILDS, type BuildId } from "./figure.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
@@ -177,7 +177,7 @@ function start(def: LevelDef) {
   const game = Game.fromRepo(def.ground(), repo, def.seed, mission);
   const world = buildWorld(game.map, { head: me.head, build: me.build });
   current = { def, repo, game, world, started: performance.now() };
-  look.yaw = game.map.spawn.yaw, look.pitch = -0.05, prone = false;
+  look.yaw = game.map.spawn.yaw, look.pitch = -0.05, prone = false, shake = 0;
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = false;
   $("level-name").textContent = def.name;
   $("repo").textContent = `${repo.name}@${repo.ref}`;
@@ -203,6 +203,8 @@ $("back").onclick = toMenu;
 const keys = new Set<string>();
 const look = { yaw: 0, pitch: 0 };
 let fire = false, zoom = false, jump = false, roll = false, prone = false, pick: WeaponId | undefined;
+/** How hard the camera's shaking: blasts near you and heavy guns going off. */
+let shake = 0;
 
 window.addEventListener("keydown", (e) => {
   if (!current) return;
@@ -212,8 +214,8 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyZ" && !e.repeat) prone = !prone;
   if (e.code === "KeyC" || e.code === "ControlLeft") prone = false;
   if (e.code === "ShiftLeft" || e.code === "ShiftRight") roll = true;
-  const n = Number(e.key);
-  if (n >= 1 && n <= ORDER.length) pick = ORDER[n - 1];
+  const slot = KEYS.indexOf(e.code);
+  if (slot >= 0 && slot < ORDER.length) pick = ORDER[slot];
   if (e.code === "Escape" && current.game.status !== "playing") toMenu();
 });
 window.addEventListener("keyup", (e) => keys.delete(e.code));
@@ -249,21 +251,21 @@ const ray = new THREE.Raycaster();
 const tmp = new THREE.Vector3(), dir = new THREE.Vector3();
 
 /** What the crosshair is on: the first block or ground along the camera's line. */
-function aimPoint(game: Game, world: World): { point: THREE.Vector3; path: string | null } {
+function aimPoint(game: Game, world: World): { point: THREE.Vector3; block: Block | null } {
   camera.getWorldDirection(dir);
   ray.set(camera.position, dir);
   ray.far = 300;
   const hits = ray.intersectObjects(world.solids.slice(1), false);
-  let best = hits[0] ? hits[0].distance : 300, path: string | null = hits[0] ? (hits[0].object.userData.path as string) : null;
+  let best = hits[0] ? hits[0].distance : 300, block: Block | null = hits[0] ? (hits[0].object.userData.block as Block) : null;
   // The ground is a heightfield: march it rather than raycast its 100k triangles.
   for (let t = 1; t < best; t += 0.75) {
     tmp.copy(camera.position).addScaledVector(dir, t);
     if (tmp.y < game.terrain.height(tmp.x, tmp.z)) {
-      best = t, path = null;
+      best = t, block = null;
       break;
     }
   }
-  return { point: camera.position.clone().addScaledVector(dir, best), path };
+  return { point: camera.position.clone().addScaledVector(dir, best), block };
 }
 
 function placeCamera(game: Game) {
@@ -276,7 +278,8 @@ function placeCamera(game: Game) {
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   const back = sniping ? 0.4 : 6, side = sniping ? 0.35 : 1.15;
   const pivot = new THREE.Vector3(you.x - fz * side, you.y + (you.prone ? 0.7 : you.crouch ? 1.3 : 1.75), you.z + fx * side);
-  camera.position.set(pivot.x - fx * cp * back, pivot.y - sp * back + 0.9, pivot.z - fz * cp * back);
+  const j = () => (Math.random() - 0.5) * shake;
+  camera.position.set(pivot.x - fx * cp * back + j(), pivot.y - sp * back + 0.9 + j(), pivot.z - fz * cp * back + j());
   // Never under the ground.
   const floor = game.terrain.height(camera.position.x, camera.position.z) + 0.4;
   if (camera.position.y < floor) camera.position.y = floor;
@@ -287,6 +290,17 @@ function placeCamera(game: Game) {
 }
 
 /* ---------------- HUD ---------------- */
+
+/** The crosshair flashes when you hit something, harder when it goes down. */
+let markT = 0;
+function mark(kind: "hit" | "kill") {
+  const c = $("crosshair");
+  if (kind === "hit" && c.classList.contains("kill")) return;
+  c.classList.remove("hit", "kill");
+  c.classList.add(kind);
+  clearTimeout(markT);
+  markT = window.setTimeout(() => c.classList.remove("hit", "kill"), kind === "kill" ? 260 : 90);
+}
 
 function feed(text: string, hot = false) {
   const li = document.createElement("li");
@@ -322,7 +336,7 @@ function objective(game: Game): [string, string] {
   return [merged, "Down every guard in a compound to merge its folder. Merge them all to win."];
 }
 
-function hud(game: Game, aimingAt: string | null) {
+function hud(game: Game, aimingAt: Block | null) {
   const you = game.you();
   $("hp").style.width = `${(you.hp / you.maxHp) * 100}%`;
   $("hp").classList.toggle("low", you.hp < 35);
@@ -331,14 +345,16 @@ function hud(game: Game, aimingAt: string | null) {
   $("progress").textContent = line;
   $("progress").title = tip;
   $("clock").textContent = clock(game.time);
-  $("stance").textContent = you.prone ? "prone" : you.crouch ? "crouched" : "";
+  $("stance").textContent = you.burn > 0 ? "on fire: roll!" : you.prone ? "prone" : you.crouch ? "crouched" : "";
+  $("stance").classList.toggle("hot", you.burn > 0);
   // Weapons you have; git reset --hard only once you've found one.
   $("weapons").innerHTML = ORDER.map((w, i) => {
     const a = you.ammo[w];
     if (w === "reset" && a === 0) return "";
-    return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${i + 1}</kbd><code>${WEAPONS[w].cmd}</code><span>${a < 0 ? "∞" : a}</span></li>`;
+    return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${keyLabel(KEYS[i]!)}</kbd><code>${WEAPONS[w].cmd}</code><span>${a < 0 ? "∞" : a}</span></li>`;
   }).join("");
-  $("target").textContent = aimingAt ?? "";
+  // What's under the crosshair, and how much of it is left.
+  $("target").textContent = aimingAt ? `${aimingAt.path} · ${aimingAt.lines.toLocaleString()} lines` : "";
 }
 
 function results(game: Game) {
@@ -371,9 +387,14 @@ function sound(game: Game, e: GameEvent) {
   } else if (e.kind === "boom") {
     const { vol, pan } = at(e.x, e.z);
     play(FIELD.boom, vol, pan);
+  } else if (e.kind === "razed") {
+    const { vol, pan } = at(e.x, e.z);
+    play(FIELD.raze, vol, pan);
   } else if (e.kind === "pickup") play(FIELD.pickup);
   else if (e.kind === "hit" && e.target === 0) play(FIELD.hurt);
+  else if (e.kind === "hit" && e.by === 0) play(FIELD.hitmark);
   else if (e.kind === "down") {
+    if (e.by === 0 && e.id !== 0) play(FIELD.kill);
     const s = game.soldiers[e.id]!, { vol, pan } = at(s.x, s.z);
     play(FIELD.down, vol, pan);
   }
@@ -398,32 +419,46 @@ function frame(now: number) {
     pitch: look.pitch,
     jump, roll, crouch: keys.has("KeyC") || keys.has("ControlLeft"), prone,
     scope: zoom,
-    // The commit rifle fires while held; everything else once per click.
     fire: fire && document.pointerLockElement === canvas,
     aim: { x: aim.point.x, y: aim.point.y, z: aim.point.z },
     weapon: pick,
   };
-  if (you.weapon !== "commit" && fire) fire = false;
+  // Automatic guns fire while held; everything else once per click.
+  if (!WEAPONS[you.weapon].auto && fire) fire = false;
   jump = roll = false, pick = undefined;
   const before = game.status;
+  shake *= Math.exp(-dt * 9);
   for (const e of game.step(dt, input)) {
     sound(game, e);
-    if (e.kind === "boom") world.boom(e.x, e.y, e.z, e.r);
-    else if (e.kind === "down" && e.id !== 0) feed(`resolved ${game.soldiers[e.id]!.name}`);
+    world.event(game, e);
+    if (e.kind === "fire" && e.id === 0) {
+      // Recoil: the aim kicks up (less crouched, least prone) and a heavy gun shakes the view.
+      const w = WEAPONS[e.weapon], k = you.prone ? 0.35 : you.crouch ? 0.65 : 1;
+      look.pitch = Math.min(1.0, look.pitch + w.kick * k * (0.7 + Math.random() * 0.6));
+      look.yaw += (Math.random() - 0.5) * w.kick * k * 0.5;
+      shake = Math.max(shake, w.kick * 2.5);
+    } else if (e.kind === "boom") {
+      shake = Math.max(shake, Math.min(0.6, e.r * 0.1) * Math.max(0, 1 - Math.hypot(e.x - you.x, e.z - you.z) / 40));
+    } else if (e.kind === "razed") {
+      if (e.by === 0) feed(`deleted ${e.path} (${e.lines.toLocaleString()} lines)`);
+    } else if (e.kind === "hit" && e.by === 0 && e.target !== 0) mark("hit");
+    if (e.kind === "down" && e.by === 0 && e.id !== 0) mark("kill");
+    if (e.kind === "boom" || e.kind === "razed" || e.kind === "fire" || (e.kind === "hit" && e.by === 0 && e.target !== 0)) continue;
+    if (e.kind === "down" && e.id !== 0) feed(`resolved ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "down") feed("you went down", true);
     else if (e.kind === "respawn") banner(`git reflog · ${e.lives} left`);
     else if (e.kind === "cleared") {
       const c = game.map.compounds[e.compound]!;
       banner(`${c.folder} merged`);
       feed(`merged ${c.folder}: crates in the yard`);
-    } else if (e.kind === "pickup") feed(e.item === "health" ? "health crate: +40 hp" : e.item === "ammo" ? "ammo crate" : "found git reset --hard (9)", e.item === "reset");
+    } else if (e.kind === "pickup") feed(e.item === "health" ? "health crate: +40 hp" : e.item === "ammo" ? "ammo crate" : `found git reset --hard (${keyLabel(KEYS[ORDER.indexOf("reset")]!)})`, e.item === "reset");
     else if (e.kind === "blamed") feed(`blamed ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "reverted") feed(`reverted ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "objective") banner(e.text), feed(e.text, true);
     else if (e.kind === "hit" && e.target === 0) $("hud").classList.add("hurt"), setTimeout(() => $("hud").classList.remove("hurt"), 120);
   }
   world.sync(game, dt);
-  hud(game, aim.path);
+  hud(game, aim.block);
   renderer.render(world.scene, camera);
   if (before === "playing" && game.status !== "playing") results(game);
 }

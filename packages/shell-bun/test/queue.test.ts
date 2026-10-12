@@ -89,3 +89,24 @@ test("a batch waits for a low slot before its messages are leased; priority says
   await q.drain();
   expect(seen).toEqual(["high 2", "low 1"]);
 });
+
+test("a batch past its timeout gives its slot back; its messages are due again and its late verdicts don't count", async () => {
+  const sched = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });   // 1 slot
+  const q = new LocalQueue<number>();
+  const errors: unknown[] = [], seen: number[][] = [];
+  let finish!: () => void;
+  let first = true;
+  q.consume(async (b) => {
+    seen.push(b.messages.map((m) => m.attempts));
+    if (first) { first = false; await new Promise<void>((r) => (finish = r)); b.ackAll(); }
+    else b.retryAll({ delaySeconds: 60 });
+  }, { scheduler: sched, timeoutMs: 30 }, (e) => errors.push(e));
+  await q.send(1);
+  await Bun.sleep(60);
+  expect(String(errors[0])).toContain("stopped after 30 ms");
+  await q.drain();
+  expect(seen).toEqual([[1], [2]]);                 // delivered again at once, the slot free
+  finish(); await Bun.sleep(10);
+  expect(q.size()).toBe(1);                          // the stuck handler's late ack didn't drop it
+  expect(sched.stats().running.low).toBe(0);
+});

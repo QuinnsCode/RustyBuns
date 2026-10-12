@@ -28,6 +28,8 @@ The pitch is in [README.md](README.md).
   A branch that changes what runs at build or deploy time (`package.json`, lockfiles, `rustybuns.config.ts`, `wrangler.*`, `.rustybuns/`, `alchemy.run.ts`, Dockerfiles, `build.ts`, `vite.config.*`, CI files) says so in the review, every changed line shown, and when the owner's next commit to main would deploy, the merge waits for "I've read the build changes" (`build_ok: true`).
   Branches come from crew and agents, and an agent can be prompt-injected.
   A branch can delete a file too (`DELETE .../branches/:name/files?path=`), text or binary: the review lists it as `deleted`, and the merge deletes it from main and from git there and then (making it again on the branch takes the deletion back).
+  A branch can be stacked on another (`POST .../branches {name, parent}`): each file it opens forks from the parent's copy where the parent has one, it waits for the parent to merge first (409, and `POST .../merges` takes them oldest first, so the parent goes first), and when the parent merges, its copies move onto main's files: main gave the merged lines its own ids, so they're matched by text, then the stacked branch's changes go on by the same three-way merge, its lines winning where main changed them too.
+  One that won't settle that way stays put, and its merge says which files.
   This is built on the line-op log, not git branches, so blame and live sync work the same on a branch; git hears about it when main is catalogued.
 - **Every line knows who wrote it and when.** The op log replays the file at any rev: blame and time travel come free.
   The file snapshots itself every 2,000 edits, so time travel replays from the nearest snapshot, and keeps ten: history reaches back at least 20,000 edits, and the log or time travel before that is a 410 naming the rev history starts at (read the file instead).
@@ -121,13 +123,23 @@ The pitch is in [README.md](README.md).
   A run's worktree goes when it's removed (`DELETE .../worktrees/:name`) or after a day, a branch's once main holds the commits it made (or the branch is gone), and one with uncommitted changes stays.
   Every sync and every `GET .../worktrees` cleans up, and deleting the repo removes them all.
   `src/worktrees.ts`.
-- **Beam: a branch's stack, cleaned up and handed over (desktop).** `POST /api/repos/:o/:r/beams {branch, onto?, title?, message?, to?, keep?, drop?}` takes git branch `branch` (pushed with the Push back remote, or made in a worktree) from where it left main, and leaves out the noise, each with why: a lockfile the repo doesn't use, lockfile churn with no `package.json` change, `node_modules/` and tool caches, build output the branch added, OS and editor leftovers, and env files (`keep` and `drop` override, by path).
+- **Pull-only: a mirror that never writes upstream (desktop, #1009).** **Make it pull-only** in the Upstream panel (`POST /api/repos/:o/:r/mirror {pullOnly: true}`, or `pullOnly: true` on `POST /api/mirrors`; `false` switches back) makes the mirror one-way.
+  Syncs still fetch and merge upstream's commits, but push nothing: a copy with commits upstream lacks settles as `held`, and they wait here until it's two-way again.
+  It beats this copy leading, a merged branch's upstream branch is left in place, and pushing a branch or a tag answers 409.
+- **Beam: a branch's stack, cleaned up and handed over.** `POST /api/repos/:o/:r/beams {branch, kind?, onto?, title?, message?, to?, keep?, drop?}` takes git branch `branch` (pushed with the Push back remote, or made in a worktree) from where it left main, and leaves out the noise, each with why: a lockfile the repo doesn't use, lockfile churn with no `package.json` change, `node_modules/` and tool caches, build output the branch added, OS and editor leftovers, and env files (`keep` and `drop` override, by path).
   What's left goes on main's tip, or with `onto: "upstream"` on a GitHub fork's upstream tip (a plain read-only `git fetch`), by `git merge-tree` with no checkout, and is squashed into one commit: the stack's author if it had one, else this machine's git identity with the others as `Co-authored-by`, the title given or the first commit's, and the stack's subjects as the body.
   A 409 says what clashes, or that nothing's left once the noise is out.
+  With `kind: "codesplitter"`, `branch` is a codeSplitter branch instead: its files as they are now, laid on main's tip the way a push upstream lays them, are the stack, cleaned up and squashed the same way (by this machine's git identity, whoever opened the branch as `Co-authored-by`).
+  That's how an agent hands its work over as one commit: the MCP server's `beam_branch` and `get_beam` tools are these routes.
+  A codeSplitter branch stacked on another beams as a commit per branch, in order: the bottom branch's files on main's tip, each next one's over it, the title given going on the top one (`stack` lists them, and the patch has them all).
+  A stacked branch's copy of a file made before the branch under it changed that file would take that change back out, so the beam refuses it with `clash`.
   The commit is kept at `refs/beams/<id>` and checked like a pushed branch.
   `GET /api/beams/:id` is the beam and its diff for anyone with the link, `GET /api/beams/:id/patch` is `git format-patch`'s output for `git am`, `to` puts it in that handle's inbox (`GET /api/me/beams`, shown on the feed), and `DELETE /api/beams/:id` withdraws it and drops the ref.
   A repo with private lines can't beam (its git holds them blank).
   Nothing goes to GitHub.
+  On the hosted site there's no git to run and no git branches, so `kind` defaults to `codesplitter` there and a beam goes onto main only, as one commit (`kind: "git"`, `onto: "upstream"` and a stacked branch are a 501, and `GET .../beams` says `hosted: true`).
+  The Worker's own git (`src/git.ts` `push`) lays the branch's files on main's tip, with the noise left as main has it, and pushes that as one commit to `refs/beams/<id>` on the repo's Artifacts remote, by whoever beams it with whoever opened the branch as `Co-authored-by`.
+  The diff and the patch are written in JS from both sides' blobs (`src/patch.ts`), byte for byte what `git diff` and `git format-patch` print, so `git am` takes the patch the same way.
   `src/beam.ts`.
 - **Cut: some lines out, run, shared, merged back.** Select lines and press Cut (`POST /api/repos/:o/:r/cuts {pieces: [{path, from, to}]}`): the cut is those lines plus what they use: the file's imports and declarations they use, and, following relative imports into the repo's other files, the declarations they import and what those use in turn (packages aren't followed).
   Add more ranges for anything else you want in it, like a test that covers them.
@@ -541,12 +553,12 @@ The caveats:
   A check gets none of your logins (#1010, `src/check-env.ts`): the desktop's queue and `scripts/runner.ts` run the clone and the command with only `PATH` and the locale from your environment, an empty `HOME` and `TMPDIR` of their own, and `CI=1`, so no `gh`, `wrangler`, npm or cloud token, and no SSH agent.
   They still run as you, with your package caches, unless you give them a sandbox user: make a standard macOS user with no logins, allow `$USER ALL=(cs-checks) NOPASSWD: ALL` in `/etc/sudoers.d/cs-checks`, and set `CODESPLITTER_CHECKS_USER=cs-checks` for the desktop (or `--user cs-checks` for a runner); every run then goes through `sudo -n -u cs-checks`, in `/tmp`, with umask 000 so the app can still clean up.
   Turn on the pin (the pin button by "Checks run", or `PUT …/checks/settings {pinned: true}`) and only the required checks with a `command` in the settings run: `codesplitter.ci` and package.json's scripts at the commit are ignored, a run queued without a command from the settings is cancelled at the claim rather than falling back to `bun test`, so a merged edit can't change the job on your machine.
-- **The mirror isn't one-way.** It pushes this copy's commits upstream, never forced.
-  That's a way out, not a way in, but if you want codeSplitter never to write to GitHub, don't commit to main here.
+- **The mirror is two-way unless you say otherwise.** By default it pushes this copy's commits upstream, never forced.
+  That's a way out, not a way in.
+  Make it pull-only (`{pullOnly: true}`, #1009) and codeSplitter never writes to GitHub: syncs only fetch, and branch and tag pushes answer 409.
 - **Merged main runs here too.** When a sync takes upstream's commits onto main (a fast-forward, a merge or a re-base), the repo's checks queue here on main's new tip, as `upstream` (#1008), beside GitHub's results for it.
   A sync that only pushes this copy's commits queues nothing: they were checked when they were made.
-
-Still missing: a pull-only mirror (#1006).
+  A pull-only mirror queues them the same way.
 
 ## Conventions
 
@@ -577,7 +589,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/agent-run.ts` | runs an agent on a file: snapshot, edit in a sandbox, diff, post, re-run on conflicts |
 | `src/archive.ts` | Artifacts: trees (cached), files, first-open materializing, catalogue pushes |
 | `src/audit.ts` | the security audit log: tokens, crews, invites, visibility, webhooks, deploy keys and repo deletes, append-only |
-| `src/beam.ts` | beams: a git branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
+| `src/beam.ts` | beams: a git or codeSplitter branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
 | `src/branches.ts` | branches: forking a file onto one, review, merge |
 | `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
 | `src/check-env.ts` | what a check's command sees: a scrubbed environment, its own empty HOME and TMPDIR, and the sandbox user if one is set |
@@ -603,6 +615,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/mirror.ts` | mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading |
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
+| `src/patch.ts` | a unified diff and a `git format-patch` mail written in JS, for beams on the hosted site where there's no git to run |
 | `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left; defaults under the repo's `.gitattributes` |
 | `src/sandbox.ts` | the container Durable Object hosted agents run in |
 | `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |

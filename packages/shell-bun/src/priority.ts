@@ -10,6 +10,12 @@
 //   in a row ramp it back up a slot at a time.
 // - a job can say how much memory it usually takes (`memMb`). It starts only if that fits what the
 //   memory budget has left after the jobs already running.
+// - a job that runs child processes tracks them (`spawn` does it for you), and each sample measures
+//   how big they really are. One past its own `maxMb` is stopped; while the background work is over
+//   the memory budget the newest is put out and, if it may, queued again sized as measured (#1028).
+//   On Linux `maxMb` is also a hard cap, a cgroup through systemd-run; macOS stays watch-and-act.
+// - `timeoutMs` stops a job that hangs, so it can't hold a slot for good. A stop aborts the job's
+//   signal and frees its slot at once; plain JS that ignores the signal runs on, outside the budget.
 //
 // Child processes of low work get OS background priority too (`lowPriorityCommand`), so the kernel
 // prefers everything else even while they run.
@@ -61,6 +67,8 @@ export interface SchedulerOptions {
   everyMs?: number;
   /** Samples in a row that count as sustained, both to back off and to ramp up. @default 6 (30s at 5s) */
   window?: number;
+  /** How big each tracked process tree is, in MB. @default processTreeMb (ps) */
+  measure?: (pids: number[]) => Map<number, number>;
   log?: (line: string) => void;
 }
 
@@ -112,23 +120,106 @@ export function lowPriorityCommand(cmd: string[], platform: string = process.pla
   return cmd;
 }
 
-type Job = { priority: "normal" | "low"; memMb: number; start: () => void };
+/** `cmd` under a hard memory cap: a transient systemd scope with MemoryMax (cgroup v2), so the kernel
+ *  kills it past `mb` instead of the machine swapping. `--user` unless we are root. Linux only. */
+export function memoryCapCommand(cmd: string[], mb: number, root: boolean): string[] {
+  return ["systemd-run", ...(root ? [] : ["--user"]), "--scope", "--quiet", "-p", `MemoryMax=${Math.ceil(mb)}M`, "-p", "MemorySwapMax=0", "--", ...cmd];
+}
+
+let capWorks: boolean | undefined;
+/** memoryCapCommand where it works (Linux with systemd, tried once per process); elsewhere `cmd` as is,
+ *  and the scheduler's watch-and-act is the only cap. */
+function hardCap(cmd: string[], mb: number): string[] {
+  if (process.platform !== "linux") return cmd;
+  const root = process.getuid?.() === 0;
+  capWorks ??= Bun.which("systemd-run") !== null && Bun.spawnSync(memoryCapCommand(["true"], 64, root), { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+  return capWorks ? memoryCapCommand(cmd, mb, root) : cmd;
+}
+
+/** Each of `pids`, with its descendants, in MB, from `ps -A -o pid=,ppid=,rss=` output. */
+export function treeMb(ps: string, pids: number[]): Map<number, number> {
+  const rss = new Map<number, number>(), kids = new Map<number, number[]>();
+  for (const line of ps.split("\n")) {
+    const [pid, ppid, kb] = line.trim().split(/\s+/).map(Number);
+    if (!pid || ppid === undefined || kb === undefined || Number.isNaN(kb)) continue;
+    rss.set(pid, kb / 1024);
+    (kids.get(ppid) ?? kids.set(ppid, []).get(ppid)!).push(pid);
+  }
+  const out = new Map<number, number>();
+  for (const root of pids) {
+    let mb = 0;
+    for (const stack = [root], seen = new Set<number>(); stack.length;) {
+      const p = stack.pop()!;
+      if (seen.has(p)) continue;
+      seen.add(p); mb += rss.get(p) ?? 0; stack.push(...kids.get(p) ?? []);
+    }
+    out.set(root, mb);
+  }
+  return out;
+}
+
+const ps = () => {
+  try { const r = Bun.spawnSync(["ps", "-A", "-o", "pid=,ppid=,rss="]); return r.exitCode === 0 ? r.stdout.toString() : ""; } catch { return ""; }
+};
+/** How big each process tree really is, in MB. No `ps` (Windows): nothing measured. */
+export const processTreeMb = (pids: number[]) => treeMb(ps(), pids);
+
+/** Why the scheduler stopped a job: past its `timeoutMs`, past its own `maxMb`, or put out
+ *  (and requeued while it has `requeues` left) to bring the background work back under the memory budget. */
+export class JobStopped extends Error {
+  constructor(readonly reason: "timeout" | "memory" | "evicted", message: string) { super(message); this.name = "JobStopped"; }
+}
+
+/** What a job is handed. `signal` aborts (with a JobStopped) when the scheduler stops it; the job should
+ *  stop its work then. `track(pid)` counts a child process and its descendants against the memory budget. */
+export interface JobContext { signal: AbortSignal; track(pid: number): void }
+
+export interface RunOptions {
+  /** What the job usually takes, in MB. It starts only if that fits what the memory budget has left. */
+  memMb?: number;
+  /** Stop the job after this long: its signal aborts, its slot frees and the promise rejects. A job that
+   *  ignores the signal runs on, but no longer holds the slot. */
+  timeoutMs?: number;
+  /** The most the job's tracked processes may take, in MB. Past it the job is stopped, not requeued. */
+  maxMb?: number;
+  /** Times the job may be put out for memory and queued again (at the front, sized as it was measured)
+   *  before it rejects. Only for a job that can start over: `fn` runs again. @default 0 */
+  requeues?: number;
+}
+
+export interface SpawnOptions extends RunOptions {
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+  stdout?: "inherit" | "pipe" | "ignore";
+  stderr?: "inherit" | "pipe" | "ignore";
+  /** After SIGTERM, how long before SIGKILL. @default 5000 */
+  graceMs?: number;
+}
+
+type Waiting = { priority: "normal" | "low"; memMb: number; start: () => void };
+type Live = { priority: Priority; memMb: number; measuredMb: number; maxMb?: number; pids: Set<number>; order: number; stop: (e: JobStopped) => void };
+const background = (p: Priority): p is "normal" | "low" => p === "normal" || p === "low";
 
 export function scheduler(o: SchedulerOptions = {}) {
   const budget: Budget = { ...PERSONAS[o.persona ?? "balanced"], ...o.budget };
   const cores = o.cores ?? availableParallelism();
   const slots = Math.max(1, Math.min(o.max ?? Infinity, Math.floor(cores * budget.cpu) - budget.reserve));
   const memBudgetMb = (o.totalMb ?? totalmem() / 2 ** 20) * budget.memory;
-  const window = o.window ?? 6, sample = o.sample ?? machineLoad, log = o.log ?? (() => {});
+  const window = o.window ?? 6, sample = o.sample ?? machineLoad, measure = o.measure ?? processTreeMb, log = o.log ?? (() => {});
   const running: Record<Priority, number> = { realtime: 0, high: 0, normal: 0, low: 0 };
-  const queue: Job[] = [];
-  let back: Backoff = { limit: slots, hot: 0, cool: 0 }, usedMb = 0, load: Load | null = null;
+  const queue: Waiting[] = [];
+  const live = new Set<Live>();
+  let back: Backoff = { limit: slots, hot: 0, cool: 0 }, load: Load | null = null, seq = 0;
 
-  function fits(j: Job) {
+  // A background job counts for what it said it takes, or what it was last measured at if more.
+  const usedMb = () => { let mb = 0; for (const j of live) if (background(j.priority)) mb += Math.max(j.memMb, j.measuredMb); return mb; };
+
+  function fits(j: Waiting) {
     if (running.normal + running.low >= slots) return false;
     if (j.priority === "low" && running.low >= back.limit) return false;
     // nothing running: a job bigger than the whole budget still gets its turn alone
-    return usedMb === 0 || usedMb + j.memMb <= memBudgetMb;
+    const used = usedMb();
+    return used === 0 || used + j.memMb <= memBudgetMb;
   }
 
   function pump() {
@@ -143,21 +234,86 @@ export function scheduler(o: SchedulerOptions = {}) {
     }
   }
 
-  function run<T>(priority: Priority, fn: () => T | Promise<T>, opts: { memMb?: number } = {}): Promise<T> {
-    const memMb = opts.memMb ?? 0;
-    const go = async () => {
-      running[priority]++;
-      if (priority === "normal" || priority === "low") usedMb += memMb;
-      try { return await fn(); } finally {
-        running[priority]--;
-        if (priority === "normal" || priority === "low") { usedMb -= memMb; pump(); }
-      }
-    };
-    if (priority === "realtime" || priority === "high") return go();
+  function run<T>(priority: Priority, fn: (job: JobContext) => T | Promise<T>, opts: RunOptions = {}): Promise<T> {
+    let memMb = opts.memMb ?? 0, requeues = opts.requeues ?? 0;
     return new Promise<T>((resolve, reject) => {
-      queue.push({ priority, memMb, start: () => go().then(resolve, reject) });
-      pump();
+      const start = () => {
+        const ctrl = new AbortController();
+        let done = false;
+        const job: Live = { priority, memMb, measuredMb: 0, maxMb: opts.maxMb, pids: new Set(), order: ++seq, stop: () => {} };
+        const timer = opts.timeoutMs ? setTimeout(() => job.stop(new JobStopped("timeout", `stopped after ${opts.timeoutMs} ms`)), opts.timeoutMs) : undefined;
+        (timer as any)?.unref?.();
+        const finish = (settle: () => void, stopped?: JobStopped) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          running[priority]--;
+          live.delete(job);
+          if (stopped) ctrl.abort(stopped);
+          if (stopped?.reason === "evicted" && requeues-- > 0) { memMb = Math.max(memMb, job.measuredMb); enqueue(start, true); }
+          else settle();
+          pump();
+        };
+        job.stop = (e) => finish(() => reject(e), e);
+        running[priority]++;
+        live.add(job);
+        let out: Promise<T>;
+        try { out = Promise.resolve(fn({ signal: ctrl.signal, track: (pid) => void job.pids.add(pid) })); } catch (e) { out = Promise.reject(e); }
+        out.then((v) => finish(() => resolve(v)), (e) => finish(() => reject(e)));
+      };
+      const enqueue = (go: () => void, front = false) => {
+        if (!background(priority)) return go();
+        const w: Waiting = { priority, memMb, start: go };
+        front ? queue.unshift(w) : queue.push(w);
+        pump();
+      };
+      enqueue(start);
     });
+  }
+
+  /** `cmd` as a job: low runs at the OS's background priority, `maxMb` is a hard cap where the OS has one
+   *  (a cgroup on Linux), and a stop kills the child (SIGTERM, then SIGKILL) and its descendants. */
+  function spawn(priority: Priority, cmd: string[], opts: SpawnOptions = {}) {
+    return run(priority, async (job) => {
+      let argv = priority === "low" ? lowPriorityCommand(cmd) : cmd;
+      if (opts.maxMb) argv = hardCap(argv, opts.maxMb);
+      const p = Bun.spawn(argv, { cwd: opts.cwd, env: opts.env, stdin: "ignore", stdout: opts.stdout ?? "inherit", stderr: opts.stderr ?? "inherit" });
+      job.track(p.pid);
+      const kill = () => {
+        const tree = [...treeDescendants(p.pid), p.pid];
+        const signal = (s: NodeJS.Signals) => { for (const pid of tree) try { process.kill(pid, s); } catch {} };
+        signal("SIGTERM");
+        const t = setTimeout(() => signal("SIGKILL"), opts.graceMs ?? 5000);
+        (t as any).unref?.();
+        void p.exited.then(() => clearTimeout(t));
+      };
+      if (job.signal.aborted) kill(); else job.signal.addEventListener("abort", kill, { once: true });
+      const exitCode = await p.exited;
+      return { exitCode, signal: p.signalCode ?? null, stdout: p.stdout, stderr: p.stderr };
+    }, opts);
+  }
+
+  /** Measure the jobs that track processes. One past its own maxMb is stopped. While the background work
+   *  is over the memory budget, the newest measured job (low before normal) is put out; the oldest keeps going. */
+  function watch() {
+    const tracked = [...live].filter((j) => j.pids.size);
+    if (!tracked.length) return;
+    const sizes = measure(tracked.flatMap((j) => [...j.pids]));
+    for (const j of tracked) j.measuredMb = [...j.pids].reduce((mb, pid) => mb + (sizes.get(pid) ?? 0), 0);
+    for (const j of tracked) if (j.maxMb && j.measuredMb > j.maxMb) {
+      log(`[priority] stopped a ${j.priority} job at ${Math.round(j.measuredMb)} MB, over its ${j.maxMb} MB`);
+      j.stop(new JobStopped("memory", `took ${Math.round(j.measuredMb)} MB, over its ${j.maxMb} MB`));
+    }
+    for (;;) {
+      const used = usedMb();
+      if (used <= memBudgetMb) break;
+      const bg = [...live].filter((j) => background(j.priority)).sort((a, b) => a.order - b.order);
+      const victim = bg.slice(1).filter((j) => j.measuredMb > 0)
+        .sort((a, b) => a.priority === b.priority ? b.order - a.order : a.priority === "low" ? -1 : 1)[0];
+      if (!victim) break;
+      log(`[priority] put out a ${victim.priority} job at ${Math.round(victim.measuredMb)} MB: background work at ${Math.round(used)} of ${Math.round(memBudgetMb)} MB`);
+      victim.stop(new JobStopped("evicted", `put out at ${Math.round(victim.measuredMb)} MB to keep background work under ${Math.round(memBudgetMb)} MB`));
+    }
   }
 
   function tick() {
@@ -167,8 +323,9 @@ export function scheduler(o: SchedulerOptions = {}) {
     if (back.limit !== before) {
       const pct = (n: number) => `${Math.round(n * 100)}%`;
       log(`[priority] low ${before} -> ${back.limit} of ${slots} (cpu ${pct(load.cpu)}, memory ${pct(load.memory)}; budget ${pct(budget.cpu)} / ${pct(budget.memory)})`);
-      pump();
     }
+    watch();
+    pump();
   }
 
   const everyMs = o.everyMs ?? 5000;
@@ -178,9 +335,21 @@ export function scheduler(o: SchedulerOptions = {}) {
   const stats = (): SchedulerStats => ({
     slots, lowLimit: back.limit, running: { ...running },
     queued: { normal: queue.filter((j) => j.priority === "normal").length, low: queue.filter((j) => j.priority === "low").length },
-    memMb: { used: usedMb, budget: Math.round(memBudgetMb) }, load,
+    memMb: { used: Math.round(usedMb()), budget: Math.round(memBudgetMb) }, load,
   });
-  return { run, tick, stats, budget, stop: () => clearInterval(timer) };
+  return { run, spawn, tick, stats, budget, stop: () => clearInterval(timer) };
+}
+
+/** Every descendant of `pid`, deepest last. */
+function treeDescendants(pid: number): number[] {
+  const kids = new Map<number, number[]>();
+  for (const line of ps().split("\n")) {
+    const [p, pp] = line.trim().split(/\s+/).map(Number);
+    if (p && pp !== undefined) (kids.get(pp) ?? kids.set(pp, []).get(pp)!).push(p);
+  }
+  const out: number[] = [];
+  for (const stack = [...kids.get(pid) ?? []]; stack.length;) { const p = stack.shift()!; out.push(p); stack.push(...kids.get(p) ?? []); }
+  return out;
 }
 
 export type Scheduler = ReturnType<typeof scheduler>;

@@ -22,7 +22,7 @@ const SHARED = new Set([
   // #749 and #751 landed side by side; either may be live already, so neither is renamed.
   "0056_check_freshness.sql",
   "0056_join_dates_and_ghost.sql",
-  // #1032 and #1038 took the same stamp; either may be live already, so neither is renamed.
+  // #1032 and #1038 took the same stamp side by side; either may be live already.
   "20261012200000_check_pinned.sql",
   "20261012200000_heal_runs.sql",
 ]);

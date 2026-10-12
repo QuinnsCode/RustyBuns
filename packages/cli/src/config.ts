@@ -1,5 +1,7 @@
 // The one file the developer owns. Everything else is generated from it.
 
+import type { Persona } from "@rustybuns/shell-bun/priority";
+
 export type Binding =
   | {
       type: "d1";
@@ -278,6 +280,12 @@ export interface HetznerBoxTarget {
    * It adds a script tag to every HTML page the box serves. @default false
    */
   webmcp?: boolean;
+  /**
+   * The budget the box's background work (crons, queue batches) shares, as `RB_PERSONA`, which
+   * overrides it: `background-burner` for a build box that should use all but a core.
+   * @default "balanced" (60% of CPU, 50% of memory)
+   */
+  persona?: Persona;
   /** `nbg1`, `fsn1`, `hel1`, `ash`, `hil`, `sin`. Changing it replaces the server. */
   location?: string;
   /** @deprecated use `location` */
@@ -310,6 +318,12 @@ export interface RailwayBoxTarget {
    * It adds a script tag to every HTML page the box serves. @default false
    */
   webmcp?: boolean;
+  /**
+   * The budget the box's background work (crons, queue batches) shares, as `RB_PERSONA`, which
+   * overrides it: `background-burner` for a build box that should use all but a core.
+   * @default "balanced" (60% of CPU, 50% of memory)
+   */
+  persona?: Persona;
   /** `us-west2`, `us-east4`, `europe-west4`, `asia-southeast1`. Railway picks when unset. */
   region?: string;
   /** Port the host listens on (Railway routes the public domain to it). @default 3000 */

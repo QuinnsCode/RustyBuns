@@ -48,12 +48,17 @@
 // Held back again after that, the crew's copy stays the one that pulls; it just
 // isn't pushed.
 //
-//   POST /api/mirrors {url, name?, visibility?}  clone any git remote as a mirror you own (desktop only)
+// A pull-only mirror (#1009, repos.mirror_pull_only, POST .../mirror {pullOnly})
+// is one-way: syncs hear from upstream and merge, but never push (a copy ahead
+// of upstream settles as "held"), merged branches' upstream branches are left be,
+// and the branch and tag push routes answer 409. For a mirror kept for local CI.
+//
+//   POST /api/mirrors {url, name?, visibility?, pullOnly?}  clone any git remote as a mirror you own (desktop only)
 //   GET  /api/repos/:o/:r/mirror                 where it stands with upstream
 //   POST /api/repos/:o/:r/mirror {resolve?, pushCrew?}
 //        (owner) sync now; settle a clash with "mine" or "upstream", rewritten history with
 //        "rebase" or "upstream"; pushCrew true sends the crew's copy upstream, false holds it;
-//        primary "here" or "upstream" says which side leads
+//        primary "here" or "upstream" says which side leads; pullOnly true never pushes
 //   GET|POST /api/repos/:o/:r/mirror/branches[/:b/pull|push]  branches both ways (see "Branches" below)
 //   GET|POST /api/repos/:o/:r/mirror/turn       a dug fork, turned into a mirror (see the end)
 
@@ -142,9 +147,9 @@ export async function mirrorIdentity(env: Env, owner: string, repo: string) {
   return r?.mirror_url ? gitIdentity() : null;
 }
 
-interface Row { owner: string; name: string; artifact: string; branch: string | null; crew_artifact: string | null; mirror_push_crew: number | null; mirror_primary: string | null; mirror_url: string; mirror_fails: number | null; mirror_down_since: number | null; upstream_commit: string | null }
+interface Row { owner: string; name: string; artifact: string; branch: string | null; crew_artifact: string | null; mirror_push_crew: number | null; mirror_primary: string | null; mirror_pull_only: number | null; mirror_url: string; mirror_fails: number | null; mirror_down_since: number | null; upstream_commit: string | null }
 const row = (env: Env, owner: string, repo: string) =>
-  env.DB.prepare("SELECT owner, name, artifact, branch, crew_artifact, mirror_push_crew, mirror_primary, mirror_url, mirror_fails, mirror_down_since, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first() as Promise<Row | null>;
+  env.DB.prepare("SELECT owner, name, artifact, branch, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_url, mirror_fails, mirror_down_since, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first() as Promise<Row | null>;
 
 type State = "ok" | "down" | "refused" | "clash" | "held" | "rewritten";
 export type Resolve = "mine" | "upstream" | "rebase";
@@ -259,7 +264,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     if (!crew) await landPushes(env, owner, repo);
     // This copy leads: commits waiting on top of what upstream last had go up before anything's fetched.
     // Upstream moved meanwhile? The push is turned away, and the usual fetch, merge and push follow.
-    if (primaryOf(r.mirror_primary) === "here" && !held && !crew) {
+    if (primaryOf(r.mirror_primary) === "here" && !held && !crew && !r.mirror_pull_only) {
       const known = await git(["rev-parse", "--verify", "--quiet", up], dir), tip = await must(["rev-parse", heads], dir), last = known.out.trim();
       if (!known.code && last !== tip && await isAncestor(dir, last, tip)) {
         const p = await push(tip);
@@ -338,6 +343,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     // 3. Hand upstream what we have that it doesn't.
     if (ours !== theirs && !(await isAncestor(dir, ours, theirs))) {
       if (held) return settled(env, r, theirs, "held", "this repo has private lines, and its git holds them blank, so nothing goes upstream", ours !== before);
+      if (r.mirror_pull_only) return settled(env, r, theirs, "held", "this mirror is pull-only, so nothing goes upstream", ours !== before);
       const p = await push(ours);
       // Upstream moved since the fetch: the next round merges it in, then pushes.
       if (p === "moved") return again(env, r);
@@ -627,7 +633,7 @@ export async function settlePush(env: Env, owner: string, repo: string, path: st
 
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
 export async function mirrorStatus(env: Env, owner: string, repo: string) {
-  const r = await env.DB.prepare("SELECT artifact, crew_artifact, mirror_push_crew, mirror_primary, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first();
+  const r = await env.DB.prepare("SELECT artifact, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first();
   const lg = localGit(env);
   if (!r || !lg) return null;
   const branch = (r.branch ?? "main") as string;
@@ -642,6 +648,8 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
     private: !!r.crew_artifact, pushCrew: !!r.mirror_push_crew,
     // Which side leads (#464). With "here", ahead is how far behind upstream (the backup) is, as of syncedAt.
     primary: primaryOf(r.mirror_primary),
+    // One-way (#1009): it pulls, and nothing it does pushes.
+    pullOnly: !!r.mirror_pull_only,
   };
 }
 
@@ -649,11 +657,13 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
 export async function mirrorRepoRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (req.method === "POST") {
     if (user !== owner) return json({ error: "owner only" }, 403);
-    const b = (await req.json().catch(() => ({}))) as { resolve?: string; pushCrew?: unknown; primary?: unknown };
+    const b = (await req.json().catch(() => ({}))) as { resolve?: string; pushCrew?: unknown; primary?: unknown; pullOnly?: unknown };
     if (b.resolve !== undefined && !["mine", "upstream", "rebase"].includes(b.resolve)) return json({ error: "resolve: mine, upstream or rebase" }, 400);
     if (b.pushCrew !== undefined && typeof b.pushCrew !== "boolean") return json({ error: "pushCrew: true or false" }, 400);
+    if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
     if (b.primary !== undefined && !PRIMARIES.includes(b.primary as Primary)) return json({ error: "primary: here or upstream" }, 400);
     if (b.primary !== undefined) await env.DB.prepare("UPDATE repos SET mirror_primary = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.primary === "here" ? "here" : null, owner, repo).run();
+    if (b.pullOnly !== undefined) await env.DB.prepare("UPDATE repos SET mirror_pull_only = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pullOnly ? 1 : null, owner, repo).run();
     if (b.pushCrew !== undefined) await env.DB.prepare("UPDATE repos SET mirror_push_crew = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pushCrew ? 1 : null, owner, repo).run();
     await syncMirror(env, owner, repo, { resolve: b.resolve as Resolve | undefined });
   }
@@ -893,6 +903,35 @@ export async function pullBranch(env: Env, owner: string, repo: string, name: st
 }
 
 /**
+ * Branch `name`'s files, as they are now, laid over `baseTree` in the git at `dir`: the
+ * tree a push upstream commits, and a beam of a codeSplitter branch (beam.ts) starts from.
+ */
+export async function branchTree(env: Env, owner: string, repo: string, name: string, dir: string, baseTree: string) {
+  const { results } = await env.DB.prepare("SELECT path, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all();
+  const idx = join(tmpdir(), `codesplitter-branch-${crypto.randomUUID()}.index`), e = { GIT_INDEX_FILE: idx };
+  try {
+    await must(["read-tree", baseTree], dir, e);
+    const gone: string[] = [];
+    for (const { path, deleted, blob, mode: binMode } of results as { path: string; deleted: number; blob: string | null; mode: string | null }[]) {
+      if (deleted) { gone.push(path); continue; }
+      // A binary file is a blob this git has already.
+      if (blob) { await must(["update-index", "--add", "--cacheinfo", `${binMode ?? "100644"},${blob},${path}`], dir, e); continue; }
+      const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", name)).json()) as Doc;
+      const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(toDisk(doc.lines)), stdout: "pipe", stderr: "pipe" });
+      const [, hash] = await Promise.all([put.exited, new Response(put.stdout).text()]);
+      const mode = (await must(["ls-tree", baseTree, "--", path], dir)).split(" ")[0] || "100644";
+      await must(["update-index", "--add", "--cacheinfo", `${mode},${hash.trim()},${path}`], dir, e);
+    }
+    // The ones it deleted: a zero entry takes each out (a bare repo has no work tree for --force-remove).
+    if (gone.length) {
+      const rm = Bun.spawn(["git", "update-index", "-z", "--index-info"], { cwd: dir, env: { ...process.env, ...e }, stdin: new TextEncoder().encode(gone.map((p) => `0 ${"0".repeat(40)}\t${p}\0`).join("")), stdout: "ignore", stderr: "pipe" });
+      if (await rm.exited) throw new Error(await new Response(rm.stderr).text() || "git update-index exited");
+    }
+    return await must(["write-tree"], dir, e);
+  } finally { rmSync(idx, { force: true }); }
+}
+
+/**
  * Push branch `name` upstream, to the git branch it came from (or one of its
  * own name): main's tip with the branch's files as they are now, as one commit.
  * Upstream's branch moved since? The branch takes that in first, so nothing up
@@ -905,6 +944,7 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   const s = await branchSetup(env, owner, repo);
   if ("error" in s) return s.error;
   const { r, dir, main, net } = s;
+  if (r.mirror_pull_only) return json({ error: "this mirror is pull-only, so nothing goes upstream" }, 409);
   if (r.crew_artifact && !r.mirror_push_crew) return json({ error: "this repo has private lines, and nothing goes upstream until you push the crew's copy" }, 409);
   const br = await branchRow(env, owner, repo, name);
   if (!br) return json({ error: "no such branch" }, 404);
@@ -925,30 +965,7 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
     [parents, baseTree] = [[prev, tip], m.out.trim().split("\n")[0]!];
   }
 
-  // The branch's files, as they are, over that tree.
-  const { results } = await env.DB.prepare("SELECT path, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all();
-  const idx = join(tmpdir(), `codesplitter-branch-${crypto.randomUUID()}.index`), e = { GIT_INDEX_FILE: idx };
-  let tree: string;
-  try {
-    await must(["read-tree", baseTree], dir, e);
-    const gone: string[] = [];
-    for (const { path, deleted, blob, mode: binMode } of results as { path: string; deleted: number; blob: string | null; mode: string | null }[]) {
-      if (deleted) { gone.push(path); continue; }
-      // A binary file is a blob this git has already.
-      if (blob) { await must(["update-index", "--add", "--cacheinfo", `${binMode ?? "100644"},${blob},${path}`], dir, e); continue; }
-      const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", name)).json()) as Doc;
-      const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(toDisk(doc.lines)), stdout: "pipe", stderr: "pipe" });
-      const [, hash] = await Promise.all([put.exited, new Response(put.stdout).text()]);
-      const mode = (await must(["ls-tree", baseTree, "--", path], dir)).split(" ")[0] || "100644";
-      await must(["update-index", "--add", "--cacheinfo", `${mode},${hash.trim()},${path}`], dir, e);
-    }
-    // The ones it deleted: a zero entry takes each out (a bare repo has no work tree for --force-remove).
-    if (gone.length) {
-      const rm = Bun.spawn(["git", "update-index", "-z", "--index-info"], { cwd: dir, env: { ...process.env, ...e }, stdin: new TextEncoder().encode(gone.map((p) => `0 ${"0".repeat(40)}\t${p}\0`).join("")), stdout: "ignore", stderr: "pipe" });
-      if (await rm.exited) throw new Error(await new Response(rm.stderr).text() || "git update-index exited");
-    }
-    tree = await must(["write-tree"], dir, e);
-  } finally { rmSync(idx, { force: true }); }
+  const tree = await branchTree(env, owner, repo, name, dir, baseTree);
   if (parents.length === 1 && parents[0] === prev && tree === await must(["rev-parse", `${prev}^{tree}`], dir)) return json({ ref, commit: prev, pushed: false, took });
 
   const message = `${name}, from codeSplitter${br.by === owner ? "" : `\n\nCo-authored-by: ${br.by} <${br.by}@${GIT_EMAIL_DOMAIN}>`}`;
@@ -986,7 +1003,8 @@ async function followBranches(env: Env, owner: string, repo: string) {
       const ref = br.upstream_ref, tip = tips.get(ref), had = await taken(s, ref);
       if (!tip) { if (br.status === "merged") await forget(br.name); continue; }
       if (tip === had) {
-        if (br.status !== "merged") continue;
+        // Deleting a merged branch upstream is a push too: a pull-only mirror leaves it be.
+        if (br.status !== "merged" || s.r.mirror_pull_only) continue;
         const m = await git(["merge-tree", "--write-tree", up, tip], s.dir);
         if (m.code || m.out.trim().split("\n")[0] !== await must(["rev-parse", `${up}^{tree}`], s.dir)) continue;
         const d = await git(["push", "--porcelain", `--force-with-lease=refs/heads/${ref}:${tip}`, s.r.mirror_url, `:refs/heads/${ref}`], s.dir, s.net);
@@ -1081,6 +1099,7 @@ export async function fetchTags(env: Env, owner: string, repo: string, names?: s
 /** Push this repo's tag `name` upstream. Never forced: upstream's own tag of that name stays. */
 export async function pushTag(env: Env, owner: string, repo: string, name: string) {
   const s = await tagSetup(env, owner, repo), ours = (await hereTags(s.dir)).get(name);
+  if (s.r.mirror_pull_only) throw refused("this mirror is pull-only, so nothing goes upstream", 409);
   if (!ours) throw refused(`no tag ${name} here`, 404);
   const p = await git(["push", "--porcelain", s.r.mirror_url, `refs/tags/${name}:refs/tags/${name}`], s.dir, s.net);
   const said = [p.err, p.out].filter(Boolean).join("\n");
@@ -1127,13 +1146,14 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
   if (!user) return json({ error: "sign in first" }, 401);
   const lg = localGit(env);
   if (!lg) return json({ error: "mirrors need git on your machine: dig it up in the desktop app" }, 501);
-  const b = (await req.json().catch(() => ({}))) as { url?: string; name?: string; visibility?: string };
+  const b = (await req.json().catch(() => ({}))) as { url?: string; name?: string; visibility?: string; pullOnly?: unknown };
   const src = remoteOf(b.url ?? "");
   if (!src) return json({ error: "give a git remote: a GitHub owner/name, an https or ssh URL, or git@host:path" }, 400);
   const name = b.name || src.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
   const visibility = b.visibility ?? "public";
   if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
+  if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
   if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
 
   // Shallow, like a dig: upstream's history stays upstream, and our commits build on its tip.
@@ -1148,9 +1168,9 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
   const branch = await must(["symbolic-ref", "--short", "HEAD"], dir), sha = await must(["rev-parse", "HEAD"], dir);
   await must(["update-ref", `refs/upstream/${branch}`, sha], dir);
   const now = Date.now();
-  await env.DB.prepare(`INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, mirror_url, mirror_state, mirror_synced_at, mirror_next_at, mirror_fails, git_seen)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, 0, ?)`).bind(user, name, visibility, now, art, lg.remote(art), branch, src.upstream, sha, src.url, now, now + EVERY, sha).run();
-  return json({ owner: user, name, upstream: src.upstream, commit: sha, mirror: true }, 201);
+  await env.DB.prepare(`INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, mirror_url, mirror_pull_only, mirror_state, mirror_synced_at, mirror_next_at, mirror_fails, git_seen)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, 0, ?)`).bind(user, name, visibility, now, art, lg.remote(art), branch, src.upstream, sha, src.url, b.pullOnly ? 1 : null, now, now + EVERY, sha).run();
+  return json({ owner: user, name, upstream: src.upstream, commit: sha, mirror: true, pullOnly: !!b.pullOnly }, 201);
 }
 
 // A dug fork, turned into a mirror (#875). A dig on the desktop is a shallow clone of upstream, so its git

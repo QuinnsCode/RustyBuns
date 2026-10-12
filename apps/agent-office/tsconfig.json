@@ -4,5 +4,5 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["bun"]
   },
-  "include": ["asks", "checks", "codesplitter", "druids", "icons", "live", "scripts", "test", "triage"]
+  "include": ["asks", "checks", "codesplitter", "druids", "icons", "live", "power", "scripts", "test", "triage"]
 }

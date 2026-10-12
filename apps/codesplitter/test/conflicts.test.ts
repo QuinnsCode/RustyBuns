@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { apply, empty, explain, fromText, merge, mergeWords, parseError, text, type Doc, type Resolve } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { markers, settled } from "../src/conflict-agent.ts";
-import { parseResolve } from "../src/branches.ts";
+import { materializeOn, parseResolve } from "../src/branches.ts";
 import { local as boot } from "../src/local.ts";
+import { toFile } from "../src/archive.ts";
 import type { Exec } from "../src/agent-run.ts";
 import type { Tester } from "../src/deps.ts";
 
@@ -281,6 +282,17 @@ describe("refused, not merged clean (#934)", () => {
   });
 });
 
+// Disagreements with git that scripts/shadow.ts found on this repo's merged PRs (#1014).
+describe("found in shadow mode (#1014)", () => {
+  test("#244's .gitignore: both added `!.env.schema` a line apart; git merged it in twice, ours asks once", () => {
+    const was = ".env\n.env.*\n!.env.example\n.dev.vars";
+    const s = sides(was, ".env\n.env.*\n!.env.schema\n!.env.example\n.dev.vars", ".env\n.env.*\n!.env.example\n!.env.schema\n.dev.vars");
+    expect(conflicts(s, ".gitignore")).toMatchObject([{ main: "!.env.schema", branch: "!.env.schema", doubled: true }]);
+    // What landed was git's, the line twice; main's place keeps it once.
+    expect(text(settle(s, { [conflicts(s, ".gitignore")[0]!.line]: "main" }, ".gitignore"))).toBe(".env\n.env.*\n!.env.schema\n!.env.example\n.dev.vars");
+  });
+});
+
 describe("over the API", () => {
   /** ana's repo r: a.ts with `x(1)` on main changed to `x(2)` and on branch b1 to `x(3)`. */
   async function app(env: Record<string, string> = {}) {
@@ -475,8 +487,11 @@ describe("over the API", () => {
     await post("ana", "/api/repos/ana/r/branches", { name: "dep" });
     const pkg = (await (await call("ana", "/api/repos/ana/r/do/file?path=package.json")).json() as Doc).lines[1]!;
     await post("ana", "/api/repos/ana/r/do/ops?path=package.json&branch=dep", { ops: [{ kind: "set", line: pkg.id, base: pkg.rev, text: '  "dependencies": { "a": "1", "b": "1" }' }] });
-    await post("ana", "/api/repos/ana/r/do/ops?path=bun.lock&branch=dep", { ops: [{ kind: "set", line: "L1", base: 1, text: "a@1 b@1" }] });
-    await post("ana", "/api/repos/ana/r/do/ops?path=bun.lock", { ops: [{ kind: "set", line: "L1", base: 1, text: "a@1.0.1" }] });
+    // The lockfile is locked to live edits (#1011): both sides change it as a push or a regeneration does, at the file.
+    const relock = (text: string, branch?: string) => toFile(call.env, "ana", "r", "bun.lock", "ana", "ops", { method: "POST", body: JSON.stringify({ ops: [{ kind: "set", line: "L1", base: 1, text }] }) }, "", branch);
+    expect(await materializeOn(call.env, "ana", "r", "dep", "bun.lock")).toEqual({ ok: true });
+    expect((await relock("a@1 b@1", "dep")).ok).toBe(true);
+    expect((await relock("a@1.0.1")).ok).toBe(true);
 
     const ran: { files: Record<string, string>; test: boolean; lock: string | null }[] = [];
     let lock: string | null = null;

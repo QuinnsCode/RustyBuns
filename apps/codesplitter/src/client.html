@@ -1979,8 +1979,8 @@ const gitMapModel = ({ owner, repo, r, branches = [], mirror = null, upBranches 
       const moving = [behind && `${behind} to take in`, ahead && `${ahead} to send up`].filter(Boolean).join(", ");
       const label = { down: "upstream down: we keep working", refused: "upstream said no to a push", clash: "a clash: pick a side", rewritten: "upstream rewrote history: pick one", held: "listening only: private lines stay here" }[m.state]
         ?? (moving || (m.primary === "here" ? "in step: this copy leads" : "in step, both ways"));
-      links.push({ from: "up", to: "here", kind: "mirror", both: m.state !== "held", hot: m.state !== "ok" || !!moving, label, pic: ["sync", { ahead, behind }] });
-      story = `${owner}/${repo} is a mirror of ${upName}: they listen to each other, so upstream's commits come in and yours go back up${m.state === "held" ? " (for now, only in)" : ""}.`;
+      links.push({ from: "up", to: "here", kind: "mirror", both: m.state !== "held" && !m.pullOnly, hot: m.state !== "ok" || !!moving, label, pic: ["sync", { ahead, behind }] });
+      story = `${owner}/${repo} is a mirror of ${upName}: they listen to each other, so upstream's commits come in and yours go back up${m.pullOnly ? " (it's pull-only: only in)" : m.state === "held" ? " (for now, only in)" : ""}.`;
     } else {
       // Upstream moved on since the dig (#874): say how far, in orange, with the pull it'd take.
       const moved = r.upstream_tip && r.upstream_commit && r.upstream_tip !== r.upstream_commit, n = r.upstream_behind ?? null;
@@ -3178,7 +3178,7 @@ const views = {
     // This copy leading (#464), Keep mine is the pick it offers first; it still waits to be pressed.
     const pickSide = m.state === "clash" && m.clash.length ? `<button class="btn${m.primary === "here" ? " primary" : ""}" data-resolve="mine"${picAttr("keep")}>${icon("user")}Keep mine</button><button class="btn" data-resolve="upstream"${picAttr("theirs")}>${icon("download")}Take upstream's</button>`
       : m.state === "rewritten" ? `<button class="btn" data-resolve="rebase"${picAttr("rebase")}>${icon("git-merge")}Re-base on upstream</button><button class="btn" data-resolve="upstream"${picAttr("drop")}>${icon("download")}Take upstream's</button>` : "";
-    const first = pickSide ? (m.state === "clash" ? ["keep"] : ["rebase"]) : m.state === "held" ? ["crew"] : ["sync", { ahead: m.ahead, behind: m.behind }];
+    const first = pickSide ? (m.state === "clash" ? ["keep"] : ["rebase"]) : m.state === "held" && m.private && !m.pullOnly ? ["crew"] : ["sync", { ahead: m.ahead, behind: m.behind }];
     // Private lines: hold the repo back, or push the crew's copy (real text) upstream.
     const crew = m.private ? (m.pushCrew
       ? `<p class="muted" style="font-size:12px">${icon("lock")}The crew's copy goes upstream, private lines' real text and all. <a href="#" data-crew="0"${picAttr("hold")}>Hold it back</a></p>`
@@ -3187,17 +3187,24 @@ const views = {
     const lead = m.primary === "here"
       ? `<p class="muted" style="font-size:12px">${icon("hard-drive")}This copy leads: <code>${esc(m.url)}</code> is the backup, ${m.ahead ? `<b>${m.ahead} commit${m.ahead === 1 ? "" : "s"} behind</b>` : "up to date"}${m.syncedAt ? ` as of ${ago(m.syncedAt)}` : ""}. Syncs push first. <a href="#" data-primary="upstream">Let upstream lead</a></p>`
       : `<p class="muted" style="font-size:12px">${icon("cloud")}Upstream leads: syncs hear from it, then push. <a href="#" data-primary="here">Make this copy the source of truth</a></p>`;
+    // Pull-only (#1009): one-way, for a mirror kept for local CI.
+    const pull = m.pullOnly
+      ? `<p class="muted" style="font-size:12px">${icon("download")}Pull-only: syncs hear from upstream and nothing goes back up. <a href="#" data-pull="0">Push too</a></p>`
+      : `<p class="muted" style="font-size:12px"><a href="#" data-pull="1" title="syncs only pull; branch and tag pushes are turned away">${icon("download")}Make it pull-only</a></p>`;
     const who = m.identity ? `Commits go up as <b>${esc(m.identity.name)}</b> &lt;${esc(m.identity.email)}&gt;.` : `No git identity on this machine: set <code>git config --global user.name</code> and <code>user.email</code>.`;
     el.dataset.pics = "";
     el.innerHTML = `<p>${head}</p>${m.state !== "ok" && m.state !== "held" && !(m.state === "rewritten" && !m.error?.includes(": ")) ? said : ""}
       <div class="gitpic-slot" data-pic="${esc(JSON.stringify(first))}">${gitPic(first)}</div>
-      <div class="row" style="gap:6px;flex-wrap:wrap">${pickSide}<button class="btn" id="mirror-sync"${sync}>${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}${lead}
+      <div class="row" style="gap:6px;flex-wrap:wrap">${pickSide}<button class="btn" id="mirror-sync"${sync}>${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}${m.pullOnly ? "" : lead}${pull}
       <p class="muted" style="font-size:12px">${who} ${m.truth && m.truth !== "ask" ? `Clashes settle themselves: ${esc(TRUTHS[m.truth]?.[0] ?? m.truth)} wins.` : "Clashes wait for you."} <a href="#/u/${esc(me())}">Where git truth lives</a>: your history never goes extinct either way.</p><div id="mirror-branches"></div>`;
     icons();
     $("#mirror-sync").addEventListener("click", () => { el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, {}); });
     el.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => { el.querySelector("p").textContent = "settling…"; views.wireMirror(owner, repo, { resolve: b.dataset.resolve }); }));
     el.querySelectorAll("[data-primary]").forEach((b) => b.addEventListener("click", (e) => {
       e.preventDefault(); el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, { primary: b.dataset.primary });
+    }));
+    el.querySelectorAll("[data-pull]").forEach((b) => b.addEventListener("click", (e) => {
+      e.preventDefault(); el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, { pullOnly: b.dataset.pull === "1" });
     }));
     el.querySelectorAll("[data-crew]").forEach((b) => b.addEventListener("click", (e) => {
       e.preventDefault();
@@ -3257,29 +3264,31 @@ const views = {
       } catch (err) { toast(err.message); views.wireListen(owner, repo); }
     });
   },
-  /** Beam (beam.ts): a git branch's stack squashed into one clean commit, its noise left out, as a link and a patch. */
+  /** Beam (beam.ts): a git or codeSplitter branch's work squashed into one clean commit, its noise left out, as a link and a patch. */
   async wireBeams(owner, repo, r) {
     const el = $("#beams");
     if (!el) return;
     const d = await api(`/repos/${owner}/${repo}/beams`).catch(() => null);
     if (!d) { el.innerHTML = ""; return; }
-    const ready = (d.branches ?? []).filter((b) => b.ahead > 0), fork = !r.mirror && r.upstream?.startsWith("github:");
+    const ready = (d.branches ?? []).filter((b) => b.ahead > 0), ours = d.codesplitter_branches ?? [], fork = !d.hosted && !r.mirror && r.upstream?.startsWith("github:");
     const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
     const sent = d.beams.slice(0, 5).map((b) => `<div class="row" style="gap:6px"><a href="#/beam/${b.id}">${esc(b.title)}</a><span class="muted" style="font-size:12px">${b.status === "open" ? `${plural(b.files, "file")}${b.to ? ` → @${esc(b.to)}` : ""}` : "withdrawn"} · ${ago(b.created_at)}</span></div>`).join("");
-    el.innerHTML = (ready.length ? `<form id="beam-form" style="display:flex;flex-direction:column;gap:6px">
-        <select name="branch" aria-label="git branch">${ready.map((b) => `<option value="${esc(b.name)}">${esc(b.name)} · ${plural(b.ahead, "commit")}</option>`).join("")}</select>
+    const opts = (label, list, kind, says) => list.length ? `<optgroup label="${label}">${list.map((b) => `<option value="${kind}:${esc(b.name)}">${esc(b.name)} · ${says(b)}</option>`).join("")}</optgroup>` : "";
+    el.innerHTML = (ready.length || ours.length ? `<form id="beam-form" style="display:flex;flex-direction:column;gap:6px">
+        <select name="branch" aria-label="branch">${opts("codeSplitter branches", ours, "codesplitter", (b) => plural(b.files, "file") + (b.parent ? ` · on ${esc(b.parent)}` : ""))}${opts("git branches", ready, "git", (b) => plural(b.ahead, "commit"))}</select>
         <input name="title" placeholder="Title (blank: the first commit's)" aria-label="title">
         <input name="to" placeholder="@handle to send it to (optional)" aria-label="send to">
         ${fork ? `<label class="row muted" style="font-size:13px;gap:6px"><input type="checkbox" name="upstream">On upstream's newest commit</label>` : ""}
         <button class="btn primary">${icon("zap")}Beam it</button></form>`
-      : `<p class="muted">Push a git branch here (the Clone button's Push back line) and beam it: its commits squashed into one clean commit, lockfile churn and leftovers left out, as a link and a patch.</p>`) + sent;
+      : `<p class="muted">Open a branch${d.hosted ? "" : ", or push a git branch here (the Clone button's Push back line),"} and beam it: its commits squashed into one clean commit, lockfile churn and leftovers left out, as a link and a patch.</p>`) + sent;
     icons();
     $("#beam-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const f = new FormData(e.target), btn = e.target.querySelector("button");
       btn.disabled = true;
       try {
-        const b = await api(`/repos/${owner}/${repo}/beams`, { branch: f.get("branch"), title: f.get("title") || undefined,
+        const [kind, ...name] = String(f.get("branch")).split(":");
+        const b = await api(`/repos/${owner}/${repo}/beams`, { branch: name.join(":"), kind, title: f.get("title") || undefined,
           to: String(f.get("to") || "").replace(/^@/, "") || undefined, onto: f.get("upstream") ? "upstream" : "main" });
         location.hash = `#/beam/${b.id}`;
       } catch (err) { toast(err.message); btn.disabled = false; }
@@ -4829,7 +4838,8 @@ const views = {
         <button class="btn" id="beam-link" title="copy the link">${icon("link")}</button>
         ${mine ? `<button class="btn" id="beam-withdraw" title="withdraw it: the link stops working">${icon("link-2-off")}</button>` : ""}</div>
         <div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">
-          <div class="muted" style="font-size:13px">@${esc(b.by)} beamed ${plural(b.commits, "commit")} of <a href="#/r/${esc(b.owner)}/${esc(b.repo)}">${esc(b.owner)}/${esc(b.repo)}</a>'s <code>${esc(b.branch)}</code>${b.to ? ` to @${esc(b.to)}` : ""}, squashed into <code>${esc(b.sha.slice(0, 7))}</code> on ${esc(b.onto.label)}.</div>
+          <div class="muted" style="font-size:13px">@${esc(b.by)} beamed ${b.kind === "codesplitter" ? "codeSplitter branch" : `${plural(b.commits, "commit")} of`} <a href="#/r/${esc(b.owner)}/${esc(b.repo)}">${esc(b.owner)}/${esc(b.repo)}</a>'s <code>${esc(b.branch)}</code>${b.to ? ` to @${esc(b.to)}` : ""}, ${b.stack.length > 1 ? `as ${b.stack.length} commits, each branch on the one under it,` : `squashed into <code>${esc(b.sha.slice(0, 7))}</code>`} on ${esc(b.onto.label)}.</div>
+          ${b.stack.length > 1 ? `<ol style="margin:8px 0 0;padding-left:20px;font-size:13px">${b.stack.map((c) => `<li><code>${esc(c.sha.slice(0, 7))}</code> ${esc(c.title)} <span class="muted">(${esc(c.branch)})</span></li>`).join("")}</ol>` : ""}
           ${b.message ? `<pre style="white-space:pre-wrap;margin:8px 0 0;font:inherit">${esc(b.message)}</pre>` : ""}</div>
         ${b.dropped.length ? `<details class="body" style="border-bottom:1px solid var(--border)"><summary>Left out ${plural(b.dropped.length, "file")} as noise</summary>${b.dropped.map((d) => `<div><code>${esc(d.path)}</code> <span class="muted">${esc(d.why)}</span></div>`).join("")}</details>` : ""}
         ${diffHtml(b.diff)}${b.diff_truncated ? '<div class="body muted">The diff goes on: the patch has all of it.</div>' : ""}</div>

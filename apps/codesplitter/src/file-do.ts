@@ -35,7 +35,7 @@ import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { apply, empty, merge, mergeWords, replay, sha, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
-import type { Rule } from "./policy.ts";
+import type { Live, Rule } from "./policy.ts";
 
 /** `writers`: everyone whose edits since the file's last commit this one carries (a hosted deploy asks about others', deploy.ts). */
 interface Commit { n: number; sha: string; parent: string | null; rev: number; by: string; at: number; message: string; writers: string[] }
@@ -206,6 +206,8 @@ export class FileDurableObject {
     const route = url.pathname.split("/").pop();
     const crew = req.headers.get("x-codesplitter-crew") === "1";
     const where = req.headers.get("x-codesplitter-file");
+    // How the path takes live edits (#1011), from main's .gitattributes: the Worker reads it for an edit or a claim.
+    const live = (req.headers.get("x-codesplitter-live") ?? undefined) as Live | undefined;
     if (where && decodeURIComponent(where) !== JSON.stringify(this.where)) {
       this.where = JSON.parse(decodeURIComponent(where));
       await this.ctx.storage.put("where", this.where);
@@ -225,14 +227,14 @@ export class FileDurableObject {
       this.ctx.acceptWebSocket(server);
       // and who its edits count as under the edit limit, if they're counted at all,
       // and whose "wrote code" step its first edit is (insights.ts), if anyone's.
-      server.serializeAttachment({ user: by, write: req.headers.get("x-codesplitter-write") === "1", limitAs: req.headers.get("x-codesplitter-limit-as"), stepAs: req.headers.get("x-codesplitter-step-as") });
+      server.serializeAttachment({ user: by, write: req.headers.get("x-codesplitter-write") === "1", live, limitAs: req.headers.get("x-codesplitter-limit-as"), stepAs: req.headers.get("x-codesplitter-step-as") });
       this.presence();
       return new Response(null, { status: 101, webSocket: client } as ResponseInit);
     }
     if (req.method === "GET" && route === "file") return json(this.shown(this.doc, crew));
     if (req.method === "POST" && route === "ops") {
       const { ops, ifRev, claim } = (await req.json()) as { ops: Op[]; ifRev?: number; claim?: string };
-      const r = await this.edit(by, ops, ifRev, claim);
+      const r = await this.edit(by, ops, ifRev, claim, live);
       return r.ok ? json({ rev: r.rev, applied: r.applied }) : json(refused(r), 409);
     }
     try {
@@ -274,6 +276,7 @@ export class FileDurableObject {
       // Crew only (the Worker checks). Any of the crew may lift any claim: that's how a person steers an agent off lines.
       const b = (await req.json()) as ClaimAsk & { release?: boolean };
       if (b.release) return json({ released: await this.release(b.id ?? "") });
+      if (live === "locked") return json({ error: LOCKED }, 409);
       return this.claim(by, b);
     }
     if (req.method === "POST" && route === "release") {
@@ -365,9 +368,12 @@ export class FileDurableObject {
    * interleave; then persisted, then broadcast as the exact applied ops, so
    * every open page updates in place without refetching.
    */
-  async edit(by: string | string[], ops: Op[], ifRev?: number, claim?: string) {
+  async edit(by: string | string[], ops: Op[], ifRev?: number, claim?: string, live?: Live) {
     // What stale lines said is read first: from here to the apply, nothing awaits.
     if (typeof by === "string" && ifRev === undefined) ops = this.rebase(ops, await this.startedFrom(ops));
+    // The path's policy, on a live edit: a locked file takes none, and on a `line` one an agent claims first.
+    const barred = typeof by === "string" ? this.barred(by, ops, live, claim) : null;
+    if (barred) return { ok: false as const, rev: this.doc.rev, ...barred };
     // A merge (one author per op) lands whole: claims guard live edits, not a branch coming home.
     const held = typeof by === "string" ? this.held(by, ops, claim) : [];
     if (held.length) {
@@ -552,12 +558,12 @@ export class FileDurableObject {
     if (msg.type !== "ops" || !Array.isArray(msg.ops)) return;
     const answer = (m: Record<string, unknown>) => { try { ws.send(JSON.stringify({ ...m, id: msg.id })); } catch {} };
     try {
-      const who = (ws.deserializeAttachment() ?? {}) as { user?: string; write?: boolean; limitAs?: string | null; stepAs?: string | null };
+      const who = (ws.deserializeAttachment() ?? {}) as { user?: string; write?: boolean; live?: Live; limitAs?: string | null; stepAs?: string | null };
       if (!who.write) return answer({ type: "nack", error: "no write access" });
       // The limit reads its rules from D1: if that fails, the edit goes through rather than nowhere.
       const over = who.limitAs ? await this.edits.hit(who.limitAs).catch(() => null) : null;
       if (over) return answer({ type: "nack", error: over.error, retryAfter: over.wait });
-      const r = await this.edit(who.user ?? "anon", msg.ops, msg.ifRev, msg.claim);
+      const r = await this.edit(who.user ?? "anon", msg.ops, msg.ifRev, msg.claim, who.live);
       answer(r.ok ? { type: "ack", rev: r.rev } : { type: "nack", ...refused(r) });
       if (r.ok && who.stepAs) {
         ws.serializeAttachment({ ...who, stepAs: null });
@@ -863,6 +869,22 @@ export class FileDurableObject {
     return out;
   }
 
+  /**
+   * What the path's live policy refuses (#1011): every op on a `locked` file, and on a `line` one,
+   * an agent's op on a line outside its own claim (named with `claim`), so it waits in line first.
+   * A person's edit isn't held. An insert needs the line it goes after, or at the top the first line.
+   */
+  barred(by: string, ops: Op[], live?: Live, claim?: string) {
+    if (live === "locked") return { error: LOCKED, conflicts: ops.map((_, index) => ({ index, reason: "locked" })) };
+    if (live !== "line" || !by.startsWith("agent-") || !this.doc.lines.length) return null;
+    const now = Date.now(), first = this.doc.lines[0]!.id;
+    const out = ops.flatMap((op, index) => {
+      const c = this.claimOf.get(op.kind === "insert" ? op.after ?? first : op.line);
+      return c && c.who === by && c.id === claim && (c.until === null || c.until > now) ? [] : [{ index, reason: "claim first" }];
+    });
+    return out.length ? { error: "this file takes an agent's edits on lines it has claimed: claim_lines (with wait to get in line), then edit with that claim", conflicts: out } : null;
+  }
+
   /** Keep claims (intents too) on the lines they cover: the holder's inserts inside join, deleted lines leave. */
   async follow(by: string, applied: Applied[], claim?: string) {
     const changed = new Set<Claim>();
@@ -896,8 +918,11 @@ type ClaimAsk = { id?: string; lines?: string[]; task?: string; ttl?: number | n
 const newId = (now: number) => `c${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 /** What a refused edit answers: its conflicts, and when lines are held, the claims in the way and when to try again. */
-const refused = (r: { rev: number; conflicts: unknown[]; claims?: Claim[]; retryAfter?: number | null }) =>
-  ({ rev: r.rev, conflicts: r.conflicts, ...(r.claims && { claims: r.claims, retryAfter: r.retryAfter }) });
+const refused = (r: { rev: number; conflicts: unknown[]; claims?: Claim[]; retryAfter?: number | null; error?: string }) =>
+  ({ ...(r.error && { error: r.error }), rev: r.rev, conflicts: r.conflicts, ...(r.claims && { claims: r.claims, retryAfter: r.retryAfter }) });
+
+/** A `codesplitter-live=locked` file (lockfiles, by default) changes by regenerating it or by a push, never line by line. */
+const LOCKED = "this file is locked (codesplitter-live=locked): regenerate it or push it, it takes no live edits";
 
 /** Seconds till the first of these claims lapses, at least 1; null when they're all people's holds, which stand till lifted. */
 function retryAfter(claims: Claim[]): number | null {

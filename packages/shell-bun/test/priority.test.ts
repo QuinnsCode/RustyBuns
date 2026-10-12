@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { adapt, lowPriorityCommand, machineLoad, scheduler, type Load } from "../src/priority.ts";
+import { adapt, JobStopped, lowPriorityCommand, machineLoad, memoryCapCommand, processTreeMb, scheduler, treeMb, type Load } from "../src/priority.ts";
 
 const BUDGET = { cpu: 0.6, memory: 0.5 };
 
@@ -10,6 +10,8 @@ function gate() {
   return { fn: () => done, release };
 }
 const settle = () => new Promise((r) => setTimeout(r, 0));
+/** The JobStopped a job rejected with. */
+const stopped = (p: Promise<unknown>) => p.then(() => { throw new Error("not stopped"); }, (e: JobStopped) => e);
 
 test("adapt: a blip does nothing, a sustained spike halves, a quiet stretch ramps back a slot at a time", () => {
   let s = { limit: 4, hot: 0, cool: 0 };
@@ -88,6 +90,81 @@ test("scheduler: a failed job frees its slot and rejects", async () => {
   const s = scheduler({ cores: 2, budget: { cpu: 1, reserve: 1 }, everyMs: 0 });
   await expect(s.run("low", () => { throw new Error("boom"); })).rejects.toThrow("boom");
   expect(await s.run("low", () => 1)).toBe(1);
+});
+
+test("scheduler: a job past its timeout is stopped, its signal aborts and its slot frees", async () => {
+  const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });   // 1 slot
+  let signal!: AbortSignal;
+  const hung = s.run("low", (job) => { signal = job.signal; return new Promise(() => {}); }, { timeoutMs: 20 });
+  const next = s.run("low", () => "next");
+  expect(s.stats().queued.low).toBe(1);
+  const err = await stopped(hung);
+  expect(err).toBeInstanceOf(JobStopped);
+  expect(err.reason).toBe("timeout");
+  expect(signal.aborted).toBe(true);
+  expect(await next).toBe("next");
+  expect(s.stats().running.low).toBe(0);
+});
+
+test("scheduler: a tracked job past its maxMb is stopped; over the budget, the newest is put out and requeued", async () => {
+  const sizes = new Map<number, number>();
+  const lines: string[] = [];
+  const s = scheduler({ cores: 16, totalMb: 1000, budget: { memory: 0.5 }, everyMs: 0, measure: (pids) => new Map(pids.map((p) => [p, sizes.get(p) ?? 0])), log: (l) => lines.push(l) });
+
+  // its own ceiling: stopped, not requeued
+  const greedy = s.run("low", (job) => { job.track(1); return new Promise(() => {}); }, { maxMb: 100, requeues: 3 });
+  sizes.set(1, 150); s.tick();
+  expect((await stopped(greedy)).reason).toBe("memory");
+
+  // three jobs, each declared at 100 MB, grow to 200: 600 of 500. The newest goes back in the queue at its
+  // measured size, and starts again once the oldest is done.
+  const gates = [gate(), gate(), gate()];
+  let starts = 0;
+  const jobs = gates.map((g, i) => s.run("low", (job) => { starts++; job.track(10 + i); return g.fn(); }, { memMb: 100, requeues: 1 }));
+  for (const i of [10, 11, 12]) sizes.set(i, 200);
+  s.tick();
+  expect(s.stats().running.low).toBe(2);
+  expect(s.stats().queued.low).toBe(1);
+  expect(s.stats().memMb.used).toBe(400);
+  expect(lines.at(-1)).toContain("put out a low job at 200 MB");
+  gates[0]!.release(); await jobs[0];
+  sizes.set(12, 0);
+  await settle();
+  expect(s.stats().queued.low).toBe(0);                 // 200 + 200 fits: it ran again
+  expect(starts).toBe(4);
+  gates[1]!.release(); gates[2]!.release();
+  await Promise.all(jobs);
+});
+
+test("scheduler: out of requeues, a job put out rejects", async () => {
+  const s = scheduler({ cores: 16, totalMb: 1000, budget: { memory: 0.5 }, everyMs: 0, measure: (pids) => new Map(pids.map((p) => [p, 300])) });
+  const first = gate();
+  void s.run("low", (job) => { job.track(1); return first.fn(); });
+  const second = s.run("low", (job) => { job.track(2); return new Promise(() => {}); });
+  s.tick();
+  expect((await stopped(second)).reason).toBe("evicted");
+  first.release();
+});
+
+test("scheduler.spawn: runs the command in a slot; a timeout kills the child", async () => {
+  const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });
+  expect((await s.spawn("normal", ["sh", "-c", "exit 3"])).exitCode).toBe(3);
+  const t = Date.now();
+  const err = await stopped(s.spawn("low", ["sleep", "30"], { timeoutMs: 50, graceMs: 100 }));
+  expect(err.reason).toBe("timeout");
+  expect(Date.now() - t).toBeLessThan(5000);
+  expect(s.stats().running.low).toBe(0);
+});
+
+test("treeMb: a process and its descendants, from ps", () => {
+  const ps = ["  1     0  1024", " 10     1  2048", " 11    10  1024", " 12    11   512", " 20     1  4096", ""].join("\n");
+  expect(treeMb(ps, [10, 20, 99])).toEqual(new Map([[10, 3.5], [20, 4], [99, 0]]));
+  expect(processTreeMb([process.pid]).get(process.pid) ?? 1).toBeGreaterThan(0);
+});
+
+test("memoryCapCommand: a systemd scope with MemoryMax, --user unless root", () => {
+  expect(memoryCapCommand(["bun", "x.ts"], 512, false)).toEqual(["systemd-run", "--user", "--scope", "--quiet", "-p", "MemoryMax=512M", "-p", "MemorySwapMax=0", "--", "bun", "x.ts"]);
+  expect(memoryCapCommand(["bun"], 100.5, true).slice(0, 5)).toEqual(["systemd-run", "--scope", "--quiet", "-p", "MemoryMax=101M"]);
 });
 
 test("lowPriorityCommand: taskpolicy on macOS, nice on Linux", () => {

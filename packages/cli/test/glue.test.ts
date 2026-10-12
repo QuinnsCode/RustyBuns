@@ -333,6 +333,10 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).toContain('if (url.pathname === "/__rb/mem")');
   expect(box).toContain("Number(process.env.RB_MEM_MAX_MB) || 0");
   expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "railway", memMaxMb: 400 } } }, "box")).toContain("RB_MEM_MAX_MB) || 400");
+  // The box's persona: its background work's budget, RB_PERSONA still the last word.
+  expect(box).not.toContain("RB_PERSONA ||=");
+  expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "hetzner", persona: "background-burner" } } }, "box")).toContain('process.env.RB_PERSONA ||= "background-burner";');
+  expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "hetzner", persona: "background-burner" } } })).not.toContain("RB_PERSONA ||=");
   // CPU profiles: /__rb/prof behind RB_PROF_SECRET, and one before a ceiling restart.
   expect(box).toContain(", memWatch, cpuProfile, profRoute, history, summarizeProfile");
   expect(box).toContain('profRoute({ secret: process.env.RB_PROF_SECRET, dir: join(dataDir, "prof"), history: hist })');

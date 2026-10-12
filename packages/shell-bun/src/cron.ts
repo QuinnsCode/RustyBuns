@@ -9,7 +9,8 @@
 // day fields are restricted, a day matching either one fires.
 //
 // A run is background work: it waits for a low slot on the host's scheduler (priority.ts), so a
-// busy machine puts it off. `priority` says otherwise.
+// busy machine puts it off. `priority` says otherwise. A run that hangs is stopped after `timeoutMs`
+// (15 minutes, the edge's own limit for a cron), so it gives its slot back.
 
 import { hostScheduler, type Priority, type Scheduler } from "./priority.ts";
 
@@ -65,6 +66,9 @@ export function cronMatches(cron: Cron, at: Date): boolean {
   return cron.anyDom || cron.anyDow ? d && w : d || w;
 }
 
+/** How long a cron run may hold its slot, as on the edge. */
+export const CRON_TIMEOUT_MS = 15 * 60_000;
+
 /** What `scheduled()` receives: Cloudflare's ScheduledController. */
 export interface ScheduledController { cron: string; scheduledTime: number; type: "scheduled"; noRetry(): void }
 
@@ -72,9 +76,10 @@ export interface ScheduledController { cron: string; scheduledTime: number; type
  * Fire `run` for each cron that matches a minute, from the next minute on,
  * until the returned stop() is called. A run that throws is reported and the
  * schedule carries on. The timer is unref'd, so it never keeps a process alive.
- * Each run goes through `scheduler` (the host's) at `priority` (low).
+ * Each run goes through `scheduler` (the host's) at `priority` (low), and gives up its slot after
+ * `timeoutMs` (15 minutes; 0 for no limit).
  */
-export function schedule(crons: string[], run: (c: ScheduledController) => unknown, opts: { onError?: (err: unknown, cron: string) => void; now?: () => number; priority?: Priority; scheduler?: Pick<Scheduler, "run"> } = {}): () => void {
+export function schedule(crons: string[], run: (c: ScheduledController) => unknown, opts: { onError?: (err: unknown, cron: string) => void; now?: () => number; priority?: Priority; timeoutMs?: number; scheduler?: Pick<Scheduler, "run"> } = {}): () => void {
   const parsed = crons.map(parseCron);
   const sched = opts.scheduler ?? hostScheduler(), priority = opts.priority ?? "low";
   const now = opts.now ?? Date.now;
@@ -84,7 +89,7 @@ export function schedule(crons: string[], run: (c: ScheduledController) => unkno
     for (const c of parsed) {
       if (!cronMatches(c, new Date(minute))) continue;
       const controller: ScheduledController = { cron: c.expr, scheduledTime: minute, type: "scheduled", noRetry() {} };
-      sched.run(priority, () => run(controller)).catch((e) => (opts.onError ?? ((err, cron) => console.error(`[cron ${cron}]`, err)))(e, c.expr));
+      sched.run(priority, () => run(controller), { timeoutMs: (opts.timeoutMs ?? CRON_TIMEOUT_MS) || undefined }).catch((e) => (opts.onError ?? ((err, cron) => console.error(`[cron ${cron}]`, err)))(e, c.expr));
     }
   };
   const arm = () => {
