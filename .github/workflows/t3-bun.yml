@@ -57,6 +57,9 @@ jobs:
           curl -fsSL -o "$RUNNER_TEMP/bun.zip" "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/bun-windows-aarch64.zip"
           unzip -q "$RUNNER_TEMP/bun.zip" -d "$RUNNER_TEMP/bun"
           echo "$RUNNER_TEMP/bun/bun-windows-aarch64" >> "$GITHUB_PATH"
+          # T3's standalone build looks for an installed Node beside process.execPath, and
+          # its antigravityAuthSupport test sets PATH to that folder. Under Bun that's Bun's.
+          cp "$(dirname "$(command -v node)")/node.exe" "$RUNNER_TEMP/bun/bun-windows-aarch64/"
       - name: T3 Code at the pinned commit, plus our adapter
         run: |
           git init -q t3 && cd t3
