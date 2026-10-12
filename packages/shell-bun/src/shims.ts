@@ -30,3 +30,24 @@ export const defineApp = (routes: unknown) => ({ fetch: async () => new Response
 export const route = (..._a: unknown[]) => null;
 export const render = (..._a: unknown[]) => null;
 export const prefix = (..._a: unknown[]) => null;
+
+// rwsdk 1.x server functions: interruptors run first and a Response from one ends
+// the call; the registered wrap runs around the handler. Same shape as rwsdk's own.
+type Interruptor = (c: { request: Request | null; ctx: unknown; args: unknown[] }) => unknown;
+type Wrap = (fn: Function, args: unknown[], type: "action" | "query") => Promise<unknown>;
+let wrap: Wrap | undefined;
+export const registerServerFunctionWrap = (w: Wrap) => { wrap = w; };
+function serverFunction(type: "action" | "query", fnsOrFn: Function | Function[], options?: { method?: "GET" | "POST" }) {
+  const fns = Array.isArray(fnsOrFn) ? fnsOrFn : [fnsOrFn];
+  const main = fns.at(-1)!;
+  const wrapped = Object.assign(async (...args: unknown[]) => {
+    for (const fn of fns.slice(0, -1)) {
+      const r = await (fn as Interruptor)({ request: requestInfo.request, ctx: requestInfo.ctx, args });
+      if (r instanceof Response) return r;
+    }
+    return wrap ? wrap(main, args, type) : main(...args);
+  }, { method: options?.method ?? (type === "query" ? "GET" : "POST") });
+  return wrapped;
+}
+export const serverQuery = (fnsOrFn: Function | Function[], options?: { method?: "GET" | "POST" }) => serverFunction("query", fnsOrFn, options);
+export const serverAction = (fnsOrFn: Function | Function[], options?: { method?: "GET" | "POST" }) => serverFunction("action", fnsOrFn, options);
