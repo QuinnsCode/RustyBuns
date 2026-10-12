@@ -514,6 +514,34 @@ The plan includes 25 GiB-hours, 375 vCPU-minutes and 200 GB-hours a month, about
 The clone and installs are egress (1 TB a month included).
 To turn it off, deploy again without the flag: the binding goes.
 
+### CI for your public repo, on your own machine
+
+The setup (#978): mirror the public GitHub repo into the desktop app on a machine you own, and set its checks to run `here` or `both`.
+
+```
+ GitHub (public repo)                 your machine
+ ├─ main, your branches ──mirror──▶  codeSplitter desktop ── runs checks in-process
+ └─ fork PRs  ✗ never mirrored         (listens on 127.0.0.1 only)
+```
+
+What the code backs up:
+
+- **Fork PRs can't get in.** A mirror's sync fetches upstream's default branch (`refs/heads/<branch>`), and opening one of upstream's other branches fetches `refs/heads/<ref>`; nothing fetches `refs/pull/*`, where fork PRs live (`src/mirror.ts`).
+  A fork's `.github/workflows` edit never reaches your machine, and `.github/` means nothing here anyway: what runs comes from `codesplitter.ci`, package.json's scripts, or a required check's `command` (`src/checks.ts`).
+- **Nothing listens.** The desktop binds 127.0.0.1, and the mirror is outbound git.
+  A runner of your own pulls its work too (`scripts/runner.ts`, `POST …/checks/claim`): another box can join with no open port of its own, as long as it can reach the site.
+- **Your hardware.** Checks run with whatever the machine has: Rust, Docker, a big disk, all night.
+
+The caveats:
+
+- **Merged code runs at home.** Review is the gate, so read what you merge, and a merge that edits `codesplitter.ci` or package.json's scripts changes what runs.
+  Run a runner as a separate macOS user with no logins and an empty `HOME`; the desktop's own queue runs as you.
+- **The mirror isn't one-way.** It pushes this copy's commits upstream, never forced.
+  That's a way out, not a way in, but if you want codeSplitter never to write to GitHub, don't commit to main here.
+- **Merged main doesn't queue checks here yet.** When the mirror takes upstream's commits it watches GitHub's results for the new tip and queues nothing here; checks start here on a commit made here, a branch opened from upstream or pushed to it, or a beam.
+
+Still missing, each its own issue: checks here on the main commits a mirror takes, a pull-only mirror, and runs as a sandbox user with no credentials (with a setting to run only the commands in the repo's settings).
+
 ## Conventions
 
 Most merge conflicts here start on one hot line that two branches both grew ([docs/merge-solutions.md](docs/merge-solutions.md), §5).

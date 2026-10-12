@@ -1,0 +1,5 @@
+{
+  "icon": "server",
+  "title": "CI for a public repo, on your own machine",
+  "what": "Your spare Mac pulls check runs; nothing on it listens. Fork PRs stay on GitHub and never mirror, so a stranger's workflow edit can't reach it."
+}
