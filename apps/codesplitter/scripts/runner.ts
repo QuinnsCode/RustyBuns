@@ -2,11 +2,11 @@
 // to, so it runs anywhere that can reach the site: behind a firewall, on a laptop, on a build box
 // with no inbound port. The loop: claim the oldest queued run, clone, run, report, again.
 //
-//   CODESPLITTERS_URL=https://codesplitter.notryanquinn.workers.dev \
-//   CODESPLITTERS_TOKEN=cst_… \
+//   CODESPLITTER_URL=https://codesplitter.notryanquinn.workers.dev \
+//   CODESPLITTER_TOKEN=cst_… \
 //   bun scripts/runner.ts owner/repo [--label my-mac] [--names test,lint] [--command "bun test"] [--once]
 //
-// Leave CODESPLITTERS_URL out to use the desktop app running on this machine (~/.codesplitters/desktop.json).
+// Leave CODESPLITTER_URL out to use the desktop app running on this machine (~/.codesplitters/desktop.json).
 // The desktop runs its own queue already (src/ci-runner.ts); this is for running them on another machine.
 //
 // The token is a write token from your profile page, of someone in the repo's crew. The command
@@ -28,7 +28,7 @@ const { values: o, positionals: [slug] } = parseArgs({ allowPositionals: true, o
   label: { type: "string", default: `${process.env.USER ?? "runner"}@${hostname()}` },
   names: { type: "string" }, command: { type: "string" }, once: { type: "boolean" }, idle: { type: "string", default: "10" },
 } });
-// No CODESPLITTERS_URL: the desktop app, if it's running, from the 0600 file it keeps while it does.
+// No CODESPLITTER_URL: the desktop app, if it's running, from the 0600 file it keeps while it does.
 function desktop(): string | undefined {
   try {
     const d = JSON.parse(readFileSync(join(homedir(), ".codesplitters/desktop.json"), "utf8")) as { url: string; token: string; pid: number };
@@ -36,8 +36,9 @@ function desktop(): string | undefined {
     return `${d.url}/?token=${encodeURIComponent(d.token)}`;
   } catch { return undefined; }
 }
-const site = process.env.CODESPLITTERS_URL ?? desktop(), token = process.env.CODESPLITTERS_TOKEN;
-if (!slug?.includes("/") || !site || !token) throw new Error("usage: CODESPLITTERS_URL=… CODESPLITTERS_TOKEN=cst_… bun scripts/runner.ts owner/repo [--label] [--names a,b] [--command] [--once]");
+// CODESPLITTERS_* is each one's name from before the rename (#805), still read.
+const site = process.env.CODESPLITTER_URL ?? process.env.CODESPLITTERS_URL ?? desktop(), token = process.env.CODESPLITTER_TOKEN ?? process.env.CODESPLITTERS_TOKEN;
+if (!slug?.includes("/") || !site || !token) throw new Error("usage: CODESPLITTER_URL=… CODESPLITTER_TOKEN=cst_… bun scripts/runner.ts owner/repo [--label] [--names a,b] [--command] [--once]");
 // The desktop app sits behind its launch token too: a URL like http://127.0.0.1:5199/?token=<it>
 // (what RB_NO_BROWSER=1 prints, or desktop() finds) sends it as the cookie the desktop expects.
 const u = new URL(site), launch = u.searchParams.get("token");
@@ -48,7 +49,7 @@ const api = (path: string, body: unknown, method = "POST") => fetch(`${base}/api
 });
 
 // The command is repo code, maybe an agent's: it doesn't get our write token, or the URL (it can carry the desktop launch token).
-const { CODESPLITTERS_TOKEN: _token, CODESPLITTERS_URL: _url, ...commandEnv } = process.env;
+const { CODESPLITTER_TOKEN: _token, CODESPLITTER_URL: _url, CODESPLITTERS_TOKEN: _oldToken, CODESPLITTERS_URL: _oldUrl, ...commandEnv } = process.env;
 
 /** A branch's own files, written over the clone (and the ones it deleted, removed). Says what it did, for the log. */
 async function overlay(dir: string, ref: string) {

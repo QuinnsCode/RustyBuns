@@ -54,15 +54,15 @@ export interface Env {
   /**
    * One vector index across every repo's committed code, and Workers AI to embed for it
    * (search.ts). With both, search across repos asks the index which repos to search instead
-   * of fanning out. Bound only with CODESPLITTERS_VECTORS=1; the desktop has neither.
+   * of fanning out. Bound only with CODESPLITTER_VECTORS=1; the desktop has neither.
    */
   VECTORS?: VectorIndex;
   AI?: { run(model: string, inputs: { text: string[] }): Promise<{ data: number[][] }> };
   /** Containers that run hosted coding agents (Cloudflare only; the desktop runs the CLIs itself). */
   AGENT_SANDBOX?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
-  /** One Durable Object per repo that runs hosted deploys, each in its own container (deploy-runner.ts). Bound only with CODESPLITTERS_DEPLOYS=1. */
+  /** One Durable Object per repo that runs hosted deploys, each in its own container (deploy-runner.ts). Bound only with CODESPLITTER_DEPLOYS=1. */
   DEPLOY_RUNNER?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
-  /** One Durable Object per repo that runs its queued checks, each in its own container (ci-runner.ts). Bound only with CODESPLITTERS_CHECKS=1. */
+  /** One Durable Object per repo that runs its queued checks, each in its own container (ci-runner.ts). Bound only with CODESPLITTER_CHECKS=1. */
   CI_RUNNER?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** "off": the desktop doesn't run its own queued checks (ci-runner.ts). local() sets it, so tests claim runs themselves. */
   CHECKS_RUNNER?: string;

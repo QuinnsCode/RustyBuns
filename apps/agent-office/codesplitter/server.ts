@@ -2,7 +2,7 @@
 // codeSplitter repo for each board (news.ts). The office asks, not the page, so the token stays on this machine
 // and codeSplitter needn't allow another origin.
 //
-// Where and as whom: CODESPLITTERS_URL and CODESPLITTERS_TOKEN (a cst_ token from your profile page), else what
+// Where and as whom: CODESPLITTER_URL and CODESPLITTER_TOKEN (a cst_ token from your profile page), else what
 // `codesplitter login` saved, else the desktop app if it's running, else the live site, signed out. The desktop
 // takes a cst_ token too, but sits behind its own launch token: a URL like http://127.0.0.1:5199/?token=<it> (what
 // RB_NO_BROWSER=1 prints, or what the running app leaves in ~/.codesplitters/desktop.json) hands that over as the
@@ -24,12 +24,13 @@ export function site(env: Record<string, string | undefined> = process.env): Sit
   for (const name of ["codesplitter", "codesplitters"]) {   // the old name, from before the rename
     try { conf = JSON.parse(readFileSync(path.join(dir, name, "config.json"), "utf8")); break; } catch {}
   }
-  const u = new URL(env.CODESPLITTERS_URL ?? conf.url ?? desktop(env.HOME ?? homedir()) ?? LIVE);
+  // CODESPLITTERS_* is each one's name from before the rename (#805), still read.
+  const u = new URL(env.CODESPLITTER_URL ?? env.CODESPLITTERS_URL ?? conf.url ?? desktop(env.HOME ?? homedir()) ?? LIVE);
   const launch = u.searchParams.get("token");
   u.search = "";
   return {
     url: u.toString().replace(/\/$/, ""),
-    token: env.CODESPLITTERS_TOKEN ?? conf.token,
+    token: env.CODESPLITTER_TOKEN ?? env.CODESPLITTERS_TOKEN ?? conf.token,
     ...(launch && { cookie: `rb_token_${u.port}=${launch}` }),
   };
 }

@@ -11,9 +11,9 @@ test("the context says who the token signs in as, never the token", async () => 
     seen.push(`${u} ${new Headers(init?.headers).get("authorization") ?? "-"}`);
     return u.endsWith("/session") ? Response.json({ mode: "token", user: "ryan", token: { id: "t1", label: "laptop", scope: "write", expires_at: 0 } }) : new Response("<html>");
   }) as typeof fetch;
-  const md = await splittersContext({ url: "https://cs.example", urlFrom: "--url", token: "cst_secret123", tokenFrom: "CODESPLITTERS_TOKEN", configPath: "/h/.config/codesplitter/config.json", send });
+  const md = await splittersContext({ url: "https://cs.example", urlFrom: "--url", token: "cst_secret123", tokenFrom: "CODESPLITTER_TOKEN", configPath: "/h/.config/codesplitter/config.json", send });
   expect(md).toContain("- Site: https://cs.example (from --url)");
-  expect(md).toContain("an API token (from CODESPLITTERS_TOKEN; never print it)");
+  expect(md).toContain("an API token (from CODESPLITTER_TOKEN; never print it)");
   expect(md).toContain("- Site answers: 200");
   expect(md).toContain('- whoami: ryan, token "laptop" scope write');
   expect(md).not.toContain("cst_secret123");

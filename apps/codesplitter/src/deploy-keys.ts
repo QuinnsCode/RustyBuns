@@ -14,7 +14,7 @@
 // admin's re-seal (the admin page's button) seals every key and every runner's
 // Alchemy state under the new one. Then DEPLOY_SECRETS_KEY_OLD can go.
 //
-// Hosted deploys are off unless the site was deployed with CODESPLITTERS_DEPLOYS=1
+// Hosted deploys are off unless the site was deployed with CODESPLITTER_DEPLOYS=1
 // (which binds DEPLOY_RUNNER), need accounts on (with aliases anyone can claim
 // a handle), and are limited to owners in ADMINS, like hosted agents.
 //
@@ -45,7 +45,7 @@ const isProvider = (p: string): p is Provider => (NAMES as string[]).includes(p)
 
 /** Why `user` can't deploy from the site, or null when they can. */
 export function hostedWhy(env: Env, user: string | null): string | null {
-  if (!env.DEPLOY_RUNNER) return "hosted deploys are off on this site (CODESPLITTERS_DEPLOYS=1)";
+  if (!env.DEPLOY_RUNNER) return "hosted deploys are off on this site (CODESPLITTER_DEPLOYS=1)";
   if (!accountsOn(env)) return "hosted deploys need accounts on (BETTER_AUTH_SECRET): with aliases anyone can claim a handle";
   if (!env.DEPLOY_SECRETS_KEY) return "hosted deploys need DEPLOY_SECRETS_KEY to seal deploy keys";
   if (!user || user.startsWith("agent-")) return "only a person deploys";
@@ -62,8 +62,8 @@ async function aes(secret: string | undefined, name: string) {
   if (raw.length !== 32) throw new Error(`${name} must be 32 bytes in base64 (openssl rand -base64 32)`);
   return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
-/** Bound to what it is and whose: a sealed value opens only as that. */
-const aad = (what: string) => new TextEncoder().encode(`codesplitters ${what}`);
+/** Bound to what it is and whose: a sealed value opens only as that. Sealed as "codesplitters …" before the rename (#805). */
+const aad = (what: string, app = "codesplitter") => new TextEncoder().encode(`${app} ${what}`);
 
 async function sealText(env: Env, what: string, text: string): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -73,17 +73,19 @@ async function sealText(env: Env, what: string, text: string): Promise<string> {
   return b64(out);
 }
 
-/** Open under DEPLOY_SECRETS_KEY, or, while it's being rotated, DEPLOY_SECRETS_KEY_OLD (`stale`). */
+/** Open under DEPLOY_SECRETS_KEY, or, while it's being rotated, DEPLOY_SECRETS_KEY_OLD; or as sealed before the rename. Either is `stale`. */
 async function open(env: Env, what: string, sealed: string): Promise<{ text: string; stale: boolean }> {
-  const raw = unb64(sealed), alg = { name: "AES-GCM", iv: raw.slice(0, 12), additionalData: aad(what) };
-  const key = await aes(env.DEPLOY_SECRETS_KEY, "DEPLOY_SECRETS_KEY");
-  try {
-    return { text: new TextDecoder().decode(await crypto.subtle.decrypt(alg, key, raw.slice(12))), stale: false };
-  } catch (e) {
-    if (!env.DEPLOY_SECRETS_KEY_OLD) throw e;
-    const old = await aes(env.DEPLOY_SECRETS_KEY_OLD, "DEPLOY_SECRETS_KEY_OLD");
-    return { text: new TextDecoder().decode(await crypto.subtle.decrypt(alg, old, raw.slice(12))), stale: true };
+  const raw = unb64(sealed), iv = raw.slice(0, 12), ct = raw.slice(12);
+  const keys = [await aes(env.DEPLOY_SECRETS_KEY, "DEPLOY_SECRETS_KEY")];
+  if (env.DEPLOY_SECRETS_KEY_OLD) keys.push(await aes(env.DEPLOY_SECRETS_KEY_OLD, "DEPLOY_SECRETS_KEY_OLD"));
+  let first: unknown;
+  for (const [k, key] of keys.entries()) for (const app of ["codesplitter", "codesplitters"]) {
+    try {
+      const text = new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv, additionalData: aad(what, app) }, key, ct));
+      return { text, stale: k > 0 || app !== "codesplitter" };
+    } catch (e) { first ??= e; }
   }
+  throw first;
 }
 const unsealText = async (env: Env, what: string, sealed: string) => (await open(env, what, sealed)).text;
 /** Sealed again under DEPLOY_SECRETS_KEY, or null when it already is. Throws when it opens under neither key. */
@@ -103,12 +105,16 @@ export const sealState = (env: Env, owner: string, repo: string, files: Record<s
 export const unsealState = async (env: Env, owner: string, repo: string, sealed: string): Promise<Record<string, string>> => JSON.parse(await unsealText(env, stateWhat(owner, repo), sealed));
 export const resealState = (env: Env, owner: string, repo: string, sealed: string) => resealText(env, stateWhat(owner, repo), sealed);
 
-/** The repo's keys, unsealed: for a deploy run only. */
+/** The repo's keys, unsealed: for a deploy run only. A stale one is sealed again as it's read, as the run's state is after it. */
 export async function deployKeys(env: Env, owner: string, repo: string): Promise<Partial<Record<Provider, DeployKey & { last4: string }>>> {
   const { results } = await env.DB.prepare("SELECT provider, sealed, last4 FROM deploy_keys WHERE owner = ? AND repo = ?").bind(owner, repo).all();
   const out: Partial<Record<Provider, DeployKey & { last4: string }>> = {};
   for (const r of results as { provider: Provider; sealed: string; last4: string }[]) {
-    if (isProvider(r.provider)) out[r.provider] = { ...(await unseal(env, owner, repo, r.sealed, r.provider)), last4: r.last4 };
+    if (!isProvider(r.provider)) continue;
+    const what = keyWhat(owner, repo, r.provider), { text, stale } = await open(env, what, r.sealed);
+    if (stale) await env.DB.prepare("UPDATE deploy_keys SET sealed = ? WHERE owner = ? AND repo = ? AND provider = ? AND sealed = ?")
+      .bind(await sealText(env, what, text), owner, repo, r.provider, r.sealed).run();
+    out[r.provider] = { ...(JSON.parse(text) as DeployKey), last4: r.last4 };
   }
   return out;
 }

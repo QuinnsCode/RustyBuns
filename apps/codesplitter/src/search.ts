@@ -8,7 +8,7 @@
 // is embedded in chunks, tagged with its repo and whether that was public. The query's
 // nearest chunks among what the caller can see (D1 decides, not the tags) name up to ROUTE
 // repos; their FTS5 hits come first, then the nearest chunks themselves. Without the index
-// (the desktop, or before CODESPLITTERS_VECTORS=1), or while it has nothing yet, a search
+// (the desktop, or before CODESPLITTER_VECTORS=1), or while it has nothing yet, a search
 // across repos fans out to the repos you can see, yours first, then the most recently
 // committed, at most FAN_OUT of them, and merges by rank.
 //
@@ -331,7 +331,7 @@ export async function searchRoutes(req: Request, env: Env, p: string[], admin: b
   if (p[1] === "admin" && p[2] === "scale" && p[3] === "search-embed") {
     if (!admin) return json({ error: "admins only" }, 403);
     if (req.method !== "POST") return json({ error: "POST only" }, 405);
-    if (!vectorsOn(env)) return json({ error: "no vector index here (CODESPLITTERS_VECTORS=1 binds it)" }, 409);
+    if (!vectorsOn(env)) return json({ error: "no vector index here (CODESPLITTER_VECTORS=1 binds it)" }, 409);
     return json(await embedDue(env));
   }
   return null;

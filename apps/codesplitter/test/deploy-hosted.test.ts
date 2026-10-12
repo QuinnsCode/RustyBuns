@@ -428,8 +428,8 @@ describe("rotating DEPLOY_SECRETS_KEY", () => {
     expect((await settle(call, 2)).history[0]).toMatchObject({ status: "done" });
 
     const r = await (await call("ryan-quinn", "/api/admin/deploy-keys/reseal", { method: "POST" })).json();
-    // The deploy since kept the root's state under the new key already.
-    expect(r).toEqual({ keys: 2, states: 1, failed: [] });
+    // The deploy since sealed the keys it read, and the root's state it kept, under the new key already.
+    expect(r).toEqual({ keys: 0, states: 1, failed: [] });
     const after = (await env.DB.prepare("SELECT sealed FROM deploy_keys ORDER BY provider").all()).results.map((x: any) => x.sealed);
     expect(after.every((x: string, i: number) => x !== before[i])).toBe(true);
     expect(await (await call("ryan-quinn", "/api/admin/deploy-keys/reseal", { method: "POST" })).json()).toEqual({ keys: 0, states: 0, failed: [] });
@@ -451,6 +451,36 @@ describe("rotating DEPLOY_SECRETS_KEY", () => {
     expect(r).toMatchObject({ keys: 0, failed: ["ryan-quinn/lab cloudflare key"] });
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM deploy_keys").first()).toEqual({ n: 1 });
   });
+});
+
+// Sealed as the site was named before the rename (#805): bound to "codesplitters …".
+async function oldSeal(secret: string, what: string, value: unknown) {
+  const key = await crypto.subtle.importKey("raw", Uint8Array.from(atob(secret), (c) => c.charCodeAt(0)), "AES-GCM", false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(`codesplitters ${what}`) }, key, new TextEncoder().encode(JSON.stringify(value))));
+  return btoa(String.fromCharCode(...iv, ...ct));
+}
+
+test("what was sealed before the rename still opens, and is sealed again as codesplitter when a deploy or a re-seal reads it", async () => {
+  const { call, send, env } = await hosted();
+  await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+  const old = await oldSeal(SECRETS, "deploy key ryan-quinn/lab", { token: TOKEN, account_id: ACCOUNT });
+  await env.DB.prepare("UPDATE deploy_keys SET sealed = ?").bind(old).run();
+  expect(await unseal(env, "ryan-quinn", "lab", old)).toEqual({ token: TOKEN, account_id: ACCOUNT });
+
+  // A deploy opens it, and leaves it sealed under the new name.
+  await send("ryan-quinn", D, {});
+  expect((await settle(call)).history[0]).toMatchObject({ status: "done" });
+  const now = (await env.DB.prepare("SELECT sealed FROM deploy_keys").first()) as { sealed: string };
+  expect(now.sealed).not.toBe(old);
+  expect(await unseal(env, "ryan-quinn", "lab", now.sealed)).toEqual({ token: TOKEN, account_id: ACCOUNT });
+
+  // A state kept from before is moved by the admin's re-seal, with no key being rotated.
+  const runner = env.DEPLOY_RUNNER.get("ryan-quinn/lab") as any;
+  await runner.ctx.storage.put("state~apps~web", await oldSeal(SECRETS, "alchemy state ryan-quinn/lab", { "web/prod/Worker.json": "{}" }));
+  expect(await (await call("ryan-quinn", "/api/admin/deploy-keys/reseal", { method: "POST" })).json()).toEqual({ keys: 0, states: 1, failed: [] });
+  expect(await (await call("ryan-quinn", "/api/admin/deploy-keys/reseal", { method: "POST" })).json()).toEqual({ keys: 0, states: 0, failed: [] });
+  expect(await unsealState(env, "ryan-quinn", "lab", await runner.ctx.storage.get("state~apps~web"))).toEqual({ "web/prod/Worker.json": "{}" });
 });
 
 test("an agent container never gets the deploy secrets", async () => {
