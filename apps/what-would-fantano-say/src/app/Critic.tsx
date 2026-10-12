@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { analyze, type Features } from "../analyze.ts";
 import { CLIP_SECONDS, RATE, clock, cut, encodeWav, loudestWindow, peaks } from "../clip.ts";
+import { decode } from "../decode.ts";
 import type { Review } from "../write.ts";
 
 const MAX_BYTES = 200 * 1024 * 1024;
-// Anything the browser can decode: phones and desktops cover mp3, wav, aac/m4a, flac,
-// ogg/opus and the audio in mp4/mov/webm video. The extensions help iOS's picker.
-const ACCEPT = "audio/*,video/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.oga,.opus,.webm,.mp4,.mov,.aif,.aiff,.caf";
+// The browser decodes mp3, wav, aac/m4a, flac, ogg/opus and the audio in mp4/mov/webm video;
+// anything else ffmpeg.wasm converts on the device. The extensions help iOS's picker.
+const ACCEPT = "audio/*,video/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.oga,.opus,.webm,.mp4,.mov,.mkv,.aif,.aiff,.caf,.wma,.ape,.wv,.amr,.ac3";
 
 declare global {
   interface Window {
@@ -18,16 +19,27 @@ declare global {
 
 interface Track { name: string; samples: Float32Array; features: Features; bars: number[]; duration: number }
 
-/** Decode on the device at 16 kHz, mix to mono, measure. Nothing is uploaded here. */
-async function load(file: File): Promise<Track> {
+/** Web Audio's decoder at 16 kHz, mixed to mono. */
+async function native(bytes: ArrayBuffer): Promise<Float32Array> {
   const ctx = new OfflineAudioContext(1, 1, RATE);
-  const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+  const buf = await ctx.decodeAudioData(bytes);
   const samples = new Float32Array(buf.length);
   for (let c = 0; c < buf.numberOfChannels; c++) {
     const ch = buf.getChannelData(c);
     for (let i = 0; i < ch.length; i++) samples[i]! += ch[i]! / buf.numberOfChannels;
   }
-  return { name: file.name.replace(/\.[^.]+$/, ""), samples, features: analyze(samples, RATE), bars: peaks(samples, 120), duration: buf.length / RATE };
+  return samples;
+}
+
+/** ffmpeg.wasm, fetched only when the browser can't decode a file, so it stays off the first load. */
+async function convert(bytes: Uint8Array, name: string, onProgress: (ratio: number) => void): Promise<Float32Array> {
+  return (await import("./ffmpeg.ts")).convert(bytes, name, onProgress);
+}
+
+/** Decode on the device at 16 kHz mono, measure. Nothing is uploaded here. */
+async function load(file: File, onConvert: (ratio: number) => void): Promise<Track> {
+  const { samples } = await decode(file, { native, convert }, onConvert);
+  return { name: file.name.replace(/\.[^.]+$/, ""), samples, features: analyze(samples, RATE), bars: peaks(samples, 120), duration: samples.length / RATE };
 }
 
 function toDataUrl(wav: Uint8Array): string {
@@ -74,13 +86,13 @@ export function Critic({ siteKey }: { siteKey: string }) {
     if (f.size > MAX_BYTES) return setStage({ kind: "error", message: "That file's over 200 MB. Even a double album isn't that long." });
     setStage({ kind: "busy", what: "decoding on your device…" });
     try {
-      const t = await load(f);
+      const t = await load(f, (r) => setStage({ kind: "busy", what: r >= 0.01 ? `converting… ${Math.round(r * 100)}%` : "converting on your device…" }));
       setTrack(t);
       setStart(loudestWindow(t.samples, RATE));
       setLink("");
       setStage({ kind: "idle" });
     } catch {
-      setStage({ kind: "error", message: "Your browser can't decode that one. Try mp3, wav, m4a, flac or ogg." });
+      setStage({ kind: "error", message: "Couldn't decode that one, even with the converter. Try mp3, wav, m4a, flac or ogg." });
     }
   }
 
