@@ -40,7 +40,7 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board guard asks` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks board guard asks` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -103,7 +103,7 @@ async function prepare(tag: string) {
 
   // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem with the
   // office's CPU profiles and heap snapshots (triage/server.ts): signed in, and to workers on the hook port
-  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\nimport { codesplittersRoute as __rbCs } from '../rb-codesplitters.js';\n");
+  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\n");
   patch("http/router.js", "const signedIn = routes.filter((r) => r.auth === 'session');",
     "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n    const __rbCsRoute = __rbCs();");
   patch("http/router.js", "            for (const route of signedIn)\n",
@@ -144,7 +144,7 @@ async function prepare(tag: string) {
   prepend("workers/env.js", "import { workerEnv as __rbWorkerEnv } from '../rb-env.js';\n");
   patch("workers/env.js", "            env[k] = v;\n    return env;\n}", "            env[k] = v;\n    return __rbWorkerEnv(env);\n}");
 
-  // 8. Lucide icons for the emoji, on every page, a search box for the queue, and the codeSplitters mark (codesplitters/)
+  // 8. Lucide icons for the emoji, on every page, a search box for the queue, and the codeSplitter mark (codesplitter/)
   await buildPageScripts();
 
   // 9. the time on the issues and PR boards, in front of "Updated …" (its setting is a page script, clock/)
@@ -173,7 +173,7 @@ async function prepare(tag: string) {
   patch("http/router.js", "const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url)",
     "const __rb = p.startsWith('/__rb/') && (__rbAsks(req.method, url, req.headers['x-rb-ask'] === '1', session.account?.name) ?? await __rbCsRoute(req.method, url)");
 
-  // 13. a per-frame hook in the 3D office, for either skin: the forest and the codeSplitters tiles both hang off it
+  // 13. a per-frame hook in the 3D office, for either skin: the forest and the codeSplitter tiles both hang off it
   officeTicks();
 
   // 13b. the issues board's Open column puts issues already handed to a worker last, so new ones are on top (board.ts)
@@ -182,7 +182,7 @@ async function prepare(tag: string) {
   // 14. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitters hosts hooktokens env ticks board guard asks\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks board guard asks\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -246,7 +246,7 @@ async function druids(cache: string) {
 }
 
 // Every frame, once the sky has set the lights, each add-on on globalThis.__rbOfficeTicks gets a turn with the
-// office (app, stage, dt, t): the Druids forest (druids/forest.ts), the codeSplitters tiles (codesplitters/).
+// office (app, stage, dt, t): the Druids forest (druids/forest.ts), the codeSplitter tiles (codesplitter/).
 function officeTicks() {
   const pub = path.join(office, "dist/public");
   const [main, ...more] = [...new Bun.Glob("assets/main-*.js").scanSync({ cwd: pub })];
@@ -265,7 +265,7 @@ async function buildSkin(dir: string) {
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
   for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
-    ["codesplitters/server.ts", "rb-codesplitters.js"],
+    ["codesplitter/server.ts", "rb-codesplitter.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
     const built = await Bun.build({ entrypoints: [path.join(root, entry!)], target: "bun" });
@@ -286,8 +286,8 @@ async function buildPageScripts() {
   await buildPageScript("checks/index.ts", "rb-checks", ["index", "lite"]);
   // the triage tools, over WebMCP for an agent in the browser
   await buildPageScript("triage/index.ts", "rb-triage", ["index", "lite"]);
-  // the codeSplitters mark by the boards, off until Settings › You turns it on
-  await buildPageScript("codesplitters/index.ts", "rb-codesplitters", ["index", "lite"]);
+  // the codeSplitter mark by the boards, off until Settings › You turns it on
+  await buildPageScript("codesplitter/index.ts", "rb-codesplitter", ["index", "lite"]);
   // AGENT_OFFICE_ASK_FIRST's Allow / Deny card, for an agent's request waiting on a person (#727)
   await buildPageScript("asks/index.ts", "rb-asks", ["index", "lite"]);
 }

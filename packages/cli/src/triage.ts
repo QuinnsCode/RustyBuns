@@ -4,7 +4,7 @@
 // what went wrong, investigates and drafts the issue; its own permission prompts gate everything it
 // runs. With neither installed, the two files are the paste-anywhere fallback.
 //
-// Plain Node, no Bun APIs: the codeSplitters CLI bundles this into its cli.js, which runs on Node 18+.
+// Plain Node, no Bun APIs: the codeSplitter CLI bundles this into its cli.js, which runs on Node 18+.
 
 import { spawn } from "node:child_process";
 import { accessSync, constants, mkdirSync, writeFileSync } from "node:fs";
@@ -17,9 +17,9 @@ export const TRIAGE_AGENTS = [
 export type TriageAgentId = (typeof TRIAGE_AGENTS)[number]["id"];
 
 export interface TriageOptions {
-  /** The product, as the prompt names it: "codeSplitters", "RustyBuns". */
+  /** The product, as the prompt names it: "codeSplitter", "RustyBuns". */
   product: string;
-  /** The command that started this, for the prompt: "codesplitters triage". */
+  /** The command that started this, for the prompt: "codesplitter triage". */
   command: string;
   /** Where the run's folder goes: <dir>/<time>/. */
   dir: string;

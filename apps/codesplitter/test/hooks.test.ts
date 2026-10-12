@@ -1,0 +1,221 @@
+import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { local as boot } from "../src/local.ts";
+import { sign } from "../src/hooks.ts";
+import type { Runner } from "../src/preview.ts";
+import { review } from "../src/deploy-review.ts";
+
+// These run the app end to end (real git, password hashes, in-process D1): fine alone,
+// but a full run on a busy machine can stretch one past bun's 5s default.
+setDefaultTimeout(20_000);
+
+const opened: { close(): void }[] = [];
+afterAll(() => { for (const o of opened) o.close(); });
+
+const SECRET = "a-secret-of-sixteen-plus";
+
+/** The app with an outbox: every webhook POST lands in `got`, answered with `status()`. */
+async function app() {
+  const call = await boot({ GH_CLI: "off" });
+  opened.push(call);
+  const got: { url: string; headers: Headers; body: any; raw: string }[] = [];
+  let status = 200;
+  call.env.HOOK_FETCH = async (url: string, init: RequestInit) => {
+    const raw = String(init.body);
+    got.push({ url, headers: new Headers(init.headers), body: JSON.parse(raw), raw });
+    return new Response("thanks", { status });
+  };
+  const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
+  await send("ryan", "/api/login", { name: "ryan" });
+  await send("ryan", "/api/repos", { name: "lab", visibility: "private" });
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "a.ts", content: "one\ntwo" });
+  return { call, send, got, answer: (s: number) => { status = s; } };
+}
+
+/** Deliveries go out after the response: wait for `n` of them. */
+const arrived = async <T>(got: T[], n: number) => {
+  for (const end = performance.now() + 15_000; performance.now() < end && got.length < n;) await Bun.sleep(10);
+  return got;
+};
+
+test("only the owner manages hooks; the secret is shown once", async () => {
+  const { call, send } = await app();
+  await send("ana", "/api/login", { name: "ana" });
+  expect((await call("ana", "/api/repos/ryan/lab/hooks")).status).toBe(403);
+  expect((await send("ana", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook" })).status).toBe(403);
+  expect((await send("ryan", "/api/repos/ryan/lab/hooks", { url: "ftp://ci.example/hook" })).status).toBe(400);
+  expect((await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://u:p@ci.example/hook" })).status).toBe(400);
+  expect((await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", events: ["push"] })).status).toBe(400);
+  expect((await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", secret: "short" })).status).toBe(400);
+
+  const made = await (await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook" })).json();
+  expect(made.secret).toMatch(/^[0-9a-f]{48}$/);
+  expect(made.events).toEqual(["commit", "branch.opened", "branch.merged", "deploy.finished", "check_run"]);
+  const list = await (await call("ryan", "/api/repos/ryan/lab/hooks")).json();
+  expect(list.hooks).toHaveLength(1);
+  expect(list.hooks[0].secret).toBeUndefined();
+
+  expect((await call("ryan", `/api/repos/ryan/lab/hooks/${made.id}`, { method: "DELETE" })).status).toBe(200);
+  expect((await (await call("ryan", "/api/repos/ryan/lab/hooks")).json()).hooks).toHaveLength(0);
+});
+
+test("a commit sends a signed, push-shaped payload; branches open and merge", async () => {
+  const { call, send, got } = await app();
+  await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", secret: SECRET });
+  await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://chat.example/hook", events: ["branch.merged"], secret: SECRET });
+
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
+  const [push] = await arrived(got, 1);
+  expect(push!.url).toBe("https://ci.example/hook");
+  expect(push!.headers.get("x-codesplitter-event")).toBe("commit");
+  expect(push!.headers.get("x-codesplitter-signature")).toBe(await sign(SECRET, push!.raw));
+  // and under the old names, for receivers set up before the rename
+  expect(push!.headers.get("x-codesplitters-event")).toBe("commit");
+  expect(push!.headers.get("x-codesplitters-signature")).toBe(push!.headers.get("x-codesplitter-signature"));
+  expect(push!.body).toMatchObject({
+    ref: "refs/heads/main", after: expect.stringMatching(/^[0-9a-f]{40}$/), pusher: { name: "ryan" },
+    head_commit: { message: "first", added: ["a.ts"] },
+    repository: { full_name: "ryan/lab", private: true }, sender: { login: "ryan" },
+  });
+
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "tidy" });
+  await arrived(got, 2);
+  expect(got[1]!.body).toMatchObject({ ref: "tidy", ref_type: "branch" });
+
+  const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.ts&branch=tidy")).json();
+  await send("ryan", "/api/repos/ryan/lab/do/ops?path=a.ts&branch=tidy", { ops: [{ kind: "set", line: doc.lines[0].id, text: "ONE", base: doc.lines[0].rev }] });
+  expect((await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {})).status).toBe(200);
+  await arrived(got, 4);
+  const merged = got.slice(2).filter((g) => g.headers.get("x-codesplitter-event") === "branch.merged");
+  expect(merged.map((g) => g.url).sort()).toEqual(["https://chat.example/hook", "https://ci.example/hook"]);
+  expect(merged[0]!.body).toMatchObject({ pull_request: { merged: true, head: { ref: "tidy" }, base: { ref: "main" } }, files: ["a.ts"] });
+});
+
+test("a GitHub-mode hook speaks GitHub: its event names, headers, signature and fields", async () => {
+  const { call, send, got } = await app();
+  expect((await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", github_compat: "yes" })).status).toBe(400);
+  const gh = await (await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://jenkins.example/github-webhook/", secret: SECRET, github_compat: true })).json();
+  expect(gh.github_compat).toBe(true);
+  await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", secret: SECRET });
+  expect((await (await call("ryan", "/api/repos/ryan/lab/hooks")).json()).hooks.map((h: any) => h.github_compat)).toEqual([true, false]);
+
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
+  await arrived(got, 2);
+  const push = got.find((g) => g.url.startsWith("https://jenkins"))!;
+  const native = got.find((g) => g.url.startsWith("https://ci"))!;
+  expect(native.headers.get("x-codesplitter-event")).toBe("commit");
+  expect(native.headers.get("x-github-event")).toBeNull();
+
+  expect(push.headers.get("x-github-event")).toBe("push");
+  expect(push.headers.get("x-github-delivery")).toMatch(/^[0-9a-f-]{36}$/);
+  expect(push.headers.get("user-agent")).toStartWith("GitHub-Hookshot/");
+  expect(push.headers.get("x-codesplitter-signature")).toBeNull();
+  // GitHub's own check: HMAC-SHA256 of the raw body with the hook's secret, hex, behind "sha256=".
+  const hmac = new Bun.CryptoHasher("sha256", SECRET).update(push.raw).digest("hex");
+  expect(push.headers.get("x-hub-signature-256")).toBe(`sha256=${hmac}`);
+  expect(push.body.commits).toEqual([push.body.head_commit]);
+  expect(push.body.head_commit.id).toBe(push.body.after);
+  const cloneUrl = push.body.repository.clone_url;
+  expect(cloneUrl).toMatch(/^https?:\/\//);
+  expect(push.body).toMatchObject({
+    ref: "refs/heads/main", before: "0".repeat(40), after: expect.stringMatching(/^[0-9a-f]{40}$/), created: true, deleted: false, forced: false,
+    head_commit: { message: "first", added: ["a.ts"], committer: { name: "ryan" } },
+    repository: { full_name: "ryan/lab", default_branch: "main", master_branch: "main", clone_url: cloneUrl },
+    sender: { login: "ryan" },
+  });
+
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "tidy" });
+  await arrived(got, 4);
+  const create = got.slice(2).find((g) => g.url.startsWith("https://jenkins"))!;
+  expect(create.headers.get("x-github-event")).toBe("create");
+  expect(create.body).toMatchObject({ ref: "tidy", ref_type: "branch", master_branch: "main", pusher_type: "user" });
+
+  const doc = await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.ts&branch=tidy")).json();
+  await send("ryan", "/api/repos/ryan/lab/do/ops?path=a.ts&branch=tidy", { ops: [{ kind: "set", line: doc.lines[0].id, text: "ONE", base: doc.lines[0].rev }] });
+  expect((await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {})).status).toBe(200);
+  await arrived(got, 6);
+  const pr = got.slice(4).find((g) => g.url.startsWith("https://jenkins"))!;
+  expect(pr.headers.get("x-github-event")).toBe("pull_request");
+  expect(pr.body).toMatchObject({
+    action: "closed",
+    pull_request: { state: "closed", merged: true, head: { ref: "tidy", repo: { full_name: "ryan/lab", clone_url: cloneUrl } }, base: { ref: "main" } },
+  });
+
+  // The delivery log names it the way it went out.
+  const log = await (await call("ryan", `/api/repos/ryan/lab/hooks/${gh.id}/deliveries`)).json();
+  expect(log.map((d: any) => d.event)).toEqual(["pull_request", "create", "push"]);
+});
+
+test("a failed delivery is logged and retried on the queue; redeliver starts over", async () => {
+  const { call, send, got, answer } = await app();
+  const hook = await (await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", events: ["branch.opened"] })).json();
+  answer(500);
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "one" });
+  await arrived(got, 1);
+  const log = async (attempts: number) => {
+    for (const end = performance.now() + 15_000; performance.now() < end;) {
+      const d = await (await call("ryan", `/api/repos/ryan/lab/hooks/${hook.id}/deliveries`)).json();
+      if (d[0]?.attempts === attempts) return d[0];
+      await Bun.sleep(10);
+    }
+  };
+  let d = await log(1);
+  expect(d).toMatchObject({ event: "branch.opened", status: "pending", attempts: 1, code: 500, response: "thanks" });
+  expect(d.next_at).toBeGreaterThan(Date.now() + 50_000);
+
+  // Not due yet: the queue holds it.
+  await call.env.HOOKS.drain();
+  expect(got).toHaveLength(1);
+  // A minute on, the queue hands it back, and this time it lands.
+  answer(204);
+  await call.env.HOOKS.drain(Date.now() + 61_000);
+  expect(got).toHaveLength(2);
+  d = await log(2);
+  expect(d).toMatchObject({ status: "ok", attempts: 2, code: 204, next_at: null });
+  expect((await (await call("ryan", "/api/repos/ryan/lab/hooks")).json()).hooks[0].last).toMatchObject({ status: "ok", code: 204 });
+
+  expect((await call("ryan", `/api/repos/ryan/lab/hooks/${hook.id}/deliveries/${d.id}/redeliver`, { method: "POST" })).status).toBe(202);
+  await arrived(got, 3);
+  expect(got[2]!.headers.get("x-codesplitter-delivery")).toBe(d.id);
+});
+
+test("the queue sends a delivery once, however often it hands the message out", async () => {
+  const { call, send, got, answer } = await app();
+  await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", events: ["branch.opened"] });
+  answer(500);
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "one" });
+  await arrived(got, 1);
+  const [d] = (await call.env.DB.prepare("SELECT id FROM webhook_deliveries").all()).results;
+  // A duplicate of the first try, and one of the second sent twice: only the second lands, once.
+  await call.env.HOOKS.sendBatch([{ body: { id: d.id, n: 0 } }, { body: { id: d.id, n: 1 } }, { body: { id: d.id, n: 1 } }]);
+  await call.env.HOOKS.drain();
+  await Bun.sleep(50);
+  expect(got).toHaveLength(2);
+  // Left on the queue: the second try first booked (stale now) and the third, five minutes out.
+  expect(call.env.HOOKS.size()).toBe(2);
+  await call.env.HOOKS.drain(Date.now() + 61_000);
+  expect(got).toHaveLength(2);
+});
+
+test("a finished deploy is announced as a deployment status", async () => {
+  const { send, got, call } = await app();
+  // The clone lands on the remote's tip, as a real one would: a deploy checks it's the commit it reviewed.
+  const runner: Runner = {
+    exec: async (cmd, _cwd, out) => {
+      const line = cmd.join(" ");
+      if (line.includes("rev-parse")) out(`${(await review(call.env, "ryan", "lab")).tip}\n`);
+      if (line.includes("bun -e")) out(`RB ${JSON.stringify({ adopt: false, edge: true, box: false })}\n`);
+      if (line.includes("rustybuns deploy")) out('url: "https://lab.ryan.workers.dev"\n');
+      return 0;
+    },
+    fetch: async () => ({ status: 200 }),
+  };
+  call.env.PREVIEW_RUNNER = runner;
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
+  await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", events: ["deploy.finished"] });
+  await send("ryan", "/api/repos/ryan/lab/deploy", {});
+  await arrived(got, 1);
+  expect(got[0]!.body).toMatchObject({
+    deployment: { environment: "prod", task: "button", creator: { login: "ryan" }, sha: (await review(call.env, "ryan", "lab")).tip },
+    deployment_status: { state: "success", environment_url: "https://lab.ryan.workers.dev" },
+  });
+});

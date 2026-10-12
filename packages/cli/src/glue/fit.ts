@@ -1,6 +1,6 @@
 // Fit: how easily Rusty Buns could box a repo, from what it says about itself.
 // Pure text in, verdict out (no filesystem), so a host that keeps files
-// elsewhere (codeSplitters keeps them in Durable Objects) can ask too.
+// elsewhere (codeSplitter keeps them in Durable Objects) can ask too.
 // infer() uses the same framework detection, so there is one detector.
 
 /** Every stack we can name. SUPPORTED lists the ones `init` reads today. */

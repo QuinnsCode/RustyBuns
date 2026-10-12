@@ -96,7 +96,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 |---|---|
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | One game class runs as a Durable Object on Cloudflare and in-process in the binary: solo, couch, LAN party and online rooms |
 | [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain, played by the page, by a LAN host or by the edge; each player is sent only what they can see. [Play it](https://park-hide-seek.notryanquinn.workers.dev) |
-| [codeSplitters](apps/codesplitters/README.md) | A code host for the agentic era: every file a Durable Object, agents editing line by line, real git on Cloudflare Artifacts, an MCP server, on the edge and as a desktop app from one codebase. [Try it](https://codesplitter.notryanquinn.workers.dev) |
+| [codeSplitter](apps/codesplitter/README.md) | A code host for the agentic era: every file a Durable Object, agents editing line by line, real git on Cloudflare Artifacts, an MCP server, on the edge and as a desktop app from one codebase. [Try it](https://codesplitter.notryanquinn.workers.dev) |
 | [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary, nothing forked |
 | [tscircuit-desktop](apps/tscircuit-desktop/README.md) | A heavy, real-world Vite app as one file, with a Rust engine up to 22x faster and a TypeScript fallback |
 | [fm-daw](apps/fm-daw/README.md) | One Rust crate as wasm in the audio thread and over FFI on the host, bit-identical to the TypeScript engine |
@@ -108,7 +108,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [splat-spray](apps/splat-spray/README.md) | The smallest one: a three.js game with no backend at all, made a desktop app by a ten-line config |
 | [example](apps/example/README.md) | A whole Worker (D1, KV, a Durable Object) as a desktop binary in half a second, plus a Rust FFI probe with a TypeScript fallback |
 | [spa-example](apps/spa-example/README.md) | Not an app: a slice of a real RWSDK game that the tests use to check `init` reads it right |
-| [agent-demo](apps/agent-demo/README.md) | A small snack-vote Worker seeded into codeSplitters, so several coding agents can build it at once and settle a merge conflict on camera |
+| [agent-demo](apps/agent-demo/README.md) | A small snack-vote Worker seeded into codeSplitter, so several coding agents can build it at once and settle a merge conflict on camera |
 
 **Try one without building anything:** download the desktop binary for [Hippo Tycoon](https://github.com/QuinnsCode/RustyBuns/releases?q=hippo-tycoon-v&expanded=true), [Park Hide & Seek](https://github.com/QuinnsCode/RustyBuns/releases?q=park-hide-seek-v&expanded=true), [Splat Spray](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true) or [FM Groovebox](https://github.com/QuinnsCode/RustyBuns/releases?q=fm-daw-v&expanded=true). Each is one file for Mac, Windows or Linux. They aren't signed yet, so the first launch takes one Terminal command on a Mac (the release page has it) and a click past SmartScreen on Windows.
 

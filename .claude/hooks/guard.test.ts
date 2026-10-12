@@ -8,7 +8,7 @@ const read = (file_path: string) => check({ tool_name: "Read", tool_input: { fil
 test("blocks reading secret files, not their schema", () => {
   for (const p of [".env", "apps/x/.env.local", "/a/.dev.vars", "apps/x/.alchemy/state/prod/w.json", "~/agent-office/.agent-office/office.json", "/repo/.agent-office/tokens.json"])
     expect(read(p)).not.toBeNull();
-  for (const p of ["apps/codesplitters/.env.schema", ".env.example", "README.md", "/repo/.agent-office/worktrees/b/package.json"])
+  for (const p of ["apps/codesplitter/.env.schema", ".env.example", "README.md", "/repo/.agent-office/worktrees/b/package.json"])
     expect(read(p)).toBeNull();
   expect(check({ tool_name: "Grep", tool_input: { pattern: "x", path: "apps/a/.dev.vars" }, cwd })).not.toBeNull();
 });
@@ -19,7 +19,7 @@ test("blocks secret reads and env dumps inside shell commands", () => {
     "op read op://vault/item", "ls && op item get x", "gh auth token", "bunx wrangler secret put X",
     "ps eww", "ps auxe", "ps -E -p 123", "ps -axE"])
     expect(bash(c)).not.toBeNull();
-  for (const c of ["env FOO=1 bun test", "cat apps/codesplitters/.env.schema", "echo .env >> .gitignore", "export FOO=1", "gh pr view", "bun test",
+  for (const c of ["env FOO=1 bun test", "cat apps/codesplitter/.env.schema", "echo .env >> .gitignore", "export FOO=1", "gh pr view", "bun test",
     "ps aux", "ps -ef", "ps -e -o pid,user", "ps -p 123 -o command"])
     expect(bash(c)).toBeNull();
 });

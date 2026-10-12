@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRANCH, FILES, prompts, seed } from "../seed.ts";
 
-// A stand-in codeSplitters: files as lines with ids, a branch as a copy of main's,
+// A stand-in codeSplitter: files as lines with ids, a branch as a copy of main's,
 // and a review that counts lines both sides set differently.
 function fakeSite() {
   const calls: string[] = [];

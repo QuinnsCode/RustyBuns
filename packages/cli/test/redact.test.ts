@@ -20,9 +20,9 @@ function settingsApi(obs: any) {
 
 test("turns redaction on and keeps the rest of the observability settings", async () => {
   const { f, calls } = settingsApi(live);
-  expect(await redactQueryStrings({ accountId: "acct", workerName: "codesplitters", token: "tok", fetch: f })).toBe("set");
+  expect(await redactQueryStrings({ accountId: "acct", workerName: "codesplitter", token: "tok", fetch: f })).toBe("set");
   expect(calls.map((c) => c.method)).toEqual(["GET", "PATCH"]);
-  expect(calls[0]!.url).toBe("https://api.cloudflare.com/client/v4/accounts/acct/workers/scripts/codesplitters/script-settings");
+  expect(calls[0]!.url).toBe("https://api.cloudflare.com/client/v4/accounts/acct/workers/scripts/codesplitter/script-settings");
   expect(calls[0]!.auth).toBe("Bearer tok");
   expect(calls[1]!.body).toEqual({ observability: { ...live, redact_query_string: true } });
 });

@@ -1,7 +1,7 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
-// Snack Vote: the small app the codeSplitters demo hands to agents. One Worker,
-// no bindings, so `rustybuns deploy` (or codeSplitters' Deploy button) ships it as is.
+// Snack Vote: the small app the codeSplitter demo hands to agents. One Worker,
+// no bindings, so `rustybuns deploy` (or codeSplitter' Deploy button) ships it as is.
 export default defineConfig({
   name: "snack-vote",
   worker: {
