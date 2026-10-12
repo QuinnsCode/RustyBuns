@@ -288,10 +288,15 @@
   .cg-scroll { overflow-x: auto; overflow-y: hidden; padding: 0 4px; }
   .cg path, .cg-key path { fill: none; stroke: var(--border-2); stroke-width: 2; stroke-linecap: round; } .cg path.off { stroke-dasharray: 2 4; }
   .cg g, .cg-key .u, .cg-key .m { cursor: default; } .cg .u, .cg-key .u { fill: var(--fg); } .cg .m, .cg-key .m { fill: var(--accent); }
-  .cg g:hover, .cg g:focus { outline: none; } .cg g:hover > *, .cg g:focus > *, .cg g.on > * { stroke: var(--accent-glow); stroke-width: 3; }
-  .cg g[data-hash] { cursor: pointer; } .cg g.beat > * { stroke: var(--accent-glow); stroke-width: 3; }
+  .cg g:hover, .cg g:focus { outline: none; } .cg g:hover > *, .cg g:focus > *, .cg g.sel > * { stroke: var(--accent-glow); stroke-width: 3; }
+  .cg path.t { fill: var(--brown); stroke: none; } .cg g[data-h] { cursor: pointer; } .cg g.beat > * { stroke: var(--accent-glow); stroke-width: 3; }
   /* The pulse travelling the vein: a glowing bead that runs into main's newest commit as the crew lands lines. */
   .cg .bead, .cg-key .bead { fill: var(--accent-glow); } .cg .bead { filter: drop-shadow(0 0 3px var(--accent)); pointer-events: none; }
+  .cg-tags { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .cg-tag { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; font: 500 11.5px/18px var(--mono); color: var(--fg); background: var(--paper); border: 1px solid var(--border-2); border-radius: 9px; cursor: pointer; }
+  .cg-tag.off { color: var(--muted); border-style: dashed; } .cg-tag button { display: inline-flex; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; } .cg-tag button:hover { color: var(--accent-ink); }
+  .cg-act { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 12px 2px; font-size: 12px; } .cg-act .msg { flex: 0 1 auto; max-width: 40ch; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cg-act form { display: inline-flex; gap: 4px; } .cg-act input { width: 9em; padding: 2px 6px; font: 12px var(--mono); } .cg-act .btn { padding: 2px 8px; }
   .cg-pick { display: grid; gap: 6px; margin: 4px 12px 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); font-size: 12px; }
   .cg-pick .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; } .cg-pick .btn { white-space: nowrap; } .cg-pick select { max-width: 14em; }
   .cg-pick .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2035,6 +2040,12 @@ const commitLanes = (commits, more = false) => {
   if (more && oldest) edges.push({ x1: -1, l1: 0, x2: oldest.x, l2: 0, off: true });
   return { dots, edges, lanes: Math.max(1, busy.length) };
 };
+/** The tags on the commits shown ({hash: [names]}), and the names of those on commits that aren't (#879). */
+const tagMarks = (commits, tags = []) => {
+  const shown = new Set(commits.map((c) => c.hash)), on = {}, off = [];
+  for (const t of tags) shown.has(t.commit) ? (on[t.commit] ??= []).push(t.name) : off.push(t.name);
+  return { on, off };
+};
 /** The vein of a repo: who it listens to, who listens to it, its branches wired with curves, and its history,
  *  which the pulse runs along as the crew lands lines (beat()). */
 async function gitMap(c) {
@@ -2053,11 +2064,12 @@ async function gitMap(c) {
   const r = await api(`/repos/${owner}/${repo}`).catch(() => null);
   if (!el.isConnected) return;
   if (!r) { $("#gm-stage").innerHTML = '<span class="muted">couldn\'t load this repo</span>'; return; }
-  const [branches, mirror, upBranches, graph] = await Promise.all([
+  const [branches, mirror, upBranches, firstGraph, tagList] = await Promise.all([
     api(`/repos/${owner}/${repo}/branches`).catch(() => []),
     r.mirror ? api(`/repos/${owner}/${repo}/mirror`).catch(() => null) : null,
     r.mirror ? api(`/repos/${owner}/${repo}/mirror/branches`).catch(() => []) : [],
     api(`/repos/${owner}/${repo}/graph`).catch(() => null),
+    api(`/repos/${owner}/${repo}/tags`).then((t) => t.tags, () => []),
   ]);
   if (!el.isConnected) return;
   const map = gitMapModel({ owner, repo, r, branches, mirror, upBranches });
@@ -2085,17 +2097,21 @@ async function gitMap(c) {
     st.querySelector(".gm-wires").innerHTML = `<defs><marker id="gm-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L7 4L1 7"/></marker><marker id="gm-tail" viewBox="0 0 8 8" refX="1" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M7 1L1 4L7 7"/></marker></defs>${d}`;
   };
   wires();
-  const drawGraph = (graph) => {
+  // The owner tags a commit by picking its dot (#879); a mirror's tags go up to upstream and come down from it.
+  let graph = firstGraph;
+  const tagger = { mine: me() === owner, mirror: !!r.mirror, sel: null };
+  let tags = tagList;
+  const drawGraph = () => {
     if (!graph?.commits?.length) return;
-    const g = $("#gm-graph");
-    g.innerHTML = commitGraph(graph) + `<div class="cg-pick" id="cg-pick" data-pics hidden></div>`;
+    const g = $("#gm-graph"), was = g.querySelector(".cg-scroll")?.scrollLeft;
+    g.innerHTML = commitGraph(graph, tags, tagger) + `<div class="cg-pick" id="cg-pick" data-pics hidden></div>`;
     g.hidden = false;
     icons();
     // Newest on the right: start there.
-    const sc = g.querySelector(".cg-scroll"); sc.scrollLeft = sc.scrollWidth;
+    const sc = g.querySelector(".cg-scroll"); sc.scrollLeft = was ?? sc.scrollWidth;
     g.commits = new Map(graph.commits.map((c) => [c.hash, c]));
+    if (tagger.sel) pickCard(tagger.sel);
   };
-  drawGraph(graph);
   // The pulse: lines landing here send a bead down the vein into main's newest commit, one at a time.
   let beatAt = 0;
   el.beat = () => {
@@ -2116,8 +2132,6 @@ async function gitMap(c) {
   const pickCard = (hash) => {
     const c = $("#gm-graph").commits?.get(hash), box = $("#cg-pick");
     if (!c || !box) return;
-    $("#gm-graph").querySelectorAll(".cg g.on").forEach((d) => d.classList.remove("on"));
-    $("#gm-graph").querySelector(`.cg g[data-hash="${CSS.escape(hash)}"]`)?.classList.add("on");
     const short = hash.slice(0, 7), onto = open[0] ?? "main";
     box.innerHTML = `<div class="row"><code>${esc(short)}</code><span class="what" title="${esc(c.message)}">${esc(c.message)}</span><span class="grow"></span><button class="btn ghost" data-cg="x" title="close">${icon("x")}</button></div>
       ${r.canWrite ? `<div class="row"><button class="btn" data-cg="revert" title="a new commit on main that undoes this one"${picAttr("revert", { short })}>${icon("undo-2")}Revert</button>
@@ -2132,27 +2146,42 @@ async function gitMap(c) {
     box.onclick = async (e) => {
       const b = e.target.closest("[data-cg]");
       if (!b) return;
-      if (b.dataset.cg === "x") { box.hidden = true; return; }
+      if (b.dataset.cg === "x") { tagger.sel = null; drawGraph(); return; }
       const kind = b.dataset.cg, to = kind === "pick" ? box.querySelector("#cg-onto").value : "main";
       b.disabled = true;
       try {
         const out = await api(`/repos/${owner}/${repo}/commits/${hash}/${kind}`, to === "main" ? {} : { branch: to });
         const n = out.files.length, files = `${n} file${n === 1 ? "" : "s"}`;
         toast(kind === "revert" ? `Reverted ${short}: ${files} on main` : to === "main" ? `Picked ${short} onto main: ${files}` : `Picked ${short} onto ${to}: ${files}, waiting for its merge`, 3600);
-        if (to === "main") drawGraph(await api(`/repos/${owner}/${repo}/graph`).catch(() => null));
-        else box.hidden = true;
+        if (to === "main") { graph = await api(`/repos/${owner}/${repo}/graph`).catch(() => graph); drawGraph(); }
+        else { tagger.sel = null; drawGraph(); }
       } catch (err) { b.disabled = false; toast(err.message, 6000); }
     };
   };
-  el.addEventListener("keydown", (e) => {
-    const d = e.key === "Enter" || e.key === " " ? e.target.closest?.(".cg g[data-hash]") : null;
-    if (d) { e.preventDefault(); pickCard(d.dataset.hash); }
+  drawGraph();
+  const retag = async (say) => { toast(say); tags = await api(`/repos/${owner}/${repo}/tags`).then((t) => t.tags, () => tags); if (el.isConnected) drawGraph(); };
+  const tagDo = async (b, run) => { b.disabled = true; try { await run(); } catch (err) { b.disabled = false; toast(err.message); } };
+  el.addEventListener("submit", (e) => {
+    if (e.target.id !== "cg-new") return;
+    e.preventDefault();
+    const name = e.target.elements.tag.value.trim(), b = e.target.querySelector("button");
+    if (name) tagDo(b, async () => { await api(`/repos/${owner}/${repo}/tags`, { name, commit: tagger.sel }); await retag(`Tagged ${tagger.sel.slice(0, 7)} ${name}`); });
   });
+  $("#gm-graph").addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.matches?.(".cg g[data-h]")) { e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", { bubbles: true })); } });
   el.addEventListener("scroll", wires, true);
   el.addEventListener("click", (e) => {
     e.stopPropagation();
-    const d = e.target.closest(".cg g[data-hash]");
-    if (d) return pickCard(d.dataset.hash);
+    const t = e.target.closest("[data-tag-del], [data-tag-push], #cg-fetch, .cg g[data-h], .cg-tag[data-at]");
+    if (t?.dataset.tagDel) return tagDo(t, async () => { await api(`/repos/${owner}/${repo}/tags/${encodeURIComponent(t.dataset.tagDel)}`, undefined, "DELETE"); await retag(`Deleted the tag ${t.dataset.tagDel}`); });
+    if (t?.dataset.tagPush) return tagDo(t, async () => { const p = await api(`/repos/${owner}/${repo}/mirror/tags/${encodeURIComponent(t.dataset.tagPush)}/push`, {}); toast(p.pushed ? `Pushed ${p.name} to upstream` : `Upstream already has ${p.name}`); });
+    if (t?.id === "cg-fetch") return tagDo(t, async () => {
+      const f = await api(`/repos/${owner}/${repo}/mirror/tags`, {});
+      await retag(`${f.fetched.length ? `Fetched ${f.fetched.length} of upstream's tags` : "No new tags upstream"}${f.kept.length ? `; kept ours of ${f.kept.join(", ")}` : ""}`);
+    });
+    // A dot, or a tag in the head: pick that commit (the owner's bar shows it), or let it go.
+    const h = t?.dataset.h ?? t?.dataset.at;
+    if (h && $(`.cg g[data-h="${h}"]`)) { tagger.sel = tagger.sel === h && t.dataset.h ? null : h; drawGraph(); if (tagger.mine) $("#cg-new input")?.focus(); return; }
+    if (h) return $(`.cg g[data-h="${h}"]`)?.scrollIntoView({ block: "nearest", inline: "center" });
     if (e.target.closest("#gm-x")) return close();
     if (e.target.closest("#gm-files")) { close(); return wireMap(c.view ? c : { ...c, view: "r" }); }
     if (e.target.closest("a.gm-tile[href^='#']")) close();
@@ -2163,8 +2192,8 @@ async function gitMap(c) {
   addEventListener("keydown", off); addEventListener("click", off); addEventListener("resize", onSize);
 }
 /** The vein's history: a head saying what it shows, and the dots and lanes, scrolled sideways. */
-const commitGraph = (g) => {
-  const DX = 22, LH = 20, PAD = 14, { dots, edges, lanes } = commitLanes(g.commits, g.more);
+const commitGraph = (g, tags = [], o = {}) => {
+  const DX = 22, LH = 20, PAD = 14, { dots, edges, lanes } = commitLanes(g.commits, g.more), marks = tagMarks(g.commits, tags);
   const X = (i) => PAD + 8 + i * DX, Y = (l) => PAD + l * LH;
   const line = (e) => {
     const [x1, y1, x2, y2] = [X(e.x1), Y(e.l1), X(e.x2), Y(e.l2)];
@@ -2178,16 +2207,27 @@ const commitGraph = (g) => {
   const tip = dots.filter((c) => c.lane === 0).at(-1);
   const dot = (c) => {
     const x = X(c.x), y = Y(c.lane);
-    const say = `${c.hash.slice(0, 7)} ${c.message}\n${c.author}, ${new Date(c.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${c.up ? "upstream's" : "this copy's"}${c.merge ? " merge" : ""}`;
+    const on = marks.on[c.hash];
+    const say = `${c.hash.slice(0, 7)} ${c.message}\n${c.author}, ${new Date(c.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${c.up ? "upstream's" : "this copy's"}${c.merge ? " merge" : ""}${on ? `\ntagged ${on.join(", ")}` : ""}`;
     const shape = c.merge ? `<rect x="${x - 4.5}" y="${y - 4.5}" width="9" height="9" rx="1.5" transform="rotate(45 ${x} ${y})"/>` : `<circle cx="${x}" cy="${y}" r="5"/>`;
-    return `<g class="${c.up ? "u" : "m"}${c === tip ? " tip" : ""}" tabindex="0" data-hash="${esc(c.hash)}" aria-label="${esc(say)}"><title>${esc(say)}</title>${shape}</g>`;
+    // A tagged commit wears a little tag above its dot.
+    const flag = on ? `<path class="t" d="M${x - 4} ${y - 13}h5l3 3l-3 3h-5z"/>` : "";
+    return `<g class="${c.up ? "u" : "m"}${c === tip ? " tip" : ""}${o.sel === c.hash ? " sel" : ""}" data-h="${c.hash}" tabindex="0" aria-label="${esc(say)}"><title>${esc(say)}</title>${flag}${shape}</g>`;
   };
   const main = dots.filter((c) => c.lane === 0).length, side = dots.length - main;
   const w = X(Math.max(0, dots.length - 1)) + PAD + 8, h = Y(lanes - 1) + PAD;
   return `<div class="cg-head muted">${icon("git-commit-horizontal")}<span>The vein, ${esc(g.branch)}: the last ${main} commit${main === 1 ? "" : "s"}${g.more ? " (older ones trail off left)" : ""}${side ? `, and ${side} on branches merged in` : ""}</span>
-    <span class="cg-key"><svg viewBox="0 0 10 10"><circle class="u" cx="5" cy="5" r="4"/></svg>upstream's</span><span class="cg-key"><svg viewBox="0 0 10 10"><circle class="m" cx="5" cy="5" r="4"/></svg>this copy's</span><span class="cg-key"><svg viewBox="0 0 10 10"><rect x="1.8" y="1.8" width="6.4" height="6.4" transform="rotate(45 5 5)"/></svg>a merge</span><span class="cg-key" title="when the crew lands lines here, a bead runs down the vein into main's newest commit"><svg viewBox="0 0 10 10"><circle class="bead" cx="5" cy="5" r="3"/></svg>the pulse</span></div>
-    <div class="cg-scroll"><svg class="cg" width="${w}" height="${h}"${tip ? ` data-tip="${X(tip.x)},${Y(0)},${X(Math.max(0, tip.x - 8))}"` : ""} viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(`${main} commits on ${g.branch}`)}">${edges.map(line).join("")}${dots.map(dot).join("")}</svg></div>`;
+    <span class="cg-key"><svg viewBox="0 0 10 10"><circle class="u" cx="5" cy="5" r="4"/></svg>upstream's</span><span class="cg-key"><svg viewBox="0 0 10 10"><circle class="m" cx="5" cy="5" r="4"/></svg>this copy's</span><span class="cg-key"><svg viewBox="0 0 10 10"><rect x="1.8" y="1.8" width="6.4" height="6.4" transform="rotate(45 5 5)"/></svg>a merge</span><span class="cg-key" title="when the crew lands lines here, a bead runs down the vein into main's newest commit"><svg viewBox="0 0 10 10"><circle class="bead" cx="5" cy="5" r="3"/></svg>the pulse</span>${tagHead(tags, marks, o)}</div>
+    <div class="cg-scroll"><svg class="cg${o.mine ? " mine" : ""}" width="${w}" height="${h}"${tip ? ` data-tip="${X(tip.x)},${Y(0)},${X(Math.max(0, tip.x - 8))}"` : ""} viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(`${main} commits on ${g.branch}`)}">${edges.map(line).join("")}${dots.map(dot).join("")}</svg></div>${tagBar(dots.find((c) => c.hash === o.sel), marks, o)}`;
 };
+/** The graph head's tags: each a chip (dashed when its commit isn't shown), and for a mirror's owner, fetch upstream's. */
+const tagHead = (tags, marks, o) => !tags.length && !(o.mine && o.mirror) ? "" : `<span class="cg-tags">${icon("tag")}${tags.slice(0, 12).map((t) => {
+  const off = marks.off.includes(t.name);
+  return `<span class="cg-tag${off ? " off" : ""}" data-at="${t.commit}" title="${esc(t.name)} on ${t.commit.slice(0, 7)}${off ? ", further back than the graph goes" : ""}">${esc(t.name)}</span>`;
+}).join("")}${tags.length > 12 ? `<span title="${esc(tags.slice(12).map((t) => t.name).join(", "))}">+${tags.length - 12}</span>` : ""}${o.mine && o.mirror ? `<button class="btn ghost" id="cg-fetch" title="fetch upstream's tags">${icon("download")}</button>` : ""}</span>`;
+/** The owner's bar for the picked commit: its tags (delete, or push up on a mirror), and a box to tag it. */
+const tagBar = (c, marks, o) => !c || !o.mine ? "" : `<div class="cg-act"><code>${c.hash.slice(0, 7)}</code><span class="msg muted" title="${esc(c.message)}">${esc(c.message)}</span>${(marks.on[c.hash] ?? []).map((n) => `<span class="cg-tag">${esc(n)}${o.mirror ? `<button data-tag-push="${esc(n)}" title="push it to upstream">${icon("upload")}</button>` : ""}<button data-tag-del="${esc(n)}" title="delete this tag">${icon("x")}</button></span>`).join("")}
+  <form id="cg-new"><input name="tag" placeholder="v1.0" aria-label="a new tag's name" autocomplete="off" spellcheck="false"><button class="btn" title="tag this commit">${icon("tag")}</button></form></div>`;
 /** This browser's layout of the details side: its width (px, "66.667%" or "full"), the panels' order, and which are folded. */
 const dockPrefs = () => { try { return { w: "", order: [], shut: [], ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", order: [], shut: [] }; } };
 const saveDock = (d) => { try { localStorage.setItem("cs_dock", JSON.stringify(d)); } catch {} };

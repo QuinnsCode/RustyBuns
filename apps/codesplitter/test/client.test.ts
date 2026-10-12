@@ -52,7 +52,7 @@ describe("git action pictures", () => {
 // The vein: who a repo listens to, its branches as tiles and curves, and its history.
 describe("the vein", () => {
   const src = html.slice(html.indexOf("// The vein: a repo's family"), html.indexOf("/** The vein of a repo:"));
-  const { gitMapModel, gitCurve, commitLanes } = new Function(`${src}; return { gitMapModel, gitCurve, commitLanes };`)();
+  const { gitMapModel, gitCurve, commitLanes, tagMarks } = new Function(`${src}; return { gitMapModel, gitCurve, commitLanes, tagMarks };`)();
   const link = (m: any, from: string, to: string) => m.links.find((l: any) => l.from === from && l.to === to);
 
   test("a dug fork was copied once and doesn't listen", () => {
@@ -131,6 +131,12 @@ describe("the vein", () => {
     for (const e of g.edges) expect(e.x1).toBeLessThan(e.x2);
     // m0 isn't shown: main trails off to the left.
     expect(g.edges).toContainEqual({ x1: -1, l1: 0, x2: 0, l2: 0, off: true });
+  });
+
+  test("tags sit on the commits shown; the rest are further back (#879)", () => {
+    const m = tagMarks([c("m2", ["m1"]), c("m1", [])], [{ name: "v2", commit: "m2" }, { name: "v2-final", commit: "m2" }, { name: "v1", commit: "m0" }]);
+    expect(m).toEqual({ on: { m2: ["v2", "v2-final"] }, off: ["v1"] });
+    expect(tagMarks([c("m1", [])])).toEqual({ on: {}, off: [] });
   });
 
   test("a branch merged twice keeps its older commits left of the first merge", () => {

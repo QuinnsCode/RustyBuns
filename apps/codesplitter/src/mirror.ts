@@ -68,6 +68,7 @@ import { diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, json, NAME, type Env } from "./env.ts";
 import type { Doc } from "./lines.ts";
 import { indexFile, unindexFile } from "./search.ts";
+import { byVersion, tagNameError } from "./tags.ts";
 
 /** How often a mirror that's in step looks again, and the longest a failing one waits. */
 export const EVERY = 5 * 60_000, MAX_WAIT = 15 * 60_000;
@@ -998,7 +999,98 @@ export async function mirrorBranchRoute(req: Request, env: Env, p: string[], own
   return serial(owner, repo, run).catch((e: Error & { status?: number }) => json({ error: e.message }, e.status ?? 500));
 }
 
-/** A remote someone pasted: a GitHub repo in any of its forms, or any git URL. */
+// Tags (#879). Syncs fetch with --no-tags; a mirror's tags come and go on asking:
+//
+//   GET  /api/repos/:o/:r/mirror/tags                upstream's tags, each here (same commit), differs, or not here
+//   POST /api/repos/:o/:r/mirror/tags {names?}        (owner) fetch upstream's tags that aren't here (all, or these)
+//   POST /api/repos/:o/:r/mirror/tags/:name/push      (owner) push the tag here upstream, never forced
+//
+// They're the repo's own git's tags (tags.ts makes and lists them), so a repo
+// with private lines, whose own git isn't upstream's history, has none to trade.
+
+type UpTag = { name: string; commit: string; here: "same" | "differs" | null };
+/** Tags from `git ls-remote` or `for-each-ref` lines (a hash, then a ref), peeled to the commit. */
+const tagsOf = (out: string) => {
+  const m = new Map<string, string>();
+  for (const l of out.split("\n")) {
+    const [hash, ref] = l.trim().split(/\s+/);
+    if (!hash || !ref?.startsWith("refs/tags/")) continue;
+    if (ref.endsWith("^{}")) m.set(ref.slice(10, -3), hash);
+    else if (!m.has(ref.slice(10))) m.set(ref.slice(10), hash);
+  }
+  return m;
+};
+/** The repo's own git and how to reach upstream, or why its tags can't go between them. */
+async function tagSetup(env: Env, owner: string, repo: string) {
+  const r = await row(env, owner, repo), lg = localGit(env);
+  if (!r || !lg) throw refused("not a mirror", 404);
+  if (r.crew_artifact) throw refused("this repo has private lines, so its git isn't upstream's history: its tags stay here", 409);
+  return { r, dir: lg.path(r.artifact), net: await remoteEnv(env, owner, r.mirror_url) };
+}
+const hereTags = async (dir: string) => tagsOf(await must(["for-each-ref", "--format=%(objectname) %(refname)%0a%(*objectname) %(refname)^{}", "refs/tags"], dir));
+
+/** Upstream's tags, highest version first, each with whether this repo has it. */
+export async function upstreamTags(env: Env, owner: string, repo: string, s?: Awaited<ReturnType<typeof tagSetup>>): Promise<UpTag[]> {
+  s ??= await tagSetup(env, owner, repo);
+  const ls = await git(["ls-remote", "--tags", s.r.mirror_url], s.dir, s.net);
+  if (ls.code) throw refused(`upstream didn't answer: ${ls.err}`, 502);
+  const ours = await hereTags(s.dir);
+  return [...tagsOf(ls.out)].map(([name, commit]) => ({ name, commit, here: ours.has(name) ? ours.get(name) === commit ? "same" as const : "differs" as const : null })).sort(byVersion);
+}
+
+/**
+ * Fetch upstream's tags that this repo doesn't have (all, or those in `names`),
+ * with the commits they name. A tag here already is left as it is, even where
+ * upstream's names another commit. A mirror is a shallow clone, so the commits
+ * come shallow too, not all the history behind them.
+ */
+export async function fetchTags(env: Env, owner: string, repo: string, names?: string[]) {
+  const s = await tagSetup(env, owner, repo), up = await upstreamTags(env, owner, repo, s);
+  const want = up.filter((t) => !t.here && (!names || names.includes(t.name)));
+  const missing = names?.filter((n) => !up.some((t) => t.name === n)) ?? [];
+  if (want.length) {
+    const shallow = (await must(["rev-parse", "--is-shallow-repository"], s.dir)) === "true";
+    for (let i = 0; i < want.length; i += 50) {
+      const f = await git(["fetch", "--quiet", "--no-tags", ...(shallow ? ["--depth=1"] : []), s.r.mirror_url, ...want.slice(i, i + 50).map((t) => `refs/tags/${t.name}:refs/tags/${t.name}`)], s.dir, s.net, 10 * 60_000);
+      if (f.code) throw refused(`upstream didn't send them: ${f.err}`, 502);
+    }
+  }
+  return { fetched: want.map((t) => t.name), kept: up.filter((t) => t.here === "differs" && (!names || names.includes(t.name))).map((t) => t.name), missing };
+}
+
+/** Push this repo's tag `name` upstream. Never forced: upstream's own tag of that name stays. */
+export async function pushTag(env: Env, owner: string, repo: string, name: string) {
+  const s = await tagSetup(env, owner, repo), ours = (await hereTags(s.dir)).get(name);
+  if (!ours) throw refused(`no tag ${name} here`, 404);
+  const p = await git(["push", "--porcelain", s.r.mirror_url, `refs/tags/${name}:refs/tags/${name}`], s.dir, s.net);
+  const said = [p.err, p.out].filter(Boolean).join("\n");
+  if (/\[up to date\]/.test(said)) return { pushed: false, name, commit: ours };
+  if (p.code) throw refused(/\[rejected\]|already exists/.test(said) ? `upstream already has a tag ${name} on another commit` : `upstream didn't take it: ${said}`, /\[rejected\]|already exists/.test(said) ? 409 : 502);
+  return { pushed: true, name, commit: ours };
+}
+
+/** /api/repos/:o/:r/mirror/tags[/:name/push]: reading is for anyone who can read the repo, the rest for its owner. */
+export async function mirrorTagRoute(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null) {
+  if (p[5] !== "tags") return null;
+  let run: () => Promise<unknown>;
+  if (!p[6] && req.method === "GET") run = () => upstreamTags(env, owner, repo);
+  else if (req.method !== "POST") return null;
+  else if (user !== owner) return json({ error: "owner only" }, 403);
+  else if (!p[6]) {
+    const b = (await req.json().catch(() => ({}))) as { names?: unknown };
+    if (b.names !== undefined && !(Array.isArray(b.names) && b.names.every((n) => typeof n === "string" && !tagNameError(n)))) return json({ error: "names: a list of tag names" }, 400);
+    run = () => fetchTags(env, owner, repo, b.names as string[] | undefined);
+  } else if (p.at(-1) === "push" && p.length > 7) {
+    const name = p.slice(6, -1).join("/"), bad = tagNameError(name);
+    if (bad) return json({ error: bad }, 400);
+    run = () => pushTag(env, owner, repo, name);
+  }
+  else return null;
+  // One at a time with the repo's syncs.
+  return serial(owner, repo, run).then((v) => json(v), (e: Error & { status?: number }) => json({ error: e.message }, e.status ?? 500));
+}
+
+/** A remote someone pasted:a GitHub repo in any of its forms, or any git URL. */
 function remoteOf(s: string): { url: string; upstream: string; name: string } | null {
   const v = s.trim().replace(/^git\s+clone\s+/, "").split(/\s+/).find((w) => !w.startsWith("-")) ?? "";
   const anyGit = /^(?:https?|ssh|git|file):\/\//i.test(v) || /^[^\s@/]+@[^\s:/]+:/.test(v) || v.startsWith("/");

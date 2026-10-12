@@ -114,6 +114,15 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { limit: int("how many of main's commits, default 60, up to 200") },
     ok: obj({ branch: str(), upstream: { type: ["string", "null"], description: "the upstream commit this repo last took" }, more: bool("main goes back further"),
       commits: arr(obj({ hash: str(), parents: arr(str()), message: str("the first line"), author: str(), at: int("ms"), up: bool(), side: str("the merge this branch commit lands in") })) }) } },
+  [`${repo}/tags`]: {
+    get: { id: "list_tags", summary: "A repo's tags, each with the commit it names", tag: "Repos", open: true,
+      description: "Version tags first, the highest first, then the rest by name. An annotated tag names the commit it points at.",
+      ok: obj({ tags: arr(obj({ name: str(), commit: str() })) }) },
+    post: { id: "make_tag", summary: "Tag a commit (owner only)", tag: "Repos",
+      description: "A lightweight tag: main's tip, or `commit`. A name that's taken is a 409; delete it first to move it.",
+      body: obj({ name: str("git's rule, as for a branch"), commit: str("a full commit hash; main's tip without it") }, ["name"]), ok: obj({ name: str(), commit: str() }), status: 201 },
+  },
+  [`${repo}/tags/{name}`]: { delete: { id: "delete_tag", summary: "Delete a tag (owner only). A mirror's upstream keeps its own", tag: "Repos", ok: ref("Ok") } },
   ...Object.fromEntries((["revert", "pick"] as const).map((k) => [`${repo}/commits/{sha}/${k}`, { post: {
     id: k === "revert" ? "revert_commit" : "cherry_pick", summary: k === "revert" ? "Revert a commit: undo its changes (the crew)" : "Cherry-pick a commit onto main or an open branch (the crew)", tag: "Repos", risky: true,
     description: "Its changes against its first parent are merged into each file's lines as they are now and land as line edits, so the lines it doesn't touch keep their ids and blame. " +
