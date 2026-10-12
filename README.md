@@ -69,6 +69,8 @@ Bun is the one runtime that has every piece built in:
 | `bun:ffi` | Rust cdylibs called directly, nanosecond calls, with a TypeScript fallback |
 | `Bun.spawn` with a terminal | real PTYs without node-gyp (see [agent-office](apps/agent-office/README.md)) |
 
+The twins refuse what the edge refuses, with the edge's error: more than 100 bound parameters in a D1 query, a KV key over 512 bytes, a queue message over 128 KB, a Durable Object value over 2 MiB. So a query that works locally doesn't fail on the first deploy. Memory and CPU limits aren't enforced yet.
+
 D1 migrations apply at boot, and `"use server"` functions run for real against sqlite. It adds up to [a full-stack framework, by accident](REFERENCE.md#a-full-stack-framework-by-accident).
 
 </details>
