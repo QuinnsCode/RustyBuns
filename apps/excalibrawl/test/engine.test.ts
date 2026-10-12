@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { actionsFor, clefRequest, decide, gridFor, sample, toOps, type Decision, type TurnInput } from "../src/engine/brain.ts";
 import { finished, newMatch, playTurn, regionOf, scenesAt, type TurnDeps } from "../src/engine/match.ts";
+import { parsePlan } from "../src/engine/plan.ts";
 import { encodePng, rasterize, snapshot } from "../src/engine/raster.ts";
 import type { SkeletonEl } from "../src/engine/types.ts";
 
@@ -78,6 +79,16 @@ describe("the questions", () => {
     expect(actionsFor({ scene: three, turn: 5, turns: 20 })).toContain("restart");
     expect(actionsFor({ scene: three, turn: 15, turns: 20 })).not.toContain("restart");
     expect(actionsFor({ scene: [head], turn: 2, turns: 20 })).not.toContain("restart");
+  });
+
+  test("no deleting or calling it done while the plan has parts left, or with little on the canvas", () => {
+    const five = [1, 2, 3, 4, 5].map((n) => ({ ...head, id: `1-${n}` }));
+    const plan = [{ part: "body", shape: "ellipse" as const, color: "orange" as const, where: "center" as const, size: 3, aspect: "wide" as const }];
+    expect(actionsFor({ scene: five, turn: 20, turns: 36, plan, done: 0 })).not.toContain("delete");
+    expect(actionsFor({ scene: five, turn: 20, turns: 36, plan, done: 0 })).not.toContain("pass");
+    expect(actionsFor({ scene: five, turn: 20, turns: 36, plan, done: 1 })).toEqual(expect.arrayContaining(["delete", "pass"]));
+    expect(actionsFor({ scene: five.slice(0, 3), turn: 20, turns: 36 })).toEqual(["add", "move", "recolor", "resize", "pass"]);
+    expect(toOps({ action: "pass", shape: "dot", color: "black", col: 1, row: 1, size: 0, aspect: "square" }, five, region, () => "x")).toEqual([]);
   });
 
   test("a duel half is a 6 × 12 grid", () => {
@@ -160,5 +171,52 @@ describe("a fight", () => {
     expect(bad!.error).toBeTruthy();
     expect(m.scenes[0]!.length).toBe(1);
     expect(finished(m)).toBe(true);
+  });
+});
+
+describe("the planner", () => {
+  const reply = { response: '{"parts":[{"part":"body","shape":"ellipse","color":"orange","where":"center","size":"large","aspect":"wide"},{"part":"head","shape":"Ellipse","color":"Orange","where":"top-left","size":"medium","aspect":"square"},{"part":"laser","shape":"laser beam","color":"red","where":"top","size":"small"},{"part":"eye","shape":"dot","color":"black","where":"top-left","size":"tiny"}]}' };
+
+  test("keeps the steps in Clef's vocabulary and drops the rest", () => {
+    const plan = parsePlan(reply);
+    expect(plan.map((s) => s.part)).toEqual(["body", "head", "eye"]);
+    expect(plan[0]).toEqual({ part: "body", shape: "ellipse", color: "orange", where: "center", size: 3, aspect: "wide" });
+    expect(plan[2]!.aspect).toBe("square"); // left out: the default
+    expect(parsePlan({ response: "I'd draw a cat!" })).toEqual([]);
+  });
+
+  test("Clef is offered the next step, and drawing it takes the plan's shape and colour", () => {
+    const plan = parsePlan(reply);
+    const t = blank({ plan, done: 1, scene: [head] });
+    expect(actionsFor(t)[0]).toBe("next");
+    const req = clefRequest("clef", t);
+    expect(req.state).toContain("1. body: large orange ellipse, wide, center (drawn); 2. head: medium orange ellipse, square, top-left (next)");
+    expect((req.questions.action as { criteria: Record<string, string> }).criteria.next).toContain("head");
+    const d = decide(answers({ action: "next", target: "none", shape: "rectangle", color: "blue", col: "c2", row: "r3", aspect: "wide" }, 3), t, 0);
+    expect(d).toMatchObject({ action: "next", shape: "ellipse", color: "orange", aspect: "square", col: 2, row: 3, size: 2.5, step: 1, part: "head" });
+    expect(toOps(d, [head], region, () => "1-9")[0]!.op).toBe("add");
+  });
+
+  test("a finished plan isn't offered again", () => {
+    expect(actionsFor(blank({ plan: parsePlan(reply), done: 3, scene: [head] }))).not.toContain("next");
+  });
+
+  test("a fight plans once, then works through the plan", async () => {
+    const m = newMatch("m-3", "a very long cat", [{ model: "clef", name: "Clef" }], 4, 0);
+    let plans = 0;
+    const deps: TurnDeps = {
+      // like Clef, it only picks what it's offered: the next step while there is one
+      run: async (_m, input) => {
+        const offered = (input as { questions: { action?: { criteria: object } } }).questions.action?.criteria ?? {};
+        return answers({ action: "next" in offered ? "next" : "add", target: "none", shape: "dot", color: "black", col: "c2", row: "r3", aspect: "wide" });
+      },
+      take: async () => true,
+      plan: async () => (plans++, parsePlan(reply)),
+      temperature: 0,
+    };
+    while (!finished(m)) await playTurn(m, deps);
+    expect(plans).toBe(1);
+    expect(m.done).toEqual([3]);
+    expect(m.log.map((e) => e.decision?.part ?? e.decision?.action)).toEqual(["body", "head", "eye", "add"]);
   });
 });

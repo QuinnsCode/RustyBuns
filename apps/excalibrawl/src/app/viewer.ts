@@ -21,6 +21,8 @@ function said(e: LogEntry | undefined): string {
   const d = e.decision;
   if (!d) return "…";
   if (d.action === "restart") return "scrapped it all";
+  if (d.action === "pass") return "admiring it";
+  if (d.action === "next") return `${d.part ?? "next part"} (${d.color} ${d.shape})`;
   return d.action === "add" ? `${d.size >= 3 ? "big " : d.size < 1 ? "tiny " : ""}${d.color} ${d.shape}` : `${d.action} ${d.target ?? ""}`.trim();
 }
 

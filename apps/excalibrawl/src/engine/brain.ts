@@ -5,15 +5,18 @@
 // ~75-token picture plus the questions, ~1,000 tokens in all, so a whole fight is about two cents.
 
 import { PALETTE } from "./ops.ts";
+import { SHAPE_KINDS, describeStep, type PlanStep } from "./plan.ts";
 import { isLinear, type Bounds, type BoxEl, type LinearEl, type Op, type SkeletonEl } from "./types.ts";
 
 export const ACTIONS = {
-  add: "Add a new shape",
+  next: "Draw the next part of your plan",
+  add: "Add a shape that isn't in the plan",
   move: "Move one shape somewhere better",
   recolor: "Recolour one shape",
   resize: "Resize or reshape one shape",
   delete: "Delete one shape that hurts the drawing",
   restart: "Scrap the whole drawing and start over (only worth it if it's going badly)",
+  pass: "Leave the drawing as it is: it's done, and more would clutter it",
 } as const;
 export type Action = keyof typeof ACTIONS;
 
@@ -26,6 +29,7 @@ export const SHAPES = {
   dot: "Small solid dot: eyes, buttons, spots",
 } as const;
 export type ShapeKind = keyof typeof SHAPES;
+if (Object.keys(SHAPES).join() !== SHAPE_KINDS.join()) throw new Error("shapes drifted");
 
 const COLORS: Record<string, string> = {
   black: "#1e1e1e",
@@ -71,6 +75,9 @@ export interface Decision {
   /** 0 (tiny) to 4 (huge), can land between levels. */
   size: number;
   aspect: Aspect;
+  /** For "next": which step of the plan it drew, and what that part is. */
+  step?: number;
+  part?: string;
 }
 
 export interface TurnInput {
@@ -82,7 +89,13 @@ export interface TurnInput {
   /** The fighter's canvas as a PNG data URL (see raster.ts). */
   image: string;
   persona?: string;
+  /** What the planner listed, and how many of its steps are drawn. */
+  plan?: PlanStep[];
+  done?: number;
 }
+
+/** The plan's next step, if there's one left. */
+export const nextStep = (t: Pick<TurnInput, "plan" | "done">) => (t.plan && (t.done ?? 0) < t.plan.length ? t.plan[t.done ?? 0] : undefined);
 
 const where = (el: SkeletonEl, region: Bounds, g: Grid) => {
   const [cx, cy] = center(el);
@@ -100,9 +113,14 @@ function describe(el: SkeletonEl, region: Bounds, g: Grid): string {
 }
 
 /** Which actions make sense now: nothing to edit on an empty canvas, no starting over late. */
-export function actionsFor(t: Pick<TurnInput, "scene" | "turn" | "turns">): Action[] {
-  if (!t.scene.length) return ["add"];
-  const out: Action[] = ["add", "move", "recolor", "resize", "delete"];
+export function actionsFor(t: Pick<TurnInput, "scene" | "turn" | "turns" | "plan" | "done">): Action[] {
+  const next: Action[] = nextStep(t) ? ["next"] : [];
+  if (!t.scene.length) return [...next, "add"];
+  const out: Action[] = [...next, "add", "move", "recolor", "resize"];
+  // Deleting tears a drawing down faster than one shape a turn builds it: only once the plan is drawn and
+  // there's enough on the canvas to spare one. Then it can also call the drawing done.
+  if (!next.length && t.scene.length >= 5) out.push("delete");
+  if (!next.length && t.scene.length >= 3) out.push("pass");
   if (t.scene.length >= 3 && t.turn / t.turns <= RESTART_UNTIL) out.push("restart");
   return out;
 }
@@ -117,18 +135,21 @@ export function clefRequest(model: "clef" | "clef-flash", t: TurnInput) {
     t.persona && `Your style: ${t.persona}.`,
     `Turn ${t.turn} of ${t.turns}.`,
     `How to draw well: big body shapes first, then details on top. Bold colour fills, a clear silhouette someone can name, black dots for eyes. A few confident shapes beat many timid ones.`,
+    t.plan?.length && `Your plan, in drawing order: ${t.plan.map((s, i) => `${i + 1}. ${describeStep(s)}${i < (t.done ?? 0) ? " (drawn)" : i === (t.done ?? 0) ? " (next)" : ""}`).join("; ")}.`,
     `The canvas is a grid of ${g.cols} columns (1 = left) by ${g.rows} rows (1 = top). Shapes so far, bottom first: ${scene || "none, it's blank"}.`,
   ].filter(Boolean).join("\n");
+  const step = nextStep(t);
+  const it = step ? `the next part (${step.part}), or the shape you change` : "the new or changed shape";
 
   const questions: Record<string, unknown> = {
     shape: { type: "choice", instructions: "If you add a shape, which kind?", criteria: SHAPES },
     color: { type: "choice", instructions: "Which colour for the new or changed shape?", criteria: Object.fromEntries(Object.keys(COLORS).map((c) => [c, null])) },
-    col: { type: "choice", instructions: "Which column should its centre be in?", criteria: Object.fromEntries(Array.from({ length: g.cols }, (_, i) => [`c${i + 1}`, `column ${i + 1}`])) },
-    row: { type: "choice", instructions: "Which row should its centre be in?", criteria: Object.fromEntries(Array.from({ length: g.rows }, (_, i) => [`r${i + 1}`, `row ${i + 1}`])) },
-    size: { type: "score", instructions: "How big should it be?", criteria: SIZES },
+    col: { type: "choice", instructions: `Looking at what's drawn, which column should the centre of ${it} be in?`, criteria: Object.fromEntries(Array.from({ length: g.cols }, (_, i) => [`c${i + 1}`, `column ${i + 1}`])) },
+    row: { type: "choice", instructions: `Looking at what's drawn, which row should the centre of ${it} be in?`, criteria: Object.fromEntries(Array.from({ length: g.rows }, (_, i) => [`r${i + 1}`, `row ${i + 1}`])) },
+    size: { type: "score", instructions: `How big should ${it} be, next to what's drawn?`, criteria: SIZES },
     aspect: { type: "choice", instructions: "What proportions? For a stroke: tall is up-down, wide is side to side, square is diagonal.", criteria: ASPECTS },
   };
-  if (actions.length > 1) questions.action = { type: "choice", instructions: "What is the best move for the drawing right now?", criteria: Object.fromEntries(actions.map((a) => [a, ACTIONS[a]])) };
+  if (actions.length > 1) questions.action = { type: "choice", instructions: "What is the best move for the drawing right now?", criteria: Object.fromEntries(actions.map((a) => [a, a === "next" && step ? `${ACTIONS.next}: ${describeStep(step)}` : ACTIONS[a]])) };
   if (t.scene.length) questions.target = { type: "choice", instructions: "If you move, recolour, resize or delete, which shape?", criteria: Object.fromEntries(t.scene.map((el) => [el.id, describe(el, t.region, g)]).concat([["none", "No existing shape"]])) };
 
   return { model, state, images: [t.image], questions };
@@ -167,6 +188,11 @@ export function decide(res: unknown, t: TurnInput, temperature = 0.7, rand: () =
   const aspect = pick("aspect", Object.keys(ASPECTS)) as Aspect | undefined;
   const size = typeof answers.size?.score === "number" ? answers.size.score : NaN;
   if (!action || !shape || !color || !col || !row || !aspect || !Number.isFinite(size)) throw new Error("answers don't fit the questions");
+  const step = nextStep(t);
+  if (action === "next" && step) {
+    // The plan says what and roughly how big; Clef, looking at the canvas, says where and adjusts the size.
+    return { action, shape: step.shape, color: step.color, col: +col.slice(1), row: +row.slice(1), size: (step.size + Math.max(0, Math.min(4, size))) / 2, aspect: step.aspect, step: t.done ?? 0, part: step.part };
+  }
   return { action, target: target === "none" ? undefined : target, shape, color, col: +col.slice(1), row: +row.slice(1), size: Math.max(0, Math.min(4, size)), aspect };
 }
 
@@ -231,9 +257,10 @@ function makeShape(id: string, d: Decision, region: Bounds): SkeletonEl {
  * delete without a usable target falls back to adding, so a turn is never wasted.
  */
 export function toOps(d: Decision, scene: SkeletonEl[], region: Bounds, nextId: () => string): Op[] {
+  if (d.action === "pass") return [];
   if (d.action === "restart") return scene.map((el) => ({ op: "delete", id: el.id }));
   const el = d.target ? scene.find((e) => e.id === d.target) : undefined;
-  if (d.action === "add" || !el) return [{ op: "add", element: makeShape(nextId(), d, region) }];
+  if (d.action === "add" || d.action === "next" || !el) return [{ op: "add", element: makeShape(nextId(), d, region) }];
   if (d.action === "delete") return [{ op: "delete", id: el.id }];
   if (d.action === "recolor") {
     const hex = COLORS[d.color]!;

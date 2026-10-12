@@ -6,6 +6,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { finished, newMatch, playTurn, type Fighter, type LogEntry, type MatchState } from "./engine/match.ts";
 import { practiceAnswers } from "./engine/brain.ts";
+import { PLANNER, parsePlan, planRequest, practicePlan } from "./engine/plan.ts";
 import { promptFor } from "./engine/prompts.ts";
 import { take } from "./budget.ts";
 import { addToIndex, type MatchSummary, summarize } from "./archive.ts";
@@ -83,12 +84,13 @@ export class Arena extends DurableObject<Cloudflare.Env> {
 
   /** Play one turn, tell the viewers, and set the alarm for the next. */
   private async turn(m: MatchState) {
-    // Local dev proxies AI to the real (billed) Workers AI, so dev fights are always practice.
-    const ai = import.meta.env.VITE_IS_DEV_SERVER ? undefined : this.env.AI;
+    // Local dev would reach the real (billed) Workers AI, so dev fights are practice unless EXCALIBRAWL_REAL_AI=1.
+    const ai = import.meta.env.VITE_IS_DEV_SERVER && !import.meta.env.VITE_REAL_AI ? undefined : this.env.AI;
     const cap = Number(this.env.DAILY_CALLS) || DEFAULT_DAILY_CALLS;
     const entries = await playTurn(m, {
       // No AI: a practice fight on random answers, free.
       run: ai ? (model, input) => ai.run(model as keyof AiModels, input as never) : async (_m, input) => practiceAnswers(input),
+      plan: ai ? async (prompt, persona) => parsePlan(await ai.run(PLANNER as keyof AiModels, planRequest(prompt, persona) as never)) : async () => practicePlan(),
       take: async () => {
         if (!ai) return true;
         const today = new Date().toISOString().slice(0, 10);

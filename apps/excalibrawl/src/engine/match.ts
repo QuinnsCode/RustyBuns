@@ -5,6 +5,7 @@
 
 import { clefRequest, decide, toOps, type Decision } from "./brain.ts";
 import { DEFAULT_LIMITS, applyOps, regionFor } from "./ops.ts";
+import type { PlanStep } from "./plan.ts";
 import { snapshot } from "./raster.ts";
 import type { Bounds, Op, SkeletonEl } from "./types.ts";
 
@@ -42,6 +43,9 @@ export interface MatchState {
   scenes: SkeletonEl[][];
   /** The next new-shape number, per fighter. */
   nextId: number[];
+  /** Each fighter's plan from the planner (empty if it failed), and how many of its steps are drawn. */
+  plans?: PlanStep[][];
+  done?: number[];
   log: LogEntry[];
 }
 
@@ -56,6 +60,8 @@ export interface TurnDeps {
   run: (model: string, input: unknown) => Promise<unknown>;
   /** Whether today's budget has room for one more call. */
   take: () => Promise<boolean>;
+  /** The planner: a fighter's parts list for the prompt, once at the start. Without it, Clef plays unplanned. */
+  plan?: (prompt: string, persona?: string) => Promise<PlanStep[]>;
   temperature?: number;
   rand?: () => number;
 }
@@ -63,13 +69,18 @@ export interface TurnDeps {
 /** Play the next turn for every fighter at once. Mutates `m`, returns the turn's log entries. */
 export async function playTurn(m: MatchState, deps: TurnDeps): Promise<LogEntry[]> {
   const turn = m.turn + 1;
+  if (deps.plan && !m.plans) {
+    const plan = deps.plan;
+    m.plans = await Promise.all(m.fighters.map(async (f) => ((await deps.take()) ? plan(m.prompt, f.persona).catch(() => []) : [])));
+    m.done = m.fighters.map(() => 0);
+  }
   const entries = await Promise.all(
     m.fighters.map(async (f, side): Promise<LogEntry> => {
       const region = regionOf(m, side);
       const scene = m.scenes[side]!;
       try {
         if (!(await deps.take())) return { side, turn, ops: [], error: "daily budget spent" };
-        const input = { prompt: m.prompt, turn, turns: m.turns, scene, region, image: await snapshot(scene, region), persona: f.persona };
+        const input = { prompt: m.prompt, turn, turns: m.turns, scene, region, image: await snapshot(scene, region), persona: f.persona, plan: m.plans?.[side], done: m.done?.[side] };
         const res = await deps.run(MODELS[f.model].id, clefRequest(f.model, input));
         const decision = decide(res, input, deps.temperature, deps.rand);
         const ops = toOps(decision, scene, region, () => `${side}-${m.nextId[side]!++}`);
@@ -77,6 +88,7 @@ export async function playTurn(m: MatchState, deps: TurnDeps): Promise<LogEntry[
         const limits = { ...DEFAULT_LIMITS, maxOpsPerTurn: Math.max(DEFAULT_LIMITS.maxOpsPerTurn, ops.length) };
         const { scene: next, applied } = applyOps(new Map(scene.map((e) => [e.id, e])), ops, region, limits);
         m.scenes[side] = [...next.values()];
+        if (decision.action === "next" && m.done && applied.length) m.done[side]!++;
         // An update logs the clamped result, not what was asked for, so replays land where the fight did.
         const logged = applied.map((op): Op => (op.op === "update" ? { op: "update", id: op.id, patch: next.get(op.id)! } : op));
         return { side, turn, ops: logged, decision };
