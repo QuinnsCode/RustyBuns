@@ -1,0 +1,74 @@
+# Slim borg tier 2 (#866): the same suite apps.yml runs on the local twins, against a real
+# workers.dev deploy. Nightly, on a PR labelled `borg`, or from the Actions tab. It costs money
+# if anything does, so it has guard rails (apps/borg/edge.ts):
+#   - off until the owner sets the repo variable BORG_EDGE=1, and behind the borg-edge
+#     environment, which holds CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID and needs the
+#     owner's approval, like npm-publish.yml
+#   - a cost cap read from `rustybuns plan`: no deploy if a resource bills fixed, needs Workers
+#     Paid (BORG_ALLOW_PAID=1 lets it), or the stack grew past BORG_MAX_RESOURCES
+#   - each run deploys under its own stage, borg<unix seconds>, and destroys it even when the
+#     checks fail; a sweeper before and after deletes borg resources over an hour old, for runs
+#     that died before their destroy, and on the way out whatever this run's destroy left
+name: borg-edge
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: borg-edge
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  edge:
+    if: vars.BORG_EDGE == '1' && (github.event_name != 'pull_request' || github.event.label.name == 'borg')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: borg-edge
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BORG_ALLOW_PAID: ${{ vars.BORG_ALLOW_PAID }}
+      BORG_MAX_RESOURCES: ${{ vars.BORG_MAX_RESOURCES }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/borg
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile
+      - name: Sweep what earlier runs left
+        run: bun edge.ts sweep
+      - id: stage
+        run: echo "stage=$(bun edge.ts stage)" >> "$GITHUB_OUTPUT"
+      - name: Plan
+        run: bun ../../packages/cli/src/index.ts plan --stage "${{ steps.stage.outputs.stage }}" | tee plan.txt
+      - name: Cost cap
+        run: bun edge.ts cap plan.txt
+      - name: Deploy
+        run: bun ../../packages/cli/src/index.ts deploy --stage "${{ steps.stage.outputs.stage }}" --yes
+      - name: Run slim borg
+        run: |
+          url="$(bun edge.ts url "${{ steps.stage.outputs.stage }}")"
+          echo "url=$url" >> "$GITHUB_ENV"
+          # A new workers.dev name can take a few seconds to answer.
+          for _ in $(seq 30); do curl -sf -o /dev/null "$url/borg/kv" && break; sleep 2; done
+          bun borg.ts "$url" --limits | tee grid.txt
+      - name: Grid
+        if: always() && hashFiles('apps/borg/grid.txt') != ''
+        run: |
+          { echo "## Slim borg on the edge"; echo; echo "Stage \`${{ steps.stage.outputs.stage }}\` at $url"; echo
+            echo '```'; cat grid.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Destroy
+        if: always() && steps.stage.outputs.stage != ''
+        run: bun ../../packages/cli/src/index.ts destroy --stage "${{ steps.stage.outputs.stage }}" --yes
+      - name: Sweep again, this run's stage too
+        if: always()
+        run: bun edge.ts sweep --stage "${{ steps.stage.outputs.stage }}"

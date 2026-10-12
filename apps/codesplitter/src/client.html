@@ -259,6 +259,29 @@
   .wm-item { display: inline-flex; align-items: center; gap: 6px; font: 400 12.5px var(--mono); color: var(--fg); white-space: nowrap; background: var(--bg); border: 1px solid var(--border-2); border-radius: 5px; padding: 4px 8px; cursor: pointer; }
   .wm-item:hover { border-color: #a8a8a8; background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); }
   .wm-item.dir svg.lucide { color: var(--muted); } .wm-item.on { border-color: var(--accent); } .wm-item.on svg.lucide { color: var(--accent-ink); }
+  /* The git map: where a repo came from, the repo, its branches, as paper tiles wired with soft
+     brown curves. Dashed was copied once; orange is moving, or waiting on you. */
+  .gitmap { --brown: #8b5e3c; --brown-soft: #f5ede4; }
+  .gitmap .gm-story { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .gm-stage { position: relative; display: grid; grid-template-columns: repeat(3, max-content); align-items: center; column-gap: 150px; padding: 28px 32px; width: max-content; min-width: 100%; }
+  .gm-stage.dips { padding-bottom: 72px; } .gm-col { display: flex; flex-direction: column; gap: 14px; min-width: 40px; }
+  .gm-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .gm-wires path { fill: none; stroke: var(--brown); stroke-width: 1.6; stroke-linecap: round; opacity: .75; }
+  .gm-wires path.fork { stroke-dasharray: 2 5; } .gm-wires path.hot { stroke: var(--accent); opacity: 1; }
+  .gm-wires marker path { fill: none; stroke: var(--brown); stroke-width: 1.4; stroke-dasharray: none; }
+  .gm-tile { position: relative; z-index: 1; display: flex; align-items: center; gap: 9px; max-width: 260px; padding: 9px 12px 8px; color: var(--fg); text-decoration: none; background: var(--grain), var(--paper); border: 1px solid var(--border-2); border-radius: 6px; box-shadow: 0 1px 0 var(--border); }
+  .gm-tile span { display: grid; min-width: 0; } .gm-tile b { font: 500 13px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gm-tile small { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gm-tile svg.lucide { width: 18px; height: 18px; color: var(--brown); }
+  a.gm-tile:hover { background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); border-color: #a8a8a8; }
+  .gm-tile.here { color: #fff; background: var(--grain), #0a0a0a; border-color: #0a0a0a; padding: 12px 16px 11px; } .gm-tile.here small { color: #bdbdbd; } .gm-tile.here svg.lucide { color: var(--accent-glow); }
+  .gm-tile.up { background: var(--grain), var(--brown-soft); border-color: #d9c4ad; }
+  .gm-tile.upbranch, .gm-tile.done { padding: 6px 10px 5px; } .gm-tile.done { opacity: .6; }
+  .gm-label { position: absolute; z-index: 2; padding: 1px 8px; font: 500 11.5px/18px var(--sans); color: var(--brown); white-space: nowrap; background: var(--paper); border: 1px solid #e3d3c1; border-radius: 10px; cursor: help; }
+  .gm-label.hot { color: var(--accent-ink); border-color: var(--del-edge); background: var(--accent-soft); }
+  .gm-key { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 12px; border-top: 1px solid var(--border); font-size: 12px; }
+  .gm-key span { display: inline-flex; align-items: center; gap: 6px; } .gm-key svg { width: 28px; height: 6px; overflow: visible; }
+  .gm-key path { fill: none; stroke: var(--brown); stroke-width: 1.6; stroke-linecap: round; } .gm-key path.fork { stroke-dasharray: 2 5; } .gm-key path.hot { stroke: var(--accent); }
   @media (max-width: 1199px) {
     body.ide-mode { height: auto; overflow: visible; display: block; } body.ide-mode main { display: block; }
     .wb { grid-template-columns: 230px minmax(0, 1fr); } .wb > * { overflow: visible; }
@@ -1833,6 +1856,7 @@ function sheets() {
  *  you open rising out of it as a column, wired to what's inside. It opens on the way to where you are. */
 function wireMap(c) {
   if ($("#wiremap")) return $("#wiremap").shut();
+  $("#gitmap")?.shut();
   const { owner, repo } = c, at = c.view === "f" ? c.path : c.dir || "";
   const segs = at.split("/").filter(Boolean), dirs = c.view === "f" ? segs.slice(0, -1) : segs;
   let trail = dirs.map((_, i) => dirs.slice(0, i + 1).join("/"));
@@ -1840,7 +1864,7 @@ function wireMap(c) {
   const load = (d) => kids[d] ??= api(treeQ(owner, repo, d)).then((t) => t.entries ?? []).catch(() => []);
   const el = document.createElement("div");
   el.className = "wiremap"; el.id = "wiremap"; el.shut = () => close();
-  el.innerHTML = `<div class="wm-head">${icon("network")}<b>${esc(owner)}/${esc(repo)}</b><span class="muted">click a folder to wire out what's in it, a file to open it</span><span class="grow"></span><button class="btn ghost" id="wm-x" title="close (esc)">${icon("x")}</button></div><div class="wm-scroll"><div class="wm-stage" id="wm-stage"></div></div>`;
+  el.innerHTML = `<div class="wm-head">${icon("network")}<b>${esc(owner)}/${esc(repo)}</b><span class="muted">click a folder to wire out what's in it, a file to open it</span><span class="grow"></span><button class="btn ghost" id="wm-git" title="the git map: upstream, this repo, its branches">${icon("git-fork")}</button><button class="btn ghost" id="wm-x" title="close (esc)">${icon("x")}</button></div><div class="wm-scroll"><div class="wm-stage" id="wm-stage"></div></div>`;
   document.body.append(el);
   const place = () => { const t = $("#sheets")?.getBoundingClientRect().top ?? innerHeight; el.style.bottom = Math.max(8, innerHeight - t + 6) + "px"; };
   place();
@@ -1897,6 +1921,7 @@ function wireMap(c) {
   el.addEventListener("click", (e) => {
     e.stopPropagation();
     if (e.target.closest("#wm-x")) return close();
+    if (e.target.closest("#wm-git")) { close(); return gitMap(c); }
     const b = e.target.closest(".wm-item"); if (!b) return;
     const p = b.dataset.path;
     if (b.dataset.type !== "dir") { close(); location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(p)}`; return; }
@@ -1910,6 +1935,113 @@ function wireMap(c) {
   const close = () => { el.remove(); removeEventListener("keydown", off); removeEventListener("click", off); removeEventListener("resize", place); };
   addEventListener("keydown", off); addEventListener("click", off); addEventListener("resize", place);
   return draw();
+}
+// The git map: a repo's family on one sheet, drawn so a kid could follow it. Tiles are git repos and
+// branches; curves are how commits travel between them. A solid curve keeps talking, a dashed one was
+// copied once and stopped listening, and orange is something moving or waiting on you.
+/** The git map's tiles, in three columns (where it came from, this repo, its branches), the curves between them, and the story in one line. */
+const gitMapModel = ({ owner, repo, r, branches = [], mirror = null, upBranches = [] }) => {
+  const main = r.branch ?? "main", tiles = [], links = [];
+  const where = r.home === "local" ? "git on your machine" : r.home === "cloud" ? "git in Cloudflare Artifacts" : "";
+  tiles.push({ id: "here", col: 1, kind: "here", icon: r.home === "local" ? "hard-drive" : "cloud", name: `${owner}/${repo}`, sub: [main, where].filter(Boolean).join(" · ") });
+  const gh = r.upstream?.startsWith("github:") ? r.upstream.slice(7) : null;
+  const upName = gh ?? r.upstream?.replace(/^\w+:\/\//, "");
+  let story = `${owner}/${repo} started here: it has no upstream, so nothing comes in unless someone pushes it.`;
+  if (r.upstream) {
+    tiles.push({ id: "up", col: 0, kind: "up", icon: gh ? "github" : "globe", name: upName, sub: [r.level ? `upstream, by level ${r.level}` : "upstream", !r.mirror && r.upstream_commit && `copied at ${r.upstream_commit.slice(0, 7)}`].filter(Boolean).join(" · "), href: gh ? `https://github.com/${gh}` : /^https?:\/\//.test(r.upstream) ? r.upstream : null });
+    const at = r.upstream_commit ? ` at ${r.upstream_commit.slice(0, 7)}` : "";
+    if (r.mirror) {
+      const m = mirror ?? {}, ahead = m.ahead ?? 0, behind = m.behind ?? 0;
+      const moving = [behind && `${behind} to take in`, ahead && `${ahead} to send up`].filter(Boolean).join(", ");
+      const label = { down: "upstream down: we keep working", refused: "upstream said no to a push", clash: "a clash: pick a side", rewritten: "upstream rewrote history: pick one", held: "listening only: private lines stay here" }[m.state]
+        ?? (moving || (m.primary === "here" ? "in step: this copy leads" : "in step, both ways"));
+      links.push({ from: "up", to: "here", kind: "mirror", both: m.state !== "held", hot: m.state !== "ok" || !!moving, label, pic: ["sync", { ahead, behind }] });
+      story = `${owner}/${repo} is a mirror of ${upName}: they listen to each other, so upstream's commits come in and yours go back up${m.state === "held" ? " (for now, only in)" : ""}.`;
+    } else {
+      links.push({ from: "up", to: "here", kind: "fork", label: "copied once", title: `copied once${at}, and not listening since` });
+      story = `${owner}/${repo} is a copy of ${upName}${at}. It stopped listening there: upstream's new commits don't come in, and nothing here goes back.`;
+    }
+  }
+  // Upstream's own branches (a mirror's), under it; the ones opened here are wired to the branch that follows them.
+  for (const b of upBranches.slice(0, 6)) {
+    tiles.push({ id: `ub:${b.ref}`, col: 0, kind: "upbranch", icon: "git-branch", name: b.ref, sub: b.branch ? `followed here as ${b.branch}` : "upstream's branch" });
+    if (b.branch) links.push({ from: `ub:${b.ref}`, to: `b:${b.branch}`, kind: "follows", both: true, label: "follows", pic: ["pull", { branch: b.branch, ref: b.ref }] });
+  }
+  // This repo's branches: open ones first, then a few that merged or closed.
+  const open = branches.filter((b) => b.status === "open"), done = branches.filter((b) => b.status !== "open");
+  for (const b of [...open.slice(0, 8), ...done.slice(0, Math.max(0, 8 - open.length)).slice(0, 3)]) {
+    const live = b.status === "open";
+    tiles.push({ id: `b:${b.name}`, col: 2, kind: live ? "branch" : "done", icon: live ? "git-branch" : b.status === "merged" ? "git-merge" : "archive", name: b.name, sub: live ? (b.by ? `@${b.by}` : "open") : b.status, href: `#/b/${owner}/${repo}/${encodeURIComponent(b.name)}` });
+    links.push({ from: "here", to: `b:${b.name}`, kind: live ? "branch" : "done", label: live ? "branched off" : b.status, pic: live ? ["merge", { branch: b.name }] : null });
+  }
+  // A followed branch that didn't make the cut has no tile to land on.
+  const has = new Set(tiles.map((t) => t.id));
+  return { tiles, links: links.filter((l) => has.has(l.from) && has.has(l.to)), story, more: Math.max(0, branches.length - tiles.filter((t) => t.col === 2).length) };
+};
+/** A curve from (x1, y1) to (x2, y2), leaving and arriving level, and its middle (where its label sits).
+ *  Given `under`, it swoops down to that depth on the way, to pass beneath the tiles between. */
+const gitCurve = (x1, y1, x2, y2, under) => {
+  const dx = Math.max(40, Math.abs(x2 - x1) / 2), c1 = under ?? y1, c2 = under ?? y2;
+  return { d: `M${x1} ${y1}C${x1 + dx} ${c1},${x2 - dx} ${c2},${x2} ${y2}`, mx: (x1 + x2) / 2, my: (y1 + 3 * c1 + 3 * c2 + y2) / 8 };
+};
+/** The git map of a repo: who it listens to, who listens to it, and its branches, wired with curves. */
+async function gitMap(c) {
+  if ($("#gitmap")) return $("#gitmap").shut();
+  $("#wiremap")?.shut();
+  const { owner, repo } = c;
+  const el = document.createElement("div");
+  el.className = "wiremap gitmap"; el.id = "gitmap"; el.shut = () => close();
+  el.innerHTML = `<div class="wm-head">${icon("git-fork")}<b>${esc(owner)}/${esc(repo)}</b><span class="muted gm-story">…</span><span class="grow"></span><button class="btn ghost" id="gm-files" title="the files' wire map">${icon("network")}</button><button class="btn ghost" id="gm-x" title="close (esc)">${icon("x")}</button></div><div class="wm-scroll"><div class="gm-stage" id="gm-stage"></div></div>
+    <div class="gm-key muted"><span><svg viewBox="0 0 28 6"><path d="M1 3H27"/></svg>keeps listening</span><span><svg viewBox="0 0 28 6"><path class="fork" d="M1 3H27"/></svg>copied once</span><span><svg viewBox="0 0 28 6"><path class="hot" d="M1 3H27"/></svg>moving, or waiting on you</span><span>point at a label to see what it does</span></div>`;
+  document.body.append(el);
+  icons();
+  const place = () => { const t = $("#sheets")?.getBoundingClientRect().top ?? innerHeight; el.style.bottom = Math.max(8, innerHeight - t + 6) + "px"; };
+  place();
+  const r = await api(`/repos/${owner}/${repo}`).catch(() => null);
+  if (!el.isConnected) return;
+  if (!r) { $("#gm-stage").innerHTML = '<span class="muted">couldn\'t load this repo</span>'; return; }
+  const [branches, mirror, upBranches] = await Promise.all([
+    api(`/repos/${owner}/${repo}/branches`).catch(() => []),
+    r.mirror ? api(`/repos/${owner}/${repo}/mirror`).catch(() => null) : null,
+    r.mirror ? api(`/repos/${owner}/${repo}/mirror/branches`).catch(() => []) : [],
+  ]);
+  if (!el.isConnected) return;
+  const map = gitMapModel({ owner, repo, r, branches, mirror, upBranches });
+  el.querySelector(".gm-story").textContent = map.story;
+  const tile = (t) => `<${t.href ? `a href="${esc(t.href)}"${t.href.startsWith("http") ? ' target="_blank" rel="noopener"' : ""}` : "div"} class="gm-tile ${t.kind}" data-id="${esc(t.id)}" title="${esc(t.name)}">${icon(t.icon)}<span><b>${esc(t.name)}</b><small>${esc(t.sub)}</small></span></${t.href ? "a" : "div"}>`;
+  const col = (i) => `<div class="gm-col">${map.tiles.filter((t) => t.col === i).map(tile).join("")}${i === 2 && map.more ? `<span class="muted" style="font-size:12px">and ${map.more} more in Branches</span>` : ""}</div>`;
+  const st = $("#gm-stage");
+  st.classList.toggle("dips", map.links.some((l) => l.kind === "follows"));
+  st.innerHTML = `<svg class="gm-wires"></svg>${col(0)}${col(1)}${col(2)}${map.links.map((l, i) => `<span class="gm-label${l.hot ? " hot" : ""}" data-l="${i}" tabindex="0"${l.title ? ` title="${esc(l.title)}"` : ""}${l.pic ? picAttr(...l.pic) : ""}>${esc(l.label)}</span>`).join("")}`;
+  icons();
+  const wires = () => {
+    const box = st.getBoundingClientRect(), at = (id) => st.querySelector(`.gm-tile[data-id="${CSS.escape(id)}"]`)?.getBoundingClientRect();
+    // A link that skips the middle column (upstream's branch to the one following it) goes under every tile.
+    const col = Object.fromEntries(map.tiles.map((t) => [t.id, t.col]));
+    const floor = Math.max(...[...st.querySelectorAll(".gm-tile")].map((t) => t.getBoundingClientRect().bottom)) - box.top + 40;
+    let d = "";
+    map.links.forEach((l, i) => {
+      const a = at(l.from), b = at(l.to), chip = st.querySelector(`[data-l="${i}"]`);
+      if (!a || !b) return void (chip.hidden = true);
+      const k = gitCurve(a.right - box.left, (a.top + a.bottom) / 2 - box.top, b.left - box.left, (b.top + b.bottom) / 2 - box.top, col[l.to] - col[l.from] > 1 ? floor : undefined);
+      const cls = [l.kind === "fork" || l.kind === "done" ? "fork" : "", l.hot ? "hot" : ""].join(" ").trim();
+      d += `<path class="${cls}" d="${k.d}" marker-end="url(#gm-tip)"${l.both ? ' marker-start="url(#gm-tail)"' : ""}/>`;
+      chip.style.left = k.mx - chip.offsetWidth / 2 + "px"; chip.style.top = k.my - chip.offsetHeight / 2 + "px";
+    });
+    st.querySelector(".gm-wires").innerHTML = `<defs><marker id="gm-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L7 4L1 7"/></marker><marker id="gm-tail" viewBox="0 0 8 8" refX="1" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M7 1L1 4L7 7"/></marker></defs>${d}`;
+  };
+  wires();
+  el.addEventListener("scroll", wires, true);
+  el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (e.target.closest("#gm-x")) return close();
+    if (e.target.closest("#gm-files")) { close(); return wireMap(c.view ? c : { ...c, view: "r" }); }
+    if (e.target.closest("a.gm-tile[href^='#']")) close();
+  });
+  const off = (e) => { if (e.key === "Escape" || e.type === "click") close(); };
+  const close = () => { el.remove(); removeEventListener("keydown", off); removeEventListener("click", off); removeEventListener("resize", onSize); };
+  const onSize = () => { place(); wires(); };
+  addEventListener("keydown", off); addEventListener("click", off); addEventListener("resize", onSize);
 }
 /** This browser's layout of the details side: its width (px, "66.667%" or "full"), the panels' order, and which are folded. */
 const dockPrefs = () => { try { return { w: "", order: [], shut: [], ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", order: [], shut: [] }; } };
@@ -2801,7 +2933,7 @@ const views = {
   /** The right-hand panel every repo page shares: where it came from, and who's in it. */
   repoDetails(owner, repo, r) {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
-    return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p>`)
+    return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p><button class="btn" data-gitmap title="who this repo listens to, and its branches, wired up">${icon("git-fork")}Git map</button>`)
       + (owner === me() && r.mirror ? sec("refresh-cw", "Upstream", `<div id="mirror"><span class="muted">…</span></div>`) : "")
       + (!r.mirror && r.upstream?.startsWith("github:") && r.upstream_commit ? sec("git-fork", "Upstream", `<div id="listen" data-pics><span class="muted">…</span></div>`) : "")
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
@@ -3385,6 +3517,7 @@ const views = {
     if ($("#limits")) { popover($("#limits")); $("#limits").addEventListener("click", () => { if (!$("#limits-panel").hidden) views.wireLimits(owner, repo); }); }
     if ($("#clone")) { popover($("#clone")); $("#clone-copy").addEventListener("click", () => copy(r.clone, "Clone command copied")); $("#crew-clone-copy")?.addEventListener("click", () => copy(r.crewClone, "Crew clone command copied")); $("#push-copy")?.addEventListener("click", () => copy(r.push, "Remote command copied")); }
     $("#flip")?.addEventListener("click", async () => { await api(`/repos/${owner}/${repo}`, { visibility: r.visibility === "private" ? "public" : "private" }, "PUT"); route(); });
+    document.querySelectorAll("[data-gitmap]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); gitMap({ owner, repo, view: "r" }); }));
     views.wireBranches(owner, repo, r);
     views.wireDeps(owner, repo);
     views.wireFit(owner, repo);
