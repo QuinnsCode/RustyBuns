@@ -100,6 +100,7 @@ The pitch is in [README.md](README.md).
   After that each sync follows them: an open branch takes its upstream branch's new commits (Pull upstream does it now, and a push takes them in first, so it never writes over them), and once a branch merged here is committed and upstream's main holds all of it, its upstream branch is deleted, unless somebody added to it since.
   Files deleted upstream are deleted on the branch too, and a file the branch deleted goes from the git branch it's pushed to.
   Binary files come over too (#446): a branch can't hold their bytes as lines, so its row keeps the git blob upstream's branch has (pinned under `refs/branch-blobs/` so a gc keeps it), the review lists it as binary and changed, merging writes it into main's git (and upstream's at the next sync), and a push puts it in the branch's tree.
+  A text file too big to dig (over 256 KB or 5000 lines, a lockfile say) comes over the same way rather than being skipped (#1094), and a merge holds (409) such a file that main changed too since the branch left it, rather than overwriting main's change (#1095): bring main into the branch upstream, then pull.
   It can't be opened as lines on the branch (415).
   `GET|POST /api/repos/:o/:r/mirror`, `GET|POST /api/repos/:o/:r/mirror/branches`, `POST /api/repos/:o/:r/mirror/branches/:b/pull|push`, `src/mirror.ts`.
 - **Local out, GitHub in: which side leads (desktop, #464).** A mirror is GitHub-first by default: each sync hears from upstream, then pushes.

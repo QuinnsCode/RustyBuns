@@ -383,7 +383,11 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   // Required checks that failed, or haven't finished, hold it, as a GitHub branch protection rule would.
   const held = await mergeBlock(env, owner, repo, name);
   if (held) return json(held, 409);
-  // A dry run first, so a conflict anywhere merges nothing. A deletion or a binary file never conflicts.
+  // A binary (or too big) file has no lines to merge: one main changed too since the branch left it waits, not overwritten.
+  const { blobMovedOnMain } = await import("./mirror.ts");
+  const moved = (await Promise.all(todo.filter((f) => f.blob && !f.deleted).map(async (f) => await blobMovedOnMain(env, owner, repo, name, f.path, f.blob!) ? f.path : null))).filter((p): p is string => !!p);
+  if (moved.length) return json({ error: `main changed ${moved.join(", ")} too, and it has no lines to merge: bring main into the branch upstream, then pull`, files: moved }, 409);
+  // A dry run first, so a conflict anywhere merges nothing. A deletion never conflicts.
   const dry = await Promise.all(todo.filter((f) => !f.deleted && !f.blob).map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], true)) })));
   // What the merge leaves goes where each file's policy says (#1012). A lockfile both changed, to CI: made again
   // on the branch and taken whole, unless the merger picked a side already.
