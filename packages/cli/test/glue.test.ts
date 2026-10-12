@@ -343,6 +343,9 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).not.toContain("RB_PERSONA ||=");
   expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "hetzner", persona: "background-burner" } } }, "box")).toContain('process.env.RB_PERSONA ||= "background-burner";');
   expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "hetzner", persona: "background-burner" } } })).not.toContain("RB_PERSONA ||=");
+  // desktop.warm: workers the host's scheduler keeps loaded, on either host, RB_WARM still the last word.
+  expect(box).not.toContain("RB_WARM ||=");
+  for (const host of ["desktop", "box"] as const) expect(spaEntry({ ...c, targets: { ...c.targets, desktop: { ...c.targets.desktop, warm: 1 } } }, host)).toContain('process.env.RB_WARM ||= "1";');
   // CPU profiles: /__rb/prof behind RB_PROF_SECRET, and one before a ceiling restart.
   expect(box).toContain(", memWatch, cpuProfile, profRoute, history, summarizeProfile");
   expect(box).toContain('profRoute({ secret: process.env.RB_PROF_SECRET, dir: join(dataDir, "prof"), history: hist })');
