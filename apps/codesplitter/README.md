@@ -150,7 +150,7 @@ There's no downloadable build yet; that's one command from source.
   A tagged commit wears a little tag; the owner picks a dot to tag it, and on a mirror fetches upstream's tags or pushes one up.
   The pulse travels the vein: while it's open, every line the crew lands sends a bead down main into its newest commit.
 - **Levels.** Loved open-source repos to browse and fork: mitt, Hono, Preact, Cloudflare's own (Agents, workerd, PartyKit, Sandbox SDK and more), and the stack this is built on (RedwoodSDK, Effect, React, Alchemy, Bun).
-- **Beam a branch.** A git branch's stack of commits (the patch, its fixups, an agent's follow-ups), or a codeSplitter branch an agent hands over with the `beam_branch` MCP tool, squashed into one clean commit on main or upstream's newest, with lockfile churn, installed packages and leftovers left out and each one named.
+- **Beam a branch.** A git branch's stack of commits (the patch, its fixups, an agent's follow-ups), or a codeSplitter branch an agent hands over with the `beam_branch` MCP tool, squashed into one clean commit on main or upstream's newest, with lockfile churn, installed packages and leftovers left out and each one named. A branch stacked on another beams as a commit per branch, in order.
   It's a link anyone can open, with the diff and a `git am` patch, and it can land in someone's inbox.
   It never writes to GitHub.
 - **Cut some lines out.** Select lines, and the cut follows what they use across files.

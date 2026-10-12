@@ -17,10 +17,12 @@
 // A merge also waits for the repo's required checks to pass on the branch (checks.ts).
 // A binary file a mirror branch took from upstream has no lines: its row holds
 // the git blob (#446), which the review shows as changed and the merge writes into main's git.
+// A branch can be opened on another branch (#1025): B on A forks each file from A's copy where A has
+// one, waits for A to merge first, and when A does, its copies move onto main's (restack below).
 
-import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, type Doc, type Op, type Pick, type Resolve } from "./lines.ts";
+import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, type Doc, type Line, type Op, type Pick, type Resolve } from "./lines.ts";
 import { lintMerge } from "./lint.ts";
-import { policyOf, type Policy } from "./policy.ts";
+import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { tryInClone } from "./deps.ts";
 import { catalogueBlob, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
@@ -28,7 +30,7 @@ import { mergeBlock, refChecks } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { branchNameError, json, type Env } from "./env.ts";
 import { emit } from "./hooks.ts";
-import { diffToOps } from "./sync.ts";
+import { diffToOps, keptPairs } from "./sync.ts";
 import { unindexFile } from "./search.ts";
 import { HARNESSES, type Harness } from "./harness.ts";
 import { localSandbox, type Exec } from "./agent-run.ts";
@@ -63,35 +65,61 @@ export async function openBranch(env: Env, owner: string, repo: string, name: st
   return b?.status === "open" ? b : null;
 }
 
-/** Make sure `path` has a copy on `branch`, forked from main's file the first time it's opened. */
+/** The open branches `branch` is stacked on, nearest first: its parent, that one's, and on down. One that merged has its work on main, and ends it. */
+export async function ancestors(env: Env, owner: string, repo: string, branch: string): Promise<string[]> {
+  const { results } = await env.DB.prepare("SELECT name, parent, status FROM branches WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const all = new Map((results as { name: string; parent: string | null; status: string }[]).map((b) => [b.name, b]));
+  const out: string[] = [];
+  for (let p = all.get(branch)?.parent; p && all.get(p)?.status === "open" && p !== branch && !out.includes(p); p = all.get(p)?.parent) out.push(p);
+  return out;
+}
+
+/** Where `branch`'s copy of `path` forks from: the nearest open branch under it with a copy of its own (deleted or binary there, maybe), or null for main. */
+async function forkSource(env: Env, owner: string, repo: string, branch: string, path: string) {
+  for (const from of await ancestors(env, owner, repo, branch)) {
+    const row = await env.DB.prepare("SELECT deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, from, path).first();
+    if (row) return { from, deleted: !!row.deleted, blob: !!row.blob };
+  }
+  return null;
+}
+
+/** Make sure `path` has a copy on `branch`, forked the first time it's opened from the copy of the branch it's stacked on, or else main's. */
 export async function materializeOn(env: Env, owner: string, repo: string, branch: string, path: string): Promise<{ ok: true } | { error: string; status: number }> {
   const row = await env.DB.prepare("SELECT deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).first();
   if (row?.blob) return { error: "binary file", status: 415 };
   if (row) return row.deleted ? { error: "deleted on this branch", status: 404 } : { ok: true };
-  const m = await materialize(env, owner, repo, path);
-  if ("error" in m) return m;
-  const doc = await (await toFile(env, owner, repo, path, "upstream", "file")).json();
+  const src = await forkSource(env, owner, repo, branch, path);
+  if (src?.deleted) return { error: `deleted on ${src.from}`, status: 404 };
+  if (src?.blob) return { error: "binary file", status: 415 };
+  if (!src) {
+    const m = await materialize(env, owner, repo, path);
+    if ("error" in m) return m;
+  }
+  const doc = await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", src?.from)).json();
   // Fork before the row lands, so nobody reads the copy empty; the DO forks once.
   await toFile(env, owner, repo, path, "upstream", "fork", { method: "POST", body: JSON.stringify({ doc }) }, "", branch);
-  await env.DB.prepare("INSERT OR IGNORE INTO branch_files (owner, repo, branch, path) VALUES (?, ?, ?, ?)").bind(owner, repo, branch, path).run();
+  await env.DB.prepare("INSERT OR IGNORE INTO branch_files (owner, repo, branch, path, source) VALUES (?, ?, ?, ?, ?)").bind(owner, repo, branch, path, src?.from ?? null).run();
   return { ok: true };
 }
 
 /** A file that's new on the branch: forked from nothing. One the branch deleted, or had as binary, can be made again. */
 export async function createOn(env: Env, owner: string, repo: string, branch: string, path: string, content: string, user: string) {
-  const gone = await env.DB.prepare("UPDATE branch_files SET deleted = 0, merged = 0, blob = NULL, mode = NULL WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND (deleted = 1 OR blob IS NOT NULL)").bind(owner, repo, branch, path).run();
+  const src = await forkSource(env, owner, repo, branch, path);
+  const gone = await env.DB.prepare("UPDATE branch_files SET deleted = 0, merged = 0, blob = NULL, mode = NULL, source = ? WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND (deleted = 1 OR blob IS NOT NULL)").bind(src && !src.deleted && !src.blob ? src.from : null, owner, repo, branch, path).run();
   if (gone.meta?.changes) {
-    // Its copy starts over, forked from main's again if main has it, so merging it is an edit of main's.
+    // Its copy starts over, forked again from the branch under it or main, whichever has it, so merging it is an edit of that.
     await toFile(env, owner, repo, path, user, "wipe", { method: "POST" }, "", branch);
-    const onMain = await materialize(env, owner, repo, path);
-    const doc = "error" in onMain ? empty() : await (await toFile(env, owner, repo, path, "upstream", "file")).json() as Doc;
+    const onMain = src ? null : await materialize(env, owner, repo, path);
+    const doc = src?.deleted || src?.blob || (onMain && "error" in onMain) ? empty() : await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", src?.from)).json() as Doc;
     await toFile(env, owner, repo, path, "upstream", "fork", { method: "POST", body: JSON.stringify({ doc }) }, "", branch);
     const ops = diffToOps(doc.lines, content.split("\n"));
     if (ops.length) await toFile(env, owner, repo, path, user, "ops", { method: "POST", body: JSON.stringify({ ops }) }, "", branch);
     return json({ path, branch }, 201);
   }
-  const onMain = await materialize(env, owner, repo, path);
-  if (!("error" in onMain) || onMain.status !== 404) return json({ error: "file exists" }, 409);
+  // The branch it's stacked on has it: that's the file it sees. One that deleted it doesn't.
+  if (src && !src.deleted) return json({ error: "file exists" }, 409);
+  const onMain = src ? null : await materialize(env, owner, repo, path);
+  if (onMain && (!("error" in onMain) || onMain.status !== 404)) return json({ error: "file exists" }, 409);
   const r = await env.DB.prepare("INSERT OR IGNORE INTO branch_files (owner, repo, branch, path) VALUES (?, ?, ?, ?)").bind(owner, repo, branch, path).run();
   if (!r.meta?.changes) return json({ error: "file exists" }, 409);
   await toFile(env, owner, repo, path, user, "fork", { method: "POST", body: JSON.stringify({ doc: empty() }) }, "", branch);
@@ -107,8 +135,10 @@ export async function createOn(env: Env, owner: string, repo: string, branch: st
 export async function deleteOn(env: Env, owner: string, repo: string, branch: string, path: string) {
   const row = await env.DB.prepare("SELECT deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).first();
   if (row?.deleted) return json({ error: "no such file" }, 404);
-  const onMain = await materialize(env, owner, repo, path);
-  const mainHas = !("error" in onMain) || onMain.status !== 404;
+  // "Main" here is what the branch sees under its own copies: the branch it's stacked on, or main.
+  const src = await forkSource(env, owner, repo, branch, path);
+  const onMain = src ? null : await materialize(env, owner, repo, path);
+  const mainHas = src ? !src.deleted : !("error" in onMain!) || onMain!.status !== 404;
   if (!mainHas && !row) return json({ error: "no such file" }, 404);
   if (row && !row.blob) await toFile(env, owner, repo, path, "upstream", "wipe", { method: "POST" }, "", branch);
   if (!mainHas) await env.DB.prepare("DELETE FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, branch, path).run();
@@ -152,6 +182,51 @@ async function mergeFile(env: Env, owner: string, repo: string, branch: { name: 
   return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[] }) };
 }
 
+/**
+ * A copy forked from another branch's, moved onto main's file once that branch merged (#1025). The
+ * merge gave the lines it brought main's own ids, so first the copy's lines are matched to main's by
+ * text: a line it had when it forked that main has too is main's line; the rest get ids of their own.
+ * Then it's a three-way merge like any other, the copy's lines winning where main changed them too.
+ * The ops turn `onto` into the copy, restacked; null when even that doesn't settle.
+ */
+export function restack(base: Doc, copy: Doc, onto: Doc, by: string, path: string, rule?: Rule): { ops: Op[]; by: string[] } | null {
+  const ids = new Map<string, Line>(), own = new Map<string, string>();
+  for (const { i, j } of keptPairs(base.lines.map((l) => l.text), onto.lines.map((l) => l.text))) ids.set(base.lines[i]!.id, onto.lines[j]!);
+  const fresh = (id: string) => own.get(id) ?? own.set(id, `restack-${own.size}`).get(id)!;
+  const was = new Map(base.lines.map((l) => [l.id, l.text]));
+  const b = { ...base, lines: base.lines.map((l) => ids.get(l.id) ?? { ...l, id: fresh(l.id) }) };
+  const c = { ...copy, lines: copy.lines.map((l) => {
+    const m = ids.get(l.id);
+    return !m ? { ...l, id: fresh(l.id) } : l.text === was.get(l.id) ? m : { ...l, id: m.id, rev: m.rev };
+  }) };
+  let m = merge(b, c, onto, {}, by, path, by, rule);
+  if (m.conflicts.length) m = merge(b, c, onto, Object.fromEntries(m.conflicts.map((x) => [x.line, "branch" as const])), by, path, by, rule);
+  return !m.conflicts.length && apply(structuredClone(onto), m.ops, m.by, 0, onto.rev).ok ? { ops: m.ops, by: m.by } : null;
+}
+
+/**
+ * Branch `from` merged: the copies its children forked from its copies move onto main's files,
+ * so they merge into main by its line ids. One that won't settle keeps its source, and its merge says so.
+ */
+async function restackChildren(env: Env, owner: string, repo: string, from: string) {
+  const { results } = await env.DB.prepare(`SELECT f.branch, f.path, f.deleted, f.blob, b.by FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch
+    WHERE f.owner = ? AND f.repo = ? AND f.source = ? AND f.merged = 0 AND b.status = 'open'`).bind(owner, repo, from).all();
+  for (const f of results as { branch: string; path: string; deleted: number; blob: string | null; by: string }[]) {
+    const done = () => env.DB.prepare("UPDATE branch_files SET source = NULL WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, f.branch, f.path).run();
+    // A deletion or a binary file has no lines to line up.
+    if (f.deleted || f.blob) { await done(); continue; }
+    const read = async (op: string, on?: string) => (await toFile(env, owner, repo, f.path, "upstream", op, {}, "", on)).json() as Promise<Doc>;
+    const onMain = await materialize(env, owner, repo, f.path);
+    const [base, copy, onto, policy] = await Promise.all([read("base", f.branch), read("file", f.branch), "error" in onMain ? empty() : read("file"), pathPolicy(env, owner, repo, f.path, "upstream")]);
+    const r = restack(base, copy, onto, f.by, f.path, policy.merge);
+    if (!r) continue;
+    await toFile(env, owner, repo, f.path, "upstream", "wipe", { method: "POST" }, "", f.branch);
+    await toFile(env, owner, repo, f.path, "upstream", "fork", { method: "POST", body: JSON.stringify({ doc: onto }) }, "", f.branch);
+    if (r.ops.length) await toFile(env, owner, repo, f.path, f.by, "ops", { method: "POST", body: JSON.stringify({ ops: r.ops }) }, "", f.branch);
+    await done();
+  }
+}
+
 /** What the branch changed in `path`, as hunks against its fork point; private lines blank outside the crew. */
 async function fileHunks(env: Env, owner: string, repo: string, branch: string, path: string, user: string, crew: boolean) {
   const read = async (op: string) => (await toFile(env, owner, repo, path, user, op, { headers: { "x-codesplitter-crew": crew ? "1" : "0" } }, "", branch)).json() as Promise<Doc | null>;
@@ -168,6 +243,11 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: { name
   const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as { path: string; merged: number; deleted: number; blob: string | null; mode: string | null }[]);
   const resolve = parseResolve(body.resolve), build_ok = body.build_ok;
   if (typeof resolve === "string") return json({ error: resolve }, 400);
+  // Stacked on a branch that's still open: that one's changes are in this one's copies, so it goes first.
+  const under = (await ancestors(env, owner, repo, name))[0];
+  if (under) return json({ error: `${name} is stacked on ${under}: merge ${under} first` }, 409);
+  const stuck = (await env.DB.prepare("SELECT path, source FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NOT NULL ORDER BY path").bind(owner, repo, name).all()).results as { path: string; source: string }[];
+  if (stuck.length) return json({ error: `${stuck.map((f) => f.path).join(", ")} forked from ${stuck[0]!.source}'s copies and didn't move onto main cleanly when it merged: copy your changes into a branch off main`, files: stuck.map((f) => f.path) }, 409);
   const todo = (await files()).filter((f) => !f.merged);
   // Build or deploy files on a merge the owner's next commit would ship: read them first.
   const build = todo.map((f) => f.path).filter(isBuildFile);
@@ -213,6 +293,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: { name
   if (!conflicts.length) {
     const at = Date.now();
     await env.DB.prepare("UPDATE branches SET status = 'merged', merged_by = ?, merged_at = ? WHERE owner = ? AND repo = ? AND name = ?").bind(user, at, owner, repo, name).run();
+    await restackChildren(env, owner, repo, name);
     // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
     await emit(env, owner, repo, "branch.merged", user, {
       action: "closed",
@@ -254,19 +335,21 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
 
   // GET /api/repos/:o/:r/branches
   if (!name && req.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT name, by, status, created_at, merged_by, merged_at, upstream_ref FROM branches WHERE owner = ? AND repo = ? ORDER BY created_at DESC").bind(owner, repo).all();
+    const { results } = await env.DB.prepare("SELECT name, by, status, parent, created_at, merged_by, merged_at, upstream_ref FROM branches WHERE owner = ? AND repo = ? ORDER BY created_at DESC").bind(owner, repo).all();
     return json(results);
   }
-  // POST /api/repos/:o/:r/branches {name}
+  // POST /api/repos/:o/:r/branches {name, parent?}  parent: an open branch to stack this one on (#1025)
   if (!name && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
-    const { name: b } = (await req.json()) as { name: string };
+    const { name: b, parent } = (await req.json()) as { name: string; parent?: unknown };
     const bad = branchNameError(typeof b === "string" ? b : "");
     if (bad) return json({ error: `bad branch name: ${bad}` }, 400);
-    const r = await env.DB.prepare("INSERT OR IGNORE INTO branches (owner, repo, name, by, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)").bind(owner, repo, b, user, Date.now()).run();
+    if (parent !== undefined && parent !== null && (typeof parent !== "string" || !(await openBranch(env, owner, repo, parent)))) return json({ error: `parent: no open branch ${parent}` }, 404);
+    const on = (parent as string | null | undefined) ?? null;
+    const r = await env.DB.prepare("INSERT OR IGNORE INTO branches (owner, repo, name, by, status, created_at, parent) VALUES (?, ?, ?, ?, 'open', ?, ?)").bind(owner, repo, b, user, Date.now(), on).run();
     if (!r.meta?.changes) return json({ error: "branch exists" }, 409);
-    await emit(env, owner, repo, "branch.opened", user!, { ref: b, ref_type: "branch", master_branch: "main" });
-    return json({ name: b, by: user, status: "open" }, 201);
+    await emit(env, owner, repo, "branch.opened", user!, { ref: b, ref_type: "branch", master_branch: on ?? "main" });
+    return json({ name: b, by: user, status: "open", parent: on }, 201);
   }
 
   const branch = name && await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first();

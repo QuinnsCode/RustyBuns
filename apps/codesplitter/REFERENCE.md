@@ -27,6 +27,8 @@ The pitch is in [README.md](README.md).
   A branch that changes what runs at build or deploy time (`package.json`, lockfiles, `rustybuns.config.ts`, `wrangler.*`, `.rustybuns/`, `alchemy.run.ts`, Dockerfiles, `build.ts`, `vite.config.*`, CI files) says so in the review, every changed line shown, and when the owner's next commit to main would deploy, the merge waits for "I've read the build changes" (`build_ok: true`).
   Branches come from crew and agents, and an agent can be prompt-injected.
   A branch can delete a file too (`DELETE .../branches/:name/files?path=`), text or binary: the review lists it as `deleted`, and the merge deletes it from main and from git there and then (making it again on the branch takes the deletion back).
+  A branch can be stacked on another (`POST .../branches {name, parent}`): each file it opens forks from the parent's copy where the parent has one, it waits for the parent to merge first (409, and `POST .../merges` takes them oldest first, so the parent goes first), and when the parent merges, its copies move onto main's files: main gave the merged lines its own ids, so they're matched by text, then the stacked branch's changes go on by the same three-way merge, its lines winning where main changed them too.
+  One that won't settle that way stays put, and its merge says which files.
   This is built on the line-op log, not git branches, so blame and live sync work the same on a branch; git hears about it when main is catalogued.
 - **Every line knows who wrote it and when.** The op log replays the file at any rev: blame and time travel come free.
   The file snapshots itself every 2,000 edits, so time travel replays from the nearest snapshot, and keeps ten: history reaches back at least 20,000 edits, and the log or time travel before that is a 410 naming the rev history starts at (read the file instead).
@@ -125,6 +127,8 @@ The pitch is in [README.md](README.md).
   A 409 says what clashes, or that nothing's left once the noise is out.
   With `kind: "codesplitter"`, `branch` is a codeSplitter branch instead: its files as they are now, laid on main's tip the way a push upstream lays them, are the stack, cleaned up and squashed the same way (by this machine's git identity, whoever opened the branch as `Co-authored-by`).
   That's how an agent hands its work over as one commit: the MCP server's `beam_branch` and `get_beam` tools are these routes.
+  A codeSplitter branch stacked on another beams as a commit per branch, in order: the bottom branch's files on main's tip, each next one's over it, the title given going on the top one (`stack` lists them, and the patch has them all).
+  A stacked branch's copy of a file made before the branch under it changed that file would take that change back out, so the beam refuses it with `clash`.
   The commit is kept at `refs/beams/<id>` and checked like a pushed branch.
   `GET /api/beams/:id` is the beam and its diff for anyone with the link, `GET /api/beams/:id/patch` is `git format-patch`'s output for `git am`, `to` puts it in that handle's inbox (`GET /api/me/beams`, shown on the feed), and `DELETE /api/beams/:id` withdraws it and drops the ref.
   A repo with private lines can't beam (its git holds them blank).

@@ -144,7 +144,7 @@ describe("beaming a branch", () => {
     const main = await sh(`git --git-dir ${bare} rev-parse main`);
 
     const list = await (await call("ana", "/api/repos/ana/lab/beams")).json() as any;
-    expect(list.codesplitter_branches).toEqual([{ name: "tune", by: "ana", files: 1 }]);
+    expect(list.codesplitter_branches).toEqual([{ name: "tune", by: "ana", parent: null, files: 1 }]);
     // A git branch of that name there isn't.
     expect((await post("ana", "/api/repos/ana/lab/beams", { branch: "tune" })).status).toBe(404);
     expect((await post("ana", "/api/repos/ana/lab/beams", { branch: "nope", kind: "codesplitter" })).status).toBe(404);
@@ -159,6 +159,46 @@ describe("beaming a branch", () => {
     expect(await sh(`git --git-dir ${bare} log -1 --format='%an <%ae>' ${beam.sha}`)).toBe("Ana Real <ana@example.com>");
     expect(await sh(`git --git-dir ${bare} show ${beam.sha}:src/a.ts`)).toBe("export const a = 1;\nexport const b = 3;");
     expect((await (await call(null, `/api/beams/${beam.id}`)).json() as any).diff).toContain("+export const b = 3;");
+  });
+
+  test("beams a codeSplitter branch stacked on another as two commits, the one under it first (#1025)", async () => {
+    const { call, post, bare } = await lab();
+    const set = async (branch: string, i: number, t: string) => {
+      const doc = await (await call("ana", `/api/repos/ana/lab/do/file?path=src/a.ts&branch=${branch}`)).json() as any, l = doc.lines[i];
+      expect((await post("ana", `/api/repos/ana/lab/do/ops?path=src/a.ts&branch=${branch}`, { ops: [{ kind: "set", line: l.id, text: t, base: l.rev }] })).status).toBe(200);
+    };
+    await post("ana", "/api/repos/ana/lab/branches", { name: "first" });
+    await set("first", 0, "export const a = 10;");
+    await post("ana", "/api/repos/ana/lab/branches", { name: "second", parent: "first" });
+    await set("second", 1, "export const b = 20;");
+    expect((await post("ana", "/api/repos/ana/lab/files", { path: "src/c.ts", content: "export const c = 3;", branch: "second" })).status).toBe(201);
+    const main = await sh(`git --git-dir ${bare} rev-parse main`);
+
+    const res = await post("ana", "/api/repos/ana/lab/beams", { branch: "second", kind: "codesplitter", title: "b is twenty" });
+    expect(res.status).toBe(201);
+    const beam = await res.json() as any;
+    expect(beam.stack.map((c: any) => [c.branch, c.title])).toEqual([["first", "first, from codeSplitter"], ["second", "b is twenty"]]);
+    expect(beam.sha).toBe(beam.stack[1].sha);
+    expect(await sh(`git --git-dir ${bare} rev-parse refs/beams/${beam.id}`)).toBe(beam.stack[1].sha);
+    expect(await sh(`git --git-dir ${bare} rev-parse ${beam.sha}^`)).toBe(beam.stack[0].sha);
+    expect(await sh(`git --git-dir ${bare} rev-parse ${beam.sha}^^`)).toBe(main);
+    expect(await sh(`git --git-dir ${bare} show ${beam.stack[0].sha}:src/a.ts`)).toBe("export const a = 10;\nexport const b = 2;");
+    expect(await sh(`git --git-dir ${bare} diff --name-only ${beam.stack[0].sha} ${beam.sha}`)).toBe("src/a.ts\nsrc/c.ts");
+    expect(await sh(`git --git-dir ${bare} show ${beam.sha}:src/a.ts`)).toBe("export const a = 10;\nexport const b = 20;");
+    expect(beam.files).toEqual([{ path: "src/a.ts", status: "M" }, { path: "src/c.ts", status: "A" }]);
+    // The patch is both commits, in order, for `git am`.
+    const patch = await (await call(null, `/api/beams/${beam.id}/patch`)).text();
+    expect(patch).toContain("Subject: [PATCH 1/2] first, from codeSplitter");
+    expect(patch).toContain("Subject: [PATCH 2/2] b is twenty");
+
+    // A copy made before the branch under it touched that file would take that change back out: it says so.
+    await post("ana", "/api/repos/ana/lab/branches", { name: "third", parent: "second" });
+    expect((await call("ana", "/api/repos/ana/lab/do/file?path=package.json&branch=third")).status).toBe(200);
+    const doc = await (await call("ana", "/api/repos/ana/lab/do/file?path=package.json&branch=second")).json() as any;
+    await post("ana", "/api/repos/ana/lab/do/ops?path=package.json&branch=second", { ops: [{ kind: "set", line: doc.lines[0].id, text: '{ "name": "lab2" }', base: doc.lines[0].rev }] });
+    const stale = await post("ana", "/api/repos/ana/lab/beams", { branch: "third", kind: "codesplitter" });
+    expect(stale.status).toBe(409);
+    expect((await stale.json() as any).clash).toEqual(["package.json"]);
   });
 
   test("says what clashes when main changed the same lines since, and refuses what isn't a beam", async () => {
