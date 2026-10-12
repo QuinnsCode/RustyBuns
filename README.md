@@ -61,7 +61,7 @@ Every app is http, comms, storage, memory and identity. Here's what each one bec
 | **memory** | per-request isolate, no FFI | the whole process, Rust over FFI | the whole process, Rust over FFI |
 | **identity** | your Worker or Cloudflare Access | a guest id | a per-launch token |
 
-You write against the left-hand shape once. What each primitive would be on AWS, Vercel or Fly is in [The five primitives](ADOPTION.md#the-five-primitives), and every binding per target (git, images, email, secrets) is in [Where things run](REFERENCE.md#where-things-run).
+You write against the left-hand shape once. What each primitive would be on AWS, Vercel or Fly is in [The five primitives](ADOPTION.md#the-five-primitives), and every binding per target (git, images, email, secrets) is in [Where things run](REFERENCE.md#where-things-run). What each framework's features map to, with support and known issues per framework, is in [Each framework, as the five primitives](FRAMEWORKS.md#each-framework-as-the-five-primitives).
 
 </details>
 
