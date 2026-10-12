@@ -12,6 +12,7 @@
 import { statSync, watch as fsWatch } from "node:fs";
 import { join, relative, sep } from "node:path";
 import type { RustyBunsConfig } from "./config.ts";
+import { hostCommand, hostEnv } from "./sandbox.ts";
 
 /** How long the tree has to be quiet before a build starts. */
 const QUIET_MS = 150;
@@ -132,7 +133,7 @@ function freePort(hostname: string): number {
 }
 
 /** `rustybuns run desktop --watch [host args]`: runs until Ctrl+C. */
-export async function watchDesktop(c: RustyBunsConfig, build: () => Promise<unknown>, args: string[]): Promise<never> {
+export async function watchDesktop(c: RustyBunsConfig, build: () => Promise<unknown>, args: string[], sandbox = false): Promise<never> {
   const root = process.cwd();
   const listen = c.targets.desktop?.listen;
   const env: Record<string, string> = {
@@ -145,9 +146,9 @@ export async function watchDesktop(c: RustyBunsConfig, build: () => Promise<unkn
   }
   const loop = swapper({
     build,
-    start: (again) => Bun.spawn(["bun", ".rustybuns/dev/desktop.js", ...args], {
+    start: (again) => Bun.spawn(hostCommand(".rustybuns/dev/desktop.js", args, { sandbox, cwd: root }), {
       cwd: root, stdio: ["inherit", "inherit", "inherit"],
-      env: { ...process.env, ...env, RB_WATCH: again ? "again" : "1" },
+      env: { ...hostEnv(process.env), ...env, RB_WATCH: again ? "again" : "1" },
     }),
   });
   const outputs = watchOutputs(c), moved = changeCheck();

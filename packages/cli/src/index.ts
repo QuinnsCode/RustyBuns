@@ -12,6 +12,7 @@ import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
 import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
+import { hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
 import type { RustyBunsConfig } from "./config.ts";
 import { infer, readPackageJson } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
@@ -677,14 +678,14 @@ try {
       await addDesktop(rest.slice(1)); break;
     }
     case "run": {
-      if (rest[0] !== "desktop") throw new Error("usage: rustybuns run desktop [--watch]");
-      const hostArgs = rest.slice(1).filter((a) => a !== "--watch");
+      if (rest[0] !== "desktop") throw new Error("usage: rustybuns run desktop [--watch] [--sandbox]");
+      const { on: sandbox, args: hostArgs } = wantsSandbox(rest.slice(1).filter((a) => a !== "--watch"));
       if (rest.includes("--watch")) {
         const cfg = await loadConfig();
-        await watchDesktop(cfg, () => buildDesktop(cfg, { noCompile: true }), hostArgs);
+        await watchDesktop(cfg, () => buildDesktop(cfg, { noCompile: true }), hostArgs, sandbox);
       }
       if (!(await Bun.file(".rustybuns/dev/desktop.js").exists())) await buildDesktop(await loadConfig(), { noCompile: true });
-      const p = Bun.spawn(["bun", ".rustybuns/dev/desktop.js", ...hostArgs], { stdio: ["inherit", "inherit", "inherit"] });
+      const p = Bun.spawn(hostCommand(".rustybuns/dev/desktop.js", hostArgs, { sandbox }), { stdio: ["inherit", "inherit", "inherit"], env: hostEnv(process.env) });
       process.exit(await p.exited);
     }
     case "boundary": { const { modules, excluded } = await boundary(); console.log(report(modules, excluded)); break; }
@@ -737,6 +738,9 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   run desktop                start the dev host (bun .rustybuns/dev/desktop.js)
             [--watch]        rebuild (--dev) on save and restart the host; a failed build
                              keeps the old one up, and the window stays (reload it)
+            [--sandbox]      macOS: run it under Seatbelt, kept out of ~/.ssh, ~/.aws, gh,
+                             wrangler, keychains and the project's .env (or RB_SANDBOX=1).
+                             Always: no .env load, no auto-install, no credential env vars
   build box [--target T]     the same host for the box: Hetzner gets a linux binary + node
                              launcher in .rustybuns/box/, Railway a Bun bundle + Dockerfile
                              in .rustybuns/railway/ (plan and deploy run this for you)
