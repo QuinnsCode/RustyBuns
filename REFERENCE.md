@@ -314,6 +314,16 @@ The desktop host listens on `127.0.0.1` on a random port by default (`listen` in
 
 The box host is the same program, minus the token and the browser.
 
+### Running code you didn't write
+
+An agent boots examples and apps it didn't write, so the CLI starts every desktop host it built (`run desktop`, `run desktop --watch`, `scripts/boot.ts`) with locks that cost nothing, since the desktop host takes no secrets:
+
+- `bun --no-env-file`: Bun doesn't load the project's `.env` into it.
+- `bun --no-install`: a missing import fails instead of fetching from npm at run time.
+- A scrubbed environment: anything named like a token, key, password or cloud login (`*_TOKEN`, `*_SECRET`, `GITHUB_*`, `CLOUDFLARE_*`, `AWS_*`, `OP_*` and so on) is dropped. `RB_*`, `SSH_AUTH_SOCK` and `GIT_SSH_COMMAND` stay.
+
+`run desktop --sandbox` (or `RB_SANDBOX=1`) adds a macOS Seatbelt profile (`sandbox-exec`): the host and whatever it spawns can do anything (network, FFI, its data dir, the repo) except read or write `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.alchemy`, wrangler's and 1Password's config, `~/Library/Keychains`, and the project's `.env`, `.dev.vars` and `.alchemy/` (up to the repo root). It's opt-in because a host that pushes over SSH with your keys, like codeSplitter's mirrors, needs `~/.ssh`. `scripts/boot.ts` turns it on (`RB_SANDBOX=0` turns it off). Inside another Seatbelt sandbox, or off macOS, it says so and runs without one.
+
 ### Multiplayer on a LAN
 
 A `spa` desktop can host its world for other copies of the app. Each guest runs its own binary, whose page is served from its own `127.0.0.1`, and opens one WebSocket to the host machine. Nothing else crosses the network: the SPA, assets, `/__rb/info` and `/__rb/action` stay behind the host's token, and a guest never gets that token.

@@ -124,6 +124,7 @@ One language top to bottom, one config file, the whole stack running locally, an
 - **Runs locally.** sqlite stands in for every cloud binding, so an agent can boot, test and break the real app with no cloud account.
 - **It can see the app.** It renders in Chrome, which agents already drive: click, screenshot, read the console.
 - **Guard rails.** `plan` and `deploy` catch an agent's mistake before a server exists.
+- **A host that can't reach your keys.** The dev host starts without your `.env`, auto-install or credential env vars, and `run desktop --sandbox` puts it in a macOS Seatbelt jail, kept out of `~/.ssh`, cloud logins and keychains. See [Running code you didn't write](REFERENCE.md#running-code-you-didnt-write).
 - **Rust without risk.** An agent can write the Rust engine and prove it matches the TypeScript one, sample by sample.
 
 Nearly every commit in this repo is co-authored by Claude Code, some of them written at desks in [Agent Office](apps/agent-office/README.md), which is itself one of the examples below.
