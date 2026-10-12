@@ -1,6 +1,6 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
-// Accounts, admin and hosted-agent secrets live in 1Password (vault "codesplitters")
+// Accounts, admin and hosted-agent secrets live in 1Password (vault "codesplitter")
 // and reach the deploy through varlock: experimental.wheel "human" unlocks them with
 // your Touch ID, so there's nothing to export and BETTER_AUTH_SECRET never drifts.
 // See .env.schema for the full list. The desktop has none of them: it uses aliases.
@@ -33,9 +33,9 @@ const mailFrom = flag("MAIL_FROM")?.trim();
 const privacyNotice = "";
 // Cloudflare Turnstile's site key (public) for the widget on sign-up, password reset and joining a
 // crew (src/security.ts). Set it once the widget exists for this hostname; its secret is then
-// required from 1Password (codesplitters/turnstile/secret). Empty means no bot check.
+// required from 1Password (codesplitter/turnstile/secret). Empty means no bot check.
 const turnstileSiteKey = "0x4AAAAAAFTyaxcLpAqRT0pg";
-const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitters/${ref}`, optional });
+const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitter/${ref}`, optional });
 
 export default defineConfig({
   name: "codesplitters",
