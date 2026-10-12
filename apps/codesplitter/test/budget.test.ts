@@ -45,6 +45,10 @@ describe("agent budgets (#1077)", () => {
       .toBe("DONE: 3 line edits to a.ts\nNEXT: rename foo to bar (a.ts)\nBROKE: 2 edits lost to others' changes, a third conflict round\nDONT: redo lines others changed; work round them");
     expect(noteFor({ path: "a.ts", task: "t", why: "context past 1k tokens", applied: 0, output: "NEXT: do b (a.ts:9)" }))
       .toBe("DONE: nothing landed\nNEXT: do b (a.ts:9)\nBROKE: context past 1k tokens");
+    // Notes its owner sent that it never acted on lead NEXT, in their words, with room past a line's usual length (#1090).
+    const long = "x".repeat(400);
+    expect(noteFor({ path: "a.ts", task: "t", why: "context past 1k tokens", applied: 0, output: "NEXT: do b (a.ts:9)", notes: ["leave c\n alone", long] }))
+      .toBe(`DONE: nothing landed\nNEXT: owner says "leave c alone", "${long}", do b (a.ts:9)\nBROKE: context past 1k tokens`);
     expect(handoffTask("a.ts", "same failure twice", "NEXT: x")).toBe("Fresh eyes on a.ts: the last agent stopped (same failure twice) and left you this note. Pick up from NEXT.\nNEXT: x");
   });
 });

@@ -525,4 +525,37 @@ describe("over the API", () => {
     expect((await post("ana", "/api/repos/ana/r/branches/dep/merge", {})).status).toBe(200);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=bun.lock")).json() as Doc)).toBe("a@1.0.1 b@1");
   });
+
+  test("a merge both sides changed, settled with no card, runs the tests in a throwaway clone before it lands (#1096)", async () => {
+    const { call, post } = await app();
+    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "scripts": { "test": "bun test" }\n}' });
+    for (const path of ["a.ts", "package.json"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "main" });
+    // b2 renames a key, and adds a file; main uses the old key on another line meanwhile: no conflict, so no
+    // card, and it builds, so the lint passes it (#1081's rules.test.ts).
+    await post("ana", "/api/repos/ana/r/branches", { name: "b2" });
+    const line = async (id: string) => (await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc).lines.find((l) => l.id === id)!;
+    const l1 = await line("L1"), l2 = await line("L2");
+    await post("ana", "/api/repos/ana/r/do/ops?path=a.ts&branch=b2", { ops: [{ kind: "set", line: "L1", base: l1.rev, text: "const a = { marines: 1 };" }] });
+    await post("ana", "/api/repos/ana/r/files", { path: "b.ts", content: "export {};", branch: "b2" });
+    await post("ana", "/api/repos/ana/r/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L2", base: l2.rev, text: "x(a.concord);" }] });
+
+    const ran: { files: Record<string, string>; only?: string[] }[] = [];
+    call.env.DEPS_TESTER = (async (_remote: string, files: Record<string, string>, o: { only?: string[] }) => {
+      ran.push({ files, only: o.only });
+      return { ok: false, out: "error TS2339: Property 'concord' does not exist." };
+    }) as Tester;
+    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
+    const failed = await post("ana", "/api/repos/ana/r/branches/b2/merge", {});
+    expect(failed.status).toBe(409);
+    const body = await failed.json() as any;
+    expect(body).toMatchObject({ error: "merged, its tests fail: a.ts", failure: "error TS2339: Property 'concord' does not exist." });
+    expect(body.conflicts).toEqual([{ path: "a.ts", leftover: "person", conflicts: [expect.objectContaining({ line: "lint:tests", choices: ["main", "branch"] })] }]);
+    // The merged tree, and only the tests for the file both changed: b.ts is the branch's alone.
+    expect(ran).toEqual([{ files: { "a.ts": "const a = { marines: 1 };\nx(a.concord);", "b.ts": "export {};" }, only: ["a.ts"] }]);
+
+    // Settled as the branch, it lands anyway.
+    expect((await post("ana", "/api/repos/ana/r/branches/b2/merge", { resolve: { "a.ts": { "lint:tests": "branch" } } })).status).toBe(200);
+    expect(ran).toHaveLength(1);
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc)).toBe("const a = { marines: 1 };\nx(a.concord);");
+  });
 });

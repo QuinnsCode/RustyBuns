@@ -46,9 +46,10 @@ export function jekyllExcludes(own: unknown): string[] {
 }
 
 /** The build that puts the site in `out`, as a shell command. */
-export function staticBuild(s: StaticSite, out: string, opts: { bundler?: boolean; jekyllConfig?: string; exec: (bin: string) => string }): string {
+export function staticBuild(s: StaticSite, out: string, opts: { jekyllConfig?: string; exec: (bin: string) => string }): string {
   switch (s.kind) {
-    case "jekyll": return `${opts.bundler ? "bundle exec " : ""}jekyll build --config ${opts.jekyllConfig ?? "_config.yml"},_config.rustybuns.yml --destination ${out}`;
+    // rustybuns jekyll: the local Jekyll on Ruby 3+, else the same build in Docker.
+    case "jekyll": return `${opts.exec("rustybuns")} jekyll build --config ${opts.jekyllConfig ?? "_config.yml"},_config.rustybuns.yml --destination ${out}`;
     case "hugo": return `hugo --destination ${out} --baseURL /`;
     case "mkdocs": return `mkdocs build --site-dir ${out}`;
     case "html": return `${opts.exec("rustybuns")} copy-site ${s.dir} ${out}`;

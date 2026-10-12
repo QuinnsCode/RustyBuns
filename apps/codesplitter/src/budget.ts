@@ -75,12 +75,12 @@ const ordinal = (n: number) => ["zeroth", "first", "second", "third", "fourth"][
 /** The four lines of a handoff note. Each says one thing, as few words as it takes. */
 export interface Note { done: string[]; next: string[]; broke: string[]; dont: string[] }
 const KEYS = ["done", "next", "broke", "dont"] as const;
-/** How long one line of a note may get. */
-const LINE_CHARS = 300;
+/** How long one line of a note may get, and how much more NEXT gets for its owner's notes. */
+const LINE_CHARS = 300, OWNER_CHARS = 1500;
 
 /** The note as the next agent reads it: `DONE: x, y` and so on, a line left out when there's nothing on it. */
-export function writeNote(n: Partial<Note>): string {
-  return KEYS.flatMap((k) => n[k]?.length ? [`${k.toUpperCase()}: ${n[k]!.join(", ").replace(/\s+/g, " ").trim().slice(0, LINE_CHARS)}`] : []).join("\n");
+export function writeNote(n: Partial<Note>, room: Partial<Record<keyof Note, number>> = {}): string {
+  return KEYS.flatMap((k) => n[k]?.length ? [`${k.toUpperCase()}: ${n[k]!.join(", ").replace(/\s+/g, " ").trim().slice(0, room[k] ?? LINE_CHARS)}`] : []).join("\n");
 }
 
 /** The note lines an agent left at the end of its reply, as the prompt asks of one that can't finish: the last of each kind wins. */
@@ -96,15 +96,17 @@ export function readNote(output: string): Partial<Note> {
 /**
  * The note for a run cut short: the agent's own lines where it left them, else what's known.
  * DONE what landed, NEXT the task (where it stopped), BROKE what went wrong, DONT what it tried.
+ * Notes its owner sent that it never acted on (#1090) lead NEXT, in their words, so they aren't lost.
  */
-export function noteFor(r: { path: string; task: string; why: string; applied: number; edited?: string[]; conflicts?: { path?: string }[]; failures?: string[]; output?: string }): string {
+export function noteFor(r: { path: string; task: string; why: string; applied: number; edited?: string[]; conflicts?: { path?: string }[]; failures?: string[]; output?: string; notes?: string[] }): string {
   const own = readNote(r.output ?? ""), lost = r.conflicts?.length ?? 0, last = r.failures?.at(-1)?.trim().split("\n").at(-1);
+  const told = r.notes?.length ? [`owner says ${r.notes.map((n) => JSON.stringify(n.replace(/\s+/g, " ").trim())).join(", ")}`] : [];
   return writeNote({
     done: own.done ?? [r.applied ? `${r.applied} line edits to ${[r.path, ...r.edited ?? []].join(", ")}` : "nothing landed"],
-    next: own.next ?? [`${r.task.split("\n")[0]!.trim()} (${r.path})`],
+    next: [...told, ...own.next ?? [`${r.task.split("\n")[0]!.trim()} (${r.path})`]],
     broke: own.broke ?? [...(last ? [last] : []), ...(lost ? [`${lost} edits lost to others' changes`] : []), r.why],
     dont: own.dont ?? (r.why === "same failure twice" ? ["same fix again"] : lost ? ["redo lines others changed; work round them"] : []),
-  });
+  }, told.length ? { next: LINE_CHARS + OWNER_CHARS } : {});
 }
 
 /** What the next agent is told: the note, and nothing else. */
