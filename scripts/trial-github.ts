@@ -18,7 +18,7 @@
 //   --prof            time boot and 200 GETs of /, read the host's memory, and save a CPU profile per
 //                     mode (logs/<app>.<mode>.cpuprofile: open it in Chrome DevTools or speedscope.app)
 //
-// It runs each app's install scripts and build on this machine: only point it at code you'd run.
+// It runs each app's install scripts and build on this machine, with none of its logins (see ENV).
 // Each app's host keeps its data in <out>/data/<app>, so nothing lands in ~ and no two apps share sqlite.
 import { $ } from "bun";
 import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSync, readFileSync } from "node:fs";
@@ -82,7 +82,24 @@ async function search(dep: string): Promise<App[]> {
   return apps.sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0) || a.repo.localeCompare(b.repo));
 }
 
-const ENV = { ...process.env, CI: "1", RUSTYBUNS_NO_UPDATE_CHECK: "1", RB_NO_BROWSER: "1" };
+// Strangers' scripts run with none of this machine's logins. A release script can say
+// `wrangler d1 migrations apply --remote` or `wrangler deploy`, and with the owner's wrangler
+// login that reaches their real account (the RWSDK sweep saw it, stopped only by a placeholder
+// database id). So HOME is an empty dir (no ~/.wrangler, ~/.alchemy, ~/.config/gh, ~/.npmrc,
+// ~/.aws, git credentials), Cloudflare's variables hold dead values, and only the package
+// caches point back at the real ones so installs stay fast.
+const SANDBOX_HOME = join(OUT, "home");
+mkdirSync(SANDBOX_HOME, { recursive: true });
+const realHome = process.env.HOME ?? "";
+const ENV: Record<string, string | undefined> = {
+  PATH: process.env.PATH, TERM: process.env.TERM, LANG: process.env.LANG, TMPDIR: process.env.TMPDIR, USER: process.env.USER,
+  HOME: SANDBOX_HOME, XDG_CONFIG_HOME: join(SANDBOX_HOME, ".config"), GH_CONFIG_DIR: join(SANDBOX_HOME, ".config/gh"),
+  CLOUDFLARE_API_TOKEN: "rustybuns-trial-has-no-credentials", CLOUDFLARE_ACCOUNT_ID: "rustybuns-trial-no-account",
+  WRANGLER_SEND_METRICS: "false", GIT_TERMINAL_PROMPT: "0",
+  npm_config_cache: join(realHome, ".npm"), npm_config_store_dir: join(realHome, "Library/pnpm/store"),
+  BUN_INSTALL_CACHE_DIR: join(realHome, ".bun/install/cache"),
+  CI: "1", RUSTYBUNS_NO_UPDATE_CHECK: "1", RB_NO_BROWSER: "1",
+};
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 /** The last lines of a failed step's output worth reading: no stack frames. */
 const tail = (s: string) => strip(s).trim().split("\n").filter((l) => !/^\s+at /.test(l) && !/^Bun v\d/.test(l) && l.trim()).slice(-4).join("\n");
