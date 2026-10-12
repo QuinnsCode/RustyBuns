@@ -425,7 +425,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "queue": {
         bind.push(`  ${name}: local.queue(${[b.queueName, b.renamedFrom].filter(Boolean).map((n) => JSON.stringify(n)).join(", ")}),`);
         // maxWaitTimeMs is the edge's: here a send is delivered at once.
-        if (b.consumer !== false) consumers.push([name, { batchSize: b.consumer?.batchSize, maxRetries: b.consumer?.maxRetries, retryDelay: b.consumer?.retryDelay }]);
+        if (b.consumer !== false) consumers.push([name, { batchSize: b.consumer?.batchSize, maxRetries: b.consumer?.maxRetries, retryDelay: b.consumer?.retryDelay, priority: b.consumer?.priority }]);
         break;
       }
       case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
@@ -501,9 +501,11 @@ ${h.box
   ? `shell.mount({ fetch: async (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/health" ? new Response("ok") : p === "/__rb/mem" ? Response.json(mem.stats()) : (await prof(req)) ?? ${webmcpOn(c, true) ? "webmcp(req) ?? " : ""}(worker as any).fetch(req, e, ctx); } } as any, env);`
   : `shell.mount({ fetch: (req: Request, e: any, ctx: any) => new URL(req.url).pathname === "/__rb/mem" ? Response.json(mem.stats()) : (worker as any).fetch(req, e, ctx) } as any, env);`}
 console.log(\`[${c.name}] serving \${shell.url}\`);${crons.length ? `
-// Cron Triggers: the edge runs scheduled() on these; here a minute timer does.
-schedule(${JSON.stringify(crons)}, (controller) => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} }));` : ""}${consumers.map(([n, s]) => `
-// Queue consumer: the edge hands ${n}'s batches to queue(); here an in-process loop does.
+// Cron Triggers: the edge runs scheduled() on these; here a minute timer does, each run a low job
+// on the host's scheduler (RB_PERSONA sets its budget).
+schedule(${JSON.stringify(crons)}, (controller) => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} })${c.worker!.cronPriority ? `, { priority: ${JSON.stringify(c.worker!.cronPriority)} }` : ""});` : ""}${consumers.map(([n, s]) => `
+// Queue consumer: the edge hands ${n}'s batches to queue(); here an in-process loop does, each
+// batch a low job on the host's scheduler unless the consumer says otherwise.
 (env.${n} as any).consume((batch: unknown) => (worker as any).queue?.(batch, env, { waitUntil() {}, passThroughOnException() {} }), ${JSON.stringify(s)});`).join("")}
 ${LAUNCH_CHECK}${appCheck(c, false)}${h.launch}`;
 }

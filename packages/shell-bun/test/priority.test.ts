@@ -101,3 +101,14 @@ test("machineLoad: fractions between 0 and 1", () => {
   const l = machineLoad();
   for (const v of [l.cpu, l.memory]) { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); }
 });
+
+test("hostScheduler: one per process, its persona from RB_PERSONA", async () => {
+  const run = (persona: string) => {
+    const r = Bun.spawnSync(["bun", "-e", `import { hostScheduler } from "./src/priority.ts"; const s = hostScheduler(); console.log(JSON.stringify({ same: s === hostScheduler(), cpu: s.budget.cpu }))`], { env: { ...process.env, RB_PERSONA: persona }, cwd: import.meta.dir + "/.." });
+    return { out: JSON.parse(r.stdout.toString()), err: r.stderr.toString() };
+  };
+  expect(run("background-burner").out).toEqual({ same: true, cpu: 0.95 });
+  const odd = run("turbo");
+  expect(odd.out.cpu).toBe(0.6);
+  expect(odd.err).toContain("RB_PERSONA=turbo");
+});
