@@ -2,7 +2,8 @@
 // Each turn it looks at its own canvas and answers a handful of typed questions (what to
 // do, to which shape, what shape, what colour, where on a grid, how big), and the code
 // here turns those answers into one draw op. Clef bills input tokens only, and a turn is a
-// ~75-token picture plus the questions, ~1,000 tokens in all, so a whole fight is about two cents.
+// small picture plus the questions and the plan, ~2,000 tokens in all: about $0.0005 a turn on Clef, and
+// $0.00003 on Clef Flash.
 
 import { PALETTE } from "./ops.ts";
 import { SHAPE_KINDS, describeStep, type PlanStep } from "./plan.ts";

@@ -19,11 +19,13 @@ export default defineConfig({
     crons: ["0 * * * *"],
   },
   bindings: {
-    // Clef and Clef Flash. Billed per input token, ~1,000 a call, so ~$0.02 a fight; no spend cap of its own, hence DAILY_CALLS.
+    // Clef, Clef Flash and the planner. Measured: a Clef turn ~$0.0005, a Flash turn ~$0.00003, a plan ~$0.0015, so
+    // ~$0.016 a fight; Workers AI has no spend cap of its own, hence DAILY_CALLS.
     AI: { type: "ai" },
     ARENA: { type: "durable_object", className: "Arena" },
-    // The arena's daily cap on Clef calls: a fight is 72, so 2,000 covers the 24 a day with room, ~$0.50 a day at worst.
-    DAILY_CALLS: { type: "var", value: "2000" },
+    // The arena's daily cap on model calls: a fight is 50 (24 turns a side and 2 plans), so 1,200 covers the 24 a
+    // day; ~$0.60 a day at worst, if every call were Clef's.
+    DAILY_CALLS: { type: "var", value: "1200" },
     ARCHIVE: { type: "r2", bucketName: "excalibrawl-replays" },
   },
   targets: {

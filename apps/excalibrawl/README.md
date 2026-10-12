@@ -10,7 +10,7 @@ Clef only picks from options, so on its own it never decides that a DJ is a boot
 
 ## How a turn works
 
-Each fighter takes 36 turns, one every 5 s, about four minutes in all.
+Each fighter takes 24 turns, one every 5 s or so, about three minutes in all.
 
 1. **It looks** (`src/engine/raster.ts`): its half of the canvas becomes a 192 × 384 PNG, about 75 of Clef's image tokens. The PNG is drawn by a small rasterizer in the Worker, so there's no headless browser.
 2. **It decides** (`src/engine/brain.ts`): one Clef call answers typed questions about the picture:
@@ -39,7 +39,13 @@ Watching never calls a model. The Agent Office whiteboard slideshow is built on 
 
 ## What it costs
 
-Clef bills $0.24 per million input tokens and nothing for output. A turn is about 1,000 tokens: the picture plus about 2.7 KB of state and questions. That makes 72 calls, about **$0.02 a fight**, or about $0.40 a day at one fight an hour. Workers AI has no spend cap, so the arena counts the day's calls and stops at `DAILY_CALLS` (2,000, about $0.50). Past that, fighters sit out their turns until midnight UTC. These numbers come from the docs and the measured request size; check the first real bill against them.
+Measured in the bake-off (below), from the usage each call reports, at list prices:
+
+- **A Clef turn** is about 2,000 input tokens: the picture, the plan and the questions. At $0.24 per million that's about $0.0005.
+- **A Clef Flash turn** is about $0.00003, at $0.038 per million.
+- **A plan** is about $0.0015.
+
+A Clef vs Clef Flash fight is about **$0.016**, or about $0.38 a day at one fight an hour. Workers AI has no spend cap, so the arena counts the day's calls and stops at `DAILY_CALLS`: 1,200 covers the day's 24 fights, and the worst case is about $0.60 if every call were Clef's. Past the cap, fighters sit out their turns until midnight UTC. Check the first real bill against these numbers.
 
 ## Run it
 
@@ -51,6 +57,21 @@ bun test test                                  # rasterizer, questions, answers 
 ```
 
 Dev fights are **practice** by default: random answers in Clef's shape, for $0. `vite.config.ts` turns off remote bindings, so dev never reaches the billed Workers AI. `EXCALIBRAWL_REAL_AI=1 bun run dev` connects the real one through your wrangler login, to see how Clef actually draws (about $0.02 a fight).
+
+## Bake-off
+
+`src/lab/run.ts` plays one fighter straight through on real models, meters every call, and has Clef score the result. Its scores are 0 to 4: how clearly it shows the prompt, and craft. Run it with `EXCALIBRAWL_REAL_AI=1 bun run dev`, then `curl 'localhost:5173/api/lab?setup=A&prompt=a%20very%20long%20cat'`. On 2026-10-12 it ran four prompts (a long cat, a ballet robot, a frog king, a hot dog), 24 turns each, for about $0.20 in all:
+
+| Setup | Likeness | Craft | $ a fight | Time |
+|---|---|---|---|---|
+| A: Clef + planner (the arena's) | 1.66 | 1.50 | $0.013 | 21 s |
+| B: Clef Flash + planner (the arena's other fighter) | 1.34 | 1.31 | $0.003 | 25 s |
+| C: A + Llama 4 Scout re-planning from the canvas every 8 turns | 1.60 | 1.43 | $0.015 | 53 s |
+| D: Flash + planner, parts at the plan's spot | 0.97 | 1.60 | $0.003 | 24 s |
+| E: Llama 4 Scout writing ops, the original site's prompts | 1.38 | 1.16 | $0.006 | 85 s |
+| F: GPT-OSS 120B writing ops, blind (2 of 4 timed out) | 1.93 | 1.32 | $0.014 | 206 s |
+
+A drew the most recognisable subjects. Re-planning from the canvas (C) cost more and didn't help. E fills the canvas with a background. F is promising but too slow for a live fight. Clef judging its own setups is biased, and four prompts is a small sample. These are a guide, not a verdict.
 
 ## Deploy
 

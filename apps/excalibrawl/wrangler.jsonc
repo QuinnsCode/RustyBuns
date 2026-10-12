@@ -38,7 +38,7 @@
     }
   ],
   "vars": {
-    "DAILY_CALLS": "2000"
+    "DAILY_CALLS": "1200"
   },
   "triggers": {
     "crons": [
