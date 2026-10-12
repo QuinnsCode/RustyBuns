@@ -208,6 +208,7 @@ pnpm exec rustybuns destroy        # removes everything it created
 
 ## Read more
 
+- [ABOUT.md](ABOUT.md): why it exists (it started with grass) and who makes it
 - [GETTING_STARTED.md](GETTING_STARTED.md): the full walkthrough, step by step
 - [REFERENCE.md](REFERENCE.md): every command, config key, the host, the Hetzner and Railway boxes, LAN multiplayer, who holds the keys to secrets
 - [ADOPTION.md](ADOPTION.md): who it's for, and how to adopt it (and leave)

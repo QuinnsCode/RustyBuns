@@ -26,6 +26,10 @@ every relative link and #anchor in the root docs. The README is a list of featur
 feature, add or update its entry. CI runs `bun run docs --check`. If it fails, run `bun run docs`, then
 rewrite any row it added in your own words before you commit.
 
+`bun run site` turns those docs into the docs site (`scripts/site/`): `latest/` from the working tree plus
+a folder per `v*` tag read from git, into `dist/site/`. CI runs `bun run site --check`, which fails on a
+site link that doesn't land. A new root guide goes in `GUIDES` in `scripts/site/rustybuns.ts`.
+
 ## Secrets and pushes
 
 Secret values live in 1Password and resolve through varlock at deploy time, behind the owner's
