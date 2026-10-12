@@ -9,6 +9,8 @@
 // An edit that depends on other lines too (a rename, "is this ever
 // reassigned?") passes `ifRev`: the whole file must still be at that rev.
 
+import { parse as parseToml } from "smol-toml";
+import { parseAllDocuments } from "yaml";
 import { alike, keptPairs } from "./sync.ts";
 
 export interface Line { id: string; text: string; by: string; rev: number }
@@ -352,8 +354,8 @@ export const MARKER = /^(<{7}|>{7})( |$)/;
  * What a merge won't call clean (#934), as `lint:` conflicts the branch's pick
  * lands anyway: conflict markers it would bring into main (a half-done merge
  * on the branch, like the one #884 committed into features.json), and, once
- * every line is settled (`whole`), a JSON file both sides parse that the
- * merged text doesn't. Markers main has already are CI's to catch
+ * every line is settled (`whole`), a JSON, YAML or TOML file both sides parse
+ * that the merged text doesn't. Markers main has already are CI's to catch
  * (scripts/conflict-markers.ts), not every branch's.
  */
 function broken(main: Doc, branch: Doc, ops: Op[], by: string[], path: string, resolve: Resolve, whole: boolean): Conflict[] {
@@ -363,16 +365,32 @@ function broken(main: Doc, branch: Doc, ops: Op[], by: string[], path: string, r
   const was = new Map(main.lines.map((l) => [l.id, l.text])), out: Conflict[] = [];
   const marks = merged.lines.flatMap((l, i) => MARKER.test(l.text) && was.get(l.id) !== l.text ? [i + 1] : []);
   if (marks.length && resolve["lint:markers"] !== "branch") out.push({ line: "lint:markers", base: "", main: null, branch: null, lint: `the branch has git's conflict markers in it (line ${marks.join(", ")})` });
-  if (whole && /\.json$/i.test(path) && resolve["lint:json"] !== "branch" && jsonError(text(main)) === null && jsonError(text(branch)) === null) {
-    const why = jsonError(text(merged));
-    if (why !== null) out.push({ line: "lint:json", base: "", main: null, branch: null, lint: `merged, it isn't valid JSON (${why})` });
+  const kind = dataKind(path);
+  if (whole && kind && resolve[`lint:${kind}`] !== "branch" && parseError(kind, text(main)) === null && parseError(kind, text(branch)) === null) {
+    const why = parseError(kind, text(merged));
+    if (why !== null) out.push({ line: `lint:${kind}`, base: "", main: null, branch: null, lint: `merged, it isn't valid ${kind.toUpperCase()} (${why})` });
   }
   return out;
 }
 
-/** Why `s` isn't JSON, or null when it is. */
-export function jsonError(s: string): string | null {
-  try { JSON.parse(s); return null; } catch (e) { return (e as Error).message; }
+type DataKind = "json" | "yaml" | "toml";
+/** The data format a merge checks `path` parses as (#934, #986), by its extension. */
+export const dataKind = (path: string): DataKind | null => /\.json$/i.test(path) ? "json" : /\.ya?ml$/i.test(path) ? "yaml" : /\.toml$/i.test(path) ? "toml" : null;
+
+/**
+ * Why `s` isn't `kind`, or null when it is. Pure JavaScript parsers, so it runs in
+ * the Worker (Bun.YAML and Bun.TOML don't); YAML's may hold several documents.
+ */
+export function parseError(kind: DataKind, s: string): string | null {
+  try {
+    if (kind === "json") JSON.parse(s);
+    else if (kind === "toml") parseToml(s);
+    else {
+      const e = parseAllDocuments(s, { prettyErrors: false }).flatMap((d) => d.errors)[0];
+      if (e) return e.message.split("\n")[0]!;
+    }
+    return null;
+  } catch (e) { return (e as Error).message.split("\n")[0]!; }
 }
 
 /**

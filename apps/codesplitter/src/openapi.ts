@@ -149,17 +149,23 @@ const OPS: Record<string, Record<string, Op>> = {
     ok: obj({ rev: int(), applied: arr(ref("Applied")) }) } },
   [`${repo}/do/claims`]: {
     get: { id: "list_claims", summary: "Who is working on which lines of a file right now", tag: "Files", open: true,
-      description: "A claimed line takes edits from its holder only. `until` is when a claim lapses (null: a person's hold, which stands till lifted).",
+      description: "A claimed line takes edits from its holder only. `until` is when a claim lapses (null: a person's hold, which stands till lifted). A `soft` one is an intent: it keeps nobody off.",
       query: filePath, ok: arr(ref("Claim")) },
     post: { id: "claim_lines", summary: "Claim lines so only you edit them, or renew your claim (the crew)", tag: "Files",
       description: "All or nothing: a 409 names the claims in the way, with `retryAfter` in seconds. An agent's claim is a 2-minute lease: renew it by claiming again with its `id` "
         + "(lines optional), or by editing with `claim`. It can't stand more than 30 minutes in all unless a person sends `extend`, "
         + "and once it ends there (or you release it in its last 2 minutes), you can't claim those lines again for 2 minutes (a 409 with `retryAfter`): work elsewhere. A person's hold stands till lifted. "
-        + "Claim before a rewrite, send `claim` with your edits, and release it when you're done.",
+        + "Claim before a rewrite, send `claim` with your edits, and release it when you're done. "
+        + "`soft: true` only says what you intend (\"rewriting 40–80\"): it's shown and listed, but keeps nobody off, and may overlap others' claims. "
+        + "`wait: true` gets in line when the lines are held (or others are already in line for them), first come first, and waits up to `timeout` seconds (20 at most): "
+        + "201 with the claim if it's granted meanwhile, else 202 {queued, id, place}: ask again at once with that id and wait to keep your place (a place nobody asks for in a minute is dropped). "
+        + "Granted between asks, the lines are yours for 15 seconds: claim again with the id to take them. You can't wait while you hold lines (here or in another file): let go first. release_claim with the id leaves the line. "
+        + "Waiting is for when your task needs those lines; otherwise work elsewhere.",
       query: filePath, body: obj({ lines: arr(str("line id")), id: str("your claim's id: to renew it, or to name a new one"), task: str("what you're doing, shown to everyone"),
-        ttl: int("ms till it lapses; an agent's defaults to 120000"), extend: bool("a person: give an agent's claim another 30 minutes past its cap") }), ok: ref("Claim") } },
+        ttl: int("ms till it lapses; an agent's defaults to 120000"), extend: bool("a person: give an agent's claim another 30 minutes past its cap"),
+        soft: bool("an intent: shown, but it keeps nobody off"), wait: bool("held? get in line for the lines"), timeout: int("with wait: seconds to wait this time, 0 to 20 (default 20)") }), ok: ref("Claim") } },
   [`${repo}/do/release`]: { post: { id: "release_claim", summary: "Let go of a claim, so its lines are free again (the crew)", tag: "Files",
-    description: "Release your own claim when you're done. Any of the crew may lift anyone's, which is how a person steers an agent off lines: ask a person before lifting someone else's.",
+    description: "Release your own claim when you're done, or your place in line. Any of the crew may lift anyone's, which is how a person steers an agent off lines: ask a person before lifting someone else's.",
     query: filePath, body: obj({ id: str("the claim's id") }, ["id"]), ok: obj({ released: bool("false if it had already gone") }) } },
   [`${repo}/do/commits`]: { get: { id: "file_commits", summary: "A file's commits, newest first", tag: "Files", open: true, query: { ...filePath, ...onBranch }, ok: arr(ref("Commit")) } },
   [`${repo}/do/commit`]: { post: { id: "commit_file", summary: "Commit a file on main and push it to the repo's git (the crew)", tag: "Files", risky: true,
@@ -248,7 +254,7 @@ const OPS: Record<string, Record<string, Op>> = {
     body: obj({ path: str(), key: str("the hunk's key, as review_branch lists it") }, ["path", "key"]),
     ok: obj({ path: str(), key: str(), rev: int() }) } },
   [`${repo}/branches/{branch}/conflicts/agent`]: { post: { id: "suggest_resolution", summary: "Have a coding agent write the settled text for one conflict; nothing lands (the crew)", tag: "Branches",
-    description: "The agent sees the conflict as git's markers, the rest of the file as the merge leaves it, and main's commit messages since the branch forked, and writes the lines that replace it. Its answer is then checked: the merged file must parse, and, where the doctor runs this repo's tests, they must pass with it in a throwaway clone. ok false comes with the attempt and the failure, for a person to fix or drop. Merge with resolve {path: {line: {text}}} to take it. Waits for the agent and the tests.",
+    description: "The agent sees the conflict as git's markers, the rest of the file as the merge leaves it, main's commit messages since the branch forked, and, on a branch an agent run made, that run's task, and writes the lines that replace it. Its answer is then checked: the merged file must parse, and, where the doctor runs this repo's tests, they must pass with it in a throwaway clone. ok false comes with the attempt and the failure, for a person to fix or drop. Merge with resolve {path: {line: {text}}} to take it. Waits for the agent and the tests.",
     body: obj({ path: str(), line: str("the conflict's line, as review_branch lists it"), harness: str("one GET /agents lists"), model: str() }, ["path", "line", "harness"]),
     ok: obj({ path: str(), line: str(), harness: str(), text: str("the settled lines"), ok: bool("it parses and the tests passed (or were skipped)"),
       tests: str("passed, failed, not run, or skipped: why"), failure: str("why the check failed: the parse problems or the test output's end") }) } },
@@ -364,7 +370,7 @@ const SCHEMAS: Record<string, Schema> = {
   ] },
   Applied: obj({ rev: int(), by: str(), at: int("ms"), op: ref("LineOp"), line: str() }),
   Claim: obj({ id: str(), who: str("who holds it"), bot: bool("an agent's: a lease that lapses"), lines: arr(str("line id")), task: str(), at: int("ms: when it was laid"),
-    until: { type: ["integer", "null"], description: "ms: when it lapses; null stands till lifted" }, cap: int("ms: an agent's claim can't be renewed past this") }, ["id", "who", "bot", "lines", "at", "until"]),
+    until: { type: ["integer", "null"], description: "ms: when it lapses; null stands till lifted" }, cap: int("ms: an agent's claim can't be renewed past this"), soft: bool("an intent: shown, but it keeps nobody off") }, ["id", "who", "bot", "lines", "at", "until"]),
   Commit: obj({ n: int(), sha: str(), parent: { type: ["string", "null"] }, rev: int(), by: str(), at: int(), message: str() }),
   Branch: obj({ name: str(), by: str(), status: str("open or merged"), created_at: int(), merged_by: { type: ["string", "null"] }, merged_at: { type: ["integer", "null"] } }),
   Playlist: obj({ id: int(), owner: str(), title: str() }),

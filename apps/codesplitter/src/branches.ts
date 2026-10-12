@@ -347,8 +347,11 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     // Why main changed the file since the branch forked: its commit messages. A branch doesn't commit.
     const log = await (await toFile(env, owner, repo, b.path, user!, "commits")).json().catch(() => []) as { at: number; message: string }[];
     const said = (Array.isArray(log) ? log : []).filter((x) => x.at >= Number(branch.created_at) && x.message !== "commit").map((x) => x.message).slice(0, 10);
+    // Why the branch changed it: the task of the agent run that made it (agent-routes.ts runBranch), if one did.
+    const run = /^agent-run-(\d+)$/.exec(name);
+    const meant = run ? ((await env.DB.prepare("SELECT task FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(run[1])).first()) as { task: string } | null)?.task : undefined;
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
-    const r = await askAgent(box, { harness: b.harness, model: b.model?.trim() || undefined, path: b.path, branch: name, conflict: c, merged: mergedWith({}).d, said }, req.signal);
+    const r = await askAgent(box, { harness: b.harness, model: b.model?.trim() || undefined, path: b.path, branch: name, conflict: c, merged: mergedWith({}).d, said, meant }, req.signal);
     if ("error" in r) return json({ error: r.error }, 502);
     const answer = { path: b.path, line: b.line, harness: b.harness, text: r.text };
     // It's offered as settled only if the merged file parses and the tests pass; otherwise a person gets it with the failure (#934).
