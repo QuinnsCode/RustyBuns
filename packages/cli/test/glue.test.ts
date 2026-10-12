@@ -622,6 +622,24 @@ test("sourceMaps: a prebuilt Worker uploads its .map files, and only when asked"
   expect(generateAlchemy({ ...c, worker: { ...c.worker, sourceMaps: undefined } })).not.toContain("rules:");
 });
 
+import { shapeSourceMaps, sourceMappingURL, wranglerShapedMap } from "../src/sourcemaps.ts";
+import { mkdtempSync, readFileSync as readText, writeFileSync as writeText } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+test("sourceMaps: maps go up in wrangler's shape, file named and sources cleaned (#799)", () => {
+  // Bun's linked map has no `file`; wrangler's upload_source_maps sets it to the module and strips one ./ or ../.
+  expect(wranglerShapedMap({ sources: ["../../src/a.ts", "./b.ts", "c.ts"] }, "worker.js"))
+    .toEqual({ file: "worker.js", sources: ["../src/a.ts", "b.ts", "c.ts"] });
+  expect(sourceMappingURL("x();\n//# debugId=AB\n//# sourceMappingURL=worker.js.map\n")).toBe("worker.js.map");
+  expect(sourceMappingURL("x();\n//# sourceMappingURL=worker.js.map\nmore();\n")).toBeUndefined();
+  const dir = mkdtempSync(join(tmpdir(), "rb-maps-"));
+  writeText(join(dir, "worker.js"), "x();\n//# sourceMappingURL=worker.js.map\n");
+  writeText(join(dir, "worker.js.map"), JSON.stringify({ version: 3, sources: ["../../src/w.ts"], mappings: "AAAA" }));
+  writeText(join(dir, "other.js"), "y();\n");
+  expect(shapeSourceMaps(dir)).toEqual(["worker.js.map"]);
+  expect(JSON.parse(readText(join(dir, "worker.js.map"), "utf8"))).toEqual({ version: 3, file: "worker.js", sources: ["../src/w.ts"], mappings: "AAAA" });
+});
+
 test("placement: Smart Placement on the edge, both ways through wrangler.jsonc", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], placement: { mode: "smart" } },

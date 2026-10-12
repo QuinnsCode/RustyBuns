@@ -25,6 +25,7 @@ import { commitsBehindMain, statefulDeletes } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
+import { shapeSourceMaps } from "./sourcemaps.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
 import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
@@ -491,6 +492,9 @@ async function alchemy(sub: string, rawArgs: string[]) {
   // stack's Build runs, so build it first or it ships the previous build (#362).
   const built = profiled && edgeOn(cfg) && !!cfg.worker?.build;
   if (built) await prof.step("build worker", () => buildWorker(cfg.worker!.build!));
+  // worker.sourceMaps: put the maps in wrangler's shape before Alchemy uploads them byte-for-byte (#799).
+  const builtDir = cfg.worker?.builtMain && dirname(cfg.worker.builtMain);
+  if (profiled && edgeOn(cfg) && cfg.worker?.sourceMaps && builtDir && existsSync(builtDir)) shapeSourceMaps(builtDir);
   // The stack's Build then only records dist, not rebuild it while the assets upload (#424).
   const buildEnv: Record<string, string> = built ? { RUSTYBUNS_BUILT: "1" } : {};
   if (sub === "plan") {
