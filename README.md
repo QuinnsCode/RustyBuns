@@ -77,6 +77,8 @@ You write against the left-hand shape once. What each primitive would be on AWS,
 
 The host binds to `127.0.0.1`, gates every request on a per-launch token, and keeps your data in `~/.<app-name>/`. Your users never install Bun: it's inside the binary. Details in [The host](REFERENCE.md#the-host).
 
+**Opens on a Mac without a warning.** A binary you download is blocked by macOS until it's signed and notarized. On a Mac with a Developer ID certificate, `build desktop --sign` signs the darwin binaries, and `--notarize <profile>` also sends a `.zip` of each to Apple. The profile is the one you saved with `xcrun notarytool store-credentials`, so your Apple password stays in the keychain.
+
 </details>
 
 ### Static sites box too, no app needed
