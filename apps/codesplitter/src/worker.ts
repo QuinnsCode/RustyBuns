@@ -69,6 +69,7 @@ import {
   cutRoutes,
 } from "./cuts.ts";
 import {
+  ancestors,
   branchRoutes,
   createOn,
   materializeOn,
@@ -522,11 +523,16 @@ async function route(req: Request, env: Env): Promise<Response> {
       }
       const under = (dir ? dir.replace(/[%_\\]/g, "\\$&") + "/" : "") + "%";
       const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path LIKE ? ESCAPE '\\'").bind(owner, repo, under).all();
-      // ?branch=: the branch's own files show too, and the ones it deleted don't (#734).
+      // ?branch=: the branch's own files show too, and the ones it deleted don't (#734); so do the files of the
+      // branches it's stacked on, nearest first, so its own rows win, then its parent's, and so on (#1039).
       const branch = url.searchParams.get("branch");
-      const own = branch && await openBranch(env, owner, repo, branch)
-        ? (await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND path LIKE ? ESCAPE '\\'").bind(owner, repo, branch, under).all()).results as { path: string; deleted: number }[]
-        : [];
+      const own: { path: string; deleted: number }[] = [];
+      if (branch && await openBranch(env, owner, repo, branch)) {
+        const had = new Set<string>();
+        for (const b of [branch, ...await ancestors(env, owner, repo, branch)])
+          for (const f of (await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND path LIKE ? ESCAPE '\\'").bind(owner, repo, b, under).all()).results as { path: string; deleted: number }[])
+            if (!had.has(f.path)) { had.add(f.path); own.push(f); }
+      }
       const gone = new Set(own.filter((f) => f.deleted).map((f) => f.path));
       entries = entries.filter((e) => !gone.has(e.path));
       // A folder in git the branch deleted every file of goes too (files written here put it back below).

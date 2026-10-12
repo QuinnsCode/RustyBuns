@@ -42,6 +42,7 @@ select { font: inherit; color: inherit; background: #222a37; border: 1px solid v
 .war .marines { background: var(--marines); } .war .wooka { background: var(--wooka); }
 .detail { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
 .orbit { margin: 0 0 6px; color: var(--dim); }
+.warn { margin: 0 0 6px; color: #f5b14c; font-size: 13px; }
 .act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
 .sectors { list-style: none; margin: 8px 0 0; padding: 0; }
 .sectors li { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; }

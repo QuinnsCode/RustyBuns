@@ -27,6 +27,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   ground.rotation.x = -Math.PI / 2;
   scene.add(ground);
   forest(scene, b.trees, spec.seed, HALF);
+  let seed = spec.seed;
+  const r = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
 
   // Command posts: a ring on the ground and a flag in the side's colour.
   const posts = b.posts.map((p) => {
@@ -40,18 +42,56 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     scene.add(ring, pole, flag);
     return { ring, flag };
   });
-  // A shield sector puts the generator and its dome on the defender's post.
-  const gen = b.posts[1]!;
+  // The sector's landmark sits by the defender's keep, the last post.
+  const keep = b.posts.at(-1)!;
+  const concrete = new THREE.MeshLambertMaterial({ color: 0x9aa4ad });
+  const box = (w: number, h: number, d: number, x: number, z: number, mat: THREE.Material = concrete) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, h / 2, z);
+    scene.add(m);
+    return m;
+  };
+  // Clear of the posts and the lane between the spawns, so the scenery never hides a fight,
+  // and off the redwoods, so no block stands in a trunk.
+  const clear = (x: number, z: number) =>
+    Math.abs(x) > 18 && b.posts.every((p) => Math.hypot(p.x - x, p.z - z) > POST_RADIUS + 10) && b.trees.every((t) => Math.hypot(t.x - x, t.z - z) > t.r + 9);
   if (spec.sector === "shield") {
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 9, 12), new THREE.MeshLambertMaterial({ color: 0x9aa4ad }));
-    core.position.set(gen.x - 6, 4.5, gen.z - 6);
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 9, 12), concrete);
+    core.position.set(keep.x - 6, 4.5, keep.z - 6);
     const dome = new THREE.Mesh(new THREE.SphereGeometry(26, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7fd8ff, transparent: true, opacity: 0.12, depthWrite: false }));
-    dome.position.set(gen.x, 0, gen.z);
+    dome.position.set(keep.x, 0, keep.z);
     scene.add(core, dome);
+  } else if (spec.sector === "capital") {
+    // City blocks of the seed's heights, and the palace behind its keep.
+    ground.material.color.setHex(0x8d8a82);
+    const walls = new THREE.MeshLambertMaterial({ color: 0xc9c2b2 });
+    for (let i = 0; i < 40; i++) {
+      const x = (r() - 0.5) * HALF * 1.9, z = (r() - 0.5) * HALF * 1.9;
+      if (clear(x, z)) box(6 + r() * 8, 6 + r() * 22, 6 + r() * 8, x, z, walls);
+    }
+    box(22, 12, 10, keep.x, keep.z - 18, walls);
+    box(8, 24, 8, keep.x, keep.z - 18, walls);
+  } else if (spec.sector === "spaceport") {
+    // Landing pads round the first post, and the control tower by the keep.
+    ground.material.color.setHex(0x9b9688);
+    const padMat = new THREE.MeshLambertMaterial({ color: 0x5d6168 });
+    const pads = b.posts[0]!;
+    for (const [dx, dz] of [[-24, -18], [24, -18], [-24, 22], [24, 22]] as const) {
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 0.4, 24), padMat);
+      pad.position.set(pads.x + dx, 0.2, pads.z + dz);
+      scene.add(pad);
+    }
+    box(5, 22, 5, keep.x + 10, keep.z - 10);
+    box(10, 4, 10, keep.x + 10, keep.z - 10).position.y = 24;
   } else {
-    const bunker = new THREE.Mesh(new THREE.BoxGeometry(10, 4, 8), new THREE.MeshLambertMaterial({ color: 0x8b8f94 }));
-    bunker.position.set(gen.x - 8, 2, gen.z - 8);
-    scene.add(bunker);
+    // The anti-ship cannon: a turret base with its barrel cocked at the sky.
+    ground.material.color.setHex(0x8f7f62);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(8, 10, 6, 16), concrete);
+    base.position.set(keep.x - 10, 3, keep.z - 12);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.8, 30, 12), new THREE.MeshLambertMaterial({ color: 0x5b6067 }));
+    barrel.position.set(keep.x - 10, 16, keep.z - 6);
+    barrel.rotation.x = -0.6;
+    scene.add(base, barrel);
   }
 
   // Units, by id. Each side looks like its faction, whichever end of the field it's on.

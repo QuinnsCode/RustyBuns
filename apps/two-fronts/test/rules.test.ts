@@ -2,26 +2,27 @@ import { expect, test } from "bun:test";
 import { LANES, SYSTEMS, neighbours } from "../src/war/galaxy.ts";
 import { aiOrders } from "../src/war/ai.ts";
 import {
-  applyBattleResult, canPushFromSurface, diceBattle, income, keyShare, newCampaign, planOrders, resolveTurn, rng,
+  applyBattleResult, canPushFromSurface, diceBattle, income, keyShare, newCampaign, planOrders, resolveTurn, rng, supplied,
   type Campaign, type Orders,
 } from "../src/war/rules.ts";
 
 const kessa = (c: Campaign) => c.systems.kessa!;
 const none = (c: Campaign): Orders[] => [{ faction: "marines", orders: [] }, { faction: "wooka", orders: [] }];
 
-test("the first slice's galaxy: 8 systems, joined up, Kessa in three sectors", () => {
+test("the galaxy: 8 systems, joined up, Kessa in three sectors, a cannon each side of the Narrows", () => {
   expect(SYSTEMS).toHaveLength(8);
   const seen = new Set(["aster"]), todo = ["aster"];
   while (todo.length) for (const n of neighbours(todo.pop()!)) if (!seen.has(n)) { seen.add(n); todo.push(n); }
   expect(seen.size).toBe(8);
   for (const [a, b] of LANES) expect(SYSTEMS.some((s) => s.id === a) && SYSTEMS.some((s) => s.id === b)).toBe(true);
   expect(SYSTEMS.find((s) => s.id === "kessa")!.sectors).toEqual(["shield", "spaceport", "capital"]);
+  expect(SYSTEMS.filter((s) => s.sectors.includes("cannon")).map((s) => s.id)).toEqual(["lumen", "morrow"]);
 });
 
 test("income counts sectors and the region bonus, and halves when morale breaks", () => {
   const c = newCampaign();
-  // Thunder Marines: four capitals (12) plus the whole Thunder Reach (2).
-  expect(income(c, "marines")).toBe(14);
+  // Thunder Marines: four capitals (12), Lumen's cannon (1) and the whole Thunder Reach (2).
+  expect(income(c, "marines")).toBe(15);
   for (const s of Object.values(c.systems)) for (const x of s.sectors) if (s.id !== "aster") x.owner = "wooka";
   expect(keyShare(c, "marines")).toBeLessThan(0.3);
   expect(income(c, "marines")).toBe(1); // 3 halved, rounded down
@@ -143,6 +144,52 @@ test("the hero battle pauses the turn on a BattleSpec and the result writes back
   expect(lost.hero.woundedUntil).toBe(4);
   const wounded = resolveTurn(lost, [{ faction: "marines", hero: { system: "kessa", sector: 1 }, orders: [] }]);
   expect(wounded.pending).toBeNull();
+});
+
+test("an anti-ship cannon knocks a ship a turn out of a blockade, and can break it", () => {
+  const c = newCampaign();
+  const lumen = c.systems.lumen!;
+  lumen.fleets = { marines: 0, wooka: 2 };
+  lumen.orbit = "wooka";
+  const one = resolveTurn(c, none(c));
+  expect(one.systems.lumen!.fleets.wooka).toBe(1);
+  expect(one.systems.lumen!.orbit).toBe("wooka");
+  expect(one.log).toContain("The cannon on Lumen knocks out 1 Wooka ship.");
+  const two = resolveTurn(one, none(one));
+  expect(two.systems.lumen!.fleets.wooka).toBe(0);
+  expect(two.systems.lumen!.orbit).toBeNull();
+  expect(two.log).toContain("Wooka's blockade of Lumen is broken.");
+  // Taken by the enemy, the cannon turns on its old owner's fleet.
+  const lost = newCampaign();
+  lost.systems.lumen!.sectors[0]!.owner = "wooka";
+  lost.systems.lumen!.sectors[0]!.armies = { marines: 0, wooka: 1 };
+  expect(resolveTurn(lost, none(lost)).systems.lumen!.fleets.marines).toBe(0);
+});
+
+test("forces cut off from a capital lose an army a turn, down to one", () => {
+  const c = newCampaign();
+  const k = kessa(c);
+  k.sectors[0]!.owner = "marines";
+  k.sectors[0]!.armies = { marines: 4, wooka: 0 };
+  // Wooka's own orbit over Kessa cuts Thunder Marines's foothold off from Corva and Lumen.
+  expect(supplied(c, "marines").has("kessa")).toBe(false);
+  expect(supplied(c, "wooka").has("kessa")).toBe(true);
+  let t = resolveTurn(c, none(c));
+  expect(t.systems.kessa!.sectors[0]!.armies.marines).toBe(3);
+  expect(t.log.some((l) => l.includes("cut off from supply"))).toBe(true);
+  for (let i = 0; i < 4; i++) t = resolveTurn(t, none(t));
+  expect(t.systems.kessa!.sectors[0]!.armies.marines).toBe(1);
+  // Clear the orbit and the line runs again.
+  const open = structuredClone(c);
+  open.systems.kessa!.fleets.wooka = 0;
+  open.systems.kessa!.orbit = null;
+  expect(supplied(open, "marines").has("kessa")).toBe(true);
+  expect(resolveTurn(open, none(open)).systems.kessa!.sectors[0]!.armies.marines).toBe(4);
+  // A blockade further back cuts off everything past it: no Thunder Marines capital, no supply.
+  const deep = newCampaign();
+  for (const id of ["aster", "brill", "corva"]) deep.systems[id]!.sectors[0]!.owner = "wooka";
+  deep.systems.corva!.orbit = "wooka";
+  expect([...supplied(deep, "marines")].sort()).toEqual(["lumen"]);
 });
 
 test("the AI's orders are all legal, and a whole war is deterministic", () => {

@@ -1,10 +1,11 @@
 // The strategy layer: a deterministic rules engine over plain JSON. A turn is income and
-// building, simultaneous moves, space battles, landings, ground battles, then upkeep. One ground
+// building, simultaneous moves, space battles, landings, ground battles, then upkeep (cannon
+// fire, bombardment, supply, income). One ground
 // battle a turn can be handed to the player as a hero battle; the turn pauses on it until the
 // BattleResult comes back.
 import type { BattleResult, BattleSpec, Faction, SectorKind } from "../battle/contract.ts";
 import { other as otherSide } from "../battle/contract.ts";
-import { FACTION_NAMES, REGIONS, SECTOR_INCOME, SECTOR_NAMES, START, SYSTEMS, adjacent, systemDef } from "./galaxy.ts";
+import { FACTION_NAMES, REGIONS, SECTOR_INCOME, SECTOR_NAMES, START, SYSTEMS, adjacent, neighbours, systemDef } from "./galaxy.ts";
 
 export type Count = Record<Faction, number>;
 export const FACTIONS: Faction[] = ["marines", "wooka"];
@@ -42,6 +43,7 @@ export const WIN_SHARE = 0.75;   // hold this share of the key sectors and the w
 export const MORALE_SHARE = 0.3; // below this, income halves: losing compounds
 const BOMBARD_FLEETS = 2;        // an orbit this strong kills an enemy army a sector each turn
 export const TICKETS_PER_ARMY = 50;
+const CANNON_HITS = 1;           // ships an anti-ship cannon knocks out of a blockading fleet each turn
 
 export function newCampaign(seed = 1, player: Faction = "marines"): Campaign {
   const systems: Record<string, SystemState> = {};
@@ -87,6 +89,18 @@ export function keyShare(c: Campaign, f: Faction) {
   let held = 0, total = 0;
   for (const s of Object.values(c.systems)) for (const x of s.sectors) if (KEY.includes(x.kind)) { total++; if (x.owner === f) held++; }
   return total ? held / total : 0;
+}
+
+// Supply runs out from a faction's capitals along the hyperlanes, through any system whose orbit
+// the enemy doesn't hold. Armies anywhere else are cut off and wither.
+export function supplied(c: Campaign, f: Faction): Set<string> {
+  const seen = new Set(Object.values(c.systems).filter((s) => holds(s, f)).map((s) => s.id)), todo = [...seen];
+  while (todo.length) for (const n of neighbours(todo.pop()!)) {
+    if (seen.has(n) || c.systems[n]!.orbit === enemy(f)) continue;
+    seen.add(n);
+    todo.push(n);
+  }
+  return seen;
 }
 
 // The ground rule: without orbit, a side holding a third of a planet or less can't push out
@@ -261,7 +275,7 @@ export function buildSpec(c: Campaign, at: Where, seed: number): BattleSpec {
     vehicles: { attacker: Math.min(3, Math.floor(x.armies[att] / 2)), defender: Math.min(3, Math.floor(x.armies[def] / 2)) },
     strikes: { attacker: strikes(att), defender: strikes(def) },
     reinforcements: { attacker: reinf(att), defender: reinf(def) },
-    turrets: x.kind === "shield" ? 2 : 1,
+    turrets: x.kind === "shield" || x.kind === "cannon" ? 2 : 1,
     seed,
   };
 }
@@ -292,8 +306,22 @@ export function applyBattleResult(c0: Campaign, res: BattleResult): Campaign {
   return upkeep(c);
 }
 
-// End of turn: bombardment, income, and whether the war is over.
+// End of turn: cannon fire, bombardment, supply, income, and whether the war is over.
 function upkeep(c: Campaign): Campaign {
+  // A cannon on the surface fires on the enemy fleet over it, and can break a blockade.
+  for (const s of Object.values(c.systems)) {
+    const o = s.orbit;
+    if (!o) continue;
+    const guns = s.sectors.filter((x) => x.kind === "cannon" && x.owner === enemy(o)).length;
+    if (!guns) continue;
+    const hit = Math.min(s.fleets[o], guns * CANNON_HITS);
+    s.fleets[o] -= hit;
+    c.log.push(`The cannon on ${name(s.id)} knocks out ${hit} ${FACTION_NAMES[o]} ${hit === 1 ? "ship" : "ships"}.`);
+    if (!s.fleets[o]) {
+      s.orbit = null;
+      c.log.push(`${FACTION_NAMES[o]}'s blockade of ${name(s.id)} is broken.`);
+    }
+  }
   for (const s of Object.values(c.systems)) {
     const o = s.orbit;
     if (!o || s.fleets[o] < BOMBARD_FLEETS) continue;
@@ -306,6 +334,15 @@ function upkeep(c: Campaign): Campaign {
       c.log.push(`${FACTION_NAMES[o]} bombards ${name(s.id)} from orbit.`);
       if (!x.armies[enemy(o)] && x.armies[o]) x.owner = o;
     }
+  }
+  // Cut off from supply, a force loses an army a turn, down to a last one holding on.
+  for (const f of FACTIONS) {
+    const ok = supplied(c, f);
+    for (const s of Object.values(c.systems)) if (!ok.has(s.id)) s.sectors.forEach((x, i) => {
+      if (x.armies[f] < 2) return;
+      x.armies[f]--;
+      c.log.push(`${FACTION_NAMES[f]} at ${where(c, { system: s.id, sector: i })} is cut off from supply and loses an army.`);
+    });
   }
   for (const f of FACTIONS) c.credits[f] += income(c, f);
   for (const f of FACTIONS) {

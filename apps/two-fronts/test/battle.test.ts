@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { BattleSpec } from "../src/battle/contract.ts";
-import { DT, FLAVOR, HALF, STRIKE_RADIUS, heroUnit, run, startBattle, step } from "../src/battle/sim.ts";
+import { DT, FLAVOR, HALF, LAYOUTS, STRIKE_RADIUS, heroUnit, run, startBattle, step } from "../src/battle/sim.ts";
 
 // A fixture straight from the contract: the ground layer never needs the strategy layer to run.
 const spec = (over: Partial<BattleSpec> = {}): BattleSpec => ({
@@ -28,6 +28,19 @@ test("more armies win more battles", () => {
     if (run(spec({ seed, armies: { attacker: 1, defender: 5 }, tickets: { attacker: 25, defender: 125 } })).over!.winner === "attacker") small++;
   }
   expect(big).toBeGreaterThan(small);
+});
+
+test("every kind of sector has its own map, the defender's keep ringed by its turrets", () => {
+  const kinds = ["shield", "capital", "spaceport", "cannon"] as const;
+  expect(new Set(kinds.map((k) => JSON.stringify(LAYOUTS[k].posts))).size).toBe(kinds.length);
+  for (const sector of kinds) {
+    const b = startBattle(spec({ sector }));
+    const keep = b.posts.at(-1)!;
+    expect(keep).toMatchObject({ name: LAYOUTS[sector].posts.at(-1)!.name, owner: "defender" });
+    expect(b.posts.slice(0, -1).every((p) => p.owner === null)).toBe(true);
+    for (const t of b.units.filter((u) => u.kind === "turret")) expect(Math.hypot(t.x - keep.x, t.z - keep.z)).toBeCloseTo(18);
+    expect(run(spec({ sector })).over).not.toBeNull();
+  }
 });
 
 test("the defender's fortifications are on the field", () => {
