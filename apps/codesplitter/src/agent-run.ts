@@ -229,7 +229,7 @@ export async function runAgent(call: Call, opts: {
     const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal);
     // Stopped: whatever it left is dropped.
     signal?.throwIfAborted();
-    // What it says it read and wrote, where its CLI says (#1088); else it read the prompt and every file, and wrote its reply and the files back.
+    // What it says it read and wrote, where its CLI says (#1088, #1118); else it read the prompt and every file, and wrote its reply and the files back.
     const usage = usageOf(run.out);
     output = (usage?.reply ?? run.out).trim();
     spent += usage?.tokens ?? tokens(prompt.length + snapshot.lines.reduce((n, l) => n + l.text.length + 1, 0) * 2
