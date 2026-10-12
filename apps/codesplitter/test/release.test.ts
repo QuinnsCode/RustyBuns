@@ -250,6 +250,18 @@ describe("release", () => {
     expect(mac.ran(/move-resources/)).toEqual([]);
   });
 
+  test("each plan and deploy gets a fresh wrangler token: one from the start may have expired at a question", async () => {
+    const mac = new Mac(); mac.answers = [true];
+    let n = 0;
+    const real = mac.run.bind(mac);
+    mac.run = async (cmd, opts) => cmd.join(" ").endsWith("wrangler auth token") ? { code: 0, out: `tok-${++n}`.padEnd(40, "x") } : real(cmd, opts);
+    await go(mac);
+    const planTok = mac.envs[mac.at(/rustybuns plan/)]!.CLOUDFLARE_API_TOKEN, deployTok = mac.envs[mac.at(/rustybuns deploy/)]!.CLOUDFLARE_API_TOKEN;
+    expect(planTok).toStartWith("tok-");
+    expect(deployTok).toStartWith("tok-");
+    expect(deployTok).not.toBe(planTok);
+  });
+
   test("the files plan regenerated are put back before syncing; anything else stops it", async () => {
     const mac = new Mac(); mac.answers = [true];
     mac.status = " M apps/codesplitter/wrangler.jsonc\n";

@@ -215,7 +215,9 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
   if (!tok) { await login("wrangler's login didn't hand over a token."); tok = await token(); }
   if (!tok) stop("wrangler still won't hand over a token after logging in; paste this to Claude.");
   const cf = { ...base, CLOUDFLARE_ACCOUNT_ID: acct!, CLOUDFLARE_API_TOKEN: tok! };
-  const run = { ...cf, ...flags, NO_COLOR: "1", FORCE_COLOR: "0" };
+  // Wrangler's OAuth token lasts about an hour, and a release can sit at a question longer: each plan
+  // and deploy asks wrangler again (it refreshes its own), keeping the last good one if it hands over none.
+  const run = async () => { tok = (await token()) ?? tok; return { ...cf, CLOUDFLARE_API_TOKEN: tok!, ...flags, NO_COLOR: "1", FORCE_COLOR: "0" }; };
 
   // Every deploy builds the sandbox images with Docker: start Docker Desktop rather than fail halfway.
   if ((await io.run(["docker", "info"])).code !== 0) {
@@ -260,7 +262,7 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
   // Plan, show it, and stop on anything risky or billable. Changes nothing, costs nothing.
   const plan = async () => {
     for (let i = 0; i < 3; i++) {
-      const p = await io.run(["bunx", "rustybuns", "plan"], { cwd: appDir, env: run });
+      const p = await io.run(["bunx", "rustybuns", "plan"], { cwd: appDir, env: await run() });
       if (p.code !== 0) { io.say(p.out.split("\n").slice(-30).join("\n")); stop("plan failed (above). Not deploying; paste this to Claude."); }
       const v = checkPlan(p.out, mode);
       for (const l of v.show) io.say(`     ${l}`);
@@ -281,6 +283,7 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
       io.say(yellow("main moved while you were reading; syncing to it and planning again, so what you approve is what goes out"));
       await sync(); await plan(); continue;
     }
+    const env = await run();   // before any copy: nothing but the deploy comes after it
     if (mode.move) {
       // Only now: the deploy follows at once, so nothing written meanwhile is left behind. A write
       // landing during the copy makes the counts differ; the second try copies again.
@@ -289,7 +292,7 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
         stop("the copy stopped twice (above). Nothing was deleted, and the live site still reads the old names; paste this to Claude.");
     }
     const args = ["bunx", "rustybuns", "deploy", "--yes", ...(mode.move ? ["--allow-delete"] : [])];
-    const d = await io.run(args, { cwd: appDir, env: run, show: (l) => !/\] noop/.test(l) });
+    const d = await io.run(args, { cwd: appDir, env, show: (l) => !/\] noop/.test(l) });
     if (d.code === 0) {
       // Deployed means the live site answers, not just that the command finished.
       const s = await io.get(`${site}/api/session`);
