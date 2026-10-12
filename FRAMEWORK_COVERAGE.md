@@ -53,6 +53,16 @@ That's enough for an app to boot and render logged-out. Anything that really nee
 
 This is containment, not malware detection. Reading code can't reliably tell a malicious package from a fine one, so the harness assumes the worst and gives the code nothing worth stealing and nowhere to send it.
 
+On top of that, the summary puts a ⚠️ beside any app worth a human look and lists why under **Worth a look**:
+
+- **Install scripts:** the app's own pre- or postinstall, and dependencies that run one. Ones nearly every app has (esbuild, workerd, sharp and the like) only go in the log.
+- **Blocked network:** anything the sandbox stopped from leaving the machine during build or boot. A build has no reason to phone home. Each app's sandbox profile tags its denials, so the unified log says which app tried.
+- **Blocked reads** of logins and keys under your home folder: `~/.ssh`, keychains, `~/.aws`, browser profiles.
+- **Busy at idle:** after serving `/`, the host and its children are measured for two quiet seconds. Over half a core or over 1 GB is flagged.
+- **Known-malicious dependencies:** installed versions that [OSV](https://osv.dev) lists with a `MAL-` advisory.
+
+The detail for each is in the app's log. Nothing flagged is published, and strangers' binaries never leave the sandbox either way.
+
 ## RWSDK
 
 **Run: Oct 12 2026, RWSDK 1.x, this checkout. 196 apps found.**
