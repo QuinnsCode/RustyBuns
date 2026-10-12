@@ -18,6 +18,7 @@ const clock = (ms: number) => {
 function said(e: LogEntry | undefined): string {
   if (!e) return "…";
   if (e.error) return `sat out (${e.error})`;
+  if (e.pen) return e.pen.done && !e.pen.lines ? "done" : `${e.pen.lines} line${e.pen.lines === 1 ? "" : "s"}${e.pen.skipped ? `, ${e.pen.skipped} skipped` : ""}${e.pen.look ? ", looking" : ""}${e.pen.done ? ", done" : ""}`;
   const d = e.decision;
   if (!d) return "…";
   if (d.action === "restart") return "scrapped it all";
@@ -34,12 +35,19 @@ export function watch(arena: HTMLElement | null, replays: HTMLElement | null): (
   let replay: { m: MatchState; turn: number; timer: ReturnType<typeof setInterval> } | null = null;
   let index: MatchSummary[] = [];
 
-  const draw = (m: Pick<MatchState, "fighters" | "prompt" | "turns">, log: LogEntry[], turn: number, label: string) => {
+  const draw = (m: Pick<MatchState, "fighters" | "prompt" | "turns" | "scores" | "winner">, log: LogEntry[], turn: number, label: string) => {
     const last = (side: number) => [...log].reverse().find((e) => e.side === side && e.turn <= turn);
+    // Clef's verdict shows once the replay reaches the end: a trophy on the winner, each side's scores as a tooltip.
+    const name = (f: { name: string }, side: number) => {
+      const s = turn >= m.turns ? m.scores?.[side] : undefined;
+      if (!s) return `<b>${esc(f.name)}</b>`;
+      const tip = `Clef refs: likeness ${s.likeness.toFixed(1)}, craft ${s.craft.toFixed(1)} (of 4)`;
+      return `<b title="${esc(tip)}">${esc(f.name)}${m.winner === side ? " 🏆" : ""}</b>`;
+    };
     arena.innerHTML =
       `<div class="bar"><span class="tag">${esc(label)}</span><strong>${esc(m.prompt)}</strong><span class="clock" title="Turn of the fight">${String(turn).padStart(2, "0")}/${m.turns}</span></div>` +
       `<div class="canvas">${sceneSvg(scenesAt({ fighters: m.fighters, log }, turn))}</div>` +
-      `<div class="fighters">${m.fighters.map((f, side) => `<div><b>${esc(f.name)}</b><span>${esc(said(last(side)))}</span></div>`).join("")}</div>`;
+      `<div class="fighters">${m.fighters.map((f, side) => `<div>${name(f, side)}<span>${esc(said(last(side)))}</span></div>`).join("")}</div>`;
   };
 
   const idle = () => {

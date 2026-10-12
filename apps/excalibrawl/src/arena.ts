@@ -1,11 +1,13 @@
 // The arena: one Durable Object ("live") runs the hour's fight. The cron starts it, an
 // alarm plays one turn every PACE_MS, every viewer's WebSocket gets each turn as it lands,
-// and the finished fight goes to R2 as a replay. It also counts today's Clef calls: Workers
-// AI has no spend cap of its own, so past DAILY_CALLS fighters sit their turns out.
+// and Clef referees the finished fight before it goes to R2 as a replay. It also counts today's
+// model calls: Workers AI has no spend cap of its own, so past DAILY_CALLS fighters sit their turns out.
 
 import { DurableObject } from "cloudflare:workers";
-import { finished, newMatch, playTurn, type Fighter, type LogEntry, type MatchState } from "./engine/match.ts";
+import { CANVAS, finished, judgeMatch, newMatch, playTurn, type Fighter, type LogEntry, type MatchState, type TurnDeps } from "./engine/match.ts";
 import { practiceAnswers } from "./engine/brain.ts";
+import { regionFor } from "./engine/ops.ts";
+import { practicePen } from "./engine/pen-fighter.ts";
 import { PLANNER, parsePlan, planRequest, practicePlan } from "./engine/plan.ts";
 import { promptFor } from "./engine/prompts.ts";
 import { take } from "./budget.ts";
@@ -17,15 +19,29 @@ export const TURNS = 24;
 export const PACE_MS = 5_000;
 /** A fight older than this is stale (a lost alarm), so the next start replaces it. */
 const STALE_MS = 20 * 60_000;
-const DEFAULT_DAILY_CALLS = 1_200;
+const DEFAULT_DAILY_CALLS = 1_000;
 
-const FIGHTERS: Fighter[] = [
-  { model: "clef", name: "Clef" },
-  { model: "clef-flash", name: "Clef Flash" },
+/** The hour's fight, alternating: Clef vs Clef Flash, then pen vs pen ("Clef refs, LLMs fight"). */
+export const MATCHUPS: Fighter[][] = [
+  [
+    { model: "clef", name: "Clef" },
+    { model: "clef-flash", name: "Clef Flash" },
+  ],
+  [
+    { model: "gpt-oss-20b", name: "GPT-OSS 20B" },
+    { model: "scout", name: "Llama 4 Scout" },
+  ],
 ];
 
+/** The matchup for an hour, with sides swapped every other round so neither model always gets the left. */
+export function fightersFor(now: number): Fighter[] {
+  const hour = Math.floor(now / 3_600_000);
+  const pair = MATCHUPS[hour % MATCHUPS.length]!;
+  return Math.floor(hour / MATCHUPS.length) % 2 ? [...pair].reverse() : pair;
+}
+
 /** What a viewer or the office needs to draw the fight so far. */
-export type LiveMatch = Omit<MatchState, "log" | "nextId">;
+export type LiveMatch = Omit<MatchState, "log" | "nextId" | "talks">;
 
 /** Everything the live socket sends. */
 export type LiveMessage =
@@ -34,7 +50,7 @@ export type LiveMessage =
   | { t: "turn"; id: string; turn: number; entries: LogEntry[] }
   | { t: "end"; id: string; summary: MatchSummary };
 
-const live = ({ log: _l, nextId: _n, ...m }: MatchState): LiveMatch => m;
+const live = ({ log: _l, nextId: _n, talks: _t, ...m }: MatchState): LiveMatch => m;
 
 export class Arena extends DurableObject<Cloudflare.Env> {
   private load = () => this.ctx.storage.get<MatchState>("match");
@@ -54,10 +70,7 @@ export class Arena extends DurableObject<Cloudflare.Env> {
   async start(now = Date.now()): Promise<{ ok: boolean; id?: string; reason?: string }> {
     const cur = await this.load();
     if (cur && now - cur.startedAt < STALE_MS) return { ok: false, reason: "a fight is on", id: cur.id };
-    // Swap sides every hour so neither model always gets the left.
-    const hour = Math.floor(now / 3_600_000);
-    const fighters = hour % 2 ? [...FIGHTERS].reverse() : FIGHTERS;
-    const m = newMatch(`m-${now}`, promptFor(now), fighters, TURNS, now);
+    const m = newMatch(`m-${now}`, promptFor(now), fightersFor(now), TURNS, now);
     await this.ctx.storage.put("match", m);
     await this.ctx.storage.setAlarm(now + 1_000);
     this.send({ t: "start", match: live(m) });
@@ -71,10 +84,13 @@ export class Arena extends DurableObject<Cloudflare.Env> {
     // Saved before archiving: if R2 fails, the alarm's retry archives without replaying a turn.
     if (!finished(m)) return;
     m.endedAt ??= Date.now();
+    // Clef referees. Saved too, so a retry neither judges nor pays twice.
+    await judgeMatch(m, this.deps());
     await this.ctx.storage.put("match", m);
     const summary = summarize(m);
     if (this.env.ARCHIVE) {
-      await this.env.ARCHIVE.put(`matches/${m.id}.json`, JSON.stringify(m), { httpMetadata: { contentType: "application/json" } });
+      const { talks: _t, ...replay } = m;
+      await this.env.ARCHIVE.put(`matches/${m.id}.json`, JSON.stringify(replay), { httpMetadata: { contentType: "application/json" } });
       const prev = await this.env.ARCHIVE.get("index.json");
       const index = addToIndex(prev ? await prev.json() : [], summary);
       await this.env.ARCHIVE.put("index.json", JSON.stringify(index), { httpMetadata: { contentType: "application/json" } });
@@ -83,14 +99,16 @@ export class Arena extends DurableObject<Cloudflare.Env> {
     this.send({ t: "end", id: m.id, summary });
   }
 
-  /** Play one turn, tell the viewers, and set the alarm for the next. */
-  private async turn(m: MatchState) {
+  /** The models, metered against today's budget. */
+  private deps(): TurnDeps {
     // Local dev would reach the real (billed) Workers AI, so dev fights are practice unless EXCALIBRAWL_REAL_AI=1.
     const ai = import.meta.env.VITE_IS_DEV_SERVER && !import.meta.env.VITE_REAL_AI ? undefined : this.env.AI;
     const cap = Number(this.env.DAILY_CALLS) || DEFAULT_DAILY_CALLS;
-    const entries = await playTurn(m, {
-      // No AI: a practice fight on random answers, free.
-      run: ai ? (model, input) => ai.run(model as keyof AiModels, input as never) : async (_m, input) => practiceAnswers(input),
+    return {
+      // No AI: a practice fight on random answers (or random pen lines), free.
+      run: ai
+        ? (model, input) => ai.run(model as keyof AiModels, input as never)
+        : async (_m, input) => ((input as { messages?: unknown }).messages ? { response: practicePen(regionFor(0, 2, CANVAS)) } : practiceAnswers(input)),
       plan: ai ? async (prompt, persona) => parsePlan(await ai.run(PLANNER as keyof AiModels, planRequest(prompt, persona) as never)) : async () => practicePlan(),
       take: async () => {
         if (!ai) return true;
@@ -99,7 +117,12 @@ export class Arena extends DurableObject<Cloudflare.Env> {
         if (next.ok) await this.ctx.storage.put("budget", { day: next.day, n: next.n });
         return next.ok;
       },
-    });
+    };
+  }
+
+  /** Play one turn, tell the viewers, and set the alarm for the next. */
+  private async turn(m: MatchState) {
+    const entries = await playTurn(m, this.deps());
     this.send({ t: "turn", id: m.id, turn: m.turn, entries });
     await this.ctx.storage.put("match", m);
     if (!finished(m)) await this.ctx.storage.setAlarm(Date.now() + PACE_MS);

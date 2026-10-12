@@ -1,8 +1,17 @@
 # Excalibrawl
 
-> **What it proves:** a vision model that can only pick from buckets can still draw. Two of Cloudflare's Clef decision models fight on one canvas every hour for about two cents a fight. They can't write a word or emit broken JSON. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
+> **What it proves:** a vision model that can only pick from buckets can still draw. Two of Cloudflare's Clef decision models fight on one canvas for about two cents a fight. They can't write a word or emit broken JSON. On the other hours two text models fight with a drawing language of their own, and Clef referees both. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-The Rusty Buns port of [excalibrawl.com](https://excalibrawl.com). The original had GPT-4.1 mini write JSON draw ops through AI Gateway. Here the fighters are **Clef** and **Clef Flash** on Workers AI, and the starter's auth, Stripe and orgs are gone. A cron starts a fight on the hour, viewers watch it live, and every finished fight is a replay in R2.
+The Rusty Buns port of [excalibrawl.com](https://excalibrawl.com). The original had GPT-4.1 mini write JSON draw ops through AI Gateway. Here the fighters are on Workers AI, and the starter's auth, Stripe and orgs are gone. A cron starts a fight on the hour, viewers watch it live, and every finished fight is a replay in R2.
+
+## The fights
+
+The hours alternate between two matchups (`MATCHUPS` in `src/arena.ts`), with sides swapped every other round:
+
+- **Clef vs Clef Flash**: each turn picks a move from a picture of its own half (below).
+- **Pen vs pen, Clef refs**: GPT-OSS 20B (blind) and Llama 4 Scout (can look) write [the pen](#the-pen). A pen turn is up to 8 lines, so a pen fighter plays every third turn: 8 turns in a fight.
+
+When a fight ends, Clef judges each side once, from a picture of its half: how clearly it shows the prompt (likeness) and how well it's made (craft), 0 to 4 each, as in the [bake-off](#bake-off). The best total wins. The replay shows a 🏆 on the winner, with the scores as the tooltip. Clef can't read text (the rasterizer draws it as a solid bar), so a title doesn't help a drawing.
 
 ## The plan
 
@@ -44,8 +53,10 @@ Measured in the bake-off (below), from the usage each call reports, at list pric
 - **A Clef turn** is about 2,000 input tokens: the picture, the plan and the questions. At $0.24 per million that's about $0.0005.
 - **A Clef Flash turn** is about $0.00003, at $0.038 per million.
 - **A plan** is about $0.0015.
+- **A pen turn** is about $0.0002 for GPT-OSS 20B and $0.0003 for Llama 4 Scout.
+- **Judging** is one Clef call a side, a fraction of a cent.
 
-A Clef vs Clef Flash fight is about **$0.016**, or about $0.38 a day at one fight an hour. Workers AI has no spend cap, so the arena counts the day's calls and stops at `DAILY_CALLS`: 1,200 covers the day's 24 fights, and the worst case is about $0.60 if every call were Clef's. Past the cap, fighters sit out their turns until midnight UTC. Check the first real bill against these numbers.
+A Clef vs Clef Flash fight is about **$0.017** with judging (52 calls). A pen fight is about **$0.005** (18 calls). At one fight an hour, half of each, that's about $0.26 a day. Workers AI has no spend cap, so the arena counts the day's calls and stops at `DAILY_CALLS`: the day's 24 fights take 840, the cap is 1,000, and the worst case is about $0.60. Past the cap, fighters sit out their turns until midnight UTC. Check the first real bill against these numbers.
 
 ## Run it
 
@@ -89,7 +100,7 @@ l tail black body.right 430,300 470,250
 
 One command a line: `o`, `b`, `d` (ellipse, box, diamond, centred at X Y), `p` (filled polygon), `l` (stroke) and `t` (text), plus edits `mv`, `sz`, `fill`, `rm` and `up`. Shapes are named, and any point can be an **anchor** on a named shape, like `head.top-30,10`, so the code does the sums models get wrong. Every line goes through `applyOps` as it's read, so an anchor sees where a shape really landed, and a bad line is skipped with a reason the fighter is told about next turn. Up to 8 lines a turn. `look` gets a fighter that can see a picture of its canvas, and `done` ends its fight.
 
-`src/lab/pen.ts` is the fighter: one conversation, the card and the prompt, then each turn its shapes come back as pen lines. The bake-off's G and H use it. Pen fighters in the arena, with Clef as the referee, are [#996](https://github.com/QuinnsCode/RustyBuns/issues/996).
+`src/engine/pen-fighter.ts` is the fighter: one conversation, the card and the prompt, then each turn its shapes come back as pen lines. The bake-off's G and H play it straight through. In the arena `src/engine/match.ts` plays one pen turn every third arena turn and saves the conversation in the Durable Object between them. It never goes to viewers or the replay.
 
 ## Deploy
 
@@ -99,4 +110,3 @@ There are no secrets. Workers AI comes with the account. `bunx rustybuns add dep
 
 - The old site's replays (D1 plus the `excalibrawl-archive` bucket) aren't migrated. The fights since about Sep 25 are empty because the gateway credit ran out, so only older ones are worth bringing over.
 - The old site hid the prompt until the end so viewers could guess. Here it's shown from the start.
-- Fighters other than Clef in the arena: [pen](#the-pen) fighters with Clef refereeing are [#996](https://github.com/QuinnsCode/RustyBuns/issues/996).

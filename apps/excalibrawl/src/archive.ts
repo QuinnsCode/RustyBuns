@@ -13,6 +13,9 @@ export interface MatchSummary {
   endedAt?: number;
   /** Shapes on each fighter's canvas at the end. A fight with none isn't worth replaying. */
   shapes: number[];
+  /** Clef's referee scores per side, and the winner (-1: a tie). Fights before #996 have neither. */
+  scores?: MatchState["scores"];
+  winner?: number;
 }
 
 /** How many fights index.json keeps. */
@@ -28,6 +31,8 @@ export const summarize = (m: MatchState): MatchSummary => ({
   startedAt: m.startedAt,
   endedAt: m.endedAt,
   shapes: m.scenes.map((s) => s.length),
+  scores: m.scores,
+  winner: m.winner,
 });
 
 export function addToIndex(index: MatchSummary[], s: MatchSummary): MatchSummary[] {
