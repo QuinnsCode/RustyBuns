@@ -2,8 +2,10 @@
 // tsconfig (DOM libs, vite/client, what it can check without generated files),
 // so the checker runs once per project. That's `bun check` (Bun >= 1.4.3, what CI
 // pins), else tsgo (TypeScript's native compiler, pinned in package.json) on an
-// older local Bun. Exits non-zero if any project has errors.
+// older local Bun. Errors print one line each, cut short (`--full` for all of it).
+// Exits non-zero if any project has errors.
 import { existsSync, readdirSync } from "node:fs";
+import { compactDiagnostics } from "../packages/cli/src/typecheck.ts";
 
 const bunCheck = Bun.semver.satisfies(Bun.version, ">=1.4.3-0");
 const cmd = (p: string) => bunCheck
@@ -16,7 +18,8 @@ const results = await Promise.all(projects.map(async (p) => {
   const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());
   return { p, code: await proc.exited, out: out.trim() };
 }));
+const full = process.argv.includes("--full");
 const failed = results.filter((r) => r.code !== 0);
-for (const r of failed) console.error(`✗ ${r.p}\n${r.out}\n`);
+for (const r of failed) console.error(`✗ ${r.p}\n${full ? r.out : compactDiagnostics(r.out)}\n`);
 console.log(`typecheck (${bunCheck ? "bun check" : "tsgo"}): ${results.length - failed.length}/${results.length} projects clean${failed.length ? `; failed: ${failed.map((r) => r.p).join(", ")}` : ""}`);
 process.exit(failed.length ? 1 : 0);

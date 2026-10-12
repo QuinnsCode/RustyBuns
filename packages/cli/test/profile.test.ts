@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Profiler, formatProfile, type ProfileRun } from "../src/profile.ts";
-import { checkFlags, checkCommand, hasBunCheck, pickChecker, stackTsconfig, wantsEffectDiagnostics } from "../src/typecheck.ts";
+import { checkFlags, checkCommand, compactDiagnostics, hasBunCheck, pickChecker, stackTsconfig, wantsEffectDiagnostics } from "../src/typecheck.ts";
 
 test("profiler: records each step in order, failed steps included", async () => {
   const p = new Profiler("plan");
@@ -32,8 +32,9 @@ test("checkFlags: --check / --no-check / --checker, other args pass through", ()
 });
 
 test("checker commands and the Effect-plugin preference", () => {
-  expect(checkCommand({ name: "bun", bin: "bun" }, "a/tsconfig.json")).toEqual(["bun", "check", "-p", "a/tsconfig.json"]);
-  expect(checkCommand({ name: "bun", bin: "bun" }, null)).toEqual(["bun", "check"]);
+  expect(checkCommand({ name: "bun", bin: "bun" }, "a/tsconfig.json")).toEqual(["bun", "check", "-p", "a/tsconfig.json", "--no-pretty"]);
+  expect(checkCommand({ name: "bun", bin: "bun" }, null)).toEqual(["bun", "check", "--no-pretty"]);
+  expect(checkCommand({ name: "tsc", bin: "tsc" }, "t.json")).toEqual(["tsc", "-p", "t.json", "--noEmit", "--pretty", "false"]);
   expect(checkCommand({ name: "tsc-rs", bin: "tsc-rs" }, "t.json")).toEqual(["tsc-rs", "-p", "t.json", "--noEmit"]);
   expect(() => checkCommand({ name: "tsc", bin: "tsc" }, null)).toThrow("tsconfig");
 
@@ -50,4 +51,21 @@ test("checker commands and the Effect-plugin preference", () => {
 
 test("bun check: 1.4.3 and its canaries have it, 1.4.2 doesn't", () => {
   expect(["1.4.2", "1.4.3-canary.12+abc", "1.4.3", "1.5.0"].map(hasBunCheck)).toEqual([false, true, true, true]);
+});
+
+test("compactDiagnostics: one short line per error, location first, capped", () => {
+  const long = "x".repeat(1000);
+  const out = [
+    "\x1b[31msrc/a.ts(2,34): error TS2322: Type 'number' is not assignable to type 'string'.\x1b[0m",
+    `src/b.ts(9,1): error TS2345: Argument of type 'Effect<${long}>' is not assignable.`,
+    "  Type 'A' is not assignable to type 'B'.",
+    "Found 2 errors in 2 files",
+  ].join("\n");
+  const lines = compactDiagnostics(out).split("\n");
+  expect(lines).toHaveLength(2);
+  expect(lines[0]).toBe("src/a.ts(2,34): error TS2322: Type 'number' is not assignable to type 'string'.");
+  expect(lines[1]!.startsWith("src/b.ts(9,1): error TS2345")).toBe(true);
+  expect(lines[1]!.length).toBe(300);
+  const many = Array.from({ length: 25 }, (_, i) => `f.ts(${i},1): error TS1: e`).join("\n");
+  expect(compactDiagnostics(many, 20).split("\n").at(-1)).toBe("… +5 more");
 });

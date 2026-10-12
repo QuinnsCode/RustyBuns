@@ -36,7 +36,7 @@ import { formatHistory } from "@rustybuns/shell-bun/history";
 import { TRIAGE_USAGE, triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
 import { checkDisabled, checkVersion } from "./advisories.ts";
-import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
+import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, compactDiagnostics, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
 const VERSION = (await Bun.file(new URL("../package.json", import.meta.url)).json()).version as string;
@@ -446,7 +446,7 @@ async function checkStack(prof: Profiler, want: CheckerName | "auto") {
   if (!c) { prof.steps.push({ name: "typecheck stack", ms: 0, note: `skipped: no checker (Bun >= ${BUN_CHECK_MIN}, tsc-rs or typescript)` }); return; }
   const r = await prof.step("typecheck stack", () => runCheck(c, STACK_TSCONFIG), c.name);
   if (!r.ok) {
-    console.error(r.output);
+    console.error(compactDiagnostics(r.output));
     await prof.finish();
     throw new Error(`the generated stack does not type check (${c.name}). Fix rustybuns.config.ts, or pass --no-check to skip.`);
   }
