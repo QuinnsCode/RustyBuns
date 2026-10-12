@@ -360,9 +360,12 @@ export const realIO: IO = {
     return { code: await p.exited, out };
   },
   async ask(q) {
-    // Ping: the terminal's bell, and a notification that reaches you in another app. Best effort.
-    process.stdout.write("\x07");
-    try { Bun.spawn(notifyCmd("codeSplitter release is waiting on you", q), { stdout: "ignore", stderr: "ignore" }); } catch {}
+    // Ping: the terminal's bell, and a notification that reaches you in another app. Best effort, and
+    // only with a person at a terminal: run by a script or an agent, there's nobody to call.
+    if (process.stdin.isTTY) {
+      process.stdout.write("\x07");
+      try { Bun.spawn(notifyCmd("codeSplitter release is waiting on you", q), { stdout: "ignore", stderr: "ignore" }); } catch {}
+    }
     const a = prompt(`\x1b[1;38;5;117m${q} [y/N]\x1b[0m`);
     return a?.trim().toLowerCase() === "y";
   },
