@@ -246,6 +246,8 @@ test("spa entry: default still binds the world and has no host", async () => {
   const src = spaEntry({ name: "x", bindings: {}, targets: { desktop: { mode: "spa" } } } as any);
   expect(src).toContain('import World from "../packages/desktop/world.ts"');
   expect(src).toContain("const host: any = null;");
+  // a path nothing answers gets the site's own 404.html
+  expect(src).toContain("return shell.notFound(url);");
 });
 
 test("nativeDirs refuses crates that were not built", async () => {
