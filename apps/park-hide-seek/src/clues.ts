@@ -145,8 +145,8 @@ export function answerText(g: Grid, c: Clue): string {
   }
 }
 
-export function parseAsk(a: any): Ask | null {
-  if (!a || typeof a !== "object") return null;
+export function parseAsk(raw: unknown): Ask | null {
+  const a = (raw ?? {}) as { kind?: unknown; r?: unknown; axis?: unknown; cat?: unknown; what?: unknown };
   if (a.kind === "radar" && typeof a.r === "number" && Number.isFinite(a.r)) return { kind: "radar", r: a.r };
   if (a.kind === "compass" && (a.axis === "ns" || a.axis === "ew")) return { kind: "compass", axis: a.axis };
   if (a.kind === "thermo") return { kind: "thermo" };

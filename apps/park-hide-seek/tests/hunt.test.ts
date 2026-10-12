@@ -395,4 +395,9 @@ test("parseMsg rejects junk from the wire", () => {
   expect(parseMsg({ t: "look", look: { shirt: 99, pants: 0, skin: 0, hat: "cap" } })).toBeNull();
   expect(parseMsg({ t: "look", look: { shirt: 1, pants: 0, skin: 0, hat: "crown" } })).toBeNull();
   expect(parseMsg({ t: "drop", x: 1, y: 2 })).toEqual({ t: "drop", x: 1, y: 2 });
+  expect(parseMsg(42)).toBeNull();
+  expect(parseMsg({ t: "look", look: null })).toBeNull();
+  expect(parseMsg({ t: "ask", ask: 7 })).toBeNull();
+  expect(parseMsg({ t: "settings", tod: { evil: 1 } })).toEqual({ t: "settings", zone: undefined, tod: undefined, live: undefined, laps: undefined });
+  expect(parseMsg({ t: "settings", tod: "dusk" })).toMatchObject({ tod: "dusk" });
 });

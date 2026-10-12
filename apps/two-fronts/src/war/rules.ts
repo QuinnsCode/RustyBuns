@@ -2,7 +2,7 @@
 // building, simultaneous moves, space battles, landings, ground battles, then upkeep (cannon
 // fire, bombardment, supply, income). One battle a turn, on the ground or in orbit, can be
 // handed to the player as a hero battle; the turn pauses on it until the result comes back.
-import type { BattleResult, BattleSpec, Faction, SectorKind, SpaceBattleResult, SpaceBattleSpec } from "../battle/contract.ts";
+import type { BattleResult, BattleSpec, Faction, SectorKind, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
 import { other as otherSide } from "../battle/contract.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
 
@@ -27,10 +27,10 @@ export interface Campaign {
   turn: number;
   seed: number;
   galaxy: GalaxyId;
-  player: Faction;
+  player: Faction; // the human side against the AI; in a two-player game, the Marines
   credits: Count;
   systems: Record<string, SystemState>;
-  hero: Hero;
+  heroes: Record<Faction, Hero>; // each side's hero, though only the human sides send one in
   pending: Pending | null;
   winner: Faction | null;
   log: string[]; // this turn's events, newest last
@@ -68,7 +68,7 @@ export function newCampaign(seed = 1, player: Faction = "marines", galaxy: Galax
   return {
     turn: 1, seed, galaxy, player,
     credits: { marines: START_CREDITS, wooka: START_CREDITS },
-    systems, hero: { level: 1, xp: 0, woundedUntil: 0 },
+    systems, heroes: { marines: { level: 1, xp: 0, woundedUntil: 0 }, wooka: { level: 1, xp: 0, woundedUntil: 0 } },
     pending: null, winner: null, log: [],
   };
 }
@@ -215,15 +215,18 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
   const c = d.c, r = rng(c.seed * 1000 + c.turn);
   c.log = [];
   const startOrbit = Object.fromEntries(Object.values(c.systems).map((s) => [s.id, s.orbit]));
-  const pick = all.find((o) => o.faction === c.player)?.hero;
+  // One hero battle a turn, on the ground or in orbit. With two players picking, it's the first
+  // pick the sweep reaches, and the other side's AI fights it.
+  const picks = all.filter((o) => o.hero && heroReady(c, o.faction));
 
   // Fleets arrive together, then fight for each orbit. The hero may fly one of these fights.
   for (const t of d.transit) if (t.from.sector < 0) c.systems[t.to.system]!.fleets[t.faction] += t.count;
   for (const s of Object.values(c.systems)) {
     if (s.fleets.marines && s.fleets.wooka) {
       const def = startOrbit[s.id] ?? (r() < 0.5 ? "marines" : "wooka"), att = enemy(def);
-      if (pick?.system === s.id && pick.sector === ORBIT && !c.pending && heroReady(c)) {
-        c.pending = { kind: "space", spec: buildSpaceSpec(c, s.id, def, Math.floor(r() * 2 ** 31)), system: s.id, landings: [] };
+      const pick = c.pending ? undefined : picks.find((o) => o.hero!.system === s.id && o.hero!.sector === ORBIT);
+      if (pick) {
+        c.pending = { kind: "space", spec: buildSpaceSpec(c, s.id, def, Math.floor(r() * 2 ** 31), pick.faction), system: s.id, landings: [] };
         continue; // the orbit is settled when the result comes back
       }
       const [a, b] = diceBattle(s.fleets[att], s.fleets[def], r);
@@ -238,11 +241,11 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
     c.pending.landings = landings;
     return c;
   }
-  return landAndFight(c, landings, pick, r);
+  return landAndFight(c, landings, picks, r);
 }
 
 // The rest of a turn after the space battles: landings, ground battles, upkeep.
-function landAndFight(c: Campaign, landings: Transit[], pick: Where | undefined, r: () => number): Campaign {
+function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () => number): Campaign {
   // Troops land only under their own orbit; the rest turn back.
   for (const t of landings) {
     const same = t.from.system === t.to.system;
@@ -253,7 +256,7 @@ function landAndFight(c: Campaign, landings: Transit[], pick: Where | undefined,
     }
   }
 
-  // Ground battles: one may be the hero's, the rest roll dice.
+  // Ground battles: one may be a hero's, the rest roll dice.
   for (const s of Object.values(c.systems)) s.sectors.forEach((x, i) => {
     const att = enemy(x.owner);
     if (!x.armies[att]) return;
@@ -263,11 +266,13 @@ function landAndFight(c: Campaign, landings: Transit[], pick: Where | undefined,
       c.log.push(`${FACTION_NAMES[att]} takes ${where(c, at)} unopposed.`);
       return;
     }
-    if (pick && pick.system === s.id && pick.sector === i && !c.pending && heroReady(c)) {
-      c.pending = { kind: "ground", spec: buildSpec(c, at, Math.floor(r() * 2 ** 31)), at };
+    const pick = c.pending ? undefined : picks.find((o) => o.hero!.system === s.id && o.hero!.sector === i);
+    if (pick) {
+      c.pending = { kind: "ground", spec: buildSpec(c, at, Math.floor(r() * 2 ** 31), pick.faction), at };
       return;
     }
-    const [a, b] = diceBattle(x.armies[att], x.armies[x.owner], r, { att: s.orbit === att, def: s.orbit === x.owner });
+    // Orbit gives either side cover from above; a jungle gives the side that holds it cover in the trees.
+    const [a, b] = diceBattle(x.armies[att], x.armies[x.owner], r, { att: s.orbit === att, def: s.orbit === x.owner || x.kind === "jungle" });
     c.log.push(`Ground battle at ${where(c, at)}: ${FACTION_NAMES[a ? att : x.owner]} wins.`);
     x.armies[att] = a; x.armies[x.owner] = b;
     if (a) x.owner = att;
@@ -275,11 +280,11 @@ function landAndFight(c: Campaign, landings: Transit[], pick: Where | undefined,
   return c.pending ? c : upkeep(c);
 }
 
-export const heroReady = (c: Campaign) => c.hero.woundedUntil <= c.turn;
+export const heroReady = (c: Campaign, f: Faction = c.player) => c.heroes[f].woundedUntil <= c.turn;
 
 // --- The hero battle, through the contract ---
 
-export function buildSpec(c: Campaign, at: Where, seed: number): BattleSpec {
+export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction = c.player): BattleSpec {
   const s = c.systems[at.system]!, x = s.sectors[at.sector]!;
   const def = x.owner, att = enemy(def);
   const strikes = (f: Faction) => (s.orbit !== f ? 0 : holdsShield(s, enemy(f)) ? 1 : 3);
@@ -290,16 +295,30 @@ export function buildSpec(c: Campaign, at: Where, seed: number): BattleSpec {
     system: name(c, at.system),
     sector: x.kind,
     factions: { attacker: att, defender: def },
-    hero: att === c.player ? "attacker" : "defender",
-    heroLevel: c.hero.level,
+    hero: att === heroOf ? "attacker" : "defender",
+    heroLevel: c.heroes[heroOf].level,
     armies: { attacker: x.armies[att], defender: x.armies[def] },
     tickets: { attacker: x.armies[att] * TICKETS_PER_ARMY, defender: x.armies[def] * TICKETS_PER_ARMY },
-    vehicles: { attacker: Math.min(3, Math.floor(x.armies[att] / 2)), defender: Math.min(3, Math.floor(x.armies[def] / 2)) },
+    vehicles: { attacker: vehiclePool(s, att, x.armies[att]), defender: vehiclePool(s, def, x.armies[def]) },
     strikes: { attacker: strikes(att), defender: strikes(def) },
     reinforcements: { attacker: reinf(att), defender: reinf(def) },
     turrets: x.kind === "shield" || x.kind === "cannon" ? 2 : 1,
     seed,
   };
+}
+
+// The vehicles a side brings to a hero battle: one per two armies, up to three. Tanks and speeders
+// come with any army. Gunships come down from a fleet holding the orbit, and walkers out of the
+// factories of a capital the side holds on the world. The Wooka have no vehicles, so the battle
+// turns their share into more Wooka.
+export function vehiclePool(s: SystemState, f: Faction, armies: number): VehiclePool {
+  const kinds: VehicleKind[] = ["tank"];
+  if (s.orbit === f) kinds.push("gunship");
+  if (s.sectors.some((x) => x.kind === "capital" && x.owner === f)) kinds.push("walker");
+  kinds.push("speeder");
+  const pool: VehiclePool = {};
+  for (let i = 0; i < Math.min(3, Math.floor(armies / 2)); i++) { const k = kinds[i % kinds.length]!; pool[k] = (pool[k] ?? 0) + 1; }
+  return pool;
 }
 
 // The battle's survivors stay on the map, scaled by the tickets left; the loser's army there is gone.
@@ -314,21 +333,21 @@ export function applyBattleResult(c0: Campaign, res: BattleResult): Campaign {
   x.armies[spec.factions[lose]] = 0;
   x.owner = spec.factions[win];
   c.log.push(`Hero battle at ${where(c, p.at)}: ${FACTION_NAMES[spec.factions[win]]} wins with ${survivors} ${survivors === 1 ? "army" : "armies"} left.`);
-  heroBack(c, win === spec.hero, res.heroDown);
+  heroBack(c, spec.factions[spec.hero], win === spec.hero, res.heroDown);
   c.pending = null;
   return upkeep(c);
 }
 
 // Each side's fleet over the system becomes a line of cruisers; the defender held the orbit.
-export function buildSpaceSpec(c: Campaign, system: string, def: Faction, seed: number): SpaceBattleSpec {
+export function buildSpaceSpec(c: Campaign, system: string, def: Faction, seed: number, heroOf: Faction = c.player): SpaceBattleSpec {
   const s = c.systems[system]!, att = enemy(def);
   return {
     id: `${c.turn}-${system}-orbit`,
     turn: c.turn,
     system: name(c, system),
     factions: { attacker: att, defender: def },
-    hero: att === c.player ? "attacker" : "defender",
-    heroLevel: c.hero.level,
+    hero: att === heroOf ? "attacker" : "defender",
+    heroLevel: c.heroes[heroOf].level,
     fleets: { attacker: s.fleets[att], defender: s.fleets[def] },
     seed,
   };
@@ -345,22 +364,23 @@ export function applySpaceResult(c0: Campaign, res: SpaceBattleResult): Campaign
   s.fleets[spec.factions[lose]] = 0;
   s.orbit = spec.factions[win];
   c.log.push(`Hero space battle over ${name(c, p.system)}: ${FACTION_NAMES[spec.factions[win]]} holds the orbit with ${kept} ${kept === 1 ? "ship" : "ships"} left.`);
-  heroBack(c, win === spec.hero, res.heroDown);
+  heroBack(c, spec.factions[spec.hero], win === spec.hero, res.heroDown);
   c.pending = null;
-  return landAndFight(c, p.landings, undefined, rng((c.seed * 1000 + c.turn) ^ 0x2545f491));
+  return landAndFight(c, p.landings, [], rng((c.seed * 1000 + c.turn) ^ 0x2545f491));
 }
 
 // Shot down or carried off, the hero sits out three turns; otherwise they learn from it.
-function heroBack(c: Campaign, won: boolean, down: boolean) {
+function heroBack(c: Campaign, f: Faction, won: boolean, down: boolean) {
+  const hero = c.heroes[f], who = `${FACTION_NAMES[f]}'s hero`;
   if (down) {
-    c.hero.woundedUntil = c.turn + 3;
-    c.log.push(`The hero is wounded and out until turn ${c.hero.woundedUntil}.`);
+    hero.woundedUntil = c.turn + 3;
+    c.log.push(`${who} is wounded and out until turn ${hero.woundedUntil}.`);
     return;
   }
-  c.hero.xp += won ? 2 : 1;
-  const level = 1 + Math.floor(c.hero.xp / 3);
-  if (level > c.hero.level) c.log.push(`The hero reaches level ${level}.`);
-  c.hero.level = level;
+  hero.xp += won ? 2 : 1;
+  const level = 1 + Math.floor(hero.xp / 3);
+  if (level > hero.level) c.log.push(`${who} reaches level ${level}.`);
+  hero.level = level;
 }
 
 // End of turn: cannon fire, bombardment, supply, income, and whether the war is over.

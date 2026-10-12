@@ -61,8 +61,12 @@ export function todAt(local: string, isDay: boolean, sunrise?: string, sunset?: 
 }
 
 /** Open-Meteo's answer, made into a Sky. null if it isn't one. */
-export function parseWeather(j: any): Weather | null {
+type Field = "weather_code" | "temperature_2m" | "time" | "precipitation" | "wind_speed_10m" | "is_day" | "cloud_cover";
+/** Open-Meteo's answer: every field unknown until checked here. */
+export function parseWeather(raw: unknown): Weather | null {
+  const j = raw as { current?: { [k in Field]?: unknown } | null; daily?: { sunrise?: unknown; sunset?: unknown } | null } | null | undefined;
   const c = j?.current;
+  const first = (v: unknown) => (Array.isArray(v) && typeof v[0] === "string" ? v[0] : undefined);
   const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
   if (!c || !num(c.weather_code) || !num(c.temperature_2m) || typeof c.time !== "string") return null;
   const code = Math.round(c.weather_code);
@@ -71,7 +75,7 @@ export function parseWeather(j: any): Weather | null {
   const rain = PRECIP[code] ?? Math.min(1, precip / 2);
   const kmh = num(c.wind_speed_10m) ? c.wind_speed_10m : 0;
   const sky: Sky = {
-    tod: todAt(local, c.is_day === 1, j.daily?.sunrise?.[0], j.daily?.sunset?.[0]),
+    tod: todAt(local, c.is_day === 1, first(j?.daily?.sunrise), first(j?.daily?.sunset)),
     // Fog codes are thick fog; a downpour hazes things a little too.
     fog: code === 45 || code === 48 ? 1 : Math.round(rain * 0.25 * 100) / 100,
     rain,

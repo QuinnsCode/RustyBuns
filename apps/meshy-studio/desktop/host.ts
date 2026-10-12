@@ -32,7 +32,7 @@ import { Meshy, MeshyError } from "../engine/meshy.ts";
 import { IMAGE_EXT } from "../engine/labels.ts";
 import { findBlender, openInBlender } from "../engine/blender.ts";
 import { cleanFolder, INBOX, PROMPT_EXT, RAW, READY, SENT, Workspace, type Engine } from "../engine/workspace.ts";
-import { estimateConcept, type OpKind } from "../engine/ops.ts";
+import { estimateConcept, type ConceptParams, type OpKind, type OpParams } from "../engine/ops.ts";
 
 const OP_KINDS: OpKind[] = ["retexture", "refine", "remesh", "resize", "uv-unwrap", "convert", "rig", "motion", "animate"];
 
@@ -42,7 +42,11 @@ let keyCache: string | null | undefined;
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const bad = (msg: string, status = 400) => json({ error: msg }, status);
 const expand = (p: string) => resolve(p.replace(/^~(?=$|\/)/, homedir()));
-const body = async (req: Request) => (await req.json().catch(() => ({}))) as any;
+// A client body: the named fields, each unknown until checked. Bad JSON or a non-object body has none.
+const body = async <K extends string>(req: Request) => ((await req.json().catch(() => null)) ?? {}) as { [k in K]?: unknown };
+// Nested payloads (a card patch, op or concept params, presets) go to the Workspace method that checks them field by field.
+const checkedBy = <T,>(v: unknown, fallback: T): T => (v && typeof v === "object" ? v : fallback) as T;
+const strings = (v: unknown) => (Array.isArray(v) ? v.map(String) : undefined);
 
 /** Test hook. */
 export function _reset() { ws?.stop(); ws = null; keyCache = undefined; }
@@ -160,7 +164,7 @@ export default {
         });
       }
       if (path === "/api/key" && req.method === "POST") {
-        const key = String((await body(req)).key ?? "").trim();
+        const key = String((await body<"key">(req)).key ?? "").trim();
         if (!key) return bad("paste a key first");
         let balance: number;
         try { balance = (await new Meshy(key).balance()).balance; }
@@ -182,7 +186,7 @@ export default {
         catch (e) { return bad(e instanceof MeshyError ? e.friendly : String(e), 502); }
       }
       if (path === "/api/settings" && req.method === "POST") {
-        const b = await body(req);
+        const b = await body<"maxQueued" | "confirmSends" | "batchCap">(req);
         const next = await settings(ctx);
         if (b.maxQueued !== undefined) {
           const n = Math.round(Number(b.maxQueued));
@@ -210,11 +214,12 @@ export default {
         });
       }
       if (path === "/api/fs/pick" && req.method === "POST") {
-        const dir = await pickFolder((await body(req)).prompt || undefined);
+        const prompt = (await body<"prompt">(req)).prompt;
+        const dir = await pickFolder(typeof prompt === "string" && prompt ? prompt : undefined);
         return json({ supported: dir !== null, dir: dir || null });
       }
       if (path === "/api/workspace/open" && req.method === "POST") {
-        const raw = String((await body(req)).dir ?? "");
+        const raw = String((await body<"dir">(req)).dir ?? "");
         if (!raw) return bad("dir required");
         const dir = expand(raw);
         if (!existsSync(dir) || !statSync(dir).isDirectory()) return bad(`not a folder: ${dir}`, 404);
@@ -250,10 +255,10 @@ export default {
         return json(ws.summary());
       }
       if (path.startsWith("/api/jobs/") && req.method === "POST") {
-        const b = await body(req);
+        const b = await body<"keys" | "credits" | "draft" | "kind" | "params" | "then" | "key" | "op" | "patch" | "prompt" | "folder">(req);
         const act = path.slice("/api/jobs/".length);
         try {
-          const keys = Array.isArray(b.keys) ? b.keys.map(String) : undefined;
+          const keys = strings(b.keys);
           const confirmed = b.credits === undefined ? undefined : Number(b.credits);
           if (act === "send") {
             const stop = await guard(ctx, ws.estimate(keys, { draft: !!b.draft }).credits, confirmed);
@@ -266,7 +271,7 @@ export default {
           } else if (act === "op") {
             const kind = String(b.kind) as OpKind;
             if (!OP_KINDS.includes(kind)) return bad("unknown step");
-            const ops: { kind: OpKind; params: any }[] = [{ kind, params: b.params ?? {} }, ...(Array.isArray(b.then) ? b.then : [])];
+            const ops = [{ kind, params: b.params }, ...(Array.isArray(b.then) ? b.then : [])].map((o) => ({ kind: o?.kind as OpKind, params: checkedBy<OpParams[OpKind]>(o?.params, {}) }));
             for (const o of ops) if (!OP_KINDS.includes(o.kind)) return bad("unknown step");
             const total = ops.reduce((n, o) => n + ws!.estimateOp(keys ?? [], o.kind, o.params).credits, 0);
             const stop = await guard(ctx, total, confirmed);
@@ -283,8 +288,8 @@ export default {
           }
           else if (act === "cancel") await ws.cancel(String(b.key), b.op ? String(b.op) : undefined);
           else if (act === "drop-op") await ws.dropOp(String(b.key), String(b.op));
-          else if (act === "edit") await ws.edit(String(b.key), b.patch ?? {});
-          else if (act === "edit-many") return json({ ...ws.summary(), skipped: await ws.editMany(keys ?? [], b.patch ?? {}) });
+          else if (act === "edit") await ws.edit(String(b.key), checkedBy(b.patch, {}));
+          else if (act === "edit-many") return json({ ...ws.summary(), skipped: await ws.editMany(keys ?? [], checkedBy(b.patch, {})) });
           else if (act === "combine") await ws.combine(keys ?? []);
           else if (act === "prompt") await ws.setPrompt(String(b.key), String(b.prompt ?? ""));
           else if (act === "split") await ws.split(String(b.key));
@@ -300,24 +305,25 @@ export default {
         return json(ws.summary());
       }
       if (path === "/api/concepts" && req.method === "POST") {
-        const b = await body(req);
+        const b = await body<"kind" | "folder" | "params" | "credits" | "name" | "references">(req);
         const kind = b.kind === "image-to-image" ? "image-to-image" : "text-to-image";
+        const params = checkedBy<ConceptParams>(b.params, {} as ConceptParams);
         const folder = cleanFolder(String(b.folder ?? ""));
         if (folder === null) return bad("bad folder");
         try {
-          const stop = await guard(ctx, estimateConcept(kind, b.params?.ai_model), b.credits === undefined ? undefined : Number(b.credits));
+          const stop = await guard(ctx, estimateConcept(kind, params.ai_model), b.credits === undefined ? undefined : Number(b.credits));
           if (stop) return bad(stop, 402);
-          await ws.addConcept(kind, b.params ?? {}, { folder, name: String(b.name ?? ""), references: Array.isArray(b.references) ? b.references.map(String) : undefined });
+          await ws.addConcept(kind, params, { folder, name: String(b.name ?? ""), references: strings(b.references) });
         } catch (e) { return bad(e instanceof MeshyError ? e.friendly : (e as Error).message); }
         ws.tick();
         return json(ws.summary());
       }
       if (path === "/api/concepts/cancel" && req.method === "POST") {
-        try { await ws.cancelConcept(String((await body(req)).id)); } catch (e) { return bad((e as Error).message); }
+        try { await ws.cancelConcept(String((await body<"id">(req)).id)); } catch (e) { return bad((e as Error).message); }
         return json(ws.summary());
       }
       if (path === "/api/create/text" && req.method === "POST") {
-        const b = await body(req);
+        const b = await body<"folder" | "name" | "prompt">(req);
         const folder = cleanFolder(String(b.folder ?? ""));
         const name = String(b.name ?? "").trim();
         const prompt = String(b.prompt ?? "").trim();
@@ -332,11 +338,11 @@ export default {
         return json(ws.summary());
       }
       if (path === "/api/presets" && req.method === "POST") {
-        try { await ws.setPresets((await body(req)).presets); } catch (e) { return bad((e as Error).message); }
+        try { await ws.setPresets(checkedBy((await body<"presets">(req)).presets, [])); } catch (e) { return bad((e as Error).message); }
         return json(ws.summary());
       }
       if (path === "/api/sync" && req.method === "POST") {
-        const b = await body(req);
+        const b = await body<"off" | "engine" | "dir">(req);
         if (b.off) { await ws.setSync(null); await confirmSync(ctx, ws.dir, null); }
         else {
           const engine = String(b.engine ?? "folder") as Engine;
@@ -349,7 +355,7 @@ export default {
         return json(ws.summary());
       }
       if (path === "/api/blender" && req.method === "POST") {
-        const keys: string[] | undefined = (await body(req)).keys;
+        const keys = strings((await body<"keys">(req)).keys);
         const files = [...ws.jobs.values()].filter((j) => j.state === "done" && j.ready && (!keys || keys.includes(j.key)))
           .flatMap((j) => [j.ready!, ...(j.readyExtras ?? [])].map((f) => ws!.path(READY, f)));
         if (!files.length) return bad("no finished models to open");
@@ -357,7 +363,7 @@ export default {
         return json({ opened: files.length });
       }
       if (path === "/api/folders" && req.method === "POST") {
-        const f = cleanFolder(String((await body(req)).name ?? ""));
+        const f = cleanFolder(String((await body<"name">(req)).name ?? ""));
         if (!f) return bad("give the folder a name");
         mkdirSync(ws.path(INBOX, f), { recursive: true });
         return json(ws.summary());
@@ -374,7 +380,7 @@ export default {
         return json(ws.summary());
       }
       if (path === "/api/reveal" && req.method === "POST") {
-        const stage = String((await body(req)).stage ?? "");
+        const stage = String((await body<"stage">(req)).stage ?? "");
         const sub = { inbox: INBOX, sent: join(INBOX, SENT), raw: RAW, ready: READY, root: "" }[stage];
         if (sub === undefined) return bad("unknown stage");
         reveal(ws.path(sub));

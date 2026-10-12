@@ -92,7 +92,7 @@ import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
 import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness } from "./harness.ts";
 import { hitsFor } from "./watch.ts";
@@ -259,9 +259,12 @@ export const npmrcRegistry = (rcs: Npmrc[]): Registry => async (name) => {
   const { url, token } = registryUrl(rcs, name);
   const res = await fetch(url, { headers: { accept: "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
   if (!res.ok) return null;
-  const doc = (await res.json()) as { versions?: Record<string, { peerDependencies?: Record<string, string> } | null>; time?: Record<string, string>; "dist-tags"?: Record<string, string> };
+  // A registry from the owner's .npmrc can answer anything: keep only the dates and tags that are strings.
+  const doc = (await res.json().catch(() => null)) as { versions?: Record<string, { peerDependencies?: Record<string, string> } | null>; time?: Record<string, unknown>; "dist-tags"?: Record<string, unknown> } | null;
+  if (!doc) return null;
+  const strings = (o: Record<string, unknown> | undefined) => Object.fromEntries(Object.entries(Object(o ?? {})).filter((e): e is [string, string] => typeof e[1] === "string"));
   const peers = Object.fromEntries(Object.entries(doc.versions ?? {}).flatMap(([v, m]) => m?.peerDependencies ? [[v, m.peerDependencies]] : []));
-  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {}, tags: doc["dist-tags"] ?? {}, peers };
+  return { versions: Object.keys(doc.versions ?? {}), time: strings(doc.time), tags: strings(doc["dist-tags"]), peers };
 };
 
 export const npmRegistry: Registry = npmrcRegistry([]);
@@ -1450,8 +1453,8 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), can_preview: !!runnerFor(env), malicious: await hitsFor(env, owner, repo) });
   }
   if (!p[5] && req.method === "PUT") {
-    const b = (await req.json()) as Partial<Settings>;
-    const s = { ...(await settings(env, owner, repo)), ...b };
+    // Only what's sent changes; each field's write() checks it before it lands.
+    const s: Record<keyof Settings, unknown> = { ...(await settings(env, owner, repo)), ...(await readBody<keyof Settings>(req)) };
     const set: [column: string, value: unknown][] = [];
     for (const [k, f] of fields) {
       const w = f.write(s[k]);
@@ -1468,8 +1471,8 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
   }
   if (p[5] === "run" && req.method === "POST") {
     // {rank}: this run's own ranking, "bring these up, solve around them", run once.
-    const b = (await req.json().catch(() => ({}))) as { rank?: unknown } | null;
-    const rank = b?.rank === undefined ? undefined : rankOf(b.rank);
+    const b = await readBody<"rank">(req);
+    const rank = b.rank === undefined ? undefined : rankOf(b.rank);
     if (rank === null) return json({ error: RANK_ERROR }, 400);
     if (!(await claim(env, owner, repo))) return json({ error: "already checking" }, 409);
     const done = runDoctor(env, caller(self, url.origin), owner, repo, rank ? { rank } : {});

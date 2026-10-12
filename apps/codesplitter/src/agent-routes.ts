@@ -37,8 +37,15 @@
 // changed on main meanwhile keeps their version, and the run's `kept` says what the agent wanted there.
 // A batch that touches build or deploy files, or that the repo's required checks hold, waits for an accept.
 // AGENT_REVIEW_MS=0 writes main directly, as the agent goes.
+//
+// A run has a budget, from its path's policy (#1077, budget.ts): past it, failing the same way twice
+// or about to start a third conflict round, it stops, and leaves a caveman-terse note (DONE, NEXT,
+// BROKE, DONT). Then, as the policy says: `handoff` starts a fresh agent from the note and nothing
+// else, `downshift` does on the cheapest model, and `escalate` leaves it to a person. A fresh agent
+// works on the branch the stopped one left, whose batch waits, held, till it's done; after HANDOFFS
+// of them it's a person's turn. The run says how much it read (`spent`) and, under `handoff`, why it stopped.
 
-import { json, type Env } from "./env.ts";
+import { json, type Env, readBody } from "./env.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
@@ -46,6 +53,10 @@ import { localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "
 import { containerSandbox } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
+import { text, type Doc } from "./lines.ts";
+import { policyOf, type Over, type Policy } from "./policy.ts";
+import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
+import { cheapest } from "./conflict-agent.ts";
 
 export interface Run {
   id: number;
@@ -81,6 +92,12 @@ export interface Run {
   /** A fix task's other files of the branch, beside `path`, that it may edit; and those it did. */
   also?: string[];
   edited?: string[];
+  /** About how many tokens it read and wrote (budget.ts). */
+  spent?: number;
+  /** It stopped short of its budget (#1077): at how many tokens, why, its note, and who took over: run `next`, or a person. */
+  handoff?: { at: number; why: string; over: Over; note: string; next?: number };
+  /** It took over from run `from`, its task that run's note; `hops` handoffs into the task. */
+  from?: number; hops?: number;
 }
 
 export interface Note { text: string; at: number }
@@ -146,6 +163,12 @@ export async function hostedBudget(env: Env): Promise<Response | null> {
   return over ? json({ error: over }, 429) : null;
 }
 
+/** `path`'s policy, from main's `.gitattributes` over the defaults, read as its owner. */
+export async function policyFor(env: Env, owner: string, repo: string, path: string): Promise<Policy> {
+  const res = await toFile(env, owner, repo, ".gitattributes", owner, "file").catch(() => null);
+  return policyOf(path, res?.ok ? text(await res.json() as Doc) : "");
+}
+
 /** The harnesses whose CLI is on PATH (all of them when a test swaps the CLI out). */
 export const installedHarnesses = (env: Env) => env.AGENT_EXEC || env.AGENT_SANDBOX ? HARNESSES : HARNESSES.filter((h) => Bun.which(harnessCommand(h, "").bin));
 
@@ -194,12 +217,14 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (why) return json({ error: why }, 501);
   if (user !== owner) return json({ error: "only the repo's owner can start a coding agent" }, 403);
   if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
-  const { path, harness, task, model, lines } = (await req.json()) as { path?: string; harness?: Harness; task?: string; model?: string; lines?: string[] };
-  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l) => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
-  if (!path) return json({ error: "path required" }, 400);
-  if (!harness || !HARNESSES.includes(harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
+  const { path, harness: h, task, model, lines } = await readBody<"path" | "harness" | "task" | "model" | "lines">(req);
+  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l): l is string => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
+  if (typeof path !== "string" || !path) return json({ error: "path required" }, 400);
+  const harness = HARNESSES.find((x) => x === h);
+  if (!harness) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
   if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
-  if (!task?.trim()) return json({ error: "task required" }, 400);
+  if (typeof task !== "string" || !task.trim()) return json({ error: "task required" }, 400);
+  if (model !== undefined && model !== null && typeof model !== "string") return json({ error: "model: text" }, 400);
   const spent = await hostedBudget(env);
   if (spent) return spent;
 
@@ -214,16 +239,21 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     .bind(owner, repo, path, harness, task.trim().slice(0, 2000), model_, agent, Date.now(), lines?.length ? JSON.stringify({ lines: lines.slice(0, 5000) }) : null).first() as Row;
   await env.DB.prepare(`DELETE FROM agent_runs WHERE owner = ? AND repo = ? AND id NOT IN (SELECT id FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id DESC LIMIT ${KEEP})`)
     .bind(owner, repo, owner, repo).run();
-  if (env.AGENT_SANDBOX) await env.JOBS.send({ agent: row.id, origin });
-  else { live.set(row.id, new AbortController()); void execute(env, self, origin, row.id).finally(() => live.delete(row.id)); }
+  await launch(env, self, origin, row.id);
   return json(toRun(row, env), 202);
+}
+
+/** Starts run `id`: off the queue when hosted, in this process on the desktop. */
+async function launch(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number) {
+  if (env.AGENT_SANDBOX) await env.JOBS.send({ agent: id, origin });
+  else { live.set(id, new AbortController()); void execute(env, self, origin, id).finally(() => live.delete(id)); }
 }
 
 /** Stops the repo's running runs that match every filter given (none: all of them). */
 async function stopRuns(req: Request, env: Env, owner: string, repo: string, user: string, call: ReturnType<typeof caller>) {
-  const { ids, path, harness, lines } = (await req.json().catch(() => ({}))) as { ids?: number[]; path?: string; harness?: string; lines?: string[] };
-  if (ids !== undefined && !(Array.isArray(ids) && ids.every(Number.isInteger))) return json({ error: "ids: run ids" }, 400);
-  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l) => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
+  const { ids, path, harness, lines } = await readBody<"ids" | "path" | "harness" | "lines">(req);
+  if (ids !== undefined && !(Array.isArray(ids) && ids.every((i): i is number => Number.isInteger(i)))) return json({ error: "ids: run ids" }, 400);
+  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l): l is string => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
   const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND status = 'running'").bind(owner, repo).all();
   const want = lines && new Set(lines);
   const hit = (results as Row[]).filter((r) => {
@@ -248,7 +278,7 @@ async function stopRuns(req: Request, env: Env, owner: string, repo: string, use
 
 /** Leaves a note for running run `id`, which its next run's prompt carries. */
 async function tell(req: Request, env: Env, owner: string, repo: string, id: number) {
-  const { text } = (await req.json().catch(() => ({}))) as { text?: string };
+  const { text } = await readBody<"text">(req);
   if (typeof text !== "string" || !text.trim()) return json({ error: "text required" }, 400);
   const row = await getRow(env, id);
   if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);
@@ -378,6 +408,36 @@ async function dropBranch(env: Env, owner: string, repo: string, name: string, p
     .map((t) => env.DB.prepare(`DELETE FROM ${t}`).bind(owner, repo, name)));
 }
 
+/**
+ * Run `row` stopped short of its budget: who carries on from its note. A fresh agent (on the cheapest
+ * model, downshifted) when the policy says so, the task hasn't been handed off HANDOFFS times and the
+ * hosted budget has one; else a person.
+ */
+async function handOff(env: Env, self: (req: Request) => Promise<Response>, origin: string, row: Row, policy: Policy,
+  t: { at: number; why: string; note: string; hops: number; branch?: string; lines?: string[]; also?: string[] }): Promise<NonNullable<Run["handoff"]>> {
+  const base = { at: t.at, why: t.why, note: t.note };
+  const over: Over = t.hops >= HANDOFFS ? "escalate" : policy.over;
+  if (over === "escalate") return { ...base, over };
+  const pick = over === "downshift" ? cheapest(installedHarnesses(env)) : { harness: row.harness, model: row.model ?? undefined };
+  if (!pick || await hostedBudget(env)) return { ...base, over: "escalate" };
+  const agent = `agent-${pick.harness}`;
+  if (pick.harness !== row.harness) await caller(self, origin)(row.owner, `/api/repos/${row.owner}/${row.repo}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
+  const result = { ...(t.lines && { lines: t.lines }), ...(t.also && { also: t.also }), from: row.id, hops: t.hops + 1 };
+  const next = await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, model, agent, status, started, branch, result) VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?) RETURNING id")
+    .bind(row.owner, row.repo, row.path, pick.harness, handoffTask(row.path, t.why, t.note).slice(0, 4000), pick.model ?? null, agent, Date.now(), t.branch ?? null, JSON.stringify(result)).first();
+  if (!next) return { ...base, over: "escalate" };
+  await launch(env, self, origin, next.id as number);
+  return { ...base, over, next: next.id as number };
+}
+
+/** The fresh agents run `id` handed off to have finished its batch: its clock goes again, as if it had just ended. */
+async function resume(env: Env, origin: string, id: number, wait: number) {
+  const run = resultOf(await getRow(env, id));
+  if (!run.pending || run.pending.until !== null || run.handoff?.next === undefined) return;
+  const pending = { branch: run.pending.branch, until: Date.now() + wait };
+  if (await swap(env, id, run, { ...run, pending })) await landLater(env, id, origin, wait);
+}
+
 /** Runs the agent of run `id`, keeping its log and result in D1. Only once: a second try (the queue's retry after a cut-off consumer) fails it instead. */
 async function execute(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number) {
   const claimed = await env.DB.prepare("UPDATE agent_runs SET picked = 1 WHERE id = ? AND picked = 0").bind(id).run();
@@ -409,8 +469,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   const cutoff = env.AGENT_SANDBOX ? setTimeout(() => void env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'")
     .bind(`out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}`, id).run().catch(() => {}).finally(() => stopper.abort()), Math.max(0, row.started + HOSTED_RUN_MS - Date.now())) : undefined;
   const call = caller(self, origin);
-  const { lines, also } = row.result ? JSON.parse(row.result) as Partial<Run> : {};
-  const extra: Partial<Run> = { ...(lines && { lines }), ...(also && { also }) };
+  const { lines, also, from, hops } = row.result ? JSON.parse(row.result) as Partial<Run> : {};
+  const extra: Partial<Run> = { ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }) };
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
     // A Stop between checks still keeps what the agent left from landing.
@@ -435,8 +495,10 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       const added = await call(owner, `/api/repos/${owner}/${repo}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
       if (!added.ok) throw new Error(`adding ${agent}: ${await added.text()}`);
     }
+    const policy = await policyFor(env, owner, repo, path);
     const r = await runAgent(call, {
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal, branch, also,
+      budget: { tokens: policy.budget, over: policy.over },
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map((n) => n.text); given = all.length; return fresh; },
       log: (s) => {
         log.push(s);
@@ -445,11 +507,21 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       },
     });
     await logged;
-    const pending = own && r.applied ? { branch: own, until: Date.now() + wait } : undefined;
-    const done = await finish(env, id, "done", { ...extra, applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), ...(r.edited && { edited: r.edited }), ...(pending ? { pending } : {}) });
+    // Cut short: a note, and who carries on from it. A fresh agent works on the branch with this one's edits.
+    const handoff = r.tripped && await handOff(env, self, origin, row, policy, {
+      ...r.tripped, hops: hops ?? 0, branch: r.applied ? branch : row.branch ?? undefined, lines, also,
+      note: noteFor({ path, task: row.task, why: r.tripped.why, applied: r.applied, edited: r.edited, conflicts: r.conflicts, failures: r.failures, output: r.output }),
+    });
+    // Its batch waits for whoever took over: held till the fresh agent is done, or for a person.
+    const pending = !own || !r.applied ? undefined : !handoff ? { branch: own, until: Date.now() + wait }
+      : { branch: own, until: null, why: handoff.next ? `handed off to run ${handoff.next}` : `stopped at ~${short(handoff.at)} tokens (${handoff.why}): a person's turn` };
+    const done = await finish(env, id, "done", { ...extra, applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
     // Stopped just as it ended: nothing waits.
-    if (pending && done.meta?.changes) await landLater(env, id, origin, wait);
-    else if (own) await dropBranch(env, owner, repo, own, path);
+    if (pending?.until && done.meta?.changes) await landLater(env, id, origin, wait);
+    else if (own && !pending) await dropBranch(env, owner, repo, own, path);
+    // A fresh agent that finished the batch it took over sets that batch's clock going again.
+    const held = /^agent-run-(\d+)$/.exec(row.branch ?? "")?.[1];
+    if (held && from && !handoff && done.meta?.changes) await resume(env, origin, Number(held), wait);
   } catch (e) {
     if (signal.aborted) {
       const stopped = await getRow(env, id);

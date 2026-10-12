@@ -3,7 +3,7 @@ import type { BattleSpec } from "../src/battle/contract.ts";
 import { GALAXIES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiOrders } from "../src/war/ai.ts";
 import {
-  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, diceBattle, income, keyShare, newCampaign, planOrders, resolveTurn, rng, supplied,
+  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, diceBattle, income, keyShare, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
   type Campaign, type Orders,
 } from "../src/war/rules.ts";
 
@@ -33,6 +33,9 @@ test("the full galaxy: 30 systems in 7 regions, joined up, the same for both sid
     expect(g.start[s.id]).toBeDefined();
   }
   expect(g.systems.filter((s) => s.sectors.length > 1).length).toBeGreaterThanOrEqual(8);
+  const has = (k: string) => g.systems.filter((s) => s.sectors.includes(k as never)).map((s) => s.id).sort();
+  expect(has("canyon")).toEqual(["tarn", "umber"]);
+  expect(has("jungle")).toEqual(["rook", "xan"]);
   // Turn the map half a turn around its centre and every world, lane and army lands on its twin.
   const at = new Map(g.systems.map((s) => [`${s.x},${s.y}`, s]));
   const twin = (id: string) => {
@@ -162,6 +165,7 @@ test("the hero battle pauses the turn on a BattleSpec and the result writes back
   // Orbit means strikes and drop pods; the defender's shield cuts the strikes to one.
   expect(spec.strikes).toEqual({ attacker: 1, defender: 0 });
   expect(spec.reinforcements).toEqual({ attacker: 24, defender: 0 });
+  expect(spec.vehicles).toEqual({ attacker: { tank: 1 }, defender: {} });
   expect(resolveTurn(paused, none(paused))).toBe(paused); // nothing moves until it's fought
 
   expect(() => applyBattleResult(paused, { id: "nope", winner: "attacker", tickets: { attacker: 1, defender: 0 }, heroDown: false })).toThrow();
@@ -169,13 +173,13 @@ test("the hero battle pauses the turn on a BattleSpec and the result writes back
   expect(after.turn).toBe(2);
   expect(after.pending).toBeNull();
   expect(after.systems.kessa!.sectors[0]).toMatchObject({ owner: "marines", armies: { marines: 1, wooka: 0 } });
-  expect(after.hero.xp).toBe(2);
+  expect(after.heroes.marines.xp).toBe(2);
   // With the shield gone, the orbit bombards the rest of Kessa.
   expect(after.systems.kessa!.sectors[1]!.armies.wooka).toBe(0);
 
   const lost = applyBattleResult(paused, { id: spec.id, winner: "defender", tickets: { attacker: 0, defender: 10 }, heroDown: true });
   expect(lost.systems.kessa!.sectors[0]!.owner).toBe("wooka");
-  expect(lost.hero.woundedUntil).toBe(4);
+  expect(lost.heroes.marines.woundedUntil).toBe(4);
   const wounded = resolveTurn(lost, [{ faction: "marines", hero: { system: "kessa", sector: 1 }, orders: [] }]);
   expect(wounded.pending).toBeNull();
 });
@@ -207,14 +211,14 @@ test("the hero can fly the space battle instead: the landings wait on who wins t
   expect(won.systems.kessa!).toMatchObject({ orbit: "marines", fleets: { marines: 2, wooka: 0 } });
   expect(won.log.some((l) => l.startsWith("Hero space battle over Kessa: Thunder Marines holds the orbit with 2 ships left."))).toBe(true);
   expect(won.log.some((l) => l.startsWith("Ground battle at Kessa shield generator"))).toBe(true);
-  expect(won.hero.xp).toBe(2);
+  expect(won.heroes.marines.xp).toBe(2);
 
   // Lose it: the troops turn back, and the hero, shot down, sits out three turns.
   const lost = applySpaceResult(paused, { id: spec.id, winner: "defender", fleets: { attacker: 0, defender: 0 }, heroDown: true });
   expect(lost.systems.kessa!).toMatchObject({ orbit: "wooka", fleets: { marines: 0, wooka: 1 } });
   expect(lost.log).toContain("Thunder Marines troops for Kessa shield generator turned back: no orbit there.");
   expect(lost.systems.corva!.sectors[0]!.armies.marines).toBe(3);
-  expect(lost.hero.woundedUntil).toBe(4);
+  expect(lost.heroes.marines.woundedUntil).toBe(4);
 });
 
 test("an anti-ship cannon knocks a ship a turn out of a blockade, and can break it", () => {
@@ -294,3 +298,12 @@ test("a full campaign runs longer than the short war, still ends, and the AI spe
   const median = (galaxy: GalaxyId) => Array.from({ length: 10 }, (_, i) => war(galaxy, i + 1)).sort((a, b) => a - b)[5]!;
   expect(median("full")).toBeGreaterThan(median("short"));
 }, 30_000);
+
+test("the vehicle pool comes from the map: gunships from the orbit, walkers from the capital", () => {
+  const k = kessa(newCampaign(1));
+  k.orbit = "marines";
+  for (const x of k.sectors) x.owner = x.kind === "capital" ? "marines" : "wooka";
+  expect(vehiclePool(k, "marines", 6)).toEqual({ tank: 1, gunship: 1, walker: 1 });
+  expect(vehiclePool(k, "wooka", 6)).toEqual({ tank: 2, speeder: 1 });
+  expect(vehiclePool(k, "marines", 1)).toEqual({});
+});

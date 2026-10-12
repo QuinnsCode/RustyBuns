@@ -222,6 +222,33 @@ describe("mirrors: branches and this copy's own git", () => {
     expect(await get(call, "/api/repos/ana/ci/mirror")).toMatchObject({ state: "ok", pullOnly: true });
   });
 
+  test("a file too big to dig comes over as its blob, and waits when main changed it too", async () => {
+    const call = await mirrored("biglock");
+    const big = (first: string, last: string) => [first, ...Array.from({ length: 6000 }, (_, i) => `pkg-${i}@1`), last].join("\n") + "\n";
+    await upstreamCommit({ "big.lock": big("head", "tail") }, "a lockfile");
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    // Upstream's branch changes the lockfile, as a PR's dependency bump does: it comes over whole, not skipped.
+    const work = mkdtempSync(join(root, "work-"));
+    await sh(`git clone -q ${up} . && git config user.name Bo && git config user.email bo@example.com && git checkout -qb bump`, work);
+    writeFileSync(join(work, "big.lock"), big("head bumped", "tail"));
+    await sh(`git commit -qam bump && git push -q origin bump`, work);
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches", { ref: "bump" })).json()).toMatchObject({ files: ["big.lock"], skipped: [] });
+    expect((await get(call, "/api/repos/ana/up/branches/bump")).files).toEqual([expect.objectContaining({ path: "big.lock", binary: true })]);
+
+    // Main changes it too: merging the blob would drop main's change, so it waits.
+    await upstreamCommit({ "big.lock": big("head", "tail moved") }, "main's lockfile");
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    const held = await post(call, "/api/repos/ana/up/branches/bump/merge");
+    expect(held.status).toBe(409);
+    expect(await held.json()).toMatchObject({ files: ["big.lock"] });
+
+    // Main brought into the branch upstream and pulled: it merges with both changes.
+    await sh(`git pull -q --no-rebase --no-edit origin main && git push -q origin bump`, work);
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/bump/pull")).json()).toMatchObject({ files: ["big.lock"] });
+    expect(await (await post(call, "/api/repos/ana/up/branches/bump/merge")).json()).toMatchObject({ status: "merged" });
+    expect(await sh(`git --git-dir ${call.artifacts.path("ana--up")} show main:big.lock`)).toBe(big("head bumped", "tail moved").trimEnd());
+  });
+
   test("a push to this copy's git reaches the files open here, so the next commit here keeps it (#773)", async () => {
     const call = await mirrored("pushed");
     expect(await sync(call, { primary: "here" })).toMatchObject({ state: "ok" });

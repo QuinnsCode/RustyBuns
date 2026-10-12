@@ -65,13 +65,13 @@
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { toFile } from "./archive.ts";
+import { MAX_BYTES, MAX_LINES, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
-import { branchNameError, json, NAME, type Env } from "./env.ts";
+import { branchNameError, json, NAME, type Env, readBody } from "./env.ts";
 import type { Doc } from "./lines.ts";
 import { indexFile, unindexFile } from "./search.ts";
 import { byVersion, tagNameError } from "./tags.ts";
@@ -657,15 +657,16 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
 export async function mirrorRepoRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (req.method === "POST") {
     if (user !== owner) return json({ error: "owner only" }, 403);
-    const b = (await req.json().catch(() => ({}))) as { resolve?: string; pushCrew?: unknown; primary?: unknown; pullOnly?: unknown };
-    if (b.resolve !== undefined && !["mine", "upstream", "rebase"].includes(b.resolve)) return json({ error: "resolve: mine, upstream or rebase" }, 400);
+    const b = await readBody<"resolve" | "pushCrew" | "primary" | "pullOnly">(req);
+    const resolve = (["mine", "upstream", "rebase"] as const).find((r) => r === b.resolve);
+    if (b.resolve !== undefined && !resolve) return json({ error: "resolve: mine, upstream or rebase" }, 400);
     if (b.pushCrew !== undefined && typeof b.pushCrew !== "boolean") return json({ error: "pushCrew: true or false" }, 400);
     if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
     if (b.primary !== undefined && !PRIMARIES.includes(b.primary as Primary)) return json({ error: "primary: here or upstream" }, 400);
     if (b.primary !== undefined) await env.DB.prepare("UPDATE repos SET mirror_primary = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.primary === "here" ? "here" : null, owner, repo).run();
     if (b.pullOnly !== undefined) await env.DB.prepare("UPDATE repos SET mirror_pull_only = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pullOnly ? 1 : null, owner, repo).run();
     if (b.pushCrew !== undefined) await env.DB.prepare("UPDATE repos SET mirror_push_crew = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pushCrew ? 1 : null, owner, repo).run();
-    await syncMirror(env, owner, repo, { resolve: b.resolve as Resolve | undefined });
+    await syncMirror(env, owner, repo, { resolve });
   }
   const s = await mirrorStatus(env, owner, repo);
   return s ? json(s) : json({ error: "not a mirror" }, 404);
@@ -708,6 +709,8 @@ export async function blobBytes(env: Env, owner: string, repo: string, blob: str
   return code ? null : new Uint8Array(bytes);
 }
 const isText = (s: string) => !s.includes("\0");
+/** Whether a text file fits as lines (archive.ts readText's limits). */
+const fitsLines = (s: string) => new TextEncoder().encode(s).length <= MAX_BYTES && s.split("\n").length <= MAX_LINES;
 type Setup = { r: Row; dir: string; main: string; net: Record<string, string> };
 type BranchRow = { name: string; by: string; status: string; upstream_ref: string | null };
 /** A failure with the status it goes back as. */
@@ -787,7 +790,7 @@ const heads = (lsRemote: string) => lsRemote.trim().split("\n").filter(Boolean).
  * (sync.ts merge3; where they touch the same lines, upstream wins). New files
  * are new on the branch. A file the branch hasn't touched that's already as
  * main has it stays main's. A file upstream deleted is deleted on the branch
- * (one only the branch had just goes). A binary one comes over as its git blob
+ * (one only the branch had just goes). A binary one, or one too big to dig, comes over as its git blob
  * (#446), pinned so a gc keeps it until the branch merges or goes up.
  */
 async function take(env: Env, owner: string, repo: string, s: Setup, b: string, from: string, to: string) {
@@ -808,7 +811,8 @@ async function take(env: Env, owner: string, repo: string, s: Setup, b: string, 
     }
     const text = await show(s.dir, to, path);
     if (text === null) { skipped.push(path); continue; }
-    if (!isText(text)) {
+    // Too big to dig (a lockfile, say) is carried as its blob too, not skipped: a skip dropped it from the merge.
+    if (!isText(text) || !fitsLines(text)) {
       const [mode, , blob] = (await must(["ls-tree", to, "--", path], s.dir)).split(/\s+/) as [string, string, string];
       if (!onBranch.has(path) && blob === await blobAt(s.dir, `refs/heads/${s.main}`, path)) continue;
       await must(["update-ref", pinned(blob), blob], s.dir);
@@ -840,6 +844,19 @@ async function take(env: Env, owner: string, repo: string, s: Setup, b: string, 
     files.push(path);
   }
   return { files, deleted, skipped };
+}
+
+/**
+ * Whether main's git changed `path` since branch `name`'s upstream branch left it, to something
+ * other than the branch's `blob`: merging the blob in whole would drop main's change.
+ */
+export async function blobMovedOnMain(env: Env, owner: string, repo: string, name: string, path: string, blob: string) {
+  const s = await branchSetup(env, owner, repo), br = await branchRow(env, owner, repo, name);
+  if ("error" in s || !br?.upstream_ref) return false;
+  const tip = await taken(s, br.upstream_ref);
+  if (!tip) return false;
+  const main = await blobAt(s.dir, `refs/heads/${s.main}`, path);
+  return main !== blob && main !== await blobAt(s.dir, await forkPoint(s, tip), path);
 }
 
 /** Branch `name` takes upstream's `ref` up to `theirs`: what it got since the branch here last took it in or pushed. */
@@ -1029,7 +1046,7 @@ export async function mirrorBranchRoute(req: Request, env: Env, p: string[], own
   if (user !== owner) return json({ error: "owner only" }, 403);
   let run: () => Promise<Response | undefined>;
   if (!p[6]) {
-    const b = (await req.json().catch(() => ({}))) as { ref?: unknown; name?: unknown };
+    const b = await readBody<"ref" | "name">(req);
     if (typeof b.ref !== "string" || (b.name !== undefined && typeof b.name !== "string")) return json({ error: "give the upstream branch as ref" }, 400);
     run = () => openUpstreamBranch(env, owner, repo, b.ref as string, user, b.name as string | undefined);
   } else if (p[7] === "push" && !p[8]) run = () => pushBranch(env, owner, repo, p[6]!);
@@ -1148,9 +1165,10 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
   if (!user) return json({ error: "sign in first" }, 401);
   const lg = localGit(env);
   if (!lg) return json({ error: "mirrors need git on your machine: dig it up in the desktop app" }, 501);
-  const b = (await req.json().catch(() => ({}))) as { url?: string; name?: string; visibility?: string; pullOnly?: unknown };
-  const src = remoteOf(b.url ?? "");
+  const b = await readBody<"url" | "name" | "visibility" | "pullOnly">(req);
+  const src = typeof b.url === "string" ? remoteOf(b.url) : null;
   if (!src) return json({ error: "give a git remote: a GitHub owner/name, an https or ssh URL, or git@host:path" }, 400);
+  if (b.name !== undefined && typeof b.name !== "string") return json({ error: "bad repo name" }, 400);
   const name = b.name || src.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
   const visibility = b.visibility ?? "public";

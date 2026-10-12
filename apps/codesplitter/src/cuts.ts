@@ -22,7 +22,7 @@
 
 import { materialize, toFile } from "./archive.ts";
 import { cardFont, renderCard, type CardLine } from "./card.ts";
-import { json, type Env } from "./env.ts";
+import { json, type Body, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import type { Doc, Line } from "./lines.ts";
 
@@ -312,11 +312,11 @@ const doc = async (env: Env, owner: string, repo: string, path: string, branch?:
   (await (await toFile(env, owner, repo, path, "cut", "file", {}, "", branch)).json()) as Doc;
 const toDisk = (lines: { text: string }[]) => lines.length ? lines.map((l) => l.text).join("\n") + "\n" : "";
 
-export async function createCut(env: Env, owner: string, repo: string, user: string | null, write: boolean, body: any) {
+export async function createCut(env: Env, owner: string, repo: string, user: string | null, write: boolean, body: Body<"pieces" | "path" | "from" | "to" | "note">) {
   if (!user) return json({ error: "sign in first" }, 401);
   // A cut is a branch, and its fix merges into the repo: the crew's.
   if (!write) return json({ error: "only the crew can cut lines: a cut is a branch of the repo" }, 403);
-  const pieces = (Array.isArray(body?.pieces) ? body.pieces : [body]) as { path?: string; from?: number; to?: number }[];
+  const pieces = (Array.isArray(body?.pieces) ? body.pieces : [body]) as (Body<"path" | "from" | "to"> | null)[];
   if (!pieces.length || pieces.length > MAX_PIECES) return json({ error: `cut 1 to ${MAX_PIECES} ranges` }, 400);
   const byPath = new Map<string, [number, number][]>();
   for (const p of pieces) {

@@ -56,8 +56,9 @@ export default class World {
     let b = this.buckets.get(ws);
     if (!b) this.buckets.set(ws, (b = new TokenBucket(MSG_RATE, MSG_BURST, now)));
     if (!b.take(now, 1 + Math.floor(raw.length / BYTES_PER_TOKEN))) { try { ws.close(CLOSE_FLOOD, "too many messages"); } catch {} return; }
-    let msg: { t: string; op?: Op; project?: unknown };
-    try { msg = JSON.parse(raw); } catch { return; }
+    // op stays Op: apply() checks every field and returns the project unchanged on a bad one.
+    let msg: { t?: unknown; op?: Op; project?: unknown };
+    try { msg = JSON.parse(raw) ?? {}; } catch { return; }
     if (msg.t === "init") {
       // first client in an empty world seeds it; later ones get the snapshot instead
       if (this.project) { ws.send(JSON.stringify({ t: "snapshot", project: this.project })); return; }

@@ -9,7 +9,7 @@
 // A private repo, and lines in one, show only in its crew's list.
 
 import { materialize, toFile } from "./archive.ts";
-import { json, type Env } from "./env.ts";
+import { json, type Env, readBody, type Body } from "./env.ts";
 
 export type Follow = { id: number; created_at: number } & (
   | { kind: "user" | "agent"; name: string }
@@ -46,8 +46,8 @@ export async function followers(db: Env["DB"], handle: string): Promise<number> 
 type Access = (owner: string, repo: string) => Promise<{ read: boolean; write: boolean }>;
 
 /** What to follow, from a POST body: its kind, target and the columns to keep. */
-async function resolve(env: Env, user: string, body: any, access: Access): Promise<Omit<Row, "id" | "follower" | "created_at"> | { error: string; status: number }> {
-  const s = (k: string) => (typeof body?.[k] === "string" ? body[k].trim() : "");
+async function resolve(env: Env, user: string, body: Body<"name" | "kind" | "owner" | "repo" | "path" | "from" | "to">, access: Access): Promise<Omit<Row, "id" | "follower" | "created_at"> | { error: string; status: number }> {
+  const s = (k: keyof typeof body) => { const v = body[k]; return typeof v === "string" ? v.trim() : ""; };
   const none = { owner: null, repo: null, path: null, ids: null, from_line: null, to_line: null };
   if (s("name")) {
     const name = s("name").replace(/^@/, "");
@@ -82,7 +82,7 @@ export async function followRoutes(req: Request, env: Env, p: string[], user: st
     const r = await env.DB.prepare("DELETE FROM follows WHERE id = ? AND follower = ?").bind(Number(p[2]), user).run();
     return r.meta?.changes ? json({ ok: true }) : json({ error: "not a follow of yours" }, 404);
   }
-  const t = await resolve(env, user, await req.json().catch(() => null), access);
+  const t = await resolve(env, user, await readBody(req), access);
   if ("error" in t) return json({ error: t.error }, t.status);
   const had = await env.DB.prepare("SELECT * FROM follows WHERE follower = ? AND kind = ? AND target = ?").bind(user, t.kind, t.target).first();
   if (had) return json(toFollow(had as Row));

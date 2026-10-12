@@ -31,6 +31,11 @@ test("nothing works before a library is open", async () => {
   expect((await call("/files/ring.ply")).status).toBe(404);
 });
 
+test("open a library: a bad body is a 400, not a crash or \"[object Object]\"", async () => {
+  for (const body of ["null", "42", "not json", JSON.stringify({ dir: { x: 1 } }), JSON.stringify({ dir: "" })])
+    expect((await call("/api/library/open", { method: "POST", body })).status).toBe(400);
+});
+
 test("open a library, list only scene files, remember it", async () => {
   const r = await call("/api/library/open", { method: "POST", body: JSON.stringify({ dir: lib }) });
   expect(r.status).toBe(200);

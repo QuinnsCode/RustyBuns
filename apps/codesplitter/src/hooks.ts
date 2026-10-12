@@ -37,7 +37,7 @@
 //   POST   /api/repos/:o/:r/hooks/:id/deliveries/:d/redeliver
 
 import { audit } from "./audit.ts";
-import { json, type Env } from "./env.ts";
+import { json, type Env, readBody } from "./env.ts";
 
 export const EVENTS = ["commit", "branch.opened", "branch.merged", "deploy.finished", "check_run"] as const;
 export type Event = (typeof EVENTS)[number];
@@ -214,7 +214,7 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
     return json({ events: EVENTS, hooks: (results as any[]).map((h) => ({ ...h, events: h.events.split(","), github_compat: !!h.github_compat, last: h.last ? JSON.parse(h.last) : null })) });
   }
   if (!id && req.method === "POST") {
-    const b = (await req.json().catch(() => ({}))) as { url?: string; events?: string[]; secret?: string; github_compat?: boolean };
+    const b = await readBody<"url" | "events" | "secret" | "github_compat">(req);
     const url = checkUrl(b.url);
     if (!url) return json({ error: "url: an http(s) URL out on the internet (not a private or loopback address), without a password in it" }, 400);
     const events = b.events ?? [...EVENTS];

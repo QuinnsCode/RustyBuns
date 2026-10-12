@@ -15,7 +15,7 @@
 import { evict, openToken } from "./github.ts";
 import { fileStub, toFile } from "./archive.ts";
 import { listFollows } from "./follows.ts";
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 
 const all = async (env: Env, sql: string, ...args: unknown[]) => (await env.DB.prepare(sql).bind(...args).all()).results;
 
@@ -263,10 +263,13 @@ export async function scrubRoutes(req: Request, env: Env, p: string[], admin: bo
   if (!admin) return json({ error: "admins only" }, 403);
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   if (p[3]) {
-    const { after = null } = (await req.json().catch(() => ({}))) as { after?: BackfillCursor | null };
-    return json(await backfillAuthors(env, after));
+    // The cursor is a `next` this route handed out: strings all through, or none.
+    const { after } = await readBody<"after">(req);
+    const cursor = after == null ? null : Object(after) as Record<keyof BackfillCursor, unknown>;
+    if (cursor && !(typeof cursor.owner === "string" && typeof cursor.repo === "string" && typeof cursor.path === "string" && (cursor.branch === undefined || typeof cursor.branch === "string"))) return json({ error: "after: the `next` the last page gave" }, 400);
+    return json(await backfillAuthors(env, cursor as BackfillCursor | null));
   }
-  const { handle = "" } = (await req.json().catch(() => ({}))) as { handle?: string };
+  const b = await readBody<"handle">(req), handle = typeof b.handle === "string" ? b.handle : "";
   const grant = await env.DB.prepare("SELECT email FROM handle_grants WHERE handle = ?").bind(handle).first();
   if (handle === GHOST || grant?.email !== `retired:${handle}`) return json({ error: `@${handle} isn't a deleted account's handle` }, 404);
   return json(await scrubHandle(env, handle));
