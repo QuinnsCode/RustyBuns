@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { LEVELS, PLAY_RADIUS, placeLevel } from "../src/levels/levels.ts";
 import { groundAt, parsePlace, placeName, worldPx, type TileSource } from "../src/levels/place.ts";
 import { folderOf, heightOf, mapRepo, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
-import { AMMO_CRATE, Game, HEALTH_CRATE, HEAVY_HP, MAX_HP, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, type Input, type Objective } from "../src/sim/game.ts";
+import { AMMO_CRATE, fileHp, Game, HEALTH_CRATE, MAX_HEAT, HEAVY_HP, MAX_HP, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, type Input, type Objective } from "../src/sim/game.ts";
 import { briefing, missionFor, OVERRUN, type Mission } from "../src/sim/missions.ts";
 import { contourStep, slope, stampTerrain, wet, withPads, type Terrain } from "../src/sim/terrain.ts";
 import { ORDER, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
@@ -314,6 +314,100 @@ describe("toy-soldier combat", () => {
       expect(yard.every((s) => !s.alive)).toBe(true);
       expect(g.cleared[0]).toBe(true);
       expect(g.soldiers.find((s) => s.compound === 1)!.alive).toBe(true);
+    });
+  });
+
+  describe("the feel of the guns", () => {
+    test("git add -A is a shotgun: a fistful of pellets, deadly close, thin far off", () => {
+      const near = target();
+      near.you.weapon = "add";
+      near.g.step(0.05, { ...idle, fire: true, aim: { x: 0, y: 1.2, z: -10 } });
+      expect(near.g.shots.length).toBe(WEAPONS.add.pellets);
+      run(near.g, 0.3);
+      const close = MAX_HP - near.guard.hp;
+      const far = target();
+      Object.assign(far.guard, { z: -40 });
+      far.you.weapon = "add";
+      run(far.g, 0.5, { fire: true, aim: { x: 0, y: 1.2, z: -40 } });
+      expect(close).toBeGreaterThan(40);
+      expect(far.guard.hp).toBe(MAX_HP);
+    });
+
+    test("git fetch --all climbs off target the longer you hold it, and cools off", () => {
+      const { g, you } = target();
+      you.weapon = "fetch";
+      g.step(0.05, { ...idle, fire: true, aim: { x: 0, y: 1.2, z: -10 } });
+      const first = you.heat;
+      run(g, 2, { fire: true, aim: { x: 0, y: 1.2, z: -10 } });
+      expect(you.heat).toBeGreaterThan(first * 3);
+      expect(you.heat).toBeLessThanOrEqual(MAX_HEAT);
+      run(g, 1);
+      expect(you.heat).toBe(0);
+    });
+
+    test("git clean -fdx sets a guard alight, and a dive-roll puts you out", () => {
+      const { g, you, guard } = target();
+      Object.assign(guard, { z: -5 });
+      you.weapon = "clean";
+      run(g, 0.6, { fire: true, aim: { x: 0, y: 1.2, z: -5 } });
+      expect(guard.burn).toBeGreaterThan(0);
+      const lit = guard.hp;
+      run(g, 1);
+      expect(guard.hp).toBeLessThan(lit);
+
+      you.burn = 3, you.burnBy = 1;
+      g.step(1 / 60, { ...idle, roll: true });
+      run(g, 0.1);
+      expect(you.burn).toBe(0);
+    });
+
+    test("the clean reaches about ten metres and no farther", () => {
+      const { g, you, guard } = target();
+      Object.assign(guard, { z: -16 });
+      you.weapon = "clean";
+      run(g, 1, { fire: true, aim: { x: 0, y: 1.2, z: -16 } });
+      expect(guard.hp).toBe(MAX_HP);
+    });
+  });
+
+  describe("files come down", () => {
+    test("a blast deletes a file's lines and it sinks; enough and it's gone", () => {
+      const file = { ...box(0, -8, 3), lines: 1000 };
+      const g = field([], { blocks: [file] }), blk = g.map.blocks[0]!;
+      g.shots.push({ id: 99, owner: 0, team: "you", weapon: "push", x: 0, y: 1, z: -6.9, vx: 0, vy: 0, vz: -10, age: 0, dead: false });
+      run(g, 0.2);
+      expect(blk.h).toBeLessThan(3);
+      expect(blk.lines).toBeLessThan(1000);
+      expect(file.h).toBe(3); // the map it came from stays whole
+      let razed = false;
+      for (let i = 0; i < 8 && !razed; i++) {
+        g.shots.push({ id: 100 + i, owner: 0, team: "you", weapon: "push", x: 0, y: 0.5, z: -6.9, vx: 0, vy: 0, vz: -10, age: 0, dead: false });
+        for (let t = 0; t < 12; t++) razed ||= g.step(1 / 60, idle).some((e) => e.kind === "razed");
+      }
+      expect(razed).toBe(true);
+      expect(g.map.blocks.length).toBe(0);
+      expect(g.blockAt(0, 0.5, -8)).toBeNull();
+    });
+
+    test("the flamethrower burns a file down; the rifle only chips it", () => {
+      const lines = 200, hp = fileHp(lines);
+      const rifle = field([], { blocks: [{ ...box(0, -5, 3), lines }] });
+      run(rifle, 1, { fire: true, aim: { x: 0, y: 1.2, z: -4 } });
+      expect(rifle.map.blocks[0]!.lines).toBeGreaterThan(lines * 0.7);
+      const flame = field([], { blocks: [{ ...box(0, -5, 3), lines }] });
+      flame.you().weapon = "clean";
+      // Aimed low, at its foot, as it sinks.
+      run(flame, 1.5, { fire: true, aim: { x: 0, y: 0.1, z: -4 } });
+      expect(flame.map.blocks.length).toBe(0);
+      expect(hp).toBeGreaterThan(60);
+    });
+
+    test("cover you're behind wears away under fire", () => {
+      // Waist-high cover: the guard sees your head and its rounds land in the file.
+      const g = field([{ x: 0, z: -14, guards: 1 }], { blocks: [{ ...box(0, -3, 1.2), lines: 40 }] });
+      const blk = g.map.blocks[0]!;
+      run(g, 8);
+      expect(blk.h).toBeLessThan(1.2);
     });
   });
 

@@ -2,13 +2,15 @@
 // hairlines, one orange. You are a glossy black clay figure (figure.ts); the conflicts holding a
 // compound are orange ones, and a compound's lines go from orange to black when it's merged.
 // Files agents mostly wrote are black glass, roads join folders that import each other, and a
-// compound with a failing check burns until it's merged.
+// compound with a failing check burns until it's merged. Files sink as they lose lines and
+// burst into paper chips when they're gone; rounds draw as tracers, the flamethrower as fire.
 
 import * as THREE from "three";
 import type { CodeMap } from "../sim/codemap.ts";
 import { contourStep } from "../sim/terrain.ts";
-import type { Game } from "../sim/game.ts";
+import type { Game, GameEvent } from "../sim/game.ts";
 import { HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
+import { WEAPONS } from "../sim/weapons.ts";
 import { buildFigure, pose, setHead, type BuildId, type Figure, type Pose } from "./figure.ts";
 import { buildHead, HEADS, type HeadDef } from "./heads.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS } from "../sim/missions.ts";
@@ -24,7 +26,8 @@ export interface World {
   /** Everything a shot can be aimed at: ground and blocks. */
   solids: THREE.Object3D[];
   sync(game: Game, dt: number): void;
-  boom(x: number, y: number, z: number, r: number): void;
+  /** Draws what an event leaves behind: a blast, chips, a muzzle flash, a file coming down. */
+  event(game: Game, e: GameEvent): void;
 }
 
 function label(text: string, sub: string): THREE.Sprite {
@@ -158,12 +161,14 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   const glassMat = new THREE.MeshStandardMaterial({ color: 0x16191c, roughness: 0.18, metalness: 0.6 });
   const edgeInk = new THREE.LineBasicMaterial({ color: INK }), edgeGrey = new THREE.LineBasicMaterial({ color: GREY });
   const compoundEdges = map.compounds.map(() => new THREE.LineBasicMaterial({ color: ORANGE }));
+  const files: { b: (typeof map.blocks)[number]; m: THREE.Mesh; tall: number; h: number }[] = [];
   for (const b of map.blocks) {
     const box = new THREE.BoxGeometry(b.w, b.h, b.d);
     const m = new THREE.Mesh(box, b.agent ? glassMat : boxMat);
     m.position.set(b.x, b.y + b.h / 2, b.z);
     m.castShadow = m.receiveShadow = true;
-    m.userData.path = b.path;
+    m.userData.block = b;
+    files.push({ b, m, tall: b.h, h: b.h });
     const e = new THREE.LineSegments(new THREE.EdgesGeometry(box), b.compound >= 0 ? compoundEdges[b.compound]! : b.agent ? edgeGrey : edgeInk);
     m.add(e);
     scene.add(m);
@@ -227,10 +232,43 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     return g;
   });
 
-  const bodies = new Map<number, { fig: Figure; tag: THREE.Mesh; down: number }>();
+  const bodies = new Map<number, { fig: Figure; tag: THREE.Mesh; fire: THREE.Group; down: number }>();
   const shotMeshes = new Map<number, THREE.Mesh>();
-  const shotGeo = new THREE.SphereGeometry(0.09, 8, 6), bigShotGeo = new THREE.SphereGeometry(0.22, 12, 8);
+  // Bullets are tracers, a streak along their flight; the rest are balls; the flamethrower's puffs grow and fade.
+  const tracerGeo = new THREE.BoxGeometry(0.035, 0.035, 1.6).translate(0, 0, 0.8), bigShotGeo = new THREE.SphereGeometry(0.22, 12, 8);
+  const puffGeo = new THREE.IcosahedronGeometry(0.3, 0);
   const shotMat = { you: new THREE.MeshBasicMaterial({ color: INK }), conflict: new THREE.MeshBasicMaterial({ color: ORANGE }) };
+  const tracer = (w: string) => WEAPONS[w as keyof typeof WEAPONS].splash === 0 && !WEAPONS[w as keyof typeof WEAPONS].homing && w !== "stash" && w !== "clean";
+  // Chips and dust: small boxes thrown out of whatever got hit, falling under gravity.
+  const chipGeo = new THREE.BoxGeometry(1, 1, 1), chipEdges = new THREE.EdgesGeometry(chipGeo);
+  const chips: { m: THREE.Object3D; vx: number; vy: number; vz: number; spin: number; t: number; life: number }[] = [];
+  function throwChips(x: number, y: number, z: number, n: number, size: number, speed: number, inked: boolean) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(chipGeo, inked ? boxMat : dustMat);
+      if (inked) m.add(new THREE.LineSegments(chipEdges, edgeInk));
+      const k = size * (0.5 + Math.random());
+      m.scale.set(k, k * (0.4 + Math.random() * 0.6), k);
+      m.position.set(x, y, z);
+      scene.add(m);
+      const a = Math.random() * Math.PI * 2, v = speed * (0.4 + Math.random() * 0.8);
+      chips.push({ m, vx: Math.cos(a) * v, vy: speed * (0.6 + Math.random()), vz: Math.sin(a) * v, spin: (Math.random() - 0.5) * 12, t: 0, life: 0.9 + Math.random() * 0.8 });
+    }
+  }
+  const dustMat = new THREE.MeshLambertMaterial({ color: GREY });
+  const flashes: { m: THREE.Mesh; t: number }[] = [];
+  const flashGeo = new THREE.SphereGeometry(0.16, 8, 6), flashMat = new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0.9, depthWrite: false });
+  /** Little flames over a soldier that's alight. */
+  function onFire(): THREE.Group {
+    const g = new THREE.Group();
+    for (let k = 0; k < 4; k++) {
+      const f = new THREE.Mesh(flameGeo, flameMat);
+      f.position.set(Math.cos(k * 1.6) * 0.25, 0.9 + k * 0.25, Math.sin(k * 1.6) * 0.25);
+      f.userData.phase = k;
+      g.add(f);
+    }
+    g.visible = false;
+    return g;
+  }
   const booms: { m: THREE.Mesh; t: number; r: number }[] = [];
   const boomGeo = new THREE.SphereGeometry(1, 24, 16);
 
@@ -269,6 +307,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     scene.add(ring);
   }
 
+  const tmp = new THREE.Vector3();
   return {
     scene,
     terrainMesh,
@@ -283,9 +322,9 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
           const fig = buildFigure(s.team === "you" ? INK : ORANGE, s.team === "you" ? 0.22 : 0.45, build);
           if (s.team === "you") setHead(fig, buildHead(you.head, fig.root.userData.mat, fig.head.userData.size));
           if (s.heavy) fig.root.scale.setScalar(1.25);
-          const tag = ghost();
-          fig.root.add(tag);
-          bodies.set(s.id, (b = { fig, tag, down: -1 }));
+          const tag = ghost(), fire = onFire();
+          fig.root.add(tag, fire);
+          bodies.set(s.id, (b = { fig, tag, fire, down: -1 }));
           scene.add(fig.root);
         }
         const { fig } = b;
@@ -294,8 +333,10 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         fig.root.position.set(s.x, s.y - Math.max(0, b.down - SURRENDER) * 2.2, s.z);
         fig.root.rotation.y = s.yaw;
         b.tag.visible = s.alive && s.tagged > 0;
+        b.fire.visible = s.alive && s.burn > 0;
+        if (b.fire.visible) for (const f of b.fire.children) f.scale.set(1, 0.6 + Math.abs(Math.sin(game.time * 11 + f.userData.phase * 2.1)) * 0.8, 1);
         pose(fig, {
-          pose: s.alive ? poseOf(s) : "surrender",
+          pose: s.alive ? (s.burn > 0 && s.grounded && s.roll <= 0 ? "star" : poseOf(s)) : "surrender",
           speed: Math.hypot(s.vx, s.vz),
           dt,
           roll: s.roll > 0 ? (ROLL_TIME - s.roll) / ROLL_TIME : 0,
@@ -333,14 +374,44 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         commit.position.set(o.x, o.y + (o.carried ? 0 : 1 + Math.sin(game.time * 2) * 0.15), o.z);
         commit.rotation.y = game.time * 1.5;
       }
+      // Files sink as they lose lines; a file with none left is gone, from sight and from aim.
+      for (const f of files) {
+        if (f.b.h === f.h) continue;
+        f.h = f.b.h;
+        if (f.h <= 0) {
+          scene.remove(f.m);
+          const i = solids.indexOf(f.m);
+          if (i >= 0) solids.splice(i, 1);
+          continue;
+        }
+        f.m.scale.y = f.h / f.tall;
+        f.m.position.y = f.b.y + f.h / 2;
+      }
       const live = new Set<number>();
       for (const p of shots) {
         live.add(p.id);
         let m = shotMeshes.get(p.id);
-        if (!m) shotMeshes.set(p.id, (m = new THREE.Mesh(p.weapon === "commit" || p.weapon === "rebase" || p.weapon === "blame" || p.weapon === "revert" ? shotGeo : bigShotGeo, shotMat[p.team]))), scene.add(m);
+        if (!m) {
+          const flame = p.weapon === "clean";
+          m = new THREE.Mesh(flame ? puffGeo : tracer(p.weapon) ? tracerGeo : bigShotGeo, flame ? flameMat.clone() : shotMat[p.team]);
+          shotMeshes.set(p.id, m), scene.add(m);
+        }
         m.position.set(p.x, p.y, p.z);
+        if (p.weapon === "clean") {
+          const k = p.age / WEAPONS.clean.life;
+          m.scale.setScalar(0.5 + k * 2.6);
+          m.rotation.set(p.id, p.age * 6, 0);
+          (m.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - k * k);
+        } else if (tracer(p.weapon)) {
+          // The streak trails behind the round, so it never pokes out ahead of what it hits.
+          tmp.set(p.x - p.vx, p.y - p.vy, p.z - p.vz);
+          m.lookAt(tmp);
+        }
       }
-      for (const [id, m] of shotMeshes) if (!live.has(id)) scene.remove(m), shotMeshes.delete(id);
+      for (const [id, m] of shotMeshes) if (!live.has(id)) {
+        scene.remove(m), shotMeshes.delete(id);
+        if (m.geometry === puffGeo) (m.material as THREE.Material).dispose();
+      }
       cleared.forEach((done, i) => compoundEdges[i]!.color.setHex(done ? INK : ORANGE));
       fires.forEach((g, i) => {
         g.visible = !cleared[i];
@@ -363,12 +434,39 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         if (k >= 1) scene.remove(b.m);
       }
       for (let i = booms.length - 1; i >= 0; i--) if (booms[i]!.t >= 0.5) booms.splice(i, 1);
+      for (const c of chips) {
+        c.t += dt, c.vy -= 22 * dt;
+        c.m.position.x += c.vx * dt, c.m.position.y += c.vy * dt, c.m.position.z += c.vz * dt;
+        const floor = game.terrain.height(c.m.position.x, c.m.position.z) + 0.03;
+        if (c.m.position.y < floor) c.m.position.y = floor, c.vy *= -0.3, c.vx *= 0.5, c.vz *= 0.5, c.spin *= 0.5;
+        c.m.rotation.x += c.spin * dt, c.m.rotation.z += c.spin * 0.7 * dt;
+        if (c.t > c.life) c.m.scale.multiplyScalar(0.85);
+      }
+      for (let i = chips.length - 1; i >= 0; i--) if (chips[i]!.t > chips[i]!.life + 0.4) scene.remove(chips[i]!.m), chips.splice(i, 1);
+      for (const f of flashes) f.t += dt, f.m.scale.setScalar(1 + f.t * 20);
+      for (let i = flashes.length - 1; i >= 0; i--) if (flashes[i]!.t > 0.05) scene.remove(flashes[i]!.m), flashes.splice(i, 1);
     },
-    boom(x, y, z, r) {
-      const m = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0.55, depthWrite: false }));
-      m.position.set(x, y, z);
-      scene.add(m);
-      booms.push({ m, t: 0, r });
+    event(game, e) {
+      if (e.kind === "boom") {
+        const m = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0.55, depthWrite: false }));
+        m.position.set(e.x, e.y, e.z);
+        scene.add(m);
+        booms.push({ m, t: 0, r: e.r });
+        throwChips(e.x, e.y + 0.2, e.z, 8, 0.18, e.r * 1.6, false);
+      } else if (e.kind === "impact") throwChips(e.x, e.y, e.z, 2, 0.07, 3, false);
+      else if (e.kind === "razed") {
+        // A file coming down: paper chips the size of its footprint, and a puff of dust.
+        const n = Math.min(28, 8 + Math.round(e.w * e.d * e.h));
+        throwChips(e.x, e.y + e.h * 0.4, e.z, n, Math.min(0.6, 0.15 + e.w * 0.1), 5, true);
+        throwChips(e.x, e.y + 0.3, e.z, 10, 0.25, 2.5, false);
+      } else if (e.kind === "fire" && e.weapon !== "clean") {
+        const s = game.soldiers[e.id];
+        if (!s) return;
+        const at = game.muzzle(s), m = new THREE.Mesh(flashGeo, flashMat);
+        m.position.set(at.x, at.y, at.z);
+        scene.add(m);
+        flashes.push({ m, t: 0 });
+      }
     },
   };
 }

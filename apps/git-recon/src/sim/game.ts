@@ -3,13 +3,15 @@
 // mid-roll) round a repo's compounds and take each one by downing its guards. The
 // level's mission (missions.ts) says what wins it. Go down and you come back from the
 // reflog, three times. Crates in the field and in cleared yards hold ammo and health.
+// The files are the cover, and they don't last: blasts, fire and bullets delete their
+// lines, a file sinks as it loses them, and one with none left is gone.
 //
 // Coordinates as in terrain.ts: x east, z south, y up. Facing: yaw 0 looks
 // along -z; forward is (-sin yaw, -cos yaw).
 
 import { mapRepo, mulberry32, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS, OVERRUN, type Mission } from "./missions.ts";
-import { CLIFF, type Terrain } from "./terrain.ts";
+import { CLIFF, wet, type Terrain } from "./terrain.ts";
 import { ORDER, splashDamage, WEAPONS, type WeaponId } from "./weapons.ts";
 
 export type Team = "you" | "conflict";
@@ -66,6 +68,12 @@ export interface Soldier {
   scoped: boolean;
   /** Seconds left of a git blame tag: you see it through walls. */
   tagged: number;
+  /** Radians of spread a held machine gun has climbed to; it cools off when you stop. */
+  heat: number;
+  /** Seconds left on fire (a dive-roll or water puts it out), who lit it, and the time to the next lick. */
+  burn: number;
+  burnBy: number;
+  burnT: number;
   /** Where it has been, one sample every TRAIL_EVERY seconds, oldest first: what git revert sends it back to. */
   trail: { x: number; y: number; z: number }[];
   /** For guards: the compound they hold. */
@@ -131,6 +139,10 @@ export type GameEvent =
   | { kind: "blamed"; id: number }
   | { kind: "reverted"; id: number }
   | { kind: "stashed"; x: number; y: number; z: number }
+  /** A round that stopped on the ground or a file, not a soldier: dust and chips. */
+  | { kind: "impact"; x: number; y: number; z: number; weapon: WeaponId }
+  /** A file with no lines left: gone. */
+  | { kind: "razed"; path: string; lines: number; by: number; x: number; y: number; z: number; w: number; h: number; d: number }
   | { kind: "objective"; text: string }
   | { kind: "won" }
   | { kind: "lost" };
@@ -146,7 +158,13 @@ export const TRAIL_EVERY = 0.25, TRAIL_SECONDS = 3;
 export const STASH_HP = 150, STASH_TTL = 30, STASHES = 2, BLAME_SECONDS = 20;
 /** What a crate gives. */
 export const HEALTH_CRATE = 40;
-export const AMMO_CRATE: Partial<Record<WeaponId, number>> = { push: 2, merge: 2, rebase: 3, cherry: 2, revert: 1, stash: 1, blame: 2 };
+export const AMMO_CRATE: Partial<Record<WeaponId, number>> = { add: 8, fetch: 40, clean: 60, push: 2, merge: 2, rebase: 3, cherry: 2, revert: 1, stash: 1, blame: 2 };
+/** How much a file takes before it's gone: more lines, more to delete. */
+export const fileHp = (lines: number) => 40 + lines * 0.15;
+/** A file shorter than this is rubble, and gone. */
+export const RUBBLE = 0.15;
+/** Damage a second while burning; spread a held machine gun climbs to, and how fast it cools. */
+export const BURN_DPS = 10, MAX_HEAT = 0.06, HEAT_COOL = 0.08;
 /** Field crates a level scatters, besides the one git reset --hard. */
 export const FIELD_PICKUPS = 6;
 const TICK = 1 / 120;
@@ -177,19 +195,22 @@ export class Game {
   lives = LIVES;
   status: "playing" | "won" | "lost" = "playing";
   readonly cleared: boolean[];
+  /** A file's full size, kept the first time something hits it: its height and lines shrink from there. */
+  private wrecks = new Map<Block, { hp: number; maxHp: number; tall: number; lines: number }>();
   private rand: () => number;
   private nextId = 1;
   private acc = 0;
   private trailT = 0;
 
   constructor(map: CodeMap, seed = 1, mission: Mission = { kind: "clear" }) {
-    this.map = map;
+    // Files get knocked down: the game's own copies, so the map it was given stays whole.
+    this.map = { ...map, blocks: map.blocks.map((b) => ({ ...b })) };
     this.terrain = map.terrain;
     this.mission = mission;
     this.rand = mulberry32(seed);
     this.cleared = map.compounds.map(() => false);
     this.soldiers.push(this.soldier("you", "you", map.spawn.x, map.spawn.z, map.spawn.yaw, -1));
-    map.compounds.forEach((c, ci) => {
+    this.map.compounds.forEach((c, ci) => {
       for (let g = 0; g < c.guards; g++) {
         const a = (g / c.guards) * Math.PI * 2 + this.rand(), d = 2 + this.rand() * 2;
         const s = this.soldier("conflict", `${c.folder} #${g + 1}`, c.x + Math.cos(a) * d, c.z + Math.sin(a) * d, this.rand() * 6.28, ci);
@@ -218,7 +239,7 @@ export class Game {
     return {
       id: this.soldiers.length, team, name, x, y: this.ground(x, z, Infinity), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0,
       hp: MAX_HP, maxHp: MAX_HP, alive: true, heavy: false, weapon: "commit", ammo, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
-      grounded: true, crouch: false, prone: false, scoped: false, tagged: 0, trail: [], compound,
+      grounded: true, crouch: false, prone: false, scoped: false, tagged: 0, heat: 0, burn: 0, burnBy: -1, burnT: 0, trail: [], compound,
       brain: team === "you" ? null : {
         home: { x, z }, alert: false, wait: 0, lost: 0, seen: null, strafe: 1, strafeT: 0, burst: 0, think: 0,
         role: "hold", side: 1, cover: null, coverT: 0, lastHp: MAX_HP, raid: false,
@@ -378,6 +399,16 @@ export class Game {
     s.roll = Math.max(0, s.roll - dt);
     s.rollCd = Math.max(0, s.rollCd - dt);
     s.tagged = Math.max(0, s.tagged - dt);
+    s.heat = Math.max(0, s.heat - HEAT_COOL * dt);
+    if (s.burn > 0) {
+      // Stop, drop and roll: a dive-roll puts it out, and so does wading in.
+      if (s.roll > 0 || wet(this.terrain, s.x, s.z)) s.burn = 0;
+      else {
+        s.burn -= dt, s.burnT += dt;
+        if (s.burnT >= 0.25) s.burnT -= 0.25, this.hurt(s, BURN_DPS * 0.25, s.burnBy);
+      }
+    }
+    if (!s.alive) return;
     const R = this.terrain.R;
     const tryTo = (nx: number, nz: number) => {
       // Cliffs: no walking up ground that rises faster than CLIFF, unless you're already above it.
@@ -532,15 +563,19 @@ export class Game {
       dx = f.x * Math.cos(p), dy = Math.sin(p), dz = f.z * Math.cos(p);
     }
     const d = Math.hypot(dx, dy, dz) || 1;
-    // Lying down steadies a rifle; crouching, a little.
-    const spread = (w.spread + extraSpread) * (s.prone ? 0.3 : s.crouch ? 0.6 : 1);
-    dx = dx / d + (this.rand() - 0.5) * 2 * spread, dy = dy / d + (this.rand() - 0.5) * 2 * spread, dz = dz / d + (this.rand() - 0.5) * 2 * spread;
-    // A lob goes up a little more than you aim, so a grenade clears the crate in front of you.
-    if (w.gravity > 5) dy += 0.25;
-    const n = Math.hypot(dx, dy, dz);
-    const shot: Shot = { id: this.nextId++, owner: s.id, team: s.team, weapon: s.weapon, x: m.x, y: m.y, z: m.z, vx: (dx / n) * w.speed, vy: (dy / n) * w.speed, vz: (dz / n) * w.speed, age: 0, dead: false };
-    if (w.homing > 0) shot.target = this.pickTarget(s, m, dx / n, dy / n, dz / n);
-    this.shots.push(shot);
+    // Lying down steadies a rifle; crouching, a little. A held machine gun climbs off target.
+    const spread = (w.spread + extraSpread + s.heat) * (s.prone ? 0.3 : s.crouch ? 0.6 : 1);
+    for (let i = 0; i < w.pellets; i++) {
+      let ux = dx / d + (this.rand() - 0.5) * 2 * spread, uy = dy / d + (this.rand() - 0.5) * 2 * spread, uz = dz / d + (this.rand() - 0.5) * 2 * spread;
+      // A lob goes up a little more than you aim, so a grenade clears the crate in front of you.
+      if (w.gravity > 5) uy += 0.25;
+      const n = Math.hypot(ux, uy, uz);
+      ux /= n, uy /= n, uz /= n;
+      const shot: Shot = { id: this.nextId++, owner: s.id, team: s.team, weapon: s.weapon, x: m.x, y: m.y, z: m.z, vx: ux * w.speed, vy: uy * w.speed, vz: uz * w.speed, age: 0, dead: false };
+      if (w.homing > 0) shot.target = this.pickTarget(s, m, ux, uy, uz);
+      this.shots.push(shot);
+    }
+    s.heat = Math.min(MAX_HEAT, s.heat + w.bloom);
     s.cd = w.cooldown;
     if (s.ammo[s.weapon]! > 0) s.ammo[s.weapon]!--;
     this.events.push({ kind: "fire", id: s.id, weapon: s.weapon });
@@ -583,10 +618,11 @@ export class Game {
         }
         const g = this.terrain.height(p.x, p.z), b = this.blockAt(p.x, p.y, p.z);
         if (p.y <= g || b) {
-          if (b && "hp" in b) (b as Stash).hp -= w.damage;
+          if (b && w.impact) this.wreck(b, w.damage * w.wreck, p.owner);
           if (w.impact) {
             // A stash lands on top of what it hit, not inside it.
             if (w.effect === "stash") p.x = ox, p.y = oy, p.z = oz;
+            if (w.splash <= 0 && !w.effect && w.burn <= 0) this.events.push({ kind: "impact", x: p.x, y: p.y, z: p.z, weapon: p.weapon });
             this.land(p, null);
           } else {
             // Bounce: back out, lose most of the speed, flip the way it came in.
@@ -623,9 +659,10 @@ export class Game {
     if (w.effect === "stash") return this.stash(p.x, p.z, p.y);
     if (w.splash > 0) {
       this.events.push({ kind: "boom", x: p.x, y: p.y, z: p.z, r: w.splash });
-      for (const st of this.stashes) {
-        const d = Math.hypot(st.x - p.x, st.y + st.h / 2 - p.y, st.z - p.z);
-        st.hp -= splashDamage(w, d);
+      // Every file and stash in the blast loses lines by how near its nearest face is.
+      for (const b of [...this.blocks()]) {
+        const cx = Math.max(b.x - b.w / 2, Math.min(p.x, b.x + b.w / 2)), cy = Math.max(b.y, Math.min(p.y, b.y + b.h)), cz = Math.max(b.z - b.d / 2, Math.min(p.z, b.z + b.d / 2));
+        this.wreck(b, splashDamage(w, Math.hypot(cx - p.x, cy - p.y, cz - p.z)) * w.wreck, p.owner);
       }
       for (const s of this.soldiers) {
         if (!s.alive) continue;
@@ -649,8 +686,26 @@ export class Game {
       direct.vx += (p.vx / v) * w.knock, direct.vz += (p.vz / v) * w.knock;
       if (w.effect === "blame") direct.tagged = BLAME_SECONDS, this.events.push({ kind: "blamed", id: direct.id });
       if (w.effect === "revert") this.revert(direct);
+      if (w.burn > 0) direct.burn = Math.max(direct.burn, w.burn), direct.burnBy = p.owner;
       this.hurt(direct, w.damage, p.owner);
     }
+  }
+
+  /** Deletes a file's lines: it sinks with what it loses, and with nothing left it's gone. A stash just takes the damage. */
+  private wreck(b: Block, damage: number, by: number) {
+    if (damage <= 0) return;
+    if ("ttl" in b) return void ((b as Stash).hp -= damage);
+    let w = this.wrecks.get(b);
+    if (!w) this.wrecks.set(b, (w = { hp: fileHp(b.lines), maxHp: fileHp(b.lines), tall: b.h, lines: b.lines }));
+    if (w.hp <= 0) return;
+    w.hp -= damage;
+    const k = Math.max(0, w.hp / w.maxHp);
+    b.h = w.tall * k, b.lines = Math.round(w.lines * k);
+    if (w.hp > 0 && b.h >= RUBBLE) return;
+    w.hp = 0, b.h = 0, b.lines = 0;
+    const i = this.map.blocks.indexOf(b);
+    if (i >= 0) this.map.blocks.splice(i, 1);
+    this.events.push({ kind: "razed", path: b.path, lines: w.lines, by, x: b.x, y: b.y, z: b.z, w: b.w, h: w.tall, d: b.d });
   }
 
   /** Throws a stash down where a round landed: a box to crouch behind. Only the newest few stay. */
@@ -769,6 +824,13 @@ export class Game {
       // Hit: duck behind something.
       if (s.hp < b.lastHp && b.alert && b.seen && !b.cover) this.takeCover(s, 1.2);
       b.lastHp = s.hp;
+    }
+    if (s.burn > 0) {
+      // On fire: it runs about flailing, and doesn't shoot.
+      const a = this.time * 2.3 + s.id * 1.7;
+      s.crouch = false;
+      this.walk(s, Math.sin(a), Math.cos(a * 0.7), dt);
+      return;
     }
     let mx = 0, mz = 0;
     const toHome = Math.hypot(b.home.x - s.x, b.home.z - s.z);
