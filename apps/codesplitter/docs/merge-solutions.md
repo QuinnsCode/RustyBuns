@@ -225,6 +225,35 @@ added one in a different place, and a line merge keeps both (#1044).
 Most PRs merged as a squash of a branch already up to date with main, so their final merge is trivial.
 The real conflicts were settled when a branch took main in.
 
+## 10. Replay through the whole app
+
+Shadow mode runs `merge()` on three texts. `scripts/merge-replay.ts` (#1097) runs five of those
+"merge main into the PR branch" fixes through the mirror, the way a branch actually comes in. That
+way a file the mirror skips, holds as a blob or lints shows up too. Upstream is a bare repo that
+borrows this clone's objects, with main at the merge base and `pr` at the branch's tip. A pull-only
+mirror opens `pr`, then main moves to the merge's main parent and the mirror syncs. The branch
+review's ops, applied to main's copy, give the text codeSplitter would settle, which is then diffed
+against the merge commit. It all runs in-process on the local twins in a temp dir, with no GitHub
+and no Cloudflare.
+
+```sh
+bun scripts/merge-replay.ts          # the five below; or pass merge commits; --json for the details
+```
+
+| PR (fix commit) | git conflicted | settled | left as cards | settled vs the fix |
+|---|---|---|---|---|
+| #1081 (`e49e19a`) | 7 | 4 | README (2), `sim.ts` (1), `main.ts` (1) | 3 exact. `rules.test.ts` kept both sides, but main's new test uses the factions' old names (#1096). Plus `view.ts`: git merged it clean into code that doesn't build (`r` is not defined), and the lint made it a card |
+| #1066 (`c0487ab`) | 3 | 3 | none | 2 exact, `priority.ts` reordered. `bun.lock` now comes over as a blob (#1094) |
+| #1051 (`0e0f81e`) | 2 | 1 | `migrations.test.ts` (2) | `branches.ts` reordered: two independent statements |
+| #1027 (`1204866`) | 3 | 3 | none | 1 exact; the README and `write.ts` reordered |
+| #995 (`14fa8c3`) | 2 | 2 | none | both exact |
+
+Of 17 files git conflicted on, codeSplitter settled 13: 8 exactly as the person did, 4 with the
+same lines in another order (both sides added at one spot, and no order changed behaviour), and 1
+semantic miss (#1096). It left 4 as cards and caught 1 broken clean merge of git's. It never dropped
+a side. The two holes the replay found, a skipped big file (#1094) and a blob merge over main's
+change (#1095), were fixed in #1098.
+
 ## Next steps
 
 Filed as issues, linked from the PR:
