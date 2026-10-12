@@ -114,6 +114,11 @@ describe("beaming from the hosted site", () => {
     expect((await post("ana", "/api/repos/ana/lab/beams", { branch: "tune", kind: "git" })).status).toBe(501);
     expect((await post("ana", "/api/repos/ana/lab/beams", { branch: "tune", onto: "upstream" })).status).toBe(501);
     expect((await post("ana", "/api/repos/ana/lab/beams", { branch: "nope" })).status).toBe(404);
+    // A stacked one is a commit per branch, and the Worker's git pushes one: the desktop app beams it.
+    expect((await post("bo", "/api/repos/ana/lab/branches", { name: "atop", parent: "tune" })).status).toBe(201);
+    const stacked = await post("ana", "/api/repos/ana/lab/beams", { branch: "atop" });
+    expect(stacked.status).toBe(501);
+    expect((await stacked.json() as any).error).toContain("stacked on tune");
 
     // codeSplitter is the kind here, without saying so.
     const res = await post("ana", "/api/repos/ana/lab/beams", { branch: "tune", to: "bo" });

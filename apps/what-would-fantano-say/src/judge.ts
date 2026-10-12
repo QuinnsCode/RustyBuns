@@ -16,6 +16,8 @@ export interface Verdict {
   craft: number;
   /** How fresh it sounds, 0–1. */
   originality: number;
+  /** Someone talking with no music behind it: a podcast, a voice memo, a review of a review. */
+  talking?: boolean;
   /** Who decided: Clef listening, or an estimate from the numbers alone. */
   by: "clef" | "estimate";
 }
@@ -33,6 +35,7 @@ export function clefRequest(clip: string, boxes: Box[], title: string, hint: str
       box: { type: "choice", instructions: "Which style is this?", criteria: Object.fromEntries(boxes.map((b) => [b.id, b.name])) },
       craft: { type: "score", instructions: "How well made and mixed?", criteria: CRAFT },
       originality: { type: "score", instructions: "How original?", criteria: ORIGINALITY },
+      speech: { type: "choice", instructions: "Music or speech?", criteria: { music: "music", talking: "speech only" } },
     },
   };
 }
@@ -62,7 +65,9 @@ export function parseClef(res: unknown, boxes: Box[]): Verdict {
   const box = boxes.find((x) => x.id === picked);
   const craft = level(answers.craft, CRAFT), originality = level(answers.originality, ORIGINALITY);
   if (!box || craft === null || originality === null) throw new Error("answers don't fit the questions");
-  return { box: box.id, craft, originality, by: "clef" };
+  const s = answers.speech;
+  const speech = typeof s?.choice === "string" ? s.choice : s?.probabilities && !Array.isArray(s.probabilities) ? argmax(s.probabilities) : undefined;
+  return { box: box.id, craft, originality, ...(speech === "talking" && { talking: true }), by: "clef" };
 }
 
 /** No Clef (local dev, or the budget's spent): a guess from the numbers. */

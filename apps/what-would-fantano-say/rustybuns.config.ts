@@ -1,8 +1,8 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
 // One Worker. The browser decodes the song, measures it and cuts the listener's best
-// 15 seconds; Clef-omni (Workers AI) listens to that clip and answers three typed
-// questions, about $0.00004 a review; templates write the text. Nothing is stored.
+// 15 seconds; Clef-omni (Workers AI) listens to that clip and answers four typed
+// questions, about $0.00005 a review; templates write the text. Nothing is stored.
 //
 // Live reviews need all of AI, BUDGET, a Turnstile site key and TURNSTILE_SECRET (from
 // 1Password through varlock, experimental.wheel "human"). Missing any, the review is the
@@ -26,7 +26,7 @@ export default defineConfig({
   bindings: {
     // Workers AI, for Clef-omni. Billed per input token; there's no spend cap, hence BUDGET.
     AI: { type: "ai" },
-    // Counts today's Clef calls (src/budget-do.ts) and stops at DAILY_REVIEWS: 25,000 is ~$1 a day, worst case.
+    // Counts today's Clef calls (src/budget-do.ts) and stops at DAILY_REVIEWS: 25,000 is ~$1.20 a day, worst case.
     BUDGET: { type: "durable_object", className: "ReviewBudget" },
     DAILY_REVIEWS: { type: "var", value: "25000" },
     // A few reviews a minute per address. Cloudflare's limiter, so it's per colo.
