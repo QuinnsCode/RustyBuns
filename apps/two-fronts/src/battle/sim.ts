@@ -3,6 +3,7 @@
 // the defender's turrets, orbital strikes and drop-pod reinforcements from the spec. Trunks,
 // buildings and rock block movement and sight, and give cover to whoever stands behind them.
 // The view draws it and feeds the hero's input; the tests run it headless with the autopilot.
+import { atan2, cos, hypot, sin } from "./fmath.ts";
 import { VEHICLE_KINDS, other, poolSize, type BattleResult, type BattleSpec, type PerSide, type SectorKind, type Side, type VehicleKind } from "./contract.ts";
 
 export type Trooper = "assault" | "heavy" | "sniper" | "engineer";
@@ -129,11 +130,11 @@ const rand = (b: Battle) => {
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
-const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
+const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => hypot(a.x - b.x, a.z - b.z);
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 // yaw 0 faces -z, towards the defender's end of the plain, like a three.js camera.
-export const facing = (yaw: number) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
-export const yawTo = (from: { x: number; z: number }, to: { x: number; z: number }) => Math.atan2(-(to.x - from.x), -(to.z - from.z));
+export const facing = (yaw: number) => ({ x: -sin(yaw), z: -cos(yaw) });
+export const yawTo = (from: { x: number; z: number }, to: { x: number; z: number }) => atan2(-(to.x - from.x), -(to.z - from.z));
 
 export function startBattle(spec: BattleSpec): Battle {
   const pool = (s: Side) => Object.fromEntries(VEHICLE_KINDS.map((k) => [k, spec.vehicles[s][k] ?? 0])) as Record<VehicleKind, number>;
@@ -153,7 +154,7 @@ export function startBattle(spec: BattleSpec): Battle {
   const gen = b.posts.at(-1)!;
   for (let i = 0; i < spec.turrets; i++) {
     const a = (i / Math.max(1, spec.turrets)) * Math.PI * 2 + 0.6;
-    add(b, "defender", "turret", gen.x + Math.cos(a) * 18, gen.z + Math.sin(a) * 18);
+    add(b, "defender", "turret", gen.x + cos(a) * 18, gen.z + sin(a) * 18);
   }
   scenery(b);
   // The woods: trees everywhere except on the posts, the spawns, the keep's ring and the scenery.
@@ -209,7 +210,7 @@ function scenery(b: Battle) {
     case "canyon":
       // Rock walls down both sides, winding, then boulders and ore carts on the canyon floor.
       for (let z = -HALF; z < HALF; z += 16) {
-        const l = -62 + 14 * Math.sin(z / 23), r = 60 + 14 * Math.sin(z / 31 + 1);
+        const l = -62 + 14 * sin(z / 23), r = 60 + 14 * sin(z / 31 + 1);
         put((l - HALF) / 2, z + 8, l + HALF, 16, 30);
         put((r + HALF) / 2, z + 8, HALF - r, 16, 30);
       }
@@ -396,22 +397,22 @@ function guardPost(b: Battle, side: Side) {
 // other) and keeps going that way a while, so it doesn't wobble back and forth along the wall.
 // The player just slides.
 function move(b: Battle, u: Unit, dx: number, dz: number, speed: number, steer = true) {
-  const len = Math.hypot(dx, dz);
+  const len = hypot(dx, dz);
   if (len < 0.5) return;
   const step = Math.min(len, speed * DT), x = u.x, z = u.z;
   if (u.detourT !== undefined && (u.detourT -= DT) <= 0) u.detour = u.detourT = undefined;
   const turn = u.detour ?? (u.id % 2 ? 1.1 : -1.1);
   for (const a of !steer ? [0] : u.detour ? [turn, 0, -turn] : [0, turn, -turn]) {
-    const c = Math.cos(a), s = Math.sin(a);
+    const c = cos(a), s = sin(a);
     u.x = clamp(x + ((dx * c - dz * s) / len) * step, -HALF, HALF);
     u.z = clamp(z + ((dx * s + dz * c) / len) * step, -HALF, HALF);
     unstick(b, u);
-    if (Math.hypot(u.x - x, u.z - z) > step * 0.3) {
+    if (hypot(u.x - x, u.z - z) > step * 0.3) {
       if (a && a !== u.detour) { u.detour = a; u.detourT = DETOUR; }
       break;
     }
   }
-  if (u.kind !== "hero") u.yaw = Math.atan2(-dx, -dz);
+  if (u.kind !== "hero") u.yaw = atan2(-dx, -dz);
 }
 
 // Push a unit out of any trunk or block it's in. Gunships fly over them.
@@ -419,7 +420,7 @@ function unstick(b: Battle, u: Unit) {
   if (flies(u)) return;
   const body = bodyOf(u.kind);
   for (const t of b.trees) {
-    const ox = u.x - t.x, oz = u.z - t.z, d = Math.hypot(ox, oz), min = t.r + body;
+    const ox = u.x - t.x, oz = u.z - t.z, d = hypot(ox, oz), min = t.r + body;
     if (d < min && d > 1e-6) { u.x = t.x + (ox / d) * min; u.z = t.z + (oz / d) * min; }
   }
   for (const k of b.blocks) {
@@ -479,7 +480,7 @@ export function step(b: Battle, input: Input | null) {
     const body = ride ?? hero, s = STATS[body.kind];
     const f = facing(input.yaw), r = { x: -f.z, z: f.x };
     const fwd = clamp(input.forward, -1, 1), rt = clamp(input.right, -1, 1);
-    move(b, body, f.x * fwd + r.x * rt, f.z * fwd + r.z * rt, s.speed * Math.min(1, Math.hypot(fwd, rt)), false);
+    move(b, body, f.x * fwd + r.x * rt, f.z * fwd + r.z * rt, s.speed * Math.min(1, hypot(fwd, rt)), false);
     body.yaw = input.yaw;
     body.cool -= DT;
     if (input.fire && body.cool <= 0) shoot(b, body, aimTarget(b, body, input.yaw, s.range), input.yaw);

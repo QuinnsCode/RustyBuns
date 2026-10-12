@@ -3,7 +3,8 @@
 // orders then. The rules stay pure; this only stores and sequences them, so the page runs it for
 // a game against the AI or a hotseat game, and the campaign's Durable Object runs the same code
 // for a game played a turn at a time over days.
-import { other, type BattleResult, type Faction, type PerSide, type SpaceBattleResult } from "../battle/contract.ts";
+import type { BattleResult, Faction, SpaceBattleResult } from "../battle/contract.ts";
+import { replayGround, replaySpace } from "../battle/replay.ts";
 import { run } from "../battle/sim.ts";
 import { runSpace } from "../battle/space.ts";
 import { aiOrders } from "./ai.ts";
@@ -30,6 +31,8 @@ export interface TurnRecord { turn: number; orders: Orders[]; battle: BattleResu
 export type Step = { ok: true; table: Table; done: TurnRecord | null } | { ok: false; error: string };
 
 const MAX_ORDERS = 200;
+// Ten minutes of ground battle with the mouse never still logs about 48 KB; this is well past that.
+export const MAX_INPUTS = 192 * 1024;
 
 export function newTable(seats: Seats, galaxy: GalaxyId = "short", seed = Math.floor(Math.random() * 1e9)): Table {
   // The rules' `player` is the side whose hero sits at the table against the AI. With two
@@ -67,40 +70,32 @@ export function handIn(t: Table, f: Faction, o: Orders): Step {
 }
 
 // The hero's side reports how their battle went, on the ground or in orbit, and the turn finishes.
-// A result can come from a stranger's browser, so it's checked: a battle left to the AI is run
-// again here and that run counts, and a played one has to fit the battle (no side ends with more
-// than it started with).
+// A result can come from a stranger's browser, so the numbers in it don't count: a battle left to
+// the AI is run again here, and a played one is played again from the hero's inputs. That run's
+// result is the one kept.
 export function report(t: Table, f: Faction, res: BattleResult | SpaceBattleResult): Step {
   const c = t.campaign;
   if (!c.pending) return { ok: false, error: "No battle is being fought" };
   if (heroFaction(c) !== f) return { ok: false, error: "That battle isn't yours" };
-  if (!res || res.id !== c.pending.spec.id || (res.winner !== "attacker" && res.winner !== "defender")) return { ok: false, error: "That isn't the battle being fought" };
-  if (typeof res.heroDown !== "boolean" || (res.auto !== undefined && res.auto !== true)) return { ok: false, error: "That result doesn't add up" };
+  if (!res || res.id !== c.pending.spec.id) return { ok: false, error: "That isn't the battle being fought" };
+  if (res.auto !== undefined && res.auto !== true) return { ok: false, error: "That result doesn't add up" };
+  if (!res.auto && (typeof res.inputs !== "string" || res.inputs.length > MAX_INPUTS)) return { ok: false, error: "A played battle needs the hero's inputs" };
   let after: Campaign, battle: BattleResult | SpaceBattleResult;
   if (c.pending.kind === "space") {
-    const r = res.auto ? { ...runSpace(c.pending.spec).over!, auto: true as const } : (res as SpaceBattleResult);
-    if (!res.auto && !fits(r.fleets, c.pending.spec.fleets)) return { ok: false, error: "That result doesn't add up" };
-    const clean = { id: r.id, winner: r.winner, fleets: { attacker: r.fleets.attacker, defender: r.fleets.defender }, heroDown: r.heroDown, ...(r.auto && { auto: true as const }) };
+    const r = res.auto ? runSpace(c.pending.spec).over : replaySpace(c.pending.spec, res.inputs!);
+    if (!r) return { ok: false, error: "Those inputs don't make a battle" };
+    const clean = { id: r.id, winner: r.winner, fleets: { attacker: r.fleets.attacker, defender: r.fleets.defender }, heroDown: r.heroDown, ...(res.auto && { auto: true as const }) };
     after = applySpaceResult(c, clean);
     battle = clean;
   } else {
-    const spec = c.pending.spec;
-    const r = res.auto ? { ...run(spec).over!, auto: true as const } : (res as BattleResult);
-    const most = { attacker: spec.tickets.attacker + spec.reinforcements.attacker, defender: spec.tickets.defender + spec.reinforcements.defender };
-    // The winner ran the loser's tickets out, or had more of them at the time limit.
-    if (!res.auto && (!fits(r.tickets, most) || r.tickets[r.winner] < r.tickets[other(r.winner)])) return { ok: false, error: "That result doesn't add up" };
-    const clean = { id: r.id, winner: r.winner, tickets: { attacker: r.tickets.attacker, defender: r.tickets.defender }, heroDown: r.heroDown, ...(r.auto && { auto: true as const }) };
+    const r = res.auto ? run(c.pending.spec).over : replayGround(c.pending.spec, res.inputs!);
+    if (!r) return { ok: false, error: "Those inputs don't make a battle" };
+    const clean = { id: r.id, winner: r.winner, tickets: { attacker: r.tickets.attacker, defender: r.tickets.defender }, heroDown: r.heroDown, ...(res.auto && { auto: true as const }) };
     after = applyBattleResult(c, clean);
     battle = clean;
   }
   return { ok: true, table: { ...t, campaign: after, resolving: null }, done: { turn: c.turn, orders: t.resolving ?? [], battle, log: after.log } };
 }
-
-// Each side's count a whole number from none up to what it had.
-const fits = (n: unknown, most: PerSide<number>) => {
-  const p = n as Partial<PerSide<unknown>> | null;
-  return !!p && typeof p === "object" && (["attacker", "defender"] as const).every((s) => Number.isInteger(p[s]) && (p[s] as number) >= 0 && (p[s] as number) <= most[s]);
-};
 
 // Orders from a stranger's browser: the right shape, every one legal, and a hero who can fight.
 function checkOrders(c: Campaign, f: Faction, o: Orders): string | null {

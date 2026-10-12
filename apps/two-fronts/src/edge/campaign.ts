@@ -20,7 +20,7 @@ export interface View {
   handedIn: boolean; // this seat's orders are in for the turn
 }
 
-const MAX_BODY = 64 * 1024;
+const MAX_BODY = 256 * 1024; // room for a played battle's input log (MAX_INPUTS)
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const fail = (error: string, status = 400) => json({ error }, status);
 
