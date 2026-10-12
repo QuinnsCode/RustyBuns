@@ -36,24 +36,6 @@ const BUILD: Record<string, (g: THREE.Group) => void> = {
     part(g, ball(0.06), ORANGE, -0.25, 0.28, -0.32, undefined, [1, 0.6, 0.4]);
     part(g, ball(0.06), ORANGE, 0.25, 0.28, -0.32, undefined, [1, 0.6, 0.4]);
   },
-  crab(g) {
-    // A wide orange shell, eyes up on stalks, two claws raised.
-    part(g, ball(0.4), ORANGE, 0, 0.22, 0, undefined, [1.25, 0.55, 0.9]);
-    for (const s of [-1, 1]) {
-      part(g, new THREE.CylinderGeometry(0.025, 0.025, 0.22), INK, s * 0.12, 0.48, -0.2);
-      part(g, ball(0.07), PAPER, s * 0.12, 0.6, -0.2);
-      part(g, ball(0.035), INK, s * 0.12, 0.6, -0.26);
-      part(g, ball(0.14), ORANGE, s * 0.6, 0.42, -0.1, undefined, [0.8, 1.1, 0.6]);
-      part(g, new THREE.ConeGeometry(0.06, 0.18, 8), ORANGE, s * 0.6, 0.6, -0.1, [0, 0, s * 0.4]);
-    }
-  },
-  penguin(g) {
-    // An ink egg with a paper face and an orange beak.
-    part(g, ball(0.4), INK, 0, 0.36, 0, undefined, [1, 1.05, 1]);
-    part(g, ball(0.3), PAPER, 0, 0.3, -0.16, undefined, [1, 1, 0.8]);
-    eyes(g, 0.46, -0.38, 0.11, 0.05);
-    part(g, new THREE.ConeGeometry(0.08, 0.2, 10), ORANGE, 0, 0.34, -0.47, [-Math.PI / 2, 0, 0]);
-  },
   whale(g) {
     // A round whale, side on, carrying a stack of crates on its back, a spout behind.
     part(g, ball(0.38), DARK, 0, 0.3, 0, undefined, [1.3, 0.8, 1]);
@@ -83,47 +65,62 @@ const BUILD: Record<string, (g: THREE.Group) => void> = {
       part(g, new THREE.CapsuleGeometry(0.045, 0.14, 4, 8), INK, Math.cos(a) * 0.24, 0.1, Math.sin(a) * 0.24, [Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5]);
     }
   },
-  gopher(g) {
-    // A pale round critter, big eyes, two buck teeth, little ears.
-    part(g, ball(0.4), GREY, 0, 0.36, 0, undefined, [1, 1.05, 0.95]);
-    for (const s of [-1, 1]) {
-      part(g, ball(0.12), PAPER, s * 0.15, 0.48, -0.32);
-      part(g, ball(0.05), INK, s * 0.15, 0.48, -0.42);
-      part(g, ball(0.08), GREY, s * 0.32, 0.72, 0);
+  hedgehog(g) {
+    // A round hedgehog: a spiky grey back, a paper face and a little ink nose.
+    part(g, ball(0.36), PAPER, 0, 0.34, -0.06, undefined, [1, 0.95, 1]);
+    // Quills over the top, sides and back, leaving the face clear.
+    for (let row = 0; row < 4; row++) {
+      const up = 0.15 + row * 0.38, n = 14 - row * 3;
+      for (let k = 0; k < n; k++) {
+        const az = (k / n) * Math.PI * 2 + row * 0.4, dx = Math.cos(up) * Math.sin(az), dy = Math.sin(up), dz = Math.cos(up) * Math.cos(az);
+        if (dz < -0.35 && dy < 0.75) continue;
+        const spike = part(g, new THREE.ConeGeometry(0.055, 0.24, 6), DARK, dx * 0.36, 0.34 + dy * 0.36, -0.06 + dz * 0.36);
+        spike.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx, dy, dz));
+      }
     }
-    part(g, ball(0.08), ORANGE, 0, 0.32, -0.4, undefined, [1.2, 0.7, 0.8]);
-    part(g, new THREE.BoxGeometry(0.1, 0.1, 0.04), PAPER, 0, 0.22, -0.38);
+    eyes(g, 0.4, -0.38, 0.12, 0.04);
+    part(g, ball(0.05), INK, 0, 0.3, -0.43);
+    part(g, ball(0.06), ORANGE, -0.22, 0.28, -0.33, undefined, [1, 0.6, 0.4]);
+    part(g, ball(0.06), ORANGE, 0.22, 0.28, -0.33, undefined, [1, 0.6, 0.4]);
   },
-  elephant(g) {
-    // A grey elephant head: big flat ears and a trunk curling down.
-    part(g, ball(0.34), GREY, 0, 0.4, 0);
-    for (const s of [-1, 1]) part(g, new THREE.CylinderGeometry(0.26, 0.26, 0.05, 20), GREY, s * 0.38, 0.42, 0.04, [Math.PI / 2, 0, s * 0.3]);
-    eyes(g, 0.48, -0.3, 0.13, 0.04);
-    const trunk = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.36, -0.3), new THREE.Vector3(0, 0.2, -0.46), new THREE.Vector3(0, 0.02, -0.44), new THREE.Vector3(0, 0, -0.32)]), 16, 0.07, 10);
-    part(g, trunk, GREY, 0, 0, 0);
+  watchtower(g) {
+    // A lookout tower: four legs, a hut on top, and an orange lamp sweeping the yard.
+    for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) part(g, new THREE.CylinderGeometry(0.03, 0.04, 0.4), INK, x! * 0.18, 0.2, z! * 0.18);
+    part(g, new THREE.BoxGeometry(0.5, 0.28, 0.5), PAPER, 0, 0.54, 0);
+    part(g, new THREE.ConeGeometry(0.42, 0.24, 4), INK, 0, 0.8, 0, [0, Math.PI / 4, 0]);
+    part(g, new THREE.CylinderGeometry(0.07, 0.1, 0.16, 12), ORANGE, 0, 0.56, -0.28, [Math.PI / 2, 0, 0]);
   },
-  helm(g) {
-    // A ship's wheel, stood upright, with an orange hub.
-    part(g, new THREE.TorusGeometry(0.3, 0.05, 10, 28), INK, 0, 0.4, 0);
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2;
-      part(g, new THREE.CylinderGeometry(0.025, 0.025, 0.74), INK, 0, 0.4, 0, [0, 0, a]);
-      part(g, ball(0.05), INK, Math.sin(a) * 0.4, 0.4 + Math.cos(a) * 0.4, 0);
-    }
-    part(g, new THREE.CylinderGeometry(0.1, 0.1, 0.1, 16), ORANGE, 0, 0.4, 0, [Math.PI / 2, 0, 0]);
+  bucket(g) {
+    // An orange storage bucket with a handle, a nod to the biggest bucket of them all.
+    part(g, new THREE.CylinderGeometry(0.36, 0.26, 0.56, 24, 1, true), ORANGE, 0, 0.3, 0);
+    part(g, new THREE.CylinderGeometry(0.26, 0.26, 0.02, 24), DARK, 0, 0.03, 0);
+    part(g, new THREE.TorusGeometry(0.36, 0.025, 8, 32), INK, 0, 0.58, 0, [Math.PI / 2, 0, 0]);
+    part(g, new THREE.TorusGeometry(0.36, 0.02, 8, 24, Math.PI), INK, 0, 0.58, 0);
+    eyes(g, 0.36, -0.33, 0.12, 0.045);
   },
-  snakes(g) {
-    // Two snakes coiled round each other, one ink, one orange.
-    for (const [color, phase] of [[INK, 0], [ORANGE, Math.PI]] as const) {
-      const pts = Array.from({ length: 24 }, (_, i) => {
-        const t = i / 23, a = phase + t * Math.PI * 3;
-        return new THREE.Vector3(Math.cos(a) * 0.18, 0.06 + t * 0.62, Math.sin(a) * 0.18);
-      });
-      part(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 48, 0.07, 10), color, 0, 0, 0);
-      const top = pts[23]!;
-      part(g, ball(0.1), color, top.x, top.y + 0.04, top.z - 0.04);
-      part(g, ball(0.03), PAPER, top.x, top.y + 0.08, top.z - 0.13);
-    }
+  magnifier(g) {
+    // A magnifying glass held up like a monocle: an ink ring, a glassy lens, the handle down.
+    part(g, new THREE.TorusGeometry(0.28, 0.06, 12, 32), INK, 0, 0.5, 0);
+    const lens = part(g, new THREE.CylinderGeometry(0.27, 0.27, 0.03, 32), PAPER, 0, 0.5, 0, [Math.PI / 2, 0, 0]);
+    lens.material = new THREE.MeshStandardMaterial({ color: 0xdfe8ef, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.6 });
+    part(g, new THREE.CylinderGeometry(0.05, 0.06, 0.36), ORANGE, 0.26, 0.12, 0, [0, 0, 0.75]);
+    part(g, ball(0.05), INK, -0.06, 0.52, -0.05);
+  },
+  terminal(g) {
+    // A little terminal: an ink screen in a paper case, an orange prompt and cursor on it.
+    part(g, new THREE.BoxGeometry(0.66, 0.5, 0.42), PAPER, 0, 0.32, 0);
+    part(g, new THREE.BoxGeometry(0.56, 0.38, 0.02), INK, 0, 0.34, -0.21);
+    part(g, new THREE.BoxGeometry(0.1, 0.03, 0.02), ORANGE, -0.17, 0.4, -0.225, [0, 0, -0.6]);
+    part(g, new THREE.BoxGeometry(0.1, 0.03, 0.02), ORANGE, -0.17, 0.35, -0.225, [0, 0, 0.6]);
+    part(g, new THREE.BoxGeometry(0.12, 0.03, 0.02), ORANGE, 0.0, 0.28, -0.225);
+  },
+  pi(g) {
+    // The letter pi as a chunky toy: a lintel on two legs, the right one kicking out.
+    part(g, new THREE.BoxGeometry(0.7, 0.12, 0.16), INK, 0, 0.66, 0);
+    part(g, new THREE.BoxGeometry(0.12, 0.6, 0.16), INK, -0.16, 0.32, 0);
+    part(g, new THREE.BoxGeometry(0.12, 0.56, 0.16), INK, 0.16, 0.32, 0, [0, 0, 0.12]);
+    part(g, new THREE.BoxGeometry(0.16, 0.1, 0.16), ORANGE, 0.24, 0.06, 0);
+    eyes(g, 0.66, -0.09, 0.14, 0.035, PAPER);
   },
   balloon(g) {
     // A striped hot-air balloon with a little basket, held above the neck on cords.
