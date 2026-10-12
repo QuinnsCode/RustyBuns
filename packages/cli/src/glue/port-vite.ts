@@ -216,7 +216,7 @@ const indentOf = (json: string) => json.match(/^\{\n([ \t]+)"/)?.[1] ?? 2;
 /** A custom webpack build: no automatic port, just what its config does that vite.config.ts must too. */
 export function webpackHint(root: string): string {
   const f = ["webpack.config.js", "webpack.config.ts", "webpack.config.cjs", "webpack.config.mjs"].find((c) => existsSync(join(root, c)));
-  const lines = [`--port-vite only ports Create React App and Vue CLI. This is a custom webpack build; port it by hand (https://github.com/QuinnsCode/RustyBuns/issues/404):`];
+  const lines = [`--port-vite only ports Create React App and Vue CLI. This is a custom webpack build; port it by hand (https://github.com/QuinnsCode/RustyBuns/issues/849):`];
   const cfg = f ? readFileSync(join(root, f), "utf8") : "";
   const has = (re: RegExp) => re.test(cfg);
   const todo: [boolean, string][] = [
