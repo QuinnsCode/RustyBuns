@@ -37,14 +37,14 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       ? `<circle cx="${d.x}" cy="${d.y}" r="${R}" fill="${hex(s.sectors[0]!.owner)}"/>`
       : s.sectors.map((x, i) => `<path d="${wedge(d.x, d.y, R, (i / n) * Math.PI * 2, ((i + 1) / n) * Math.PI * 2)}" fill="${hex(x.owner)}" class="wedge"/>`).join("");
     const ships = (f: Faction) => s.fleets[f] ? `<text x="${d.x + (f === c.player ? -R - 1 : R + 1)}" y="${d.y - R - 1.2}" class="ships" text-anchor="${f === c.player ? "end" : "start"}" fill="${hex(f)}">▲${s.fleets[f]}</text>` : "";
-    const armies = s.sectors.reduce((a, x) => ({ concord: a.concord + x.armies.concord, hegemony: a.hegemony + x.armies.hegemony }), { concord: 0, hegemony: 0 });
+    const armies = s.sectors.reduce((a, x) => ({ marines: a.marines + x.armies.marines, wooka: a.wooka + x.armies.wooka }), { marines: 0, wooka: 0 });
     return `<g class="system${selected === d.id ? " selected" : ""}" data-system="${d.id}" tabindex="0" role="button" aria-label="${d.name}">
       <circle cx="${d.x}" cy="${d.y}" r="${R + 1.5}" class="orbit" stroke="${s.orbit ? hex(s.orbit) : "#6b7280"}" ${s.orbit ? "" : 'stroke-dasharray="1 1"'}/>
       ${body}
       ${hero?.system === d.id ? `<text x="${d.x}" y="${d.y + 1.3}" class="hero-mark">⚔</text>` : ""}
-      ${ships("concord")}${ships("hegemony")}
+      ${ships("marines")}${ships("wooka")}
       <text x="${d.x}" y="${d.y + R + 4.6}" class="name">${d.name}</text>
-      <text x="${d.x}" y="${d.y + R + 7.8}" class="armies"><tspan fill="${hex("concord")}">${armies.concord ? `■${armies.concord}` : ""}</tspan> <tspan fill="${hex("hegemony")}">${armies.hegemony ? `■${armies.hegemony}` : ""}</tspan></text>
+      <text x="${d.x}" y="${d.y + R + 7.8}" class="armies"><tspan fill="${hex("marines")}">${armies.marines ? `■${armies.marines}` : ""}</tspan> <tspan fill="${hex("wooka")}">${armies.wooka ? `■${armies.wooka}` : ""}</tspan></text>
     </g>`;
   }).join("");
   return `<svg viewBox="0 0 100 100" class="galaxy" role="img" aria-label="The galaxy map">

@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import type { BattleSpec } from "../src/battle/contract.ts";
-import { DT, HALF, STRIKE_RADIUS, heroUnit, run, startBattle, step } from "../src/battle/sim.ts";
+import { DT, FLAVOR, HALF, STRIKE_RADIUS, heroUnit, run, startBattle, step } from "../src/battle/sim.ts";
 
 // A fixture straight from the contract: the ground layer never needs the strategy layer to run.
 const spec = (over: Partial<BattleSpec> = {}): BattleSpec => ({
   id: "1-kessa-0", turn: 1, system: "Kessa", sector: "shield",
-  factions: { attacker: "concord", defender: "hegemony" }, hero: "attacker", heroLevel: 1,
+  factions: { attacker: "marines", defender: "wooka" }, hero: "attacker", heroLevel: 1,
   armies: { attacker: 3, defender: 2 }, tickets: { attacker: 75, defender: 50 },
   vehicles: { attacker: 1, defender: 1 }, strikes: { attacker: 1, defender: 0 },
   reinforcements: { attacker: 24, defender: 0 }, turrets: 2, seed: 42, ...over,
@@ -86,4 +86,26 @@ test("losing every hero life is reported as heroDown", () => {
   b.tickets.defender = 0;
   step(b, null);
   expect(b.over!.heroDown).toBe(true);
+});
+
+const horde = (over: Partial<BattleSpec> = {}) => spec({ factions: { attacker: "wooka", defender: "marines" }, hero: "defender", ...over });
+
+test("the Wooka come as a horde: more of them, all clubs, no tanks", () => {
+  const b = startBattle(horde({ vehicles: { attacker: 2, defender: 1 } }));
+  for (let t = 0; t < 1; t += DT) step(b, null);
+  const wooka = b.units.filter((u) => u.side === "attacker");
+  expect(wooka.filter((u) => u.kind === "wooka").length).toBeGreaterThan(b.units.filter((u) => u.kind === "trooper").length);
+  expect(wooka.some((u) => u.kind === "tank" || u.kind === "trooper")).toBe(false);
+  expect(b.units.some((u) => u.side === "defender" && u.kind === "tank")).toBe(true);
+});
+
+test("nobody walks through a redwood", () => {
+  const b = run(horde(), 120);
+  expect(b.trees.length).toBeGreaterThan(50);
+  for (const u of b.units) for (const t of b.trees) expect(Math.hypot(u.x - t.x, u.z - t.z)).toBeGreaterThan(t.r);
+});
+
+test("the radio has opinions about the Wooka", () => {
+  const b = run(horde(), 80);
+  expect(b.events.some((e) => FLAVOR.includes(e))).toBe(true);
 });
