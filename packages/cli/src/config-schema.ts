@@ -48,7 +48,10 @@ const Binding = Schema.Union([
   Schema.Struct({ type: Schema.Literal("container"), className: Str, dockerfile: Str, maxInstances: opt(int(1, 1000)), instanceType: opt(Str) }),
   Schema.Struct({ type: Schema.Literal("queue"), queueName: Str, renamedFrom: opt(Str), consumer: opt(Schema.Union([QueueConsumer, Schema.Literal(false)])) }),
   Schema.Struct({
-    type: Schema.Literal("hyperdrive"), urlSecret: Str, configName: opt(Str),
+    type: Schema.Literal("hyperdrive"), urlSecret: opt(Str), configName: opt(Str),
+    origin: opt(Schema.Struct({ neon: Schema.Struct({
+      project: opt(Str), branch: opt(Str), region: opt(Str), pgVersion: opt(Schema.Literals([14, 15, 16, 17, 18])), apiKeyOp: opt(Str),
+    }) })),
     caching: opt(Schema.Union([Schema.Literal(false), Schema.Struct({ maxAge: opt(int(1, 3600)), staleWhileRevalidate: opt(int(0, 3600)) })])),
   }),
   Schema.Struct({ type: Schema.Literal("var"), value: Str }),
@@ -178,8 +181,11 @@ export const decodeConfig = (input: unknown): Effect.Effect<RustyBunsConfig, Con
     // A Hyperdrive's origin URL comes from a secret binding, so the wheel and the box get it too.
     Effect.flatMap((c) => {
       const b = c.bindings;
-      const bad = Object.entries(b).flatMap(([n, h]) => h.type === "hyperdrive" && b[h.urlSecret]?.type !== "secret"
-        ? [`bindings.${n}.urlSecret: ${JSON.stringify(h.urlSecret)} isn't a secret binding; add ${h.urlSecret}: { type: "secret" } with the postgres:// URL`] : []);
+      // Or the stack owns a Neon branch, and urlSecret is only the twin's.
+      const bad = Object.entries(b).flatMap(([n, h]) => h.type !== "hyperdrive" ? []
+        : h.urlSecret === undefined ? (h.origin?.neon ? [] : [`bindings.${n}: needs urlSecret (a secret with the postgres:// URL) or origin: { neon: {} }`])
+        : b[h.urlSecret]?.type !== "secret"
+          ? [`bindings.${n}.urlSecret: ${JSON.stringify(h.urlSecret)} isn't a secret binding; add ${h.urlSecret}: { type: "secret" } with the postgres:// URL`] : []);
       return bad.length ? Effect.fail(new ConfigInvalid({ problems: bad })) : Effect.succeed(c);
     }),
     Effect.as(input as RustyBunsConfig),   // the schema only checks; the config stays what the developer wrote

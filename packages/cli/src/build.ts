@@ -8,7 +8,7 @@ import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname, normalize, relative, resolve } from "node:path";
-import type { DesktopOs, RustyBunsConfig } from "./config.ts";
+import { hyperdriveUrlEnv, type DesktopOs, type RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 import { Profiler } from "./profile.ts";
 import { BUN_CHECK_MIN, compactDiagnostics, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
@@ -130,7 +130,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
   const d1s = Object.entries(bindings).filter(([, b]) => b.type === "d1").map(([n, b]) => [n, (b as any).databaseName as string, (b as any).migrationsDir as string | undefined] as const);
   const vars = Object.entries(bindings).filter(([, b]) => b.type === "var").map(([n, b]) => [n, (b as any).value as string]);
   const r2s = Object.entries(bindings).filter(([, b]) => b.type === "r2").map(([n, b]) => [n, (b as any).bucketName as string] as const);
-  const pgs = Object.entries(bindings).filter(([, b]) => b.type === "hyperdrive").map(([n, b]) => [n, (b as any).urlSecret as string] as const);
+  const pgs = Object.entries(bindings).filter(([, b]) => b.type === "hyperdrive").map(([n, b]) => [n, hyperdriveUrlEnv(n, b as any)] as const);
   // Desktop has no secrets; a box reads them from its env file.
   const secrets = h.box ? Object.entries(bindings).filter(([, b]) => b.type === "secret").map(([n]) => n) : [];
   const mounts = d.mounts ?? {};
@@ -465,7 +465,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
       case "ratelimit": bind.push(`  // ${name}: Workers Rate Limiting has no local twin; the app runs without it`); break;
       // No pool off the edge: the app gets the origin's URL in Hyperdrive's shape.
-      case "hyperdrive": bind.push(`  ${name}: local.hyperdrive(process.env[${JSON.stringify(b.urlSecret)}], ${JSON.stringify(name)}),`); break;
+      case "hyperdrive": bind.push(`  ${name}: local.hyperdrive(process.env[${JSON.stringify(hyperdriveUrlEnv(name, b))}], ${JSON.stringify(name)}),`); break;
       case "vectorize": bind.push(`  // ${name}: Cloudflare Vectorize has no local twin; the app runs without it`); break;
       case "ai": bind.push(`  // ${name}: Workers AI has no local twin; the app runs without it`); break;
       case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;

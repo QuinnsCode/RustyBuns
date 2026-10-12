@@ -12,8 +12,20 @@ export const ENV_SCHEMA = ".env.schema";
 /** Pinned: varlock's standalone binary only loads plugins at a fixed version. */
 export const OP_PLUGIN = "@varlock/1password-plugin@2.0.4";
 
-function secrets(c: RustyBunsConfig): { name: string; op?: string; optional?: boolean }[] {
+/** `stack`: read by the stack alone, never bound to the app. */
+type Secret = { name: string; op?: string; optional?: boolean; stack?: boolean };
+
+function secrets(c: RustyBunsConfig): Secret[] {
   return Object.entries(c.bindings ?? {}).flatMap(([name, b]) => b.type === "secret" ? [{ name, op: b.op, optional: b.optional }] : []);
+}
+
+/** Secrets only the stack reads, never bound to the app: Alchemy's NEON_API_KEY for a Neon origin. */
+function stackSecrets(c: RustyBunsConfig): Secret[] {
+  const neon = Object.values(c.bindings ?? {}).flatMap((b) => b.type === "hyperdrive" && b.origin?.neon ? [b.origin.neon] : []);
+  if (!neon.length) return [];
+  const ops = [...new Set(neon.flatMap((n) => n.apiKeyOp ? [n.apiKeyOp] : []))];
+  if (ops.length > 1) throw new Error(`origin.neon.apiKeyOp: one NEON_API_KEY per stack, but the bindings name ${ops.join(" and ")}`);
+  return [{ name: "NEON_API_KEY", op: ops[0], stack: true }];
 }
 
 /** Refuse half-set configs before anything is generated. */
@@ -21,7 +33,7 @@ export function checkWheel(c: RustyBunsConfig): void {
   const wheel = c.experimental?.wheel;
   if (wheel !== undefined && wheel !== "agent" && wheel !== "human")
     throw new Error(`experimental.wheel is "${wheel}"; it takes "agent" or "human"`);
-  for (const s of secrets(c)) {
+  for (const s of [...secrets(c), ...stackSecrets(c)]) {
     if (s.op === undefined) continue;
     if (!wheel) throw new Error(`secret ${s.name} has an op reference, which needs experimental.wheel ("agent" or "human")`);
     if (!s.op.startsWith("op://")) throw new Error(`secret ${s.name}: op should be a 1Password reference like "op://vault/item/field", not ${JSON.stringify(s.op)}`);
@@ -40,7 +52,7 @@ export function mintedSecrets(c: RustyBunsConfig): string[] {
  */
 export function generateEnvSchema(c: RustyBunsConfig): string | null {
   const wheel = c.experimental?.wheel;
-  const all = secrets(c);
+  const all = [...secrets(c), ...stackSecrets(c)];
   if (!wheel || !all.length) return null;
   const minted = new Set(mintedSecrets(c));
   const vaulted = all.filter((s) => s.op);
@@ -58,7 +70,9 @@ export function generateEnvSchema(c: RustyBunsConfig): string | null {
   for (const s of all) {
     lines.push(``);
     if (s.op && s.optional) lines.push(`# Optional: unset when the item is missing.`, `# @sensitive @optional`, `${s.name}=op(${s.op}, allowMissing=true)`);
+    else if (s.op && s.stack) lines.push(`# For the stack only (Alchemy's Neon provider), never bound to the app.`, `# @sensitive @required`, `${s.name}=op(${s.op})`);
     else if (s.op) lines.push(`# @sensitive @required`, `${s.name}=op(${s.op})`);
+    else if (s.stack) lines.push(`# For the stack only (Alchemy's Neon provider): from the shell, or Alchemy's Neon profile.`, `# @sensitive`, `${s.name}=`);
     else if (minted.has(s.name)) lines.push(`# ${s.name}: minted by the stack on create, gone on destroy (not resolved here).`);
     else lines.push(`# From the shell or .dev.vars.`, `# @sensitive`, `${s.name}=`);
   }

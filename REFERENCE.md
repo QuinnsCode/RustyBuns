@@ -259,7 +259,7 @@ export default defineConfig({
 | Key | Values |
 |---|---|
 | `source` | `dir`, `aliases`, `ignore` (inferred from tsconfig paths) |
-| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `send_email` (+ `allowedSenderAddresses`), `queue` (+ `queueName`, `consumer`: the Worker's `queue()` gets its batches; a sqlite queue in the host process off the edge, each batch a low job on the host's scheduler unless `consumer.priority` says otherwise), `hyperdrive` (+ `urlSecret`, the `secret` holding the `postgres://` URL, `configName`, `caching`: `env.NAME.connectionString` goes through Hyperdrive on the edge and is the URL itself off it), `var`, `secret` (+ `op`, `optional`, `boxOnly`) |
+| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `send_email` (+ `allowedSenderAddresses`), `queue` (+ `queueName`, `consumer`: the Worker's `queue()` gets its batches; a sqlite queue in the host process off the edge, each batch a low job on the host's scheduler unless `consumer.priority` says otherwise), `hyperdrive` (+ `urlSecret`, the `secret` holding the `postgres://` URL, `configName`, `caching`: `env.NAME.connectionString` goes through Hyperdrive on the edge and is the URL itself off it; or `origin: { neon: { project, branch, region, pgVersion, apiKeyOp } }`, a Neon project and branch the stack makes with `NEON_API_KEY`, whose URL the desktop reads from `NAME_URL` and a box in the stack is handed), `var`, `secret` (+ `op`, `optional`, `boxOnly`) |
 | `state` | `shared` (default) \| `project`, see below |
 | `experimental` | `wheel` (`agent` \| `human`), see below |
 | `targets.edge` | `provider: "cloudflare"`, `domain`, `adopt` |

@@ -34,6 +34,7 @@ export function billables(c: RustyBunsConfig): Billable[] {
       if (b.type === "ratelimit") out.push({ what: `Rate limit ${name}`, kind: "usage", note: "free: counted in memory at each location, no storage" });
       if (b.type === "vectorize") out.push({ what: `Vectorize ${name} (${b.dimensions} dims)`, kind: "usage", note: "Workers Paid: 10M stored + 50M queried dimensions a month included, then $0.05 per 100M stored and $0.01 per 1M queried" });
       if (b.type === "hyperdrive") out.push({ what: `Hyperdrive ${name}`, kind: "usage", note: "100k queries a day free, unlimited on Workers Paid; the Postgres behind it bills on its own" });
+      if (b.type === "hyperdrive" && b.origin?.neon) out.push({ what: `Neon project for ${name}${b.origin.neon.branch ? ` (branch ${b.origin.neon.branch})` : ""}`, kind: "usage", note: "Neon Free: 0.5 GB per project and 100 compute-hours a month, scales to zero; paid plans bill compute and storage by use" });
       if (b.type === "ai") out.push({ what: `Workers AI ${name}`, kind: "usage", note: "10,000 neurons a day free, then $0.011 per 1k; bge-small embeddings are about 1.8k neurons per million tokens" });
       if (b.type === "queue") out.push({ what: `Queue ${name}`, kind: "usage", note: "10k operations a day free, 1M a month on Workers Paid, then $0.40 per million; a message is about three (write, read, delete)" });
       if (b.type === "images") out.push({ what: `Images ${name}`, kind: "usage", note: "5,000 unique transformations a month free, then $0.50 per 1k" });

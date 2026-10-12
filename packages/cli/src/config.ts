@@ -108,8 +108,19 @@ export type Binding =
    */
   | {
       type: "hyperdrive";
-      /** The `secret` binding holding the origin's URL, postgres://user:password@host:port/database. */
-      urlSecret: string;
+      /**
+       * The `secret` binding holding the origin's URL, postgres://user:password@host:port/database.
+       * Required unless `origin.neon`; with it, the desktop and box read this secret (a dev branch,
+       * say) instead of the stack's branch.
+       */
+      urlSecret?: string;
+      /**
+       * A Postgres the stack owns instead of a URL: a Neon project (and branch) made at deploy and
+       * gone on destroy, its origin wired into Hyperdrive. Alchemy reads the Neon API key from
+       * NEON_API_KEY. Off the edge the app reads `NAME_URL` (or `urlSecret`); a box in the same
+       * stack gets the branch's URL there.
+       */
+      origin?: { neon: NeonOrigin };
       /** The Hyperdrive config's name on Cloudflare (with targets.edge.adopt; Alchemy names it otherwise). */
       configName?: string;
       /** Query caching, on by default (60 s, 15 s stale-while-revalidate). false turns it off. */
@@ -135,6 +146,20 @@ export type Binding =
        */
       boxOnly?: boolean;
     };
+
+/** A Neon Postgres the stack makes for a `hyperdrive` binding. */
+export interface NeonOrigin {
+  /** The Neon project's name (Alchemy names it otherwise). */
+  project?: string;
+  /** A branch of that name off the project's default branch, fronted instead of the default branch. */
+  branch?: string;
+  /** Where the project lives, e.g. "aws-us-east-2". Fixed once made. */
+  region?: string;
+  /** Postgres major version. Fixed once made. */
+  pgVersion?: 14 | 15 | 16 | 17 | 18;
+  /** experimental.wheel only: a 1Password reference for NEON_API_KEY, fetched through varlock at plan/deploy. */
+  apiKeyOp?: string;
+}
 
 /** A queue consumer's settings, as wrangler's `queues.consumers` has them. */
 export interface QueueConsumer {
@@ -511,3 +536,6 @@ export function defineConfig(c: RustyBunsConfig): RustyBunsConfig { return c; }
 
 /** The Worker's name on Cloudflare: `targets.edge.workerName`, else the app's `name`. */
 export function workerName(c: Pick<RustyBunsConfig, "name" | "targets">): string { return c.targets.edge?.workerName ?? c.name; }
+
+/** The env var a hyperdrive binding's desktop and box twin reads its Postgres URL from. */
+export function hyperdriveUrlEnv(name: string, b: { urlSecret?: string }): string { return b.urlSecret ?? `${name}_URL`; }

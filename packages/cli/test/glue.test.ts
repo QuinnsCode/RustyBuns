@@ -875,3 +875,43 @@ test("hyperdrive: alchemy fronts the URL secret, wrangler binds it for local dev
     REPLICA_URL: { type: "secret" }, REPLICA: { type: "hyperdrive", urlSecret: "REPLICA_URL" },
   });
 });
+
+test("hyperdrive origin.neon: the stack owns a Neon branch, Hyperdrive fronts its origin, a box gets its URL", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { HYPERDRIVE: { type: "hyperdrive", origin: { neon: { project: "g-db", branch: "prod", region: "aws-us-east-2", pgVersion: 17 } } } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  const a = generateAlchemy(c);
+  expect(a).toContain(`import * as Neon from "alchemy/Neon";`);
+  expect(a).not.toContain("pgOrigin");
+  expect(a).toContain(`export const HYPERDRIVE_NeonProject = Neon.Project("HYPERDRIVENeon", { name: "g-db", region: "aws-us-east-2", pgVersion: 17 });`);
+  expect(a).toContain(`export const HYPERDRIVE_Neon = Neon.Branch("HYPERDRIVENeonBranch", { project: HYPERDRIVE_NeonProject, name: "prod" });`);
+  expect(a).toContain(`  const db = yield* HYPERDRIVE_Neon;\n  return yield* Cloudflare.Hyperdrive.Connection("HYPERDRIVE", { origin: db.origin });`);
+  expect(a).toContain(`env: { HYPERDRIVE: HYPERDRIVE }`);
+  expect(a).toContain(`providers: Layer.mergeAll(Cloudflare.providers(), Neon.providers())`);
+  // No branch: the project's default branch.
+  expect(generateAlchemy({ ...c, bindings: { HYPERDRIVE: { type: "hyperdrive", origin: { neon: {} } } } })).toContain(`export const HYPERDRIVE_Neon = Neon.Project("HYPERDRIVENeon");`);
+  // Off the edge the twin reads HYPERDRIVE_URL, or urlSecret when one is named.
+  expect(desktopEntry(c)).toContain(`HYPERDRIVE: local.hyperdrive(process.env["HYPERDRIVE_URL"], "HYPERDRIVE"),`);
+  const dev = { ...c, bindings: { DEV_DB: { type: "secret" }, HYPERDRIVE: { ...c.bindings.HYPERDRIVE, urlSecret: "DEV_DB" } } };
+  expect(desktopEntry(dev)).toContain(`local.hyperdrive(process.env["DEV_DB"], "HYPERDRIVE")`);
+  // A box in the stack gets the branch's URL in its env.
+  for (const provider of ["railway", "hetzner"]) {
+    const box = generateAlchemy({ ...c, targets: { edge: { provider: "cloudflare" }, box: { provider } } });
+    expect(box).toContain(`  const hyperdrive_neon = yield* HYPERDRIVE_Neon;`);
+    expect(box).toContain(`HYPERDRIVE_URL: hyperdrive_neon.connectionUri`);
+  }
+  // ...unless urlSecret is its twin, which the box already has as a secret.
+  expect(generateAlchemy({ ...dev, targets: { edge: { provider: "cloudflare" }, box: { provider: "railway" } } })).not.toContain("connectionUri");
+
+  // NEON_API_KEY: the stack's alone, through the wheel when it has one.
+  expect(generateEnvSchema(c)).toBeNull();
+  const human = { ...c, experimental: { wheel: "human" } };
+  expect(generateEnvSchema(human)).toContain("NEON_API_KEY=\n");
+  const vaulted = { ...human, bindings: { HYPERDRIVE: { type: "hyperdrive", origin: { neon: { apiKeyOp: "op://rb/neon/credential" } } } } };
+  expect(generateEnvSchema(vaulted)).toContain("# @plugin(");
+  expect(generateEnvSchema(vaulted)).toContain("# @sensitive @required\nNEON_API_KEY=op(op://rb/neon/credential)\n");
+  expect(generateAlchemy(vaulted)).not.toContain("NEON_API_KEY");
+  expect(() => generateAlchemy({ ...vaulted, experimental: undefined })).toThrow(/NEON_API_KEY has an op reference/);
+});
