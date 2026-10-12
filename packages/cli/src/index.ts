@@ -10,6 +10,7 @@ import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
+import { signDarwin } from "./sign.ts";
 import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
 import { buildEnv, hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
@@ -867,11 +868,17 @@ try {
       const [what, ...flags] = rest;
       const t = flags.indexOf("--target");
       if (what === "box") { console.log(`built ${await buildBox(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined })}`); break; }
-      if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--dev] [--check] [--checker bun|tsc-rs|tsc] [--target darwin-arm64] [--outfile dist/app-darwin-arm64] | build box [--target linux-x64]");
+      if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--dev] [--check] [--checker bun|tsc-rs|tsc] [--target darwin-arm64] [--outfile dist/app-darwin-arm64] [--sign] [--notarize <profile>] | build box [--target linux-x64]");
       const { on: check, checker } = checkFlags(flags, false);
       const o = flags.indexOf("--outfile");
       const out = await buildDesktop(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined, outfile: o >= 0 ? flags[o + 1] : undefined, noCompile: flags.includes("--dev"), check: check ? checker : undefined, profile: true });
       console.log(`built ${out}`);
+      const n = flags.indexOf("--notarize");
+      if (flags.includes("--sign") || n >= 0) {
+        const cfg = await loadConfig();
+        const zips = await signDarwin(out.split("\n"), { identifier: process.env.RB_SIGN_ID ?? `dev.rustybuns.${cfg.name}`, notarize: n >= 0 ? flags[n + 1] : undefined });
+        if (zips.length) console.log(`notarized ${zips.join(", ")}`);
+      }
       break;
     }
     case "eject": {
@@ -919,6 +926,10 @@ Box and ship the web app you already have. A dev dependency, never in prod.
              [--target T]    T = darwin-arm64 | darwin-x64 | linux-x64 | linux-arm64 | windows-x64
                              (default: targets in the config; "all" cross-compiles TS-only builds)
              [--check]       type check the app (its tsconfig) before the vite build
+             [--sign]        macOS: sign the darwin binaries with your keychain's Developer ID
+                             (RB_SIGN_IDENTITY picks one), so Gatekeeper doesn't block them
+             [--notarize P]  sign, then notarize a .zip of each with Apple, using the profile
+                             from \`xcrun notarytool store-credentials P\`
   run desktop                start the dev host (bun .rustybuns/dev/desktop.js)
             [--watch]        rebuild (--dev) on save and restart the host; a failed build
                              keeps the old one up, and the window stays (reload it)

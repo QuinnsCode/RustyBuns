@@ -11,7 +11,7 @@ rustup target add wasm32-unknown-unknown      # only for fm-daw's Rust engine
 
 - **Bun 1.4+** is required. **Rust** is required for tscircuit-desktop and optional everywhere else: without it, the apps take their TypeScript path with the same output.
 - Every app starts the same way: `cd apps/<app> && bun run desktop:dev`. `bun run desktop:build` makes the one-file binary in `dist/`.
-- A built binary is unsigned. On macOS, right-click → Open the first time, or `xattr -d com.apple.quarantine <file>`.
+- A built binary is unsigned unless you build with `rustybuns build desktop --sign` (and `--notarize <profile>`) on a Mac with a Developer ID. Otherwise, on macOS, right-click → Open the first time, or `xattr -d com.apple.quarantine <file>`.
 
 ## The run-through (about 15 minutes)
 
