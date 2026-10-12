@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Two Fronts</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226%22 fill=%22%234c8dff%22/%3E%3Cpath d=%22M8 2a6 6 0 0 1 0 12z%22 fill=%22%23e5533d%22/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <main class="war-room">
+      <section id="map" class="map"></section>
+      <aside class="panel">
+        <header><h1>Two Fronts</h1><button type="button" id="restart" class="link" title="New campaign">↺</button></header>
+        <div id="status" class="status"></div>
+        <div id="detail" class="detail"></div>
+        <h3>Orders</h3>
+        <ul id="orders" class="orders"></ul>
+        <button type="button" id="end-turn" class="primary end">End turn</button>
+        <h3>Last turn</h3>
+        <ul id="log" class="log"></ul>
+      </aside>
+    </main>
+    <section class="battle" aria-label="The ground battle">
+      <canvas id="battle-view"></canvas>
+      <div id="battle-hud" class="battle-hud"></div>
+      <div class="crosshair" aria-hidden="true"></div>
+    </section>
+    <div id="flash" class="flash" role="alert" hidden></div>
+    <div id="modal" class="modal" hidden><div id="modal-body" class="modal-body" role="dialog" aria-modal="true"></div></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
