@@ -150,13 +150,11 @@ export type Primary = typeof PRIMARIES[number];
 const primaryOf = (v: unknown): Primary => v === "here" ? "here" : "upstream";
 export const TRUTHS = ["ask", "codesplitter", "artifact", "github"] as const;
 export type Truth = typeof TRUTHS[number];
-/** A git_truth as sent or stored: "codesplitters" is what codesplitter was called before the rename (#805). */
-export const asTruth = (v: unknown) => v === "codesplitters" ? "codesplitter" : v;
 
 /** Where `owner` says git truth lives (users.git_truth): whose side a sync takes when nobody picked. */
 async function truthOf(env: Env, owner: string): Promise<Truth> {
   const u = await env.DB.prepare("SELECT git_truth FROM users WHERE name = ?").bind(owner).first();
-  const t = asTruth(u?.git_truth);
+  const t = u?.git_truth;
   return TRUTHS.includes(t as Truth) ? t as Truth : "ask";
 }
 

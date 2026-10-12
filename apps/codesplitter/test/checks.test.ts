@@ -150,14 +150,12 @@ test("GitHub's results for a sha sent up come back in beside ours, and ours go o
 
   // The branch went up as SHA: our check is queued, and GitHub's is watched.
   await startChecks(call.env, "ryan", "lab", "tidy", SHA, "ryan");
-  // Under codesplitter/ only; the pre-rename codesplitters/ is no longer posted (#821).
   expect(github.posted).toEqual([
     { path: `/repos/QuinnsCode/RustyBuns/statuses/${SHA}`, body: { state: "pending", context: "codesplitter/test", description: "desktop: queued" } }]);
 
   github.runs = [{ id: 7, name: "typecheck", status: "in_progress", conclusion: null, started_at: "2026-10-10T10:00:00Z", html_url: "https://github.com/QuinnsCode/RustyBuns/actions/runs/1/job/7" }];
   github.statuses = [
     { context: "codesplitter/test", state: "pending" },    // ours, echoed back
-    { context: "codesplitters/test", state: "pending" },   // and under the old name, on older commits
     { context: "ci/other", state: "success", target_url: "https://ci.example/1", created_at: "2026-10-10T10:00:00Z", updated_at: "2026-10-10T10:01:00Z" },
   ];
   const polled = await (await send("ryan", "/api/repos/ryan/lab/checks/github", { ref: "tidy" })).json();
@@ -407,14 +405,6 @@ test("a commit queues the repo's own checks, scoped by paths, each with its comm
   await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
   expect((await checks()).runs.map((r: any) => r.name)).toEqual(["test", "lint", "image"]);
   expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${(await checks()).runs[2].id}`)).json()).toMatchObject({ command: "docker build ." });
-});
-
-test("a repo still on the old codesplitters.ci keeps its checks", async () => {
-  const { send, checks } = await app();
-  await send("ryan", "/api/repos/ryan/lab/files", { path: "codesplitters.ci", content: JSON.stringify({ lint: "biome check" }) });
-  await send("ryan", "/api/repos/ryan/lab/do/commit?path=codesplitters.ci", { message: "ci" });
-  await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
-  expect((await checks()).runs.map((r: any) => r.name)).toEqual(["lint"]);
 });
 
 test("queued runs nobody picks up are cancelled by the cron, saying so, and the gate stops waiting on them (#490)", async () => {

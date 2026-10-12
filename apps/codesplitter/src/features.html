@@ -61,7 +61,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 let shipped = [], items = [];
 
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(items.map((f) => f.id))); } catch {} };
-const saved = () => { try { return JSON.parse(localStorage.getItem(KEY) || localStorage.getItem("codesplitters.features.order") || "null"); } catch { return null; } };
+const saved = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } };
 const toast = (msg) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.append(t); setTimeout(() => t.remove(), 2200); };
 
 function draw() {
