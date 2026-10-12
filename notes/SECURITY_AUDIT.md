@@ -92,7 +92,7 @@ All of these are free on the plan we're on:
 
 ## What you need to wire up
 
-Only you can do these. Each is a `MANUAL RUN` issue with the clicks and a check:
+Only you can do these. Each one had a `MANUAL RUN` issue with the clicks and a check, and open manual runs now live in one easiest-first list, #609:
 
 1. **#652, GitHub:** a ruleset on `main` (no force-push or delete, require a PR and checks), a tag rule for `*-v*`, Dependabot alerts, and a `drops` environment that holds the R2 secrets.
 2. **#653, Cloudflare dashboard:** WAF, bots, an auth rate-limit rule, Access on admin, a Turnstile widget with its secret in 1Password, and notifications.

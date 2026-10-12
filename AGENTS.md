@@ -33,6 +33,15 @@ codeSplitter's site (`scripts/site/codesplitter.ts`, tags `codesplitter-v*`) gen
 and MCP tool list from `apps/codesplitter/src/openapi.ts` and `src/mcp-tools.ts`, so an endpoint change
 updates its docs in the same PR. Those two files must keep importing nothing else.
 
+## Manual runs: one list, easiest first
+
+Anything only the owner can finish (a token, a sign-in, a live deploy, a phone) goes in
+[#609](https://github.com/QuinnsCode/RustyBuns/issues/609), not in a new issue. Add one line at its
+place in the easiest-to-hardest order, with a rough time and a link to the PR or issue that holds the
+steps. If a `manual run` issue gets opened anyway, add its line to #609 and close it into #609. A PR
+that touches #609 says "Part of #609". GitHub reads "close #609" anywhere in a PR body, even after a
+"Doesn't", and would close it on merge.
+
 ## Secrets and pushes
 
 Secret values live in 1Password and resolve through varlock at deploy time, behind the owner's
