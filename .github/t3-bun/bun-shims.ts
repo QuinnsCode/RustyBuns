@@ -47,3 +47,33 @@ const vm = require("node:vm");
 const runInNewContext = vm.runInNewContext;
 vm.runInNewContext = (code: unknown, ...rest: unknown[]) =>
   typeof code === "string" && code.trim() === "gc" ? () => Bun.gc(true) : runInNewContext(code, ...rest);
+
+// node:sqlite DatabaseSync.close() under Bun 1.4 leaves the database file open while any
+// statement it prepared is still alive (Node finalizes them on close). Effect's SQL client
+// caches statements, so on Windows a test can't delete its temp folder (EBUSY). Hand out
+// statements behind a holder that close() empties, then collect so Bun finalizes them.
+const sqlite = require("node:sqlite");
+const { prepare, close } = sqlite.DatabaseSync.prototype;
+const holders = new WeakMap<object, Set<{ s?: object }>>();
+const forget = new FinalizationRegistry<{ set: Set<{ s?: object }>; h: { s?: object } }>(({ set, h }) => set.delete(h));
+sqlite.DatabaseSync.prototype.prepare = function (this: object, ...args: unknown[]) {
+  const h: { s?: object } = { s: prepare.apply(this, args) };
+  let set = holders.get(this);
+  if (!set) holders.set(this, (set = new Set()));
+  set.add(h);
+  const proxy = new Proxy(Object.create(sqlite.StatementSync.prototype), {
+    get(_t, prop) {
+      if (!h.s) throw Object.assign(new Error("statement has been finalized"), { code: "ERR_INVALID_STATE" });
+      const v = Reflect.get(h.s, prop, h.s);
+      return typeof v === "function" ? v.bind(h.s) : v;
+    },
+  });
+  forget.register(proxy, { set, h });
+  return proxy;
+};
+sqlite.DatabaseSync.prototype.close = function (this: object) {
+  for (const h of holders.get(this) ?? []) h.s = undefined;
+  holders.delete(this);
+  close.call(this);
+  Bun.gc(true);
+};
