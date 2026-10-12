@@ -63,7 +63,7 @@ import { toFile } from "./archive.ts";
 import { fromDisk, toDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { githubToken, parseRepo } from "./github.ts";
-import { startChecks, upstreamMoved } from "./checks.ts";
+import { startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, json, NAME, type Env } from "./env.ts";
 import type { Doc } from "./lines.ts";
@@ -184,13 +184,18 @@ async function failed(env: Env, r: Row, state: Exclude<State, "ok">, error: stri
   return state;
 }
 
-/** In step: upstream is at `tip`, and so are we (or we're ahead and it's held). */
-async function settled(env: Env, r: Row, tip: string, state: "ok" | "held" = "ok", error: string | null = null) {
+/** In step: upstream is at `tip`, and so are we (or we're ahead and it's held). `took`: main here took upstream's commits on the way. */
+async function settled(env: Env, r: Row, tip: string, state: "ok" | "held" = "ok", error: string | null = null, took = false) {
   const now = Date.now();
   await env.DB.prepare("UPDATE repos SET mirror_state = ?, mirror_error = ?, mirror_clash = NULL, mirror_down_since = NULL, mirror_fails = 0, mirror_synced_at = ?, mirror_next_at = ?, upstream_commit = ? WHERE owner = ? AND name = ?")
     .bind(state, error, now, now + EVERY, tip, r.owner, r.name).run();
   // GitHub runs its Actions on upstream's new tip: watch for the results (checks.ts).
   if (tip !== r.upstream_commit) await upstreamMoved(env, r.owner, r.name, "main", tip);
+  // Upstream's code is on main here now, untested here: our own checks run on main as the repo's own git has it.
+  if (took) {
+    const lg = localGit(env), main = lg && await git(["rev-parse", `refs/heads/${r.branch ?? "main"}`], lg.path(r.artifact));
+    if (main && !main.code) await upstreamTaken(env, r.owner, r.name, "main", main.out.trim());
+  }
   return state;
 }
 
@@ -331,7 +336,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
 
     // 3. Hand upstream what we have that it doesn't.
     if (ours !== theirs && !(await isAncestor(dir, ours, theirs))) {
-      if (held) return settled(env, r, theirs, "held", "this repo has private lines, and its git holds them blank, so nothing goes upstream");
+      if (held) return settled(env, r, theirs, "held", "this repo has private lines, and its git holds them blank, so nothing goes upstream", ours !== before);
       const p = await push(ours);
       // Upstream moved since the fetch: the next round merges it in, then pushes.
       if (p === "moved") return again(env, r);
@@ -339,7 +344,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
       await must(["update-ref", up, ours], dir);
       theirs = ours;
     }
-    return settled(env, r, theirs);
+    return settled(env, r, theirs, "ok", null, ours !== before);
   } catch (e) {
     return failed(env, r, "clash", `sync stopped: ${String((e as Error).message ?? e)}`);
   }

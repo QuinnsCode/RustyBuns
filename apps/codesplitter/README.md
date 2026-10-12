@@ -196,7 +196,7 @@ GitHub ──mirror──▶ codeSplitter ◀──pulls work── your machine
 
 GitHub warns against self-hosted runners on public repos because a fork PR can edit `.github/workflows` and run on your box, and a personal account can't fence runners off (that takes an organization's runner groups).
 Here, fork PRs never mirror: a mirror fetches upstream's own branches, never `refs/pull/*`.
-Only trusted code runs: your branches and your agents', and main as merged on GitHub, which you reviewed (that one doesn't queue by itself yet; see the caveats).
+Only trusted code runs: your branches and your agents', and main as merged on GitHub, which you reviewed, queued as the mirror takes it.
 Your machine pulls its runs, so it needs no open port.
 GitHub's free runners keep doing the quick PR checks.
 

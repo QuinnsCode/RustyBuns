@@ -540,9 +540,10 @@ The caveats:
   Run a runner as a separate macOS user with no logins and an empty `HOME`; the desktop's own queue runs as you.
 - **The mirror isn't one-way.** It pushes this copy's commits upstream, never forced.
   That's a way out, not a way in, but if you want codeSplitter never to write to GitHub, don't commit to main here.
-- **Merged main doesn't queue checks here yet.** When the mirror takes upstream's commits it watches GitHub's results for the new tip and queues nothing here; checks start here on a commit made here, a branch opened from upstream or pushed to it, or a beam.
+- **Merged main runs here too.** When a sync takes upstream's commits onto main (a fast-forward, a merge or a re-base), the repo's checks queue here on main's new tip, as `upstream` (#1008), beside GitHub's results for it.
+  A sync that only pushes this copy's commits queues nothing: they were checked when they were made.
 
-Still missing: checks here on the main commits a mirror takes (#1005), a pull-only mirror (#1006), and runs as a sandbox user with no credentials, with a setting to run only the commands in the repo's settings (#1007).
+Still missing: a pull-only mirror (#1006), and runs as a sandbox user with no credentials, with a setting to run only the commands in the repo's settings (#1007).
 
 ## Conventions
 
