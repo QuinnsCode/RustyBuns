@@ -27,8 +27,9 @@ const SHARED = new Set([
 // The last numbered migration. Two branches that each took the next number merged clean in git
 // and clashed here (#935), so every migration after it is named for when it was written,
 // YYYYMMDDHHMMSS_name.sql in UTC, which Alchemy (and the desktop's applyD1Migrations) sort
-// after every numbered one.
-const LAST_NUMBERED = "0070";
+// after every numbered one. 0071 (#992) landed on main before this rule did and may be live,
+// so it keeps its name.
+const LAST_NUMBERED = "0071";
 
 const files = readdirSync(`${import.meta.dir}/../migrations`).filter(f => f.endsWith(".sql"));
 const numbered = files.filter(f => /^\d{4}_/.test(f));

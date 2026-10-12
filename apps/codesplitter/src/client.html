@@ -368,6 +368,8 @@
   .ln.claim.bot .t { background: linear-gradient(90deg, transparent 0 30%, color-mix(in srgb, var(--who) 12%, transparent) 50%, transparent 70%) 0 0 / 300% 100%, color-mix(in srgb, var(--who) 6%, transparent); animation: shimmer 2.4s linear infinite; }
   @keyframes shimmer { from { background-position: 100% 0, 0 0; } to { background-position: -50% 0, 0 0; } }
   @media (prefers-reduced-motion: reduce) { .ln.claim.bot .t { animation: none; } }
+  /* An intent (a soft claim): someone means to work here, but the line is open to all. A dashed edge, no fill. */
+  .ln.intent:not(.claim) .t { box-shadow: none; border-left: 3px dashed var(--who); }
   /* Who's in the file, over the code: a few faces, then counts, so a thousand agents is still one row. */
   .crew { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 12px; min-height: 30px; box-sizing: border-box; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 12px; overflow: hidden; }
   .crew .faces { display: flex; gap: 4px; min-width: 0; overflow: hidden; flex: 0 1 auto; }
@@ -4250,6 +4252,14 @@ const views = {
         const by = $(".by", el);
         if (by) by.title += ` · ${Object.entries(st).map(([k, who]) => `${stampKind(k)[2]} ×${who.length}`).join(", ")}`;
       }
+      if (intentOf.size) for (const el of box.children) {
+        const c = intentOf.get(el.dataset.id);
+        if (!c || claimOf.has(el.dataset.id)) continue;
+        el.classList.add("intent");
+        el.style.setProperty("--who", hueOf(c.bot ? c.id : c.who));
+        const by = $(".by", el);
+        if (by) by.title = `${c.bot ? nameOf(c) : "@" + c.who} means to work on this line${c.task ? `: ${c.task}` : ""} (it's open to you all the same)`;
+      }
       if (claimOf.size) for (const el of box.children) {
         const c = claimOf.get(el.dataset.id);
         if (!c) continue;
@@ -4296,10 +4306,10 @@ const views = {
     // faces. Built for a crowd: a few faces, then counts, and the whole list under
     // Here now with a filter; every redraw waits for the next frame and lands once.
     let people = [], claims = new Map(), above = new Set();
-    const claimOf = new Map();
+    const claimOf = new Map(), intentOf = new Map();
     const nameOf = (c) => c.bot ? `${c.who.replace(/^agent-/, "")} #${c.id.replace(/^run-/, "")}` : c.who;
     const setClaims = (list) => { claims = new Map(list.map((c) => [c.id, c])); reindex(); };
-    const reindex = () => { claimOf.clear(); for (const c of claims.values()) for (const id of c.lines) claimOf.set(id, c); };
+    const reindex = () => { claimOf.clear(); intentOf.clear(); for (const c of claims.values()) for (const id of c.lines) (c.soft ? intentOf : claimOf).set(id, c); };
     const mine = (c) => c && !c.bot && c.who === me();
     const standing = () => { const now = Date.now(); return [...claims.values()].filter((c) => c.until === null || c.until > now); };
     const holdLabel = () => {
@@ -4319,7 +4329,7 @@ const views = {
     };
     const FACES = 6, LISTED = 200;
     const drawCrew = () => {
-      const cs = standing(), bots = cs.filter((c) => c.bot), holds = cs.filter((c) => !c.bot);
+      const cs = standing(), bots = cs.filter((c) => c.bot), holds = cs.filter((c) => !c.bot && !c.soft);
       const humans = people.filter((w) => !w.startsWith("agent-")), openBots = people.filter((w) => w.startsWith("agent-"));
       const nBots = bots.length + openBots.length;
       const faces = [...humans.map((w) => face(null, w)), ...bots.map((c) => face(c)), ...openBots.map((w) => face(null, w))];
@@ -4331,7 +4341,7 @@ const views = {
       f.hidden = cs.length + humans.length < 12;
       const rows = [...cs.map((c) => ({ c, key: `${nameOf(c)} ${c.task ?? ""}`.toLowerCase() })), ...humans.filter((w) => !cs.some((c) => c.who === w)).map((w) => ({ w, key: w.toLowerCase() }))]
         .filter((x) => !needle || x.key.includes(needle));
-      $("#here-list").innerHTML = rows.slice(0, LISTED).map(({ c, w }) => `<div class="row">${face(c, w)}${c ? profileOf(c) : ""}<span class="what">${c ? `${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? ` · ${esc(c.task)}` : ""}` : "looking"}</span>${c && r.canWrite ? `<button class="btn" data-lift="${esc(c.id)}" title="${mine(c) ? "let go of these lines" : "lift this claim: the lines are free again, and the agent's edits to them won't land"}">${mine(c) ? "Let go" : "Lift"}</button>` : ""}</div>`).join("")
+      $("#here-list").innerHTML = rows.slice(0, LISTED).map(({ c, w }) => `<div class="row">${face(c, w)}${c ? profileOf(c) : ""}<span class="what">${c ? `${c.soft ? `<span class="tag" title="an intent: shown, but the lines stay open to everyone">means to</span> ` : ""}${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? ` · ${esc(c.task)}` : ""}` : "looking"}</span>${c && r.canWrite ? `<button class="btn" data-lift="${esc(c.id)}" title="${mine(c) ? "let go of these lines" : "lift this claim: the lines are free again, and the agent's edits to them won't land"}">${mine(c) ? "Let go" : "Lift"}</button>` : ""}</div>`).join("")
         + (rows.length > LISTED ? `<p class="muted">and ${rows.length - LISTED} more: type to find one</p>` : "");
     };
     // Activity: who changed what, newest first, from the socket's ops and claims alone.

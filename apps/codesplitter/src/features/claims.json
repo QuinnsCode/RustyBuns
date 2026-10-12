@@ -1,5 +1,5 @@
 {
   "icon": "hand",
   "title": "Hold lines, steer agents",
-  "what": "An agent holds the lines it was given on a short lease it renews while it works, so a crashed one frees them in two minutes; hold your own and agents leave them be. Lift any claim to take lines back."
+  "what": "An agent holds the lines it was given on a short lease it renews while it works, so a crashed one frees them in two minutes; hold your own and agents leave them be. Lift any claim to take lines back. Agents that need held lines wait in line for them in turn, and anyone can mark lines they mean to rewrite without keeping others off."
 }

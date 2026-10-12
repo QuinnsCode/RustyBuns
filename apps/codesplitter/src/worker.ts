@@ -639,6 +639,13 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (typeof on !== "boolean") return json({ error: "{lines, private: true|false}, please" }, 400);
         if (!on && user !== owner) return json({ error: "only the owner makes private lines public" }, 403);
       }
+      // No waiting in line here while holding lines in another file: that's how two waiters end up
+      // waiting on each other for ever. The file itself refuses it for lines held in it (file-do.ts).
+      if (p[5] === "claims" && req.method === "POST" && user) {
+        const b = (() => { try { return JSON.parse(sent!) as { wait?: unknown; soft?: unknown }; } catch { return {}; } })();
+        const holding = b.wait && !b.soft ? await heldElsewhere(env, user, [owner, repo, path]) : [];
+        if (holding.length) return json({ error: `you hold lines in ${holding.map((h) => h.path).join(", ")}: let go of them before you wait in line here, or work elsewhere`, holding }, 409);
+      }
       if (p[5] === "ws") {
         // The DO learns who this socket is, and whether it may write, from us.
         const h = new Headers(req.headers);
@@ -807,3 +814,19 @@ const app = {
 };
 
 export default app;
+
+/**
+ * The claims `who` holds in files other than `here` (on main, across repos), from D1's `held`
+ * rows, each checked with its file: the file is the truth, and a row whose claim has gone is dropped.
+ */
+async function heldElsewhere(env: Env, who: string, here: [string, string, string]) {
+  const { results } = await env.DB.prepare("SELECT owner, repo, path, id FROM held WHERE who = ? AND NOT (owner = ? AND repo = ? AND path = ?) LIMIT 20")
+    .bind(who, ...here).all() as { results: { owner: string; repo: string; path: string; id: string }[] };
+  const out: typeof results = [], now = Date.now();
+  for (const h of results) {
+    const claims = await toFile(env, h.owner, h.repo, h.path, who, "claims").then((r) => r.json() as Promise<{ id: string; who: string; until: number | null; soft?: boolean }[]>).catch(() => null);
+    if (claims?.some((c) => c.id === h.id && c.who === who && !c.soft && (c.until === null || c.until > now))) out.push(h);
+    else if (claims) await env.DB.prepare("DELETE FROM held WHERE owner = ? AND repo = ? AND path = ? AND id = ?").bind(h.owner, h.repo, h.path, h.id).run();
+  }
+  return out;
+}

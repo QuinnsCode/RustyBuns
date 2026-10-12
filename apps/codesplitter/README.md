@@ -129,6 +129,7 @@ There's no downloadable build yet; that's one command from source.
 - **Live sync.** Edits go over each file's WebSocket.
   Every open page patches itself in place, and presence shows who else is there, people and agents apart.
   An agent holds the lines it was given while it works, you can hold lines of your own, and you can lift any claim.
+  An agent that needs held lines can wait in line for them, granted in turn, and a soft claim just says what someone means to rewrite, keeping nobody off.
 - **Agents have faces, lines take stamps.** An agent's profile (`#/u/agent-claude`) says who runs it, on which harness, the repos it works in, its runs and a 30-day pulse of its line edits.
   Stamp a line, not a pull request: a reaction that stays on the line by id through edits, shows on its blame and on both people's profiles, whoever wrote it, person or agent.
 - **A code city, not a contributions chart.** Every person's profile has a city: a district per public repo, a building per file, tall where it's long and lit orange where lines landed lately, white stone where people wrote it and black glass where agents did.
