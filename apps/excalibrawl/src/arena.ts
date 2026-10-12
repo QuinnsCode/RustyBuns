@@ -11,12 +11,13 @@ import { promptFor } from "./engine/prompts.ts";
 import { take } from "./budget.ts";
 import { addToIndex, type MatchSummary, summarize } from "./archive.ts";
 
-/** Turns per fighter, and the gap between them: about four minutes of fight. */
-export const TURNS = 36;
+/** Turns per fighter, and the gap between them: about three minutes of fight. A plan is 5–12 parts and a
+ * finished drawing can pass, so more turns mostly bought clutter (the bake-off, src/lab/run.ts). */
+export const TURNS = 24;
 export const PACE_MS = 5_000;
 /** A fight older than this is stale (a lost alarm), so the next start replaces it. */
 const STALE_MS = 20 * 60_000;
-const DEFAULT_DAILY_CALLS = 2_000;
+const DEFAULT_DAILY_CALLS = 1_200;
 
 const FIGHTERS: Fighter[] = [
   { model: "clef", name: "Clef" },

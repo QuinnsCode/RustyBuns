@@ -30,6 +30,16 @@ const app = defineApp([
   // Local dev only: start a practice fight now instead of waiting for the hour.
   route("/api/practice", async () =>
     import.meta.env.VITE_IS_DEV_SERVER ? Response.json(await arena().start()) : new Response("not here", { status: 404 })),
+  // Local dev with EXCALIBRAWL_REAL_AI=1 only: the bake-off (src/lab/run.ts), one billed fight per call.
+  route("/api/lab", async ({ request }) => {
+    if (!import.meta.env.VITE_IS_DEV_SERVER || !import.meta.env.VITE_REAL_AI || !env.AI) return new Response("not here", { status: 404 });
+    const { runLab, SETUPS } = await import("./lab/run.ts");
+    const q = new URL(request.url).searchParams;
+    const setup = q.get("setup") as keyof typeof SETUPS;
+    if (!(setup in SETUPS) || !q.get("prompt")) return Response.json({ setups: SETUPS }, { status: 400 });
+    const ai = env.AI as unknown as { run(model: string, input: unknown): Promise<unknown> };
+    return Response.json(await runLab(ai, setup, q.get("prompt")!, Math.min(36, Number(q.get("turns")) || 24)));
+  }),
   render(Document, [route("/", () => <Home />)]),
 ]);
 
