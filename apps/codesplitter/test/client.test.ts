@@ -49,6 +49,55 @@ describe("git action pictures", () => {
   });
 });
 
+// The git map: who a repo listens to, and its branches, as tiles and curves.
+describe("the git map", () => {
+  const src = html.slice(html.indexOf("// The git map: a repo's family"), html.indexOf("/** The git map of a repo:"));
+  const { gitMapModel, gitCurve } = new Function(`${src}; return { gitMapModel, gitCurve };`)();
+  const link = (m: any, from: string, to: string) => m.links.find((l: any) => l.from === from && l.to === to);
+
+  test("a dug fork was copied once and doesn't listen", () => {
+    const m = gitMapModel({ owner: "ann", repo: "hono", r: { upstream: "github:honojs/hono", upstream_commit: "abcdef123", home: "cloud", branch: "main" } });
+    expect(m.tiles.find((t: any) => t.id === "up")).toMatchObject({ name: "honojs/hono", href: "https://github.com/honojs/hono" });
+    expect(link(m, "up", "here")).toMatchObject({ kind: "fork", label: "copied once", title: "copied once at abcdef1, and not listening since" });
+    expect(m.tiles.find((t: any) => t.id === "up").sub).toBe("upstream · copied at abcdef1");
+    expect(m.story).toContain("stopped listening");
+  });
+
+  test("a mirror listens both ways, and says what's moving", () => {
+    const r = { upstream: "github:a/b", mirror: true, home: "local" };
+    const calm = gitMapModel({ owner: "ann", repo: "b", r, mirror: { state: "ok", ahead: 0, behind: 0 } });
+    expect(link(calm, "up", "here")).toMatchObject({ kind: "mirror", both: true, hot: false, label: "in step, both ways", pic: ["sync", { ahead: 0, behind: 0 }] });
+    expect(calm.tiles[0].sub).toContain("git on your machine");
+    const busy = gitMapModel({ owner: "ann", repo: "b", r, mirror: { state: "ok", ahead: 2, behind: 1 } });
+    expect(link(busy, "up", "here")).toMatchObject({ hot: true, label: "1 to take in, 2 to send up" });
+    expect(link(gitMapModel({ owner: "ann", repo: "b", r, mirror: { state: "down" } }), "up", "here").label).toBe("upstream down: we keep working");
+    expect(link(gitMapModel({ owner: "ann", repo: "b", r, mirror: { state: "held" } }), "up", "here").both).toBe(false);
+  });
+
+  test("branches hang off the repo, and upstream's branches wire to the ones that follow them", () => {
+    const m = gitMapModel({ owner: "ann", repo: "b", r: { upstream: "github:a/b", mirror: true }, mirror: { state: "ok" },
+      branches: [{ name: "fix", by: "agent-1", status: "open" }, { name: "old", status: "merged" }],
+      upBranches: [{ ref: "dev", branch: "fix" }, { ref: "next", branch: null }] });
+    expect(link(m, "here", "b:fix")).toMatchObject({ kind: "branch", pic: ["merge", { branch: "fix" }] });
+    expect(link(m, "here", "b:old")).toMatchObject({ kind: "done", label: "merged", pic: null });
+    expect(link(m, "ub:dev", "b:fix")).toMatchObject({ kind: "follows", pic: ["pull", { branch: "fix", ref: "dev" }] });
+    expect(m.links.filter((l: any) => l.from === "ub:next")).toEqual([]);
+  });
+
+  test("a repo with no upstream says so, and a long branch list says how many it left out", () => {
+    const branches = Array.from({ length: 12 }, (_, i) => ({ name: `b${i}`, status: "open" }));
+    const m = gitMapModel({ owner: "ann", repo: "x", r: {}, branches });
+    expect(m.tiles.some((t: any) => t.id === "up")).toBe(false);
+    expect(m.story).toContain("no upstream");
+    expect(m.more).toBe(4);
+  });
+
+  test("a curve leaves and lands level, its label at the middle", () => {
+    expect(gitCurve(0, 0, 200, 100)).toEqual({ d: "M0 0C100 0,100 100,200 100", mx: 100, my: 50 });
+    expect(gitCurve(0, 0, 200, 0, 80)).toEqual({ d: "M0 0C100 80,100 80,200 0", mx: 100, my: 60 });
+  });
+});
+
 // Line picks come as runs (#710): ⌘-click and gutter drags make gaps.
 describe("picked lines as runs", () => {
   const src = html.slice(html.indexOf("/** Picked line indexes"), html.indexOf("// The game's door"));
