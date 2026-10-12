@@ -1,8 +1,9 @@
 // Hand one merge conflict to a coding agent. It gets the conflict as git's markers in a file of its own
 // (main's, the base's and the branch's version), the merge of the rest of the file around it, and what
-// main's commits to the file said since the branch forked (a branch doesn't commit), and edits the file into the settled text. branches.ts then checks it: the
+// main's commits to the file said since the branch forked, and edits the file into the settled text. branches.ts then checks it: the
 // merged file parses, and the repo's tests pass in a throwaway clone (deps.ts). It comes back as a
 // suggestion either way, with any failure attached: nothing lands until someone merges with it as `{text}`.
+// A branch doesn't commit, so for its side the agent gets the task of the agent run that made it, if one did (#986).
 // Run as the feed digest runs one (feed.ts): on this machine, or in a container when hosted.
 import { harnessCommand, type Harness } from "./harness.ts";
 import type { Conflict, Doc } from "./lines.ts";
@@ -32,14 +33,15 @@ export function around(merged: Doc, id: string, n = 8) {
 /** The file the agent edits: RESOLVE with the conflicted file's extension, so it reads as that language. */
 export const resolveFile = (path: string) => `RESOLVE${/\.[\w-]+$/.exec(path)?.[0] ?? ".txt"}`;
 
-/** `said`: main's commit messages for the file since the branch forked, why main changed it. */
-export function conflictPrompt(path: string, branch: string, c: Conflict, context: string, said: string[] = []) {
+/** `said`: main's commit messages for the file since the branch forked, why main changed it; `meant`: why the branch did, the task an agent run made it for. */
+export function conflictPrompt(path: string, branch: string, c: Conflict, context: string, said: string[] = [], meant?: string) {
   const file = resolveFile(path);
   return [
     `${file} in the current directory holds one merge conflict from ${path}, merging the branch ${branch} into main, as git's markers:`,
     `main's version, then the base both started from, then the branch's.`,
     ...(context ? [`Around it, ${path} as the merge leaves it, every other change already in (the conflicted line marked >):`, context] : []),
     ...(said.length ? [`Since ${branch} forked, main's commits to ${path} said:`, ...said.map((m) => `- ${m}`)] : []),
+    ...(meant ? [`${branch} is a coding agent's work on the task: ${meant}`] : []),
     `Rewrite ${file} in place as the settled text: keep what each side meant to change. When both added something, keep both.`,
     `Leave no markers. Keep the indentation. Write only the lines that replace the conflict, nothing around them.`,
     `Do not add files, and do not run git commands. The merged file is parsed and the repo's tests run on your answer after you stop.`,
@@ -55,8 +57,8 @@ export function settled(run: { code: number; out: string; text: string | null },
   return { text };
 }
 
-export async function askAgent(box: Sandbox, o: { harness: Harness; model?: string; path: string; branch: string; conflict: Conflict; merged: Doc; said?: string[] }, signal?: AbortSignal) {
+export async function askAgent(box: Sandbox, o: { harness: Harness; model?: string; path: string; branch: string; conflict: Conflict; merged: Doc; said?: string[]; meant?: string }, signal?: AbortSignal) {
   const given = markers(o.conflict);
-  const cmd = harnessCommand(o.harness, conflictPrompt(o.path, o.branch, o.conflict, around(o.merged, o.conflict.line), o.said), { model: o.model });
+  const cmd = harnessCommand(o.harness, conflictPrompt(o.path, o.branch, o.conflict, around(o.merged, o.conflict.line), o.said, o.meant), { model: o.model });
   return settled(await box(cmd, { path: resolveFile(o.path), text: given }, signal), o.harness, given);
 }
