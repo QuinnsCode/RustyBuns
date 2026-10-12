@@ -8,7 +8,7 @@ import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname, normalize, relative, resolve } from "node:path";
-import type { Binding, DesktopOs, RustyBunsConfig } from "./config.ts";
+import { hyperdriveUrlEnv, type Binding, type DesktopOs, type RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 import { Profiler } from "./profile.ts";
 import { BUN_CHECK_MIN, compactDiagnostics, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
@@ -136,7 +136,7 @@ const pgliteFiles = { wasm: resolve(import.meta.dir, pglite0), initdb: resolve(i
 /** env.NAME for a hyperdrive binding off the edge: the origin's URL, or with `local: "pglite"`
  *  and the URL unset, PGlite in the data dir. `dir` resolves an embedded project dir. */
 function hyperdriveBinding(name: string, b: Extract<Binding, { type: "hyperdrive" }>, dir: (rel: string) => string): string {
-  const url = `process.env[${JSON.stringify(b.urlSecret)}]`;
+  const url = `process.env[${JSON.stringify(hyperdriveUrlEnv(name, b))}]`;
   const viaUrl = `local.hyperdrive(${url}, ${JSON.stringify(name)})`;
   if (b.local !== "pglite") return viaUrl;
   const migrations = b.migrationsDir ? `, migrations: ${dir(b.migrationsDir)}` : "";

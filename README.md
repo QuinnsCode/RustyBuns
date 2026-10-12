@@ -77,6 +77,8 @@ You write against the left-hand shape once. What each primitive would be on AWS,
 
 The host binds to `127.0.0.1`, gates every request on a per-launch token, and keeps your data in `~/.<app-name>/`. Your users never install Bun: it's inside the binary. Details in [The host](REFERENCE.md#the-host).
 
+**Opens on a Mac without a warning.** A binary you download is blocked by macOS until it's signed and notarized. On a Mac with a Developer ID certificate, `build desktop --sign` signs the darwin binaries, and `--notarize <profile>` also sends a `.zip` of each to Apple. The profile is the one you saved with `xcrun notarytool store-credentials`, so your Apple password stays in the keychain.
+
 </details>
 
 ### Static sites box too, no app needed
@@ -109,7 +111,7 @@ Bun is the one runtime that has every piece built in:
 
 The twins refuse what the edge refuses, with the edge's error: more than 100 bound parameters in a D1 query, a KV key over 512 bytes, a queue message over 128 KB, a Durable Object value over 2 MiB. So a query that works locally doesn't fail on the first deploy. Memory and CPU limits aren't enforced yet.
 
-A Postgres app (Supabase, Neon, RDS) keeps its database: a `hyperdrive` binding puts Cloudflare Hyperdrive in front of it on the edge, and the desktop and box connect to the same `DATABASE_URL` directly. `init` adds one when the app uses `pg`, `postgres`, or Drizzle or Prisma on postgresql. With `local: "pglite"` an offline desktop gets Postgres too: PGlite runs in the data dir, served on 127.0.0.1, with your Drizzle or Prisma migrations applied at boot.
+A Postgres app (Supabase, Neon, RDS) keeps its database: a `hyperdrive` binding puts Cloudflare Hyperdrive in front of it on the edge, and the desktop and box connect to the same `DATABASE_URL` directly. `init` adds one when the app uses `pg`, `postgres`, or Drizzle or Prisma on postgresql. With `local: "pglite"` an offline desktop gets Postgres too: PGlite runs in the data dir, served on 127.0.0.1, with your Drizzle or Prisma migrations applied at boot. Or the stack owns the database: `origin: { neon: { branch: "prod" } }` makes a Neon project and branch at deploy and fronts that, and a box in the same stack gets the branch's URL.
 
 D1 migrations apply at boot, and `"use server"` functions run for real against sqlite. It adds up to [a full-stack framework, by accident](REFERENCE.md#a-full-stack-framework-by-accident).
 
@@ -240,7 +242,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [excalibrawl](apps/excalibrawl/README.md) | An hourly drawing fight: Clef vs Clef Flash picking only a move, shape, colour, grid cell and size from a picture of their halves, or two text models writing a token-cheap drawing language, with Clef as referee, for two cents or less a fight; replays and a live socket in R2 and a Durable Object |
 | [two-fronts](apps/two-fronts/README.md) | Thunder Marines vs the Wooka horde: a turn-based galactic war plus three.js hero battles in a redwood forest or in orbit, built apart and joined by small JSON types (a spec in, a result out); play the AI or hotseat in the page, or a friend online through a Durable Object per campaign |
 
-**Try one without building anything:** download the desktop binary for [Hippo Tycoon](https://github.com/QuinnsCode/RustyBuns/releases?q=hippo-tycoon-v&expanded=true), [Park Hide & Seek](https://github.com/QuinnsCode/RustyBuns/releases?q=park-hide-seek-v&expanded=true), [Splat Spray](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true) or [FM Groovebox](https://github.com/QuinnsCode/RustyBuns/releases?q=fm-daw-v&expanded=true). Each is one file for Mac, Windows or Linux. They aren't signed yet, so the first launch takes one Terminal command on a Mac (the release page has it) and a click past SmartScreen on Windows.
+**Try one without building anything:** download the desktop binary for [Hippo Tycoon](https://github.com/QuinnsCode/RustyBuns/releases?q=hippo-tycoon-v&expanded=true), [Park Hide & Seek](https://github.com/QuinnsCode/RustyBuns/releases?q=park-hide-seek-v&expanded=true), [Splat Spray](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true) or [FM Groovebox](https://github.com/QuinnsCode/RustyBuns/releases?q=fm-daw-v&expanded=true). Each is one file for Mac, Windows or Linux. They aren't signed yet, so the first launch takes one Terminal command on a Mac (the release page has it; [APPLE_SIGNING.md](APPLE_SIGNING.md) is the road to fixing that) and a click past SmartScreen on Windows.
 
 Want to run them from source? [EXAMPLES.md](EXAMPLES.md) is two lines per app, no experience needed.
 
