@@ -16,21 +16,21 @@ A toy-soldier third-person shooter, fought in a codebase. You're a glossy black 
 - **Lives are the reflog.** Go down and you're back at the start, three times.
 - **Fight any repo.** Type `owner/repo` on the menu and any public GitHub repo becomes the level, read in the browser at play time.
 - **A richer map.** Folders that import each other are joined by roads. A folder that changed a lot lately holds more guards. Files agents mostly wrote are black glass, not paper. A failing check sets its folder's compound on fire until you merge it.
-- **Toy heads.** Besides the ball and the logo blocks, every level you win (a level on a repo you haven't won it on) unlocks a toy head for the neck slot. They're our own designs, nods to big names in open source, hosting and infra: no traced logos, no real faces.
+- **Toy heads.** Besides the ball and the logo blocks, every level you win (a level on a repo you haven't won it on) unlocks a toy head for the neck slot. They're our own designs, nods to the dev tools and platforms developers build and ship on (no AI labs): no traced logos, no real faces.
 
 | Head | A nod to |
 |---|---|
 | Steamed bun | Bun |
-| Crab | Rust's unofficial crab mascot |
-| Penguin | Linux |
-| Whale with cargo | Docker |
 | Orange cloud | Cloudflare |
 | Black pyramid | Vercel |
-| Many-armed cat | GitHub's cat-octopus mascot |
-| Buck-toothed gopher | Go |
-| Elephant | PostgreSQL |
-| Ship's wheel | Kubernetes |
-| Two snakes | Python |
+| Hedgehog | PostHog |
+| Watchtower | Sentry |
+| Orange bucket | AWS |
+| Magnifying glass | Google Cloud |
+| Little terminal | opencode |
+| Chunky pi | pi |
+| Many-armed cat | GitHub |
+| Whale with cargo | Docker |
 | Hot-air balloon | Fly.io |
 
 Built with [Three.js](https://threejs.org) and [Rusty Buns](../../README.md).
