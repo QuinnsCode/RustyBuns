@@ -50,6 +50,8 @@ test("the full galaxy: 30 systems in 7 regions, joined up, the same for both sid
     expect(b.owner).not.toBe(a.owner);
   }
   for (const [a, b] of g.lanes) expect(g.adjacent(twin(a).id, twin(b).id)).toBe(true);
+  // The list runs in twin order, so each side's AI can read it from its own end.
+  expect(g.systems.map((s) => twin(s.id).id)).toEqual(g.systems.map((s) => s.id).reverse());
   const c = newCampaign(1, "marines", "full");
   expect(keyShare(c, "marines")).toBe(0.5);
   expect(income(c, "marines")).toBe(income(c, "wooka"));
@@ -277,9 +279,24 @@ test("the AI's orders are all legal, and a whole war is deterministic", () => {
     }
     return c;
   };
-  const a = play(3), b = play(3);
+  const a = play(7), b = play(7);
   expect(a).toEqual(b);
   expect(a.turn).toBeGreaterThan(5);
+});
+
+// On the symmetric full map the Wooka's first orders are the Marines' turned half a turn around:
+// the AI doesn't play a better game for the side whose worlds come first in the list (#1086).
+test("the AI gives each side the mirror image of the other's opening orders", () => {
+  const g = GALAXIES.full, ids = g.systems.map((s) => s.id);
+  const twin = (id: string) => ids[ids.length - 1 - ids.indexOf(id)]!;
+  let c = newCampaign(1, "marines", "full");
+  for (let i = 0; i < 3; i++) c = resolveTurn(c, none(c)); // a few quiet turns' income to spend
+  const mirrored = aiOrders(c, "marines").orders.map((o) =>
+    o.kind === "build" ? { ...o, at: { ...o.at, system: twin(o.at.system) } }
+    : o.kind === "fleet" ? { ...o, from: twin(o.from), to: twin(o.to) }
+    : { ...o, from: { ...o.from, system: twin(o.from.system) }, to: { ...o.to, system: twin(o.to.system) } });
+  expect(mirrored.length).toBeGreaterThan(10);
+  expect(aiOrders(c, "wooka").orders).toEqual(mirrored);
 });
 
 // Pacing, AI against AI: every war ends, a full one runs longer than a short one, and the AI

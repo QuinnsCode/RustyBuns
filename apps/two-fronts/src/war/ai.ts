@@ -11,8 +11,16 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     if (d.errors.at(-1) === null) { orders.push(o); return true; }
     return false;
   };
-  const foe = enemy(f), { neighbours } = galaxyOf(c);
-  const mine = Object.values(c.systems).filter((s) => s.sectors.some((x) => x.owner === f));
+  // The galaxy lists its systems in twin order, the last the first one's twin, so each side reads
+  // it from its own end. Then every first-come choice below goes the same way for both sides, and
+  // neither plays a better game because its worlds come first in the list (#1086).
+  const g = galaxyOf(c), foe = enemy(f);
+  const ids = g.systems.map((s) => s.id);
+  if (f === "wooka") ids.reverse();
+  const rank = new Map(ids.map((id, i) => [id, i]));
+  const neighbours = (id: string) => [...g.neighbours(id)].sort((a, b) => rank.get(a)! - rank.get(b)!);
+  const systems = (from: Campaign) => ids.map((id) => from.systems[id]!);
+  const mine = systems(c).filter((s) => s.sectors.some((x) => x.owner === f));
   const front = mine.filter((s) => neighbours(s.id).some((n) => c.systems[n]!.sectors.some((x) => x.owner === foe)) || s.sectors.some((x) => x.owner === foe));
 
   // Build: alternate ships and troops on the front, ships first where the enemy's fleets are near.
@@ -53,7 +61,7 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
   }
 
   // Push across a shared planet when the rules allow it.
-  for (const s of Object.values(after.systems)) {
+  for (const s of systems(after)) {
     const foeAt = s.sectors.findIndex((x) => x.owner === foe);
     if (foeAt < 0) continue;
     s.sectors.forEach((x, j) => {
