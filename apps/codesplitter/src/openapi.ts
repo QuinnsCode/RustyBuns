@@ -56,7 +56,7 @@ const OPS: Record<string, Record<string, Op>> = {
       stamps: obj({ given: arr(ref("Stamp")), got: arr(ref("Stamp")) }),
       agent: loose("an agent's only: {harness, run_by: [{name, runs}], repos, lines, pulse: [{day, runs, lines}], runs: [{id, owner, repo, path, status, started, applied, task?}], run_count}") }) } },
   "/users/{name}/city": { get: { id: "get_city", summary: "A person's code city: a district per public repo, a building per file (height from lines, glow from how lately lines landed, agent from how much agents wrote), and who's in town", tag: "Account", open: true,
-    description: "Private repos are never in it. 404 when its owner has switched the public city off, to anyone but them. The postcard is GET /api/users/{name}/city.png.",
+    description: "Private repos are never in it. Each district carries its pulse: its week of commits and edits (bustle, 0-1, how busy its streets are) and its check runs (failing now, and chaos, 0-1, how wild its traffic is). 404 when its owner has switched the public city off, to anyone but them. The postcard is GET /api/users/{name}/city.png.",
     ok: loose("{name, public, districts: [{repo, x, z, size, buildings: [{path, lines, agent, last, glow, x, z, w, h}]}], present: [{who, repo, path, at}], files, lines, visit}") } },
   "/me/city": { put: { id: "set_city", summary: "Switch your public code city off, or back on", tag: "Account", body: obj({ public: { type: "boolean" } }), ok: obj({ public: { type: "boolean" } }) } },
   "/me/following": { get: { id: "list_following", summary: "Everyone and everything you follow: people, agents, repos and line ranges, newest first", tag: "Following",

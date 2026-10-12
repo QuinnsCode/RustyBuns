@@ -1,6 +1,6 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { heightOf, layout } from "../src/city.ts";
+import { heightOf, layout, pulseOf } from "../src/city.ts";
 
 // End to end (in-process D1 and file DOs): fine alone, slow on a busy machine.
 setDefaultTimeout(20_000);
@@ -117,5 +117,31 @@ test("files only in git stand too, counted once by blob; binaries and dotfiles d
   await push(info.remote, token.plaintext, { changes: { "src/main.ts": "a\nb\nc\nd\n", "logo.png": "\u0000png", ".env": "X=1\n" }, message: "upstream", author: "upstream" });
   const dug = (await city(null)).body.districts.find((d: any) => d.repo === "dug");
   expect(dug.buildings.map((b: any) => [b.path, b.lines, b.glow])).toEqual([["src/main.ts", 4, 0]]);
+  // Its commit this week counts toward its pulse.
+  expect(dug.pulse.commits).toBe(1);
   expect(((await call.env.DB.prepare("SELECT COUNT(*) AS n FROM blob_lines").first()) as any).n).toBe(2);
+});
+
+test("each district's pulse: a week of commits and edits makes it busy, failing checks make it chaos", async () => {
+  const { call, city } = await app();
+  const lab = () => city(null).then((r) => r.body.districts.find((d: any) => d.repo === "lab").pulse);
+  const quiet = await lab();
+  expect(quiet).toMatchObject({ failed: 0, failing: 0, chaos: 0 });
+  expect(quiet.edits).toBeGreaterThan(0);
+  expect(quiet.bustle).toBeGreaterThan(0);
+  const run = (name: string, status: string, at: number) => call.env.DB.prepare(
+    "INSERT INTO check_runs (owner, repo, ref, sha, name, runner, status, finished_at, created_at) VALUES ('ryan', 'lab', 'main', 'abc', ?, 'container', ?, ?, ?)").bind(name, status, at, at).run();
+  const now = Date.now();
+  // test failed then passed: fixed. lint passed then failed: failing now. A month-old failure is forgotten.
+  await run("test", "failed", now - 3000); await run("test", "passed", now - 2000);
+  await run("lint", "passed", now - 3000); await run("lint", "failed", now - 1000);
+  await run("old", "failed", now - 30 * 86_400_000);
+  expect(await lab()).toMatchObject({ passed: 2, failed: 2, failing: 1, chaos: 0.6 });
+});
+
+test("pulseOf: bustle climbs with commits and saturates; chaos tops out at 1", () => {
+  expect(pulseOf(0, 0, []).bustle).toBe(0);
+  expect(pulseOf(6, 0, []).bustle).toBeLessThan(pulseOf(30, 0, []).bustle);
+  expect(pulseOf(500, 0, []).bustle).toBe(1);
+  expect(pulseOf(0, 0, ["a", "b", "c", "d"].map((name) => ({ name, status: "failed" }))).chaos).toBe(1);
 });
