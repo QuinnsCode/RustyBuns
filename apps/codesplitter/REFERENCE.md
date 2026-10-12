@@ -627,7 +627,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
 | `src/patch.ts` | a unified diff and a `git format-patch` mail written in JS, for beams on the hosted site where there's no git to run |
-| `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left, an agent's budget; defaults under the repo's `.gitattributes` |
+| `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left, how a settled merge is checked, an agent's budget; defaults under the repo's `.gitattributes` |
 | `src/sandbox.ts` | the container Durable Object hosted agents run in |
 | `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
