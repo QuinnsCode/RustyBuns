@@ -116,6 +116,8 @@ export interface Settings {
   min_age_days: number;
   ignore: string[];
   run_tests: boolean;
+  /** Test a conflict agent's answer in a throwaway clone before it's offered (#998), whatever run_tests says. */
+  test_merges: boolean;
   fix_with: Harness | null;
   fix_tries: number;
   /** What happens to an update that broke the tests, in order, until a step works. */
@@ -720,14 +722,19 @@ function testerAt(env: Env, owner: string): Tester | null {
 
 const testerFor = (env: Env, s: Settings, owner: string): Tester | null => s.run_tests ? testerAt(env, owner) : null;
 
+/** Why tests can't run for this owner here, though a setting asks for them. */
+const noTester = (env: Env) => env.AGENT_SANDBOX ? "tests on Cloudflare are limited to this site's admins (ADMINS)" : "tests only run on the desktop app";
+
 /**
  * A merge's answer tried as the doctor tries an update (#934): `files` swapped into a clone
  * of the repo, a full install, then its test script (with `only`, just the tests for those
- * files, where it can). Runs only where the owner lets the doctor run tests; otherwise `skipped` says why not.
+ * files, where it can). Runs only where the owner turned on test_merges (#998), in the
+ * doctor's sandbox; otherwise `skipped` says why not.
  */
 export async function tryInClone(env: Env, owner: string, repo: string, files: Record<string, string>, only?: string[]): Promise<{ ok: boolean; out: string } | { skipped: string }> {
-  const tester = testerFor(env, await settings(env, owner, repo), owner);
-  if (!tester) return { skipped: "the doctor doesn't run this repo's tests here (its run tests setting)" };
+  if (!(await settings(env, owner, repo)).test_merges) return { skipped: "this repo's merge answers aren't tested (its test merges setting)" };
+  const tester = testerAt(env, owner);
+  if (!tester) return { skipped: noTester(env) };
   const h = await handleFor(env, owner, repo, true);
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   if (!art) return { skipped: "the repo isn't in git yet" };
@@ -948,7 +955,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   updates = updates.filter((u) => u.status !== "yielded");
   const at = (u: Update) => found.findIndex((f) => f.name === u.name && f.path === u.path);
   const inOrder = (us: Update[]) => us.sort((a, b) => at(a) - at(b));
-  if (!tester && s.run_tests) note = [note, env.AGENT_SANDBOX ? "tests on Cloudflare are limited to this site's admins (ADMINS)" : "tests only run on the desktop app"].filter(Boolean).join("; ");
+  if (!tester && s.run_tests) note = [note, noTester(env)].filter(Boolean).join("; ");
   let tested = false;
   let edits: Edit[] = [];
   const held: string[] = [];
@@ -1296,6 +1303,7 @@ const FIELDS: { [K in keyof Settings]: Field<K> } = {
   min_age_days: { default: 3, read: Number, write: count("min_age_days", 0, 90) },
   ignore: { default: [], read: list, write: (v) => ({ value: csv(v).join(",") }) },
   run_tests: { default: false, read: Boolean, write: flag },
+  test_merges: { default: false, read: Boolean, write: flag },
   fix_with: {
     default: null,
     read: (v) => FIX_HARNESSES.includes(v) ? v : null,
