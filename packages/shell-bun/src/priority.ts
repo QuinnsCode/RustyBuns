@@ -28,7 +28,8 @@
 //   counts it at what it measures. Not on Windows, which has no SIGSTOP: there it is put out as before.
 // - parked or paused, a job's `timeoutMs` clock stops: the timeout is for time spent holding a slot.
 // - `runEffect` runs an Effect as the job, in a fiber a stop interrupts: wherever it is, its finalizers
-//   run (an acquireRelease child is killed) and nothing of it runs on outside the budget.
+//   run (an acquireRelease child is killed) and nothing of it runs on outside the budget. Checkpoints are
+//   Effects underneath, so `checkpointWith(release)` runs its release in that fiber too (#1079).
 // - CPU-heavy JS runs on a worker thread through the same slots (`worker`), and a stop terminates the
 //   thread, so it is the one kind of JS job a stop really interrupts. Up to `warm` finished workers are
 //   kept loaded, so the next job for the same module skips the startup (#1047). An idle one counts
@@ -250,6 +251,7 @@ export interface WorkerOptions extends RunOptions {
   transfer?: Transferable[];
 }
 
+type Checkpoint = (release?: Effect.Effect<number | void>) => Effect.Effect<void>;
 // `self`: a job already running that gave its slot back, and waits for one again.
 type Waiting = { priority: "normal" | "low"; memMb: number; start: () => void; self?: Live };
 type Live = {
@@ -317,6 +319,11 @@ export function scheduler(o: SchedulerOptions = {}) {
   }
 
   function run<T>(priority: Priority, fn: (job: JobContext) => T | Promise<T>, opts: RunOptions = {}): Promise<T> {
+    return submit(priority, (job) => fn(job), opts);
+  }
+
+  // run, with the job's checkpoint also handed over as the Effect it is underneath, for runEffect.
+  function submit<T>(priority: Priority, fn: (job: JobContext, checkpoint: Checkpoint) => T | Promise<T>, opts: RunOptions): Promise<T> {
     let memMb = opts.memMb ?? 0, requeues = opts.requeues ?? 0;
     return new Promise<T>((resolve, reject) => {
       const start = () => {
@@ -370,24 +377,38 @@ export function scheduler(o: SchedulerOptions = {}) {
           pump();
         };
         job.hold = () => { signalTrees(job.pids, "SIGSTOP"); park("paused", 0, cont, () => {}); };
-        const checkpoint = async (release?: Release): Promise<void> => {
-          if (ctrl.signal.aborted) throw ctrl.signal.reason;
+        // An Effect, so in runEffect the release runs in the job's own fiber, where a stop interrupts it (#1079).
+        const checkpoint = (release?: Effect.Effect<number | void>): Effect.Effect<void> => Effect.gen(function* () {
+          if (ctrl.signal.aborted) return yield* Effect.die(ctrl.signal.reason);
           if (done || parking || !crowded(job, !!release)) return;
           const before = held(job);
-          const after = release ? await release() : undefined;
-          if (ctrl.signal.aborted) throw ctrl.signal.reason;
+          const after = release ? yield* release : undefined;
+          if (ctrl.signal.aborted) return yield* Effect.die(ctrl.signal.reason);
           if (done || parking) return;
           let need = 0;
           if (typeof after === "number" && after < before) {
             job.memMb = after; job.measuredMb = Math.min(job.measuredMb, after); need = before - after;
             log(`[priority] a ${priority} job let ${Math.round(need)} MB go at a checkpoint`);
           }
-          return new Promise<void>((resume, fail) => {
-            park("parked", need, () => { if (need) job.memMb = before; resume(); }, fail);
+          yield* Effect.callback<void>((resume) => {
+            park("parked", need, () => { if (need) job.memMb = before; resume(Effect.void); }, (e) => resume(Effect.die(e)));
             log(`[priority] a ${priority} job gave its slot back at a checkpoint`);
+            const w = parking!.w;
+            // Interrupted while parked (not by a stop, which settles the parking itself): the job runs on,
+            // so it leaves the queue and holds a slot again, past `slots` if it must.
+            return Effect.sync(() => {
+              if (parking?.w !== w) return;
+              queue.splice(queue.indexOf(w), 1);
+              parking = undefined; job.away = null; running[priority]++; clock(true);
+              if (need) job.memMb = before;
+            });
           });
+        });
+        const ctx: JobContext = {
+          signal: ctrl.signal, track: (pid) => void job.pids.add(pid),
+          checkpoint: (release) => Effect.runPromise(checkpoint(release && Effect.promise(async () => release()))),
         };
-        try { out = Promise.resolve(fn({ signal: ctrl.signal, track: (pid) => void job.pids.add(pid), checkpoint })); } catch (e) { out = Promise.reject(e); }
+        try { out = Promise.resolve(fn(ctx, checkpoint)); } catch (e) { out = Promise.reject(e); }
         out.then((v) => finish(() => resolve(v)), (e) => finish(() => reject(e)));
       };
       const enqueue = (go: () => void, front = false) => {
@@ -404,10 +425,8 @@ export function scheduler(o: SchedulerOptions = {}) {
    *  is, so its finalizers run and none of it goes on outside the budget. `yield* job.checkpoint` between
    *  steps lets a low job give its slot back to normal work. */
   function runEffect<A, E>(priority: Priority, make: (job: EffectJobContext) => Effect.Effect<A, E>, opts: RunOptions = {}): Promise<A> {
-    return run(priority, (job) => Effect.runPromise(make({
-      ...job,
-      checkpoint: Effect.promise(() => job.checkpoint()),
-      checkpointWith: (release) => Effect.promise(() => job.checkpoint(() => Effect.runPromise(release))),
+    return submit(priority, (job, checkpoint) => Effect.runPromise(make({
+      signal: job.signal, track: job.track, checkpoint: checkpoint(), checkpointWith: checkpoint,
     }), { signal: job.signal }), opts);
   }
 

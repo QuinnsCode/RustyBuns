@@ -323,6 +323,35 @@ test("runEffect: a stop interrupts the fiber and runs its finalizers; checkpoint
   expect(order).toEqual(["low 1", "normal", "low 2"]);
 });
 
+test("runEffect: checkpointWith's release runs in the job's fiber, so a stop interrupts it too (#1079)", async () => {
+  const s = scheduler({ cores: 2, totalMb: 1000, budget: { cpu: 1, memory: 0.5, reserve: 0 }, everyMs: 0 });
+  let released = false, after = false;
+  // 600 MB over a 500 MB budget: the checkpoint calls its release, which hangs
+  const job = s.runEffect("low", (job) => job.checkpointWith(Effect.acquireRelease(Effect.succeed(0), () => Effect.sync(() => { released = true; })).pipe(
+    Effect.andThen(Effect.never), Effect.scoped)).pipe(Effect.andThen(Effect.sync(() => { after = true; }))), { memMb: 600, timeoutMs: 20 });
+  expect((await stopped(job)).reason).toBe("timeout");
+  await settle();
+  expect(released).toBe(true);
+  expect(after).toBe(false);
+  expect(s.stats()).toMatchObject({ running: { low: 0 }, parked: 0, memMb: { used: 0 } });
+});
+
+test("runEffect: a job interrupted while parked takes its slot back and leaves the queue", async () => {
+  const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });
+  const normal = gate();
+  const low = s.runEffect("low", (job) => Effect.gen(function* () {
+    yield* Effect.sleep(5);                      // the normal job queues behind this one
+    const gaveUp = yield* job.checkpoint.pipe(Effect.as(false), Effect.timeoutOrElse({ duration: 10, orElse: () => Effect.succeed(true) }));
+    return { gaveUp, stats: s.stats() };
+  }));
+  const queued = s.run("normal", normal.fn);
+  // it runs on, so it counts as running again, over the slots until it ends
+  expect(await low).toMatchObject({ gaveUp: true, stats: { parked: 0, queued: { low: 0, normal: 0 }, running: { normal: 1, low: 1 } } });
+  expect(s.stats().running).toMatchObject({ normal: 1, low: 0 });
+  normal.release();
+  await queued;
+});
+
 test("scheduler.spawn: runs the command in a slot; a timeout kills the child", async () => {
   const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });
   expect((await s.spawn("normal", ["sh", "-c", "exit 3"])).exitCode).toBe(3);
