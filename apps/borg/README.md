@@ -43,9 +43,19 @@ bun borg.ts <url> --limits                         # and go over each edge limit
 
 To check the edge, `rustybuns plan` then `rustybuns deploy` from here, run `bun borg.ts` against the URL, and `rustybuns destroy` when it's done. Everything in the stack is billed by usage, and one run sits inside Cloudflare's free allowances; `plan` lists each resource first.
 
+## The nightly edge run
+
+[`borg-edge.yml`](../../.github/workflows/borg-edge.yml) is tier 2: nightly, on a PR labelled `borg`, or from the Actions tab, it plans, deploys, runs `bun borg.ts <url> --limits`, destroys, and puts the grid in the job summary. [`edge.ts`](edge.ts) holds its guard rails:
+
+- **Cost cap, read from the plan.** `bun edge.ts cap plan.txt` refuses the deploy if any resource bills fixed, needs Workers Paid (`BORG_ALLOW_PAID=1` lets it), or the stack grew past six resources (`BORG_MAX_RESOURCES`).
+- **Its own stage.** Each run deploys under `borg<unix seconds>`, so every resource it makes carries its start time, and `destroy` runs even when the checks fail.
+- **A sweeper.** `bun edge.ts sweep` deletes any `borg-slim-*` resource from a run over an hour old, before and after each run; on the way out it also takes whatever this run's destroy left. `--dry-run` lists without deleting.
+
+It's off until the owner sets the repo variable `BORG_EDGE=1` and creates the `borg-edge` environment with required reviewers and the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets.
+
 ## Where it's going
 
-Slim borg checks each primitive once. What's left for it: the edge run on a Free-plan account ([#865](https://github.com/QuinnsCode/RustyBuns/issues/865)), a nightly edge run with cost guard rails ([#866](https://github.com/QuinnsCode/RustyBuns/issues/866)), and twins that enforce the limits above ([#867](https://github.com/QuinnsCode/RustyBuns/issues/867)). Two bigger rigs are planned:
+Slim borg checks each primitive once. What's left for it: the edge run on a Free-plan account ([#865](https://github.com/QuinnsCode/RustyBuns/issues/865)), and twins that enforce the limits above ([#867](https://github.com/QuinnsCode/RustyBuns/issues/867)). Two bigger rigs are planned:
 
 - **thick borg** ([#856](https://github.com/QuinnsCode/RustyBuns/issues/856)): a decent-sized app per common migration story (keep the database and move the code, leave a PaaS for a box, go all-edge).
 - **fatty borg** ([#857](https://github.com/QuinnsCode/RustyBuns/issues/857)): the chunky examples (codeSplitter, tscircuit-desktop, park-hide-seek, agent-office) run through build, deploy and teardown.
