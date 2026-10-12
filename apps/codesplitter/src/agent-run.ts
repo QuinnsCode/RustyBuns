@@ -86,6 +86,8 @@ export interface Result {
   tripped?: Trip;
   /** Each round's failure, for the handoff note: the lines that moved under it. */
   failures?: string[];
+  /** Notes its owner sent that no run's prompt carried, as it stopped short: the handoff note takes them (#1090). */
+  unheard?: string[];
 }
 
 /** What a file's text looks like on disk: lines joined by \n with one trailing \n. */
@@ -173,6 +175,8 @@ export async function runAgent(call: Call, opts: {
   const retries = opts.retries ?? 2, signal = opts.signal;
   let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = 0, trip: Trip | undefined;
   const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
+  /** How many of `told` the last prompt carried. */
+  let heard = 0;
   /** Whether going round again would blow its budget: if so it stops, and says why. */
   const over = () => {
     const why = opts.budget && tripped({ spent, budget: opts.budget.tokens, failures, conflictRounds: failures.length });
@@ -219,6 +223,7 @@ export async function runAgent(call: Call, opts: {
     const others = await Promise.all(also.map((p) => get(p)));
     rev = snapshot.rev;
     const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.budget ? `\n${NOTE_ASK}` : "");
+    heard = told.length;
     const cmd = harnessCommand(opts.harness, prompt, { model: opts.model });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
     const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal);
@@ -258,6 +263,6 @@ export async function runAgent(call: Call, opts: {
     const res = await call(user, `${file}/commit${q}`, { method: "POST", body: JSON.stringify({ message: opts.commit }) });
     if (!res.ok) throw new Error(`commit: ${res.status} ${await res.text()}`);
   }
-  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(touched.size && { edited: [...touched] }), ...(trip && { tripped: trip, failures }) };
+  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(touched.size && { edited: [...touched] }), ...(trip && { tripped: trip, failures, unheard: told.slice(heard) }) };
   }
 }
