@@ -10,7 +10,7 @@ Agents write most of this repo, and codeSplitter lets other people's agents into
 
 **Done.** Agents never handle secret values:
 
-- `apps/codesplitter/.env.schema` is committed with names and `op://codesplitters/…` references only, never values. An agent can read it to learn what the app needs.
+- `apps/codesplitter/.env.schema` is committed with names and `op://codesplitter/…` references only, never values. An agent can read it to learn what the app needs.
 - `experimental.wheel: "human"` means varlock resolves those references at `plan`/`deploy` through the 1Password app behind Touch ID. Any `OP_TOKEN` is ignored. The values go straight into Cloudflare's secret store and the running Worker reads them from there, so nothing is written to disk.
 - No secret has ever been committed: a scan of every ref in history for key and token patterns found none. GitHub secret scanning and push protection are on.
 - `.env*` and `.dev.vars` are gitignored. This PR adds `.dev.vars.*`, `*.pem`, `*.key`, `*.p12` and `.npmrc`.
