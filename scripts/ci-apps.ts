@@ -17,23 +17,25 @@ type App = {
   check?: boolean;      // typecheck before building (--check)
   drop?: false;         // tests only: no desktop binaries to build
   smoke?: string;       // build the host's binary and check it runs, on every Mac and Linux runner, when the app changes
+  boot?: boolean;       // borg tier 1: build the dev host and boot it on the local twins (scripts/boot.ts)
 };
 
 export const APPS: Record<string, App> = {
   "agent-demo":        { test: "bun test test", drop: false },
   "agent-office":      { test: "bun test test", build: "bun scripts/rustybunsify.ts compile --all", smoke: "bun run desktop:build && bun run desktop:smoke" },
-  "auto-rig":          { test: "bun test test", prep: "bun run build:native", perOs: true },
+  "auto-rig":          { test: "bun test test", prep: "bun run build:native", perOs: true, boot: true },
   "borg":              { test: "bun test test", drop: false },
-  "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true },
-  "codesplitter":     { test: "bun test --parallel test" },
-  "hippo-tycoon":      { test: "bun test --parallel test", prep: "bun run build:native", check: true },
-  "meshy-studio":      { test: "bun test --parallel tests", check: true },
-  "motion-midi":       { test: "bun test test", prep: "bun run build:native", perOs: true, check: true },
-  "park-hide-seek":    { test: "bun test" },
-  "splat-desktop":     { test: "bun test" },
-  "splat-rooms":       { test: "bun test test" },
-  "splat-spray":       { test: "bun test --parallel" },
-  "tscircuit-desktop": { test: "bun test", prep: "bun run native", perOs: true },
+  "example":           { boot: true, drop: false },
+  "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },
+  "codesplitter":     { test: "bun test --parallel test", boot: true },
+  "hippo-tycoon":      { test: "bun test --parallel test", prep: "bun run build:native", check: true, boot: true },
+  "meshy-studio":      { test: "bun test --parallel tests", check: true, boot: true },
+  "motion-midi":       { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },
+  "park-hide-seek":    { test: "bun test", boot: true },
+  "splat-desktop":     { test: "bun test", boot: true },
+  "splat-rooms":       { test: "bun test test", boot: true },
+  "splat-spray":       { test: "bun test --parallel", boot: true },
+  "tscircuit-desktop": { test: "bun test", prep: "bun run native", perOs: true, boot: true },
 };
 
 const RUNNERS = [
@@ -100,8 +102,8 @@ if (cmd === "drop") {
   const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
   const shared = rows === "all" || changed.some((f) => /^(packages\/|bun\.lock$|package\.json$|\.github\/workflows\/apps\.yml$)/.test(f));
   const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...(rows === "all" ? [] : rows)]);
-  const names = Object.keys(APPS).filter((n) => APPS[n]!.test && (shared || touched.has(n)));
-  out("apps", { include: names.map((app) => ({ app, test: APPS[app]!.test, prep: APPS[app]!.prep ?? "", cargo: cargo(app) })) });
+  const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n)));
+  out("apps", { include: names.map((app) => ({ app, test: APPS[app]!.test ?? "", boot: !!APPS[app]!.boot, prep: APPS[app]!.prep ?? "", cargo: cargo(app) })) });
   out("any", names.length > 0);
   const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke && (shared || touched.has(n)))
     .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })));

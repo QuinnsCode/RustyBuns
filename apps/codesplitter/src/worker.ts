@@ -21,6 +21,7 @@ import { createCut, cutRoutes } from "./cuts.ts";
 import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
 import { agentRoutes, runQueuedAgents, type AgentMessage } from "./agent-routes.ts";
 import { depRoutes, scheduledDoctor } from "./deps.ts";
+import { hearDue, listenRoute } from "./listen.ts";
 import { scheduledWatch, watchRoutes } from "./watch.ts";
 import { advanceAll, freshRoutes, startIfFull } from "./fresh.ts";
 import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, runJobs, sweepLimits, type JobMessage } from "./limits.ts";
@@ -29,6 +30,8 @@ import { deployOnCommit, deployRoutes } from "./deploy.ts";
 import { clearOwn } from "./deploy-review.ts";
 import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
+import { commitGraph } from "./graph.ts";
+import { pickRoute } from "./pick.ts";
 import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
 import { bearer, tokenRoutes } from "./tokens.ts";
 import { audit, auditRoutes, via } from "./audit.ts";
@@ -257,7 +260,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
     // GET /api/repos/:o/:r
     if (!p[4] && req.method === "GET") {
-      const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, created_at, expires_at, mirror_url IS NOT NULL AS mirror FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, created_at, expires_at, mirror_url IS NOT NULL AS mirror FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
       const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
       // Anyone who can read the repo can clone its artifact, with an hour-long read token;
       // the crew also gets their own remote's, with private lines' real text, once there is one.
@@ -311,6 +314,26 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "cuts" && req.method === "POST") return createCut(env, owner, repo, user, a.write, await body());
     // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
     if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
+    // GET /api/repos/:o/:r/graph[?limit=60]  main's commits, newest first, with the branches merged into them, each upstream's or this copy's
+    if (p[4] === "graph" && !p[5] && req.method === "GET") {
+      const r = await env.DB.prepare("SELECT upstream_commit FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 60));
+      try {
+        const h = await handleFor(env, owner, repo);
+        if (!h) return json({ branch: "main", commits: [], more: false, upstream: null });
+        return json(await commitGraph(h.handle, h.branch, (r?.upstream_commit as string) ?? null, limit));
+      } catch (e) {
+        if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return json({ forking: true, commits: [] }, 202);
+        if (code(e) === "NOT_FOUND") return json({ lost: true, commits: [] });
+        throw e;
+      }
+    }
+    // POST /api/repos/:o/:r/commits/:sha/revert {branch?}  a commit undone, as line edits (pick.ts)
+    // POST /api/repos/:o/:r/commits/:sha/pick {branch?}  a commit taken again, onto main or an open branch
+    if (p[4] === "commits" && p[5] && (p[6] === "revert" || p[6] === "pick") && !p[7] && req.method === "POST") {
+      if (!a.write) return json({ error: "no write access" }, 403);
+      return pickRoute(env, owner, repo, user!, p[6], p[5], await req.json().catch(() => ({})) as { branch?: unknown });
+    }
     // GET /api/repos/:o/:r/tree?path=dir[&branch=b]  the repo's git tree, plus files written here but not catalogued yet
     if (p[4] === "tree") {
       const dir = (url.searchParams.get("path") ?? "").replace(/^\/|\/$/g, "");
@@ -366,6 +389,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "mirror" && !p[5]) return mirrorRepoRoute(req, env, owner, repo, user);
     // GET|POST /api/repos/:o/:r/mirror/branches[/:b/pull|push]  upstream's branches, opened here; ours, pushed there
     if (p[4] === "mirror") { const r = await mirrorBranchRoute(req, env, p, owner, repo, user); if (r) return r; }
+    // GET /api/repos/:o/:r/upstream, POST .../upstream/hear|take  a dug fork listens to its upstream (listen.ts)
+    if (p[4] === "upstream") { const r = await listenRoute(req, env, p, owner, repo, user); if (r) return r; }
     // GET|POST /api/repos/:o/:r/worktrees, DELETE .../worktrees/:name  real checkouts off the desktop's bare git (worktrees.ts)
     if (p[4] === "worktrees") { const r = await worktreeRoute(req, env, p, owner, repo, user); if (r) return r; }
     const fresh = await freshRoutes(req, env, p, url, owner, repo, user);
@@ -576,6 +601,8 @@ const app = {
     ctx.waitUntil(scheduledDoctor(env, (r) => app.fetch(r, env)));
     // The supply-chain watch: agent platforms' status pages, and new malicious-package advisories against every repo (watch.ts).
     ctx.waitUntil(scheduledWatch(env, (r) => app.fetch(r, env)));
+    // Each dug fork asks GitHub whether its upstream moved on (listen.ts).
+    ctx.waitUntil(hearDue(env));
     ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(sweepTraffic(env));
     ctx.waitUntil(sweepLineEvents(env));

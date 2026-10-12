@@ -3,6 +3,7 @@ import { local as boot } from "../src/local.ts";
 import { bump, costOf, fixCommand, fixPrompt, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, satisfies, scheduledDoctor, settlePeers, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "./fake-gate.ts";
+import type { Runner } from "../src/preview.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { depsFix as containerFix, depsTest as containerTest } from "../sandbox/server.mjs";
 
@@ -526,6 +527,85 @@ test("a fix lands on top of live edits made since the last commit, unless they t
   ]);
   const other = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=src/other.ts&branch=${branch}`)).json();
   expect(other.lines[0].text).toBe(`import kleur from "kleur"; // live`);
+});
+
+/**
+ * A fake preview machine (preview.ts's Runner): the deploy reads the package.json laid over the
+ * clone, and fails when `breaks` says so. `deployed` is each deploy's versions of clsx, hono and kleur.
+ */
+function previewRunner(breaks: (deps: Record<string, string>) => boolean = () => false) {
+  const deployed: string[][] = [], ran: string[] = [];
+  const runner: Runner = {
+    exec: async (cmd, cwd, out) => {
+      const line = cmd.join(" ");
+      ran.push(line);
+      if (line.startsWith("bun -e")) out('RB {"adopt":false,"edge":true,"box":false}\n');
+      if (!line.includes("rustybuns deploy")) return 0;
+      const pkg = JSON.parse(await Bun.file(`${cwd}/package.json`).text());
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      deployed.push(["clsx", "hono", "kleur"].map((n) => `${n}@${deps[n]}`));
+      if (breaks(deps)) { out("Error: the Worker threw on startup\n"); return 1; }
+      out('url: "https://lab-preview.ryan.workers.dev"\n');
+      return 0;
+    },
+    fetch: async () => ({ status: 200 }),
+  };
+  return { runner, deployed, ran };
+}
+
+test("previews on: what passed the tests goes up as a preview, is checked and comes down, then goes on the branch (#864)", async () => {
+  const { call, send } = await app(kleurTester());
+  const { runner, deployed, ran } = previewRunner();
+  call.env.PREVIEW_RUNNER = runner;
+  expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).can_preview).toBe(true);
+  const s = await (await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true, preview: true }, "PUT")).json();
+  expect(s.preview).toBe(true);
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const got = await settle(call);
+  // kleur broke the tests, so only clsx and hono went up, once, on a preview stage, and came down.
+  expect(deployed).toEqual([["clsx@~2.0.0", "hono@4.6.0", "kleur@^3.0.0"]]);
+  expect(got.report.previews).toEqual([{ id: expect.any(String), stage: expect.stringMatching(/^preview-/), ok: true, names: ["clsx", "hono"], url: "https://lab-preview.ryan.workers.dev" }]);
+  expect(ran.filter((l) => /rustybuns (deploy|destroy)/.test(l)).map((l) => l.replace(/preview-\w+/, "preview-x"))).toEqual(["bun x rustybuns deploy --yes --stage preview-x", "bun x rustybuns destroy --yes --stage preview-x"]);
+  expect(got.report.branch).toMatch(/^deps-/);
+  // Logged with the owner's own previews, by agent-deps.
+  const logged = await (await call("ryan", "/api/repos/ryan/lab/preview")).json();
+  expect(logged.history[0]).toMatchObject({ id: got.report.previews[0].id, by: "agent-deps", trigger: "preview", status: "done" });
+});
+
+test("a preview that fails finds the update that broke it, and sends that one down the on-fail chain", async () => {
+  // No tests: the deploy is the check. hono 4.6.0 throws on startup, and has nothing smaller to roll back to.
+  const { call, send } = await app();
+  const { runner, deployed } = previewRunner((d) => d.hono === "4.6.0");
+  call.env.PREVIEW_RUNNER = runner;
+  await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", preview: true, on_fail: ["rollback", "hold"] }, "PUT");
+  const report = await (await send("ryan", "/api/repos/ryan/lab/deps/run", {})).json();
+  const by = Object.fromEntries(report.updates.map((u: any) => [u.name, u]));
+  expect(by.hono.status).toBe("held");
+  expect(by.hono.chain).toEqual([{ step: "rollback", ok: false, note: "no smaller release passes" }, { step: "hold", ok: true }]);
+  expect(by.hono.out).toContain("deploy failed");
+  expect(by.hono.out).toContain("threw on startup");
+  expect([by.clsx.status, by.kleur.status]).toEqual(["kept", "kept"]);
+  // All three, then each alone, then the two that passed, together.
+  expect(deployed.length).toBe(5);
+  expect(deployed.at(-1)).toEqual(["clsx@~2.0.0", "hono@4.0.0", "kleur@^4.1.5"]);
+  expect(report.previews.map((p: any) => [p.names.join(","), p.ok, p.failed])).toEqual([
+    ["clsx,hono,kleur", false, "deploy"], ["clsx", true, undefined], ["hono", false, "deploy"], ["kleur", true, undefined], ["clsx,kleur", true, undefined],
+  ]);
+  const pkg = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=package.json&branch=${report.branch}`)).json();
+  expect(pkg.lines.map((l: any) => l.text).filter((t: string) => /clsx|hono|kleur/.test(t))).toEqual([`    "kleur": "^4.1.5",`, `    "clsx": "~2.0.0",`, `    "hono": "4.0.0",`]);
+});
+
+test("over the preview-deploy limit, nothing unchecked goes on the branch", async () => {
+  const { call, send } = await app();
+  const { runner, deployed } = previewRunner();
+  call.env.PREVIEW_RUNNER = runner;
+  await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('preview', 0, 3600, 1, 'reject')").run();
+  await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", preview: true }, "PUT");
+  const report = await (await send("ryan", "/api/repos/ryan/lab/deps/run", {})).json();
+  expect(deployed).toEqual([]);
+  expect(report.branch).toBeUndefined();
+  expect(report.note).toContain("a preview deploy couldn't go (Slow down: preview deploys");
+  expect(report.updates.every((u: any) => u.status === "untested")).toBe(true);
 });
 
 test("a long run beats, so it's never taken for dead while it goes", async () => {

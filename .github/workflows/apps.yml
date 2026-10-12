@@ -1,6 +1,7 @@
 # Everyday app tests, on PRs only: one Linux job per app the PR touched (every app if
 # packages/ or the lockfile moved), plus the packages' own tests when packages/ moved and the
 # agent guard hook's tests when .claude/ moved.
+# An app with boot: true in scripts/ci-apps.ts also builds its dev host and boots it on the local twins.
 # An app with a smoke row in scripts/ci-apps.ts (agent-office) also builds its binary on each Mac and Linux
 # runner and checks it starts; those binaries are thrown away. The ones handed out come from desktop-drop.yml.
 name: apps
@@ -90,7 +91,11 @@ jobs:
       - if: matrix.prep
         run: ${{ matrix.prep }}
       # the test count goes on the check run as an annotation, for the office's PR health bar
-      - run: bun ../../scripts/ci-test-count.ts "${{ matrix.test }}"
+      - if: matrix.test
+        run: bun ../../scripts/ci-test-count.ts "${{ matrix.test }}"
+      # Borg tier 1: the dev host builds and boots on the local twins (scripts/boot.ts).
+      - if: matrix.boot
+        run: bun ../../scripts/boot.ts
 
   # The app's own binary, built for the runner it's on and started: linux-x64, linux-arm64, darwin-arm64, darwin-x64.
   smoke:

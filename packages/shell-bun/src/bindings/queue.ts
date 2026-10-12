@@ -43,6 +43,9 @@ const LEASE_MS = 15 * 60_000;
 /** How often the consumer looks for messages whose delay is up. A send wakes it at once. */
 const POLL_MS = 1000;
 
+/** A message body is at most 128 KB, as on Cloudflare. */
+export const QUEUE_MAX_MESSAGE_BYTES = 128_000;
+
 interface Row { id: string; body: Uint8Array; attempts: number; sent_at: number }
 type Verdict = { ack: true } | { ack: false; delaySeconds?: number };
 
@@ -63,19 +66,27 @@ export class LocalQueue<Body = unknown> {
   }
 
   async send(body: Body, opts: QueueSendOptions = {}): Promise<void> {
-    this.insert(body, opts.delaySeconds);
+    this.insert(this.encode(body), opts.delaySeconds);
     this.kick();
   }
 
   async sendBatch(messages: Iterable<{ body: Body; delaySeconds?: number; contentType?: string }>, opts: { delaySeconds?: number } = {}): Promise<void> {
-    this.db.transaction(() => { for (const m of messages) this.insert(m.body, m.delaySeconds ?? opts.delaySeconds); })();
+    // Encode them all first, so one too large refuses the batch before any of it is queued.
+    const rows = [...messages].map((m) => [this.encode(m.body), m.delaySeconds ?? opts.delaySeconds] as const);
+    this.db.transaction(() => { for (const [b, d] of rows) this.insert(b, d); })();
     this.kick();
   }
 
-  private insert(body: Body, delaySeconds = 0) {
+  private encode(body: Body): Buffer {
+    const b = serialize(body);
+    if (b.byteLength > QUEUE_MAX_MESSAGE_BYTES) throw new Error(`Queue send failed: message length of ${b.byteLength} bytes exceeds limit of ${QUEUE_MAX_MESSAGE_BYTES}`);
+    return b;
+  }
+
+  private insert(body: Buffer, delaySeconds = 0) {
     const now = Date.now();
     this.db.query(`INSERT INTO queue_messages (id, queue, body, visible_at, sent_at) VALUES (?, ?, ?, ?, ?)`)
-      .run(crypto.randomUUID(), this.name, serialize(body), now + delaySeconds * 1000, now);
+      .run(crypto.randomUUID(), this.name, body, now + delaySeconds * 1000, now);
   }
 
   /** Messages waiting or in flight. */

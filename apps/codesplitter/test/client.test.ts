@@ -44,7 +44,7 @@ describe("git action pictures", () => {
   });
 
   test("the git actions on the page carry a picture", () => {
-    for (const b of ["data-resolve=\"mine\"", "data-resolve=\"rebase\"", "id=\"mirror-sync\"", "data-crew=\"1\"", "data-push=", "data-pull=", "data-open-ref="])
+    for (const b of ["data-resolve=\"mine\"", "data-resolve=\"rebase\"", "id=\"mirror-sync\"", "data-crew=\"1\"", "data-push=", "data-pull=", "data-open-ref=", "data-cg=\"revert\"", "data-cg=\"pick\""])
       expect(html).toMatch(new RegExp(`${b}[^>]*\\$\\{(picAttr|sync)`));
   });
 });
@@ -52,7 +52,7 @@ describe("git action pictures", () => {
 // The git map: who a repo listens to, and its branches, as tiles and curves.
 describe("the git map", () => {
   const src = html.slice(html.indexOf("// The git map: a repo's family"), html.indexOf("/** The git map of a repo:"));
-  const { gitMapModel, gitCurve } = new Function(`${src}; return { gitMapModel, gitCurve };`)();
+  const { gitMapModel, gitCurve, commitLanes } = new Function(`${src}; return { gitMapModel, gitCurve, commitLanes };`)();
   const link = (m: any, from: string, to: string) => m.links.find((l: any) => l.from === from && l.to === to);
 
   test("a dug fork was copied once and doesn't listen", () => {
@@ -90,6 +90,42 @@ describe("the git map", () => {
     expect(m.tiles.some((t: any) => t.id === "up")).toBe(false);
     expect(m.story).toContain("no upstream");
     expect(m.more).toBe(4);
+  });
+
+  // Main's commits newest first, each merge followed by its branch's commits (as GET .../graph sends them).
+  const c = (hash: string, parents: string[], o: Record<string, unknown> = {}) => ({ hash, parents, message: hash, author: "ann", at: 0, up: false, ...o });
+  const at = (g: any) => Object.fromEntries(g.dots.map((d: any) => [d.hash, [d.x, d.lane]]));
+
+  test("the commit graph: main in a row, oldest left, and a merged branch in a lane below from where it left to where it landed", () => {
+    const g = commitLanes([c("m3", ["m2", "b2"]), c("b2", ["b1"], { side: "m3" }), c("b1", ["m1"], { side: "m3" }), c("m2", ["m1"]), c("m1", [], { up: true })]);
+    expect(at(g)).toEqual({ m1: [0, 0], m2: [1, 0], b1: [2, 1], b2: [3, 1], m3: [4, 0] });
+    expect(g.lanes).toBe(2);
+    expect(g.dots.find((d: any) => d.hash === "m3").merge).toBe(true);
+    // It leaves main at m1 and lands on the merge.
+    expect(g.edges).toContainEqual({ x1: 0, l1: 0, x2: 2, l2: 1 });
+    expect(g.edges).toContainEqual({ x1: 3, l1: 1, x2: 4, l2: 0 });
+    expect(g.edges.some((e: any) => e.off)).toBe(false);
+  });
+
+  test("branches that ran at once take lanes of their own; one after another share", () => {
+    // b ran from m1 to m4, and a from m2 to m3 alongside it. d ran from m4 to m5, after b landed.
+    const g = commitLanes([
+      c("m5", ["m4", "d1"]), c("d1", ["m4"], { side: "m5" }),
+      c("m4", ["m3", "b1"]), c("b1", ["m1"], { side: "m4" }),
+      c("m3", ["m2", "a1"]), c("a1", ["m2"], { side: "m3" }),
+      c("m2", ["m1"]), c("m1", ["m0"]),
+    ], true);
+    const lane = (h: string) => at(g)[h][1];
+    expect([lane("b1"), lane("a1"), lane("d1")]).toEqual([1, 2, 1]);
+    // Every parent sits left of its children.
+    for (const e of g.edges) expect(e.x1).toBeLessThan(e.x2);
+    // m0 isn't shown: main trails off to the left.
+    expect(g.edges).toContainEqual({ x1: -1, l1: 0, x2: 0, l2: 0, off: true });
+  });
+
+  test("a branch merged twice keeps its older commits left of the first merge", () => {
+    const g = commitLanes([c("m3", ["m2", "b2"]), c("b2", ["b1"], { side: "m3" }), c("m2", ["m1", "b1"]), c("b1", ["m1"], { side: "m2" }), c("m1", [])]);
+    for (const e of g.edges) expect(e.x1).toBeLessThan(e.x2);
   });
 
   test("a curve leaves and lands level, its label at the middle", () => {
