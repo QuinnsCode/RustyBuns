@@ -4,7 +4,7 @@ import { take } from "../src/budget.ts";
 import { BOXES, boxById, pickBoxes } from "../src/boxes.ts";
 import { clefRequest, estimate, parseClef } from "../src/judge.ts";
 import { MAX_CLIP, parseRequest } from "../src/review.ts";
-import { scoreFor, verdictFor, writeReview } from "../src/write.ts";
+import { cameo, namesHim, scoreFor, verdictFor, writeReview } from "../src/write.ts";
 
 const f: Features = { durationSec: 200, loudnessDb: -7, dynamicsDb: 4, bpm: 145, pulse: 0.6, bass: 0.6, brightness: 0.3, silence: 0 };
 const clip = "data:audio/wav;base64,UklGRiQAAABXQVZF";
@@ -54,12 +54,19 @@ describe("judge", () => {
     expect(Object.keys(req.questions.box.criteria)).toEqual(boxes.map((b) => b.id));
     expect(req.audio).toEqual([clip]);
     // Every question token is billed: keep the whole text side small.
-    expect(JSON.stringify({ ...req, audio: [] }).length).toBeLessThan(700);
+    expect(JSON.stringify({ ...req, audio: [] }).length).toBeLessThan(800);
   });
 
   test("reads Clef's documented fields", () => {
     const v = parseClef({ answers: { box: { choice: boxes[2]!.id }, craft: { score: 3 }, originality: { score: 1 } } }, boxes);
     expect(v).toEqual({ box: boxes[2]!.id, craft: 0.75, originality: 0.25, by: "clef" });
+  });
+
+  test("hears talking with no music, and assumes music when it isn't told", () => {
+    const answers = { box: { choice: boxes[0]!.id }, craft: { score: 2 }, originality: { score: 2 } };
+    expect(parseClef({ answers: { ...answers, speech: { choice: "talking" } } }, boxes).talking).toBe(true);
+    expect(parseClef({ answers: { ...answers, speech: { probabilities: { music: 0.8, talking: 0.2 } } } }, boxes).talking).toBeUndefined();
+    expect(parseClef({ answers }, boxes).talking).toBeUndefined();
   });
 
   test("falls back to the probabilities when a field is missing", () => {
@@ -104,6 +111,22 @@ describe("write", () => {
     expect(a.review).not.toContain("{");
     expect(a.headline).toContain("Mixtape");
     expect(a.worstBit).toContain("sausage");
+  });
+});
+
+describe("cameos", () => {
+  const v = { box: "indie-folk", craft: 0.5, originality: 0.5, by: "estimate" as const };
+
+  test("naming him gets the self-review, for free", () => {
+    expect(["Fantano reacts", "theneedledrop", "Needle Drop", "melon head"].every(namesHim)).toBe(true);
+    expect(["Watermelon Sugar", "Phantom", "Song"].some(namesHim)).toBe(false);
+    expect(cameo(v, "my song", "sounds like fantano")).toMatchObject({ box: "Self-review", score: 10, headline: "Well hey, what is going on here?" });
+    expect(cameo(v, "Fantano reviews my song", "")!.review).toContain("I know me when I know me");
+  });
+
+  test("talking with no music is a podcast; a song is just a song", () => {
+    expect(cameo({ ...v, talking: true }, "Ep. 4", "")).toMatchObject({ box: "Podcast", verdict: "NOT GOOD" });
+    expect(cameo(v, "Song", "trap")).toBeNull();
   });
 });
 
