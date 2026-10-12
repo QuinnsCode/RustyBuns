@@ -44,7 +44,7 @@ for (const d of ["clones", "logs", "data"]) mkdirSync(join(OUT, d), { recursive:
 type App = { repo: string; sub: string; version?: string; stars?: number; pushed?: string };
 type Prof = { bootMs: number; p50: number; p95: number; max: number; rssMb: number; profile?: string };
 type ModeResult = { stage: string; status?: number; bytes?: number; text?: string; error?: string; prof?: Prof };
-type Result = App & { pm?: string; init?: string; error?: string; modes: Record<string, ModeResult> };
+type Result = App & { fakeSecrets?: string[]; pm?: string; init?: string; error?: string; modes: Record<string, ModeResult> };
 
 /** The version range an app's package.json gives <dep>, or undefined. */
 export function depVersion(pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }, dep: string) {
@@ -109,8 +109,32 @@ const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 /** The last lines of a failed step's output worth reading: no stack frames. */
 const tail = (s: string) => strip(s).trim().split("\n").filter((l) => !/^\s+at /.test(l) && !/^Bun v\d/.test(l) && l.trim()).slice(-4).join("\n");
 
-async function step(log: string, cwd: string, cmd: string[], ms: number) {
-  const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", env: ENV });
+// On macOS the OS enforces the rest (sandbox-exec). Every app command: no reads or writes under
+// the real home except the toolchains and package caches it needs (so no ~/.ssh, keychains,
+// ~/.wrangler). After install: no network but localhost, so a build or a booted server can't send
+// anything out or reach anyone's real service. Install keeps the network: packages come from registries.
+type Net = "net" | "offline";
+const PROFILES: Partial<Record<Net, string>> = {};
+function profile(net: Net): string | undefined {
+  if (process.platform !== "darwin" || !Bun.which("sandbox-exec")) return undefined;
+  if (PROFILES[net]) return PROFILES[net];
+  const ok = [join(realHome, ".bun"), join(realHome, ".nvm"), join(realHome, ".npm"), join(realHome, "Library/pnpm"), REPO, OUT];
+  const sb = [
+    "(version 1)", "(allow default)",
+    `(deny file-read* file-write* (subpath ${JSON.stringify(realHome)}))`,
+    // later rules win: these stay reachable
+    ...ok.map((p) => `(allow file-read* file-write* (subpath ${JSON.stringify(p)}))`),
+    `(allow file-read* (literal ${JSON.stringify(realHome)}))`,
+    ...(net === "offline" ? ["(deny network-outbound)", '(allow network-outbound (remote ip "localhost:*"))', "(allow network-outbound (remote unix-socket))"] : []),
+  ].join("\n");
+  const f = join(OUT, `sandbox-${net}.sb`);
+  writeFileSync(f, sb + "\n");
+  return (PROFILES[net] = f);
+}
+const sandboxed = (cmd: string[], net: Net) => { const f = profile(net); return f ? ["sandbox-exec", "-f", f, ...cmd] : cmd; };
+
+async function step(log: string, cwd: string, cmd: string[], ms: number, net: Net = "offline", fakes: Record<string, string> = {}) {
+  const p = Bun.spawn(sandboxed(cmd, net), { cwd, stdout: "pipe", stderr: "pipe", env: { ...fakes, ...ENV } });
   const t = setTimeout(() => p.kill(), ms);
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   const code = await p.exited; clearTimeout(t);
@@ -130,10 +154,10 @@ function packageManager(dir: string, root: string): { pm: string; at: string } {
 }
 
 /** Boots the dev host, logs in with the printed token like a browser does, and GETs /. */
-async function boot(dir: string, log: string, profName?: string): Promise<ModeResult> {
+async function boot(dir: string, log: string, profName?: string, fakes: Record<string, string> = {}): Promise<ModeResult> {
   const prof = profName ? ["--cpu-prof", `--cpu-prof-dir=${join(OUT, "logs")}`, `--cpu-prof-name=${profName}.cpuprofile`] : [];
   const t0 = performance.now();
-  const host = Bun.spawn(["bun", ...prof, ".rustybuns/dev/desktop.js"], { cwd: dir, stdout: "pipe", stderr: "pipe", env: ENV });
+  const host = Bun.spawn(sandboxed(["bun", ...prof, ".rustybuns/dev/desktop.js"], "offline"), { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...fakes, ...ENV } });
   let buf = "";
   for (const s of [host.stdout, host.stderr]) void (async () => { for await (const c of s) buf += new TextDecoder().decode(c); })();
   try {
@@ -168,6 +192,65 @@ function setMode(cfg: string, mode: "spa" | "worker", dataDir: string) {
   return s;
 }
 
+/** A plausible fake for a secret, by its name. Never real: enough for an app to boot logged-out. */
+export function fakeSecret(name: string): string | undefined {
+  const hex = (n: number) => Buffer.from(crypto.getRandomValues(new Uint8Array(n))).toString("hex");
+  if (/^(NODE_ENV|PORT|HOST|HOSTNAME|CI|HOME|PATH|TZ|PWD)$|^CLOUDFLARE_/.test(name)) return undefined;
+  // Clerk checks the format: pk_<env>_ + base64("<frontend api host>$")
+  if (/CLERK.*PUBLISHABLE|PUBLISHABLE.*CLERK/.test(name)) return `pk_test_${Buffer.from("rustybuns-trial.clerk.accounts.dev$").toString("base64")}`;
+  if (/CLERK.*SECRET/.test(name)) return `sk_test_${hex(20)}`;
+  if (/STRIPE.*PUBLISHABLE/.test(name)) return `pk_test_${hex(24)}`;
+  if (/STRIPE.*SECRET/.test(name)) return `sk_test_${hex(24)}`;
+  // addresses go nowhere: port 9 (discard) refuses at once, and the sandbox has no network anyway
+  if (/(DATABASE|DB|POSTGRES|PG).*(URL|URI)|^DATABASE_URL$/.test(name)) return "postgres://trial:trial@127.0.0.1:9/trial";
+  if (/(MYSQL).*(URL|URI)/.test(name)) return "mysql://trial:trial@127.0.0.1:9/trial";
+  if (/(REDIS|KV).*(URL|URI)/.test(name)) return "redis://127.0.0.1:9";
+  if (/(URL|URI|ENDPOINT|ORIGIN|BASE)$/.test(name)) return "http://127.0.0.1:9";
+  if (/SECRET|KEY|TOKEN|PASSWORD|PASS$|SALT|PRIVATE|SIGNING/.test(name)) return hex(32);
+  if (/EMAIL|FROM$/.test(name)) return "trial@example.invalid";
+  if (/^VITE_|^PUBLIC_|^NEXT_PUBLIC_/.test(name)) return "rustybuns-trial";
+  return undefined;
+}
+
+/** The secret names an app declares (.env.example and friends) or reads (process.env.X, env.X) in its own code. */
+export function declaredSecrets(dir: string): string[] {
+  const names = new Set<string>();
+  const examples = /^\.(env|dev\.vars)(\..+)?\.(example|sample|template)$|^\.env\.(example|sample|template)$/;
+  const code = /\.(m?[jt]sx?)$/;
+  let files = 0;
+  const walk = (d: string, depth: number) => {
+    if (depth > 6 || files > 2000) return;
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (/^(node_modules|\.git|dist|build|\.output|\.vercel|\.wrangler|\.rustybuns)$/.test(e.name)) continue;
+      const p = join(d, e.name);
+      if (e.isDirectory()) { walk(p, depth + 1); continue; }
+      if (examples.test(e.name)) for (const m of readFileSync(p, "utf8").matchAll(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]+)\s*=/gm)) names.add(m[1]!);
+      else if (code.test(e.name) && files++ < 2000) {
+        const src = readFileSync(p, "utf8");
+        for (const m of src.matchAll(/\b(?:process\.env|import\.meta\.env|env)\.([A-Z][A-Z0-9_]{2,})\b/g)) names.add(m[1]!);
+        for (const m of src.matchAll(/\b(?:process\.env|env)\[["']([A-Z][A-Z0-9_]{2,})["']\]/g)) names.add(m[1]!);
+      }
+    }
+  };
+  walk(dir, 0);
+  // SDKs that read their own variables, which the app's code never names
+  const pkg = (() => { try { return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")); } catch { return {}; } })();
+  const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+  for (const [dep, vars] of Object.entries(IMPLICIT)) if (deps.some((d) => d === dep || d.startsWith(dep + "/"))) vars.forEach((v) => names.add(v));
+  return [...names].sort();
+}
+
+/** Variables an SDK reads by itself when present. */
+const IMPLICIT: Record<string, string[]> = {
+  "@clerk": ["CLERK_SECRET_KEY", "CLERK_PUBLISHABLE_KEY", "VITE_CLERK_PUBLISHABLE_KEY"],
+  "better-auth": ["BETTER_AUTH_SECRET", "BETTER_AUTH_URL"],
+  "next-auth": ["AUTH_SECRET", "NEXTAUTH_SECRET", "NEXTAUTH_URL"], "@auth": ["AUTH_SECRET", "AUTH_URL"],
+  "convex": ["CONVEX_URL", "VITE_CONVEX_URL"], "@convex-dev": ["CONVEX_URL", "VITE_CONVEX_URL"],
+  "@supabase": ["SUPABASE_URL", "SUPABASE_ANON_KEY", "VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY"],
+  "stripe": ["STRIPE_SECRET_KEY"], "resend": ["RESEND_API_KEY"], "openai": ["OPENAI_API_KEY"],
+  "@anthropic-ai": ["ANTHROPIC_API_KEY"], "@neondatabase": ["DATABASE_URL"], "@prisma/client": ["DATABASE_URL"], "postgres": ["DATABASE_URL"],
+};
+
 /** .env, .env.production, .dev.vars and the like anywhere in a clone (not .env.example), deleted; returns their paths. */
 export function removeCommittedSecrets(root: string): string[] {
   const out: string[] = [];
@@ -191,17 +274,28 @@ async function trial(app: App): Promise<Result> {
   const dir = join(root, app.sub);
   const r: Result = { ...app, modes: {} };
   if (!existsSync(root)) {
-    const s = await step(log, OUT, ["git", "clone", "--depth", "1", `https://github.com/${app.repo}`, root], 180e3);
+    const s = await step(log, OUT, ["git", "clone", "--depth", "1", `https://github.com/${app.repo}`, root], 180e3, "net");
     if (!s.ok) return { ...r, error: `clone: ${s.tail}` };
   }
   // Some repos commit their real secrets (.env with a production DATABASE_URL, .dev.vars). Nothing
   // here may use them: they go before any of the app's code runs. Examples and templates stay.
   const removed = removeCommittedSecrets(root);
   if (removed.length) appendFileSync(log, `\nremoved committed secrets files: ${removed.join(", ")}\n`);
+  // In their place, fakes for every secret the app declares or reads, so a missing key doesn't stop it
+  // booting: .env (Vite, dotenv), .dev.vars (Workers, init's secret bindings), and the process itself.
+  const fakes: Record<string, string> = {};
+  for (const n of declaredSecrets(dir)) { const v = fakeSecret(n); if (v) fakes[n] = v; }
+  if (Object.keys(fakes).length) {
+    const lines = Object.entries(fakes).map(([k, v]) => `${k}=${v}`).join("\n") + "\n";
+    writeFileSync(join(dir, ".env"), lines);
+    writeFileSync(join(dir, ".dev.vars"), lines);
+    r.fakeSecrets = Object.keys(fakes);
+    appendFileSync(log, `\nfake secrets: ${Object.keys(fakes).join(" ")}\n`);
+  }
   let { pm, at } = packageManager(dir, root);
-  let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3);
+  let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3, "net");
   // an npm lockfile that npm itself can't install (peer conflicts): pnpm reads package.json alone
-  if (!s.ok && pm === "npm") { pm = "pnpm"; s = await step(log, at, ["pnpm", "install", "--config.minimum-release-age=0"], 600e3); }
+  if (!s.ok && pm === "npm") { pm = "pnpm"; s = await step(log, at, ["pnpm", "install", "--config.minimum-release-age=0"], 600e3, "net"); }
   r.pm = pm;
   if (!s.ok) return { ...r, error: `install: ${s.tail}` };
   const cli = o.local ? ["bun", join(REPO, "packages/cli/src/index.ts")] : [join(dir, "node_modules/.bin/rustybuns")];
@@ -211,10 +305,10 @@ async function trial(app: App): Promise<Result> {
     for (const p of ["cli", "shell-bun"]) { rmSync(join(dir, "node_modules/@rustybuns", p), { recursive: true, force: true }); symlinkSync(join(REPO, "packages", p), join(dir, "node_modules/@rustybuns", p)); }
   } else {
     const add = pm === "npm" ? ["npm", "i", "-D"] : [pm, "add", "-D", ...(pm === "pnpm" ? ["--config.minimum-release-age=0"] : [])];
-    s = await step(log, dir, [...add, `@rustybuns/cli@${VERSION}`, `@rustybuns/shell-bun@${VERSION}`], 300e3);
+    s = await step(log, dir, [...add, `@rustybuns/cli@${VERSION}`, `@rustybuns/shell-bun@${VERSION}`], 300e3, "net");
     if (!s.ok) return { ...r, error: `add rustybuns: ${s.tail}` };
   }
-  s = await step(log, dir, [...cli, "init", "--force"], 120e3);
+  s = await step(log, dir, [...cli, "init", "--force"], 120e3, "offline", fakes);
   if (!s.ok) return { ...r, error: `init: ${s.tail}` };
   r.init = strip(s.out).match(/^detected: (.*)$/m)?.[1];
   const initCfg = readFileSync(join(dir, "rustybuns.config.ts"), "utf8");
@@ -226,11 +320,11 @@ async function trial(app: App): Promise<Result> {
     writeFileSync(join(dir, "rustybuns.config.ts"), setMode(initCfg, mode, join(OUT, "data", slug, mode)));
     appendFileSync(log, `\n===== mode ${mode} =====\n`);
     if (mode === "spa" && initMode === "spa" && !existsSync(join(dir, "vite.desktop.config.ts"))) {
-      s = await step(log, dir, [...cli, "add", "desktop"], 300e3);
+      s = await step(log, dir, [...cli, "add", "desktop"], 300e3, "offline", fakes);
       if (!s.ok) { r.modes[mode] = { stage: "add desktop", error: s.tail }; continue; }
     }
-    s = await step(log, dir, [...cli, "build", "desktop", "--dev"], 600e3);
-    r.modes[mode] = s.ok ? await boot(dir, log, o.prof ? `${slug}.${mode}` : undefined) : { stage: "build", error: s.tail };
+    s = await step(log, dir, [...cli, "build", "desktop", "--dev"], 600e3, "offline", fakes);
+    r.modes[mode] = s.ok ? await boot(dir, log, o.prof ? `${slug}.${mode}` : undefined, fakes) : { stage: "build", error: s.tail };
   }
   if (!o.keep) for (const d of new Set([dir, at])) rmSync(join(d, "node_modules"), { recursive: true, force: true });
   return r;

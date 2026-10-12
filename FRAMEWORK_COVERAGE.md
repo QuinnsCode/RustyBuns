@@ -28,6 +28,31 @@ The apps' own credentials are kept out too, in two ways:
 - **Secrets files are deleted.** Before any of the app's code runs, committed secrets files (`.env`, `.env.production`, `.dev.vars` and the like, but not the `.example` ones) are removed from the clone.
 - **Remote steps are dropped from the build.** `init` leaves out any step that would act on a real database or account (migrations, `db push`, seeds and deploys to wrangler, Vercel, Netlify, Convex or Supabase). So a Vercel-style `"build": "prisma migrate deploy && vite build"` runs only the build.
 
+On macOS the operating system enforces two more limits (`sandbox-exec`), on every app command:
+
+- **No reading or writing under your home folder**, except the toolchains and package caches the build needs. That means no `~/.ssh`, keychains or `~/.wrangler`.
+- **No network after install** except localhost. A build or a booted server can't send anything out or reach a real service.
+
+Installs keep the network, because packages come from registries.
+
+**Missing secrets are faked, never borrowed.** The harness collects every secret an app declares or reads:
+
+- from `.env.example`, `.dev.vars.example` and similar files;
+- from `process.env.X` and `env.X` in the app's code;
+- from the variables well-known SDKs read on their own (Clerk, better-auth, Auth.js, Convex, Supabase, Stripe, Resend, OpenAI, Anthropic, Prisma and Neon).
+
+It then fills each one with a plausible fake, chosen by name:
+
+| secret name | fake |
+|---|---|
+| `*_SECRET`, `*_KEY` | random bytes |
+| Clerk keys | the right `pk_test_…` / `sk_test_…` shape |
+| `DATABASE_URL`, `*_URL` | a dead local address |
+
+That's enough for an app to boot and render logged-out. Anything that really needs the service fails, as it should.
+
+This is containment, not malware detection. Reading code can't reliably tell a malicious package from a fine one, so the harness assumes the worst and gives the code nothing worth stealing and nowhere to send it.
+
 ## RWSDK
 
 **Run: Oct 12 2026, RWSDK 1.x, this checkout. 196 apps found.**
