@@ -114,6 +114,13 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { limit: int("how many of main's commits, default 60, up to 200") },
     ok: obj({ branch: str(), upstream: { type: ["string", "null"], description: "the upstream commit this repo last took" }, more: bool("main goes back further"),
       commits: arr(obj({ hash: str(), parents: arr(str()), message: str("the first line"), author: str(), at: int("ms"), up: bool(), side: str("the merge this branch commit lands in") })) }) } },
+  ...Object.fromEntries((["revert", "pick"] as const).map((k) => [`${repo}/commits/{sha}/${k}`, { post: {
+    id: k === "revert" ? "revert_commit" : "cherry_pick", summary: k === "revert" ? "Revert a commit: undo its changes (the crew)" : "Cherry-pick a commit onto main or an open branch (the crew)", tag: "Repos", risky: true,
+    description: "Its changes against its first parent are merged into each file's lines as they are now and land as line edits, so the lines it doesn't touch keep their ids and blame. " +
+      "On main the files are committed as one git commit; on a branch they wait for its merge. A file whose lines changed since, deleted or made since, or a binary one: 409 with `clashes`, and nothing lands.",
+    body: obj({ branch: str("an open branch to land it on instead of main") }),
+    ok: obj({ kind: str("revert or pick"), commit: str(), branch: str(), message: str("the commit message, as git writes it"), files: arr(obj({ path: str(), did: str("edit, make or delete") })), git: loose("main's git commit") }),
+  } }])),
   [`${repo}/files`]: { post: { id: "add_file", summary: "Add a file (the crew)", tag: "Files",
     body: obj({ path: str(), content: str(), branch: str("add it on this open branch instead of main") }, ["path"]), ok: obj({ path: str() }), status: 201 } },
   [`${repo}/do/file`]: { get: { id: "read_file", summary: "A file's lines, each with its id, who last wrote it, and the rev it was written at", tag: "Files", open: true,

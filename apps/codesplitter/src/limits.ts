@@ -64,7 +64,7 @@ export const RULES: Rule[] = [
   { name: "repo", label: "New repos", what: "empty repos made here", group: "Repos", per: "user", max: 10, window_s: DAY, on_fail: "reject" },
   { name: "file", label: "New files", what: "files added to a repo", group: "Repos", per: "user", max: 120, window_s: HOUR, on_fail: "reject" },
   { name: "edit", label: "Line edits", what: "live edits to a file's lines, over its socket or POST", group: "Editing and sharing", per: "user", max: 300, window_s: MIN, on_fail: "reject" },
-  { name: "commit", label: "Commits", what: "pushes to Artifacts, branch merges included", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
+  { name: "commit", label: "Commits", what: "pushes to Artifacts, branch merges, reverts and cherry-picks included", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "branch", label: "New branches", what: "branches made on a repo", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "fresh", label: "Fresh starts", what: "repos copied onto new git (an Artifacts repo each)", group: "Repos", per: "user", max: 3, window_s: DAY, on_fail: "reject" },
   { name: "hook", label: "Webhooks", what: "webhooks added to repos", group: "Repos", per: "user", max: 20, window_s: HOUR, on_fail: "reject" },
@@ -113,6 +113,7 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "repos" && p[4] === "deploy" && !p[5]) return "deploy";
   if (p[1] === "repos" && p[4] === "deps" && p[5] === "run") return "doctor";
   if (p[1] === "repos" && p[4] === "do" && p[5] === "commit") return "commit";
+  if (p[1] === "repos" && p[4] === "commits" && (p[6] === "revert" || p[6] === "pick") && !p[7]) return "commit";
   if (p[1] === "repos" && p[4] === "do" && p[5] === "ops") return "edit";
   return null;
 }

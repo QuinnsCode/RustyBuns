@@ -44,7 +44,7 @@ describe("git action pictures", () => {
   });
 
   test("the git actions on the page carry a picture", () => {
-    for (const b of ["data-resolve=\"mine\"", "data-resolve=\"rebase\"", "id=\"mirror-sync\"", "data-crew=\"1\"", "data-push=", "data-pull=", "data-open-ref="])
+    for (const b of ["data-resolve=\"mine\"", "data-resolve=\"rebase\"", "id=\"mirror-sync\"", "data-crew=\"1\"", "data-push=", "data-pull=", "data-open-ref=", "data-cg=\"revert\"", "data-cg=\"pick\""])
       expect(html).toMatch(new RegExp(`${b}[^>]*\\$\\{(picAttr|sync)`));
   });
 });
