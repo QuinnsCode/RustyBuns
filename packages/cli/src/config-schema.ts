@@ -15,12 +15,14 @@ const StrMap = Schema.Record(Str, Str);
 const int = (minimum: number, maximum: number) => Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum, maximum }));
 const Port = int(1, 65535);
 
+const Priority = Schema.Literals(["realtime", "high", "normal", "low"]);
 const QueueConsumer = Schema.Struct({
   batchSize: opt(int(1, 100)),
   maxWaitTimeMs: opt(int(0, 60_000)),
   maxRetries: opt(int(0, 100)),
   retryDelay: opt(int(0, 86_400)),
   maxConcurrency: opt(int(1, 250)),
+  priority: opt(Priority),
 });
 
 const Binding = Schema.Union([
@@ -90,7 +92,7 @@ export const ConfigSchema = Schema.Struct({
       tag: Str, new_classes: opt(Strs), new_sqlite_classes: opt(Strs),
       renamed_classes: opt(Schema.Array(Schema.Struct({ from: Str, to: Str }))), deleted_classes: opt(Strs),
     }))),
-    crons: opt(Strs),
+    crons: opt(Strs), cronPriority: opt(Priority),
     cpuMs: opt(int(10, 300_000)),
     placement: opt(Schema.Struct({ mode: Schema.Literal("smart") })),
     redactQueryStrings: opt(Bool), sourceMaps: opt(Bool),

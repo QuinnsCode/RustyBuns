@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalQueue, type QueueBatch } from "../src/bindings/queue.ts";
+import { scheduler } from "../src/priority.ts";
 
 test("send and sendBatch reach the consumer in batches; acked by default", async () => {
   const q = new LocalQueue<{ n: number; at?: Date }>();
@@ -58,7 +59,7 @@ test("messages outlive the process; a batch in flight comes back after its lease
   const path = join(mkdtempSync(join(tmpdir(), "rb-queue-")), "queues.sqlite");
   const a = new LocalQueue<number>(path, "jobs");
   await a.send(7);
-  a.consume(() => new Promise(() => {}));   // takes the batch and never finishes
+  a.consume(() => new Promise(() => {}), { priority: "high" });   // takes the batch and never finishes (high: it holds no low slot)
   await Bun.sleep(20);
 
   const b = new LocalQueue<number>(path, "jobs");
@@ -70,4 +71,21 @@ test("messages outlive the process; a batch in flight comes back after its lease
   expect(seen).toEqual([[2]]);
   // Queues share the file, not their messages.
   expect(new LocalQueue(path, "other").size()).toBe(0);
+});
+
+test("a batch waits for a low slot before its messages are leased; priority says otherwise", async () => {
+  const sched = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0 });   // 1 slot
+  let release!: () => void;
+  const hold = sched.run("low", () => new Promise<void>((r) => (release = r)));
+  const q = new LocalQueue<number>(), urgent = new LocalQueue<number>();
+  const seen: string[] = [];
+  q.consume((b) => { for (const m of b.messages) seen.push(`low ${m.body}`); }, { scheduler: sched });
+  urgent.consume((b) => { for (const m of b.messages) seen.push(`high ${m.body}`); }, { scheduler: sched, priority: "high" });
+  await q.send(1); await urgent.send(2);
+  await Bun.sleep(20);
+  expect(seen).toEqual(["high 2"]);
+  expect(sched.stats().queued.low).toBe(1);
+  release(); await hold;
+  await q.drain();
+  expect(seen).toEqual(["high 2", "low 1"]);
 });
