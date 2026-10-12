@@ -44,8 +44,18 @@
 // left out only where the two touch the same lines. A run says it's alive every
 // few minutes, so a long one is never taken for dead and run twice.
 //
+// That fixer is one step of the owner's on-fail chain (#861): what happens to an
+// update that broke the tests, step by step in the owner's order, stopping at
+// the first that works. 🔁 retry it, in case the break was a flake; 🤖 the fixer;
+// 🔎 the fixer told to search the web for known breakage first (claude only, its
+// search runs on Anthropic's side); 📌 hold that release back, so later runs skip
+// it; ↩️ roll back to the newest release one level smaller; 🔔 tell the owner.
+// The whole chain of one update gets a few tries, minutes and dollars of AI at
+// most (claude says what each try cost; the others don't, so they aren't
+// counted), and the report says which step settled each update.
+//
 //   GET  /api/repos/:o/:r/deps        settings and the last report (owner only)
-//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries}
+//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held}
 //   POST /api/repos/:o/:r/deps/run    check now
 
 import type { Doc, Op } from "./lines.ts";
@@ -55,19 +65,31 @@ import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { json, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
-import { FIX_HARNESSES, harnessCommand, type Harness } from "./harness.ts";
+import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness } from "./harness.ts";
 import { hitsFor } from "./watch.ts";
 
 export type Level = "patch" | "minor" | "major";
 const LEVELS: Level[] = ["patch", "minor", "major"];
 
-export interface Settings { on: boolean; every_hours: number; max_level: Level; min_age_days: number; ignore: string[]; run_tests: boolean; fix_with: Harness | null; fix_tries: number }
-export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false, fix_with: null, fix_tries: 3 };
+/** The on-fail chain's steps: retry, AI fix, AI web search, hold back, roll back, alert. */
+export type Step = "retry" | "fix" | "search" | "hold" | "rollback" | "alert";
+export const STEPS: Step[] = ["retry", "fix", "search", "hold", "rollback", "alert"];
+
+export interface Settings {
+  on: boolean; every_hours: number; max_level: Level; min_age_days: number; ignore: string[]; run_tests: boolean; fix_with: Harness | null; fix_tries: number;
+  /** What happens to an update that broke the tests, in order, until a step works. */
+  on_fail: Step[];
+  /** Limits over one update's whole chain: test runs and agent tries, minutes, and dollars of AI. */
+  chain_tries: number; chain_minutes: number; chain_usd: number;
+  /** Releases held back ("name@version"), which no run proposes again. */
+  held: string[];
+}
+export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false, fix_with: null, fix_tries: 3, on_fail: ["fix"], chain_tries: 6, chain_minutes: 30, chain_usd: 2, held: [] };
 
 /** One dependency to move, in the package.json at `path` (the top one, or a workspace's). */
 export interface Update {
   name: string; from: string; to: string; level: Level;
-  status: "kept" | "fixed" | "broke" | "untested";
+  status: "kept" | "fixed" | "broke" | "untested" | "held";
   /** The last failing test output. */
   out?: string;
   /** A fixer's go at it: who, how many tries, and the files its passing fix changed (none if it gave up). */
@@ -75,6 +97,10 @@ export interface Update {
   path?: string;
   /** The advisories this update fixes. */
   fixes?: string[];
+  /** The on-fail chain's go at it, step by step: the last ok one settled it; none ok, it gave up. */
+  chain?: { step: Step; ok: boolean; note?: string; usd?: number }[];
+  /** Where it was headed before a roll back. */
+  was?: string;
 }
 /** A dependency whose version has a known vulnerability that no release fixes yet (or that's on the ignore list). */
 export interface Exposed { name: string; version: string; ids: string[]; path?: string }
@@ -191,13 +217,19 @@ export type Tester = (remote: string, files: Record<string, string>, opts: { pm:
  * and fails its tests with `out`. With `until` (the cron's deadline), a try only
  * starts if there's room for one as slow as the slowest so far.
  */
-export interface FixJob { remote: string; files: Record<string, string>; pm: PM; update: Update; out: string; harness: Harness; tries: number; until?: number; hosts?: string[] }
+export interface FixJob {
+  remote: string; files: Record<string, string>; pm: PM; update: Update; out: string; harness: Harness; tries: number; until?: number; hosts?: string[];
+  /** Search the web for known breakage first (the chain's 🔎 step). */
+  search?: boolean;
+  /** Dollars it may spend: no try starts once what's reported reaches it. */
+  usd?: number;
+}
 
 /** A file the fix changed: its text at the commit cloned (null: new) and after. */
 export interface Edit { path: string; before: string | null; after: string }
 
-/** Patch the call sites until the tests pass. ok: they do, and `edits` is the fix. */
-export type Fixer = (job: FixJob) => Promise<{ ok: boolean; tries: number; out: string; edits: Edit[] }>;
+/** Patch the call sites until the tests pass. ok: they do, and `edits` is the fix. `usd`: what the harness says it cost. */
+export type Fixer = (job: FixJob) => Promise<{ ok: boolean; tries: number; out: string; edits: Edit[]; usd?: number }>;
 
 // ---- versions ---------------------------------------------------------------
 
@@ -280,6 +312,7 @@ export async function outdated(pkg: Record<string, any>, s: Settings, registry: 
       const v = parse(raw);
       if (!v || cmp(v, r.v) <= 0 || allows(r, v)) continue;
       if (LEVELS.indexOf(levelOf(r.v, v)) > LEVELS.indexOf(s.max_level)) continue;
+      if (s.held?.includes(`${name}@${raw}`)) continue;
       const published = Date.parse(meta.time[raw] ?? "");
       if (!(published <= ripe)) continue;
       if (!best || cmp(v, best) > 0) best = v;
@@ -406,12 +439,13 @@ export const localFixer = (exec: Exec = execCommand, timeoutMs = 10 * 60_000): F
       history: (await run(["git", "log", "-n", "15", "--format=%h %an, %ar: %s", "-S", name])).out,
       sites: (await run(["git", "grep", "-n", "-F", name, "--", ".", ":!package.json", ":!*.lock", ":!*.lockb"])).out.slice(0, 6000),
     };
-    const prompt = fixPrompt(job.update, job.tries);
-    let out = job.out, tries = 0, ok = false, slowest = 0;
-    while (tries < job.tries && !ok && install.code === 0 && !(job.until && Date.now() + slowest > job.until)) {
+    const prompt = fixPrompt(job.update, job.tries, job.search);
+    let out = job.out, tries = 0, ok = false, slowest = 0, usd = 0;
+    while (tries < job.tries && !ok && install.code === 0 && !(job.until && Date.now() + slowest > job.until) && !(job.usd !== undefined && usd >= job.usd)) {
       tries++;
       const t0 = Date.now();
-      const ran = await exec(harnessCommand(job.harness, fillPrompt(prompt, { ...context, out: tail(out), try: String(tries) })), repo);
+      const ran = await exec(fixCommand(job.harness, fillPrompt(prompt, { ...context, out: tail(out), try: String(tries) }), job.search), repo);
+      usd += costOf(ran.out);
       for (const [path, text] of Object.entries(job.files)) writeFileSync(join(repo, path), text);
       const gone = (await run(["git", "ls-files", "--deleted"])).out.split("\n").slice(1).filter(Boolean);
       if (gone.length) await run(["git", "checkout", "--", ...gone]);
@@ -420,7 +454,7 @@ export const localFixer = (exec: Exec = execCommand, timeoutMs = 10 * 60_000): F
       slowest = Math.max(slowest, Date.now() - t0);
     }
     if (install.code !== 0) out = install.out;
-    if (!ok) return { ok, tries, out, edits: [] };
+    if (!ok) return { ok, tries, out, edits: [], usd };
     const status = (await run(["git", "status", "--porcelain", "--untracked-files=all"])).out.split("\n").slice(1);
     const edits: Edit[] = [];
     for (const line of status) {
@@ -429,17 +463,37 @@ export const localFixer = (exec: Exec = execCommand, timeoutMs = 10 * 60_000): F
       const before = line.startsWith("??") ? null : (await run(["git", "show", `HEAD:${path}`])).out.replace(/^.*\n/, "");
       edits.push({ path, before, after: readFileSync(join(repo, path), "utf8") });
     }
-    return { ok, tries, out, edits };
-  }, (out) => ({ ok: false, tries: 0, out, edits: [] }));
+    return { ok, tries, out, edits, usd };
+  }, (out) => ({ ok: false, tries: 0, out, edits: [], usd: 0 }));
+
+/**
+ * The fixer's command line. claude answers in JSON, which says what the try cost,
+ * and the 🔎 step gets its web search too (it runs on Anthropic's side, so a
+ * container needs no more hosts). The other harnesses report no cost.
+ */
+export function fixCommand(harness: Harness, prompt: string, search = false): Command {
+  const cmd = harnessCommand(harness, prompt);
+  if (harness !== "claude") return cmd;
+  const args = [...cmd.args, "--output-format", "json"];
+  if (search) args[args.indexOf("--tools") + 1] = `${CLAUDE_TOOLS},WebSearch`;
+  return { ...cmd, args };
+}
+
+/** What a try cost, from claude's JSON answer; 0 when it doesn't say. */
+export const costOf = (out: string) => Number(/"total_cost_usd"\s*:\s*([\d.eE+-]+)/.exec(out)?.[1]) || 0;
 
 /**
  * What the fixer is told, with {{try}}, {{out}}, {{changelog}}, {{history}} and
  * {{sites}} filled in on each try (fillPrompt), here or in the container.
  */
-export function fixPrompt(u: Update, of: number): string {
+export function fixPrompt(u: Update, of: number, search = false): string {
   return [
     `This repository's tests fail after updating the dependency ${u.name} from ${u.from} to ${u.to} (a ${u.level} update). The new version is installed.`,
     `Change the repository's code so it works with ${u.name} ${u.to} and the tests pass. Try {{try}} of ${of}.`,
+    ...(search ? [
+      ``, `Before you change anything, search the web for known breakage in this release: an issue, release note or migration guide about ${u.name}@${u.to.replace(/^[\^~]/, "")}, alone or together with the packages it is used with here (package.json has their versions).`,
+      `Apply the fix or workaround the sources describe, and say which one you followed.`,
+    ] : []),
     ``, `The failing test output (after your last try, if this isn't the first):`, `{{out}}`,
     ``, `The start of ${u.name}'s changelog (if it ships none, read its code and types in node_modules/${u.name}):`, `{{changelog}}`,
     ``, `Commits in this repo that added or removed mentions of ${u.name}:`, `{{history}}`,
@@ -481,8 +535,8 @@ const testerFor = (env: Env, s: Settings, owner: string): Tester | null => s.run
  */
 export const containerFixer = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Fixer => async (job) => {
   const stub = ns.get(ns.idFromName(crypto.randomUUID()));
-  const cmd = harnessCommand(job.harness, fixPrompt(job.update, job.tries));
-  const body = { cmd, remote: job.remote, files: job.files, pm: job.pm, name: job.update.name, out: job.out, tries: job.tries, until: job.until, hosts: job.hosts };
+  const cmd = fixCommand(job.harness, fixPrompt(job.update, job.tries, job.search), job.search);
+  const body = { cmd, remote: job.remote, files: job.files, pm: job.pm, name: job.update.name, out: job.out, tries: job.tries, until: job.until, usd: job.usd, hosts: job.hosts };
   const res = await stub.fetch(new Request("http://sandbox/deps-fix", { method: "POST", body: JSON.stringify(body) }));
   if (!res.ok) return { ok: false, tries: 0, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(job.remote, "<remote>")}`, edits: [] };
   return (await res.json()) as Awaited<ReturnType<Fixer>>;
@@ -543,7 +597,7 @@ export async function runDoctor(env: Env, call: Call, owner: string, repo: strin
     const row = await env.DB.prepare("SELECT alerted FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     const news = whatsNew(row?.alerted ? String(row.alerted).split("\n") : [], report);
     await env.DB.prepare("UPDATE dep_watches SET alerted = ? WHERE owner = ? AND repo = ?").bind(news.seen.join("\n"), owner, repo).run();
-    if (news.exposed.length || news.fixes.length) await alert(env, owner, repo, report, news).catch((e) => console.error("codeSplitter: dependency alert failed", String((e as Error)?.message ?? e)));
+    if (news.exposed.length || news.fixes.length || news.broke.length) await alert(env, owner, repo, report, news).catch((e) => console.error("codeSplitter: dependency alert failed", String((e as Error)?.message ?? e)));
   }
   return report;
 }
@@ -552,10 +606,11 @@ export async function runDoctor(env: Env, call: Call, owner: string, repo: strin
 
 /**
  * What this report has that the owner wasn't told about yet: advisories no update
- * fixes, and security fixes on its branch. `seen` is what to remember for next
- * time: everything in this report, so one that goes away and comes back is news again.
+ * fixes, security fixes on its branch, and broken updates whose on-fail chain
+ * ended in 🔔. `seen` is what to remember for next time: everything in this
+ * report, so one that goes away and comes back is news again.
  */
-export function whatsNew(told: string[], report: Report): { exposed: Exposed[]; fixes: Update[]; seen: string[] } {
+export function whatsNew(told: string[], report: Report): { exposed: Exposed[]; fixes: Update[]; broke: Update[]; seen: string[] } {
   const was = new Set(told), seen: string[] = [];
   const key = (kind: string, path: string | undefined, nameAt: string, id: string) => { const k = `${kind} ${path ?? "package.json"} ${nameAt} ${id}`; seen.push(k); return !was.has(k); };
   const exposed = (report.exposed ?? []).map((x) => ({ ...x, ids: x.ids.filter((id) => key("exposed", x.path, `${x.name}@${x.version}`, id)) })).filter((x) => x.ids.length);
@@ -563,7 +618,8 @@ export function whatsNew(told: string[], report: Report): { exposed: Exposed[]; 
   const tested = report.updates.some((u) => u.status !== "untested");
   const taken = report.branch ? report.updates.filter((u) => u.fixes?.length && (tested ? u.status === "kept" || u.status === "fixed" : true)) : [];
   const fixes = taken.filter((u) => u.fixes!.map((id) => key("fix", u.path, `${u.name}@${u.to}`, id)).some(Boolean));
-  return { exposed, fixes, seen };
+  const broke = report.updates.filter((u) => u.chain?.at(-1)?.step === "alert" && u.chain.at(-1)!.ok).filter((u) => key("broke", u.path, `${u.name}@${u.to}`, "tests"));
+  return { exposed, fixes, broke, seen };
 }
 
 /** Says a short thing to the owner: a subject, some lines, a link. */
@@ -579,7 +635,9 @@ async function alert(env: Env, owner: string, repo: string, report: Report, news
     ...news.fixes.map((u) => `  ${u.name} ${u.from} → ${u.to}${u.path && u.path !== "package.json" ? ` (${u.path})` : ""}: ${u.fixes!.join(", ")}`));
   if (news.exposed.length) lines.push(`${news.exposed.length === 1 ? "A dependency has" : `${news.exposed.length} dependencies have`} a known vulnerability that no update here fixes yet:`,
     ...news.exposed.map((x) => `  ${x.name}@${x.version}${x.path && x.path !== "package.json" ? ` (${x.path})` : ""}: ${x.ids.join(", ")}`));
-  const subject = news.exposed.length ? `${owner}/${repo}: a dependency is exposed` : `${owner}/${repo}: security fixes on ${report.branch}`;
+  if (news.broke.length) lines.push(`${news.broke.length === 1 ? "An update breaks" : `${news.broke.length} updates break`} the tests, and nothing in the on-fail chain got ${news.broke.length === 1 ? "it" : "them"} through, so ${news.broke.length === 1 ? "it's" : "they're"} left out:`,
+    ...news.broke.map((u) => `  ${u.name} ${u.from} → ${u.to}${u.path && u.path !== "package.json" ? ` (${u.path})` : ""}: tried ${u.chain!.slice(0, -1).map((c) => c.step).join(", ") || "nothing"}`));
+  const subject = news.exposed.length ? `${owner}/${repo}: a dependency is exposed` : news.fixes.length ? `${owner}/${repo}: security fixes on ${report.branch}` : `${owner}/${repo}: an update breaks the tests`;
   const link = `${(env.BETTER_AUTH_URL ?? "").replace(/\/$/, "")}/#/r/${owner}/${repo}`;
   await notifierFor(env)?.(owner, subject, lines, link);
 }
@@ -654,6 +712,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   if (!tester && s.run_tests) note = [note, env.AGENT_SANDBOX ? "tests on Cloudflare are limited to this site's admins (ADMINS)" : "tests only run on the desktop app"].filter(Boolean).join("; ");
   let tested = false;
   let edits: Edit[] = [];
+  const held: string[] = [];
   if (tester) {
     const r = await remoteFor();
     if (!r) note = [note, "no git remote to test against"].filter(Boolean).join("; ");
@@ -683,23 +742,75 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
         }
       }
       if (short) note = [note, "ran out of time before every test ran; only what passed went on a branch, and the next run tries the rest"].filter(Boolean).join("; ");
-      // An agent takes each broken update in turn, on top of what's kept and fixed so far.
+      // Each broken update goes down the owner's on-fail chain in turn, on top of what's kept and fixed so far.
       const fixer = fixerFor(env, s, owner);
-      for (const u of fixer ? updates.filter((u) => u.status === "broke") : []) {
-        const taken = updates.filter((x) => x === u || x.status === "kept" || x.status === "fixed");
-        const files = { ...Object.fromEntries(edits.map((e) => [e.path, e.after])), ...filesFor(taken) };
-        const f = await fixer!({ remote: r, files, pm, update: u, out: u.out ?? "", harness: s.fix_with!, tries: s.fix_tries, hosts, ...(deadline ? { until: deadline } : {}) });
-        const by = `agent-${s.fix_with}`;
-        if (f.ok) {
-          for (const e of f.edits) {
-            const had = edits.find((x) => x.path === e.path);
-            if (had) had.after = e.after; else edits.push(e);
+      for (const u of updates.filter((u) => u.status === "broke")) {
+        const until = Math.min(deadline ?? Infinity, Date.now() + s.chain_minutes * 60_000);
+        let tries = s.chain_tries, usd = s.chain_usd;
+        const chain: NonNullable<Update["chain"]> = u.chain = [];
+        const files = () => ({ ...Object.fromEntries(edits.map((e) => [e.path, e.after])), ...filesFor(updates.filter((x) => x === u || x.status === "kept" || x.status === "fixed")) });
+        const room = () => tries > 0 && Date.now() + slowest <= until;
+        const test = async () => {
+          tries--;
+          const t0 = Date.now();
+          const t = await tester(r, files(), { pm, lock, test: true, hosts });
+          slowest = Math.max(slowest, Date.now() - t0);
+          return t;
+        };
+        const settled = async (step: Step): Promise<{ ok: boolean; note?: string; usd?: number }> => {
+          if (step === "retry") {
+            if (!room()) return { ok: false, note: "out of tries or time" };
+            const t = await test();
+            if (t.ok) Object.assign(u, { status: "kept", out: undefined });
+            else u.out = tail(t.out);
+            return { ok: t.ok };
           }
-          Object.assign(u, { status: "fixed", out: undefined, fix: { by, tries: f.tries, files: f.edits.map((e) => e.path) } });
-        } else Object.assign(u, { out: tail(f.out), fix: { by, tries: f.tries, files: [] } });
+          if (step === "fix" || step === "search") {
+            if (!fixer) return { ok: false, note: "no AI picked to fix it" };
+            if (step === "search" && s.fix_with !== "claude") return { ok: false, note: "web search needs claude" };
+            if (usd <= 0) return { ok: false, note: "out of dollars" };
+            if (!room()) return { ok: false, note: "out of tries or time" };
+            const f = await fixer({ remote: r, files: files(), pm, update: u, out: u.out ?? "", harness: s.fix_with!, tries: Math.min(s.fix_tries, tries), hosts, until: Number.isFinite(until) ? until : undefined, usd, ...(step === "search" ? { search: true } : {}) });
+            tries -= f.tries; usd -= f.usd ?? 0;
+            const by = `agent-${s.fix_with}`, spent = f.usd ? { usd: f.usd } : {};
+            if (!f.ok) { Object.assign(u, { out: tail(f.out), fix: { by, tries: f.tries, files: [] } }); return { ok: false, ...spent }; }
+            for (const e of f.edits) {
+              const had = edits.find((x) => x.path === e.path);
+              if (had) had.after = e.after; else edits.push(e);
+            }
+            Object.assign(u, { status: "fixed", out: undefined, fix: { by, tries: f.tries, files: f.edits.map((e) => e.path) } });
+            return { ok: true, ...spent };
+          }
+          if (step === "rollback") {
+            // The advisory says which version is safe, so a security fix never steps back.
+            if (u.fixes) return { ok: false, note: "a security fix isn't rolled back" };
+            // A major that broke tries the newest minor, then the newest patch.
+            for (const level of LEVELS.slice(0, LEVELS.indexOf(u.level)).reverse()) {
+              const smaller = (await outdated({ dependencies: { [u.name]: u.from } }, { ...s, max_level: level, ignore: [], held: [...s.held, ...held] }, once, now)).updates[0];
+              if (!smaller || smaller.to === u.to) continue;
+              if (!room()) return { ok: false, note: "out of tries or time" };
+              const was = { to: u.to, level: u.level };
+              Object.assign(u, { to: smaller.to, level: smaller.level });
+              const t = await test();
+              if (t.ok) { Object.assign(u, { status: "kept", out: undefined, was: was.to }); return { ok: true }; }
+              Object.assign(u, was);
+            }
+            return { ok: false, note: "no smaller release passes" };
+          }
+          // Held back: off the branch, and no later run proposes this release again.
+          if (step === "hold") { held.push(`${u.name}@${u.to.replace(/^[\^~]/, "")}`); u.status = "held"; return { ok: true }; }
+          // The owner hears about it once the run is over (runDoctor), once per release.
+          return { ok: true };
+        };
+        for (const step of s.on_fail) {
+          const got = await settled(step);
+          chain.push({ step, ...got });
+          if (got.ok) break;
+        }
       }
     }
   }
+  if (held.length) await env.DB.prepare("UPDATE dep_watches SET held = ? WHERE owner = ? AND repo = ?").bind([...new Set([...s.held, ...held])].join(","), owner, repo).run();
   // Once tests ran, only what passed them goes on the branch.
   const take = updates.filter((u) => tested ? (u.status === "kept" || u.status === "fixed") : u.status !== "broke");
   if (!take.length) return { at: now, checked, updates, ...also, note: [note, "every update broke the tests; nothing was put on a branch"].filter(Boolean).join("; ") };
@@ -788,7 +899,12 @@ const tail = (s: string) => s.trim().slice(-1500);
 export async function settings(env: Env, owner: string, repo: string): Promise<Settings> {
   const r = await env.DB.prepare("SELECT * FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
   if (!r) return { ...DEFAULTS };
-  return { on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: r.ignore ? String(r.ignore).split(",") : [], run_tests: !!r.run_tests, fix_with: FIX_HARNESSES.includes(r.fix_with as Harness) ? r.fix_with as Harness : null, fix_tries: r.fix_tries };
+  const list = (v: unknown) => v ? String(v).split(",").filter(Boolean) : [];
+  return {
+    on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: list(r.ignore), run_tests: !!r.run_tests,
+    fix_with: FIX_HARNESSES.includes(r.fix_with as Harness) ? r.fix_with as Harness : null, fix_tries: r.fix_tries,
+    on_fail: list(r.on_fail).filter((x): x is Step => STEPS.includes(x as Step)), chain_tries: r.chain_tries, chain_minutes: r.chain_minutes, chain_usd: r.chain_usd, held: list(r.held),
+  };
 }
 
 /** Repos one owner may have the doctor watching on a schedule: each costs registry lookups every cron it's due. */
@@ -834,13 +950,22 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     const fixWith = s.fix_with || null, tries = Math.round(Number(s.fix_tries));
     if (fixWith && !FIX_HARNESSES.includes(fixWith)) return json({ error: `fix_with: ${FIX_HARNESSES.join(", ")} or null` }, 400);
     if (!(tries >= 1 && tries <= 5)) return json({ error: "fix_tries: 1 to 5" }, 400);
-    const ignore = (Array.isArray(s.ignore) ? s.ignore : String(s.ignore).split(",")).map((x) => x.trim()).filter(Boolean).join(",");
+    const csv = (v: unknown) => (Array.isArray(v) ? v.map(String) : String(v ?? "").split(",")).map((x) => x.trim()).filter(Boolean);
+    const ignore = csv(s.ignore).join(",");
+    const onFail = csv(s.on_fail);
+    if (onFail.some((x) => !STEPS.includes(x as Step)) || new Set(onFail).size !== onFail.length) return json({ error: `on_fail: each of ${STEPS.join(", ")} at most once, in order` }, 400);
+    const chainTries = Math.round(Number(s.chain_tries)), minutes = Math.round(Number(s.chain_minutes)), usd = Number(s.chain_usd);
+    if (!(chainTries >= 1 && chainTries <= 20)) return json({ error: "chain_tries: 1 to 20" }, 400);
+    if (!(minutes >= 1 && minutes <= 120)) return json({ error: "chain_minutes: 1 to 120" }, 400);
+    if (!(usd >= 0 && usd <= 50)) return json({ error: "chain_usd: 0 to 50" }, 400);
+    const held = csv(s.held);
+    if (held.some((x) => !/^(@[^@/\s]+\/)?[^@\s]+@\d+\.\d+\.\d+$/.test(x))) return json({ error: "held: name@version, comma-separated" }, 400);
     if (s.on) {
       const others = await env.DB.prepare("SELECT COUNT(*) AS n FROM dep_watches WHERE owner = ? AND repo != ? AND enabled = 1").bind(owner, repo).first();
       if ((others?.n as number) >= MAX_WATCHED) return json({ error: `the doctor watches ${MAX_WATCHED} of your repos at most: turn it off on one first` }, 400);
     }
-    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ? WHERE owner = ? AND repo = ?")
-      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, owner, repo).run();
+    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ?, on_fail = ?, chain_tries = ?, chain_minutes = ?, chain_usd = ?, held = ? WHERE owner = ? AND repo = ?")
+      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, onFail.join(","), chainTries, minutes, Math.round(usd * 100) / 100, held.join(","), owner, repo).run();
     return json(await settings(env, owner, repo));
   }
   if (p[5] === "run" && req.method === "POST") {
