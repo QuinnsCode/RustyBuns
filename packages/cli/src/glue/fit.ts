@@ -7,17 +7,28 @@
 export type Stack =
   | "rwsdk" | "tanstack-start" | "vite-react" | "vite"
   | "next" | "astro" | "sveltekit" | "react-router" | "nuxt"
+  | "solidstart" | "qwik" | "angular" | "gatsby"
+  | "cra" | "vue-cli" | "webpack"
   | "unknown";
 
-export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "vite-react", "vite"];
+/** React Router counts only when it builds through @cloudflare/vite-plugin; see `inits`. */
+export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "react-router", "vite-react", "vite"];
 
 const LABEL: Record<Stack, string> = {
   rwsdk: "RedwoodSDK", "tanstack-start": "TanStack Start", "vite-react": "Vite + React", vite: "Vite",
-  next: "Next.js", astro: "Astro", sveltekit: "SvelteKit", "react-router": "React Router / Remix", nuxt: "Nuxt", unknown: "no framework",
+  next: "Next.js", astro: "Astro", sveltekit: "SvelteKit", "react-router": "React Router / Remix", nuxt: "Nuxt",
+  solidstart: "SolidStart", qwik: "Qwik City", angular: "Angular", gatsby: "Gatsby",
+  cra: "Create React App", "vue-cli": "Vue CLI", webpack: "webpack", unknown: "no framework",
 };
 
-/** Frameworks with a Cloudflare adapter that `init` doesn't infer yet. One issue tracks them all. */
-const TRACKED: Partial<Record<Stack, number>> = { next: 318, sveltekit: 318, "react-router": 318, nuxt: 318 };
+/**
+ * Frameworks `init` doesn't infer yet, and the issue tracking each: #318 for the ones with a
+ * Cloudflare build (ranked in FRAMEWORKS.md), #404 for the webpack builds a Vite port would fix.
+ */
+const TRACKED: Partial<Record<Stack, number>> = {
+  next: 318, sveltekit: 318, "react-router": 318, nuxt: 318, solidstart: 318, qwik: 318, angular: 318, gatsby: 318,
+  cra: 404, "vue-cli": 404, webpack: 404,
+};
 const ISSUES = "https://github.com/QuinnsCode/RustyBuns/issues/";
 
 /** A framework init doesn't support yet: its name and tracking issue. */
@@ -33,6 +44,7 @@ export function vitePlugins(src: string): string[] {
     else if (/@vitejs\/plugin-react/.test(pkg)) out.push("react");
     else if (/@tanstack\/(react-)?start/.test(pkg)) out.push("tanstack-start");
     else if (/@tailwindcss\/vite/.test(pkg)) out.push("tailwind");
+    else if (/@react-router\/dev\/vite/.test(pkg)) out.push("react-router");
   }
   return out;
 }
@@ -46,10 +58,23 @@ export function stackOf(deps: Record<string, unknown>, plugins: string[] = []): 
   if (deps["@sveltejs/kit"]) return "sveltekit";
   if (deps["@react-router/dev"] || Object.keys(deps).some((d) => d.startsWith("@remix-run/"))) return "react-router";
   if (deps["nuxt"]) return "nuxt";
+  // These build with vite too, so they come before it.
+  if (deps["@solidjs/start"]) return "solidstart";
+  if (deps["@builder.io/qwik-city"] || deps["@qwik.dev/router"]) return "qwik";
+  if (deps["@angular/core"]) return "angular";
+  if (deps["gatsby"]) return "gatsby";
   if (deps["vite"] && deps["react"]) return "vite-react";
   if (deps["vite"]) return "vite";
+  // webpack builds, after vite: an app halfway through a port is a Vite app.
+  if (deps["react-scripts"]) return "cra";
+  if (deps["@vue/cli-service"]) return "vue-cli";
+  if (deps["webpack"]) return "webpack";
   return "unknown";
 }
+
+/** Whether `init` reads this app. React Router only as a Worker: its Cloudflare template's @cloudflare/vite-plugin. */
+export const inits = (stack: Stack, plugins: string[]) =>
+  SUPPORTED.includes(stack) && (stack !== "react-router" || plugins.includes("cloudflare"));
 
 export type Verdict = "ready" | "likely" | "needs-work" | "poor";
 
@@ -96,7 +121,8 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
   }
 
   const deps: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
-  const stack = stackOf(deps, viteConfig ? vitePlugins(viteConfig) : []);
+  const plugins = viteConfig ? vitePlugins(viteConfig) : [];
+  const stack = stackOf(deps, plugins);
   const reasons: string[] = [];
   let verdict: Verdict;
   let issue: string | undefined;
@@ -104,13 +130,17 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
   const worker = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].find(has);
   const fetchServer = FETCH_SERVERS.find((d) => deps[d]);
 
-  if (SUPPORTED.includes(stack)) {
+  if (inits(stack, plugins)) {
     verdict = "ready";
     reasons.push(`${LABEL[stack]}: \`rustybuns init\` reads it as is.`);
   } else if (unsupported(stack)) {
     verdict = "needs-work";
     issue = unsupported(stack)!.issue;
-    reasons.push(`${LABEL[stack]} has a Cloudflare adapter, but \`rustybuns init\` doesn't infer it yet.`);
+    reasons.push(stack === "react-router"
+      ? "React Router: `rustybuns init` reads it when @cloudflare/vite-plugin builds it (Cloudflare's current template), not through cloudflareDevProxy or a Node server."
+      : TRACKED[stack] === 404
+        ? `${LABEL[stack]} builds with webpack; ported to Vite, \`rustybuns init\` reads it.`
+        : `${LABEL[stack]} has a Cloudflare build, but \`rustybuns init\` doesn't infer it yet.`);
   } else if (worker || fetchServer) {
     verdict = "ready";
     name = worker ? "Cloudflare Worker" : fetchServer!;
