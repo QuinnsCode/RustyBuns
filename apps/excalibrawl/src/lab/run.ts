@@ -9,6 +9,7 @@ import { PLANNER, parsePlan, planRequest, type PlanStep } from "../engine/plan.t
 import { snapshot } from "../engine/raster.ts";
 import type { Op, SkeletonEl } from "../engine/types.ts";
 import { drawPrompt, extractText, parseOpsDebug, planPrompt } from "./llm.ts";
+import { penFight, type PenStats } from "./pen.ts";
 
 export const SETUPS = {
   A: "Clef + planner",
@@ -17,6 +18,8 @@ export const SETUPS = {
   D: "Clef Flash + planner, parts at the plan's spot (Flash picks size)",
   E: "Llama 4 Scout writes ops, looking every other step (the original site)",
   F: "GPT-OSS 120B writes ops, blind",
+  G: "Llama 4 Scout draws with the pen, and can look",
+  H: "GPT-OSS 20B draws with the pen, blind",
 } as const;
 export type Setup = keyof typeof SETUPS;
 
@@ -24,6 +27,7 @@ const CLEF = "@cf/cloudflare/clef";
 const FLASH = "@cf/cloudflare/clef-flash";
 const SCOUT = "@cf/meta/llama-4-scout-17b-16e-instruct";
 const OSS = "@cf/openai/gpt-oss-120b";
+const OSS20 = "@cf/openai/gpt-oss-20b";
 
 /** $ per million tokens, in and out (Workers AI's list prices). */
 const PRICE: Record<string, [number, number]> = {
@@ -32,6 +36,7 @@ const PRICE: Record<string, [number, number]> = {
   [PLANNER]: [0.293, 2.253],
   [SCOUT]: [0.27, 0.85],
   [OSS]: [0.35, 0.75],
+  [OSS20]: [0.2, 0.3],
 };
 
 type Ai = { run(model: string, input: unknown): Promise<unknown> };
@@ -45,6 +50,8 @@ export interface LabResult {
   calls: number;
   errors: string[];
   judge?: { likeness: number; craft: number };
+  /** Pen setups only: whether the model looked, edited, or stopped early. */
+  pen?: PenStats;
   ms: number;
 }
 
@@ -72,7 +79,14 @@ export async function runLab(ai: Ai, setup: Setup, prompt: string, turns = 24): 
   let scene = new Map<string, SkeletonEl>();
   let n = 1;
 
-  if (setup === "E" || setup === "F") {
+  if (setup === "G" || setup === "H") {
+    // The pen: up to 8 lines a turn, so a quarter of the turns the Clef setups get.
+    const f = setup === "G" ? { model: SCOUT, canLook: true, maxTokens: 800 } : { model: OSS20, canLook: false, maxTokens: 3000 };
+    const out = await penFight(run, f, prompt, region, Math.max(2, Math.round(turns / 4)));
+    scene = out.scene;
+    r.pen = out.stats;
+    r.errors.push(...out.errors);
+  } else if (setup === "E" || setup === "F") {
     // The original flow: a plan in words, then a few ops a step, eight steps.
     const model = setup === "E" ? SCOUT : OSS;
     const fighter = { model };
