@@ -13,7 +13,7 @@ const token = "borg-local-token";
 
 // The edge limits each host refuses today (✓ in the limits grid). The rest it accepts, looser
 // than the edge. Tighten a twin and add its limit here.
-const ENFORCED: string[] = [];
+const ENFORCED = ["d1-params", "kv-key", "queue-size", "do-value"];
 
 const HOSTS = [
   {
