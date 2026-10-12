@@ -5353,6 +5353,15 @@ async function commands() {
       try { await api(`/repos/${c.owner}/${c.repo}/branches/${encodeURIComponent(name)}/merge`, {}); toast(`Merged ${name}`); if (branchPicked(c.owner, c.repo) === name) pickBranch(c.owner, c.repo, null); } catch (e) { toast(`Not merged: ${e.message}`); }
       route();
     }, "branch name");
+    if (c.canWrite) add("This repo", "git-merge", "Merge every branch that merges clean", `POST /api/repos/${c.owner}/${c.repo}/merges`, async () => {
+      try {
+        const r = await api(`/repos/${c.owner}/${c.repo}/merges`, {});
+        const held = r.skipped.filter((s) => s.error !== "nothing to merge");
+        toast(`${r.merged.length ? `Merged ${r.merged.join(", ")}` : "Nothing merged"}${held.length ? `; left open ${held.map((s) => `${s.branch} (${s.error})`).join(", ")}` : ""}`);
+        if (r.merged.includes(branchPicked(c.owner, c.repo))) pickBranch(c.owner, c.repo, null);
+      } catch (e) { toast(`Not merged: ${e.message}`); }
+      route();
+    });
     if (c.canWrite) add("This repo", "list-checks", "Run checks", `POST /api/repos/${c.owner}/${c.repo}/checks/run`, async (ref) => {
       try { await api(`/repos/${c.owner}/${c.repo}/checks/run`, { ref: ref.trim() || "main" }); toast(`Checks queued on ${ref.trim() || "main"}`); route(); } catch (e) { toast(`Not queued: ${e.message}`); }
     }, "main or a branch's name");
