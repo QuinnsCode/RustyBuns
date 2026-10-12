@@ -1,3 +1,4 @@
+// Layout: branches: forking a file onto one, review, merge
 // Branches and merges. An agent works on a branch: its own copy of each file
 // it touches, which a person or another agent reviews and merges. Built on
 // the line-op log, not git branches: a branch's copy of a file is its own
@@ -34,6 +35,7 @@ import { localSandbox, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
 import { askAgent } from "./conflict-agent.ts";
+import { guardTripped } from "./heal.ts";
 import { hunks, revertOps } from "./review.ts";
 
 const TEXT_MAX = 20_000;
@@ -179,7 +181,12 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: { name
   const blocked = dry.filter((d) => d.conflicts.length).map(({ path, conflicts }) => ({ path, conflicts: conflicts.map(explain) }));
   // Settling a stretch can leave code that won't build: say so, as the review (settling nothing) can't show it.
   const broken = blocked.flatMap((b) => b.conflicts.filter((c) => c.lint).map((c) => `${b.path}: ${c.lint}`));
-  if (blocked.length) return json({ error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked }, 409);
+  if (blocked.length) {
+    // A guard tripped (git's markers, a file that won't parse or build): a fix task on the branch, when self-healing is on (heal.ts).
+    const trips = blocked.map((b) => ({ path: b.path, lints: b.conflicts.flatMap((c) => c.lint ? [c.lint] : []) }));
+    const fix = await guardTripped(env, owner, repo, name, trips).catch(() => null);
+    return json({ error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked, ...(fix && "id" in fix && { fix: fix.id }) }, 409);
+  }
 
   const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
   for (const f of todo) {

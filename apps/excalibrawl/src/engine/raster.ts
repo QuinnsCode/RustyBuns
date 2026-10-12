@@ -33,6 +33,29 @@ function inPolygon(x: number, y: number, pts: [number, number][]): boolean {
   return inside;
 }
 
+// A 5×7 bitmap font, so Clef can read a title: seven rows a glyph, two hex digits a row, the
+// high bit of five on the left. Lower case draws as upper case; anything else is a hollow box.
+const FONT: Record<string, string> = {
+  " ": "00000000000000",
+  A: "0E11111F111111", B: "1E11111E11111E", C: "0E11101010110E", D: "1C12111111121C",
+  E: "1F10101E10101F", F: "1F10101E101010", G: "0E11101711110F", H: "1111111F111111",
+  I: "0E04040404040E", J: "0702020202120C", K: "11121418141211", L: "1010101010101F",
+  M: "111B1515111111", N: "11111915131111", O: "0E11111111110E", P: "1E11111E101010",
+  Q: "0E11111115120D", R: "1E11111E141211", S: "0F10100E01011E", T: "1F040404040404",
+  U: "1111111111110E", V: "11111111110A04", W: "1111111515150A", X: "11110A040A1111",
+  Y: "1111110A040404", Z: "1F01020408101F",
+  0: "0E11131519110E", 1: "040C040404040E", 2: "0E11010204081F", 3: "1F02040201110E",
+  4: "02060A121F0202", 5: "1F101E0101110E", 6: "0608101E11110E", 7: "1F010204080808",
+  8: "0E11110E11110E", 9: "0E11110F01020C",
+  ".": "00000000000C0C", ",": "000000000C0408", "!": "04040404040004", "?": "0E110102040004",
+  "'": "0C040800000000", '"': "0A0A0A00000000", "-": "0000001F000000", ":": "000C0C000C0C00",
+  "/": "00010204081000", "+": "0004041F040400", "=": "00001F001F0000", "&": "0C12140815120D",
+  "(": "02040808080402", ")": "08040202020408", "#": "0A0A1F0A1F0A0A",
+};
+const BOX = [0x1f, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1f];
+const GLYPHS = new Map(Object.entries(FONT).map(([c, hex]) => [c, Array.from({ length: 7 }, (_, i) => parseInt(hex.slice(2 * i, 2 * i + 2), 16))]));
+const glyphOf = (c: string): number[] => GLYPHS.get(c.toUpperCase()) ?? BOX;
+
 interface Shape {
   /** Pixel-space box the shape can touch, outline included. */
   box: Bounds;
@@ -61,11 +84,23 @@ function shapeOf(el: SkeletonEl, s: number, ox: number, oy: number, sw: number):
     };
   }
   if (el.type === "text") {
-    // Text reads as a dark bar where the words are: the model sees placement, not glyphs.
-    const fs = (el.fontSize ?? 20) * s;
-    const w = Math.max(1, el.text.length * fs * 0.6), h = fs;
-    const x0 = (el.x - ox) * s, y0 = (el.y - oy) * s + h * 0.2;
-    return { box: { x: x0, y: y0, w, h: h * 0.6 }, filled: true, dist: () => -1 };
+    // Each character is a 5×7 glyph in a 6-unit cell, a unit being a tenth of the font size, so
+    // the words fill the same 0.6 × fontSize a character that bboxOf gives them.
+    const u = (el.fontSize ?? 20) * s * 0.1;
+    const x0 = (el.x - ox) * s, y0 = (el.y - oy) * s + 1.5 * u;
+    const glyphs = [...el.text].map(glyphOf);
+    // Below 2 px a unit, a pixel takes ink if any part of it does, so thin strokes don't vanish.
+    const r = u < 2 ? 0.49 : 0;
+    const ink = (x: number, y: number) => {
+      const gx = Math.floor((x - x0) / u), gy = Math.floor((y - y0) / u);
+      const col = gx % 6;
+      return gy >= 0 && gy < 7 && gx >= 0 && col < 5 && ((glyphs[Math.floor(gx / 6)]?.[gy] ?? 0) >> (4 - col)) & 1;
+    };
+    return {
+      box: { x: x0 - 1, y: y0 - 1, w: glyphs.length * 6 * u + 2, h: 7 * u + 2 },
+      filled: true,
+      dist: (x, y) => (ink(x, y) || (r && (ink(x - r, y - r) || ink(x + r, y - r) || ink(x - r, y + r) || ink(x + r, y + r))) ? -1 : 1),
+    };
   }
   const x0 = (el.x - ox) * s, y0 = (el.y - oy) * s, w = el.width * s, h = el.height * s;
   const cx = x0 + w / 2, cy = y0 + h / 2, rx = Math.max(w / 2, 0.5), ry = Math.max(h / 2, 0.5);

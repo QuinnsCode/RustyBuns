@@ -41,31 +41,17 @@ net.Socket = Socket;
 
 // ws's WebSocketServer({ perMessageDeflate: true }) never compresses under Bun 1.4: its
 // handleUpgrade goes through the Bun.serve that node:http starts, whose websocket options
-// leave deflate off. Once a server asks for it, turn it on in those (live and later ones).
+// leave deflate off. Turning it on once a WebSocketServer asks (server.reload) is too late
+// for Effect's NodeHttpServer, which builds its WebSocketServer during the first upgrade, so
+// that first socket goes out uncompressed. Bun can't set deflate per upgrade, so it's on for
+// every node:http server from the start. Bun only deflates when the client offers it; unlike
+// Node, a ws server left at perMessageDeflate: false compresses too, with the same messages.
 const serve = Bun.serve;
 type NodeServeOptions = { onNodeHTTPRequest?: unknown; websocket?: object };
-const nodeHttpServers = new Map<{ reload(o: object): unknown }, NodeServeOptions>();
-let deflate = false;
-const withDeflate = (o: NodeServeOptions) => ({ ...o, websocket: { ...o.websocket, perMessageDeflate: true } });
-Bun.serve = ((options: NodeServeOptions) => {
-  if (!options?.onNodeHTTPRequest || !options.websocket) return serve(options as never);
-  const server = serve((deflate ? withDeflate(options) : options) as never);
-  nodeHttpServers.set(server as never, options);
-  return server;
-}) as typeof Bun.serve;
-const ws = require("ws");
-const BunWebSocketServer = ws.WebSocketServer;
-class WebSocketServer extends BunWebSocketServer {
-  constructor(options?: { perMessageDeflate?: unknown }, callback?: () => void) {
-    super(options, callback);
-    if (!options?.perMessageDeflate || deflate) return;
-    deflate = true;
-    for (const [server, o] of nodeHttpServers) {
-      try { server.reload(withDeflate(o)); } catch { nodeHttpServers.delete(server); }
-    }
-  }
-}
-ws.WebSocketServer = ws.Server = WebSocketServer;
+Bun.serve = ((options: NodeServeOptions) =>
+  serve((options?.onNodeHTTPRequest && options.websocket
+    ? { ...options, websocket: { ...options.websocket, perMessageDeflate: true } }
+    : options) as never)) as typeof Bun.serve;
 
 // v8.queryObjects(Ctor, { format: "count" }): count live instances by class name in a JSC heap snapshot.
 const v8 = require("node:v8");

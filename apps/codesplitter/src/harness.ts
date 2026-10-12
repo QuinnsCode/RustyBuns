@@ -1,3 +1,4 @@
+// Layout: the coding-agent CLIs and the prompt each one gets
 // The coding agents that can plug in. Each one is a CLI run non-interactively in
 // a scratch directory that holds just the file being edited; whatever it leaves
 // there is read back and turned into ops (see sync.ts). The CLI brings its own

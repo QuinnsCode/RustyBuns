@@ -212,6 +212,25 @@ describe("mirrors", () => {
     expect(await upShow("src/a.ts")).toBe("export const a = 3");
   });
 
+  test("checks running here run on main commits taken from upstream, not again on ones it pushed (#1008)", async () => {
+    const call = await mirrored("checks");
+    const runs = async () => (await get(call, "/api/repos/ana/up/checks?ref=main")).runs as any[];
+    expect((await call("ana", "/api/repos/ana/up/checks/settings", { method: "PUT", body: JSON.stringify({ where: "here" }) })).status).toBe(200);
+
+    // Upstream's commit comes in: main here is at it, and our check queues on it.
+    await upstreamCommit({ "src/a.ts": "export const a = 2\n" }, "bo's change");
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    const tip = await upLog("%H");
+    expect(await runs()).toMatchObject([{ name: "test", ref: "main", sha: tip, status: "queued" }]);
+
+    // A commit here queues its own check when it's made; handing it upstream doesn't queue another.
+    await editHere(call, "README", 1, "hello from here");
+    const mine = await sh(`git --git-dir ${call.artifacts.path("ana--up")} rev-parse main`);
+    expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0 });
+    expect(await upLog("%H")).toBe(mine);
+    expect((await runs()).filter((r) => r.sha === mine)).toHaveLength(1);
+  });
+
   test("takes any git URL on the desktop, and says what's wrong with a bad one", async () => {
     const call = await boot();
     opened.push(call);

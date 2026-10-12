@@ -311,59 +311,70 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     deserializeAttachment: () => ws.data.attachment,
   });
 
+  const respond = async (raw: Request, srv: Server<WsData>): Promise<Response> => {
+    const url = new URL(raw.url);
+    for (const [prefix, route] of Object.entries(opts.open ?? {}))
+      if (url.pathname.startsWith(prefix)) return withHeaders(await route(raw));
+    const who = gate(raw, url);
+    if (who instanceof Response) return who;
+    // Pairing a phone: the host's own page (a POST, so the browser sends Origin) asks for a
+    // launch code to open on another device. It works once, within five minutes.
+    if (url.pathname === PAIR_PATH) {
+      const origin = raw.headers.get("origin");
+      if (raw.method !== "POST" || who !== "host" || origin === null || !ownOrigin(raw, origin)) return new Response("forbidden", { status: 403 });
+      return Response.json({ code: mintCode(PAIR_TTL_MS), ttlMs: PAIR_TTL_MS });
+    }
+    // Vouch the principal to the handler; never trust the client's copy.
+    const h = new Headers(raw.headers);
+    for (const k of [...h.keys()]) if (k.startsWith("x-rb-")) h.delete(k);
+    h.set("x-rb-principal", who);
+    const req = new Request(raw, { headers: h });
+
+    if (req.headers.get("upgrade")?.toLowerCase() === "websocket" && wsRoutes.has(url.pathname)) {
+      const ok = srv.upgrade(raw, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket } });
+      return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
+    }
+
+    const workerFirst = (opts.runWorkerFirst ?? []).some((pat) =>
+      pat.endsWith("*") ? url.pathname.startsWith(pat.slice(0, -1)) : url.pathname === pat);
+    if (!workerFirst) {
+      const a = await asset(url);
+      if (a) return withHeaders(a);
+    }
+    if (handler && env) {
+      const pending: Promise<unknown>[] = [];
+      const ctx: ExecutionContext = { waitUntil: (p) => { pending.push(p); }, passThroughOnException() {} };
+      try {
+        const res = await handler.fetch(req, env, ctx);
+        void Promise.allSettled(pending);
+        // A DO answered an upgrade with 101 + a local client end: bridge it
+        // to the real socket. This is what makes WorldDurableObject-style
+        // code run in-process untouched.
+        const client = (res as any).webSocket as LocalWebSocket | undefined;
+        if (res.status === 101 && client) {
+          const ok = srv.upgrade(raw, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket, bridge: client } });
+          return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
+        }
+        return withHeaders(res);
+      } catch (err) {
+        rep?.escaped("fetch", err, { path: url.pathname });
+        return new Response("internal error", { status: 500 });
+      }
+    }
+    return new Response("not found", { status: 404 });
+  };
+
   const listen = (hostname: string, port: number) => Bun.serve<WsData>({
     port, hostname,
     async fetch(raw, srv) {
-      const url = new URL(raw.url);
-      for (const [prefix, route] of Object.entries(opts.open ?? {}))
-        if (url.pathname.startsWith(prefix)) return withHeaders(await route(raw));
-      const who = gate(raw, url);
-      if (who instanceof Response) return who;
-      // Pairing a phone: the host's own page (a POST, so the browser sends Origin) asks for a
-      // launch code to open on another device. It works once, within five minutes.
-      if (url.pathname === PAIR_PATH) {
-        const origin = raw.headers.get("origin");
-        if (raw.method !== "POST" || who !== "host" || origin === null || !ownOrigin(raw, origin)) return new Response("forbidden", { status: 403 });
-        return Response.json({ code: mintCode(PAIR_TTL_MS), ttlMs: PAIR_TTL_MS });
-      }
-      // Vouch the principal to the handler; never trust the client's copy.
-      const h = new Headers(raw.headers);
-      for (const k of [...h.keys()]) if (k.startsWith("x-rb-")) h.delete(k);
-      h.set("x-rb-principal", who);
-      const req = new Request(raw, { headers: h });
-
-      if (req.headers.get("upgrade")?.toLowerCase() === "websocket" && wsRoutes.has(url.pathname)) {
-        const ok = srv.upgrade(raw, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket } });
-        return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
-      }
-
-      const workerFirst = (opts.runWorkerFirst ?? []).some((pat) =>
-        pat.endsWith("*") ? url.pathname.startsWith(pat.slice(0, -1)) : url.pathname === pat);
-      if (!workerFirst) {
-        const a = await asset(url);
-        if (a) return withHeaders(a);
-      }
-      if (handler && env) {
-        const pending: Promise<unknown>[] = [];
-        const ctx: ExecutionContext = { waitUntil: (p) => { pending.push(p); }, passThroughOnException() {} };
-        try {
-          const res = await handler.fetch(req, env, ctx);
-          void Promise.allSettled(pending);
-          // A DO answered an upgrade with 101 + a local client end: bridge it
-          // to the real socket. This is what makes WorldDurableObject-style
-          // code run in-process untouched.
-          const client = (res as any).webSocket as LocalWebSocket | undefined;
-          if (res.status === 101 && client) {
-            const ok = srv.upgrade(raw, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket, bridge: client } });
-            return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
-          }
-          return withHeaders(res);
-        } catch (err) {
-          rep?.escaped("fetch", err, { path: url.pathname });
-          return new Response("internal error", { status: 500 });
-        }
-      }
-      return new Response("not found", { status: 404 });
+      const res = await respond(raw, srv);
+      // rebind() replaced this listener, maybe in this very request, and its
+      // stop(false) closes each connection once it goes idle. Say so, or a
+      // keep-alive client sends its next request into that close (ECONNRESET).
+      if (!res || srv === server) return res;
+      const h = new Headers(res.headers);   // a redirect's headers are immutable
+      h.set("connection", "close");
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
     },
     websocket: {
       open(ws) {

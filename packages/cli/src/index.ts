@@ -24,6 +24,7 @@ import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
+import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
 import { adoptNote, alchemyStage, linkSharedState, lockState, noteChild, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
@@ -522,7 +523,9 @@ function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { 
 const edgeOn = (c: RustyBunsConfig) => !!c.targets.edge || !c.targets.box;
 
 /** Run the Worker's build command in the app, with the env the stack's Build gets. */
-const buildWorker = (command: string) => Effect.gen(function* () {
+const buildWorker = (build: string) => Effect.gen(function* () {
+  // a monorepo app's unbuilt workspace packages first (glue/workspace-build.ts)
+  const command = [...workspacePrebuild(process.cwd()), build].join(" && ");
   console.log(`building the worker: ${command}`);
   const code = yield* spawnScoped(["sh", "-c", command], { stdio: ["inherit", "inherit", "inherit"], env: { ...readDevVars(), ...process.env } });
   if (code !== 0) return yield* Effect.fail(new Error(`the worker build failed (exit ${code}): ${command}`));

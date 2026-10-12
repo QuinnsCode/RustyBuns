@@ -425,7 +425,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "queue": {
         bind.push(`  ${name}: local.queue(${[b.queueName, b.renamedFrom].filter(Boolean).map((n) => JSON.stringify(n)).join(", ")}),`);
         // maxWaitTimeMs is the edge's: here a send is delivered at once.
-        if (b.consumer !== false) consumers.push([name, { batchSize: b.consumer?.batchSize, maxRetries: b.consumer?.maxRetries, retryDelay: b.consumer?.retryDelay }]);
+        if (b.consumer !== false) consumers.push([name, { batchSize: b.consumer?.batchSize, maxRetries: b.consumer?.maxRetries, retryDelay: b.consumer?.retryDelay, priority: b.consumer?.priority }]);
         break;
       }
       case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
@@ -501,9 +501,11 @@ ${h.box
   ? `shell.mount({ fetch: async (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/health" ? new Response("ok") : p === "/__rb/mem" ? Response.json(mem.stats()) : (await prof(req)) ?? ${webmcpOn(c, true) ? "webmcp(req) ?? " : ""}(worker as any).fetch(req, e, ctx); } } as any, env);`
   : `shell.mount({ fetch: (req: Request, e: any, ctx: any) => new URL(req.url).pathname === "/__rb/mem" ? Response.json(mem.stats()) : (worker as any).fetch(req, e, ctx) } as any, env);`}
 console.log(\`[${c.name}] serving \${shell.url}\`);${crons.length ? `
-// Cron Triggers: the edge runs scheduled() on these; here a minute timer does.
-schedule(${JSON.stringify(crons)}, (controller) => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} }));` : ""}${consumers.map(([n, s]) => `
-// Queue consumer: the edge hands ${n}'s batches to queue(); here an in-process loop does.
+// Cron Triggers: the edge runs scheduled() on these; here a minute timer does, each run a low job
+// on the host's scheduler (RB_PERSONA sets its budget).
+schedule(${JSON.stringify(crons)}, (controller) => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} })${c.worker!.cronPriority ? `, { priority: ${JSON.stringify(c.worker!.cronPriority)} }` : ""});` : ""}${consumers.map(([n, s]) => `
+// Queue consumer: the edge hands ${n}'s batches to queue(); here an in-process loop does, each
+// batch a low job on the host's scheduler unless the consumer says otherwise.
 (env.${n} as any).consume((batch: unknown) => (worker as any).queue?.(batch, env, { waitUntil() {}, passThroughOnException() {} }), ${JSON.stringify(s)});`).join("")}
 ${LAUNCH_CHECK}${appCheck(c, false)}${h.launch}`;
 }
@@ -511,6 +513,7 @@ ${LAUNCH_CHECK}${appCheck(c, false)}${h.launch}`;
 import { sourceLayout } from "./glue/source.ts";
 import { analyze } from "./glue/boundary.ts";
 import { generateBoundaryFiles } from "./glue/desktop-scaffold.ts";
+import { workspacePrebuild } from "./glue/workspace-build.ts";
 
 // Rust cdylibs from native/dist/<crate>/<os>-<arch>/ ride inside the binary at
 // /$bunfs/root/native/<crate>/<os>-<arch>/, where @rustybuns/native looks.
@@ -620,6 +623,11 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   const bins: string[] = [];
   for (let d = process.cwd(); ; d = dirname(d)) { bins.push(join(d, "node_modules", ".bin")); if (dirname(d) === d) break; }
   const bin = { ...process.env, PATH: [...bins, process.env.PATH ?? ""].join(process.platform === "win32" ? ";" : ":") };
+  // A monorepo app's workspace packages that ship as source with a build step are built first.
+  for (const pre of workspacePrebuild(process.cwd())) {
+    console.log(`building a workspace dependency: ${pre}`);
+    await step("workspace build", () => $`sh -c ${pre}`.env(bin));
+  }
   if (build) await step("client build", () => $`sh -c ${build}`.env(bin));
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(entry, mode === "spa" ? spaEntry(c, host) : desktopEntry(c, host));

@@ -1,3 +1,4 @@
+// Layout (src/card.ts, src/font.ts, src/font-geist.ts): the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono
 // The social card for a cut: its code and its test result as a 1200x630 PNG,
 // so a link unfurls on X with the lines in it. Drawn by hand (font.ts glyphs,
 // a PNG encoder on CompressionStream), so a Worker needs no image library.

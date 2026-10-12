@@ -4,7 +4,7 @@
 //
 //   CODESPLITTER_URL=https://codesplitter.notryanquinn.workers.dev \
 //   CODESPLITTER_TOKEN=cst_… \
-//   bun scripts/runner.ts owner/repo [--label my-mac] [--names test,lint] [--command "bun test"] [--once]
+//   bun scripts/runner.ts owner/repo [--label my-mac] [--names test,lint] [--command "bun test"] [--user cs-checks] [--once]
 //
 // Leave CODESPLITTER_URL out to use the desktop app running on this machine (~/.codesplitters/desktop.json).
 // The desktop runs its own queue already (src/ci-runner.ts); this is for running them on another machine.
@@ -17,17 +17,24 @@
 // 10 minutes and the run goes back in the queue. Exit 0 passes it; anything else fails it. A
 // junit.xml left in the clone goes up as the report. To wrap Jenkins, Docker or anything else,
 // make --command the thing that starts it, or copy this loop: it's the whole protocol.
+//
+// The clone and the command get none of your logins (#1010): a scrubbed env, an empty HOME and
+// TMPDIR, and CI=1. --user (or CODESPLITTER_CHECKS_USER) runs them as that OS user too, through
+// `sudo -n -u`: see src/check-env.ts for the one-time setup.
 
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { checkEnv, runDirs, sandboxUser, spawnAs } from "../src/check-env.ts";
 
 const { values: o, positionals: [slug] } = parseArgs({ allowPositionals: true, options: {
   label: { type: "string", default: `${process.env.USER ?? "runner"}@${hostname()}` },
   names: { type: "string" }, command: { type: "string" }, once: { type: "boolean" }, idle: { type: "string", default: "10" },
+  user: { type: "string", default: process.env.CODESPLITTER_CHECKS_USER },
 } });
+const user = sandboxUser(o.user);
 // No CODESPLITTER_URL: the desktop app, if it's running, from the 0600 file it keeps while it does.
 function desktop(): string | undefined {
   try {
@@ -47,9 +54,6 @@ const api = (path: string, body: unknown, method = "POST") => fetch(`${base}/api
   method, body: JSON.stringify(body),
   headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(launch && { cookie: `rb_token_${u.port}=${launch}` }) },
 });
-
-// The command is repo code, maybe an agent's: it doesn't get our write token, or the URL (it can carry the desktop launch token).
-const { CODESPLITTER_TOKEN: _token, CODESPLITTER_URL: _url, CODESPLITTERS_TOKEN: _oldToken, CODESPLITTERS_URL: _oldUrl, ...commandEnv } = process.env;
 
 /** A branch's own files, written over the clone (and the ones it deleted, removed). Says what it did, for the log. */
 async function overlay(dir: string, ref: string) {
@@ -72,21 +76,26 @@ async function overlay(dir: string, ref: string) {
 /** One run, start to finish. */
 async function work(job: { id: number; ref: string; sha: string; name: string; clone_url: string | null; command?: string }) {
   const report = (b: object) => api(`/${job.id}`, { runner_label: o.label, ...b }, "PUT");
-  const dir = await mkdtemp(join(tmpdir(), "cs-runner-"));
+  // The command is repo code, maybe an agent's: it gets none of this env (our write token, the URL with the desktop's launch token, your logins).
+  const base = await mkdtemp(join(user ? "/tmp" : tmpdir(), "cs-runner-")), { repo: dir, home, tmp } = runDirs(base);
+  for (const d of [dir, home, tmp]) await mkdir(d);
+  if (user) { await chmod(base, 0o755); for (const d of [dir, home, tmp]) await chmod(d, 0o777); }
+  const env = checkEnv(process.env, home, tmp, user);
   let out = "";
   const flush = async () => { const append = out; out = ""; if ((await report({ append })).status === 409) throw new Error("lost the claim"); };
   try {
     if (!job.clone_url) throw new Error("the repo has no git to clone yet");
-    const git = (...a: string[]) => Bun.spawnSync(["git", ...a], { cwd: dir, stderr: "pipe" });
+    const git = (...a: string[]) => { const as = spawnAs(["git", ...a], env, user); return Bun.spawnSync(as.cmd, { cwd: dir, stderr: "pipe", env: as.env }); };
     const cloned = git("clone", "--quiet", job.clone_url, ".");
-    if (cloned.exitCode) throw new Error(`git clone failed: ${cloned.stderr}`);
+    if (cloned.exitCode) throw new Error(`git clone failed: ${String(cloned.stderr).split(job.clone_url).join("<the repo>")}`);
     // A branch that hasn't gone up as a git commit (`<branch>@<time>`): main, with the branch's files laid over it as they are now.
     if (/^[0-9a-f]{40}$/.test(job.sha)) { if (git("checkout", "--quiet", job.sha).exitCode) throw new Error(`${job.sha} isn't a commit in the repo's git`); }
-    else if (/@\d+$/.test(job.sha)) out = await overlay(dir, job.ref);
+    else if (/@\d+$/.test(job.sha)) { out = await overlay(dir, job.ref); if (user) Bun.spawnSync(["chmod", "-R", "a+rwX", dir]); }
     else throw new Error(`${job.sha} isn't a commit in the repo's git`);
     const command = job.command ?? o.command ?? "bun test";
     out += `$ ${command}\n`;
-    const p = Bun.spawn(["sh", "-c", command], { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...commandEnv, CI: "1" } });
+    const as = spawnAs(["sh", "-c", command], env, user);
+    const p = Bun.spawn(as.cmd, { cwd: dir, stdout: "pipe", stderr: "pipe", env: as.env });
     const pump = async (s: ReadableStream<Uint8Array>) => { for await (const t of s.pipeThrough(new TextDecoderStream())) out += t; };
     const tick = setInterval(() => flush().catch(() => p.kill()), 2000);
     const [code] = await Promise.all([p.exited, pump(p.stdout), pump(p.stderr)]).finally(() => clearInterval(tick));
@@ -95,7 +104,8 @@ async function work(job: { id: number; ref: string; sha: string; name: string; c
   } catch (e) {
     await report({ append: `${out}\n${(e as Error).message}\n`, status: "failed" }).catch(() => null);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    if (user) Bun.spawnSync(spawnAs(["rm", "-rf", dir, home, tmp], env, user).cmd, { stdout: "ignore", stderr: "ignore" });
+    await rm(base, { recursive: true, force: true });
   }
 }
 

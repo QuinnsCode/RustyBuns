@@ -1,3 +1,4 @@
+// Layout: personal API tokens: make, revoke, and who a bearer token acts as
 // Personal API tokens: how a caller outside the browser (a script, Claude Code, an
 // agent behind an MCP gateway like Executor) acts as you. Made and revoked on your
 // profile page, sent as `Authorization: Bearer cst_…`, described by GET /api/openapi.json.

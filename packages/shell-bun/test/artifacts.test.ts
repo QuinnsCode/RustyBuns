@@ -56,17 +56,23 @@ test("a real git client pushes to and clones from a local Artifacts repo, behind
 });
 
 test("onPush hears each push, with the repo's name", async () => {
+  // onPush runs after the push's answer goes, so the push can exit first: wait for it, briefly.
   const heard: string[] = [];
-  ns.onPush = (name) => heard.push(name);
+  let wake = () => {};
+  ns.onPush = (name) => { heard.push(name); wake(); };
+  const hears = async (n: number) => {
+    const by = Date.now() + 2000;
+    while (heard.length < n && Date.now() < by) await new Promise<void>((r) => { wake = r; setTimeout(r, 50); });
+    return heard;
+  };
   try {
     const { remote, work } = await seeded("heard", { "a.txt": "a\n" });
-    expect(heard).toEqual(["heard"]);
+    expect(await hears(1)).toEqual(["heard"]);
     await Bun.write(join(work, "a.txt"), "b\n");
     await sh([...git, "commit", "-qam", "second"], work);
     const { plaintext } = await (await ns.get("heard")).createToken("write", 60);
     expect((await sh(["git", "push", "-q", withToken(remote, plaintext), "main"], work)).ok).toBe(true);
-    await Bun.sleep(10);
-    expect(heard).toEqual(["heard", "heard"]);
+    expect(await hears(2)).toEqual(["heard", "heard"]);
   } finally { ns.onPush = undefined; }
 });
 

@@ -66,6 +66,8 @@ export interface Env {
   CI_RUNNER?: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** "off": the desktop doesn't run its own queued checks (ci-runner.ts). local() sets it, so tests claim runs themselves. */
   CHECKS_RUNNER?: string;
+  /** Self-healing CI (heal.ts): "1" turns it on for the desktop (it's on with hosted agents), "off" turns it off anywhere. */
+  HEAL?: string;
   /** 32 random bytes in base64: seals each repo's stored deploy key (deploy-keys.ts). */
   DEPLOY_SECRETS_KEY?: string;
   /** The DEPLOY_SECRETS_KEY before a rotation: what's sealed under it still opens until an admin re-seals it (deploy-keys.ts). */

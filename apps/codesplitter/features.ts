@@ -1,3 +1,4 @@
+// Layout (features.ts, src/features/): the home page's feature strip: a file per feature and their order, built into `features.json`
 // The home page's feature strip, built from one file per feature (#935): src/features/<id>.json
 // holds a feature's icon, title and what, and src/features/order.txt lists the ids in the order
 // the strip shows them, one per line. A new feature is a new file, and a line in order.txt if it

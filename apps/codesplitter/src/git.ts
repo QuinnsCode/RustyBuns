@@ -1,3 +1,4 @@
+// Layout: a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack
 // Push changed files to a git remote over smart HTTP, with no git library:
 // build the blobs, rebuild only the trees along changed paths (reading the
 // rest from the parent), pack the new objects, and send one receive-pack

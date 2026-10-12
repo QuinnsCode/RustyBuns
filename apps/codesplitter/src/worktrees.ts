@@ -1,3 +1,4 @@
+// Layout: real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done
 // Worktrees: real checkouts off a desktop repo's bare git (#464). The way
 // Agent Office gives every worker its own git worktree, an agent, a runner or
 // your own tools can ask for a directory with a branch (or a run's commit)

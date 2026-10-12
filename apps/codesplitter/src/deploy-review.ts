@@ -1,3 +1,4 @@
+// Layout: what a deploy (hosted or desktop) may run with the owner's keys: the owner's own commits, or what they approved after reading the diff
 // What a deploy may run with the owner's keys (#646, #682). A deploy runs the
 // repo's install and Alchemy code with keys in its env (the stored ones in a
 // hosted container, this machine's logins on the desktop), so whoever gets

