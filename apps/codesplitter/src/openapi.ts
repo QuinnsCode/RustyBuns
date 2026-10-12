@@ -161,6 +161,21 @@ const OPS: Record<string, Record<string, Op>> = {
     get: { id: "get_share", summary: "Shared lines as they are now", tag: "Sharing", open: true, ok: loose("{id, owner, repo, path, note, by, from, to, lines: [{id, n, text, by, rev, private?}], gone?}") },
     delete: { id: "delete_share", summary: "Revoke a share (whoever shared it, or the repo's owner)", tag: "Sharing", risky: true, ok: ref("Ok") },
   },
+  [`${repo}/beams`]: {
+    get: { id: "list_beams", summary: "A repo's beams; for the crew, the git branches there are to beam too", tag: "Sharing",
+      ok: obj({ beams: arr(ref("BeamSummary")), branches: arr(obj({ name: str(), sha: str(), ahead: int("commits past main") })) }) },
+    post: { id: "beam_branch", summary: "Beam a git branch: its stack squashed into one clean commit on main (or upstream's tip), its noise left out, as a link and a patch (the crew, desktop)", tag: "Sharing",
+      description: "Lockfiles from another package manager, lockfile churn with no package.json change, installed packages, build output, OS and editor leftovers and env files are left out, each with why; `keep` and `drop` override. Nothing is written to GitHub. 409 with `clash` when it doesn't sit cleanly on `onto`, or with `dropped` when nothing's left.",
+      body: obj({ branch: str("a git branch in the repo's git"), onto: { type: "string", enum: ["main", "upstream"] }, title: str(), message: str(), to: str("a handle whose inbox it goes in"),
+        keep: arr(str("path")), drop: arr(str("path")) }, ["branch"]), ok: ref("Beam"), status: 201 },
+  },
+  "/beams/{id}": {
+    get: { id: "get_beam", summary: "A beam: its message, what it changes, what was left out and why, and its diff", tag: "Sharing", open: true,
+      ok: { allOf: [ref("Beam"), obj({ diff: str("git diff, cut at 512 KB"), diff_truncated: bool() })] } },
+    delete: { id: "withdraw_beam", summary: "Withdraw a beam (whoever beamed it, or the repo's owner): its commit's ref goes", tag: "Sharing", risky: true, ok: ref("Ok") },
+  },
+  "/beams/{id}/patch": { get: { id: "beam_patch", summary: "A beam as `git format-patch` writes it, for `git am`", tag: "Sharing", open: true, ok: str("the patch, text/plain") } },
+  "/me/beams": { get: { id: "my_beams", summary: "Beams sent to you, and the ones you sent", tag: "Sharing", ok: obj({ to_you: arr(ref("BeamSummary")), yours: arr(ref("BeamSummary")) }) } },
   [`${repo}/stamps`]: {
     get: { id: "list_stamps", summary: "A file's stamps, line by line", tag: "Sharing", open: true, query: filePath,
       ok: arr(obj({ line: str("line id"), n: int("line number now"), stamps: loose("{stamp: [who stamped it]}") })) },
@@ -268,6 +283,12 @@ const OPS: Record<string, Record<string, Op>> = {
       "A branch that changes build or deploy files needs `build_ok` when commits deploy.",
     body: obj({ resolve: loose("{path: {line: \"main\" | \"branch\" | \"both\" | \"both:branch-first\" | {text}}}"), build_ok: bool() }),
     ok: obj({ status: str("merged or open"), merged: arr(obj({ path: str(), rev: int(), ops: int(), deleted: bool() })), conflicts: arr(loose("{path, conflicts}")) }) } },
+  [`${repo}/merges`]: { post: { id: "merge_clean_branches", summary: "Merge every open branch that merges clean, oldest first (the crew)", tag: "Branches", risky: true,
+    description: "Each branch merges by line id against main as the one before it left it, so branches that change different lines (a README edit, a package.json bump) all land. " +
+      "One with a conflict, failing or waiting required checks, or build files without `build_ok` stays open and is listed in `skipped` with why; merge it alone with merge_branch. " +
+      "`branches` limits it to those names. A branch with nothing on it yet is skipped.",
+    body: obj({ branches: arr(str()), build_ok: bool() }),
+    ok: obj({ merged: arr(str("a branch name")), skipped: arr(obj({ branch: str(), error: str(), files: arr(str("the conflicting or build files")) })) }) } },
   [`${repo}/limits`]: { get: { id: "repo_limits", summary: "What this repo and you may do, and how close you are", tag: "Repos", ok: loose("{git, fresh, files, dig, you: [{label, used, max, window_s, on}]}") } },
   [`${repo}/agents`]: {
     get: { id: "list_agent_runs", summary: "A repo's coding-agent runs, newest first (owner only)", tag: "Agents", query: { path: str() }, ok: arr(loose("a run: {id, harness, task, status, …}")) },
@@ -305,6 +326,11 @@ const OPS: Record<string, Record<string, Op>> = {
 const SCHEMAS: Record<string, Schema> = {
   Error: obj({ error: str() }, ["error"]),
   Ok: obj({ ok: bool() }),
+  Beam: obj({ id: str(), owner: str(), repo: str(), branch: str(), by: str(), to: { type: ["string", "null"] }, title: str(), message: str(),
+    onto: obj({ sha: str(), label: str('"main", or "upstream <repo>@<branch>"') }), sha: str("the one clean commit, at refs/beams/{id}"), commits: int("commits in the stack it squashed"),
+    files: arr(obj({ path: str(), status: str("git's A, M or D") })), dropped: arr(obj({ path: str(), why: str() })),
+    status: { type: "string", enum: ["open", "withdrawn"] }, created_at: int(), page: str("open it at /#/beam/{id}"), patch: str() }),
+  BeamSummary: loose("A Beam with `files` and `dropped` as counts"),
   User: obj({ name: str(), bio: str(), theme_html: str(), city_public: int("1 while your code city is public, 0 once you switched it off"), pulse: int("1 when their pulse is public") }),
   Pulse: obj({ name: str(), hours: arr(int()), from: int("ms: the first hour's start; hours[] is 168 counts, oldest first"), total: int(), live_at: { type: ["integer", "null"], description: "ms: the last line they landed" } }),
   RepoSummary: obj({ owner: str(), name: str(), visibility: str(), level: str(), created_at: int("ms"), expires_at: { type: ["integer", "null"], description: "a visitor's dig goes then" } }),

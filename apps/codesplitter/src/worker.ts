@@ -53,7 +53,8 @@ import { seenRoutes } from "./seen.ts";
 import { installScript } from "./install.ts";
 import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
-import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorTagRoute, mirrorRoutes, mirrorsOn, hearPushes, pushClashes, pushHolds, seeGit, settlePush, syncDue, TRUTHS, type Truth } from "./mirror.ts";
+import { beamRoutes } from "./beam.ts";
+import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorTagRoute, mirrorRoutes, mirrorsOn, hearPushes, pushClashes, pushHolds, seeGit, settlePush, syncDue, TRUTHS, turnRoute, upstreamRemote, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
@@ -170,6 +171,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (game) return game;
   const share = await shareRoutes(req, env, p, user);
   if (share) return share;
+  // /api/repos/:o/:r/beams, /api/beams/:id[/patch], /api/me/beams: a branch's stack, cleaned and handed over (beam.ts)
+  const beam = await beamRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
+  if (beam) return beam;
   const cut = await cutRoutes(req, env, p, url, user);
   if (cut) return cut;
   const agents = await agentRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user), (r) => app.fetch(r, env));
@@ -281,7 +285,9 @@ async function route(req: Request, env: Env): Promise<Response> {
       const invites = user === owner ? { invites: await pendingInvites(env, owner, repo) } : {};
       // Files a push to that git clashed with, whose commit here waits on the owner's pick (#788).
       const pushClash = home === "local" && a.write ? Object.keys((await pushClashes(env, owner, repo)).clashes) : [];
-      return json({ ...r, mirror: !!r?.mirror, collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home, ...(push && { push }), ...(pushClash.length && { pushClash }), ...invites });
+      // A fork the owner dug up here could be a two-way mirror (#875): the About panel offers it.
+      const mirrorable = user === owner && !r?.mirror && mirrorsOn(env) && !!r?.upstream_commit && !!upstreamRemote(r?.upstream as string | null);
+      return json({ ...r, mirror: !!r?.mirror, ...(mirrorable && { mirrorable }), collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home, ...(push && { push }), ...(pushClash.length && { pushClash }), ...invites });
     }
     // PUT /api/repos/:o/:r {visibility}  (owner only)
     if (!p[4] && req.method === "PUT") {
@@ -390,6 +396,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
     // GET|POST /api/repos/:o/:r/mirror  where a mirror stands with upstream; sync it now (mirror.ts)
     if (p[4] === "mirror" && !p[5]) return mirrorRepoRoute(req, env, owner, repo, user);
+    // GET|POST /api/repos/:o/:r/mirror/turn  (owner) a dug fork, turned into a two-way mirror (#875)
+    if (p[4] === "mirror" && p[5] === "turn" && !p[6]) return turnRoute(req, env, owner, repo, user);
     // GET|POST /api/repos/:o/:r/mirror/branches[/:b/pull|push]  upstream's branches, opened here; ours, pushed there
     if (p[4] === "mirror") { const r = await mirrorBranchRoute(req, env, p, owner, repo, user); if (r) return r; }
     // GET|POST /api/repos/:o/:r/mirror/tags[/:name/push]  upstream's tags, fetched here; ours, pushed there

@@ -198,4 +198,32 @@ describe("over the API", () => {
     expect(same.status).toBe(502);
     expect((await same.json() as any).error).toBe("claude left the conflict as it was");
   });
+
+  test("merge_clean_branches: branches on different lines all land, one that conflicts stays open", async () => {
+    const { call, post, file } = await app();
+    await post("ana", "/api/repos/ana/r/files", { path: "README.md", content: "# r" });
+    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "version": "1.0.0"\n}' });
+    // Two branches that change different files, and one that only adds a line to a.ts beside b1's.
+    for (const b of ["docs", "bump", "more", "empty"]) await post("ana", "/api/repos/ana/r/branches", { name: b });
+    await post("ana", "/api/repos/ana/r/do/ops?path=README.md&branch=docs", { ops: [{ kind: "set", line: "L1", base: 1, text: "# r, documented" }] });
+    await post("ana", "/api/repos/ana/r/do/ops?path=package.json&branch=bump", { ops: [{ kind: "set", line: "L2", base: 2, text: '  "version": "1.0.1"' }] });
+    await post("ana", "/api/repos/ana/r/do/ops?path=a.ts&branch=more", { ops: [{ kind: "set", line: "L1", base: 1, text: "const a = 2;" }] });
+    expect((await post("bob", "/api/repos/ana/r/merges", {})).status).toBe(403);
+    expect((await post("ana", "/api/repos/ana/r/merges", { branches: "docs" })).status).toBe(400);
+
+    const r = await post("ana", "/api/repos/ana/r/merges", {});
+    expect(r.status).toBe(200);
+    const out = await r.json() as any;
+    expect(out.merged.sort()).toEqual(["bump", "docs", "more"]);
+    expect(out.skipped).toEqual([{ branch: "b1", error: "conflicts", files: ["a.ts"] }, { branch: "empty", error: "nothing to merge" }]);
+    const read = async (path: string) => text(await (await call("ana", `/api/repos/ana/r/do/file?path=${path}`)).json() as Doc);
+    expect(await read("README.md")).toBe("# r, documented");
+    expect(await read("package.json")).toBe('{\n  "version": "1.0.1"\n}');
+    expect(await file()).toBe("const a = 2;\nx(2);");
+    const open = (await (await call("ana", "/api/repos/ana/r/branches")).json() as any[]).filter((b) => b.status === "open").map((b) => b.name).sort();
+    expect(open).toEqual(["b1", "empty"]);
+
+    const named = await (await post("ana", "/api/repos/ana/r/merges", { branches: ["b1", "gone"] })).json() as any;
+    expect(named).toEqual({ merged: [], skipped: [{ branch: "gone", error: "no open branch" }, { branch: "b1", error: "conflicts", files: ["a.ts"] }] });
+  });
 });

@@ -54,6 +54,7 @@
 //        "rebase" or "upstream"; pushCrew true sends the crew's copy upstream, false holds it;
 //        primary "here" or "upstream" says which side leads
 //   GET|POST /api/repos/:o/:r/mirror/branches[/:b/pull|push]  branches both ways (see "Branches" below)
+//   GET|POST /api/repos/:o/:r/mirror/turn       a dug fork, turned into a mirror (see the end)
 
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -128,7 +129,7 @@ export function gitIdentity() {
   }
   return identity;
 }
-const authorEnv = (): Record<string, string> => {
+export const authorEnv = (): Record<string, string> => {
   const id = gitIdentity() ?? { name: "codesplitter", email: `${GIT_BOT}@${GIT_EMAIL_DOMAIN}` };
   return { GIT_AUTHOR_NAME: id.name, GIT_AUTHOR_EMAIL: id.email, GIT_COMMITTER_NAME: id.name, GIT_COMMITTER_EMAIL: id.email };
 };
@@ -210,7 +211,7 @@ function serial<T>(owner: string, repo: string, run: () => Promise<T>): Promise<
   return next;
 }
 /** One sync: the default branch (step), then the branches that follow upstream ones. */
-export function syncMirror(env: Env, owner: string, repo: string, o: { resolve?: Resolve } = {}): Promise<State | null> {
+export function syncMirror(env: Env, owner: string, repo: string, o: { resolve?: Resolve; ask?: boolean } = {}): Promise<State | null> {
   return serial(owner, repo, async () => {
     const state = await step(env, owner, repo, o);
     if (state === "ok" || state === "held") await followBranches(env, owner, repo).catch(() => {});
@@ -232,7 +233,7 @@ export async function syncDue(env: Env, now = Date.now()) {
   for (const { owner, name } of results as { owner: string; name: string }[]) await syncMirror(env, owner, name).catch(() => null);
 }
 
-async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolve }): Promise<State | null> {
+async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolve; ask?: boolean }): Promise<State | null> {
   const r = await row(env, owner, repo), lg = localGit(env);
   if (!r || !lg) return null;
   const crew = await crewSynced(lg, r), held = !!r.crew_artifact && !r.mirror_push_crew;
@@ -284,7 +285,8 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     // 2. Take what upstream has that we don't.
     if (rewritten || (ours !== theirs && !(await isAncestor(dir, theirs, ours)))) {
       // Nobody picked a side for this sync: the owner's standing one, where they said git truth lives.
-      const truth = o.resolve ? "ask" : await truthOf(env, owner);
+      // Unless it's asked to ask (a fork's first sync as a mirror): then a clash or a rewrite stops.
+      const truth = o.resolve || o.ask ? "ask" : await truthOf(env, owner);
       const resolve: Resolve | undefined = o.resolve ?? (truth === "github" ? "upstream" : truth === "ask" ? undefined : rewritten ? "rebase" : "mine");
       let tip = theirs, clash: string[] = [], live: "mine" | "upstream" | undefined = resolve === "rebase" ? undefined : resolve;
       if (rewritten) {
@@ -1129,4 +1131,70 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
   await env.DB.prepare(`INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, mirror_url, mirror_state, mirror_synced_at, mirror_next_at, mirror_fails, git_seen)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, 0, ?)`).bind(user, name, visibility, now, art, lg.remote(art), branch, src.upstream, sha, src.url, now, now + EVERY, sha).run();
   return json({ owner: user, name, upstream: src.upstream, commit: sha, mirror: true }, 201);
+}
+
+// A dug fork, turned into a mirror (#875). A dig on the desktop is a shallow clone of upstream, so its git
+// already holds the commit it was dug at (upstream_commit): that's the commit both sides agree on, and from
+// there the usual sync takes over. Its own commits since the dig are ahead of upstream, so the first sync
+// pushes them; the page says so, and asks first. Two sides that never synced shouldn't lose a line on it:
+//
+//   - the POST names how many commits it means to send up ({ahead}, as GET said), so nothing blind
+//     (an agent, a stale page) pushes more than the owner saw, and
+//   - the first sync asks whatever git_truth says: a clash or a rewritten upstream stops there, with
+//     both sides as they were, for the owner to settle in the Upstream panel.
+//
+//   GET  /api/repos/:o/:r/mirror/turn  (owner) whether it can be turned, and what the first sync would send up
+//   POST /api/repos/:o/:r/mirror/turn  (owner) turn it: a mirror from now on, synced at once
+
+/** Where a fork's `upstream` can be fetched from and pushed to: a whole GitHub repo, or a git URL. Not a folder of one. */
+export function upstreamRemote(upstream: string | null | undefined) {
+  if (!upstream) return null;
+  const gh = /^github:([\w.-]+\/[\w.-]+)$/.exec(upstream);
+  if (gh) return `https://github.com/${gh[1]}.git`;
+  return /^(?:https?|ssh|git|file):\/\//i.test(upstream) ? upstream : null;
+}
+
+type Turn = { artifact: string; url: string; branch: string; commit: string; ahead: number };
+/** What turning `owner/repo` into a mirror would do, or why it can't be. */
+async function turnable(env: Env, owner: string, repo: string): Promise<Turn | { error: string; status: number }> {
+  const lg = localGit(env);
+  if (!lg) return { error: "mirrors need git on your machine: turn it into one in the desktop app", status: 501 };
+  const r = await env.DB.prepare("SELECT artifact, branch, upstream, upstream_commit, mirror_url FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as
+    { artifact: string; branch: string | null; upstream: string | null; upstream_commit: string | null; mirror_url: string | null } | null;
+  if (!r) return { error: "not found", status: 404 };
+  if (r.mirror_url) return { error: "it's a mirror already", status: 409 };
+  const url = upstreamRemote(r.upstream);
+  if (!url) return { error: r.upstream ? "only a whole repo can be a mirror, not one folder of it" : "it isn't a fork of anything", status: 409 };
+  const dir = lg.path(r.artifact), branch = r.branch ?? "main";
+  // A dig too big to clone came from a tarball, as one commit of its own: nothing upstream would know.
+  if (!r.upstream_commit || (await git(["cat-file", "-e", `${r.upstream_commit}^{commit}`], dir)).code)
+    return { error: "its git doesn't have the commit it was dug at, so there's nothing to sync from: make a new mirror of upstream instead", status: 409 };
+  // Its git started over since (a fresh start pushed to it): none of its commits build on upstream's.
+  if (!(await isAncestor(dir, r.upstream_commit, `refs/heads/${branch}`)))
+    return { error: "its history doesn't build on the commit it was dug at any more, so there's nothing to sync from: make a new mirror of upstream instead", status: 409 };
+  const n = await git(["rev-list", "--count", `${r.upstream_commit}..refs/heads/${branch}`], dir);
+  return { artifact: r.artifact, url, branch, commit: r.upstream_commit, ahead: n.code ? 0 : Number(n.out.trim()) };
+}
+
+/** GET|POST /api/repos/:o/:r/mirror/turn, for the owner. */
+export async function turnRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
+  if (user !== owner) return json({ error: "owner only" }, 403);
+  if (req.method !== "GET" && req.method !== "POST") return json({ error: "GET or POST" }, 405);
+  const b = req.method === "POST" ? (await req.json().catch(() => ({}))) as { ahead?: unknown } : {};
+  const turned = await serial(owner, repo, async () => {
+    const t = await turnable(env, owner, repo);
+    if ("error" in t) return json({ error: t.error }, t.status);
+    if (req.method === "GET") return json({ url: shownUrl(t.url), branch: t.branch, commit: t.commit, ahead: t.ahead });
+    // What goes up is what the owner was shown: a commit made since (or a POST that never looked) asks again.
+    if (b.ahead !== t.ahead) return json({ error: `${t.ahead} commit${t.ahead === 1 ? "" : "s"} made here would go up: say {ahead: ${t.ahead}} to send ${t.ahead === 1 ? "it" : "them"}`, ahead: t.ahead }, 409);
+    // The agreed commit is upstream's tip as far as this copy knows; a mirror stays, with no dig's time limit.
+    await must(["update-ref", `refs/upstream/${t.branch}`, t.commit], localGit(env)!.path(t.artifact));
+    await env.DB.prepare("UPDATE repos SET mirror_url = ?, mirror_state = 'ok', mirror_error = NULL, mirror_clash = NULL, mirror_fails = 0, mirror_down_since = NULL, mirror_next_at = ?, expires_at = NULL WHERE owner = ? AND name = ? AND mirror_url IS NULL")
+      .bind(t.url, Date.now(), owner, repo).run();
+    return null;
+  });
+  if (turned) return turned;
+  // Its first sync, now: upstream's news comes in, and this copy's commits since the dig go up. It asks before taking a side.
+  await syncMirror(env, owner, repo, { ask: true });
+  return json(await mirrorStatus(env, owner, repo), 201);
 }

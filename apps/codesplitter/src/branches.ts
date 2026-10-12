@@ -147,7 +147,96 @@ async function fileHunks(env: Env, owner: string, repo: string, branch: string, 
   return { doc: doc!, hunks: hunks(base ?? empty(), doc!) };
 }
 
+/**
+ * Merge an open branch into main: a dry run first, so a conflict anywhere merges nothing (409),
+ * then each file for real. `resolve` settles conflicts by line; `build_ok` lets build files land.
+ */
+async function mergeBranch(env: Env, owner: string, repo: string, branch: { name: string; by: string }, user: string, body: { resolve?: unknown; build_ok?: boolean }): Promise<Response> {
+  const name = branch.name;
+  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as { path: string; merged: number; deleted: number; blob: string | null; mode: string | null }[]);
+  const resolve = parseResolve(body.resolve), build_ok = body.build_ok;
+  if (typeof resolve === "string") return json({ error: resolve }, 400);
+  const todo = (await files()).filter((f) => !f.merged);
+  // Build or deploy files on a merge the owner's next commit would ship: read them first.
+  const build = todo.map((f) => f.path).filter(isBuildFile);
+  if (build.length && !build_ok && (await deploySettings(env, owner, repo)).on_commit) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok", build }, 409);
+  // Required checks that failed, or haven't finished, hold it, as a GitHub branch protection rule would.
+  const held = await mergeBlock(env, owner, repo, name);
+  if (held) return json(held, 409);
+  // A dry run first, so a conflict anywhere merges nothing. A deletion or a binary file never conflicts.
+  const dry = await Promise.all(todo.filter((f) => !f.deleted && !f.blob).map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], true)) })));
+  const blocked = dry.filter((d) => d.conflicts.length).map(({ path, conflicts }) => ({ path, conflicts: conflicts.map(explain) }));
+  // Settling a stretch can leave code that won't build: say so, as the review (settling nothing) can't show it.
+  const broken = blocked.flatMap((b) => b.conflicts.filter((c) => c.lint).map((c) => `${b.path}: ${c.lint}`));
+  if (blocked.length) return json({ error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked }, 409);
+
+  const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
+  for (const f of todo) {
+    // Claim the file, so two merges at once can't both apply it.
+    const claim = await env.DB.prepare("UPDATE branch_files SET merged = 1 WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, name, f.path).run();
+    if (!claim.meta?.changes) continue;
+    if (f.deleted) {
+      await deleteOnMain(env, owner, repo, f.path, user, `Delete ${f.path}, merging ${name}`);
+      merged.push({ path: f.path, rev: 0, ops: 0, deleted: true });
+      continue;
+    }
+    if (f.blob) {
+      try { await blobOnMain(env, owner, repo, { path: f.path, blob: f.blob, mode: f.mode }, user, `${f.path}, merging ${name}`); }
+      catch (e) {
+        await env.DB.prepare("UPDATE branch_files SET merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, f.path).run();
+        throw e;
+      }
+      merged.push({ path: f.path, rev: 0, ops: 0, binary: true });
+      continue;
+    }
+    // A file new on the branch becomes a file on main.
+    const onMain = await materialize(env, owner, repo, f.path);
+    if ("error" in onMain && onMain.status === 404) await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, f.path).run();
+    const m = await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], false);
+    if (m.status === 200) { merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); continue; }
+    // Main moved into a conflict between the dry run and now: this file waits for another merge.
+    await env.DB.prepare("UPDATE branch_files SET merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, f.path).run();
+    conflicts.push({ path: f.path, conflicts: m.conflicts });
+  }
+  if (!conflicts.length) {
+    const at = Date.now();
+    await env.DB.prepare("UPDATE branches SET status = 'merged', merged_by = ?, merged_at = ? WHERE owner = ? AND repo = ? AND name = ?").bind(user, at, owner, repo, name).run();
+    // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
+    await emit(env, owner, repo, "branch.merged", user, {
+      action: "closed",
+      pull_request: { merged: true, merged_at: new Date(at).toISOString(), merged_by: { login: user }, user: { login: branch.by }, head: { ref: name }, base: { ref: "main" } },
+      files: merged.map((m) => m.path),
+    });
+  }
+  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts }, conflicts.length ? 409 : 200);
+}
+
 export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
+  // POST /api/repos/:o/:r/merges {branches?, build_ok?}  merge every open branch (or those named) that
+  // merges clean, oldest first. Each merges against main as the last one left it, so two that change
+  // different lines (a README edit, a package.json bump) both land; one that conflicts, or that its
+  // checks hold, stays open and says why.
+  if (p[4] === "merges" && !p[5] && req.method === "POST") {
+    if (!a.write) return json({ error: "no write access" }, 403);
+    const b = (await req.json().catch(() => ({}))) as { branches?: unknown; build_ok?: boolean };
+    const named = b.branches;
+    if (named !== undefined && !(Array.isArray(named) && named.every((x) => typeof x === "string"))) return json({ error: "branches: [name]" }, 400);
+    const open = (await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND status = 'open' ORDER BY created_at, name").bind(owner, repo).all()).results as { name: string; by: string }[];
+    const todo = named ? open.filter((r) => named.includes(r.name)) : open;
+    const merged: string[] = [];
+    const skipped: { branch: string; error: string; files?: string[] }[] = (named ?? []).filter((n) => !todo.some((r) => r.name === n)).map((n) => ({ branch: n, error: "no open branch" }));
+    for (const br of todo) {
+      const name = br.name;
+      // A branch with nothing on it yet is someone's work about to start: leave it open.
+      const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, name).first() as { n: number } | null;
+      if (!left?.n) { skipped.push({ branch: name, error: "nothing to merge" }); continue; }
+      const res = await mergeBranch(env, owner, repo, br, user!, { build_ok: b.build_ok });
+      const out = (await res.json()) as { error?: string; conflicts?: { path: string }[]; build?: string[] };
+      if (res.ok) merged.push(name);
+      else skipped.push({ branch: name, error: out.error ?? "conflicts", ...((out.conflicts?.length || out.build) && { files: out.build ?? out.conflicts!.map((c) => c.path) }) });
+    }
+    return json({ merged, skipped });
+  }
   if (p[4] !== "branches") return null;
   const name = p[5];
 
@@ -256,62 +345,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   if (p[6] === "merge" && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
-    const body = (await req.json().catch(() => ({}))) as { resolve?: unknown; build_ok?: boolean };
-    const resolve = parseResolve(body.resolve), build_ok = body.build_ok;
-    if (typeof resolve === "string") return json({ error: resolve }, 400);
-    const todo = (await files()).filter((f) => !f.merged);
-    // Build or deploy files on a merge the owner's next commit would ship: read them first.
-    const build = todo.map((f) => f.path).filter(isBuildFile);
-    if (build.length && !build_ok && (await deploySettings(env, owner, repo)).on_commit) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok", build }, 409);
-    // Required checks that failed, or haven't finished, hold it, as a GitHub branch protection rule would.
-    const held = await mergeBlock(env, owner, repo, name);
-    if (held) return json(held, 409);
-    // A dry run first, so a conflict anywhere merges nothing. A deletion or a binary file never conflicts.
-    const dry = await Promise.all(todo.filter((f) => !f.deleted && !f.blob).map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user!, resolve[f.path], true)) })));
-    const blocked = dry.filter((d) => d.conflicts.length).map(({ path, conflicts }) => ({ path, conflicts: conflicts.map(explain) }));
-    // Settling a stretch can leave code that won't build: say so, as the review (settling nothing) can't show it.
-    const broken = blocked.flatMap((b) => b.conflicts.filter((c) => c.lint).map((c) => `${b.path}: ${c.lint}`));
-    if (blocked.length) return json({ error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked }, 409);
-
-    const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
-    for (const f of todo) {
-      // Claim the file, so two merges at once can't both apply it.
-      const claim = await env.DB.prepare("UPDATE branch_files SET merged = 1 WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, name, f.path).run();
-      if (!claim.meta?.changes) continue;
-      if (f.deleted) {
-        await deleteOnMain(env, owner, repo, f.path, user!, `Delete ${f.path}, merging ${name}`);
-        merged.push({ path: f.path, rev: 0, ops: 0, deleted: true });
-        continue;
-      }
-      if (f.blob) {
-        try { await blobOnMain(env, owner, repo, { path: f.path, blob: f.blob, mode: f.mode }, user!, `${f.path}, merging ${name}`); }
-        catch (e) {
-          await env.DB.prepare("UPDATE branch_files SET merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, f.path).run();
-          throw e;
-        }
-        merged.push({ path: f.path, rev: 0, ops: 0, binary: true });
-        continue;
-      }
-      // A file new on the branch becomes a file on main.
-      const onMain = await materialize(env, owner, repo, f.path);
-      if ("error" in onMain && onMain.status === 404) await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, f.path).run();
-      const m = await mergeFile(env, owner, repo, branch, f.path, user!, resolve[f.path], false);
-      if (m.status === 200) { merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); continue; }
-      // Main moved into a conflict between the dry run and now: this file waits for another merge.
-      await env.DB.prepare("UPDATE branch_files SET merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, f.path).run();
-      conflicts.push({ path: f.path, conflicts: m.conflicts });
-    }
-    if (!conflicts.length) {
-      const at = Date.now();
-      await env.DB.prepare("UPDATE branches SET status = 'merged', merged_by = ?, merged_at = ? WHERE owner = ? AND repo = ? AND name = ?").bind(user, at, owner, repo, name).run();
-      // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
-      await emit(env, owner, repo, "branch.merged", user!, {
-        action: "closed",
-        pull_request: { merged: true, merged_at: new Date(at).toISOString(), merged_by: { login: user }, user: { login: branch.by }, head: { ref: name }, base: { ref: "main" } },
-        files: merged.map((m) => m.path),
-      });
-    }
-    return json({ status: conflicts.length ? "open" : "merged", merged, conflicts }, conflicts.length ? 409 : 200);
+    return mergeBranch(env, owner, repo, branch, user!, await req.json().catch(() => ({})));
   }
   return null;
 }

@@ -49,9 +49,9 @@ describe("git action pictures", () => {
   });
 });
 
-// The git map: who a repo listens to, and its branches, as tiles and curves.
-describe("the git map", () => {
-  const src = html.slice(html.indexOf("// The git map: a repo's family"), html.indexOf("/** The git map of a repo:"));
+// The vein: who a repo listens to, its branches as tiles and curves, and its history.
+describe("the vein", () => {
+  const src = html.slice(html.indexOf("// The vein: a repo's family"), html.indexOf("/** The vein of a repo:"));
   const { gitMapModel, gitCurve, commitLanes, tagMarks } = new Function(`${src}; return { gitMapModel, gitCurve, commitLanes, tagMarks };`)();
   const link = (m: any, from: string, to: string) => m.links.find((l: any) => l.from === from && l.to === to);
 
@@ -61,6 +61,16 @@ describe("the git map", () => {
     expect(link(m, "up", "here")).toMatchObject({ kind: "fork", label: "copied once", title: "copied once at abcdef1, and not listening since" });
     expect(m.tiles.find((t: any) => t.id === "up").sub).toBe("upstream · copied at abcdef1");
     expect(m.story).toContain("stopped listening");
+  });
+
+  test("a dug fork whose upstream moved on says how far, in orange, with the pull", () => {
+    const r = { upstream: "github:honojs/hono", upstream_commit: "abcdef123", home: "cloud", branch: "main" };
+    expect(link(gitMapModel({ owner: "ann", repo: "hono", r: { ...r, upstream_tip: "abcdef123", upstream_behind: 0 } }), "up", "here").label).toBe("copied once");
+    const moved = gitMapModel({ owner: "ann", repo: "hono", r: { ...r, upstream_tip: "1234567", upstream_behind: 3 } });
+    expect(link(moved, "up", "here")).toMatchObject({ kind: "fork", hot: true, label: "3 new upstream", pic: ["pull", { branch: "a new branch", ref: "main" }] });
+    expect(moved.story).toContain("moved on");
+    // GitHub wouldn't count them.
+    expect(link(gitMapModel({ owner: "ann", repo: "hono", r: { ...r, upstream_tip: "1234567", upstream_behind: null } }), "up", "here").label).toBe("new upstream");
   });
 
   test("a mirror listens both ways, and says what's moving", () => {
@@ -96,7 +106,7 @@ describe("the git map", () => {
   const c = (hash: string, parents: string[], o: Record<string, unknown> = {}) => ({ hash, parents, message: hash, author: "ann", at: 0, up: false, ...o });
   const at = (g: any) => Object.fromEntries(g.dots.map((d: any) => [d.hash, [d.x, d.lane]]));
 
-  test("the commit graph: main in a row, oldest left, and a merged branch in a lane below from where it left to where it landed", () => {
+  test("the vein's history: main in a row, oldest left, and a merged branch in a lane below from where it left to where it landed", () => {
     const g = commitLanes([c("m3", ["m2", "b2"]), c("b2", ["b1"], { side: "m3" }), c("b1", ["m1"], { side: "m3" }), c("m2", ["m1"]), c("m1", [], { up: true })]);
     expect(at(g)).toEqual({ m1: [0, 0], m2: [1, 0], b1: [2, 1], b2: [3, 1], m3: [4, 0] });
     expect(g.lanes).toBe(2);
@@ -283,7 +293,7 @@ describe("headings and landmarks", () => {
 
   test("the feed, search, admin, invite, share, cut and error pages each open with an h1", () => {
     for (const h of [`<h1>\${icon("rss")} Your feed`, `<h1 class="page-h" style="margin:0 0 14px">\${icon("search")}`, `<h1>\${icon("gauge")} Rate limits`,
-      `<h1>\${icon("activity")} Insights`, `<h1>\${icon("shovel")} Dig site`, `\${icon("mail-x")}<h1>Invite</h1>`, `\${icon("user-plus")}<h1>`,
+      `<h1>\${icon("activity")} Insights`, `<h1>\${icon("map")} Survey`, `\${icon("mail-x")}<h1>Invite</h1>`, `\${icon("user-plus")}<h1>`,
       `\${icon("share-2")}<h1>`, `\${icon("scissors")}<h1>`, `<h1 class="sr">Couldn't open this page</h1>`]) expect(html).toContain(h);
   });
 });
