@@ -6,6 +6,10 @@ import { spaEntry } from "../src/build.ts";
 
 const root = mkdtempSync(join(import.meta.dir, ".e2e-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
+// Each host gets its own data dir, and a test waits for its host to exit, so a host
+// still shutting down never shares state with the next test's.
+let launches = 0;
+async function halt(p: Bun.Subprocess) { p.kill(); await p.exited; }
 
 async function launch(extraEnv: Record<string, string> = {}, args: string[] = [], host: "desktop" | "box" = "desktop") {
   mkdirSync(join(root, "packages/desktop"), { recursive: true });
@@ -24,7 +28,7 @@ export default class World {
   webSocketMessage(ws: any, m: any) { if (m === "bye") ws.close(4000, "bye"); else ws.send("echo:" + m); }
 }`);
   writeFileSync(join(root, ".rustybuns/actions.ts"), `export const actions: Record<string, Record<string, Function>> = { m: { f: async () => 42 } };`);
-  const entry = spaEntry({ name: "e2e", bindings: {}, targets: { desktop: { mode: "spa", clientDir: "dist/ui", dataDir: join(root, "data"), guests: { max: 2, version: "v1" } } } } as any, host);
+  const entry = spaEntry({ name: "e2e", bindings: {}, targets: { desktop: { mode: "spa", clientDir: "dist/ui", dataDir: join(root, `data-${++launches}`), guests: { max: 2, version: "v1" } } } } as any, host);
   writeFileSync(join(root, ".rustybuns/desktop.ts"), entry);
   const p = Bun.spawn(["bun", ".rustybuns/desktop.ts", ...args], { cwd: root, env: { ...process.env, RB_NO_BROWSER: "1", ...extraEnv }, stdout: "pipe", stderr: "pipe" });
   let out = "";
@@ -38,11 +42,20 @@ export default class World {
 }
 
 type Hello = { id: string; name: string; principal: string; slug: string };
-function connect(url: string, headers: Record<string, string> = {}): Promise<{ hello: Hello; ws: WebSocket } | { closed: true }> {
+// A socket that never says hello resolves closed, with why: the close code and reason, or, for a
+// refused upgrade (Bun's error leaves out the status), what the host answers that upgrade again.
+function connect(url: string, headers: Record<string, string> = {}): Promise<{ hello: Hello; ws: WebSocket } | { closed: true; why: string }> {
   return new Promise((res) => {
     const ws = new WebSocket(url.replace("http", "ws"), { headers } as any);
     ws.onmessage = (m) => res({ hello: JSON.parse(String(m.data)), ws });
-    ws.onerror = () => res({ closed: true }); ws.onclose = () => res({ closed: true });
+    let refused = false;
+    ws.onerror = () => {
+      refused = true;
+      fetch(url, { headers: { ...headers, upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "x", "sec-websocket-version": "13" } })
+        .then(async (r) => `upgrade refused; again: ${r.status} ${await r.text()}`, (e) => `upgrade refused; again: ${e}`)
+        .then((why) => res({ closed: true, why }));
+    };
+    ws.onclose = (e) => { if (!refused) res({ closed: true, why: `close ${e.code} ${e.reason}` }); };
   });
 }
 
@@ -63,7 +76,7 @@ test("generated host: host identity by cookie, guests by passphrase with their o
     expect("hello" in h && h.hello).toMatchObject({ id: "local", principal: "host", slug: "local" });
 
     // closed to guests until the host page opens it; then 0.0.0.0 keeps the port
-    expect(await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=g1&name=Guest&v=v1`)).toEqual({ closed: true });
+    expect(await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=g1&name=Guest&v=v1`)).toMatchObject({ closed: true });
     const host = (body: unknown) => fetch(`${url}/__rb/host`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) });
     // off loopback a short passphrase changes nothing; join: true makes one up
     const weak = await host({ listen: { hostname: "0.0.0.0" }, join: "short" });
@@ -112,11 +125,11 @@ test("generated host: host identity by cookie, guests by passphrase with their o
 
     // stop hosting: closes to new guests, back to loopback; the live guest socket survives
     await fetch(`${url}/__rb/host`, { method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) });
-    expect(await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=g3&v=v1`)).toEqual({ closed: true });
+    expect(await connect(`${url}/ws?join=pwxxxxxxxxxx&uid=g3&v=v1`)).toMatchObject({ closed: true });
     const echo = new Promise<string>((res) => ((g1 as any).ws.onmessage = (m: any) => res(String(m.data))));
     (g1 as any).ws.send("still");
     expect(await echo).toBe("echo:still");
-  } finally { p.kill(); }
+  } finally { await halt(p); }
 });
 
 test("generated host: --listen and --join at launch", async () => {
@@ -124,14 +137,14 @@ test("generated host: --listen and --join at launch", async () => {
   try {
     expect(new URL(url).hostname).toBe("0.0.0.0");
     const g = await connect(`http://127.0.0.1:${new URL(url).port}/ws?join=fromenvxxxxxx&uid=g1&v=v1`);
-    expect("hello" in g && g.hello.id).toBe("g1");
-  } finally { p.kill(); }
+    expect(g).toMatchObject({ hello: { id: "g1" } });             // a miss prints why the socket closed
+  } finally { await halt(p); }
 });
 
 test("generated host: a short launch passphrase off loopback won't start, on loopback it does", async () => {
   await expect(launch({ RB_JOIN: "short" }, ["--listen", "0.0.0.0:0"])).rejects.toThrow(/at least 12 characters/);
   const { p } = await launch({}, ["--listen", "127.0.0.1:0", "--join", "short"]);
-  p.kill();
+  await halt(p);
 });
 
 test("generated host: a guest the world closes frees exactly one slot", async () => {
@@ -148,7 +161,7 @@ test("generated host: a guest the world closes frees exactly one slot", async ()
     expect("hello" in c).toBe(true);
     const status = async (q: string) => (await fetch(`${url}/ws?${q}`, { headers: { upgrade: "websocket", connection: "upgrade", "sec-websocket-key": "x", "sec-websocket-version": "13" } })).status;
     expect(await status("join=pwxxxxxxxxxx&uid=d&v=v1")).toBe(503);   // full: a and c
-  } finally { p.kill(); }
+  } finally { await halt(p); }
 });
 
 test("box: a room leaves when its last socket closes, and /ws is rate limited per X-Real-IP", async () => {
@@ -177,5 +190,5 @@ test("box: a room leaves when its last socket closes, and /ws is rate limited pe
     for (let i = 0; i < 30; i++) expect(await status("room=lobby", "203.0.113.7")).not.toBe(429);
     expect(await status("room=lobby", "203.0.113.7")).toBe(429);
     expect(await status("room=lobby", "203.0.113.8")).not.toBe(429);  // another address has its own minute
-  } finally { p.kill(); }
+  } finally { await halt(p); }
 }, 30000);
