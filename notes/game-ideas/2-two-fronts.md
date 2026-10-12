@@ -107,9 +107,14 @@ That's the "lose too much ground and it becomes impossible" rule in practice:
    vehicle type and an orbital strike call-in tied to orbit control.
 5. Results write back to the map, and the shield-to-orbit and orbit-to-reinforcement links work.
 
-## Open questions
+## Decisions
 
-- Real-time with pause, or turn-based strategic layer? (Turn-based is the plan.)
-- Can you play more than one hero battle per turn?
-- How big is a full campaign: 30 systems? 100?
-- Should space battles also be playable (dogfighting as the hero), or stay auto-resolved?
+- **Turn-based strategic layer**, not real-time with pause.
+- **One hero battle per turn.** You have one hero, and they can only be in one place. Every other
+  ground battle that turn is auto-resolved. Orders carry a single `hero` pick and `resolveTurn`
+  pauses on it ([#1076](https://github.com/QuinnsCode/RustyBuns/issues/1076)).
+- **A full campaign is about 30 systems** in 6-8 regions, played over several evenings. The
+  8-system galaxy stays as the short map ([#1082](https://github.com/QuinnsCode/RustyBuns/issues/1082)).
+- **Space battles stay auto-resolved** (dice plus stats) for now. A playable space battle, the hero
+  in a fighter, is a later mode, and it takes the turn's one hero battle
+  ([#1083](https://github.com/QuinnsCode/RustyBuns/issues/1083)).
