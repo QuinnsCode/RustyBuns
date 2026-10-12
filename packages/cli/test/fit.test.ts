@@ -58,7 +58,7 @@ test("React Router is ready built as a Worker (@cloudflare/vite-plugin), needs w
 });
 
 test("needs work: webpack builds point at the Vite port issue", () => {
-  for (const d of [{ "react-scripts": "5" }, { "@vue/cli-service": "5" }, { webpack: "5" }]) {
+  for (const d of [{ "react-scripts": "5" }, { "@vue/cli-service": "5" }, { webpack: "5" }] as Record<string, string>[]) {
     const f = fit({ pkg: pkg(d), files: [] });
     expect(f.verdict).toBe("needs-work");
     expect(f.issue).toMatch(/issues\/404$/);
