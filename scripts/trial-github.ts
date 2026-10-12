@@ -14,6 +14,7 @@
 //   --modes spa,worker  desktop modes to try; worker swaps init's mode for the app's own Worker build
 //   --jobs <n>        apps at a time (default 2)
 //   --out <dir>       results.jsonl, summary.md, logs, clones (default .rustybuns-trial/, gitignored)
+//   --from <file>     the apps a saved --list printed, instead of searching again (no API calls)
 //   --list            print the apps a search finds (stars, last push, version) and stop
 //   --keep            keep node_modules after each app (default: removed, to bound disk use)
 //   --prof            time boot and 200 GETs of /, read the host's memory, and save a CPU profile per
@@ -31,7 +32,7 @@ const { values: o, positionals } = parseArgs({
   options: {
     dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, since: { type: "string" }, stable: { type: "boolean" }, local: { type: "boolean" },
     modes: { type: "string", default: "spa,worker" }, jobs: { type: "string", default: "2" },
-    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" }, list: { type: "boolean" },
+    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" }, list: { type: "boolean" }, from: { type: "string" },
   },
 });
 const REPO = resolve(import.meta.dir, "..");
@@ -267,7 +268,12 @@ function summary(rs: Result[]) {
 
 if (import.meta.main) {
   let apps: App[] = positionals.map((p) => { const [repo, sub = ""] = p.split(":"); return { repo: repo!, sub }; });
-  if (o.dep) apps.push(...await search(o.dep));
+  if (o.from) for (const line of readFileSync(o.from, "utf8").split("\n")) {
+    const m = line.match(/^\s*(\d*)\s+(\d{4}-\d\d-\d\d)?\s+(\S+)\s+([\w.-]+\/[\w.-]+)(?::(\S+))?\s*$/);
+    if (!m || (o.since && m[2]! < o.since)) continue;
+    apps.push({ repo: m[4]!, sub: m[5] ?? "", stars: Number(m[1]) || 0, pushed: m[2], version: m[3] });
+  }
+  if (o.dep && !o.from) apps.push(...await search(o.dep));
   if (!apps.length) throw new Error("usage: bun scripts/trial-github.ts [--dep <name> [--major <n>]] [owner/repo[:subdir] ...]");
   if (o.limit) apps = apps.slice(0, Number(o.limit));
   if (o.list) {
