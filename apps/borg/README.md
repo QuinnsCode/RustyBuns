@@ -41,6 +41,8 @@ bun borg.ts <url> --limits                         # and go over each edge limit
 
 `bun test test` is what CI runs on every PR that touches this app or `packages/`. It's free: nothing leaves the machine.
 
+Every other example gets a lighter tier 1 too: [`scripts/boot.ts`](../../scripts/boot.ts) builds its dev host, boots it on the local twins and checks the token gate, the page and cross-origin isolation. CI runs it for each app with `boot: true` in `scripts/ci-apps.ts`.
+
 To check the edge, `rustybuns plan` then `rustybuns deploy` from here, run `bun borg.ts` against the URL, and `rustybuns destroy` when it's done. Everything in the stack is billed by usage, and one run sits inside Cloudflare's free allowances; `plan` lists each resource first.
 
 ## The nightly edge run
