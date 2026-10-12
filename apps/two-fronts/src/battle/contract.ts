@@ -2,7 +2,7 @@
 // battle the hero plays, the ground layer plays it and hands back a BattleResult. Neither side
 // imports the other, so each is tested on its own with fixtures.
 
-export type Faction = "concord" | "hegemony";
+export type Faction = "marines" | "wooka";
 export type SectorKind = "capital" | "spaceport" | "shield" | "cannon";
 export type Side = "attacker" | "defender";
 export type PerSide<T> = Record<Side, T>;
@@ -33,4 +33,4 @@ export interface BattleResult {
 }
 
 export const other = (s: Side): Side => (s === "attacker" ? "defender" : "attacker");
-export const FACTION_COLORS: Record<Faction, number> = { concord: 0x4c8dff, hegemony: 0xe5533d };
+export const FACTION_COLORS: Record<Faction, number> = { marines: 0xdfe6ee, wooka: 0xc8833a };

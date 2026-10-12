@@ -7,11 +7,11 @@ import {
 } from "./war/rules.ts";
 import { aiOrders } from "./war/ai.ts";
 import { drawMap } from "./ui/map.ts";
-import { run } from "./battle/sim.ts";
-import type { BattleResult } from "./battle/contract.ts";
+import { FLAVOR, run } from "./battle/sim.ts";
+import type { BattleResult, BattleSpec, Side } from "./battle/contract.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const SAVE = "two-fronts:v2"; // v2: Lumen and Morrow gained cannon sectors
+const SAVE = "two-fronts:v3"; // v2 gained the cannon sectors, v3 renamed the factions to the Marines and the Wooka
 
 function load(): { campaign: Campaign; orders: Orders } | null {
   try { return JSON.parse(localStorage.getItem(SAVE) ?? "null"); } catch { return null; }
@@ -54,7 +54,7 @@ function render() {
   $("status").innerHTML = `
     <div class="row"><b>Turn ${c.turn}</b><span title="Credits now, and next turn's income">◈ ${draft.credits[me]} <small>+${income(c, me)}/turn</small></span></div>
     <div class="war" title="Key sectors held (capitals and spaceports). Hold 75% to win; fall under 30% and your income halves.">
-      <i class="concord" style="width:${keyShare(c, "concord") * 100}%"></i><i class="hegemony" style="width:${keyShare(c, "hegemony") * 100}%"></i>
+      <i class="marines" style="width:${keyShare(c, "marines") * 100}%"></i><i class="wooka" style="width:${keyShare(c, "wooka") * 100}%"></i>
     </div>
     <div class="row small"><span>War score ${Math.round(share * 100)}%</span><span>${heroReady(c) ? `Hero, level ${c.hero.level}` : `Hero wounded until turn ${c.hero.woundedUntil}`}</span></div>`;
 
@@ -88,7 +88,7 @@ function render() {
         const isHero = mine.hero?.system === selected && mine.hero.sector === i;
         return `<li>
           <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>
-            <span class="armies"><span class="concord">■${x.armies.concord}</span> <span class="hegemony">■${x.armies.hegemony}</span></span>
+            <span class="armies"><span class="marines">■${x.armies.marines}</span> <span class="wooka">■${x.armies.wooka}</span></span>
             <button type="button" class="hero${isHero ? " on" : ""}" data-hero="${i}" ${heroReady(c) ? "" : "disabled"} title="${heroReady(c) ? "Play the battle here yourself, if one happens this turn" : "Your hero is wounded"}">⚔</button></div>
           ${builds ? `<div class="act">${builds}</div>` : ""}
           ${here.armies[me] && x.owner === me ? `<div class="act">Send <select data-army-n="${i}">${opts(here.armies[me])}</select> armies to
@@ -143,19 +143,21 @@ function endTurn() {
   c = resolveTurn(c, [mine, aiOrders(c, enemy(c.player))]);
   mine = { faction: c.player, orders: [] };
   save(); render();
-  if (c.pending) brief();
+  if (c.pending) brief(c.pending.spec, finish);
 }
 
 // The hero battle's briefing: what the map has given each side for this fight.
-function brief() {
-  const spec = c.pending!.spec, me = spec.hero, foe = me === "attacker" ? "defender" : "attacker";
+function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
+  const me = spec.hero, foe = me === "attacker" ? "defender" : "attacker";
+  const horde = spec.factions[foe] === "wooka", tanks = (s: Side) => (spec.factions[s] === "wooka" ? "none, just more Wooka" : spec.vehicles[s]);
   const row = (label: string, a: number | string, b: number | string) => `<tr><th>${label}</th><td>${a}</td><td>${b}</td></tr>`;
   showModal(`<h2>Hero battle: ${spec.system}, ${SECTOR_NAMES[spec.sector].toLowerCase()}</h2>
-    <p>You ${me === "attacker" ? "attack" : "defend"}. Take the command posts and run their tickets out.</p>
+    <p>You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain" : "a Thunder Marine"}. Take the command posts and run their tickets out.</p>
+    ${horde ? `<p class="flavor">“${FLAVOR[Math.floor(Math.random() * FLAVOR.length)]}”</p>` : ""}
     <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>
       ${row("Armies", spec.armies[me], spec.armies[foe])}
       ${row("Tickets", spec.tickets[me], spec.tickets[foe])}
-      ${row("Tanks", spec.vehicles[me], spec.vehicles[foe])}
+      ${row("Tanks", tanks(me), tanks(foe))}
       ${row("Orbital strikes", spec.strikes[me], spec.strikes[foe])}
       ${row("Drop pods", spec.reinforcements[me] ? `+${spec.reinforcements[me]}` : "none", spec.reinforcements[foe] ? `+${spec.reinforcements[foe]}` : "none")}
       ${row("Turrets", me === "defender" ? spec.turrets : 0, me === "attacker" ? spec.turrets : 0)}
@@ -168,9 +170,9 @@ function brief() {
     const { playBattle } = await import("./battle/view.ts");
     const result = await playBattle(spec, $<HTMLCanvasElement>("battle-view"), $("battle-hud"));
     document.body.classList.remove("in-battle");
-    finish(result);
+    done(result);
   };
-  $("auto-battle").onclick = () => { hideModal(); finish(run(spec).over!); };
+  $("auto-battle").onclick = () => { hideModal(); done(run(spec).over!); };
 }
 
 function finish(result: BattleResult) {
@@ -183,9 +185,29 @@ function finish(result: BattleResult) {
     <button type="button" id="close" class="primary">Back to the map</button>`);
 }
 
+// Quick play, outside the campaign: the Wooka come for the shield generator. Hold the line as a
+// Thunder Marine, or be the horde.
+function skirmish(asWooka: boolean) {
+  const spec: BattleSpec = {
+    id: `skirmish-${Date.now()}`, turn: 0, system: "the forest moon", sector: "shield",
+    factions: { attacker: "wooka", defender: "marines" }, hero: asWooka ? "attacker" : "defender", heroLevel: 1,
+    armies: { attacker: 4, defender: 3 }, tickets: { attacker: 200, defender: 150 },
+    vehicles: { attacker: 1, defender: 1 }, strikes: { attacker: 0, defender: 2 },
+    reinforcements: { attacker: 0, defender: 30 }, turrets: 2, seed: Math.floor(Math.random() * 2 ** 31),
+  };
+  brief(spec, (r) => {
+    const won = r.winner === spec.hero;
+    showModal(`<h2>${asWooka ? (won ? "The forest is ours" : "Driven back into the ferns") : won ? "Horde repelled" : "Overrun"}</h2>
+      <p>${asWooka ? (won ? "The generator is in pieces and someone is wearing a backpack as a hat." : "The Marines held. For now.") : won ? "They'll be back. They always come back." : "They got into the backpacks."}</p>
+      <button type="button" id="close" class="primary">Back to the map</button>`);
+  });
+}
+$("hold-line").onclick = () => skirmish(false);
+$("be-horde").onclick = () => skirmish(true);
+
 function showModal(html: string) { $("modal-body").innerHTML = html; $("modal").hidden = false; }
 function hideModal() { $("modal").hidden = true; }
 
 selected = SYSTEMS.find((d) => c.systems[d.id]!.sectors.some((x) => x.owner === c.player))?.id ?? null;
 render();
-if (c.pending) brief();
+if (c.pending) brief(c.pending.spec, finish);

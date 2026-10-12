@@ -15,9 +15,9 @@ export interface SystemDef {
 export interface RegionDef { id: string; name: string; bonus: number }
 
 export const REGIONS: RegionDef[] = [
-  { id: "west", name: "Concord Reach", bonus: 2 },
+  { id: "west", name: "Thunder Reach", bonus: 2 },
   { id: "core", name: "The Narrows", bonus: 3 },
-  { id: "east", name: "Hegemon Marches", bonus: 2 },
+  { id: "east", name: "Wooka Wilds", bonus: 2 },
 ];
 
 export const SYSTEMS: SystemDef[] = [
@@ -44,17 +44,17 @@ export const SECTOR_INCOME: Record<SectorKind, number> = { capital: 3, spaceport
 
 // Armies are per sector.
 export const START: Record<string, { owner: Faction; fleets: number; armies: number }> = {
-  aster: { owner: "concord", fleets: 3, armies: 2 },
-  brill: { owner: "concord", fleets: 1, armies: 2 },
-  corva: { owner: "concord", fleets: 3, armies: 3 },
-  lumen: { owner: "concord", fleets: 1, armies: 1 },
-  kessa: { owner: "hegemony", fleets: 2, armies: 1 },
-  morrow: { owner: "hegemony", fleets: 3, armies: 2 },
-  nyx: { owner: "hegemony", fleets: 2, armies: 2 },
-  orin: { owner: "hegemony", fleets: 1, armies: 2 },
+  aster: { owner: "marines", fleets: 3, armies: 2 },
+  brill: { owner: "marines", fleets: 1, armies: 2 },
+  corva: { owner: "marines", fleets: 3, armies: 3 },
+  lumen: { owner: "marines", fleets: 1, armies: 1 },
+  kessa: { owner: "wooka", fleets: 2, armies: 1 },
+  morrow: { owner: "wooka", fleets: 3, armies: 2 },
+  nyx: { owner: "wooka", fleets: 2, armies: 2 },
+  orin: { owner: "wooka", fleets: 1, armies: 2 },
 };
 
-export const FACTION_NAMES: Record<Faction, string> = { concord: "Concord", hegemony: "Hegemony" };
+export const FACTION_NAMES: Record<Faction, string> = { marines: "Thunder Marines", wooka: "Wooka" };
 
 export const neighbours = (id: string) =>
   LANES.flatMap(([a, b]) => (a === id ? [b] : b === id ? [a] : []));

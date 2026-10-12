@@ -8,9 +8,9 @@ import { other as otherSide } from "../battle/contract.ts";
 import { FACTION_NAMES, REGIONS, SECTOR_INCOME, SECTOR_NAMES, START, SYSTEMS, adjacent, neighbours, systemDef } from "./galaxy.ts";
 
 export type Count = Record<Faction, number>;
-export const FACTIONS: Faction[] = ["concord", "hegemony"];
-export const enemy = (f: Faction): Faction => (f === "concord" ? "hegemony" : "concord");
-const zero = (): Count => ({ concord: 0, hegemony: 0 });
+export const FACTIONS: Faction[] = ["marines", "wooka"];
+export const enemy = (f: Faction): Faction => (f === "marines" ? "wooka" : "marines");
+const zero = (): Count => ({ marines: 0, wooka: 0 });
 
 export interface Sector { kind: SectorKind; owner: Faction; armies: Count }
 export interface SystemState { id: string; orbit: Faction | null; fleets: Count; sectors: Sector[] }
@@ -45,7 +45,7 @@ const BOMBARD_FLEETS = 2;        // an orbit this strong kills an enemy army a s
 export const TICKETS_PER_ARMY = 50;
 const CANNON_HITS = 1;           // ships an anti-ship cannon knocks out of a blockading fleet each turn
 
-export function newCampaign(seed = 1, player: Faction = "concord"): Campaign {
+export function newCampaign(seed = 1, player: Faction = "marines"): Campaign {
   const systems: Record<string, SystemState> = {};
   for (const def of SYSTEMS) {
     const s = START[def.id]!;
@@ -60,7 +60,7 @@ export function newCampaign(seed = 1, player: Faction = "concord"): Campaign {
   }
   return {
     turn: 1, seed, player,
-    credits: { concord: START_CREDITS, hegemony: START_CREDITS },
+    credits: { marines: START_CREDITS, wooka: START_CREDITS },
     systems, hero: { level: 1, xp: 0, woundedUntil: 0 },
     pending: null, winner: null, log: [],
   };
@@ -211,13 +211,13 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
   // Fleets arrive together, then fight for each orbit.
   for (const t of d.transit) if (t.from.sector < 0) c.systems[t.to.system]!.fleets[t.faction] += t.count;
   for (const s of Object.values(c.systems)) {
-    if (s.fleets.concord && s.fleets.hegemony) {
-      const def = startOrbit[s.id] ?? (r() < 0.5 ? "concord" : "hegemony"), att = enemy(def);
+    if (s.fleets.marines && s.fleets.wooka) {
+      const def = startOrbit[s.id] ?? (r() < 0.5 ? "marines" : "wooka"), att = enemy(def);
       const [a, b] = diceBattle(s.fleets[att], s.fleets[def], r);
       c.log.push(`Space battle over ${name(s.id)}: ${FACTION_NAMES[a ? att : def]} holds the orbit (${s.fleets[att] - a} ${FACTION_NAMES[att]} and ${s.fleets[def] - b} ${FACTION_NAMES[def]} ships lost).`);
       s.fleets[att] = a; s.fleets[def] = b;
     }
-    s.orbit = s.fleets.concord ? "concord" : s.fleets.hegemony ? "hegemony" : null;
+    s.orbit = s.fleets.marines ? "marines" : s.fleets.wooka ? "wooka" : null;
   }
 
   // Troops land only under their own orbit; the rest turn back.

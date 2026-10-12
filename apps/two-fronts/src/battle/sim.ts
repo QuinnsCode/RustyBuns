@@ -4,7 +4,7 @@
 // tests run it headless with the autopilot.
 import { other, type BattleResult, type BattleSpec, type PerSide, type SectorKind, type Side } from "./contract.ts";
 
-export type UnitKind = "trooper" | "tank" | "turret" | "hero";
+export type UnitKind = "trooper" | "wooka" | "tank" | "turret" | "hero";
 export interface Unit { id: number; side: Side; kind: UnitKind; x: number; z: number; yaw: number; hp: number; maxHp: number; cool: number; jx: number; jz: number; guard?: boolean }
 export interface Post { name: string; x: number; z: number; owner: Side | null; progress: number } // progress: +1 attacker, -1 defender
 export interface Strike { side: Side; x: number; z: number; t: number }
@@ -13,8 +13,11 @@ export interface Fx { kind: "shot" | "blast"; x: number; z: number; tx: number; 
 // What the player does this step. Movement is relative to where the hero faces.
 export interface Input { forward: number; right: number; yaw: number; fire: boolean; strike?: { x: number; z: number }; use?: boolean }
 
+export interface Tree { x: number; z: number; r: number }
+
 export interface Battle {
   spec: BattleSpec;
+  trees: Tree[];           // redwood trunks: nobody walks through them
   time: number;
   tickets: PerSide<number>;
   posts: Post[];
@@ -42,7 +45,7 @@ export const POST_RADIUS = 12;
 // Each kind of sector is its own map. The last post is the defender's keep: it starts theirs,
 // and their turrets ring it. The view adds the scenery to match.
 export const LAYOUTS: Record<SectorKind, { name: string; posts: { name: string; x: number; z: number }[] }> = {
-  shield: { name: "Shield generator plain", posts: [{ name: "Relay ridge", x: -40, z: 20 }, { name: "Generator", x: 30, z: -50 }] },
+  shield: { name: "Shield generator clearing", posts: [{ name: "Old stump", x: -40, z: 20 }, { name: "Generator", x: 30, z: -50 }] },
   capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 45, z: 25 }, { name: "Market square", x: -35, z: -5 }, { name: "Palace", x: 5, z: -60 }] },
   spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -30, z: 5 }, { name: "Control tower", x: 35, z: -55 }] },
   cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 40, z: 10 }, { name: "Cannon", x: -25, z: -55 }] },
@@ -52,9 +55,26 @@ const STRIKE_DELAY = 2.5;
 const WAVE_EVERY = 8;              // seconds between reinforcement waves
 const BLEED_EVERY = 4;             // seconds per ticket the side with fewer posts loses
 const HERO_LIVES = 3;
+const AGGRO = 35;                  // how far a Wooka will charge at someone it can smell
+const FLAVOR_EVERY = 35;
+
+// What the Marines' radio says about the Wooka. They are not cuddly.
+export const FLAVOR = [
+  "Something in the ferns is humming.",
+  "Command reminds you: they are not cuddly. Do not attempt to cuddle.",
+  "Look at those eyes. There's nothing behind them. Nothing.",
+  "That club has a nail in it. On purpose.",
+  "Intel called them basically harmless. Intel has stopped answering.",
+  "Private Okafor swears one of them waved. Then it ate his radio.",
+  "The forest has gone quiet. It is never quiet.",
+  "Do not feed them. Do not make eye contact. Keep them off the backpacks.",
+  "They've started singing. Nobody likes it when they sing.",
+];
 
 export const STATS: Record<UnitKind, { hp: number; speed: number; range: number; cool: number; dmg: number; aim: number; cost: number }> = {
   trooper: { hp: 100, speed: 5, range: 45, cool: 0.9, dmg: 6, aim: 0.7, cost: 1 },
+  // Small, fast, and only dangerous up close. Their clubs are built to maim, not to kill.
+  wooka: { hp: 70, speed: 6.5, range: 2.6, cool: 0.8, dmg: 16, aim: 0.85, cost: 0.5 },
   tank: { hp: 600, speed: 7, range: 60, cool: 2.2, dmg: 45, aim: 0.8, cost: 5 },
   turret: { hp: 350, speed: 0, range: 55, cool: 1.2, dmg: 10, aim: 0.75, cost: 0 },
   hero: { hp: 300, speed: 8, range: 55, cool: 0.3, dmg: 9, aim: 0.9, cost: 3 },
@@ -74,7 +94,7 @@ export const yawTo = (from: { x: number; z: number }, to: { x: number; z: number
 
 export function startBattle(spec: BattleSpec): Battle {
   const b: Battle = {
-    spec, time: 0,
+    spec, time: 0, trees: [],
     tickets: { ...spec.tickets },
     posts: LAYOUTS[spec.sector].posts.map((p, i, all) => (i === all.length - 1 ? { ...p, owner: "defender", progress: -1 } : { ...p, owner: null, progress: 0 })),
     units: [], strikes: [], fx: [], events: [],
@@ -86,6 +106,13 @@ export function startBattle(spec: BattleSpec): Battle {
     aiStrikeAt: { attacker: 20, defender: 25 },
     spawnAt: { attacker: 0, defender: 0 },
   };
+  // The forest: redwoods everywhere except on the posts, the spawns and the generator's ring.
+  const clear = [...b.posts, SPAWN.attacker, SPAWN.defender];
+  for (let tries = 0; b.trees.length < 110 && tries < 2000; tries++) {
+    const t = { x: (rand(b) - 0.5) * HALF * 2, z: (rand(b) - 0.5) * HALF * 2, r: 1.2 + rand(b) * 2.2 };
+    if (clear.some((c) => dist(c, t) < 26) || b.trees.some((o) => dist(o, t) < o.r + t.r + 5)) continue;
+    b.trees.push(t);
+  }
   const gen = b.posts.at(-1)!;
   for (let i = 0; i < spec.turrets; i++) {
     const a = (i / Math.max(1, spec.turrets)) * Math.PI * 2 + 0.6;
@@ -97,7 +124,7 @@ export function startBattle(spec: BattleSpec): Battle {
 
 function add(b: Battle, side: Side, kind: UnitKind, x: number, z: number): Unit {
   const hp = kind === "hero" ? Math.round(STATS.hero.hp * (1 + 0.15 * (b.spec.heroLevel - 1))) : STATS[kind].hp;
-  const u: Unit = { id: b.nextId++, side, kind, x, z, yaw: side === "attacker" ? 0 : Math.PI, hp, maxHp: hp, cool: rand(b) * STATS[kind].cool, jx: (rand(b) - 0.5) * 16, jz: (rand(b) - 0.5) * 16, guard: kind === "trooper" && rand(b) < 1 / 3 };
+  const u: Unit = { id: b.nextId++, side, kind, x, z, yaw: side === "attacker" ? 0 : Math.PI, hp, maxHp: hp, cool: rand(b) * STATS[kind].cool, jx: (rand(b) - 0.5) * 16, jz: (rand(b) - 0.5) * 16, guard: (kind === "trooper" || kind === "wooka") && rand(b) < 1 / 3 };
   b.units.push(u);
   return u;
 }
@@ -116,7 +143,12 @@ function spawnHero(b: Battle) {
   b.hero.id = add(b, b.spec.hero, "hero", p.x, p.z).id;
 }
 
-const troopCap = (b: Battle, side: Side) => Math.min(14, 4 + b.spec.armies[side] * 3);
+// Marines field troopers and tanks. The Wooka field a horde: more of them, and no tanks, so
+// their share of the vehicle pool comes as yet more Wooka.
+export const isHorde = (b: Battle, side: Side) => b.spec.factions[side] === "wooka";
+const troopKind = (b: Battle, side: Side): UnitKind => (isHorde(b, side) ? "wooka" : "trooper");
+const troopCap = (b: Battle, side: Side) =>
+  isHorde(b, side) ? Math.min(24, 6 + b.spec.armies[side] * 5 + b.spec.vehicles[side] * 3) : Math.min(14, 4 + b.spec.armies[side] * 3);
 export const heroUnit = (b: Battle) => b.units.find((u) => u.id === b.hero.id) ?? null;
 const heroTank = (b: Battle) => (b.hero.inTank === null ? null : b.units.find((u) => u.id === b.hero.inTank) ?? null);
 
@@ -164,6 +196,10 @@ function think(b: Battle, u: Unit) {
   if (foe && u.cool <= 0) shoot(b, u, foe);
   if (!s.speed) return;
   if (foe && dist(u, foe) < s.range * 0.6) return; // hold and shoot
+  if (u.kind === "wooka") {
+    const prey = nearestEnemy(b, u, AGGRO);
+    if (prey) return move(b, u, prey.x - u.x, prey.z - u.z, s.speed);
+  }
   const goal = u.guard ? guardPost(b, u.side) ?? objective(b, u.side) : objective(b, u.side);
   move(b, u, goal.x + u.jx - u.x, goal.z + u.jz - u.z, s.speed);
 }
@@ -188,6 +224,12 @@ function move(b: Battle, u: Unit, dx: number, dz: number, speed: number) {
   const step = Math.min(len, speed * DT);
   u.x = clamp(u.x + (dx / len) * step, -HALF, HALF);
   u.z = clamp(u.z + (dz / len) * step, -HALF, HALF);
+  // Slide round the trunks.
+  const body = u.kind === "tank" ? 2.5 : 0.6;
+  for (const t of b.trees) {
+    const ox = u.x - t.x, oz = u.z - t.z, d = Math.hypot(ox, oz), min = t.r + body;
+    if (d < min && d > 1e-6) { u.x = t.x + (ox / d) * min; u.z = t.z + (oz / d) * min; }
+  }
   if (u.kind !== "hero") u.yaw = Math.atan2(-dx, -dz);
 }
 
@@ -289,7 +331,7 @@ export function step(b: Battle, input: Input | null) {
     if (p.progress >= 1) p.owner = "attacker";
     else if (p.progress <= -1) p.owner = "defender";
     else if ((p.owner === "attacker" && p.progress <= 0) || (p.owner === "defender" && p.progress >= 0)) p.owner = null;
-    if (p.owner !== before) b.events.push(p.owner ? `${p.name} taken by the ${p.owner === b.spec.hero ? "your side" : "enemy"}` : `${p.name} lost`);
+    if (p.owner !== before) b.events.push(p.owner ? `${p.name} taken by ${p.owner === b.spec.hero ? "your side" : "the enemy"}` : `${p.name} lost`);
   }
 
   // Bleed, drop pods, fresh troops and tanks.
@@ -308,8 +350,12 @@ export function step(b: Battle, input: Input | null) {
     if (b.tickets[s] <= 0 || b.time < b.spawnAt[s]) continue;
     b.spawnAt[s] = b.time + WAVE_EVERY;
     const alive = (k: UnitKind) => b.units.filter((u) => u.side === s && u.kind === k).length;
-    if (alive("tank") < 2 && b.vehiclesLeft[s] > 0) { const at = spawnPoint(b, s); b.vehiclesLeft[s]--; add(b, s, "tank", at.x, at.z); }
-    for (let n = troopCap(b, s) - alive("trooper"); n > 0; n--) { const at = spawnPoint(b, s); add(b, s, "trooper", at.x, at.z); }
+    if (!isHorde(b, s) && alive("tank") < 2 && b.vehiclesLeft[s] > 0) { const at = spawnPoint(b, s); b.vehiclesLeft[s]--; add(b, s, "tank", at.x, at.z); }
+    const kind = troopKind(b, s);
+    for (let n = troopCap(b, s) - alive(kind); n > 0; n--) { const at = spawnPoint(b, s); add(b, s, kind, at.x, at.z); }
+  }
+  if (Math.floor(b.time / FLAVOR_EVERY) !== Math.floor((b.time - DT) / FLAVOR_EVERY) && sides.some((s) => isHorde(b, s))) {
+    b.events.push(FLAVOR[Math.floor(rand(b) * FLAVOR.length)]!);
   }
 
   for (const f of b.fx) f.t -= DT;
@@ -319,7 +365,7 @@ export function step(b: Battle, input: Input | null) {
   const out = sides.find((s) => b.tickets[s] <= 0);
   if (out || b.time >= TIME_LIMIT) {
     const winner = out ? other(out) : b.tickets.attacker > b.tickets.defender ? "attacker" : "defender";
-    b.over = { id: b.spec.id, winner, tickets: { attacker: Math.max(0, b.tickets.attacker), defender: Math.max(0, b.tickets.defender) }, heroDown: b.hero.lives <= 0 };
+    b.over = { id: b.spec.id, winner, tickets: { attacker: Math.max(0, Math.ceil(b.tickets.attacker)), defender: Math.max(0, Math.ceil(b.tickets.defender)) }, heroDown: b.hero.lives <= 0 };
   }
 }
 

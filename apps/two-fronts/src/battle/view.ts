@@ -3,7 +3,8 @@
 // you're aiming, E to climb into or out of a tank.
 import * as THREE from "three";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
-import { DT, HALF, POST_RADIUS, STRIKE_RADIUS, TIME_LIMIT, facing, heroUnit, startBattle, step, type Input, type Unit } from "./sim.ts";
+import { forest, marine, tank, turret, wooka } from "./models.ts";
+import { DT, HALF, POST_RADIUS, STATS, STRIKE_RADIUS, TIME_LIMIT, facing, heroUnit, startBattle, step, type Input, type Unit } from "./sim.ts";
 
 
 export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
@@ -14,27 +15,20 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xb9c7cf);
-  scene.fog = new THREE.Fog(0xb9c7cf, 80, 260);
+  // The forest moon: green gloom, light coming down through the canopy.
+  scene.background = new THREE.Color(0x8fa48a);
+  scene.fog = new THREE.Fog(0x8fa48a, 30, 190);
   const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 600);
-  scene.add(new THREE.HemisphereLight(0xe8f0ff, 0x6b5a3a, 1.6));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.4);
-  sun.position.set(60, 120, 40);
+  scene.add(new THREE.HemisphereLight(0xd6e8c4, 0x2f2a1a, 1.5));
+  const sun = new THREE.DirectionalLight(0xfff1d0, 1.2);
+  sun.position.set(40, 120, 30);
   scene.add(sun);
-
-  // The plain: grass, a scatter of rocks from the battle's seed, and the two ends of the field.
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2.6, HALF * 2.6), new THREE.MeshLambertMaterial({ color: 0x7d8f5a }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2.6, HALF * 2.6), new THREE.MeshLambertMaterial({ color: 0x3b4a26 }));
   ground.rotation.x = -Math.PI / 2;
   scene.add(ground);
+  forest(scene, b.trees, spec.seed, HALF);
   let seed = spec.seed;
   const r = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
-  const rockMat = new THREE.MeshLambertMaterial({ color: 0x8a8577 });
-  for (let i = 0; i < 70; i++) {
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(1 + r() * 3, 0), rockMat);
-    rock.position.set((r() - 0.5) * HALF * 2, 0.4, (r() - 0.5) * HALF * 2);
-    rock.rotation.set(r() * 3, r() * 3, 0);
-    scene.add(rock);
-  }
 
   // Command posts: a ring on the ground and a flag in the side's colour.
   const posts = b.posts.map((p) => {
@@ -57,8 +51,10 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     scene.add(m);
     return m;
   };
-  // Clear of the posts and the lane between the spawns, so the scenery never hides a fight.
-  const clear = (x: number, z: number) => Math.abs(x) > 18 && b.posts.every((p) => Math.hypot(p.x - x, p.z - z) > POST_RADIUS + 10);
+  // Clear of the posts and the lane between the spawns, so the scenery never hides a fight,
+  // and off the redwoods, so no block stands in a trunk.
+  const clear = (x: number, z: number) =>
+    Math.abs(x) > 18 && b.posts.every((p) => Math.hypot(p.x - x, p.z - z) > POST_RADIUS + 10) && b.trees.every((t) => Math.hypot(t.x - x, t.z - z) > t.r + 9);
   if (spec.sector === "shield") {
     const core = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 9, 12), concrete);
     core.position.set(keep.x - 6, 4.5, keep.z - 6);
@@ -98,35 +94,12 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     scene.add(base, barrel);
   }
 
-  // Units, by id.
-  const mats = { attacker: new THREE.MeshLambertMaterial({ color: color("attacker") }), defender: new THREE.MeshLambertMaterial({ color: color("defender") }) };
-  const heroMat = new THREE.MeshLambertMaterial({ color: color(heroSide), emissive: 0xffc640, emissiveIntensity: 0.5 });
-  const geo = {
-    trooper: new THREE.CapsuleGeometry(0.45, 1.1, 4, 8),
-    hero: new THREE.CapsuleGeometry(0.6, 1.4, 4, 8),
-    tankBody: new THREE.BoxGeometry(3.4, 1.4, 5),
-    tankTurret: new THREE.BoxGeometry(1.8, 0.9, 1.8),
-    barrel: new THREE.CylinderGeometry(0.2, 0.2, 3.2),
-    turret: new THREE.CylinderGeometry(1.2, 1.6, 3, 10),
-  };
-  const meshes = new Map<number, THREE.Object3D>();
+  // Units, by id. Each side looks like its faction, whichever end of the field it's on.
+  const meshes = new Map<number, THREE.Group>();
   const makeMesh = (u: Unit) => {
-    const m = mats[u.side];
-    const g = new THREE.Group();
-    if (u.kind === "trooper" || u.kind === "hero") {
-      const body = new THREE.Mesh(u.kind === "hero" ? geo.hero : geo.trooper, u.kind === "hero" ? heroMat : m);
-      body.position.y = u.kind === "hero" ? 1.3 : 1;
-      g.add(body);
-    } else {
-      const base = new THREE.Mesh(u.kind === "tank" ? geo.tankBody : geo.turret, m);
-      base.position.y = u.kind === "tank" ? 0.9 : 1.5;
-      const top = new THREE.Mesh(geo.tankTurret, m);
-      top.position.y = u.kind === "tank" ? 2 : 3.3;
-      const barrel = new THREE.Mesh(geo.barrel, m);
-      barrel.rotation.x = Math.PI / 2;
-      barrel.position.set(0, top.position.y, -1.8);
-      g.add(base, top, barrel);
-    }
+    const f = spec.factions[u.side];
+    const g = u.kind === "tank" ? tank() : u.kind === "turret" ? turret(f) : f === "wooka" ? wooka(u.kind === "hero") : marine(u.kind === "hero");
+    g.userData.last = { x: u.x, z: u.z };
     scene.add(g);
     return g;
   };
@@ -189,7 +162,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
-    const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${s === mine ? "You" : "Enemy"}</b><span>${Math.max(0, b.tickets[s])}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
+    const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${s === mine ? "You" : "Enemy"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
     hud.innerHTML = `
       <div class="b-top">${bar(mine)}
         <div class="b-clock" title="Time left. When it runs out, the side with more tickets wins (the defender on a tie)."><span class="clock">${fmt(Math.max(0, TIME_LIMIT - b.time))}</span><sup>i</sup></div>
@@ -231,6 +204,16 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         if (!m) meshes.set(u.id, (m = makeMesh(u)));
         m.position.set(u.x, 0, u.z);
         m.rotation.y = u.yaw;
+        // Wooka bounce when they run; Marine antennas wobble, more so on the move.
+        const last = m.userData.last as { x: number; z: number }, moving = Math.hypot(u.x - last.x, u.z - last.z) > 0.01;
+        last.x = u.x; last.z = u.z;
+        const t = now / 1000 + u.id;
+        if (m.userData.bob) m.userData.bob.position.y = moving ? Math.abs(Math.sin(t * 13)) * 0.14 : 0;
+        if (m.userData.club) m.userData.club.rotation.x = -0.6 + (u.cool > STATS.wooka.cool - 0.2 ? -1.2 : 0);
+        for (const [i, a] of ((m.userData.antennas ?? []) as THREE.Group[]).entries()) {
+          a.rotation.z = Math.sin(t * (5 + i) + i) * (moving ? 0.18 : 0.05);
+          a.rotation.x = Math.cos(t * (4 + i)) * (moving ? 0.12 : 0.03);
+        }
         m.visible = !(u.kind === "hero" && b.hero.inTank !== null);
       }
       for (const [id, m] of meshes) if (!seen.has(id)) { scene.remove(m); meshes.delete(id); }
