@@ -383,9 +383,21 @@ export const plainDynamicImports = (js: string) => js.replace(/\bimport\(`([^`$\
 export function builtEntry(c: RustyBunsConfig, cwd = process.cwd()): string | undefined {
   const built = c.worker!.builtMain;
   if (!built || existsSync(join(cwd, built))) return built ?? c.worker!.main;
-  const w = join(cwd, dirname(built), "wrangler.json");
-  const main = existsSync(w) ? (JSON.parse(readFileSync(w, "utf8")) as { main?: string }).main : undefined;
-  return main && existsSync(join(cwd, dirname(built), main)) ? join(dirname(built), main) : built;
+  const fromWrangler = (dir: string) => {
+    const w = join(cwd, dir, "wrangler.json");
+    const main = existsSync(w) ? (JSON.parse(readFileSync(w, "utf8")) as { main?: string }).main : undefined;
+    return main && existsSync(join(cwd, dir, main)) ? join(dir, main) : undefined;
+  };
+  // 1. beside the guess; 2. any environment folder under the build root: the plugin names it after the
+  // Worker or its viteEnvironment (dist/server/ for TanStack Start's `cloudflare({ viteEnvironment: { name: "ssr" } })`)
+  const top = built.split("/")[0]!;
+  const envDirs = existsSync(join(cwd, top)) ? readdirSync(join(cwd, top), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => join(top, e.name)) : [];
+  const hit = fromWrangler(dirname(built)) ?? envDirs.map(fromWrangler).find(Boolean);
+  if (hit) return hit;
+  // 3. the guessed folder holds one script: a custom server entry (tanstackStart({ server: { entry } }))
+  const dir = join(cwd, dirname(built));
+  const scripts = existsSync(dir) ? readdirSync(dir).filter((f) => /\.m?js$/.test(f)) : [];
+  return scripts.length === 1 ? join(dirname(built), scripts[0]!) : built;
 }
 
 export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string {
@@ -620,6 +632,14 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     setup(b: any) {
       // Host side: the worker-runtime modules become the local runtime.
       b.onResolve({ filter: /^(cloudflare:workers|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
+      // A dependency's optional import that isn't installed (pg's pg-cloudflare and pg-native, only
+      // loaded on those platforms) stays a runtime import instead of failing the bundle. The app's
+      // own imports aren't covered: a missing one of those should still fail here.
+      b.onResolve({ filter: /^[^./][^:]*$/ }, (args: { path: string; importer: string }) => {
+        if (!args.importer.includes("/node_modules/")) return undefined;
+        try { Bun.resolveSync(args.path, dirname(args.importer)); return undefined; }
+        catch { return { path: args.path, external: true }; }
+      });
       // Vite writes some dynamic imports with a template literal (import(`cloudflare:workers`)), which
       // the bundler leaves to runtime, past the line above. In the built Worker, a literal with no
       // ${...} is made a plain string so it resolves here like any other import.

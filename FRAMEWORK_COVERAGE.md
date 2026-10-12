@@ -21,7 +21,37 @@ Results go to `.rustybuns-trial/summary.md` (gitignored). That file has a row pe
 
 The two modes measure different things. **`spa`** serves the client build and runs `"use server"` functions on the host. **`worker`** runs the app's own built Worker on the host: its server rendering, routes and server functions, against the local twins. Passing in `worker` mode is the stronger result.
 
-The apps are strangers' code, so their scripts run with **none of this machine's logins**. HOME is an empty directory, Cloudflare's variables hold dead values, and only the package caches point back at the real ones. This matters because a release script can run `wrangler d1 migrations apply --remote` or `wrangler deploy`. The point is to prove each app on Rusty Buns' local twins, never on someone's real cloud.
+The apps are strangers' code, so their scripts run with **none of this machine's logins**. HOME is an empty directory, Cloudflare's variables hold dead values, and only the package caches point back at the real ones. This matters because a release script can run `wrangler d1 migrations apply --remote` or `wrangler deploy`. The point is to prove each app on Rusty Buns' local twins, never on someone's real cloud or data.
+
+The apps' own credentials are kept out too, in two ways:
+
+- **Secrets files are deleted.** Before any of the app's code runs, committed secrets files (`.env`, `.env.production`, `.dev.vars` and the like, but not the `.example` ones) are removed from the clone.
+- **Remote steps are dropped from the build.** `init` leaves out any step that would act on a real database or account (migrations, `db push`, seeds and deploys to wrangler, Vercel, Netlify, Convex or Supabase). So a Vercel-style `"build": "prisma migrate deploy && vite build"` runs only the build.
+
+On macOS the operating system enforces two more limits (`sandbox-exec`), on every app command:
+
+- **No reading or writing under your home folder**, except the toolchains and package caches the build needs. That means no `~/.ssh`, keychains or `~/.wrangler`.
+- **No network after install** except localhost. A build or a booted server can't send anything out or reach a real service.
+
+Installs keep the network, because packages come from registries.
+
+**Missing secrets are faked, never borrowed.** The harness collects every secret an app declares or reads:
+
+- from `.env.example`, `.dev.vars.example` and similar files;
+- from `process.env.X` and `env.X` in the app's code;
+- from the variables well-known SDKs read on their own (Clerk, better-auth, Auth.js, Convex, Supabase, Stripe, Resend, OpenAI, Anthropic, Prisma and Neon).
+
+It then fills each one with a plausible fake, chosen by name:
+
+| secret name | fake |
+|---|---|
+| `*_SECRET`, `*_KEY` | random bytes |
+| Clerk keys | the right `pk_test_…` / `sk_test_…` shape |
+| `DATABASE_URL`, `*_URL` | a dead local address |
+
+That's enough for an app to boot and render logged-out. Anything that really needs the service fails, as it should.
+
+This is containment, not malware detection. Reading code can't reliably tell a malicious package from a fine one, so the harness assumes the worst and gives the code nothing worth stealing and nowhere to send it.
 
 ## RWSDK
 
@@ -91,3 +121,43 @@ rwsdk.com is slow on the host because its star widget fetches the GitHub API wit
 | 16 | don't install: broken lockfiles, `jsr:` dependencies, network errors | the app's |
 
 About 10 of the apps found aren't runnable apps at all: library packages inside monorepos, templates and benchmarks. No tool would boot them.
+
+## TanStack Start
+
+**Run: Oct 12 2026, `@tanstack/react-start` 1.x, this checkout. A partial mixed sample of 16 apps.**
+
+820 apps were found; 469 of them were pushed in the last 3 months. The run was cut short on purpose to free the machine. The sample, drawn with `--sample` (stratified), covers:
+
+- big monorepos (convex-backend, secret-project-331);
+- official templates (Convex + Clerk, the Clerk quickstart);
+- docs sites;
+- popular standalone apps;
+- the long tail.
+
+| | apps |
+|---|---|
+| sampled | 16 |
+| install | 13 (the 3 others failed on clone or network timeouts) |
+| serve a server-rendered `/` | **8 of 13** |
+
+Before this run's fixes, it was 0. Off Cloudflare, `init` gave TanStack Start apps a SPA config, but Start renders on its server and has no `index.html`, so every request was a 404. `init` now runs the app's own production server in `worker` mode. Which server it uses depends on how the app builds:
+
+| how the app builds | server the desktop runs |
+|---|---|
+| no Nitro | `<outDir>/server/server.js` |
+| `nitro({ preset: "vercel" })` | the Vercel function, `export default { fetch }` |
+| `nitro()` with no preset | `NITRO_PRESET=standard`, `.output/server/index.mjs` |
+| `cloudflare({ viteEnvironment })` | the Worker, found by the `wrangler.json` its build writes |
+| a preset that starts its own server (`bun`, node-server) | none; `init` says so |
+
+Fake secrets turned the Clerk-based templates' 500s into working pages.
+
+### What still fails
+
+| apps | cause | whose |
+|---|---|---|
+| 4 | a monorepo frontend whose workspace packages must be built first (`start-only, monorepo`) | ours: build the workspace dependencies before the app ([#953](https://github.com/QuinnsCode/RustyBuns/issues/953)) |
+| 3 | clone or install timeouts on very large monorepos | the run's (network, size) |
+| 1 | a 500 on a Cloudflare monorepo app (algorandfoundation/gGov) | open |
+
+The by-kind pass rates are written to `summary.md`'s "By kind of app" table on each run. The next full sample (`--sample 30`) should come from the dedicated build box, not a laptop.
