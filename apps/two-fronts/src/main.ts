@@ -1,6 +1,6 @@
 // The page: the strategy map and its orders panel, the briefing for a hero battle, the battle
 // itself, and back. The campaign is saved in this browser after every change.
-import { SECTOR_NAMES, FACTION_NAMES, neighbours, systemDef, SYSTEMS } from "./war/galaxy.ts";
+import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
   COST, applyBattleResult, enemy, heroReady, income, keyShare, newCampaign, planOrders, resolveTurn, supplied,
   type Campaign, type Order, type Orders, type Where,
@@ -11,7 +11,7 @@ import { FLAVOR, run } from "./battle/sim.ts";
 import type { BattleResult, BattleSpec, Side } from "./battle/contract.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const SAVE = "two-fronts:v3"; // v2 gained the cannon sectors, v3 renamed the factions to the Marines and the Wooka
+const SAVE = "two-fronts:v4"; // v2 gained the cannon sectors, v3 renamed the factions, v4 has a galaxy per campaign
 
 function load(): { campaign: Campaign; orders: Orders } | null {
   try { return JSON.parse(localStorage.getItem(SAVE) ?? "null"); } catch { return null; }
@@ -21,6 +21,18 @@ let c: Campaign = saved?.campaign ?? newCampaign(Math.floor(Math.random() * 1e9)
 let mine: Orders = saved?.orders ?? { faction: c.player, orders: [] };
 let selected: string | null = null;
 const save = () => { try { localStorage.setItem(SAVE, JSON.stringify({ campaign: c, orders: mine })); } catch { /* private window */ } };
+
+const systemDef = (id: string) => galaxyOf(c).system(id), neighbours = (id: string) => galaxyOf(c).neighbours(id);
+// New campaign: one button per galaxy, the short map first.
+const newWarButtons = () => Object.values(GALAXIES).map((g, i) =>
+  `<button type="button" data-new-war="${g.id}" class="${i ? "" : "primary"}" title="${g.blurb}">${g.name} <small>${g.systems.length} systems</small></button>`).join(" ");
+function newWar(g: GalaxyId) {
+  c = newCampaign(Math.floor(Math.random() * 1e9), "marines", g);
+  mine = { faction: c.player, orders: [] };
+  selected = firstSystem();
+  hideModal(); save(); render();
+}
+const firstSystem = () => galaxyOf(c).systems.find((d) => c.systems[d.id]!.sectors.some((x) => x.owner === c.player))?.id ?? null;
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 const placeName = (w: Where) => {
@@ -105,7 +117,7 @@ function render() {
     : `<li class="hint">No orders yet. Build, send ships to take an orbit, land armies under it, and pick one battle to lead (⚔).</li>`;
   $("log").innerHTML = c.log.map((l) => `<li>${esc(l)}</li>`).join("");
   $("end-turn").toggleAttribute("disabled", !!c.winner);
-  if (c.winner) showModal(`<h2>${c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
+  if (c.winner) showModal(`<h2>${c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}.</p>${newWarButtons()}`);
 }
 
 // Clicks, delegated.
@@ -130,8 +142,9 @@ document.addEventListener("click", (e) => {
     save(); render(); return;
   }
   if (t.id === "end-turn") return endTurn();
-  if (t.id === "new-war" || t.id === "confirm-new") { c = newCampaign(Math.floor(Math.random() * 1e9)); mine = { faction: c.player, orders: [] }; selected = null; hideModal(); save(); render(); return; }
-  if (t.id === "restart") return showModal(`<h2>Start over?</h2><p>This campaign will be lost.</p><button type="button" id="confirm-new" class="primary">New campaign</button> <button type="button" id="close">Keep playing</button>`);
+  const war = t.closest<HTMLElement>("[data-new-war]");
+  if (war) return newWar(war.dataset.newWar as GalaxyId);
+  if (t.id === "restart") return showModal(`<h2>Start over?</h2><p>This campaign will be lost. Pick a map for the next one: the short war is an evening, the full campaign several.</p>${newWarButtons()} <button type="button" id="close">Keep playing</button>`);
   if (t.id === "close") hideModal();
 });
 document.addEventListener("keydown", (e) => {
@@ -208,6 +221,6 @@ $("be-horde").onclick = () => skirmish(true);
 function showModal(html: string) { $("modal-body").innerHTML = html; $("modal").hidden = false; }
 function hideModal() { $("modal").hidden = true; }
 
-selected = SYSTEMS.find((d) => c.systems[d.id]!.sectors.some((x) => x.owner === c.player))?.id ?? null;
+selected = firstSystem();
 render();
 if (c.pending) brief(c.pending.spec, finish);

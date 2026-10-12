@@ -5,7 +5,7 @@
 // BattleResult comes back.
 import type { BattleResult, BattleSpec, Faction, SectorKind } from "../battle/contract.ts";
 import { other as otherSide } from "../battle/contract.ts";
-import { FACTION_NAMES, REGIONS, SECTOR_INCOME, SECTOR_NAMES, START, SYSTEMS, adjacent, neighbours, systemDef } from "./galaxy.ts";
+import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
 
 export type Count = Record<Faction, number>;
 export const FACTIONS: Faction[] = ["marines", "wooka"];
@@ -20,6 +20,7 @@ export interface Where { system: string; sector: number }
 export interface Campaign {
   turn: number;
   seed: number;
+  galaxy: GalaxyId;
   player: Faction;
   credits: Count;
   systems: Record<string, SystemState>;
@@ -45,10 +46,10 @@ const BOMBARD_FLEETS = 2;        // an orbit this strong kills an enemy army a s
 export const TICKETS_PER_ARMY = 50;
 const CANNON_HITS = 1;           // ships an anti-ship cannon knocks out of a blockading fleet each turn
 
-export function newCampaign(seed = 1, player: Faction = "marines"): Campaign {
-  const systems: Record<string, SystemState> = {};
-  for (const def of SYSTEMS) {
-    const s = START[def.id]!;
+export function newCampaign(seed = 1, player: Faction = "marines", galaxy: GalaxyId = "short"): Campaign {
+  const systems: Record<string, SystemState> = {}, g = GALAXIES[galaxy];
+  for (const def of g.systems) {
+    const s = g.start[def.id]!;
     const fleets = zero();
     fleets[s.owner] = s.fleets;
     systems[def.id] = {
@@ -59,7 +60,7 @@ export function newCampaign(seed = 1, player: Faction = "marines"): Campaign {
     };
   }
   return {
-    turn: 1, seed, player,
+    turn: 1, seed, galaxy, player,
     credits: { marines: START_CREDITS, wooka: START_CREDITS },
     systems, hero: { level: 1, xp: 0, woundedUntil: 0 },
     pending: null, winner: null, log: [],
@@ -95,7 +96,7 @@ export function keyShare(c: Campaign, f: Faction) {
 // the enemy doesn't hold. Armies anywhere else are cut off and wither.
 export function supplied(c: Campaign, f: Faction): Set<string> {
   const seen = new Set(Object.values(c.systems).filter((s) => holds(s, f)).map((s) => s.id)), todo = [...seen];
-  while (todo.length) for (const n of neighbours(todo.pop()!)) {
+  while (todo.length) for (const n of galaxyOf(c).neighbours(todo.pop()!)) {
     if (seen.has(n) || c.systems[n]!.orbit === enemy(f)) continue;
     seen.add(n);
     todo.push(n);
@@ -113,7 +114,8 @@ export function canPushFromSurface(s: SystemState, f: Faction) {
 export function income(c: Campaign, f: Faction) {
   let n = 0;
   for (const s of Object.values(c.systems)) for (const x of s.sectors) if (x.owner === f) n += SECTOR_INCOME[x.kind];
-  for (const r of REGIONS) if (SYSTEMS.filter((d) => d.region === r.id).every((d) => holds(c.systems[d.id]!, f))) n += r.bonus;
+  const g = galaxyOf(c);
+  for (const r of g.regions) if (g.systems.filter((d) => d.region === r.id).every((d) => holds(c.systems[d.id]!, f))) n += r.bonus;
   return keyShare(c, f) < MORALE_SHARE ? Math.floor(n / 2) : n;
 }
 
@@ -149,7 +151,7 @@ function check(d: Draft, f: Faction, o: Order): string | null {
   if (o.kind === "fleet") {
     const s = c.systems[o.from];
     if (!s || !c.systems[o.to]) return "No such system";
-    if (!adjacent(o.from, o.to)) return "No hyperlane between them";
+    if (!galaxyOf(c).adjacent(o.from, o.to)) return "No hyperlane between them";
     if (s.fleets[f] < o.count) return "Not that many ships there";
     return null;
   }
@@ -161,7 +163,7 @@ function check(d: Draft, f: Faction, o: Order): string | null {
     if (!canPushFromSurface(c.systems[o.from.system]!, f)) return "Cut off: take the orbit or more of the planet first";
     return null;
   }
-  if (!adjacent(o.from.system, o.to.system)) return "No hyperlane between them";
+  if (!galaxyOf(c).adjacent(o.from.system, o.to.system)) return "No hyperlane between them";
   return null; // a landing: whether it lands depends on who holds the orbit after the space battles
 }
 
@@ -195,10 +197,10 @@ export function diceBattle(att: number, def: number, r: () => number, cover: { a
   return [att, def] as const;
 }
 
-const name = (id: string) => systemDef(id).name;
+const name = (c: Campaign, id: string) => galaxyOf(c).system(id).name;
 const where = (c: Campaign, w: Where) => {
   const s = c.systems[w.system]!;
-  return s.sectors.length > 1 ? `${name(w.system)} ${SECTOR_NAMES[s.sectors[w.sector]!.kind].toLowerCase()}` : name(w.system);
+  return s.sectors.length > 1 ? `${name(c, w.system)} ${SECTOR_NAMES[s.sectors[w.sector]!.kind].toLowerCase()}` : name(c, w.system);
 };
 
 export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
@@ -214,7 +216,7 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
     if (s.fleets.marines && s.fleets.wooka) {
       const def = startOrbit[s.id] ?? (r() < 0.5 ? "marines" : "wooka"), att = enemy(def);
       const [a, b] = diceBattle(s.fleets[att], s.fleets[def], r);
-      c.log.push(`Space battle over ${name(s.id)}: ${FACTION_NAMES[a ? att : def]} holds the orbit (${s.fleets[att] - a} ${FACTION_NAMES[att]} and ${s.fleets[def] - b} ${FACTION_NAMES[def]} ships lost).`);
+      c.log.push(`Space battle over ${name(c, s.id)}: ${FACTION_NAMES[a ? att : def]} holds the orbit (${s.fleets[att] - a} ${FACTION_NAMES[att]} and ${s.fleets[def] - b} ${FACTION_NAMES[def]} ships lost).`);
       s.fleets[att] = a; s.fleets[def] = b;
     }
     s.orbit = s.fleets.marines ? "marines" : s.fleets.wooka ? "wooka" : null;
@@ -265,7 +267,7 @@ export function buildSpec(c: Campaign, at: Where, seed: number): BattleSpec {
   return {
     id: `${c.turn}-${at.system}-${at.sector}`,
     turn: c.turn,
-    system: name(at.system),
+    system: name(c, at.system),
     sector: x.kind,
     factions: { attacker: att, defender: def },
     hero: att === c.player ? "attacker" : "defender",
@@ -316,22 +318,22 @@ function upkeep(c: Campaign): Campaign {
     if (!guns) continue;
     const hit = Math.min(s.fleets[o], guns * CANNON_HITS);
     s.fleets[o] -= hit;
-    c.log.push(`The cannon on ${name(s.id)} knocks out ${hit} ${FACTION_NAMES[o]} ${hit === 1 ? "ship" : "ships"}.`);
+    c.log.push(`The cannon on ${name(c, s.id)} knocks out ${hit} ${FACTION_NAMES[o]} ${hit === 1 ? "ship" : "ships"}.`);
     if (!s.fleets[o]) {
       s.orbit = null;
-      c.log.push(`${FACTION_NAMES[o]}'s blockade of ${name(s.id)} is broken.`);
+      c.log.push(`${FACTION_NAMES[o]}'s blockade of ${name(c, s.id)} is broken.`);
     }
   }
   for (const s of Object.values(c.systems)) {
     const o = s.orbit;
     if (!o || s.fleets[o] < BOMBARD_FLEETS) continue;
     if (holdsShield(s, enemy(o))) {
-      if (s.sectors.some((x) => x.armies[enemy(o)])) c.log.push(`The shield on ${name(s.id)} holds off ${FACTION_NAMES[o]}'s bombardment.`);
+      if (s.sectors.some((x) => x.armies[enemy(o)])) c.log.push(`The shield on ${name(c, s.id)} holds off ${FACTION_NAMES[o]}'s bombardment.`);
       continue;
     }
     for (const x of s.sectors) if (x.armies[enemy(o)]) {
       x.armies[enemy(o)]--;
-      c.log.push(`${FACTION_NAMES[o]} bombards ${name(s.id)} from orbit.`);
+      c.log.push(`${FACTION_NAMES[o]} bombards ${name(c, s.id)} from orbit.`);
       if (!x.armies[enemy(o)] && x.armies[o]) x.owner = o;
     }
   }

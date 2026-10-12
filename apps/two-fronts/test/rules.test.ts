@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { LANES, SYSTEMS, neighbours } from "../src/war/galaxy.ts";
+import { GALAXIES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiOrders } from "../src/war/ai.ts";
 import {
   applyBattleResult, canPushFromSurface, diceBattle, income, keyShare, newCampaign, planOrders, resolveTurn, rng, supplied,
@@ -7,16 +7,48 @@ import {
 } from "../src/war/rules.ts";
 
 const kessa = (c: Campaign) => c.systems.kessa!;
+const reachable = (g: Galaxy, from: string) => {
+  const seen = new Set([from]), todo = [from];
+  while (todo.length) for (const n of g.neighbours(todo.pop()!)) if (!seen.has(n)) { seen.add(n); todo.push(n); }
+  return seen;
+};
 const none = (c: Campaign): Orders[] => [{ faction: "marines", orders: [] }, { faction: "wooka", orders: [] }];
 
-test("the galaxy: 8 systems, joined up, Kessa in three sectors, a cannon each side of the Narrows", () => {
-  expect(SYSTEMS).toHaveLength(8);
-  const seen = new Set(["aster"]), todo = ["aster"];
-  while (todo.length) for (const n of neighbours(todo.pop()!)) if (!seen.has(n)) { seen.add(n); todo.push(n); }
-  expect(seen.size).toBe(8);
-  for (const [a, b] of LANES) expect(SYSTEMS.some((s) => s.id === a) && SYSTEMS.some((s) => s.id === b)).toBe(true);
-  expect(SYSTEMS.find((s) => s.id === "kessa")!.sectors).toEqual(["shield", "spaceport", "capital"]);
-  expect(SYSTEMS.filter((s) => s.sectors.includes("cannon")).map((s) => s.id)).toEqual(["lumen", "morrow"]);
+test("the short galaxy: 8 systems, joined up, Kessa in three sectors, a cannon each side of the Narrows", () => {
+  const g = GALAXIES.short;
+  expect(g.systems).toHaveLength(8);
+  expect(reachable(g, "aster").size).toBe(8);
+  expect(g.system("kessa").sectors).toEqual(["shield", "spaceport", "capital"]);
+  expect(g.systems.filter((s) => s.sectors.includes("cannon")).map((s) => s.id)).toEqual(["lumen", "morrow"]);
+});
+
+test("the full galaxy: 30 systems in 7 regions, joined up, the same for both sides", () => {
+  const g = GALAXIES.full;
+  expect(g.systems).toHaveLength(30);
+  expect(g.regions).toHaveLength(7);
+  expect(reachable(g, "aster").size).toBe(30);
+  for (const s of g.systems) {
+    expect(g.regions.some((r) => r.id === s.region)).toBe(true);
+    expect(g.start[s.id]).toBeDefined();
+  }
+  expect(g.systems.filter((s) => s.sectors.length > 1).length).toBeGreaterThanOrEqual(8);
+  // Turn the map half a turn around its centre and every world, lane and army lands on its twin.
+  const at = new Map(g.systems.map((s) => [`${s.x},${s.y}`, s]));
+  const twin = (id: string) => {
+    const s = g.system(id), t = at.get(`${g.width - s.x},${98 - s.y}`);
+    if (!t) throw new Error(`${id} has no twin`);
+    return t;
+  };
+  for (const s of g.systems) {
+    const t = twin(s.id), a = g.start[s.id]!, b = g.start[t.id]!;
+    expect(t.sectors).toEqual(s.sectors);
+    expect({ ...b, owner: a.owner }).toEqual(a);
+    expect(b.owner).not.toBe(a.owner);
+  }
+  for (const [a, b] of g.lanes) expect(g.adjacent(twin(a).id, twin(b).id)).toBe(true);
+  const c = newCampaign(1, "marines", "full");
+  expect(keyShare(c, "marines")).toBe(0.5);
+  expect(income(c, "marines")).toBe(income(c, "wooka"));
 });
 
 test("income counts sectors and the region bonus, and halves when morale breaks", () => {
@@ -206,3 +238,20 @@ test("the AI's orders are all legal, and a whole war is deterministic", () => {
   expect(a).toEqual(b);
   expect(a.turn).toBeGreaterThan(5);
 });
+
+// Pacing, AI against AI: every war ends, a full one runs longer than a short one, and the AI
+// spends the bigger galaxy's income rather than banking it. These seeds' wars run 5-17 turns on
+// the short map and 10-36 on the full one.
+test("a full campaign runs longer than the short war, still ends, and the AI spends its income", () => {
+  const war = (galaxy: GalaxyId, seed: number) => {
+    let c = newCampaign(seed, "marines", galaxy);
+    while (!c.winner && c.turn < 100) {
+      c = resolveTurn(c, [aiOrders(c, "marines"), aiOrders(c, "wooka")]);
+      if (galaxy === "full" && c.turn === 6) for (const f of ["marines", "wooka"] as const) expect(c.credits[f]).toBeLessThan(2 * income(c, f) + 10);
+    }
+    expect(c.winner).not.toBeNull();
+    return c.turn;
+  };
+  const median = (galaxy: GalaxyId) => Array.from({ length: 10 }, (_, i) => war(galaxy, i + 1)).sort((a, b) => a - b)[5]!;
+  expect(median("full")).toBeGreaterThan(median("short"));
+}, 30_000);
