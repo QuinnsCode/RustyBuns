@@ -7,6 +7,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, resolve, relative, sep } from "node:path";
 import { parseJsonc } from "./jsonc.ts";
+import { workspaceRoot } from "./deploy-deps.ts";
 import { inits, stackOf, vitePlugins, type Stack } from "./fit.ts";
 import { inferStaticBuild } from "./build-script.ts";
 
@@ -207,7 +208,14 @@ export function infer(root = process.cwd()): Inferred {
   const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
   const staticBuild = inferStaticBuild(pkg.scripts ?? {});
   const vite = inferVite(root, staticBuild.config);
-  const stack = stackOf(deps, vite.plugins);
+  let stack = stackOf(deps, vite.plugins);
+  // A workspace member often gets vite from the root package.json (excalidraw-app): a vite
+  // config here, or vite at the workspace root, still makes it a vite app.
+  if (stack === "unknown") {
+    const ws = workspaceRoot(root), top = ws ? readPackageJson(ws) ?? {} : {};
+    const viaRoot = { ...(top.dependencies ?? {}), ...(top.devDependencies ?? {}) }["vite"];
+    if (vite.configPath || viaRoot) stack = stackOf({ ...deps, vite: viaRoot ?? "*" }, vite.plugins);
+  }
   const framework = (inits(stack, vite.plugins) ? stack : "unknown") as Framework;
   const pm = detectPm(root);
   const wranglerPath = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].map((c) => join(root, c)).find(existsSync) ?? null;
