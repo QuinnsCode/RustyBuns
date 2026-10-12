@@ -173,6 +173,8 @@ There's no downloadable build yet; that's one command from source.
   Checks planned from package.json install first (`bun install`, frozen when there's a `bun.lock`), since a runner's fresh clone has no node_modules.
   Required checks gate Merge, scoped by path when you like (a change in `apps/a` doesn't wait on `b-tests`), and agents watch them with the `checks` MCP tool the way they'd run `gh pr checks`.
   GitHub is the backup, not a dependency: running checks here is always on offer, and while GitHub is down the desktop checks here in its place, merges on its own checks passing, and lets GitHub's verdict catch up on main once the mirror syncs.
+- **CI that heals itself.** A required check failing on a branch, or its merge tripping a guard (conflict markers, a JSON file that won't parse), starts a coding agent on that branch with the failing log, and the checks run again on its fix.
+  Two tries, one at a time; then the branch waits for a person, the attempts listed beside its checks. On with hosted agents (admins only, on the hosted budget), or on the desktop with `HEAL=1`.
 - **Build changes are flagged.** A branch that touches `package.json`, a lockfile, a Dockerfile, CI or the deploy config shows every changed line, and its merge waits for a person to say they've read them.
   Agents can be prompt-injected; this is where it gets caught.
 - **Accounts and limits.** GitHub, Google or email sign-in.
@@ -196,8 +198,9 @@ GitHub ──mirror──▶ codeSplitter ◀──pulls work── your machine
 
 GitHub warns against self-hosted runners on public repos because a fork PR can edit `.github/workflows` and run on your box, and a personal account can't fence runners off (that takes an organization's runner groups).
 Here, fork PRs never mirror: a mirror fetches upstream's own branches, never `refs/pull/*`.
-Only trusted code runs: your branches and your agents', and main as merged on GitHub, which you reviewed (that one doesn't queue by itself yet; see the caveats).
+Only trusted code runs: your branches and your agents', and main as merged on GitHub, which you reviewed, queued as the mirror takes it.
 Your machine pulls its runs, so it needs no open port.
+A check gets none of your logins: a scrubbed environment and an empty `HOME`, as a sandbox user of its own if you like, and pinning the repo's checks runs only the commands in its settings, so a merge can't change what runs.
 GitHub's free runners keep doing the quick PR checks.
 
 It isn't new in kind: GitLab's CI for external repos, Buildkite's agents and GitOps (Argo CD, Flux) all pull the same way.

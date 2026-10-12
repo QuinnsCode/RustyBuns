@@ -8,7 +8,7 @@
 //
 //   - The desktop drains its own queue, in-process: when checks are queued here, and on the
 //     5-minute cron for any left over, one run at a time per repo, in a temp dir on this
-//     machine, as the repo's owner. Off in the tests (CHECKS_RUNNER=off, set by local()), so
+//     machine, with none of the owner's logins (check-env.ts). Off in the tests (CHECKS_RUNNER=off, set by local()), so
 //     they claim runs themselves.
 //   - On Cloudflare, with CI_RUNNER bound (deploy with CODESPLITTER_CHECKS=1), a CiRunner
 //     Durable Object per repo runs them in containers (deploy-sandbox/ci.Dockerfile): one run
@@ -22,6 +22,7 @@
 //
 // It costs container time: see "Checks in a container" in REFERENCE.md for the price.
 
+import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
 import { claimRun, get, readAt, updateRun, type CheckRun } from "./checks.ts";
 import { RUN_BUDGET_MS, readExec } from "./deploy-runner.ts";
 import { gate, hostList, hostOf, REGISTRIES, type GateExports } from "./egress.ts";
@@ -106,12 +107,19 @@ export async function runJob(env: Env, owner: string, repo: string, job: Job, la
 /** Whether this is the desktop app running its own checks: Bun, no accounts, and not turned off. */
 export const desktopRuns = (env: Env) => typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET && env.CHECKS_RUNNER !== "off" && !env.CI_RUNNER;
 
-/** A temp dir on this machine. The command gets this process's env, as a runner started from a shell would, and CI=1. */
-async function localMachine(): Promise<Machine & { dispose(): Promise<void> }> {
-  const { mkdtemp, mkdir, rm } = await import("node:fs/promises");
+/**
+ * A temp dir on this machine. The command gets none of the owner's logins (check-env.ts): a
+ * scrubbed env with an empty HOME, and CI=1, as CODESPLITTER_CHECKS_USER when that's set (#1010).
+ */
+export async function localMachine(user = sandboxUser(process.env.CODESPLITTER_CHECKS_USER)): Promise<Machine & { dispose(): Promise<void> }> {
+  const { chmod, mkdtemp, mkdir, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { dirname, join, relative, resolve } = await import("node:path");
-  const dir = await mkdtemp(join(tmpdir(), "cs-checks-"));
+  // A sandbox user can't reach the owner's own temp dir: /tmp is everyone's.
+  const base = await mkdtemp(join(user ? "/tmp" : tmpdir(), "cs-checks-")), { repo: dir, home, tmp } = runDirs(base);
+  for (const d of [dir, home, tmp]) await mkdir(d);
+  if (user) { await chmod(base, 0o755); for (const d of [dir, home, tmp]) await chmod(d, 0o777); }
+  const env = checkEnv(process.env, home, tmp, user);
   const inside = (p: string) => {
     const at = resolve(dir, p);
     if (!relative(dir, at) || relative(dir, at).startsWith("..")) throw new Error(`${p} is outside the repo`);
@@ -120,7 +128,8 @@ async function localMachine(): Promise<Machine & { dispose(): Promise<void> }> {
   const live = new Set<{ kill(): void }>();
   return {
     async exec(cmd, out) {
-      const p = Bun.spawn(cmd, { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...process.env, CI: "1" } });
+      const as = spawnAs(cmd, env, user);
+      const p = Bun.spawn(as.cmd, { cwd: dir, stdout: "pipe", stderr: "pipe", env: as.env });
       live.add(p);
       const pump = async (s: ReadableStream<Uint8Array>) => { const d = new TextDecoder(); for await (const b of s) out(d.decode(b, { stream: true })); out(d.decode()); };
       const [code] = await Promise.all([p.exited, pump(p.stdout), pump(p.stderr)]).finally(() => live.delete(p));
@@ -132,11 +141,16 @@ async function localMachine(): Promise<Machine & { dispose(): Promise<void> }> {
         if (text === null) { await rm(at, { force: true }); continue; }
         await mkdir(dirname(at), { recursive: true });
         await Bun.write(at, text);
+        if (user) await chmod(at, 0o666);
       }
     },
     read: (path) => Bun.file(inside(path)).text().catch(() => undefined),
     stop() { for (const p of live) p.kill(); },
-    dispose: () => rm(dir, { recursive: true, force: true }),
+    async dispose() {
+      // What the sandbox user left, as it: it may have taken its own files out of the owner's reach.
+      if (user) await Bun.spawn(spawnAs(["rm", "-rf", dir, home, tmp], env, user).cmd, { stdout: "ignore", stderr: "ignore" }).exited.catch(() => null);
+      await rm(base, { recursive: true, force: true });
+    },
   };
 }
 

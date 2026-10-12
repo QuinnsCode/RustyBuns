@@ -5,9 +5,13 @@
 // throws), after `delaySeconds` or the consumer's retryDelay, until it has been
 // delivered maxRetries + 1 times; then it is dropped. Messages survive a
 // restart: a batch in flight when the process died comes back after its lease.
+//
+// Each batch is background work: it waits for a low slot on the host's scheduler (priority.ts)
+// before its messages are picked and leased. The consumer's `priority` says otherwise.
 
 import { Database } from "bun:sqlite";
 import { deserialize, serialize } from "node:v8";
+import { hostScheduler, type Priority, type Scheduler } from "../priority.ts";
 
 /** The consumer's settings, as in wrangler's `queues.consumers`. */
 export interface QueueConsumerSettings {
@@ -17,6 +21,10 @@ export interface QueueConsumerSettings {
   maxRetries?: number;
   /** Seconds before a retry, when retry() doesn't say. @default 0 */
   retryDelay?: number;
+  /** The scheduler class each batch runs at. @default "low" */
+  priority?: Priority;
+  /** @default the host's, hostScheduler() */
+  scheduler?: Pick<Scheduler, "run">;
 }
 
 export interface QueueSendOptions { delaySeconds?: number; contentType?: string }
@@ -133,7 +141,13 @@ export class LocalQueue<Body = unknown> {
     return this.draining;
   }
 
-  private async deliver(until: number): Promise<number> {
+  private deliver(until: number): Promise<number> {
+    const c = this.consumer;
+    if (!c) return Promise.resolve(0);
+    return (c.settings.scheduler ?? hostScheduler()).run(c.settings.priority ?? "low", () => this.deliverNow(until));
+  }
+
+  private async deliverNow(until: number): Promise<number> {
     const c = this.consumer;
     if (!c) return 0;
     const rows = this.db.query(`SELECT id, body, attempts, sent_at FROM queue_messages WHERE queue = ? AND visible_at <= ? ORDER BY visible_at, rowid LIMIT ?`)
