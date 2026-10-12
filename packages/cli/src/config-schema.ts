@@ -67,7 +67,7 @@ const DesktopTarget = Schema.Struct({
   actions: opt(Schema.Struct({ include: opt(Strs), exclude: opt(Strs) })),
   mounts: opt(StrMap), r2: opt(StrMap),
   storageCodec: opt(Schema.Literals(["json", "v8"])),
-  advisories: opt(Str), define: opt(StrMap),
+  advisories: opt(Str), define: opt(StrMap), workers: opt(Strs),
 });
 
 const BoxCommon = { memMaxMb: opt(int(64, 1_048_576)), webmcp: opt(Bool), persona: opt(Schema.Literals(Object.keys(PERSONAS) as [Persona, ...Persona[]])), region: opt(Str), port: opt(Port) };

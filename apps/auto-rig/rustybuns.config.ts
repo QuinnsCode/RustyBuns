@@ -1,7 +1,8 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
 // Desktop app: the page rigs with TypeScript in a Web Worker, and the host
-// rigs with Rust over bun:ffi through the "use server" action in src/actions.
+// rigs with Rust over bun:ffi through the "use server" action in src/actions,
+// or with TypeScript on a worker thread (desktop.workers) without a Rust build.
 export default defineConfig({
   name: "auto-rig",
   source: { dir: "src", aliases: {} },
@@ -15,6 +16,7 @@ export default defineConfig({
       native: ["auto_rig"],
       window: "app",
       dataDir: "~/.auto-rig",
+      workers: ["src/rig/worker.ts"],
     },
   },
 });

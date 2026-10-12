@@ -262,6 +262,15 @@ export interface DesktopTarget {
   advisories?: string;
   /** Extra --define values baked into the binary (RB_VERSION is always set). */
   define?: Record<string, string>;
+  /**
+   * Worker-thread modules the host starts, as project paths. Each is bundled on
+   * its own and shipped beside the host, and host code that names one with
+   * `new URL("./worker.ts", import.meta.url)` is pointed at that copy, so
+   * `new Worker(url)` or `hostScheduler().worker(priority, url, data)` find it
+   * in the binary too:
+   *   workers: ["src/rig/worker.ts"]
+   */
+  workers?: string[];
 }
 
 /**

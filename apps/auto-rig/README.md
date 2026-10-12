@@ -8,7 +8,7 @@ Drop in a 3D model (a glTF/GLB, or one of the built-in samples) and get a skelet
 
 1. **Install** (repo root): `bun install`
 2. `cd apps/auto-rig`
-3. **Optional, for the Rust rigger** (needs [rustup](https://rustup.rs)): `bun run build:native`. Skip it and the host uses the TypeScript rigger.
+3. **Optional, for the Rust rigger** (needs [rustup](https://rustup.rs)): `bun run build:native`. Skip it and the host uses the TypeScript rigger, on a worker thread so it keeps serving while a mesh rigs.
 4. **Launch**: `bun run desktop:dev`
 
 `bun run dev` serves the plain browser build with hot reload (run step 4 once first; it writes `.rustybuns/vite.ts`). With no host there, rigging runs in a Web Worker.
