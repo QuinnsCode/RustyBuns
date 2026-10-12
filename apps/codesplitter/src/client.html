@@ -140,7 +140,9 @@
   /* The details side (dock()): drag its left edge to widen it, or snap it to 2/3 or the whole bench.
      Panels drag by their title to a new spot and fold to a rounded bar; the rail jumps to one.
      Each browser keeps its own layout. */
-  .drail { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 2px; flex-wrap: wrap; padding: 4px 8px; background: var(--canvas); border-bottom: 1px solid var(--border); }
+  .drail { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 2px; padding: 4px 8px; background: var(--canvas); border-bottom: 1px solid var(--border); }
+  .drail button { flex: none; } .drail .dscroll[hidden] { display: none; }
+  .dstrip { flex: 1; min-width: 0; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; } .dstrip::-webkit-scrollbar { display: none; } .dstrip button { scroll-snap-align: start; }
   .drail button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
   .drail button:hover, .drail button.on { background: var(--select); color: var(--fg); }
   .drail button.shut { color: var(--faint); }
@@ -2251,10 +2253,23 @@ function dock() {
   const widths = [["290px", "panel-right", "Narrow"], ["66.667%", "columns-2", "Two-thirds of the screen"], ["full", "maximize-2", "Whole screen"]];
   const drawRail = () => {
     rail.innerHTML = widths.map(([w, ic, t]) => `<button type="button" class="dw${(d.w || "290px") === w ? " on" : ""}" data-w="${w}" title="${t}">${icon(ic)}</button>`).join("")
-      + `<span class="sep dw"></span>` + [...panels.children].map((s) => `<button type="button" class="${s.classList.contains("shut") ? "shut" : ""}" data-jump="${s.dataset.key}" title="${esc(s.querySelector("h2").textContent)}">${icon(s.dataset.ic)}</button>`).join("")
-      + `<span class="grow" style="flex:1"></span><button type="button" data-fold title="Fold every panel, or open them all">${icon("chevrons-down-up")}</button>`;
+      + `<span class="sep dw"></span><button type="button" class="dscroll" data-scroll="-1" title="more panels" hidden>${icon("chevron-left")}</button>`
+      + `<div class="dstrip">${[...panels.children].map((s) => `<button type="button" class="${s.classList.contains("shut") ? "shut" : ""}" data-jump="${s.dataset.key}" title="${esc(s.querySelector("h2").textContent)}">${icon(s.dataset.ic)}</button>`).join("")}</div>`
+      + `<button type="button" class="dscroll" data-scroll="1" title="more panels" hidden>${icon("chevron-right")}</button><button type="button" data-fold title="Fold every panel, or open them all">${icon("chevrons-down-up")}</button>`;
     icons();
+    const strip = $(".dstrip", rail), keep = stripAt;
+    strip.scrollLeft = keep; strip.addEventListener("scroll", arrows); arrows();
   };
+  // The panel buttons are one row that scrolls sideways: arrows show at whichever end has more, and a wheel scrolls it.
+  let stripAt = 0;
+  const arrows = () => {
+    const strip = $(".dstrip", rail); if (!strip) return;
+    stripAt = strip.scrollLeft;
+    const [l, r] = rail.querySelectorAll(".dscroll");
+    l.hidden = strip.scrollLeft <= 1; r.hidden = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
+  };
+  new ResizeObserver(arrows).observe(rail);
+  rail.addEventListener("wheel", (e) => { const strip = e.target.closest(".dstrip"); if (!strip || !e.deltaY || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; e.preventDefault(); strip.scrollLeft += e.deltaY; }, { passive: false });
   const save = () => {
     const keys = [...panels.children].map((s) => s.dataset.key);
     d.order = [...keys, ...d.order.filter((k) => !keys.includes(k))];
@@ -2264,11 +2279,13 @@ function dock() {
   const setWidth = (w) => {
     d.w = w; wb.classList.toggle("d-full", w === "full");
     wb.style.setProperty("--dw", w && w !== "full" ? w : "290px");
+    arrows();
   };
   setWidth(d.w);
   aside.append(rail, panels); drawRail();
   rail.addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.scroll) { const strip = $(".dstrip", rail); return strip.scrollBy({ left: Math.sign(+b.dataset.scroll) * strip.clientWidth * 0.8, behavior: "smooth" }); }
     if (b.dataset.w) { setWidth(b.dataset.w); return save(); }
     if ("fold" in b.dataset) { const all = [...panels.children], shut = all.some((s) => !s.classList.contains("shut")); all.forEach((s) => s.classList.toggle("shut", shut)); return save(); }
     const s = panels.querySelector(`[data-key="${b.dataset.jump}"]`); if (!s) return;
