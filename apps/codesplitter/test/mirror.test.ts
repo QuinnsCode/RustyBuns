@@ -540,6 +540,41 @@ describe("mirrors", () => {
     expect((await get(call, "/api/repos/ana/empty/graph")).commits).toEqual([]);
   });
 
+  test("a dug fork turns into a mirror: its commits since the dig go up on the first sync (#875)", async () => {
+    // A dig on the desktop is the same shallow clone, without a mirror_url: make one, then forget it was a mirror.
+    const call = await mirrored("turn") as Call & { env: any };
+    const dug = await upLog("%H");
+    await call.env.DB.prepare("UPDATE repos SET mirror_url = NULL, expires_at = ? WHERE owner = 'ana' AND name = 'up'").bind(Date.now() + 3600_000).run();
+    expect(await get(call, "/api/repos/ana/up")).toMatchObject({ mirror: false, mirrorable: true });
+    expect((await (await call("bob", "/api/repos/ana/up")).json() as any).mirrorable).toBeUndefined();
+
+    // Work here, and upstream moves too, while it's a plain fork: nothing goes either way.
+    await editHere(call, "README", 1, "hello from the dig");
+    await upstreamCommit({ "src/b.ts": "export const b = 1\n" }, "bo's b");
+    expect(await upShow("README")).toBe("hello\nworld");
+    const before = await get(call, "/api/repos/ana/up/mirror/turn");
+    expect(before).toEqual({ url: `file://${up}`, branch: "main", commit: dug, ahead: 1 });
+    expect((await call("bob", "/api/repos/ana/up/mirror/turn")).status).toBe(403);
+
+    // Turned: the first sync merges upstream's commit in and sends this copy's up.
+    const turned = await post(call, "/api/repos/ana/up/mirror/turn");
+    expect(turned.status).toBe(201);
+    expect(await turned.json()).toMatchObject({ state: "ok", ahead: 0, behind: 0 });
+    expect(await upShow("README")).toBe("hello from the dig\nworld");
+    expect(await get(call, "/api/repos/ana/up/tree?path=src")).toMatchObject({ entries: [{ name: "a.ts" }, { name: "b.ts" }] });
+    expect(await get(call, "/api/repos/ana/up")).toMatchObject({ mirror: true, expires_at: null });
+    expect((await get(call, "/api/repos/ana/up")).mirrorable).toBeUndefined();
+    expect((await post(call, "/api/repos/ana/up/mirror/turn")).status).toBe(409);
+
+    // A dig that came from a tarball has a commit of its own, not upstream's: nothing to sync from.
+    await call.env.DB.prepare("UPDATE repos SET mirror_url = NULL, upstream_commit = ? WHERE owner = 'ana' AND name = 'up'").bind("f".repeat(40)).run();
+    expect((await get(call, "/api/repos/ana/up/mirror/turn")).error).toMatch(/doesn't have the commit it was dug at/);
+    // Nor is one folder of a repo.
+    await call.env.DB.prepare("UPDATE repos SET upstream = 'github:a/b/tree/main/src' WHERE owner = 'ana' AND name = 'up'").run();
+    expect((await get(call, "/api/repos/ana/up")).mirrorable).toBeUndefined();
+    expect((await post(call, "/api/repos/ana/up/mirror/turn")).status).toBe(409);
+  });
+
   test("takes any git URL on the desktop, and says what's wrong with a bad one", async () => {
     const call = await boot();
     opened.push(call);

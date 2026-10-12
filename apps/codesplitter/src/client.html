@@ -3005,6 +3005,7 @@ const views = {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
     return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p><button class="btn" data-gitmap title="who this repo listens to, and its branches, wired up">${icon("git-fork")}Git map</button>`)
       + (owner === me() && r.mirror ? sec("refresh-cw", "Upstream", `<div id="mirror"><span class="muted">…</span></div>`) : "")
+      + (owner === me() && r.mirrorable ? sec("refresh-cw", "Upstream", `<div id="mirror-turn"><span class="muted">…</span></div>`) : "")
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
@@ -3067,6 +3068,28 @@ const views = {
       el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, { pushCrew: b.dataset.crew === "1" });
     }));
     views.wireMirrorBranches(owner, repo);
+  },
+  /** A fork dug up on this machine, turned into a two-way mirror (#875): what its first sync sends up, said before it does. */
+  async wireMirrorTurn(owner, repo) {
+    const el = $("#mirror-turn");
+    if (!el) return;
+    const t = await api(`/repos/${owner}/${repo}/mirror/turn`).catch((e) => ({ failed: e.message }));
+    if (t.failed) { el.innerHTML = `<span class="muted">${esc(t.failed)}</span>`; return; }
+    const mine = t.ahead ? `<b>${t.ahead} commit${t.ahead === 1 ? "" : "s"}</b> made here since the dig go up to <code>${esc(t.url)}</code> ${esc(t.branch)} on the first sync` : `Nothing made here since the dig, so nothing goes up yet`;
+    const pic = ["sync", { ahead: t.ahead, behind: 1 }];
+    el.innerHTML = `<p>Copied once, at <code>${esc(t.commit.slice(0, 7))}</code>. Make it a mirror and the two listen to each other: upstream's commits come here, yours go back up, never forced.</p>
+      <div class="gitpic-slot" data-pic="${esc(JSON.stringify(pic))}">${gitPic(pic)}</div>
+      <p class="muted" style="font-size:12px">${mine}. Upstream has to take your pushes: without the rights, it stays here and says so.</p>
+      <div class="row"><button class="btn" id="mirror-turn-go"${picAttr(...pic)}>${icon("refresh-cw")}Make it a mirror</button></div>`;
+    icons();
+    const go = $("#mirror-turn-go");
+    go.addEventListener("click", async () => {
+      // Once it's up it's up: the first click says so, the second does it.
+      if (t.ahead && !go.dataset.sure) { go.dataset.sure = "1"; go.textContent = `Sure? ${t.ahead === 1 ? "It goes" : "They go"} upstream`; return; }
+      go.disabled = true; go.textContent = "syncing…";
+      try { await api(`/repos/${owner}/${repo}/mirror/turn`, {}); toast(`${repo} is a mirror of ${t.url} now`); route(); }
+      catch (err) { go.disabled = false; toast(err.message); views.wireMirrorTurn(owner, repo); }
+    });
   },
   /** Upstream's other branches: open one here as a branch, or go to the one that already follows it. */
   async wireMirrorBranches(owner, repo) {
@@ -3563,6 +3586,7 @@ const views = {
     views.wireDeps(owner, repo);
     views.wireFit(owner, repo);
     views.wireMirror(owner, repo);
+    views.wireMirrorTurn(owner, repo);
     views.wirePreview(owner, repo);
     views.wireDeploy(owner, repo);
     views.wireHooks(owner, repo);
