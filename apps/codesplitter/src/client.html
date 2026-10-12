@@ -1979,8 +1979,8 @@ const gitMapModel = ({ owner, repo, r, branches = [], mirror = null, upBranches 
       const moving = [behind && `${behind} to take in`, ahead && `${ahead} to send up`].filter(Boolean).join(", ");
       const label = { down: "upstream down: we keep working", refused: "upstream said no to a push", clash: "a clash: pick a side", rewritten: "upstream rewrote history: pick one", held: "listening only: private lines stay here" }[m.state]
         ?? (moving || (m.primary === "here" ? "in step: this copy leads" : "in step, both ways"));
-      links.push({ from: "up", to: "here", kind: "mirror", both: m.state !== "held", hot: m.state !== "ok" || !!moving, label, pic: ["sync", { ahead, behind }] });
-      story = `${owner}/${repo} is a mirror of ${upName}: they listen to each other, so upstream's commits come in and yours go back up${m.state === "held" ? " (for now, only in)" : ""}.`;
+      links.push({ from: "up", to: "here", kind: "mirror", both: m.state !== "held" && !m.pullOnly, hot: m.state !== "ok" || !!moving, label, pic: ["sync", { ahead, behind }] });
+      story = `${owner}/${repo} is a mirror of ${upName}: they listen to each other, so upstream's commits come in and yours go back up${m.pullOnly ? " (it's pull-only: only in)" : m.state === "held" ? " (for now, only in)" : ""}.`;
     } else {
       // Upstream moved on since the dig (#874): say how far, in orange, with the pull it'd take.
       const moved = r.upstream_tip && r.upstream_commit && r.upstream_tip !== r.upstream_commit, n = r.upstream_behind ?? null;
@@ -3178,7 +3178,7 @@ const views = {
     // This copy leading (#464), Keep mine is the pick it offers first; it still waits to be pressed.
     const pickSide = m.state === "clash" && m.clash.length ? `<button class="btn${m.primary === "here" ? " primary" : ""}" data-resolve="mine"${picAttr("keep")}>${icon("user")}Keep mine</button><button class="btn" data-resolve="upstream"${picAttr("theirs")}>${icon("download")}Take upstream's</button>`
       : m.state === "rewritten" ? `<button class="btn" data-resolve="rebase"${picAttr("rebase")}>${icon("git-merge")}Re-base on upstream</button><button class="btn" data-resolve="upstream"${picAttr("drop")}>${icon("download")}Take upstream's</button>` : "";
-    const first = pickSide ? (m.state === "clash" ? ["keep"] : ["rebase"]) : m.state === "held" ? ["crew"] : ["sync", { ahead: m.ahead, behind: m.behind }];
+    const first = pickSide ? (m.state === "clash" ? ["keep"] : ["rebase"]) : m.state === "held" && m.private && !m.pullOnly ? ["crew"] : ["sync", { ahead: m.ahead, behind: m.behind }];
     // Private lines: hold the repo back, or push the crew's copy (real text) upstream.
     const crew = m.private ? (m.pushCrew
       ? `<p class="muted" style="font-size:12px">${icon("lock")}The crew's copy goes upstream, private lines' real text and all. <a href="#" data-crew="0"${picAttr("hold")}>Hold it back</a></p>`
@@ -3187,17 +3187,24 @@ const views = {
     const lead = m.primary === "here"
       ? `<p class="muted" style="font-size:12px">${icon("hard-drive")}This copy leads: <code>${esc(m.url)}</code> is the backup, ${m.ahead ? `<b>${m.ahead} commit${m.ahead === 1 ? "" : "s"} behind</b>` : "up to date"}${m.syncedAt ? ` as of ${ago(m.syncedAt)}` : ""}. Syncs push first. <a href="#" data-primary="upstream">Let upstream lead</a></p>`
       : `<p class="muted" style="font-size:12px">${icon("cloud")}Upstream leads: syncs hear from it, then push. <a href="#" data-primary="here">Make this copy the source of truth</a></p>`;
+    // Pull-only (#1009): one-way, for a mirror kept for local CI.
+    const pull = m.pullOnly
+      ? `<p class="muted" style="font-size:12px">${icon("download")}Pull-only: syncs hear from upstream and nothing goes back up. <a href="#" data-pull="0">Push too</a></p>`
+      : `<p class="muted" style="font-size:12px"><a href="#" data-pull="1" title="syncs only pull; branch and tag pushes are turned away">${icon("download")}Make it pull-only</a></p>`;
     const who = m.identity ? `Commits go up as <b>${esc(m.identity.name)}</b> &lt;${esc(m.identity.email)}&gt;.` : `No git identity on this machine: set <code>git config --global user.name</code> and <code>user.email</code>.`;
     el.dataset.pics = "";
     el.innerHTML = `<p>${head}</p>${m.state !== "ok" && m.state !== "held" && !(m.state === "rewritten" && !m.error?.includes(": ")) ? said : ""}
       <div class="gitpic-slot" data-pic="${esc(JSON.stringify(first))}">${gitPic(first)}</div>
-      <div class="row" style="gap:6px;flex-wrap:wrap">${pickSide}<button class="btn" id="mirror-sync"${sync}>${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}${lead}
+      <div class="row" style="gap:6px;flex-wrap:wrap">${pickSide}<button class="btn" id="mirror-sync"${sync}>${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}${m.pullOnly ? "" : lead}${pull}
       <p class="muted" style="font-size:12px">${who} ${m.truth && m.truth !== "ask" ? `Clashes settle themselves: ${esc(TRUTHS[m.truth]?.[0] ?? m.truth)} wins.` : "Clashes wait for you."} <a href="#/u/${esc(me())}">Where git truth lives</a>: your history never goes extinct either way.</p><div id="mirror-branches"></div>`;
     icons();
     $("#mirror-sync").addEventListener("click", () => { el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, {}); });
     el.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => { el.querySelector("p").textContent = "settling…"; views.wireMirror(owner, repo, { resolve: b.dataset.resolve }); }));
     el.querySelectorAll("[data-primary]").forEach((b) => b.addEventListener("click", (e) => {
       e.preventDefault(); el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, { primary: b.dataset.primary });
+    }));
+    el.querySelectorAll("[data-pull]").forEach((b) => b.addEventListener("click", (e) => {
+      e.preventDefault(); el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, { pullOnly: b.dataset.pull === "1" });
     }));
     el.querySelectorAll("[data-crew]").forEach((b) => b.addEventListener("click", (e) => {
       e.preventDefault();

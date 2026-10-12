@@ -198,6 +198,7 @@ GitHub warns against self-hosted runners on public repos because a fork PR can e
 Here, fork PRs never mirror: a mirror fetches upstream's own branches, never `refs/pull/*`.
 Only trusted code runs: your branches and your agents', and main as merged on GitHub, which you reviewed (that one doesn't queue by itself yet; see the caveats).
 Your machine pulls its runs, so it needs no open port.
+Make the mirror pull-only and codeSplitter never writes to GitHub either: syncs only fetch, and branch and tag pushes are turned away.
 GitHub's free runners keep doing the quick PR checks.
 
 It isn't new in kind: GitLab's CI for external repos, Buildkite's agents and GitOps (Argo CD, Flux) all pull the same way.

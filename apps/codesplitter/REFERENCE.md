@@ -105,6 +105,9 @@ The pitch is in [README.md](README.md).
   A clash still stops and asks, with Keep mine offered first.
   The panel says how many commits behind upstream is and as of when, so with the app closed you know what GitHub has: everything up to the last push.
   If upstream is down, nothing stops.
+- **Pull-only: a mirror that never writes upstream (desktop, #1009).** **Make it pull-only** in the Upstream panel (`POST /api/repos/:o/:r/mirror {pullOnly: true}`, or `pullOnly: true` on `POST /api/mirrors`; `false` switches back) makes the mirror one-way.
+  Syncs still fetch and merge upstream's commits, but push nothing: a copy with commits upstream lacks settles as `held`, and they wait here until it's two-way again.
+  It beats this copy leading, a merged branch's upstream branch is left in place, and pushing a branch or a tag answers 409.
   **Your own tools use it as a remote:** the Clone button's popover has a `git clone` line (read token, an hour) and, for the owner on the desktop, a **Push back** line, `git remote add codesplitter http://127.0.0.1:…/__rb/git/codesplitters/<owner>--<repo>.git` with a day-long write token (tokens live in memory, so a restart means copying a fresh one), served by the desktop's `git http-backend`.
   Make it a terminal's, an editor's or Agent Office's `origin` with GitHub as a second remote; what you push reaches upstream on the next sync.
   Not offered for a repo with private lines (its git holds them blank).
@@ -538,11 +541,11 @@ The caveats:
 
 - **Merged code runs at home.** Review is the gate, so read what you merge, and a merge that edits `codesplitter.ci` or package.json's scripts changes what runs.
   Run a runner as a separate macOS user with no logins and an empty `HOME`; the desktop's own queue runs as you.
-- **The mirror isn't one-way.** It pushes this copy's commits upstream, never forced.
-  That's a way out, not a way in, but if you want codeSplitter never to write to GitHub, don't commit to main here.
+- **The mirror is two-way unless you say otherwise.** By default it pushes this copy's commits upstream, never forced.
+  That's a way out, not a way in. Make it pull-only (`{pullOnly: true}`, #1009) and codeSplitter never writes to GitHub: syncs only fetch, and branch and tag pushes answer 409.
 - **Merged main doesn't queue checks here yet.** When the mirror takes upstream's commits it watches GitHub's results for the new tip and queues nothing here; checks start here on a commit made here, a branch opened from upstream or pushed to it, or a beam.
 
-Still missing: checks here on the main commits a mirror takes (#1005), a pull-only mirror (#1006), and runs as a sandbox user with no credentials, with a setting to run only the commands in the repo's settings (#1007).
+Still missing: checks here on the main commits a mirror takes (#1005), and runs as a sandbox user with no credentials, with a setting to run only the commands in the repo's settings (#1007).
 
 ## Conventions
 
