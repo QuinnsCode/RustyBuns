@@ -283,6 +283,7 @@ bun run office
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | A four-player arcade game: solo, couch, LAN party and online rooms from one codebase; the room is a Durable Object on Cloudflare and runs in-process in the binary | Small (three.js) |
 | [auto-rig](apps/auto-rig/README.md) | Drop in a model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical results | Small |
 | [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain: campers vs park rangers in a race to find Bigfoot, vs AI bots, in online rooms, or with friends on a LAN | Small |
+| [git-recon](apps/git-recon/README.md) | A third-person shooter where a repo is the level: the snapshot of a codebase laid onto a real heightmap or authored stamps, with no backend (`world: false`) | Small (three.js) |
 | [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary for macOS and Linux: a native addon swapped for Bun's PTY, assets embedded, nothing forked | Medium (downloads the release) |
 | [splat-desktop](apps/splat-desktop/README.md) | PlayCanvas' SuperSplat editor on a folder of scenes: a plain Vite app, a `desktop.host` for file routes, `headers` for CDN assets | Medium |
 | [splat-rooms](apps/splat-rooms/README.md) | A splat hunting game: a world class, and a `mounts` folder streamed from disk with range requests, never embedded | Small (scenes download separately) |
