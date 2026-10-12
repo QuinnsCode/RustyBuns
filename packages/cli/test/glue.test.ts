@@ -500,6 +500,18 @@ test("images: wrangler, alchemy and the desktop host all get the binding; wrangl
   expect(a).toContain(`export const IMAGES = Cloudflare.Images.Images("IMAGES");`);
   expect(a).toContain(`IMAGES: IMAGES`);
   expect(desktopEntry(c)).toContain(`IMAGES: local.images(),`);
+});
+
+test("worker-mode host: R2 is a directory bucket, and Bun's process survives a nodejs_compat bundle", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: ["nodejs_compat"] },
+    bindings: { MEDIA: { type: "r2", bucketName: "media" } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  const host = desktopEntry(c);
+  expect(host).toContain(`MEDIA: local.r2("media"),`);
+  // unenv's process polyfill replaces globalThis.process when the Worker is imported (cwd() is "/")
+  expect(host).toContain(`import process from "node:process";`);
   expect(wranglerToConfig({ name: "g", images: { binding: "IMG" } }).bindings).toEqual({ IMG: { type: "images" } });
 });
 

@@ -14,6 +14,19 @@ test("stackOf: specific frameworks win over the vite they pull in", () => {
   expect(stackOf({ lodash: "4" })).toBe("unknown");
 });
 
+test("stackOf: names the frameworks init doesn't read yet", () => {
+  expect(stackOf({ vite: "6", "@solidjs/start": "1" })).toBe("solidstart");
+  expect(stackOf({ vite: "6", "@builder.io/qwik": "1", "@builder.io/qwik-city": "1" })).toBe("qwik");
+  expect(stackOf({ "@qwik.dev/core": "2", "@qwik.dev/router": "2" })).toBe("qwik");
+  expect(stackOf({ "@angular/core": "20", "@angular/build": "20" })).toBe("angular");
+  expect(stackOf({ gatsby: "5", react: "18" })).toBe("gatsby");
+  expect(stackOf({ "react-scripts": "5", react: "18" })).toBe("cra");
+  expect(stackOf({ "@vue/cli-service": "5", vue: "3" })).toBe("vue-cli");
+  expect(stackOf({ webpack: "5", react: "18" })).toBe("webpack");
+  // halfway through a port: vite wins over the webpack still in package.json
+  expect(stackOf({ webpack: "5", vite: "6", react: "18" })).toBe("vite-react");
+});
+
 test("vitePlugins: by the packages a config imports", () => {
   const src = `import { defineConfig } from "vite";\nimport react from "@vitejs/plugin-react";\nimport { cloudflare } from "@cloudflare/vite-plugin";`;
   expect(vitePlugins(src)).toEqual(["react", "cloudflare"]);
@@ -31,6 +44,27 @@ test("needs work: a framework init doesn't infer yet links its issue", () => {
   const f = fit({ pkg: pkg({ next: "15", react: "19" }), files: ["tsconfig.json"] });
   expect(f).toMatchObject({ verdict: "needs-work", stack: "next", label: "Next.js, TypeScript" });
   expect(f.issue).toMatch(/issues\/318$/);
+});
+
+test("React Router is ready built as a Worker (@cloudflare/vite-plugin), needs work on Node", () => {
+  const deps = pkg({ react: "19", "react-router": "7", "@react-router/dev": "7", vite: "7" });
+  const cf = `import { reactRouter } from "@react-router/dev/vite";\nimport { cloudflare } from "@cloudflare/vite-plugin";`;
+  expect(vitePlugins(cf)).toEqual(["react-router", "cloudflare"]);
+  expect(fit({ pkg: deps, files: [], viteConfig: cf })).toMatchObject({ verdict: "ready", stack: "react-router" });
+  const node = fit({ pkg: deps, files: [], viteConfig: `import { reactRouter } from "@react-router/dev/vite";` });
+  expect(node).toMatchObject({ verdict: "needs-work", stack: "react-router" });
+  expect(node.reasons[0]).toContain("@cloudflare/vite-plugin");
+  expect(node.issue).toMatch(/issues\/318$/);
+});
+
+test("needs work: webpack builds point at the Vite port issue", () => {
+  for (const d of [{ "react-scripts": "5" }, { "@vue/cli-service": "5" }, { webpack: "5" }] as Record<string, string>[]) {
+    const f = fit({ pkg: pkg(d), files: [] });
+    expect(f.verdict).toBe("needs-work");
+    expect(f.issue).toMatch(/issues\/404$/);
+    expect(f.reasons[0]).toContain("Vite");
+  }
+  expect(fit({ pkg: pkg({ "@angular/core": "20" }), files: [] }).issue).toMatch(/issues\/318$/);
 });
 
 test("likely: Bun or TypeScript apps with no framework", () => {

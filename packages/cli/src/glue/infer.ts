@@ -7,10 +7,10 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, resolve, relative, sep } from "node:path";
 import { parseJsonc } from "./jsonc.ts";
-import { SUPPORTED, stackOf, vitePlugins, type Stack } from "./fit.ts";
+import { inits, stackOf, vitePlugins, type Stack } from "./fit.ts";
 import { inferStaticBuild } from "./build-script.ts";
 
-export type Framework = "rwsdk" | "tanstack-start" | "astro" | "vite-react" | "vite" | "unknown";
+export type Framework = "rwsdk" | "tanstack-start" | "astro" | "react-router" | "vite-react" | "vite" | "unknown";
 export type PackageManager = "bun" | "pnpm" | "npm" | "yarn";
 
 export interface Inferred {
@@ -44,6 +44,8 @@ export interface Inferred {
   };
   /** astro.config.*: its adapter by package name and its `output`. Null when there is no config. */
   astro: AstroInfo | null;
+  /** React Router's buildDirectory (react-router.config.*), "build" by default. */
+  reactRouterBuild: string;
   wranglerPath: string | null;
   /** Where app source lives. From tsconfig paths, then the vite "@" alias, then common names. */
   srcDir: string;
@@ -192,6 +194,12 @@ export function inferAstro(root: string): AstroInfo | null {
   };
 }
 
+export function inferReactRouterBuild(root: string): string {
+  const cfg = ["react-router.config.ts", "react-router.config.js", "react-router.config.mjs"].map((c) => join(root, c)).find(existsSync);
+  const dir = cfg ? readFileSync(cfg, "utf8").match(/\bbuildDirectory:\s*["']([^"']+)["']/)?.[1] : undefined;
+  return (dir ?? "build").replace(/^\.\//, "").replace(/\/$/, "");
+}
+
 const SERVER_DEPS = ["express", "fastify", "koa", "socket.io", "@hono/node-server", "@nestjs/core", "@hapi/hapi"];
 
 export function infer(root = process.cwd()): Inferred {
@@ -200,7 +208,7 @@ export function infer(root = process.cwd()): Inferred {
   const staticBuild = inferStaticBuild(pkg.scripts ?? {});
   const vite = inferVite(root, staticBuild.config);
   const stack = stackOf(deps, vite.plugins);
-  const framework = (SUPPORTED.includes(stack) ? stack : "unknown") as Framework;
+  const framework = (inits(stack, vite.plugins) ? stack : "unknown") as Framework;
   const pm = detectPm(root);
   const wranglerPath = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].map((c) => join(root, c)).find(existsSync) ?? null;
   const tsAliases = inferTsconfigAliases(root);
@@ -223,7 +231,7 @@ export function infer(root = process.cwd()): Inferred {
     serverDeps: SERVER_DEPS.filter((d) => deps[d]),
     scripts: pkg.scripts ?? {},
     prebuild: staticBuild.pre,
-    vite, astro: inferAstro(root), wranglerPath, srcDir, aliases, srcDirSource, workerEntry,
+    vite, astro: inferAstro(root), reactRouterBuild: inferReactRouterBuild(root), wranglerPath, srcDir, aliases, srcDirSource, workerEntry,
     isWorkspaceRoot: !!pkg.workspaces || existsSync(join(root, "pnpm-workspace.yaml")),
     hasPackageJson: existsSync(join(root, "package.json")),
   };

@@ -391,7 +391,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "kv": bind.push(`  ${name}: local.kv(${JSON.stringify(name)}),`); break;
       case "var": bind.push(`  ${name}: ${JSON.stringify(b.value)},`); break;
       case "secret": bind.push(`  ${name}: process.env[${JSON.stringify(name)}] ?? "",`); break;
-      case "r2": bind.push(`  // ${name}: R2 -> directory adapter (slice 2)`); break;
+      case "r2": bind.push(`  ${name}: local.r2(${JSON.stringify(b.bucketName)}),`); break;
       case "artifacts":
         bind.push(`  ${name}: local.artifacts(${JSON.stringify(b.namespace)}),`);
         artifacts.push(name);
@@ -421,6 +421,9 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
+// Bun's own process: a Worker built with nodejs_compat (unenv) swaps globalThis.process for
+// one whose cwd() is "/" and argv is empty, and that would move assets and flags (#741).
+import process from "node:process";
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
 import { basename, join, isAbsolute } from "node:path";

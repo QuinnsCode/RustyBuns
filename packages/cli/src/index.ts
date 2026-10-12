@@ -119,7 +119,9 @@ async function init() {
   if (existsSync("rustybuns.config.ts") && !force) throw new Error("rustybuns.config.ts already exists; init would overwrite it. Edit it directly, or pass --force to regenerate from scratch.");
   if (inf.isWorkspaceRoot && !src && !inf.vite.configPath && inf.framework === "unknown")
     throw new Error("this looks like a monorepo root (workspaces, no app here). cd into the package you want to ship and run init there.");
-  const later = unsupported(inf.stack);
+  const later = inf.framework === "unknown" ? unsupported(inf.stack) : null;
+  if (later && !force && inf.stack === "react-router")
+    throw new Error(`this React Router app doesn't build with @cloudflare/vite-plugin; Rusty Buns runs the Worker that plugin builds (Cloudflare's React Router template). cloudflareDevProxy, Remix v2 and the Node server are ${later.issue}. Pass --force to write a config anyway.`);
   if (later && !force)
     throw new Error(`${later.name} isn't supported yet (${later.issue}). Pass --force to write a config anyway.`);
   const astroAdapter = inf.framework === "astro" ? inf.astro?.adapter ?? null : null;
@@ -177,6 +179,13 @@ async function init() {
     const major = Number(rw.replace(/^[^0-9]*/, "").split(".")[0]);
     if (major >= 1) cfg.worker!.builtMain = "dist/worker/index.js";
   }
+  // React Router's Cloudflare template: @cloudflare/vite-plugin builds the Worker into the
+  // react-router build directory, and the desktop runs that same Worker.
+  const rrWorker = inf.framework === "react-router";
+  if (rrWorker) {
+    cfg.worker!.builtMain = `${inf.reactRouterBuild}/server/index.js`;
+    cfg.worker!.assets = `${inf.reactRouterBuild}/client`;
+  }
   if (astroWorker) {
     cfg.worker!.builtMain = "dist/server/entry.mjs";
     cfg.worker!.assets = "dist/client";
@@ -192,8 +201,8 @@ async function init() {
   // Desktop client build: always the vite.desktop.config.ts that `add desktop` generates.
   // Never the app's own scripts: they can point at files Rusty Buns doesn't own.
   const host = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
-  // Astro: the desktop runs the adapter's Worker build under Bun, same bundle as the edge.
-  if (astroWorker) cfg.targets.desktop = { mode: "worker", targets: [host as any] };
+  // Astro and React Router: the desktop runs the Worker build under Bun, same bundle as the edge.
+  if (astroWorker || rrWorker) cfg.targets.desktop = { mode: "worker", targets: [host as any] };
   else {
     const d = cfg.targets.desktop!;
     d.clientBuild = `${inf.execCmd("vite")} build --config vite.desktop.config.ts`;
@@ -218,8 +227,8 @@ async function init() {
   }
   await generate({ adopt: false });
   // The boundary report is for `add desktop`'s spa split; a worker-mode desktop runs the whole Worker.
-  if (!astroWorker) { const { modules } = await boundary(); console.log(report(modules)); }
-  console.log(astroWorker
+  if (!astroWorker && !rrWorker) { const { modules } = await boundary(); console.log(report(modules)); }
+  console.log(astroWorker || rrWorker
     ? `\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}, or ${inf.execCmd("rustybuns plan")}`
     : `\nnext: rustybuns add desktop [--entry ./src/app/App.tsx#App]`);
 }

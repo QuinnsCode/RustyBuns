@@ -326,3 +326,40 @@ test("init: a static build runs the app's prebuild steps, reads its non-default 
   expect(c).toContain('"clientBuild": "node gen-config.js && bunx vite build --config vite.app.config.ts --outDir ../dist/ui --emptyOutDir"');
   expect(c).toContain('"@": "src"');
 });
+
+test("init: React Router on @cloudflare/vite-plugin runs its Worker build, on the desktop too; on Node it's refused", () => {
+  const rr = (vite: string, extra: Record<string, string> = {}) => project({
+    "package.json": JSON.stringify({ name: "rr", scripts: { build: "react-router build", deploy: "wrangler deploy" }, dependencies: { react: "^19", "react-router": "^7" }, devDependencies: { vite: "^7", "@react-router/dev": "^7", "@cloudflare/vite-plugin": "^1" } }),
+    "vite.config.ts": vite,
+    "wrangler.json": JSON.stringify({ name: "rr", main: "./workers/app.ts", compatibility_date: "2025-10-08", vars: { GREETING: "hi" } }),
+    "workers/app.ts": "export default {};\n", "bun.lock": "", ...extra,
+  });
+  const CF = 'import { reactRouter } from "@react-router/dev/vite";\nimport { cloudflare } from "@cloudflare/vite-plugin";\nexport default { plugins: [cloudflare({ viteEnvironment: { name: "ssr" } }), reactRouter()] };\n';
+  const p = rr(CF);
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: react-router/);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"builtMain": "build/server/index.js"');
+  expect(c).toContain('"assets": "build/client"');
+  expect(c).toContain('"build": "react-router build"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).not.toContain("clientBuild");
+
+  const moved = rr(CF, { "react-router.config.ts": 'export default { ssr: true, buildDirectory: "out" };\n' });
+  expect(moved.run("init").code).toBe(0);
+  expect(moved.read("rustybuns.config.ts")).toContain('"builtMain": "out/server/index.js"');
+
+  const node = rr('import { reactRouter } from "@react-router/dev/vite";\nexport default { plugins: [reactRouter()] };\n');
+  const n = node.run("init");
+  expect(n.code).not.toBe(0);
+  expect(n.out).toMatch(/@cloudflare\/vite-plugin.*issues\/318/);
+  expect(existsSync(join(node.dir, "rustybuns.config.ts"))).toBe(false);
+});
+
+test("init: a webpack app (CRA) is refused with the Vite port issue", () => {
+  const p = project({ "package.json": JSON.stringify({ name: "cra", dependencies: { react: "^18", "react-scripts": "5" } }), "bun.lock": "" });
+  const r = p.run("init");
+  expect(r.code).not.toBe(0);
+  expect(r.out).toMatch(/Create React App isn't supported yet \(.*issues\/404\)/);
+});

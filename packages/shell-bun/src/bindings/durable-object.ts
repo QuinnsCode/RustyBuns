@@ -297,6 +297,9 @@ export function installCloudflareGlobals() {
       super(body, init);
       if (init?.webSocket) this.webSocket = init.webSocket;
     }
+    // Response.json(), Response.redirect() and fetch() still make native Responses, and
+    // `x instanceof Response` must hold for those too (Astro's endpoint check, #741).
+    static [Symbol.hasInstance](v: unknown) { return v instanceof Native; }
   }
   (globalThis as any).Response = RBResponse;
   (globalThis as any).WebSocketPair = WebSocketPair;
