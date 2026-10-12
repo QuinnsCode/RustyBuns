@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
+import type { BattleSpec } from "../src/battle/contract.ts";
 import { GALAXIES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiOrders } from "../src/war/ai.ts";
 import {
-  applyBattleResult, canPushFromSurface, diceBattle, income, keyShare, newCampaign, planOrders, resolveTurn, rng, supplied,
+  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, diceBattle, income, keyShare, newCampaign, planOrders, resolveTurn, rng, supplied,
   type Campaign, type Orders,
 } from "../src/war/rules.ts";
 
@@ -154,7 +155,8 @@ test("the hero battle pauses the turn on a BattleSpec and the result writes back
   const paused = resolveTurn(c, [{ faction: "marines", hero: at, orders: [
     { kind: "army", from: { system: "corva", sector: 0 }, to: at, count: 2 },
   ] }]);
-  const spec = paused.pending!.spec;
+  expect(paused.pending?.kind).toBe("ground");
+  const spec = paused.pending!.spec as BattleSpec;
   expect(paused.turn).toBe(1);
   expect(spec).toMatchObject({ sector: "shield", hero: "attacker", factions: { attacker: "marines", defender: "wooka" }, armies: { attacker: 2, defender: 1 }, tickets: { attacker: 100, defender: 50 } });
   // Orbit means strikes and drop pods; the defender's shield cuts the strikes to one.
@@ -176,6 +178,43 @@ test("the hero battle pauses the turn on a BattleSpec and the result writes back
   expect(lost.hero.woundedUntil).toBe(4);
   const wounded = resolveTurn(lost, [{ faction: "marines", hero: { system: "kessa", sector: 1 }, orders: [] }]);
   expect(wounded.pending).toBeNull();
+});
+
+test("the hero can fly the space battle instead: the landings wait on who wins the orbit", () => {
+  const c = newCampaign();
+  c.systems.corva!.fleets.marines = 3;
+  c.systems.corva!.sectors[0]!.armies.marines = 3;
+  const k = kessa(c);
+  k.fleets = { marines: 0, wooka: 2 };
+  k.orbit = "wooka";
+  const at = { system: "kessa", sector: 0 };
+  const orders: Orders[] = [{ faction: "marines", hero: { system: "kessa", sector: ORBIT }, orders: [
+    { kind: "fleet", from: "corva", to: "kessa", count: 3 },
+    { kind: "army", from: { system: "corva", sector: 0 }, to: at, count: 2 },
+  ] }];
+  const paused = resolveTurn(c, orders);
+  expect(paused.pending?.kind).toBe("space");
+  const spec = paused.pending!.spec;
+  expect(spec).toMatchObject({ id: "1-kessa-orbit", system: "Kessa", hero: "attacker", factions: { attacker: "marines", defender: "wooka" }, fleets: { attacker: 3, defender: 2 } });
+  expect(paused.systems.kessa!.sectors[0]!.armies.marines).toBe(0); // still in the transports
+  expect(resolveTurn(paused, none(paused))).toBe(paused);
+  expect(() => applyBattleResult(paused, { id: spec.id, winner: "attacker", tickets: { attacker: 1, defender: 0 }, heroDown: false })).toThrow();
+
+  // Win the orbit: the cruisers fit to fly keep it, and the troops land under it.
+  const won = applySpaceResult(paused, { id: spec.id, winner: "attacker", fleets: { attacker: 2, defender: 1 }, heroDown: false });
+  expect(won.turn).toBe(2);
+  expect(won.pending).toBeNull();
+  expect(won.systems.kessa!).toMatchObject({ orbit: "marines", fleets: { marines: 2, wooka: 0 } });
+  expect(won.log.some((l) => l.startsWith("Hero space battle over Kessa: Thunder Marines holds the orbit with 2 ships left."))).toBe(true);
+  expect(won.log.some((l) => l.startsWith("Ground battle at Kessa shield generator"))).toBe(true);
+  expect(won.hero.xp).toBe(2);
+
+  // Lose it: the troops turn back, and the hero, shot down, sits out three turns.
+  const lost = applySpaceResult(paused, { id: spec.id, winner: "defender", fleets: { attacker: 0, defender: 0 }, heroDown: true });
+  expect(lost.systems.kessa!).toMatchObject({ orbit: "wooka", fleets: { marines: 0, wooka: 1 } });
+  expect(lost.log).toContain("Thunder Marines troops for Kessa shield generator turned back: no orbit there.");
+  expect(lost.systems.corva!.sectors[0]!.armies.marines).toBe(3);
+  expect(lost.hero.woundedUntil).toBe(4);
 });
 
 test("an anti-ship cannon knocks a ship a turn out of a blockade, and can break it", () => {

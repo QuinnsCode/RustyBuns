@@ -98,3 +98,4 @@ body.in-battle .war-room { display: none; }
 .quick { display: flex; gap: 8px; margin: 10px 0; }
 .quick button { flex: 1; }
 .flavor { font-style: italic; color: var(--wooka); }
+.quick #dogfight { flex: 0 0 auto; }

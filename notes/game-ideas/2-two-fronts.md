@@ -115,6 +115,8 @@ That's the "lose too much ground and it becomes impossible" rule in practice:
   pauses on it ([#1076](https://github.com/QuinnsCode/RustyBuns/issues/1076)).
 - **A full campaign is about 30 systems** in 6-8 regions, played over several evenings. The
   8-system galaxy stays as the short map ([#1082](https://github.com/QuinnsCode/RustyBuns/issues/1082)).
-- **Space battles stay auto-resolved** (dice plus stats) for now. A playable space battle, the hero
-  in a fighter, is a later mode, and it takes the turn's one hero battle
+- **Space battles are auto-resolved** (dice plus stats) unless the hero flies one. The hero's one
+  battle a turn can be a space battle instead of a ground one: a fighter in a three.js dogfight
+  over the orbit, through `SpaceBattleSpec` and `SpaceBattleResult`. The turn pauses before the
+  landings, since where troops can land waits on who wins the orbit
   ([#1083](https://github.com/QuinnsCode/RustyBuns/issues/1083)).

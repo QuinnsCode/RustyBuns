@@ -1,6 +1,7 @@
-// The two JSON types the fronts talk through. The strategy layer writes a BattleSpec for the
-// battle the hero plays, the ground layer plays it and hands back a BattleResult. Neither side
-// imports the other, so each is tested on its own with fixtures.
+// The JSON types the fronts talk through. The strategy layer writes a BattleSpec (or a
+// SpaceBattleSpec) for the battle the hero plays, the battle layer plays it and hands back a
+// BattleResult (or a SpaceBattleResult). Neither side imports the other,
+// so each is tested on its own with fixtures.
 
 export type Faction = "marines" | "wooka";
 export type SectorKind = "capital" | "spaceport" | "shield" | "cannon";
@@ -30,6 +31,26 @@ export interface BattleResult {
   winner: Side;
   tickets: PerSide<number>; // left at the end
   heroDown: boolean;        // the hero used up every life
+}
+
+// The playable space battle: the fleets over one system, the hero flying a fighter in it. Each
+// ship on the map is a cruiser in the fight, launching its wing of fighters.
+export interface SpaceBattleSpec {
+  id: string;
+  turn: number;
+  system: string;
+  factions: PerSide<Faction>; // the defender held the orbit at the start of the turn
+  hero: Side;
+  heroLevel: number;
+  fleets: PerSide<number>;    // ships on each side
+  seed: number;
+}
+
+export interface SpaceBattleResult {
+  id: string;
+  winner: Side;               // holds the orbit
+  fleets: PerSide<number>;    // cruisers still flying at the end
+  heroDown: boolean;
 }
 
 export const other = (s: Side): Side => (s === "attacker" ? "defender" : "attacker");

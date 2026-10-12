@@ -206,3 +206,78 @@ export function forest(scene: THREE.Scene, trees: Tree[], seed: number, half: nu
   }
   scene.add(trunks, crowns, ferns, logs);
 }
+
+// --- In orbit. Models are centred on the craft and face -z, like yaw 0 and pitch 0 in the sim. ---
+const glow = (color: number) => new THREE.MeshBasicMaterial({ color });
+const along = (mesh: THREE.Mesh) => { mesh.rotation.x = Math.PI / 2; return mesh; };
+
+// A Marine fighter: a black dart with white trim, its canopy glass, two engines burning orange.
+// The hero's has gold trim.
+function marineFighter(hero: boolean) {
+  const g = new THREE.Group(), trim = hero ? M.gold : M.trim;
+  const nose = along(new THREE.Mesh(new THREE.ConeGeometry(0.7, 2.4, 6), M.armour));
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -2.4;
+  g.add(
+    box(1.4, 0.8, 2.6, M.armour), nose,
+    box(1.42, 0.12, 2.62, trim, 0, 0.2, 0),
+    box(5, 0.12, 1.3, M.armour, 0, -0.1, 0.5), box(5.02, 0.13, 0.25, trim, 0, -0.1, 0.05),
+    box(0.12, 1.2, 1, trim, -2.5, 0.35, 0.7), box(0.12, 1.2, 1, trim, 2.5, 0.35, 0.7), // wingtip fins
+    ball(0.45, M.glass, 0, 0.45, -0.7),
+  );
+  for (const x of [-0.45, 0.45]) g.add(along(rod(0.28, 0.6, glow(0xff9a3c), x, 0, 1.5)));
+  return g;
+}
+
+// A Wooka fighter: a hollowed-out log with hide sails for wings and one Wooka sitting in it,
+// steering by leaning. A bonfire in the back end does the rest.
+function wookaFighter(hero: boolean) {
+  const g = new THREE.Group();
+  const log = along(new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 4.4, 8), W.wood));
+  const hide = new THREE.MeshLambertMaterial({ color: 0xb59a6a, side: THREE.DoubleSide });
+  const sail = (x: number) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.6), hide);
+    m.rotation.set(-Math.PI / 2, 0, 0);
+    m.position.set(x, 0.1, 0.3);
+    return m;
+  };
+  const spar = rod(0.06, 5.2, W.wood, 0, 0.12, 0.3);
+  spar.rotation.z = Math.PI / 2;
+  g.add(log, sail(-1.9), sail(1.9), spar, ball(0.5, W.fur, 0, 0.75, -0.4), ball(0.12, W.eye, -0.18, 0.82, -0.82), ball(0.12, W.eye, 0.18, 0.82, -0.82));
+  g.add(ball(0.5, glow(0xff6a1a), 0, 0, 2.3, 8));
+  if (hero) for (let i = 0; i < 5; i++) {
+    const bone = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.5, 5), W.bone);
+    bone.position.set(-0.4 + i * 0.2, 1.25, -0.4);
+    g.add(bone);
+  }
+  return g;
+}
+
+export const fighter = (f: Faction, hero = false) => (f === "wooka" ? wookaFighter(hero) : marineFighter(hero));
+
+// A Marine cruiser: a long black hull with a white stripe, a bridge tower and a row of engines.
+// A Wooka cruiser: a hollowed asteroid with logs lashed round it and a sail of patched hides.
+export function cruiser(f: Faction) {
+  const g = new THREE.Group();
+  if (f === "wooka") {
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(14, 1), lambert(0x6f6559, { flatShading: true }));
+    rock.scale.set(1, 0.7, 1.8);
+    const sailMat = new THREE.MeshLambertMaterial({ color: 0xb59a6a, side: THREE.DoubleSide });
+    const sail = new THREE.Mesh(new THREE.PlaneGeometry(26, 22), sailMat);
+    sail.position.set(0, 22, 4);
+    g.add(rock, sail, rod(0.8, 34, W.wood, 0, 16, 4));
+    for (const x of [-12, 12]) g.add(along(rod(1.4, 46, W.wood, x, -2, 0)));
+    g.add(ball(5, glow(0xff6a1a), 0, 0, 25, 8));
+  } else {
+    g.add(
+      box(12, 7, 60, M.armour), box(12.1, 1, 60.1, M.trim, 0, 2, 0),
+      box(5, 8, 10, M.armour, 0, 7, 14), box(5.1, 1, 2, M.glass, 0, 9, 8.9),
+    );
+    const prow = along(new THREE.Mesh(new THREE.ConeGeometry(6, 14, 4), M.armour));
+    prow.rotation.x = -Math.PI / 2;
+    prow.position.z = -37;
+    g.add(prow);
+    for (const x of [-3.5, 0, 3.5]) g.add(along(rod(1.4, 1, glow(0xff9a3c), x, 0, 30.5)));
+  }
+  return g;
+}
