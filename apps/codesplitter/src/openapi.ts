@@ -9,9 +9,11 @@
 // instead of a copied token (the `oauth` scheme, oauth.ts).
 //
 // Written by hand, next to the routes: a route that changes shape changes here too
-// (test/tokens.test.ts checks each operation answers).
+// (test/tokens.test.ts checks each operation answers). It imports nothing, so the docs
+// site (scripts/site/codesplitter.ts) can load it from any version and render its pages.
 
-import { OAUTH_SCOPES } from "./oauth.ts";
+/** What an OAuth app may ask for (oauth.ts). */
+export const OAUTH_SCOPES = { read: "read what you can read", write: "read, and change what you can change" } as const;
 
 type Schema = Record<string, unknown>;
 const ref = (name: string): Schema => ({ $ref: `#/components/schemas/${name}` });

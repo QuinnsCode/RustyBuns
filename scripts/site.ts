@@ -6,10 +6,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atTag, buildSite, shown, tags, worktree } from "./site/lib.ts";
+import { codesplitter } from "./site/codesplitter.ts";
 import { rustybuns } from "./site/rustybuns.ts";
 
 const check = process.argv.includes("--check");
-const sites = [{ dir: "rustybuns", site: rustybuns, tags: "v*" }];
+const sites = [
+  { dir: "rustybuns", site: rustybuns, tags: "v*" },
+  { dir: "codesplitter", site: codesplitter, tags: "codesplitter-v*" },
+];
 
 const root = check ? mkdtempSync(join(tmpdir(), "site-")) : "dist/site";
 if (!check) rmSync(root, { recursive: true, force: true });
