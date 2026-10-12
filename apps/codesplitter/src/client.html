@@ -149,6 +149,13 @@
   .sec.shut { margin: 6px 10px; padding: 3px 12px; border: 1px solid var(--border-2); border-radius: 999px; background: var(--canvas); }
   .sec.shut h2 { margin: 0; } .sec.shut > :not(h2) { display: none; } .sec.shut h2 .fold { transform: rotate(-90deg); }
   .sec.dragging { opacity: .4; } .sec.drop-before { box-shadow: inset 0 2px var(--accent); } .sec.drop-after { box-shadow: inset 0 -2px var(--accent); }
+  /* The Wow me tour: a card in the corner, and a ring round whatever it's showing. */
+  .tour { position: fixed; left: 16px; bottom: 56px; z-index: 60; width: min(360px, calc(100vw - 32px)); display: grid; gap: 8px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; }
+  .tour .tour-top { display: flex; align-items: center; gap: 8px; } .tour .tour-top b { flex: 1; } .tour .tour-n { font-variant-numeric: tabular-nums; }
+  .tour p { margin: 0; } .tour .tour-said { font-size: 13px; color: var(--accent); min-height: 1em; }
+  .tour .tour-dots { display: flex; gap: 3px; } .tour .tour-dots i { flex: 1; height: 3px; border-radius: 2px; background: var(--border); } .tour .tour-dots i.on { background: var(--accent); }
+  .tour .tour-btns { display: flex; gap: 6px; } .tour .tour-btns .grow { flex: 1; }
+  .tour-hot { outline: 2px solid var(--accent) !important; outline-offset: 2px; animation: pulse 1.2s ease-in-out infinite; }
   .sec.flash { animation: flash 1s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   .dgrip { position: absolute; top: 0; bottom: 0; right: calc(var(--dw, 290px) - 3px); width: 6px; z-index: 3; cursor: col-resize; }
   .dgrip:hover, .dgrip.on, .egrip:hover, .egrip.on { background: var(--accent); opacity: .5; }
@@ -2338,7 +2345,7 @@ function visBadge(v, canFlip) {
 // (owner/name, a page URL, a remote, a git clone line). The server reads the repo out of it.
 const digBox = (why, fold = false) => `${fold ? `<details class="box fold" id="digfold"><summary class="bar">${icon("github")}<b>Dig up a GitHub repo</b><span class="muted">fork one here</span>${icon("chevron-down", "chev")}</summary><form id="ghdig">` : `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div>`}<div class="body"><p class="muted" style="margin-top:0">${why}</p>
   <div class="ghwho" id="ghwho" hidden></div>
-  <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up (fork)</button></div>
+  <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up (fork)</button><button type="button" class="btn" id="ghwow" title="dig it up, then a tour shows off everything on it: collab, agents, the side panels, the city and the backrooms">${icon("sparkles")}Wow me</button></div>
   <label class="muted" id="ghmirror" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:8px"><input type="checkbox" name="mirror">Keep it in sync with upstream (a mirror): its commits come here, yours go back, and if it goes down you keep working until it's back. Takes any git URL, GitHub or not.</label>
   <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form>${fold ? "</details>" : ""}`;
 // A box that folds to its bar on your profile (#729): open it to see the rest. Unfolded elsewhere.
@@ -2406,15 +2413,21 @@ function wireDig() {
       if (!r.repos.length && !r.error) list.innerHTML = '<span class="muted">nothing on GitHub by that name</span>';
     }, 350);
   });
-  f.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  const dig = async (wow) => {
     if (!me()) { msg.textContent = "Sign in first (top right), then dig it up."; return; }
+    if (!f.repo.value.trim()) { msg.textContent = "Paste a public GitHub repo first."; return f.repo.focus(); }
     msg.textContent = "cloning…";
     const mirror = f.mirror.checked;
     if (mirror) msg.textContent = "cloning, to keep in sync…";
-    try { const r = await api(mirror ? "/mirrors" : "/github/dig", mirror ? { url: f.repo.value, name: f.name.value || undefined } : { repo: f.repo.value, name: f.name.value || undefined }); location.hash = `#/r/${r.owner}/${r.name}`; }
+    try {
+      const r = await api(mirror ? "/mirrors" : "/github/dig", mirror ? { url: f.repo.value, name: f.name.value || undefined } : { repo: f.repo.value, name: f.name.value || undefined });
+      if (wow) tourStart(r.owner, r.name);
+      location.hash = `#/r/${r.owner}/${r.name}`;
+    }
     catch (err) { msg.textContent = err.message; }
-  });
+  };
+  f.addEventListener("submit", (e) => { e.preventDefault(); dig(false); });
+  $("#ghwow", f).addEventListener("click", () => dig(true));
 }
 
 // Where a fork came from, where its git lives, and who owns it.
@@ -5224,6 +5237,116 @@ async function webTools() {
   }
 }
 
+// Wow me: dig up a repo, then a card in the corner walks through what it can do, a step at a time:
+// collab, an agent, every panel on the right, picking lines, git, the city and the backrooms.
+// It lives in sessionStorage, so it rides along as the page routes; ✕ ends it.
+const TOUR_KEY = "cs_tour";
+const tourState = () => { try { return JSON.parse(sessionStorage.getItem(TOUR_KEY) ?? "null"); } catch { return null; } };
+const tourSave = (t) => { try { t ? sessionStorage.setItem(TOUR_KEY, JSON.stringify(t)) : sessionStorage.removeItem(TOUR_KEY); } catch {} };
+const tourStart = (owner, repo) => tourSave({ owner, repo, i: 0 });
+// What each panel on the right is for, by its data-key, for the panel tour.
+const PANEL_SAY = {
+  "here-now": "Who has this file open right now, people and agents apart.",
+  activity: "Every edit and hold as it lands, one row per person or agent run. Click one to jump to its lines.",
+  editing: "Double-click any line to edit it. It's live: every open page patches itself.",
+  agents: "Your coding agents' runs on this repo. Their lines land live, blamed on the agent.",
+  commits: "Real git commits, built in the Worker with no git library and pushed to Cloudflare Artifacts.",
+  about: "Where this fork came from, and at which commit. Every line you change is marked as your mod.",
+  upstream: "A mirror of GitHub: it syncs both ways, and keeps going when GitHub is down.",
+  crew: "Who can edit, people and agents both, with a pulse of their edits.",
+  branches: "Agents work on branches. A merge by line id settles what git would call a conflict.",
+  "rusty-buns": "How easily this repo ships as a desktop binary, a Cloudflare Worker or a server.",
+  dependencies: "The dependency doctor: aged updates on a branch, known vulnerabilities, and the supply-chain watch.",
+  deploy: "Ship the repo for real. Only a person presses the button; agents never deploy.",
+  "preview-deploy": "A throwaway preview of the repo before anything ships.",
+  webhooks: "GitHub-shaped, HMAC-signed webhooks for your CI/CD, retried on a queue.",
+  "audit-log": "Who changed tokens, crew, invites, visibility and deploy keys.",
+};
+const $$ = (q) => [...document.querySelectorAll(q)];
+const tourClick = (el, init = {}) => el?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, ...init }));
+const TOUR = [
+  { ic: "shovel", t: "Dug up", at: ".repohead h1",
+    say: (t) => `${t.owner}/${t.repo} is a real git repo you own now, forked from GitHub. Upstream never hears about it. It opened on the README.` },
+  { ic: "user-round-pen", t: "Every line knows who wrote it", at: "#lines",
+    say: () => "Blame sits beside every line, person or agent. Lines, not files, are the unit: each has its own id and history." },
+  { ic: "history", t: "Time travel", at: "#hist", go: () => { $("#hist")?.click(); return "Drag the slider back through every edit this file ever had."; },
+    say: () => "Replay this file to any edit it ever had, with blame at every rev." },
+  { ic: "user-plus", t: "Collab with it", at: "#invite",
+    go: async (t) => { const i = await invite(t.owner, t.repo); await copy(i.link, "Invite link copied"); return `Invite link copied. ${inviteSaid(i)}`; },
+    say: () => "Make an invite link. A friend opens it, joins the crew, and you edit the same file live, line by line." },
+  { ic: "bot", t: "Add an agent", at: "#agent",
+    go: async (t) => {
+      const h = ctx.agents?.harnesses?.[0];
+      if (h && ctx.path) {
+        await api(`/repos/${t.owner}/${t.repo}/agents`, { path: ctx.path, harness: h, task: "Add a short, friendly note at the top of this file saying what the project is for, in one or two lines." });
+        ctx.pollAgents?.(); return `agent-${h} is on it: watch its lines land, blamed on the agent.`;
+      }
+      const i = await invite(t.owner, t.repo); await copy(i.link, "Agent invite copied");
+      return "No agent runs on this machine, so here's an invite: hand the link to Claude Code, Codex, pi or opencode and it joins the crew over MCP.";
+    },
+    say: () => "Put a coding agent on this file. It holds the lines it works on, edits live, and lands on a branch for you to merge." },
+  { ic: "panel-right", t: "What's on the right", at: ".details", panels: true,
+    say: () => "Every panel, one at a time. Fold them, drag them, or widen the side with the buttons along its top." },
+  { ic: "mouse-pointer-click", t: "Pick some lines", at: ".crumbbar",
+    go: () => {
+      const ns = $$("#lines .ln .n"); if (!ns.length) return "";
+      tourClick(ns[0]); tourClick(ns[Math.min(2, ns.length - 1)], { shiftKey: true }); dispatchEvent(new MouseEvent("mouseup"));
+      return "Lines 1–3 picked: the buttons up top just woke up.";
+    },
+    say: () => "Pick lines, then share just them as a live link, stamp them, cut them out with what they use, hold them from agents, or make them private in a public repo." },
+  { ic: "git-commit-horizontal", t: "It's still real git", at: "#clone", go: () => { $("#clone")?.click(); return "git clone works, git pull works, your tools work."; },
+    say: () => "Commit pushes a real git commit. Clone it with plain git, or point your AI at it: claude mcp add codesplitter." },
+  { ic: "building", t: "Your code city", at: null, href: () => `/play.html#c/${encodeURIComponent(me())}`, open: true,
+    say: () => "Every repo you own is a district, every file a building: white stone where people wrote it, black glass where agents did. It opens in a new tab." },
+  { ic: "gamepad-2", t: "Beat up the code", at: null, href: (t) => `/play.html#r/${t.owner}/${t.repo}`,
+    say: () => "The backrooms of this repo: its lines tear off the walls as paper birds, and you swat them with the rolled-up README. Bring friends and bop them too." },
+];
+let tourTimer = null;
+function tourStop(done) { clearInterval(tourTimer); tourTimer = null; $$(".tour-hot").forEach((e) => e.classList.remove("tour-hot")); $(".tour")?.remove(); if (done) tourSave(null); }
+function tour() {
+  tourStop();
+  const t = tourState();
+  if (!t) return;
+  // Only on the toured repo's own pages; leave it and the card waits till you're back.
+  const m = location.hash.match(/^#\/[fr]\/([^/]+)\/([^/]+)/);
+  if (!m || decodeURIComponent(m[1]) !== t.owner || decodeURIComponent(m[2]) !== t.repo) return;
+  const s = TOUR[t.i] ?? TOUR[0], last = t.i === TOUR.length - 1;
+  const card = document.createElement("div"); card.className = "tour"; card.setAttribute("role", "dialog"); card.setAttribute("aria-label", "Tour");
+  card.innerHTML = `<div class="tour-top">${icon(s.ic)}<b>${esc(s.t)}</b><span class="muted tour-n">${t.i + 1}/${TOUR.length}</span><button class="btn ghost" data-x title="end the tour">${icon("x")}</button></div>
+    <div class="tour-dots">${TOUR.map((_, k) => `<i class="${k <= t.i ? "on" : ""}"></i>`).join("")}</div>
+    <p>${esc(s.say(t))}</p><p class="tour-said" aria-live="polite"></p>
+    <div class="tour-btns">${t.i ? `<button class="btn" data-back title="back">${icon("arrow-left")}</button>` : ""}<span class="grow"></span>
+      ${s.go || s.href || s.panels ? `<button class="btn primary" data-go>${icon("zap")}${s.href ? (s.open ? "Open it" : "Go") : s.panels ? "Show me" : "Do it"}</button>` : ""}
+      ${last ? "" : `<button class="btn" data-next>Next${icon("arrow-right")}</button>`}</div>`;
+  document.body.append(card); icons();
+  const said = $(".tour-said", card), hot = s.at && $(s.at);
+  if (hot) { hot.classList.add("tour-hot"); hot.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); }
+  const step = (i) => { tourSave({ ...t, i }); tour(); };
+  card.addEventListener("click", async (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if ("x" in b.dataset) return tourStop(true);
+    if ("back" in b.dataset) return step(t.i - 1);
+    if ("next" in b.dataset) return step(t.i + 1);
+    if (!("go" in b.dataset)) return;
+    if (s.href) { if (last) tourStop(true); else step(t.i + 1); return s.open ? open(s.href(t), "_blank", "noopener") : (location.href = s.href(t)); }
+    if (s.panels) {
+      // Open each panel in turn, flash it, and say what it's for.
+      const secs = $$(".dpanels > .sec").filter((x) => PANEL_SAY[x.dataset.key]);
+      let k = 0; clearInterval(tourTimer); b.disabled = true; hot?.classList.remove("tour-hot");
+      const show = () => {
+        $$(".dpanels > .sec.tour-hot").forEach((x) => x.classList.remove("tour-hot"));
+        const x = secs[k++]; if (!x) { clearInterval(tourTimer); b.disabled = false; said.textContent = "That's the lot."; return; }
+        x.classList.remove("shut"); x.classList.add("tour-hot"); x.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        said.textContent = `${x.querySelector("h2").textContent.trim()}: ${PANEL_SAY[x.dataset.key]}`;
+      };
+      show(); tourTimer = setInterval(show, 1600); return;
+    }
+    b.disabled = true; said.textContent = "…";
+    try { said.textContent = (await s.go(t)) || ""; } catch (err) { said.textContent = err.message; }
+    finally { b.disabled = false; }
+  });
+}
+
 // Views and how many plain segments come before a path tail: #/f/owner/repo/<path>.
 const FIXED = { f: 2, r: 2, l: 1, b: 2 };
 // Settles when the page has drawn, so an agent's tool call can answer with where it landed.
@@ -5252,6 +5375,7 @@ async function route() {
   window.scrollTo(0, 0);
   wireFollows();
   await webTools();
+  tour();
   drawn();
 }
 addEventListener("hashchange", route);
