@@ -26,8 +26,8 @@ export default defineConfig({
     // A few reviews a minute per address (src/guard.ts). Cloudflare's limiter, so it's per colo.
     REVIEW_LIMIT: { type: "ratelimit", namespaceId: "7401", simple: { limit: 4, period: 60 } },
     TURNSTILE_SITE_KEY: { type: "var", value: turnstileSiteKey },
-    // claude-haiku-5-5 is ~40x cheaper per review, if the jokes hold up on it.
-    REVIEW_MODEL: { type: "var", value: "claude-opus-5-5" },
+    // The cheapest model, about $0.0004 a review. claude-opus-5-5 writes sharper jokes at ~40x the cost.
+    REVIEW_MODEL: { type: "var", value: "claude-haiku-5-5" },
     ANTHROPIC_API_KEY: op("anthropic/api-key"),
     TURNSTILE_SECRET: op("turnstile/secret"),
   },

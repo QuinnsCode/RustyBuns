@@ -63,7 +63,7 @@ export async function handleReview(request: Request, env: ReviewEnv, cache?: Cac
 async function askClaude(env: ReviewEnv, prompt: string): Promise<Review> {
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 30_000 });
   const res = await client.messages.create({
-    model: env.REVIEW_MODEL || "claude-opus-5-5",
+    model: env.REVIEW_MODEL || "claude-haiku-5-5",
     max_tokens: 2000,
     output_config: { effort: "low", format: { type: "json_schema", schema: REVIEW_SCHEMA } },
     system: SYSTEM,

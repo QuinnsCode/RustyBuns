@@ -24,6 +24,6 @@
   ],
   "vars": {
     "TURNSTILE_SITE_KEY": "",
-    "REVIEW_MODEL": "claude-opus-5-5"
+    "REVIEW_MODEL": "claude-haiku-5-5"
   }
 }
