@@ -183,6 +183,7 @@ For the 3 D hunks here, every right answer can be checked by a build or a test. 
 ## 7. Found along the way
 
 - **main's `src/features.json` didn't parse.** #884's squash merge committed `<<<<<<< HEAD`, so the home page's feature strip fell back to `[]`. This PR first fixed it with the deterministic answer: both of main's sentences, the dig sentence first. main has since fixed it the same way, so the PR no longer changes the file. The guard against it recurring is part of the second next step below.
+- **The deps.test.ts "doubled" conflict was hiding a broken merge** (#933). Each side's diff read its new test as starting a few lines up, inside the test before it, since both end in the same `await send(…)`, `await settle(call)`, `expect(…)`, `});`. The two sides started it at different lines, so the union cut a test in half, and git's `--union` merge of the file does the same. `diffToOps` now slides each added block as far down as the repeated lines allow, so both sides add it under the blank line. With L2a–c, L3 and the ordering rule in, these 29 hunks leave 3 conflicts, the D hunks, and every merged `.ts` file parses. `features.json` (E) still carries main's markers.
 - **The `doctor` line conflicted again after #886 merged.** This wasn't two PRs appending to one line. It was the markers #884 committed. See section 8.
 
 ## 8. Committed conflict markers are a conflict source

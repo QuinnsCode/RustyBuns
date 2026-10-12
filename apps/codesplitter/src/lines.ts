@@ -8,7 +8,7 @@
 // An edit that depends on other lines too (a rename, "is this ever
 // reassigned?") passes `ifRev`: the whole file must still be at that rev.
 
-import { keptPairs } from "./sync.ts";
+import { alike, keptPairs } from "./sync.ts";
 
 export interface Line { id: string; text: string; by: string; rev: number }
 
@@ -139,19 +139,23 @@ export function kindOf(path: string): Kind {
  * `base`, as one batch of ops against `main` as it is now. A line only one
  * side changed merges cleanly; the same change on both sides is no change.
  * A line both sides changed merges word by word when the edits don't touch
- * the same words (one re-indents, the other changes an argument). A moved
- * line or block (deleted and the same text inserted elsewhere) keeps the
- * other side's edit, and lines the branch added under a line main moved go
- * under it where it is now. The same new line added at the same spot on both sides lands once.
+ * the same words (one re-indents, the other changes an argument), and items
+ * both added to one list at one spot both land, main's first (see mergeWords).
+ * A moved line or block (deleted and the same text inserted elsewhere) keeps
+ * the other side's edit, and lines the branch added under a line main moved
+ * go under it where it is now. New lines both added at one spot land main's
+ * first; the same new line added at the same spot on both sides lands once.
+ * A stretch both sides reshaped settles line by line where it can (see blend).
  *
  * Conflicts, each settled by `resolve` (by its `line`: main's, the branch's,
  * both, or a text of `writer`'s; see Pick) or left out and reported:
- * - a stretch both sides reshaped: lines added or deleted on one side where
- *   the other changed a line too (one changed a line the other deleted, or
- *   both rewrote a function). The whole stretch is one conflict, as in git.
+ * - a stretch both sides reshaped that won't settle line by line: lines added
+ *   or deleted on one side where the other changed a line too (one changed a
+ *   line the other deleted, or both rewrote a function). The whole stretch is
+ *   one conflict, as in git.
  * - one line both rewrote in the same words.
- * - the same line added on both sides in different places (`doubled`): it
- *   would land twice.
+ * - the same line added on both sides in different places in one block
+ *   (`doubled`): it would land twice.
  * - by `path` (see `kindOf`): a lockfile both changed is one whole-file
  *   conflict, since a line merge of one is never valid; a config key (.env,
  *   JSON, YAML, TOML) the merge would define twice is a conflict; and in code,
@@ -178,9 +182,11 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
   const mainPos = places(base, main), branchPos = places(base, branch);
   const regions = clashes(hunks(base, main, mainPos, movedOnMain), hunks(base, branch, branchPos, movedOnBranch), kind !== "prose");
   const inRegion = (p: number) => regions.some((g) => g.lo <= p && p <= g.hi);
-  // Lines main added that weren't in the file already: a line that already repeats (a test's setup call) is no sign of doubling.
-  const before = new Set(base.lines.map((l) => l.text));
-  const mainAdded = new Set(main.lines.filter((l) => !was.has(l.id) && !before.has(l.text)).map((l) => l.text));
+  // Lines main added that weren't in the file already, and the block each went in: a line that already repeats (a test's setup call) is no sign of doubling.
+  const before = new Set(base.lines.map((l) => l.text)), mainHeads = heads(main.lines), branchHeads = heads(branch.lines);
+  const mainAdded = new Map<string, Set<string>>();
+  main.lines.forEach((l, i) => { if (!was.has(l.id) && !before.has(l.text)) mainAdded.set(l.text, (mainAdded.get(l.text) ?? new Set()).add(mainHeads[i]!)); });
+  const loose = (t: string) => kind === "prose" || remark(t);
   const ops: Op[] = [], by: string[] = [], conflicts: Conflict[] = [], taken = new Set<string>();
   let next = main.nextId, after: string | null = null;
   const push = (op: Op, who: string) => { ops.push(op); by.push(who); };
@@ -192,6 +198,11 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
       if (m.text === t && !taken.has(m.id)) { taken.add(m.id); return m.id; }
     }
     return null;
+  };
+  // Main's new lines right at this spot go first (it landed first). A line both added was a twin already.
+  const movedIn = new Set([...movedOnMain.values()].map((l) => l.id)), fresh = (m: Line) => !was.has(m.id) && !movedIn.has(m.id) && !taken.has(m.id);
+  const behindMain = () => {
+    for (let i = after === null ? 0 : (at.get(after) ?? Infinity) + 1; i < main.lines.length && fresh(main.lines[i]!); i++) after = main.lines[i]!.id;
   };
   const written = (pick: Pick | undefined) => typeof pick === "object" ? pick.text.split("\n") : null;
   // A stretch both reshaped: keep main's as is, swap in the branch's whole or a text of the writer's, or keep both.
@@ -222,11 +233,23 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
       for (const l of bs) insert(l.text, l.by);
       return;
     }
-    if (!pick) conflicts.push({ line: key, base: join(base.lines.filter((_, i) => g.lo <= 2 * i + 1 && 2 * i + 1 <= g.hi))!, main: join(ms), branch: join(bs) });
+    const bl = base.lines.filter((_, i) => g.lo <= 2 * i + 1 && 2 * i + 1 <= g.hi), both = pick ? null : blend(bl, ms, bs, kind !== "prose", loose);
+    if (both) {
+      before();
+      const keep = new Set(both.map((e) => e.m?.id));
+      for (const m of ms) if (!keep.has(m.id)) push({ kind: "delete", line: m.id, base: m.rev }, deleter);
+      for (const e of both) {
+        if (!e.m) { insert(e.text, e.by); continue; }
+        if (e.text !== e.m.text) push({ kind: "set", line: e.m.id, base: e.m.rev, text: e.text }, e.by);
+        after = e.m.id;
+      }
+      return;
+    }
+    if (!pick) conflicts.push({ line: key, base: join(bl)!, main: join(ms), branch: join(bs) });
     if (ms.length) after = ms.at(-1)!.id;
   };
   let r = 0;
-  for (const l of branch.lines) {
+  for (const [k, l] of branch.lines.entries()) {
     const p = branchPos.get(l.id)!;
     while (r < regions.length && regions[r]!.lo <= p) settle(regions[r++]!);
     if (r && p <= regions[r - 1]!.hi) continue;
@@ -241,11 +264,12 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
       // Main added this very line somewhere else: landing it too would double it.
       // Main's copy stays; settled as the branch (or both) it lands as well, or as a text in its place.
       const twice = resolve[l.id];
-      if (mainAdded.has(l.text) && /[A-Za-z]{2}/.test(l.text) && l.text.trim().length >= 8 && twice !== "branch" && twice !== "both" && twice !== "both:branch-first") {
+      if (mainAdded.get(l.text)?.has(branchHeads[k]!) && /[A-Za-z]{2}/.test(l.text) && l.text.trim().length >= 8 && twice !== "branch" && twice !== "both" && twice !== "both:branch-first") {
         if (!twice) conflicts.push({ line: l.id, base: "", main: l.text, branch: l.text, doubled: true });
         for (const t of written(twice) ?? []) insert(t, writer);
         continue;
       }
+      behindMain();
       insert(l.text, l.by);
       continue;
     }
@@ -253,7 +277,7 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
     const m = now.get(l.id) ?? (moved || undefined);
     if (l.text !== b.text && m?.text !== l.text) {
       const pick = m?.text === b.text ? "branch" : resolve[l.id];
-      const words = m && !pick ? mergeWords(b.text, m.text, l.text) : null;
+      const words = m && !pick ? blendLine(b.text, m.text, l.text, loose(b.text)) : null;
       if (words !== null) push({ kind: "set", line: m!.id, base: m!.rev, text: words }, l.by);
       else if (!pick) conflicts.push({ line: l.id, base: b.text, main: m?.text ?? null, branch: l.text });
       else if (pick !== "main") {
@@ -294,6 +318,76 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
   }
   if (kind === "keyed") twiceKeyed(main, branch, ops, by, conflicts, resolve, deleter, path);
   return { ops, by, conflicts };
+}
+
+/**
+ * Each line's block: the lines above it that each indent less (a test, the
+ * function in it, an object), "" at the top level.
+ */
+function heads(lines: Line[]): string[] {
+  const open: { indent: number; text: string }[] = [];
+  return lines.map((l) => {
+    const indent = l.text.search(/\S/);
+    if (indent >= 0) while (open.length && open.at(-1)!.indent >= indent) open.pop();
+    const head = open.map((o) => o.text).join("\n");
+    if (indent >= 0) open.push({ indent, text: l.text });
+    return head;
+  });
+}
+
+/**
+ * A stretch both sides reshaped, settled line by line where that's safe: each
+ * base line paired with its version on each side (its own id, or the most
+ * alike line), each pair merged (see blendLine), and every line only one side
+ * added kept whole, main's first at a shared spot. The same line added on both
+ * sides lands once. Null, a conflict, when a pair won't merge, or a base line
+ * is gone on one side and changed on the other, or gone at all in code
+ * (`strict`), where the other side's new lines may lean on it.
+ */
+function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: string) => boolean) {
+  // Its own id, unless a line the side rewrote it into is more alike (a one-liner reflowed, an id handed to the wrong line).
+  const pair = (side: Line[]) => {
+    let from = 0;
+    return bl.map((b) => {
+      let best = side.findIndex((l, i) => i >= from && l.id === b.id), score = best < 0 ? 0.5 : Math.max(alike(b.text, side[best]!.text), 0.5);
+      for (let i = from; i < side.length; i++) {
+        const like = alike(b.text, side[i]!.text);
+        if (like > score) { best = i; score = like; }
+      }
+      if (best >= 0) from = best + 1;
+      return best;
+    });
+  };
+  const pm = pair(ms), pb = pair(bs), out: { m?: Line; text: string; by: string }[] = [];
+  // Main's lines no base line paired with: a branch line that's the same lands once.
+  const mainOnly = new Map<string, number>();
+  ms.forEach((m, i) => { if (!pm.includes(i)) mainOnly.set(m.text, (mainOnly.get(m.text) ?? 0) + 1); });
+  let i = 0, j = 0;
+  const upTo = (x: number, y: number) => {
+    while (i < x) { const m = ms[i++]!; out.push({ m, text: m.text, by: m.by }); }
+    while (j < y) {
+      const l = bs[j++]!, n = mainOnly.get(l.text) ?? 0;
+      if (n) mainOnly.set(l.text, n - 1);
+      else out.push({ text: l.text, by: l.by });
+    }
+  };
+  for (const [k, b] of bl.entries()) {
+    const m = ms[pm[k]!], l = bs[pb[k]!];
+    if (m && l) {
+      const text = m.text === l.text || l.text === b.text ? m.text : m.text === b.text ? l.text : blendLine(b.text, m.text, l.text, loose(b.text));
+      if (text === null) return null;
+      upTo(pm[k]!, pb[k]!);
+      out.push({ m, text, by: text === m.text ? m.by : l.by });
+      i++; j++;
+      continue;
+    }
+    // Gone on one side: dropped, if the other side left it as it was.
+    if (strict || (m ?? l) && (m ?? l)!.text !== b.text) return null;
+    if (m) { upTo(pm[k]!, j); i++; }
+    if (l) { upTo(i, pb[k]!); j++; }
+  }
+  upTo(ms.length, bs.length);
+  return out;
 }
 
 /** Both changed a lockfile: keep main's, swap in the branch's whole, or report it. Either way it's regenerated after. */
@@ -464,17 +558,31 @@ function clashes(main: Hunk[], branch: Hunk[], strict: boolean): Region[] {
 }
 
 const words = (s: string) => s.match(/\s+|\w+|[^\s\w]/g) ?? [];
+// Words too common in prose to say anything was renamed.
+const STOP = new Set("the and for with that this its are was were but not from into onto than then when what which who how why each all any one our your their has have had can will".split(" "));
+/** A comment line: in code, its words are prose. */
+const remark = (t: string) => /^\s*(\/\/|\/\*|\*|#\s|<!--)/.test(t);
+// The keys a list adds (`digs: []`, `rank?: string[]`): two sides adding one key two ways can't both land.
+const keysOf = (ws: string[]) => new Set([...ws.join("").matchAll(/([\w$]+)\??\s*:(?!:)/g)].map((m) => m[1]!));
+/** Was `line` a sorted list: three or more comma-separated names in order? Then adds go in sorted too. */
+function sorted(line: string) {
+  const parts = line.split(","), names = parts.map((p, i) => (i ? p.match(/[\w$]+/) : p.match(/[\w$]+(?=[^\w$]*$)/))?.[0]?.toLowerCase());
+  return names.length >= 3 && names.every((n, i) => n && (!i || names[i - 1]! <= n));
+}
 
 /**
  * Two edits of one line, merged word by word: each side's changes to `base`
  * as spans of words, applied together. Null when the spans overlap or touch
  * (unless both made the very same change), or when a word one side replaced
  * is one the other side adds (a rename on one side, a new use of the old
- * name on the other): that's a real conflict. With `both`, words both sides
- * only added at the very same spot are kept, `a`'s first: not safe to merge on
- * its own, since only a person knows the order, but a good suggestion.
+ * name on the other): that's a real conflict. With `loose` (prose and
+ * comments), that guard skips short and common words ("a", "it", "the").
+ *
+ * With `both`, words both sides only added at the very same spot are kept: an
+ * item each added to one list, `a`'s first (main's: it landed first), or in
+ * order if the list was sorted. Refused if both add the same key.
  */
-export function mergeWords(base: string, a: string, b: string, both = false): string | null {
+export function mergeWords(base: string, a: string, b: string, both = false, loose = false): string | null {
   const o = words(base);
   const spans = (x: string[]) => {
     const out: { from: number; to: number; add: string[] }[] = [];
@@ -487,17 +595,23 @@ export function mergeWords(base: string, a: string, b: string, both = false): st
     return out;
   };
   const sa = spans(words(a)), sb = spans(words(b));
-  const named = (ws: string[]) => new Set(ws.filter((w) => /\w/.test(w)));
+  const named = (ws: string[]) => new Set(ws.filter((w) => /\w/.test(w) && (!loose || (w.length >= 3 && !STOP.has(w.toLowerCase())))));
   const gone = (ss: typeof sa) => named(ss.flatMap((s) => o.slice(s.from, s.to))), added = (ss: typeof sa) => named(ss.flatMap((s) => s.add));
   const clash = (x: Set<string>, y: Set<string>) => [...x].some((w) => y.has(w));
   if (clash(gone(sa), added(sb)) || clash(gone(sb), added(sa))) return null;
   const all = [...sa, ...sb].sort((p, q) => p.from - q.from || p.to - q.to);
+  const inOrder = both && sorted(base), first = (ws: string[]) => ws.join("").match(/[\w$]+/)?.[0]?.toLowerCase() ?? "";
   let out = "", i = 0, last: (typeof all)[number] | null = null;
   for (const s of all) {
     if (last && s.from <= last.to) {
       if (s.from === last.from && s.to === last.to && s.add.join("") === last.add.join("")) continue;
-      // Two inserts at one spot (the sort is stable, so a's came first): b's goes after a's.
-      if (both && s.from === s.to && last.from === last.to && s.from === last.from) { out += s.add.join(""); continue; }
+      // Two inserts at one spot (the sort is stable, so a's came first): b's goes after a's, or before it in a sorted list.
+      if (both && s.from === s.to && last.from === last.to && s.from === last.from && !clash(keysOf(s.add), keysOf(last.add))) {
+        const add = s.add.join("");
+        if (inOrder && first(s.add) < first(last.add)) out = out.slice(0, out.length - last.add.join("").length) + add + last.add.join("");
+        else out += add;
+        continue;
+      }
       return null;
     }
     out += o.slice(i, s.from).join("") + s.add.join("");
@@ -506,6 +620,9 @@ export function mergeWords(base: string, a: string, b: string, both = false): st
   }
   return out + o.slice(i).join("");
 }
+
+/** One line both changed: word by word, else as a list both added items to (see mergeWords). */
+const blendLine = (base: string, a: string, b: string, loose: boolean) => mergeWords(base, a, b, false, loose) ?? mergeWords(base, a, b, true, loose);
 
 /**
  * A conflict as the review shows it: which picks settle it (`text` is
