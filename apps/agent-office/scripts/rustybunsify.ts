@@ -40,8 +40,11 @@ if (process.argv.includes("--check")) {
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
 // The skin and the codeSplitter tiles both use three, so they're built together and share one copy of it, in
-// /assets/rb-chunk-<hash>.js, instead of each bundling their own. Agent Office's bundle keeps its own (it doesn't
-// export it), so the console still says "Multiple instances of Three.js" once, but not twice.
+// /assets/rb-chunk-<hash>.js, instead of each bundling their own. Agent Office's bundle keeps its own, so the
+// console still says "Multiple instances of Three.js" once, but not twice. That one stays (#839): the office's three
+// is tree-shaken and minified into main-*.js, never exported or put on window (window.__THREE__ is just "186"), and
+// our scripts run first anyway. Using it would mean matching ~110 minified names per release for ~92 KB gzipped.
+// Should a release ever expose it (window.THREE, or a chunk of its own), use that when it's there.
 const SHARED = ["codesplitter/index.ts", ...(skin === "druids" ? ["druids/index.ts"] : [])];
 let shared: Promise<Map<string, string>> | undefined;
 // (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
