@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { LEVELS } from "../src/levels/levels.ts";
-import { folderOf, heightOf, mapRepo, type RepoSnapshot } from "../src/sim/codemap.ts";
-import { Game, MAX_HP, ROLL_TIME, type Input } from "../src/sim/game.ts";
+import { folderOf, heightOf, mapRepo, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
+import { AMMO_CRATE, Game, HEALTH_CRATE, HEAVY_HP, MAX_HP, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, type Input, type Objective } from "../src/sim/game.ts";
+import { briefing, missionFor, OVERRUN, type Mission } from "../src/sim/missions.ts";
 import { slope, stampTerrain, withPads, type Terrain } from "../src/sim/terrain.ts";
-import { splashDamage, WEAPONS } from "../src/sim/weapons.ts";
+import { ORDER, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
+import { VOICES } from "../src/ui/audio.ts";
 
 const flat: Terrain = { R: 80, height: () => 0 };
 const repo: RepoSnapshot = {
@@ -89,6 +91,7 @@ describe("game", () => {
     Object.assign(you, { x: 0, z: 0, y: 0 });
     Object.assign(guard, { x: 0, z: -10, y: 0 });
     g.map.blocks.length = 0;
+    g.pickups.length = 0;
     guard.brain!.home = { x: 0, z: -10 };
     return { g, you, guard };
   }
@@ -170,5 +173,250 @@ describe("game", () => {
     expect(g.you().z).toBeLessThan(-2);
     expect(g.you().y).toBeCloseTo(1.2, 1);
     expect(g.you().grounded).toBe(true);
+  });
+});
+
+describe("Sarge's Heroes", () => {
+  type C = { x: number; z: number; guards: number };
+  /** A flat field with compounds where you say, no files on it unless given. */
+  function field(compounds: C[], opts: { blocks?: Block[]; mission?: Mission } = {}) {
+    const g = new Game({
+      terrain: flat,
+      spawn: { x: 0, z: 0, yaw: 0 },
+      compounds: compounds.map((c, i) => ({ folder: `apps/c${i}`, x: c.x, z: c.z, r: 8, files: 1, lines: 1, guards: c.guards })),
+      blocks: opts.blocks ?? [],
+    }, 4, opts.mission);
+    return g;
+  }
+  const box = (x: number, z: number, h = 2): Block => ({ path: "b.ts", lines: 1, compound: -1, x, z, y: 0, w: 2, d: 2, h });
+  const run = (g: Game, seconds: number, inp: Partial<Input> = {}) => { for (let i = 0; i < seconds * 60; i++) g.step(1 / 60, { ...idle, ...inp }); };
+  /** One still guard 10 m ahead of you. */
+  function target() {
+    const g = field([{ x: 0, z: -10, guards: 1 }]), guard = g.soldiers[1]!;
+    Object.assign(guard, { x: 0, z: -10, brain: null });
+    return { g, you: g.you(), guard };
+  }
+
+  describe("git weapons", () => {
+    test("every weapon is a git command, and reset --hard is a pickup, not a starting weapon", () => {
+      for (const w of ORDER) expect(WEAPONS[w].cmd).toStartWith("git ");
+      expect(WEAPONS.reset.ammo).toBe(0);
+    });
+
+    test("cherry-pick follows the target it picked", () => {
+      // Aimed 10 degrees off: a commit misses, a cherry-pick comes round onto it.
+      const miss = target();
+      miss.g.step(0.3, { ...idle, fire: true, aim: { x: 1.8, y: 1.2, z: -10 } });
+      expect(miss.guard.hp).toBe(MAX_HP);
+      const { g, you, guard } = target();
+      you.weapon = "cherry";
+      run(g, 1, { fire: true, aim: { x: 1.8, y: 1.2, z: -10 } });
+      expect(guard.hp).toBeLessThan(MAX_HP);
+    });
+
+    test("revert sends a guard back where it was a few seconds ago", () => {
+      const { g, you, guard } = target();
+      run(g, 4);
+      Object.assign(guard, { z: -20 });
+      you.weapon = "revert";
+      run(g, 0.4, { fire: true, aim: { x: 0, y: 1.2, z: -20 } });
+      expect(guard.z).toBeCloseTo(-10, 0);
+    });
+
+    test("a stash is cover, and the guards shoot it instead of you", () => {
+      const { g, you } = target();
+      you.weapon = "stash";
+      run(g, 1.5, { fire: true, aim: { x: 0, y: 0, z: -6 } });
+      expect(g.stashes.length).toBe(1);
+      const st = g.stashes[0]!;
+      expect(g.blockAt(st.x, st.y + 0.5, st.z)).toBe(st);
+      expect(g.clear(st.x, 0.6, st.z + 3, st.x, 0.6, st.z - 3)).toBe(false);
+
+      // You're out of sight; a guard that sees the stash empties its rifle into it.
+      const d = field([{ x: 0, z: -10, guards: 1 }]), guard = d.soldiers[1]!;
+      Object.assign(guard, { x: 0, z: -10 });
+      Object.assign(d.you(), { z: 70 });
+      d.stashes.push({ ...box(0, 0, 1.3), id: 99, hp: STASH_HP, ttl: 30 });
+      run(d, 3);
+      expect(d.stashes[0]?.hp ?? 0).toBeLessThan(STASH_HP);
+      expect(d.you().hp).toBe(MAX_HP);
+    });
+
+    test("blame tags a guard to be seen through walls", () => {
+      const { g, you, guard } = target();
+      you.weapon = "blame";
+      run(g, 0.2, { fire: true, aim: { x: 0, y: 1.2, z: -10 } });
+      expect(guard.tagged).toBeGreaterThan(0);
+    });
+
+    test("reset --hard wipes the yard it lands in", () => {
+      const g = field([{ x: 0, z: -30, guards: 3 }, { x: 40, z: -30, guards: 1 }]);
+      const yard = g.soldiers.filter((s) => s.compound === 0);
+      yard[0]!.x = 20; // out of the blast, still of the yard
+      g.shots.push({ id: 99, owner: 0, team: "you", weapon: "reset", x: 0, y: 0.5, z: -30, vx: 0, vy: -10, vz: 0, age: 0, dead: false });
+      run(g, 0.2);
+      expect(yard.every((s) => !s.alive)).toBe(true);
+      expect(g.cleared[0]).toBe(true);
+      expect(g.soldiers.find((s) => s.compound === 1)!.alive).toBe(true);
+    });
+  });
+
+  describe("pickups", () => {
+    test("a level scatters ammo and health crates, and one reset --hard", () => {
+      const g = field([], { blocks: Array.from({ length: 10 }, (_, i) => box(10 + i * 6, 5)) });
+      expect(g.pickups.filter((p) => p.kind === "reset").length).toBe(1);
+      expect(g.pickups.some((p) => p.kind === "ammo")).toBe(true);
+      expect(g.pickups.some((p) => p.kind === "health")).toBe(true);
+    });
+
+    test("walking over a crate takes it; health waits until you're hurt", () => {
+      const g = field([]), you = g.you();
+      g.pickups.push({ id: 90, kind: "health", x: 0, y: 0, z: 0 }, { id: 91, kind: "ammo", x: 0, y: 0, z: 0 });
+      run(g, 0.1);
+      expect(g.pickups.map((p) => p.kind)).toEqual(["health"]);
+      expect(you.ammo.push).toBe(WEAPONS.push.ammo + AMMO_CRATE.push!);
+      you.hp = 30;
+      run(g, 0.1);
+      expect(g.pickups.length).toBe(0);
+      expect(you.hp).toBe(30 + HEALTH_CRATE);
+    });
+
+    test("a taken yard drops crates instead of a flat resupply", () => {
+      const g = field([{ x: 0, z: -30, guards: 1 }, { x: 40, z: -30, guards: 1 }]);
+      g.pickups.length = 0;
+      g.hurt(g.soldiers[1]!, 999, 0);
+      expect(g.you().ammo.push).toBe(WEAPONS.push.ammo);
+      expect(g.pickups.map((p) => p.kind).sort()).toEqual(["ammo", "health"]);
+    });
+  });
+
+  describe("moves", () => {
+    test("prone is low, slow, steady and hard to spot", () => {
+      const g = field([]), you = g.you();
+      run(g, 1, { prone: true, forward: 1 });
+      expect(you.prone).toBe(true);
+      expect(-you.z).toBeLessThan(PRONE_SPEED * 1.05);
+      expect(g.muzzle(you).y).toBeLessThan(0.5);
+      run(g, 0.2, { prone: true, jump: true });
+      expect(you.grounded).toBe(true);
+
+      // A guard 30 m off spots you standing, not lying down.
+      for (const prone of [true, false]) {
+        const s = field([{ x: 0, z: -30, guards: 1 }]);
+        Object.assign(s.soldiers[1]!, { x: 0, z: -30 });
+        run(s, 1, { prone });
+        expect(s.soldiers[1]!.brain!.alert).toBe(!prone);
+      }
+    });
+
+    test("a roll goes sideways out from behind cover, and lying down it's a log roll", () => {
+      const g = field([], { blocks: [box(0, -2)] }), you = g.you();
+      run(g, 0.1, { crouch: true });
+      run(g, 0.5, { crouch: true, right: 1, roll: true });
+      expect(you.x).toBeGreaterThan(2.5);
+      expect(Math.abs(you.z)).toBeLessThan(0.5);
+
+      const p = field([]);
+      run(p, 0.1, { prone: true });
+      run(p, 0.5, { prone: true, roll: true });
+      expect(p.you().x).toBeGreaterThan(1);
+      expect(p.you().prone).toBe(true);
+    });
+
+    test("the sniper scope sways, less crouched, least prone", () => {
+      const amp = (st: "stand" | "crouch" | "prone") => Math.max(...Array.from({ length: 200 }, (_, i) => Math.abs(scopeSway(i * 0.05, st).yaw)));
+      expect(amp("stand")).toBeGreaterThan(amp("crouch"));
+      expect(amp("crouch")).toBeGreaterThan(amp("prone"));
+      expect(amp("prone")).toBeGreaterThan(0);
+      // Scoped without a crosshair point, the round goes where the sway points.
+      const g = field([]);
+      g.you().weapon = "rebase";
+      g.time = 1;
+      g.step(1 / 60, { ...idle, scope: true, fire: true });
+      expect(g.shots[0]!.vx).not.toBe(0);
+    });
+  });
+
+  describe("guards", () => {
+    test("a big compound has a heavy; its squads have flankers", () => {
+      const g = field([{ x: 0, z: -30, guards: 4 }, { x: 40, z: -30, guards: 2 }]);
+      const big = g.soldiers.filter((s) => s.compound === 0), small = g.soldiers.filter((s) => s.compound === 1);
+      expect(big.filter((s) => s.heavy).length).toBe(1);
+      expect(big.find((s) => s.heavy)!.hp).toBe(HEAVY_HP);
+      expect(small.some((s) => s.heavy)).toBe(false);
+      expect(big.filter((s) => s.brain!.role === "flank").length).toBe(2);
+    });
+
+    test("flankers swing round your side", () => {
+      const g = field([{ x: 0, z: -30, guards: 2 }]), you = g.you();
+      you.hp = you.maxHp = 1e9;
+      run(g, 5);
+      const flanker = g.soldiers.find((s) => s.brain?.role === "flank")!;
+      const angle = Math.abs(Math.atan2(flanker.x - you.x, -(flanker.z - you.z)));
+      expect(angle).toBeGreaterThan(Math.PI / 4);
+    });
+
+    test("a guard takes cover on the far side of a block when hit", () => {
+      const g = field([{ x: 0, z: -14, guards: 1 }], { blocks: [box(0, -10)] }), guard = g.soldiers[1]!;
+      Object.assign(guard, { x: 3, z: -14 });
+      const c = g.coverFrom(guard, { x: 0, z: 0 })!;
+      expect(c.z).toBeLessThan(-11);
+      expect(Math.abs(c.x)).toBeLessThan(0.5);
+      Object.assign(guard.brain!, { alert: true, seen: { x: 0, y: 1, z: 0 }, lastHp: MAX_HP });
+      g.hurt(guard, 10, 0);
+      run(g, 0.3);
+      expect(guard.brain!.cover).not.toBeNull();
+    });
+  });
+
+  describe("objectives", () => {
+    test("each level has its own mission", () => {
+      expect(missionFor("el-capitan").kind).toBe("carry");
+      expect(missionFor("backyard").kind).toBe("defend");
+      expect(missionFor("nowhere").kind).toBe("clear");
+      for (const l of LEVELS) expect(briefing(missionFor(l.id))).not.toBe("");
+    });
+
+    test("carry the commit from the farthest yard to HEAD; going down drops it", () => {
+      const g = field([{ x: 0, z: -20, guards: 0 }, { x: 0, z: -40, guards: 0 }], { mission: { kind: "carry" } }), you = g.you();
+      const o = g.objective as Extract<Objective, { kind: "carry" }>;
+      expect(o.z).toBe(-40);
+      Object.assign(you, { z: -40 });
+      run(g, 0.1);
+      expect(o.carried).toBe(true);
+      Object.assign(you, { z: -30 });
+      g.hurt(you, 999, 1);
+      expect(o.carried).toBe(false);
+      expect(o.z).toBeCloseTo(-30);
+      Object.assign(you, { z: -30 });
+      run(g, 0.1);
+      Object.assign(you, { z: 1 });
+      run(g, 0.1);
+      expect(o.delivered).toBe(true);
+      expect(g.status).toBe("won");
+    });
+
+    test("defend: raids come in waves; hold the branch long enough and it's yours", () => {
+      const g = field([{ x: 0, z: -60, guards: 1 }, { x: 40, z: 0, guards: 1 }], { mission: { kind: "defend", seconds: 10, wave: 20 } });
+      g.you().hp = g.you().maxHp = 1e9;
+      run(g, 6);
+      expect(g.soldiers[2]!.brain!.raid).toBe(true);
+      for (const s of g.soldiers.slice(1)) s.brain = null;
+      run(g, 5);
+      expect(g.status).toBe("won");
+    });
+
+    test("defend: guards standing on the branch overwrite it", () => {
+      const g = field([{ x: 0, z: -60, guards: 1 }], { mission: { kind: "defend", seconds: 100, wave: 20 } });
+      const guard = g.soldiers[1]!;
+      Object.assign(guard, { x: 3, z: 0, brain: null });
+      g.you().hp = g.you().maxHp = 1e9;
+      run(g, OVERRUN + 0.5);
+      expect(g.status).toBe("lost");
+    });
+  });
+
+  test("every weapon has a sound", () => {
+    for (const w of ORDER) expect(VOICES[w]).toBeDefined();
   });
 });
