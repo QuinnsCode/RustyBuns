@@ -1,7 +1,9 @@
 // Layout: beams: a git branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox
 // Beam: a branch's stack of commits, cleaned up into one commit and handed to
 // someone. You worked on a git branch (pushed here with the Push back remote, or
-// in a worktree): a patch, its fixups, an agent's follow-ups. Beaming it
+// in a worktree): a patch, its fixups, an agent's follow-ups. Or on a codeSplitter
+// branch (branches.ts, `kind: "codesplitter"`): its files as they are now, laid on
+// main's tip like a push upstream lays them (mirror.ts branchTree), are the stack. Beaming it
 //
 //   1. takes what the stack changed since it left main, file by file,
 //   2. leaves out the noise (a lockfile from another package manager, lockfile
@@ -19,9 +21,9 @@
 // handle and it's in their inbox (GET /api/me/beams). It never writes to GitHub.
 // Desktop only, like mirrors and worktrees: it needs git on this machine.
 //
-//   GET    /api/repos/:o/:r/beams               the repo's beams; for the crew, the git branches there are to beam too
-//   POST   /api/repos/:o/:r/beams {branch, onto?: "main" | "upstream", title?, message?, to?, keep?, drop?}
-//          (the crew) beam git branch `branch`: 201 with the beam, 409 with `clash` when it
+//   GET    /api/repos/:o/:r/beams               the repo's beams; for the crew, the git and codeSplitter branches there are to beam too
+//   POST   /api/repos/:o/:r/beams {branch, kind?: "git" | "codesplitter", onto?: "main" | "upstream", title?, message?, to?, keep?, drop?}
+//          (the crew) beam branch `branch`: 201 with the beam, 409 with `clash` when it
 //          doesn't sit on `onto` cleanly, or when nothing is left once the noise is out
 //   GET    /api/beams/:id                       the beam and its diff, for anyone with the link
 //   GET    /api/beams/:id/patch                 the commit as `git format-patch` writes it, for `git am`
@@ -33,8 +35,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startChecks } from "./checks.ts";
 import { branchNameError, json, type Env } from "./env.ts";
+import { GIT_EMAIL_DOMAIN } from "./git.ts";
 import { upstreamOf } from "./listen.ts";
-import { authorEnv, git, gitIdentity, localGit } from "./mirror.ts";
+import { authorEnv, branchTree, git, gitIdentity, localGit } from "./mirror.ts";
 
 type Access = (owner: string, repo: string) => Promise<{ read: boolean; write: boolean; exists: boolean }>;
 export interface Change { path: string; status: string }
@@ -123,7 +126,40 @@ async function bareOf(env: Env, owner: string, repo: string): Promise<{ error: R
   return { r, dir: lg.path(r.artifact), main: r.branch ?? "main" };
 }
 
-/** Beam git branch `branch` of owner/repo: see the top of this file. */
+type Stack = { error: Response } | { base: string; tip: string; log: { name: string; email: string; subject: string; body: string }[] };
+
+/** A git branch's stack: where it left main, its tip, and its commits, oldest first. */
+async function gitStack(dir: string, main: string, branch: string): Promise<Stack> {
+  const tip = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}^{commit}`], dir)).out.trim();
+  if (!tip) return { error: json({ error: `this repo's git has no branch ${branch}` }, 404) };
+  const mainTip = await must(["rev-parse", `refs/heads/${main}`], dir);
+  const mb = await git(["merge-base", mainTip, tip], dir);
+  if (mb.code) return { error: json({ error: `${branch} shares no history with ${main}` }, 409) };
+  const base = mb.out.trim();
+  if (await isAncestor(dir, tip, mainTip)) return { error: json({ error: `${main} has all of ${branch} already: nothing to beam` }, 409) };
+  const log = (await must(["log", "--reverse", "--format=%an%x1f%ae%x1f%s%x1f%b%x1e", `${base}..${tip}`], dir)).split("\x1e").map((e) => e.trim()).filter(Boolean)
+    .map((e) => { const [name, email, subject, body] = e.split("\x1f"); return { name: name!, email: email!, subject: subject!, body: body ?? "" }; });
+  return { base, tip, log };
+}
+
+/**
+ * A codeSplitter branch as a stack of one: its files as they are now over main's tip, the commit a
+ * push upstream would make. Whoever opened it is a co-author, unless it's the repo's owner (as a push).
+ */
+async function linesStack(env: Env, owner: string, repo: string, dir: string, main: string, branch: string): Promise<Stack> {
+  const br = await env.DB.prepare("SELECT by, status FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, branch).first() as { by: string; status: string } | null;
+  if (!br) return { error: json({ error: `this repo has no codeSplitter branch ${branch}` }, 404) };
+  if (br.status !== "open") return { error: json({ error: `${branch} is ${br.status} already: nothing to beam` }, 409) };
+  const base = await must(["rev-parse", `refs/heads/${main}`], dir);
+  const tree = await branchTree(env, owner, repo, branch, dir, `${base}^{tree}`);
+  if (tree === await must(["rev-parse", `${base}^{tree}`], dir)) return { error: json({ error: `${main} has all of ${branch} already: nothing to beam` }, 409) };
+  const subject = `${branch}, from codeSplitter`;
+  const tip = await must(["commit-tree", tree, "-p", base, "-m", subject], dir, authorEnv());
+  const me = authorEnv(), by = br.by === owner ? { name: me.GIT_AUTHOR_NAME!, email: me.GIT_AUTHOR_EMAIL! } : { name: br.by, email: `${br.by}@${GIT_EMAIL_DOMAIN}` };
+  return { base, tip, log: [{ ...by, subject, body: "" }] };
+}
+
+/** Beam branch `branch` of owner/repo, a git one or (`kind: "codesplitter"`) one of ours: see the top of this file. */
 export async function makeBeam(env: Env, owner: string, repo: string, user: string, body: any): Promise<Response> {
   const b = await bareOf(env, owner, repo);
   if ("error" in b) return b.error;
@@ -132,23 +168,18 @@ export async function makeBeam(env: Env, owner: string, repo: string, user: stri
   const branch = String(body?.branch ?? "");
   const bad = branchNameError(branch);
   if (bad || branch === main) return json({ error: bad ?? `${main} is what a beam goes on top of: beam a branch off it` }, 400);
+  const kind = body?.kind ?? "git";
+  if (kind !== "git" && kind !== "codesplitter") return json({ error: 'kind: "git" or "codesplitter"' }, 400);
   const onto = body?.onto ?? "main";
   if (onto !== "main" && onto !== "upstream") return json({ error: 'onto: "main" or "upstream"' }, 400);
   const paths = (v: unknown) => Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
   const to = body?.to ? String(body.to) : null;
   if (to && !await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(to).first()) return json({ error: `nobody here goes by ${to}` }, 404);
 
-  const tip = (await git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}^{commit}`], dir)).out.trim();
-  if (!tip) return json({ error: `this repo's git has no branch ${branch}` }, 404);
+  const st = kind === "git" ? await gitStack(dir, main, branch) : await linesStack(env, owner, repo, dir, main, branch);
+  if ("error" in st) return st.error;
+  const { base, tip, log } = st;
   const mainTip = await must(["rev-parse", `refs/heads/${main}`], dir);
-  const mb = await git(["merge-base", mainTip, tip], dir);
-  if (mb.code) return json({ error: `${branch} shares no history with ${main}` }, 409);
-  const base = mb.out.trim();
-  if (await isAncestor(dir, tip, mainTip)) return json({ error: `${main} has all of ${branch} already: nothing to beam` }, 409);
-
-  // The stack: its commits, oldest first, and who wrote them.
-  const log = (await must(["log", "--reverse", "--format=%an%x1f%ae%x1f%s%x1f%b%x1e", `${base}..${tip}`], dir)).split("\x1e").map((e) => e.trim()).filter(Boolean)
-    .map((e) => { const [name, email, subject, body] = e.split("\x1f"); return { name: name!, email: email!, subject: subject!, body: body ?? "" }; });
   const { kept, dropped } = sortOut(changesOf(await must(["diff", "--name-status", "-z", "--no-renames", base, tip], dir)), { keep: paths(body?.keep), drop: paths(body?.drop) });
   if (!kept.length) return json({ error: "everything it changes is noise, so a beam of it would be empty: `keep` the files you meant", dropped }, 409);
 
@@ -196,7 +227,7 @@ export async function makeBeam(env: Env, owner: string, repo: string, user: stri
   // One commit: the stack's author if it had one, else whoever beams (this machine's git identity).
   const env_ = authorEnv(), me = { name: env_.GIT_AUTHOR_NAME!, email: env_.GIT_AUTHOR_EMAIL! };
   const authors = log.map((c) => ({ name: c.name, email: c.email }));
-  const one = new Set(authors.map((a) => a.email.toLowerCase())).size === 1 ? authors[0]! : null;
+  const one = kind === "git" && new Set(authors.map((a) => a.email.toLowerCase())).size === 1 ? authors[0]! : null;
   const author = one ?? gitIdentity() ?? me;
   const message = beamMessage({ title: body?.title, message: body?.message, subjects: log.map((c) => c.subject), body: log[0]?.body, author, authors });
   const sha = await must(["commit-tree", tree, "-p", ontoSha, "-F", "-"], dir, { ...env_, GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email }, message);
@@ -205,15 +236,15 @@ export async function makeBeam(env: Env, owner: string, repo: string, user: stri
   const id = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
   await must(["update-ref", `refs/beams/${id}`, sha], dir);
   const [title, ...rest] = message.trimEnd().split("\n");
-  await env.DB.prepare("INSERT INTO beams (id, owner, repo, branch, by, to_user, title, message, onto, onto_label, sha, commits, files, dropped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, owner, repo, branch, user, to, title!, rest.join("\n").trim(), ontoSha, ontoLabel, sha, log.length, JSON.stringify(files), JSON.stringify(dropped), Date.now()).run();
+  await env.DB.prepare("INSERT INTO beams (id, owner, repo, branch, kind, by, to_user, title, message, onto, onto_label, sha, commits, files, dropped, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, owner, repo, branch, kind, user, to, title!, rest.join("\n").trim(), ontoSha, ontoLabel, sha, kind === "git" ? log.length : 0, JSON.stringify(files), JSON.stringify(dropped), Date.now()).run();
   // Checked like a branch pushed upstream would be, as that commit.
   await startChecks(env, owner, repo, `beam/${id}`, sha, user);
   return json(view(await beamRow(env, id)), 201);
 }
 
 interface BeamRow {
-  id: string; owner: string; repo: string; branch: string; by: string; to_user: string | null; title: string; message: string;
+  id: string; owner: string; repo: string; branch: string; kind: string; by: string; to_user: string | null; title: string; message: string;
   onto: string; onto_label: string; sha: string; commits: number; files: string; dropped: string; status: string; created_at: number;
 }
 const beamRow = (env: Env, id: string) =>
@@ -221,7 +252,7 @@ const beamRow = (env: Env, id: string) =>
     .bind(id, Date.now()).first() as Promise<BeamRow | null>;
 
 const view = (b: BeamRow | null) => b && ({
-  id: b.id, owner: b.owner, repo: b.repo, branch: b.branch, by: b.by, to: b.to_user, title: b.title, message: b.message,
+  id: b.id, owner: b.owner, repo: b.repo, branch: b.branch, kind: b.kind, by: b.by, to: b.to_user, title: b.title, message: b.message,
   onto: { sha: b.onto, label: b.onto_label }, sha: b.sha, commits: b.commits,
   files: JSON.parse(b.files) as Change[], dropped: JSON.parse(b.dropped) as Dropped[],
   status: b.status, created_at: b.created_at, page: `/#/beam/${b.id}`, patch: `/api/beams/${b.id}/patch`,
@@ -242,6 +273,13 @@ async function beamable(dir: string, main: string) {
   return out.slice(0, BRANCHES);
 }
 
+/** The repo's open codeSplitter branches with files of their own, newest first: each with how many. */
+async function beamableLines(env: Env, owner: string, repo: string) {
+  const { results } = await env.DB.prepare(`SELECT b.name, b.by, COUNT(f.path) AS files FROM branches b JOIN branch_files f ON f.owner = b.owner AND f.repo = b.repo AND f.branch = b.name AND f.merged = 0
+    WHERE b.owner = ? AND b.repo = ? AND b.status = 'open' GROUP BY b.name ORDER BY COALESCE(b.changed_at, b.created_at) DESC LIMIT ?`).bind(owner, repo, BRANCHES).all();
+  return results as { name: string; by: string; files: number }[];
+}
+
 export async function beamRoutes(req: Request, env: Env, p: string[], user: string | null, access: Access): Promise<Response | null> {
   // /api/repos/:o/:r/beams
   if (p[1] === "repos" && p[4] === "beams" && !p[5]) {
@@ -258,7 +296,8 @@ export async function beamRoutes(req: Request, env: Env, p: string[], user: stri
     const beams = (results as unknown as BeamRow[]).map(summary);
     if (!a.write) return json({ beams });
     const b = await bareOf(env, owner, repo);
-    return json({ beams, branches: "error" in b ? [] : await beamable(b.dir, b.main) });
+    if ("error" in b) return json({ beams, branches: [], codesplitter_branches: [] });
+    return json({ beams, branches: await beamable(b.dir, b.main), codesplitter_branches: await beamableLines(env, owner, repo) });
   }
 
   // /api/me/beams
