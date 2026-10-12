@@ -54,8 +54,20 @@
 // most (claude says what each try cost; the others don't, so they aren't
 // counted), and the report says which step settled each update.
 //
+// With previews on too (#864, opt-in, since it costs deploy time), what passed
+// the tests is checked against a real deploy before it goes on the branch: the
+// same preview deploy the owner starts by hand (preview.ts), with the branch's
+// files laid over the clone, deployed to a preview-<id> stage, checked to
+// answer, and destroyed. Never a real stage: only a person ships. If it fails,
+// each update goes up alone to find the one that broke it, and that one goes
+// down the on-fail chain, which then has to pass the tests and a preview; what's
+// left goes up together once more. Each preview counts against the owner's
+// preview-deploy limit (limits.ts) and is logged with their own previews, by
+// agent-deps. A run that's out of time or over the limit puts nothing unchecked
+// on the branch. Previews run on the desktop, with its logins.
+//
 //   GET  /api/repos/:o/:r/deps        settings and the last report (owner only)
-//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held}
+//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held, preview}
 //   POST /api/repos/:o/:r/deps/run    check now
 
 import type { Doc, Op } from "./lines.ts";
@@ -67,6 +79,9 @@ import { json, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness } from "./harness.ts";
 import { hitsFor } from "./watch.ts";
+import { settings as deploySettings } from "./deploy.ts";
+import { charge } from "./limits.ts";
+import { logEnd, logStart, preview, runnerFor, runs as livePreviews, STEPS as PREVIEW_STEPS, type Run as PreviewDeploy } from "./preview.ts";
 
 export type Level = "patch" | "minor" | "major";
 const LEVELS: Level[] = ["patch", "minor", "major"];
@@ -83,8 +98,10 @@ export interface Settings {
   chain_tries: number; chain_minutes: number; chain_usd: number;
   /** Releases held back ("name@version"), which no run proposes again. */
   held: string[];
+  /** Deploy what passed as a preview, check it answers, and tear it down, before it goes on the branch (#864). */
+  preview: boolean;
 }
-export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false, fix_with: null, fix_tries: 3, on_fail: ["fix"], chain_tries: 6, chain_minutes: 30, chain_usd: 2, held: [] };
+export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false, fix_with: null, fix_tries: 3, on_fail: ["fix"], chain_tries: 6, chain_minutes: 30, chain_usd: 2, held: [], preview: false };
 
 /** One dependency to move, in the package.json at `path` (the top one, or a workspace's). */
 export interface Update {
@@ -104,7 +121,9 @@ export interface Update {
 }
 /** A dependency whose version has a known vulnerability that no release fixes yet (or that's on the ignore list). */
 export interface Exposed { name: string; version: string; ids: string[]; path?: string }
-export interface Report { at: number; checked: number; updates: Update[]; exposed?: Exposed[]; branch?: string; lock?: string; note?: string }
+/** A preview deploy the run made: which updates went up, and whether it deployed and answered (else which step failed). */
+export interface PreviewRun { id: string; stage: string; ok: boolean; names: string[]; url?: string; failed?: string; note?: string }
+export interface Report { at: number; checked: number; updates: Update[]; exposed?: Exposed[]; previews?: PreviewRun[]; branch?: string; lock?: string; note?: string }
 
 /** A known vulnerability, and the versions that fix it (on each line it affects). */
 export interface Vuln { id: string; summary: string; fixed: string[] }
@@ -635,9 +654,9 @@ async function alert(env: Env, owner: string, repo: string, report: Report, news
     ...news.fixes.map((u) => `  ${u.name} ${u.from} → ${u.to}${u.path && u.path !== "package.json" ? ` (${u.path})` : ""}: ${u.fixes!.join(", ")}`));
   if (news.exposed.length) lines.push(`${news.exposed.length === 1 ? "A dependency has" : `${news.exposed.length} dependencies have`} a known vulnerability that no update here fixes yet:`,
     ...news.exposed.map((x) => `  ${x.name}@${x.version}${x.path && x.path !== "package.json" ? ` (${x.path})` : ""}: ${x.ids.join(", ")}`));
-  if (news.broke.length) lines.push(`${news.broke.length === 1 ? "An update breaks" : `${news.broke.length} updates break`} the tests, and nothing in the on-fail chain got ${news.broke.length === 1 ? "it" : "them"} through, so ${news.broke.length === 1 ? "it's" : "they're"} left out:`,
+  if (news.broke.length) lines.push(`${news.broke.length === 1 ? "An update breaks" : `${news.broke.length} updates break`} the tests or its preview deploy, and nothing in the on-fail chain got ${news.broke.length === 1 ? "it" : "them"} through, so ${news.broke.length === 1 ? "it's" : "they're"} left out:`,
     ...news.broke.map((u) => `  ${u.name} ${u.from} → ${u.to}${u.path && u.path !== "package.json" ? ` (${u.path})` : ""}: tried ${u.chain!.slice(0, -1).map((c) => c.step).join(", ") || "nothing"}`));
-  const subject = news.exposed.length ? `${owner}/${repo}: a dependency is exposed` : news.fixes.length ? `${owner}/${repo}: security fixes on ${report.branch}` : `${owner}/${repo}: an update breaks the tests`;
+  const subject = news.exposed.length ? `${owner}/${repo}: a dependency is exposed` : news.fixes.length ? `${owner}/${repo}: security fixes on ${report.branch}` : `${owner}/${repo}: an update breaks the tests or its preview`;
   const link = `${(env.BETTER_AUTH_URL ?? "").replace(/\/$/, "")}/#/r/${owner}/${repo}`;
   await notifierFor(env)?.(owner, subject, lines, link);
 }
@@ -713,18 +732,100 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   let tested = false;
   let edits: Edit[] = [];
   const held: string[] = [];
+  // With a deadline (the cron's time limit), a try only starts if there's room for one as slow as the slowest so far.
+  let slowest = 0;
+  const timed = async <T>(f: () => Promise<T>) => { const t0 = Date.now(); try { return await f(); } finally { slowest = Math.max(slowest, Date.now() - t0); } };
+  /** These updates' files, over the fixes so far. */
+  const filesWith = (us: Update[]) => ({ ...Object.fromEntries(edits.map((e) => [e.path, e.after])), ...filesFor(us) });
+  const fixer = fixerFor(env, s, owner);
+
+  /** What a set of updates has to pass. null: it couldn't run (out of time, or over a limit). */
+  type Check = (us: Update[]) => Promise<{ ok: boolean; out: string } | null>;
+  /**
+   * One broken update down the owner's on-fail chain, on top of what's kept and fixed so far.
+   * `check` is the tests, or in the preview phase the tests and then a preview deploy. A fix
+   * passes the tests in the fixer's clone, then `verify` (the preview) when there is one.
+   */
+  const runChain = async (u: Update, r: string, check: Check, verify?: Check) => {
+    const until = Math.min(deadline ?? Infinity, Date.now() + s.chain_minutes * 60_000);
+    let tries = s.chain_tries, usd = s.chain_usd;
+    const chain: NonNullable<Update["chain"]> = u.chain = [];
+    const set = () => updates.filter((x) => x === u || x.status === "kept" || x.status === "fixed");
+    const room = () => tries > 0 && Date.now() + slowest <= until;
+    const test = () => { tries--; return check(set()); };
+    const settled = async (step: Step): Promise<{ ok: boolean; note?: string; usd?: number }> => {
+      if (step === "retry") {
+        const t = room() ? await test() : null;
+        if (!t) return { ok: false, note: "out of tries or time" };
+        if (t.ok) Object.assign(u, { status: "kept", out: undefined });
+        else u.out = tail(t.out);
+        return { ok: t.ok };
+      }
+      if (step === "fix" || step === "search") {
+        if (!fixer) return { ok: false, note: "no AI picked to fix it" };
+        if (step === "search" && s.fix_with !== "claude") return { ok: false, note: "web search needs claude" };
+        if (usd <= 0) return { ok: false, note: "out of dollars" };
+        if (!room()) return { ok: false, note: "out of tries or time" };
+        const f = await fixer({ remote: r, files: filesWith(set()), pm, update: u, out: u.out ?? "", harness: s.fix_with!, tries: Math.min(s.fix_tries, tries), hosts, until: Number.isFinite(until) ? until : undefined, usd, ...(step === "search" ? { search: true } : {}) });
+        tries -= f.tries; usd -= f.usd ?? 0;
+        const by = `agent-${s.fix_with}`, spent = f.usd ? { usd: f.usd } : {};
+        if (!f.ok) { Object.assign(u, { out: tail(f.out), fix: { by, tries: f.tries, files: [] } }); return { ok: false, ...spent }; }
+        const had = edits;
+        edits = edits.map((e) => ({ ...e }));
+        for (const e of f.edits) {
+          const was = edits.find((x) => x.path === e.path);
+          if (was) was.after = e.after; else edits.push(e);
+        }
+        Object.assign(u, { status: "fixed", out: undefined, fix: { by, tries: f.tries, files: f.edits.map((e) => e.path) } });
+        if (verify) {
+          tries--;
+          const v = await verify(set());
+          if (!v?.ok) {
+            edits = had;
+            Object.assign(u, { status: "broke", ...(v ? { out: tail(v.out) } : {}) });
+            return { ok: false, note: v ? "the fix passes the tests, not the preview" : "out of tries or time", ...spent };
+          }
+        }
+        return { ok: true, ...spent };
+      }
+      if (step === "rollback") {
+        // The advisory says which version is safe, so a security fix never steps back.
+        if (u.fixes) return { ok: false, note: "a security fix isn't rolled back" };
+        // A major that broke tries the newest minor, then the newest patch.
+        for (const level of LEVELS.slice(0, LEVELS.indexOf(u.level)).reverse()) {
+          const smaller = (await outdated({ dependencies: { [u.name]: u.from } }, { ...s, max_level: level, ignore: [], held: [...s.held, ...held] }, once, now)).updates[0];
+          if (!smaller || smaller.to === u.to) continue;
+          if (!room()) return { ok: false, note: "out of tries or time" };
+          const was = { to: u.to, level: u.level };
+          Object.assign(u, { to: smaller.to, level: smaller.level });
+          const t = await test();
+          if (t?.ok) { Object.assign(u, { status: "kept", out: undefined, was: was.to }); return { ok: true }; }
+          Object.assign(u, was);
+          if (!t) return { ok: false, note: "out of tries or time" };
+        }
+        return { ok: false, note: "no smaller release passes" };
+      }
+      // Held back: off the branch, and no later run proposes this release again.
+      if (step === "hold") { held.push(`${u.name}@${u.to.replace(/^[\^~]/, "")}`); u.status = "held"; return { ok: true }; }
+      // The owner hears about it once the run is over (runDoctor), once per release.
+      return { ok: true };
+    };
+    for (const step of s.on_fail) {
+      const got = await settled(step);
+      chain.push({ step, ...got });
+      if (got.ok) break;
+    }
+  };
+
   if (tester) {
     const r = await remoteFor();
     if (!r) note = [note, "no git remote to test against"].filter(Boolean).join("; ");
     else {
       tested = true;
-      // With a deadline (the cron's time limit), a try only starts if there's room for one as slow as the slowest so far.
-      let slowest = 0, short = false;
+      let short = false;
       const tryWith = async (us: Update[]) => {
         if (deadline && Date.now() + slowest > deadline) { short = true; return null; }
-        const t0 = Date.now();
-        const t = await tester(r, filesFor(us), { pm, lock, test: true, hosts });
-        slowest = Math.max(slowest, Date.now() - t0);
+        const t = await timed(() => tester(r, filesFor(us), { pm, lock, test: true, hosts }));
         tried.set(key(us), t);
         return t;
       };
@@ -743,77 +844,78 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
       }
       if (short) note = [note, "ran out of time before every test ran; only what passed went on a branch, and the next run tries the rest"].filter(Boolean).join("; ");
       // Each broken update goes down the owner's on-fail chain in turn, on top of what's kept and fixed so far.
-      const fixer = fixerFor(env, s, owner);
-      for (const u of updates.filter((u) => u.status === "broke")) {
-        const until = Math.min(deadline ?? Infinity, Date.now() + s.chain_minutes * 60_000);
-        let tries = s.chain_tries, usd = s.chain_usd;
-        const chain: NonNullable<Update["chain"]> = u.chain = [];
-        const files = () => ({ ...Object.fromEntries(edits.map((e) => [e.path, e.after])), ...filesFor(updates.filter((x) => x === u || x.status === "kept" || x.status === "fixed")) });
-        const room = () => tries > 0 && Date.now() + slowest <= until;
-        const test = async () => {
-          tries--;
-          const t0 = Date.now();
-          const t = await tester(r, files(), { pm, lock, test: true, hosts });
-          slowest = Math.max(slowest, Date.now() - t0);
-          return t;
-        };
-        const settled = async (step: Step): Promise<{ ok: boolean; note?: string; usd?: number }> => {
-          if (step === "retry") {
-            if (!room()) return { ok: false, note: "out of tries or time" };
-            const t = await test();
-            if (t.ok) Object.assign(u, { status: "kept", out: undefined });
-            else u.out = tail(t.out);
-            return { ok: t.ok };
-          }
-          if (step === "fix" || step === "search") {
-            if (!fixer) return { ok: false, note: "no AI picked to fix it" };
-            if (step === "search" && s.fix_with !== "claude") return { ok: false, note: "web search needs claude" };
-            if (usd <= 0) return { ok: false, note: "out of dollars" };
-            if (!room()) return { ok: false, note: "out of tries or time" };
-            const f = await fixer({ remote: r, files: files(), pm, update: u, out: u.out ?? "", harness: s.fix_with!, tries: Math.min(s.fix_tries, tries), hosts, until: Number.isFinite(until) ? until : undefined, usd, ...(step === "search" ? { search: true } : {}) });
-            tries -= f.tries; usd -= f.usd ?? 0;
-            const by = `agent-${s.fix_with}`, spent = f.usd ? { usd: f.usd } : {};
-            if (!f.ok) { Object.assign(u, { out: tail(f.out), fix: { by, tries: f.tries, files: [] } }); return { ok: false, ...spent }; }
-            for (const e of f.edits) {
-              const had = edits.find((x) => x.path === e.path);
-              if (had) had.after = e.after; else edits.push(e);
-            }
-            Object.assign(u, { status: "fixed", out: undefined, fix: { by, tries: f.tries, files: f.edits.map((e) => e.path) } });
-            return { ok: true, ...spent };
-          }
-          if (step === "rollback") {
-            // The advisory says which version is safe, so a security fix never steps back.
-            if (u.fixes) return { ok: false, note: "a security fix isn't rolled back" };
-            // A major that broke tries the newest minor, then the newest patch.
-            for (const level of LEVELS.slice(0, LEVELS.indexOf(u.level)).reverse()) {
-              const smaller = (await outdated({ dependencies: { [u.name]: u.from } }, { ...s, max_level: level, ignore: [], held: [...s.held, ...held] }, once, now)).updates[0];
-              if (!smaller || smaller.to === u.to) continue;
-              if (!room()) return { ok: false, note: "out of tries or time" };
-              const was = { to: u.to, level: u.level };
-              Object.assign(u, { to: smaller.to, level: smaller.level });
-              const t = await test();
-              if (t.ok) { Object.assign(u, { status: "kept", out: undefined, was: was.to }); return { ok: true }; }
-              Object.assign(u, was);
-            }
-            return { ok: false, note: "no smaller release passes" };
-          }
-          // Held back: off the branch, and no later run proposes this release again.
-          if (step === "hold") { held.push(`${u.name}@${u.to.replace(/^[\^~]/, "")}`); u.status = "held"; return { ok: true }; }
-          // The owner hears about it once the run is over (runDoctor), once per release.
-          return { ok: true };
-        };
-        for (const step of s.on_fail) {
-          const got = await settled(step);
-          chain.push({ step, ...got });
-          if (got.ok) break;
+      const runTests: Check = (us) => timed(() => tester(r, filesWith(us), { pm, lock, test: true, hosts }));
+      for (const u of updates.filter((u) => u.status === "broke")) await runChain(u, r, runTests);
+    }
+  }
+
+  // Then, when the owner turned it on, what passed goes up as a preview deploy, is checked, and comes down (#864).
+  const previews: NonNullable<Report["previews"]> = [];
+  const taking = () => updates.filter((u) => tested ? (u.status === "kept" || u.status === "fixed") : u.status !== "broke");
+  const runner = s.preview ? runnerFor(env) : null;
+  if (s.preview && !runner) note = [note, "preview deploys run on the desktop app, with your own logins"].filter(Boolean).join("; ");
+  if (runner && taking().length) {
+    const r = await remoteFor();
+    if (!r) note = [note, "no git remote to deploy a preview from"].filter(Boolean).join("; ");
+    else {
+      const { dir } = await deploySettings(env, owner, repo);
+      let stopped: string | null = null;
+      /** One preview of these updates' files, logged beside the owner's own previews. */
+      const deploy = async (us: Update[], files: Record<string, string>) => {
+        if (stopped) return null;
+        if (deadline && Date.now() + slowest > deadline) { stopped = "out of time"; return null; }
+        // Each counts against the owner's preview deploys, like one they started.
+        const over = env.ADMINS && isAdmin(env, owner) ? null : await charge(env, "preview", `@${owner}`);
+        if (over) { stopped = over; return null; }
+        const id = crypto.randomUUID().slice(0, 8);
+        const run: PreviewDeploy = { id, at: Date.now(), stage: `preview-${id}`, steps: PREVIEW_STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
+        const shown = `${owner}/${repo}`;
+        if (!livePreviews.get(shown) || livePreviews.get(shown)!.done) livePreviews.set(shown, run);
+        await logStart(env, owner, repo, run, "agent-deps", "preview");
+        await timed(() => preview(runner, r, run, { dir, files })).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
+        await logEnd(env, run);
+        const ok = run.steps.every((x) => x.status === "done");
+        const failed = run.steps.find((x) => x.status === "failed");
+        previews.push({ id, stage: run.stage, ok, names: us.map((u) => u.name), ...(run.url ? { url: run.url } : {}), ...(failed ? { failed: failed.key } : {}), ...(run.note ? { note: run.note } : {}) });
+        return { ok, out: ok ? "" : `preview deploy ${run.stage}: ${failed?.key ?? "it"} failed${run.note ? ` (${run.note})` : ""}\n${tail(failed?.out ?? "")}` };
+      };
+      const deployAll: Check = (us) => deploy(us, filesWith(us));
+      // The chain's retry and roll back have to pass the tests too, when there are any, before a deploy.
+      const both: Check = async (us) => {
+        if (tester) { const t = await timed(() => tester(r, filesWith(us), { pm, lock, test: true, hosts })); if (!t.ok) return t; }
+        return deployAll(us);
+      };
+      const first = taking();
+      tested = true;
+      const all = await deployAll(first);
+      if (!all) for (const u of first) u.status = "untested";
+      else if (all.ok) { for (const u of first) if (u.status === "untested") u.status = "kept"; }
+      else {
+        // Which one breaks it: each alone, with its own fix if it has one.
+        for (const u of first) {
+          const own = new Set(u.fix?.files ?? []);
+          const p = first.length === 1 ? all : await deploy([u], { ...Object.fromEntries(edits.filter((e) => own.has(e.path)).map((e) => [e.path, e.after])), ...filesFor([u]) });
+          if (!p) u.status = "untested";
+          else if (!p.ok) Object.assign(u, { status: "broke", out: tail(p.out) });
+          else if (u.status === "untested") u.status = "kept";
+        }
+        for (const u of first.filter((u) => u.status === "broke")) await runChain(u, r, both, deployAll);
+        // What's left goes up together once more: each passing alone doesn't make them pass together.
+        const last = taking();
+        const again = last.length > 1 ? await deployAll(last) : { ok: true };
+        if (!again?.ok) {
+          for (const u of last) u.status = "untested";
+          note = [note, again ? "each of these passes a preview alone but not together; nothing was put on a branch" : "what passed alone couldn't go up together to check it; nothing was put on a branch"].filter(Boolean).join("; ");
         }
       }
+      if (stopped) note = [note, `a preview deploy couldn't go (${stopped}): only what passed one went on a branch`].filter(Boolean).join("; ");
     }
   }
   if (held.length) await env.DB.prepare("UPDATE dep_watches SET held = ? WHERE owner = ? AND repo = ?").bind([...new Set([...s.held, ...held])].join(","), owner, repo).run();
   // Once tests ran, only what passed them goes on the branch.
-  const take = updates.filter((u) => tested ? (u.status === "kept" || u.status === "fixed") : u.status !== "broke");
-  if (!take.length) return { at: now, checked, updates, ...also, note: [note, "every update broke the tests; nothing was put on a branch"].filter(Boolean).join("; ") };
+  const take = taking();
+  const shown = previews.length ? { previews } : {};
+  if (!take.length) return { at: now, checked, updates, ...also, ...shown, note: [note, previews.length ? "nothing passed both the tests and a preview deploy; nothing was put on a branch" : "every update broke the tests; nothing was put on a branch"].filter(Boolean).join("; ") };
 
   // The lockfile to match, from the install that passed, else one made for it.
   let locked: string | undefined;
@@ -858,7 +960,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
     if (merged.length) note = [note, `the fix was merged into live edits, untested together: ${merged.join(", ")}`].filter(Boolean).join("; ");
     if (skipped.length) note = [note, `left out of the fix, its live edits touch the same lines: ${skipped.join(", ")}`].filter(Boolean).join("; ");
   }
-  return { at: now, checked, updates, ...also, branch, ...(locked !== undefined ? { lock: lock! } : {}), ...(note ? { note } : {}) };
+  return { at: now, checked, updates, ...also, ...shown, branch, ...(locked !== undefined ? { lock: lock! } : {}), ...(note ? { note } : {}) };
 }
 
 /**
@@ -904,6 +1006,7 @@ export async function settings(env: Env, owner: string, repo: string): Promise<S
     on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: list(r.ignore), run_tests: !!r.run_tests,
     fix_with: FIX_HARNESSES.includes(r.fix_with as Harness) ? r.fix_with as Harness : null, fix_tries: r.fix_tries,
     on_fail: list(r.on_fail).filter((x): x is Step => STEPS.includes(x as Step)), chain_tries: r.chain_tries, chain_minutes: r.chain_minutes, chain_usd: r.chain_usd, held: list(r.held),
+    preview: !!r.preview,
   };
 }
 
@@ -938,7 +1041,7 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
 
   if (!p[5] && req.method === "GET") {
     const r = await env.DB.prepare("SELECT last_run, last_report, running_since FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-    return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), malicious: await hitsFor(env, owner, repo) });
+    return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), can_preview: !!runnerFor(env), malicious: await hitsFor(env, owner, repo) });
   }
   if (!p[5] && req.method === "PUT") {
     const b = (await req.json()) as Partial<Settings>;
@@ -964,8 +1067,8 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
       const others = await env.DB.prepare("SELECT COUNT(*) AS n FROM dep_watches WHERE owner = ? AND repo != ? AND enabled = 1").bind(owner, repo).first();
       if ((others?.n as number) >= MAX_WATCHED) return json({ error: `the doctor watches ${MAX_WATCHED} of your repos at most: turn it off on one first` }, 400);
     }
-    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ?, on_fail = ?, chain_tries = ?, chain_minutes = ?, chain_usd = ?, held = ? WHERE owner = ? AND repo = ?")
-      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, onFail.join(","), chainTries, minutes, Math.round(usd * 100) / 100, held.join(","), owner, repo).run();
+    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ?, on_fail = ?, chain_tries = ?, chain_minutes = ?, chain_usd = ?, held = ?, preview = ? WHERE owner = ? AND repo = ?")
+      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, onFail.join(","), chainTries, minutes, Math.round(usd * 100) / 100, held.join(","), s.preview ? 1 : 0, owner, repo).run();
     return json(await settings(env, owner, repo));
   }
   if (p[5] === "run" && req.method === "POST") {

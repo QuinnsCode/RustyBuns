@@ -285,7 +285,11 @@
   .cg-scroll { overflow-x: auto; overflow-y: hidden; padding: 0 4px; }
   .cg path, .cg-key path { fill: none; stroke: var(--border-2); stroke-width: 2; stroke-linecap: round; } .cg path.off { stroke-dasharray: 2 4; }
   .cg g, .cg-key .u, .cg-key .m { cursor: default; } .cg .u, .cg-key .u { fill: var(--fg); } .cg .m, .cg-key .m { fill: var(--accent); }
-  .cg g:hover, .cg g:focus { outline: none; } .cg g:hover > *, .cg g:focus > * { stroke: var(--accent-glow); stroke-width: 3; }
+  .cg g:hover, .cg g:focus { outline: none; } .cg g:hover > *, .cg g:focus > *, .cg g.on > * { stroke: var(--accent-glow); stroke-width: 3; }
+  .cg g[data-hash] { cursor: pointer; }
+  .cg-pick { display: grid; gap: 6px; margin: 4px 12px 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); font-size: 12px; }
+  .cg-pick .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; } .cg-pick .btn { white-space: nowrap; } .cg-pick select { max-width: 14em; }
+  .cg-pick .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gm-key { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 12px; border-top: 1px solid var(--border); font-size: 12px; }
   .gm-key span { display: inline-flex; align-items: center; gap: 6px; } .gm-key svg { width: 28px; height: 6px; overflow: visible; }
   .gm-key path { fill: none; stroke: var(--brown); stroke-width: 1.6; stroke-linecap: round; } .gm-key path.fork { stroke-dasharray: 2 5; } .gm-key path.hot { stroke: var(--accent); }
@@ -721,6 +725,7 @@
   .gitpic .dots i.x { background: none; border: 1.5px dashed var(--accent); opacity: .6; } .gitpic .dots i.p { background: var(--bg); border: 3px solid var(--accent); }
   .gitpic .dots i.k, .gitpic .dots i.w { border-radius: 2px; transform: rotate(45deg) scale(.85); } .gitpic .dots i.k { background: var(--accent); } .gitpic .dots i.w { background: var(--fg); }
   .gitpic .dots i.k::before, .gitpic .dots i.w::before { display: none; }
+  .gitpic .dots i.r { background: repeating-linear-gradient(135deg, var(--accent) 0 2px, var(--bg) 2px 4px); border: 1.5px solid var(--accent); } .gitpic .dots i.c { background: var(--accent); box-shadow: inset 0 0 0 2px var(--fg); }
   .gitpic .say { flex-basis: 100%; color: var(--muted); }
   #mirror .gitpic { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); }
   #gitpop { position: fixed; z-index: 60; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--bg); box-shadow: 0 4px 16px rgb(0 0 0 / .12); pointer-events: none; max-width: min(420px, calc(100vw - 32px)); }
@@ -2069,17 +2074,59 @@ async function gitMap(c) {
     st.querySelector(".gm-wires").innerHTML = `<defs><marker id="gm-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L7 4L1 7"/></marker><marker id="gm-tail" viewBox="0 0 8 8" refX="1" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M7 1L1 4L7 7"/></marker></defs>${d}`;
   };
   wires();
-  if (graph?.commits?.length) {
+  const drawGraph = (graph) => {
+    if (!graph?.commits?.length) return;
     const g = $("#gm-graph");
-    g.innerHTML = commitGraph(graph);
+    g.innerHTML = commitGraph(graph) + `<div class="cg-pick" id="cg-pick" data-pics hidden></div>`;
     g.hidden = false;
     icons();
     // Newest on the right: start there.
     const sc = g.querySelector(".cg-scroll"); sc.scrollLeft = sc.scrollWidth;
-  }
+    g.commits = new Map(graph.commits.map((c) => [c.hash, c]));
+  };
+  drawGraph(graph);
+  // A dot, clicked: revert it on main, or cherry-pick it onto main or an open branch (#880).
+  const open = branches.filter((b) => b.status === "open").map((b) => b.name);
+  const pickCard = (hash) => {
+    const c = $("#gm-graph").commits?.get(hash), box = $("#cg-pick");
+    if (!c || !box) return;
+    $("#gm-graph").querySelectorAll(".cg g.on").forEach((d) => d.classList.remove("on"));
+    $("#gm-graph").querySelector(`.cg g[data-hash="${CSS.escape(hash)}"]`)?.classList.add("on");
+    const short = hash.slice(0, 7), onto = open[0] ?? "main";
+    box.innerHTML = `<div class="row"><code>${esc(short)}</code><span class="what" title="${esc(c.message)}">${esc(c.message)}</span><span class="grow"></span><button class="btn ghost" data-cg="x" title="close">${icon("x")}</button></div>
+      ${r.canWrite ? `<div class="row"><button class="btn" data-cg="revert" title="a new commit on main that undoes this one"${picAttr("revert", { short })}>${icon("undo-2")}Revert</button>
+      <button class="btn" data-cg="pick" title="take this commit's changes again"${picAttr("pick", { short, onto })}>${icon("cherry")}Cherry-pick</button><select id="cg-onto" title="onto">${["main", ...open].map((b) => `<option${b === onto ? " selected" : ""}>${esc(b)}</option>`).join("")}</select></div>
+      <div class="gitpic-slot" data-pic="${esc(JSON.stringify(["revert", { short }]))}">${gitPic(["revert", { short }])}</div>` : `<span class="muted">The crew can revert it or cherry-pick it.</span>`}`;
+    box.hidden = false;
+    icons();
+    box.querySelector("#cg-onto")?.addEventListener("change", (e) => {
+      const b = box.querySelector('[data-cg="pick"]'), pic = JSON.stringify(["pick", { short, onto: e.target.value }]);
+      b.dataset.pic = pic; box.querySelector(".gitpic-slot").dataset.pic = pic; box.querySelector(".gitpic-slot").innerHTML = gitPic(pic);
+    });
+    box.onclick = async (e) => {
+      const b = e.target.closest("[data-cg]");
+      if (!b) return;
+      if (b.dataset.cg === "x") { box.hidden = true; return; }
+      const kind = b.dataset.cg, to = kind === "pick" ? box.querySelector("#cg-onto").value : "main";
+      b.disabled = true;
+      try {
+        const out = await api(`/repos/${owner}/${repo}/commits/${hash}/${kind}`, to === "main" ? {} : { branch: to });
+        const n = out.files.length, files = `${n} file${n === 1 ? "" : "s"}`;
+        toast(kind === "revert" ? `Reverted ${short}: ${files} on main` : to === "main" ? `Picked ${short} onto main: ${files}` : `Picked ${short} onto ${to}: ${files}, waiting for its merge`, 3600);
+        if (to === "main") drawGraph(await api(`/repos/${owner}/${repo}/graph`).catch(() => null));
+        else box.hidden = true;
+      } catch (err) { b.disabled = false; toast(err.message, 6000); }
+    };
+  };
+  el.addEventListener("keydown", (e) => {
+    const d = e.key === "Enter" || e.key === " " ? e.target.closest?.(".cg g[data-hash]") : null;
+    if (d) { e.preventDefault(); pickCard(d.dataset.hash); }
+  });
   el.addEventListener("scroll", wires, true);
   el.addEventListener("click", (e) => {
     e.stopPropagation();
+    const d = e.target.closest(".cg g[data-hash]");
+    if (d) return pickCard(d.dataset.hash);
     if (e.target.closest("#gm-x")) return close();
     if (e.target.closest("#gm-files")) { close(); return wireMap(c.view ? c : { ...c, view: "r" }); }
     if (e.target.closest("a.gm-tile[href^='#']")) close();
@@ -2105,7 +2152,7 @@ const commitGraph = (g) => {
     const x = X(c.x), y = Y(c.lane);
     const say = `${c.hash.slice(0, 7)} ${c.message}\n${c.author}, ${new Date(c.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${c.up ? "upstream's" : "this copy's"}${c.merge ? " merge" : ""}`;
     const shape = c.merge ? `<rect x="${x - 4.5}" y="${y - 4.5}" width="9" height="9" rx="1.5" transform="rotate(45 ${x} ${y})"/>` : `<circle cx="${x}" cy="${y}" r="5"/>`;
-    return `<g class="${c.up ? "u" : "m"}" tabindex="0" aria-label="${esc(say)}"><title>${esc(say)}</title>${shape}</g>`;
+    return `<g class="${c.up ? "u" : "m"}" tabindex="0" data-hash="${esc(c.hash)}" aria-label="${esc(say)}"><title>${esc(say)}</title>${shape}</g>`;
   };
   const main = dots.filter((c) => c.lane === 0).length, side = dots.length - main;
   const w = X(Math.max(0, dots.length - 1)) + PAD + 8, h = Y(lanes - 1) + PAD;
@@ -3158,6 +3205,7 @@ const views = {
         <div class="row">releases at least <input name="min_age_days" aria-label="minimum release age in days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
         <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
         <label title="${d.can_test ? "" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code)</span></label>
+        <label title="${d.can_preview ? "Each counts against your preview deploys, and is logged with them" : "Preview deploys run on the desktop app, with your own logins"}"><input type="checkbox" name="preview"${s.preview ? " checked" : ""}${d.can_preview ? "" : " disabled"}> Then deploy what passed as a preview, check it answers, and tear it down <span class="muted">(costs deploy time)</span></label>
         <div class="row" title="The connected AI for the 🤖 fix and 🔎 web search steps below">AI for 🤖 🔎 <select name="fix_with" aria-label="who fixes a break"${d.can_test ? "" : " disabled"}>${opt("", "none", s.fix_with ?? "")}${["claude", "pi", "opencode"].map((h) => opt(h, h, s.fix_with ?? "")).join("")}</select>
           up to <input name="fix_tries" aria-label="fix tries" type="number" min="1" max="5" value="${s.fix_tries}" style="width:3em"> tries a step</div>
         <div class="row">on a break, in order: <span class="chain" id="deps-chain"></span></div>
@@ -3169,6 +3217,7 @@ const views = {
       ${rep ? `<div class="run"><span class="st">last checked ${new Date(rep.at).toLocaleString()} · ${rep.checked} package${rep.checked === 1 ? "" : "s"}</span>
         ${rep.updates.map((u) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level}${u.fixes ? ` · <b class="vuln">fixes ${u.fixes.map(esc).join(", ")}</b>` : ""} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? (u.was ? `broke the tests at ${esc(u.was)}; rolled back, tests pass` : "tests pass") : u.status === "held" ? "broke the tests, held back" : "untested"}${u.chain?.length ? ` · ${u.chain.map((c) => `<span title="${esc(DEP_STEPS[c.step][1])}: ${c.ok ? "worked" : esc(c.note ?? "didn't work")}${c.usd ? ` ($${c.usd.toFixed(2)})` : ""}">${DEP_STEPS[c.step][0]}${c.ok ? "✓" : c.note ? "–" : "✗"}</span>`).join(" ")}${u.chain.some((c) => c.ok) ? "" : " gave up"}` : ""}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
         ${(rep.exposed ?? []).map((x) => `<span><b class="vuln">exposed</b> <code>${esc(x.name)}</code> ${esc(x.version)} <span class="muted">${x.ids.map(esc).join(", ")} · no update here fixes it</span></span>`).join("")}
+        ${(rep.previews ?? []).map((p) => `<span title="${esc(p.stage)}${p.url ? ` · ${esc(p.url)}` : ""}${p.note ? ` · ${esc(p.note)}` : ""}">${icon("rocket")} preview of ${p.names.map((n) => `<code>${esc(n)}</code>`).join(", ")} <span class="muted">· ${p.ok ? "answered, torn down" : `${esc(p.failed ?? "it")} failed`}</span></span>`).join("")}
         ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>${rep.lock ? `, with <code>${esc(rep.lock)}</code> to match` : ""}, ready to review above.</span>` : ""}
         ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}
       ${(d.malicious ?? []).length ? `<div class="run">${d.malicious.map((h) => `<span><b class="vuln">malicious</b> <code>${esc(h.name)}</code> ${esc(h.spec)} <span class="muted">${h.path !== "package.json" ? `${esc(h.path.replace(/\/package\.json$/, ""))} · ` : ""}<a href="https://osv.dev/vulnerability/${encodeURIComponent(h.id)}" target="_blank" rel="noopener">${esc(h.id)}</a>${h.summary ? ` · ${esc(h.summary)}` : ""} · remove it or pin a clean version</span></span>`).join("")}</div>` : ""}
@@ -3188,7 +3237,7 @@ const views = {
     drawChain();
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target;
-      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value }, "PUT"); toast("Saved"); }
+      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, preview: f.preview.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value }, "PUT"); toast("Saved"); }
       catch (err) { toast(err.message); }
     });
     $("#deps-run").addEventListener("click", async () => {
@@ -4874,8 +4923,10 @@ const GITPICS = {
   merge: ({ branch }) => [[["main", "oou"], [branch, "oomm"]], [["main", "oouk"], [branch, "oomm"]], "The branch's lines land on main. Commit the files to put them in git."],
   push: ({ branch, ref }) => [[[`upstream's ${ref}`, "oo"], [branch, "oomm"]], [[`upstream's ${ref}`, "oomm"], [branch, "oomm"]], `${branch}'s commits go up as upstream's ${ref}.`],
   pull: ({ branch, ref }) => [[[`upstream's ${ref}`, "oouu"], [branch, "oomm"]], [[`upstream's ${ref}`, "oouu"], [branch, "oouumm"]], `What upstream's ${ref} got since comes onto ${branch}.`],
+  revert: ({ short }) => [[["main", "ocm"], [`${short}'s lines`, "c"]], [["main", "ocmr"], [`${short}'s lines`, "r"]], `A new commit on main undoes ${short}'s changes, line by line; what came after it stays.`],
+  pick: ({ short, onto = "main" }) => [[[short, "oc"], [onto, "oom"]], [[short, "oc"], [onto, "oomc"]], onto === "main" ? `${short}'s changes land on main again, line by line, as a new commit.` : `${short}'s changes land on ${onto}, line by line, and reach main when it merges.`],
 };
-const GITDOT = { o: "a commit both sides have", u: "upstream's commit", m: "this copy's commit", p: "a commit with private lines", x: "off the branch, kept by a ref", k: "a merge: your lines win", w: "a merge: upstream's lines win" };
+const GITDOT = { o: "a commit both sides have", u: "upstream's commit", m: "this copy's commit", p: "a commit with private lines", x: "off the branch, kept by a ref", k: "a merge: your lines win", w: "a merge: upstream's lines win", c: "the commit picked, or its changes taken again", r: "a revert: a commit undoing one" };
 /** The picture for `data-pic` (a [kind, options] pair, as JSON). */
 const gitPic = (pic) => {
   const [kind, o = {}] = typeof pic === "string" ? JSON.parse(pic) : pic;

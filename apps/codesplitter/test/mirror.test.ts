@@ -522,8 +522,9 @@ describe("mirrors", () => {
 
   test("the commit graph: upstream's commits black, this copy's orange, and the merge that took both (#871)", async () => {
     const call = await mirrored("graph");
-    await editHere(call, "README", 1, "hi");
+    // Upstream first: a commit here starts its own push, which a push from outside straight after can race for main's ref.
     await upstreamCommit({ "src/b.ts": "export const b = 2\n" }, "add b");
+    await editHere(call, "README", 1, "hi");
     expect((await sync(call)).state).toBe("ok");
     // In step: the merge went up too, so every commit is upstream's, and "add b" is the branch the merge took in.
     const g = await get(call, "/api/repos/ana/up/graph");
