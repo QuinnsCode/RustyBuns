@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { apply, empty, explain, fromText, merge, mergeWords, parseError, text, type Doc, type Resolve } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { markers, settled } from "../src/conflict-agent.ts";
-import { parseResolve } from "../src/branches.ts";
+import { materializeOn, parseResolve } from "../src/branches.ts";
 import { lintMerge } from "../src/lint.ts";
 import { local as boot } from "../src/local.ts";
+import { toFile } from "../src/archive.ts";
 import type { Exec } from "../src/agent-run.ts";
 import type { Tester } from "../src/deps.ts";
 
@@ -310,8 +311,8 @@ describe("found in shadow mode (#1014)", () => {
 
 describe("over the API", () => {
   /** ana's repo r: a.ts with `x(1)` on main changed to `x(2)` and on branch b1 to `x(3)`. */
-  async function app() {
-    const call = await boot({ GH_CLI: "off" });
+  async function app(env: Record<string, string> = {}) {
+    const call = await boot({ GH_CLI: "off", ...env });
     opened.push(call);
     const post = (user: string, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
     await post("ana", "/api/login", { name: "ana" });
@@ -448,5 +449,80 @@ describe("over the API", () => {
 
     const named = await (await post("ana", "/api/repos/ana/r/merges", { branches: ["b1", "gone"] })).json() as any;
     expect(named).toEqual({ merged: [], skipped: [{ branch: "gone", error: "no open branch" }, { branch: "b1", error: "conflicts", files: ["a.ts"] }] });
+  });
+
+  test("leftovers to AI: a merge asks a checked agent on its own, once per conflict, on the cheapest model (#1012)", async () => {
+    const { call, post, file } = await app({ HEAL: "1" });
+    let asked = 0, prompt: string[] = [];
+    call.env.AGENT_EXEC = (async (cmd, cwd) => { asked++; prompt = cmd.args; writeFileSync(join(cwd, "RESOLVE.ts"), "x(2);\nx(3);\n"); return { code: 0, out: "" }; }) as Exec;
+    // Code goes to a person by default: nobody is asked.
+    const person = await (await post("ana", "/api/repos/ana/r/branches/b1/merge", {})).json() as any;
+    expect(person.conflicts[0]).toMatchObject({ path: "a.ts", leftover: "person" });
+    expect(person.conflicts[0].conflicts[0].answer).toBeUndefined();
+    expect(asked).toBe(0);
+
+    await post("ana", "/api/repos/ana/r/files", { path: ".gitattributes", content: "*.ts codesplitter-leftover=ai" });
+    const r = await post("ana", "/api/repos/ana/r/branches/b1/merge", {});
+    expect(r.status).toBe(409);
+    const out = await r.json() as any;
+    const answer = { harness: "claude", model: "haiku", text: "x(2);\nx(3);", ok: true, tests: "skipped: this repo's merge answers aren't tested (its test merges setting)" };
+    expect(out.conflicts[0]).toMatchObject({ path: "a.ts", leftover: "ai" });
+    expect(out.conflicts[0].conflicts[0].answer).toEqual(answer);
+    expect(prompt.slice(-2)).toEqual(["--model", "haiku"]);
+    // Nothing lands on its own, and merging again asks nothing until the conflict changes.
+    expect(await file()).toBe("const a = 1;\nx(2);");
+    await post("ana", "/api/repos/ana/r/branches/b1/merge", {});
+    expect(asked).toBe(1);
+    const review = await (await call("ana", "/api/repos/ana/r/branches/b1")).json() as any;
+    expect(review.files.find((f: any) => f.path === "a.ts").conflicts[0].answer).toEqual(answer);
+    const rev = (await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc).rev;
+    await post("ana", "/api/repos/ana/r/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L2", base: rev, text: "x(4);" }] });
+    await post("ana", "/api/repos/ana/r/branches/b1/merge", {});
+    expect(asked).toBe(2);
+
+    // Taking it merges, and the kept answers go with the branch.
+    expect((await post("ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.ts": { L2: { text: "x(2);\nx(3);" } } } })).status).toBe(200);
+    expect((await call.env.DB.prepare("SELECT COUNT(*) AS n FROM leftover_answers").first() as { n: number }).n).toBe(0);
+  });
+
+  test("leftovers to AI where agents don't run on their own: the conflict goes to a person, saying why", async () => {
+    const { call, post } = await app();
+    let asked = 0;
+    call.env.AGENT_EXEC = (async () => { asked++; return { code: 0, out: "" }; }) as Exec;
+    await post("ana", "/api/repos/ana/r/files", { path: ".gitattributes", content: "a.ts codesplitter-leftover=ai" });
+    const out = await (await post("ana", "/api/repos/ana/r/branches/b1/merge", {})).json() as any;
+    expect(out.conflicts[0].note).toStartWith("no agent asked: self-healing runs with hosted agents");
+    expect(asked).toBe(0);
+  });
+
+  test("leftovers to CI: a lockfile both changed is made again in a throwaway clone and merged whole (#1012)", async () => {
+    const { call, post } = await app();
+    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "dependencies": { "a": "1" }\n}' });
+    await post("ana", "/api/repos/ana/r/files", { path: "bun.lock", content: "a@1" });
+    for (const path of ["package.json", "bun.lock"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "deps" });
+    await post("ana", "/api/repos/ana/r/branches", { name: "dep" });
+    const pkg = (await (await call("ana", "/api/repos/ana/r/do/file?path=package.json")).json() as Doc).lines[1]!;
+    await post("ana", "/api/repos/ana/r/do/ops?path=package.json&branch=dep", { ops: [{ kind: "set", line: pkg.id, base: pkg.rev, text: '  "dependencies": { "a": "1", "b": "1" }' }] });
+    // The lockfile is locked to live edits (#1011): both sides change it as a push or a regeneration does, at the file.
+    const relock = (text: string, branch?: string) => toFile(call.env, "ana", "r", "bun.lock", "ana", "ops", { method: "POST", body: JSON.stringify({ ops: [{ kind: "set", line: "L1", base: 1, text }] }) }, "", branch);
+    expect(await materializeOn(call.env, "ana", "r", "dep", "bun.lock")).toEqual({ ok: true });
+    expect((await relock("a@1 b@1", "dep")).ok).toBe(true);
+    expect((await relock("a@1.0.1")).ok).toBe(true);
+
+    const ran: { files: Record<string, string>; test: boolean; lock: string | null }[] = [];
+    let lock: string | null = null;
+    call.env.DEPS_TESTER = (async (_remote: string, files: Record<string, string>, o: { test: boolean; lock: string | null }) => {
+      ran.push({ files, test: o.test, lock: o.lock });
+      return lock === null ? { ok: false, out: "error: no such package b" } : { ok: true, out: "", lock };
+    }) as Tester;
+    const failed = await post("ana", "/api/repos/ana/r/branches/dep/merge", {});
+    expect(failed.status).toBe(409);
+    expect((await failed.json() as any).conflicts).toEqual([{ path: "bun.lock", leftover: "ci", note: "couldn't be regenerated: error: no such package b", conflicts: [expect.objectContaining({ line: "file", whole: true })] }]);
+    // Main's lockfile and the manifest as merged, a lockfile-only install.
+    expect(ran[0]).toEqual({ files: { "package.json": '{\n  "dependencies": { "a": "1", "b": "1" }\n}', "bun.lock": "a@1.0.1\n" }, test: false, lock: "bun.lock" });
+
+    lock = "a@1.0.1 b@1\n";
+    expect((await post("ana", "/api/repos/ana/r/branches/dep/merge", {})).status).toBe(200);
+    expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=bun.lock")).json() as Doc)).toBe("a@1.0.1 b@1");
   });
 });
