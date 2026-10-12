@@ -74,7 +74,8 @@ describe("the diff and patch written in JS", () => {
     await sh(`git am -q ${join(root, "x.patch")}`, dir);
     expect(await Bun.file(join(dir, "x.txt")).text()).toBe("a\nB\n");
     expect(await sh("git ls-files", dir)).toBe("new/y.txt\nx.txt\n");
-    expect(await sh("git log -1 --format='%an <%ae>|%aI|%B'", dir)).toBe("Bo <bo@example.com>|2026-10-12T16:00:00+00:00|B is big\n\nBecause.\n\nCo-authored-by: Ana <ana@x>\n\n");
+    // %at, not %aI: git versions spell UTC as Z or +00:00.
+    expect(await sh("git log -1 --format='%an <%ae>|%at|%B'", dir)).toBe(`Bo <bo@example.com>|${Date.UTC(2026, 9, 12, 16, 0, 0) / 1000}|B is big\n\nBecause.\n\nCo-authored-by: Ana <ana@x>\n\n`);
   });
 });
 
