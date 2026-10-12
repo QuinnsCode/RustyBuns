@@ -173,6 +173,13 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "Someone pasted you a codeSplitter invite link (…/invite/csi_…)? Pass it as invite. as: agent makes you a handle of your own (agent-<name>-xxxx) and a write API token, shown once, with the line that connects your harness's MCP client as that agent: use it, so your lines are blamed on you. as: person joins as whoever this token is.",
     body: obj({ invite: str("the invite link, or its csi_… token"), as: { type: "string", enum: ["agent", "person"] }, name: str("an agent's handle's middle part, like linter"), harness: { type: "string", enum: ["claude", "codex", "pi", "opencode"] } }, ["invite", "as"]),
     ok: loose("{owner, repo, url, joined, door, and for a new agent: token, expires_at, mcp: {claude, codex, pi, opencode}, next}"), status: 201 } },
+  [`${repo}/upstream`]: { get: { id: "upstream_status", summary: "Where a fork dug from GitHub stands with its upstream: the commit it's at, upstream's tip, and how many commits behind (asks GitHub when it last did over 10 minutes ago)", tag: "Repos", open: true,
+    ok: loose("{listens: false} for a repo that isn't a dug GitHub fork; else {listens, upstream, repo, branch, folder, commit, tip, behind (null when GitHub wouldn't count), heardAt, error?}") } },
+  [`${repo}/upstream/hear`]: { post: { id: "hear_upstream", summary: "Ask GitHub now whether a dug fork's upstream moved on (the owner)", tag: "Repos",
+    ok: loose("the same as upstream_status") } },
+  [`${repo}/upstream/take`]: { post: { id: "take_upstream", summary: "Open what upstream changed since the fork's commit as a branch, to review and merge; the fork then stands at upstream's tip (the owner)", tag: "Branches",
+    body: obj({ name: str("the branch to open; upstream-<sha> if left out") }),
+    ok: loose("{name, from, commit, commits, files, deleted, skipped}: the branch, the upstream commits it spans, and its paths (binary ones are skipped)"), status: 201 } },
   [`${repo}/branches`]: {
     get: { id: "list_branches", summary: "A repo's branches", tag: "Branches", open: true, ok: arr(ref("Branch")) },
     post: { id: "start_branch", summary: "Open a branch, named as git allows (slashes, dots, capitals; no spaces): edit its files with ?branch=, then merge it (the crew)", tag: "Branches",
