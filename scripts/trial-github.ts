@@ -45,7 +45,7 @@ for (const d of ["clones", "logs", "data"]) mkdirSync(join(OUT, d), { recursive:
 type App = { repo: string; sub: string; version?: string; stars?: number; pushed?: string };
 type Prof = { bootMs: number; p50: number; p95: number; max: number; rssMb: number; profile?: string };
 type ModeResult = { stage: string; status?: number; bytes?: number; text?: string; error?: string; prof?: Prof };
-type Result = App & { fakeSecrets?: string[]; pm?: string; init?: string; error?: string; modes: Record<string, ModeResult> };
+type Result = App & { fakeSecrets?: string[]; traits?: string[]; pm?: string; init?: string; error?: string; modes: Record<string, ModeResult> };
 
 /** The version range an app's package.json gives <dep>, or undefined. */
 export function depVersion(pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }, dep: string) {
@@ -293,6 +293,7 @@ async function trial(app: App): Promise<Result> {
     r.fakeSecrets = Object.keys(fakes);
     appendFileSync(log, `\nfake secrets: ${Object.keys(fakes).join(" ")}\n`);
   }
+  r.traits = traits(dir, root);
   let { pm, at } = packageManager(dir, root);
   let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3, "net");
   // an npm lockfile that npm itself can't install (peer conflicts): pnpm reads package.json alone
@@ -331,8 +332,54 @@ async function trial(app: App): Promise<Result> {
   return r;
 }
 
+/** n apps across kinds, not just the long tail of small ones: big and other monorepo apps, popular,
+ *  mid and unstarred standalone apps, an equal share each, spread within each kind. A short kind's
+ *  unused share goes to the others. */
+export function stratified<T extends { sub: string; stars?: number }>(apps: T[], n: number): T[] {
+  const kinds: ((a: T) => boolean)[] = [
+    (a) => !!a.sub && (a.stars ?? 0) >= 20, (a) => !!a.sub && (a.stars ?? 0) < 20,
+    (a) => !a.sub && (a.stars ?? 0) >= 10, (a) => !a.sub && (a.stars ?? 0) >= 1 && (a.stars ?? 0) < 10, (a) => !a.sub && !(a.stars ?? 0),
+  ];
+  const groups = kinds.map((k) => apps.filter(k));
+  const take = groups.map(() => 0);
+  for (let left = n; left > 0;) {
+    const open = groups.map((g, i) => i).filter((i) => take[i]! < groups[i]!.length);
+    if (!open.length) break;
+    for (const i of open) if (left > 0) { take[i]!++; left--; }
+  }
+  return groups.flatMap((g, i) => { const k = take[i]!, step = g.length / Math.max(k, 1); return Array.from({ length: k }, (_, j) => g[Math.floor(j * step + step / 2)]!); });
+}
+
+/** What kind of app it is, read from its package.json and Vite config: deploy target, auth, database, monorepo. */
+export function traits(dir: string, root: string): string[] {
+  const read = (f: string) => { try { return readFileSync(join(dir, f), "utf8"); } catch { return ""; } };
+  const pkg = (() => { try { return JSON.parse(read("package.json")); } catch { return {}; } })();
+  const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).join(" ");
+  const vite = ["vite.config.ts", "vite.config.mts", "vite.config.js", "app.config.ts"].map(read).join("\n");
+  const has = (re: RegExp) => re.test(deps);
+  const t: string[] = [];
+  const preset = vite.match(/\bpreset\s*:\s*["']([\w-]+)["']/)?.[1];
+  t.push(/cloudflare\(/.test(vite) || existsSync(join(dir, "wrangler.jsonc")) || existsSync(join(dir, "wrangler.toml")) ? "cloudflare"
+    : preset ? preset : /\bnitro\(/.test(vite) ? "node" : /netlify/.test(deps + vite) ? "netlify" : /vercel/.test(deps + vite) ? "vercel" : "start-only");
+  if (has(/@clerk\//)) t.push("clerk"); if (has(/\bbetter-auth\b/)) t.push("better-auth"); if (has(/next-auth|@auth\//)) t.push("authjs");
+  if (has(/@supabase\//)) t.push("supabase"); if (has(/\bconvex\b/)) t.push("convex");
+  if (has(/@prisma\/client|\bprisma\b/)) t.push("prisma"); if (has(/drizzle-orm/)) t.push("drizzle"); if (has(/@neondatabase|\bpostgres\b|\bpg\b/)) t.push("postgres");
+  if (dir !== root) t.push("monorepo");
+  return t;
+}
+
 const cell = (m?: ModeResult) => !m ? "" : m.stage === "works" ? `✅ ${m.status}` : m.stage === "skipped" ? "—" : `❌ ${m.stage}`;
 const note = (r: Result) => (r.error ?? Object.values(r.modes).find((m) => m.error)?.error ?? "").split("\n").at(-1)!.replace(/\|/g, "\\|").replace(/\/[^\s"']*\/(clones|node_modules)\//g, "…/").slice(0, 140);
+/** Pass rates by trait (deploy target, auth, database, monorepo): which kinds of app lag. */
+function byTrait(rs: Result[]): string[] {
+  const names = [...new Set(rs.flatMap((r) => r.traits ?? []))].sort();
+  if (!names.length) return [];
+  const works = (r: Result) => MODES.some((m) => r.modes[m]?.stage === "works");
+  return ["", "## By kind of app", "", "| trait | apps | install | serve / |", "|---|---|---|---|",
+    ...names.map((t) => { const b = rs.filter((r) => r.traits?.includes(t)); const i = b.filter((r) => !r.error);
+      return `| ${t} | ${b.length} | ${i.length} | ${b.filter(works).length} of ${i.length} |`; })];
+}
+
 /** Pass rates by how long ago the repo was last pushed to: is a failure Rusty Buns, or an abandoned app? */
 function freshness(rs: Result[]): string[] {
   const dated = rs.filter((r) => r.pushed);
@@ -353,7 +400,7 @@ function summary(rs: Result[]) {
     MODES.map((m) => `${m}: ${ok(m)}/${rs.length} serve /`).join(" · "), "",
     `| app | version | ${MODES.join(" | ")} | first error |`, `|---|---|${MODES.map(() => "---|").join("")}---|`,
     ...rs.map((r) => `| [${r.repo}${r.sub ? `:${r.sub}` : ""}](https://github.com/${r.repo}${r.sub ? `/tree/HEAD/${r.sub}` : ""}) | ${r.version ?? ""} | ${MODES.map((m) => cell(r.modes[m]) || (r.error ? `❌ ${r.error.split(":")[0]}` : "")).join(" | ")} | ${note(r)} |`),
-    ...freshness(rs),
+    ...freshness(rs), ...byTrait(rs),
     ...(o.prof ? ["", "## Perf (dev host, this machine)", "", "Boot is spawn to the first page; latency is 200 sequential GETs of /.", "",
       "| app | mode | boot | p50 | p95 | max | rss | page |", "|---|---|---|---|---|---|---|---|",
       ...rs.flatMap((r) => Object.entries(r.modes).filter(([, m]) => m.prof).map(([mode, m]) =>
@@ -371,7 +418,7 @@ if (import.meta.main) {
   if (o.dep && !o.from) apps.push(...await search(o.dep));
   if (!apps.length) throw new Error("usage: bun scripts/trial-github.ts [--dep <name> [--major <n>]] [owner/repo[:subdir] ...]");
   if (o.limit) apps = apps.slice(0, Number(o.limit));
-  if (o.sample && Number(o.sample) < apps.length) { const n = Number(o.sample), step = apps.length / n; apps = Array.from({ length: n }, (_, i) => apps[Math.floor(i * step + step / 2)]!); }
+  if (o.sample && Number(o.sample) < apps.length) apps = stratified(apps, Number(o.sample));
   if (o.list) {
     for (const a of apps) console.log(`${String(a.stars ?? "").padStart(6)}  ${a.pushed ?? "          "}  ${(a.version ?? "").padEnd(16)}  ${a.repo}${a.sub ? `:${a.sub}` : ""}`);
     console.log(`${apps.length} apps`);
