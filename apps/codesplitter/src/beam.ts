@@ -1,3 +1,4 @@
+// Layout: beams: a git branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox
 // Beam: a branch's stack of commits, cleaned up into one commit and handed to
 // someone. You worked on a git branch (pushed here with the Push back remote, or
 // in a worktree): a patch, its fixups, an agent's follow-ups. Beaming it

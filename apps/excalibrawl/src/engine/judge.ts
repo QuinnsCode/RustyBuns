@@ -1,6 +1,6 @@
 // Clef as the referee: once per side at the end of a fight, how clearly the drawing shows the
 // prompt and how well it's made, 0 to 4 each. The bake-off scores its setups the same way. One
-// Clef call a side, a fraction of a cent. It can't read text: the rasterizer draws it as a bar.
+// Clef call a side, a fraction of a cent. Text is drawn in a 5×7 bitmap font, so it can read a title.
 
 import { snapshot } from "./raster.ts";
 import type { Bounds, SkeletonEl } from "./types.ts";

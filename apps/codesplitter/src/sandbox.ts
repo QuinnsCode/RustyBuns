@@ -1,3 +1,4 @@
+// Layout: the container Durable Object hosted agents run in
 // Hosted agents: a Worker can't start the agents' CLIs (native programs that
 // run shell commands; an isolate has node:fs but no processes), so the agent
 // runs in a container (sandbox/Dockerfile: each CLI, plus a small server). The

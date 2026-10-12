@@ -1,3 +1,4 @@
+// Layout: the line model: ops, conflicts, replay. Pure functions
 // A file is an ordered list of lines with stable ids, plus an append-only log
 // of ops against those ids. Pure functions: the Durable Object owns the state,
 // the tests and the agents demo drive these directly.

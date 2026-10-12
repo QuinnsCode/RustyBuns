@@ -169,6 +169,33 @@ test("serve: rebind keeps the port and the open sockets", async () => {
   await shell.stop();
 });
 
+test("serve: a keep-alive socket on the old listener is told to close after a rebind (#975)", async () => {
+  const shell = serve({});
+  let n = 0;
+  shell.mount({ async fetch(req) {
+    if (new URL(req.url).pathname === "/rebind") shell.rebind({ hostname: ++n % 2 ? "0.0.0.0" : "127.0.0.1" });
+    return new Response("ok");
+  } }, {});
+  const post = (p: string) => `POST ${p} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n`;
+  // A keep-alive client sends its next request the moment a response lands. The old
+  // listener closes the socket under it, so the rebind response must say Connection: close.
+  const around = () => new Promise<string>(async (res) => {
+    let buf = "";
+    await Bun.connect({ hostname: "127.0.0.1", port: shell.port, socket: {
+      open(s) { s.write(post("/x") + post("/rebind")); },   // two requests on one socket around the rebind
+      data(s, d) { buf += d; if (buf.split("\r\n\r\nok").length === 3) s.write(post("/x")); },
+      close() { res(buf); },
+      error(_s, e) { res(String(e)); },
+    } });
+  });
+  for (let i = 0; i < 10; i++) {
+    const [before, after] = (await around()).split(/(?=HTTP\/1\.1 )/);
+    expect(before).not.toMatch(/^connection: close/im);   // still the live listener: keep-alive as usual
+    expect(after).toMatch(/^connection: close/im);
+  }
+  await shell.stop();
+});
+
 test("serve: another local page's request carries the cookie but not our Origin, and is refused", async () => {
   const shell = serve({ token: "t0k" });
   shell.mount({ async fetch() { return new Response("ok"); } }, {});

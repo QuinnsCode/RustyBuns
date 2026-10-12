@@ -1,3 +1,4 @@
+// Layout: the game's noodle monsters: finds a file's type guards and their line ranges
 // The noodle monsters: a file's type guards (`isRecord(x): x is Record<…>` and
 // friends), found when the walls are built, so the game can turn each one into
 // a boss made of its own lines. `isRecord` is the big one; any other guard is a

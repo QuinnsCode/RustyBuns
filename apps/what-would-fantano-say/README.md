@@ -7,8 +7,24 @@ Pick a track, drag to your best 15 seconds, and get a parody review in the style
 ## How a review works
 
 1. **On the phone** (`src/app/Critic.tsx`, `src/analyze.ts`, `src/clip.ts`): the browser decodes the file at 16 kHz mono. That covers anything it can play: mp3, wav, m4a/aac, flac, ogg/opus, and the audio in mp4/mov/webm. When it can't (wma, ALAC on Chrome, odd aiff), `src/decode.ts` falls back to **ffmpeg.wasm**, still on the device: `src/app/ffmpeg.ts` is its own chunk, imported only after a decode fails, and fetches the pinned ~30 MB core from jsDelivr (too big for Workers assets) once per visit. The first load never pays for it. It then measures tempo, loudness, dynamic range, bass and brightness, suggests the loudest 15 s, and lets you drag the window and preview it. Only that clip leaves the device, as a 480 KB WAV.
-2. **On the Worker** (`src/api.ts`): the numbers narrow twelve hand-written boxes (`src/boxes.ts`) to the six nearest. **Clef-omni**, Cloudflare's audio-capable decision model on Workers AI, listens to the clip and answers three typed questions (`src/judge.ts`): which of those six boxes it is, how well made, and how original. It returns probabilities, not text, so nobody can talk it into saying anything.
-3. **The text** (`src/write.ts`) comes from templates: Clef's answers set the box and the tone, and the phone's numbers set the best and worst bits. The same clip always gets the same review.
+2. **On the Worker** (`src/api.ts`): the numbers narrow twelve boxes (`src/boxes.ts`, see [the boxes](#the-boxes)) to the six nearest. **Clef-omni**, Cloudflare's audio-capable decision model on Workers AI, listens to the clip and answers three typed questions (`src/judge.ts`): which of those six boxes it is, how well made, and how original. It returns probabilities, not text, so nobody can talk it into saying anything.
+3. **The text** (`src/write.ts`) comes from templates: Clef's answers set the box and the tone, the phone's numbers set the best and worst bits, and it ends on one of his real reviews in that box with a score near this one. The same clip always gets the same review.
+
+## The boxes
+
+Each box is half written by hand, half built from his real reviews. The hand-written half is the parody: the name, the hint words, the numbers a typical track has, and a one-line take. The real half is where his scores for that kind of record land (the middle half of them), the artists he's reviewed most there, and one actual review per score he's given in that box.
+
+`scripts/build-boxes.ts` builds the real half offline, once. Nothing in the app fetches it, and nothing here calls a paid API:
+
+```sh
+bun scripts/build-boxes.ts            # or: bun scripts/build-boxes.ts path/to/reviews.csv
+```
+
+- **Scores** come from [andrewjleung/tnd-reviews](https://github.com/andrewjleung/tnd-reviews) (MIT), a public CSV of about 2,650 scored reviews with their genres, pinned to one commit and checked by hash. Each album goes in the box of its first genre that a rule in `RULES` matches. About one in eight has only joke genres and goes nowhere.
+- **Takes** come from transcripts you pull by hand, one per album, into `data/transcripts/Artist - Title.txt`. The take is what he says just before the score. That folder is gitignored: only the one-line takes get committed, never the transcripts.
+- It writes `data/albums.json` (every album with its score and take, grouped by box; committed, not bundled) and `src/boxes.data.json` (the per-box summary that ships in the Worker, about 14 KB).
+
+Pulling transcripts is the slow, manual part, and the dataset stops in mid-2023. Until some are pulled, the reviews carry scores, not takes.
 
 ## What it costs
 
@@ -31,7 +47,7 @@ With no Turnstile secret, or no AI binding, or a failing call, the review is the
 ```sh
 cd apps/what-would-fantano-say
 bun run dev       # http://localhost:5173: estimated reviews, $0
-bun test test     # analysis, clip, decode fallback, boxes, judge, writer, budget, the door
+bun test test     # analysis, clip, decode fallback, boxes and their build, judge, writer, budget, the door
 ```
 
 ## Deploy
@@ -41,7 +57,3 @@ The only secret is `turnstile/secret` in the 1Password vault `fantano` (`.env.sc
 1. `bunx rustybuns add deploy` once, to install the pinned Alchemy set.
 2. Create a Turnstile widget for the hostname and put its site key in `turnstileSiteKey` in `rustybuns.config.ts`.
 3. `bun run gen` to refresh `wrangler.jsonc` and `.env.schema`, then `bun run deploy`. That runs `rustybuns deploy`, and varlock unlocks the secret with Touch ID.
-
-## Not built yet
-
-- The boxes are written by hand. Building them from the critic's actual reviews is a follow-up.

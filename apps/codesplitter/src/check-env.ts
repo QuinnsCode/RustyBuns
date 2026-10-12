@@ -1,3 +1,4 @@
+// Layout: what a check's command sees: a scrubbed environment, its own empty HOME and TMPDIR, and the sandbox user if one is set
 // What a check's command sees of the machine it runs on (#1010). Merged code is code that runs at
 // home, so a check on the desktop or a runner of your own (scripts/runner.ts) gets none of the
 // owner's logins: a scrubbed environment, an empty HOME and TMPDIR of its own, and, given a

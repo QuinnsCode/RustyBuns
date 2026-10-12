@@ -1,3 +1,4 @@
+// Layout: GitHub: a token from wherever there is one, your repos, digging one up as a fork
 // GitHub: find a token wherever this host has one, list the caller's repos, and
 // dig one up. Digging up is a fork: the repo is cloned into a git repo the
 // caller owns (local git on the desktop, Cloudflare Artifacts on the edge) and

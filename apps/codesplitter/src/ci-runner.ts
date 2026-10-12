@@ -1,3 +1,4 @@
+// Layout: the built-in check runners: the desktop draining its own queue, and the per-repo `CiRunner` that runs each check in a container
 // The runners codeSplitter brings itself (#750), beside the ones you run (scripts/runner.ts):
 // each claims a queued run through the same claimRun as any runner (checks.ts), so one of
 // your own can still take work, and runs it the way scripts/runner.ts does: a fresh clone at

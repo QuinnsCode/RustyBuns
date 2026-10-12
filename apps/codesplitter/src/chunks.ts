@@ -1,3 +1,4 @@
+// Layout: levels too big for Artifacts at all: their text files as chunks in R2, read through the cache
 // Levels too big for an Artifacts repo even from the tarball (#344; Bun and
 // Alchemy fit there after all, #356): their tip from GitHub's
 // tarball, kept as chunks in R2 instead of a git repo. Each chunk packs many

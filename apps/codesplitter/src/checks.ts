@@ -1,3 +1,4 @@
+// Layout: checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results
 // Checks: one place to see whether a change is good, wherever it ran. A check run
 // is one record (migrations/0038_check_runs.sql): a name, the ref and sha it ran
 // on, its runner and its status. Four things write them:
@@ -237,6 +238,13 @@ export async function upstreamMoved(env: Env, owner: string, repo: string, ref: 
   try {
     const s = await checkSettings(env, owner, repo);
     if ((s.where === "github" || s.where === "both") && s.github) await watchGithub(env, owner, repo, ref, sha);
+  } catch {}
+}
+
+/** The mirror took upstream's commits onto `ref`, now at `sha` here: run our own checks on them, when checks run here. */
+export async function upstreamTaken(env: Env, owner: string, repo: string, ref: string, sha: string) {
+  try {
+    if ((await checkSettings(env, owner, repo)).here) await queueHere(env, owner, repo, ref, sha, "upstream");
   } catch {}
 }
 

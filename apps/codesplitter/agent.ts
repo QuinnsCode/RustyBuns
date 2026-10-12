@@ -1,3 +1,4 @@
+// Layout: one real coding agent on one file
 // Plug a coding agent into a file in codeSplitter. The agent is a collaborator
 // on the repo; it reads the file, edits it with its own tools, and its edit
 // lands as line ops, live, with the agent's name on the lines it changed.
