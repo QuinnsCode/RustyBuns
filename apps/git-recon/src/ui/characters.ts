@@ -1,6 +1,6 @@
 // The heads from src/sim/heads.ts, drawn: toy-like and our own, a handful of primitives each
-// in the paper palette (ink, paper, orange, a grey), sat on top of the pillar. Each faces -z,
-// the way the pillar does, and stands on y = 0, the top of the body.
+// in the paper palette (ink, paper, orange, a grey), for the figure's neck slot
+// (heads.ts's buildHead shrinks them to it). Each faces -z, the way the figure does, and stands on y = 0.
 
 import * as THREE from "three";
 
@@ -126,7 +126,7 @@ const BUILD: Record<string, (g: THREE.Group) => void> = {
     }
   },
   balloon(g) {
-    // A striped hot-air balloon with a little basket, held above the pillar on cords.
+    // A striped hot-air balloon with a little basket, held above the neck on cords.
     const env = part(g, ball(0.36), PAPER, 0, 0.62, 0, undefined, [1, 1.15, 1]);
     // Orange gores, children of the envelope so they stretch with it.
     for (let i = 0; i < 4; i++) env.add(new THREE.Mesh(new THREE.SphereGeometry(0.362, 20, 14, (i / 4) * Math.PI * 2, Math.PI / 8), mat(ORANGE)));
@@ -135,7 +135,7 @@ const BUILD: Record<string, (g: THREE.Group) => void> = {
   },
 };
 
-/** A head, ready to sit on top of the body; null for the plain pillar. */
+/** A head, ready to sit on top of the body; null for no toy head. */
 export function headModel(id: string | null): THREE.Group | null {
   const build = id ? BUILD[id] : undefined;
   if (!build) return null;
