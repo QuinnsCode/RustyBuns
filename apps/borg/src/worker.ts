@@ -13,7 +13,7 @@ interface Env {
 }
 interface Socket { send(m: string): void; serializeAttachment(v: unknown): void; deserializeAttachment(): any }
 interface State {
-  storage: { get<T>(k: string): Promise<T | undefined>; put(k: string, v: unknown): Promise<void> };
+  storage: { get<T>(k: string): Promise<T | undefined>; put(k: string, v: unknown): Promise<void>; delete(k: string): Promise<boolean> };
   acceptWebSocket(ws: Socket): void;
 }
 declare const WebSocketPair: { new (): { 0: unknown; 1: Socket } };
@@ -31,6 +31,12 @@ export class Probe {
       this.ctx.acceptWebSocket(pair[1]);
       pair[1].serializeAttachment({ joined: new URL(req.url).searchParams.get("n") });
       return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit);
+    }
+    if (new URL(req.url).pathname === "/big") {
+      // Over the 2 MB value limit of a SQLite-backed object.
+      await this.ctx.storage.put("big", "x".repeat(3_000_000));
+      await this.ctx.storage.delete("big");
+      return Response.json({ stored: 3_000_000 });
     }
     // Read, then write: the edge's input gate keeps two requests from interleaving here.
     const n = ((await this.ctx.storage.get<number>("n")) ?? 0) + 1;
@@ -105,11 +111,58 @@ const checks: Record<string, (env: Env, url: URL) => Promise<Response>> = {
   },
 };
 
+// Each limit goes over one the edge documents, on purpose. Refused is what the edge does;
+// accepted means the target is looser. The edge kills a request over memory or CPU outright,
+// so the suite counts an HTTP error as refused too.
+const limits: Record<string, (env: Env) => Promise<string>> = {
+  // D1: at most 100 bound parameters per query.
+  async "d1-params"(env) {
+    const vs = Array.from({ length: 101 }, (_, i) => i);
+    await env.DB.prepare(`SELECT ${vs.map(() => "?").join(", ")}`).bind(...vs).first();
+    return "101 parameters bound";
+  },
+  // KV: keys up to 512 bytes.
+  async "kv-key"(env) {
+    const k = `borg:${nonce()}:`.padEnd(513, "k");
+    await env.KV.put(k, "v");
+    await env.KV.delete(k);
+    return "513-byte key stored";
+  },
+  // Queues: a message up to 128 KB.
+  async "queue-size"(env) {
+    await env.JOBS.send({ n: `limit-${nonce()}`, pad: "x".repeat(140_000) });
+    return "140 KB message sent";
+  },
+  // Durable Objects (SQLite-backed): a value up to 2 MB.
+  async "do-value"(env) {
+    const r = await env.PROBE.get(env.PROBE.idFromName(`limit-${nonce()}`)).fetch("https://borg/big");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return "3 MB value stored";
+  },
+  // An isolate gets 128 MB.
+  async memory() {
+    const held = Array.from({ length: 200 }, () => new Uint8Array(1 << 20).fill(1));
+    return `${held.length} MB held`;
+  },
+  // 10 ms of CPU on the Free plan, 30 s by default on Paid. Clocks stand still while a Worker
+  // computes, so this counts work, not time: a few hundred ms on a laptop.
+  async cpu() {
+    let x = 1;
+    for (let i = 0; i < 30_000_000; i++) x = (x * 1103515245 + 12345) | 0;
+    return `30M steps done (${x & 1})`;
+  },
+};
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === "/borg/ws") return env.PROBE.get(env.PROBE.idFromName("ws")).fetch(req);
-    if (url.pathname === "/borg") return Response.json(Object.keys(checks));
+    if (url.pathname === "/borg") return Response.json({ checks: Object.keys(checks), limits: Object.keys(limits) });
+    if (url.pathname.startsWith("/borg/limit/")) {
+      const over = limits[url.pathname.slice(12)];
+      if (!over) return new Response("not found", { status: 404 });
+      try { return verdict(false, `accepted: ${await over(env)}`); } catch (e) { return verdict(true, `refused: ${e instanceof Error ? e.message : String(e)}`); }
+    }
     const check = url.pathname.startsWith("/borg/") ? checks[url.pathname.slice(6)] : undefined;
     if (!check) return new Response("not found", { status: 404 });
     try { return await check(env, url); } catch (e) { return verdict(false, `threw: ${e instanceof Error ? e.message : String(e)}`); }

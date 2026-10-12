@@ -54,9 +54,20 @@ export const CHECKS: Record<string, (t: Target) => Promise<Verdict>> = {
   queue,
 };
 
-export async function runBorg(t: Target): Promise<Result[]> {
+// Each one goes over an edge limit on purpose (src/worker.ts says which). ok means the target
+// refused, as the edge does; a twin that accepts is looser than the edge. The edge kills a
+// request over memory or CPU, so an HTTP error counts as refused.
+const over = async (t: Target, name: string): Promise<Verdict> => {
+  const r = await fetch(`${t.url}/borg/limit/${name}`, { headers: t.headers });
+  return r.ok ? r.json() as Promise<Verdict> : { ok: true, detail: `refused: HTTP ${r.status}` };
+};
+export const LIMITS: Record<string, (t: Target) => Promise<Verdict>> = Object.fromEntries(
+  ["d1-params", "kv-key", "queue-size", "do-value", "memory", "cpu"].map((n) => [n, (t: Target) => over(t, n)]),
+);
+
+export async function runBorg(t: Target, checks = CHECKS): Promise<Result[]> {
   const out: Result[] = [];
-  for (const [check, run] of Object.entries(CHECKS)) {
+  for (const [check, run] of Object.entries(checks)) {
     const t0 = performance.now();
     const v = await run(t).catch((e): Verdict => ({ ok: false, detail: `threw: ${e instanceof Error ? e.message : String(e)}` }));
     out.push({ check, ...v, ms: Math.round(performance.now() - t0) });
@@ -65,4 +76,4 @@ export async function runBorg(t: Target): Promise<Result[]> {
 }
 
 export const formatResults = (rs: Result[]) =>
-  rs.map((r) => `${r.ok ? "✓" : "✗"} ${r.check.padEnd(9)} ${String(r.ms).padStart(5)}ms  ${r.detail}`).join("\n");
+  rs.map((r) => `${r.ok ? "✓" : "✗"} ${r.check.padEnd(10)} ${String(r.ms).padStart(5)}ms  ${r.detail}`).join("\n");
