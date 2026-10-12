@@ -3,7 +3,7 @@
 
 import { $ } from "bun";
 import { mkdir, rm } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys } from "./wrangler.ts";
@@ -20,7 +20,7 @@ import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, fl
 import { infer, readPackageJson } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
-import { jekyllExcludes, staticBuild, type StaticSite } from "./glue/static-site.ts";
+import { jekyllDefaults, jekyllExcludes, staticBuild, type StaticSite } from "./glue/static-site.ts";
 import { copySite, staticSiteAt } from "./glue/site-files.ts";
 import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
@@ -316,8 +316,12 @@ async function initStatic(inf: ReturnType<typeof infer>, site: StaticSite) {
     // A second config file layered on the app's own keeps them out, and serves from / instead of a Pages baseurl.
     const cfgFile = jekyllConfig;
     const own = (Bun as any).YAML.parse(readFileSync(cfgFile, "utf8")) ?? {};
-    await Bun.write("_config.rustybuns.yml", `# Written by rustybuns init: layered on ${cfgFile} for Rusty Buns builds only.\nbaseurl: ""\nexclude: ${JSON.stringify(jekyllExcludes(own.exclude))}\n`);
-    console.log(`wrote _config.rustybuns.yml (baseurl "", and Rusty Buns' files kept out of the site)`);
+    // No Gemfile: GitHub Pages builds it, with a plugin plain Jekyll lacks that gives layout-less pages one.
+    const layouts = existsSync("Gemfile") || !existsSync("_layouts") ? [] : readdirSync("_layouts", { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name.replace(/\.[^.]+$/, ""));
+    const defaults = jekyllDefaults(layouts, own.defaults);
+    await Bun.write("_config.rustybuns.yml", `# Written by rustybuns init: layered on ${cfgFile} for Rusty Buns builds only.\nbaseurl: ""\nexclude: ${JSON.stringify(jekyllExcludes(own.exclude))}\n`
+      + (defaults.length ? `# GitHub Pages' default layouts (jekyll-default-layout), and the site's own defaults after them.\ndefaults: ${JSON.stringify(defaults)}\n` : ""));
+    console.log(`wrote _config.rustybuns.yml (baseurl "", ${defaults.length ? "GitHub Pages' default layouts, " : ""}and Rusty Buns' files kept out of the site)`);
   }
   const bundler = site.kind === "jekyll" && existsSync("Gemfile");
   const build = (out: string) => staticBuild(site, out, { bundler, jekyllConfig, exec: inf.execCmd });

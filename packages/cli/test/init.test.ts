@@ -529,4 +529,22 @@ test("init: a Jekyll site builds through a layered config that keeps Rusty Buns'
   const layer = p.read("_config.rustybuns.yml");
   expect(layer).toContain('baseurl: ""');
   for (const f of ["notes.md", "dist", "desktop", "rustybuns.config.ts", "package.json"]) expect(layer).toContain(`"${f}"`);
+  // No Gemfile means GitHub Pages, whose default-layout plugin gives a page with no layout one.
+  expect((Bun as any).YAML.parse(layer).defaults).toEqual([
+    { scope: { path: "", type: "pages" }, values: { layout: "default" } },
+    { scope: { path: "", type: "posts" }, values: { layout: "default" } },
+  ]);
+});
+
+test("init: a Jekyll site's own defaults stay, after GitHub Pages' layouts; a Gemfile site gets none of ours", () => {
+  const pages = project({ "_config.yml": "defaults:\n  - scope: { path: blog }\n    values: { layout: post }\n", "_layouts/page.html": "{{ content }}", "_layouts/post.html": "{{ content }}", "index.md": "# hi" });
+  expect(pages.run("init").code).toBe(0);
+  expect((Bun as any).YAML.parse(pages.read("_config.rustybuns.yml")).defaults).toEqual([
+    { scope: { path: "", type: "pages" }, values: { layout: "page" } },
+    { scope: { path: "", type: "posts" }, values: { layout: "post" } },
+    { scope: { path: "blog" }, values: { layout: "post" } },
+  ]);
+  const gem = project({ "_config.yml": "title: Docs\n", "Gemfile": "gem 'jekyll'\n", "_layouts/default.html": "{{ content }}", "index.md": "# hi" });
+  expect(gem.run("init").code).toBe(0);
+  expect(gem.read("_config.rustybuns.yml")).not.toContain("defaults");
 });
