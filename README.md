@@ -219,6 +219,7 @@ pnpm exec rustybuns destroy        # removes everything it created
 - [ADOPTION.md](ADOPTION.md): who it's for, and how to adopt it (and leave)
 - [COSTS.md](COSTS.md): what each deploy can bill you for, and how to cap it
 - [FRAMEWORKS.md](FRAMEWORKS.md): beyond Vite + React
+- [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md): how many real GitHub apps per framework run unchanged
 - [notes/ROADMAP.md](notes/ROADMAP.md): next up are TLS on the box, Fly, installers and signing
 
 ## License

@@ -25,7 +25,7 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | Vite + Vue (SPA) | `spa` | none | same | 🧪 |
 | Vite + Svelte (SPA) | `spa` | none | same | 🧪 |
 | Vite + Solid (SPA) | `spa` | none | same | 🧪 |
-| RWSDK | `spa` from `init`; `worker` by hand | `dist/worker/index.js` | `Cloudflare.Worker` | ✅ live; 117 of 139 GitHub apps (below) |
+| RWSDK | `spa` from `init`; `worker` by hand | `dist/worker/index.js` | `Cloudflare.Worker` | ✅ live; 153 of 180 GitHub apps ([coverage](FRAMEWORK_COVERAGE.md#rwsdk)) |
 | TanStack Start | `worker` | `dist/server/server.js` | `Cloudflare.Website.Vite` | ✅ desktop, 🧪 edge |
 | SvelteKit | `worker` | adapter-cloudflare `_worker.js` | `Cloudflare.Website.SvelteKit` | 🧪 |
 | Astro | `worker` (adapter), `spa` (static) | @astrojs/cloudflare 14: `dist/server/entry.mjs` + `dist/client` | `Cloudflare.Worker` + assets | ✅ `init`, desktop, box and edge (sample app, Oct 9) |
@@ -41,11 +41,9 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 
 The server output paths in this table come from each framework's usual layout. Record the real path when you build each sample app.
 
-## Real apps from GitHub (`scripts/trial-github.ts`)
+## Real apps from GitHub
 
-`bun scripts/trial-github.ts --dep <pkg> --major <n> --local` finds public apps that depend on a framework (code search over `package.json`), then clones, installs, runs `init` and boots each one in `spa` and `worker` mode. It writes a pass/fail table to `.rustybuns-trial/summary.md`, and with `--prof` it adds boot time, `GET /` latency, memory and a CPU profile per app. It runs each app's install scripts on your machine.
-
-RWSDK 1.x, Oct 12: of 196 apps found, 139 install (the rest fail in npm or pnpm on their own). 109 serve `/` in `spa` mode, 81 serve a server-rendered `/` in `worker` mode, and 117 serve it in at least one mode. `init` still writes `spa` for RWSDK: it serves more apps, but only `worker` runs the app's own server rendering and server functions.
+`scripts/trial-github.ts` boots public apps on each framework in both desktop modes. The numbers are in [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md).
 
 ## Ranked: what to add next
 
