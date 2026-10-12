@@ -11,7 +11,7 @@ The hours alternate between two matchups (`MATCHUPS` in `src/arena.ts`), with si
 - **Clef vs Clef Flash**: each turn picks a move from a picture of its own half (below).
 - **Pen vs pen, Clef refs**: GPT-OSS 20B (blind) and Llama 4 Scout (can look) write [the pen](#the-pen). A pen turn is up to 8 lines, so a pen fighter plays every third turn: 8 turns in a fight.
 
-When a fight ends, Clef judges each side once, from a picture of its half: how clearly it shows the prompt (likeness) and how well it's made (craft), 0 to 4 each, as in the [bake-off](#bake-off). The best total wins. The replay shows a 🏆 on the winner, with the scores as the tooltip. Clef can't read text (the rasterizer draws it as a solid bar), so a title doesn't help a drawing.
+When a fight ends, Clef judges each side once, from a picture of its half: how clearly it shows the prompt (likeness) and how well it's made (craft), 0 to 4 each, as in the [bake-off](#bake-off). The best total wins. The replay shows a 🏆 on the winner, with the scores as the tooltip. The rasterizer draws text in a small 5×7 bitmap font, so Clef can read a title or a label.
 
 ## The plan
 
