@@ -8,6 +8,8 @@
 //   --dep <name>      search for package.json files that depend on <name> (needs `gh` logged in)
 //   --major <n>       keep only apps whose <dep> version is <n>.x
 //   --limit <n>       try at most n apps (default: all found)
+//   --stable          skip prerelease versions (1.0.0-beta.9, 1.3.0-canary.5): betas fail more, for the betas' own churn
+//   --since <date>    keep only repos pushed to on or after this date (e.g. 2026-01-01)
 //   --local           test this checkout's cli and shell-bun instead of the npm release
 //   --modes spa,worker  desktop modes to try; worker swaps init's mode for the app's own Worker build
 //   --jobs <n>        apps at a time (default 2)
@@ -26,7 +28,7 @@ import { parseArgs } from "node:util";
 const { values: o, positionals } = parseArgs({
   allowPositionals: true,
   options: {
-    dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, local: { type: "boolean" },
+    dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, since: { type: "string" }, stable: { type: "boolean" }, local: { type: "boolean" },
     modes: { type: "string", default: "spa,worker" }, jobs: { type: "string", default: "2" },
     out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" },
   },
@@ -37,7 +39,7 @@ const MODES = o.modes!.split(",") as ("spa" | "worker")[];
 const VERSION = "0.1.11";
 for (const d of ["clones", "logs", "data"]) mkdirSync(join(OUT, d), { recursive: true });
 
-type App = { repo: string; sub: string; version?: string; stars?: number };
+type App = { repo: string; sub: string; version?: string; stars?: number; pushed?: string };
 type Prof = { bootMs: number; p50: number; p95: number; max: number; rssMb: number; profile?: string };
 type ModeResult = { stage: string; status?: number; bytes?: number; text?: string; error?: string; prof?: Prof };
 type Result = App & { pm?: string; init?: string; error?: string; modes: Record<string, ModeResult> };
@@ -62,19 +64,20 @@ async function search(dep: string): Promise<App[]> {
     if (items.length < 100) break;
     await Bun.sleep(7000); // code search allows 10 requests a minute
   }
-  const meta = new Map<string, { stars: number; archived: boolean }>();
+  const meta = new Map<string, { stars: number; archived: boolean; pushed: string }>();
   const apps: App[] = [];
   await Promise.all([...hits.values()].map(async (a) => {
     const raw = await $`gh api repos/${a.repo}/contents/${a.sub ? `${a.sub}/` : ""}package.json -H ${"Accept: application/vnd.github.raw"}`.quiet().nothrow().text();
     let v: string | undefined;
     try { v = depVersion(JSON.parse(raw), dep); } catch { return; }
-    if (!v || (o.major && !isMajor(v, o.major))) return;
+    if (!v || (o.major && !isMajor(v, o.major)) || (o.stable && /\d-[a-z]/i.test(v))) return;
     if (!meta.has(a.repo)) {
-      const m = await $`gh api repos/${a.repo} --jq ${"[.stargazers_count,.archived]"}`.quiet().nothrow().text();
-      const [stars, archived] = m ? JSON.parse(m) : [0, true];
-      meta.set(a.repo, { stars, archived });
+      const m = await $`gh api repos/${a.repo} --jq ${"[.stargazers_count,.archived,.pushed_at]"}`.quiet().nothrow().text();
+      const [stars, archived, pushed] = m ? JSON.parse(m) : [0, true, ""];
+      meta.set(a.repo, { stars, archived, pushed: String(pushed).slice(0, 10) });
     }
-    if (!meta.get(a.repo)!.archived) apps.push({ ...a, version: v, stars: meta.get(a.repo)!.stars });
+    const m = meta.get(a.repo)!;
+    if (!m.archived && (!o.since || m.pushed >= o.since)) apps.push({ ...a, version: v, stars: m.stars, pushed: m.pushed });
   }));
   return apps.sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0) || a.repo.localeCompare(b.repo));
 }
@@ -189,12 +192,27 @@ async function trial(app: App): Promise<Result> {
 
 const cell = (m?: ModeResult) => !m ? "" : m.stage === "works" ? `✅ ${m.status}` : m.stage === "skipped" ? "—" : `❌ ${m.stage}`;
 const note = (r: Result) => (r.error ?? Object.values(r.modes).find((m) => m.error)?.error ?? "").split("\n").at(-1)!.replace(/\|/g, "\\|").replace(/\/[^\s"']*\/(clones|node_modules)\//g, "…/").slice(0, 140);
+/** Pass rates by how long ago the repo was last pushed to: is a failure Rusty Buns, or an abandoned app? */
+function freshness(rs: Result[]): string[] {
+  const dated = rs.filter((r) => r.pushed);
+  if (!dated.length) return [];
+  const age = (r: Result) => (Date.now() - Date.parse(r.pushed!)) / 864e5;
+  const buckets = [["under 3 months", 0, 91], ["3 to 12 months", 91, 365], ["over a year", 365, Infinity]] as const;
+  return ["", "## By last push", "", `| last push | apps | install | ${MODES.join(" | ")} |`, `|---|---|---|${MODES.map(() => "---|").join("")}`,
+    ...buckets.map(([name, lo, hi]) => {
+      const b = dated.filter((r) => age(r) >= lo && age(r) < hi);
+      const pct = (n: number) => (b.length ? `${n} (${Math.round((n / b.length) * 100)}%)` : "0");
+      return `| ${name} | ${b.length} | ${pct(b.filter((r) => !r.error).length)} | ${MODES.map((m) => pct(b.filter((r) => r.modes[m]?.stage === "works").length)).join(" | ")} |`;
+    })];
+}
+
 function summary(rs: Result[]) {
   const ok = (mode: string) => rs.filter((r) => r.modes[mode]?.stage === "works").length;
   return [`# trial-github: ${rs.length} apps${o.dep ? ` depending on ${o.dep}${o.major ? ` ${o.major}.x` : ""}` : ""} (${o.local ? "this checkout" : `@rustybuns ${VERSION}`})`, "",
     MODES.map((m) => `${m}: ${ok(m)}/${rs.length} serve /`).join(" · "), "",
     `| app | version | ${MODES.join(" | ")} | first error |`, `|---|---|${MODES.map(() => "---|").join("")}---|`,
     ...rs.map((r) => `| [${r.repo}${r.sub ? `:${r.sub}` : ""}](https://github.com/${r.repo}${r.sub ? `/tree/HEAD/${r.sub}` : ""}) | ${r.version ?? ""} | ${MODES.map((m) => cell(r.modes[m]) || (r.error ? `❌ ${r.error.split(":")[0]}` : "")).join(" | ")} | ${note(r)} |`),
+    ...freshness(rs),
     ...(o.prof ? ["", "## Perf (dev host, this machine)", "", "Boot is spawn to the first page; latency is 200 sequential GETs of /.", "",
       "| app | mode | boot | p50 | p95 | max | rss | page |", "|---|---|---|---|---|---|---|---|",
       ...rs.flatMap((r) => Object.entries(r.modes).filter(([, m]) => m.prof).map(([mode, m]) =>

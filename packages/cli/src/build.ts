@@ -375,6 +375,16 @@ ${LAUNCH_CHECK}${appCheck(c, true)}${h.launch}`;
 }
 
 
+/** The Worker the host imports: builtMain, unless the build says otherwise. @cloudflare/vite-plugin
+ *  writes a wrangler.json beside its output whose main names the real file (worker.js vs index.js). */
+export function builtEntry(c: RustyBunsConfig, cwd = process.cwd()): string | undefined {
+  const built = c.worker!.builtMain;
+  if (!built || existsSync(join(cwd, built))) return built ?? c.worker!.main;
+  const w = join(cwd, dirname(built), "wrangler.json");
+  const main = existsSync(w) ? (JSON.parse(readFileSync(w, "utf8")) as { main?: string }).main : undefined;
+  return main && existsSync(join(cwd, dirname(built), main)) ? join(dirname(built), main) : built;
+}
+
 export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string {
   const h = hostParts(c, host, c.targets.desktop?.dataDir ?? `~/.${c.name}`);
   const bind: string[] = [];
@@ -415,7 +425,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
     }
   }
   const crons = c.worker!.crons ?? [];
-  const entry = c.worker!.builtMain ?? c.worker!.main;
+  const entry = builtEntry(c);
   if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
@@ -587,9 +597,12 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   // After the glue (the app imports the generated stubs), before the client build:
   // a type error shouldn't cost a full UI build and a 100 MB compile first.
   if (opts.check) await checkApp(prof, opts.check);
-  // The app's bins on PATH, as under `pnpm exec`, so a step like `prisma generate` resolves
-  // when rustybuns itself was started some other way.
-  const bin = { ...process.env, PATH: `${join(process.cwd(), "node_modules", ".bin")}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}` };
+  // The app's bins on PATH, nearest first as npm puts them, so a step like `prisma generate`
+  // resolves when rustybuns was started some other way, and so does a vite hoisted to a
+  // workspace root.
+  const bins: string[] = [];
+  for (let d = process.cwd(); ; d = dirname(d)) { bins.push(join(d, "node_modules", ".bin")); if (dirname(d) === d) break; }
+  const bin = { ...process.env, PATH: [...bins, process.env.PATH ?? ""].join(process.platform === "win32" ? ";" : ":") };
   if (build) await step("client build", () => $`sh -c ${build}`.env(bin));
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(entry, mode === "spa" ? spaEntry(c, host) : desktopEntry(c, host));

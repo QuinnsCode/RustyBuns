@@ -189,12 +189,13 @@ async function init() {
   for (const b of Object.values(cfg.bindings)) {
     if (b.type === "d1" && !b.migrationsDir && existsSync("migrations")) b.migrationsDir = "migrations";
   }
-  // Built worker entry: rwsdk 1.x emits dist/worker/index.js, 0.x emitted dist/worker/worker.js.
+  // Built worker entry: rwsdk 1.x emits dist/worker/index.js; 0.x and the 1.0.0 alphas emitted
+  // dist/worker/worker.js. The build's own dist/worker/wrangler.json settles it at build time.
   {
     const pkg = JSON.parse(readFileSync("package.json", "utf8"));
     const rw = String({ ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) }["rwsdk"] ?? "");
     const major = Number(rw.replace(/^[^0-9]*/, "").split(".")[0]);
-    if (major >= 1) cfg.worker!.builtMain = "dist/worker/index.js";
+    if (major >= 1 && !/^[^0-9]*1\.0\.0-alpha/.test(rw)) cfg.worker!.builtMain = "dist/worker/index.js";
   }
   // React Router's Cloudflare template: @cloudflare/vite-plugin builds the Worker into the
   // react-router build directory, and the desktop runs that same Worker.
