@@ -236,6 +236,13 @@ export async function upstreamMoved(env: Env, owner: string, repo: string, ref: 
   } catch {}
 }
 
+/** The mirror took upstream's commits onto `ref`, now at `sha` here: run our own checks on them, when checks run here. */
+export async function upstreamTaken(env: Env, owner: string, repo: string, ref: string, sha: string) {
+  try {
+    if ((await checkSettings(env, owner, repo)).here) await queueHere(env, owner, repo, ref, sha, "upstream");
+  } catch {}
+}
+
 /** A file's text on `ref` (the branch's copy when it has one, else main's), or null when there's none. */
 export async function readAt(env: Env, owner: string, repo: string, ref: string, path: string) {
   const { materialize, toFile } = await import("./archive.ts");
