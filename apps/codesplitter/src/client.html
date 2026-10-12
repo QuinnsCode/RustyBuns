@@ -1965,8 +1965,13 @@ const gitMapModel = ({ owner, repo, r, branches = [], mirror = null, upBranches 
       links.push({ from: "up", to: "here", kind: "mirror", both: m.state !== "held", hot: m.state !== "ok" || !!moving, label, pic: ["sync", { ahead, behind }] });
       story = `${owner}/${repo} is a mirror of ${upName}: they listen to each other, so upstream's commits come in and yours go back up${m.state === "held" ? " (for now, only in)" : ""}.`;
     } else {
-      links.push({ from: "up", to: "here", kind: "fork", label: "copied once", title: `copied once${at}, and not listening since` });
-      story = `${owner}/${repo} is a copy of ${upName}${at}. It stopped listening there: upstream's new commits don't come in, and nothing here goes back.`;
+      // Upstream moved on since the dig (#874): say how far, in orange, with the pull it'd take.
+      const moved = r.upstream_tip && r.upstream_commit && r.upstream_tip !== r.upstream_commit, n = r.upstream_behind ?? null;
+      if (moved) links.push({ from: "up", to: "here", kind: "fork", hot: true, label: n === null ? "new upstream" : `${n} new upstream`, pic: ["pull", { branch: "a new branch", ref: main }] });
+      else links.push({ from: "up", to: "here", kind: "fork", label: "copied once", title: `copied once${at}, and not listening since` });
+      story = moved
+        ? `${owner}/${repo} is a copy of ${upName}${at}. Upstream has moved on since: its new commits come in only when you take them, on a branch, and nothing here goes back.`
+        : `${owner}/${repo} is a copy of ${upName}${at}. It stopped listening there: upstream's new commits don't come in, and nothing here goes back.`;
     }
   }
   // Upstream's own branches (a mirror's), under it; the ones opened here are wired to the branch that follows them.

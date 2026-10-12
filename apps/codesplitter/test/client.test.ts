@@ -63,6 +63,16 @@ describe("the git map", () => {
     expect(m.story).toContain("stopped listening");
   });
 
+  test("a dug fork whose upstream moved on says how far, in orange, with the pull", () => {
+    const r = { upstream: "github:honojs/hono", upstream_commit: "abcdef123", home: "cloud", branch: "main" };
+    expect(link(gitMapModel({ owner: "ann", repo: "hono", r: { ...r, upstream_tip: "abcdef123", upstream_behind: 0 } }), "up", "here").label).toBe("copied once");
+    const moved = gitMapModel({ owner: "ann", repo: "hono", r: { ...r, upstream_tip: "1234567", upstream_behind: 3 } });
+    expect(link(moved, "up", "here")).toMatchObject({ kind: "fork", hot: true, label: "3 new upstream", pic: ["pull", { branch: "a new branch", ref: "main" }] });
+    expect(moved.story).toContain("moved on");
+    // GitHub wouldn't count them.
+    expect(link(gitMapModel({ owner: "ann", repo: "hono", r: { ...r, upstream_tip: "1234567", upstream_behind: null } }), "up", "here").label).toBe("new upstream");
+  });
+
   test("a mirror listens both ways, and says what's moving", () => {
     const r = { upstream: "github:a/b", mirror: true, home: "local" };
     const calm = gitMapModel({ owner: "ann", repo: "b", r, mirror: { state: "ok", ahead: 0, behind: 0 } });
