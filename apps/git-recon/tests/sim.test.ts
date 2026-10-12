@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { LEVELS, PLAY_RADIUS, placeLevel } from "../src/levels/levels.ts";
 import { groundAt, parsePlace, placeName, worldPx, type TileSource } from "../src/levels/place.ts";
 import { folderOf, heightOf, mapRepo, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
-import { AMMO_CRATE, fileHp, Game, HEALTH_CRATE, MAX_HEAT, HEAVY_HP, MAX_HP, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, type Input, type Objective } from "../src/sim/game.ts";
+import { AMMO_CRATE, fileHp, Game, HEALTH_CRATE, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, SHIELD_DELAY, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, type Input, type Objective } from "../src/sim/game.ts";
 import { briefing, missionFor, OVERRUN, type Mission } from "../src/sim/missions.ts";
 import { contourStep, slope, stampTerrain, wet, withPads, type Terrain } from "../src/sim/terrain.ts";
 import { ORDER, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
@@ -189,7 +189,27 @@ describe("game", () => {
   test("guards see you, wait a beat, then shoot", () => {
     const { g, you } = duel();
     for (let i = 0; i < 180; i++) g.step(1 / 60, idle);
-    expect(you.hp).toBeLessThan(MAX_HP);
+    expect(you.hp + you.shield).toBeLessThan(MAX_HP + MAX_SHIELD);
+  });
+
+  test("your shield soaks hits first, pops, then refills after a quiet spell", () => {
+    const { g, you, guard } = duel();
+    guard.brain = null;
+    expect(you.shield).toBe(MAX_SHIELD);
+    g.hurt(you, 50, guard.id);
+    expect(you.shield).toBe(MAX_SHIELD - 50);
+    expect(you.hp).toBe(MAX_HP);
+    g.hurt(you, 50, guard.id);
+    expect(you.shield).toBe(0);
+    expect(you.hp).toBe(MAX_HP - 30);
+    expect(g.events.some((e) => e.kind === "shield" && e.state === "broke")).toBe(true);
+    const seen: string[] = [];
+    for (let t = 0; t < SHIELD_DELAY - 0.2; t += 1 / 60) g.step(1 / 60, idle);
+    expect(you.shield).toBe(0);
+    for (let t = 0; t < 3; t += 1 / 60) for (const e of g.step(1 / 60, idle)) if (e.kind === "shield") seen.push(e.state);
+    expect(you.shield).toBe(MAX_SHIELD);
+    expect(you.hp).toBe(MAX_HP - 30);
+    expect(seen).toEqual(["charging", "full"]);
   });
 
   test("downing the last guard merges the compound and wins", () => {
@@ -493,6 +513,8 @@ describe("toy-soldier combat", () => {
       const big = g.soldiers.filter((s) => s.compound === 0), small = g.soldiers.filter((s) => s.compound === 1);
       expect(big.filter((s) => s.heavy).length).toBe(1);
       expect(big.find((s) => s.heavy)!.hp).toBe(HEAVY_HP);
+      expect(big.find((s) => s.heavy)!.shield).toBe(HEAVY_SHIELD);
+      expect(big.find((s) => !s.heavy && s.team === "conflict")!.shield).toBe(0);
       expect(small.some((s) => s.heavy)).toBe(false);
       expect(big.filter((s) => s.brain!.role === "flank").length).toBe(2);
     });

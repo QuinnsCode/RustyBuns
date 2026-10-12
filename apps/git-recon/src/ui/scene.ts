@@ -4,6 +4,12 @@
 // Files agents mostly wrote are black glass, roads join folders that import each other, and a
 // compound with a failing check burns until it's merged. Files sink as they lose lines and
 // burst into paper chips when they're gone; rounds draw as tracers, the flamethrower as fire.
+//
+// Action is drawn like a comic, since glow vanishes on white paper: muzzle flashes are inked
+// orange starbursts, blasts are an orange core under inked puffs of smoke with a shockwave ring
+// running out along the ground, and each throws a short orange light on what's near it. A
+// shield shows as an orange shimmer round the body when it takes a hit, and a band sweeping up
+// it as it refills.
 
 import * as THREE from "three";
 import type { CodeMap } from "../sim/codemap.ts";
@@ -11,7 +17,7 @@ import { contourStep } from "../sim/terrain.ts";
 import type { Game, GameEvent } from "../sim/game.ts";
 import { HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
 import { WEAPONS } from "../sim/weapons.ts";
-import { buildFigure, pose, setHead, type BuildId, type Figure, type Pose } from "./figure.ts";
+import { buildFigure, inked, pose, setGun, setHead, type BuildId, type Figure, type Pose } from "./figure.ts";
 import { buildHead, HEADS, type HeadDef } from "./heads.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS } from "../sim/missions.ts";
 
@@ -60,7 +66,63 @@ function poseOf(s: Soldier): Pose {
   if (s.roll > 0 && !s.prone) return "tuck";
   if (s.prone) return "prone";
   if (!s.grounded && Math.hypot(s.vx, s.vz) > 9) return "star";
+  if (!s.grounded && Math.abs(s.vy) > 1.5) return "air";
   return s.crouch ? "kneel" : "stand";
+}
+
+/** The shield: a shell round the body, lit at its rim and in fine bands, flashed by `uFlash` and swept from the feet up by `uSweep` (0..1, or off below 0). */
+function shell(color: number): THREE.Mesh {
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uColor: { value: new THREE.Color(color) }, uFlash: { value: 0 }, uSweep: { value: -1 }, uTime: { value: 0 } },
+    vertexShader: `varying vec3 vN; varying vec3 vView; varying float vY;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vN = normalize(normalMatrix * normal); vView = normalize(-mv.xyz); vY = position.y;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `uniform vec3 uColor; uniform float uFlash; uniform float uSweep; uniform float uTime;
+      varying vec3 vN; varying vec3 vView; varying float vY;
+      void main() {
+        float rim = pow(1.0 - abs(dot(vN, vView)), 2.2);
+        float bands = 0.75 + 0.25 * step(0.5, fract(vY * 10.0 - uTime * 3.0));
+        float a = uFlash * (rim * 0.95 + 0.12) * bands;
+        float y = (vY + 1.0) / 2.0;
+        if (uSweep >= 0.0) a = max(a, (1.0 - smoothstep(0.0, 0.08, abs(y - uSweep))) * (0.25 + rim * 0.75));
+        if (a < 0.01) discard;
+        gl_FragColor = vec4(uColor, clamp(a, 0.0, 0.9));
+      }`,
+  });
+  const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 0.9, 6, 20), mat);
+  m.renderOrder = 5;
+  m.visible = false;
+  return m;
+}
+
+/** An inked orange starburst, for muzzle flashes and the hot core of a blast. */
+let burstTex: THREE.CanvasTexture | null = null;
+function burst(): THREE.Sprite {
+  if (!burstTex) {
+    const c = document.createElement("canvas"), n = 256, g = c.getContext("2d")!;
+    c.width = c.height = n;
+    g.translate(n / 2, n / 2);
+    const star = (spikes: number, outer: number, inner: number) => {
+      g.beginPath();
+      for (let i = 0; i <= spikes * 2; i++) {
+        const r = i % 2 ? inner : outer * (0.8 + 0.2 * Math.sin(i * 2.3)), a = (i / (spikes * 2)) * Math.PI * 2;
+        g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      g.closePath();
+    };
+    star(9, 120, 52);
+    g.fillStyle = "#e8590c", g.fill();
+    g.lineWidth = 7, g.strokeStyle = "#1f1f1f", g.lineJoin = "round", g.stroke();
+    star(9, 64, 30);
+    g.fillStyle = "#ffd8a8", g.fill();
+    burstTex = new THREE.CanvasTexture(c);
+    burstTex.colorSpace = THREE.SRGBColorSpace;
+  }
+  return new THREE.Sprite(new THREE.SpriteMaterial({ map: burstTex, depthWrite: false, transparent: true }));
 }
 
 /** A blame tag: a ghost the soldier's size, drawn over everything, so you see it through walls. */
@@ -74,6 +136,10 @@ function ghost(): THREE.Mesh {
 
 /** How long a downed soldier kneels with its hands up, then sinks away. */
 const SURRENDER = 1.4, SINK = 0.8;
+/** Half the width of ground the sun's shadows cover, round you. */
+const SHADOW_REACH = 45;
+/** How fast poses blend into each other, per second. */
+const BLEND = 14;
 
 export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "average" }): World {
   const scene = new THREE.Scene();
@@ -85,12 +151,27 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   sun.position.set(-60, 120, 40);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
+  // The shadows cover the ground round you, not the whole level, so they stay crisp; the sun follows you.
   const sc = sun.shadow.camera as THREE.OrthographicCamera;
-  sc.left = sc.bottom = -map.terrain.R;
-  sc.right = sc.top = map.terrain.R;
+  sc.left = sc.bottom = -SHADOW_REACH;
+  sc.right = sc.top = SHADOW_REACH;
   sc.far = 400;
-  sun.shadow.bias = -0.0005;
-  scene.add(hemi, sun);
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.02;
+  scene.add(hemi, sun, sun.target);
+  // Muzzles and blasts light up what's near them: a small pool of lights, always there and dark
+  // when idle, so the shaders never rebuild for a light coming or going.
+  const lamps = Array.from({ length: 4 }, () => {
+    const l = new THREE.PointLight(ORANGE, 0, 10, 1.6);
+    scene.add(l);
+    return { l, t: 1, life: 1, peak: 0 };
+  });
+  let nextLamp = 0;
+  function flare(x: number, y: number, z: number, peak: number, reach: number, life: number) {
+    const k = lamps[nextLamp++ % lamps.length]!;
+    k.l.position.set(x, y, z), k.l.distance = reach;
+    Object.assign(k, { t: 0, life, peak });
+  }
 
   // Ground: a fine grid of the terrain, paper white, with contour lines spaced for
   // this level's relief so the shape reads without colour, and rock faces hatched in ink.
@@ -232,10 +313,15 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     return g;
   });
 
-  const bodies = new Map<number, { fig: Figure; tag: THREE.Mesh; fire: THREE.Group; down: number }>();
+  interface Body {
+    fig: Figure; tag: THREE.Mesh; fire: THREE.Group; down: number; shell: THREE.Mesh;
+    /** Recoil, a hit's jolt (and which side it came from), a landing's dip; the shell's flash and refill sweep. */
+    kick: number; flinch: number; flinchSide: number; land: number; air: number; flash: number; sweep: number;
+  }
+  const bodies = new Map<number, Body>();
   const shotMeshes = new Map<number, THREE.Mesh>();
   // Bullets are tracers, a streak along their flight; the rest are balls; the flamethrower's puffs grow and fade.
-  const tracerGeo = new THREE.BoxGeometry(0.035, 0.035, 1.6).translate(0, 0, 0.8), bigShotGeo = new THREE.SphereGeometry(0.22, 12, 8);
+  const tracerGeo = new THREE.BoxGeometry(0.05, 0.05, 2.4).translate(0, 0, 1.2), bigShotGeo = new THREE.SphereGeometry(0.22, 12, 8);
   const puffGeo = new THREE.IcosahedronGeometry(0.3, 0);
   const shotMat = { you: new THREE.MeshBasicMaterial({ color: INK }), conflict: new THREE.MeshBasicMaterial({ color: ORANGE }) };
   const tracer = (w: string) => WEAPONS[w as keyof typeof WEAPONS].splash === 0 && !WEAPONS[w as keyof typeof WEAPONS].homing && w !== "stash" && w !== "clean";
@@ -255,8 +341,15 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     }
   }
   const dustMat = new THREE.MeshLambertMaterial({ color: GREY });
-  const flashes: { m: THREE.Mesh; t: number }[] = [];
-  const flashGeo = new THREE.SphereGeometry(0.16, 8, 6), flashMat = new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0.9, depthWrite: false });
+  const flashes: { m: THREE.Sprite; t: number; life: number; size: number }[] = [];
+  function pop(x: number, y: number, z: number, size: number, life: number) {
+    const m = burst();
+    m.position.set(x, y, z);
+    m.material.rotation = Math.random() * Math.PI;
+    m.renderOrder = 6;
+    scene.add(m);
+    flashes.push({ m, t: 0, life, size });
+  }
   /** Little flames over a soldier that's alight. */
   function onFire(): THREE.Group {
     const g = new THREE.Group();
@@ -269,8 +362,12 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     g.visible = false;
     return g;
   }
-  const booms: { m: THREE.Mesh; t: number; r: number }[] = [];
-  const boomGeo = new THREE.SphereGeometry(1, 24, 16);
+  // A blast: an orange core that swells and is gone, inked puffs of smoke that billow up and shrink
+  // away, and an ink ring running out along the ground.
+  const booms: { m: THREE.Object3D; t: number; r: number; kind: "core" | "smoke" | "ring"; vx: number; vy: number; vz: number; life: number }[] = [];
+  const boomGeo = new THREE.SphereGeometry(1, 24, 16), puffBall = new THREE.IcosahedronGeometry(1, 2);
+  const smokeMat = new THREE.MeshLambertMaterial({ color: 0xf2f2f2 });
+  const ringGeo = new THREE.RingGeometry(0.92, 1, 48).rotateX(-Math.PI / 2);
 
   // Crates: white boxes, orange-edged for ammo, an orange cross for health, solid orange for git reset --hard.
   const crateGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8), crateEdges = new THREE.EdgesGeometry(crateGeo);
@@ -314,6 +411,13 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     solids,
     sync(game, dt) {
       const { soldiers, shots, cleared } = game;
+      for (const l of lamps) {
+        l.t += dt;
+        l.l.intensity = l.t < l.life ? l.peak * (1 - l.t / l.life) ** 2 : 0;
+      }
+      const you0 = game.you();
+      sun.target.position.set(you0.x, you0.y, you0.z);
+      sun.position.set(you0.x - 60, you0.y + 120, you0.z + 40);
       for (const s of soldiers) {
         let b = bodies.get(s.id);
         if (!b) {
@@ -322,12 +426,24 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
           const fig = buildFigure(s.team === "you" ? INK : ORANGE, s.team === "you" ? 0.22 : 0.45, build);
           if (s.team === "you") setHead(fig, buildHead(you.head, fig.root.userData.mat, fig.head.userData.size));
           if (s.heavy) fig.root.scale.setScalar(1.25);
-          const tag = ghost(), fire = onFire();
+          const tag = ghost(), fire = onFire(), sh = shell(s.team === "you" ? ORANGE : INK);
           fig.root.add(tag, fire);
-          bodies.set(s.id, (b = { fig, tag, fire, down: -1 }));
+          fig.joints.tumble!.add(sh);
+          bodies.set(s.id, (b = { fig, tag, fire, down: -1, shell: sh, kick: 0, flinch: 0, flinchSide: 0, land: 0, air: 0, flash: 0, sweep: -1 }));
           scene.add(fig.root);
         }
         const { fig } = b;
+        // Landing after a real drop dips the knees, harder the longer it was in the air.
+        if (!s.grounded) b.air += dt;
+        else if (b.air > 0) b.land = Math.max(b.land, Math.min(1, b.air * 1.4)), b.air = 0;
+        const ease = (v: number, rate: number) => v * Math.exp(-dt * rate);
+        b.kick = ease(b.kick, 14), b.flinch = ease(b.flinch, 8), b.land = ease(b.land, 7), b.flash = ease(b.flash, 5);
+        if (b.sweep >= 0) b.sweep += dt * 1.6;
+        if (b.sweep > 1.1 || !s.alive) b.sweep = -1;
+        const u = (b.shell.material as THREE.ShaderMaterial).uniforms;
+        u.uFlash!.value = Math.min(1.5, b.flash), u.uSweep!.value = b.sweep, u.uTime!.value = game.time;
+        b.shell.visible = s.alive && (b.flash > 0.02 || b.sweep >= 0);
+        setGun(fig, s.weapon);
         b.down = s.alive ? -1 : b.down < 0 ? 0 : b.down + dt;
         fig.root.visible = s.alive || b.down < SURRENDER + SINK;
         fig.root.position.set(s.x, s.y - Math.max(0, b.down - SURRENDER) * 2.2, s.z);
@@ -335,12 +451,18 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         b.tag.visible = s.alive && s.tagged > 0;
         b.fire.visible = s.alive && s.burn > 0;
         if (b.fire.visible) for (const f of b.fire.children) f.scale.set(1, 0.6 + Math.abs(Math.sin(game.time * 11 + f.userData.phase * 2.1)) * 0.8, 1);
+        // How it's moving against the way it faces, so it strafes and backs up rather than moonwalks.
+        const fx = -Math.sin(s.yaw), fz = -Math.cos(s.yaw);
         pose(fig, {
           pose: s.alive ? (s.burn > 0 && s.grounded && s.roll <= 0 ? "star" : poseOf(s)) : "surrender",
           speed: Math.hypot(s.vx, s.vz),
+          forward: s.vx * fx + s.vz * fz,
+          side: s.vx * -fz + s.vz * fx,
           dt,
           roll: s.roll > 0 ? (ROLL_TIME - s.roll) / ROLL_TIME : 0,
-          pitch: s.team === "you" ? s.pitch * 0.8 : 0,
+          pitch: s.pitch * 0.8,
+          kick: b.kick, flinch: b.flinch, flinchSide: b.flinchSide, land: b.land,
+          blend: BLEND,
         });
       }
       const have = new Set<number>();
@@ -428,12 +550,19 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       });
       for (const b of booms) {
         b.t += dt;
-        const k = b.t / 0.5;
-        b.m.scale.setScalar(b.r * (0.3 + k * 0.9));
-        (b.m.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.55 * (1 - k));
+        const k = Math.min(1, b.t / b.life);
+        if (b.kind === "core") b.m.scale.setScalar(b.r * (0.35 + Math.sqrt(k) * 0.75) * (1 - k * k));
+        else if (b.kind === "ring") {
+          b.m.scale.setScalar(0.5 + b.r * 2.2 * Math.sqrt(k));
+          ((b.m as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k);
+        } else {
+          b.vx *= Math.exp(-dt * 3), b.vz *= Math.exp(-dt * 3), b.vy = b.vy * Math.exp(-dt * 2) + dt * 1.2;
+          b.m.position.x += b.vx * dt, b.m.position.y += b.vy * dt, b.m.position.z += b.vz * dt;
+          b.m.scale.setScalar(b.r * Math.sin(Math.min(1, k * 1.15) * Math.PI) ** 0.6);
+        }
         if (k >= 1) scene.remove(b.m);
       }
-      for (let i = booms.length - 1; i >= 0; i--) if (booms[i]!.t >= 0.5) booms.splice(i, 1);
+      for (let i = booms.length - 1; i >= 0; i--) if (booms[i]!.t >= booms[i]!.life) booms.splice(i, 1);
       for (const c of chips) {
         c.t += dt, c.vy -= 22 * dt;
         c.m.position.x += c.vx * dt, c.m.position.y += c.vy * dt, c.m.position.z += c.vz * dt;
@@ -443,29 +572,63 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         if (c.t > c.life) c.m.scale.multiplyScalar(0.85);
       }
       for (let i = chips.length - 1; i >= 0; i--) if (chips[i]!.t > chips[i]!.life + 0.4) scene.remove(chips[i]!.m), chips.splice(i, 1);
-      for (const f of flashes) f.t += dt, f.m.scale.setScalar(1 + f.t * 20);
-      for (let i = flashes.length - 1; i >= 0; i--) if (flashes[i]!.t > 0.05) scene.remove(flashes[i]!.m), flashes.splice(i, 1);
+      for (const f of flashes) f.t += dt, f.m.scale.setScalar(f.size * (0.6 + (f.t / f.life) * 0.8));
+      for (let i = flashes.length - 1; i >= 0; i--) if (flashes[i]!.t > flashes[i]!.life) scene.remove(flashes[i]!.m), flashes[i]!.m.material.dispose(), flashes.splice(i, 1);
     },
     event(game, e) {
       if (e.kind === "boom") {
-        const m = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0.55, depthWrite: false }));
-        m.position.set(e.x, e.y, e.z);
-        scene.add(m);
-        booms.push({ m, t: 0, r: e.r });
-        throwChips(e.x, e.y + 0.2, e.z, 8, 0.18, e.r * 1.6, false);
-      } else if (e.kind === "impact") throwChips(e.x, e.y, e.z, 2, 0.07, 3, false);
-      else if (e.kind === "razed") {
+        const add = (m: THREE.Object3D, kind: "core" | "smoke" | "ring", r: number, life: number, v = [0, 0, 0]) => {
+          scene.add(m);
+          booms.push({ m, t: 0, r, kind, life, vx: v[0]!, vy: v[1]!, vz: v[2]! });
+        };
+        const core = new THREE.Mesh(boomGeo, orangeMat);
+        core.position.set(e.x, e.y, e.z);
+        add(core, "core", e.r * 0.7, 0.35);
+        for (let i = 0; i < 7; i++) {
+          const a = (i / 7) * Math.PI * 2 + Math.random(), out = e.r * (0.8 + Math.random() * 0.8);
+          const puff = inked(new THREE.Mesh(puffBall, smokeMat));
+          puff.position.set(e.x + Math.cos(a) * e.r * 0.25, e.y + 0.2, e.z + Math.sin(a) * e.r * 0.25);
+          add(puff, "smoke", e.r * (0.3 + Math.random() * 0.25), 1.1 + Math.random() * 0.6, [Math.cos(a) * out, 1.5 + Math.random() * 2.5, Math.sin(a) * out]);
+        }
+        const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: INK, transparent: true, depthWrite: false }));
+        ring.position.set(e.x, game.terrain.height(e.x, e.z) + 0.12, e.z);
+        add(ring, "ring", e.r, 0.45);
+        pop(e.x, e.y + 0.4, e.z, e.r * 1.6, 0.12);
+        flare(e.x, e.y + 1, e.z, 260 * e.r, e.r * 6, 0.45);
+        throwChips(e.x, e.y + 0.2, e.z, 10, 0.18, e.r * 1.8, false);
+      } else if (e.kind === "impact") {
+        throwChips(e.x, e.y, e.z, 3, 0.07, 3.5, false);
+        pop(e.x, e.y, e.z, 0.45, 0.06);
+      } else if (e.kind === "hit") {
+        const b = bodies.get(e.target), s = game.soldiers[e.target], by = game.soldiers[e.by];
+        if (!b || !s) return;
+        b.flinch = Math.min(1, b.flinch + Math.min(1, e.damage / 30) + 0.25);
+        // Which side it came from, against the way the soldier faces: a hit from the right throws it left.
+        if (by) b.flinchSide = Math.sign((by.x - s.x) * Math.cos(s.yaw) - (by.z - s.z) * Math.sin(s.yaw)) || 1;
+        if (e.shield) b.flash = Math.max(b.flash, 1);
+        else throwChips(s.x, s.y + 1.1, s.z, 3, 0.06, 2.5, false);
+      } else if (e.kind === "shield") {
+        const b = bodies.get(e.id), s = game.soldiers[e.id];
+        if (!b || !s) return;
+        if (e.state === "broke") {
+          b.flash = 2.5;
+          pop(s.x, s.y + 1, s.z, 1.4, 0.1);
+          throwChips(s.x, s.y + 1, s.z, 10, 0.08, 4, true);
+        } else if (e.state === "charging") b.sweep = 0;
+        else b.flash = Math.max(b.flash, 0.6);
+      } else if (e.kind === "razed") {
         // A file coming down: paper chips the size of its footprint, and a puff of dust.
         const n = Math.min(28, 8 + Math.round(e.w * e.d * e.h));
         throwChips(e.x, e.y + e.h * 0.4, e.z, n, Math.min(0.6, 0.15 + e.w * 0.1), 5, true);
         throwChips(e.x, e.y + 0.3, e.z, 10, 0.25, 2.5, false);
-      } else if (e.kind === "fire" && e.weapon !== "clean") {
-        const s = game.soldiers[e.id];
+      } else if (e.kind === "fire") {
+        const s = game.soldiers[e.id], b = bodies.get(e.id);
         if (!s) return;
-        const at = game.muzzle(s), m = new THREE.Mesh(flashGeo, flashMat);
-        m.position.set(at.x, at.y, at.z);
-        scene.add(m);
-        flashes.push({ m, t: 0 });
+        if (b) b.kick = Math.min(1.2, b.kick + Math.min(1, WEAPONS[e.weapon].kick * 12 + 0.3));
+        if (e.weapon === "clean") return;
+        const at = game.muzzle(s), big = WEAPONS[e.weapon].splash > 0 || e.weapon === "add" || e.weapon === "rebase";
+        pop(at.x, at.y, at.z, big ? 0.9 : 0.55, 0.05);
+        flare(at.x, at.y, at.z, big ? 40 : 18, big ? 9 : 6, 0.08);
       }
     },
   };
