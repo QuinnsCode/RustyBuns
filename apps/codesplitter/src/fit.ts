@@ -1,3 +1,4 @@
+// Layout: the Rusty Buns fit check: how easily `rustybuns init` could box the repo
 // Rusty Buns fit: could this repo ship as a desktop binary, a Worker and a
 // server with `rustybuns init`? Reads the top level, package.json and any
 // vite config, and lets the CLI's own detector decide. A monorepo root also

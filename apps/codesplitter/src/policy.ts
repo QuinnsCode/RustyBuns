@@ -1,3 +1,4 @@
+// Layout: policy per path: how live edits go, the merge rule, who settles what is left; defaults under the repo's `.gitattributes`
 /**
  * Policy per path (#938): how live edits go, how a merge settles a file, and
  * who gets what the merge can't settle. Defaults cover most files; a repo

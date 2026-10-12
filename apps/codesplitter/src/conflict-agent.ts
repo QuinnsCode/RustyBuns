@@ -1,3 +1,4 @@
+// Layout: one merge conflict handed to a coding agent: git's markers in, the settled lines out
 // Hand one merge conflict to a coding agent. It gets the conflict as git's markers in a file of its own
 // (main's, the base's and the branch's version), the merge of the rest of the file around it, and what
 // main's commits to the file said since the branch forked, and edits the file into the settled text. branches.ts then checks it: the

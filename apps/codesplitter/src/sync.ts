@@ -1,3 +1,4 @@
+// Layout: an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now
 // Turns a harness's plain-text edit into line ops. A CLI agent edits a file on
 // disk; the file's Durable Object only takes ops that name lines by id. So we
 // diff the text the agent left against the snapshot it started from, and map

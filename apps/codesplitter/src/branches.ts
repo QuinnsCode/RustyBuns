@@ -1,3 +1,4 @@
+// Layout: branches: forking a file onto one, review, merge
 // Branches and merges. An agent works on a branch: its own copy of each file
 // it touches, which a person or another agent reviews and merges. Built on
 // the line-op log, not git branches: a branch's copy of a file is its own

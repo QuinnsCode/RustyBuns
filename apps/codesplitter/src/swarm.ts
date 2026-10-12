@@ -1,3 +1,4 @@
+// Layout: digging a big level in parts off the `LEVEL_DIGS` queue, side by side
 // A big level dug up by a swarm (#344). GitHub's tarball is one gzip stream,
 // so one Worker has to read it start to end; Bun takes minutes that way. The
 // swarm skips the tarball: one call lists the tip's whole tree, the files are
