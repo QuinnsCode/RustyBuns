@@ -3,6 +3,7 @@
 // Cruisers trade broadsides across the gap and shoot at fighters close by. A third of the
 // fighters fly bombing runs on the enemy cruisers, and the rest dogfight. Lose your cruisers and
 // you lose the orbit. The view draws it and feeds the hero's input; the tests run it headless.
+import { acos, atan2, cos, hypot, sin } from "./fmath.ts";
 import { other, type PerSide, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./contract.ts";
 
 export type CraftKind = "fighter" | "cruiser" | "hero";
@@ -63,16 +64,16 @@ const rand = (b: SpaceBattle) => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 type P = { x: number; y: number; z: number };
-const dist = (a: P, b: P) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+const dist = (a: P, b: P) => hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+const wrap = (a: number) => atan2(sin(a), cos(a));
 // yaw 0, pitch 0 faces -z, like the ground battle and a three.js camera.
-export const heading = (yaw: number, pitch: number) => ({ x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) });
-export const lookAt = (from: P, to: P) => ({ yaw: Math.atan2(-(to.x - from.x), -(to.z - from.z)), pitch: Math.atan2(to.y - from.y, Math.hypot(to.x - from.x, to.z - from.z)) });
+export const heading = (yaw: number, pitch: number) => ({ x: -sin(yaw) * cos(pitch), y: sin(pitch), z: -cos(yaw) * cos(pitch) });
+export const lookAt = (from: P, to: P) => ({ yaw: atan2(-(to.x - from.x), -(to.z - from.z)), pitch: atan2(to.y - from.y, hypot(to.x - from.x, to.z - from.z)) });
 // The angle between where a craft points and the way to something.
 function offBore(u: Craft, t: P) {
   const h = heading(u.yaw, u.pitch), d = dist(u, t) || 1;
-  return Math.acos(clamp((h.x * (t.x - u.x) + h.y * (t.y - u.y) + h.z * (t.z - u.z)) / d, -1, 1));
+  return acos(clamp((h.x * (t.x - u.x) + h.y * (t.y - u.y) + h.z * (t.z - u.z)) / d, -1, 1));
 }
 
 export function startSpaceBattle(spec: SpaceBattleSpec): SpaceBattle {
@@ -158,7 +159,7 @@ function pilot(b: SpaceBattle, u: Craft) {
   const t = (line.length ? line[u.id % line.length]! : nearest(b, u, (v) => !isCruiser(v))) ?? nearest(b, u, () => true);
   if (t && u.cool <= 0 && dist(u, t) < s.range && offBore(u, t) < 0.2) { u.cool = s.cool; fire(b, u, t, s); }
   if (u.pass > 0) { u.pass -= DT; return fly(u, u.yaw, u.pitch); }
-  if (Math.hypot(u.x, u.y, u.z) > ARENA) { const back = lookAt(u, { x: 0, y: 0, z: 0 }); return fly(u, back.yaw, back.pitch); }
+  if (hypot(u.x, u.y, u.z) > ARENA) { const back = lookAt(u, { x: 0, y: 0, z: 0 }); return fly(u, back.yaw, back.pitch); }
   if (!t) return fly(u, u.yaw, u.pitch);
   // A bombing run goes right past the cruiser, then turns round for another.
   if (t.kind === "cruiser" && dist(u, t) < 30) u.pass = 2;
@@ -214,7 +215,7 @@ export function stepSpace(b: SpaceBattle, input: SpaceInput | null) {
   // Cruiser hulls are solid: a capsule along z that fighters slide off.
   for (const c of b.craft) if (c.kind === "cruiser") for (const u of b.craft) {
     if (u.kind === "cruiser") continue;
-    const z = clamp(u.z, c.z - HULL.half, c.z + HULL.half), ox = u.x - c.x, oy = u.y - c.y, oz = u.z - z, d = Math.hypot(ox, oy, oz);
+    const z = clamp(u.z, c.z - HULL.half, c.z + HULL.half), ox = u.x - c.x, oy = u.y - c.y, oz = u.z - z, d = hypot(ox, oy, oz);
     if (d >= HULL.r) continue;
     if (d < 1e-6) { u.y = c.y + HULL.r; continue; } // dead on the keel: over the top
     u.x = c.x + (ox / d) * HULL.r; u.y = c.y + (oy / d) * HULL.r; u.z = z + (oz / d) * HULL.r;
