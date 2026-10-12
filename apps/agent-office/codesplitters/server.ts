@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { summarize, type AgentRun, type Branch, type CheckRun, type Summary } from "./news.ts";
 
-export const LIVE = "https://codesplitters.notryanquinn.workers.dev";
+export const LIVE = "https://codesplitter.notryanquinn.workers.dev";
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const FRESH_MS = 15_000;
 

@@ -2,7 +2,7 @@
 // to, so it runs anywhere that can reach the site: behind a firewall, on a laptop, on a build box
 // with no inbound port. The loop: claim the oldest queued run, clone, run, report, again.
 //
-//   CODESPLITTERS_URL=https://codesplitters.notryanquinn.workers.dev \
+//   CODESPLITTERS_URL=https://codesplitter.notryanquinn.workers.dev \
 //   CODESPLITTERS_TOKEN=cst_… \
 //   bun scripts/runner.ts owner/repo [--label my-mac] [--names test,lint] [--command "bun test"] [--once]
 //

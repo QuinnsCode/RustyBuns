@@ -10,7 +10,7 @@
 
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { RustyBunsConfig } from "./config.ts";
+import { workerName, type RustyBunsConfig } from "./config.ts";
 
 /** `<git common dir>/rustybuns/alchemy/<app path in repo>`, or null outside git. */
 export function sharedStateBase(projectDir: string): string | null {
@@ -115,7 +115,7 @@ export function adoptNote(projectDir: string, cfg: Pick<RustyBunsConfig, "name" 
   if (!cfg.targets.edge?.adopt) return null;
   const dir = join(projectDir, ".alchemy", "state", cfg.name, stage);
   if (existsSync(join(dir, "Worker.json"))) return null;
-  const names = [`Worker ${cfg.name}`];
+  const names = [`Worker ${workerName(cfg)}`];
   for (const b of Object.values(cfg.bindings ?? {})) {
     if (b.type === "d1") names.push(`D1 ${b.databaseName}`);
     if (b.type === "r2") names.push(`R2 ${b.bucketName}`);
