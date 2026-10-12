@@ -183,7 +183,16 @@ For the 3 D hunks here, every right answer can be checked by a build or a test. 
 ## 7. Found along the way
 
 - **main's `src/features.json` didn't parse.** #884's squash merge committed `<<<<<<< HEAD`, so the home page's feature strip fell back to `[]`. This PR first fixed it with the deterministic answer: both of main's sentences, the dig sentence first. main has since fixed it the same way, so the PR no longer changes the file. The guard against it recurring is part of the second next step below.
-- **The `doctor` line conflicted again after #886 merged.** It's one line in `features.json`, and every doctor feature adds a sentence to it. #886 added "Rank the packages…", and #893 (and this PR) then conflicted on the same line a second time, although neither touched what the other added. A single-line registry entry that two PRs both extend conflicts every time. One entry per sentence, or a generated file (next step 3), would avoid it.
+- **The `doctor` line conflicted again after #886 merged.** This wasn't two PRs appending to one line. It was the markers #884 committed. See section 8.
+
+## 8. Committed conflict markers are a conflict source
+
+#884 (`09d9443`, 03:00) committed `<<<<<<< HEAD` / `=======` / `>>>>>>> origin/main` around the `doctor` line of `src/features.json`. Nothing parses that file in a test, so CI passed. #886 (`50fec50`) removed them on main. Every branch cut between those two commits inherited the markers and removed them its own way, so each one "edited the same line" as main. That is why #893 conflicted on `doctor` a second time, and #936 did too. The fix for each is to take main's line, which also has #886's "Rank the packages…" sentence.
+
+So one bad merge commit turns into a conflict for every branch open at the time. Two cheap checks catch it before it lands:
+
+- **Reject marker lines in CI.** Fail any tracked file with a line starting `<<<<<<< `, `=======` on its own line, or `>>>>>>> ` (`git grep -nE '^(<{7} |={7}$|>{7} )'`), excluding fixtures that need them on purpose.
+- **Parse JSON registries in a test.** A test that loads `features.json` (and the other JSON registries) with `JSON.parse` fails on markers, and on any other break.
 - **`migrations/0069_*` will clash** once #886 lands. `test/migrations.test.ts` catches it, so #886 has to renumber.
 
 ## Next steps
