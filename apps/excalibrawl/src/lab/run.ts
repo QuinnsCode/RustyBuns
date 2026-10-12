@@ -3,13 +3,14 @@
 // goes into the arena. Every call is metered from the usage the model reports, so a run says what it cost.
 
 import { clefRequest, decide, toOps, type TurnInput } from "../engine/brain.ts";
-import { CANVAS } from "../engine/match.ts";
+import { judge } from "../engine/judge.ts";
+import { CANVAS, MODELS, penOf } from "../engine/match.ts";
 import { applyOps, DEFAULT_LIMITS } from "../engine/ops.ts";
+import { penFight, type PenStats } from "../engine/pen-fighter.ts";
 import { PLANNER, parsePlan, planRequest, type PlanStep } from "../engine/plan.ts";
 import { snapshot } from "../engine/raster.ts";
 import type { Op, SkeletonEl } from "../engine/types.ts";
 import { drawPrompt, extractText, parseOpsDebug, planPrompt } from "./llm.ts";
-import { penFight, type PenStats } from "./pen.ts";
 
 export const SETUPS = {
   A: "Clef + planner",
@@ -25,9 +26,9 @@ export type Setup = keyof typeof SETUPS;
 
 const CLEF = "@cf/cloudflare/clef";
 const FLASH = "@cf/cloudflare/clef-flash";
-const SCOUT = "@cf/meta/llama-4-scout-17b-16e-instruct";
+const SCOUT = MODELS.scout.id;
 const OSS = "@cf/openai/gpt-oss-120b";
-const OSS20 = "@cf/openai/gpt-oss-20b";
+const OSS20 = MODELS["gpt-oss-20b"].id;
 
 /** $ per million tokens, in and out (Workers AI's list prices). */
 const PRICE: Record<string, [number, number]> = {
@@ -81,7 +82,7 @@ export async function runLab(ai: Ai, setup: Setup, prompt: string, turns = 24): 
 
   if (setup === "G" || setup === "H") {
     // The pen: up to 8 lines a turn, so a quarter of the turns the Clef setups get.
-    const f = setup === "G" ? { model: SCOUT, canLook: true, maxTokens: 800 } : { model: OSS20, canLook: false, maxTokens: 3000 };
+    const f = penOf(setup === "G" ? "scout" : "gpt-oss-20b")!;
     const out = await penFight(run, f, prompt, region, Math.max(2, Math.round(turns / 4)));
     scene = out.scene;
     r.pen = out.stats;
@@ -137,7 +138,7 @@ export async function runLab(ai: Ai, setup: Setup, prompt: string, turns = 24): 
 
   r.elements = [...scene.values()];
   try {
-    r.judge = await judge(run, prompt, r.elements);
+    r.judge = await judge(run, prompt, r.elements, CANVAS);
   } catch (e) {
     r.errors.push(`judge: ${e instanceof Error ? e.message : e}`);
   }
@@ -153,18 +154,4 @@ async function replan(run: (m: string, i: unknown) => Promise<unknown>, prompt: 
   const res = await run(SCOUT, { ...req, messages: [req.messages[0], { role: "user", content: [{ type: "text", text }, { type: "image_url", image_url: { url: image } }] }] });
   const more = parsePlan(res);
   return more.length ? more : plan.slice(done);
-}
-
-/** Clef as the judge: how clearly the drawing shows the prompt, and how well it's made. */
-async function judge(run: (m: string, i: unknown) => Promise<unknown>, prompt: string, elements: SkeletonEl[]) {
-  const res = (await run(CLEF, {
-    model: "clef",
-    state: `A drawing made only of simple coloured shapes. It is meant to show: "${prompt}".`,
-    images: [await snapshot(elements, CANVAS)],
-    questions: {
-      likeness: { type: "score", instructions: `How clearly does the drawing show "${prompt}"?`, criteria: ["not at all", "barely", "somewhat", "clearly", "unmistakably"] },
-      craft: { type: "score", instructions: "How well made is it as a drawing: composition, colour, clear shapes?", criteria: ["a mess", "rough", "okay", "good", "great"] },
-    },
-  })) as { answers?: Record<string, { score?: number }> };
-  return { likeness: res.answers?.likeness?.score ?? NaN, craft: res.answers?.craft?.score ?? NaN };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { PEN_LINES, penCard, penScene, penTurn } from "../src/engine/pen.ts";
 import type { BoxEl, LinearEl, Scene, TextEl } from "../src/engine/types.ts";
-import { penFight } from "../src/lab/pen.ts";
+import { penFight } from "../src/engine/pen-fighter.ts";
 
 const full = { x: 0, y: 0, w: 700, h: 700 };
 const right = { x: 350, y: 0, w: 350, h: 700 };

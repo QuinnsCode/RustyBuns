@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { actionsFor, clefRequest, decide, gridFor, sample, toOps, type Decision, type TurnInput } from "../src/engine/brain.ts";
-import { finished, newMatch, playTurn, regionOf, scenesAt, type TurnDeps } from "../src/engine/match.ts";
+import { JUDGE, winnerOf } from "../src/engine/judge.ts";
+import { MODELS, PEN_EVERY, finished, judgeMatch, newMatch, playTurn, regionOf, scenesAt, type TurnDeps } from "../src/engine/match.ts";
 import { parsePlan } from "../src/engine/plan.ts";
 import { encodePng, rasterize, snapshot } from "../src/engine/raster.ts";
 import type { SkeletonEl } from "../src/engine/types.ts";
@@ -171,6 +172,107 @@ describe("a fight", () => {
     expect(bad!.error).toBeTruthy();
     expect(m.scenes[0]!.length).toBe(1);
     expect(finished(m)).toBe(true);
+  });
+});
+
+describe("pen fighters in the arena", () => {
+  const pens = [{ model: "gpt-oss-20b" as const, name: "GPT-OSS 20B" }, { model: "scout" as const, name: "Llama 4 Scout" }];
+
+  test(`play every ${PEN_EVERY}rd turn in one conversation, sit out after done, and replay to the same canvases`, async () => {
+    const m = newMatch("m-4", "a box", pens, 9, 0);
+    const seen: { model: string; messages: unknown[] }[] = [];
+    const replies: Record<string, string[]> = {
+      [MODELS["gpt-oss-20b"].id]: ["b a 50 50 40 40 red", "mv a 500 0\nb b a.bottom 20 20 blue", "done"],
+      [MODELS.scout.id]: ["o a 100 100 60 60 green\ndone"],
+    };
+    let plans = 0;
+    const deps: TurnDeps = {
+      run: async (model, input) => {
+        const { messages } = input as { messages: unknown[] };
+        seen.push({ model, messages: structuredClone(messages) });
+        return { response: replies[model]!.shift() ?? "" };
+      },
+      take: async () => true,
+      plan: async () => (plans++, []),
+    };
+    while (!finished(m)) await playTurn(m, deps);
+    expect(plans).toBe(0);
+    expect(m.log.map((e) => `${e.turn}:${e.side}`)).toEqual(["1:0", "1:1", "4:0", "7:0"]);
+    expect(m.log[1]!.pen).toEqual({ lines: 1, skipped: 0, done: true });
+    expect(seen.filter((s) => s.model === MODELS.scout.id).length).toBe(1);
+    // its third call carries both earlier turns, and the card names its half of the canvas
+    const third = seen.filter((s) => s.model === MODELS["gpt-oss-20b"].id)[2]!.messages;
+    expect(third.length).toBe(6);
+    expect(JSON.stringify(third[0])).toContain("canvas 350×700");
+    expect(JSON.stringify(third[1])).toContain("Turn 1 of 3");
+    // mv was clamped into the left half, and the log records where it landed
+    expect(m.scenes[0]!.map((e) => e.id)).toEqual(["0-a", "0-b"]);
+    expect(m.scenes[0]![0]!.x + (m.scenes[0]![0] as { width: number }).width).toBeLessThanOrEqual(350);
+    expect(scenesAt(m)).toEqual(m.scenes);
+    expect(m.scenes[1]![0]!.x).toBeGreaterThanOrEqual(350);
+  });
+
+  test("a failed pen call costs that turn, keeping what's drawn", async () => {
+    const m = newMatch("m-5", "a box", [pens[0]!], 6, 0);
+    let n = 0;
+    const deps: TurnDeps = { run: async () => { if (n++ === 1) throw new Error("timeout"); return { response: "b a 50 50 40 40 red" }; }, take: async () => true };
+    while (!finished(m)) await playTurn(m, deps);
+    expect(m.log.map((e) => e.error ?? e.pen?.lines)).toEqual([1, "timeout"]);
+    expect(m.scenes[0]!.length).toBe(1);
+  });
+
+  test("a Clef can fight a pen fighter: only the Clef plans, and both play their turns", async () => {
+    const m = newMatch("m-6", "a box", [{ model: "clef", name: "Clef" }, pens[0]!], 3, 0);
+    let plans = 0;
+    const deps: TurnDeps = {
+      run: async (_m, input) => ((input as { messages?: unknown }).messages ? { response: "b a 50 50 40 40 red" } : answers({ shape: "dot", color: "black", col: "c1", row: "r1", aspect: "square" })),
+      take: async () => true,
+      plan: async () => (plans++, []),
+      temperature: 0,
+    };
+    while (!finished(m)) await playTurn(m, deps);
+    expect(plans).toBe(1);
+    expect(m.log.filter((e) => e.side === 0).length).toBe(3);
+    expect(m.log.filter((e) => e.side === 1).length).toBe(1);
+  });
+});
+
+describe("Clef the referee", () => {
+  test("scores each side once from its own half, and names the winner", async () => {
+    const m = newMatch("m-7", "a very long cat", [{ model: "clef", name: "Clef" }, { model: "clef-flash", name: "Clef Flash" }], 1, 0);
+    m.scenes = [[head], [{ ...head, id: "1-1", x: 450 }]];
+    const calls: { model: string; input: { state: string; images: string[] } }[] = [];
+    let n = 0;
+    const deps = {
+      run: async (model: string, input: unknown) => {
+        calls.push({ model, input: input as (typeof calls)[number]["input"] });
+        return { answers: { likeness: { score: n++ ? 3 : 1 }, craft: { score: 2 } } };
+      },
+      take: async () => true,
+    };
+    await judgeMatch(m, deps);
+    await judgeMatch(m, deps); // a retry doesn't judge again
+    expect(calls.length).toBe(2);
+    expect(calls[0]!.model).toBe(JUDGE);
+    expect(calls[0]!.input.state).toContain("a very long cat");
+    expect(calls[0]!.input.images[0]).toStartWith("data:image/png;base64,");
+    expect(m.scores).toEqual([{ likeness: 1, craft: 2 }, { likeness: 3, craft: 2 }]);
+    expect(m.winner).toBe(1);
+  });
+
+  test("an empty canvas, a spent budget or a failed call isn't scored", async () => {
+    const m = newMatch("m-8", "x", [{ model: "clef", name: "Clef" }, { model: "clef-flash", name: "Clef Flash" }], 1, 0);
+    m.scenes = [[head], []];
+    await judgeMatch(m, { run: async () => { throw new Error("down"); }, take: async () => true });
+    expect(m.scores).toEqual([null, null]);
+    expect(m.winner).toBe(-1);
+  });
+
+  test("the winner has the best likeness + craft; a tie has none", () => {
+    expect(winnerOf([{ likeness: 2, craft: 1 }, { likeness: 1, craft: 1.5 }])).toBe(0);
+    expect(winnerOf([{ likeness: 2, craft: 1 }, { likeness: 1, craft: 2 }])).toBe(-1);
+    expect(winnerOf([null, { likeness: 0, craft: 0 }])).toBe(1);
+    expect(winnerOf([{ likeness: NaN, craft: 1 }, null])).toBe(-1);
   });
 });
 
