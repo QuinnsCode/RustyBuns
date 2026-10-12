@@ -70,8 +70,26 @@ Dev fights are **practice** by default: random answers in Clef's shape, for $0. 
 | D: Flash + planner, parts at the plan's spot | 0.97 | 1.60 | $0.003 | 24 s |
 | E: Llama 4 Scout writing ops, the original site's prompts | 1.38 | 1.16 | $0.006 | 85 s |
 | F: GPT-OSS 120B writing ops, blind (2 of 4 timed out) | 1.93 | 1.32 | $0.014 | 206 s |
+| G: Llama 4 Scout with [the pen](#the-pen), can look | 1.14 | 1.29 | $0.002 | 19 s |
+| H: GPT-OSS 20B with the pen, blind | 1.70 | 1.64 | $0.001 | 17 s |
 
-A drew the most recognisable subjects. Re-planning from the canvas (C) cost more and didn't help. E fills the canvas with a background. F is promising but too slow for a live fight. Clef judging its own setups is biased, and four prompts is a small sample. These are a guide, not a verdict.
+A drew the most recognisable subjects. Re-planning from the canvas (C) cost more and didn't help. E fills the canvas with a background. F is promising but too slow for a live fight. G and H (run the same day, up to 6 pen turns each) are a tenth of A's price. H scored best on craft, but two earlier H runs, before the parser took bare `X Y` points and kept a reasoning model's thinking out of the chat, scored 0.94 and 1.58 for likeness. Single drawings swing from 0.35 to 2.3. Scout looked at its canvas on most turns and redrew parts, yet drew worse than the blind 20B, which often said `done` after one turn. Clef judging its own setups is biased, and four prompts is a small sample. These are a guide, not a verdict.
+
+## The pen
+
+A drawing language for text models (`src/engine/pen.ts`), so a fighter writes a cat in about 120 tokens instead of 60 a shape in JSON ops. The tool card is about 200 tokens:
+
+```
+o body 350 430 300 170 orange
+o head body.top-90,-40 150 130 orange
+p earL orange head.top-50,10 head.top-35,-45 head.top-5,5
+o eyeL head.c-28,-8 16 16 black
+l tail black body.right 430,300 470,250
+```
+
+One command a line: `o`, `b`, `d` (ellipse, box, diamond, centred at X Y), `p` (filled polygon), `l` (stroke) and `t` (text), plus edits `mv`, `sz`, `fill`, `rm` and `up`. Shapes are named, and any point can be an **anchor** on a named shape, like `head.top-30,10`, so the code does the sums models get wrong. Every line goes through `applyOps` as it's read, so an anchor sees where a shape really landed, and a bad line is skipped with a reason the fighter is told about next turn. Up to 8 lines a turn. `look` gets a fighter that can see a picture of its canvas, and `done` ends its fight.
+
+`src/lab/pen.ts` is the fighter: one conversation, the card and the prompt, then each turn its shapes come back as pen lines. The bake-off's G and H use it. Pen fighters in the arena, with Clef as the referee, are [#996](https://github.com/QuinnsCode/RustyBuns/issues/996).
 
 ## Deploy
 
@@ -81,4 +99,4 @@ There are no secrets. Workers AI comes with the account. `bunx rustybuns add dep
 
 - The old site's replays (D1 plus the `excalibrawl-archive` bucket) aren't migrated. The fights since about Sep 25 are empty because the gateway credit ran out, so only older ones are worth bringing over.
 - The old site hid the prompt until the end so viewers could guess. Here it's shown from the start.
-- Fighters other than Clef: a GPT or a Workers AI text model writing ops, as on the old site, could join with the same `TurnDeps`.
+- Fighters other than Clef in the arena: [pen](#the-pen) fighters with Clef refereeing are [#996](https://github.com/QuinnsCode/RustyBuns/issues/996).

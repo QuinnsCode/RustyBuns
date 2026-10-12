@@ -33,7 +33,7 @@ import { branchEdited } from "./checks.ts";
 import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
-import { apply, empty, merge, replay, sha, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
+import { apply, empty, merge, mergeWords, replay, sha, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
 
 /** `writers`: everyone whose edits since the file's last commit this one carries (a hosted deploy asks about others', deploy.ts). */
 interface Commit { n: number; sha: string; parent: string | null; rev: number; by: string; at: number; message: string; writers: string[] }
@@ -364,6 +364,8 @@ export class FileDurableObject {
    * every open page updates in place without refetching.
    */
   async edit(by: string | string[], ops: Op[], ifRev?: number, claim?: string) {
+    // What stale lines said is read first: from here to the apply, nothing awaits.
+    if (typeof by === "string" && ifRev === undefined) ops = this.rebase(ops, await this.startedFrom(ops));
     // A merge (one author per op) lands whole: claims guard live edits, not a branch coming home.
     const held = typeof by === "string" ? this.held(by, ops, claim) : [];
     if (held.length) {
@@ -810,6 +812,40 @@ export class FileDurableObject {
     await this.serve();
     if (rearm) await this.arm();
     return true;
+  }
+
+  /**
+   * What each stale `set` started from, keyed `line@rev`: the line's text in the op at its base
+   * rev, or in main's doc when this branch forked. Missing once history is trimmed: that set stays stale.
+   */
+  async startedFrom(ops: Op[]) {
+    const out = new Map<string, string>();
+    for (const op of ops) {
+      if (op.kind !== "set" || this.doc.lines.find((l) => l.id === op.line)?.rev === op.base) continue;
+      const a: Applied | undefined = op.base > this.trimmed ? await this.ctx.storage.get("op:" + pad(op.base)) : undefined;
+      const was = a?.line === op.line && a.op.kind !== "delete" ? a.op.text : this.base?.lines.find((l) => l.id === op.line && l.rev === op.base)?.text;
+      if (was !== undefined) out.set(`${op.line}@${op.base}`, was);
+    }
+    return out;
+  }
+
+  /**
+   * A stale `set` (someone wrote the line since its `base`) rewritten onto the line as it is now,
+   * word by word, when the two edits' words don't overlap (#928): both land, blamed on the sender,
+   * with no retry. Otherwise it stays stale and the batch is a 409 as ever. Code-strict (mergeWords).
+   */
+  rebase(ops: Op[], from: Map<string, string>) {
+    if (!from.size) return ops;
+    const touched = ops.map((op) => op.kind === "insert" ? "" : op.line);
+    return ops.map((op) => {
+      if (op.kind !== "set") return op;
+      const was = from.get(`${op.line}@${op.base}`), now = this.doc.lines.find((l) => l.id === op.line);
+      // A batch that touches the line twice is past rebasing.
+      if (was === undefined || !now || now.rev === op.base || touched.filter((id) => id === op.line).length > 1) return op;
+      // Nothing left to add (the same edit sent again): stale, not a no-op write.
+      const text = mergeWords(was, now.text, op.text);
+      return text === null || text === now.text ? op : { ...op, text, base: now.rev };
+    });
   }
 
   /** The ops that land on someone else's claim, as conflicts. An insert lands on the line it goes after. Intents keep nobody off. */

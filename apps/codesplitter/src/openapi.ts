@@ -142,7 +142,7 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { ...filePath, ...onBranch, since: int("0 for all"), limit: int("at most this many ops, up to and by default 1,000") },
     ok: obj({ ops: arr(ref("Applied")), next: int("pass as since for the next page; null at the end") }) } },
   [`${repo}/do/ops`]: { post: { id: "edit_lines", summary: "Edit a file's lines: insert, set and delete by line id, all or nothing (the crew)", tag: "Files",
-    description: "Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts. `ifRev` pins the batch to the whole file's rev. "
+    description: "Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts, unless a set changed other words of the line than the edit since did: then it lands on top of that one. `ifRev` pins the batch to the whole file's rev. "
       + "An agent editing lines it claimed names the claim, which renews it. When someone else holds a line, the 409 also has `claims` (who, task, until) and `retryAfter` (seconds; null for a person's hold, which stands till lifted): "
       + "work elsewhere in the file first, then try those lines again no sooner than retryAfter, or ask a person to lift the claim. Don't poll.",
     query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int(), claim: str("your claim's id, when you're an agent editing lines you claimed") }, ["ops"]),

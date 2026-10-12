@@ -27,7 +27,8 @@ It's a proof of concept, built for Cloudflare's Artifacts challenge, and it move
 The highest-value things, in order:
 
 1. **Point your agents at one repo, all at once, safely.** Claude Code, Codex, pi and opencode edit line by line, live, blamed by name (`agent-claude`).
-   Stale edits get a 409 and retry; nothing is silently overwritten.
+   A stale edit to a line someone just changed lands anyway when the two changed different words; otherwise it gets a 409 and retries.
+   Nothing is silently overwritten.
    Agents work on branches, and a three-way merge **by line id** settles what git would call a conflict (a moved block that someone else edited, the same line added twice).
    What's left is a card each on the branch's merge page: keep main's, the branch's, both, or write it, with a suggestion when both sides added words at one spot and an Ask button for a coding agent's answer, which is offered only once the merged file parses and the repo's tests pass with it in a throwaway clone.
    Agents settle the same conflicts over MCP, the CLI or WebMCP.
