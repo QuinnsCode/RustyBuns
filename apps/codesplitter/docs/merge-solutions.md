@@ -254,6 +254,41 @@ semantic miss (#1096). It left 4 as cards and caught 1 broken clean merge of git
 a side. The two holes the replay found, a skipped big file (#1094) and a blob merge over main's
 change (#1095), were fixed in #1098.
 
+### 2026-10-12 replay: a day of Two Fronts and README clashes
+
+That day's seven "merge main into the PR" commits, run through the same replay against main `08d6601`:
+
+```sh
+bun scripts/merge-replay.ts b070fd8 02e1045 401eeda e2f2145 2086218 db4095c 03e9127 --json
+```
+
+| PR (fix commit) | git conflicted on | codeSplitter vs the fix |
+|---|---|---|
+| #1093 vs #1102 (`b070fd8`) | two-fronts `README.md`, `main.ts` | README exact; `main.ts` 1 card |
+| #1093 vs #1087 (`02e1045`) | two-fronts `README.md`, `main.ts`, `war/rules.ts` | `rules.ts` exact; README 1 card, `main.ts` 3 cards |
+| #1100 (`401eeda`) | root `README.md`, two-fronts `README.md`, `main.ts`, `styles.css`, `war/rules.ts`, `test/rules.test.ts` | root README exact; `styles.css` reordered; `rules.test.ts` settled differently; two-fronts README 1 card, `main.ts` 5 cards, `rules.ts` 3 cards |
+| #1110 (`e2f2145`) | `README.md` | exact |
+| #1115 (`2086218`) | `README.md` | 1 card |
+| #1119 (`db4095c`) | codesplitter `src/agent-run.ts` | exact |
+| #1124 (`03e9127`) | cli `test/init.test.ts` | settled differently: ordering only |
+
+Of 15 files git conflicted on, 6 needed nobody: 5 came out exactly like the fix, and `styles.css` had the
+same rules in another order (`.quick #dogfight` moved down a few lines, which doesn't change what it styles).
+7 went to cards. 2 were settled silently but differently, and neither lost a side:
+
+- **`init.test.ts`, harmless.** Both sides added a test at the same spot. It kept both, with the branch's
+  test after main's rather than before it, and lost the blank line between them.
+- **`rules.test.ts`, a real miss.** #1093 on main renamed `hero` to `heroes.<faction>`, and #1100's new test
+  still says `won.hero.xp` and `lost.hero.woundedUntil`. The person renamed them; the merge kept them, so the file
+  wouldn't typecheck. It's the #1096 case again. The replay is a dry run of the line merge, so it doesn't run
+  #1109's test check, which is what would send this back as a card.
+
+`02e1045` also shows five files git merged clean that differ from the fix (`edge/campaign.ts`, `net.ts`,
+`war/table.ts` and two tests). codeSplitter's text matches git's clean merge in all five. The person wired
+#1087's galaxy pick through them in the merge commit itself, which no line merge can do.
+
+No new engine bugs: nothing dropped a side, and the one semantic miss is a known class with a fix already in (#1109).
+
 ## Next steps
 
 Filed as issues, linked from the PR:
