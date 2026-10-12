@@ -3,12 +3,29 @@
 //   - the biggest folders are enemy compounds, cut level into the ground, each held by guards
 //   - a compound's files are its buildings: height is line count, so a 2000-line file is a tower to fight round
 //   - files from everywhere else are crates scattered across the field, cover between you and them
+//   - folders that import each other are joined by roads; a folder that changed a lot lately holds more guards
+//   - a file agents mostly wrote is black glass, not paper (codeSplitter's city does this); a failing check sets its compound on fire
 // The same repo on the same ground with the same seed is always the same level.
 
 import { CLIFF, slope, withPads, type Pad, type Terrain } from "./terrain.ts";
 
-export interface RepoFile { path: string; lines: number }
-export interface RepoSnapshot { name: string; ref: string; files: RepoFile[] }
+export interface RepoFile {
+  path: string;
+  lines: number;
+  /** Commits that touched it lately (of the repo's last hundred or so). */
+  churn?: number;
+  /** The share of those commits agents made, 0-1. */
+  agent?: number;
+}
+export interface RepoSnapshot {
+  name: string;
+  ref: string;
+  files: RepoFile[];
+  /** Folders whose files import each other: [a, b, importing files]. */
+  links?: [string, string, number][];
+  /** Names of the checks failing at `ref`. */
+  failing?: string[];
+}
 
 export interface Block {
   path: string;
@@ -23,15 +40,33 @@ export interface Block {
   w: number;
   d: number;
   h: number;
+  /** Agents mostly wrote it (its recent commits were at least half agents'). */
+  agent?: boolean;
 }
 
-export interface Compound { folder: string; x: number; z: number; r: number; files: number; lines: number; guards: number }
+export interface Compound {
+  folder: string;
+  x: number;
+  z: number;
+  r: number;
+  files: number;
+  lines: number;
+  guards: number;
+  /** The folder's share of the repo's recent changes, 0-1. */
+  churn?: number;
+  /** A failing check is about this folder. */
+  burning?: boolean;
+}
+
+/** Two compounds whose folders import each other, and how many files do. */
+export interface Road { a: number; b: number; weight: number }
 
 export interface CodeMap {
   terrain: Terrain;
   spawn: { x: number; z: number; yaw: number };
   compounds: Compound[];
   blocks: Block[];
+  roads?: Road[];
 }
 
 /** Compounds a level holds at most, files shown in each, and crates out in the field. */
@@ -60,6 +95,16 @@ export function folderOf(path: string): string {
   if (parts.length === 1) return ".";
   if ((parts[0] === "apps" || parts[0] === "packages") && parts.length > 2) return `${parts[0]}/${parts[1]}`;
   return parts[0]!;
+}
+
+/** Extra guards for a folder that has had this share of the repo's recent changes. */
+export const churnGuards = (share: number) => (share >= 0.25 ? 2 : share >= 0.1 ? 1 : 0);
+
+/** Whether a failing check is about this folder: its name has the folder's own name in it as a word. */
+export function checkHits(folder: string, check: string): boolean {
+  const name = folder.split("/").pop()!.toLowerCase();
+  if (name === "." || name.length < 2) return false;
+  return new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(check.toLowerCase());
 }
 
 /** A block's height for its line count: a one-liner is a step, a 5000-line file a watchtower. */
@@ -126,6 +171,7 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     .map(([folder, files]) => ({ folder, files: files.sort((a, b) => b.lines - a.lines), lines: files.reduce((s, f) => s + f.lines, 0) }))
     .sort((a, b) => b.lines - a.lines || a.folder.localeCompare(b.folder));
 
+  const allChurn = repo.files.reduce((s, f) => s + (f.churn ?? 0), 0);
   const compounds: Compound[] = [];
   const pads: Pad[] = [];
   const taken: { x: number; z: number; r: number }[] = [{ x: spawn.x, z: spawn.z, r: 30 }];
@@ -142,7 +188,10 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
       if (gap > 8 && gap > bestGap && flatDisc(ground, p.x, p.z, r, 0.45)) best = p, bestGap = gap;
     }
     if (!best) continue;
-    compounds.push({ folder: f.folder, x: best.x, z: best.z, r, files: f.files.length, lines: f.lines, guards: 2 + Math.min(3, Math.floor(f.lines / 6000)) });
+    const churn = allChurn ? Math.round((f.files.reduce((s, x) => s + (x.churn ?? 0), 0) / allChurn) * 100) / 100 : 0;
+    const guards = 2 + Math.min(3, Math.floor(f.lines / 6000)) + churnGuards(churn);
+    const burning = (repo.failing ?? []).some((check) => checkHits(f.folder, check));
+    compounds.push({ folder: f.folder, x: best.x, z: best.z, r, files: f.files.length, lines: f.lines, guards, churn, burning });
     pads.push({ x: best.x, z: best.z, r });
     taken.push({ x: best.x, z: best.z, r });
   }
@@ -163,7 +212,7 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
         if (dist > c.r - 1) break;
         const x = c.x + Math.cos(a) * dist, z = c.z + Math.sin(a) * dist;
         if (overlaps(x, z, w, d, 1.4)) continue;
-        blocks.push({ path: f.path, lines: f.lines, compound: ci, x, z, y: terrain.height(c.x, c.z), w, d, h: heightOf(f.lines) });
+        blocks.push({ path: f.path, lines: f.lines, compound: ci, x, z, y: terrain.height(c.x, c.z), w, d, h: heightOf(f.lines), agent: (f.agent ?? 0) >= 0.5 });
         break;
       }
     }
@@ -178,9 +227,18 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
       if (taken.some((o) => Math.hypot(p.x - o.x, p.z - o.z) < o.r + 3) || overlaps(p.x, p.z, w, d, 2)) continue;
       // Sat on its lowest corner so it never floats on a slope.
       const y = Math.min(...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => terrain.height(p.x + (sx! * w) / 2, p.z + (sz! * d) / 2)));
-      blocks.push({ path: f.path, lines: f.lines, compound: -1, x: p.x, z: p.z, y, w, d, h });
+      blocks.push({ path: f.path, lines: f.lines, compound: -1, x: p.x, z: p.z, y, w, d, h, agent: (f.agent ?? 0) >= 0.5 });
       break;
     }
   }
-  return { terrain, spawn, compounds, blocks };
+
+  // Roads: one between each pair of compounds whose folders import each other.
+  const at = new Map(compounds.map((c, i) => [c.folder, i]));
+  const roads: Road[] = [];
+  for (const [fa, fb, weight] of repo.links ?? []) {
+    const a = at.get(fa), b = at.get(fb);
+    if (a !== undefined && b !== undefined) roads.push(a < b ? { a, b, weight } : { a: b, b: a, weight });
+  }
+  roads.sort((p, q) => p.a - q.a || p.b - q.b);
+  return { terrain, spawn, compounds, blocks, roads };
 }

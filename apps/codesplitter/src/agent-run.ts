@@ -6,7 +6,7 @@
 
 import type { Call } from "./local.ts";
 import type { Doc, Line, Op } from "./lines.ts";
-import { harnessCommand, taskPrompt, type Command, type Harness } from "./harness.ts";
+import { harnessCommand, taskPrompt, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 
 /** Runs a command in `cwd`; `signal` aborting kills it (Stop on a run). */
@@ -80,6 +80,8 @@ export const fromDisk = (s: string) => s === "" ? [] : s.replace(/\n$/, "").spli
 
 /** Re-runs notes may add to one run, so a chatty owner can't keep an agent going for ever. */
 const NOTE_RUNS = 5;
+/** How often a run renews its claim while the CLI thinks: well inside the file's 2-minute lease (file-do.ts). */
+const HEARTBEAT_MS = 30_000;
 
 export async function runAgent(call: Call, opts: {
   user: string; owner: string; repo: string; path: string;
@@ -101,6 +103,8 @@ export async function runAgent(call: Call, opts: {
   signal?: AbortSignal;
   /** Where the agent runs (default: a scratch dir here, running `exec`). */
   sandbox?: Sandbox;
+  /** How often its claim is renewed while it works (default HEARTBEAT_MS). */
+  heartbeat?: number;
   exec?: Exec; log?: (s: string) => void;
 }): Promise<Result> {
   const { user, owner, repo, path } = opts;
@@ -123,8 +127,24 @@ export async function runAgent(call: Call, opts: {
     const res = await call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim, lines: opts.lines, task: opts.task }) });
     if (!res.ok) throw new Error(`claiming its lines: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? res.status}`);
   }
+  // The claim is a lease: renewed by every edit that names it, and by this while the CLI thinks.
+  const renew = () => call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim }) })
+    .then((res) => { if (!res.ok) log(`${opts.harness}: couldn't renew its claim on ${path} (${res.status}); its lines may be free to others`); }, () => {});
+  const beat = claim ? setInterval(renew, opts.heartbeat ?? HEARTBEAT_MS) : null;
   try { return await work(); }
-  finally { if (claim) await call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim, release: true }) }).catch(() => {}); }
+  finally { if (beat) clearInterval(beat); if (claim) await call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim, release: true }) }).catch(() => {}); }
+
+  /** Lines of `doc` others hold right now (claims are on main's copy; a branch's lines share its ids), so the agent works elsewhere. */
+  async function heldLines(doc: Doc): Promise<HeldLine[]> {
+    const res = await call(user, `${file}/claims${onMain}`).catch(() => null);
+    if (!res?.ok) return [];
+    const now = Date.now(), whose = new Map<string, string>();
+    for (const c of (await res.json()) as { id: string; who: string; bot: boolean; lines: string[]; task?: string; until: number | null }[]) {
+      if (c.id === claim || (c.who === user && !c.bot) || (c.until !== null && c.until <= now)) continue;
+      for (const id of c.lines) whose.set(id, `held by @${c.who}${c.task ? `: ${c.task}` : ""}`);
+    }
+    return doc.lines.flatMap((l, i) => whose.has(l.id) ? [{ n: i + 1, text: l.text, why: whose.get(l.id)! }] : []);
+  }
 
   async function work(): Promise<Result> {
   const retries = opts.retries ?? 2, signal = opts.signal;
@@ -136,7 +156,7 @@ export async function runAgent(call: Call, opts: {
     // 1. Snapshot the file, and 2. let the agent edit a copy of it in the sandbox.
     const snapshot = await get();
     rev = snapshot.rev;
-    const cmd = harnessCommand(opts.harness, taskPrompt(path, opts.task, conflicts, told), { model: opts.model });
+    const cmd = harnessCommand(opts.harness, taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot)), { model: opts.model });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path} (rev ${snapshot.rev})`);
     const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines) }, signal);
     // Stopped: whatever it left is dropped.

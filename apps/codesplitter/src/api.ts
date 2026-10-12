@@ -126,7 +126,7 @@ export const GROUPS: Group[] = [
     about: "Each file is a Durable Object. Every call takes ?path= (the file) and, to work on a branch's copy, &branch=. A line is {id, text, by, rev}: by and rev are its blame. An op names lines by id: {kind: \"insert\", after: id | null, text} | {kind: \"set\", line, base, text} | {kind: \"delete\", line, base}, where base is the line's rev as you read it; a stale one is a 409 to retry. ifRev pins the whole batch to the file's rev.",
     endpoints: [
       { method: "GET", path: "/api/repos/:o/:r/do/file?path=", does: "the file now, with blame: {rev, lines: [{id, text, by, rev, private?}]}" },
-      { method: "POST", path: "/api/repos/:o/:r/do/ops?path=", body: "{ops: Op[], ifRev?}", who: CREW, does: "edit, all or nothing: {rev, applied}, or 409 {rev, conflicts}" },
+      { method: "POST", path: "/api/repos/:o/:r/do/ops?path=", body: "{ops: Op[], ifRev?, claim?}", who: CREW, does: "edit, all or nothing: {rev, applied}, or 409 {rev, conflicts}, plus {claims, retryAfter} when lines are held" },
       { method: "GET", path: "/api/repos/:o/:r/do/log?path=&since=&limit=", does: "a page of the ops after rev since: {ops: [{rev, by, at, op, line}], next}, at most limit (default and cap 1,000); pass next as since for the next page, null at the end; 410 {from} if since is before where history starts" },
       { method: "GET", path: "/api/repos/:o/:r/do/at?path=&rev=", does: "time travel: the file as it was at rev, with blame; 410 {from} before where history starts" },
       { method: "POST", path: "/api/repos/:o/:r/do/commit?path=", body: "{message}", who: CREW, does: "commit the file on main: indexed for search and pushed to git ({…commit, git})" },
@@ -134,7 +134,8 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/repos/:o/:r/do/private?path=", does: "the ids of its private lines" },
       { method: "POST", path: "/api/repos/:o/:r/do/private?path=", body: "{lines: [id], private: boolean}", who: CREW, does: "make lines private (the crew), or public again (the owner only)" },
       { method: "GET", path: "/api/repos/:o/:r/do/claims?path=", does: "who is working on which lines: [{id, who, bot, lines: [id], task?, at, until}]; until null stands until lifted" },
-      { method: "POST", path: "/api/repos/:o/:r/do/claims?path=", body: "{lines: [id], id?, task?, ttl?} | {id, release: true}", who: CREW, does: "claim lines so only you edit them (an agent's lapses in 30 minutes, a person's hold stands), renew your claim by id, or lift any claim; 409 {error, claims} when they're held. An agent's ops name their claim: {ops, claim}" },
+      { method: "POST", path: "/api/repos/:o/:r/do/claims?path=", body: "{lines: [id], id?, task?, ttl?, extend?} | {id, release: true}", who: CREW, does: "claim lines so only you edit them, or renew your claim by id. An agent's is a 2-minute lease, renewed by its edits ({ops, claim}) and capped at 30 minutes unless a person sends extend; a person's hold stands. 409 {error, claims, retryAfter} when they're held" },
+      { method: "POST", path: "/api/repos/:o/:r/do/release?path=", body: "{id}", who: CREW, does: "let go of a claim: your own, or (any of the crew) anyone's: {released}" },
       { method: "WS", path: "/api/repos/:o/:r/do/ws?path=", does: "live: send {type: \"ops\", id, ops, ifRev?} and get {type: \"ack\", id, rev} or {type: \"nack\", id, rev?, conflicts?, error?, retryAfter?}; everyone gets {type: \"ops\", rev, applied}, {type: \"presence\", who}, {type: \"commit\", commit}, {type: \"private\", lines, private}, {type: \"claim\", claim} and {type: \"unclaim\", id}. A gap in revs means refetch the file" },
     ],
   },

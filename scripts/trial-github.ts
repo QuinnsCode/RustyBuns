@@ -16,6 +16,9 @@
 //   --jobs <n>        apps at a time (default 2)
 //   --out <dir>       results.jsonl, summary.md, logs, clones (default .rustybuns-trial/, gitignored)
 //   --from <file>     the apps a saved --list printed, instead of searching again (no API calls)
+//   --fresh           ask GitHub again instead of <out>/gh-cache (search pages and repo meta keep a day,
+//                     a package.json until its repo's pushed_at moves). A search stops before it would
+//                     leave the shared core budget under 500 calls.
 //   --list            print the apps a search finds (stars, last push, version) and stop
 //   --keep            keep node_modules after each app (default: removed, to bound disk use)
 //   --prof            time boot and 200 GETs of /, read the host's memory, and save a CPU profile per
@@ -30,6 +33,7 @@ import { $ } from "bun";
 import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { parseArgs } from "node:util";
+import { Cache, cacheKey, DAY, overBudget, parseRate, rateLine } from "./trial-github-cache.ts";
 import { installedPackages, ownInstallScripts, parseDenials, treeUsage, malicious, flagLines, USUAL_INSTALL, IDLE_CPU, BIG_RSS_MB, type Flags, type Idle } from "./trial-flags.ts";
 
 const { values: o, positionals } = parseArgs({
@@ -37,13 +41,14 @@ const { values: o, positionals } = parseArgs({
   options: {
     dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, sample: { type: "string" }, since: { type: "string" }, stable: { type: "boolean" }, local: { type: "boolean" },
     modes: { type: "string", default: "spa,worker" }, jobs: { type: "string", default: "2" },
-    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" }, list: { type: "boolean" }, from: { type: "string" },
+    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" }, list: { type: "boolean" }, from: { type: "string" }, fresh: { type: "boolean" },
   },
 });
 const REPO = resolve(import.meta.dir, "..");
 const OUT = resolve(o.out!);
 const MODES = o.modes!.split(",") as ("spa" | "worker")[];
 const VERSION = "0.1.11";
+const cache = new Cache(join(OUT, "gh-cache"), o.fresh);
 for (const d of ["clones", "logs", "data", "sandbox"]) mkdirSync(join(OUT, d), { recursive: true });
 
 type App = { repo: string; sub: string; version?: string; stars?: number; pushed?: string };
@@ -58,37 +63,77 @@ export function depVersion(pkg: { dependencies?: Record<string, string>; devDepe
 /** "^1.7.0", "1.0.0-beta.9", "~1.2" are major 1; "workspace:*", "latest", "0.0.88" are not. */
 export const isMajor = (range: string, major: string) => new RegExp(`^[\\^~=v]?${major}\\.`).test(range.trim());
 
+const rate = async () => parseRate(await $`gh api rate_limit`.quiet().nothrow().text()); // free: rate_limit doesn't count
+
+type Meta = { stars: number; archived: boolean; pushed: string; pushedAt: string };
+type Deps = { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | null;
+
+/** Repos depending on <dep>. Everything it asks GitHub is cached under <out>/gh-cache (see trial-github-cache.ts),
+ *  so a rerun costs a few calls, not thousands; --fresh asks again. */
 async function search(dep: string): Promise<App[]> {
+  const before = await rate();
+  console.log(before ? rateLine(before) : "could not read gh api rate_limit: no budget check this run");
+  const q = `"${dep}" filename:package.json`;
   const hits = new Map<string, App>();
   for (let page = 1; page <= 10; page++) {
-    const r = await $`gh api -X GET search/code -f q=${`"${dep}" filename:package.json`} -f per_page=100 -f page=${page}`.quiet().nothrow();
-    if (r.exitCode) { console.error(`search page ${page}: ${r.stderr.toString().trim().split("\n").at(-1)}`); break; }
-    const items: { path: string; repository: { full_name: string; fork: boolean } }[] = JSON.parse(r.stdout.toString()).items;
-    for (const it of items) if (it.path.endsWith("package.json") && !it.repository.fork) {
+    const key = cacheKey("search", q, page);
+    let items = cache.get<{ path: string; repo: string; fork: boolean }[]>(key, DAY);
+    if (!items) {
+      const r = await $`gh api -X GET search/code -f q=${q} -f per_page=100 -f page=${page}`.quiet().nothrow();
+      if (r.exitCode) { console.error(`search page ${page}: ${r.stderr.toString().trim().split("\n").at(-1)}`); break; }
+      items = (JSON.parse(r.stdout.toString()).items as { path: string; repository: { full_name: string; fork: boolean } }[])
+        .map((it) => ({ path: it.path, repo: it.repository.full_name, fork: it.repository.fork }));
+      cache.set(key, items);
+      if (items.length === 100) await Bun.sleep(7000); // code search allows 10 requests a minute
+    }
+    for (const it of items) if (it.path.endsWith("package.json") && !it.fork) {
       const sub = dirname(it.path) === "." ? "" : dirname(it.path);
-      hits.set(`${it.repository.full_name}:${sub}`, { repo: it.repository.full_name, sub });
+      hits.set(`${it.repo}:${sub}`, { repo: it.repo, sub });
     }
     if (items.length < 100) break;
-    await Bun.sleep(7000); // code search allows 10 requests a minute
   }
-  const meta = new Map<string, { stars: number; archived: boolean; pushed: string }>();
+  const metaKey = (repo: string) => cacheKey("meta", repo);
+  const pkgKey = (a: App, m: Meta) => cacheKey("pkg", a.repo, a.sub, m.pushedAt);
+  // Before spending any: what the uncached lookups cost, against what's left for everyone else.
+  const repos = new Set([...hits.values()].map((a) => a.repo));
+  let needed = [...repos].filter((r) => !cache.get(metaKey(r), DAY)).length;
+  for (const a of hits.values()) { const m = cache.get<Meta>(metaKey(a.repo), DAY); if (!m || (!m.archived && cache.get(pkgKey(a, m)) === undefined)) needed++; }
+  console.log(`${hits.size} hits in ${repos.size} repos, ${needed} uncached GitHub calls`);
+  if (before && needed) {
+    const over = overBudget(before.core, needed);
+    if (over) { console.error(over); process.exit(1); }
+  }
+  const meta = new Map<string, Promise<Meta>>();
+  const repoMeta = (repo: string) => meta.get(repo) ?? meta.set(repo, (async () => {
+    const hit = cache.get<Meta>(metaKey(repo), DAY);
+    if (hit) return hit;
+    const r = await $`gh api repos/${repo} --jq ${"[.stargazers_count,.archived,.pushed_at]"}`.quiet().nothrow();
+    let parsed: unknown; try { parsed = JSON.parse(r.stdout.toString()); } catch {}
+    if (r.exitCode || !Array.isArray(parsed)) return { stars: 0, archived: true, pushed: "", pushedAt: "" }; // not cached: ask again next run
+    const [stars, archived, pushedAt] = parsed;
+    const m: Meta = { stars, archived, pushed: String(pushedAt).slice(0, 10), pushedAt: String(pushedAt) };
+    cache.set(metaKey(repo), m);
+    return m;
+  })()).get(repo)!;
   const apps: App[] = [];
   // 8 at a time: GitHub's secondary rate limit answers a burst with an error body, not data
   const queue = [...hits.values()];
   await Promise.all(Array.from({ length: 8 }, async () => { for (let a; (a = queue.shift()); ) await (async (a: App) => {
-    const raw = await $`gh api repos/${a.repo}/contents/${a.sub ? `${a.sub}/` : ""}package.json -H ${"Accept: application/vnd.github.raw"}`.quiet().nothrow().text();
-    let v: string | undefined;
-    try { v = depVersion(JSON.parse(raw), dep); } catch { return; }
-    if (!v || (o.major && !isMajor(v, o.major)) || (o.stable && /\d-[a-z]/i.test(v))) return;
-    if (!meta.has(a.repo)) {
-      const m = await $`gh api repos/${a.repo} --jq ${"[.stargazers_count,.archived,.pushed_at]"}`.quiet().nothrow().text();
-      let parsed: unknown; try { parsed = JSON.parse(m); } catch {}
-      const [stars, archived, pushed] = Array.isArray(parsed) ? parsed : [0, true, ""];
-      meta.set(a.repo, { stars, archived, pushed: String(pushed).slice(0, 10) });
+    const m = await repoMeta(a.repo);
+    if (m.archived || (o.since && m.pushed < o.since)) return;
+    let pkg = cache.get<Deps>(pkgKey(a, m));
+    if (pkg === undefined) {
+      const r = await $`gh api repos/${a.repo}/contents/${a.sub ? `${a.sub}/` : ""}package.json -H ${"Accept: application/vnd.github.raw"}`.quiet().nothrow();
+      if (r.exitCode) return; // a 404 or a rate-limit answer: not cached, ask again next run
+      try { const j = JSON.parse(r.stdout.toString()); pkg = { dependencies: j.dependencies, devDependencies: j.devDependencies }; } catch { pkg = null; }
+      cache.set(pkgKey(a, m), pkg);
     }
-    const m = meta.get(a.repo)!;
-    if (!m.archived && (!o.since || m.pushed >= o.since)) apps.push({ ...a, version: v, stars: m.stars, pushed: m.pushed });
+    const v = pkg ? depVersion(pkg, dep) : undefined;
+    if (!v || (o.major && !isMajor(v, o.major)) || (o.stable && /\d-[a-z]/i.test(v))) return;
+    apps.push({ ...a, version: v, stars: m.stars, pushed: m.pushed });
   })(a); }));
+  const after = await rate();
+  if (after) console.log(rateLine(after));
   return apps.sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0) || a.repo.localeCompare(b.repo));
 }
 
