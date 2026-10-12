@@ -1,0 +1,131 @@
+# T3 Code's server tests on Windows on Arm, on Node and on Bun, to see what Bun breaks there.
+# Read-only on T3 Code (pingdotgg/t3code): it clones one pinned commit, lays our Bun terminal
+# adapter on it (.github/t3-bun/bun-pty.patch), runs the suite with our Node shims for Bun
+# (bun-shims.ts) and lists the tests that fail on Bun only (compare.ts). Nothing goes back to them.
+#
+# Their code and its dependencies run here, so the jobs get no secrets, a read-only token and
+# no saved git credentials, and install with scripts off. On demand, and on a PR that changes it.
+# Free: windows-11-arm is a standard runner on a public repo.
+name: t3-bun
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/t3-bun.yml
+      - .github/t3-bun/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t3-bun-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  T3_REPO: https://github.com/pingdotgg/t3code
+  T3_SHA: 58d253231d83f669a2cdfefa5fe479751d22c582
+  BUN_VERSION: "1.4.3"
+  T3CODE_TELEMETRY_ENABLED: "false"
+  DO_NOT_TRACK: "1"
+  CI: "1"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  suite:
+    name: ${{ matrix.runtime }} ${{ matrix.shard }}/4
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [node, bun]
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          architecture: arm64
+      # Native bun-windows-aarch64, not setup-bun, which falls back to x64 here (oven-sh/setup-bun#164).
+      - name: Native Bun for Arm64
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/bun.zip" "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/bun-windows-aarch64.zip"
+          unzip -q "$RUNNER_TEMP/bun.zip" -d "$RUNNER_TEMP/bun"
+          echo "$RUNNER_TEMP/bun/bun-windows-aarch64" >> "$GITHUB_PATH"
+      - name: T3 Code at the pinned commit, plus our adapter
+        run: |
+          git init -q t3 && cd t3
+          # Windows checkouts turn LF into CRLF: keep T3's files as they are, and the patch's too.
+          git config core.autocrlf false
+          git fetch -q --depth 1 "$T3_REPO" "$T3_SHA" && git checkout -q FETCH_HEAD
+          tr -d '\r' < ../.github/t3-bun/bun-pty.patch | git apply
+      - name: Install (scripts off)
+        working-directory: t3
+        run: |
+          node --version; bun --version; bun -e "console.log(process.platform, process.arch)"
+          bun install --filter t3 --filter @t3tools/web --ignore-scripts
+      - name: Server tests
+        working-directory: t3/apps/server
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          out="$(cygpath -m "$RUNNER_TEMP/out")/${{ matrix.runtime }}-${{ matrix.shard }}.json"
+          args=(test run --shard=${{ matrix.shard }}/4 --reporter=dot --reporter=json --outputFile="$out")
+          if [ "${{ matrix.runtime }}" = bun ]; then
+            # BUN_OPTIONS, not --preload: vitest's forked workers need the shims too.
+            export BUN_OPTIONS="--preload $(cygpath -m "$GITHUB_WORKSPACE")/.github/t3-bun/bun-shims.ts"
+            bun --bun node_modules/vite-plus/bin/vp "${args[@]}" || echo "exit $?"
+          else
+            node node_modules/vite-plus/bin/vp "${args[@]}" || echo "exit $?"
+          fi
+          test -s "$out"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: t3-${{ matrix.runtime }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/out/*.json
+
+  adapter:
+    name: Bun terminal adapter (ConPTY)
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Native Bun for Arm64
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/bun.zip" "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/bun-windows-aarch64.zip"
+          unzip -q "$RUNNER_TEMP/bun.zip" -d "$RUNNER_TEMP/bun"
+          echo "$RUNNER_TEMP/bun/bun-windows-aarch64" >> "$GITHUB_PATH"
+      - name: T3 Code at the pinned commit, plus our adapter
+        run: |
+          git init -q t3 && cd t3
+          # Windows checkouts turn LF into CRLF: keep T3's files as they are, and the patch's too.
+          git config core.autocrlf false
+          git fetch -q --depth 1 "$T3_REPO" "$T3_SHA" && git checkout -q FETCH_HEAD
+          tr -d '\r' < ../.github/t3-bun/bun-pty.patch | git apply
+      - working-directory: t3
+        run: bun install --filter t3 --ignore-scripts
+      - working-directory: t3/apps/server
+        run: bun test ./src/terminal/BunPtyAdapter.bun-test.ts
+
+  compare:
+    needs: suite
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: t3-*
+          path: reports
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun .github/t3-bun/compare.ts reports | tee -a "$GITHUB_STEP_SUMMARY"
