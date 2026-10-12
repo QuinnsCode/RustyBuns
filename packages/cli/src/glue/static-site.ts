@@ -68,3 +68,43 @@ export function staticBuild(s: StaticSite, out: string, opts: { jekyllConfig?: s
     case "html": return `${opts.exec("rustybuns")} copy-site ${s.dir} ${out}`;
   }
 }
+
+/** A GitHub Pages default plugin a Gemfile-less Jekyll site leans on, which plain Jekyll doesn't run. */
+export interface PagesPluginUse {
+  plugin: string;
+  /** What breaks without it, for the init warning. */
+  what: string;
+  files: string[];
+}
+
+// jekyll-optional-front-matter leaves these alone (jekyll-readme-index takes README).
+const NOT_OPTIONAL_PAGE = /^(README|LICENSE|LICENCE|COPYING|CODE_OF_CONDUCT|CONTRIBUTING|ISSUE_TEMPLATE|PULL_REQUEST_TEMPLATE)$/i;
+
+/**
+ * The rest of GitHub Pages' default plugins (beyond jekyll-default-layout, which jekyllDefaults covers)
+ * that this site's Markdown looks like it needs. `files` are the site's paths ("/"-separated, excludes,
+ * dotfiles and _folders already left out) and `read` gives one's text.
+ */
+export function jekyllPagesPlugins(files: string[], read: (f: string) => string): PagesPluginUse[] {
+  const md = files.filter((f) => /\.(md|markdown)$/i.test(f));
+  const base = (f: string) => f.split("/").pop()!.replace(/\.[^.]+$/, "");
+  const dir = (f: string) => f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "";
+  const noMatter: string[] = [], links: string[] = [], titles: string[] = [];
+  for (const f of md) {
+    const text = read(f);
+    const fm = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(text);
+    if (!fm && !NOT_OPTIONAL_PAGE.test(base(f))) noMatter.push(f);
+    // [x](other.md), [x](../a/b.md#part), [x]: other.md; not a URL, an absolute path or a #fragment.
+    if (/(\]\(|^\[[^\]]+\]:[ \t]*)(?![a-z][\w+.-]*:|\/|#)[^)\s]+\.(md|markdown)(#[^)\s]*)?(\)|\s|$)/im.test(text)) links.push(f);
+    const body = fm ? text.slice(fm[0].length) : text;
+    if (!(fm && /^title\s*:/m.test(fm[1]!)) && /^\s*(#{1,6}[ \t]+\S|[^\n]+\r?\n(=+|-+)[ \t]*(\r?\n|$))/.test(body)) titles.push(f);
+  }
+  const hasIndex = (d: string) => files.some((f) => dir(f) === d && /^index\.(md|markdown|html?)$/i.test(f.split("/").pop()!));
+  const readmes = md.filter((f) => /^readme$/i.test(base(f)) && !hasIndex(dir(f)));
+  return [
+    { plugin: "jekyll-optional-front-matter", what: "Markdown with no front matter is copied raw here, not rendered", files: noMatter },
+    { plugin: "jekyll-relative-links", what: "links to .md files 404 here, Pages points them at the .html", files: links },
+    { plugin: "jekyll-titles-from-headings", what: "a page with no title takes its first heading on Pages, and has none here", files: titles },
+    { plugin: "jekyll-readme-index", what: "a README is its folder's index on Pages, with no index.md; not here", files: readmes },
+  ].filter((u) => u.files.length);
+}

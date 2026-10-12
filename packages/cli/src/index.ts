@@ -20,8 +20,8 @@ import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, fl
 import { infer, readPackageJson } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
-import { jekyllDefaults, jekyllExcludes, staticBuild, type StaticSite } from "./glue/static-site.ts";
-import { copySite, staticSiteAt } from "./glue/site-files.ts";
+import { jekyllDefaults, jekyllExcludes, jekyllPagesPlugins, staticBuild, type StaticSite } from "./glue/static-site.ts";
+import { copySite, jekyllSiteFiles, staticSiteAt } from "./glue/site-files.ts";
 import { jekyllPlan, type JekyllEnv } from "./glue/jekyll.ts";
 import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
@@ -325,6 +325,13 @@ async function initStatic(inf: ReturnType<typeof infer>, site: StaticSite) {
     await Bun.write("_config.rustybuns.yml", `# Written by rustybuns init: layered on ${cfgFile} for Rusty Buns builds only.\nbaseurl: ""\nexclude: ${JSON.stringify(jekyllExcludes(own.exclude))}\n`
       + (defaults.length ? `# GitHub Pages' default layouts (jekyll-default-layout), and the site's own defaults after them.\ndefaults: ${JSON.stringify(defaults)}\n` : ""));
     console.log(`wrote _config.rustybuns.yml (baseurl "", ${defaults.length ? "GitHub Pages' default layouts, " : ""}and Rusty Buns' files kept out of the site)`);
+    // Pages' other default plugins need their gems, so say which ones the site leans on rather than guess.
+    const uses = existsSync("Gemfile") ? [] : jekyllPagesPlugins(jekyllSiteFiles(".", jekyllExcludes(own.exclude)), (f) => readFileSync(f, "utf8"));
+    if (uses.length) {
+      console.log(`warning:  GitHub Pages builds this site with plugins plain Jekyll lacks, and it looks like it needs them:`);
+      for (const u of uses) console.log(`            ${u.plugin}: ${u.what} (${u.files.slice(0, 3).join(", ")}${u.files.length > 3 ? `, ${u.files.length - 3} more` : ""})`);
+      console.log(`          to build it the way Pages does, add a Gemfile with \`gem "github-pages", group: :jekyll_plugins\``);
+    }
   }
   const build = (out: string) => staticBuild(site, out, { jekyllConfig, exec: inf.execCmd });
   const cfg = {
