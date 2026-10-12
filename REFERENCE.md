@@ -111,6 +111,7 @@ The launcher exists because Alchemy's `Hetzner.Service` always starts `node <mai
 | `port` | `3000` | |
 | `volumeSize` | `10` | GB, minimum 10. `0` keeps data on the server's own disk in `/var/lib/<name>`. |
 | `memMaxMb` | none | RSS ceiling in MB: above it the box saves a CPU profile and a heap snapshot, then restarts. `RB_MEM_MAX_MB` overrides. See `/__rb/mem` below. |
+| `persona` | `balanced` | The budget the box's crons and queue batches share: `balanced`, `power-user`, `background-beatdown` or `background-burner` (a build box). `RB_PERSONA` overrides. |
 | `webmcp` | `false` | Triage tools for an agent in the browser, over WebMCP: `mem_stats`, and `take_cpu_profile` and `mem_history` with `RB_PROF_SECRET`. See below. |
 
 Current limits on the box:
@@ -164,6 +165,7 @@ Railway's upload is a Docker context capped at 32 MiB, and a compiled Bun binary
 | `port` | `3000` | |
 | `volume` | `true` | `false` keeps data in the container, lost on every redeploy |
 | `memMaxMb` | none | RSS ceiling in MB: above it the box saves a CPU profile and a heap snapshot, then restarts. `RB_MEM_MAX_MB` overrides. See `/__rb/mem` below. |
+| `persona` | `balanced` | The budget the box's crons and queue batches share: `balanced`, `power-user`, `background-beatdown` or `background-burner` (a build box). `RB_PERSONA` overrides. |
 | `webmcp` | `false` | Triage tools for an agent in the browser, over WebMCP: `mem_stats`, and `take_cpu_profile` and `mem_history` with `RB_PROF_SECRET`. See below. |
 | `sleep` | `true` | sleeps when idle, so a quiet box costs close to nothing; the first request wakes it, and in-memory world state starts fresh (sqlite doesn't) |
 
@@ -260,7 +262,7 @@ export default defineConfig({
 | `state` | `shared` (default) \| `project`, see below |
 | `experimental` | `wheel` (`agent` \| `human`), see below |
 | `targets.edge` | `provider: "cloudflare"`, `domain`, `adopt` |
-| `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize`, `memMaxMb`; or `provider: "railway"`, `region`, `port`, `volume`, `sleep`, `memMaxMb` |
+| `targets.box` | `provider: "hetzner"`, `location`, `serverType`, `image`, `port`, `volumeSize`, `memMaxMb`, `persona`; or `provider: "railway"`, `region`, `port`, `volume`, `sleep`, `memMaxMb`, `persona` |
 | `targets.desktop` | `mode` (`spa` \| `worker`), `clientBuild`, `clientDir`, `world` (or `false`), `worldPath`, `identity`, `listen` (`hostname`, `port`), `guests` (`join`, `max`, `version`), `host`, `headers`, `native`, `actions` (`include` / `exclude`), `mounts`, `r2`, `storageCodec` (`json` \| `v8`), `targets` (list or `"all"`), `window` (`app` \| `tab`), `dataDir`, `define` |
 
 **`targets.edge.adopt`** names the Worker, D1 databases and R2 buckets exactly as the config does (`name`, `databaseName`, `bucketName`) and takes over ones that already exist under those names, instead of making new ones beside them. Turn it on for an app first deployed with wrangler, or one whose Alchemy state was lost. Without it Alchemy picks its own `<app>-<id>-<stage>-<random>` names. Leave it off for a stack Alchemy already deployed: its names would change, so those resources would be replaced. On a fresh state, `plan` lists the Worker as a create even with `adopt`, because its bindings aren't known until deploy. It is still uploaded under the config's name, over the existing Worker.
