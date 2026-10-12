@@ -39,6 +39,12 @@ if (process.argv.includes("--check")) {
   if (r.exitCode !== 0) throw new Error("type errors; nothing was built. Drop --check to build anyway.");
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
+// The skin and the codeSplitter tiles both use three, so they're built together and share one copy of it, in
+// /assets/rb-chunk-<hash>.js, instead of each bundling their own. Agent Office's bundle keeps its own (it doesn't
+// export it), so the console still says "Multiple instances of Three.js" once, but not twice.
+const SHARED = ["codesplitter/index.ts", ...(skin === "druids" ? ["druids/index.ts"] : [])];
+let shared: Promise<Map<string, string>> | undefined;
+// (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
 const stamp = path.join(office, ".rustybuns");
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks board guard asks` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
@@ -256,10 +262,26 @@ function officeTicks() {
   rehash(pub, main);
 }
 
+function sharedBuild() {
+  return (shared ??= (async () => {
+    const built = await Bun.build({
+      entrypoints: SHARED.map((e) => path.join(root, e)), root, minify: true, target: "browser",
+      splitting: true, publicPath: "/", naming: { entry: "[dir]/[name].[ext]", chunk: "assets/rb-chunk-[hash].[ext]" },
+    });
+    if (!built.success) throw new AggregateError(built.logs, `${SHARED.join(", ")} failed to build`);
+    const pub = path.join(office, "dist/public");
+    for (const old of new Bun.Glob("assets/rb-chunk-*.js").scanSync({ cwd: pub })) rmSync(path.join(pub, old));
+    const entries = new Map<string, string>();
+    for (const out of built.outputs) {
+      if (out.kind === "chunk") await Bun.write(path.join(pub, out.path), out);
+      else entries.set(out.path.replace(/^\.\//, "").replace(/\.js$/, ".ts"), await out.text());
+    }
+    return entries;
+  })());
+}
+
 async function buildSkin(dir: string) {
-  const built = await Bun.build({ entrypoints: [path.join(root, "druids/index.ts")], minify: true, target: "browser" });
-  if (!built.success) throw new AggregateError(built.logs, "druids/index.ts failed to build");
-  await Bun.write(path.join(dir, "druids.js"), built.outputs[0]);
+  writeFileSync(path.join(dir, "druids.js"), (await sharedBuild()).get("druids/index.ts")!);
 }
 
 // next to the server code they hook into, rebuilt every start like the skin
@@ -293,9 +315,7 @@ async function buildPageScripts() {
 }
 
 async function buildPageScript(entry: string, prefix: string, pages: string[]) {
-  const built = await Bun.build({ entrypoints: [path.join(root, entry)], minify: true, target: "browser" });
-  if (!built.success) throw new AggregateError(built.logs, `${entry} failed to build`);
-  const js = await built.outputs[0]!.text();
+  const js = SHARED.includes(entry) ? (await sharedBuild()).get(entry)! : await buildOne(entry);
   const pub = path.join(office, "dist/public");
   for (const old of new Bun.Glob(`assets/${prefix}-*.js`).scanSync({ cwd: pub })) rmSync(path.join(pub, old));
   const name = `assets/${prefix}-${Bun.hash(js).toString(36).slice(0, 8)}.js`;
@@ -308,6 +328,12 @@ async function buildPageScript(entry: string, prefix: string, pages: string[]) {
     if (old.test(html)) writeFileSync(file, html.replace(old, tag));
     else patch(file, "<head>", `<head>\n    ${tag}`);
   }
+}
+
+async function buildOne(entry: string) {
+  const built = await Bun.build({ entrypoints: [path.join(root, entry)], minify: true, target: "browser" });
+  if (!built.success) throw new AggregateError(built.logs, `${entry} failed to build`);
+  return built.outputs[0]!.text();
 }
 
 // The boards' "Updated just now" gets the time in front: "3:42 PM PDT · Updated just now". The 3D office and
