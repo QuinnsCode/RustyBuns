@@ -215,6 +215,8 @@ export interface WorkerOptions extends RunOptions {
 type Waiting = { priority: "normal" | "low"; memMb: number; start: () => void };
 type Live = { priority: Priority; memMb: number; measuredMb: number; maxMb?: number; pids: Set<number>; order: number; stop: (e: JobStopped) => void };
 const background = (p: Priority): p is "normal" | "low" => p === "normal" || p === "low";
+// With the DOM lib loaded, the global Worker types as the DOM's; at run time it's Bun's, which has ref/unref.
+type BunWorker = Worker & Pick<Bun.Worker, "ref" | "unref">;
 
 export function scheduler(o: SchedulerOptions = {}) {
   const budget: Budget = { ...PERSONAS[o.persona ?? "balanced"], ...o.budget };
@@ -227,7 +229,7 @@ export function scheduler(o: SchedulerOptions = {}) {
   const live = new Set<Live>();
   let back: Backoff = { limit: slots, hot: 0, cool: 0 }, load: Load | null = null, seq = 0;
   const warm = o.warm ?? 0, workerMb = o.workerMb ?? 30;
-  const idle: { url: string; w: Worker }[] = [];
+  const idle: { url: string; w: BunWorker }[] = [];
 
   // A background job counts for what it said it takes, or what it was last measured at if more; an idle worker for workerMb.
   const usedMb = () => { let mb = idle.length * workerMb; for (const j of live) if (background(j.priority)) mb += Math.max(j.memMb, j.measuredMb); return mb; };
@@ -325,7 +327,7 @@ export function scheduler(o: SchedulerOptions = {}) {
     const href = String(url);
     return run<T>(priority, (job) => new Promise<T>((resolve, reject) => {
       const i = idle.findIndex((x) => x.url === href);
-      const w = i >= 0 ? idle.splice(i, 1)[0]!.w : new Worker(href);
+      const w = i >= 0 ? idle.splice(i, 1)[0]!.w : new Worker(href) as BunWorker;
       w.ref();
       const off = () => { w.onmessage = null; w.onerror = null; job.signal.removeEventListener("abort", stop); };
       const stop = () => { off(); w.terminate(); reject(job.signal.reason); };

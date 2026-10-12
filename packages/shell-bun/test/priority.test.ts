@@ -157,16 +157,17 @@ test("scheduler.spawn: runs the command in a slot; a timeout kills the child", a
 });
 
 const BUSY = new URL("./fixtures/busy.worker.ts", import.meta.url);
+type Busy = { seen: number; echo: unknown };
 
 test("scheduler.worker: a job on a worker thread; with warm, the next job reuses it and it counts against the budget", async () => {
   const cold = scheduler({ cores: 4, everyMs: 0 });
-  expect(await cold.worker("low", BUSY, "a")).toEqual({ seen: 1, echo: "a" });
-  expect(await cold.worker("low", BUSY, "b")).toEqual({ seen: 1, echo: "b" });   // no pool: a fresh thread each time
+  expect(await cold.worker<Busy>("low", BUSY, "a")).toEqual({ seen: 1, echo: "a" });
+  expect(await cold.worker<Busy>("low", BUSY, "b")).toEqual({ seen: 1, echo: "b" });   // no pool: a fresh thread each time
   expect(cold.stats().warm).toBe(0);
 
   const s = scheduler({ cores: 4, everyMs: 0, warm: 1, workerMb: 40 });
   await s.worker("low", BUSY, 1);
-  expect(await s.worker("normal", BUSY, 2)).toEqual({ seen: 2, echo: 2 });
+  expect(await s.worker<Busy>("normal", BUSY, 2)).toEqual({ seen: 2, echo: 2 });
   expect(s.stats().warm).toBe(1);
   expect(s.stats().memMb.used).toBe(40);
   s.stop();
@@ -182,7 +183,7 @@ test("scheduler.worker: a timeout terminates the thread and frees the slot; a th
   expect(s.stats().warm).toBe(1);
   await expect(s.worker("low", BUSY, "throw")).rejects.toThrow("thrown in the worker");
   expect(s.stats().warm).toBe(0);
-  expect(await s.worker("low", BUSY, "after")).toEqual({ seen: 1, echo: "after" });
+  expect(await s.worker<Busy>("low", BUSY, "after")).toEqual({ seen: 1, echo: "after" });
   s.stop();
 });
 
