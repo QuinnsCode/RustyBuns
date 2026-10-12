@@ -166,7 +166,10 @@
   .sec h2 { margin: 0 0 6px; font: 500 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .sec p { margin: 0 0 6px; } .sec .btn { margin: 2px 4px 2px 0; }
   .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
-  .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent-ink); } .sec .run .st.failed { color: var(--del-fg); } .vuln { color: var(--del-fg); font-weight: 600; } .unverified { color: var(--accent-ink); font-weight: 600; }
+  .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent-ink); } .sec .run .st.failed { color: var(--del-fg); } .vuln { color: var(--del-fg); font-weight: 600; }
+  .chain { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; } .chain .step { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+  .chain .step button { border: 0; background: none; cursor: pointer; padding: 2px 6px; font: inherit; color: inherit; } .chain .step:not(.on) { opacity: .45; } .chain .step.on { border-color: var(--accent); }
+  .chain .step sup { font: 600 9px var(--mono); color: var(--muted); margin-right: 2px; } .chain .step .up { padding: 2px 3px; color: var(--muted); } .unverified { color: var(--accent-ink); font-weight: 600; }
   .watch { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } .watch .badge { white-space: nowrap; text-decoration: none; }
   .watch .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); } .watch .none .dot { background: var(--fg); } .watch .unknown .dot { background: none; border: 1px solid var(--muted); } .watch .minor .dot { background: var(--accent); } .watch .major .dot, .watch .critical .dot { background: var(--del-fg); }
   .sec .run .tell { display: flex; align-items: center; gap: 4px; margin-top: 2px; } .sec .run .tell input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px; }
@@ -2443,6 +2446,15 @@ function forkNote(r, owner) {
 }
 
 // ---- views ---------------------------------------------------------------------------
+/** The dependency doctor's on-fail steps (deps.ts STEPS): an icon each, and what it does. */
+const DEP_STEPS = {
+  retry: ["🔁", "retry it alone, in case the break was a flake"],
+  fix: ["🤖", "AI fix: the agent above patches the call sites"],
+  search: ["🔎", "AI web search for known breakage, then a fix (claude only)"],
+  hold: ["📌", "hold this release back: later runs skip it"],
+  rollback: ["↩️", "roll back to the newest smaller release that passes"],
+  alert: ["🔔", "tell me"],
+};
 const views = {
   async home() {
     ctx = { view: "home" };
@@ -2900,7 +2912,7 @@ const views = {
           `<li><a href="#" data-fit-dir="${esc(w.dir)}" title="${esc(w.dir)}">${esc(w.name)}</a> <span class="badge fit-${w.verdict}">${say[w.verdict]}</span> <span class="fw-logos">${stackLogos(w.label)}</span></li>`).join("")}</ul>` : "");
     el.querySelectorAll("[data-fit-dir]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); views.wireFit(owner, repo, a.dataset.fitDir); }));
   },
-  /** The dependency doctor: when it checks, what it may propose, and what it found last. */
+  /** The dependency doctor: when it checks, what it may propose, what to do when an update breaks the tests, and what it found last. */
   async wireDeps(owner, repo) {
     const el = $("#deps"), base = `/repos/${owner}/${repo}/deps`;
     if (!el) return;
@@ -2915,21 +2927,37 @@ const views = {
         <div class="row">releases at least <input name="min_age_days" aria-label="minimum release age in days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
         <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
         <label title="${d.can_test ? "" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code)</span></label>
-        <div class="row">when one breaks them, <select name="fix_with" aria-label="who fixes a break"${d.can_test ? "" : " disabled"}>${opt("", "leave it out", s.fix_with ?? "")}${["claude", "pi", "opencode"].map((h) => opt(h, `have ${h} fix it`, s.fix_with ?? "")).join("")}</select>
-          in up to <input name="fix_tries" aria-label="fix tries" type="number" min="1" max="5" value="${s.fix_tries}" style="width:3em"> tries</div>
+        <div class="row" title="The connected AI for the 🤖 fix and 🔎 web search steps below">AI for 🤖 🔎 <select name="fix_with" aria-label="who fixes a break"${d.can_test ? "" : " disabled"}>${opt("", "none", s.fix_with ?? "")}${["claude", "pi", "opencode"].map((h) => opt(h, h, s.fix_with ?? "")).join("")}</select>
+          up to <input name="fix_tries" aria-label="fix tries" type="number" min="1" max="5" value="${s.fix_tries}" style="width:3em"> tries a step</div>
+        <div class="row">on a break, in order: <span class="chain" id="deps-chain"></span></div>
+        <div class="row" title="Over one update's whole chain: test runs and agent tries, wall-clock minutes, and dollars of AI (claude reports its cost; pi and opencode don't, so they aren't counted)">at most <input name="chain_tries" aria-label="chain tries" type="number" min="1" max="20" value="${s.chain_tries}" style="width:3em"> tries,
+          <input name="chain_minutes" aria-label="chain minutes" type="number" min="1" max="120" value="${s.chain_minutes}" style="width:3.5em"> min, $<input name="chain_usd" aria-label="chain dollar cap" type="number" min="0" max="50" step="0.5" value="${s.chain_usd}" style="width:3.5em"> of AI</div>
+        <input name="held" placeholder="held back: vite@6.0.0" aria-label="releases held back" value="${esc(s.held.join(", "))}">
         <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deps-run"${d.running ? " disabled" : ""}>${icon("refresh-cw")}${d.running ? "Checking…" : "Check now"}</button></div>
       </form>
       ${rep ? `<div class="run"><span class="st">last checked ${new Date(rep.at).toLocaleString()} · ${rep.checked} package${rep.checked === 1 ? "" : "s"}</span>
-        ${rep.updates.map((u) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level}${u.fixes ? ` · <b class="vuln">fixes ${u.fixes.map(esc).join(", ")}</b>` : ""} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? "tests pass" : "untested"}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
+        ${rep.updates.map((u) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level}${u.fixes ? ` · <b class="vuln">fixes ${u.fixes.map(esc).join(", ")}</b>` : ""} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? (u.was ? `broke the tests at ${esc(u.was)}; rolled back, tests pass` : "tests pass") : u.status === "held" ? "broke the tests, held back" : "untested"}${u.chain?.length ? ` · ${u.chain.map((c) => `<span title="${esc(DEP_STEPS[c.step][1])}: ${c.ok ? "worked" : esc(c.note ?? "didn't work")}${c.usd ? ` ($${c.usd.toFixed(2)})` : ""}">${DEP_STEPS[c.step][0]}${c.ok ? "✓" : c.note ? "–" : "✗"}</span>`).join(" ")}${u.chain.some((c) => c.ok) ? "" : " gave up"}` : ""}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
         ${(rep.exposed ?? []).map((x) => `<span><b class="vuln">exposed</b> <code>${esc(x.name)}</code> ${esc(x.version)} <span class="muted">${x.ids.map(esc).join(", ")} · no update here fixes it</span></span>`).join("")}
         ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>${rep.lock ? `, with <code>${esc(rep.lock)}</code> to match` : ""}, ready to review above.</span>` : ""}
         ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}
       ${(d.malicious ?? []).length ? `<div class="run">${d.malicious.map((h) => `<span><b class="vuln">malicious</b> <code>${esc(h.name)}</code> ${esc(h.spec)} <span class="muted">${h.path !== "package.json" ? `${esc(h.path.replace(/\/package\.json$/, ""))} · ` : ""}<a href="https://osv.dev/vulnerability/${encodeURIComponent(h.id)}" target="_blank" rel="noopener">${esc(h.id)}</a>${h.summary ? ` · ${esc(h.summary)}` : ""} · remove it or pin a clean version</span></span>`).join("")}</div>` : ""}
       ${watch?.status?.length ? `<div class="watch" title="Agent platforms' status pages, checked hourly">${watch.status.map((st) => `<a class="badge ${esc(st.indicator)}" href="${esc(st.url)}" target="_blank" rel="noopener" title="${esc(st.description)} · ${new Date(st.checked_at).toLocaleString()}"><span class="dot"></span>${esc(st.name)}</a>`).join("")}</div>` : ""}
       ${watch?.news?.length ? `<div class="run" title="From a daily web search, summarised by Claude. Not checked the way an OSV advisory is, so it never flags a dependency">${watch.news.map((n) => `<span><b class="unverified">unverified</b> <a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title)}</a> <span class="muted">${n.packages.map((p) => `<code>${esc(p)}</code>`).join(" ")}${n.summary ? ` · ${esc(n.summary)}` : ""} · ${esc(n.published ?? new Date(n.at).toLocaleDateString())}</span></span>`).join("")}</div>` : ""}`;
+    // The on-fail chain: the steps that are on, in order, then the rest. A tap turns one on (last) or off; ‹ moves it earlier.
+    const chain = [...s.on_fail];
+    const drawChain = () => {
+      const box = $("#deps-chain");
+      box.innerHTML = [...chain, ...Object.keys(DEP_STEPS).filter((k) => !chain.includes(k))].map((k) => {
+        const i = chain.indexOf(k), [glyph, says] = DEP_STEPS[k];
+        return `<span class="step${i >= 0 ? " on" : ""}">${i > 0 ? `<button type="button" class="up" data-up="${k}" title="earlier" aria-label="${esc(says)}: earlier">‹</button>` : ""}<button type="button" data-step="${k}" title="${esc(says)}${i >= 0 ? "" : " (off)"}" aria-pressed="${i >= 0}">${i >= 0 ? `<sup>${i + 1}</sup>` : ""}${glyph}</button></span>`;
+      }).join("");
+      box.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { const i = chain.indexOf(b.dataset.step); if (i >= 0) chain.splice(i, 1); else chain.push(b.dataset.step); drawChain(); }));
+      box.querySelectorAll("[data-up]").forEach((b) => b.addEventListener("click", () => { const i = chain.indexOf(b.dataset.up); chain.splice(i - 1, 0, ...chain.splice(i, 1)); drawChain(); }));
+    };
+    drawChain();
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target;
-      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value }, "PUT"); toast("Saved"); }
+      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value }, "PUT"); toast("Saved"); }
       catch (err) { toast(err.message); }
     });
     $("#deps-run").addEventListener("click", async () => {

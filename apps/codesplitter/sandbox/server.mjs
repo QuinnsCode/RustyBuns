@@ -137,7 +137,7 @@ const LOCKFILES = /(^|\/)(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.y
 const tail = (s) => s.trim().slice(-1500);
 
 /** The fixer (localFixer in src/deps.ts, in a container): the agent patches, the files the doctor owns go back, the tests decide. */
-export async function depsFix({ cmd, remote, files, pm = "bun", name, out = "", tries: most = 3, until }) {
+export async function depsFix({ cmd, remote, files, pm = "bun", name, out = "", tries: most = 3, until, usd: budget }) {
   const r = await inClone(remote, files, 0, async (repo, run) => {
     // The agent needs the history, not the remote, whose URL carries a token.
     await run("git", ["remote", "remove", "origin"]);
@@ -148,13 +148,15 @@ export async function depsFix({ cmd, remote, files, pm = "bun", name, out = "", 
       history: (await run("git", ["log", "-n", "15", "--format=%h %an, %ar: %s", "-S", name])).out,
       sites: (await run("git", ["grep", "-n", "-F", name, "--", ".", ":!package.json", ":!*.lock", ":!*.lockb"])).out.slice(0, 6000),
     };
-    let tries = 0, ok = false, slowest = 0;
-    while (tries < most && !ok && installed.code === 0 && !(until && Date.now() + slowest > until)) {
+    // usd: what claude's JSON answers say the tries cost (deps.ts costOf); no try starts past the budget.
+    let tries = 0, ok = false, slowest = 0, usd = 0;
+    while (tries < most && !ok && installed.code === 0 && !(until && Date.now() + slowest > until) && !(budget !== undefined && usd >= budget)) {
       tries++;
       const t0 = Date.now();
       const values = { ...context, out: tail(out), try: String(tries) };
       const fill = (s) => s.replace(/\{\{(\w+)\}\}/g, (m, k) => k in values ? values[k].trim() || "(none)" : m);
       const ran = await exec(cmd.bin, cmd.args.map(fill), repo, cmd.env);
+      usd += Number(/"total_cost_usd"\s*:\s*([\d.eE+-]+)/.exec(ran.out)?.[1]) || 0;
       for (const [path, text] of Object.entries(files ?? {})) await writeFile(join(repo, path), text);
       const gone = (await run("git", ["ls-files", "--deleted"])).out.split("\n").slice(1).filter(Boolean);
       if (gone.length) await run("git", ["checkout", "--", ...gone]);
@@ -166,7 +168,7 @@ export async function depsFix({ cmd, remote, files, pm = "bun", name, out = "", 
       slowest = Math.max(slowest, Date.now() - t0);
     }
     if (installed.code !== 0) out = installed.out;
-    if (!ok) return { ok, tries, out, edits: [] };
+    if (!ok) return { ok, tries, out, edits: [], usd };
     const status = (await run("git", ["status", "--porcelain", "--untracked-files=all"])).out.split("\n").slice(1);
     const edits = [];
     for (const line of status) {
@@ -175,7 +177,7 @@ export async function depsFix({ cmd, remote, files, pm = "bun", name, out = "", 
       const before = line.startsWith("??") ? null : (await run("git", ["show", `HEAD:${path}`])).out.replace(/^.*\n/, "");
       edits.push({ path, before, after: await readFile(join(repo, path), "utf8") });
     }
-    return { ok, tries, out, edits };
+    return { ok, tries, out, edits, usd };
   });
   return { tries: 0, edits: [], ...r };
 }

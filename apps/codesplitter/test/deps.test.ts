@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { bump, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
+import { bump, costOf, fixCommand, fixPrompt, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "./fake-gate.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
@@ -324,6 +324,76 @@ test("a fixer that gives up leaves the update out, with its last output", async 
   expect(kleur).toMatchObject({ status: "broke", out: "TypeError: red is not a function", fix: { by: "agent-pi", tries: 3, files: [] } });
   const paint = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=src/paint.ts&branch=${got.report.branch}`)).json();
   expect(paint.lines[0].text).toBe(`import kleur from "kleur";`);
+});
+
+test("the on-fail chain: the owner orders the steps, and the first that works settles each update (#861)", async () => {
+  // clsx 2 and kleur 4 both break; clsx has a 1.3.0 to roll back to, kleur nothing smaller than its major.
+  const tester: Tester = async (_remote, files) => {
+    const deps = JSON.parse(files["package.json"]!).dependencies;
+    return deps.clsx === "~2.0.0" || deps.kleur === "^4.1.5" ? { ok: false, out: `broke with ${deps.clsx} ${deps.kleur}` } : { ok: true, out: "pass" };
+  };
+  const jobs: any[] = [];
+  const fixer: Fixer = async (job) => { jobs.push(job); return { ok: false, tries: 1, out: "still broken", edits: [], usd: 0.25 }; };
+  const { call, send } = await app(tester, fixer);
+  call.env.DEPS_REGISTRY = registry({ ...{ mitt: { "3.0.0": 400 }, hono: { "4.0.0": 90 }, ky: { "1.0.0": 300 } }, kleur: { "3.0.0": 900, "4.1.5": 30 }, clsx: { "1.2.1": 500, "1.3.0": 200, "2.0.0": 60 } });
+  const put = (b: unknown) => send("ryan", "/api/repos/ryan/lab/deps", b, "PUT");
+  expect((await put({ on_fail: ["retry", "pray"] })).status).toBe(400);
+  expect((await put({ on_fail: ["retry", "retry"] })).status).toBe(400);
+  expect((await put({ chain_tries: 0 })).status).toBe(400);
+  expect((await put({ chain_usd: 99 })).status).toBe(400);
+  expect((await put({ held: "kleur" })).status).toBe(400);
+  const s = await (await put({ max_level: "major", ignore: "ky", run_tests: true, fix_with: "claude", fix_tries: 3, on_fail: "retry, fix, rollback, hold, alert", chain_tries: 6, chain_usd: 2 })).json();
+  expect(s).toMatchObject({ on_fail: ["retry", "fix", "rollback", "hold", "alert"], chain_tries: 6, chain_minutes: 30, chain_usd: 2, held: [] });
+
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const got = await settle(call);
+  const by = Object.fromEntries(got.report.updates.map((u: any) => [u.name, u]));
+  // clsx: the retry and the fix didn't work, the roll back to 1.3.0 did.
+  expect(by.clsx).toMatchObject({ status: "kept", to: "~1.3.0", level: "minor", was: "~2.0.0" });
+  expect(by.clsx.chain).toEqual([{ step: "retry", ok: false }, { step: "fix", ok: false, usd: 0.25 }, { step: "rollback", ok: true }]);
+  // kleur: nothing smaller to roll back to, so it's held back, and the chain stops before the alert.
+  expect(by.kleur.status).toBe("held");
+  expect(by.kleur.chain.map((c: any) => [c.step, c.ok])).toEqual([["retry", false], ["fix", false], ["rollback", false], ["hold", true]]);
+  // The fixer got what's left of the chain's tries and dollars.
+  expect(jobs.map((j) => [j.update.name, j.tries, j.usd])).toEqual([["clsx", 3, 2], ["kleur", 3, 2]]);
+  const pkg = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=package.json&branch=${got.report.branch}`)).json();
+  expect(pkg.lines.map((l: any) => l.text).filter((t: string) => /clsx|kleur/.test(t))).toEqual([`    "kleur": "^3.0.0",`, `    "clsx": "~1.3.0",`]);
+
+  // Held back: the next run doesn't propose that release again.
+  expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).settings.held).toEqual(["kleur@4.1.5"]);
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  expect((await settle(call)).report.updates.map((u: any) => u.name)).not.toContain("kleur");
+});
+
+test("the on-fail chain stops spending at its dollar cap, and its alert tells the owner once", async () => {
+  const fixer: Fixer = async () => ({ ok: false, tries: 2, out: "TypeError: red is not a function", edits: [], usd: 0.6 });
+  const { call, send } = await app(kleurTester(), fixer);
+  const told: string[] = [];
+  call.env.DEPS_NOTIFY = (async (_owner, subject, lines) => { told.push([subject, ...lines].join("\n")); }) satisfies Notify;
+  await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "major", ignore: "ky", run_tests: true, fix_with: "claude", on_fail: ["fix", "search", "alert"], chain_usd: 0.5 }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const kleur = (await settle(call)).report.updates.find((u: any) => u.name === "kleur");
+  expect(kleur.status).toBe("broke");
+  expect(kleur.chain).toEqual([{ step: "fix", ok: false, usd: 0.6 }, { step: "search", ok: false, note: "out of dollars" }, { step: "alert", ok: true }]);
+  expect(told.length).toBe(1);
+  expect(told[0]).toContain("ryan/lab: an update breaks the tests");
+  expect(told[0]).toContain("kleur ^3.0.0 → ^4.1.5: tried fix, search");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  await settle(call);
+  expect(told.length).toBe(1);
+});
+
+test("the 🔎 step: claude gets web search and a prompt to look for known breakage; every claude try says its cost", () => {
+  const u: Update = { name: "vite", from: "^6.0.0", to: "^7.0.0", level: "major", status: "broke" };
+  const plain = fixCommand("claude", fixPrompt(u, 3)), search = fixCommand("claude", fixPrompt(u, 3, true), true);
+  expect(plain.args[plain.args.indexOf("--tools") + 1]).toBe("Read,Edit,Write,Glob,Grep");
+  expect(search.args[search.args.indexOf("--tools") + 1]).toBe("Read,Edit,Write,Glob,Grep,WebSearch");
+  expect(search.args.slice(-2)).toEqual(["--output-format", "json"]);
+  expect(search.args[1]).toContain("search the web for known breakage in this release: an issue, release note or migration guide about vite@7.0.0");
+  expect(plain.args[1]).not.toContain("search the web");
+  expect(fixCommand("pi", "x").args).not.toContain("--output-format");
+  expect(costOf(`{"type":"result","total_cost_usd":0.1234,"result":"done"}`)).toBe(0.1234);
+  expect(costOf("pi said nothing about money")).toBe(0);
 });
 
 test("a fix lands on top of live edits made since the last commit, unless they touch the same lines", async () => {
