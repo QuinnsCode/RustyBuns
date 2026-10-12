@@ -26,7 +26,7 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | Vite + Svelte (SPA) | `spa` | none | same | 🧪 |
 | Vite + Solid (SPA) | `spa` | none | same | 🧪 |
 | RWSDK | `spa` from `init`; `worker` by hand | `dist/worker/index.js` | `Cloudflare.Worker` | ✅ live; 153 of 180 GitHub apps ([coverage](FRAMEWORK_COVERAGE.md#rwsdk)) |
-| TanStack Start | `worker` | `dist/server/server.js` | `Cloudflare.Website.Vite` | ✅ desktop, 🧪 edge |
+| TanStack Start | `worker` | `dist/server/server.js` | `Cloudflare.Website.Vite` | ✅ desktop, 🧪 edge; 8 of 13 sampled GitHub apps ([coverage](FRAMEWORK_COVERAGE.md#tanstack-start)) |
 | SvelteKit | `worker` | adapter-cloudflare `_worker.js` | `Cloudflare.Website.SvelteKit` | 🧪 |
 | Astro | `worker` (adapter), `spa` (static) | @astrojs/cloudflare 14: `dist/server/entry.mjs` + `dist/client` | `Cloudflare.Worker` + assets | ✅ `init`, desktop, box and edge (sample app, Oct 9) |
 | Nuxt | `worker` | Nitro `cloudflare-module` preset | `Cloudflare.Website.Nuxt` | 🧪 |

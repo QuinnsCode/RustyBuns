@@ -121,3 +121,43 @@ rwsdk.com is slow on the host because its star widget fetches the GitHub API wit
 | 16 | don't install: broken lockfiles, `jsr:` dependencies, network errors | the app's |
 
 About 10 of the apps found aren't runnable apps at all: library packages inside monorepos, templates and benchmarks. No tool would boot them.
+
+## TanStack Start
+
+**Run: Oct 12 2026, `@tanstack/react-start` 1.x, this checkout. A partial mixed sample of 16 apps.**
+
+820 apps were found; 469 of them were pushed in the last 3 months. The run was cut short on purpose to free the machine. The sample, drawn with `--sample` (stratified), covers:
+
+- big monorepos (convex-backend, secret-project-331);
+- official templates (Convex + Clerk, the Clerk quickstart);
+- docs sites;
+- popular standalone apps;
+- the long tail.
+
+| | apps |
+|---|---|
+| sampled | 16 |
+| install | 13 (the 3 others failed on clone or network timeouts) |
+| serve a server-rendered `/` | **8 of 13** |
+
+Before this run's fixes, it was 0. Off Cloudflare, `init` gave TanStack Start apps a SPA config, but Start renders on its server and has no `index.html`, so every request was a 404. `init` now runs the app's own production server in `worker` mode. Which server it uses depends on how the app builds:
+
+| how the app builds | server the desktop runs |
+|---|---|
+| no Nitro | `<outDir>/server/server.js` |
+| `nitro({ preset: "vercel" })` | the Vercel function, `export default { fetch }` |
+| `nitro()` with no preset | `NITRO_PRESET=standard`, `.output/server/index.mjs` |
+| `cloudflare({ viteEnvironment })` | the Worker, found by the `wrangler.json` its build writes |
+| a preset that starts its own server (`bun`, node-server) | none; `init` says so |
+
+Fake secrets turned the Clerk-based templates' 500s into working pages.
+
+### What still fails
+
+| apps | cause | whose |
+|---|---|---|
+| 4 | a monorepo frontend whose workspace packages must be built first (`start-only, monorepo`) | ours to handle: build the workspace dependencies before the app |
+| 3 | clone or install timeouts on very large monorepos | the run's (network, size) |
+| 1 | a 500 on a Cloudflare monorepo app (algorandfoundation/gGov) | open |
+
+The by-kind pass rates are written to `summary.md`'s "By kind of app" table on each run. The next full sample (`--sample 30`) should come from the dedicated build box, not a laptop.
