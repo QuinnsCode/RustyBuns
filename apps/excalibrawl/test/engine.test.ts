@@ -49,6 +49,7 @@ describe("the picture Clef sees", () => {
   test("a t line draws glyphs, not one filled rectangle (#1001)", () => {
     // fontSize 50 at 1:1 is a 5 px unit: "HI" sits at x 0-60, its glyph rows at y 7.5-42.5.
     const title = penTurn("t title 30 25 50 HI", new Map(), { x: 0, y: 0, w: 200, h: 100 }, "1").scene.get("1title")!;
+    if (title.type !== "text") throw new Error(`"t" drew a ${title.type}, not text`);
     const px = rasterize([{ ...title, x: 0, y: 0 }], { x: 0, y: 0, w: 200, h: 100 }, 200, 100);
     const inked = (x: number, y: number) => px[(y * 200 + x) * 3] !== 255;
     const ink = Array.from({ length: 100 }, (_, y) => Array.from({ length: 200 }, (_, x) => inked(x, y)));
