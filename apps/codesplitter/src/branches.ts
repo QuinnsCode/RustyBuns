@@ -363,6 +363,40 @@ async function regenerated(env: Env, owner: string, repo: string, branch: Branch
 }
 
 /**
+ * A merge that settled with no card, checked further where the file's policy says `tests` (#1096): the lint
+ * can't see a key or string one side renamed and the other still uses. Each such file both sides changed
+ * since the branch forked runs the repo's tests on the merged tree in a throwaway clone, as an agent's answer
+ * does, only those files' tests where the runner can tell. A failure is a `lint:tests` conflict on each, and
+ * settled as the branch it lands anyway. Null when it passed, or nothing needed the run, or it can't run here.
+ */
+async function testedMerge(env: Env, owner: string, repo: string, branch: BranchRow, dry: { path: string; policy: Policy; ops?: Op[] }[], resolve: Record<string, Resolve>, user: string) {
+  // A file new on the branch has no copy on main yet: it starts empty.
+  const read = async (path: string, op: string, on?: string) => {
+    const res = await toFile(env, owner, repo, path, user, op, {}, "", on);
+    return (res.ok && await res.json() as Doc | null) || empty();
+  };
+  const asked = dry.filter((d) => d.policy.check === "tests" && d.ops?.length && resolve[d.path]?.["lint:tests"] !== "branch");
+  const both = (await Promise.all(asked.map(async (d) => {
+    const [main, base] = await Promise.all([read(d.path, "file"), read(d.path, "base", branch.name)]);
+    return text(main) !== text(base) ? d : null;
+  }))).filter((d) => !!d);
+  if (!both.length) return null;
+  const files: Record<string, string> = {};
+  for (const d of dry) {
+    if (!d.ops?.length) continue;
+    const doc = await read(d.path, "file");
+    if (apply(doc, d.ops, d.ops.map(() => user), 0, doc.rev).ok) files[d.path] = text(doc);
+  }
+  const t = await tryInClone(env, owner, repo, files, both.map((d) => d.path));
+  if ("skipped" in t || t.ok) return null;
+  const lint = "merged with main's changes, the tests fail: settle it as the branch to land it anyway";
+  return {
+    error: `merged, its tests fail: ${both.map((d) => d.path).join(", ")}`, failure: t.out.slice(-4000),
+    conflicts: both.map((d) => ({ path: d.path, leftover: d.policy.leftover, conflicts: [explain({ line: "lint:tests", base: "", main: null, branch: null, lint })] })),
+  };
+}
+
+/**
  * Merge an open branch into main: a dry run first, so a conflict anywhere merges nothing (409),
  * then each file for real. `resolve` settles conflicts by line; `build_ok` lets build files land.
  */
@@ -418,6 +452,8 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     });
     return json({ error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked, ...(fix && "id" in fix && { fix: fix.id }) }, 409);
   }
+  const failed = await testedMerge(env, owner, repo, branch, dry, resolve, user);
+  if (failed) return json(failed, 409);
 
   const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
   for (const f of todo) {
