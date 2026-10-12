@@ -3264,29 +3264,31 @@ const views = {
       } catch (err) { toast(err.message); views.wireListen(owner, repo); }
     });
   },
-  /** Beam (beam.ts): a git branch's stack squashed into one clean commit, its noise left out, as a link and a patch. */
+  /** Beam (beam.ts): a git or codeSplitter branch's work squashed into one clean commit, its noise left out, as a link and a patch. */
   async wireBeams(owner, repo, r) {
     const el = $("#beams");
     if (!el) return;
     const d = await api(`/repos/${owner}/${repo}/beams`).catch(() => null);
     if (!d) { el.innerHTML = ""; return; }
-    const ready = (d.branches ?? []).filter((b) => b.ahead > 0), fork = !r.mirror && r.upstream?.startsWith("github:");
+    const ready = (d.branches ?? []).filter((b) => b.ahead > 0), ours = d.codesplitter_branches ?? [], fork = !r.mirror && r.upstream?.startsWith("github:");
     const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
     const sent = d.beams.slice(0, 5).map((b) => `<div class="row" style="gap:6px"><a href="#/beam/${b.id}">${esc(b.title)}</a><span class="muted" style="font-size:12px">${b.status === "open" ? `${plural(b.files, "file")}${b.to ? ` → @${esc(b.to)}` : ""}` : "withdrawn"} · ${ago(b.created_at)}</span></div>`).join("");
-    el.innerHTML = (ready.length ? `<form id="beam-form" style="display:flex;flex-direction:column;gap:6px">
-        <select name="branch" aria-label="git branch">${ready.map((b) => `<option value="${esc(b.name)}">${esc(b.name)} · ${plural(b.ahead, "commit")}</option>`).join("")}</select>
+    const opts = (label, list, kind, says) => list.length ? `<optgroup label="${label}">${list.map((b) => `<option value="${kind}:${esc(b.name)}">${esc(b.name)} · ${says(b)}</option>`).join("")}</optgroup>` : "";
+    el.innerHTML = (ready.length || ours.length ? `<form id="beam-form" style="display:flex;flex-direction:column;gap:6px">
+        <select name="branch" aria-label="branch">${opts("codeSplitter branches", ours, "codesplitter", (b) => plural(b.files, "file") + (b.parent ? ` · on ${esc(b.parent)}` : ""))}${opts("git branches", ready, "git", (b) => plural(b.ahead, "commit"))}</select>
         <input name="title" placeholder="Title (blank: the first commit's)" aria-label="title">
         <input name="to" placeholder="@handle to send it to (optional)" aria-label="send to">
         ${fork ? `<label class="row muted" style="font-size:13px;gap:6px"><input type="checkbox" name="upstream">On upstream's newest commit</label>` : ""}
         <button class="btn primary">${icon("zap")}Beam it</button></form>`
-      : `<p class="muted">Push a git branch here (the Clone button's Push back line) and beam it: its commits squashed into one clean commit, lockfile churn and leftovers left out, as a link and a patch.</p>`) + sent;
+      : `<p class="muted">Open a branch, or push a git branch here (the Clone button's Push back line), and beam it: its commits squashed into one clean commit, lockfile churn and leftovers left out, as a link and a patch.</p>`) + sent;
     icons();
     $("#beam-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const f = new FormData(e.target), btn = e.target.querySelector("button");
       btn.disabled = true;
       try {
-        const b = await api(`/repos/${owner}/${repo}/beams`, { branch: f.get("branch"), title: f.get("title") || undefined,
+        const [kind, ...name] = String(f.get("branch")).split(":");
+        const b = await api(`/repos/${owner}/${repo}/beams`, { branch: name.join(":"), kind, title: f.get("title") || undefined,
           to: String(f.get("to") || "").replace(/^@/, "") || undefined, onto: f.get("upstream") ? "upstream" : "main" });
         location.hash = `#/beam/${b.id}`;
       } catch (err) { toast(err.message); btn.disabled = false; }
@@ -4836,7 +4838,8 @@ const views = {
         <button class="btn" id="beam-link" title="copy the link">${icon("link")}</button>
         ${mine ? `<button class="btn" id="beam-withdraw" title="withdraw it: the link stops working">${icon("link-2-off")}</button>` : ""}</div>
         <div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">
-          <div class="muted" style="font-size:13px">@${esc(b.by)} beamed ${plural(b.commits, "commit")} of <a href="#/r/${esc(b.owner)}/${esc(b.repo)}">${esc(b.owner)}/${esc(b.repo)}</a>'s <code>${esc(b.branch)}</code>${b.to ? ` to @${esc(b.to)}` : ""}, squashed into <code>${esc(b.sha.slice(0, 7))}</code> on ${esc(b.onto.label)}.</div>
+          <div class="muted" style="font-size:13px">@${esc(b.by)} beamed ${b.kind === "codesplitter" ? "codeSplitter branch" : `${plural(b.commits, "commit")} of`} <a href="#/r/${esc(b.owner)}/${esc(b.repo)}">${esc(b.owner)}/${esc(b.repo)}</a>'s <code>${esc(b.branch)}</code>${b.to ? ` to @${esc(b.to)}` : ""}, ${b.stack.length > 1 ? `as ${b.stack.length} commits, each branch on the one under it,` : `squashed into <code>${esc(b.sha.slice(0, 7))}</code>`} on ${esc(b.onto.label)}.</div>
+          ${b.stack.length > 1 ? `<ol style="margin:8px 0 0;padding-left:20px;font-size:13px">${b.stack.map((c) => `<li><code>${esc(c.sha.slice(0, 7))}</code> ${esc(c.title)} <span class="muted">(${esc(c.branch)})</span></li>`).join("")}</ol>` : ""}
           ${b.message ? `<pre style="white-space:pre-wrap;margin:8px 0 0;font:inherit">${esc(b.message)}</pre>` : ""}</div>
         ${b.dropped.length ? `<details class="body" style="border-bottom:1px solid var(--border)"><summary>Left out ${plural(b.dropped.length, "file")} as noise</summary>${b.dropped.map((d) => `<div><code>${esc(d.path)}</code> <span class="muted">${esc(d.why)}</span></div>`).join("")}</details>` : ""}
         ${diffHtml(b.diff)}${b.diff_truncated ? '<div class="body muted">The diff goes on: the patch has all of it.</div>' : ""}</div>
