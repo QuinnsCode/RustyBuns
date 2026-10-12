@@ -33,6 +33,11 @@
 // rule counts work the site starts itself rather than a request: container
 // check runs (ci-runner.ts), charged to the repo's owner as each one starts.
 //
+// Two rules are site-wide budgets (per "site"), counted for everyone at once, admins
+// included, since what they cap is the site's bill rather than one caller's share:
+// hosted agent runs (agent-routes.ts, feed.ts, branches.ts), and the minutes container
+// checks run for (ci-runner.ts).
+//
 // Edits sent over a file's WebSocket skip the Worker, so the Worker works out
 // who a socket counts as when it opens (or that it isn't counted) and the
 // file's DO counts each edit with a Tally: in memory, written to D1 in the
@@ -43,7 +48,7 @@ import { actingAs } from "./identity.ts";
 
 export const ACTIONS = ["reject", "log", "flag", "queue"] as const;
 export type Action = (typeof ACTIONS)[number];
-export interface Rule { name: string; label: string; what: string; group: string; per: "ip" | "user" | "token"; max: number; window_s: number; on_fail: Action; queueable?: true }
+export interface Rule { name: string; label: string; what: string; group: string; per: "ip" | "user" | "token" | "site"; max: number; window_s: number; on_fail: Action; queueable?: true }
 
 const MIN = 60, HOUR = 3600, DAY = 86400;
 export const RULES: Rule[] = [
@@ -59,16 +64,24 @@ export const RULES: Rule[] = [
   { name: "repo", label: "New repos", what: "empty repos made here", group: "Repos", per: "user", max: 10, window_s: DAY, on_fail: "reject" },
   { name: "file", label: "New files", what: "files added to a repo", group: "Repos", per: "user", max: 120, window_s: HOUR, on_fail: "reject" },
   { name: "edit", label: "Line edits", what: "live edits to a file's lines, over its socket or POST", group: "Editing and sharing", per: "user", max: 300, window_s: MIN, on_fail: "reject" },
-  { name: "commit", label: "Commits", what: "pushes to Artifacts", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
+  { name: "commit", label: "Commits", what: "pushes to Artifacts, branch merges included", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
+  { name: "branch", label: "New branches", what: "branches made on a repo", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
+  { name: "fresh", label: "Fresh starts", what: "repos copied onto new git (an Artifacts repo each)", group: "Repos", per: "user", max: 3, window_s: DAY, on_fail: "reject" },
+  { name: "hook", label: "Webhooks", what: "webhooks added to repos", group: "Repos", per: "user", max: 20, window_s: HOUR, on_fail: "reject" },
   { name: "invite", label: "Invites", what: "crew invites made, emailed ones included", group: "Editing and sharing", per: "user", max: 30, window_s: HOUR, on_fail: "reject" },
   { name: "share", label: "Shares, stamps and collections", what: "share links, line stamps, collections and tracks, and follows", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", group: "Agents", per: "user", max: 20, window_s: DAY, on_fail: "reject" },
+  { name: "hosted", label: "Hosted runs", what: "coding agent, conflict agent and feed digest runs on the site's API keys, everyone's together, admins included", group: "Agents", per: "site", max: 30, window_s: DAY, on_fail: "reject" },
   { name: "preview", label: "Preview deploys", what: "stacks stood up and torn down to try a repo", group: "Deploys and checks", per: "user", max: 6, window_s: HOUR, on_fail: "reject", queueable: true },
   { name: "deploy", label: "Deploys", what: "deploys started with the Deploy button (hosted, on the owner's deploy key)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "flag" },
   { name: "ci", label: "CI reports", what: "statuses and check runs external CI sends to /api/gh/v3, counted per CI token", group: "Deploys and checks", per: "token", max: 600, window_s: HOUR, on_fail: "reject" },
   { name: "checks", label: "Container checks", what: "check runs in a codeSplitters container (CI_RUNNER), counted against the repo's owner", group: "Deploys and checks", per: "user", max: 30, window_s: HOUR, on_fail: "reject" },
   { name: "doctor", label: "Dependency checks", what: "dependency-doctor runs started by hand (registry lookups, installs and tests)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "reject", queueable: true },
+  { name: "containers", label: "Container minutes", what: "minutes container checks ran for (CI_RUNNER), every owner's together, admins included", group: "Deploys and checks", per: "site", max: 600, window_s: DAY, on_fail: "reject" },
 ];
+
+/** Who a site-wide rule counts as. */
+export const SITE = "site";
 
 /** Which rule a request counts against, if any. */
 export function ruleFor(method: string, p: string[]): string | null {
@@ -91,6 +104,10 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "repos" && !p[2]) return "repo";
   if (p[1] === "repos" && p[4] === "files") return "file";
   if (p[1] === "repos" && (p[4] === "shares" || p[4] === "stamps")) return "share";
+  if (p[1] === "repos" && p[4] === "branches" && !p[5]) return "branch";
+  if (p[1] === "repos" && p[4] === "branches" && p[6] === "merge" && !p[7]) return "commit";
+  if (p[1] === "repos" && p[4] === "fresh" && !p[5]) return "fresh";
+  if (p[1] === "repos" && p[4] === "hooks" && !p[5]) return "hook";
   if (p[1] === "repos" && p[4] === "agents") return "agent";
   if (p[1] === "repos" && p[4] === "preview" && !p[5]) return "preview";
   if (p[1] === "repos" && p[4] === "deploy" && !p[5]) return "deploy";
@@ -138,18 +155,18 @@ export function counted(req: Request, rule: string | null, user: string | null, 
   return r.per === "user" && user ? `@${user}` : ip;
 }
 
-/** Count one hit against the rule for `who`; when that's over the limit and the rule rejects, why, and how many seconds to wait, or with `queue` a queueing rule says so (and which window it was) instead. */
-async function hit(env: Env, rule: string, who: string, queue: boolean): Promise<{ error: string; wait: number } | { queue: Rule; win: number } | null> {
+/** Count `n` hits against the rule for `who`; when that's over the limit and the rule rejects, why, and how many seconds to wait, or with `queue` a queueing rule says so (and which window it was) instead. */
+async function hit(env: Env, rule: string, who: string, queue: boolean, n = 1): Promise<{ error: string; wait: number } | { queue: Rule; win: number } | null> {
   const r = (await rules(env)).get(rule);
   if (!r?.enabled) return null;
   const span = r.window_s * 1000, win = Math.floor(Date.now() / span) * span;
   const row = await env.DB.prepare(
-    "INSERT INTO limit_hits (rule, who, win, count) VALUES (?, ?, ?, 1) ON CONFLICT (rule, who, win) DO UPDATE SET count = count + 1 RETURNING count")
-    .bind(rule, who, win).first();
+    "INSERT INTO limit_hits (rule, who, win, count) VALUES (?, ?, ?, ?) ON CONFLICT (rule, who, win) DO UPDATE SET count = count + excluded.count RETURNING count")
+    .bind(rule, who, win, n).first();
   const count = row?.count as number;
   if (count <= r.max) return null;
   // The first time over in a window goes in the log, whatever the rule does about it.
-  if (count === r.max + 1)
+  if (count - n <= r.max)
     await env.DB.prepare("INSERT INTO limit_events (rule, who, win, action, at) VALUES (?, ?, ?, ?, ?)").bind(rule, who, win, r.on_fail, Date.now()).run();
   if (r.on_fail === "queue" && r.queueable && queue) return { queue: r, win };
   if (r.on_fail !== "reject" && r.on_fail !== "queue") return null;
@@ -157,17 +174,18 @@ async function hit(env: Env, rule: string, who: string, queue: boolean): Promise
 }
 
 /**
- * Count one hit of something the site starts itself, not a request (a container check run,
- * ci-runner.ts), against `who` (`@handle`): why it can't go when that's over a rule that
- * rejects or queues, else null. Nothing is held for later: the caller says no.
+ * Count `n` hits of something the site starts itself, not a request (a container check run,
+ * ci-runner.ts), against `who` (`@handle`, or SITE for a site-wide rule): why it can't go when
+ * that's over a rule that rejects or queues, else null. Nothing is held for later: the caller says no.
  */
-export async function charge(env: Env, rule: string, who: string): Promise<string | null> {
-  const over = await hit(env, rule, who, false);
+export async function charge(env: Env, rule: string, who: string, n = 1): Promise<string | null> {
+  const over = await hit(env, rule, who, false, n);
   return over && "error" in over ? over.error : null;
 }
 
 function slowDown(r: Rule, win: number) {
   const wait = Math.ceil((win + r.window_s * 1000 - Date.now()) / 1000);
+  if (r.per === "site") return { error: `The site's ${r.label.toLowerCase()} for the ${every(r.window_s)} are used up (${r.max}). Try again in ${every(wait)}.`, wait };
   return { error: `Slow down: ${r.label.toLowerCase()} is limited to ${r.max} per ${every(r.window_s)}. Try again in ${every(wait)}.`, wait };
 }
 

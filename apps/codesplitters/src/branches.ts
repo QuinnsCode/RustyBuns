@@ -28,7 +28,7 @@ import { unindexFile } from "./search.ts";
 import { HARNESSES, type Harness } from "./harness.ts";
 import { localSandbox, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
-import { ADMINS_ONLY, adminsOnly, agentsUnavailable, installedHarnesses } from "./agent-routes.ts";
+import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
 import { askAgent } from "./conflict-agent.ts";
 import { hunks, revertOps } from "./review.ts";
 
@@ -243,6 +243,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     const c = f && (await mergeFile(env, owner, repo, branch, f.path, user!, undefined, true)).conflicts.find((x) => x.line === b.line);
     if (!c) return json({ error: `no conflict ${b.line} in ${b.path} on ${name}` }, 404);
     if (!explain(c).choices.includes("text")) return json({ error: "this conflict only takes main or branch" }, 400);
+    const spent = await hostedBudget(env);
+    if (spent) return spent;
     const main = await (await toFile(env, owner, repo, b.path, user!, "file")).json() as Doc;
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
     const r = await askAgent(box, { harness: b.harness, model: b.model?.trim() || undefined, path: b.path, branch: name, conflict: c, main }, req.signal);

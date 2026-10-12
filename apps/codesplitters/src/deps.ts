@@ -791,6 +791,9 @@ export async function settings(env: Env, owner: string, repo: string): Promise<S
   return { on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: r.ignore ? String(r.ignore).split(",") : [], run_tests: !!r.run_tests, fix_with: FIX_HARNESSES.includes(r.fix_with as Harness) ? r.fix_with as Harness : null, fix_tries: r.fix_tries };
 }
 
+/** Repos one owner may have the doctor watching on a schedule: each costs registry lookups every cron it's due. */
+export const MAX_WATCHED = 10;
+
 /** A run beats this often while it goes (running_since moves up)... */
 const BEAT = 5 * 60_000;
 /** ...so one that hasn't beaten in this long died with its process, and the next one may go. */
@@ -826,12 +829,16 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     const s = { ...(await settings(env, owner, repo)), ...b };
     if (!LEVELS.includes(s.max_level)) return json({ error: "max_level: patch, minor or major" }, 400);
     const every = Math.round(Number(s.every_hours)), age = Math.round(Number(s.min_age_days));
-    if (!(every >= 1 && every <= 24 * 30)) return json({ error: "every_hours: 1 to 720" }, 400);
+    if (!(every >= 6 && every <= 24 * 30)) return json({ error: "every_hours: 6 to 720" }, 400);
     if (!(age >= 0 && age <= 90)) return json({ error: "min_age_days: 0 to 90" }, 400);
     const fixWith = s.fix_with || null, tries = Math.round(Number(s.fix_tries));
     if (fixWith && !FIX_HARNESSES.includes(fixWith)) return json({ error: `fix_with: ${FIX_HARNESSES.join(", ")} or null` }, 400);
     if (!(tries >= 1 && tries <= 5)) return json({ error: "fix_tries: 1 to 5" }, 400);
     const ignore = (Array.isArray(s.ignore) ? s.ignore : String(s.ignore).split(",")).map((x) => x.trim()).filter(Boolean).join(",");
+    if (s.on) {
+      const others = await env.DB.prepare("SELECT COUNT(*) AS n FROM dep_watches WHERE owner = ? AND repo != ? AND enabled = 1").bind(owner, repo).first();
+      if ((others?.n as number) >= MAX_WATCHED) return json({ error: `the doctor watches ${MAX_WATCHED} of your repos at most: turn it off on one first` }, 400);
+    }
     await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ? WHERE owner = ? AND repo = ?")
       .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, owner, repo).run();
     return json(await settings(env, owner, repo));
@@ -858,11 +865,11 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
  */
 export const SCHEDULED_BUDGET = 12 * 60_000;
 
-/** The Worker's scheduled(): every repo whose doctor is on and due gets a run, while there's time. */
+/** The Worker's scheduled(): every repo whose doctor is on and due gets a run, while there's time, longest waiting first so no one's repos crowd out the rest. */
 export async function scheduledDoctor(env: Env, self: (r: Request) => Promise<Response>, now = Date.now(), budgetMs = SCHEDULED_BUDGET) {
   const deadline = Date.now() + budgetMs;
   const { results } = await env.DB.prepare(
-    "SELECT owner, repo FROM dep_watches WHERE enabled = 1 AND (running_since IS NULL OR running_since < ?) AND (last_run IS NULL OR last_run + every_hours * 3600000 <= ?)").bind(now - STALE, now + 60_000).all();
+    "SELECT owner, repo FROM dep_watches WHERE enabled = 1 AND (running_since IS NULL OR running_since < ?) AND (last_run IS NULL OR last_run + every_hours * 3600000 <= ?) ORDER BY COALESCE(last_run, 0)").bind(now - STALE, now + 60_000).all();
   const call = caller(self, "http://codesplitters.local");
   for (const { owner, repo } of results as { owner: string; repo: string }[]) {
     if (Date.now() >= deadline) break;

@@ -38,6 +38,7 @@
 // AGENT_REVIEW_MS=0 writes main directly, as the agent goes.
 
 import { json, type Env } from "./env.ts";
+import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
@@ -132,6 +133,13 @@ export function agentsUnavailable(env: Env): string | null {
 export const adminsOnly = (env: Env, user: string | null) => !!env.AGENT_SANDBOX && !(env.ADMINS && isAdmin(env, user));
 export const ADMINS_ONLY = "hosted agents are limited to this site's admins (ADMINS)";
 
+/** A hosted run takes one from the site's daily budget (the `hosted` rule), admins' runs too: a 429 once it's spent. Off the hosted site, nothing is counted. */
+export async function hostedBudget(env: Env): Promise<Response | null> {
+  if (!env.AGENT_SANDBOX) return null;
+  const over = await charge(env, "hosted", SITE);
+  return over ? json({ error: over }, 429) : null;
+}
+
 /** The harnesses whose CLI is on PATH (all of them when a test swaps the CLI out). */
 export const installedHarnesses = (env: Env) => env.AGENT_EXEC || env.AGENT_SANDBOX ? HARNESSES : HARNESSES.filter((h) => Bun.which(harnessCommand(h, "").bin));
 
@@ -186,6 +194,8 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!harness || !HARNESSES.includes(harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
   if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
   if (!task?.trim()) return json({ error: "task required" }, 400);
+  const spent = await hostedBudget(env);
+  if (spent) return spent;
 
   // The agent edits as its own collaborator, so blame shows which agent wrote what.
   const agent = `agent-${harness}`, origin = url.origin, call = caller(self, origin);
@@ -386,6 +396,9 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     return r ? JSON.parse(r.notes) as Note[] : [];
   };
   const checking = setInterval(() => void peek().catch(() => {}), CHECK_MS);
+  // A hosted run ends at its deadline, however many times its CLI has been round.
+  const cutoff = env.AGENT_SANDBOX ? setTimeout(() => void env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'")
+    .bind(`out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}`, id).run().catch(() => {}).finally(() => stopper.abort()), Math.max(0, row.started + HOSTED_RUN_MS - Date.now())) : undefined;
   const call = caller(self, origin);
   const { lines } = row.result ? JSON.parse(row.result) as Partial<Run> : {};
   const extra: Partial<Run> = lines ? { lines } : {};
@@ -431,5 +444,5 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.
     if (branch) await dropBranch(env, owner, repo, branch, path);
-  } finally { clearInterval(checking); }
+  } finally { clearInterval(checking); clearTimeout(cutoff); }
 }
