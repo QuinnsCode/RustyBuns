@@ -181,6 +181,18 @@ describe("settled without asking (#933)", () => {
     expect(merged("a\nz", "a\nm1\nsame\nz", "a\nsame\nb1\nz")).toBe("a\nm1\nsame\nb1\nz");
   });
 
+  test("new lines both added to a sorted block land in order", () => {
+    const imp = (...ns: string[]) => ns.map((n) => `import { ${n} } from "./${n}";`).join("\n");
+    expect(merged(imp("a", "c", "e"), imp("a", "c", "d", "e"), imp("a", "b", "c", "e"))).toBe(imp("a", "b", "c", "d", "e"));
+    // Main's new lines on either side of the branch's, and the branch's own run among them.
+    const keys = (...ks: string[]) => `const o = {\n${ks.map((k) => `  ${k}: 1,`).join("\n")}\n};`;
+    expect(merged(keys("a", "f", "k"), keys("a", "b", "d", "f", "k"), keys("a", "c", "e", "f", "k"))).toBe(keys("a", "b", "c", "d", "e", "f", "k"));
+    expect(merged(keys("a", "f", "k"), keys("a", "f", "g", "k"), keys("a", "f", "h", "k"))).toBe(keys("a", "f", "g", "h", "k"));
+    // Not sorted, or too short to tell: main's first.
+    expect(merged(keys("f", "a", "k"), keys("f", "d", "a", "k"), keys("f", "b", "a", "k"))).toBe(keys("f", "d", "b", "a", "k"));
+    expect(merged("a\nz", "a\nm\nz", "a\nb\nz")).toBe("a\nm\nb\nz");
+  });
+
   test("items both added to one list: main's first, or in order if the list was sorted; one key added two ways is a conflict", () => {
     // The deps save body in client.html, both appended.
     const save = (x: string) => `await api(base, { on: f.on.checked, held: f.held.value${x} }, "PUT");`;
