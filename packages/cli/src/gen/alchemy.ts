@@ -128,11 +128,11 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     lines.push(``);
 
     if (w.build) {
-      // rustybuns plan/deploy build before Alchemy hashes the bundle (#362) and set
-      // RUSTYBUNS_BUILT, so this only records dist instead of rebuilding it under the
-      // upload (#424). The resource stays: dropping it would delete dist.
+      // rustybuns plan/deploy/dev build before Alchemy hashes the bundle (#362), without the
+      // deploy's logins (#1114, #1121), and set RUSTYBUNS_BUILT, so this only records dist instead
+      // of rebuilding it under the upload (#424). The resource stays: dropping it would delete dist.
       lines.push(`// Build the app (RWSDK: vite build -> dist/worker + dist/client) before deploy.`);
-      lines.push(`// Under rustybuns plan/deploy the app is already built (RUSTYBUNS_BUILT), so this only records dist.`);
+      lines.push(`// Under rustybuns plan/deploy/dev the app is already built (RUSTYBUNS_BUILT), so this only records dist.`);
       lines.push(`export const Build = Command.Build("Build", { command: process.env.RUSTYBUNS_BUILT ? "true" : ${JSON.stringify(w.build)}, outdir: "dist" });`);
       lines.push(``);
     }

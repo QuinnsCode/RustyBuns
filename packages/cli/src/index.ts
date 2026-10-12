@@ -668,7 +668,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   }
   // The Worker hashes (and uploads) its bundle from disk at plan time, before the
   // stack's Build runs, so build it first or it ships the previous build (#362).
-  const built = profiled && edgeOn(cfg) && !!cfg.worker?.build;
+  // dev builds first too: the stack's Build would run it inside alchemy, with the Cloudflare token (#1121).
+  const built = (profiled || sub === "dev") && edgeOn(cfg) && !!cfg.worker?.build;
   if (built) yield* timed(prof, "build worker", buildWorker(cfg.worker!.build!));
   // Name each map's module and give it app-relative sources, as wrangler does (#799).
   if (built && cfg.worker!.sourceMaps && cfg.worker!.builtMain) {
