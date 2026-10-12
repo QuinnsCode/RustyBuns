@@ -1,0 +1,866 @@
+{
+ "abrasive-rap": {
+  "reviews": 44,
+  "median": 7,
+  "scores": [
+   6,
+   8
+  ],
+  "soundsLike": [
+   "clipping.",
+   "Death Grips",
+   "Backxwash",
+   "Bladee",
+   "Injury Reserve"
+  ],
+  "examples": [
+   {
+    "artist": "Death Grips",
+    "title": "NO LOVE DEEP WEB",
+    "year": 2012,
+    "score": 2
+   },
+   {
+    "artist": "Eminem",
+    "title": "Music to Be Murdered By – Side B",
+    "year": 2021,
+    "score": 3
+   },
+   {
+    "artist": "M.I.A.",
+    "title": "MATA",
+    "year": 2022,
+    "score": 5
+   },
+   {
+    "artist": "Sematary",
+    "title": "Butcher House",
+    "year": 2023,
+    "score": 6
+   },
+   {
+    "artist": "Bladee",
+    "title": "Spiderr",
+    "year": 2022,
+    "score": 7
+   },
+   {
+    "artist": "Backxwash",
+    "title": "His Happiness Shall Come First Even Though We Are Suffering",
+    "year": 2022,
+    "score": 8
+   },
+   {
+    "artist": "JPEGMAFIA",
+    "title": "LP!",
+    "year": 2021,
+    "score": 9
+   },
+   {
+    "artist": "Death Grips",
+    "title": "The Money Store",
+    "year": 2012,
+    "score": 10
+   }
+  ]
+ },
+ "ambient": {
+  "reviews": 55,
+  "median": 6,
+  "scores": [
+   5,
+   7
+  ],
+  "soundsLike": [
+   "Tim Hecker",
+   "Colin Stetson",
+   "Daniel Avery",
+   "Nicolas Jaar",
+   "Prurient"
+  ],
+  "examples": [
+   {
+    "artist": "Gas",
+    "title": "Narkopop",
+    "year": 2017,
+    "score": 2
+   },
+   {
+    "artist": "Sufjan Stevens & Lowell Brams",
+    "title": "Aporia",
+    "year": 2020,
+    "score": 3
+   },
+   {
+    "artist": "Sigur Rós",
+    "title": "Átta",
+    "year": 2023,
+    "score": 4
+   },
+   {
+    "artist": "Daniel Avery",
+    "title": "Love + Light",
+    "year": 2020,
+    "score": 5
+   },
+   {
+    "artist": "Xiu Xiu",
+    "title": "Ignore Grief",
+    "year": 2023,
+    "score": 6
+   },
+   {
+    "artist": "Tim Hecker",
+    "title": "No Highs",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "Colin Stetson",
+    "title": "When we were that what wept for the sea",
+    "year": 2023,
+    "score": 8
+   },
+   {
+    "artist": "Xiu Xiu",
+    "title": "Girl with Basket of Fruit",
+    "year": 2019,
+    "score": 9
+   }
+  ]
+ },
+ "art-pop": {
+  "reviews": 143,
+  "median": 7,
+  "scores": [
+   6,
+   8
+  ],
+  "soundsLike": [
+   "Beach House",
+   "Lana Del Rey",
+   "Everything Everything",
+   "Björk",
+   "Julia Holter"
+  ],
+  "examples": [
+   {
+    "artist": "Foxygen",
+    "title": "...And Star Power",
+    "year": 2014,
+    "score": 2
+   },
+   {
+    "artist": "Arctic Monkeys",
+    "title": "The Car",
+    "year": 2022,
+    "score": 3
+   },
+   {
+    "artist": "Lorde",
+    "title": "Solar Power",
+    "year": 2021,
+    "score": 4
+   },
+   {
+    "artist": "M83",
+    "title": "Fantasy",
+    "year": 2023,
+    "score": 5
+   },
+   {
+    "artist": "The Mars Volta",
+    "title": "The Mars Volta",
+    "year": 2022,
+    "score": 6
+   },
+   {
+    "artist": "Frost Children",
+    "title": "Speed Run",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "Caroline Polachek",
+    "title": "Desire, I Want to Turn Into You",
+    "year": 2023,
+    "score": 8
+   },
+   {
+    "artist": "Weyes Blood",
+    "title": "Titanic Rising",
+    "year": 2019,
+    "score": 9
+   },
+   {
+    "artist": "Spellling",
+    "title": "The Turning Wheel",
+    "year": 2021,
+    "score": 10
+   }
+  ]
+ },
+ "conscious-rap": {
+  "reviews": 372,
+  "median": 7,
+  "scores": [
+   5,
+   8
+  ],
+  "soundsLike": [
+   "Big K.R.I.T.",
+   "Open Mike Eagle",
+   "Vince Staples",
+   "Joey Bada$$",
+   "Ka"
+  ],
+  "examples": [
+   {
+    "artist": "Milo",
+    "title": "I Wish My Brother Rob Was Here",
+    "year": 2011,
+    "score": 1
+   },
+   {
+    "artist": "Macklemore",
+    "title": "Ben",
+    "year": 2023,
+    "score": 2
+   },
+   {
+    "artist": "Rico Nasty",
+    "title": "Las Ruinas",
+    "year": 2022,
+    "score": 3
+   },
+   {
+    "artist": "Larry June & The Alchemist",
+    "title": "The Great Escape",
+    "year": 2023,
+    "score": 4
+   },
+   {
+    "artist": "Aminé & KAYTRANADA",
+    "title": "KaytrAminé",
+    "year": 2023,
+    "score": 5
+   },
+   {
+    "artist": "Killer Mike",
+    "title": "MICHAEL",
+    "year": 2023,
+    "score": 6
+   },
+   {
+    "artist": "Black Thought & El Michels Affair",
+    "title": "Glorious Game",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "billy woods & Kenny Segal",
+    "title": "Maps",
+    "year": 2023,
+    "score": 8
+   },
+   {
+    "artist": "McKinley Dixon",
+    "title": "Beloved! Paradise! Jazz​!​?",
+    "year": 2023,
+    "score": 9
+   },
+   {
+    "artist": "Kendrick Lamar",
+    "title": "To Pimp A Butterfly",
+    "year": 2015,
+    "score": 10
+   }
+  ]
+ },
+ "dad-rock": {
+  "reviews": 152,
+  "median": 6,
+  "scores": [
+   5,
+   7
+  ],
+  "soundsLike": [
+   "Weezer",
+   "Jack White",
+   "Foo Fighters",
+   "Coldplay",
+   "Jeff Rosenstock"
+  ],
+  "examples": [
+   {
+    "artist": "Machine Gun Kelly",
+    "title": "Mainstream Sellout",
+    "year": 2022,
+    "score": 1
+   },
+   {
+    "artist": "The National",
+    "title": "First Two Pages of Frankenstein",
+    "year": 2023,
+    "score": 2
+   },
+   {
+    "artist": "The Smashing Pumpkins",
+    "title": "ATUM (A Rock Opera in 3 Acts)",
+    "year": 2023,
+    "score": 3
+   },
+   {
+    "artist": "HMLTD",
+    "title": "The Worm",
+    "year": 2023,
+    "score": 4
+   },
+   {
+    "artist": "Jack White",
+    "title": "Entering Heaven Alive",
+    "year": 2022,
+    "score": 5
+   },
+   {
+    "artist": "Queens of the Stone Age",
+    "title": "In Times New Roman...",
+    "year": 2023,
+    "score": 6
+   },
+   {
+    "artist": "Weezer",
+    "title": "SZNZ: Winter",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "Geese",
+    "title": "3D Country",
+    "year": 2023,
+    "score": 8
+   },
+   {
+    "artist": "Jack White",
+    "title": "Boarding House Reach",
+    "year": 2018,
+    "score": 9
+   }
+  ]
+ },
+ "electronic": {
+  "reviews": 132,
+  "median": 7,
+  "scores": [
+   6,
+   8
+  ],
+  "soundsLike": [
+   "Flume",
+   "Blanck Mass",
+   "Hudson Mohawke",
+   "Ibibio Sound Machine",
+   "Iglooghost"
+  ],
+  "examples": [
+   {
+    "artist": "Kuedo",
+    "title": "Severant",
+    "year": 2011,
+    "score": 1
+   },
+   {
+    "artist": "Andy Stott",
+    "title": "Luxury Problems",
+    "year": 2012,
+    "score": 2
+   },
+   {
+    "artist": "Glitch Mob",
+    "title": "Love Death Immortality",
+    "year": 2014,
+    "score": 3
+   },
+   {
+    "artist": "Gaspard Augé",
+    "title": "Escapades",
+    "year": 2021,
+    "score": 4
+   },
+   {
+    "artist": "Flume",
+    "title": "Things Don't Always Go the Way You Plan",
+    "year": 2023,
+    "score": 5
+   },
+   {
+    "artist": "Fred again..",
+    "title": "Actual Life 3",
+    "year": 2022,
+    "score": 6
+   },
+   {
+    "artist": "Skrillex",
+    "title": "Quest for Fire",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "Snow Strippers",
+    "title": "April Mixtape 3",
+    "year": 2023,
+    "score": 8
+   },
+   {
+    "artist": "A.A.L (Against All Logic) - 2012",
+    "title": "2017",
+    "year": 2018,
+    "score": 9
+   }
+  ]
+ },
+ "heavy": {
+  "reviews": 250,
+  "median": 7,
+  "scores": [
+   6,
+   8
+  ],
+  "soundsLike": [
+   "Krallice",
+   "Code Orange",
+   "Deftones",
+   "Ghost",
+   "La Dispute"
+  ],
+  "examples": [
+   {
+    "artist": "Dance Gavin Dance",
+    "title": "Instant Gratification",
+    "year": 2015,
+    "score": 1
+   },
+   {
+    "artist": "Sleep Token",
+    "title": "Take Me Back to Eden",
+    "year": 2023,
+    "score": 2
+   },
+   {
+    "artist": "Megadeth",
+    "title": "The Sick, the Dying… and the Dead!",
+    "year": 2022,
+    "score": 3
+   },
+   {
+    "artist": "Slipknot",
+    "title": "The End, So Far",
+    "year": 2022,
+    "score": 4
+   },
+   {
+    "artist": "Metallica",
+    "title": "72 Seasons",
+    "year": 2023,
+    "score": 5
+   },
+   {
+    "artist": "Rammstein",
+    "title": "Zeit",
+    "year": 2022,
+    "score": 6
+   },
+   {
+    "artist": "Portrayal of Guilt",
+    "title": "Devil Music",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "Thantifaxath",
+    "title": "Hive Mind Narcosis",
+    "year": 2023,
+    "score": 8
+   },
+   {
+    "artist": "Ashenspire",
+    "title": "Hostile Architecture",
+    "year": 2022,
+    "score": 9
+   }
+  ]
+ },
+ "indie-folk": {
+  "reviews": 259,
+  "median": 7,
+  "scores": [
+   5,
+   7
+  ],
+  "soundsLike": [
+   "Mount Eerie",
+   "Angel Olsen",
+   "Laura Marling",
+   "Natalia Lafourcade",
+   "Sharon Van Etten"
+  ],
+  "examples": [
+   {
+    "artist": "Teenage Cool Kids",
+    "title": "Denton After Sunset",
+    "year": 2011,
+    "score": 1
+   },
+   {
+    "artist": "Modest Mouse",
+    "title": "The Golden Casket",
+    "year": 2021,
+    "score": 2
+   },
+   {
+    "artist": "girl in red",
+    "title": "if i could make it go quiet",
+    "year": 2021,
+    "score": 3
+   },
+   {
+    "artist": "Arcade Fire",
+    "title": "We",
+    "year": 2022,
+    "score": 4
+   },
+   {
+    "artist": "Ed Sheeran",
+    "title": "Subtract",
+    "year": 2023,
+    "score": 5
+   },
+   {
+    "artist": "AJJ",
+    "title": "Disposable Everything",
+    "year": 2023,
+    "score": 6
+   },
+   {
+    "artist": "Swans",
+    "title": "The Beggar",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "feeble little horse",
+    "title": "Girl with Fish",
+    "year": 2023,
+    "score": 8
+   },
+   {
+    "artist": "Lana Del Rey",
+    "title": "Did you know that there's a tunnel under Ocean Blvd",
+    "year": 2023,
+    "score": 9
+   }
+  ]
+ },
+ "noise-rock": {
+  "reviews": 268,
+  "median": 7,
+  "scores": [
+   6,
+   8
+  ],
+  "soundsLike": [
+   "King Gizzard & The Lizard Wizard",
+   "Dope Body",
+   "Godspeed You! Black Emperor",
+   "Parquet Courts",
+   "Protomartyr"
+  ],
+  "examples": [
+   {
+    "artist": "John Frusciante",
+    "title": "Enclosure",
+    "year": 2014,
+    "score": 2
+   },
+   {
+    "artist": "Deafheaven",
+    "title": "Infinite Granite",
+    "year": 2021,
+    "score": 3
+   },
+   {
+    "artist": "MGMT",
+    "title": "11​•​11​•​11",
+    "year": 2022,
+    "score": 4
+   },
+   {
+    "artist": "Gilla Band",
+    "title": "Most Normal",
+    "year": 2022,
+    "score": 5
+   },
+   {
+    "artist": "Protomartyr",
+    "title": "Formal Growth in the Desert",
+    "year": 2023,
+    "score": 6
+   },
+   {
+    "artist": "tricot",
+    "title": "Fudeki",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "King Gizzard & The Lizard Wizard",
+    "title": "PetroDragonic Apocalypse",
+    "year": 2023,
+    "score": 8
+   },
+   {
+    "artist": "black midi",
+    "title": "Hellfire",
+    "year": 2022,
+    "score": 9
+   },
+   {
+    "artist": "Lingua Ignota",
+    "title": "Sinner Get Ready",
+    "year": 2021,
+    "score": 10
+   }
+  ]
+ },
+ "radio-pop": {
+  "reviews": 160,
+  "median": 6,
+  "scores": [
+   5,
+   7
+  ],
+  "soundsLike": [
+   "Charli XCX",
+   "Carly Rae Jepsen",
+   "Beyoncé",
+   "BTS",
+   "Gorillaz"
+  ],
+  "examples": [
+   {
+    "artist": "Tones and I",
+    "title": "Welcome to the Madhouse",
+    "year": 2021,
+    "score": 0
+   },
+   {
+    "artist": "Miley Cyrus",
+    "title": "She Is Coming",
+    "year": 2019,
+    "score": 1
+   },
+   {
+    "artist": "Ed Sheeran",
+    "title": "=",
+    "year": 2021,
+    "score": 2
+   },
+   {
+    "artist": "Skrillex",
+    "title": "Don't Get Too Close",
+    "year": 2023,
+    "score": 3
+   },
+   {
+    "artist": "Miley Cyrus",
+    "title": "Endless Summer Vacation",
+    "year": 2023,
+    "score": 4
+   },
+   {
+    "artist": "U.S. Girls",
+    "title": "Bless This Mess",
+    "year": 2023,
+    "score": 5
+   },
+   {
+    "artist": "Gorillaz",
+    "title": "Cracker Island",
+    "year": 2023,
+    "score": 6
+   },
+   {
+    "artist": "Kesha",
+    "title": "Gag Order",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "Jessie Ware",
+    "title": "That! Feels Good!",
+    "year": 2023,
+    "score": 8
+   },
+   {
+    "artist": "Jessie Ware",
+    "title": "What's Your Pleasure?",
+    "year": 2020,
+    "score": 9
+   }
+  ]
+ },
+ "rnb": {
+  "reviews": 175,
+  "median": 7,
+  "scores": [
+   5,
+   8
+  ],
+  "soundsLike": [
+   "The Weeknd",
+   "BADBADNOTGOOD",
+   "Kali Uchis",
+   "Anderson .Paak",
+   "Blood Orange"
+  ],
+  "examples": [
+   {
+    "artist": "Bladee",
+    "title": "Red Light",
+    "year": 2018,
+    "score": 1
+   },
+   {
+    "artist": "XXXTentacion",
+    "title": "17",
+    "year": 2017,
+    "score": 2
+   },
+   {
+    "artist": "Steve Lacy",
+    "title": "Apollo XXI",
+    "year": 2019,
+    "score": 3
+   },
+   {
+    "artist": "Joji",
+    "title": "SMITHEREENS",
+    "year": 2022,
+    "score": 4
+   },
+   {
+    "artist": "Don Toliver",
+    "title": "Love Sick",
+    "year": 2023,
+    "score": 5
+   },
+   {
+    "artist": "Janelle Monáe",
+    "title": "The Age of Pleasure",
+    "year": 2023,
+    "score": 6
+   },
+   {
+    "artist": "Kali Uchis",
+    "title": "Red Moon in Venus",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "SZA",
+    "title": "SOS",
+    "year": 2022,
+    "score": 8
+   },
+   {
+    "artist": "Lonnie Holley",
+    "title": "Oh Me Oh My",
+    "year": 2023,
+    "score": 9
+   },
+   {
+    "artist": "KIDS SEE GHOSTS",
+    "title": "Self-Titled",
+    "year": 2018,
+    "score": 10
+   }
+  ]
+ },
+ "streaming-rap": {
+  "reviews": 316,
+  "median": 5,
+  "scores": [
+   4,
+   6
+  ],
+  "soundsLike": [
+   "Drake",
+   "Young Thug",
+   "Future",
+   "Lil Yachty",
+   "Logic"
+  ],
+  "examples": [
+   {
+    "artist": "Ken Carson",
+    "title": "X",
+    "year": 2022,
+    "score": 0
+   },
+   {
+    "artist": "Gunna",
+    "title": "a Gift & a Curse",
+    "year": 2023,
+    "score": 1
+   },
+   {
+    "artist": "Rae Sremmurd",
+    "title": "Sremm 4 Life",
+    "year": 2023,
+    "score": 2
+   },
+   {
+    "artist": "Jack Harlow",
+    "title": "Come Home The Kids Miss You",
+    "year": 2022,
+    "score": 3
+   },
+   {
+    "artist": "Lil Baby",
+    "title": "It's Only Me",
+    "year": 2022,
+    "score": 4
+   },
+   {
+    "artist": "Young Thug",
+    "title": "Business Is Business",
+    "year": 2023,
+    "score": 5
+   },
+   {
+    "artist": "Thaiboy Digital",
+    "title": "Back 2 Life",
+    "year": 2022,
+    "score": 6
+   },
+   {
+    "artist": "Yeat",
+    "title": "Aftërlyfe",
+    "year": 2023,
+    "score": 7
+   },
+   {
+    "artist": "Otoboke Beaver",
+    "title": "Super Champon",
+    "year": 2022,
+    "score": 8
+   },
+   {
+    "artist": "Tkay Maidza",
+    "title": "Last Year Was Weird Vol. 2",
+    "year": 2020,
+    "score": 9
+   }
+  ]
+ }
+}

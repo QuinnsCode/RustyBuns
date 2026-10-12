@@ -77,6 +77,16 @@ function worst(f: Features | null): string {
   return "It plays it a little safe.";
 }
 
+/** The real review in this box nearest the score, so the parody points at something he actually said. */
+export function realReview(box: Box, score: number, seed: number): string {
+  const near = Math.min(...box.examples.map((e) => Math.abs(e.score - score)));
+  const picks = box.examples.filter((e) => Math.abs(e.score - score) === near);
+  const e = picks[seed % picks.length];
+  if (!e) return "";
+  const said = `For the record, he gave ${e.artist}'s ${e.title} ${e.score === 8 ? "an" : "a"} ${e.score} back in ${e.year}`;
+  return e.take ? `${said}: "${e.take}"` : `${said}.`;
+}
+
 export function writeReview(v: Verdict, box: Box, f: Features | null, title: string): Review {
   const seed = seedOf(`${title}|${box.id}|${f ? Object.values(f).join(",") : ""}`);
   const pick = <T,>(xs: T[], salt: number) => xs[(seed >>> salt) % xs.length]!;
@@ -89,7 +99,7 @@ export function writeReview(v: Verdict, box: Box, f: Features | null, title: str
     verdict,
     box: box.name,
     headline: fill(`{title}: ${pick(["a", "the", "yet another"], 1)} ${box.name.toLowerCase()} record`),
-    review: [pick(OPENERS, 0), pick(CRAFT[bucket(v.craft)]!, 5), pick(ORIGINALITY[bucket(v.originality)]!, 9), pick(CLOSERS[verdict], 13)].map(fill).join(" "),
+    review: [pick(OPENERS, 0), pick(CRAFT[bucket(v.craft)]!, 5), pick(ORIGINALITY[bucket(v.originality)]!, 9), pick(CLOSERS[verdict], 13)].map(fill).concat(realReview(box, score, seed >>> 17)).filter(Boolean).join(" "),
     bestBit: best(f, box),
     worstBit: worst(f),
     by: v.by,
