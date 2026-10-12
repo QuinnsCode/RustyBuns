@@ -3010,6 +3010,7 @@ const views = {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
     return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p><button class="btn" data-gitmap title="who this repo listens to, and its branches, wired up">${icon("git-fork")}Git map</button>`)
       + (owner === me() && r.mirror ? sec("refresh-cw", "Upstream", `<div id="mirror"><span class="muted">…</span></div>`) : "")
+      + (!r.mirror && r.upstream?.startsWith("github:") && r.upstream_commit ? sec("git-fork", "Upstream", `<div id="listen" data-pics><span class="muted">…</span></div>`) : "")
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
@@ -3073,6 +3074,34 @@ const views = {
     }));
     views.wireMirrorBranches(owner, repo);
   },
+  /** A dug fork listening to its upstream (#870): how many commits upstream got since the dig, and Take them onto a branch. */
+  async wireListen(owner, repo, hear) {
+    const el = $("#listen");
+    if (!el) return;
+    const u = await api(`/repos/${owner}/${repo}/upstream${hear ? "/hear" : ""}`, hear ? {} : undefined).catch((e) => ({ failed: e.message }));
+    if (u.failed) { el.innerHTML = `<span class="muted">${esc(u.failed)}</span>`; return; }
+    const moved = u.tip && u.tip !== u.commit;
+    const n = u.behind ?? null, count = n === null ? "new upstream commits" : `${n} new upstream commit${n === 1 ? "" : "s"}`;
+    const head = !moved && !u.error ? `<span class="tag ok">up to date</span> with ${esc(u.repo)}'s ${esc(u.branch)}`
+      : moved ? `<span class="tag" style="color:var(--accent-ink)">${esc(count)}</span> on ${esc(u.repo)}'s ${esc(u.branch)} since <code>${esc(u.commit.slice(0, 7))}</code>`
+      : `<span class="muted">${esc(u.error)}</span>`;
+    const pic = ["pull", { branch: "a new branch", ref: u.branch }];
+    const mine = owner === me();
+    el.innerHTML = `<p>${head}${u.heardAt ? `, heard ${ago(u.heardAt)}` : ""}.${u.folder ? ` Only <code>${esc(u.folder)}</code> comes in.` : ""}</p>
+      ${moved && mine ? `<div class="gitpic-slot" data-pic="${esc(JSON.stringify(pic))}">${gitPic(pic)}</div>` : ""}
+      <div class="row" style="gap:6px;flex-wrap:wrap">${moved && mine ? `<button class="btn primary" id="listen-take"${picAttr(...pic)}>${icon("download")}Take them</button>` : ""}${mine ? `<button class="btn" id="listen-hear" title="ask GitHub now">${icon("refresh-cw")}Check now</button>` : ""}</div>
+      ${mine ? `<p class="muted" style="font-size:12px">They come in on a branch, to review and merge like any other. Checked every hour.</p>` : ""}`;
+    icons();
+    $("#listen-hear")?.addEventListener("click", () => { el.querySelector("p").textContent = "asking GitHub…"; views.wireListen(owner, repo, true); });
+    $("#listen-take")?.addEventListener("click", async (e) => {
+      e.target.closest("button").disabled = true; el.querySelector("p").textContent = "taking them…";
+      try {
+        const t = await api(`/repos/${owner}/${repo}/upstream/take`, {});
+        toast(`Opened ${t.name}: ${t.files.length + t.deleted.length} file${t.files.length + t.deleted.length === 1 ? "" : "s"} from upstream${t.skipped.length ? `; skipped ${t.skipped.join(", ")}` : ""}`);
+        location.hash = `#/b/${owner}/${repo}/${encodeURIComponent(t.name)}`;
+      } catch (err) { toast(err.message); views.wireListen(owner, repo); }
+    });
+  },
   /** Upstream's other branches: open one here as a branch, or go to the one that already follows it. */
   async wireMirrorBranches(owner, repo) {
     const el = $("#mirror-branches");
@@ -3134,6 +3163,7 @@ const views = {
         <div class="row">releases at least <input name="min_age_days" aria-label="minimum release age in days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
         <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
         <label title="${d.can_test ? "" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code)</span></label>
+        <label title="${d.can_preview ? "Each counts against your preview deploys, and is logged with them" : "Preview deploys run on the desktop app, with your own logins"}"><input type="checkbox" name="preview"${s.preview ? " checked" : ""}${d.can_preview ? "" : " disabled"}> Then deploy what passed as a preview, check it answers, and tear it down <span class="muted">(costs deploy time)</span></label>
         <div class="row" title="The connected AI for the 🤖 fix and 🔎 web search steps below">AI for 🤖 🔎 <select name="fix_with" aria-label="who fixes a break"${d.can_test ? "" : " disabled"}>${opt("", "none", s.fix_with ?? "")}${["claude", "pi", "opencode"].map((h) => opt(h, h, s.fix_with ?? "")).join("")}</select>
           up to <input name="fix_tries" aria-label="fix tries" type="number" min="1" max="5" value="${s.fix_tries}" style="width:3em"> tries a step</div>
         <div class="row">on a break, in order: <span class="chain" id="deps-chain"></span></div>
@@ -3145,6 +3175,7 @@ const views = {
       ${rep ? `<div class="run"><span class="st">last checked ${new Date(rep.at).toLocaleString()} · ${rep.checked} package${rep.checked === 1 ? "" : "s"}</span>
         ${rep.updates.map((u) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level}${u.fixes ? ` · <b class="vuln">fixes ${u.fixes.map(esc).join(", ")}</b>` : ""} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? (u.was ? `broke the tests at ${esc(u.was)}; rolled back, tests pass` : "tests pass") : u.status === "held" ? "broke the tests, held back" : "untested"}${u.chain?.length ? ` · ${u.chain.map((c) => `<span title="${esc(DEP_STEPS[c.step][1])}: ${c.ok ? "worked" : esc(c.note ?? "didn't work")}${c.usd ? ` ($${c.usd.toFixed(2)})` : ""}">${DEP_STEPS[c.step][0]}${c.ok ? "✓" : c.note ? "–" : "✗"}</span>`).join(" ")}${u.chain.some((c) => c.ok) ? "" : " gave up"}` : ""}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
         ${(rep.exposed ?? []).map((x) => `<span><b class="vuln">exposed</b> <code>${esc(x.name)}</code> ${esc(x.version)} <span class="muted">${x.ids.map(esc).join(", ")} · no update here fixes it</span></span>`).join("")}
+        ${(rep.previews ?? []).map((p) => `<span title="${esc(p.stage)}${p.url ? ` · ${esc(p.url)}` : ""}${p.note ? ` · ${esc(p.note)}` : ""}">${icon("rocket")} preview of ${p.names.map((n) => `<code>${esc(n)}</code>`).join(", ")} <span class="muted">· ${p.ok ? "answered, torn down" : `${esc(p.failed ?? "it")} failed`}</span></span>`).join("")}
         ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>${rep.lock ? `, with <code>${esc(rep.lock)}</code> to match` : ""}, ready to review above.</span>` : ""}
         ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}
       ${(d.malicious ?? []).length ? `<div class="run">${d.malicious.map((h) => `<span><b class="vuln">malicious</b> <code>${esc(h.name)}</code> ${esc(h.spec)} <span class="muted">${h.path !== "package.json" ? `${esc(h.path.replace(/\/package\.json$/, ""))} · ` : ""}<a href="https://osv.dev/vulnerability/${encodeURIComponent(h.id)}" target="_blank" rel="noopener">${esc(h.id)}</a>${h.summary ? ` · ${esc(h.summary)}` : ""} · remove it or pin a clean version</span></span>`).join("")}</div>` : ""}
@@ -3164,7 +3195,7 @@ const views = {
     drawChain();
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target;
-      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value }, "PUT"); toast("Saved"); }
+      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, preview: f.preview.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value }, "PUT"); toast("Saved"); }
       catch (err) { toast(err.message); }
     });
     $("#deps-run").addEventListener("click", async () => {
@@ -3568,6 +3599,7 @@ const views = {
     views.wireDeps(owner, repo);
     views.wireFit(owner, repo);
     views.wireMirror(owner, repo);
+    views.wireListen(owner, repo);
     views.wirePreview(owner, repo);
     views.wireDeploy(owner, repo);
     views.wireHooks(owner, repo);

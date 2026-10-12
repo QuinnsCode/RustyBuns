@@ -84,8 +84,8 @@ export const runnerFor = (env: Env): Runner | null => {
   return typeof Bun !== "undefined" && !env.BETTER_AUTH_SECRET ? { exec: spawnExec(), fetch: (u) => fetch(u, { redirect: "manual" }) } : null;
 };
 
-/** One run per repo, in this process: the desktop app is one process. */
-const runs = new Map<string, Run>();
+/** One run per repo, in this process: the desktop app is one process. The dependency doctor's previews show here too. */
+export const runs = new Map<string, Run>();
 
 // ---- the log: deploys and previews alike, in D1's `deploys` table ------------
 
@@ -161,9 +161,10 @@ console.log("RB " + JSON.stringify({ adopt: !!c.targets?.edge?.adopt, edge: !!c.
  * a real deploy (`keep`, see deploy.ts), whose run has no destroy step. A real
  * deploy may take over live resources (`adopt`) when the owner said so. With
  * `expect`, the clone has to be that commit (the one a hosted deploy checked,
- * deploy-review.ts), or nothing after it runs.
+ * deploy-review.ts), or nothing after it runs. `files` (repo paths) are laid
+ * over the clone first: the dependency doctor's branch, not yet pushed (deps.ts).
  */
-export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean; dir?: string; expect?: string } = {}) {
+export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean; dir?: string; expect?: string; files?: Record<string, string> } = {}) {
   const fs = runner.workdir ? null : await import("node:fs");
   const dir = runner.workdir ?? fs!.mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "codesplitter-preview-"));
   const app = opts.dir ? `${dir}/repo/${opts.dir}` : `${dir}/repo`;
@@ -192,6 +193,16 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
       step("clone").status = "failed";
       run.note = `main moved to ${run.commit?.slice(0, 7) ?? "?"} after ${opts.expect.slice(0, 7)} was checked: deploy again`;
       return skip("install", "deploy", "check", "destroy");
+    }
+    if (opts.files) {
+      const c = step("clone"), paths = Object.keys(opts.files);
+      // A runner with a workdir of its own is a container, which this can't write into.
+      const outside = paths.find((p) => p.split("/").some((x) => x === ".." || x === "" || x === "."));
+      const bad = !fs ? "this runner can't lay files over its clone" : outside ? `${outside} is outside the repo` : null;
+      if (bad) { c.status = "failed"; c.out += bad + "\n"; return skip("install", "deploy", "check", "destroy"); }
+      const { dirname, join } = await import("node:path");
+      for (const p of paths) { fs!.mkdirSync(dirname(join(dir, "repo", p)), { recursive: true }); fs!.writeFileSync(join(dir, "repo", p), opts.files[p]!); }
+      c.out += `laid ${paths.length} changed file${paths.length === 1 ? "" : "s"} over the clone: ${paths.join(", ")}\n`;
     }
     // A folder that isn't there says so, rather than failing to start bun in it.
     const has = opts.dir ? [{ cmd: ["test", "-d", opts.dir], cwd: `${dir}/repo` }] : [];
