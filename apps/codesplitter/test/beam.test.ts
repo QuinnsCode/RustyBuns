@@ -141,10 +141,12 @@ describe("beaming a branch", () => {
     expect((await post("ana", "/api/repos/ana/lab/branches", { name: "tune" })).status).toBe(201);
     const doc = await (await call("ana", "/api/repos/ana/lab/do/file?path=src/a.ts&branch=tune")).json() as any;
     expect((await post("ana", "/api/repos/ana/lab/do/ops?path=src/a.ts&branch=tune", { ops: [{ kind: "set", line: doc.lines[1].id, text: "export const b = 3;", base: doc.lines[1].rev }] })).status).toBe(200);
+    // Written with its trailing newline, which keeps an empty last line (#1041).
+    expect((await post("ana", "/api/repos/ana/lab/files", { path: "keep.md", content: "stays\n", branch: "tune" })).status).toBe(201);
     const main = await sh(`git --git-dir ${bare} rev-parse main`);
 
     const list = await (await call("ana", "/api/repos/ana/lab/beams")).json() as any;
-    expect(list.codesplitter_branches).toEqual([{ name: "tune", by: "ana", parent: null, files: 1 }]);
+    expect(list.codesplitter_branches).toEqual([{ name: "tune", by: "ana", parent: null, files: 2 }]);
     // A git branch of that name there isn't.
     expect((await post("ana", "/api/repos/ana/lab/beams", { branch: "tune" })).status).toBe(404);
     expect((await post("ana", "/api/repos/ana/lab/beams", { branch: "nope", kind: "codesplitter" })).status).toBe(404);
@@ -154,10 +156,12 @@ describe("beaming a branch", () => {
     expect(res.status).toBe(201);
     const beam = await res.json() as any;
     expect(beam).toMatchObject({ branch: "tune", kind: "codesplitter", commits: 0, title: "tune, from codeSplitter", onto: { sha: main, label: "main" },
-      files: [{ path: "src/a.ts", status: "M" }], dropped: [] });
+      files: [{ path: "keep.md", status: "A" }, { path: "src/a.ts", status: "M" }], dropped: [] });
     expect(await sh(`git --git-dir ${bare} rev-parse ${beam.sha}^`)).toBe(main);
     expect(await sh(`git --git-dir ${bare} log -1 --format='%an <%ae>' ${beam.sha}`)).toBe("Ana Real <ana@example.com>");
     expect(await sh(`git --git-dir ${bare} show ${beam.sha}:src/a.ts`)).toBe("export const a = 1;\nexport const b = 3;");
+    // One newline at the end, as main commits it, not a blank line nobody wrote. (sh trims, so the size.)
+    expect(await sh(`git --git-dir ${bare} cat-file -s ${beam.sha}:keep.md`)).toBe("6");
     expect((await (await call(null, `/api/beams/${beam.id}`)).json() as any).diff).toContain("+export const b = 3;");
   });
 
