@@ -295,6 +295,13 @@ export interface DesktopTarget {
    *   workers: ["src/rig/worker.ts"]
    */
   workers?: string[];
+  /**
+   * Finished workers the host's scheduler keeps loaded for the next job on the same module, as
+   * `RB_WARM`, which overrides it. A warm worker skips the thread's startup and keeps its JIT'd
+   * code (auto-rig rigs about twice as fast), but each idle one counts against the memory budget.
+   * @default 0
+   */
+  warm?: number;
 }
 
 /**

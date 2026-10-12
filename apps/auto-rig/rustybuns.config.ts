@@ -17,6 +17,8 @@ export default defineConfig({
       window: "app",
       dataDir: "~/.auto-rig",
       workers: ["src/rig/worker.ts"],
+      // One rigger stays loaded between rigs: a warm one keeps analyze() JIT'd, about 2x faster.
+      warm: 1,
     },
   },
 });

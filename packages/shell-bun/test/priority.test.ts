@@ -438,3 +438,18 @@ test("hostScheduler: one per process, its persona from RB_PERSONA", async () => 
   expect(odd.out.cpu).toBe(0.6);
   expect(odd.err).toContain("RB_PERSONA=turbo");
 });
+
+test("hostScheduler: RB_WARM keeps that many finished workers loaded", () => {
+  const run = (warm?: string) => {
+    const code = `import { hostScheduler } from "./src/priority.ts"; const s = hostScheduler(); await s.worker("high", new URL("./test/fixtures/busy.worker.ts", "file://" + process.cwd() + "/"), 1); console.log(s.stats().warm)`;
+    const env: Record<string, string | undefined> = { ...process.env, RB_WARM: warm };
+    if (warm === undefined) delete env.RB_WARM;
+    const r = Bun.spawnSync(["bun", "-e", code], { env, cwd: import.meta.dir + "/.." });
+    return { warm: Number(r.stdout.toString().trim().split("\n").at(-1)), err: r.stderr.toString() };
+  };
+  expect(run().warm).toBe(0);
+  expect(run("1").warm).toBe(1);
+  const odd = run("lots");
+  expect(odd.warm).toBe(0);
+  expect(odd.err).toContain("RB_WARM=lots");
+});

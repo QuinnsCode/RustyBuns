@@ -558,11 +558,14 @@ export type Scheduler = ReturnType<typeof scheduler>;
 let host: Scheduler | undefined;
 
 /** This process's scheduler, made on first use: crons and queue consumers run through it. Its
- *  persona is `RB_PERSONA` (balanced when unset); a name it doesn't know is reported and ignored. */
+ *  persona is `RB_PERSONA` (balanced when unset); a name it doesn't know is reported and ignored.
+ *  `RB_WARM` is how many finished workers it keeps loaded (0 when unset, #1132). */
 export function hostScheduler(): Scheduler {
   if (host) return host;
   const asked = process.env.RB_PERSONA;
   const persona = asked && asked in PERSONAS ? asked as Persona : "balanced";
   if (asked && persona !== asked) console.warn(`[priority] RB_PERSONA=${asked}: not one of ${Object.keys(PERSONAS).join(", ")}; using balanced`);
-  return (host = scheduler({ persona, log: (l) => console.log(l) }));
+  const askedWarm = process.env.RB_WARM?.trim(), warm = askedWarm && /^\d+$/.test(askedWarm) ? Number(askedWarm) : 0;
+  if (askedWarm && !/^\d+$/.test(askedWarm)) console.warn(`[priority] RB_WARM=${askedWarm}: not a whole number; keeping no warm workers`);
+  return (host = scheduler({ persona, warm, log: (l) => console.log(l) }));
 }

@@ -87,6 +87,8 @@ function hostMemWatch(c: RustyBunsConfig, box: boolean): string {
 // to <data>/heap and exits 1, so ${box ? "the box restarts before it runs out" : "a leak stops before it takes the machine down"}.
 ${box && c.targets.box?.persona ? `// Background work (crons, queue batches) shares the ${c.targets.box.persona} budget; RB_PERSONA overrides.
 process.env.RB_PERSONA ||= ${JSON.stringify(c.targets.box.persona)};
+` : ""}${c.targets.desktop?.warm ? `// The host's scheduler keeps ${c.targets.desktop.warm} finished worker(s) loaded (desktop.warm); RB_WARM overrides.
+process.env.RB_WARM ||= ${JSON.stringify(String(c.targets.desktop.warm))};
 ` : ""}${box ? `// It takes 5 seconds of CPU profile into <data>/prof first.
 // <data>/history.jsonl keeps the samples, profile summaries and ceiling restarts
 // across restarts and deploys: GET /__rb/history, behind RB_PROF_SECRET, reads it.
