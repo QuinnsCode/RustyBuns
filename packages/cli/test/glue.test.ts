@@ -778,3 +778,27 @@ test("plainDynamicImports: import(`x`) becomes import(\"x\") so the shim resolve
   expect(plainDynamicImports("import(`./page-${id}.js`)")).toBe("import(`./page-${id}.js`)");
   expect(plainDynamicImports('import("rwsdk/worker")')).toBe('import("rwsdk/worker")');
 });
+
+test("startLayout: TanStack Start's server and static files, by Nitro setup", async () => {
+  const { startLayout } = await import("../src/glue/start-layout.ts");
+  expect(startLayout(`plugins: [tanstackStart(), viteReact()]`)).toEqual({ builtMain: "dist/server/server.js", assets: "dist/client", env: "" });
+  expect(startLayout(`environments: { ssr: { build: { outDir: ".output" } } }, plugins: [tanstackStart({ server: { entry: "./start-server.ts" } })]`).builtMain).toBe(".output/server/server.js");
+  expect(startLayout(`plugins: [tanstackStart(), nitro({ preset: 'vercel' })]`)).toMatchObject({ builtMain: ".vercel/output/functions/__server.func/index.mjs", assets: ".vercel/output/static" });
+  // no preset: steer it to "standard" ({ fetch }), which an app's own preset would override
+  expect(startLayout(`plugins: [tanstackStart(), nitro()]`)).toEqual({ builtMain: ".output/server/index.mjs", assets: ".output/public", env: "NITRO_PRESET=standard " });
+  expect(startLayout(`nitro({ preset: "bun" })`).warn).toMatch(/starts a server of its own/);
+});
+
+test("builtEntry: finds the Worker in any environment folder by its wrangler.json, or a lone custom server entry", () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs") as typeof import("node:fs");
+  const dir = mkdtempSync(require("node:os").tmpdir() + "/rb-env-");
+  // cloudflare({ viteEnvironment: { name: "ssr" } }) writes dist/server/, not dist/<worker name>/
+  mkdirSync(dir + "/dist/server", { recursive: true });
+  writeFileSync(dir + "/dist/server/index.js", "");
+  writeFileSync(dir + "/dist/server/wrangler.json", JSON.stringify({ main: "index.js" }));
+  expect(builtEntry({ name: "d", worker: { builtMain: "dist/genie_docs/index.js" } } as any, dir)).toBe("dist/server/index.js");
+  // tanstackStart({ server: { entry: "./start-server.ts" } }) builds .output/server/start-server.js
+  mkdirSync(dir + "/.output/server/assets", { recursive: true });
+  writeFileSync(dir + "/.output/server/start-server.js", "");
+  expect(builtEntry({ name: "h", worker: { builtMain: ".output/server/server.js" } } as any, dir)).toBe(".output/server/start-server.js");
+});

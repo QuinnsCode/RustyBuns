@@ -220,6 +220,8 @@ async function trial(app: App): Promise<Result> {
   const initMode = initCfg.match(/"mode": "(\w+)"/)?.[1];
   for (const mode of MODES) {
     if (mode === "worker" && !/"builtMain"/.test(initCfg)) { r.modes[mode] = { stage: "skipped", error: "init found no Worker build" }; continue; }
+    // init chose worker itself (TanStack Start's server, Astro's adapter): there is no SPA to try
+    if (mode === "spa" && initMode === "worker") { r.modes[mode] = { stage: "skipped", error: "init chose worker mode" }; continue; }
     writeFileSync(join(dir, "rustybuns.config.ts"), setMode(initCfg, mode, join(OUT, "data", slug, mode)));
     appendFileSync(log, `\n===== mode ${mode} =====\n`);
     if (mode === "spa" && initMode === "spa" && !existsSync(join(dir, "vite.desktop.config.ts"))) {
