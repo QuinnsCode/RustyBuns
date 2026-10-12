@@ -34,6 +34,9 @@
 // the ref: a `codesplitter.ci` file at the top, {"<name>": "<command>" | {run, paths?}}, any
 // command at all (a `docker build .` runs on whoever's machine claims it), else package.json's
 // `test` and `typecheck` scripts, else one `test` run with the runner's default command.
+// The `pinned` setting (#1010) drops all of that read at the ref: only the required checks with a
+// command run, and a claim hands out a command from the settings or none at all, so a merged
+// edit to codesplitter.ci or package.json can't change the job that runs on someone's machine.
 // A monorepo (package.json `workspaces`) checks per workspace instead (#750): each one's own
 // `test` and `typecheck`, run in its folder as `<folder>:test`, and only when the change touches
 // that folder, a workspace it depends on (by package name, followed through theirs), the root
@@ -61,7 +64,7 @@
 //   POST /api/repos/:o/:r/checks/run {ref}     queue our own checks on a ref as it is now, whatever the setting (the crew)
 //   POST /api/repos/:o/:r/checks/github {ref?}  fetch GitHub's results for the shas sent up now (the crew)
 //   POST /api/repos/:o/:r/checks/claim {runner_label, names?}  a runner takes the oldest queued run, or a 204 (the crew)
-//   GET|PUT /api/repos/:o/:r/checks/settings   where checks run, which are required, and whether ours go to GitHub
+//   GET|PUT /api/repos/:o/:r/checks/settings   where checks run, which are required, whether ours go to GitHub, and whether only the settings' commands run
 //   GET  /api/repos/:o/:r/checks/:id           one run, with its log
 //   PUT  /api/repos/:o/:r/checks/:id {status?, log?, append?, junit?, runner_label?}  a runner reports, and says it's alive (whoever claimed it, or the owner)
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
@@ -130,7 +133,7 @@ async function githubOf(env: Env, owner: string, repo: string) {
 }
 
 export async function checkSettings(env: Env, owner: string, repo: string) {
-  const s = await env.DB.prepare("SELECT run_where, required, post_statuses FROM check_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
+  const s = await env.DB.prepare("SELECT run_where, required, post_statuses, pinned FROM check_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
   const github = await githubOf(env, owner, repo);
   const where = (s?.run_where as Where | null) ?? (github ? "github" : null);
   // The mirror couldn't reach GitHub last time it tried: GitHub's checks can't run, so ours stand in.
@@ -138,6 +141,8 @@ export async function checkSettings(env: Env, owner: string, repo: string) {
   const offline = m?.mirror_state === "down";
   return {
     where, required: parseRequired(String(s?.required ?? "")), post_statuses: !!s?.post_statuses, github,
+    /** Only the settings' commands run: codesplitter.ci and package.json at the ref are ignored (#1010). */
+    pinned: !!s?.pinned,
     offline, down_since: offline ? (m?.mirror_down_since as number | null) ?? null : null,
     /** Whether our own checks run: asked for, or standing in while GitHub is down. */
     here: where === "here" || where === "both" || (where === "github" && offline),
@@ -355,8 +360,9 @@ async function rootFiles(env: Env, owner: string, repo: string, ref: string) {
 /** The repo's codesplitter.ci. */
 const readCi = (env: Env, owner: string, repo: string, ref: string) => readAt(env, owner, repo, ref, "codesplitter.ci").catch(() => null);
 
-/** What runs here on `ref`, given what it touched: each required check with a command, then the repo's own, by name. */
-export async function planChecks(env: Env, owner: string, repo: string, ref: string, required: Required[], paths: string[] | null) {
+/** What runs here on `ref`, given what it touched: each required check with a command, then the repo's own, by name. Pinned, only the former. */
+export async function planChecks(env: Env, owner: string, repo: string, ref: string, required: Required[], paths: string[] | null, pinned = false) {
+  if (pinned) return requiredFor(required.filter((r) => r.command && r.name !== "*"), paths).map(({ name, command }) => ({ name, command }));
   const [ci, pkg] = await Promise.all([readCi(env, owner, repo, ref), readAt(env, owner, repo, ref, "package.json").catch(() => null)]);
   // A monorepo without its own codesplitter.ci: each workspace's package.json, to plan per workspace.
   const patterns = parse(ci ?? null) ? [] : workspacePatterns(pkg ?? null);
@@ -382,7 +388,7 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha != ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, sha).all();
     for (const old of results as unknown as CheckRun[]) await updateRun(env, old, { status: "cancelled", append: `\n${sha.slice(0, 12)} came along before a runner did: cancelled\n` }, by);
   }
-  for (const { name, command } of await planChecks(env, owner, repo, ref, s.required, await touched(env, owner, repo, ref))) {
+  for (const { name, command } of await planChecks(env, owner, repo, ref, s.required, await touched(env, owner, repo, ref), s.pinned)) {
     const live = edit
       ? await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND name = ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, name).first()
       : await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND name = ? AND runner != 'github' AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, name).first();
@@ -445,8 +451,14 @@ export async function claimRun(env: Env, owner: string, repo: string, label: str
     WHERE id = (SELECT id FROM check_runs WHERE owner = ? AND repo = ? AND status = 'queued' AND runner IN ('desktop', 'container')${only} ORDER BY id LIMIT 1) AND status = 'queued' RETURNING *`)
     .bind(now, label, now, by, owner, repo, ...names).first() as CheckRun | null;
   if (!run) return null;
+  const s = await checkSettings(env, owner, repo);
+  const command = s.required.find((r) => r.name === run.name)?.command ?? (s.pinned ? undefined : run.command);
+  // Pinned, a run with no command in the settings (queued before, or by hand) doesn't fall back to the runner's default.
+  if (s.pinned && !command) {
+    await updateRun(env, run, { status: "cancelled", append: "\nchecks are pinned to the settings, and this one has no command there: cancelled\n" }, "codesplitters");
+    return claimRun(env, owner, repo, label, names, now, by);
+  }
   await postStatus(env, run).catch(() => null);
-  const command = (await checkSettings(env, owner, repo)).required.find((r) => r.name === run.name)?.command ?? run.command;
   return { id: run.id, ref: run.ref, sha: run.sha, name: run.name, clone_url: await cloneUrl(env, owner, repo), ...(command && { command }), stale_after_s: STALE / 1000 };
 }
 
@@ -634,7 +646,8 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   if (p[5] === "settings" && req.method === "GET") return json(await checkSettings(env, owner, repo));
   if (p[5] === "settings" && req.method === "PUT") {
     if (user !== owner) return json({ error: "owner only" }, 403);
-    const b = await body<{ where?: Where | null; required?: (string | Required)[]; post_statuses?: boolean }>();
+    const b = await body<{ where?: Where | null; required?: (string | Required)[]; post_statuses?: boolean; pinned?: boolean }>();
+    if (b.pinned !== undefined && typeof b.pinned !== "boolean") return json({ error: "pinned: true or false" }, 400);
     if (b.where != null && !["here", "github", "both"].includes(b.where)) return json({ error: "where: here, github or both" }, 400);
     const required = b.required === undefined ? undefined : Array.isArray(b.required) ? b.required.map((r) => typeof r === "string" ? { name: r } : r) : null;
     const bad = (r: Required) => !r || typeof r.name !== "string" || !r.name.trim() || r.name.includes(",")
@@ -643,10 +656,10 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     if (required === null || required?.some(bad)) return json({ error: "required: a list of check names or {name, paths?, command?}, or [\"*\"] for all" }, 400);
     const now = await checkSettings(env, owner, repo);
     const had = await env.DB.prepare("SELECT run_where FROM check_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-    await env.DB.prepare("INSERT INTO check_settings (owner, repo, run_where, required, post_statuses) VALUES (?, ?, ?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET run_where = excluded.run_where, required = excluded.required, post_statuses = excluded.post_statuses")
+    await env.DB.prepare("INSERT INTO check_settings (owner, repo, run_where, required, post_statuses, pinned) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET run_where = excluded.run_where, required = excluded.required, post_statuses = excluded.post_statuses, pinned = excluded.pinned")
       .bind(owner, repo, b.where !== undefined ? b.where : (had?.run_where ?? null), JSON.stringify((required ?? now.required).map((r) => ({
         name: r.name.trim(), ...(r.paths?.length && { paths: r.paths.map((x) => x.trim()) }), ...(r.command && { command: r.command }),
-      }))), (b.post_statuses ?? now.post_statuses) ? 1 : 0).run();
+      }))), (b.post_statuses ?? now.post_statuses) ? 1 : 0, (b.pinned ?? now.pinned) ? 1 : 0).run();
     return json(await checkSettings(env, owner, repo));
   }
 

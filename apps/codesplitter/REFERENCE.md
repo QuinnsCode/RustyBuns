@@ -536,14 +536,16 @@ What the code backs up:
 
 The caveats:
 
-- **Merged code runs at home.** Review is the gate, so read what you merge, and a merge that edits `codesplitter.ci` or package.json's scripts changes what runs.
-  Run a runner as a separate macOS user with no logins and an empty `HOME`; the desktop's own queue runs as you.
+- **Merged code runs at home.** Review is the gate, so read what you merge.
+  A check gets none of your logins (#1010, `src/check-env.ts`): the desktop's queue and `scripts/runner.ts` run the clone and the command with only `PATH` and the locale from your environment, an empty `HOME` and `TMPDIR` of their own, and `CI=1`, so no `gh`, `wrangler`, npm or cloud token, and no SSH agent.
+  They still run as you, with your package caches, unless you give them a sandbox user: make a standard macOS user with no logins, allow `$USER ALL=(cs-checks) NOPASSWD: ALL` in `/etc/sudoers.d/cs-checks`, and set `CODESPLITTER_CHECKS_USER=cs-checks` for the desktop (or `--user cs-checks` for a runner); every run then goes through `sudo -n -u cs-checks`, in `/tmp`, with umask 000 so the app can still clean up.
+  Turn on the pin (the pin button by "Checks run", or `PUT …/checks/settings {pinned: true}`) and only the required checks with a `command` in the settings run: `codesplitter.ci` and package.json's scripts at the commit are ignored, a run queued without a command from the settings is cancelled at the claim rather than falling back to `bun test`, so a merged edit can't change the job on your machine.
 - **The mirror isn't one-way.** It pushes this copy's commits upstream, never forced.
   That's a way out, not a way in, but if you want codeSplitter never to write to GitHub, don't commit to main here.
 - **Merged main runs here too.** When a sync takes upstream's commits onto main (a fast-forward, a merge or a re-base), the repo's checks queue here on main's new tip, as `upstream` (#1008), beside GitHub's results for it.
   A sync that only pushes this copy's commits queues nothing: they were checked when they were made.
 
-Still missing: a pull-only mirror (#1006), and runs as a sandbox user with no credentials, with a setting to run only the commands in the repo's settings (#1007).
+Still missing: a pull-only mirror (#1006).
 
 ## Conventions
 
@@ -577,6 +579,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/beam.ts` | beams: a git branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
 | `src/branches.ts` | branches: forking a file onto one, review, merge |
 | `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
+| `src/check-env.ts` | what a check's command sees: a scrubbed environment, its own empty HOME and TMPDIR, and the sandbox user if one is set |
 | `src/checks.ts` | checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results |
 | `src/chunks.ts` | levels too big for Artifacts at all: their text files as chunks in R2, read through the cache |
 | `src/ci-runner.ts` | the built-in check runners: the desktop draining its own queue, and the per-repo `CiRunner` that runs each check in a container |

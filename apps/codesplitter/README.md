@@ -198,6 +198,7 @@ GitHub warns against self-hosted runners on public repos because a fork PR can e
 Here, fork PRs never mirror: a mirror fetches upstream's own branches, never `refs/pull/*`.
 Only trusted code runs: your branches and your agents', and main as merged on GitHub, which you reviewed, queued as the mirror takes it.
 Your machine pulls its runs, so it needs no open port.
+A check gets none of your logins: a scrubbed environment and an empty `HOME`, as a sandbox user of its own if you like, and pinning the repo's checks runs only the commands in its settings, so a merge can't change what runs.
 GitHub's free runners keep doing the quick PR checks.
 
 It isn't new in kind: GitLab's CI for external repos, Buildkite's agents and GitOps (Argo CD, Flux) all pull the same way.
