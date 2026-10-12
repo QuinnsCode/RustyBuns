@@ -256,10 +256,11 @@ change (#1095), were fixed in #1098.
 
 ### 2026-10-12 replay: a day of Two Fronts and README clashes
 
-That day's seven "merge main into the PR" commits, run through the same replay against main `08d6601`:
+That day's seven "merge main into the PR" commits, run through the same replay against main `08d6601`, and
+#1148's (`0fb458f`) against main `31aa72e` and again, after #1156, against `9137d57`, with the same result:
 
 ```sh
-bun scripts/merge-replay.ts b070fd8 02e1045 401eeda e2f2145 2086218 db4095c 03e9127 --json
+bun scripts/merge-replay.ts b070fd8 02e1045 401eeda e2f2145 2086218 db4095c 03e9127 0fb458f --json
 ```
 
 | PR (fix commit) | git conflicted on | codeSplitter vs the fix |
@@ -271,10 +272,12 @@ bun scripts/merge-replay.ts b070fd8 02e1045 401eeda e2f2145 2086218 db4095c 03e9
 | #1115 (`2086218`) | `README.md` | 1 card |
 | #1119 (`db4095c`) | codesplitter `src/agent-run.ts` | exact |
 | #1124 (`03e9127`) | cli `test/init.test.ts` | settled differently: ordering only |
+| #1148 (`0fb458f`) | root `README.md`, `REFERENCE.md`, cli `src/build.ts`, `src/config-schema.ts`, `test/config-schema.test.ts`, `test/glue.test.ts` | README exact; `config-schema.test.ts` reordered; `REFERENCE.md`, `config-schema.ts`, `glue.test.ts` settled differently; `build.ts` 3 cards |
 
-Of 15 files git conflicted on, 6 needed nobody: 5 came out exactly like the fix, and `styles.css` had the
-same rules in another order (`.quick #dogfight` moved down a few lines, which doesn't change what it styles).
-7 went to cards. 2 were settled silently but differently, and neither lost a side:
+Of 21 files git conflicted on, 8 needed nobody: 6 came out exactly like the fix, and 2 had the same lines in
+another order (`styles.css`'s `.quick #dogfight` moved down a few lines, which doesn't change what it styles;
+#1148's new schema tests landed in another order). 8 went to cards. 5 were settled silently but differently,
+and none lost a side:
 
 - **`init.test.ts`, harmless.** Both sides added a test at the same spot. It kept both, with the branch's
   test after main's rather than before it, and lost the blank line between them.
@@ -283,12 +286,31 @@ same rules in another order (`.quick #dogfight` moved down a few lines, which do
   wouldn't typecheck. It's the #1096 case again. The replay is a dry run of the line merge, so it doesn't run
   #1109's test check, which is what would send this back as a card. Since #1156 the merge carries main's rename into
   the branch's new lines, and this file replays exactly like the fix.
+- **#1148's `REFERENCE.md`, harmless.** Both sides added a clause to the one-line `hyperdrive` row. It kept
+  both, main's PGlite clause before the branch's Neon one, where the person put Neon first and added
+  "(or `urlSecret`)". Plus a trailing blank line.
+- **#1148's `glue.test.ts`, harmless.** Both sides added a test at one spot. It kept both, the PGlite test
+  before the branch's rather than last.
+- **#1148's `config-schema.ts`, a real rewrite.** The branch rebuilt the hyperdrive check as a ternary chain
+  (a Neon `origin` needs no `urlSecret`); main added a `migrationsDir` clause to the old one. Both clauses
+  survive, but a Neon binding with no `urlSecret` returns early, so its `migrationsDir` goes unchecked. The
+  person reworked the chain so it doesn't. Only a test of that case would catch it.
+
+#1148's three `build.ts` cards, and what would settle each:
+
+- **L11, the `./config.ts` import**: main added `Binding`, the branch added `hyperdriveUrlEnv` and moved
+  `type` inside the braces. A one-line list both sides grew: L3.
+- **L133, `const pgs`**: main kept the whole binding (`[n, b]`), the branch mapped it to
+  `hyperdriveUrlEnv(n, b)`. Real rewrite.
+- **L468, the desktop `hyperdrive` case**: main moved it into `hyperdriveBinding()`, the branch changed the
+  env name inside the old call. Real rewrite.
 
 `02e1045` also shows five files git merged clean that differ from the fix (`edge/campaign.ts`, `net.ts`,
 `war/table.ts` and two tests). codeSplitter's text matches git's clean merge in all five. The person wired
 #1087's galaxy pick through them in the merge commit itself, which no line merge can do.
 
-No new engine bugs: nothing dropped a side, and the one semantic miss is a known class with a fix already in (#1109).
+No new engine bugs: nothing dropped a side. Of the two semantic misses, `rules.test.ts` is a known class with fixes
+already in (#1109, and #1156, after which it replays exactly), and `config-schema.ts` is a real rewrite that only a test of the Neon-plus-`migrationsDir` case would send back.
 
 ## 11. A merge plan: who waits for whom
 
