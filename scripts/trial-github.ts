@@ -209,10 +209,11 @@ if (import.meta.main) {
   if (o.limit) apps = apps.slice(0, Number(o.limit));
   console.log(`trying ${apps.length} apps, ${o.jobs} at a time, modes ${MODES.join(",")}; results in ${OUT}`);
   const results: Result[] = [];
-  const queue = [...apps];
+  // One worker per repo at a time: apps in the same clone would install over each other.
+  const groups = [...Map.groupBy(apps, (a) => a.repo).values()];
   await Promise.all(Array.from({ length: Number(o.jobs) }, async () => {
-    for (let app; (app = queue.shift()); ) {
-      const r = await trial(app).catch((e): Result => ({ ...app!, error: String(e), modes: {} }));
+    for (let group; (group = groups.shift()); ) for (const app of group) {
+      const r = await trial(app).catch((e): Result => ({ ...app, error: String(e), modes: {} }));
       results.push(r);
       appendFileSync(join(OUT, "results.jsonl"), JSON.stringify(r) + "\n");
       console.log(`[${results.length}/${apps.length}] ${r.repo}${r.sub ? `:${r.sub}` : ""}  ${MODES.map((m) => `${m} ${cell(r.modes[m]) || "❌"}`).join("  ")}  ${note(r)}`);
