@@ -110,10 +110,18 @@
   .on-branch > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .on-branch code { color: var(--accent-ink); font-weight: 600; }
   .on-branch .btn { flex: none; padding: 2px 10px; }
-  .wb { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr) var(--dw, 290px); position: relative; }
+  .wb { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--ew, 250px) minmax(0, 1fr) var(--dw, 290px); position: relative; }
   .wb > * { min-height: 0; overflow: auto; }
   .explorer { background: var(--canvas); border-right: 1px solid var(--border); padding-bottom: 12px; }
   .pad { padding: 8px 12px 4px; }
+  .explorer .label { display: flex; align-items: center; }
+  .tree-add { margin-left: auto; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
+  .tree-add:hover { background: var(--select); color: var(--fg); } .tree-add svg.lucide { width: 14px; height: 14px; }
+  /* The explorer's menu (right-click or ctrl-click on the tree): new file, copy path. */
+  .ctx { position: fixed; z-index: 50; min-width: 220px; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; box-shadow: 0 12px 32px -8px rgba(0,0,0,.18); display: grid; font-size: 13px; }
+  .ctx button { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 0; border-radius: 4px; background: none; color: var(--fg); text-align: left; cursor: pointer; font: inherit; }
+  .ctx button:hover { background: var(--select); } .ctx svg.lucide { width: 14px; height: 14px; color: var(--muted); }
+  .ctx input { margin: 2px; font: 12.5px var(--mono); }
   .tree a { display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px 0 calc(8px + var(--d, 0) * 12px); color: var(--fg); font-size: 13px; white-space: nowrap; cursor: pointer; }
   .tree a:hover { background: #f0f0f0; text-decoration: none; }
   .tree a.on { background: #e9e9e9; box-shadow: inset 2px 0 var(--fg); font-weight: 500; }
@@ -143,8 +151,10 @@
   .sec.dragging { opacity: .4; } .sec.drop-before { box-shadow: inset 0 2px var(--accent); } .sec.drop-after { box-shadow: inset 0 -2px var(--accent); }
   .sec.flash { animation: flash 1s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   .dgrip { position: absolute; top: 0; bottom: 0; right: calc(var(--dw, 290px) - 3px); width: 6px; z-index: 3; cursor: col-resize; }
-  .dgrip:hover, .dgrip.on { background: var(--accent); opacity: .5; }
-  @media (min-width: 1200px) { .wb.d-full { grid-template-columns: minmax(0, 1fr); } .wb.d-full > :is(.explorer, .editor, .dgrip) { display: none; } .wb.d-full > .details { border-left: 0; } }
+  .dgrip:hover, .dgrip.on, .egrip:hover, .egrip.on { background: var(--accent); opacity: .5; }
+  /* The explorer's right edge: drag to any width, double-click for the default. */
+  .egrip { position: absolute; top: 0; bottom: 0; left: calc(var(--ew, 250px) - 3px); width: 6px; z-index: 3; cursor: col-resize; }
+  @media (min-width: 1200px) { .wb.d-full { grid-template-columns: minmax(0, 1fr); } .wb.d-full > :is(.explorer, .editor, .dgrip, .egrip) { display: none; } .wb.d-full > .details { border-left: 0; } }
   .sec { padding: 10px 14px; border-bottom: 1px solid var(--border); }
   .sec h2 { margin: 0 0 6px; font: 500 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .sec p { margin: 0 0 6px; } .sec .btn { margin: 2px 4px 2px 0; }
@@ -244,7 +254,7 @@
     .wb { grid-template-columns: 230px minmax(0, 1fr); } .wb > * { overflow: visible; }
     .explorer { grid-row: span 2; } .editor { overflow: visible; } .editor .scroll { overflow-x: auto; }
     .details { border-left: 0; border-top: 1px solid var(--border); grid-column: 2; }
-    .dgrip, .drail .dw { display: none; } .drail { position: static; }
+    .dgrip, .egrip, .drail .dw { display: none; } .drail { position: static; }
     .status { position: sticky; bottom: 0; } .sheets { position: sticky; bottom: 24px; z-index: 5; }
   }
   .box { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; background: var(--bg); }
@@ -1559,7 +1569,7 @@ function crumbs(base, root, path) {
 /** The explorer: the whole repo as a tree. Folders open in place; the ones on
  *  the way to what you're looking at start open, and stay open as you move. */
 const openDirs = new Map(), treeCache = new Map();
-function mountExplorer(el, key, load, href, current) {
+function mountExplorer(el, key, load, href, current, onNew) {
   const open = openDirs.get(key) ?? new Set(); openDirs.set(key, open);
   const segs = current.split("/").filter(Boolean);
   for (let i = 1; i <= segs.length; i++) open.add(segs.slice(0, i).join("/"));
@@ -1571,7 +1581,7 @@ function mountExplorer(el, key, load, href, current) {
     const kids = await Promise.all(t.entries.map((e) => e.type === "dir" && open.has(e.path) ? rows(e.path, d + 1) : ""));
     return t.entries.map((e, i) => e.type === "dir"
       ? `<a data-dir="${esc(e.path)}" class="${e.path === current ? "on" : ""}" style="--d:${d}" title="${esc(e.path)}">${icon(open.has(e.path) ? "chevron-down" : "chevron-right", "chev")}${icon(open.has(e.path) ? "folder-open" : "folder", "ic-dir")}${esc(e.name)}</a>${kids[i]}`
-      : `<a href="${href(e)}" class="${e.path === current ? "on" : ""}" style="--d:${d}" title="${esc(e.path)}">${icon("file", "ic-file")}${esc(e.name)}</a>`).join("")
+      : `<a href="${href(e)}" data-path="${esc(e.path)}" class="${e.path === current ? "on" : ""}" style="--d:${d}" title="${esc(e.path)}">${icon("file", "ic-file")}${esc(e.name)}</a>`).join("")
       || (d ? "" : '<p class="muted pad" style="margin:0">nothing here yet</p>');
   };
   const draw = async () => { el.innerHTML = await rows("", 0); icons(); el.querySelector("a.on")?.scrollIntoView({ block: "nearest" }); };
@@ -1579,8 +1589,57 @@ function mountExplorer(el, key, load, href, current) {
     const a = e.target.closest("[data-dir]"); if (!a) return;
     const p = a.dataset.dir; open.has(p) ? open.delete(p) : open.add(p); draw();
   });
+  if (onNew) {
+    // A + by the title, and a menu on the tree (right-click, or ctrl-click on a Mac), the way an editor's explorer has.
+    const label = el.parentElement.querySelector(".label");
+    label.removeAttribute("aria-hidden");
+    label.insertAdjacentHTML("beforeend", `<button type="button" class="tree-add" title="New file">${icon("file-plus")}</button>`);
+    label.querySelector(".tree-add").addEventListener("click", (e) => { e.stopPropagation(); const b = e.currentTarget.getBoundingClientRect(); treeMenu(b.left, b.bottom + 4, "", null, onNew, true); });
+    el.parentElement.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const a = e.target.closest(".tree a"), file = a?.dataset.path ?? null;
+      const dir = a?.dataset.dir ?? (file?.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "");
+      treeMenu(e.clientX, e.clientY, dir, a ? a.dataset.dir ?? file : null, onNew);
+    });
+  }
+  icons();
   return draw();
 }
+/** The explorer's menu: a new file in `dir` (typed in place, Enter makes it), and copying the path under the pointer. */
+function treeMenu(x, y, dir, path, onNew, naming = false) {
+  $(".ctx")?.remove();
+  const m = document.createElement("div"); m.className = "ctx"; m.setAttribute("role", "menu");
+  m.innerHTML = `<button type="button" data-new role="menuitem">${icon("file-plus")}New file${dir ? ` in ${esc(dir)}` : ""}…</button>`
+    + (path ? `<button type="button" data-copy role="menuitem">${icon("copy")}Copy path</button>` : "");
+  document.body.append(m); icons();
+  m.style.left = Math.min(x, innerWidth - m.offsetWidth - 8) + "px"; m.style.top = Math.min(y, innerHeight - m.offsetHeight - 8) + "px";
+  const close = () => { m.remove(); removeEventListener("click", out, true); removeEventListener("keydown", esc_); };
+  const out = (e) => { if (!m.contains(e.target)) close(); };
+  const esc_ = (e) => { if (e.key === "Escape") close(); };
+  addEventListener("click", out, true); addEventListener("keydown", esc_);
+  const name = () => {
+    m.innerHTML = `<input aria-label="new file's path" placeholder="src/hello.ts" value="${dir ? esc(dir) + "/" : ""}">`;
+    const i = m.querySelector("input"); i.focus(); i.setSelectionRange(i.value.length, i.value.length);
+    i.addEventListener("keydown", async (e) => {
+      if (e.key !== "Enter") return;
+      const p = i.value.trim().replace(/^\/+/, ""); if (!p || p.endsWith("/")) return;
+      i.disabled = true;
+      try { await onNew(p); close(); } catch (err) { toast(err.message); i.disabled = false; i.focus(); }
+    });
+  };
+  m.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if ("new" in b.dataset) return name();
+    navigator.clipboard?.writeText(path).then(() => toast("Copied " + path)); close();
+  });
+  if (naming) name();
+}
+/** A new, empty file in the repo (on the branch you're on), then open it. */
+const newFileIn = (owner, repo) => async (path) => {
+  const b = branchPicked(owner, repo);
+  await api(`/repos/${owner}/${repo}/files`, { path, content: "", ...(b && { branch: b }) });
+  location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(path)}`;
+};
 /** A repo or level page: header, then explorer | editor | details, then the status bar. */
 // ---- the branch you're on, per repo (#701) ----------------------------------------
 // Picked in the switcher (or by starting one), it's what the file view reads and edits.
@@ -1719,7 +1778,7 @@ function wireHunks(el, owner, repo, hunksOf, then) {
 
 function workbench(head, { tab, bar, body, details, status }) {
   document.body.classList.add("ide-mode");
-  queueMicrotask(dock); queueMicrotask(sheets);
+  queueMicrotask(dock); queueMicrotask(explorerGrip); queueMicrotask(sheets);
   return `${head}<div class="wb"><aside class="explorer" aria-label="Explorer"><div class="label pad" aria-hidden="true">Explorer</div><nav class="tree" id="tree" aria-label="Files"></nav></aside>
     <section class="editor">${tab ? `<div class="tabs"><span class="tab">${tab}</span></div>` : ""}<div class="crumbbar">${bar}</div><div class="scroll">${body}</div></section>
     <aside class="details" aria-label="Details">${details}</aside></div><nav class="sheets" id="sheets" aria-label="Recent repos"></nav><footer class="status">${status}</footer>`;
@@ -1910,6 +1969,24 @@ function dock() {
     const move = (m) => setWidth(`${Math.round(Math.min(box.width - 160, Math.max(220, box.right - m.clientX)))}px`);
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", () => { grip.removeEventListener("pointermove", move); grip.classList.remove("on"); save(); }, { once: true });
+  });
+}
+/** The explorer's right edge: drag to any width, double-click for the default. This browser keeps it. */
+function explorerGrip() {
+  const wb = $(".wb"); if (!wb || wb.querySelector(".egrip")) return;
+  const set = (w) => wb.style.setProperty("--ew", w ? w + "px" : "250px");
+  try { set(Number(localStorage.getItem("cs_explorer_w")) || 0); } catch {}
+  const save = (w) => { try { w ? localStorage.setItem("cs_explorer_w", String(w)) : localStorage.removeItem("cs_explorer_w"); } catch {} };
+  const grip = document.createElement("div"); grip.className = "egrip"; grip.title = "Drag to widen; double-click to reset";
+  wb.append(grip);
+  grip.addEventListener("dblclick", () => { set(0); save(0); });
+  grip.addEventListener("pointerdown", (e) => {
+    e.preventDefault(); grip.setPointerCapture(e.pointerId); grip.classList.add("on");
+    const box = wb.getBoundingClientRect(), dw = wb.querySelector(".details")?.offsetWidth ?? 0;
+    let w = 0;
+    const move = (m) => { w = Math.round(Math.min(box.width - dw - 240, Math.max(140, m.clientX - box.left))); set(w); };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", () => { grip.removeEventListener("pointermove", move); grip.classList.remove("on"); if (w) save(w); }, { once: true });
   });
 }
 const fits = {};
@@ -3331,7 +3408,7 @@ const views = {
       status: views.repoStatus(r, tree),
     });
     views.wireRepoHead(owner, repo, r);
-    mountExplorer($("#tree"), `r/${owner}/${repo}`, (d) => api(treeQ(owner, repo, d)), href, dir);
+    mountExplorer($("#tree"), `r/${owner}/${repo}`, (d) => api(treeQ(owner, repo, d)), href, dir, r.canWrite && newFileIn(owner, repo));
     if ($("#add")) { popover($("#add")); $("#newfile").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api(`/repos/${owner}/${repo}/files`, { path: f.path.value, content: f.content.value }); location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(f.path.value)}`; }); }
     icons();
   },
@@ -3415,7 +3492,7 @@ const views = {
         + views.repoDetails(owner, repo, r),
       status: views.repoStatus(r, null, `<span class="grow"></span><span id="st-sel"></span>${r.upstream ? '<span id="modded"></span>' : ""}<span id="revl"></span>`),
     });
-    mountExplorer($("#tree"), `r/${owner}/${repo}`, (d) => api(treeQ(owner, repo, d)), href, path);
+    mountExplorer($("#tree"), `r/${owner}/${repo}`, (d) => api(treeQ(owner, repo, d)), href, path, r.canWrite && newFileIn(owner, repo));
     views.wireRepoHead(owner, repo, r);
     const box = $("#lines");
     // Line id -> {stamp: [who]}, from GET .../stamps (stamps.ts).
