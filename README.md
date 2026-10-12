@@ -4,6 +4,14 @@
 
 No rewrite. No second codebase. No new language.
 
+> We want how your software happens to be fast, ephemeral and out of mind. Seamless.
+> A stack made for agent power, and human-simple.
+> Let us ride along in your dev dependencies, and we'll show you the cloud.
+>
+> Rust on the server, Rust on the client, Rust between the two: you decide how, when and where. Or write TypeScript top to bottom and live a Rust-free life. Whatever your full-stack heart desires.
+>
+> Rusty Buns: the framework where you don't actually need either. 😅 Naming things is hard.
+
 ```sh
 pnpm add -D @rustybuns/cli @rustybuns/shell-bun
 pnpm exec rustybuns init                # reads your app, writes rustybuns.config.ts
@@ -36,6 +44,24 @@ Every app is five things: **http, comms, storage, memory, identity**. Cloudflare
 ```
 
 `rustybuns.config.ts` is the only file you own. `init` reads your app and writes it; the host, the wrangler config and the infrastructure are all generated from it. More in [The five primitives](ADOPTION.md#the-five-primitives) and [How it works](REFERENCE.md#how-it-works).
+
+</details>
+
+### Five primitives, and where each one lands
+
+Every app is http, comms, storage, memory and identity. Here's what each one becomes on each target.
+
+<details><summary>More</summary>
+
+| Primitive | Cloudflare | Railway or Hetzner box | Desktop |
+|---|---|---|---|
+| **http** | a Worker's `fetch` | `Bun.serve()` | `Bun.serve()` on localhost |
+| **comms** | Durable Object WebSockets | the same class, in-process | the same class, in-process |
+| **storage** | D1, KV, R2 | sqlite and a folder on a volume | sqlite and a folder in `~/.<app-name>/` |
+| **memory** | per-request isolate, no FFI | the whole process, Rust over FFI | the whole process, Rust over FFI |
+| **identity** | your Worker or Cloudflare Access | a guest id | a per-launch token |
+
+You write against the left-hand shape once. What each primitive would be on AWS, Vercel or Fly is in [The five primitives](ADOPTION.md#the-five-primitives), and every binding per target (git, images, email, secrets) is in [Where things run](REFERENCE.md#where-things-run).
 
 </details>
 
