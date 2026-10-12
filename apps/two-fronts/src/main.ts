@@ -324,7 +324,7 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
     document.body.classList.remove("in-battle");
     done(result);
   };
-  $("auto-battle").onclick = () => { hideModal(); done(run(spec).over!); };
+  $("auto-battle").onclick = () => { hideModal(); done({ ...run(spec).over!, auto: true }); };
 }
 
 // The space battle's briefing: the fleets over the system, a cruiser for each ship.
@@ -345,7 +345,7 @@ function briefSpace(spec: SpaceBattleSpec, done: (r: SpaceBattleResult) => void)
     document.body.classList.remove("in-battle");
     done(result);
   };
-  $("auto-battle").onclick = () => { hideModal(); done(runSpace(spec).over!); };
+  $("auto-battle").onclick = () => { hideModal(); done({ ...runSpace(spec).over!, auto: true }); };
 }
 
 // Hand the hero battle's result to the table, here or in the campaign's Durable Object.
