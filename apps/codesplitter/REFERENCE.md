@@ -576,7 +576,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/agent-run.ts` | runs an agent on a file: snapshot, edit in a sandbox, diff, post, re-run on conflicts |
 | `src/archive.ts` | Artifacts: trees (cached), files, first-open materializing, catalogue pushes |
 | `src/audit.ts` | the security audit log: tokens, crews, invites, visibility, webhooks, deploy keys and repo deletes, append-only |
-| `src/beam.ts` | beams: a git branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
+| `src/beam.ts` | beams: a git or codeSplitter branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
 | `src/branches.ts` | branches: forking a file onto one, review, merge |
 | `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
 | `src/check-env.ts` | what a check's command sees: a scrubbed environment, its own empty HOME and TMPDIR, and the sandbox user if one is set |

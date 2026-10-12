@@ -893,6 +893,35 @@ export async function pullBranch(env: Env, owner: string, repo: string, name: st
 }
 
 /**
+ * Branch `name`'s files, as they are now, laid over `baseTree` in the git at `dir`: the
+ * tree a push upstream commits, and a beam of a codeSplitter branch (beam.ts) starts from.
+ */
+export async function branchTree(env: Env, owner: string, repo: string, name: string, dir: string, baseTree: string) {
+  const { results } = await env.DB.prepare("SELECT path, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all();
+  const idx = join(tmpdir(), `codesplitter-branch-${crypto.randomUUID()}.index`), e = { GIT_INDEX_FILE: idx };
+  try {
+    await must(["read-tree", baseTree], dir, e);
+    const gone: string[] = [];
+    for (const { path, deleted, blob, mode: binMode } of results as { path: string; deleted: number; blob: string | null; mode: string | null }[]) {
+      if (deleted) { gone.push(path); continue; }
+      // A binary file is a blob this git has already.
+      if (blob) { await must(["update-index", "--add", "--cacheinfo", `${binMode ?? "100644"},${blob},${path}`], dir, e); continue; }
+      const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", name)).json()) as Doc;
+      const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(toDisk(doc.lines)), stdout: "pipe", stderr: "pipe" });
+      const [, hash] = await Promise.all([put.exited, new Response(put.stdout).text()]);
+      const mode = (await must(["ls-tree", baseTree, "--", path], dir)).split(" ")[0] || "100644";
+      await must(["update-index", "--add", "--cacheinfo", `${mode},${hash.trim()},${path}`], dir, e);
+    }
+    // The ones it deleted: a zero entry takes each out (a bare repo has no work tree for --force-remove).
+    if (gone.length) {
+      const rm = Bun.spawn(["git", "update-index", "-z", "--index-info"], { cwd: dir, env: { ...process.env, ...e }, stdin: new TextEncoder().encode(gone.map((p) => `0 ${"0".repeat(40)}\t${p}\0`).join("")), stdout: "ignore", stderr: "pipe" });
+      if (await rm.exited) throw new Error(await new Response(rm.stderr).text() || "git update-index exited");
+    }
+    return await must(["write-tree"], dir, e);
+  } finally { rmSync(idx, { force: true }); }
+}
+
+/**
  * Push branch `name` upstream, to the git branch it came from (or one of its
  * own name): main's tip with the branch's files as they are now, as one commit.
  * Upstream's branch moved since? The branch takes that in first, so nothing up
@@ -925,30 +954,7 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
     [parents, baseTree] = [[prev, tip], m.out.trim().split("\n")[0]!];
   }
 
-  // The branch's files, as they are, over that tree.
-  const { results } = await env.DB.prepare("SELECT path, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, name).all();
-  const idx = join(tmpdir(), `codesplitter-branch-${crypto.randomUUID()}.index`), e = { GIT_INDEX_FILE: idx };
-  let tree: string;
-  try {
-    await must(["read-tree", baseTree], dir, e);
-    const gone: string[] = [];
-    for (const { path, deleted, blob, mode: binMode } of results as { path: string; deleted: number; blob: string | null; mode: string | null }[]) {
-      if (deleted) { gone.push(path); continue; }
-      // A binary file is a blob this git has already.
-      if (blob) { await must(["update-index", "--add", "--cacheinfo", `${binMode ?? "100644"},${blob},${path}`], dir, e); continue; }
-      const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", name)).json()) as Doc;
-      const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(toDisk(doc.lines)), stdout: "pipe", stderr: "pipe" });
-      const [, hash] = await Promise.all([put.exited, new Response(put.stdout).text()]);
-      const mode = (await must(["ls-tree", baseTree, "--", path], dir)).split(" ")[0] || "100644";
-      await must(["update-index", "--add", "--cacheinfo", `${mode},${hash.trim()},${path}`], dir, e);
-    }
-    // The ones it deleted: a zero entry takes each out (a bare repo has no work tree for --force-remove).
-    if (gone.length) {
-      const rm = Bun.spawn(["git", "update-index", "-z", "--index-info"], { cwd: dir, env: { ...process.env, ...e }, stdin: new TextEncoder().encode(gone.map((p) => `0 ${"0".repeat(40)}\t${p}\0`).join("")), stdout: "ignore", stderr: "pipe" });
-      if (await rm.exited) throw new Error(await new Response(rm.stderr).text() || "git update-index exited");
-    }
-    tree = await must(["write-tree"], dir, e);
-  } finally { rmSync(idx, { force: true }); }
+  const tree = await branchTree(env, owner, repo, name, dir, baseTree);
   if (parents.length === 1 && parents[0] === prev && tree === await must(["rev-parse", `${prev}^{tree}`], dir)) return json({ ref, commit: prev, pushed: false, took });
 
   const message = `${name}, from codeSplitter${br.by === owner ? "" : `\n\nCo-authored-by: ${br.by} <${br.by}@${GIT_EMAIL_DOMAIN}>`}`;
