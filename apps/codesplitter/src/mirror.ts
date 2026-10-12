@@ -128,7 +128,7 @@ export function gitIdentity() {
   }
   return identity;
 }
-const authorEnv = (): Record<string, string> => {
+export const authorEnv = (): Record<string, string> => {
   const id = gitIdentity() ?? { name: "codesplitter", email: `${GIT_BOT}@${GIT_EMAIL_DOMAIN}` };
   return { GIT_AUTHOR_NAME: id.name, GIT_AUTHOR_EMAIL: id.email, GIT_COMMITTER_NAME: id.name, GIT_COMMITTER_EMAIL: id.email };
 };

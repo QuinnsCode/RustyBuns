@@ -2523,6 +2523,23 @@ function codeRows(lines, { blame = true, start = 1 } = {}) {
   // A private line reaches people outside the crew blank: say so instead of showing nothing.
   return lines.map((l, i) => `<div class="ln${l.private ? " priv" : ""}" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${l.private && !l.text ? '<span class="ph">private line: only the crew can read it</span>' : l.private ? `<span class="secret">${esc(l.text) || " "}</span>` : esc(l.text) || " "}</span></div>`).join("");
 }
+/** A unified diff (git diff) as code rows: a bar per file, + lines and − lines marked as the file view marks them, numbered as they are after (− lines, before). */
+function diffHtml(text) {
+  const out = [];
+  let file = null, rows = [], was = 0, now = 0;
+  const flush = () => { if (file !== null) out.push(`<div class="bar">${icon("file")}<code>${esc(file)}</code></div><div class="code">${rows.join("")}</div>`); rows = []; };
+  for (const l of text.split("\n")) {
+    if (l.startsWith("diff --git ")) { flush(); file = l.replace(/^diff --git a\/(.*) b\/.*$/, "$1"); continue; }
+    if (file === null || /^(index |--- |\+\+\+ |new file|deleted file|old mode|new mode|similarity|rename |Binary files)/.test(l)) { if (l.startsWith("Binary files")) rows.push('<div class="ln"><span class="n"></span><span class="t muted">a binary file</span></div>'); continue; }
+    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(l);
+    if (h) { [was, now] = [Number(h[1]), Number(h[2])]; rows.push(`<div class="ln"><span class="n"></span><span class="t muted">${esc(l)}</span></div>`); continue; }
+    if (l === "" || l.startsWith("\\")) continue;   // the end of the diff, or "\ No newline at end of file"
+    const k = l[0] === "+" ? " add" : l[0] === "-" ? " del" : "", n = k === " del" ? was++ : (k ? now++ : (was++, now++));
+    rows.push(`<div class="ln${k}"><span class="n">${n}</span><span class="t">${esc(l.slice(1)) || " "}</span></div>`);
+  }
+  flush();
+  return out.join("");
+}
 /** Cut lines out: the picked pieces, plus "path:from-to" lines from the "add these lines too" box. */
 function cutLines(owner, repo, pieces, more = "", note = "") {
   for (const s of more.split("\n").map((x) => x.trim()).filter(Boolean)) {
@@ -3062,6 +3079,7 @@ const views = {
       + (!r.mirror && r.upstream?.startsWith("github:") && r.upstream_commit ? sec("git-fork", "Upstream", `<div id="listen" data-pics><span class="muted">…</span></div>`) : "")
       + (owner === me() && r.mirrorable ? sec("refresh-cw", "Mirror", `<div id="mirror-turn"><span class="muted">…</span></div>`) : "")
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
+      + (r.canWrite ? sec("zap", "Beam", `<div id="beams"><span class="muted">…</span></div>`) : "")
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<div id="deps"><span class="muted">…</span></div>`) : "")
@@ -3172,6 +3190,34 @@ const views = {
         toast(`Opened ${t.name}: ${t.files.length + t.deleted.length} file${t.files.length + t.deleted.length === 1 ? "" : "s"} from upstream${t.skipped.length ? `; skipped ${t.skipped.join(", ")}` : ""}`);
         location.hash = `#/b/${owner}/${repo}/${encodeURIComponent(t.name)}`;
       } catch (err) { toast(err.message); views.wireListen(owner, repo); }
+    });
+  },
+  /** Beam (beam.ts): a git branch's stack squashed into one clean commit, its noise left out, as a link and a patch. */
+  async wireBeams(owner, repo, r) {
+    const el = $("#beams");
+    if (!el) return;
+    const d = await api(`/repos/${owner}/${repo}/beams`).catch(() => null);
+    if (!d) { el.innerHTML = ""; return; }
+    const ready = (d.branches ?? []).filter((b) => b.ahead > 0), fork = !r.mirror && r.upstream?.startsWith("github:");
+    const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+    const sent = d.beams.slice(0, 5).map((b) => `<div class="row" style="gap:6px"><a href="#/beam/${b.id}">${esc(b.title)}</a><span class="muted" style="font-size:12px">${b.status === "open" ? `${plural(b.files, "file")}${b.to ? ` → @${esc(b.to)}` : ""}` : "withdrawn"} · ${ago(b.created_at)}</span></div>`).join("");
+    el.innerHTML = (ready.length ? `<form id="beam-form" style="display:flex;flex-direction:column;gap:6px">
+        <select name="branch" aria-label="git branch">${ready.map((b) => `<option value="${esc(b.name)}">${esc(b.name)} · ${plural(b.ahead, "commit")}</option>`).join("")}</select>
+        <input name="title" placeholder="Title (blank: the first commit's)" aria-label="title">
+        <input name="to" placeholder="@handle to send it to (optional)" aria-label="send to">
+        ${fork ? `<label class="row muted" style="font-size:13px;gap:6px"><input type="checkbox" name="upstream">On upstream's newest commit</label>` : ""}
+        <button class="btn primary">${icon("zap")}Beam it</button></form>`
+      : `<p class="muted">Push a git branch here (the Clone button's Push back line) and beam it: its commits squashed into one clean commit, lockfile churn and leftovers left out, as a link and a patch.</p>`) + sent;
+    icons();
+    $("#beam-form")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target), btn = e.target.querySelector("button");
+      btn.disabled = true;
+      try {
+        const b = await api(`/repos/${owner}/${repo}/beams`, { branch: f.get("branch"), title: f.get("title") || undefined,
+          to: String(f.get("to") || "").replace(/^@/, "") || undefined, onto: f.get("upstream") ? "upstream" : "main" });
+        location.hash = `#/beam/${b.id}`;
+      } catch (err) { toast(err.message); btn.disabled = false; }
     });
   },
   /** Upstream's other branches: open one here as a branch, or go to the one that already follows it. */
@@ -3693,6 +3739,7 @@ const views = {
     views.wireFit(owner, repo);
     views.wireMirror(owner, repo);
     views.wireListen(owner, repo);
+    views.wireBeams(owner, repo, r);
     views.wireMirrorTurn(owner, repo);
     views.wirePreview(owner, repo);
     views.wireDeploy(owner, repo);
@@ -4630,6 +4677,39 @@ const views = {
     timer = setInterval(() => { if (location.hash !== "#/s/" + id) return clearInterval(timer); if (!document.hidden) load().catch(() => {}); }, 6000);
   },
 
+  // A beam: a branch's stack squashed into one clean commit, for anyone with the link (beam.ts).
+  async beam(id) {
+    ctx = { view: "beam", id };
+    const b = await api("/beams/" + id);
+    const mine = b.by === me() || b.owner === me(), plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+    if (b.status !== "open") {
+      app.innerHTML = `<div class="wrap" style="max-width:980px;padding-top:28px"><div class="box"><div class="bar">${icon("zap")}<h1>${esc(b.title)}</h1></div><div class="body muted">@${esc(b.by)} withdrew this beam.</div></div></div>`;
+      return icons();
+    }
+    const patch = `${location.origin}/api/beams/${id}/patch`, am = `curl -sL ${patch} | git am`;
+    app.innerHTML = `<div class="wrap" style="max-width:980px;padding-top:28px">
+      <div class="box"><div class="bar">${icon("zap")}<h1>${esc(b.title)}</h1><span class="grow"></span>
+        <div class="pop"><button class="btn primary" id="beam-take">${icon("download")}Take it</button><div class="panel" hidden style="width:420px"><b>Apply it to your copy</b>
+          <span class="muted" style="font-size:13px">One commit, made on ${esc(b.onto.label)} at <code>${esc(b.onto.sha.slice(0, 7))}</code>.</span>
+          <div class="copyline"><input readonly value="${esc(am)}" aria-label="git am command"><button class="btn" type="button" id="beam-am" title="copy">${icon("copy")}</button></div>
+          <a class="btn" href="/api/beams/${id}/patch" download>${icon("file-down")}Download the patch</a></div></div>
+        <button class="btn" id="beam-link" title="copy the link">${icon("link")}</button>
+        ${mine ? `<button class="btn" id="beam-withdraw" title="withdraw it: the link stops working">${icon("link-2-off")}</button>` : ""}</div>
+        <div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">
+          <div class="muted" style="font-size:13px">@${esc(b.by)} beamed ${plural(b.commits, "commit")} of <a href="#/r/${esc(b.owner)}/${esc(b.repo)}">${esc(b.owner)}/${esc(b.repo)}</a>'s <code>${esc(b.branch)}</code>${b.to ? ` to @${esc(b.to)}` : ""}, squashed into <code>${esc(b.sha.slice(0, 7))}</code> on ${esc(b.onto.label)}.</div>
+          ${b.message ? `<pre style="white-space:pre-wrap;margin:8px 0 0;font:inherit">${esc(b.message)}</pre>` : ""}</div>
+        ${b.dropped.length ? `<details class="body" style="border-bottom:1px solid var(--border)"><summary>Left out ${plural(b.dropped.length, "file")} as noise</summary>${b.dropped.map((d) => `<div><code>${esc(d.path)}</code> <span class="muted">${esc(d.why)}</span></div>`).join("")}</details>` : ""}
+        ${diffHtml(b.diff)}${b.diff_truncated ? '<div class="body muted">The diff goes on: the patch has all of it.</div>' : ""}</div>
+      <p class="muted" style="font-size:12px">A beam never writes to GitHub: whoever takes it applies the patch to their own copy.</p></div>`;
+    popover($("#beam-take"));
+    $("#beam-am").addEventListener("click", () => copy(am, "Command copied"));
+    $("#beam-link").addEventListener("click", () => copy(`${location.origin}/#/beam/${id}`, "Link copied"));
+    $("#beam-withdraw")?.addEventListener("click", async () => {
+      try { await api("/beams/" + id, undefined, "DELETE"); toast("Withdrawn"); route(); } catch (err) { toast(err.message); }
+    });
+    icons();
+  },
+
   // A cut: some lines cut out as a tiny repo on a branch, its tests' result in the gutter.
   async c(id) {
     ctx = { view: "c", id };
@@ -4714,7 +4794,8 @@ const views = {
     ctx = { view: "feed" };
     if (!me()) throw new Error("Sign in to see your feed.");
     const span = [1, 7, 30].includes(Number(days)) ? Number(days) : 7;
-    const [f, agents] = await Promise.all([api(`/me/feed?since=${Date.now() - span * 86400000}`), api("/agents").catch(() => ({ available: false, harnesses: [] }))]);
+    const [f, agents, beams] = await Promise.all([api(`/me/feed?since=${Date.now() - span * 86400000}`), api("/agents").catch(() => ({ available: false, harnesses: [] })),
+      api("/me/beams").catch(() => ({ to_you: [] }))]);
     const d = f.digest;
     const digest = !d ? `<p class="muted">No digest yet. Pick a coding agent and it reads your feed and writes you one. It only ever sees what you can read.</p>`
       : d.status === "running" ? `<p class="muted">${glyph("bot")} ${esc(d.harness)} is reading your feed…</p>`
@@ -4728,6 +4809,7 @@ const views = {
         ${agents.available && agents.admins_only ? `<span class="muted small" title="Digests run on this site's API keys">digests are for this site's admins</span>`
           : agents.available ? `<select id="dg-harness" aria-label="which agent writes it">${agents.harnesses.map((h) => `<option${h === d?.harness ? " selected" : ""}>${esc(h)}</option>`).join("")}</select><button class="btn" id="dg-go"${d?.status === "running" ? " disabled" : ""}>${icon("bot")}Digest what's new</button>` : `<span class="muted small" title="${esc(agents.why ?? "")}">agents run on the desktop app</span>`}</div>
         <div class="body">${digest}</div></div>
+      ${beams.to_you.length ? `<div class="box" style="margin-top:14px"><div class="bar">${icon("zap")}<b>Beamed to you</b><span class="muted">a branch's work as one clean commit, to take or leave</span></div><div class="evs">${beams.to_you.map((b) => `<div><a href="#/beam/${esc(b.id)}">${esc(b.title)}</a> <span class="muted">from <a href="#/u/${esc(b.by)}">@${esc(b.by)}</a>, ${esc(b.owner)}/${esc(b.repo)} · ${b.files} file${b.files === 1 ? "" : "s"} · ${ago(b.created_at)}</span></div>`).join("")}</div></div>` : ""}
       <div id="groups">${f.groups.map((g, i) => `<details class="grp" style="--who:${hueOf(g.bot && g.run ? g.run : g.who)}"><summary>${glyph(g.bot ? "bot" : "user")}<span class="what">${esc(g.summary)}</span><span class="age" data-at="${g.last_at}">${ago(g.last_at)}</span></summary>
         <div class="evs">${g.events.map((e) => `<div>${where(e)} <span class="muted">${e.inserts ? `+${e.inserts} ` : ""}${e.sets ? `~${e.sets} ` : ""}${e.deletes ? `−${e.deletes} ` : ""}· ${ago(e.last_at)}</span></div>`).join("")}</div></details>`).join("")
         || `<p class="muted">${f.follows ? "Nothing new from who and what you follow." : "You don't follow anyone yet. Follow people, agents, repos or a few lines and their edits land here."}</p>`}</div>

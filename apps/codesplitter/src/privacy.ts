@@ -48,6 +48,7 @@ export async function exportFor(env: Env, handle: string) {
     collections: await Promise.all((await all(env, "SELECT id, title FROM playlists WHERE owner = ?", handle)).map(async (p: any) =>
       ({ ...p, tracks: await all(env, "SELECT owner, repo, path, from_line, to_line, note FROM tracks WHERE playlist = ?", p.id) }))),
     shares: await all(env, "SELECT * FROM shares WHERE by = ?", handle),
+    beams: await all(env, "SELECT id, owner, repo, branch, to_user, title, sha, status, created_at FROM beams WHERE by = ?", handle),
     // Who and what you follow; a private repo's only while you're its crew, as in the app.
     following: await listFollows(env.DB, handle),
     invites_to_you: await all(env, "SELECT owner, repo, by, note, created_at, expires_at, claimed_at FROM invites WHERE target = ? OR claimed_by = ?", handle, handle),
@@ -167,6 +168,8 @@ export async function eraseUser(env: Env, handle: string, { scrub = false } = {}
     by("DELETE FROM playlists WHERE owner = ?", handle),
     by("DELETE FROM collaborators WHERE name = ?", handle),
     by("DELETE FROM shares WHERE by = ?", handle),
+    by("DELETE FROM beams WHERE by = ?", handle),
+    by("UPDATE beams SET to_user = NULL WHERE to_user = ?", handle),
     by("DELETE FROM follows WHERE follower = ? OR (kind IN ('user', 'agent') AND target = ?)", handle, handle),
     by("DELETE FROM invites WHERE target = ? AND claimed_by IS NULL", handle),
     by("DELETE FROM stamps WHERE by = ?", handle),

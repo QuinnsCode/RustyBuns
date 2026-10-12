@@ -52,6 +52,7 @@ import { seenRoutes } from "./seen.ts";
 import { installScript } from "./install.ts";
 import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
+import { beamRoutes } from "./beam.ts";
 import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, hearPushes, pushClashes, pushHolds, seeGit, settlePush, syncDue, TRUTHS, turnRoute, upstreamRemote, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
@@ -169,6 +170,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (game) return game;
   const share = await shareRoutes(req, env, p, user);
   if (share) return share;
+  // /api/repos/:o/:r/beams, /api/beams/:id[/patch], /api/me/beams: a branch's stack, cleaned and handed over (beam.ts)
+  const beam = await beamRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
+  if (beam) return beam;
   const cut = await cutRoutes(req, env, p, url, user);
   if (cut) return cut;
   const agents = await agentRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user), (r) => app.fetch(r, env));
