@@ -520,6 +520,26 @@ describe("mirrors", () => {
     expect(await upShow("README")).toBe("hello, mine\nworld, pushed twice");
   });
 
+  test("the commit graph: upstream's commits black, this copy's orange, and the merge that took both (#871)", async () => {
+    const call = await mirrored("graph");
+    await editHere(call, "README", 1, "hi");
+    await upstreamCommit({ "src/b.ts": "export const b = 2\n" }, "add b");
+    expect((await sync(call)).state).toBe("ok");
+    // In step: the merge went up too, so every commit is upstream's, and "add b" is the branch the merge took in.
+    const g = await get(call, "/api/repos/ana/up/graph");
+    expect(g.commits.map((c: any) => [c.message.split(" ")[0], c.up, c.parents.length, !!c.side])).toEqual([["Merge", true, 2, false], ["add", true, 1, true], ["edit", true, 1, false], ["init", true, 0, false]]);
+    expect(g).toMatchObject({ branch: "main", more: false, upstream: g.commits[0].hash });
+    expect(g.commits[1].side).toBe(g.commits[0].hash);
+    expect((await get(call, "/api/repos/ana/up/graph?limit=2")).more).toBe(true);
+    // A repo with no upstream: all of it is this copy's.
+    await post(call, "/api/repos", { name: "own" });
+    await post(call, "/api/repos/ana/own/files", { path: "a.ts", content: "one" });
+    expect((await post(call, "/api/repos/ana/own/do/commit?path=a.ts", { message: "first" })).status).toBe(200);
+    expect((await get(call, "/api/repos/ana/own/graph")).commits).toMatchObject([{ message: "first", up: false, parents: [] }]);
+    await post(call, "/api/repos", { name: "empty" });
+    expect((await get(call, "/api/repos/ana/empty/graph")).commits).toEqual([]);
+  });
+
   test("takes any git URL on the desktop, and says what's wrong with a bad one", async () => {
     const call = await boot();
     opened.push(call);

@@ -82,6 +82,7 @@ export const GROUPS: Group[] = [
       { method: "PUT", path: "/api/repos/:o/:r", body: "{visibility}", who: OWNER, does: "make it public or private" },
       { method: "DELETE", path: "/api/repos/:o/:r?confirm=:r", who: OWNER, does: "delete it here: rows, files, branches, git. GitHub never hears" },
       { method: "GET", path: "/api/repos/:o/:r/tree?path=dir&branch=", does: "one folder: {commit, entries: [{name, path, type: \"file\" | \"dir\"}]}, git's plus files written here but not committed yet (with branch, as that branch has it: its new files in, the ones it deleted out); 202 {forking} while a dig is landing" },
+      { method: "GET", path: "/api/repos/:o/:r/graph?limit=", does: "the commit graph: {branch, upstream, more, commits: [{hash, parents, message, author, at, up, side?}]}, main's last limit commits (default 60, up to 200) newest first, each followed by the commits of a branch it merged (side: the merge); up is true for upstream's, false for this copy's" },
       { method: "POST", path: "/api/repos/:o/:r/files", body: "{path, content?, branch?}", who: CREW, does: "a new file (on a branch, with branch)" },
       { method: "POST", path: "/api/repos/:o/:r/collaborators", body: "{name}", who: OWNER, does: "add someone who already signed up straight to the crew (hosted agents get in this way); anyone else gets an invite" },
       { method: "DELETE", path: "/api/repos/:o/:r/collaborators/:name", who: OWNER, does: "take someone out of the crew; the lines they wrote stay theirs, and an agent's token for this repo is revoked" },
