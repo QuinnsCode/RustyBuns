@@ -180,27 +180,34 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
  * `deployCommit` is the commit on the remote deploys clone (the crew's, when there is one),
  * when that commit carries this file alone.
  */
-export async function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string) {
-  await (files.content !== files.published ? ensureCrewRemote(env, owner, repo, path) : payBackfill(env, owner, repo, path));
+export function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string) {
+  return pushCatalogues(env, owner, repo, { [path]: files }, author, message);
+}
+
+/** pushCatalogue for several files at once, as one commit (a revert, #880); null takes a file out. */
+export async function pushCatalogues(env: Env, owner: string, repo: string, files: Record<string, { content: string; published: string } | null>, author: string, message: string) {
+  const paths = Object.keys(files), secret = paths.find((p) => files[p] && files[p]!.content !== files[p]!.published);
+  await (secret ? ensureCrewRemote(env, owner, repo, secret) : payBackfill(env, owner, repo, paths[0]));
   const [h, crew] = await Promise.all([handleFor(env, owner, repo), handleFor(env, owner, repo, true)]);
   if (!h) return null;
   if (await env.DB.prepare("SELECT 1 FROM fresh_starts WHERE owner = ? AND repo = ? AND state IN ('walking', 'copying')").bind(owner, repo).first()) {
-    await pend(env, owner, repo, [path]);
+    await pend(env, owner, repo, paths);
     throw new Error("git is moving to a fresh start; this commit lands when it's done");
   }
   const text = (c: string) => c.endsWith("\n") ? c : c + "\n";
+  const changes = (side: "content" | "published") => Object.fromEntries(paths.map((p) => [p, files[p] ? text(files[p]![side]) : null]));
   const crewPush = async (to: Handle) => {
     const a = await access(to.handle, to.remote, "write", 300);
-    return push(a.remote, a.token, { changes: { [path]: text(files.content) }, ...(await byline(env, owner, repo, author, message)), branch: to.branch, base: to.handle });
+    return push(a.remote, a.token, { changes: changes("content"), ...(await byline(env, owner, repo, author, message)), branch: to.branch, base: to.handle });
   };
   const pending = await pendingChanges(env, owner, repo);
   const [pub, crewed] = await Promise.allSettled([
-    pushChanges(env, owner, repo, h, { ...pending, [path]: text(files.published) }, author, message),
+    pushChanges(env, owner, repo, h, { ...pending, ...changes("published") }, author, message),
     crew?.crew ? crewPush(crew) : null,
   ]);
   if (pub.status === "rejected") throw pub.reason;
   if (crewed.status === "rejected") return { ...pub.value, crewError: (crewed.reason as Error).message, deployCommit: undefined };
-  const deployCommit = crew?.crew ? crewed.value?.commit : Object.keys(pending).some((p) => p !== path) ? undefined : pub.value.commit;
+  const deployCommit = crew?.crew ? crewed.value?.commit : Object.keys(pending).some((p) => !(p in files)) ? undefined : pub.value.commit;
   return { ...pub.value, deployCommit };
 }
 
