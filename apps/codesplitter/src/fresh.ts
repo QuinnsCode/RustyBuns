@@ -15,7 +15,7 @@
 //   DELETE /api/repos/:o/:r/fresh?artifact= (owner) delete git it moved off
 
 import { access, flushPending, handleFor, MAX_BYTES, MAX_LINES, readTree } from "./archive.ts";
-import { copyObjects, rawObj, type Obj } from "./git.ts";
+import { copyObjects, GIT_BOT, rawObj, type Obj } from "./git.ts";
 import { digCap } from "./github.ts";
 import { usage } from "./limits.ts";
 import { json, type Env } from "./env.ts";
@@ -205,7 +205,7 @@ async function step(env: Env, f: Fresh) {
   const h = await env.ARTIFACTS!.get(f.artifact);
   const a = await access(h, f.remote, "write", 300);
   const branch = (await h.info().catch(() => null))?.defaultBranch ?? "main";
-  const r = await copyObjects(a.remote, a.token, objs, { branch, parent: f.stage, author: "codesplitters" },
+  const r = await copyObjects(a.remote, a.token, objs, { branch, parent: f.stage, author: GIT_BOT },
     last ? { tree: f.tree, message: `Fresh start from ${f.tip.slice(0, 7)}: the same files, in a new Artifact. Every line's history is kept in codeSplitter.` } : undefined);
   await env.DB.prepare("UPDATE fresh_starts SET done = done + ?, bytes = bytes + ?, stage = ?, seq = ? WHERE owner = ? AND repo = ?").bind(objs.length, r.bytes, r.stage, upTo, f.owner, f.repo).run();
   if (!last) return;

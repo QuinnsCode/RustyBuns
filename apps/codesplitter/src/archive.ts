@@ -3,7 +3,7 @@
 // open, and pushing a catalogue as a commit.
 
 import { fromText } from "./lines.ts";
-import { push, type Change } from "./git.ts";
+import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
 import { localGit, mirrorIdentity } from "./mirror.ts";
 import { noodles, type Noodle } from "./noodles.ts";
 import type { ArtifactsRepo, Env, TreeEntry } from "./env.ts";
@@ -105,7 +105,7 @@ async function backfillCrew(env: Env, owner: string, repo: string, except?: stri
   }
   if (!Object.keys(changes).length) return;
   const a = await access(crew.handle, crew.remote, "write", 300);
-  await push(a.remote, a.token, { changes, message: `Private lines' real text: ${Object.keys(changes).join(", ")}`, author: "codesplitters", branch: crew.branch, base: crew.handle });
+  await push(a.remote, a.token, { changes, message: `Private lines' real text: ${Object.keys(changes).join(", ")}`, author: GIT_BOT, branch: crew.branch, base: crew.handle });
 }
 
 /** A remote and a fresh token for it. */
@@ -250,13 +250,13 @@ export async function catalogueBlob(env: Env, owner: string, repo: string, path:
 export async function flushPending(env: Env, owner: string, repo: string) {
   const h = await handleFor(env, owner, repo), changes = await pendingChanges(env, owner, repo);
   if (!h || !Object.keys(changes).length) return null;
-  return pushChanges(env, owner, repo, h, changes, "codesplitters", `Catalogued while git was away: ${Object.keys(changes).join(", ")}`);
+  return pushChanges(env, owner, repo, h, changes, GIT_BOT, `Catalogued while git was away: ${Object.keys(changes).join(", ")}`);
 }
 
 /** A mirror's commits go upstream (the crew's copy's too, when it's the one pushed), so they're this machine's git identity's, crediting the handle that made them. */
 async function byline(env: Env, owner: string, repo: string, author: string, message: string): Promise<{ author: string; email?: string; message: string }> {
   const id = await mirrorIdentity(env, owner, repo);
-  return id ? { author: id.name, email: id.email, message: author === owner || author === "codesplitters" ? message : `${message}\n\nCo-authored-by: ${author} <${author}@codesplitters.local>` } : { author, message };
+  return id ? { author: id.name, email: id.email, message: author === owner || author === GIT_BOT ? message : `${message}\n\nCo-authored-by: ${author} <${author}@${GIT_EMAIL_DOMAIN}>` } : { author, message };
 }
 
 type Handle = NonNullable<Awaited<ReturnType<typeof handleFor>>>;

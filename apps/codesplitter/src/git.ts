@@ -5,6 +5,14 @@
 // all a push is. Runs the same in a Worker and under Bun (Web Crypto and
 // CompressionStream only).
 
+// The git identity commits are built with keeps its pre-rename spelling for good (#810):
+// a commit's hash covers its author line, so renaming these would rebuild every commit
+// made afterwards with new hashes, and mirrors would see that as rewritten history.
+/** The author of the commits codeSplitter makes on its own. */
+export const GIT_BOT = "codesplitters";
+/** A crew member without an email of their own commits as `<name>@` this. */
+export const GIT_EMAIL_DOMAIN = "codesplitters.local";
+
 const enc = new TextEncoder();
 const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 const unhex = (s: string) => Uint8Array.from(s.match(/../g)!.map((h) => parseInt(h, 16)));
@@ -109,7 +117,7 @@ export interface Snapshot {
   /** Paths to write (content) or remove (null). Everything else is kept from the parent commit. */
   changes: Record<string, Change>;
   message: string; author: string; branch?: string; at?: number;
-  /** The author's email; `<author>@codesplitters.local` without it. */
+  /** The author's email; `<author>@` GIT_EMAIL_DOMAIN without it. */
   email?: string;
   /** Reads the parent's trees. Without it, `changes` is the whole tree. */
   base?: TreeReader;
@@ -135,7 +143,7 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
     const parentTree = old !== ZERO && snap.base ? (await snap.base.readCommit(old))?.treeHash ?? null : null;
     const tree = (await apply(snap.base, parentTree, snap.changes, objs)) ?? (objs.push(await obj("tree", new Uint8Array())), objs.at(-1)!);
     const when = `${Math.floor((snap.at ?? Date.now()) / 1000)} +0000`;
-    const who = `${snap.author} <${snap.email ?? `${snap.author}@codesplitters.local`}> ${when}`;
+    const who = `${snap.author} <${snap.email ?? `${snap.author}@${GIT_EMAIL_DOMAIN}`}> ${when}`;
     const commit = await obj("commit", enc.encode(
       `tree ${tree.id}\n${old !== ZERO ? `parent ${old}\n` : ""}author ${who}\ncommitter ${who}\n\n${snap.message}\n`));
     objs.push(commit);
@@ -240,7 +248,7 @@ export async function pushTree(remote: string, token: string, files: AsyncIterab
     entries.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
     return add("tree", concat(entries.flatMap((e) => [enc.encode(`${e.mode} ${e.name}\0`), unhex(e.id)])));
   };
-  const when = `${Math.floor((c.at ?? Date.now()) / 1000)} +0000`, who = `${c.author} <${c.email ?? `${c.author}@codesplitters.local`}> ${when}`;
+  const when = `${Math.floor((c.at ?? Date.now()) / 1000)} +0000`, who = `${c.author} <${c.email ?? `${c.author}@${GIT_EMAIL_DOMAIN}`}> ${when}`;
   const commit = async (message: string, parent?: string) =>
     add("commit", enc.encode(`tree ${await tree(root)}\n${parent ? `parent ${parent}\n` : ""}author ${who}\ncommitter ${who}\n\n${message}\n`));
 
@@ -296,7 +304,7 @@ export async function rawObj(r: Raw): Promise<Obj> {
 export async function copyObjects(remote: string, token: string, objs: Obj[], stage: { branch: string; parent: string | null; author: string },
   finish?: { tree: string; message: string }): Promise<{ stage: string; commit?: string; bytes: number }> {
   const auth = { authorization: `Bearer ${token.split("?")[0]}` };
-  const who = `${stage.author} <${stage.author}@codesplitters.local> ${Math.floor(Date.now() / 1000)} +0000`;
+  const who = `${stage.author} <${stage.author}@${GIT_EMAIL_DOMAIN}> ${Math.floor(Date.now() / 1000)} +0000`;
   const ref = `refs/heads/${stage.branch}`;
   let commit: Obj, all: Obj[];
   if (finish) {
