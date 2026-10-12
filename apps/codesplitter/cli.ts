@@ -3,7 +3,7 @@
 // OpenAPI spec's operations, so the API, MCP and this never drift: each command
 // is that HTTP call, made with your personal API token.
 //
-//   export CODESPLITTERS_URL=https://<site> CODESPLITTERS_TOKEN=cst_…
+//   export CODESPLITTER_URL=https://<site> CODESPLITTER_TOKEN=cst_…
 //   bun cli.ts tools                         every command, one a line
 //   bun cli.ts help read_file                what it takes
 //   bun cli.ts read_file --owner ryan --repo lab --path a.ts
@@ -60,9 +60,9 @@ export async function main(argv: string[], env: Record<string, string | undefine
     } else if (k in t.inputSchema.properties) args[k] = value;
     else return fail(`${name} takes no --${k}: codesplitter help ${name}`);
   }
-  const site = opts.url ?? env.CODESPLITTERS_URL, token = opts.token ?? env.CODESPLITTERS_TOKEN, as = opts.as ?? env.CODESPLITTERS_AS;
-  if (!site) return fail("set CODESPLITTERS_URL (or --url)");
-  if (!token && !as) return fail("set CODESPLITTERS_TOKEN (or --token), or run codesplitter login");
+  const site = opts.url ?? envVar(env, "URL"), token = opts.token ?? envVar(env, "TOKEN"), as = opts.as ?? envVar(env, "AS");
+  if (!site) return fail("set CODESPLITTER_URL (or --url)");
+  if (!token && !as) return fail("set CODESPLITTER_TOKEN (or --token), or run codesplitter login");
   // The desktop app sits behind its launch token too: a URL like http://127.0.0.1:5199/?token=<it>
   // (what RB_NO_BROWSER=1 prints) sends it as the cookie the desktop expects.
   const u = new URL(site), launch = u.searchParams.get("token"), url = u.origin + u.pathname;
@@ -82,6 +82,11 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/** Which is set: CODESPLITTER_<name>, or CODESPLITTERS_<name> as it was called before the rename (#805). */
+export const envName = (env: Record<string, string | undefined>, name: string) =>
+  [`CODESPLITTER_${name}`, `CODESPLITTERS_${name}`].find((k) => env[k]);
+export const envVar = (env: Record<string, string | undefined>, name: string) => env[envName(env, name) ?? ""];
+
 // `codesplitter login` keeps the site and token here, so neither has to be exported
 // every time. The variables and flags still win over it.
 const configPath = (env: Record<string, string | undefined>) => `${env.XDG_CONFIG_HOME ?? `${env.HOME ?? "."}/.config`}/codesplitter/config.json`;
@@ -96,14 +101,14 @@ function saved(env: Record<string, string | undefined>): { url?: string; token?:
 export async function run(argv: string[], env: Record<string, string | undefined> = process.env, ask = askLine, send?: Fetch): Promise<Out> {
   const conf = saved(env);
   if (argv[0] === "triage") return triageCommand(argv.slice(1), env, conf, send);
-  if (argv[0] !== "login") return main(argv, { CODESPLITTERS_URL: conf.url, CODESPLITTERS_TOKEN: conf.token, ...strip(env) }, send);
+  if (argv[0] !== "login") return main(argv, { ...strip(env), CODESPLITTER_URL: envVar(env, "URL") ?? conf.url, CODESPLITTER_TOKEN: envVar(env, "TOKEN") ?? conf.token }, send);
   const flags: Record<string, string> = {};
   for (let i = 1; i < argv.length; i += 2) {
     const k = argv[i]!.replace(/^--/, "");
     if ((k !== "url" && k !== "token") || argv[i + 1] === undefined) return { code: 2, out: "", err: "usage: codesplitter login [--url URL] [--token cst_…]" };
     flags[k] = argv[i + 1]!;
   }
-  const url = (flags.url ?? env.CODESPLITTERS_URL ?? conf.url)?.replace(/\/$/, "");
+  const url = (flags.url ?? envVar(env, "URL") ?? conf.url)?.replace(/\/$/, "");
   if (!url) return { code: 2, out: "", err: "codesplitter login --url https://<site>" };
   const token = (flags.token ?? (await ask(`Make a token at ${url}/#/me/tokens (sign in first), copy it with its copy button, and paste it here: `)) ?? conf.token)?.trim();
   // A token copied from its box, not its button, comes out masked (cst_••••6x48): don't save that (#729).
@@ -124,12 +129,12 @@ async function triageCommand(argv: string[], env: Record<string, string | undefi
     if ((k === "url" || k === "token" || k === "as") && argv[i + 1] !== undefined) opts[k] = argv[++i]!;
     else rest.push(argv[i]!);
   }
-  const from = (flag: string, v: string, c?: string) => opts[flag] ? `--${flag}` : env[v] ? v : c ? configPath(env) : undefined;
-  const url = (opts.url ?? env.CODESPLITTERS_URL ?? conf.url)?.replace(/\/$/, "");
-  const token = opts.token ?? env.CODESPLITTERS_TOKEN ?? conf.token;
+  const from = (flag: string, v: string, c?: string) => opts[flag] ? `--${flag}` : envName(env, v) ?? (c ? configPath(env) : undefined);
+  const url = (opts.url ?? envVar(env, "URL") ?? conf.url)?.replace(/\/$/, "");
+  const token = opts.token ?? envVar(env, "TOKEN") ?? conf.token;
   const context = await splittersContext({
-    url, urlFrom: from("url", "CODESPLITTERS_URL", conf.url), token, tokenFrom: from("token", "CODESPLITTERS_TOKEN", conf.token),
-    as: opts.as ?? env.CODESPLITTERS_AS, configPath: configPath(env), send: send && (((u: string, i?: RequestInit) => send(new Request(u, i))) as typeof fetch),
+    url, urlFrom: from("url", "URL", conf.url), token, tokenFrom: from("token", "TOKEN", conf.token),
+    as: opts.as ?? envVar(env, "AS"), configPath: configPath(env), send: send && (((u: string, i?: RequestInit) => send(new Request(u, i))) as typeof fetch),
   });
   const code = await triage({
     product: "codeSplitter", command: "codesplitter triage", dir: configPath(env).replace(/config\.json$/, "triage"),

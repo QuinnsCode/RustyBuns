@@ -9,7 +9,7 @@ export function installScript(origin: string): Response {
 # curl -fsSL ${origin}/install.sh | sh
 set -e
 site='${origin.replace(/'/g, "")}'
-dir="\${CODESPLITTERS_BIN:-$HOME/.local/bin}"
+dir="\${CODESPLITTER_BIN:-\${CODESPLITTERS_BIN:-$HOME/.local/bin}}"
 if command -v bun >/dev/null 2>&1; then rt=bun
 elif command -v node >/dev/null 2>&1; then rt=node
 else echo "codesplitter needs Bun (https://bun.sh) or Node 18+" >&2; exit 1; fi

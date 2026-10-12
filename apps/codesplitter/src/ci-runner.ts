@@ -9,7 +9,7 @@
 //     5-minute cron for any left over, one run at a time per repo, in a temp dir on this
 //     machine, as the repo's owner. Off in the tests (CHECKS_RUNNER=off, set by local()), so
 //     they claim runs themselves.
-//   - On Cloudflare, with CI_RUNNER bound (deploy with CODESPLITTERS_CHECKS=1), a CiRunner
+//   - On Cloudflare, with CI_RUNNER bound (deploy with CODESPLITTER_CHECKS=1), a CiRunner
 //     Durable Object per repo runs them in containers (deploy-sandbox/ci.Dockerfile): one run
 //     per alarm, so one at a time per repo, each in a fresh container that is destroyed after.
 //     The container gets no secrets, starts with the internet off, and reaches only the clone

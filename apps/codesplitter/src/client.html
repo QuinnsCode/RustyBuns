@@ -4552,7 +4552,7 @@ const picAttr = (kind, o = {}) => ` data-pic="${esc(JSON.stringify([kind, o]))}"
 // Where git truth lives (PUT /api/me {git_truth}): whose side a mirror takes when it and upstream disagree.
 const TRUTHS = {
   ask: ["Ask me", "Stop at a clash or a rewritten upstream, and wait for you to pick."],
-  codesplitters: ["codeSplitter", "The edits here win, committed or not; on a rewritten upstream, your commits go on top of it."],
+  codesplitter: ["codeSplitter", "The edits here win, committed or not; on a rewritten upstream, your commits go on top of it."],
   artifact: ["The artifact", "This copy's git commits win, and go on top of a rewritten upstream. Edits not committed yet still ask."],
   github: ["GitHub (upstream)", "Upstream's side wins: its lines in a clash, its history when it's rewritten."],
 };

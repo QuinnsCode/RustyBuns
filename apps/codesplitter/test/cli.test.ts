@@ -23,7 +23,7 @@ async function app() {
   const seen: Request[] = [];
   // The CLI's request, answered by the app in-process, headers and all.
   const fetch = (r: Request) => { seen.push(r); const u = new URL(r.url); return call(null, u.pathname + u.search, { method: r.method, headers: r.headers, body: r.body ? r.clone().body : undefined }); };
-  const cli = (argv: string[], env: Record<string, string> = { CODESPLITTERS_URL: "http://site", CODESPLITTERS_TOKEN: token }, stdin = "") => main(argv, env, fetch, async () => stdin);
+  const cli = (argv: string[], env: Record<string, string> = { CODESPLITTER_URL: "http://site", CODESPLITTER_TOKEN: token }, stdin = "") => main(argv, env, fetch, async () => stdin);
   return { cli, seen, fetch, token };
 }
 
@@ -54,7 +54,7 @@ describe("bun cli.ts", () => {
 
   test("the desktop app's launch URL goes as its cookie, beside the token", async () => {
     const { cli, seen, token } = await app();
-    expect((await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { CODESPLITTERS_URL: "http://127.0.0.1:5199/?token=launch", CODESPLITTERS_TOKEN: token })).code).toBe(0);
+    expect((await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { CODESPLITTER_URL: "http://127.0.0.1:5199/?token=launch", CODESPLITTER_TOKEN: token })).code).toBe(0);
     expect(seen[0]!.url).toStartWith("http://127.0.0.1:5199/api/");
     expect(seen[0]!.url).not.toContain("launch");
     expect(seen[0]!.headers.get("cookie")).toBe("rb_token_5199=launch");
@@ -66,14 +66,27 @@ describe("bun cli.ts", () => {
     expect((await cli(["read_file", "--owner", "ryan", "--repo", "lab"])).err).toContain("path is required");
     expect((await cli(["read_file", "--colour", "red"])).err).toContain("takes no --colour");
     expect((await cli(["edit_lines", "--body", "{nope"])).err).toContain("--body takes JSON");
-    expect((await cli(["read_file"], {})).err).toContain("CODESPLITTERS_URL");
-    expect((await cli(["read_file"], { CODESPLITTERS_URL: "http://site" })).err).toContain("CODESPLITTERS_TOKEN");
+    expect((await cli(["read_file"], {})).err).toContain("CODESPLITTER_URL");
+    expect((await cli(["read_file"], { CODESPLITTER_URL: "http://site" })).err).toContain("CODESPLITTER_TOKEN");
   });
 
   test("on the desktop, --as signs in as a handle", async () => {
     const { cli } = await app();
-    const r = await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts", "--as", "ryan"], { CODESPLITTERS_URL: "http://site" });
+    const r = await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts", "--as", "ryan"], { CODESPLITTER_URL: "http://site" });
     expect(r.code).toBe(0);
+  });
+
+  // They were CODESPLITTERS_* before the rename (#805): those still work, and the new names win.
+  test("reads the variables' old names too", async () => {
+    const { cli, seen, fetch, token } = await app();
+    expect((await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { CODESPLITTERS_URL: "http://old", CODESPLITTERS_TOKEN: token })).code).toBe(0);
+    expect(seen[0]!.url).toStartWith("http://old/api/");
+    await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { CODESPLITTER_URL: "http://new", CODESPLITTERS_URL: "http://old", CODESPLITTERS_TOKEN: token });
+    expect(seen[1]!.url).toStartWith("http://new/api/");
+    // Through run, the way the installed CLI starts, with nothing saved.
+    const home = mkdtempSync(`${tmpdir()}/cs-cli-`);
+    expect((await run(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { HOME: home, CODESPLITTERS_URL: "http://old", CODESPLITTERS_TOKEN: token }, undefined, fetch)).code).toBe(0);
+    expect(seen[2]!.url).toStartWith("http://old/api/");
   });
 
   test("login saves the site and token, and every command after uses them", async () => {

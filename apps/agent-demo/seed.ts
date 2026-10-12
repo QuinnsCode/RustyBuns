@@ -4,7 +4,7 @@
 // and the prompts to hand the agents. Nothing is deleted; each run makes a new repo.
 //
 //   bun seed.ts                       the site and token `codesplitter login` saved
-//   bun seed.ts --url URL --token cst_…   or CODESPLITTERS_URL / CODESPLITTERS_TOKEN
+//   bun seed.ts --url URL --token cst_…   or CODESPLITTER_URL / CODESPLITTER_TOKEN
 //   bun seed.ts --name my-demo        the repo's name (default snack-vote-<MMDD-HHMM>)
 //
 // Its calls are the same ones the codeSplitter MCP tools make (create_repo,
@@ -93,7 +93,8 @@ if (import.meta.main) {
   let saved: { url?: string; token?: string } = {};
   for (const name of ["codesplitter", "codesplitters"])   // the old name, from before the rename
     try { saved = JSON.parse(readFileSync(`${process.env.XDG_CONFIG_HOME ?? `${process.env.HOME}/.config`}/${name}/config.json`, "utf8")); break; } catch {}
-  const url = args.url ?? process.env.CODESPLITTERS_URL ?? saved.url, token = args.token ?? process.env.CODESPLITTERS_TOKEN ?? saved.token;
+  const url = args.url ?? process.env.CODESPLITTER_URL ?? process.env.CODESPLITTERS_URL ?? saved.url;   // and the old names, from before the rename
+  const token = args.token ?? process.env.CODESPLITTER_TOKEN ?? process.env.CODESPLITTERS_TOKEN ?? saved.token;
   if (!url || !token) {
     console.error("No codeSplitter site or token. Run `codesplitter login` once, or pass --url and --token.");
     process.exit(2);

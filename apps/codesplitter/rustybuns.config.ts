@@ -6,25 +6,27 @@ import { defineConfig } from "@rustybuns/cli/config";
 // See .env.schema for the full list. The desktop has none of them: it uses aliases.
 //
 // Hosted coding agents are opt-in from the deploying shell; their keys come from 1Password too:
-//   CODESPLITTERS_AGENTS=1  hosted coding agents (super experimental, see README)
-//   CODESPLITTERS_DEPLOYS=1 hosted deploys with each repo's stored deploy key, sealed under
-//                           DEPLOY_SECRETS_KEY (1Password, like the rest)
-//   CODESPLITTERS_CHECKS=1  queued checks run in a container per run (CiRunner, src/ci-runner.ts);
-//                           billed by use, see REFERENCE.md. No secrets go in.
-//   CODESPLITTERS_VECTORS=1 search across repos through one Vectorize index, embedded with
-//                           Workers AI (src/search.ts); billed by use, see REFERENCE.md
-//   CODESPLITTERS_WATCH_NEWS=1 the supply-chain watch's daily news search for compromised
-//                           packages (src/watch.ts): one Claude run with web search a day,
-//                           on ANTHROPIC_API_KEY; billed by use, see REFERENCE.md
+//   CODESPLITTER_AGENTS=1  hosted coding agents (super experimental, see README)
+//   CODESPLITTER_DEPLOYS=1 hosted deploys with each repo's stored deploy key, sealed under
+//                          DEPLOY_SECRETS_KEY (1Password, like the rest)
+//   CODESPLITTER_CHECKS=1  queued checks run in a container per run (CiRunner, src/ci-runner.ts);
+//                          billed by use, see REFERENCE.md. No secrets go in.
+//   CODESPLITTER_VECTORS=1 search across repos through one Vectorize index, embedded with
+//                          Workers AI (src/search.ts); billed by use, see REFERENCE.md
+//   CODESPLITTER_WATCH_NEWS=1 the supply-chain watch's daily news search for compromised
+//                          packages (src/watch.ts): one Claude run with web search a day,
+//                          on ANTHROPIC_API_KEY; billed by use, see REFERENCE.md
 // Account email (verification and password reset) is opt-in the same way, once the
 // sender's domain is onboarded to Cloudflare Email Sending (Workers Paid):
-//   CODESPLITTERS_MAIL_FROM=accounts@your-domain  binds EMAIL and sends from it
-const agents = process.env.CODESPLITTERS_AGENTS === "1";
-const deploys = process.env.CODESPLITTERS_DEPLOYS === "1";
-const vectors = process.env.CODESPLITTERS_VECTORS === "1";
-const checks = process.env.CODESPLITTERS_CHECKS === "1";
-const news = process.env.CODESPLITTERS_WATCH_NEWS === "1";
-const mailFrom = process.env.CODESPLITTERS_MAIL_FROM?.trim();
+//   CODESPLITTER_MAIL_FROM=accounts@your-domain  binds EMAIL and sends from it
+// Each still answers to its name from before the rename, CODESPLITTERS_* (#805).
+const flag = (name: string) => process.env[`CODESPLITTER_${name}`] ?? process.env[`CODESPLITTERS_${name}`];
+const agents = flag("AGENTS") === "1";
+const deploys = flag("DEPLOYS") === "1";
+const vectors = flag("VECTORS") === "1";
+const checks = flag("CHECKS") === "1";
+const news = flag("WATCH_NEWS") === "1";
+const mailFrom = flag("MAIL_FROM")?.trim();
 // A change to the privacy page that matters goes here first, as "YYYY-MM-DD what changes"
 // (the day it applies), and ships before that day: the site shows it as a banner (src/privacy.ts).
 // Empty means no banner.

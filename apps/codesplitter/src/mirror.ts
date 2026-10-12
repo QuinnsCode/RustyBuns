@@ -23,7 +23,7 @@
 //
 // Where git truth lives (users.git_truth, PUT /api/me {git_truth}) settles those
 // stops without asking: "github" takes upstream's side of a clash or a rewrite;
-// "codesplitters" keeps the side here, edits and all, and re-bases this copy's
+// "codesplitter" keeps the side here, edits and all, and re-bases this copy's
 // commits on a rewritten upstream; "artifact" does the same for commits but still
 // stops for edits that aren't committed yet. "ask", the default, always stops. A
 // pick sent with the sync beats it. Nobody's commits are lost either way: what one
@@ -147,13 +147,16 @@ export type Resolve = "mine" | "upstream" | "rebase";
 export const PRIMARIES = ["upstream", "here"] as const;
 export type Primary = typeof PRIMARIES[number];
 const primaryOf = (v: unknown): Primary => v === "here" ? "here" : "upstream";
-export const TRUTHS = ["ask", "codesplitters", "artifact", "github"] as const;
+export const TRUTHS = ["ask", "codesplitter", "artifact", "github"] as const;
 export type Truth = typeof TRUTHS[number];
+/** A git_truth as sent or stored: "codesplitters" is what codesplitter was called before the rename (#805). */
+export const asTruth = (v: unknown) => v === "codesplitters" ? "codesplitter" : v;
 
 /** Where `owner` says git truth lives (users.git_truth): whose side a sync takes when nobody picked. */
 async function truthOf(env: Env, owner: string): Promise<Truth> {
   const u = await env.DB.prepare("SELECT git_truth FROM users WHERE name = ?").bind(owner).first();
-  return TRUTHS.includes(u?.git_truth as Truth) ? u!.git_truth as Truth : "ask";
+  const t = asTruth(u?.git_truth);
+  return TRUTHS.includes(t as Truth) ? t as Truth : "ask";
 }
 
 /**

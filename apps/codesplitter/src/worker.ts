@@ -49,7 +49,7 @@ import { seenRoutes } from "./seen.ts";
 import { installScript } from "./install.ts";
 import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
-import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, hearPushes, pushClashes, pushHolds, seeGit, settlePush, syncDue, TRUTHS, type Truth } from "./mirror.ts";
+import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, hearPushes, pushClashes, pushHolds, seeGit, settlePush, syncDue, TRUTHS, asTruth, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
@@ -207,6 +207,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
       const b = await body<{ bio?: string; theme_html?: string; pulse?: boolean; git_truth?: string }>();
       if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
+      if (b.git_truth !== undefined) b.git_truth = asTruth(b.git_truth) as string;
       if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
       await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth) WHERE name = ?")
         .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, user).run();
