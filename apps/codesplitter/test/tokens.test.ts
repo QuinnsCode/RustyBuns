@@ -125,7 +125,7 @@ describe("GET /api/openapi.json", () => {
     // Executor's policy keys off these.
     const risky = Object.values(s.paths).flatMap((m: any) => Object.values(m).filter((o: any) => o["x-codesplitter-risky"]).map((o: any) => o.operationId)).sort();
     expect(risky).toEqual(["accept_agent_batch", "cherry_pick", "commit_file", "create_ci_token", "create_invite", "delete_repo", "delete_share", "deploy", "invite", "merge_branch", "reject_agent_batch",
-      "remove_collaborator", "revert_commit", "revoke_ci_token", "revoke_invite", "set_private_lines", "set_repo_visibility", "stop_agents"]);
+      "remove_collaborator", "revert_commit", "revoke_ci_token", "revoke_invite", "set_private_lines", "set_repo_visibility", "stop_agents", "withdraw_beam"]);
   });
 
   test("covers every API call the palette and the home page name", async () => {
@@ -154,9 +154,16 @@ describe("GET /api/openapi.json", () => {
     const pl = await (await send("ryan", "/api/playlists", { title: "faves" })).json() as { id: number };
     const run = await (await send("ryan", "/api/repos/ryan/lab/checks", { ref: "b", sha: "a".repeat(40), name: "test" })).json() as { id: number };
     const invite = await (await send("ryan", "/api/repos/ryan/lab/invites", {})).json() as { token: string };
+    // A beam needs a git branch: one commit past main, made in the repo's git.
+    await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "a" });
+    const bare = call.artifacts.path("ryan--lab"), who = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+    const g = (args: string[], stdin?: string) => Bun.spawnSync(["git", ...args], { cwd: bare, env: { ...process.env, ...who }, ...(stdin && { stdin: new TextEncoder().encode(stdin) }) }).stdout.toString().trim();
+    const tree = g(["mktree"], `100644 blob ${g(["hash-object", "-w", "--stdin"], "one\n2\nthree\n")}\ta.ts\n`);
+    g(["update-ref", "refs/heads/two", g(["commit-tree", tree, "-p", "main", "-m", "two"])]);
+    const beam = await (await send("ryan", "/api/repos/ryan/lab/beams", { branch: "two" })).json() as { id: string };
     const s = await spec(call);
     const fill: Record<string, string> = { owner: "ryan", repo: "lab", name: "ryan", branch: "b", slug: "mitt", id: "", token: invite.token };
-    const ids: Record<string, string> = { "/shares/{id}": share.id, "/cuts/{id}": cut.id, "/playlists/{id}": String(pl.id), "/jobs/{id}": "1", "/repos/{owner}/{repo}/checks/{id}": String(run.id) };
+    const ids: Record<string, string> = { "/shares/{id}": share.id, "/cuts/{id}": cut.id, "/playlists/{id}": String(pl.id), "/jobs/{id}": "1", "/repos/{owner}/{repo}/checks/{id}": String(run.id), "/beams/{id}": beam.id, "/beams/{id}/patch": beam.id };
     const query: Record<string, string> = { path: "a.ts", rev: "1", q: "one", since: "0" };
     const answers: Record<string, number> = {};
     for (const [path, methods] of Object.entries(s.paths) as [string, any][]) {
