@@ -668,9 +668,9 @@ export const localFixer = (exec: Exec = execCommand, timeoutMs = 10 * 60_000): F
  * container needs no more hosts). The other harnesses report no cost.
  */
 export function fixCommand(harness: Harness, prompt: string, search = false): Command {
-  const cmd = harnessCommand(harness, prompt);
+  const cmd = harnessCommand(harness, prompt, { usage: true });
   if (harness !== "claude") return cmd;
-  const args = [...cmd.args, "--output-format", "json"];
+  const args = [...cmd.args];
   if (search) args[args.indexOf("--tools") + 1] = `${CLAUDE_TOOLS},WebSearch`;
   return { ...cmd, args };
 }

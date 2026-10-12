@@ -411,7 +411,7 @@ The crew sees the same waiting batch on the file and their reading it counts too
 Anyone else who can read the file sees the ghost diff with no controls, with private lines blank (`GET /api/repos/:o/:r/agents/waiting?path=`).
 
 A run has a budget, from its path's policy (#1077, `src/budget.ts`): `codesplitter-budget=80k` in `.gitattributes` is the context it may read, in tokens, and `codesplitter-over=handoff|escalate|downshift` is what happens past it (defaults: lockfiles 20k and config 60k downshift, prose 100k and code 150k hand off).
-What a run reads is counted from what goes in and out of its CLI, every round, at four characters to the token.
+What a run reads is counted every round: claude's own usage (its JSON answer, cache reads and writes included), and for the other CLIs what goes in and out of them, at four characters to the token.
 Before it goes round again (a note, or lines that moved under it) it stops if it's past the budget, failed the same way as last round, or would start a third conflict round.
 It leaves a caveman-terse note, its own `DONE:`/`NEXT:`/`BROKE:`/`DONT:` lines if it ended its reply with them (the prompt asks), else what's known: what landed, the task, what broke.
 `handoff` starts a fresh agent with that note as its whole task, on the branch the stopped one left, whose batch waits, held, till the fresh one is done and then lands as any batch does; `downshift` does the same on the cheapest model; `escalate`, or a third handoff, leaves the held batch and the note to a person.

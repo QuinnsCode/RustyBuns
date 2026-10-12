@@ -2546,7 +2546,7 @@ async function reviewBatch(owner, repo, id, what) {
 /** About `n` tokens, short: 950, 12k, 1.2m. */
 const kTokens = (n) => n >= 1e6 ? `${+(n / 1e6).toFixed(1)}m` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
 /** What a run read (#1077), and if it stopped short of its budget, why and who took over, its note a click away. */
-const spendLine = (x) => !x.spent ? "" : `<span class="muted" style="font-size:12px" title="About how many tokens it read and wrote, every run of its CLI counted, at four characters to the token. Its path's budget is in the repo's .gitattributes (codesplitter-budget).">${icon("gauge")}~${kTokens(x.spent)} tokens${x.from ? ` · took over from run ${x.from}` : ""}</span>`
+const spendLine = (x) => !x.spent ? "" : `<span class="muted" style="font-size:12px" title="How many tokens it read and wrote, every run of its CLI counted: claude's own count, the other CLIs' at about four characters to the token. Its path's budget is in the repo's .gitattributes (codesplitter-budget).">${icon("gauge")}~${kTokens(x.spent)} tokens${x.from ? ` · took over from run ${x.from}` : ""}</span>`
   + (x.handoff ? `<details><summary class="muted" style="font-size:12px">${icon(x.handoff.next ? "user-round-plus" : "hand")}handed off at ~${kTokens(x.handoff.at)} tokens because ${esc(x.handoff.why)}: ${x.handoff.next ? `run ${x.handoff.next}${x.handoff.over === "downshift" ? ", on a cheaper model," : ""} picks it up` : "a person's turn"}</summary><pre>${esc(x.handoff.note)}</pre></details>` : "");
 /** One coding agent's run: who, how it's going, its task, and its output. With file, which file it's on. */
 const agentRun = (x, file) => {

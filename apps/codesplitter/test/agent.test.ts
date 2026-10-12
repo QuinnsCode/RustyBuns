@@ -126,6 +126,27 @@ describe("runAgent", () => {
     expect(doc.lines[1]!.by).toBe("ryan"); // untouched lines keep their author
   });
 
+  test("a run counts what claude says it read, and keeps its reply, not the JSON (#1088)", async () => {
+    const call = await local();
+    await setup(call, "var x = 1");
+    let args: string[] = [];
+    const r = await runAgent(call, {
+      user: "agent-x", owner: "ryan", repo: "r1", path: "a.js", harness: "claude", task: "use let",
+      exec: async (cmd, cwd) => {
+        args = cmd.args;
+        writeFileSync(join(cwd, "a.js"), "let x = 1\n");
+        return { code: 0, out: JSON.stringify({ type: "result", result: "used let", usage: { input_tokens: 10, cache_read_input_tokens: 5000, output_tokens: 90 } }) };
+      },
+    });
+    expect(args.slice(-2)).toEqual(["--output-format", "json"]);
+    expect(r.spent).toBe(5100);
+    expect(r.output).toBe("used let");
+    // A CLI that says nothing of its usage is counted by characters.
+    const p = await runAgent(call, { user: "agent-x", owner: "ryan", repo: "r1", path: "a.js", harness: "pi", task: "x", exec: editor("a.js", "let x = 1\n") });
+    expect(p.spent).toBeGreaterThan(0);
+    expect(p.output).toBe("done");
+  });
+
   test("a file the agent did not change posts nothing", async () => {
     const call = await local();
     await setup(call, "keep\nme");

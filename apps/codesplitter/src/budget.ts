@@ -4,8 +4,8 @@
 // and is cut short before it grinds on: past the budget, the same failure twice, or a third round of
 // conflicts. What it did and what's left go in a short, blunt note, and the next agent (agent-routes.ts)
 // starts from that note and nothing else: a fresh one, a cheaper model, or a person, as the policy says.
-// The CLIs don't report their usage the same way, so what a run read is counted from what went in and
-// came out of it: four characters to the token, as near as that gets.
+// What a run read comes from the CLI's own usage where it reports it (claude's JSON answer, #1088);
+// the others' is counted from what went in and came out of them: four characters to the token.
 
 import type { Over } from "./policy.ts";
 
@@ -13,6 +13,25 @@ import type { Over } from "./policy.ts";
 const CHARS_PER_TOKEN = 4;
 /** About how many tokens `chars` characters are. */
 export const tokens = (chars: number) => Math.ceil(chars / CHARS_PER_TOKEN);
+
+/**
+ * What a CLI asked for JSON said it read and wrote, and its reply: claude's answer is one
+ * `{"type":"result",...}` line, whose usage counts the cache it read and wrote as well as fresh
+ * input and output. Null when the output holds no such line (another harness, or a crash), so
+ * the run is counted by characters instead. Stderr comes after it, so the last one wins.
+ */
+export function usageOf(out: string): { reply: string; tokens: number } | null {
+  for (const line of out.split("\n").reverse()) {
+    if (!line.startsWith("{")) continue;
+    try {
+      const r = JSON.parse(line) as { type?: string; result?: unknown; usage?: Record<string, unknown> };
+      if (r.type !== "result" || !r.usage) continue;
+      const n = (k: string) => typeof r.usage![k] === "number" ? r.usage![k] as number : 0;
+      return { reply: typeof r.result === "string" ? r.result : "", tokens: n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens") + n("output_tokens") };
+    } catch { /* not JSON: a line of the CLI's chatter */ }
+  }
+  return null;
+}
 
 /** The conflict round that goes to fresh eyes instead: the third. */
 export const CONFLICT_ROUNDS = 3;
