@@ -156,7 +156,7 @@ Fake secrets turned the Clerk-based templates' 500s into working pages.
 
 | apps | cause | whose |
 |---|---|---|
-| 4 | a monorepo frontend whose workspace packages must be built first (`start-only, monorepo`) | ours to handle: build the workspace dependencies before the app |
+| 4 | a monorepo frontend whose workspace packages must be built first (`start-only, monorepo`) | ours: build the workspace dependencies before the app ([#953](https://github.com/QuinnsCode/RustyBuns/issues/953)) |
 | 3 | clone or install timeouts on very large monorepos | the run's (network, size) |
 | 1 | a 500 on a Cloudflare monorepo app (algorandfoundation/gGov) | open |
 
