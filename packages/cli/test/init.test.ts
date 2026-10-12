@@ -38,7 +38,7 @@ test("init: refuses to overwrite an existing config unless --force", () => {
 });
 
 test("init: no package.json, unknown framework and monorepo roots are refused before writing", () => {
-  const none = project({});
+  const none = project({ "README.md": "# hi" });
   expect(none.run("init").out).toMatch(/no package\.json/);
   expect(existsSync(join(none.dir, "rustybuns.config.ts"))).toBe(false);
 
@@ -503,4 +503,30 @@ test("init: an older Astro adapter's wrangler paths (dist/_worker.js, dist) are 
   const c = a.read("rustybuns.config.ts");
   expect(c).toContain('"builtMain": "dist/_worker.js/index.js"');
   expect(c).toContain('"assets": "dist"');
+});
+
+test("init: a plain HTML site with no package.json gets a static config, a package.json and a copy build", () => {
+  const p = project({ "index.html": "<h1>hi</h1>", "about/index.html": "<p>about</p>", ".github/x.yml": "", "README.md": "# r" });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("detected: static HTML site in the project root");
+  const cfg = p.read("rustybuns.config.ts");
+  expect(cfg).toContain('copy-site . dist/ui"');
+  expect(cfg).toContain('"notFoundHandling": "404-page"');
+  expect(JSON.parse(p.read("package.json")).devDependencies["@rustybuns/cli"]).toMatch(/^\^/);
+  // copy-site leaves out dotfiles and Rusty Buns' own files
+  expect(p.run("copy-site", ".", "dist/ui").code).toBe(0);
+  expect(existsSync(join(p.dir, "dist/ui/about/index.html"))).toBe(true);
+  for (const f of [".github", "package.json", "rustybuns.config.ts", "desktop", "dist/ui/dist"]) expect(existsSync(join(p.dir, "dist/ui", f))).toBe(false);
+});
+
+test("init: a Jekyll site builds through a layered config that keeps Rusty Buns' files out", () => {
+  const p = project({ "_config.yml": "title: Docs\nbaseurl: /docs\nexclude:\n  - notes.md\n", "_layouts/default.html": "{{ content }}", "index.md": "# hi" });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("detected: Jekyll site");
+  expect(p.read("rustybuns.config.ts")).toContain("jekyll build --config _config.yml,_config.rustybuns.yml --destination dist/ui");
+  const layer = p.read("_config.rustybuns.yml");
+  expect(layer).toContain('baseurl: ""');
+  for (const f of ["notes.md", "dist", "desktop", "rustybuns.config.ts", "package.json"]) expect(layer).toContain(`"${f}"`);
 });

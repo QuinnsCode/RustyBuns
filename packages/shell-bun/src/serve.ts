@@ -300,6 +300,8 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     if (!inside(root, p)) return null;
     let k = kind(p);
     if (k === "dir") { p = join(p, "index.html"); k = kind(p); }
+    // Like Cloudflare and GitHub Pages, /ops serves ops.html (a site generator's page links drop the extension).
+    else if (k !== "file" && !/\.[^/]*$/.test(path) && kind(p + ".html") === "file") { p += ".html"; k = "file"; }
     if (k !== "file") return null;
     return applyHeaders(headerRules, url.pathname, new Response(Bun.file(p)));
   };
