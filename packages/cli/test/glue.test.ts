@@ -512,6 +512,8 @@ test("worker-mode host: R2 is a directory bucket, and Bun's process survives a n
   expect(host).toContain(`MEDIA: local.r2("media"),`);
   // unenv's process polyfill replaces globalThis.process when the Worker is imported (cwd() is "/")
   expect(host).toContain(`import process from "node:process";`);
+  // workerd's globalThis.Cloudflare is set before the Worker loads: unenv's preset reads it at import
+  expect(host.indexOf(`import "@rustybuns/shell-bun/workerd-global";`)).toBeLessThan(host.indexOf("import worker"));
   expect(wranglerToConfig({ name: "g", images: { binding: "IMG" } }).bindings).toEqual({ IMG: { type: "images" } });
 });
 
