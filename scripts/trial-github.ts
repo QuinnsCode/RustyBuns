@@ -24,6 +24,9 @@
 //   --prof            time boot and 200 GETs of /, read the host's memory, and save a CPU profile per
 //                     mode (logs/<app>.<mode>.cpuprofile: open it in Chrome DevTools or speedscope.app)
 //
+// The summary puts a ⚠️ beside an app worth a human look (scripts/trial-flags.ts): uncommon install
+// scripts, network or home reads the sandbox blocked, a host busy or huge while idle, and dependencies
+// OSV lists as malicious. Nothing here is published either way.
 // It runs each app's install scripts and build on this machine, with none of its logins (see ENV).
 // Each app's host keeps its data in <out>/data/<app>, so nothing lands in ~ and no two apps share sqlite.
 import { $ } from "bun";
@@ -31,6 +34,7 @@ import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSy
 import { join, resolve, dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { Cache, cacheKey, DAY, overBudget, parseRate, rateLine } from "./trial-github-cache.ts";
+import { installedPackages, ownInstallScripts, parseDenials, treeUsage, malicious, flagLines, USUAL_INSTALL, IDLE_CPU, BIG_RSS_MB, type Flags, type Idle } from "./trial-flags.ts";
 
 const { values: o, positionals } = parseArgs({
   allowPositionals: true,
@@ -45,12 +49,12 @@ const OUT = resolve(o.out!);
 const MODES = o.modes!.split(",") as ("spa" | "worker")[];
 const VERSION = "0.1.11";
 const cache = new Cache(join(OUT, "gh-cache"), o.fresh);
-for (const d of ["clones", "logs", "data"]) mkdirSync(join(OUT, d), { recursive: true });
+for (const d of ["clones", "logs", "data", "sandbox"]) mkdirSync(join(OUT, d), { recursive: true });
 
 type App = { repo: string; sub: string; version?: string; stars?: number; pushed?: string };
 type Prof = { bootMs: number; p50: number; p95: number; max: number; rssMb: number; profile?: string };
-type ModeResult = { stage: string; status?: number; bytes?: number; text?: string; error?: string; prof?: Prof };
-type Result = App & { fakeSecrets?: string[]; traits?: string[]; pm?: string; init?: string; error?: string; modes: Record<string, ModeResult> };
+type ModeResult = { stage: string; status?: number; bytes?: number; text?: string; error?: string; prof?: Prof; idle?: Idle };
+type Result = App & { fakeSecrets?: string[]; traits?: string[]; pm?: string; init?: string; error?: string; flags?: Flags; modes: Record<string, ModeResult> };
 
 /** The version range an app's package.json gives <dep>, or undefined. */
 export function depVersion(pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }, dep: string) {
@@ -159,28 +163,42 @@ const tail = (s: string) => strip(s).trim().split("\n").filter((l) => !/^\s+at /
 // the real home except the toolchains and package caches it needs (so no ~/.ssh, keychains,
 // ~/.wrangler). After install: no network but localhost, so a build or a booted server can't send
 // anything out or reach anyone's real service. Install keeps the network: packages come from registries.
+// Each app's profile tags its denials with `rbtrial:<app>;`, so the unified log says which app tried what.
 type Net = "net" | "offline";
-const PROFILES: Partial<Record<Net, string>> = {};
-function profile(net: Net): string | undefined {
-  if (process.platform !== "darwin" || !Bun.which("sandbox-exec")) return undefined;
-  if (PROFILES[net]) return PROFILES[net];
+const SANDBOXED = process.platform === "darwin" && !!Bun.which("sandbox-exec");
+const PROFILES = new Map<string, string>();
+function profile(net: Net, tag: string): string | undefined {
+  if (!SANDBOXED) return undefined;
+  const key = `${net}:${tag}`;
+  if (PROFILES.has(key)) return PROFILES.get(key);
   const ok = [join(realHome, ".bun"), join(realHome, ".nvm"), join(realHome, ".npm"), join(realHome, "Library/pnpm"), REPO, OUT];
+  const msg = tag ? ` (with message ${JSON.stringify(tag)})` : "";
   const sb = [
     "(version 1)", "(allow default)",
-    `(deny file-read* file-write* (subpath ${JSON.stringify(realHome)}))`,
+    `(deny file-read* file-write* (subpath ${JSON.stringify(realHome)})${msg})`,
     // later rules win: these stay reachable
     ...ok.map((p) => `(allow file-read* file-write* (subpath ${JSON.stringify(p)}))`),
     `(allow file-read* (literal ${JSON.stringify(realHome)}))`,
-    ...(net === "offline" ? ["(deny network-outbound)", '(allow network-outbound (remote ip "localhost:*"))', "(allow network-outbound (remote unix-socket))"] : []),
+    ...(net === "offline" ? [`(deny network-outbound${msg})`, '(allow network-outbound (remote ip "localhost:*"))', "(allow network-outbound (remote unix-socket))"] : []),
   ].join("\n");
-  const f = join(OUT, `sandbox-${net}.sb`);
+  const f = join(OUT, "sandbox", `${tag.replace(/\W+/g, "_") || "harness"}-${net}.sb`);
   writeFileSync(f, sb + "\n");
-  return (PROFILES[net] = f);
+  PROFILES.set(key, f);
+  return f;
 }
-const sandboxed = (cmd: string[], net: Net) => { const f = profile(net); return f ? ["sandbox-exec", "-f", f, ...cmd] : cmd; };
+const sandboxed = (cmd: string[], net: Net, tag = "") => { const f = profile(net, tag); return f ? ["sandbox-exec", "-f", f, ...cmd] : cmd; };
 
-async function step(log: string, cwd: string, cmd: string[], ms: number, net: Net = "offline", fakes: Record<string, string> = {}) {
-  const p = Bun.spawn(sandboxed(cmd, net), { cwd, stdout: "pipe", stderr: "pipe", env: { ...fakes, ...ENV } });
+/** What the sandbox denied an app since `since`, from the unified log; undefined off macOS. */
+async function denials(tag: string, since: Date) {
+  if (!SANDBOXED) return undefined;
+  await Bun.sleep(1000); // the log lags a little
+  const at = new Date(since.getTime() - since.getTimezoneOffset() * 6e4).toISOString().slice(0, 19).replace("T", " ");
+  const r = await $`/usr/bin/log show --style ndjson --start ${at} --predicate ${`sender == "Sandbox" AND eventMessage CONTAINS "${tag}"`}`.quiet().nothrow();
+  return r.exitCode ? undefined : parseDenials(r.stdout.toString(), tag);
+}
+
+async function step(log: string, cwd: string, cmd: string[], ms: number, net: Net = "offline", fakes: Record<string, string> = {}, tag = "") {
+  const p = Bun.spawn(sandboxed(cmd, net, tag), { cwd, stdout: "pipe", stderr: "pipe", env: { ...fakes, ...ENV } });
   const t = setTimeout(() => p.kill(), ms);
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   const code = await p.exited; clearTimeout(t);
@@ -200,10 +218,10 @@ function packageManager(dir: string, root: string): { pm: string; at: string } {
 }
 
 /** Boots the dev host, logs in with the printed token like a browser does, and GETs /. */
-async function boot(dir: string, log: string, profName?: string, fakes: Record<string, string> = {}): Promise<ModeResult> {
+async function boot(dir: string, log: string, tag: string, profName?: string, fakes: Record<string, string> = {}): Promise<ModeResult> {
   const prof = profName ? ["--cpu-prof", `--cpu-prof-dir=${join(OUT, "logs")}`, `--cpu-prof-name=${profName}.cpuprofile`] : [];
   const t0 = performance.now();
-  const host = Bun.spawn(sandboxed(["bun", ...prof, ".rustybuns/dev/desktop.js"], "offline"), { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...fakes, ...ENV } });
+  const host = Bun.spawn(sandboxed(["bun", ...prof, ".rustybuns/dev/desktop.js"], "offline", tag), { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...fakes, ...ENV } });
   let buf = "";
   for (const s of [host.stdout, host.stderr]) void (async () => { for await (const c of s) buf += new TextDecoder().decode(c); })();
   try {
@@ -214,9 +232,13 @@ async function boot(dir: string, log: string, profName?: string, fakes: Record<s
     const r = await fetch(new URL("/", url), { headers: { cookie }, redirect: "manual" });
     const html = await r.text();
     const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const bootMs = Math.round(performance.now() - t0);
     const res: ModeResult = { stage: r.status < 400 ? "works" : "request", status: r.status, bytes: html.length, text: text.slice(0, 160) };
+    // A served host should then sit idle: CPU over two quiet seconds and memory, its children included (a miner).
+    const usage = async () => treeUsage(await $`ps -A -o pid=,ppid=,time=,rss=`.quiet().nothrow().text(), host.pid);
+    const a = await usage(); await Bun.sleep(2000); const b = await usage();
+    res.idle = { cpu: Math.round(((b.cpu - a.cpu) / 2) * 100) / 100, rssMb: b.rssMb };
     if (profName && r.status < 400) {
-      const bootMs = Math.round(performance.now() - t0);
       const times: number[] = [];
       for (let i = 0; i < 200; i++) { const a = performance.now(); await (await fetch(new URL("/", url), { headers: { cookie } })).text(); times.push(performance.now() - a); }
       times.sort((a, b) => a - b);
@@ -316,6 +338,33 @@ async function trial(app: App): Promise<Result> {
   const slug = `${app.repo.replace("/", "__")}${app.sub ? `__${app.sub.replace(/\//g, "_")}` : ""}`;
   const log = join(OUT, "logs", `${slug}.log`);
   writeFileSync(log, "");
+  const tag = `rbtrial:${slug};`, since = new Date();
+  const r = await trialSteps(app, slug, log, tag);
+  const d = await denials(tag, since);
+  if (d) {
+    if (d.net.length || d.reads.length) r.flags = { ...r.flags, ...(d.net.length ? { network: d.net } : {}), ...(d.reads.length ? { reads: d.reads } : {}) };
+    appendFileSync(log, `\nsandbox denials: ${[...d.net, ...d.reads].join("\n  ") || "none flagged"}${d.other ? ` (+${d.other} other reads under home)` : ""}\n`);
+  }
+  const idle = Object.entries(r.modes).filter(([, m]) => m.idle && (m.idle.cpu >= IDLE_CPU || m.idle.rssMb >= BIG_RSS_MB))
+    .map(([mode, m]) => `${mode} ${Math.round(m.idle!.cpu * 100)}% CPU, ${m.idle!.rssMb} MB`);
+  if (idle.length) r.flags = { ...r.flags, idle };
+  return r;
+}
+
+/** After an install: which packages run install scripts, and whether OSV lists any as malicious. */
+async function installFlags(dirs: string[], log: string): Promise<Flags> {
+  const pkgs = [...new Map(dirs.flatMap(installedPackages).map((p) => [`${p.name}@${p.version}`, p])).values()];
+  const scripted = pkgs.filter((p) => p.scripts.length);
+  if (scripted.length) appendFileSync(log, `\ninstall scripts: ${scripted.map((p) => `${p.name}@${p.version} (${p.scripts.join(", ")})`).join(" ")}\n`);
+  const own = ownInstallScripts(dirs[0]!).map((s) => `the app's ${s}`);
+  const f: Flags = {};
+  const odd = [...own, ...scripted.filter((p) => !USUAL_INSTALL.has(p.name)).map((p) => p.name)];
+  if (odd.length) f.installScripts = [...new Set(odd)];
+  await malicious(pkgs).then((m) => { if (m.length) f.malicious = m; }, (e: Error) => { f.osvError = e.message; appendFileSync(log, `\nosv.dev: ${e.message}\n`); });
+  return f;
+}
+
+async function trialSteps(app: App, slug: string, log: string, tag: string): Promise<Result> {
   const root = join(OUT, "clones", app.repo.replace("/", "__"));
   const dir = join(root, app.sub);
   const r: Result = { ...app, modes: {} };
@@ -340,10 +389,12 @@ async function trial(app: App): Promise<Result> {
   }
   r.traits = traits(dir, root);
   let { pm, at } = packageManager(dir, root);
-  let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3, "net");
+  let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3, "net", {}, tag);
   // an npm lockfile that npm itself can't install (peer conflicts): pnpm reads package.json alone
-  if (!s.ok && pm === "npm") { pm = "pnpm"; s = await step(log, at, ["pnpm", "install", "--config.minimum-release-age=0"], 600e3, "net"); }
+  if (!s.ok && pm === "npm") { pm = "pnpm"; s = await step(log, at, ["pnpm", "install", "--config.minimum-release-age=0"], 600e3, "net", {}, tag); }
   r.pm = pm;
+  // what ran during install (or tried to): even a failed install ran scripts
+  r.flags = await installFlags([dir, at], log);
   if (!s.ok) return { ...r, error: `install: ${s.tail}` };
   const cli = o.local ? ["bun", join(REPO, "packages/cli/src/index.ts")] : [join(dir, "node_modules/.bin/rustybuns")];
   if (o.local) {
@@ -352,10 +403,10 @@ async function trial(app: App): Promise<Result> {
     for (const p of ["cli", "shell-bun"]) { rmSync(join(dir, "node_modules/@rustybuns", p), { recursive: true, force: true }); symlinkSync(join(REPO, "packages", p), join(dir, "node_modules/@rustybuns", p)); }
   } else {
     const add = pm === "npm" ? ["npm", "i", "-D"] : [pm, "add", "-D", ...(pm === "pnpm" ? ["--config.minimum-release-age=0"] : [])];
-    s = await step(log, dir, [...add, `@rustybuns/cli@${VERSION}`, `@rustybuns/shell-bun@${VERSION}`], 300e3, "net");
+    s = await step(log, dir, [...add, `@rustybuns/cli@${VERSION}`, `@rustybuns/shell-bun@${VERSION}`], 300e3, "net", {}, tag);
     if (!s.ok) return { ...r, error: `add rustybuns: ${s.tail}` };
   }
-  s = await step(log, dir, [...cli, "init", "--force"], 120e3, "offline", fakes);
+  s = await step(log, dir, [...cli, "init", "--force"], 120e3, "offline", fakes, tag);
   if (!s.ok) return { ...r, error: `init: ${s.tail}` };
   r.init = strip(s.out).match(/^detected: (.*)$/m)?.[1];
   const initCfg = readFileSync(join(dir, "rustybuns.config.ts"), "utf8");
@@ -367,11 +418,11 @@ async function trial(app: App): Promise<Result> {
     writeFileSync(join(dir, "rustybuns.config.ts"), setMode(initCfg, mode, join(OUT, "data", slug, mode)));
     appendFileSync(log, `\n===== mode ${mode} =====\n`);
     if (mode === "spa" && initMode === "spa" && !existsSync(join(dir, "vite.desktop.config.ts"))) {
-      s = await step(log, dir, [...cli, "add", "desktop"], 300e3, "offline", fakes);
+      s = await step(log, dir, [...cli, "add", "desktop"], 300e3, "offline", fakes, tag);
       if (!s.ok) { r.modes[mode] = { stage: "add desktop", error: s.tail }; continue; }
     }
-    s = await step(log, dir, [...cli, "build", "desktop", "--dev"], 600e3, "offline", fakes);
-    r.modes[mode] = s.ok ? await boot(dir, log, o.prof ? `${slug}.${mode}` : undefined, fakes) : { stage: "build", error: s.tail };
+    s = await step(log, dir, [...cli, "build", "desktop", "--dev"], 600e3, "offline", fakes, tag);
+    r.modes[mode] = s.ok ? await boot(dir, log, tag, o.prof ? `${slug}.${mode}` : undefined, fakes) : { stage: "build", error: s.tail };
   }
   if (!o.keep) for (const d of new Set([dir, at])) rmSync(join(d, "node_modules"), { recursive: true, force: true });
   return r;
@@ -425,6 +476,14 @@ function byTrait(rs: Result[]): string[] {
       return `| ${t} | ${b.length} | ${i.length} | ${b.filter(works).length} of ${i.length} |`; })];
 }
 
+/** The apps worth a human look, and why: what they ran at install, what the sandbox stopped, what OSV knows. */
+function flagged(rs: Result[]): string[] {
+  const f = rs.filter((r) => flagLines(r.flags).length);
+  if (!f.length) return [];
+  return ["", "## ⚠️ Worth a look", "", "Containment, not detection: these ran with no logins, no home and no network after install. Logs have the detail.", "",
+    ...f.flatMap((r) => [`- **${r.repo}${r.sub ? `:${r.sub}` : ""}**`, ...flagLines(r.flags).map((l) => `  - ${l.replace(/\|/g, "\\|")}`)])];
+}
+
 /** Pass rates by how long ago the repo was last pushed to: is a failure Rusty Buns, or an abandoned app? */
 function freshness(rs: Result[]): string[] {
   const dated = rs.filter((r) => r.pushed);
@@ -443,9 +502,9 @@ function summary(rs: Result[]) {
   const ok = (mode: string) => rs.filter((r) => r.modes[mode]?.stage === "works").length;
   return [`# trial-github: ${rs.length} apps${o.dep ? ` depending on ${o.dep}${o.major ? ` ${o.major}.x` : ""}` : ""} (${o.local ? "this checkout" : `@rustybuns ${VERSION}`})`, "",
     MODES.map((m) => `${m}: ${ok(m)}/${rs.length} serve /`).join(" · "), "",
-    `| app | version | ${MODES.join(" | ")} | first error |`, `|---|---|${MODES.map(() => "---|").join("")}---|`,
-    ...rs.map((r) => `| [${r.repo}${r.sub ? `:${r.sub}` : ""}](https://github.com/${r.repo}${r.sub ? `/tree/HEAD/${r.sub}` : ""}) | ${r.version ?? ""} | ${MODES.map((m) => cell(r.modes[m]) || (r.error ? `❌ ${r.error.split(":")[0]}` : "")).join(" | ")} | ${note(r)} |`),
-    ...freshness(rs), ...byTrait(rs),
+    `| app | version | ⚠️ | ${MODES.join(" | ")} | first error |`, `|---|---|---|${MODES.map(() => "---|").join("")}---|`,
+    ...rs.map((r) => `| [${r.repo}${r.sub ? `:${r.sub}` : ""}](https://github.com/${r.repo}${r.sub ? `/tree/HEAD/${r.sub}` : ""}) | ${r.version ?? ""} | ${flagLines(r.flags).length ? "⚠️" : ""} | ${MODES.map((m) => cell(r.modes[m]) || (r.error ? `❌ ${r.error.split(":")[0]}` : "")).join(" | ")} | ${note(r)} |`),
+    ...flagged(rs), ...freshness(rs), ...byTrait(rs),
     ...(o.prof ? ["", "## Perf (dev host, this machine)", "", "Boot is spawn to the first page; latency is 200 sequential GETs of /.", "",
       "| app | mode | boot | p50 | p95 | max | rss | page |", "|---|---|---|---|---|---|---|---|",
       ...rs.flatMap((r) => Object.entries(r.modes).filter(([, m]) => m.prof).map(([mode, m]) =>
@@ -478,7 +537,7 @@ if (import.meta.main) {
       const r = await trial(app).catch((e): Result => ({ ...app, error: String(e), modes: {} }));
       results.push(r);
       appendFileSync(join(OUT, "results.jsonl"), JSON.stringify(r) + "\n");
-      console.log(`[${results.length}/${apps.length}] ${r.repo}${r.sub ? `:${r.sub}` : ""}  ${MODES.map((m) => `${m} ${cell(r.modes[m]) || "❌"}`).join("  ")}  ${note(r)}`);
+      console.log(`[${results.length}/${apps.length}] ${r.repo}${r.sub ? `:${r.sub}` : ""}  ${MODES.map((m) => `${m} ${cell(r.modes[m]) || "❌"}`).join("  ")}${flagLines(r.flags).length ? "  ⚠️" : ""}  ${note(r)}`);
     }
   }));
   const order = new Map(apps.map((a, i) => [`${a.repo}:${a.sub}`, i]));
