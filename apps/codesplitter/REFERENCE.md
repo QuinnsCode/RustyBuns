@@ -105,9 +105,6 @@ The pitch is in [README.md](README.md).
   A clash still stops and asks, with Keep mine offered first.
   The panel says how many commits behind upstream is and as of when, so with the app closed you know what GitHub has: everything up to the last push.
   If upstream is down, nothing stops.
-- **Pull-only: a mirror that never writes upstream (desktop, #1009).** **Make it pull-only** in the Upstream panel (`POST /api/repos/:o/:r/mirror {pullOnly: true}`, or `pullOnly: true` on `POST /api/mirrors`; `false` switches back) makes the mirror one-way.
-  Syncs still fetch and merge upstream's commits, but push nothing: a copy with commits upstream lacks settles as `held`, and they wait here until it's two-way again.
-  It beats this copy leading, a merged branch's upstream branch is left in place, and pushing a branch or a tag answers 409.
   **Your own tools use it as a remote:** the Clone button's popover has a `git clone` line (read token, an hour) and, for the owner on the desktop, a **Push back** line, `git remote add codesplitter http://127.0.0.1:…/__rb/git/codesplitters/<owner>--<repo>.git` with a day-long write token (tokens live in memory, so a restart means copying a fresh one), served by the desktop's `git http-backend`.
   Make it a terminal's, an editor's or Agent Office's `origin` with GitHub as a second remote; what you push reaches upstream on the next sync.
   Not offered for a repo with private lines (its git holds them blank).
@@ -123,6 +120,9 @@ The pitch is in [README.md](README.md).
   A run's worktree goes when it's removed (`DELETE .../worktrees/:name`) or after a day, a branch's once main holds the commits it made (or the branch is gone), and one with uncommitted changes stays.
   Every sync and every `GET .../worktrees` cleans up, and deleting the repo removes them all.
   `src/worktrees.ts`.
+- **Pull-only: a mirror that never writes upstream (desktop, #1009).** **Make it pull-only** in the Upstream panel (`POST /api/repos/:o/:r/mirror {pullOnly: true}`, or `pullOnly: true` on `POST /api/mirrors`; `false` switches back) makes the mirror one-way.
+  Syncs still fetch and merge upstream's commits, but push nothing: a copy with commits upstream lacks settles as `held`, and they wait here until it's two-way again.
+  It beats this copy leading, a merged branch's upstream branch is left in place, and pushing a branch or a tag answers 409.
 - **Beam: a branch's stack, cleaned up and handed over (desktop).** `POST /api/repos/:o/:r/beams {branch, onto?, title?, message?, to?, keep?, drop?}` takes git branch `branch` (pushed with the Push back remote, or made in a worktree) from where it left main, and leaves out the noise, each with why: a lockfile the repo doesn't use, lockfile churn with no `package.json` change, `node_modules/` and tool caches, build output the branch added, OS and editor leftovers, and env files (`keep` and `drop` override, by path).
   What's left goes on main's tip, or with `onto: "upstream"` on a GitHub fork's upstream tip (a plain read-only `git fetch`), by `git merge-tree` with no checkout, and is squashed into one commit: the stack's author if it had one, else this machine's git identity with the others as `Co-authored-by`, the title given or the first commit's, and the stack's subjects as the body.
   A 409 says what clashes, or that nothing's left once the noise is out.
@@ -539,13 +539,16 @@ What the code backs up:
 
 The caveats:
 
-- **Merged code runs at home.** Review is the gate, so read what you merge, and a merge that edits `codesplitter.ci` or package.json's scripts changes what runs.
-  Run a runner as a separate macOS user with no logins and an empty `HOME`; the desktop's own queue runs as you.
+- **Merged code runs at home.** Review is the gate, so read what you merge.
+  A check gets none of your logins (#1010, `src/check-env.ts`): the desktop's queue and `scripts/runner.ts` run the clone and the command with only `PATH` and the locale from your environment, an empty `HOME` and `TMPDIR` of their own, and `CI=1`, so no `gh`, `wrangler`, npm or cloud token, and no SSH agent.
+  They still run as you, with your package caches, unless you give them a sandbox user: make a standard macOS user with no logins, allow `$USER ALL=(cs-checks) NOPASSWD: ALL` in `/etc/sudoers.d/cs-checks`, and set `CODESPLITTER_CHECKS_USER=cs-checks` for the desktop (or `--user cs-checks` for a runner); every run then goes through `sudo -n -u cs-checks`, in `/tmp`, with umask 000 so the app can still clean up.
+  Turn on the pin (the pin button by "Checks run", or `PUT …/checks/settings {pinned: true}`) and only the required checks with a `command` in the settings run: `codesplitter.ci` and package.json's scripts at the commit are ignored, a run queued without a command from the settings is cancelled at the claim rather than falling back to `bun test`, so a merged edit can't change the job on your machine.
 - **The mirror is two-way unless you say otherwise.** By default it pushes this copy's commits upstream, never forced.
-  That's a way out, not a way in. Make it pull-only (`{pullOnly: true}`, #1009) and codeSplitter never writes to GitHub: syncs only fetch, and branch and tag pushes answer 409.
-- **Merged main doesn't queue checks here yet.** When the mirror takes upstream's commits it watches GitHub's results for the new tip and queues nothing here; checks start here on a commit made here, a branch opened from upstream or pushed to it, or a beam.
-
-Still missing: checks here on the main commits a mirror takes (#1005), and runs as a sandbox user with no credentials, with a setting to run only the commands in the repo's settings (#1007).
+  That's a way out, not a way in.
+  Make it pull-only (`{pullOnly: true}`, #1009) and codeSplitter never writes to GitHub: syncs only fetch, and branch and tag pushes answer 409.
+- **Merged main runs here too.** When a sync takes upstream's commits onto main (a fast-forward, a merge or a re-base), the repo's checks queue here on main's new tip, as `upstream` (#1008), beside GitHub's results for it.
+  A sync that only pushes this copy's commits queues nothing: they were checked when they were made.
+  A pull-only mirror queues them the same way.
 
 ## Conventions
 
@@ -560,50 +563,53 @@ These keep growth to whole lines, which merge as plain inserts (#935):
   The doctor's settings each have a line in `FIELDS` (`src/deps.ts`), and the SQL, the reader, the checks and the API reference are built from it.
 - **Migrations are named for when they were written,** `YYYYMMDDHHMMSS_name.sql` in UTC, not the next number, which two branches can both take.
 - **A feature is its own file** in `src/features/`, built into `features.json`.
+- **A file says its own Layout row** on its first line, `// Layout: what it is`, and `bun run layout` builds the table below from those (`layout.ts`). Two branches that each add a row and collide in the table settle it by running it again.
 
 ## Layout
 
 | File | What |
 |---|---|
-| `src/lines.ts` | the line model: ops, conflicts, replay. Pure functions |
-| `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left; defaults under the repo's `.gitattributes` |
-| `src/file-do.ts` | the file Durable Object: ops, log, time travel, commits, a live socket |
-| `src/worker.ts` | routes, visibility, profiles, playlists, search |
-| `src/branches.ts` | branches: forking a file onto one, review, merge |
-| `src/conflict-agent.ts` | one merge conflict handed to a coding agent: git's markers in, the settled lines out |
-| `src/identity.ts` | accounts (Better Auth) or aliases, and handles |
-| `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
-| `src/audit.ts` | the security audit log: tokens, crews, invites, visibility, webhooks, deploy keys and repo deletes, append-only |
-| `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
-| `src/levels.ts` | the levels: import, browse, fork |
-| `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
-| `src/chunks.ts` | levels too big for Artifacts at all: their text files as chunks in R2, read through the cache |
-| `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
-| `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
-| `src/archive.ts` | Artifacts: trees (cached), files, first-open materializing, catalogue pushes |
-| `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
-| `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
-| `migrations/` | the D1 schema. A new one is named for when it was written, `YYYYMMDDHHMMSS_name.sql` in UTC, not the next number (`test/migrations.test.ts`) |
-| `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
-| `src/harness.ts` | the coding-agent CLIs and the prompt each one gets |
-| `src/agent-run.ts` | runs an agent on a file: snapshot, edit in a sandbox, diff, post, re-run on conflicts |
-| `src/sandbox.ts` | the container Durable Object hosted agents run in |
-| `src/deploy.ts` | deploys: settings, the log, the desktop runner |
-| `src/mirror.ts` | mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading |
-| `src/worktrees.ts` | real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done |
-| `src/deploy-keys.ts` | hosted deploys' write-only keys: sealing, the owner's routes, who may deploy |
-| `src/deploy-runner.ts` | the per-repo Durable Object that runs a hosted deploy in its own container |
-| `src/deploy-review.ts` | what a deploy (hosted or desktop) may run with the owner's keys: the owner's own commits, or what they approved after reading the diff |
-| `deploy-sandbox/` | the deploy container image: git, bun, and the server that runs one command; `ci.Dockerfile` is the check container's image, the same server without the deploy tools |
-| `src/checks.ts` | checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results |
-| `src/ci-runner.ts` | the built-in check runners: the desktop draining its own queue, and the per-repo `CiRunner` that runs each check in a container |
-| `src/beam.ts` | beams: a git branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
-| `src/cuts.ts` | cuts: picking lines and following what they use across files, the cut's branch, running its tests, the share page |
-| `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
-| `features.ts`, `src/features/` | the home page's feature strip: a file per feature and their order, built into `features.json` |
-| `src/fit.ts` | the Rusty Buns fit check: how easily `rustybuns init` could box the repo |
-| `sandbox/` | the container image: the CLIs, and the server that runs one on one file |
-| `agents.ts` | the three-agent demo |
 | `agent.ts` | one real coding agent on one file |
-| `src/hooks.ts` | outgoing webhooks: the owner's hooks, signed deliveries, the log, retries |
+| `agents.ts` | the three-agent demo |
+| `deploy-sandbox/` | the deploy container image: git, bun, and the server that runs one command; `ci.Dockerfile` is the check container's image, the same server without the deploy tools |
+| `features.ts`, `src/features/` | the home page's feature strip: a file per feature and their order, built into `features.json` |
+| `migrations/` | the D1 schema. A new one is named for when it was written, `YYYYMMDDHHMMSS_name.sql` in UTC, not the next number (`test/migrations.test.ts`) |
+| `sandbox/` | the container image: the CLIs, and the server that runs one on one file |
 | `src/agent-routes.ts` | the file page's Agent button: start a run, list runs |
+| `src/agent-run.ts` | runs an agent on a file: snapshot, edit in a sandbox, diff, post, re-run on conflicts |
+| `src/archive.ts` | Artifacts: trees (cached), files, first-open materializing, catalogue pushes |
+| `src/audit.ts` | the security audit log: tokens, crews, invites, visibility, webhooks, deploy keys and repo deletes, append-only |
+| `src/beam.ts` | beams: a git branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
+| `src/branches.ts` | branches: forking a file onto one, review, merge |
+| `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
+| `src/check-env.ts` | what a check's command sees: a scrubbed environment, its own empty HOME and TMPDIR, and the sandbox user if one is set |
+| `src/checks.ts` | checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results |
+| `src/chunks.ts` | levels too big for Artifacts at all: their text files as chunks in R2, read through the cache |
+| `src/ci-runner.ts` | the built-in check runners: the desktop draining its own queue, and the per-repo `CiRunner` that runs each check in a container |
+| `src/conflict-agent.ts` | one merge conflict handed to a coding agent: git's markers in, the settled lines out |
+| `src/cuts.ts` | cuts: picking lines and following what they use across files, the cut's branch, running its tests, the share page |
+| `src/deploy-keys.ts` | hosted deploys' write-only keys: sealing, the owner's routes, who may deploy |
+| `src/deploy-review.ts` | what a deploy (hosted or desktop) may run with the owner's keys: the owner's own commits, or what they approved after reading the diff |
+| `src/deploy-runner.ts` | the per-repo Durable Object that runs a hosted deploy in its own container |
+| `src/deploy.ts` | deploys: settings, the log, the desktop runner |
+| `src/file-do.ts` | the file Durable Object: ops, log, time travel, commits, a live socket |
+| `src/fit.ts` | the Rusty Buns fit check: how easily `rustybuns init` could box the repo |
+| `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
+| `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
+| `src/harness.ts` | the coding-agent CLIs and the prompt each one gets |
+| `src/heal.ts` | self-healing CI: a failed required check, or a merge guard tripping, opens a fix task on the branch |
+| `src/hooks.ts` | outgoing webhooks: the owner's hooks, signed deliveries, the log, retries |
+| `src/identity.ts` | accounts (Better Auth) or aliases, and handles |
+| `src/levels.ts` | the levels: import, browse, fork |
+| `src/lines.ts` | the line model: ops, conflicts, replay. Pure functions |
+| `src/mirror.ts` | mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading |
+| `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
+| `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
+| `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left; defaults under the repo's `.gitattributes` |
+| `src/sandbox.ts` | the container Durable Object hosted agents run in |
+| `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
+| `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
+| `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
+| `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
+| `src/worker.ts` | routes, visibility, profiles, playlists, search |
+| `src/worktrees.ts` | real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done |

@@ -50,7 +50,12 @@ export class LocalArtifacts {
   private busy = new Map<string, "IMPORT_IN_PROGRESS" | "FORK_IN_PROGRESS">();
   /** Unlike Cloudflare's, import() here takes a token for a private source. */
   readonly privateImports = true;
-  /** Told the repo's name after a git client pushes to it through gitHttp, so the app can catch up. */
+  /**
+   * Told the repo's name after a git client pushes to it through gitHttp, so the app can catch up.
+   * Async: it runs after the push's answer goes and is never awaited, so `git push` can exit before
+   * it starts. An app that must see a push by a given moment catches up itself (codeSplitter's
+   * landPushes on read); a test waits for the call.
+   */
   onPush?: (name: string) => unknown;
 
   constructor(readonly dir: string, readonly namespace: string) { mkdirSync(dir, { recursive: true }); }

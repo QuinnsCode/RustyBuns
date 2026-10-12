@@ -1,3 +1,4 @@
+// Layout: past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit
 // A repo's tip out of GitHub's tarball, for the repos Cloudflare Artifacts
 // won't import: its import stops at 40 MB even at depth 1 (code 10402,
 // MEMORY_LIMIT; #334). So: make an empty Artifact, read the tarball, and push

@@ -1,3 +1,4 @@
+// Layout: the three-agent demo
 // Three agents edit one file at the same time. Each reads the file, picks one
 // line to change, and sends an op pinned to that line's rev. Different lines
 // never collide; when two agents grab the same line, the file's Durable Object

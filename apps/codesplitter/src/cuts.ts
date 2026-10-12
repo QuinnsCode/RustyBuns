@@ -1,3 +1,4 @@
+// Layout: cuts: picking lines and following what they use across files, the cut's branch, running its tests, the share page
 // Cuts: select some lines, cut them out as a tiny repo, run its tests, share
 // it, and merge a fix back. A cut is a branch, `cut-<id>`, whose copy of each
 // file is forked from main with only the picked lines in it, each keeping its

@@ -1,12 +1,12 @@
 // POST /api/review. In order: size cap, per-address rate limit, Turnstile, the edge
-// cache, the daily budget, then one Clef-omni call (~$0.00004). Anything missing or
+// cache, the daily budget, then one Clef-omni call (~$0.00005). Anything missing or
 // failing falls back to the free estimate, so nothing here can run up a bill.
 
 import { boxById, pickBoxes } from "./boxes.ts";
 import { turnstileOk, youtubeId, youtubeTitle } from "./guard.ts";
 import { clefRequest, estimate, MODEL, parseClef, type Verdict } from "./judge.ts";
 import { MAX_CLIP, parseRequest } from "./review.ts";
-import { writeReview } from "./write.ts";
+import { cameo, writeReview } from "./write.ts";
 
 export interface ReviewEnv {
   AI?: { run(model: string, input: unknown): Promise<unknown> };
@@ -61,7 +61,7 @@ export async function handleReview(request: Request, env: ReviewEnv, cache?: Cac
     }
   }
 
-  return json(writeReview(verdict, boxById(verdict.box) ?? boxes[0]!, req.features, req.title));
+  return json(cameo(verdict, req.title, req.hint) ?? writeReview(verdict, boxById(verdict.box) ?? boxes[0]!, req.features, req.title));
 }
 
 async function sha256(s: string): Promise<string> {

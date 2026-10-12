@@ -5539,7 +5539,8 @@ async function wireCheckHead(el, owner, repo, r) {
   const isOwner = owner === me();
   const opts = [...(s.github ? [["github", "On GitHub, here when it's down"]] : []), ["here", "Here, on this machine"], ...(s.github ? [["both", "Here and on GitHub"]] : [])];
   const pick = isOwner ? `<label class="muted" style="font-size:12px">${icon("list-checks")} Checks run <select id="check-where" autocomplete="off">${s.where ? "" : `<option value="" selected>nowhere yet</option>`}${opts.map(([v, t]) => `<option value="${v}"${s.where === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
-    <span id="check-where-save" hidden><button class="btn primary" title="save where checks run">${icon("check")}Save</button><button class="btn ghost" title="put it back">${icon("x")}</button></span>` : "";
+    <span id="check-where-save" hidden><button class="btn primary" title="save where checks run">${icon("check")}Save</button><button class="btn ghost" title="put it back">${icon("x")}</button></span>
+    <button id="check-pin" class="btn ghost" aria-pressed="${!!s.pinned}" title="${s.pinned ? "Pinned: only the required checks' commands in these settings run. Click to also run codesplitter.ci and package.json's scripts" : "Not pinned: codesplitter.ci and package.json's scripts at the commit say what runs, so a merge can change it. Click to run only the settings' commands"}">${icon(s.pinned ? "pin" : "pin-off")}</button>` : "";
   const down = s.offline ? `<span class="muted">${icon("cloud-off")} GitHub has been down${s.down_since ? ` since ${new Date(s.down_since).toLocaleTimeString()}` : ""}. Keep going: commits, branches and merges work here, checks run on this machine, and everything syncs to GitHub when it's back.</span>` : "";
   const mainRow = main?.runs.length ? `<div class="commit"><code>main</code><span class="muted">checks on the latest commit${s.github ? ", GitHub's included once it has them" : ""}</span>${checkRow(main)}</div>` : "";
   if (!pick && !down && !mainRow) return;
@@ -5551,6 +5552,12 @@ async function wireCheckHead(el, owner, repo, r) {
   const sel = $("#check-where"), save = $("#check-where-save"), saved = s.where ?? "";
   sel?.addEventListener("change", () => { save.hidden = sel.value === saved; });
   save?.lastElementChild.addEventListener("click", () => { sel.value = saved; save.hidden = true; });
+  // Pinned (#1010): what runs comes from these settings only, never from files a merge can change.
+  $("#check-pin")?.addEventListener("click", async (e) => {
+    if (!e.isTrusted) return;
+    try { await api(`/repos/${owner}/${repo}/checks/settings`, { pinned: !s.pinned }, "PUT"); toast(s.pinned ? "Unpinned: the repo's files say what runs" : "Pinned: only the settings' commands run"); route(); }
+    catch (err) { toast(err.message); }
+  });
   save?.firstElementChild.addEventListener("click", async (e) => {
     if (!e.isTrusted || sel.value === saved) return;
     try { await api(`/repos/${owner}/${repo}/checks/settings`, { where: sel.value || null }, "PUT"); toast(sel.value === "here" ? "Checks run here now: local first" : "Saved"); route(); }

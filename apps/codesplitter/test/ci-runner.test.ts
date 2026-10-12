@@ -159,6 +159,24 @@ test("the desktop runs its own queue: a commit's check and a branch's edit run h
   await drained("ryan", "lab");
 });
 
+test("the desktop's checks get none of the owner's logins: a scrubbed env and an empty HOME of their own (#1010)", async () => {
+  const { send, add, settled, log } = await app({ CHECKS_RUNNER: undefined });
+  process.env.CS_FAKE_LOGIN = "hunter2";
+  try {
+    await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: [{ name: "env", command: 'echo "login=${CS_FAKE_LOGIN:-none} ci=$CI files=$(ls -A "$HOME" | wc -l | tr -d " ")"; echo "home=$HOME"' }] }, "PUT");
+    await add("a.ts", "one");
+    const k = await settled();
+    expect(k.runs).toMatchObject([{ name: "env", status: "passed" }]);
+    const out = await log(k.runs[0].id);
+    expect(out).toContain("login=none ci=1 files=0");
+    expect(out).not.toContain(`home=${process.env.HOME}\n`);
+    expect(out).toMatch(/home=\S+\/home\n/);
+  } finally {
+    delete process.env.CS_FAKE_LOGIN;
+  }
+  await drained("ryan", "lab");
+});
+
 /** A CiRunner per repo whose container is real: server.mjs's own exec and files, in a temp dir. Its alarms run one at a time, as the runtime's do. */
 function ciNamespace(env: any) {
   const seen = { lists: [] as string[][], env: [] as (Record<string, string> | undefined)[], internet: [] as (boolean | undefined)[], destroyed: 0, ran: [] as string[] };

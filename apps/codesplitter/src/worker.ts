@@ -1,3 +1,4 @@
+// Layout: routes, visibility, profiles, playlists, search
 // codeSplitter: a code host where each file is a Durable Object and your profile
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.

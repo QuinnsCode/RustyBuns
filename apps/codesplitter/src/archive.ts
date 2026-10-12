@@ -1,3 +1,4 @@
+// Layout: Artifacts: trees (cached), files, first-open materializing, catalogue pushes
 // Everything that touches a repo's git history in Artifacts: tokens, browsing
 // trees, reading files, turning a file into a live Durable Object on first
 // open, and pushing a catalogue as a commit.

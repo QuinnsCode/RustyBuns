@@ -1,3 +1,4 @@
+// Layout: runs an agent on a file: snapshot, edit in a sandbox, diff, post, re-run on conflicts
 // Run one coding agent on one file of a repo. The agent works on a plain-text
 // copy in a sandbox; when it stops, its edit is diffed against the snapshot and
 // posted to the file's Durable Object as line ops, so the edit shows up live and

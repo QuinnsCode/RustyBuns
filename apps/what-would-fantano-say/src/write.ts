@@ -77,6 +77,47 @@ function worst(f: Features | null): string {
   return "It plays it a little safe.";
 }
 
+/** The title or hint names the critic himself. */
+export const namesHim = (text: string) => /fantano|needle ?drop|\bmelon\b/i.test(text);
+
+/**
+ * The two gags that replace a review: a clip that names him gets his cheesy self-review,
+ * and a clip Clef heard as talking with no music gets told it's a podcast. Nothing is
+ * spent on either: the name is a text match, and "talking" rides along on the one Clef call.
+ */
+export function cameo(v: Verdict, title: string, hint: string): Review | null {
+  const by = v.by;
+  if (namesHim(`${title} ${hint}`)) {
+    return {
+      score: 10, verdict: "STRONG", box: "Self-review", by,
+      headline: "Well hey, what is going on here?",
+      review: "Hold on. I know that voice. I know me when I know me. The delivery is impeccable, the opinions are correct, and the head is shining like a freshly waxed melon. I'm feeling a strong 10, and I'm not biased at all. Transition!",
+      bestBit: "The host. Incredible host.",
+      worstBit: "Not enough Death Grips references.",
+    };
+  }
+  if (v.talking) {
+    return {
+      score: 0, verdict: "NOT GOOD", box: "Podcast", by,
+      headline: `${title || "This"}: somebody pressed record and started talking`,
+      review: "Hi everyone. I waited for the beat to drop and it never did, because there isn't one. This is a podcast. Possibly a voice memo. I review music, buddy. Not good. Transition!",
+      bestBit: "Clear enunciation.",
+      worstBit: "No song.",
+    };
+  }
+  return null;
+}
+
+/** The real review in this box nearest the score, so the parody points at something he actually said. */
+export function realReview(box: Box, score: number, seed: number): string {
+  const near = Math.min(...box.examples.map((e) => Math.abs(e.score - score)));
+  const picks = box.examples.filter((e) => Math.abs(e.score - score) === near);
+  const e = picks[seed % picks.length];
+  if (!e) return "";
+  const said = `For the record, he gave ${e.artist}'s ${e.title} ${e.score === 8 ? "an" : "a"} ${e.score} back in ${e.year}`;
+  return e.take ? `${said}: "${e.take}"` : `${said}.`;
+}
+
 export function writeReview(v: Verdict, box: Box, f: Features | null, title: string): Review {
   const seed = seedOf(`${title}|${box.id}|${f ? Object.values(f).join(",") : ""}`);
   const pick = <T,>(xs: T[], salt: number) => xs[(seed >>> salt) % xs.length]!;
@@ -89,7 +130,7 @@ export function writeReview(v: Verdict, box: Box, f: Features | null, title: str
     verdict,
     box: box.name,
     headline: fill(`{title}: ${pick(["a", "the", "yet another"], 1)} ${box.name.toLowerCase()} record`),
-    review: [pick(OPENERS, 0), pick(CRAFT[bucket(v.craft)]!, 5), pick(ORIGINALITY[bucket(v.originality)]!, 9), pick(CLOSERS[verdict], 13)].map(fill).join(" "),
+    review: [pick(OPENERS, 0), pick(CRAFT[bucket(v.craft)]!, 5), pick(ORIGINALITY[bucket(v.originality)]!, 9), pick(CLOSERS[verdict], 13)].map(fill).concat(realReview(box, score, seed >>> 17)).filter(Boolean).join(" "),
     bestBit: best(f, box),
     worstBit: worst(f),
     by: v.by,

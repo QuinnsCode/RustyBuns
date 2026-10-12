@@ -1,3 +1,4 @@
+// Layout: the levels: import, browse, fork
 // Levels: famous open-source repos, imported into Artifacts as shallow,
 // read-only digs. Browse any of them; fork one into your own excavation to
 // edit it. Ordered roughly by how deep the dig goes: small, well-loved
