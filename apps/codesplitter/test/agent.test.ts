@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { harnessCommand, taskPrompt, HARNESSES } from "../src/harness.ts";
 import { execCommand, runAgent, toDisk, fromDisk, type Exec } from "../src/agent-run.ts";
+import { FileDurableObject, LEASE_CAP_MS, LEASE_MS } from "../src/file-do.ts";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -211,7 +212,7 @@ describe("claims", () => {
   const file = "/api/repos/ryan/r1/do", q = "?path=a.js";
   const post = (call: Call, user: string, route: string, body: unknown) => call(user, `${file}/${route}${q}`, { method: "POST", body: JSON.stringify(body) });
   const doc = async (call: Call) => await (await call("ryan", `${file}/file${q}`)).json() as Doc;
-  const claims = async (call: Call) => await (await call("ryan", `${file}/claims${q}`)).json() as { id: string; who: string; bot: boolean; lines: string[] }[];
+  const claims = async (call: Call) => await (await call("ryan", `${file}/claims${q}`)).json() as { id: string; who: string; bot: boolean; lines: string[]; until: number | null }[];
 
   test("an agent given lines holds them while it works, and lets go when it's done", async () => {
     const call = await local();
@@ -267,6 +268,141 @@ describe("claims", () => {
     expect((await claims(call))[0]!.lines.sort()).toEqual(["L1", "L4"]);
     expect(await (await post(call, "ryan", "claims", { id: "run-1", release: true })).json()).toEqual({ released: true });
     expect(await claims(call)).toEqual([]);
+  });
+
+  /** The file's live socket, as a page would open it: every message it gets. */
+  const listen = async (call: Call) => {
+    const ws = ((await call("ryan", `${file}/ws${q}`, { headers: { upgrade: "websocket" } })) as any).webSocket, got: any[] = [];
+    ws.toBrowser = (d: string) => got.push(JSON.parse(d));
+    return got;
+  };
+  const until = async (ok: () => boolean, ms = 2000) => { for (const end = Date.now() + ms; !ok() && Date.now() < end;) await Bun.sleep(10); return ok(); };
+
+  test("an edit on a held line is a 409 naming the claim, who has it, and when to try again", async () => {
+    const call = await local();
+    await setup(call, "a\nb");
+    await post(call, "agent-x", "claims", { id: "run-1", lines: ["L1"], task: "rename a" });
+    const res = await post(call, "ryan", "ops", { ops: [{ kind: "set", line: "L1", base: 1, text: "x" }] });
+    expect(res.status).toBe(409);
+    const body = await res.json() as any;
+    expect(body.claims).toMatchObject([{ id: "run-1", who: "agent-x", task: "rename a", lines: ["L1"] }]);
+    expect(body.retryAfter).toBeGreaterThan(100);
+    expect(body.retryAfter).toBeLessThanOrEqual(LEASE_MS / 1000);
+    // A person's hold stands till lifted: there's no time to come back at.
+    await post(call, "ryan", "claims", { lines: ["L2"] });
+    expect(await (await post(call, "agent-x", "claims", { id: "run-2", lines: ["L2"] })).json()).toMatchObject({ claims: [{ who: "ryan", until: null }], retryAfter: null });
+    // And release_claim lets go.
+    expect(await (await post(call, "ryan", "release", { id: "run-1" })).json()).toEqual({ released: true });
+    expect((await post(call, "ryan", "ops", { ops: [{ kind: "set", line: "L1", base: 1, text: "x" }] })).status).toBe(200);
+  });
+
+  test("an agent's claim is a short lease: edits and claiming again renew it, never past its cap unless a person extends it", async () => {
+    const call = await local();
+    await setup(call, "a\nb");
+    const t0 = Date.now();
+    try {
+      const c = await (await post(call, "agent-x", "claims", { id: "run-1", lines: ["L1"] })).json() as any;
+      expect(c.until - c.at).toBe(LEASE_MS);
+      expect(c.cap - c.at).toBe(LEASE_CAP_MS);
+      // A minute on, an edit under the claim renews it.
+      setSystemTime(t0 + 60_000);
+      expect((await post(call, "agent-x", "ops", { claim: "run-1", ops: [{ kind: "set", line: "L1", base: 1, text: "A" }] })).status).toBe(200);
+      expect((await claims(call))[0]).toMatchObject({ until: t0 + 60_000 + LEASE_MS });
+      // It may ask for longer, up to its cap; near the cap, a renewal (its id alone) stops there.
+      expect(await (await post(call, "agent-x", "claims", { id: "run-1", ttl: 2 * LEASE_CAP_MS })).json()).toMatchObject({ until: c.cap });
+      setSystemTime(t0 + LEASE_CAP_MS - 30_000);
+      expect(await (await post(call, "agent-x", "claims", { id: "run-1" })).json()).toMatchObject({ lines: ["L1"], until: c.cap });
+      // The agent can't extend itself; a person can.
+      expect((await post(call, "agent-x", "claims", { id: "run-1", extend: true })).ok).toBe(true);
+      expect((await claims(call))[0]).toMatchObject({ until: c.cap });
+      expect(await (await post(call, "ryan", "claims", { id: "run-1", extend: true })).json()).toMatchObject({ who: "agent-x", cap: t0 + 2 * LEASE_CAP_MS - 30_000 });
+      expect((await post(call, "ryan", "claims", { id: "run-1" })).status).toBe(409);
+    } finally { setSystemTime(); }
+  });
+
+  test("an agent that dies holding lines frees them when its lease lapses, and the page hears unclaim from the alarm", async () => {
+    const call = await local();
+    await setup(call, "a\nb");
+    const got = await listen(call);
+    // It claims and is never heard from again: no edit, no renewal, no release.
+    expect((await post(call, "agent-x", "claims", { id: "run-dead", lines: ["L1"], ttl: 50 })).status).toBe(201);
+    expect(await until(() => got.some((m) => m.type === "unclaim" && m.id === "run-dead"))).toBe(true);
+    expect((await post(call, "ryan", "ops", { ops: [{ kind: "set", line: "L1", base: 1, text: "free" }] })).status).toBe(200);
+  });
+
+  test("a lease still lapses on time when the object is evicted in the middle of it", async () => {
+    const call = await local();
+    await setup(call, "a\nb");
+    const got = await listen(call);
+    await post(call, "agent-x", "claims", { id: "run-1", lines: ["L1"], ttl: 150 });
+    const ns = call.env.FILES;
+    expect(ns.evict(ns.idFromName("ryan/r1/a.js"))).toBe(true);
+    expect(await until(() => got.some((m) => m.type === "unclaim" && m.id === "run-1"))).toBe(true);
+    expect(await claims(call)).toEqual([]);
+  });
+
+  test("after a restart (the alarm lost, as a desktop's setTimeout is) the object sets it again from its claims", async () => {
+    // The object's storage, kept between lives.
+    const m = new Map<string, unknown>();
+    const store = {
+      get: async (k: string) => structuredClone(m.get(k)), put: async (k: string, v: unknown) => { m.set(k, structuredClone(v)); }, delete: async (k: string) => m.delete(k),
+      list: async (o: { prefix?: string; start?: string; end?: string; limit?: number } = {}) => {
+        const out = new Map<string, unknown>();
+        for (const [k, v] of [...m].sort(([a], [b]) => a < b ? -1 : 1)) {
+          if (!k.startsWith(o.prefix ?? "") || (o.start !== undefined && k < o.start) || (o.end !== undefined && k >= o.end)) continue;
+          out.set(k, structuredClone(v));
+          if (o.limit && out.size >= o.limit) break;
+        }
+        return out;
+      },
+    };
+    // One life of the object on `store`, its alarm kept by hand: a restart starts with none.
+    const life = async () => {
+      let ready: Promise<unknown> = Promise.resolve(), alarm: number | null = null;
+      const ctx = {
+        storage: { ...store, setAlarm: async (at: number) => { alarm = at; }, getAlarm: async () => alarm, deleteAlarm: async () => { alarm = null; } },
+        blockConcurrencyWhile: (fn: () => Promise<unknown>) => (ready = fn()),
+        getWebSockets: () => [], acceptWebSocket: () => {},
+      };
+      const obj = new FileDurableObject(ctx, {} as any);
+      await ready;
+      const as = (by: string, route: string, body: unknown) => obj.fetch(new Request(`https://file/${route}`, { method: "POST", body: JSON.stringify(body), headers: { "x-codesplitter-user": by } }));
+      // Going off clears it, as the platform does, then calls the object.
+      return { obj, as, alarm: () => alarm, fire: () => { alarm = null; return obj.alarm(); } };
+    };
+    const one = await life();
+    await one.as("ryan", "ops", { ops: [{ kind: "insert", after: null, text: "a" }] });
+    const c = await (await one.as("agent-x", "claims", { id: "run-1", lines: ["L1"] })).json() as any;
+    expect(one.alarm()).toBe(c.until);
+    const two = await life();
+    expect(two.alarm()).toBe(c.until);
+    // When it goes off, the lapsed claim goes, from storage too, and no alarm is left.
+    setSystemTime(c.until + 1);
+    try { await two.fire(); } finally { setSystemTime(); }
+    expect(two.obj.claims.size).toBe(0);
+    expect(two.alarm()).toBe(null);
+    expect((await (await life()).obj.claims.size)).toBe(0);
+  });
+
+  test("a run renews its claim while the CLI thinks, and tells the agent which lines others hold", async () => {
+    const call = await local();
+    await setup(call, "a\nb\nc");
+    await post(call, "ryan", "claims", { lines: ["L3"] });
+    const seen: number[] = [];
+    let prompt = "";
+    await runAgent(call, {
+      user: "agent-x", owner: "ryan", repo: "r1", path: "a.js", harness: "claude", task: "uppercase", lines: ["L1"], claim: "run-1", heartbeat: 20,
+      exec: async (cmd, cwd) => {
+        prompt = cmd.args.join(" ");
+        for (let i = 0; i < 3; i++) { seen.push((await claims(call)).find((c) => c.id === "run-1")!.until as number); await Bun.sleep(60); }
+        writeFileSync(join(cwd, "a.js"), "A\nb\nc\n");
+        return { code: 0, out: "" };
+      },
+    });
+    expect(seen[2]!).toBeGreaterThan(seen[0]!);
+    expect(prompt).toContain("Someone else is working on these lines right now");
+    expect(prompt).toContain(`line 3: "c" (held by @ryan)`);
+    expect(prompt).not.toContain("line 1:");
   });
 
   test("a thousand agents each on a line of their own", async () => {

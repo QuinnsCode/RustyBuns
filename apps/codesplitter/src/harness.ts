@@ -66,7 +66,12 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
  * worked; their version is already in the file and the agent must keep it.
  * `notes` are what its owner told it since it started (a note sends it round again).
  */
-export function taskPrompt(path: string, task: string, conflicts: Conflict[] = [], notes: string[] = []): string {
+/** A line someone else holds while the agent works: its number (from 1), text, and who has it. */
+export interface HeldLine { n: number; text: string; why: string }
+/** Held lines named in a prompt at most; past that it says how many more. */
+const HELD_LISTED = 40;
+
+export function taskPrompt(path: string, task: string, conflicts: Conflict[] = [], notes: string[] = [], held: HeldLine[] = []): string {
   const moved = conflicts.filter((c) => !c.held).map(({ op, now }) =>
     now === null ? `- a line you ${op.kind === "insert" ? "anchored an insert to" : "changed"} was deleted by someone else`
     : `- ${JSON.stringify(now.text)} (changed by ${now.by}; you had ${op.kind === "set" ? JSON.stringify(op.text) : op.kind === "delete" ? "deleted it" : `inserted ${JSON.stringify(op.text)} after it`})`);
@@ -84,6 +89,12 @@ export function taskPrompt(path: string, task: string, conflicts: Conflict[] = [
       `While you worked, the person who gave you the task told you:`,
       ...notes.map((n) => `- ${n}`),
       `Take that into account, and finish the task on the file as it is now.`,
+    ] : []),
+    // Lines someone holds won't take its edits: it works elsewhere, and the claim may have lapsed by its next run.
+    ...(held.length ? [
+      `Someone else is working on these lines right now, so edits to them will not land. Leave them exactly as they are and do the task on the rest of the file:`,
+      ...held.slice(0, HELD_LISTED).map((h) => `- line ${h.n}: ${JSON.stringify(h.text)} (${h.why})`),
+      ...(held.length > HELD_LISTED ? [`- and ${held.length - HELD_LISTED} more held lines`] : []),
     ] : []),
     `Edit ${path} in place. Change only what the task needs, keep every other line as it is, and do not add files.`,
     `Do not run git commands.`,

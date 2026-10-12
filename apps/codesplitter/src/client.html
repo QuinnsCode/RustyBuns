@@ -4435,13 +4435,14 @@ const views = {
     });
     $("#here-list").addEventListener("click", async (e) => {
       const lift = e.target.closest("[data-lift]");
-      if (lift) { lift.disabled = true; try { await api(`${base}/claims${q}`, { id: lift.dataset.lift, release: true }); } catch (err) { toast(err.message); lift.disabled = false; } return; }
+      if (lift) { lift.disabled = true; try { await api(`${base}/release${q}`, { id: lift.dataset.lift }); } catch (err) { toast(err.message); lift.disabled = false; } return; }
       const c = claims.get(e.target.closest("[data-claim]")?.dataset.claim);
       if (c) [...box.children].find((el) => claimOf.get(el.dataset.id) === c)?.scrollIntoView({ block: "center" });
     });
     $("#here-filter").addEventListener("input", drawCrew);
     (box.closest(".scroll") ?? window).addEventListener("scroll", () => { if (above.size && (scroller()?.scrollTop ?? scrollY) === 0) { above.clear(); drawCrew(); } }, { passive: true });
     setClaims(await api(`${base}/claims${q}`).catch(() => []));
+    ctx.claims = standing;
     // The game's "smash the removed lines": a revision pair of this file.
     const smashHref = (from, to) => `/play.html#r/${owner}/${repo}?path=${encodeURIComponent(path)}&from=${from}&to=${to}`;
     // Newest first, so a commit's parent is the next one down.
@@ -4557,7 +4558,7 @@ const views = {
       const ls = selLines();
       try {
         if ($("#hold span").textContent === "Let go") {
-          for (const c of new Set(ls.map((l) => claimOf.get(l.id)))) await api(`${base}/claims${q}`, { id: c.id, release: true });
+          for (const c of new Set(ls.map((l) => claimOf.get(l.id)))) await api(`${base}/release${q}`, { id: c.id });
           toast("Let go: those lines are free again");
         } else {
           await api(`${base}/claims${q}`, { lines: ls.map((l) => l.id) });
@@ -5559,6 +5560,18 @@ async function commands() {
       for (const [from, to] of c.sel ?? typed(arg)) await api(`/repos/${c.owner}/${c.repo}/stamps`, { path: c.path, stamp: "+1", from, to });
       await c.loadStamps?.();
     }, c.sel ? null : "which lines, like 4-12");
+    // Holding lines, and lifting a hold or an agent's claim: the Hold button and Here now's lift, as commands.
+    if (c.canWrite && range && $("#hold")) {
+      const letGo = $("#hold span").textContent === "Let go";
+      add("This file", "hand", `${letGo ? "Let go of" : "Hold"} ${range}`, letGo ? `POST /api/repos/${c.owner}/${c.repo}/do/release` : `POST /api/repos/${c.owner}/${c.repo}/do/claims`, async () => $("#hold").click());
+    }
+    const held = c.canWrite ? c.claims?.() ?? [] : [];
+    if (held.length) add("This file", "hand", "Lift a claim…", `POST /api/repos/${c.owner}/${c.repo}/do/release`, async (arg) => {
+      const w = String(arg ?? "").trim().replace(/^@/, ""), hit = held.filter((h) => h.id === w || h.who === w);
+      if (!hit.length) return toast(`Nobody holds lines here as ${w || "that"}`);
+      for (const h of hit) await api(`${c.base}/release${c.q}`, { id: h.id });
+      toast(`Lifted ${hit.length === 1 ? `@${hit[0].who}'s claim` : `${hit.length} claims`}: those lines are free again`);
+    }, `@who or claim id: ${held.slice(0, 5).map((h) => h.bot ? h.id : "@" + h.who).join(", ")}`);
     if (c.canWrite && !c.branch && range) add("This file", "lock", `${$("#lock span")?.textContent ?? "Make private"}: ${range}`, `POST /api/repos/${c.owner}/${c.repo}/do/private`, async () => $("#lock").click());
     if (c.canWrite) add("This file", "scissors", range ? `Cut ${range} out` : "Cut lines out…", `POST /api/repos/${c.owner}/${c.repo}/cuts`, async (arg) => {
       location.hash = "#/c/" + (await cutLines(c.owner, c.repo, (c.sel ?? typed(arg)).map(([from, to]) => ({ path: c.path, from, to })))).id;

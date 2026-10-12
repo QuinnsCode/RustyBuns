@@ -142,9 +142,24 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { ...filePath, ...onBranch, since: int("0 for all"), limit: int("at most this many ops, up to and by default 1,000") },
     ok: obj({ ops: arr(ref("Applied")), next: int("pass as since for the next page; null at the end") }) } },
   [`${repo}/do/ops`]: { post: { id: "edit_lines", summary: "Edit a file's lines: insert, set and delete by line id, all or nothing (the crew)", tag: "Files",
-    description: "Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts. `ifRev` pins the batch to the whole file's rev.",
-    query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int() }, ["ops"]),
+    description: "Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts. `ifRev` pins the batch to the whole file's rev. "
+      + "An agent editing lines it claimed names the claim, which renews it. When someone else holds a line, the 409 also has `claims` (who, task, until) and `retryAfter` (seconds; null for a person's hold, which stands till lifted): "
+      + "work elsewhere in the file first, then try those lines again no sooner than retryAfter, or ask a person to lift the claim. Don't poll.",
+    query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int(), claim: str("your claim's id, when you're an agent editing lines you claimed") }, ["ops"]),
     ok: obj({ rev: int(), applied: arr(ref("Applied")) }) } },
+  [`${repo}/do/claims`]: {
+    get: { id: "list_claims", summary: "Who is working on which lines of a file right now", tag: "Files", open: true,
+      description: "A claimed line takes edits from its holder only. `until` is when a claim lapses (null: a person's hold, which stands till lifted).",
+      query: filePath, ok: arr(ref("Claim")) },
+    post: { id: "claim_lines", summary: "Claim lines so only you edit them, or renew your claim (the crew)", tag: "Files",
+      description: "All or nothing: a 409 names the claims in the way, with `retryAfter` in seconds. An agent's claim is a 2-minute lease: renew it by claiming again with its `id` "
+        + "(lines optional), or by editing with `claim`. It can't stand more than 30 minutes in all unless a person sends `extend`. A person's hold stands till lifted. "
+        + "Claim before a rewrite, send `claim` with your edits, and release it when you're done.",
+      query: filePath, body: obj({ lines: arr(str("line id")), id: str("your claim's id: to renew it, or to name a new one"), task: str("what you're doing, shown to everyone"),
+        ttl: int("ms till it lapses; an agent's defaults to 120000"), extend: bool("a person: give an agent's claim another 30 minutes past its cap") }), ok: ref("Claim") } },
+  [`${repo}/do/release`]: { post: { id: "release_claim", summary: "Let go of a claim, so its lines are free again (the crew)", tag: "Files",
+    description: "Release your own claim when you're done. Any of the crew may lift anyone's, which is how a person steers an agent off lines: ask a person before lifting someone else's.",
+    query: filePath, body: obj({ id: str("the claim's id") }, ["id"]), ok: obj({ released: bool("false if it had already gone") }) } },
   [`${repo}/do/commits`]: { get: { id: "file_commits", summary: "A file's commits, newest first", tag: "Files", open: true, query: { ...filePath, ...onBranch }, ok: arr(ref("Commit")) } },
   [`${repo}/do/commit`]: { post: { id: "commit_file", summary: "Commit a file on main and push it to the repo's git (the crew)", tag: "Files", risky: true,
     description: "A real git commit; if the owner turned on deploy on commit, it ships too.",
@@ -346,6 +361,8 @@ const SCHEMAS: Record<string, Schema> = {
     obj({ kind: { const: "delete" }, line: str(), base: int() }, ["kind", "line", "base"]),
   ] },
   Applied: obj({ rev: int(), by: str(), at: int("ms"), op: ref("LineOp"), line: str() }),
+  Claim: obj({ id: str(), who: str("who holds it"), bot: bool("an agent's: a lease that lapses"), lines: arr(str("line id")), task: str(), at: int("ms: when it was laid"),
+    until: { type: ["integer", "null"], description: "ms: when it lapses; null stands till lifted" }, cap: int("ms: an agent's claim can't be renewed past this") }, ["id", "who", "bot", "lines", "at", "until"]),
   Commit: obj({ n: int(), sha: str(), parent: { type: ["string", "null"] }, rev: int(), by: str(), at: int(), message: str() }),
   Branch: obj({ name: str(), by: str(), status: str("open or merged"), created_at: int(), merged_by: { type: ["string", "null"] }, merged_at: { type: ["integer", "null"] } }),
   Playlist: obj({ id: int(), owner: str(), title: str() }),

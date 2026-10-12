@@ -19,7 +19,7 @@ A design doc, not a feature. The question: what line-locking model should codeSp
 
 **Optimistic vs serialized.** Each file is one Durable Object, the only writer for that file. `held()` and `apply()` run synchronously on the in-memory doc, so two edits never interleave: **within a file, edits are totally ordered**, and conflicts are detected rather than prevented. Nothing serializes **across files**: a cross-file rename is N independent batches. Branches are optimistic too, and their conflicts surface at merge.
 
-**Gaps in today's claims:**
+**Gaps in claims before Phase 1** (Phase 1 has shipped, #926: leases are 2 minutes, renewed by edits, an explicit renew and a run's heartbeat, capped at 30 minutes; the alarm sends `unclaim`; the 409 carries `claims` and `retryAfter`; `list_claims`, `claim_lines` and `release_claim` are in the spec and the palette):
 
 | Gap | Effect |
 |---|---|
@@ -106,7 +106,7 @@ The tool description tells the agent what to do, in order: **work elsewhere** (o
 
 | Phase | Scope | Done when |
 |---|---|---|
-| **1. Leases everywhere** | Claims in `openapi.ts` (so MCP, CLI and the docs site get them). `claim` on `edit_lines`. 409 with `claims` and `retryAfter`. Renew on edit, 2 min agent default, total-age cap. Alarm expiry re-armed in the constructor. `agent-run` heartbeat. Held conflicts told to the agent ("work elsewhere") | Tests on the local twin: crash → lapse → `unclaim`, `evict()` mid-lease, restart re-arms, MCP tool list includes the claim ops |
+| **1. Leases everywhere** (shipped, #926) | Claims in `openapi.ts` (so MCP, CLI and the docs site get them). `claim` on `edit_lines`. 409 with `claims` and `retryAfter`. Renew on edit, 2 min agent default, total-age cap. Alarm expiry re-armed in the constructor. `agent-run` heartbeat. Held conflicts told to the agent ("work elsewhere") | Tests on the local twin: crash → lapse → `unclaim`, `evict()` mid-lease, restart re-arms, MCP tool list includes the claim ops |
 | **2. Queue and intent** | `claim_lines {wait: true}`: FIFO per claim, socket `grant` with a 15 s grant window, MCP/CLI long-poll capped at 20 s, `soft: true` intents shown on the page, no `wait` while holding claims in another file | Two agents on one block take turns in order. A dead waiter is skipped after its grant window |
 | **3. Word-level rebase** | On a stale `set`, read the base text from `op:<base>` and try `mergeWords`. Land it (blamed on the sender) when the words don't overlap, else 409 as now | Two agents changing different words of one line both land, with no retry |
 

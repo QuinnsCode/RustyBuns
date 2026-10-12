@@ -34,6 +34,9 @@ describe("POST /api/mcp", () => {
     expect(JSON.stringify(ts.map((t) => t.inputSchema))).not.toContain("$ref");
     expect(ts.find((t) => t.name === "delete_repo")!.annotations.destructiveHint).toBe(true);
     expect(ts.find((t) => t.name === "read_file")!.inputSchema.required).toEqual(["owner", "repo", "path"]);
+    // Line claims, for agents sharing a file (#926).
+    for (const name of ["list_claims", "claim_lines", "release_claim"]) expect(ts.find((t) => t.name === name)?.annotations.destructiveHint).toBe(false);
+    expect(ts.find((t) => t.name === "edit_lines")!.inputSchema.properties.body.properties.claim).toBeDefined();
   });
 
   test("a tool call from the internet counts against the rate limits, as the HTTP call would", async () => {

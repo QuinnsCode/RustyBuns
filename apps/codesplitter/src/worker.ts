@@ -73,7 +73,7 @@ async function access(env: Env, owner: string, repo: string, user: string | null
 }
 
 // What a page or agent may ask a file's DO directly; forks and merges go through the branch routes.
-const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private", "claims"]);
+const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private", "claims", "release"]);
 
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
 
@@ -456,7 +456,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       await toFile(env, owner, repo, path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: fromText(content) }) });
       return json({ path }, 201);
     }
-    // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws|private|claims)?path=...&branch=...  -> the file's DO, or its copy on a branch
+    // /api/repos/:o/:r/do/(file|ops|log|at|commit|commits|ws|private|claims|release)?path=...&branch=...  -> the file's DO, or its copy on a branch
     if (p[4] === "do" && DO_ROUTES.has(p[5] ?? "")) {
       const path = url.searchParams.get("path") ?? "", branch = url.searchParams.get("branch") || undefined;
       if (branch && !(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
@@ -465,7 +465,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (branch && p[5] === "private") return json({ error: "mark lines private on main" }, 400);
       const m = branch ? await materializeOn(env, owner, repo, branch, path) : await materialize(env, owner, repo, path);
       if ("error" in m) return json({ error: m.error }, m.status);
-      const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims") && req.method === "POST");
+      const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims" || p[5] === "release") && req.method === "POST");
       if (writes && !a.write) return json({ error: "no write access" }, 403);
       // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
       // committed, so a commit here never writes their old lines back over it (#773).
