@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { apply, empty, explain, fromText, merge, mergeWords, text, type Doc, type Resolve } from "../src/lines.ts";
+import { apply, empty, explain, fromText, merge, mergeWords, parseError, text, type Doc, type Resolve } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { markers, settled } from "../src/conflict-agent.ts";
 import { parseResolve } from "../src/branches.ts";
@@ -265,6 +265,20 @@ describe("refused, not merged clean (#934)", () => {
     // A file that didn't parse to begin with (comments in a tsconfig) isn't held for it.
     expect(conflicts(sides("// c\n[\n  1\n]", "// c\n[\n  1,\n  2\n]", "// c\n[\n  1,\n  3\n]"), "tsconfig.json")).toEqual([]);
   });
+
+  test("YAML and TOML too, with parsers that run in the Worker (#986)", () => {
+    // As with the JSON above: each side adds an item after the same line it gave a comma.
+    const yaml = sides('tags: [\n  "a"\n]', 'tags: [\n  "a",\n  "b"\n]', 'tags: [\n  "a",\n  "c"\n]');
+    expect(conflicts(yaml, "ci.yml")).toMatchObject([{ line: "lint:yaml", lint: expect.stringContaining("merged, it isn't valid YAML") }]);
+    expect(text(settle(yaml, { "lint:yaml": "branch" }, "ci.yml"))).toBe('tags: [\n  "a",\n  "b"\n  "c"\n]');
+    const toml = sides("a = [\n  1\n]", "a = [\n  1,\n  2\n]", "a = [\n  1,\n  3\n]");
+    expect(conflicts(toml, "Cargo.toml")).toMatchObject([{ line: "lint:toml", lint: expect.stringContaining("merged, it isn't valid TOML") }]);
+    // Merges that parse, and several YAML documents in one file, pass.
+    expect(conflicts(sides("a: 1\n---\nb: 1", "a: 2\n---\nb: 1", "a: 1\n---\nb: 2"), "k8s.yaml")).toEqual([]);
+    expect(conflicts(sides("[a]\nx = 1\n[b]\ny = 1", "[a]\nx = 2\n[b]\ny = 1", "[a]\nx = 1\n[b]\ny = 2"), "a.toml")).toEqual([]);
+    expect(parseError("yaml", "a: [1")).not.toBeNull();
+    expect(parseError("toml", "a = ")).not.toBeNull();
+  });
 });
 
 describe("over the API", () => {
@@ -354,6 +368,23 @@ describe("over the API", () => {
     expect(ran[0]).toEqual({ "a.ts": "const a = 1;\nx(2);\nx(3);" });
     pass = true;
     expect(await ask()).toMatchObject({ ok: true, tests: "passed" });
+  });
+
+  test("a branch an agent run made: the agent hears the run's task as the branch's side (#986)", async () => {
+    const { call, post } = await app();
+    const row = await call.env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES ('ana', 'r', 'a.ts', 'claude', 'count from three', 'ana', 'done', 0) RETURNING id").first() as { id: number };
+    const name = `agent-run-${row.id}`;
+    await post("ana", "/api/repos/ana/r/branches", { name });
+    const rev = (await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc).rev;
+    await post("ana", `/api/repos/ana/r/do/ops?path=a.ts&branch=${name}`, { ops: [{ kind: "set", line: "L2", base: rev, text: "x(3);" }] });
+    await post("ana", "/api/repos/ana/r/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L2", base: rev, text: "x(4);" }] });
+    let prompt = "";
+    call.env.AGENT_EXEC = (async (cmd, cwd) => { prompt = cmd.args.join(" "); writeFileSync(join(cwd, "RESOLVE.ts"), "x(3);\n"); return { code: 0, out: "" }; }) as Exec;
+    expect((await post("ana", `/api/repos/ana/r/branches/${name}/conflicts/agent`, { path: "a.ts", line: "L2", harness: "claude" })).status).toBe(200);
+    expect(prompt).toContain(`${name} is a coding agent's work on the task: count from three`);
+    // A branch a person made has no task to tell.
+    await post("ana", "/api/repos/ana/r/branches/b1/conflicts/agent", { path: "a.ts", line: "L2", harness: "claude" });
+    expect(prompt).not.toContain("coding agent's work");
   });
 
   test("merge_clean_branches: branches on different lines all land, one that conflicts stays open", async () => {
