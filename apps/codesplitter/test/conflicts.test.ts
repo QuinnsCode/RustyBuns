@@ -236,6 +236,12 @@ describe("settled without asking (#933)", () => {
     expect(conflicts(s)).toHaveLength(1);
   });
 
+  test("an `import type` list the branch made inline: main's new name keeps its `type` (#1168, build.ts)", () => {
+    const was = "import type { DesktopOs, RustyBunsConfig } from \"./config.ts\";\nz";
+    expect(merged(was, was.replace("{ ", "{ Binding, "), was.replace("import type { DesktopOs, RustyBunsConfig }", "import { hyperdriveUrlEnv, type DesktopOs, type RustyBunsConfig }")))
+      .toBe("import { hyperdriveUrlEnv, type Binding, type DesktopOs, type RustyBunsConfig } from \"./config.ts\";\nz");
+  });
+
   test("a stretch both reshaped: lines paired, list items merged in each pair, lines only one side added kept whole (deps.ts)", () => {
     // DEFAULTS, a one-liner both added to, with declarations both added under it.
     const d = (x: string) => `export const DEFAULTS = { on: false, held: [], ${x}preview: false };`;
@@ -266,6 +272,15 @@ describe("settled without asking (#933)", () => {
     const was = "/** Its versions. */\nexport type Registry = (n: string) => Promise<{ versions: string[] } | null>;";
     const onMain = "/** Its versions. */\nexport interface Meta { versions: string[]; tags?: Tags }\nexport type Registry = (n: string) => Promise<Meta | null>;";
     expect(conflicts(sides(was, onMain, was.replace("string[] }", "string[]; peers?: Peers }")))).toHaveLength(1);
+  });
+
+  test("a `? :` chain both sides added clauses to is a conflict: blended, a Neon binding skipped main's migrationsDir check (#1168, config-schema.ts)", () => {
+    const was = "  const bad = all.flatMap((h) => h.pg && !secret(h.url)\n    ? [\"url isn't a secret\"] : []);\n  return bad;";
+    const onMain = "  const bad = all.flatMap((h) => h.pg && !secret(h.url)\n    ? [\"url isn't a secret\"]\n    : h.pg && h.migrations && !h.pglite\n    ? [\"migrations need pglite\"] : []);\n  return bad;";
+    const onBranch = "  const bad = all.flatMap((h) => !h.pg ? []\n    : h.url === undefined ? (h.neon ? [] : [\"needs url or neon\"])\n    : !secret(h.url)\n      ? [\"url isn't a secret\"] : []);\n  return bad;";
+    expect(conflicts(sides(was, onMain, onBranch))).toHaveLength(1);
+    // One side's chain under the other's plain new line still blends.
+    expect(merged(was, `// checks\n${was}`, onBranch)).toBe(`// checks\n${onBranch}`);
   });
 });
 

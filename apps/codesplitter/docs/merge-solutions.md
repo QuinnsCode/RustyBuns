@@ -294,12 +294,15 @@ and none lost a side:
 - **#1148's `config-schema.ts`, a real rewrite.** The branch rebuilt the hyperdrive check as a ternary chain
   (a Neon `origin` needs no `urlSecret`); main added a `migrationsDir` clause to the old one. Both clauses
   survive, but a Neon binding with no `urlSecret` returns early, so its `migrationsDir` goes unchecked. The
-  person reworked the chain so it doesn't. Only a test of that case would catch it.
+  person reworked the chain so it doesn't. Only a test of that case would catch it. Since #1168 a code stretch
+  where both sides edited links of one `? :` or `&&` chain is a card, so this one goes to a person or the checked AI.
 
 #1148's three `build.ts` cards, and what would settle each:
 
 - **L11, the `./config.ts` import**: main added `Binding`, the branch added `hyperdriveUrlEnv` and moved
-  `type` inside the braces. A one-line list both sides grew: L3.
+  `type` inside the braces. A one-line list both sides grew: L3. Main's `Binding` needed a `type` of its own once
+  the branch dropped `import type`, and the word merge saw that as a clash. Since #1168 the merge reads an
+  `import type { … }` as `import { type … }` when the other side switched forms, and this line settles like the fix.
 - **L133, `const pgs`**: main kept the whole binding (`[n, b]`), the branch mapped it to
   `hyperdriveUrlEnv(n, b)`. Real rewrite.
 - **L468, the desktop `hyperdrive` case**: main moved it into `hyperdriveBinding()`, the branch changed the
@@ -311,6 +314,7 @@ and none lost a side:
 
 No new engine bugs: nothing dropped a side. Of the two semantic misses, `rules.test.ts` is a known class with fixes
 already in (#1109, and #1156, after which it replays exactly), and `config-schema.ts` is a real rewrite that only a test of the Neon-plus-`migrationsDir` case would send back.
+Since #1168 `0fb458f` replays with `config-schema.ts` as 1 card and `build.ts` down to its 2 real rewrites.
 
 ## 11. A merge plan: who waits for whom
 
