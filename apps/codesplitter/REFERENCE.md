@@ -31,6 +31,7 @@ The pitch is in [README.md](README.md).
   A branch can delete a file too (`DELETE .../branches/:name/files?path=`), text or binary: the review lists it as `deleted`, and the merge deletes it from main and from git there and then (making it again on the branch takes the deletion back).
   A branch can be stacked on another (`POST .../branches {name, parent}`): each file it opens forks from the parent's copy where the parent has one, it waits for the parent to merge first (409, and `POST .../merges` takes them oldest first, so the parent goes first), and when the parent merges, its copies move onto main's files: main gave the merged lines its own ids, so they're matched by text, then the stacked branch's changes go on by the same three-way merge, its lines winning where main changed them too.
   One that won't settle that way stays put, and its merge says which files.
+  The merge plan (`GET .../merge-plan`, the `get_merge_plan` MCP tool, and a line over the repo's open branches; `src/merge-plan.ts`, #1155) puts the open branches in waves: everything in a wave merges together, and a branch waits a wave past any before it that it clashes with. Two clash when the second merges clean into main now but not once the first has landed, by codeSplitter's own merge, so a pair it settles by itself holds nothing up. They're taken in the bulk merge's order, the ones whose checks passed first, and a stacked branch waits for its parent. A PR agent reads it instead of dry-running every pair: merge a wave, then bring main into each branch of the next that names one of them, once. `bun scripts/merge-plan.ts` replays 2026-10-12's merge-main fixes through the same test (`docs/merge-solutions.md` §11).
   This is built on the line-op log, not git branches, so blame and live sync work the same on a branch; git hears about it when main is catalogued.
 - **Every line knows who wrote it and when.** The op log replays the file at any rev: blame and time travel come free.
   The file snapshots itself every 2,000 edits, so time travel replays from the nearest snapshot, and keeps ten: history reaches back at least 20,000 edits, and the log or time travel before that is a 410 naming the rev history starts at (read the file instead).
@@ -624,6 +625,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/identity.ts` | accounts (Better Auth) or aliases, and handles |
 | `src/levels.ts` | the levels: import, browse, fork |
 | `src/lines.ts` | the line model: ops, conflicts, replay. Pure functions |
+| `src/merge-plan.ts` | merge plan (#1155): the open branches in waves, by codeSplitter's own merge as the clash test |
 | `src/mirror.ts` | mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading |
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |

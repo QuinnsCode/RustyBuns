@@ -289,6 +289,41 @@ same rules in another order (`.quick #dogfight` moved down a few lines, which do
 
 No new engine bugs: nothing dropped a side, and the one semantic miss is a known class with a fix already in (#1109).
 
+## 11. A merge plan: who waits for whom
+
+On 2026-10-12 the PR agent dry-ran pairs of about 40 open PRs, laid them out as waves, and told a worker to
+merge main in 9 times. The merge plan (`src/merge-plan.ts`, `GET …/merge-plan`, #1155) does the layout: a
+branch clashes with one before it when it merges clean into main now and not once that one has landed, and
+it goes one wave past the latest it clashes with. The test is codeSplitter's merge, not git's.
+
+`scripts/merge-plan.ts` replays that day's fixes with main's own history as the first branch: from each
+fix's merge base, every PR that landed before the fix, and whether the branch merged clean just before it and
+not just after it.
+
+```sh
+bun scripts/merge-plan.ts          # the 9 below; or pass merge commits; --json for the details
+```
+
+| PR (fix commit) | blocker by git's merge | by codeSplitter's |
+|---|---|---|
+| #1081 (`e49e19a`) | #1078: 7 files | #1078: README, `sim.ts`, `main.ts`, and `view.ts`, which git merges clean into code that doesn't build |
+| #1093 (`02e1045`) | #1087, the one the fix names: README, `main.ts`, `rules.ts` | #1087: README, `main.ts` |
+| #1093 (`b070fd8`) | #1102, the one the fix names: README, `main.ts` | #1102: `main.ts` |
+| #1100 (`401eeda`) | #1102: 4 files; #1093: root README, `styles.css` | #1102: two-fronts README, `main.ts`, `rules.ts` |
+| #1110 (`e2f2145`) | #1107: README | none |
+| #1115 (`2086218`) | #1110: README | #1110: README |
+| #1119 (`db4095c`) | #1116: `agent-run.ts` | none |
+| #1124 (`03e9127`) | #1120: `init.test.ts` | none |
+| #1148 (`0fb458f`) | #1146: 6 files | #1146: `build.ts` |
+
+By git's merge the plan puts all 9 behind a blocker that landed before the fix, the two named in a fix
+message included, in three waves: #1100 and #1115 wait on #1093 and #1110, which waited themselves, as they
+did that day. By codeSplitter's it's two waves, and 3 of the 9 (#1110, #1119, #1124) never wait: the replay
+in §10 has their files settling exactly or with the same lines in another order.
+
+Left for later: merging main into each branch that waits once its blocker lands (#1162), and warning before
+a task starts that an open branch is rewriting the same files (#1163).
+
 ## Next steps
 
 Filed as issues, linked from the PR:

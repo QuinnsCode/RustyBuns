@@ -40,6 +40,7 @@ import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarn
 import { askAgent, cheapest } from "./conflict-agent.ts";
 import { guardTripped, healUnavailable } from "./heal.ts";
 import { hunks, revertOps } from "./review.ts";
+import { clashIn, waves, type Clash, type Side } from "./merge-plan.ts";
 
 const TEXT_MAX = 20_000;
 
@@ -519,6 +520,46 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   return json({ status: conflicts.length ? "open" : "merged", merged, conflicts }, conflicts.length ? 409 : 200);
 }
 
+/**
+ * The merge plan (#1155): the open branches in waves, each wave merging together, a branch waiting for any
+ * before it that it clashes with (merge-plan.ts). They go in the order the bulk merge takes them, oldest
+ * first, the ones whose required checks passed ahead of the ones they hold. Only files two branches both
+ * change are merged in the dry run: a branch on files nobody else touches clashes with nothing.
+ */
+async function mergePlan(env: Env, owner: string, repo: string, user: string) {
+  const open = (await env.DB.prepare("SELECT name, parent FROM branches WHERE owner = ? AND repo = ? AND status = 'open' ORDER BY created_at, name").bind(owner, repo).all()).results as { name: string; parent: string | null }[];
+  const held = new Set((await Promise.all(open.map(async (b) => await mergeBlock(env, owner, repo, b.name) ? b.name : null))).filter((n) => n !== null));
+  // A stacked branch can't merge before the one it's on, so that one comes first whatever its age.
+  const order: string[] = [], parent = new Map(open.map((b) => [b.name, b.parent]));
+  const place = (b: string) => { if (order.includes(b)) return; const on = parent.get(b); if (on && parent.has(on)) place(on); order.push(b); };
+  for (const b of [...open.filter((b) => !held.has(b.name)), ...open.filter((b) => held.has(b.name))]) place(b.name);
+  const rows = (await env.DB.prepare("SELECT branch, path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND merged = 0").bind(owner, repo).all()).results as { branch: string; path: string; deleted: number; blob: string | null }[];
+  const on = new Map<string, typeof rows>();
+  for (const r of rows) if (order.includes(r.branch) && !r.deleted) on.set(r.path, [...on.get(r.path) ?? [], r]);
+  const clashes = new Map<string, Clash>();
+  const clash = (first: string, then: string, path?: string) => {
+    const c = clashes.get(`${first}\n${then}`) ?? clashes.set(`${first}\n${then}`, { first, then, files: [] }).get(`${first}\n${then}`)!;
+    if (path) c.files.push(path); else c.stacked = true;
+  };
+  // A stacked branch waits for the one it's on: its merge refuses until then.
+  for (const b of open) if (b.parent && parent.has(b.parent)) clash(b.parent, b.name);
+  const rank = (b: string) => order.indexOf(b);
+  for (const [path, touched] of on) {
+    if (touched.length < 2) continue;
+    touched.sort((x, y) => rank(x.branch) - rank(y.branch));
+    // A binary file has no lines to merge: the second to change it waits for the first, as its merge would.
+    const text = touched.filter((t) => !t.blob);
+    for (const [i, x] of touched.entries()) for (const y of touched.slice(i + 1)) if (x.blob && y.blob) clash(x.branch, y.branch, path);
+    if (text.length < 2) continue;
+    const read = async (op: string, branch?: string) => { const res = await toFile(env, owner, repo, path, user, op, {}, "", branch); return (res.ok && await res.json() as Doc | null) || empty(); };
+    const [main, policy, ...sides] = await Promise.all([read("file"), pathPolicy(env, owner, repo, path, user),
+      ...text.map(async (t) => ({ base: await read("base", t.branch), copy: await read("file", t.branch) }))]) as [Doc, Policy, ...Side[]];
+    for (const [i, x] of text.entries()) for (const [j, y] of text.entries())
+      if (j > i && clashIn(path, main, sides[i]!, sides[j]!, policy.merge).length) clash(x.branch, y.branch, path);
+  }
+  return { order, held: [...held], waves: waves(order, [...clashes.values()]) };
+}
+
 export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
   // POST /api/repos/:o/:r/merges {branches?, build_ok?}  merge every open branch (or those named) that
   // merges clean, oldest first. Each merges against main as the last one left it, so two that change
@@ -545,6 +586,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     }
     return json({ merged, skipped });
   }
+  // GET /api/repos/:o/:r/merge-plan  the open branches in waves (merge-plan.ts).
+  if (p[4] === "merge-plan" && !p[5] && req.method === "GET") return json(await mergePlan(env, owner, repo, user ?? "anon"));
   if (p[4] !== "branches") return null;
   const name = p[5];
 

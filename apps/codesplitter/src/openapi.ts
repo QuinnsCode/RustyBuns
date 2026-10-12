@@ -321,6 +321,12 @@ const OPS: Record<string, Record<string, Op>> = {
       "`branches` limits it to those names. A branch with nothing on it yet is skipped.",
     body: obj({ branches: arr(str()), build_ok: bool() }),
     ok: obj({ merged: arr(str("a branch name")), skipped: arr(obj({ branch: str(), error: str(), files: arr(str("the conflicting or build files")) })) }) } },
+  [`${repo}/merge-plan`]: { get: { id: "get_merge_plan", summary: "The open branches in merge waves: each wave merges together, a branch waits for the ones before it that it clashes with", tag: "Branches",
+    description: "Two branches clash when the second merges clean into main now but not once the first has landed, by codeSplitter's own merge (line ids, then the lint), so a pair it settles by itself holds nothing up. " +
+      "`order` is the order merge_clean_branches takes them: oldest first, the ones whose required checks passed ahead of the ones they hold (`held`). A stacked branch waits for the one it's on. " +
+      "Read it before merging a batch: merge a wave, then bring main into each branch of the next that names one of them in `after`, once.",
+    ok: obj({ order: arr(str("a branch name")), held: arr(str("a branch its required checks hold")),
+      waves: arr(arr(obj({ branch: str(), after: arr(obj({ branch: str("one it waits for"), files: arr(str("where they clash")), stacked: bool("it's built on that one") })) }))) }) } },
   [`${repo}/limits`]: { get: { id: "repo_limits", summary: "What this repo and you may do, and how close you are", tag: "Repos", ok: loose("{git, fresh, files, dig, you: [{label, used, max, window_s, on}]}") } },
   [`${repo}/agents`]: {
     get: { id: "list_agent_runs", summary: "A repo's coding-agent runs, newest first (owner only)", tag: "Agents", query: { path: str() }, ok: arr(loose("a run: {id, harness, task, status, …}")) },
