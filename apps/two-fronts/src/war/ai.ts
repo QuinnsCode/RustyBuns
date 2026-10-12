@@ -1,7 +1,7 @@
 // The AI faction's orders: spend everything, push fleets into weaker orbits next door, and land
 // troops behind them. Every order goes through planOrders, so it never queues one the rules refuse.
 import type { Faction } from "../battle/contract.ts";
-import { neighbours } from "./galaxy.ts";
+import { galaxyOf } from "./galaxy.ts";
 import { COST, enemy, planOrders, type Campaign, type Order, type Orders } from "./rules.ts";
 
 export function aiOrders(c: Campaign, f: Faction): Orders {
@@ -11,13 +11,14 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     if (d.errors.at(-1) === null) { orders.push(o); return true; }
     return false;
   };
-  const foe = enemy(f);
+  const foe = enemy(f), { neighbours } = galaxyOf(c);
   const mine = Object.values(c.systems).filter((s) => s.sectors.some((x) => x.owner === f));
   const front = mine.filter((s) => neighbours(s.id).some((n) => c.systems[n]!.sectors.some((x) => x.owner === foe)) || s.sectors.some((x) => x.owner === foe));
 
   // Build: alternate ships and troops on the front, ships first where the enemy's fleets are near.
+  // The cap only stops a loop with nowhere to build; the full galaxy earns ~25 builds a turn.
   let credits = c.credits[f], i = 0;
-  while (credits >= COST.army && i++ < 12) {
+  while (credits >= COST.army && i++ < 60) {
     const wantShips = credits >= COST.fleet && (i % 2 === 1 || !front.length);
     let placed = false;
     for (const s of front.length ? front : mine) {
