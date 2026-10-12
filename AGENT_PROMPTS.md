@@ -38,7 +38,7 @@ Don't run `rustybuns deploy`. Show me plan's list of billable resources and anyt
 
 ## 3. A frontend with its own server
 
-For a Vite frontend that talks to a server of its own in another folder (an `api/` with `node server.js`, its `vite.config` proxying `/api`). `init` keeps such an app desktop-only and prints a `backend:` line naming the server. When it finds the server's file it also writes `targets.desktop.server`, and the desktop host runs that server for you: try prompt 1 first. This prompt is for the server that can't run that way (a WebSocket, a native addon, a server init couldn't find), or for taking it to the web.
+For a Vite frontend that talks to a server of its own in another folder (an `api/` with `node server.js`, its `vite.config` proxying `/api`). `init` keeps such an app desktop-only and prints a `backend:` line naming the server. When it finds the server's file it also writes `targets.desktop.server`, and the desktop host runs that server for you: try prompt 1 first. This prompt is for the server that can't run that way (a native addon, a server init couldn't find), or for taking it to the web.
 
 ```text
 `rustybuns init` made this app desktop-only because its Vite dev server proxies some paths to a

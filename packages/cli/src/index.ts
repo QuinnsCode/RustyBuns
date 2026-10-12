@@ -14,11 +14,11 @@ import { signDarwin } from "./sign.ts";
 import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
 import { buildEnv, emptyHome, hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
-import type { RustyBunsConfig } from "./config.ts";
+import { desktopServers, type RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
 import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError } from "./errors.ts";
-import { infer, readPackageJson, appsBelow, siblingServers } from "./glue/infer.ts";
+import { infer, readPackageJson, appsBelow, siblingServers, proxyServers } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
 import { jekyllDefaults, jekyllExcludes, jekyllPagesPlugins, jekyllPlugins, staticBuild, type StaticSite } from "./glue/static-site.ts";
@@ -460,9 +460,12 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
       : own ? [...inf.prebuild, `${inf.execCmd("vite")} build${inf.vite.buildConfig ? ` --config ${inf.vite.buildConfig}` : ""}`].join(" && ") : vite("dist/web"),
     notFoundHandling: astro ? "404-page" : "single-page-application",
   };
-  // One server beside the app that init can name the file of: the host runs it and proxies to it.
+  // The servers beside the app the proxy points at, whose files init can name: the host runs each
+  // and proxies its paths to it. Paths that go to a server it didn't find are left for host.ts.
   const servers = proxied.length ? siblingServers(".") : [];
-  const server = servers.length === 1 && servers[0]!.entry ? { entry: servers[0]!.entry, paths: proxied } : null;
+  const { found, left } = proxyServers(Object.fromEntries(proxied.map((p) => [p, inf.vite.proxyTargets[p] ?? null])), servers);
+  const specs = found.map((f) => ({ entry: f.server.entry!, paths: f.paths, ...(f.port ? { port: f.port } : {}) }));
+  const server = specs.length > 1 ? specs : specs[0] ?? null;
   const cfg = {
     name: inf.name.replace(/^@[^/]+\//, ""),
     source: { dir: inf.srcDir, aliases: inf.aliases },
@@ -487,12 +490,13 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   console.log(web ? `wrote rustybuns.config.ts (${what}: the desktop, and the web as static files on Workers, from ${web.assets})`
     : inf.serverDeps.length ? `wrote rustybuns.config.ts (desktop-only: it runs a Node server (${inf.serverDeps.join(", ")}), so its frontend alone can't go on the web)`
     : `wrote rustybuns.config.ts (desktop-only: ${relative(".", inf.vite.configPath!)} proxies ${proxied.join(", ")} to a separate server in dev, so its frontend alone can't go on the web)`);
-  if (proxied.length) {
-    console.log(server
-      ? `backend:  ${servers[0]!.dir} (${servers[0]!.runs}) runs beside the desktop host: desktop.server proxies ${proxied.join(", ")} to it, with DATA_DIR in the app's data dir. Drop any of those paths that go to another server. The web can't run it, so the app stays off the edge`
-      : servers.length
-      ? `backend:  ${servers.map((s) => `${s.dir} (${s.runs})`).join(", ")} ${servers.length > 1 ? "may be" : "looks like"} that server. Rusty Buns doesn't run it yet: answer ${proxied.join(", ")} in desktop/host.ts, or port the server to a Worker, before \`plan\``
-      : `backend:  answer ${proxied.join(", ")} in desktop/host.ts, or port that server to a Worker, before \`plan\``);
+  for (const f of found)
+    console.log(`backend:  ${f.server.dir} (${f.server.runs}) runs beside the desktop host: desktop.server proxies ${f.paths.join(", ")} to it, with DATA_DIR in the app's data dir. The web can't run it, so the app stays off the edge`);
+  if (left.length) {
+    const rest = servers.filter((s) => !found.some((f) => f.server === s));
+    console.log(rest.length
+      ? `backend:  ${rest.map((s) => `${s.dir} (${s.runs})`).join(", ")} ${rest.length > 1 ? "may be" : "looks like"} the server for ${left.join(", ")}. Rusty Buns can't tell which file it runs or which paths are its: add it to desktop.server, answer them in desktop/host.ts, or port it to a Worker, before \`plan\``
+      : `backend:  answer ${left.join(", ")} in desktop/host.ts, or port that server to a Worker, before \`plan\``);
   }
   await writeHost();
   await ignoreOurs();
@@ -737,12 +741,13 @@ const timed = <A, E, R>(prof: Profiler, name: string, e: Effect.Effect<A, E, R>)
  */
 const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(function* () {
   const cfg = yield* step(loadConfig);
-  const server = cfg.targets.desktop?.server;
+  const servers = desktopServers(cfg.targets.desktop);
+  const entries = servers.map((s) => s.entry).join(", ");
   // A Worker can't run a node:http server with files on disk: that's a port by hand, not a config line.
-  const serverNote = server ? ` Its own server (desktop.server, ${server.entry}) runs beside the desktop and box hosts only: a Worker can't run a Node server without porting it. Add targets.box to host it on a server.` : "";
+  const serverNote = servers.length ? ` Its own server (desktop.server, ${entries}) runs beside the desktop and box hosts only: a Worker can't run a Node server without porting it. Add targets.box to host it on a server.` : "";
   if (!cfg.worker && !cfg.targets.box) throw new Error(`desktop-only app: no edge or box stack to plan or deploy.${serverNote}`);
   const profiled = sub === "plan" || sub === "deploy";
-  if (server && cfg.worker && profiled) console.warn(`[server] the edge doesn't run desktop.server (${server.entry}): on the web ${server.paths.join(", ")} reach the Worker, not that server.\n`);
+  if (servers.length && cfg.worker && profiled) console.warn(`[server] the edge doesn't run desktop.server (${entries}): on the web ${servers.flatMap((s) => s.paths).join(", ")} reach the Worker, not that server.\n`);
   if (profiled) { checkBox(cfg); checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
   const { on: check, checker, rest: flagged } = checkFlags(rawArgs, profiled);
   // Ours, not Alchemy's: they waive the guards below.

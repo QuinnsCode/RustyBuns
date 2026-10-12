@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inferTsconfigAliases, detectPm, inferPostgres, viteProxyPaths } from "../src/glue/infer.ts";
+import { inferTsconfigAliases, detectPm, inferPostgres, viteProxyPaths, viteProxyTargets, proxyServers, type SiblingServer } from "../src/glue/infer.ts";
 import { parseWranglerToml, droppedWranglerKeys } from "../src/wrangler.ts";
 import { workspaceRoot } from "../src/glue/deploy-deps.ts";
 import { viteConfig } from "../src/glue/port-vite.ts";
@@ -281,10 +281,52 @@ test("init: a Vite app that proxies to its own server in dev stays desktop-only 
   const r = run("init");
   expect(r.code).toBe(0);
   expect(r.out).toContain("desktop-only: vite.config.js proxies /api, /img to a separate server in dev");
-  expect(r.out).toContain("backend:  ../api (node server.js) looks like that server");
+  expect(r.out).toContain("backend:  ../api (node server.js) looks like the server for /api, /img");
   expect(p.read("frontend/rustybuns.config.ts")).not.toContain('"edge"');
   expect(p.read("frontend/.gitignore")).toContain(".alchemy/");
   expect(run("plan").out).toMatch(/desktop-only app/);
+});
+
+test("vite server.proxy targets: a string, an options target, or the URL in the variable named", () => {
+  expect(viteProxyTargets(`const backend = process.env.API ?? "http://localhost:3001";
+export default defineConfig({ server: { proxy: {
+    '/api': { target: backend, changeOrigin: true, headers: { Origin: o } },
+    "/img": { target: media },
+    '/gif': 'http://127.0.0.1:8888',
+    '^/ws/.*': { target: 'ws://localhost:3001', ws: true },
+  } } })`)).toEqual({ "/api": "http://localhost:3001", "/img": null, "/gif": "http://127.0.0.1:8888", "^/ws/.*": "ws://localhost:3001" });
+});
+
+test("proxy paths grouped by target port, each group given the server listening there", () => {
+  const srv = (dir: string, port: number | null, readsPort = true): SiblingServer => ({ dir, runs: "node index.js", entry: `${dir}/index.js`, port, readsPort });
+  const api = srv("../api", 3001), media = srv("../media", 8888, false);
+  const two = proxyServers({ "/api": "http://localhost:3001", "^/ws": "ws://localhost:3001", "/img": "http://127.0.0.1:8888", "/gif": "http://127.0.0.1:8888", "/x": "http://localhost:9999" }, [api, media]);
+  expect(two.found).toEqual([{ server: api, paths: ["/api", "^/ws"] }, { server: media, paths: ["/img", "/gif"], port: 8888 }]);
+  expect(two.left).toEqual(["/x"]);
+  // One target and one server: that's it, whatever port it names.
+  expect(proxyServers({ "/api": "http://localhost:3000" }, [srv("../api", null)]).found.map((f) => f.paths)).toEqual([["/api"]]);
+  // Two targets, and no server says which port it's on: neither is guessed.
+  expect(proxyServers({ "/api": "http://localhost:3000", "/img": "http://localhost:4000" }, [srv("../api", null), srv("../media", null)]).left).toEqual(["/api", "/img"]);
+});
+
+test("init: a proxy to two servers runs both, each with its own paths", () => {
+  const p = project({
+    "frontend/package.json": VITE, "frontend/src/main.tsx": "", "frontend/package-lock.json": "{}",
+    "frontend/vite.config.js": "export default { server: { proxy: { '/api': 'http://localhost:3001', '/img': { target: 'http://localhost:8888' }, '/gif': 'http://localhost:8888' } } }\n",
+    "api/package.json": JSON.stringify({ scripts: { start: "node server.js" } }),
+    "api/server.js": "require('http').createServer(() => {}).listen(process.env.PORT || 3001);\n",
+    "media/package.json": JSON.stringify({ main: "index.js", dependencies: { express: "^4" } }),
+    "media/index.js": "const app = require('express')();\napp.listen(8888);\n",
+  });
+  const x = Bun.spawnSync(["bun", CLI, "init"], { cwd: join(p.dir, "frontend"), env: { ...process.env, npm_config_user_agent: "" } });
+  const out = x.stdout.toString() + x.stderr.toString();
+  expect(x.exitCode).toBe(0);
+  expect(out).toContain("backend:  ../api (node server.js) runs beside the desktop host: desktop.server proxies /api to it");
+  expect(out).toContain("backend:  ../media (express) runs beside the desktop host: desktop.server proxies /img, /gif to it");
+  const cfg = p.read("frontend/rustybuns.config.ts");
+  const server = JSON.parse(cfg.slice(cfg.indexOf("defineConfig(") + 13, cfg.lastIndexOf(")"))).targets.desktop.server;
+  // The media server ignores PORT, so the host proxies to the port it keeps.
+  expect(server).toEqual([{ entry: "../api/server.js", paths: ["/api"] }, { entry: "../media/index.js", paths: ["/img", "/gif"], port: 8888 }]);
 });
 
 test("init: a proxied Vite app whose server file it can find runs that server beside the host", () => {
