@@ -4,19 +4,21 @@
 // is one seat at it.
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
-  COST, enemy, heroReady, income, keyShare, planOrders, supplied,
+  COST, ORBIT, enemy, heroReady, income, keyShare, planOrders, supplied,
   type Campaign, type Order, type Orders, type Where,
 } from "./war/rules.ts";
 import { handIn, heroFaction, humans, newTable, report, waitingOn, type Seats, type Table } from "./war/table.ts";
 import { fetchView, linkInHash, seatLink, sendBattle, sendOrders, startOnline, type Online, type View } from "./net.ts";
 import { drawMap } from "./ui/map.ts";
 import { FLAVOR, run } from "./battle/sim.ts";
-import { VEHICLE_KINDS, type BattleResult, type BattleSpec, type Faction, type Side } from "./battle/contract.ts";
+import { runSpace } from "./battle/space.ts";
+import { VEHICLE_KINDS, type BattleResult, type BattleSpec, type Faction, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./battle/contract.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 // v2 gained the cannon sectors, v3 renamed the factions, v4 had a galaxy per campaign, v5 had
-// canyon and jungle sectors and a vehicle pool per battle, v6 is a table with seats and a hero a side.
-const SAVE = "two-fronts:v6", ONLINE = "two-fronts:online";
+// canyon and jungle sectors and a vehicle pool per battle, v6 was a table with seats and a hero a
+// side, v7 can pause on a space hero battle.
+const SAVE = "two-fronts:v7", ONLINE = "two-fronts:online";
 const POLL_MS = 5000;
 
 type Game = { kind: "local"; table: Table } | { kind: "online"; link: Online; view: View };
@@ -47,6 +49,7 @@ const systemDef = (id: string) => galaxyOf(c).system(id), neighbours = (id: stri
 const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 const placeName = (w: Where) => {
   const d = systemDef(w.system);
+  if (w.sector === ORBIT) return `${d.name} · Orbit`;
   return d.sectors.length > 1 ? `${d.name} · ${SECTOR_NAMES[d.sectors[w.sector]!]}` : d.name;
 };
 const describe = (o: Order) =>
@@ -88,6 +91,11 @@ function render() {
     const d = systemDef(selected), s = c.systems[selected]!, ds = draft.systems[selected]!;
     const opts = (n: number) => Array.from({ length: n }, (_, i) => `<option${i === n - 1 ? " selected" : ""}>${i + 1}</option>`).join("");
     const can = (o: Order) => planOrders(c, [{ ...mine, orders: [...mine.orders, o] }]).errors.at(-1);
+    // One hero battle a turn: a sector's ground battle, or the space battle over the system.
+    const heroButton = (sector: number, title: string) => {
+      const on = mine.hero?.system === selected && mine.hero.sector === sector;
+      return `<button type="button" class="hero${on ? " on" : ""}" data-hero="${sector}" ${heroReady(c, me) ? "" : "disabled"} title="${heroReady(c, me) ? title : "Your hero is wounded"}">⚔</button>`;
+    };
     const btn = (label: string, o: Order, extra = "") => {
       const err = can(o);
       return `<button type="button" data-order="${esc(JSON.stringify(o))}" ${err ? `disabled title="${esc(err)}"` : ""} ${extra}>${label}</button>`;
@@ -97,7 +105,8 @@ function render() {
       ...neighbours(selected).flatMap((n) => c.systems[n]!.sectors.map((_, i) => ({ system: n, sector: i }))),
     ];
     html = `<h2>${d.name}</h2>
-      <p class="orbit">Orbit: ${s.orbit ? `<b class="${s.orbit}">${FACTION_NAMES[s.orbit]}</b>` : "nobody"} · ▲ ${s.fleets[me]} yours, ${s.fleets[foe]} theirs</p>
+      <p class="orbit">Orbit: ${s.orbit ? `<b class="${s.orbit}">${FACTION_NAMES[s.orbit]}</b>` : "nobody"} · ▲ ${s.fleets[me]} yours, ${s.fleets[foe]} theirs
+        ${heroButton(ORBIT, "Fly the space battle here yourself, if one happens this turn")}</p>
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? `<p class="warn">Cut off from supply: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.</p>` : ""}
       ${s.sectors.some((x) => x.kind === "cannon") ? `<p class="small">The anti-ship cannon knocks a ship a turn out of an enemy fleet in orbit.</p>` : ""}
       ${s.sectors.some((x) => x.kind === "canyon") ? `<p class="small">The mining canyon's ore pays its holder as well as a capital.</p>` : ""}
@@ -111,11 +120,10 @@ function render() {
           (x.kind === "spaceport" || (x.kind === "capital" && !s.sectors.some((y) => y.kind === "spaceport"))) && btn(`+ Ship ◈${COST.fleet}`, { kind: "build", unit: "fleet", at }),
           x.kind === "capital" && btn(`+ Army ◈${COST.army}`, { kind: "build", unit: "army", at }),
         ].filter(Boolean).join("") : "";
-        const isHero = mine.hero?.system === selected && mine.hero.sector === i;
         return `<li>
           <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>
             <span class="armies"><span class="marines">■${x.armies.marines}</span> <span class="wooka">■${x.armies.wooka}</span></span>
-            <button type="button" class="hero${isHero ? " on" : ""}" data-hero="${i}" ${heroReady(c, me) ? "" : "disabled"} title="${heroReady(c, me) ? "Play the battle here yourself, if one happens this turn" : "Your hero is wounded"}">⚔</button></div>
+            ${heroButton(i, "Play the battle here yourself, if one happens this turn")}</div>
           ${builds ? `<div class="act">${builds}</div>` : ""}
           ${here.armies[me] && x.owner === me ? `<div class="act">Send <select data-army-n="${i}">${opts(here.armies[me])}</select> armies to
             <select data-army-to="${i}">${targets.filter((t) => !(t.system === selected && t.sector === i)).map((t) => `<option value="${t.system}:${t.sector}">${placeName(t)}</option>`).join("")}</select>
@@ -127,7 +135,7 @@ function render() {
 
   $("orders").innerHTML = mine.orders.length || mine.hero
     ? `${mine.orders.map((o, i) => `<li>${describe(o)} <button type="button" class="x" data-drop="${i}" title="Cancel">✕</button></li>`).join("")}
-       ${mine.hero ? `<li class="hero-order">⚔ Hero leads at ${placeName(mine.hero)} <button type="button" class="x" data-drop="hero" title="Cancel">✕</button></li>` : ""}`
+       ${mine.hero ? `<li class="hero-order">⚔ Hero ${mine.hero.sector === ORBIT ? "flies" : "leads"} at ${placeName(mine.hero)} <button type="button" class="x" data-drop="hero" title="Cancel">✕</button></li>` : ""}`
     : `<li class="hint">No orders yet. Build, send ships to take an orbit, land armies under it, and pick one battle to lead (⚔).</li>`;
   $("log").innerHTML = c.log.map((l) => `<li>${esc(l)}</li>`).join("");
   const end = $("end-turn");
@@ -261,7 +269,8 @@ function passTo(f: Faction) {
 // After anything moves the turn on: fight our hero battle if it's ours, or wait for the others.
 function afterTurn() {
   if (c.winner || busy) return;
-  if (c.pending && heroFaction(c) === me) return brief(c.pending.spec, finish);
+  const p = c.pending;
+  if (p && heroFaction(c) === me) return p.kind === "space" ? briefSpace(p.spec, finishSpace) : brief(p.spec, finish);
   if (online() && !myTurn()) schedulePoll();
 }
 
@@ -318,29 +327,71 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
   $("auto-battle").onclick = () => { hideModal(); done(run(spec).over!); };
 }
 
-async function finish(result: BattleResult) {
-  const spec = c.pending!.spec, won = result.winner === spec.hero, g = online();
+// The space battle's briefing: the fleets over the system, a cruiser for each ship.
+function briefSpace(spec: SpaceBattleSpec, done: (r: SpaceBattleResult) => void) {
+  const me = spec.hero, foe = me === "attacker" ? "defender" : "attacker";
+  showModal(`<h2>Space battle: over ${spec.system}</h2>
+    <p>You fly a ${spec.factions[me] === "wooka" ? "Wooka log glider" : "Thunder Marine fighter"} for the orbit. Knock out their cruisers and the orbit is yours.</p>
+    <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>
+      <tr><th>Cruisers</th><td>${spec.fleets[me]}</td><td>${spec.fleets[foe]}</td></tr>
+    </table>
+    <p class="small">Each ship on the map is a cruiser here, launching its wing of fighters. A cruiser under half its hull doesn't fly on after the battle. Win the orbit and the turn's landings can come down under it.</p>
+    <button type="button" id="launch" class="primary">Launch</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
+  $("launch").onclick = async () => {
+    hideModal();
+    document.body.classList.add("in-battle");
+    const { playSpaceBattle } = await import("./battle/space-view.ts");
+    const result = await playSpaceBattle(spec, $<HTMLCanvasElement>("battle-view"), $("battle-hud"));
+    document.body.classList.remove("in-battle");
+    done(result);
+  };
+  $("auto-battle").onclick = () => { hideModal(); done(runSpace(spec).over!); };
+}
+
+// Hand the hero battle's result to the table, here or in the campaign's Durable Object.
+// False if it didn't get through.
+async function sendResult(result: BattleResult | SpaceBattleResult, retry: () => void): Promise<boolean> {
+  const g = online();
   if (g) {
     busy = true;
     try {
       g.view = await sendBattle(g.link, result);
     } catch (e) {
       showModal(`<h2>The result didn't get through</h2><p>${esc((e as Error).message)}</p><button type="button" id="resend" class="primary">Try again</button>`);
-      $("resend").onclick = () => void finish(result);
-      return;
+      $("resend").onclick = retry;
+      return false;
     } finally {
       busy = false;
     }
     useGame(g);
   } else if (game.kind === "local") {
     const step = report(game.table, me, result);
-    if (!step.ok) return flash(step.error);
+    if (!step.ok) { flash(step.error); return false; }
     useGame({ kind: "local", table: step.table });
   }
+  return true;
+}
+// The button that closes a result: hand the screen over in hotseat, else back to the map.
+const backButton = (f: Faction) => `<button type="button" id="${hotseat() && seatUp() !== f ? "pass-on-after" : "back-to-map"}" class="primary">Back to the map</button>`;
+
+async function finishSpace(result: SpaceBattleResult) {
+  if (c.pending?.kind !== "space") return;
+  const spec = c.pending.spec, won = result.winner === spec.hero;
+  if (!(await sendResult(result, () => void finishSpace(result)))) return;
+  showModal(`<h2>${won ? "Orbit taken" : "Orbit lost"}</h2>
+    <p>${won ? `The orbit over ${spec.system} is ours.` : "The fleet went down fighting."}
+      Cruisers left: ${result.fleets[spec.hero]} to ${result.fleets[spec.hero === "attacker" ? "defender" : "attacker"]}.${result.heroDown ? " Your hero was shot down." : ""}</p>
+    ${backButton(spec.factions[spec.hero])}`);
+}
+
+async function finish(result: BattleResult) {
+  if (c.pending?.kind !== "ground") return;
+  const spec = c.pending.spec, won = result.winner === spec.hero;
+  if (!(await sendResult(result, () => void finish(result)))) return;
   showModal(`<h2>${won ? "Sector taken" : "Sector lost"}</h2>
     <p>${won ? (spec.hero === "attacker" ? `${spec.system}'s ${SECTOR_NAMES[spec.sector].toLowerCase()} is yours.` : "You held the line.") : "The battle went against you."}
       Tickets left: ${result.tickets[spec.hero]} to ${result.tickets[spec.hero === "attacker" ? "defender" : "attacker"]}.${result.heroDown ? " Your hero was carried off the field." : ""}</p>
-    <button type="button" id="${hotseat() && seatUp() !== spec.factions[spec.hero] ? "pass-on-after" : "back-to-map"}" class="primary">Back to the map</button>`);
+    ${backButton(spec.factions[spec.hero])}`);
 }
 
 // Quick play, outside the campaign: the Wooka come for the shield generator. Hold the line as a
@@ -362,6 +413,19 @@ function skirmish(asWooka: boolean) {
 }
 $("hold-line").onclick = () => skirmish(false);
 $("be-horde").onclick = () => skirmish(true);
+// Quick play in orbit: three Marine cruisers hold the orbit against three Wooka ones.
+$("dogfight").onclick = () => {
+  const spec: SpaceBattleSpec = {
+    id: `dogfight-${Date.now()}`, turn: 0, system: "the forest moon", factions: { attacker: "wooka", defender: "marines" },
+    hero: "defender", heroLevel: 1, fleets: { attacker: 3, defender: 3 }, seed: Math.floor(Math.random() * 2 ** 31),
+  };
+  briefSpace(spec, (r) => {
+    const won = r.winner === spec.hero;
+    showModal(`<h2>${won ? "Orbit held" : "Orbit lost"}</h2>
+      <p>${won ? "The log gliders are drifting home. Some of them are still on fire." : "There are Wooka in the cruisers now. They are pressing every button."}</p>
+      <button type="button" id="close" class="primary">Back to the map</button>`);
+  });
+};
 
 function showModal(html: string) { $("modal-body").innerHTML = html; $("modal").hidden = false; }
 function hideModal() { $("modal").hidden = true; }

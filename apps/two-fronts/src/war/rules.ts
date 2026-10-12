@@ -1,9 +1,8 @@
 // The strategy layer: a deterministic rules engine over plain JSON. A turn is income and
 // building, simultaneous moves, space battles, landings, ground battles, then upkeep (cannon
-// fire, bombardment, supply, income). One ground
-// battle a turn can be handed to the player as a hero battle; the turn pauses on it until the
-// BattleResult comes back.
-import type { BattleResult, BattleSpec, Faction, SectorKind, VehicleKind, VehiclePool } from "../battle/contract.ts";
+// fire, bombardment, supply, income). One battle a turn, on the ground or in orbit, can be
+// handed to the player as a hero battle; the turn pauses on it until the result comes back.
+import type { BattleResult, BattleSpec, Faction, SectorKind, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
 import { other as otherSide } from "../battle/contract.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
 
@@ -16,6 +15,13 @@ export interface Sector { kind: SectorKind; owner: Faction; armies: Count }
 export interface SystemState { id: string; orbit: Faction | null; fleets: Count; sectors: Sector[] }
 export interface Hero { level: number; xp: number; woundedUntil: number }
 export interface Where { system: string; sector: number }
+// A hero pick with this sector flies in the space battle over the system instead.
+export const ORBIT = -1;
+interface Transit { faction: Faction; from: Where; to: Where; count: number }
+// A paused space battle holds the turn's landings: where they can land waits on who wins the orbit.
+export type Pending =
+  | { kind: "ground"; spec: BattleSpec; at: Where }
+  | { kind: "space"; spec: SpaceBattleSpec; system: string; landings: Transit[] };
 
 export interface Campaign {
   turn: number;
@@ -25,7 +31,7 @@ export interface Campaign {
   credits: Count;
   systems: Record<string, SystemState>;
   heroes: Record<Faction, Hero>; // each side's hero, though only the human sides send one in
-  pending: { spec: BattleSpec; at: Where } | null;
+  pending: Pending | null;
   winner: Faction | null;
   log: string[]; // this turn's events, newest last
 }
@@ -121,7 +127,7 @@ export function income(c: Campaign, f: Faction) {
 
 // --- Orders ---
 
-interface Draft { c: Campaign; transit: { faction: Faction; from: Where; to: Where; count: number }[]; errors: (string | null)[] }
+interface Draft { c: Campaign; transit: Transit[]; errors: (string | null)[] }
 
 // Applies orders in sequence to a copy, so each is checked against what the earlier ones left.
 // The UI uses it to refuse an order before it's queued; the engine uses it to run them.
@@ -209,12 +215,20 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
   const c = d.c, r = rng(c.seed * 1000 + c.turn);
   c.log = [];
   const startOrbit = Object.fromEntries(Object.values(c.systems).map((s) => [s.id, s.orbit]));
+  // One hero battle a turn, on the ground or in orbit. With two players picking, it's the first
+  // pick the sweep reaches, and the other side's AI fights it.
+  const picks = all.filter((o) => o.hero && heroReady(c, o.faction));
 
-  // Fleets arrive together, then fight for each orbit.
+  // Fleets arrive together, then fight for each orbit. The hero may fly one of these fights.
   for (const t of d.transit) if (t.from.sector < 0) c.systems[t.to.system]!.fleets[t.faction] += t.count;
   for (const s of Object.values(c.systems)) {
     if (s.fleets.marines && s.fleets.wooka) {
       const def = startOrbit[s.id] ?? (r() < 0.5 ? "marines" : "wooka"), att = enemy(def);
+      const pick = c.pending ? undefined : picks.find((o) => o.hero!.system === s.id && o.hero!.sector === ORBIT);
+      if (pick) {
+        c.pending = { kind: "space", spec: buildSpaceSpec(c, s.id, def, Math.floor(r() * 2 ** 31), pick.faction), system: s.id, landings: [] };
+        continue; // the orbit is settled when the result comes back
+      }
       const [a, b] = diceBattle(s.fleets[att], s.fleets[def], r);
       c.log.push(`Space battle over ${name(c, s.id)}: ${FACTION_NAMES[a ? att : def]} holds the orbit (${s.fleets[att] - a} ${FACTION_NAMES[att]} and ${s.fleets[def] - b} ${FACTION_NAMES[def]} ships lost).`);
       s.fleets[att] = a; s.fleets[def] = b;
@@ -222,8 +236,18 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
     s.orbit = s.fleets.marines ? "marines" : s.fleets.wooka ? "wooka" : null;
   }
 
+  const landings = d.transit.filter((t) => t.from.sector >= 0);
+  if (c.pending?.kind === "space") {
+    c.pending.landings = landings;
+    return c;
+  }
+  return landAndFight(c, landings, picks, r);
+}
+
+// The rest of a turn after the space battles: landings, ground battles, upkeep.
+function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () => number): Campaign {
   // Troops land only under their own orbit; the rest turn back.
-  for (const t of d.transit) if (t.from.sector >= 0) {
+  for (const t of landings) {
     const same = t.from.system === t.to.system;
     if (same || c.systems[t.to.system]!.orbit === t.faction) sectorAt(c, t.to)!.armies[t.faction] += t.count;
     else {
@@ -232,9 +256,7 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
     }
   }
 
-  // Ground battles: one may be a hero's, the rest roll dice. With two players picking, the turn
-  // still has one hero battle: the first pick the sweep reaches, and the other side's AI fights it.
-  const picks = all.filter((o) => o.hero && heroReady(c, o.faction));
+  // Ground battles: one may be a hero's, the rest roll dice.
   for (const s of Object.values(c.systems)) s.sectors.forEach((x, i) => {
     const att = enemy(x.owner);
     if (!x.armies[att]) return;
@@ -246,7 +268,7 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
     }
     const pick = c.pending ? undefined : picks.find((o) => o.hero!.system === s.id && o.hero!.sector === i);
     if (pick) {
-      c.pending = { spec: buildSpec(c, at, Math.floor(r() * 2 ** 31), pick.faction), at };
+      c.pending = { kind: "ground", spec: buildSpec(c, at, Math.floor(r() * 2 ** 31), pick.faction), at };
       return;
     }
     // Orbit gives either side cover from above; a jungle gives the side that holds it cover in the trees.
@@ -302,7 +324,7 @@ export function vehiclePool(s: SystemState, f: Faction, armies: number): Vehicle
 // The battle's survivors stay on the map, scaled by the tickets left; the loser's army there is gone.
 export function applyBattleResult(c0: Campaign, res: BattleResult): Campaign {
   const p = c0.pending;
-  if (!p || p.spec.id !== res.id) throw new Error("that isn't the battle being fought");
+  if (p?.kind !== "ground" || p.spec.id !== res.id) throw new Error("that isn't the battle being fought");
   const c = structuredClone(c0), spec = p.spec, x = sectorAt(c, p.at)!;
   const win = res.winner, lose = otherSide(win);
   const start = spec.tickets[win] + spec.reinforcements[win];
@@ -310,19 +332,55 @@ export function applyBattleResult(c0: Campaign, res: BattleResult): Campaign {
   x.armies[spec.factions[win]] = survivors;
   x.armies[spec.factions[lose]] = 0;
   x.owner = spec.factions[win];
-  const heroWon = win === spec.hero, f = spec.factions[spec.hero], hero = c.heroes[f], who = `${FACTION_NAMES[f]}'s hero`;
   c.log.push(`Hero battle at ${where(c, p.at)}: ${FACTION_NAMES[spec.factions[win]]} wins with ${survivors} ${survivors === 1 ? "army" : "armies"} left.`);
-  if (res.heroDown) {
-    hero.woundedUntil = c.turn + 3;
-    c.log.push(`${who} is wounded and out until turn ${hero.woundedUntil}.`);
-  } else {
-    hero.xp += heroWon ? 2 : 1;
-    const level = 1 + Math.floor(hero.xp / 3);
-    if (level > hero.level) c.log.push(`${who} reaches level ${level}.`);
-    hero.level = level;
-  }
+  heroBack(c, spec.factions[spec.hero], win === spec.hero, res.heroDown);
   c.pending = null;
   return upkeep(c);
+}
+
+// Each side's fleet over the system becomes a line of cruisers; the defender held the orbit.
+export function buildSpaceSpec(c: Campaign, system: string, def: Faction, seed: number, heroOf: Faction = c.player): SpaceBattleSpec {
+  const s = c.systems[system]!, att = enemy(def);
+  return {
+    id: `${c.turn}-${system}-orbit`,
+    turn: c.turn,
+    system: name(c, system),
+    factions: { attacker: att, defender: def },
+    hero: att === heroOf ? "attacker" : "defender",
+    heroLevel: c.heroes[heroOf].level,
+    fleets: { attacker: s.fleets[att], defender: s.fleets[def] },
+    seed,
+  };
+}
+
+// The winner's cruisers still fit to fly keep the orbit (one at least); the loser's fleet there
+// is gone. Then the turn goes on: landings under the orbit as it now stands, and ground battles.
+export function applySpaceResult(c0: Campaign, res: SpaceBattleResult): Campaign {
+  const p = c0.pending;
+  if (p?.kind !== "space" || p.spec.id !== res.id) throw new Error("that isn't the battle being fought");
+  const c = structuredClone(c0), spec = p.spec, s = c.systems[p.system]!;
+  const win = res.winner, lose = otherSide(win), kept = Math.max(1, Math.min(spec.fleets[win], res.fleets[win]));
+  s.fleets[spec.factions[win]] = kept;
+  s.fleets[spec.factions[lose]] = 0;
+  s.orbit = spec.factions[win];
+  c.log.push(`Hero space battle over ${name(c, p.system)}: ${FACTION_NAMES[spec.factions[win]]} holds the orbit with ${kept} ${kept === 1 ? "ship" : "ships"} left.`);
+  heroBack(c, spec.factions[spec.hero], win === spec.hero, res.heroDown);
+  c.pending = null;
+  return landAndFight(c, p.landings, [], rng((c.seed * 1000 + c.turn) ^ 0x2545f491));
+}
+
+// Shot down or carried off, the hero sits out three turns; otherwise they learn from it.
+function heroBack(c: Campaign, f: Faction, won: boolean, down: boolean) {
+  const hero = c.heroes[f], who = `${FACTION_NAMES[f]}'s hero`;
+  if (down) {
+    hero.woundedUntil = c.turn + 3;
+    c.log.push(`${who} is wounded and out until turn ${hero.woundedUntil}.`);
+    return;
+  }
+  hero.xp += won ? 2 : 1;
+  const level = 1 + Math.floor(hero.xp / 3);
+  if (level > hero.level) c.log.push(`${who} reaches level ${level}.`);
+  hero.level = level;
 }
 
 // End of turn: cannon fire, bombardment, supply, income, and whether the war is over.

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { handIn, newTable, report, waitingOn, type Step, type Table } from "../src/war/table.ts";
-import { resolveTurn, type Where } from "../src/war/rules.ts";
+import { ORBIT, resolveTurn, type Where } from "../src/war/rules.ts";
 
 const ok = (s: Step) => {
   if (!s.ok) throw new Error(s.error);
@@ -81,4 +81,26 @@ test("the Wooka have a hero of their own, and the turn still has one hero battle
   const after = ok(report(p2, "wooka", { id: spec.id, winner: "defender", tickets: { attacker: 0, defender: 40 }, heroDown: false })).table.campaign;
   expect(after.heroes.wooka.xp).toBe(2);
   expect(after.heroes.marines.xp).toBe(0);
+});
+
+test("a space hero battle goes through the table too, and its result finishes the turn", () => {
+  const t = newTable({ marines: "human", wooka: "human" }, "short", 7);
+  t.campaign.systems.corva!.fleets.marines = 3;
+  const k = t.campaign.systems.kessa!;
+  k.fleets = { marines: 0, wooka: 2 };
+  k.orbit = "wooka";
+  const orbit = { system: "kessa", sector: ORBIT };
+  expect(handIn(t, "marines", empty("marines", { system: "nowhere", sector: ORBIT }))).toEqual({ ok: false, error: "No such sector for the hero" });
+  const marines = { faction: "marines" as const, orders: [{ kind: "fleet" as const, from: "corva", to: "kessa", count: 3 }] };
+  const paused = ok(handIn(ok(handIn(t, "marines", marines)).table, "wooka", empty("wooka", orbit))).table;
+  const p = paused.campaign.pending!;
+  expect(p.kind).toBe("space");
+  expect(p.spec).toMatchObject({ hero: "defender", factions: { defender: "wooka" } });
+  expect(waitingOn(paused)).toEqual(["wooka"]);
+  const res = { id: p.spec.id, winner: "defender" as const, fleets: { attacker: 0, defender: 1 }, heroDown: false };
+  const done = ok(report(paused, "wooka", res));
+  expect(done.table.campaign).toMatchObject({ turn: 2, pending: null });
+  expect(done.table.campaign.systems.kessa!).toMatchObject({ orbit: "wooka", fleets: { marines: 0, wooka: 1 } });
+  expect(done.table.campaign.heroes.wooka.xp).toBe(2);
+  expect(done.done).toMatchObject({ turn: 1, battle: res });
 });

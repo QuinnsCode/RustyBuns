@@ -3,11 +3,11 @@
 // orders then. The rules stay pure; this only stores and sequences them, so the page runs it for
 // a game against the AI or a hotseat game, and the campaign's Durable Object runs the same code
 // for a game played a turn at a time over days.
-import type { BattleResult, Faction } from "../battle/contract.ts";
+import type { BattleResult, Faction, SpaceBattleResult } from "../battle/contract.ts";
 import { aiOrders } from "./ai.ts";
 import type { GalaxyId } from "./galaxy.ts";
 import {
-  FACTIONS, applyBattleResult, heroReady, newCampaign, planOrders, resolveTurn, sectorAt,
+  FACTIONS, ORBIT, applyBattleResult, applySpaceResult, heroReady, newCampaign, planOrders, resolveTurn, sectorAt,
   type Campaign, type Orders,
 } from "./rules.ts";
 
@@ -23,7 +23,7 @@ export interface Table {
 }
 
 // A resolved turn, as the history keeps it.
-export interface TurnRecord { turn: number; orders: Orders[]; battle: BattleResult | null; log: string[] }
+export interface TurnRecord { turn: number; orders: Orders[]; battle: BattleResult | SpaceBattleResult | null; log: string[] }
 
 export type Step = { ok: true; table: Table; done: TurnRecord | null } | { ok: false; error: string };
 
@@ -64,14 +64,21 @@ export function handIn(t: Table, f: Faction, o: Orders): Step {
   return { ok: true, table: { ...next, campaign: after, handedIn: {} }, done: { turn: c.turn, orders: all, battle: null, log: after.log } };
 }
 
-// The hero's side reports how their battle went, and the turn finishes.
-export function report(t: Table, f: Faction, res: BattleResult): Step {
+// The hero's side reports how their battle went, on the ground or in orbit, and the turn finishes.
+export function report(t: Table, f: Faction, res: BattleResult | SpaceBattleResult): Step {
   const c = t.campaign;
   if (!c.pending) return { ok: false, error: "No battle is being fought" };
   if (heroFaction(c) !== f) return { ok: false, error: "That battle isn't yours" };
   if (!res || res.id !== c.pending.spec.id || (res.winner !== "attacker" && res.winner !== "defender")) return { ok: false, error: "That isn't the battle being fought" };
-  const tickets = { attacker: num(res.tickets?.attacker), defender: num(res.tickets?.defender) };
-  const after = applyBattleResult(c, { id: res.id, winner: res.winner, tickets, heroDown: res.heroDown === true });
+  const heroDown = res.heroDown === true;
+  let after: Campaign;
+  if (c.pending.kind === "space") {
+    const fleets = (res as Partial<SpaceBattleResult>).fleets;
+    after = applySpaceResult(c, { id: res.id, winner: res.winner, fleets: { attacker: num(fleets?.attacker), defender: num(fleets?.defender) }, heroDown });
+  } else {
+    const tickets = (res as Partial<BattleResult>).tickets;
+    after = applyBattleResult(c, { id: res.id, winner: res.winner, tickets: { attacker: num(tickets?.attacker), defender: num(tickets?.defender) }, heroDown });
+  }
   return { ok: true, table: { ...t, campaign: after, resolving: null }, done: { turn: c.turn, orders: t.resolving ?? [], battle: res, log: after.log } };
 }
 
@@ -83,7 +90,8 @@ function checkOrders(c: Campaign, f: Faction, o: Orders): string | null {
   if (o.orders.length > MAX_ORDERS) return "Too many orders";
   if (o.orders.some((x) => !x || typeof x !== "object" || !["build", "fleet", "army"].includes(x.kind) || (x.kind === "build" && x.unit !== "fleet" && x.unit !== "army"))) return "Those aren't orders";
   if (o.hero) {
-    if (typeof o.hero.system !== "string" || !Number.isInteger(o.hero.sector) || !sectorAt(c, o.hero)) return "No such sector for the hero";
+    if (typeof o.hero.system !== "string" || !Number.isInteger(o.hero.sector)) return "No such sector for the hero";
+    if (o.hero.sector === ORBIT ? !Object.hasOwn(c.systems, o.hero.system) : !sectorAt(c, o.hero)) return "No such sector for the hero";
     if (!heroReady(c, f)) return "Your hero is wounded";
   }
   try {

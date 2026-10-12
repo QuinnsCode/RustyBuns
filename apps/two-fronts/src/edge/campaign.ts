@@ -3,7 +3,7 @@
 // hash is kept. The table (map, orders handed in) is one row in the object's SQLite, and every
 // resolved turn adds a row to its history. The sequencing is src/war/table.ts, the same code the
 // page runs for a game against the AI or a hotseat game.
-import type { BattleResult, Faction } from "../battle/contract.ts";
+import type { BattleResult, Faction, SpaceBattleResult } from "../battle/contract.ts";
 import { GALAXIES, type GalaxyId } from "../war/galaxy.ts";
 import type { Campaign, Orders } from "../war/rules.ts";
 import { handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord } from "../war/table.ts";
@@ -51,7 +51,7 @@ export class CampaignRoom {
       return json(rows.map((r): TurnRecord => ({ turn: r.turn, orders: JSON.parse(r.orders), battle: r.battle ? JSON.parse(r.battle) : null, log: JSON.parse(r.log) })));
     }
     if (req.method === "POST" && path === "/orders") return this.step(seat, handIn(table, seat, (await body(req)) as Orders));
-    if (req.method === "POST" && path === "/battle") return this.step(seat, report(table, seat, (await body(req)) as BattleResult));
+    if (req.method === "POST" && path === "/battle") return this.step(seat, report(table, seat, (await body(req)) as BattleResult | SpaceBattleResult));
     return fail("Not found", 404);
   }
 
