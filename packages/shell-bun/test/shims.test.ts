@@ -52,3 +52,11 @@ test("workerd-global: globalThis.Cloudflare.compatibilityFlags, true for the fla
     expect(g.Cloudflare.compatibilityFlags.enable_nodejs_process_v2).toBeUndefined();
   } finally { delete g.RB_COMPAT_FLAGS; g.Cloudflare = before; }
 });
+
+test("getRequestInfo is requestInfo; defineScript runs its function with the env", async () => {
+  const { getRequestInfo, requestInfo, defineScript } = await import("../src/shims.ts");
+  expect(getRequestInfo()).toBe(requestInfo);
+  (globalThis as any).__RB_ENV = { DB: "db" };
+  try { expect(await defineScript(async ({ env }) => env.DB)()).toBe("db"); }
+  finally { delete (globalThis as any).__RB_ENV; }
+});
