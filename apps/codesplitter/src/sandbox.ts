@@ -9,12 +9,16 @@ import type { Sandbox } from "./agent-run.ts";
 import { json, type Env } from "./env.ts";
 import { gate, GITHUB_HOSTS, HARNESS_HOSTS, hostList, hostOf, REGISTRIES, type GateExports, type Interceptor } from "./egress.ts";
 
-/** The CLIs' logins, passed into the container from the Worker's secrets when set. */
-export const LOGINS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"] as const;
+/**
+ * The CLIs' logins, passed into the container from the Worker's secrets when set.
+ * API keys only: a Claude subscription login (CLAUDE_CODE_OAUTH_TOKEN) is for your
+ * own use, not for running a service for others (#559), so hosted runs never get one.
+ */
+export const LOGINS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY"] as const;
 
 /** The logins each CLI may see. An agent can read its own env, so a run only gets its harness's keys. */
 const KEYS: Record<string, readonly (typeof LOGINS)[number][]> = {
-  claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+  claude: ["ANTHROPIC_API_KEY"],
   codex: ["OPENAI_API_KEY", "CODEX_API_KEY"],
   // pi and opencode take a provider/model, so they may need either provider's key.
   pi: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"],

@@ -72,7 +72,6 @@ export interface Env {
   DEPLOY_SECRETS_KEY_OLD?: string;
   /** Logins for the agent CLIs in the sandbox (see sandbox.ts). */
   ANTHROPIC_API_KEY?: string;
-  CLAUDE_CODE_OAUTH_TOKEN?: string;
   OPENAI_API_KEY?: string;
   CODEX_API_KEY?: string;
   /** Cloudflare Artifacts (a bare-repo twin on the desktop). Optional: without it, nothing is pushed. */

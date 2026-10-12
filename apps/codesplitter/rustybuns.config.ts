@@ -104,7 +104,6 @@ export default defineConfig({
     // Optional: only the items you've made in 1Password are bound.
     ...(agents ? {
       ANTHROPIC_API_KEY: op("anthropic/api-key", true),
-      CLAUDE_CODE_OAUTH_TOKEN: op("claude-code/oauth-token", true),
       OPENAI_API_KEY: op("openai/api-key", true),
       CODEX_API_KEY: op("codex/api-key", true),
     } : {}),
