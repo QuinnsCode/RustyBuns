@@ -281,7 +281,8 @@ same rules in another order (`.quick #dogfight` moved down a few lines, which do
 - **`rules.test.ts`, a real miss.** #1093 on main renamed `hero` to `heroes.<faction>`, and #1100's new test
   still says `won.hero.xp` and `lost.hero.woundedUntil`. The person renamed them; the merge kept them, so the file
   wouldn't typecheck. It's the #1096 case again. The replay is a dry run of the line merge, so it doesn't run
-  #1109's test check, which is what would send this back as a card.
+  #1109's test check, which is what would send this back as a card. Since #1156 the merge carries main's rename into
+  the branch's new lines, and this file replays exactly like the fix.
 
 `02e1045` also shows five files git merged clean that differ from the fix (`edge/campaign.ts`, `net.ts`,
 `war/table.ts` and two tests). codeSplitter's text matches git's clean merge in all five. The person wired

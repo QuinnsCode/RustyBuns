@@ -152,6 +152,8 @@ export function kindOf(path: string): Kind {
  * first, or in order in a sorted block (an import block, keys one per line);
  * the same new line added at the same spot on both sides lands once.
  * A stretch both sides reshaped settles line by line where it can (see blend).
+ * A name one side renamed across the file (see renames) is renamed in the
+ * lines the other side added too.
  *
  * Conflicts, each settled by `resolve` (by its `line`: main's, the branch's,
  * both, or a text of `writer`'s; see Pick) or left out and reported:
@@ -198,6 +200,13 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
   const was = new Map(base.lines.map((l) => [l.id, l])), now = new Map(main.lines.map((l) => [l.id, l]));
   const at = new Map(main.lines.map((l, i) => [l.id, i]));
   const movedOnMain = moves(base, main, was), movedOnBranch = moves(base, branch, was);
+  const loose = (t: string) => kind === "prose" || remark(t);
+  // A name main renamed across the file is renamed in the lines the branch added too, and the other way round (#1156).
+  const mainRenames = renames(base, main, loose), branchRenames = renames(base, branch, loose);
+  if (mainRenames.length) {
+    const into = new Set([...movedOnBranch.values()].map((l) => l.id));
+    branch = { ...branch, lines: branch.lines.map((l) => was.has(l.id) || into.has(l.id) ? l : { ...l, text: carry(l.text, mainRenames, loose(l.text)) }) };
+  }
   const moveOf = new Map([...movedOnBranch].map(([id, l]) => [l.id, id]));
   const mainPos = places(base, main), branchPos = places(base, branch);
   const regions = clashes(hunks(base, main, mainPos, movedOnMain), hunks(base, branch, branchPos, movedOnBranch), kind !== "prose");
@@ -206,7 +215,6 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
   const before = new Set(base.lines.map((l) => l.text)), mainHeads = heads(main.lines), branchHeads = heads(branch.lines);
   const mainAdded = new Map<string, Set<string>>();
   main.lines.forEach((l, i) => { if (!was.has(l.id) && !before.has(l.text)) mainAdded.set(l.text, (mainAdded.get(l.text) ?? new Set()).add(mainHeads[i]!)); });
-  const loose = (t: string) => kind === "prose" || remark(t);
   const ops: Op[] = [], by: string[] = [], conflicts: Conflict[] = [], taken = new Set<string>();
   let next = main.nextId, after: string | null = null;
   const push = (op: Op, who: string) => { ops.push(op); by.push(who); };
@@ -340,6 +348,14 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
     if (m) after = m.id;
   }
   while (r < regions.length) settle(regions[r++]!);
+  if (branchRenames.length) {
+    const touched = new Set(ops.flatMap((o) => o.kind === "insert" ? [] : [o.line]));
+    for (const m of main.lines) {
+      if (was.has(m.id) || movedIn.has(m.id) || touched.has(m.id) || inRegion(mainPos.get(m.id)!)) continue;
+      const t = carry(m.text, branchRenames, loose(m.text));
+      if (t !== m.text) push({ kind: "set", line: m.id, base: m.rev, text: t }, m.by);
+    }
+  }
   const kept = new Set(branch.lines.map((l) => l.id));
   for (const b of base.lines) {
     if (kept.has(b.id)) continue;
@@ -726,6 +742,48 @@ export function mergeWords(base: string, a: string, b: string, both = false, loo
   }
   return out + o.slice(i).join("");
 }
+
+/** A name one side renamed across the file: `from`, as a property (`.from`) or not, now `to` (a name or a dotted path). */
+interface Rename { from: string; dotted: boolean; to: string }
+
+/** `t` with each use of the renamed name swapped for the new one. */
+function renamed(t: string, r: Rename) {
+  const ws = words(t);
+  return ws.map((w, i) => w === r.from && (ws[i - 1] === ".") === r.dotted && ws[i + 1] !== "$" && ws[i - 1] !== "$" ? r.to : w).join("");
+}
+
+/**
+ * The names `side` renamed across the file (#1156): a line it changed where one
+ * word became a name or dotted path (`.hero` to `.heroes.marines`), the same swap
+ * turning two or more of base's lines into the side's, and no use of the old name,
+ * as a property or not as before, left on that side. In prose (`loose`) the
+ * name must say something, as in mergeWords' guard.
+ */
+function renames(base: Doc, side: Doc, loose: (t: string) => boolean): Rename[] {
+  const now = new Map(side.lines.map((l) => [l.id, l.text])), seen = new Map<string, Rename>();
+  for (const b of base.lines) {
+    const s = now.get(b.id);
+    if (s === undefined || s === b.text) continue;
+    const o = words(b.text), n = words(s);
+    let p = 0, q = 0;
+    while (p < o.length && p < n.length && o[p] === n[p]) p++;
+    while (q < o.length - p && q < n.length - p && o[o.length - 1 - q] === n[n.length - 1 - q]) q++;
+    const from = o.slice(p, o.length - q), to = n.slice(p, n.length - q).join("");
+    if (from.length !== 1 || !/^[A-Za-z_]\w*$/.test(from[0]!) || !/^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/.test(to)) continue;
+    if (loose(b.text) && (from[0]!.length < 3 || STOP.has(from[0]!.toLowerCase()))) continue;
+    const r = { from: from[0]!, dotted: o[p - 1] === ".", to };
+    seen.set(`${r.from} ${r.dotted} ${r.to}`, r);
+  }
+  const all = [...seen.values()];
+  return all.filter((r) => !side.lines.some((l) => renamed(l.text, r) !== l.text)
+    && base.lines.filter((b) => b.text !== now.get(b.id) && renamed(b.text, r) === now.get(b.id)).length >= 2
+    // One name renamed two ways (`hero` to `heroes.a` here, `heroes.b` there) isn't one swap.
+    && !all.some((x) => x !== r && x.from === r.from && x.dotted === r.dotted));
+}
+
+/** `t`, a line one side added, with the other side's renames carried into it. Prose and comments skip short and common words. */
+const carry = (t: string, rs: Rename[], loose: boolean) =>
+  rs.reduce((s, r) => loose && (r.from.length < 3 || STOP.has(r.from.toLowerCase())) ? s : renamed(s, r), t);
 
 /** One line both changed: word by word, else as a list both added items to (see mergeWords). */
 const blendLine = (base: string, a: string, b: string, loose: boolean) => mergeWords(base, a, b, false, loose) ?? mergeWords(base, a, b, true, loose);
