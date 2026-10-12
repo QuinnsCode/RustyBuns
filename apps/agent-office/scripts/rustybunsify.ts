@@ -22,6 +22,7 @@ import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { floorGuardBin, floorGuardHooks } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
+import { POWER_PATCHES } from "../power/patch.ts";
 import { TRIAGE_READ_ONLY } from "../triage/tools.ts";
 
 const root = path.dirname(import.meta.dir);
@@ -49,7 +50,7 @@ const SHARED = ["codesplitter/index.ts", ...(skin === "druids" ? ["druids/index.
 let shared: Promise<Map<string, string>> | undefined;
 // (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks board guard asks brawl` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks power board guard asks brawl` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
@@ -198,7 +199,7 @@ async function prepare(tag: string) {
   // 14. the Druids Curse skin
   if (skin === "druids") await druids(cache);
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks board guard asks brawl\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks power board guard asks brawl\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -269,6 +270,8 @@ function officeTicks() {
   if (!main || more.length) throw new Error(`Agent Office changed: expected one assets/main-*.js, found ${more.length + (main ? 1 : 0)}`);
   patch(path.join(pub, main), "l.setWeather(s.rain,1-s.daylight)}function b(t)",
     "l.setWeather(s.rain,1-s.daylight),globalThis.__rbOfficeTicks?.forEach(f=>f(e,n.stage,r,i))}function b(t)");
+  // Battery (power/): a frame rate to suit what you're doing, and no discrete GPU
+  for (const [from, to] of POWER_PATCHES) patch(path.join(pub, main), from, to);
   rehash(pub, main);
 }
 
@@ -320,6 +323,8 @@ async function buildPageScripts() {
   await buildPageScript("triage/index.ts", "rb-triage", ["index", "lite"]);
   // the codeSplitter mark by the boards, off until Settings › You turns it on
   await buildPageScript("codesplitter/index.ts", "rb-codesplitter", ["index", "lite"]);
+  // the Graphics setting and the frame rate it picks (power/), in the 3D office only
+  await buildPageScript("power/index.ts", "rb-power", ["index"]);
   // AGENT_OFFICE_ASK_FIRST's Allow / Deny card, for an agent's request waiting on a person (#727)
   await buildPageScript("asks/index.ts", "rb-asks", ["index", "lite"]);
 }
