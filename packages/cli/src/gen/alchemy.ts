@@ -4,14 +4,14 @@
 // Cloudflare.InferEnv. The generated file is readable and committable; the
 // eject path is "keep this file, delete the config".
 
-import { workerName, type Binding, type RustyBunsConfig } from "../config.ts";
+import { hyperdriveUrlEnv, workerName, type Binding, type RustyBunsConfig } from "../config.ts";
 import { BOX_DIR, RAILWAY_DATA, RAILWAY_DIR, boxDefaults, railwayDefaults } from "../box.ts";
 import { checkWheel, mintedSecrets } from "../wheel.ts";
 
 const ident = (s: string) => s.replace(/[^A-Za-z0-9_]/g, "_");
 
 /** `, { ... }` from the props that are set, or nothing. */
-const propsArg = (props: Record<string, string | undefined>) => {
+const propsArg = (props: Record<string, string | number | undefined>) => {
   const set = Object.entries(props).filter(([, v]) => v !== undefined);
   return set.length ? `, { ${set.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ")} }` : "";
 };
@@ -45,9 +45,17 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
       // Its metadata indexes are made in the stack below, once the index exists.
       return `export const ${id} = Cloudflare.Vectorize.Index("${name}", { ${adopt ? `name: ${JSON.stringify(b.indexName)}, ` : ""}dimensions: ${b.dimensions}, metric: ${JSON.stringify(b.metric ?? "cosine")} });`;
     case "hyperdrive": {
-      // The origin is the secret's URL, read as the stack deploys; the password stays redacted.
       const caching = b.caching === false ? `, caching: { disabled: true }` : b.caching ? `, caching: ${JSON.stringify(b.caching)}` : "";
-      return `export const ${id} = Cloudflare.Hyperdrive.Connection("${name}", { ${adopt && b.configName ? `name: ${JSON.stringify(b.configName)}, ` : ""}origin: Config.redacted(${JSON.stringify(b.urlSecret)}).pipe(Config.map(pgOrigin))${caching} });`;
+      const named = adopt && b.configName ? `name: ${JSON.stringify(b.configName)}, ` : "";
+      // The stack's own Neon branch (neonResources, above): its origin, once it exists.
+      if (b.origin?.neon) return [
+        `export const ${id} = Effect.gen(function* () {`,
+        `  const db = yield* ${neonDb(name)};`,
+        `  return yield* Cloudflare.Hyperdrive.Connection("${name}", { ${named}origin: db.origin${caching} });`,
+        `});`,
+      ].join("\n");
+      // The origin is the secret's URL, read as the stack deploys; the password stays redacted.
+      return `export const ${id} = Cloudflare.Hyperdrive.Connection("${name}", { ${named}origin: Config.redacted(${JSON.stringify(b.urlSecret)}).pipe(Config.map(pgOrigin))${caching} });`;
     }
     case "ai":
       // Worker-only: Workers AI has no resource to provision.
@@ -74,6 +82,20 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
   }
 }
 
+/** The Neon resource a hyperdrive binding fronts: its branch, else its project's default branch. */
+const neonDb = (name: string) => `${ident(name)}_Neon`;
+
+/** `origin: { neon }`: the Neon project, and the branch off it when one is named. */
+function neonResources(name: string, b: Extract<Binding, { type: "hyperdrive" }>): string[] {
+  const n = b.origin!.neon;
+  const project = `Neon.Project("${name}Neon"${propsArg({ name: n.project, region: n.region, pgVersion: n.pgVersion })})`;
+  if (!n.branch) return [`export const ${neonDb(name)} = ${project};`];
+  return [
+    `export const ${neonDb(name)}Project = ${project};`,
+    `export const ${neonDb(name)} = Neon.Branch("${name}NeonBranch", { project: ${neonDb(name)}Project, name: ${JSON.stringify(n.branch)} });`,
+  ];
+}
+
 export function generateAlchemy(c: RustyBunsConfig): string {
   // Edge is on when asked for, or when nothing else is (configs from before targets.box).
   const edge = !!c.targets.edge || !c.targets.box;
@@ -88,18 +110,23 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   // experimental.wheel "agent": these secrets are minted by the stack itself.
   const minted = new Set(mintedSecrets(c));
   for (const [name, b] of Object.entries(bindings))
-    if (b.type === "hyperdrive" && minted.has(b.urlSecret))
+    if (b.type === "hyperdrive" && b.urlSecret && minted.has(b.urlSecret))
       throw new Error(`${name} reads its Postgres URL from ${b.urlSecret}, and experimental.wheel "agent" would mint that as a random value. Give ${b.urlSecret} an op reference.`);
-  const pg = edge && Object.values(bindings).some((b) => b.type === "hyperdrive");
+  const hyperdrives = Object.entries(bindings).flatMap(([n, b]) => b.type === "hyperdrive" ? [[n, b] as const] : []);
+  const pg = edge && hyperdrives.some(([, b]) => !b.origin?.neon);
+  const neon = hyperdrives.filter(([, b]) => b.origin?.neon);
+  // A box in the stack reads the branch's URL where the desktop reads NAME_URL; a urlSecret twin is a secret already.
+  const boxPg = neon.filter(([, b]) => !b.urlSecret).map(([n, b]) => [hyperdriveUrlEnv(n, b), neonDb(n)] as const);
   if (box && minted.size)
     throw new Error(`experimental.wheel "agent" can't mint secrets on a Hetzner box yet (${[...minted].join(", ")}). Give them an op reference or a value, or use the railway box.`);
-  /** `export const Name = <ctor>(...)`, built inside an Effect when it needs minted secrets. */
-  const withMinted = (name: string, ctor: string, body: string[], pipe = "") => {
-    if (!minted.size) return [`export const ${name} = ${ctor}(${JSON.stringify(name)}, {`, ...body, `})${pipe};`];
+  /** `export const Name = <ctor>(...)`, built inside an Effect when it needs minted secrets (or, `dbs`, Neon branches). */
+  const withMinted = (name: string, ctor: string, body: string[], pipe = "", dbs: readonly (readonly [string, string])[] = []) => {
+    if (!minted.size && !dbs.length) return [`export const ${name} = ${ctor}(${JSON.stringify(name)}, {`, ...body, `})${pipe};`];
     return [
       `export const ${name} = Effect.gen(function* () {`,
-      `  // experimental.wheel "agent": minted on create, kept in stack state, gone on destroy.`,
+      ...(minted.size ? [`  // experimental.wheel "agent": minted on create, kept in stack state, gone on destroy.`] : []),
       ...[...minted].map((n) => `  const ${ident(n)} = yield* Alchemy.makeRandom(${JSON.stringify(n)});`),
+      ...dbs.map(([, db]) => `  const ${db.toLowerCase()} = yield* ${db};`),
       `  return yield* ${ctor}(${JSON.stringify(name)}, {`,
       ...body.map((l) => "  " + l),
       `  })${pipe};`,
@@ -114,12 +141,15 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   if (edge && w.build) lines.push(`import * as Command from "alchemy/Command";`);
   if (box) lines.push(`import * as Hetzner from "alchemy/Hetzner";`);
   if (rail) lines.push(`import * as Railway from "alchemy/Railway";`);
+  if (neon.length) lines.push(`import * as Neon from "alchemy/Neon";`);
   lines.push(`import * as Effect from "effect/Effect";`);
   if (edge) lines.push(`import * as Config from "effect/Config";`);
   if (pg) lines.push(`import * as Redacted from "effect/Redacted";`);
   // Without the edge, Random's provider has to be named: Railway.providers() registers it but its type doesn't say so.
   const randomProvider = minted.size > 0 && !edge;
-  if ((edge && (box || rail)) || randomProvider) lines.push(`import * as Layer from "effect/Layer";`);
+  const providerList = [edge && "Cloudflare.providers()", box ? "Hetzner.providers()" : rail ? "Railway.providers()" : null,
+    randomProvider && "Alchemy.RandomProvider()", neon.length && "Neon.providers()"].filter((p): p is string => !!p);
+  if (providerList.length > 1) lines.push(`import * as Layer from "effect/Layer";`);
   lines.push(``);
 
   if (pg) {
@@ -132,6 +162,12 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     lines.push(`  return { scheme: scheme as "postgres" | "postgresql", host: host!, port: Number(port || 5432), database: decodeURIComponent(database!),`);
     lines.push(`    user: decodeURIComponent(user!), password: Redacted.make(decodeURIComponent(password ?? "")) };`);
     lines.push(`};`);
+    lines.push(``);
+  }
+
+  if (neon.length) {
+    // origin: { neon }: the stack owns the Postgres. Made at deploy (NEON_API_KEY), gone on destroy.
+    for (const [name, b] of neon) lines.push(...neonResources(name, b));
     lines.push(``);
   }
 
@@ -195,6 +231,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     const env = [
       ...secrets.map((n) => `${n}: process.env[${JSON.stringify(n)}] ?? ""`),
       ...(box.volumeSize > 0 ? [] : [`DATA_DIR: ${JSON.stringify(`/var/lib/${c.name}`)}`]),
+      ...boxPg.map(([env, db]) => `${env}: ${db.toLowerCase()}.connectionUri`),
     ];
     lines.push(`// ---- box target (Hetzner) ------------------------------------------------`);
     lines.push(`// One server running the compiled Bun host (\`rustybuns build box\`). Hetzner.Service`);
@@ -209,14 +246,14 @@ export function generateAlchemy(c: RustyBunsConfig): string {
       lines.push(`  return yield* Hetzner.Volume("Data", { size: ${box.volumeSize}, format: "ext4", server: box, automount: true });`);
       lines.push(`});`);
     }
-    lines.push(`export const Service = Hetzner.Service("Service", {`);
-    lines.push(`  server: Box,`);
-    lines.push(`  main: ${JSON.stringify(`${BOX_DIR}/launch.mjs`)},`);
-    lines.push(`  extraFiles: [{ source: ${JSON.stringify(BOX_DIR)}, destination: "." }],`);
-    lines.push(`  isExternal: true,  // a finished program, not an Effect entry: pack it as-is`);
-    lines.push(`  port: ${box.port},`);
-    lines.push(`  env: { ${env.join(", ")} },`);
-    lines.push(`});`);
+    lines.push(...withMinted("Service", "Hetzner.Service", [
+      `  server: Box,`,
+      `  main: ${JSON.stringify(`${BOX_DIR}/launch.mjs`)},`,
+      `  extraFiles: [{ source: ${JSON.stringify(BOX_DIR)}, destination: "." }],`,
+      `  isExternal: true,  // a finished program, not an Effect entry: pack it as-is`,
+      `  port: ${box.port},`,
+      `  env: { ${env.join(", ")} },`,
+    ], "", boxPg));
     lines.push(``);
   }
 
@@ -225,6 +262,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
       `DATA_DIR: ${JSON.stringify(rail.volume ? RAILWAY_DATA : `/var/lib/${c.name}`)}`,
       ...secrets.map((n) => `${n}: process.env[${JSON.stringify(n)}] ?? ""`),
       ...[...minted].map((n) => `${n}: ${ident(n)}`),
+      ...boxPg.map(([env, db]) => `${env}: ${db.toLowerCase()}.connectionUri`),
     ];
     const region = rail.region ? `, region: ${JSON.stringify(rail.region)}` : "";
     lines.push(`// ---- box target (Railway) -----------------------------------------------`);
@@ -240,8 +278,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     sb.push(`  healthcheckPath: "/health",`);
     sb.push(`  sleepApplication: ${rail.sleep},  // idle = asleep = close to free; first request wakes it`);
     sb.push(`  env: { ${env.join(", ")} },`);
-    lines.push(...withMinted("Service", "Railway.Service", sb));
-    if (rail.volume && minted.size) {
+    lines.push(...withMinted("Service", "Railway.Service", sb, "", boxPg));
+    if (rail.volume && (minted.size || boxPg.length)) {
       // Service is an Effect here, so attach the Volume to the created one.
       lines.push(`export const Data = Effect.gen(function* () {`);
       lines.push(`  const service = yield* Service;`);
@@ -258,10 +296,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   if (((box || rail) && secrets.length) || optional)
     lines.splice(lines.findIndex((l) => l === ""), 0, `declare const process: { env: Record<string, string | undefined> };`);
 
-  const other = box ? "Hetzner.providers()" : rail ? "Railway.providers()" : null;
-  const providers = edge && other ? `Layer.mergeAll(Cloudflare.providers(), ${other})`
-    : randomProvider ? `Layer.mergeAll(${other}, Alchemy.RandomProvider())`
-    : other ?? "Cloudflare.providers()";
+  const providers = providerList.length > 1 ? `Layer.mergeAll(${providerList.join(", ")})` : providerList[0]!;
   const out = [edge && "url: worker.url", (box || rail) && "box: service.url"].filter(Boolean).join(", ");
   lines.push(`export default Alchemy.Stack(`);
   lines.push(`  ${JSON.stringify(c.name)},`);

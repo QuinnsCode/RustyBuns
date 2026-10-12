@@ -42,6 +42,10 @@ test("hyperdrive: its urlSecret has to be a secret binding", async () => {
     .toEqual([`bindings.HYPERDRIVE.urlSecret: "DATABASE_URL" isn't a secret binding; add DATABASE_URL: { type: "secret" } with the postgres:// URL`]);
   expect(await pg({ DATABASE_URL: { type: "var", value: "postgres://x" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL" } })).toHaveLength(1);
   expect(await pg({ DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL", caching: { maxAge: 0 } } })).toHaveLength(1);
+  // origin.neon: the stack owns the database, so the URL secret is optional.
+  expect(await pg({ HYPERDRIVE: { type: "hyperdrive", origin: { neon: { branch: "prod", pgVersion: 17 } } } })).toEqual([]);
+  expect(await pg({ HYPERDRIVE: { type: "hyperdrive" } })).toEqual([`bindings.HYPERDRIVE: needs urlSecret (a secret with the postgres:// URL) or origin: { neon: {} }`]);
+  expect(await pg({ HYPERDRIVE: { type: "hyperdrive", origin: { neon: { pgVersion: 13 } } } })).toHaveLength(1);
   expect(await pg({ DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL", local: "pglite", migrationsDir: "drizzle" } })).toEqual([]);
   expect(await pg({ DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL", migrationsDir: "drizzle" } }))
     .toEqual([`bindings.HYPERDRIVE.migrationsDir: only a PGlite twin takes migrations at boot; add local: "pglite", or migrate your Postgres yourself`]);
