@@ -67,15 +67,121 @@ Each Supabase piece has a Cloudflare shape, and with it a Rusty Buns twin:
 | Cron (`pg_cron`) | **Cron Triggers** | low | |
 | Vectors (`pgvector`) | **Vectorize**, or keep pgvector on Neon | medium | |
 
-The cheapest real exit is **Neon + Hyperdrive + Better Auth + R2**. The SQL and the RLS-free parts move
-almost unchanged. D1 is the "full Rusty Buns" endpoint (sqlite everywhere, true offline desktop), but
-it's a rewrite of the data layer, so it's only worth it if he wants that desktop story.
+
+## Own your auth: Better Auth
+
+Better Auth is the proposal for auth on either path. It's a TypeScript library, not a service: users,
+sessions and accounts are rows in *your* database (D1, sqlite, Postgres or PGlite), and it runs in the
+`fetch` handler on all three targets. Supabase Auth bills per user over 100k MAU. Better Auth costs
+nothing per user, because a user is a row. It covers email and password, OAuth, magic links, passkeys,
+2FA and organizations as plugins. Alchemy's repo already has a `cloudflare-better-auth` example.
+
+It also fits the identity primitive as it is. Better Auth checks the session, and the handler passes on
+`X-User-Id`. You can switch over before the database moves: Better Auth's [Supabase migration
+guide](https://better-auth.com/docs/guides/supabase-migration-guide) copies users and password hashes,
+and the one cost is that everyone logs in again once.
+
+## The simple database options
+
+Not every app needs a hosted Postgres. From simplest up:
+
+- **sqlite / D1**: what Rusty Buns already does. D1 in the cloud, a sqlite file on the desktop and box.
+  Free up to 5GB on Workers Free. One D1 database tops out at 10GB, so a big app shards it or uses
+  Postgres.
+- **[PGlite](https://pglite.dev)**: real Postgres compiled to WASM (from ElectricSQL), a few MB, running
+  inside Bun, Node or the browser and saving to a folder. It's the obvious **local twin for a Postgres
+  binding**: the desktop build gets real Postgres offline, with no Docker and no `supabase start`, and
+  the app's Postgres SQL keeps working. It allows one connection at a time and isn't a production
+  server, so the cloud side still uses Hyperdrive. It also makes a good test database.
+- **Postgres on the box**: Rusty Buns already deploys a Railway or Hetzner box. A Postgres next to the
+  app on that volume costs nothing extra beyond the box.
+- **Neon + Hyperdrive**: managed Postgres that scales to zero. Pay as you go, no minimum.
+
+PGlite locally, Hyperdrive to Neon or Supabase in the cloud: that's the shape #1067 should take.
+
+## The toolchain: an agent, `cf` and Rusty Buns
+
+What used to sell Supabase is that one dashboard does everything. An agent with the right tools now
+does that job, against primitives you own:
+
+- **Rusty Buns** turns the app into a desktop binary, a Worker and a box from one config, and deploys
+  it through Alchemy.
+- **[`cf`](https://flaviocopes.com/cloudflare-cf/)**, Cloudflare's new agent-first CLI (open beta since
+  Birthday Week, September 28 2026), covers about 2,900 API operations against Wrangler's 280. It prints
+  JSON by default, has `cf cli search` to find a command from a plain-language task, offers `--dry-run`
+  with no credentials, and supports scoped tokens per project. With it, an agent can inspect and fix the
+  account (DNS, Access, R2 lifecycle, logs), not just deploy Workers. It reads `cloudflare.config.ts`.
+  **Caveats:** it's beta, it needs Node 22.18+ and **doesn't support Bun**, and Wrangler gets 18 months
+  of maintenance after the beta ends. Rusty Buns keeps deploying through Alchemy. `cf` is the agent's
+  tool for everything around the deploy.
+- **An agent** (Claude Code at an Agent Office desk) does the migration work: it rewrites Edge
+  Functions as Worker routes, ports the SQL, runs the Better Auth user copy, and `rclone`s the buckets.
+  Supabase's moat was the convenience; an agent covers the convenience.
+
+## Napkin math
+
+List prices as of October 2026 ([Supabase](https://supabase.com/pricing),
+[Workers, D1, R2, DOs](https://developers.cloudflare.com/workers/platform/pricing/),
+[Neon](https://neon.com/pricing)). Monthly, rounded, assuming 5ms CPU per request and that R2 traffic
+mostly stays inside the free op counts. Nothing was deployed to get these numbers.
+
+**1. Side project**: 2k MAU, 0.5GB DB, 2GB files, 10GB egress, 1M requests.
+
+| Supabase | Cloudflare + Rusty Buns |
+|---|---|
+| Free fits, but it pauses after a week idle and caps you at 2 projects. To stay up: **Pro, $25** | Workers Free (100k requests/day), D1 and R2 free tiers: **$0** ($5 if one day tops 100k) |
+
+**2. Small SaaS**: 20k MAU, 4GB DB, 50GB files, 300GB egress, 20M requests, prod plus staging.
+
+| Line | Supabase | Cloudflare + Rusty Buns |
+|---|---|---|
+| Base | Pro $25 (covers 1 Micro) | Workers Paid $5 (covers every app and stage) |
+| Second project | Micro $10 | $0 |
+| Requests and CPU | — | 10M × $0.30 + 70M ms × $0.02 = $4.40 |
+| DB | included | D1 included |
+| Files | included | 40GB × $0.015 = $0.60 |
+| Egress | 50GB × $0.09 = $4.50 | $0 |
+| Auth | included | Better Auth, $0 |
+| **Total** | **≈ $40** ($45 on Small compute) | **≈ $10** |
+
+**3. Taking off**: 150k MAU, 40GB DB, 500GB files, 3TB egress, 200M requests, 20M realtime messages,
+1,500 peak sockets.
+
+| Line | Supabase | Cloudflare + Rusty Buns (Neon for the 40GB) |
+|---|---|---|
+| Base and compute | $25 + Medium $50 (after the $10 credit) = $75 | Workers $5 |
+| Requests and CPU | — | 190M × $0.30 + 970M ms × $0.02 = $76 |
+| DB | 32GB × $0.125 = $4 | Neon: 1 CU always on, 730h × $0.106 = $77, plus 40GB × $0.35 = $14 |
+| Auth (MAU) | 50k × $0.00325 = **$163** | Better Auth, **$0** |
+| Files | 400GB × $0.0213 = $9 | R2: 490GB × $0.015 = $7, plus ops ≈ $32 |
+| Egress | 2,750GB × $0.09 = **$248** | **$0** |
+| Realtime | 15M msgs × $2.50/M + 1k sockets × $10/1k = $48 | DOs: 20M msgs bill as 1M requests (20:1), hibernated: ≈ $5 |
+| **Total** | **≈ $545** (≈ $645 with 7-day PITR) | **≈ $215** |
+
+What the math says:
+
+- **Small apps go from $25-45 to $0-10.** Every extra project costs nothing on Cloudflare, but costs at
+  least $10 of compute on Supabase.
+- **At scale, two lines are 75% of the Supabase bill: MAU ($163) and egress ($248).** Better Auth takes
+  the first to zero, Cloudflare's free egress the second. That's about $400 a month back, the bulk of a
+  2.5x saving.
+- The Cloudflare side keeps its own sharp edge: request and CPU charges grow with traffic. A heavy
+  5ms+ handler at 200M requests is real money, so profile it (and that's where Rust pays off).
+- **The agent's cost** is the Claude plan he already pays for, plus a few sessions of migration. Paths
+  A, then auth, then storage are small steps an agent can do in a day each. At the small-SaaS size the
+  saving is about $30 a month, which won't move anyone by itself. The pitch for him is the desktop
+  binary, owning his auth and data, and not getting a bill shock when the app takes off.
 
 ## Recommendation
 
-Do it in that order. **Path A first**: it's a dev dependency and an afternoon of work, and he keeps
-Supabase. Once his app runs as a Worker and a binary, the Supabase pieces he actually uses are easy to
-see, and each one can move on its own (storage to R2 is the easiest first move, auth the riskiest). The
-gap that makes path A rough is ours: **Rusty Buns has no Postgres/Hyperdrive binding** ([#1067](https://github.com/QuinnsCode/RustyBuns/issues/1067)). Adding one would
-make "Supabase or Neon behind Hyperdrive" a first-class storage option, and it would serve the Neon exit
-in path B too.
+1. **Path A first.** Rusty Buns as a dev dependency, Supabase untouched. That's an afternoon's work, and
+   he gets the binary and the Worker.
+2. **Own the auth next: Better Auth.** It takes the biggest line at scale to zero, and it doesn't wait
+   on the database.
+3. **Storage to R2.** Easy, and it ends the egress bill.
+4. **Database last, and only if it's worth it**: D1 if the data is small and he wants true offline
+   desktop, Neon + Hyperdrive if he wants to keep Postgres. Either way, PGlite is the local twin.
+
+The gap is ours: **Rusty Buns has no Postgres/Hyperdrive binding**
+([#1067](https://github.com/QuinnsCode/RustyBuns/issues/1067)). With PGlite as its local twin, it makes
+"keep your Postgres" first-class on every target.
