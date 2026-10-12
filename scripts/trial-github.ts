@@ -103,7 +103,8 @@ function packageManager(dir: string, root: string): { pm: string; at: string } {
       if (existsSync(join(d, f))) return { pm, at: d };
     if (d === root) break;
   }
-  return { pm: "npm", at: dir };
+  // no lockfile: pnpm, as RWSDK's starters use. npm 10 fails 41 of 42 such apps (ERESOLVE, an edgesOut crash).
+  return { pm: "pnpm", at: dir };
 }
 
 /** Boots the dev host, logs in with the printed token like a browser does, and GETs /. */
@@ -156,9 +157,11 @@ async function trial(app: App): Promise<Result> {
     const s = await step(log, OUT, ["git", "clone", "--depth", "1", `https://github.com/${app.repo}`, root], 180e3);
     if (!s.ok) return { ...r, error: `clone: ${s.tail}` };
   }
-  const { pm, at } = packageManager(dir, root);
+  let { pm, at } = packageManager(dir, root);
+  let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3);
+  // an npm lockfile that npm itself can't install (peer conflicts): pnpm reads package.json alone
+  if (!s.ok && pm === "npm") { pm = "pnpm"; s = await step(log, at, ["pnpm", "install", "--config.minimum-release-age=0"], 600e3); }
   r.pm = pm;
-  let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : [pm, "install"], 600e3);
   if (!s.ok) return { ...r, error: `install: ${s.tail}` };
   const cli = o.local ? ["bun", join(REPO, "packages/cli/src/index.ts")] : [join(dir, "node_modules/.bin/rustybuns")];
   if (o.local) {
