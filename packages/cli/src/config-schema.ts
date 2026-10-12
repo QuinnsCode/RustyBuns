@@ -47,6 +47,10 @@ const Binding = Schema.Union([
   Schema.Struct({ type: Schema.Literal("ai") }),
   Schema.Struct({ type: Schema.Literal("container"), className: Str, dockerfile: Str, maxInstances: opt(int(1, 1000)), instanceType: opt(Str) }),
   Schema.Struct({ type: Schema.Literal("queue"), queueName: Str, renamedFrom: opt(Str), consumer: opt(Schema.Union([QueueConsumer, Schema.Literal(false)])) }),
+  Schema.Struct({
+    type: Schema.Literal("hyperdrive"), urlSecret: Str, configName: opt(Str),
+    caching: opt(Schema.Union([Schema.Literal(false), Schema.Struct({ maxAge: opt(int(1, 3600)), staleWhileRevalidate: opt(int(0, 3600)) })])),
+  }),
   Schema.Struct({ type: Schema.Literal("var"), value: Str }),
   Schema.Struct({ type: Schema.Literal("secret"), op: opt(Str), optional: opt(Bool), boxOnly: opt(Bool) }),
 ]);
@@ -171,5 +175,12 @@ export const decodeConfig = (input: unknown): Effect.Effect<RustyBunsConfig, Con
       (c) => !((c.worker || c.targets.edge) && !c.targets.edge?.workerName) || Schema.is(WorkerName)(c.name),
       (c) => new ConfigInvalid({ problems: [`name: ${JSON.stringify(c.name)} is the Worker's name, so it needs to be lowercase letters, digits and dashes (at most 63), or set targets.edge.workerName`] }),
     ),
+    // A Hyperdrive's origin URL comes from a secret binding, so the wheel and the box get it too.
+    Effect.flatMap((c) => {
+      const b = c.bindings;
+      const bad = Object.entries(b).flatMap(([n, h]) => h.type === "hyperdrive" && b[h.urlSecret]?.type !== "secret"
+        ? [`bindings.${n}.urlSecret: ${JSON.stringify(h.urlSecret)} isn't a secret binding; add ${h.urlSecret}: { type: "secret" } with the postgres:// URL`] : []);
+      return bad.length ? Effect.fail(new ConfigInvalid({ problems: bad })) : Effect.succeed(c);
+    }),
     Effect.as(input as RustyBunsConfig),   // the schema only checks; the config stays what the developer wrote
   );

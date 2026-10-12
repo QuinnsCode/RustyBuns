@@ -157,7 +157,7 @@ async function init() {
   if (inf.framework === "unknown" && !src && !force)
     throw new Error("no vite or rwsdk dependency in package.json, so this does not look like a web app Rusty Buns can box. Pass --force to write a config anyway.");
   console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}`);
-  console.log(`detected: ${inf.framework} app "${inf.name}" (${inf.pm}${inf.hasReact ? ", react" : ""}${inf.hasThree ? ", three" : ""}${inf.hasPrisma ? ", prisma" : ""}${inf.hasBetterAuth ? ", better-auth" : ""})`);
+  console.log(`detected: ${inf.framework} app "${inf.name}" (${inf.pm}${inf.hasReact ? ", react" : ""}${inf.hasThree ? ", three" : ""}${inf.hasPrisma ? ", prisma" : ""}${inf.hasBetterAuth ? ", better-auth" : ""}${inf.postgres ? ", postgres" : ""})`);
   console.log(`source:   ${inf.srcDir}/ (${inf.srcDirSource}${Object.keys(inf.aliases).length ? `, aliases ${Object.entries(inf.aliases).map(([a, d]) => `${a}->${d}`).join(" ")}` : ""})`);
   if (inf.srcDirSource === "guess") {
     console.log(inf.srcDir === "."
@@ -231,6 +231,13 @@ async function init() {
   const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k]);
   for (const k of secrets) cfg.bindings[k] = { type: "secret" };
   if (secrets.length) console.log(`secrets:  ${secrets.join(" ")}  (names from .dev.vars)`);
+  // Postgres: Hyperdrive in front of it on the edge; the desktop and box connect to the URL itself.
+  if (inf.postgres && !Object.values(cfg.bindings).some((b) => b.type === "hyperdrive")) {
+    const name = cfg.bindings["HYPERDRIVE"] ? "PG" : "HYPERDRIVE";
+    cfg.bindings["DATABASE_URL"] ??= { type: "secret" };
+    cfg.bindings[name] = { type: "hyperdrive", urlSecret: "DATABASE_URL" };
+    console.log(`postgres: ${name} (Hyperdrive, for ${inf.postgres}) in front of the DATABASE_URL secret; read env.${name}.connectionString`);
+  }
   // Desktop client build: always the vite.desktop.config.ts that `add desktop` generates,
   // never the app's own vite config: it can point at files Rusty Buns doesn't own. What the
   // app's build runs before vite (prisma generate, codegen) runs first, as in initSpa (#403).

@@ -9,6 +9,7 @@ export { kv, KVNamespace } from "./bindings/kv.ts";
 export { storage, type StorageOptions } from "./bindings/storage.ts";
 export { sqlStorage } from "./bindings/sql.ts";
 export { r2, R2Bucket } from "./bindings/r2.ts";
+export { hyperdrive, type LocalHyperdrive } from "./bindings/hyperdrive.ts";
 export { LocalArtifacts, LocalArtifactsRepo, gitHttp } from "./bindings/artifacts.ts";
 export { images, LocalImages } from "./bindings/images.ts";
 export { queue, LocalQueue, type QueueBatch, type QueueMessage, type QueueConsumerSettings, type QueueSendOptions } from "./bindings/queue.ts";
@@ -29,6 +30,7 @@ import { d1 } from "./bindings/d1.ts";
 import { kv } from "./bindings/kv.ts";
 import { storage, type StorageOptions } from "./bindings/storage.ts";
 import { r2 } from "./bindings/r2.ts";
+import { hyperdrive } from "./bindings/hyperdrive.ts";
 import { LocalArtifacts } from "./bindings/artifacts.ts";
 import { images } from "./bindings/images.ts";
 import { queue } from "./bindings/queue.ts";
@@ -85,6 +87,8 @@ export function localBindings(dataDir: string) {
     /** R2 over a directory. With `dir` (an embedded/synced set, possibly read-only) reads come
      *  from it and writes land in the data dir overlay; without it, everything lives in the data dir. */
     r2: (bucket: string, dir?: string) => r2(dir ?? `${dataDir}/r2/${bucket}`, `${dataDir}/r2/${bucket}`),
+    /** Hyperdrive as the origin's own URL: no pool off the edge. Undefined when the URL is unset. */
+    hyperdrive,
     /** Artifacts over bare git repos. Serve them with `gitHttp` under /__rb/git/ and set `remoteBase`. */
     artifacts: (namespace: string) => new LocalArtifacts(`${dataDir}/artifacts/${namespace}`, namespace),
     /** Cloudflare Images as a passthrough: info() reads the header, output() returns the original. */

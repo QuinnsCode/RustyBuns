@@ -814,3 +814,36 @@ test("builtEntry: finds the Worker in any environment folder by its wrangler.jso
   writeFileSync(dir + "/.output/server/start-server.js", "");
   expect(builtEntry({ name: "h", worker: { builtMain: ".output/server/server.js" } } as any, dir)).toBe(".output/server/start-server.js");
 });
+
+test("hyperdrive: alchemy fronts the URL secret, wrangler binds it for local dev, the desktop and box get the URL itself", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL", configName: "g-pg", caching: false } },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  const a = generateAlchemy(c);
+  expect(a).toContain(`import * as Redacted from "effect/Redacted";`);
+  expect(a).toContain(`export const HYPERDRIVE = Cloudflare.Hyperdrive.Connection("HYPERDRIVE", { origin: Config.redacted("DATABASE_URL").pipe(Config.map(pgOrigin)), caching: { disabled: true } });`);
+  expect(a).toContain(`HYPERDRIVE: HYPERDRIVE`);
+  // adopt names it as the config does.
+  expect(generateAlchemy({ ...c, targets: { edge: { provider: "cloudflare", adopt: true } } })).toContain(`Connection("HYPERDRIVE", { name: "g-pg", origin:`);
+  // The generated parser, run: a Supabase pooler URL with an encoded password and a query string.
+  const src = new Bun.Transpiler({ loader: "ts" }).transformSync(a.slice(a.indexOf("const pgOrigin"), a.indexOf("\n};", a.indexOf("const pgOrigin")) + 3));
+  const Redacted = { value: (s: string) => s, make: (s: string) => ({ redacted: s }) };
+  const pgOrigin = new Function("Redacted", `${src}; return pgOrigin;`)(Redacted);
+  expect(pgOrigin("postgresql://postgres.ref:p%40ss@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require")).toEqual({
+    scheme: "postgresql", host: "aws-0-us-east-1.pooler.supabase.com", port: 6543, database: "postgres", user: "postgres.ref", password: { redacted: "p@ss" } });
+  expect(pgOrigin("postgres://u:pw@db.example.com/app").port).toBe(5432);
+  expect(() => pgOrigin("mysql://u:pw@h/db")).toThrow(/postgres:\/\//);
+  // A minted (wheel "agent") secret is random: it can't be a database URL.
+  expect(() => generateAlchemy({ ...c, experimental: { wheel: "agent" } })).toThrow(/op reference/);
+  const w = JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, ""));
+  expect(w.hyperdrive).toEqual([{ binding: "HYPERDRIVE", id: "00000000000000000000000000000000" }]);
+  expect(desktopEntry(c)).toContain(`HYPERDRIVE: local.hyperdrive(process.env["DATABASE_URL"], "HYPERDRIVE"),`);
+  expect(spaEntry({ ...c, targets: { desktop: { mode: "spa", clientDir: "dist" } } })).toContain(`HYPERDRIVE: local.hyperdrive(process.env["DATABASE_URL"], "HYPERDRIVE"),`);
+  // wrangler's hyperdrive carries over, its origin URL as a secret.
+  expect(wranglerToConfig({ name: "g", hyperdrive: [{ binding: "HYPERDRIVE", id: "abc" }, { binding: "REPLICA", id: "def" }] }).bindings).toEqual({
+    DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL" },
+    REPLICA_URL: { type: "secret" }, REPLICA: { type: "hyperdrive", urlSecret: "REPLICA_URL" },
+  });
+});

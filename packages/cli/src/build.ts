@@ -130,6 +130,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
   const d1s = Object.entries(bindings).filter(([, b]) => b.type === "d1").map(([n, b]) => [n, (b as any).databaseName as string, (b as any).migrationsDir as string | undefined] as const);
   const vars = Object.entries(bindings).filter(([, b]) => b.type === "var").map(([n, b]) => [n, (b as any).value as string]);
   const r2s = Object.entries(bindings).filter(([, b]) => b.type === "r2").map(([n, b]) => [n, (b as any).bucketName as string] as const);
+  const pgs = Object.entries(bindings).filter(([, b]) => b.type === "hyperdrive").map(([n, b]) => [n, (b as any).urlSecret as string] as const);
   // Desktop has no secrets; a box reads them from its env file.
   const secrets = h.box ? Object.entries(bindings).filter(([, b]) => b.type === "secret").map(([n]) => n) : [];
   const mounts = d.mounts ?? {};
@@ -185,6 +186,7 @@ ${d1s.map(([n, db]) => `  ${n}: local.d1(${JSON.stringify(db)}),`).join("\n")}
 ${vars.map(([n, v]) => `  ${n}: ${JSON.stringify(v)},`).join("\n")}
 ${r2s.map(([n, bucket]) => { const dir = d.r2?.[n]; return `  ${n}: local.r2(${JSON.stringify(bucket)}${dir ? `, resolveDir(${JSON.stringify(dir)})` : ""}),`; }).join("\n")}
 ${secrets.map((n) => `  ${n}: process.env[${JSON.stringify(n)}] ?? "",`).join("\n")}
+${pgs.map(([n, url]) => `  ${n}: local.hyperdrive(process.env[${JSON.stringify(url)}], ${JSON.stringify(n)}),`).join("\n")}
   LOG_PIPELINE: { send: async () => {} },
   LOG_COLDSTORE_PIPELINE: { send: async () => {} },
 };
@@ -433,6 +435,8 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       }
       case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
       case "ratelimit": bind.push(`  // ${name}: Workers Rate Limiting has no local twin; the app runs without it`); break;
+      // No pool off the edge: the app gets the origin's URL in Hyperdrive's shape.
+      case "hyperdrive": bind.push(`  ${name}: local.hyperdrive(process.env[${JSON.stringify(b.urlSecret)}], ${JSON.stringify(name)}),`); break;
       case "vectorize": bind.push(`  // ${name}: Cloudflare Vectorize has no local twin; the app runs without it`); break;
       case "ai": bind.push(`  // ${name}: Workers AI has no local twin; the app runs without it`); break;
       case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;

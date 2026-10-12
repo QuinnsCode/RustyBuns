@@ -69,7 +69,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     w["assets"] = { ...(c.worker.main ? { binding: "ASSETS" } : {}), directory: c.worker.assets, ...(c.worker.runWorkerFirst ? { run_worker_first: c.worker.runWorkerFirst } : {}),
       ...(c.worker.notFoundHandling ? { not_found_handling: c.worker.notFoundHandling } : {}) };
   }
-  const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [], sendEmail: unknown[] = [], ratelimits: unknown[] = [], vectorize: unknown[] = [];
+  const d1: unknown[] = [], kv: unknown[] = [], r2: unknown[] = [], dos: unknown[] = [], artifacts: unknown[] = [], containers: unknown[] = [], sendEmail: unknown[] = [], ratelimits: unknown[] = [], vectorize: unknown[] = [], hyperdrive: unknown[] = [];
   const producers: unknown[] = [], consumers: unknown[] = [];
   const vars: Record<string, string> = {};
   const sqliteClasses: string[] = [];
@@ -87,6 +87,9 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
     if (b.type === "images") w["images"] = { binding: name };
     if (b.type === "send_email") sendEmail.push({ name, ...(b.allowedSenderAddresses ? { allowed_sender_addresses: b.allowedSenderAddresses } : {}) });
     if (b.type === "ratelimit") ratelimits.push({ name, namespace_id: b.namespaceId, simple: b.simple });
+    // Wrangler wants an id, but local dev never uses it: it connects to
+    // CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<binding> instead, which keeps the password off disk.
+    if (b.type === "hyperdrive") hyperdrive.push({ binding: name, id: "00000000000000000000000000000000" });
     if (b.type === "vectorize") vectorize.push({ binding: name, index_name: b.indexName });
     // Wrangler takes one AI binding, as an object.
     if (b.type === "ai") w["ai"] = { binding: name };
@@ -108,6 +111,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   if (sendEmail.length) w["send_email"] = sendEmail;
   if (ratelimits.length) w["ratelimits"] = ratelimits;
   if (vectorize.length) w["vectorize"] = vectorize;
+  if (hyperdrive.length) w["hyperdrive"] = hyperdrive;
   if (producers.length) w["queues"] = { producers, ...(consumers.length ? { consumers } : {}) };
   if (dos.length) w["durable_objects"] = { bindings: dos };
   const migrations = doMigrations(sqliteClasses, previousMigrations(previous), c.worker.migrations);

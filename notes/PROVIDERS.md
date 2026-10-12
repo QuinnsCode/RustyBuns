@@ -58,8 +58,8 @@ binary, the Worker and the Linux box.
   because the queries still reach Postgres as that user.
 - **Direct Postgres** (Drizzle, Prisma, raw SQL) needs [Hyperdrive in front of
   Supabase](https://developers.cloudflare.com/hyperdrive/examples/connect-to-postgres/postgres-database-providers/supabase/)
-  on the Worker. Alchemy can declare that. **Rusty Buns can't yet**: there's no Postgres or Hyperdrive
-  binding, so no local twin either.
+  on the Worker. A `hyperdrive` binding declares it (#1067), and `init` adds one when the app uses `pg`,
+  `postgres`, or Drizzle or Prisma on postgresql. Off the edge its twin is the Postgres URL itself.
 
 The catch is the desktop and offline story. Our local twins are sqlite and folders, but his data lives
 in a hosted Postgres. So the desktop build is a thin client that needs the network, or it points at a
@@ -75,7 +75,7 @@ Each Supabase piece has a Cloudflare shape, and with it a Rusty Buns twin:
 | Supabase | Moves to | Effort | Notes |
 |---|---|---|---|
 | Postgres | **D1** (sqlite) | high | Rewrite Postgres-only SQL (jsonb, arrays, `returning` quirks, extensions). RLS has no equivalent, so policies become checks in code. You get a local twin for free. |
-| Postgres | **Neon + Hyperdrive** | low | Keeps Postgres and the SQL. `pg_dump` to restore. Alchemy has `Neon.Project`/`Neon.Branch`, wired straight into `Cloudflare.Hyperdrive`. No local twin until we add a Postgres binding. |
+| Postgres | **Neon + Hyperdrive** | low | Keeps Postgres and the SQL. `pg_dump` to restore. Alchemy has `Neon.Project`/`Neon.Branch`, wired straight into `Cloudflare.Hyperdrive`. The `hyperdrive` binding fronts a URL today; the stack owning the Neon branch is [#1139](https://github.com/QuinnsCode/RustyBuns/issues/1139). |
 | Auth | **Better Auth** (or Cloudflare Access for internal tools) | medium | Better Auth has an official [Supabase migration guide](https://better-auth.com/docs/guides/supabase-migration-guide): it moves users and password hashes, logs every session out, and doesn't cover 2FA or RLS yet. Its script targets Postgres, so with D1 it needs adapting. |
 | Storage | **R2** | low | Supabase Storage has an [S3-compatible endpoint](https://supabase.com/docs/guides/storage/s3/compatibility), so `rclone` copies buckets across. Bucket policies become checks in the Worker. |
 | Realtime | **Durable Objects** | medium | This is our comms primitive. Postgres change feeds don't carry over: whatever writes the row broadcasts to the DO. Presence and broadcast map directly. |
@@ -113,7 +113,8 @@ Not every app needs a hosted Postgres. From simplest up:
   app on that volume costs nothing extra beyond the box.
 - **Neon + Hyperdrive**: managed Postgres that scales to zero. Pay as you go, no minimum.
 
-PGlite locally, Hyperdrive to Neon or Supabase in the cloud: that's the shape #1067 should take.
+PGlite locally, Hyperdrive to Neon or Supabase in the cloud: that's the shape to end up with. #1067 shipped
+the Hyperdrive half, with the Postgres URL itself as the twin; PGlite is [#1138](https://github.com/QuinnsCode/RustyBuns/issues/1138).
 
 ### The toolchain: an agent, `cf` and Rusty Buns
 
@@ -198,9 +199,9 @@ What the math says:
 4. **Database last, and only if it's worth it**: D1 if the data is small and he wants true offline
    desktop, Neon + Hyperdrive if he wants to keep Postgres. Either way, PGlite is the local twin.
 
-The gap is ours: **Rusty Buns has no Postgres/Hyperdrive binding**
-([#1067](https://github.com/QuinnsCode/RustyBuns/issues/1067)). With PGlite as its local twin, it makes
-"keep your Postgres" first-class on every target.
+The `hyperdrive` binding ([#1067](https://github.com/QuinnsCode/RustyBuns/issues/1067)) keeps his Postgres
+on every target that can reach it. With PGlite as its offline twin
+([#1138](https://github.com/QuinnsCode/RustyBuns/issues/1138)), "keep your Postgres" works with no network too.
 
 ## Next providers
 

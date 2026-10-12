@@ -28,6 +28,8 @@ export interface Inferred {
   hasThree: boolean;
   hasPrisma: boolean;
   hasBetterAuth: boolean;
+  /** What says the app talks to Postgres (`pg`, `postgres`, Drizzle's or Prisma's postgresql), or null. */
+  postgres: string | null;
   /** Node server frameworks it depends on (express, socket.io, ...): its frontend alone isn't the app. */
   serverDeps: string[];
   scripts: Record<string, string>;
@@ -201,6 +203,25 @@ export function inferReactRouterBuild(root: string): string {
   return (dir ?? "build").replace(/^\.\//, "").replace(/\/$/, "");
 }
 
+/**
+ * The Postgres client an app queries with, by what names it: a driver in package.json, or
+ * Drizzle or Prisma set to postgresql. Neon's serverless driver is left out: it goes over
+ * HTTP and needs no Hyperdrive.
+ */
+export function inferPostgres(root: string, deps: Record<string, string>): string | null {
+  for (const d of ["pg", "postgres", "@prisma/adapter-pg"]) if (deps[d]) return d;
+  const read = (f: string) => { try { return readFileSync(join(root, f), "utf8"); } catch { return ""; } };
+  if (deps["drizzle-orm"] || deps["drizzle-kit"]) {
+    const cfg = ["drizzle.config.ts", "drizzle.config.js", "drizzle.config.mjs", "drizzle.config.json"].map(read).join("\n");
+    if (/\bdialect["']?\s*:\s*["']postgresql["']/.test(cfg)) return "drizzle (postgresql)";
+  }
+  if (deps["prisma"] || deps["@prisma/client"]) {
+    const schema = ["prisma/schema.prisma", "schema.prisma"].map(read).join("\n");
+    if (/\bprovider\s*=\s*["']postgres(?:ql)?["']/.test(schema)) return "prisma (postgresql)";
+  }
+  return null;
+}
+
 const SERVER_DEPS = ["express", "fastify", "koa", "socket.io", "@hono/node-server", "@nestjs/core", "@hapi/hapi"];
 
 export function infer(root = process.cwd()): Inferred {
@@ -236,6 +257,7 @@ export function infer(root = process.cwd()): Inferred {
     hasThree: !!deps["three"],
     hasPrisma: !!deps["@prisma/client"] || !!deps["prisma"],
     hasBetterAuth: !!deps["better-auth"],
+    postgres: inferPostgres(root, deps),
     serverDeps: SERVER_DEPS.filter((d) => deps[d]),
     scripts: pkg.scripts ?? {},
     prebuild: staticBuild.pre,

@@ -100,6 +100,21 @@ export type Binding =
       /** How this Worker consumes it, or false to only send to it. @default {} */
       consumer?: QueueConsumer | false;
     }
+  /**
+   * Cloudflare Hyperdrive: a pooled, cached route to a Postgres the app already has (Supabase,
+   * Neon, RDS). `env.NAME.connectionString` goes to `pg`, `postgres` or Drizzle as is. Off the
+   * edge there is no pool to go through, so the desktop and box hand the app the secret's URL
+   * itself, in the same shape (connectionString, host, port, user, password, database).
+   */
+  | {
+      type: "hyperdrive";
+      /** The `secret` binding holding the origin's URL, postgres://user:password@host:port/database. */
+      urlSecret: string;
+      /** The Hyperdrive config's name on Cloudflare (with targets.edge.adopt; Alchemy names it otherwise). */
+      configName?: string;
+      /** Query caching, on by default (60 s, 15 s stale-while-revalidate). false turns it off. */
+      caching?: false | { maxAge?: number; staleWhileRevalidate?: number };
+    }
   | { type: "var"; value: string }
   | {
       type: "secret";

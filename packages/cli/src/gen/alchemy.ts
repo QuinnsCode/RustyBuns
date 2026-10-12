@@ -44,6 +44,11 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
     case "vectorize":
       // Its metadata indexes are made in the stack below, once the index exists.
       return `export const ${id} = Cloudflare.Vectorize.Index("${name}", { ${adopt ? `name: ${JSON.stringify(b.indexName)}, ` : ""}dimensions: ${b.dimensions}, metric: ${JSON.stringify(b.metric ?? "cosine")} });`;
+    case "hyperdrive": {
+      // The origin is the secret's URL, read as the stack deploys; the password stays redacted.
+      const caching = b.caching === false ? `, caching: { disabled: true }` : b.caching ? `, caching: ${JSON.stringify(b.caching)}` : "";
+      return `export const ${id} = Cloudflare.Hyperdrive.Connection("${name}", { ${adopt && b.configName ? `name: ${JSON.stringify(b.configName)}, ` : ""}origin: Config.redacted(${JSON.stringify(b.urlSecret)}).pipe(Config.map(pgOrigin))${caching} });`;
+    }
     case "ai":
       // Worker-only: Workers AI has no resource to provision.
       return `export const ${id} = Cloudflare.Workers.AI(${JSON.stringify(name)});`;
@@ -82,6 +87,10 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   checkWheel(c);
   // experimental.wheel "agent": these secrets are minted by the stack itself.
   const minted = new Set(mintedSecrets(c));
+  for (const [name, b] of Object.entries(bindings))
+    if (b.type === "hyperdrive" && minted.has(b.urlSecret))
+      throw new Error(`${name} reads its Postgres URL from ${b.urlSecret}, and experimental.wheel "agent" would mint that as a random value. Give ${b.urlSecret} an op reference.`);
+  const pg = edge && Object.values(bindings).some((b) => b.type === "hyperdrive");
   if (box && minted.size)
     throw new Error(`experimental.wheel "agent" can't mint secrets on a Hetzner box yet (${[...minted].join(", ")}). Give them an op reference or a value, or use the railway box.`);
   /** `export const Name = <ctor>(...)`, built inside an Effect when it needs minted secrets. */
@@ -107,10 +116,24 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   if (rail) lines.push(`import * as Railway from "alchemy/Railway";`);
   lines.push(`import * as Effect from "effect/Effect";`);
   if (edge) lines.push(`import * as Config from "effect/Config";`);
+  if (pg) lines.push(`import * as Redacted from "effect/Redacted";`);
   // Without the edge, Random's provider has to be named: Railway.providers() registers it but its type doesn't say so.
   const randomProvider = minted.size > 0 && !edge;
   if ((edge && (box || rail)) || randomProvider) lines.push(`import * as Layer from "effect/Layer";`);
   lines.push(``);
+
+  if (pg) {
+    // A regex, not URL: the stack is checked with lib ESNext alone.
+    lines.push(`/** A postgres://user:password@host:port/database URL as Hyperdrive's origin. */`);
+    lines.push(`const pgOrigin = (url: Redacted.Redacted<string>) => {`);
+    lines.push(`  const m = /^(postgres(?:ql)?):\\/\\/([^:@]*)(?::(.*))?@([^@:\\/?#]+)(?::(\\d+))?\\/([^?#]+)/.exec(Redacted.value(url));`);
+    lines.push(`  if (!m) throw new Error("a Hyperdrive origin needs a postgres://user:password@host:port/database URL");`);
+    lines.push(`  const [, scheme, user, password, host, port, database] = m as unknown as string[];`);
+    lines.push(`  return { scheme: scheme as "postgres" | "postgresql", host: host!, port: Number(port || 5432), database: decodeURIComponent(database!),`);
+    lines.push(`    user: decodeURIComponent(user!), password: Redacted.make(decodeURIComponent(password ?? "")) };`);
+    lines.push(`};`);
+    lines.push(``);
+  }
 
   if (edge) {
     const envEntries: string[] = [];

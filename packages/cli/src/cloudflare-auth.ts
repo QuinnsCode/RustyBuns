@@ -16,7 +16,7 @@ import { workspaceRoot } from "./glue/deploy-deps.ts";
 
 /** Every Worker deploy: find the account, upload the script, its Durable Objects and workers.dev route. */
 export const BASE_SCOPES = ["account:read", "user:read", "workers:write", "workers_scripts:write", "workers_routes:write", "workers_tail:read"];
-/** Bindings Alchemy provisions through their own API. R2, DOs, vars and secrets ride on workers:write. */
+/** Bindings Alchemy provisions through their own API. R2, DOs, Hyperdrive, vars and secrets ride on workers:write. */
 const BY_BINDING: Record<string, string[]> = {
   d1: ["d1:write"],
   kv: ["workers_kv:write"],
