@@ -7,7 +7,8 @@
 //
 //   --dep <name>      search for package.json files that depend on <name> (needs `gh` logged in)
 //   --major <n>       keep only apps whose <dep> version is <n>.x
-//   --limit <n>       try at most n apps (default: all found)
+//   --limit <n>       try at most n apps (default: all found): the first n, most stars first
+//   --sample <n>      try n apps spread evenly across the list: a fair picture in minutes, not hours
 //   --stable          skip prerelease versions (1.0.0-beta.9, 1.3.0-canary.5): betas fail more, for the betas' own churn
 //   --since <date>    keep only repos pushed to on or after this date (e.g. 2026-01-01)
 //   --local           test this checkout's cli and shell-bun instead of the npm release
@@ -30,7 +31,7 @@ import { parseArgs } from "node:util";
 const { values: o, positionals } = parseArgs({
   allowPositionals: true,
   options: {
-    dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, since: { type: "string" }, stable: { type: "boolean" }, local: { type: "boolean" },
+    dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, sample: { type: "string" }, since: { type: "string" }, stable: { type: "boolean" }, local: { type: "boolean" },
     modes: { type: "string", default: "spa,worker" }, jobs: { type: "string", default: "2" },
     out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" }, list: { type: "boolean" }, from: { type: "string" },
   },
@@ -370,6 +371,7 @@ if (import.meta.main) {
   if (o.dep && !o.from) apps.push(...await search(o.dep));
   if (!apps.length) throw new Error("usage: bun scripts/trial-github.ts [--dep <name> [--major <n>]] [owner/repo[:subdir] ...]");
   if (o.limit) apps = apps.slice(0, Number(o.limit));
+  if (o.sample && Number(o.sample) < apps.length) { const n = Number(o.sample), step = apps.length / n; apps = Array.from({ length: n }, (_, i) => apps[Math.floor(i * step + step / 2)]!); }
   if (o.list) {
     for (const a of apps) console.log(`${String(a.stars ?? "").padStart(6)}  ${a.pushed ?? "          "}  ${(a.version ?? "").padEnd(16)}  ${a.repo}${a.sub ? `:${a.sub}` : ""}`);
     console.log(`${apps.length} apps`);
