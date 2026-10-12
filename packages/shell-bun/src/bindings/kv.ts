@@ -3,6 +3,15 @@
 
 import { Database } from "bun:sqlite";
 
+/** KV keys are at most this many UTF-8 bytes. */
+export const KV_MAX_KEY_BYTES = 512;
+
+/** Refuse a key the edge would, with its 414. */
+function checkKey(verb: string, key: string) {
+  const n = Buffer.byteLength(key, "utf8");
+  if (n > KV_MAX_KEY_BYTES) throw new Error(`KV ${verb} failed: 414 UTF-8 encoded length of ${n} exceeds key length limit of ${KV_MAX_KEY_BYTES}.`);
+}
+
 interface Row { key: string; value: string; metadata: string | null; expires_at: number | null }
 
 export class KVNamespace {
@@ -26,6 +35,7 @@ export class KVNamespace {
   async get<T = unknown>(key: string, type: "json"): Promise<T | null>;
   async get(key: string, type: "arrayBuffer"): Promise<ArrayBuffer | null>;
   async get(key: string, type: "text" | "json" | "arrayBuffer" = "text"): Promise<unknown> {
+    checkKey("GET", key);
     const row = this.live(this.db.query(`SELECT * FROM ${this.table} WHERE key = ?`).get(key) as Row | null);
     if (!row) return null;
     if (type === "json") return JSON.parse(row.value);
@@ -34,11 +44,13 @@ export class KVNamespace {
   }
 
   async getWithMetadata<T = unknown, M = unknown>(key: string): Promise<{ value: T | null; metadata: M | null }> {
+    checkKey("GET", key);
     const row = this.live(this.db.query(`SELECT * FROM ${this.table} WHERE key = ?`).get(key) as Row | null);
     return { value: (row?.value ?? null) as T | null, metadata: row?.metadata ? JSON.parse(row.metadata) : null };
   }
 
   async put(key: string, value: string | ArrayBuffer | ArrayBufferView, opts?: { expirationTtl?: number; expiration?: number; metadata?: unknown }): Promise<void> {
+    checkKey("PUT", key);
     const v = typeof value === "string" ? value : new TextDecoder().decode(value as ArrayBuffer);
     const expires = opts?.expiration ? opts.expiration * 1000 : opts?.expirationTtl ? Date.now() + opts.expirationTtl * 1000 : null;
     this.db.query(`INSERT OR REPLACE INTO ${this.table} (key, value, metadata, expires_at) VALUES (?, ?, ?, ?)`)
@@ -46,6 +58,7 @@ export class KVNamespace {
   }
 
   async delete(key: string): Promise<void> {
+    checkKey("DELETE", key);
     this.db.query(`DELETE FROM ${this.table} WHERE key = ?`).run(key);
   }
 
