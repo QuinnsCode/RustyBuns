@@ -65,7 +65,7 @@ The desktop and box hosts are the same generated program. The desktop build bind
 | http | Worker | Bun `serve()` | Bun `serve()` on `oven/bun` | Bun `serve()` |
 | WebSocket state | Durable Object | in-process DO | in-process DO | in-process DO |
 | SQL | D1 | sqlite on a Volume | sqlite on a Volume | sqlite |
-| Postgres | Hyperdrive in front of your Postgres | the Postgres URL itself | the Postgres URL itself | the Postgres URL itself, when it's set |
+| Postgres | Hyperdrive in front of your Postgres | the Postgres URL itself | the Postgres URL itself | the Postgres URL itself, or PGlite in the data dir with `local: "pglite"` |
 | KV | KV | sqlite table | sqlite table | sqlite table |
 | blob | R2 | directory on a Volume | directory on a Volume | embedded directory |
 | git repos | Artifacts | untested | untested | bare repos over git HTTP (worker mode; needs `git`) |
@@ -259,7 +259,7 @@ export default defineConfig({
 | Key | Values |
 |---|---|
 | `source` | `dir`, `aliases`, `ignore` (inferred from tsconfig paths) |
-| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `send_email` (+ `allowedSenderAddresses`), `queue` (+ `queueName`, `consumer`: the Worker's `queue()` gets its batches; a sqlite queue in the host process off the edge, each batch a low job on the host's scheduler unless `consumer.priority` says otherwise), `hyperdrive` (+ `urlSecret`, the `secret` holding the `postgres://` URL, `configName`, `caching`: `env.NAME.connectionString` goes through Hyperdrive on the edge and is the URL itself off it), `var`, `secret` (+ `op`, `optional`, `boxOnly`) |
+| `bindings` | `d1` (+ `migrationsDir`), `kv`, `r2`, `durable_object`, `artifacts` (+ `namespace`), `images`, `send_email` (+ `allowedSenderAddresses`), `queue` (+ `queueName`, `consumer`: the Worker's `queue()` gets its batches; a sqlite queue in the host process off the edge, each batch a low job on the host's scheduler unless `consumer.priority` says otherwise), `hyperdrive` (+ `urlSecret`, the `secret` holding the `postgres://` URL, `configName`, `caching`: `env.NAME.connectionString` goes through Hyperdrive on the edge and is the URL itself off it; `local: "pglite"` (+ `migrationsDir`) serves PGlite on 127.0.0.1 when the URL is unset, with `@electric-sql/pglite` and `@electric-sql/pglite-socket` in the app's dependencies. It is one session, so pooled clients use unnamed prepared statements: `pg` does by default, `postgres` and `Bun.SQL` take `prepare: false`), `var`, `secret` (+ `op`, `optional`, `boxOnly`) |
 | `state` | `shared` (default) \| `project`, see below |
 | `experimental` | `wheel` (`agent` \| `human`), see below |
 | `targets.edge` | `provider: "cloudflare"`, `domain`, `adopt` |

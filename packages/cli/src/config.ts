@@ -114,6 +114,15 @@ export type Binding =
       configName?: string;
       /** Query caching, on by default (60 s, 15 s stale-while-revalidate). false turns it off. */
       caching?: false | { maxAge?: number; staleWhileRevalidate?: number };
+      /**
+       * "pglite": when the URL is unset off the edge (an offline desktop), run PGlite in the data dir
+       * and hand the app its 127.0.0.1 URL instead. Needs @electric-sql/pglite and
+       * @electric-sql/pglite-socket in the app's dependencies; the binary embeds PGlite (~16 MB).
+       */
+      local?: "pglite";
+      /** With local "pglite": SQL migrations applied to it at boot, Drizzle's (0000_name.sql) or
+       *  Prisma's (<timestamp>_name/migration.sql), tracked in rb_migrations. */
+      migrationsDir?: string;
     }
   | { type: "var"; value: string }
   | {

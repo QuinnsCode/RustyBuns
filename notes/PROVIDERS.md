@@ -114,7 +114,7 @@ Not every app needs a hosted Postgres. From simplest up:
 - **Neon + Hyperdrive**: managed Postgres that scales to zero. Pay as you go, no minimum.
 
 PGlite locally, Hyperdrive to Neon or Supabase in the cloud: that's the shape to end up with. #1067 shipped
-the Hyperdrive half, with the Postgres URL itself as the twin; PGlite is [#1138](https://github.com/QuinnsCode/RustyBuns/issues/1138).
+the Hyperdrive half, with the Postgres URL itself as the twin; `local: "pglite"` ([#1138](https://github.com/QuinnsCode/RustyBuns/issues/1138)) added PGlite.
 
 ### The toolchain: an agent, `cf` and Rusty Buns
 
