@@ -20,7 +20,7 @@ import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, fl
 import { infer, readPackageJson } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
-import { jekyllDefaults, jekyllExcludes, jekyllPagesPlugins, staticBuild, type StaticSite } from "./glue/static-site.ts";
+import { jekyllDefaults, jekyllExcludes, jekyllPagesPlugins, jekyllPlugins, staticBuild, type StaticSite } from "./glue/static-site.ts";
 import { copySite, jekyllSiteFiles, staticSiteAt } from "./glue/site-files.ts";
 import { jekyllPlan, type JekyllEnv } from "./glue/jekyll.ts";
 import { sourceLayout } from "./glue/source.ts";
@@ -322,16 +322,16 @@ async function initStatic(inf: ReturnType<typeof infer>, site: StaticSite) {
     // No Gemfile: GitHub Pages builds it, with a plugin plain Jekyll lacks that gives layout-less pages one.
     const layouts = existsSync("Gemfile") || !existsSync("_layouts") ? [] : readdirSync("_layouts", { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name.replace(/\.[^.]+$/, ""));
     const defaults = jekyllDefaults(layouts, own.defaults);
-    await Bun.write("_config.rustybuns.yml", `# Written by rustybuns init: layered on ${cfgFile} for Rusty Buns builds only.\nbaseurl: ""\nexclude: ${JSON.stringify(jekyllExcludes(own.exclude))}\n`
-      + (defaults.length ? `# GitHub Pages' default layouts (jekyll-default-layout), and the site's own defaults after them.\ndefaults: ${JSON.stringify(defaults)}\n` : ""));
-    console.log(`wrote _config.rustybuns.yml (baseurl "", ${defaults.length ? "GitHub Pages' default layouts, " : ""}and Rusty Buns' files kept out of the site)`);
-    // Pages' other default plugins need their gems, so say which ones the site leans on rather than guess.
+    // Pages' other default plugins need their gems: turn on the ones the site leans on, and `rustybuns jekyll` installs them.
     const uses = existsSync("Gemfile") ? [] : jekyllPagesPlugins(jekyllSiteFiles(".", jekyllExcludes(own.exclude)), (f) => readFileSync(f, "utf8"));
-    if (uses.length) {
-      console.log(`warning:  GitHub Pages builds this site with plugins plain Jekyll lacks, and it looks like it needs them:`);
-      for (const u of uses) console.log(`            ${u.plugin}: ${u.what} (${u.files.slice(0, 3).join(", ")}${u.files.length > 3 ? `, ${u.files.length - 3} more` : ""})`);
-      console.log(`          to build it the way Pages does, add a Gemfile with \`gem "github-pages", group: :jekyll_plugins\``);
-    }
+    // Jekyll still reads the old `gems` key, and it replaces `plugins`, so a site on it gets both.
+    const plugins = jekyllPlugins(uses, own.plugins ?? own.gems);
+    await Bun.write("_config.rustybuns.yml", `# Written by rustybuns init: layered on ${cfgFile} for Rusty Buns builds only.\nbaseurl: ""\nexclude: ${JSON.stringify(jekyllExcludes(own.exclude))}\n`
+      + (defaults.length ? `# GitHub Pages' default layouts (jekyll-default-layout), and the site's own defaults after them.\ndefaults: ${JSON.stringify(defaults)}\n` : "")
+      + (plugins.length ? `# GitHub Pages' default plugins this site leans on, after its own; rustybuns jekyll installs their gems.\nplugins: ${JSON.stringify(plugins)}\n`
+        + (own.gems !== undefined ? `gems: ${JSON.stringify(plugins)}\n` : "") : ""));
+    console.log(`wrote _config.rustybuns.yml (baseurl "", ${defaults.length ? "GitHub Pages' default layouts, " : ""}${uses.length ? "its default plugins this site needs, " : ""}and Rusty Buns' files kept out of the site)`);
+    for (const u of uses) console.log(`plugin:   ${u.plugin}, as on Pages: ${u.what} (${u.files.slice(0, 3).join(", ")}${u.files.length > 3 ? `, ${u.files.length - 3} more` : ""})`);
   }
   const build = (out: string) => staticBuild(site, out, { jekyllConfig, exec: inf.execCmd });
   const cfg = {
@@ -355,9 +355,10 @@ async function initStatic(inf: ReturnType<typeof infer>, site: StaticSite) {
   }
   // The generator lives outside npm: say so now, not halfway through a build.
   if (site.kind === "jekyll") {
-    const plan = jekyllPlan([], jekyllEnv());
+    const args = ["build", "--config", `${jekyllConfig},_config.rustybuns.yml`];
+    const plan = jekyllPlan(args, jekyllEnv(args));
     if (plan.how === "none") console.log(`warning:  ${plan.why}`);
-    else if (plan.how === "docker") console.log(`jekyll:   no Ruby 3+ Jekyll here, so builds run in Docker (${plan.image}; the first one installs Jekyll)`);
+    else if (plan.how === "docker") console.log(`jekyll:   no Ruby 3+ Jekyll${plan.plugins ? " with the site's plugins" : ""} here, so builds run in Docker (${plan.image}; the first one installs Jekyll${plan.plugins ? " and them" : ""})`);
   } else if (site.tool && !Bun.which(site.tool)) {
     const how = { hugo: "`brew install hugo` or gohugo.io", mkdocs: "`pip install mkdocs`" }[site.kind as "hugo" | "mkdocs"];
     console.log(`warning:  ${site.tool} is not on PATH; the build needs ${how}`);
@@ -365,16 +366,32 @@ async function initStatic(inf: ReturnType<typeof infer>, site: StaticSite) {
   console.log(`\nnext: ${inf.hasPackageJson ? "" : `${inf.pm} install && `}${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}, or ${inf.execCmd("rustybuns plan")}`);
 }
 
-function jekyllEnv(): JekyllEnv {
+function jekyllEnv(args: string[]): JekyllEnv {
   const ruby = Bun.which("ruby") ? Bun.spawnSync(["ruby", "-e", "print RUBY_VERSION"]).stdout?.toString() ?? "" : "";
-  return { ruby, has: (bin) => !!Bun.which(bin), gemfile: existsSync("Gemfile"), cwd: process.cwd() };
+  const gemfile = existsSync("Gemfile");
+  return { ruby, has: (bin) => !!Bun.which(bin), gemfile, cwd: process.cwd(), plugins: gemfile ? [] : jekyllConfigPlugins(args),
+    gem: (name) => Bun.spawnSync(["gem", "list", "-i", `^${name}$`]).exitCode === 0 };
+}
+
+/** The `plugins` Jekyll will run with these args: the last `--config` file (default _config.yml) to set them wins. */
+function jekyllConfigPlugins(args: string[]): string[] {
+  const i = args.findIndex((a) => a === "--config" || a.startsWith("--config="));
+  const files = i < 0 ? ["_config.yml", "_config.yaml"].filter((f) => existsSync(f)).slice(0, 1)
+    : (args[i]!.includes("=") ? args[i]!.slice(args[i]!.indexOf("=") + 1) : args[i + 1] ?? "").split(",").filter(Boolean);
+  let plugins: unknown;
+  for (const f of files) {
+    let cfg: any;
+    try { cfg = (Bun as any).YAML.parse(readFileSync(f, "utf8")); } catch { continue; }
+    if (cfg?.plugins !== undefined || cfg?.gems !== undefined) plugins = cfg.plugins ?? cfg.gems;
+  }
+  return Array.isArray(plugins) ? plugins.map(String) : [];
 }
 
 /** `rustybuns jekyll <args>`: Jekyll on this machine's Ruby 3+, else in Docker. Exits with its code. */
 function jekyll(args: string[]) {
-  const plan = jekyllPlan(args, jekyllEnv());
+  const plan = jekyllPlan(args, jekyllEnv(args));
   if (plan.how === "none") throw new Error(plan.why);
-  if (plan.how === "docker") console.error(`rustybuns: no Ruby 3+ Jekyll here; running it in Docker (${plan.image})`);
+  if (plan.how === "docker") console.error(`rustybuns: no Ruby 3+ Jekyll${plan.plugins ? " with the site's plugins" : ""} here; running it in Docker (${plan.image})`);
   process.exit(Bun.spawnSync(plan.argv, { stdio: ["inherit", "inherit", "inherit"] }).exitCode ?? 1);
 }
 
