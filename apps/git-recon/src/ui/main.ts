@@ -2,7 +2,9 @@
 // The game itself is src/sim/game.ts; this only draws it and feeds it input.
 
 import * as THREE from "three";
-import { LEVELS, type LevelDef } from "../levels/levels.ts";
+import { LEVELS, placeLevel, type LevelDef } from "../levels/levels.ts";
+import { groundAt, parsePlace } from "../levels/place.ts";
+import type { ZoneData } from "../sim/terrain.ts";
 import { Game, MAX_HP, type Input } from "../sim/game.ts";
 import { ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { buildWorld, type World } from "./scene.ts";
@@ -41,6 +43,44 @@ for (const def of LEVELS) {
   b.onclick = () => start(def);
   list.append(b);
 }
+
+// Any lat/long: the ground is read from AWS Terrain Tiles in the page, then kept
+// in this browser so the same place loads instantly (and offline) next time.
+const placeKey = (lat: number, lon: number) => `git-recon:ground:${lat.toFixed(4)},${lon.toFixed(4)}`;
+async function groundFor(lat: number, lon: number): Promise<ZoneData> {
+  try {
+    const hit = localStorage.getItem(placeKey(lat, lon));
+    if (hit) return JSON.parse(hit) as ZoneData;
+  } catch {}
+  const zone = await groundAt(lat, lon);
+  try {
+    localStorage.setItem(placeKey(lat, lon), JSON.stringify(zone));
+  } catch {}
+  return zone;
+}
+
+$("place").onsubmit = async (e) => {
+  e.preventDefault();
+  const status = $("place-status"), go = $<HTMLButtonElement>("place-go");
+  const at = parsePlace($<HTMLInputElement>("place-at").value);
+  status.classList.remove("bad");
+  if (!at) {
+    status.textContent = "Two numbers, like 36.0566, -112.1251.";
+    status.classList.add("bad");
+    return;
+  }
+  go.disabled = true, status.textContent = "Reading the ground (a few seconds the first time)…";
+  try {
+    const def = placeLevel(await groundFor(at.lat, at.lon));
+    status.textContent = "";
+    start(def);
+  } catch (err) {
+    status.textContent = err instanceof Error ? err.message : String(err);
+    status.classList.add("bad");
+  } finally {
+    go.disabled = false;
+  }
+};
 
 function start(def: LevelDef) {
   const game = Game.fromRepo(def.ground(), def.repo, def.seed);
