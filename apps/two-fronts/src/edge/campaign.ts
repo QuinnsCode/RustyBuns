@@ -4,6 +4,7 @@
 // resolved turn adds a row to its history. The sequencing is src/war/table.ts, the same code the
 // page runs for a game against the AI or a hotseat game.
 import type { BattleResult, Faction } from "../battle/contract.ts";
+import { GALAXIES, type GalaxyId } from "../war/galaxy.ts";
 import type { Campaign, Orders } from "../war/rules.ts";
 import { handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord } from "../war/table.ts";
 
@@ -56,10 +57,11 @@ export class CampaignRoom {
 
   private async create(b: unknown): Promise<Response> {
     if (this.load()) return fail("The campaign already exists", 409);
-    const seats = (b as { seats?: Seats } | null)?.seats;
+    const { seats, galaxy = "short" } = (b ?? {}) as { seats?: Seats; galaxy?: GalaxyId };
     const ok = (s: unknown) => s === "human" || s === "ai";
     if (!seats || !ok(seats.marines) || !ok(seats.wooka)) return fail("Say who sits in each seat");
-    const table = newTable({ marines: seats.marines, wooka: seats.wooka });
+    if (!Object.hasOwn(GALAXIES, galaxy)) return fail("No such galaxy");
+    const table = newTable({ marines: seats.marines, wooka: seats.wooka }, galaxy);
     if (!humans(table).length) return fail("Someone has to play");
     this.sql.exec(`CREATE TABLE IF NOT EXISTS campaign (id INTEGER PRIMARY KEY CHECK (id = 1), tbl TEXT NOT NULL, created INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS seats (faction TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE);

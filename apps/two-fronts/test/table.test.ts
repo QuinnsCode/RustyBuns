@@ -17,7 +17,7 @@ function kessaFight(t: Table) {
 }
 
 test("against the AI, the turn resolves the moment the human's orders are in", () => {
-  const t = newTable({ marines: "human", wooka: "ai" }, 7);
+  const t = newTable({ marines: "human", wooka: "ai" }, "short", 7);
   expect(waitingOn(t)).toEqual(["marines"]);
   const s = ok(handIn(t, "marines", empty("marines")));
   expect(s.table.campaign.turn).toBe(2);
@@ -26,7 +26,7 @@ test("against the AI, the turn resolves the moment the human's orders are in", (
 });
 
 test("hotseat: nothing resolves until both sides are in, and the same orders resolve the same way", () => {
-  const t = newTable({ marines: "human", wooka: "human" }, 7);
+  const t = newTable({ marines: "human", wooka: "human" }, "short", 7);
   const build = { faction: "wooka" as const, orders: [{ kind: "build" as const, unit: "army" as const, at: { system: "nyx", sector: 0 } }] };
   const one = ok(handIn(t, "marines", empty("marines")));
   expect(one.done).toBeNull();
@@ -40,7 +40,7 @@ test("hotseat: nothing resolves until both sides are in, and the same orders res
 });
 
 test("orders the rules refuse, or that aren't orders at all, are turned away", () => {
-  const t = newTable({ marines: "human", wooka: "human" }, 7);
+  const t = newTable({ marines: "human", wooka: "human" }, "short", 7);
   expect(handIn(t, "marines", { faction: "marines", orders: [{ kind: "build", unit: "fleet", at: { system: "nyx", sector: 0 } }] }))
     .toEqual({ ok: false, error: "You don't hold that sector" });
   expect(handIn(t, "marines", empty("wooka"))).toEqual({ ok: false, error: "Those aren't orders" });
@@ -51,7 +51,7 @@ test("orders the rules refuse, or that aren't orders at all, are turned away", (
 });
 
 test("a hero battle holds the turn for the hero's side, and the history row has the whole turn", () => {
-  const t = newTable({ marines: "human", wooka: "human" }, 7);
+  const t = newTable({ marines: "human", wooka: "human" }, "short", 7);
   const marines = { ...kessaFight(t), hero: { system: "kessa", sector: 0 } };
   const paused = ok(handIn(ok(handIn(t, "marines", marines)).table, "wooka", empty("wooka"))).table;
   const spec = paused.campaign.pending!.spec;
@@ -68,13 +68,13 @@ test("a hero battle holds the turn for the hero's side, and the history row has 
 });
 
 test("the Wooka have a hero of their own, and the turn still has one hero battle", () => {
-  const t = newTable({ marines: "human", wooka: "human" }, 7);
+  const t = newTable({ marines: "human", wooka: "human" }, "short", 7);
   const at = { system: "kessa", sector: 0 };
   const paused = ok(handIn(ok(handIn(t, "marines", { ...kessaFight(t), hero: at })).table, "wooka", empty("wooka", at))).table;
   // Both picked Kessa: the Marines' pick came first, so it's theirs.
   expect(paused.campaign.pending!.spec.hero).toBe("attacker");
 
-  const t2 = newTable({ marines: "human", wooka: "human" }, 7);
+  const t2 = newTable({ marines: "human", wooka: "human" }, "short", 7);
   const p2 = ok(handIn(ok(handIn(t2, "marines", kessaFight(t2))).table, "wooka", empty("wooka", at))).table;
   const spec = p2.campaign.pending!.spec;
   expect(spec).toMatchObject({ hero: "defender", factions: { defender: "wooka" } });

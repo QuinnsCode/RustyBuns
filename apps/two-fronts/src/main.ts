@@ -2,7 +2,7 @@
 // itself, and back. A game against the AI or a hotseat game is a table kept in this browser,
 // saved after every change. A game online lives in its campaign's Durable Object, and this page
 // is one seat at it.
-import { SECTOR_NAMES, FACTION_NAMES, neighbours, systemDef, SYSTEMS } from "./war/galaxy.ts";
+import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
   COST, enemy, heroReady, income, keyShare, planOrders, supplied,
   type Campaign, type Order, type Orders, type Where,
@@ -14,9 +14,9 @@ import { FLAVOR, run } from "./battle/sim.ts";
 import type { BattleResult, BattleSpec, Faction, Side } from "./battle/contract.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-// v2 gained the cannon sectors, v3 renamed the factions to the Marines and the Wooka, v4 is a table
-// with seats and a hero a side.
-const SAVE = "two-fronts:v4", ONLINE = "two-fronts:online";
+// v2 gained the cannon sectors, v3 renamed the factions, v4 had a galaxy per campaign, v5 is a
+// table with seats and a hero a side.
+const SAVE = "two-fronts:v5", ONLINE = "two-fronts:online";
 const POLL_MS = 5000;
 
 type Game = { kind: "local"; table: Table } | { kind: "online"; link: Online; view: View };
@@ -41,6 +41,8 @@ const save = () => {
   else write(ONLINE, { ...game.link, draft: { turn: c.turn, orders: mine } });
 };
 const myTurn = () => !c.winner && !c.pending && waiting().includes(me);
+
+const systemDef = (id: string) => galaxyOf(c).system(id), neighbours = (id: string) => galaxyOf(c).neighbours(id);
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 const placeName = (w: Where) => {
@@ -178,7 +180,10 @@ document.addEventListener("keydown", (e) => {
 
 function chooseGame() {
   showModal(`<h2>New campaign</h2>
-    <p>${game.kind === "local" ? "The campaign in this browser will be lost." : "You can come back to the online one from its link."}</p>
+    <p>${game.kind === "local" ? "The campaign in this browser will be lost." : "You can come back to the online one from its link."}
+      The short war is an evening, the full campaign several.</p>
+    <div class="choices">${Object.values(GALAXIES).map((g, i) =>
+      `<label title="${esc(g.blurb)}"><input type="radio" name="galaxy" value="${g.id}"${i ? "" : " checked"} /> ${g.name} <small>${g.systems.length} systems</small></label>`).join("")}</div>
     <div class="choices">
       <button type="button" data-start="ai" class="primary" title="The Thunder Marines against the Wooka AI">🤖 Against the AI</button>
       <button type="button" data-start="hotseat" title="Two players taking turns at this screen">👥 Hotseat</button>
@@ -189,14 +194,15 @@ function chooseGame() {
 
 async function startGame(kind: "ai" | "hotseat" | "online") {
   const seats: Seats = { marines: "human", wooka: kind === "ai" ? "ai" : "human" };
+  const galaxy = (document.querySelector<HTMLInputElement>('input[name="galaxy"]:checked')?.value ?? "short") as GalaxyId;
   if (kind !== "online") {
     hideModal();
     try { localStorage.removeItem(ONLINE); } catch { /* private window */ }
-    useGame({ kind: "local", table: newTable(seats) });
+    useGame({ kind: "local", table: newTable(seats, galaxy) });
     return hotseat() ? passTo(seatUp()) : afterTurn();
   }
   try {
-    const { id, tokens } = await startOnline(seats);
+    const { id, tokens } = await startOnline(seats, galaxy);
     const link = { id, token: tokens.marines!, invite: tokens.wooka };
     useGame({ kind: "online", link, view: await fetchView(link) });
     showInvite();
@@ -210,7 +216,7 @@ function useGame(g: Game, draft?: { turn: number; orders: Orders }) {
   c = g.kind === "local" ? g.table.campaign : g.view.campaign;
   me = seatUp();
   mine = draft?.turn === c.turn && draft.orders.faction === me ? draft.orders : { faction: me, orders: [] };
-  selected = SYSTEMS.find((d) => c.systems[d.id]!.sectors.some((x) => x.owner === me))?.id ?? null;
+  selected = galaxyOf(c).systems.find((d) => c.systems[d.id]!.sectors.some((x) => x.owner === me))?.id ?? null;
   save(); render();
 }
 

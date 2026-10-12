@@ -5,6 +5,7 @@
 // for a game played a turn at a time over days.
 import type { BattleResult, Faction } from "../battle/contract.ts";
 import { aiOrders } from "./ai.ts";
+import type { GalaxyId } from "./galaxy.ts";
 import {
   FACTIONS, applyBattleResult, heroReady, newCampaign, planOrders, resolveTurn, sectorAt,
   type Campaign, type Orders,
@@ -28,11 +29,11 @@ export type Step = { ok: true; table: Table; done: TurnRecord | null } | { ok: f
 
 const MAX_ORDERS = 200;
 
-export function newTable(seats: Seats, seed = Math.floor(Math.random() * 1e9)): Table {
+export function newTable(seats: Seats, galaxy: GalaxyId = "short", seed = Math.floor(Math.random() * 1e9)): Table {
   // The rules' `player` is the side whose hero sits at the table against the AI. With two
   // humans it's the Marines, and each side's hero comes from its own orders.
   const player = seats.marines === "human" || seats.wooka !== "human" ? "marines" : "wooka";
-  return { seats, campaign: newCampaign(seed, player), handedIn: {}, resolving: null };
+  return { seats, campaign: newCampaign(seed, player, galaxy), handedIn: {}, resolving: null };
 }
 
 export const humans = (t: Table) => FACTIONS.filter((f) => t.seats[f] === "human");

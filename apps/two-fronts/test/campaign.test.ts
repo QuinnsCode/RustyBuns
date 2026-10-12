@@ -75,6 +75,11 @@ test("campaigns that were never started, bad ids and bad seats", async () => {
   expect((await call("/api/campaigns/not-an-id")).status).toBe(404);
   expect((await call("/api/campaigns", undefined, { seats: { marines: "ai", wooka: "ai" } })).status).toBe(400);
   expect((await call("/api/campaigns", undefined, { seats: { marines: "robot" } })).status).toBe(400);
+  expect((await call("/api/campaigns", undefined, { seats: { marines: "human", wooka: "ai" }, galaxy: "nowhere" })).status).toBe(400);
+  const full = await (await call("/api/campaigns", undefined, { seats: { marines: "human", wooka: "ai" }, galaxy: "full" })).json() as { id: string; tokens: Record<string, string> };
+  const v = (await (await call(`/api/campaigns/${full.id}`, full.tokens.marines)).json()) as View;
+  expect(v.campaign.galaxy).toBe("full");
+  expect(Object.keys(v.campaign.systems)).toHaveLength(30);
   expect(await (await call("/")).text()).toBe("the page");
 });
 
