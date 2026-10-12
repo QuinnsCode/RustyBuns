@@ -65,7 +65,7 @@
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { toFile } from "./archive.ts";
+import { MAX_BYTES, MAX_LINES, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { githubToken, parseRepo } from "./github.ts";
@@ -708,6 +708,8 @@ export async function blobBytes(env: Env, owner: string, repo: string, blob: str
   return code ? null : new Uint8Array(bytes);
 }
 const isText = (s: string) => !s.includes("\0");
+/** Whether a text file fits as lines (archive.ts readText's limits). */
+const fitsLines = (s: string) => new TextEncoder().encode(s).length <= MAX_BYTES && s.split("\n").length <= MAX_LINES;
 type Setup = { r: Row; dir: string; main: string; net: Record<string, string> };
 type BranchRow = { name: string; by: string; status: string; upstream_ref: string | null };
 /** A failure with the status it goes back as. */
@@ -787,7 +789,7 @@ const heads = (lsRemote: string) => lsRemote.trim().split("\n").filter(Boolean).
  * (sync.ts merge3; where they touch the same lines, upstream wins). New files
  * are new on the branch. A file the branch hasn't touched that's already as
  * main has it stays main's. A file upstream deleted is deleted on the branch
- * (one only the branch had just goes). A binary one comes over as its git blob
+ * (one only the branch had just goes). A binary one, or one too big to dig, comes over as its git blob
  * (#446), pinned so a gc keeps it until the branch merges or goes up.
  */
 async function take(env: Env, owner: string, repo: string, s: Setup, b: string, from: string, to: string) {
@@ -808,7 +810,8 @@ async function take(env: Env, owner: string, repo: string, s: Setup, b: string, 
     }
     const text = await show(s.dir, to, path);
     if (text === null) { skipped.push(path); continue; }
-    if (!isText(text)) {
+    // Too big to dig (a lockfile, say) is carried as its blob too, not skipped: a skip dropped it from the merge.
+    if (!isText(text) || !fitsLines(text)) {
       const [mode, , blob] = (await must(["ls-tree", to, "--", path], s.dir)).split(/\s+/) as [string, string, string];
       if (!onBranch.has(path) && blob === await blobAt(s.dir, `refs/heads/${s.main}`, path)) continue;
       await must(["update-ref", pinned(blob), blob], s.dir);
@@ -840,6 +843,19 @@ async function take(env: Env, owner: string, repo: string, s: Setup, b: string, 
     files.push(path);
   }
   return { files, deleted, skipped };
+}
+
+/**
+ * Whether main's git changed `path` since branch `name`'s upstream branch left it, to something
+ * other than the branch's `blob`: merging the blob in whole would drop main's change.
+ */
+export async function blobMovedOnMain(env: Env, owner: string, repo: string, name: string, path: string, blob: string) {
+  const s = await branchSetup(env, owner, repo), br = await branchRow(env, owner, repo, name);
+  if ("error" in s || !br?.upstream_ref) return false;
+  const tip = await taken(s, br.upstream_ref);
+  if (!tip) return false;
+  const main = await blobAt(s.dir, `refs/heads/${s.main}`, path);
+  return main !== blob && main !== await blobAt(s.dir, await forkPoint(s, tip), path);
 }
 
 /** Branch `name` takes upstream's `ref` up to `theirs`: what it got since the branch here last took it in or pushed. */
