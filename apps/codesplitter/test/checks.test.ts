@@ -150,14 +150,14 @@ test("GitHub's results for a sha sent up come back in beside ours, and ours go o
 
   // The branch went up as SHA: our check is queued, and GitHub's is watched.
   await startChecks(call.env, "ryan", "lab", "tidy", SHA, "ryan");
-  // Under the new name, and the old one that branch protection may still require (#810).
-  expect(github.posted).toEqual(["codesplitter/test", "codesplitters/test"].map((context) =>
-    ({ path: `/repos/QuinnsCode/RustyBuns/statuses/${SHA}`, body: { state: "pending", context, description: "desktop: queued" } })));
+  // Under codesplitter/ only; the pre-rename codesplitters/ is no longer posted (#821).
+  expect(github.posted).toEqual([
+    { path: `/repos/QuinnsCode/RustyBuns/statuses/${SHA}`, body: { state: "pending", context: "codesplitter/test", description: "desktop: queued" } }]);
 
   github.runs = [{ id: 7, name: "typecheck", status: "in_progress", conclusion: null, started_at: "2026-10-10T10:00:00Z", html_url: "https://github.com/QuinnsCode/RustyBuns/actions/runs/1/job/7" }];
   github.statuses = [
     { context: "codesplitter/test", state: "pending" },    // ours, echoed back
-    { context: "codesplitters/test", state: "pending" },   // and under the old name
+    { context: "codesplitters/test", state: "pending" },   // and under the old name, on older commits
     { context: "ci/other", state: "success", target_url: "https://ci.example/1", created_at: "2026-10-10T10:00:00Z", updated_at: "2026-10-10T10:01:00Z" },
   ];
   const polled = await (await send("ryan", "/api/repos/ryan/lab/checks/github", { ref: "tidy" })).json();
@@ -177,7 +177,7 @@ test("GitHub's results for a sha sent up come back in beside ours, and ours go o
   k = await checks("tidy");
   expect(k.runs.map((r: any) => `${r.runner}:${r.name}:${r.status}`)).toEqual(["desktop:test:passed", "github:typecheck:failed", "github:ci/other:passed"]);
   expect(k.gate).toMatchObject({ ok: false, failed: ["typecheck"], passed: ["test"] });
-  expect(github.posted.slice(-2).map((p) => p.body)).toMatchObject([{ state: "success", context: "codesplitter/test" }, { state: "success", context: "codesplitters/test" }]);
+  expect(github.posted.at(-1)!.body).toMatchObject({ state: "success", context: "codesplitter/test" });
   const m = await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {});
   expect(m.status).toBe(409);
   expect((await m.json()).error).toContain("typecheck failed");
