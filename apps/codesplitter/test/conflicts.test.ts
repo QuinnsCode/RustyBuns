@@ -281,6 +281,17 @@ describe("refused, not merged clean (#934)", () => {
   });
 });
 
+// Disagreements with git that scripts/shadow.ts found on this repo's merged PRs (#1014).
+describe("found in shadow mode (#1014)", () => {
+  test("#244's .gitignore: both added `!.env.schema` a line apart; git merged it in twice, ours asks once", () => {
+    const was = ".env\n.env.*\n!.env.example\n.dev.vars";
+    const s = sides(was, ".env\n.env.*\n!.env.schema\n!.env.example\n.dev.vars", ".env\n.env.*\n!.env.example\n!.env.schema\n.dev.vars");
+    expect(conflicts(s, ".gitignore")).toMatchObject([{ main: "!.env.schema", branch: "!.env.schema", doubled: true }]);
+    // What landed was git's, the line twice; main's place keeps it once.
+    expect(text(settle(s, { [conflicts(s, ".gitignore")[0]!.line]: "main" }, ".gitignore"))).toBe(".env\n.env.*\n!.env.schema\n!.env.example\n.dev.vars");
+  });
+});
+
 describe("over the API", () => {
   /** ana's repo r: a.ts with `x(1)` on main changed to `x(2)` and on branch b1 to `x(3)`. */
   async function app() {
