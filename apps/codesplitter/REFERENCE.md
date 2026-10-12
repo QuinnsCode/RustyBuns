@@ -122,6 +122,9 @@ The pitch is in [README.md](README.md).
   A run's worktree goes when it's removed (`DELETE .../worktrees/:name`) or after a day, a branch's once main holds the commits it made (or the branch is gone), and one with uncommitted changes stays.
   Every sync and every `GET .../worktrees` cleans up, and deleting the repo removes them all.
   `src/worktrees.ts`.
+- **Pull-only: a mirror that never writes upstream (desktop, #1009).** **Make it pull-only** in the Upstream panel (`POST /api/repos/:o/:r/mirror {pullOnly: true}`, or `pullOnly: true` on `POST /api/mirrors`; `false` switches back) makes the mirror one-way.
+  Syncs still fetch and merge upstream's commits, but push nothing: a copy with commits upstream lacks settles as `held`, and they wait here until it's two-way again.
+  It beats this copy leading, a merged branch's upstream branch is left in place, and pushing a branch or a tag answers 409.
 - **Beam: a branch's stack, cleaned up and handed over (desktop).** `POST /api/repos/:o/:r/beams {branch, kind?, onto?, title?, message?, to?, keep?, drop?}` takes git branch `branch` (pushed with the Push back remote, or made in a worktree) from where it left main, and leaves out the noise, each with why: a lockfile the repo doesn't use, lockfile churn with no `package.json` change, `node_modules/` and tool caches, build output the branch added, OS and editor leftovers, and env files (`keep` and `drop` override, by path).
   What's left goes on main's tip, or with `onto: "upstream"` on a GitHub fork's upstream tip (a plain read-only `git fetch`), by `git merge-tree` with no checkout, and is squashed into one commit: the stack's author if it had one, else this machine's git identity with the others as `Co-authored-by`, the title given or the first commit's, and the stack's subjects as the body.
   A 409 says what clashes, or that nothing's left once the noise is out.
@@ -546,12 +549,12 @@ The caveats:
   A check gets none of your logins (#1010, `src/check-env.ts`): the desktop's queue and `scripts/runner.ts` run the clone and the command with only `PATH` and the locale from your environment, an empty `HOME` and `TMPDIR` of their own, and `CI=1`, so no `gh`, `wrangler`, npm or cloud token, and no SSH agent.
   They still run as you, with your package caches, unless you give them a sandbox user: make a standard macOS user with no logins, allow `$USER ALL=(cs-checks) NOPASSWD: ALL` in `/etc/sudoers.d/cs-checks`, and set `CODESPLITTER_CHECKS_USER=cs-checks` for the desktop (or `--user cs-checks` for a runner); every run then goes through `sudo -n -u cs-checks`, in `/tmp`, with umask 000 so the app can still clean up.
   Turn on the pin (the pin button by "Checks run", or `PUT …/checks/settings {pinned: true}`) and only the required checks with a `command` in the settings run: `codesplitter.ci` and package.json's scripts at the commit are ignored, a run queued without a command from the settings is cancelled at the claim rather than falling back to `bun test`, so a merged edit can't change the job on your machine.
-- **The mirror isn't one-way.** It pushes this copy's commits upstream, never forced.
-  That's a way out, not a way in, but if you want codeSplitter never to write to GitHub, don't commit to main here.
+- **The mirror is two-way unless you say otherwise.** By default it pushes this copy's commits upstream, never forced.
+  That's a way out, not a way in.
+  Make it pull-only (`{pullOnly: true}`, #1009) and codeSplitter never writes to GitHub: syncs only fetch, and branch and tag pushes answer 409.
 - **Merged main runs here too.** When a sync takes upstream's commits onto main (a fast-forward, a merge or a re-base), the repo's checks queue here on main's new tip, as `upstream` (#1008), beside GitHub's results for it.
   A sync that only pushes this copy's commits queues nothing: they were checked when they were made.
-
-Still missing: a pull-only mirror (#1006).
+  A pull-only mirror queues them the same way.
 
 ## Conventions
 

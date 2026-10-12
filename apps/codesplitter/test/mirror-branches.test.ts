@@ -189,6 +189,39 @@ describe("mirrors: branches and this copy's own git", () => {
     expect((await (await call("bo", "/api/repos/ana/up")).json() as any).push).toBeUndefined();
   });
 
+  test("pull-only: syncs take upstream's commits and never push, and branch and tag pushes answer 409 (#1009)", async () => {
+    const call = await mirrored("pull");
+    expect((await post(call, "/api/repos/ana/up/mirror", { pullOnly: "yes" })).status).toBe(400);
+    // Pull-only wins over this copy leading: nothing goes up first either.
+    expect(await sync(call, { pullOnly: true, primary: "here" })).toMatchObject({ state: "ok", pullOnly: true });
+    const upTip = await upLog("%H");
+
+    // A commit here stays here; upstream's still come in.
+    await editHere(call, "README", 1, "hello, kept here");
+    await upstreamCommit({ "src/b.ts": "export const b = 2\n" }, "bo adds b");
+    expect(await sync(call)).toMatchObject({ state: "held", ahead: 2, behind: 0, error: "this mirror is pull-only, so nothing goes upstream" });
+    expect(await upShow("README")).toBe("hello\nworld");
+    expect((await file(call, "src/b.ts")).lines.map((l: any) => l.text)).toEqual(["export const b = 2"]);
+    expect(await upLog("%P")).toBe(upTip);
+
+    // A branch and a tag can't go up.
+    expect((await post(call, "/api/repos/ana/up/branches", { name: "tidy" })).status).toBe(201);
+    expect((await post(call, "/api/repos/ana/up/files", { path: "src/c.ts", content: "export const c = 1", branch: "tidy" })).status).toBe(201);
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/tidy/push")).json()).toEqual({ error: "this mirror is pull-only, so nothing goes upstream" });
+    expect((await post(call, "/api/repos/ana/up/tags", { name: "v9" })).status).toBe(201);
+    expect((await post(call, "/api/repos/ana/up/mirror/tags/v9/push")).status).toBe(409);
+    expect(await sh(`git --git-dir ${up} for-each-ref --format='%(refname)' refs/heads refs/tags`)).toBe("refs/heads/main");
+
+    // Two-way again: what waited goes up.
+    expect(await sync(call, { pullOnly: false })).toMatchObject({ state: "ok", pullOnly: false, ahead: 0 });
+    expect(await upShow("README")).toBe("hello, kept here\nworld");
+
+    // Made pull-only from the start.
+    expect((await post(call, "/api/mirrors", { url: `file://${up}`, name: "ci", pullOnly: 1 })).status).toBe(400);
+    expect(await (await post(call, "/api/mirrors", { url: `file://${up}`, name: "ci", pullOnly: true })).json()).toMatchObject({ name: "ci", pullOnly: true });
+    expect(await get(call, "/api/repos/ana/ci/mirror")).toMatchObject({ state: "ok", pullOnly: true });
+  });
+
   test("a push to this copy's git reaches the files open here, so the next commit here keeps it (#773)", async () => {
     const call = await mirrored("pushed");
     expect(await sync(call, { primary: "here" })).toMatchObject({ state: "ok" });

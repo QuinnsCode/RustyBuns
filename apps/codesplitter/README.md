@@ -201,6 +201,7 @@ Here, fork PRs never mirror: a mirror fetches upstream's own branches, never `re
 Only trusted code runs: your branches and your agents', and main as merged on GitHub, which you reviewed, queued as the mirror takes it.
 Your machine pulls its runs, so it needs no open port.
 A check gets none of your logins: a scrubbed environment and an empty `HOME`, as a sandbox user of its own if you like, and pinning the repo's checks runs only the commands in its settings, so a merge can't change what runs.
+Make the mirror pull-only and codeSplitter never writes to GitHub either: syncs only fetch, and branch and tag pushes are turned away.
 GitHub's free runners keep doing the quick PR checks.
 
 It isn't new in kind: GitLab's CI for external repos, Buildkite's agents and GitOps (Argo CD, Flux) all pull the same way.
