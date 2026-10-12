@@ -162,6 +162,30 @@ describe("settled without asking (#933)", () => {
     expect(mergeWords(was, onMain, was.replace("revert it.", "revert it on the map."), false, true)).toBeNull();
   });
 
+  test("a name one side renamed across the file is renamed in the other side's new lines (#1156, rules.test.ts)", () => {
+    // Main turned `.hero` into `.heroes.marines`; the branch's new test still says `.hero`. The `hero:` key isn't the property, so it stays.
+    const was = "go({ hero: at });\nexpect(after.hero.xp).toBe(2);\nexpect(lost.hero.woundedUntil).toBe(4);\n// end";
+    const onMain = was.replace(/\.hero\./g, ".heroes.marines.");
+    const added = "\nexpect(won.hero.xp).toBe(2);\nwon.hero = { hero: 1 };";
+    expect(merged(was, onMain, was + added)).toBe(onMain + added.replace(/\.hero\b/g, ".heroes.marines"));
+    // The other way round: the branch renamed `count` to `total`, main's new line still says `count`.
+    const calls = "const count = 1;\nf(count);\nz";
+    expect(merged(calls, `${calls}\ng(count + 1);`, calls.replace(/count/g, "total"))).toBe("const total = 1;\nf(total);\nz\ng(total + 1);");
+  });
+
+  test("no rename carried where it isn't one: the old name still on main, one line changed, two new names, or prose words", () => {
+    const was = "a(x.hero);\nb(x.hero);\nc(x.hero);\nz";
+    // Main still has a `.hero` left.
+    expect(merged(was, "a(x.heroes);\nb(x.heroes);\nc(x.hero);\nz", `${was}\nd(x.hero);`)).toBe("a(x.heroes);\nb(x.heroes);\nc(x.hero);\nz\nd(x.hero);");
+    // One line's `.length` became `.size`: a change, not a rename.
+    expect(merged("a(s.length);\nz", "a(s.size);\nz", "a(s.length);\nz\nb(t.length);")).toBe("a(s.size);\nz\nb(t.length);");
+    // `.hero` went two ways: no one swap to carry.
+    expect(merged(was, "a(x.ha);\nb(x.ha);\nc(x.hb);\nz", `${was}\nd(x.hero);`)).toBe("a(x.ha);\nb(x.ha);\nc(x.hb);\nz\nd(x.hero);");
+    // Prose keeps the stopword rule: "the" renamed to "a" across the file says nothing.
+    const prose = "Open the map.\nRead the log.\nz";
+    expect(merged(prose, "Open a map.\nRead a log.\nz", `${prose}\nClose the door.`, "README.md")).toBe("Open a map.\nRead a log.\nz\nClose the door.");
+  });
+
   test("the same line in two new blocks isn't doubled; at the same level it still is (deps.test.ts)", () => {
     const setup = "    const pkg = JSON.parse(files[\"package.json\"]!);";
     const t = (name: string) => `test("${name}", async () => {\n  const tester = async (files) => {\n${setup}\n  };\n});`;
