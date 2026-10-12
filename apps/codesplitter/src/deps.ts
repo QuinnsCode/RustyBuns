@@ -54,6 +54,16 @@
 // most (claude says what each try cost; the others don't, so they aren't
 // counted), and the report says which step settled each update.
 //
+// The owner can rank the packages they care about most (#862): ① rwsdk ② react
+// ③ effect. When updates clash, a higher one keeps its target and a lower one
+// gives way. Peer ranges are settled before anything installs: a lower package
+// whose target doesn't fit a higher one's peerDependencies (or whose own peers
+// don't fit the higher one's target) is re-picked to the newest release that
+// fits, or held where it is. With tests on, updates that pass alone but break
+// together are added in rank order, each kept only if it still passes with the
+// ones above it, then the unranked ones together, as before. A check-now can
+// carry a ranking of its own, for that run only: "bring these up, solve around them".
+//
 // 🪏 A dig (#863) is a future release the owner asked to watch: the next major, a
 // dist-tag (beta, next, rc) or an exact version, of one package. Each run looks for
 // it, past the level and the ignore list since the owner named it, and once it's
@@ -74,8 +84,8 @@
 // on the branch. Previews run on the desktop, with its logins.
 //
 //   GET  /api/repos/:o/:r/deps        settings and the last report (owner only)
-//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held, preview, digs}
-//   POST /api/repos/:o/:r/deps/run    check now
+//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held, rank, preview, digs}
+//   POST /api/repos/:o/:r/deps/run    check now; {rank} ranks the packages for this run only
 
 import type { Doc, Op } from "./lines.ts";
 import { access as artifactAccess, handleFor } from "./archive.ts";
@@ -105,12 +115,16 @@ export interface Settings {
   chain_tries: number; chain_minutes: number; chain_usd: number;
   /** Releases held back ("name@version"), which no run proposes again. */
   held: string[];
+  /** The packages the owner cares about most, first first: in a clash, a higher one keeps its target. */
+  rank: string[];
   /** Deploy what passed as a preview, check it answers, and tear it down, before it goes on the branch (#864). */
   preview: boolean;
   /** 🪏 Future releases to watch, try, and maybe take. */
   digs: Dig[];
 }
-export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false, fix_with: null, fix_tries: 3, on_fail: ["fix"], chain_tries: 6, chain_minutes: 30, chain_usd: 2, held: [], preview: false, digs: [] };
+export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false, fix_with: null, fix_tries: 3, on_fail: ["fix"], chain_tries: 6, chain_minutes: 30, chain_usd: 2, held: [], rank: [], preview: false, digs: [] };
+/** How many packages a ranking holds. */
+export const MAX_RANKED = 20;
 
 /** 🪏 A future release of one package to watch for: "major" (the next major), a dist-tag like beta, or an exact version. `take`: onto the branch once it's green. */
 export interface Dig { name: string; target: string; take: boolean }
@@ -122,7 +136,7 @@ export const MAX_DIGS = 10;
 /** One dependency to move, in the package.json at `path` (the top one, or a workspace's). */
 export interface Update {
   name: string; from: string; to: string; level: Level;
-  status: "kept" | "fixed" | "broke" | "untested" | "held";
+  status: "kept" | "fixed" | "broke" | "untested" | "held" | "yielded";
   /** The last failing test output. */
   out?: string;
   /** A fixer's go at it: who, how many tries, and the files its passing fix changed (none if it gave up). */
@@ -134,12 +148,18 @@ export interface Update {
   chain?: { step: Step; ok: boolean; note?: string; usd?: number }[];
   /** Where it was headed before a roll back. */
   was?: string;
+  /** It gave way to higher-ranked packages: re-picked to fit their peer ranges (`was`: its first target), or left out (status yielded). */
+  yields?: { to: string[]; why: "peer" | "tests"; was?: string };
 }
 /** A dependency whose version has a known vulnerability that no release fixes yet (or that's on the ignore list). */
 export interface Exposed { name: string; version: string; ids: string[]; path?: string }
 /** A preview deploy the run made: which updates went up, and whether it deployed and answered (else which step failed). */
 export interface PreviewRun { id: string; stage: string; ok: boolean; names: string[]; url?: string; failed?: string; note?: string }
-export interface Report { at: number; checked: number; updates: Update[]; exposed?: Exposed[]; previews?: PreviewRun[]; digs?: Dug[]; branch?: string; lock?: string; note?: string }
+export interface Report {
+  at: number; checked: number; updates: Update[]; exposed?: Exposed[]; previews?: PreviewRun[]; digs?: Dug[]; branch?: string; lock?: string; note?: string;
+  /** The ranking this run settled clashes by, and whether it was this run's alone. */
+  rank?: string[]; once?: boolean;
+}
 
 /** A known vulnerability, and the versions that fix it (on each line it affects). */
 export interface Vuln { id: string; summary: string; fixed: string[] }
@@ -173,8 +193,8 @@ export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (p
   return out;
 };
 
-/** What npm says about a package: its versions, when each was published, and its dist-tags. */
-export interface Meta { versions: string[]; time: Record<string, string>; tags?: Record<string, string> }
+/** What npm says about a package: its versions, when each was published, its dist-tags, and each version's peerDependencies. */
+export interface Meta { versions: string[]; time: Record<string, string>; tags?: Record<string, string>; peers?: Record<string, Record<string, string>> }
 export type Registry = (name: string) => Promise<Meta | null>;
 
 /** What an .npmrc says about registries: the default, one per scope, and a token per host. */
@@ -215,8 +235,9 @@ export const npmrcRegistry = (rcs: Npmrc[]): Registry => async (name) => {
   const { url, token } = registryUrl(rcs, name);
   const res = await fetch(url, { headers: { accept: "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
   if (!res.ok) return null;
-  const doc = (await res.json()) as { versions?: Record<string, unknown>; time?: Record<string, string>; "dist-tags"?: Record<string, string> };
-  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {}, tags: doc["dist-tags"] ?? {} };
+  const doc = (await res.json()) as { versions?: Record<string, { peerDependencies?: Record<string, string> } | null>; time?: Record<string, string>; "dist-tags"?: Record<string, string> };
+  const peers = Object.fromEntries(Object.entries(doc.versions ?? {}).flatMap(([v, m]) => m?.peerDependencies ? [[v, m.peerDependencies]] : []));
+  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {}, tags: doc["dist-tags"] ?? {}, peers };
 };
 
 export const npmRegistry: Registry = npmrcRegistry([]);
@@ -299,6 +320,37 @@ export function mayTake(spec: string, version: string): boolean {
 }
 
 /**
+ * Does `version` meet a peer range the way npm reads it: `||`, ^, ~, >=, >, <=, <,
+ * exact, and partial or x versions (18, 18.x, *). A range it can't read, or a
+ * prerelease, counts as met, so a clash is only ever one it's sure of.
+ */
+export function satisfies(spec: string, version: string): boolean {
+  const v = parse(version);
+  if (!v) return true;
+  const comparator = (c: string): ((x: V) => boolean) | null => {
+    const m = /^(\^|~|>=|<=|>|<|=)?v?(\*|x|\d+)(?:\.(\*|x|\d+))?(?:\.(\*|x|\d+))?$/i.exec(c);
+    if (!m) return null;
+    const op = m[1] ?? "", parts = [m[2], m[3], m[4]];
+    const n = parts.findIndex((p) => p === undefined || /^[x*]$/i.test(p)), fixed = n < 0 ? 3 : n;
+    const base = [0, 1, 2].map((i) => i < fixed ? +parts[i]! : 0) as V;
+    const up = (k: number): V => k === 0 ? [base[0] + 1, 0, 0] : k === 1 ? [base[0], base[1] + 1, 0] : [base[0], base[1], base[2] + 1];
+    const from = (lo: V, hi?: V) => (x: V) => cmp(x, lo) >= 0 && (!hi || cmp(x, hi) < 0);
+    if (!fixed) return op === "<" || op === ">" ? () => false : () => true;
+    if (op === "^") { const k = base.slice(0, fixed).findIndex((p) => p > 0); return from(base, up(k < 0 ? fixed - 1 : k)); }
+    if (op === "~") return from(base, up(fixed >= 2 ? 1 : 0));
+    if (op === ">=") return from(base);
+    if (op === ">") return from(up(fixed - 1));
+    if (op === "<") return (x) => cmp(x, base) < 0;
+    if (op === "<=") return (x) => cmp(x, up(fixed - 1)) < 0;
+    return from(base, up(fixed - 1));
+  };
+  return spec.split("||").some((alt) => {
+    const cs = alt.trim().split(/\s+/).filter(Boolean).map(comparator);
+    return cs.some((c) => !c) || cs.every((c) => c!(v));
+  });
+}
+
+/**
  * How big a move is, the way semver reads it: below 1.0 the leftmost non-zero part is the
  * major, so every 0.0.x change breaks, and a 0.x minor does too (a 0.x patch counts as minor).
  */
@@ -342,17 +394,7 @@ export async function outdated(pkg: Record<string, any>, s: Settings, registry: 
     if (unfixed.length) exposed.push({ name, version: r.v.join("."), ids: unfixed });
     const meta = await registry(name).catch(() => null);
     if (!meta) return 0;
-    const ripe = now - s.min_age_days * 86_400_000;
-    let best: V | null = null;
-    for (const raw of meta.versions) {
-      const v = parse(raw);
-      if (!v || cmp(v, r.v) <= 0 || allows(r, v)) continue;
-      if (LEVELS.indexOf(levelOf(r.v, v)) > LEVELS.indexOf(s.max_level)) continue;
-      if (s.held?.includes(`${name}@${raw}`)) continue;
-      const published = Date.parse(meta.time[raw] ?? "");
-      if (!(published <= ripe)) continue;
-      if (!best || cmp(v, best) > 0) best = v;
-    }
+    let best = newest(name, r, meta, s, now);
     // Short of the fix, the first published release that has it, however new or far.
     if (need && (!best || cmp(best, need) < 0)) {
       best = meta.versions.map(parse).filter((v): v is V => !!v && cmp(v, need!) >= 0).sort(cmp)[0] ?? best;
@@ -365,6 +407,61 @@ export async function outdated(pkg: Record<string, any>, s: Settings, registry: 
   const checked = (await Promise.all(checks)).reduce((a: number, b) => a + b, 0);
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
   return { checked, updates: found.sort(byName), exposed: exposed.sort(byName) };
+}
+
+/** The newest release past the range that's within the level, not held back, old enough, and `fits`. */
+function newest(name: string, r: { prefix: string; v: V }, meta: { versions: string[]; time: Record<string, string> }, s: Settings, now: number, fits = (_raw: string) => true): V | null {
+  const ripe = now - s.min_age_days * 86_400_000;
+  let best: V | null = null;
+  for (const raw of meta.versions) {
+    const v = parse(raw);
+    if (!v || cmp(v, r.v) <= 0 || allows(r, v)) continue;
+    if (LEVELS.indexOf(levelOf(r.v, v)) > LEVELS.indexOf(s.max_level)) continue;
+    if (s.held?.includes(`${name}@${raw}`)) continue;
+    const published = Date.parse(meta.time[raw] ?? "");
+    if (!(published <= ripe)) continue;
+    if (!fits(raw)) continue;
+    if (!best || cmp(v, best) > 0) best = v;
+  }
+  return best;
+}
+
+/** A package's place in the ranking; unranked ones come last. */
+const placeIn = (rank: string[]) => (name: string) => { const i = rank.indexOf(name); return i < 0 ? Infinity : i; };
+
+const bare = (to: string) => to.replace(/^[\^~]/, "");
+
+/**
+ * Settle peer ranges by the owner's ranking, before anything installs. Each
+ * ranked update, highest first, keeps its target; a lower one in the same
+ * package.json that clashes with it (its target outside the higher one's
+ * peerDependencies, or the higher one's target outside its own) is re-picked to
+ * the newest release that fits both, or stays where it is (status yielded). A
+ * security fix never gives way, since the advisory says which version is safe;
+ * the tests decide. Unranked packages impose nothing. Changes `updates` in place.
+ */
+export async function settlePeers(updates: Update[], rank: string[], s: Settings, registry: Registry, now = Date.now()): Promise<void> {
+  if (!rank.length) return;
+  const place = placeIn(rank);
+  const peersOf = async (name: string, version: string) => (await registry(name).catch(() => null))?.peers?.[version] ?? {};
+  const fits = async (hi: Update, lo: Update, version: string) => {
+    const want = (await peersOf(hi.name, bare(hi.to)))[lo.name], back = (await peersOf(lo.name, version))[hi.name];
+    return (!want || satisfies(want, version)) && (!back || satisfies(back, bare(hi.to)));
+  };
+  for (const hi of updates.filter((u) => place(u.name) < Infinity).sort((a, b) => place(a.name) - place(b.name))) {
+    if (hi.status === "yielded") continue;
+    for (const lo of updates) {
+      if (lo === hi || lo.status === "yielded" || lo.fixes || place(lo.name) <= place(hi.name) || (lo.path ?? "package.json") !== (hi.path ?? "package.json")) continue;
+      if (await fits(hi, lo, bare(lo.to))) continue;
+      const r = range(lo.from), meta = r && await registry(lo.name).catch(() => null);
+      const ok = new Set<string>();
+      if (meta) for (const raw of meta.versions) if (parse(raw) && await fits(hi, lo, raw)) ok.add(raw);
+      const best = r && meta ? newest(lo.name, r, meta, s, now, (raw) => ok.has(raw)) : null;
+      const to = [...new Set([...(lo.yields?.to ?? []), hi.name])];
+      if (best) Object.assign(lo, { to: r!.prefix + best.join("."), level: levelOf(r!.v, best), yields: { to, why: "peer", was: lo.yields?.was ?? lo.to } });
+      else Object.assign(lo, { status: "yielded", yields: { to, why: "peer" } });
+    }
+  }
 }
 
 /** An exact version, a prerelease too (5.0.0-beta.1). */
@@ -645,9 +742,10 @@ export async function readManifests(call: Call, owner: string, repo: string) {
 }
 
 /** Check one repo now, put what's worth taking on a branch, and keep the report. */
-export async function runDoctor(env: Env, call: Call, owner: string, repo: string, opts: { registry?: Registry; now?: number; deadline?: number; beatMs?: number } = {}): Promise<Report> {
+export async function runDoctor(env: Env, call: Call, owner: string, repo: string, opts: { registry?: Registry; now?: number; deadline?: number; beatMs?: number; rank?: string[] } = {}): Promise<Report> {
   const now = opts.now ?? Date.now();
-  const s = await settings(env, owner, repo);
+  // A ranking passed in is this run's alone; the saved one stays as it is.
+  const saved = await settings(env, owner, repo), s = opts.rank ? { ...saved, rank: opts.rank } : saved;
   // While it runs, it says so, so a long one (a slow suite, several fix tries) is never taken for dead.
   const beat = setInterval(() => {
     void env.DB.prepare("UPDATE dep_watches SET running_since = ? WHERE owner = ? AND repo = ? AND running_since IS NOT NULL").bind(Date.now(), owner, repo).run().catch(() => {});
@@ -656,6 +754,7 @@ export async function runDoctor(env: Env, call: Call, owner: string, repo: strin
   const report = await check(env, call, owner, repo, s, opts.registry ?? (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, advisories, now, opts.deadline)
     .catch((e: Error): Report => ({ at: now, checked: 0, updates: [], note: `failed: ${e.message}` }))
     .finally(() => clearInterval(beat));
+  if (s.rank.length) Object.assign(report, { rank: s.rank, ...(opts.rank ? { once: true } : {}) });
   await env.DB.prepare("UPDATE dep_watches SET last_run = ?, last_report = ?, running_since = NULL WHERE owner = ? AND repo = ?").bind(now, JSON.stringify(report), owner, repo).run();
   // A failed run knows nothing new, so it neither alerts nor forgets what was told.
   if (!report.note?.startsWith("failed:")) {
@@ -680,7 +779,7 @@ export function whatsNew(told: string[], report: Report): { exposed: Exposed[]; 
   const key = (kind: string, path: string | undefined, nameAt: string, id: string) => { const k = `${kind} ${path ?? "package.json"} ${nameAt} ${id}`; seen.push(k); return !was.has(k); };
   const exposed = (report.exposed ?? []).map((x) => ({ ...x, ids: x.ids.filter((id) => key("exposed", x.path, `${x.name}@${x.version}`, id)) })).filter((x) => x.ids.length);
   // What went on the branch: once tests ran, what passed; else everything that didn't break.
-  const tested = report.updates.some((u) => u.status !== "untested");
+  const tested = report.updates.some((u) => u.status !== "untested" && u.status !== "yielded");
   const taken = report.branch ? report.updates.filter((u) => u.fixes?.length && (tested ? u.status === "kept" || u.status === "fixed" : true)) : [];
   const fixes = taken.filter((u) => u.fixes!.map((id) => key("fix", u.path, `${u.name}@${u.to}`, id)).some(Boolean));
   const dugs = (report.digs ?? []).filter((d) => d.update && d.update.status !== "untested");
@@ -794,6 +893,12 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   // Try them together, and only one by one when that breaks.
   const tester = testerFor(env, s, owner);
   let updates: Update[] = found.map((u) => ({ ...u, status: "untested" }));
+  // The owner's ranking settles peer ranges first, so what's tried can install together.
+  await settlePeers(updates, s.rank, s, once, now);
+  const yielded = updates.filter((u) => u.status === "yielded");
+  updates = updates.filter((u) => u.status !== "yielded");
+  const at = (u: Update) => found.findIndex((f) => f.name === u.name && f.path === u.path);
+  const inOrder = (us: Update[]) => us.sort((a, b) => at(a) - at(b));
   if (!tester && s.run_tests) note = [note, env.AGENT_SANDBOX ? "tests on Cloudflare are limited to this site's admins (ADMINS)" : "tests only run on the desktop app"].filter(Boolean).join("; ");
   let tested = false;
   let edits: Edit[] = [];
@@ -912,10 +1017,27 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
         for (const u of updates) { const t = await tryWith([u]); if (t) Object.assign(u, t.ok ? { status: "kept" } : { status: "broke", out: tail(t.out) }); }
         const kept = updates.filter((u) => u.status === "kept");
         const again = kept.length > 1 ? await tryWith(kept) : { ok: true };
-        if (!again?.ok) for (const u of kept) u.status = "untested";
-        if (again && !again.ok) {
-          note = [note, "each of these passes alone but not together; nothing was put on a branch"].filter(Boolean).join("; ");
-          return { at: now, checked, updates, ...also, note };
+        const place = placeIn(s.rank);
+        if (again && !again.ok && kept.some((u) => place(u.name) < Infinity)) {
+          // The ranking settles it: the ranked ones in order, each kept only if it still passes with
+          // those above it, then the unranked ones together, which stay or go as one, as before.
+          const ranked = kept.filter((u) => place(u.name) < Infinity).sort((a, b) => place(a.name) - place(b.name));
+          const rest = kept.filter((u) => place(u.name) === Infinity);
+          const set: Update[] = [ranked[0]!];
+          for (const u of ranked.slice(1)) {
+            const t = await tryWith([...set, u]);
+            if (t?.ok) set.push(u);
+            else Object.assign(u, t ? { status: "yielded", out: tail(t.out), yields: { to: set.map((x) => x.name), why: "tests" } } : { status: "untested" });
+          }
+          const t = rest.length ? await tryWith([...set, ...rest]) : { ok: true, out: "" };
+          if (!t?.ok) for (const u of rest) u.status = "untested";
+          if (t && !t.ok) note = [note, `${rest.map((u) => u.name).join(", ")} pass${rest.length === 1 ? "es" : ""} alone but not with the ranked ones, so ${rest.length === 1 ? "it's" : "they're"} left out`].filter(Boolean).join("; ");
+        } else {
+          if (!again?.ok) for (const u of kept) u.status = "untested";
+          if (again && !again.ok) {
+            note = [note, "each of these passes alone but not together; nothing was put on a branch"].filter(Boolean).join("; ");
+            return { at: now, checked, updates: inOrder([...updates, ...yielded]), ...also, note };
+          }
         }
       }
       if (short) note = [note, "ran out of time before every test ran; only what passed went on a branch, and the next run tries the rest"].filter(Boolean).join("; ");
@@ -1005,10 +1127,11 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
     }
   }
   if (held.length) await env.DB.prepare("UPDATE dep_watches SET held = ? WHERE owner = ? AND repo = ?").bind([...new Set([...s.held, ...held])].join(","), owner, repo).run();
-  // Once tests ran, only what passed them goes on the branch.
-  const take = taking();
+  // Once tests ran, only what passed them goes on the branch; what gave way to a higher-ranked package never does.
+  const take = inOrder(taking());
+  updates = inOrder([...updates, ...yielded]);
   const shown = previews.length ? { previews } : {};
-  if (!take.length) return { at: now, checked, updates, ...also, ...shown, note: [note, previews.length ? "nothing passed both the tests and a preview deploy; nothing was put on a branch" : "every update broke the tests; nothing was put on a branch"].filter(Boolean).join("; ") };
+  if (!take.length) return { at: now, checked, updates, ...also, ...shown, note: [note, previews.length ? "nothing passed both the tests and a preview deploy; nothing was put on a branch" : `every update ${updates.every((u) => u.status === "yielded") ? "gave way to a higher-ranked package" : "broke the tests"}; nothing was put on a branch`].filter(Boolean).join("; ") };
 
   // The lockfile to match, from the install that passed, else one made for it.
   let locked: string | undefined;
@@ -1098,7 +1221,7 @@ export async function settings(env: Env, owner: string, repo: string): Promise<S
   return {
     on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: list(r.ignore), run_tests: !!r.run_tests,
     fix_with: FIX_HARNESSES.includes(r.fix_with as Harness) ? r.fix_with as Harness : null, fix_tries: r.fix_tries,
-    on_fail: list(r.on_fail).filter((x): x is Step => STEPS.includes(x as Step)), chain_tries: r.chain_tries, chain_minutes: r.chain_minutes, chain_usd: r.chain_usd, held: list(r.held),
+    on_fail: list(r.on_fail).filter((x): x is Step => STEPS.includes(x as Step)), chain_tries: r.chain_tries, chain_minutes: r.chain_minutes, chain_usd: r.chain_usd, held: list(r.held), rank: list(r.rank),
     preview: !!r.preview,
     digs: parseDigs(r.digs),
   };
@@ -1140,6 +1263,14 @@ export const caller = (self: (r: Request) => Promise<Response>, origin: string):
   return self(r);
 };
 
+const RANK_ERROR = `rank: up to ${MAX_RANKED} package names, each once, highest first`;
+/** A ranking from a request: package names, each once, highest first; null when it isn't one. */
+function rankOf(v: unknown): string[] | null {
+  const names = (Array.isArray(v) ? v.map(String) : String(v ?? "").split(",")).map((x) => x.trim()).filter(Boolean);
+  const ok = names.length <= MAX_RANKED && new Set(names).size === names.length && names.every((n) => /^(@[a-z0-9][\w.~-]*\/)?[a-z0-9][\w.~-]*$/i.test(n));
+  return ok ? names : null;
+}
+
 export async function depRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null, self: (r: Request) => Promise<Response>): Promise<Response | null> {
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "deps")) return null;
   const [owner, repo] = [p[2], p[3]];
@@ -1172,6 +1303,8 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     if (!(usd >= 0 && usd <= 50)) return json({ error: "chain_usd: 0 to 50" }, 400);
     const held = csv(s.held);
     if (held.some((x) => !/^(@[^@/\s]+\/)?[^@\s]+@\d+\.\d+\.\d+(-[\w.-]+)?$/.test(x))) return json({ error: "held: name@version, comma-separated" }, 400);
+    const rank = rankOf(s.rank);
+    if (!rank) return json({ error: RANK_ERROR }, 400);
     const digs = Array.isArray(s.digs) ? s.digs.map(digOf) : [null];
     if (digs.some((d) => !d) || digs.length > MAX_DIGS || new Set(digs.map((d) => d!.name)).size !== digs.length)
       return json({ error: `digs: up to ${MAX_DIGS} of {name, target: "major", a version or a dist-tag, take}, one per package` }, 400);
@@ -1179,13 +1312,17 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
       const others = await env.DB.prepare("SELECT COUNT(*) AS n FROM dep_watches WHERE owner = ? AND repo != ? AND enabled = 1").bind(owner, repo).first();
       if ((others?.n as number) >= MAX_WATCHED) return json({ error: `the doctor watches ${MAX_WATCHED} of your repos at most: turn it off on one first` }, 400);
     }
-    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ?, on_fail = ?, chain_tries = ?, chain_minutes = ?, chain_usd = ?, held = ?, preview = ?, digs = ? WHERE owner = ? AND repo = ?")
-      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, onFail.join(","), chainTries, minutes, Math.round(usd * 100) / 100, held.join(","), s.preview ? 1 : 0, JSON.stringify(digs), owner, repo).run();
+    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ?, on_fail = ?, chain_tries = ?, chain_minutes = ?, chain_usd = ?, held = ?, rank = ?, preview = ?, digs = ? WHERE owner = ? AND repo = ?")
+      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, onFail.join(","), chainTries, minutes, Math.round(usd * 100) / 100, held.join(","), rank.join(","), s.preview ? 1 : 0, JSON.stringify(digs), owner, repo).run();
     return json(await settings(env, owner, repo));
   }
   if (p[5] === "run" && req.method === "POST") {
+    // {rank}: this run's own ranking, "bring these up, solve around them", run once.
+    const b = (await req.json().catch(() => ({}))) as { rank?: unknown } | null;
+    const rank = b?.rank === undefined ? undefined : rankOf(b.rank);
+    if (rank === null) return json({ error: RANK_ERROR }, 400);
     if (!(await claim(env, owner, repo))) return json({ error: "already checking" }, 409);
-    const done = runDoctor(env, caller(self, url.origin), owner, repo);
+    const done = runDoctor(env, caller(self, url.origin), owner, repo, rank ? { rank } : {});
     // A run that installs and tests takes minutes: answer now, and the page polls.
     // Not on Cloudflare, where work left after the response is cut off.
     if (env.AGENT_SANDBOX) return json(await done);
