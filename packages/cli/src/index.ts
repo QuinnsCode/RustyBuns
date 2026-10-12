@@ -12,7 +12,7 @@ import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
 import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
-import { hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
+import { buildEnv, hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
 import type { RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
@@ -604,12 +604,12 @@ function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { 
 /** Edge is on when asked for, or when nothing else is (as in gen/alchemy.ts). */
 const edgeOn = (c: RustyBunsConfig) => !!c.targets.edge || !c.targets.box;
 
-/** Run the Worker's build command in the app, with the env the stack's Build gets. */
+/** Run the Worker's build command in the app, with the env the stack's Build gets, minus the deploy's logins. */
 const buildWorker = (build: string) => Effect.gen(function* () {
   // a monorepo app's unbuilt workspace packages first (glue/workspace-build.ts)
   const command = [...workspacePrebuild(process.cwd()), build].join(" && ");
   console.log(`building the worker: ${command}`);
-  const code = yield* spawnScoped(["sh", "-c", command], { stdio: ["inherit", "inherit", "inherit"], env: { ...readDevVars(), ...process.env } });
+  const code = yield* spawnScoped(["sh", "-c", command], { stdio: ["inherit", "inherit", "inherit"], env: buildEnv({ ...readDevVars(), ...process.env }) });
   if (code !== 0) return yield* Effect.fail(new Error(`the worker build failed (exit ${code}): ${command}`));
 });
 
