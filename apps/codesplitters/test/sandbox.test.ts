@@ -257,6 +257,28 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     expect(text(await doc(call))).toBe("var x = 1\nf()");
   });
 
+  test("hosted runs share one daily budget for the site, admins' runs included (#797)", async () => {
+    const { call, post, env } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
+    await env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('hosted', 1, 86400, 1, 'reject')").run();
+    await finished(call, { harness: "claude", path: "src/a.js", task: "x" });
+    const res = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "claude", path: "src/a.js", task: "x" });
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as any).error).toStartWith("The site's hosted runs for the day are used up (1).");
+    expect((await post("ryan-quinn", "/api/me/feed/digest", { harness: "claude" })).status).toBe(429);
+  });
+
+  test("a hosted run past its 15 minutes is stopped, however many times its CLI went round, and nothing lands (#797)", async () => {
+    const { call, env } = await hosted(async (b) => { await Bun.sleep(200); return { code: 0, out: "", text: b.text.replace("var", "let") }; });
+    await finished(call, { harness: "claude", path: "src/a.js", task: "warm up" });
+    const late = await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES ('ryan-quinn', 'r1', 'src/a.js', 'claude', 'x', 'agent-claude', 'running', ?) RETURNING id")
+      .bind(Date.now() - 16 * 60_000).first() as { id: number };
+    await env.JOBS.send({ agent: late.id, origin: "http://codesplitters.local" });
+    let run: any;
+    for (const end = performance.now() + 15_000; performance.now() < end && (run = ((await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/agents")).json()) as any[]).find((r) => r.id === late.id)).status === "running";) await Bun.sleep(20);
+    expect(run).toMatchObject({ status: "stopped", error: "out of time: a hosted run gets 15 minutes" });
+    expect(run.pending).toBeUndefined();
+  });
+
   test("a CLI that fails in the container comes back as a failed run, and nothing lands", async () => {
     const { call } = await hosted(async () => ({ code: 1, out: "not logged in", text: "junk" }));
     expect(await finished(call, { harness: "codex", path: "src/a.js", task: "x" })).toMatchObject({ status: "failed" });

@@ -15,8 +15,9 @@
 //     The container gets no secrets, starts with the internet off, and reaches only the clone
 //     and the package registries through the egress gate (#681). A run gets RUN_BUDGET_MS of
 //     the alarm's 15 minutes. Each one counts against the `checks` rate limit (limits.ts),
-//     charged to the repo's owner: one over it is cancelled, saying so. The hourly cron wakes
-//     any repo with runs still queued, in case a kick went missing.
+//     charged to the repo's owner, and its minutes against the site-wide `containers` budget,
+//     which admins' runs count against too: one over either is cancelled, saying so. The
+//     hourly cron wakes any repo with runs still queued, in case a kick went missing.
 //
 // It costs container time: see "Checks in a container" in REFERENCE.md for the price.
 
@@ -25,7 +26,7 @@ import { RUN_BUDGET_MS, readExec } from "./deploy-runner.ts";
 import { gate, hostList, hostOf, REGISTRIES, type GateExports } from "./egress.ts";
 import { json, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
-import { charge } from "./limits.ts";
+import { charge, SITE } from "./limits.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
 
 /** A run as claimRun hands it out. */
@@ -210,13 +211,15 @@ export class CiRunner {
     const job = await claimRun(this.env, owner, repo, LABEL, [], Date.now(), null);
     if (!job) return;
     try {
-      const over = this.env.ADMINS && isAdmin(this.env, owner) ? null : await charge(this.env, "checks", `@${owner}`);
+      // Its first minute comes off the site's budget up front, so a spent budget starts no container.
+      const over = (this.env.ADMINS && isAdmin(this.env, owner) ? null : await charge(this.env, "checks", `@${owner}`))
+        ?? await charge(this.env, "containers", SITE);
       if (over) {
         const run = await get(this.env, job.id) as CheckRun;
         await updateRun(this.env, run, { status: "cancelled", append: `${over} Run it on the desktop app or a runner of your own (scripts/runner.ts), or press Run later.\n` }, "codesplitters");
         return;
       }
-      const deadline = Date.now() + this.budgetMs;
+      const began = Date.now(), deadline = began + this.budgetMs;
       await runJob(this.env, owner, repo, job, LABEL, async () => {
         if (!c) throw new Error("this Durable Object has no container");
         // The clone and the package registries, nothing else (#681): no secrets go in, so there's nothing to send anywhere.
@@ -224,6 +227,9 @@ export class CiRunner {
         c.start({ env: { CI: "1" }, enableInternet: false });
         return containerMachine(c, `run-${job.id}`, deadline, this.budgetMs);
       });
+      // The rest of its minutes, rounded up. It ran already, so going over only stops the next one.
+      const rest = Math.ceil((Date.now() - began) / 60_000) - 1;
+      if (rest > 0) await charge(this.env, "containers", SITE, rest).catch(() => null);
     } finally {
       await c?.destroy().catch(() => {});
       // The next one, if any, in an alarm of its own: each run gets its own 15 minutes.

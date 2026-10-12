@@ -240,3 +240,19 @@ test("container checks count against the owner's `checks` limit: one over it is 
   expect(holder.ci.seen.env).toHaveLength(1);   // the second never started a container
   await holder.ci.idle();
 });
+
+test("container minutes come off one daily budget for the site, admins' runs included: a spent one cancels the run before a container starts (#797)", async () => {
+  const holder = { ci: null as ReturnType<typeof ciNamespace> | null };
+  const { call, send, add, settled, log } = await app({ ADMINS: "ryan", CI_RUNNER: { get: (id: string) => holder.ci!.ns.get(id), idFromName: (n: string) => n } });
+  holder.ci = ciNamespace(call.env);
+  await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('containers', 1, 86400, 1, 'reject')").run();
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: [{ name: "test", command: "true" }] }, "PUT");
+  await add("a.ts", "one");
+  expect((await settled()).runs).toMatchObject([{ status: "passed" }]);
+  await add("b.ts", "two");
+  const k = await settled();
+  expect(k.runs).toMatchObject([{ status: "cancelled" }]);
+  expect(await log(k.runs[0].id)).toContain("The site's container minutes for the day are used up (1).");
+  expect(holder.ci.seen.env).toHaveLength(1);
+  await holder.ci.idle();
+});

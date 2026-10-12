@@ -646,6 +646,16 @@ describe("account email", () => {
     expect(ruleFor("PUT", ["", "repos", "o", "r", "deps"])).toBeNull();
   });
 
+  test("branches, merges, fresh starts and webhooks have rules: each writes to Artifacts or calls out (#797)", () => {
+    expect(ruleFor("POST", ["", "repos", "o", "r", "branches"])).toBe("branch");
+    expect(ruleFor("POST", ["", "repos", "o", "r", "branches", "b", "merge"])).toBe("commit");
+    expect(ruleFor("POST", ["", "repos", "o", "r", "branches", "b", "hunks", "reject"])).toBeNull();
+    expect(ruleFor("POST", ["", "repos", "o", "r", "fresh"])).toBe("fresh");
+    expect(ruleFor("POST", ["", "repos", "o", "r", "hooks"])).toBe("hook");
+    expect(ruleFor("POST", ["", "repos", "o", "r", "hooks", "id", "test"])).toBeNull();
+    expect(ruleFor("GET", ["", "repos", "o", "r", "branches"])).toBeNull();
+  });
+
   test("a failed send is logged, not shown: the reset answer stays the same", async () => {
     const { call } = await accounts({ EMAIL: { send: async () => { throw Object.assign(new Error("no"), { code: "E_SENDER_NOT_VERIFIED" }); } }, EMAIL_FROM: "accounts@example.com" });
     const err = console.error; console.error = () => {};

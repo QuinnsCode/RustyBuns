@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { bump, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, whatsNew, DEFAULTS, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
+import { bump, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "./fake-gate.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
@@ -434,6 +434,18 @@ test("the schedule runs repos that are on and due, and skips the rest", async ()
   expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).last_run).toBe(NOW);
   await scheduledDoctor(call.env, self, NOW + 25 * 3_600_000);
   expect((await (await call("ryan", "/api/repos/ryan/lab/deps")).json()).last_run).toBe(NOW + 25 * 3_600_000);
+});
+
+test("the doctor watches 10 of an owner's repos at most, every 6 hours at the most often (#797)", async () => {
+  const { call, send } = await app();
+  for (let i = 0; i < MAX_WATCHED; i++) await call.env.DB.prepare("INSERT INTO dep_watches (owner, repo, enabled) VALUES ('ryan', ?, 1)").bind(`other${i}`).run();
+  const res = await send("ryan", "/api/repos/ryan/lab/deps", { on: true }, "PUT");
+  expect(res.status).toBe(400);
+  expect(((await res.json()) as any).error).toContain(`${MAX_WATCHED} of your repos at most`);
+  expect((await send("ryan", "/api/repos/ryan/lab/deps", { on: false, every_hours: 168 }, "PUT")).status).toBe(200);
+  await call.env.DB.prepare("UPDATE dep_watches SET enabled = 0 WHERE repo = 'other0'").run();
+  expect((await send("ryan", "/api/repos/ryan/lab/deps", { on: true }, "PUT")).status).toBe(200);
+  expect((await send("ryan", "/api/repos/ryan/lab/deps", { every_hours: 1 }, "PUT")).status).toBe(400);
 });
 
 test("an .npmrc picks the registry per scope, and a token only goes to its own host", () => {

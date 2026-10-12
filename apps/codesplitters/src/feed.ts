@@ -23,7 +23,7 @@ import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, type Exec, type Sandbox } from "./agent-run.ts";
 import { KEEP_MS } from "./line-events.ts";
 import { containerSandbox } from "./sandbox.ts";
-import { ADMINS_ONLY, adminsOnly, agentsUnavailable, installedHarnesses } from "./agent-routes.ts";
+import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
 
 const WEEK = 7 * 24 * 3600_000;
 /** Events one feed read looks at. */
@@ -190,6 +190,8 @@ export async function feedRoutes(req: Request, env: Env, p: string[], url: URL, 
   if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
   const now = Date.now(), last = await digestOf(env, user);
   if (last?.status === "running" && now - last.at < 15 * 60_000) return json({ error: "a digest is already being written" }, 409);
+  const spent = await hostedBudget(env);
+  if (spent) return spent;
   // What's new since the last digest that worked; a week the first time.
   const since = Math.max(last?.status === "done" ? last.through : now - WEEK, now - KEEP_MS);
   await env.DB.prepare(`INSERT INTO feed_digests (name, harness, status, since, through, text, error, at) VALUES (?, ?, 'running', ?, ?, NULL, NULL, ?)
