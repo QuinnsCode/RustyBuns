@@ -525,7 +525,7 @@ test("init: a Jekyll site builds through a layered config that keeps Rusty Buns'
   const r = p.run("init");
   expect(r.code).toBe(0);
   expect(r.out).toContain("detected: Jekyll site");
-  expect(p.read("rustybuns.config.ts")).toContain("jekyll build --config _config.yml,_config.rustybuns.yml --destination dist/ui");
+  expect(p.read("rustybuns.config.ts")).toContain("rustybuns jekyll build --config _config.yml,_config.rustybuns.yml --destination dist/ui");
   const layer = p.read("_config.rustybuns.yml");
   expect(layer).toContain('baseurl: ""');
   for (const f of ["notes.md", "dist", "desktop", "rustybuns.config.ts", "package.json"]) expect(layer).toContain(`"${f}"`);
