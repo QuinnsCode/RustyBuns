@@ -16,13 +16,27 @@ This is **slim borg**, the thin one. It isn't an app anyone uses: it's the test 
 
 Every run uses fresh keys, so it's safe against a store that already has data in it.
 
+`--limits` goes over each limit the edge documents, on purpose, and says whether the target refused (✓, as the edge does) or accepted (✗, looser):
+
+| Limit | The edge's |
+|---|---|
+| `d1-params` | 100 bound parameters per query |
+| `kv-key` | 512-byte keys |
+| `queue-size` | 128 KB messages |
+| `do-value` | 2 MB values in a SQLite-backed object |
+| `memory` | 128 MB per isolate |
+| `cpu` | 10 ms per request on the Free plan (30 s on Paid, so it passes there) |
+
+Today the twins accept all six. The local test pins that list, so tightening a twin means updating it.
+
 ## Run it
 
 ```sh
 cd apps/borg
-bun test test                        # builds the dev host, runs every check on the local twins
+bun test test                        # builds the desktop and box hosts, runs every check on the local twins
 bun borg.ts https://borg-slim.<you>.workers.dev   # the same checks against a deploy
 bun borg.ts http://127.0.0.1:<port> --token <t>   # or against a desktop host you started
+bun borg.ts <url> --limits                         # and go over each edge limit
 ```
 
 `bun test test` is what CI runs on every PR that touches this app or `packages/`. It's free: nothing leaves the machine.
@@ -31,7 +45,7 @@ To check the edge, `rustybuns plan` then `rustybuns deploy` from here, run `bun 
 
 ## Where it's going
 
-Slim borg checks each primitive once; what's left for it is in [#855](https://github.com/QuinnsCode/RustyBuns/issues/855). Two bigger rigs are planned:
+Slim borg checks each primitive once. What's left for it: the edge run on a Free-plan account ([#865](https://github.com/QuinnsCode/RustyBuns/issues/865)), a nightly edge run with cost guard rails ([#866](https://github.com/QuinnsCode/RustyBuns/issues/866)), and twins that enforce the limits above ([#867](https://github.com/QuinnsCode/RustyBuns/issues/867)). Two bigger rigs are planned:
 
 - **thick borg** ([#856](https://github.com/QuinnsCode/RustyBuns/issues/856)): a decent-sized app per common migration story (keep the database and move the code, leave a PaaS for a box, go all-edge).
 - **fatty borg** ([#857](https://github.com/QuinnsCode/RustyBuns/issues/857)): the chunky examples (codeSplitter, tscircuit-desktop, park-hide-seek, agent-office) run through build, deploy and teardown.
