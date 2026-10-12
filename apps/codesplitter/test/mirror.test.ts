@@ -540,6 +540,55 @@ describe("mirrors", () => {
     expect((await get(call, "/api/repos/ana/empty/graph")).commits).toEqual([]);
   });
 
+  test("tags: fetched from upstream on asking, made and deleted here, pushed up, never clobbered (#879)", async () => {
+    const call = await mirrored("tags");
+    const init = await upLog("%H");
+    await upstreamCommit({ "src/b.ts": "export const b = 1\n" }, "add b");
+    const b = await upLog("%H");
+    // An annotated tag on upstream's tip, a plain one on the commit the mirror was cloned at.
+    await sh(`git --git-dir ${up} tag -a v1.1 -m "one one" main && git --git-dir ${up} tag old ${init}`);
+    expect((await sync(call)).state).toBe("ok");
+    const tags = async () => (await get(call, "/api/repos/ana/up/tags")).tags.map((t: any) => [t.name, t.commit]);
+    expect(await tags()).toEqual([]);
+    // Upstream's, peeled to their commits; none here yet.
+    expect(await get(call, "/api/repos/ana/up/mirror/tags")).toEqual([{ name: "v1.1", commit: b, here: null }, { name: "old", commit: init, here: null }]);
+    expect(await (await post(call, "/api/repos/ana/up/mirror/tags", { names: ["v1.1", "nope"] })).json()).toEqual({ fetched: ["v1.1"], kept: [], missing: ["nope"] });
+    expect(await tags()).toEqual([["v1.1", b]]);
+
+    // Made here: main's tip by default, or a commit; a name git won't take, or one that's taken, is turned away.
+    expect(await (await post(call, "/api/repos/ana/up/tags", { name: "v2" })).json()).toEqual({ name: "v2", commit: b });
+    expect((await post(call, "/api/repos/ana/up/tags", { name: "v2" })).status).toBe(409);
+    expect(await (await post(call, "/api/repos/ana/up/tags", { name: "a b" })).json()).toEqual({ error: "no spaces in a tag name: use - instead" });
+    expect((await post(call, "/api/repos/ana/up/tags", { name: "rc", commit: b })).status).toBe(201);
+    expect((await post(call, "/api/repos/ana/up/tags", { name: "x", commit: "f".repeat(40) })).status).toBe(404);
+
+    // Upstream has its own rc, on another commit: fetching leaves ours be, and pushing ours is refused.
+    await sh(`git --git-dir ${up} tag rc ${init}`);
+    expect((await get(call, "/api/repos/ana/up/mirror/tags")).find((t: any) => t.name === "rc").here).toBe("differs");
+    expect(await (await post(call, "/api/repos/ana/up/mirror/tags")).json()).toEqual({ fetched: ["old"], kept: ["rc"], missing: [] });
+    expect(await tags()).toEqual([["v2", b], ["v1.1", b], ["old", init], ["rc", b]]);
+    expect((await post(call, "/api/repos/ana/up/mirror/tags/rc/push")).status).toBe(409);
+    expect(await (await post(call, "/api/repos/ana/up/mirror/tags/v2/push")).json()).toEqual({ pushed: true, name: "v2", commit: b });
+    expect(await sh(`git --git-dir ${up} rev-parse v2`)).toBe(b);
+    expect((await (await post(call, "/api/repos/ana/up/mirror/tags/v2/push")).json()).pushed).toBe(false);
+
+    // Deleted here (an annotated one too); upstream keeps its own.
+    expect((await call("ana", "/api/repos/ana/up/tags/v2", { method: "DELETE" })).status).toBe(200);
+    expect((await call("ana", "/api/repos/ana/up/tags/v1.1", { method: "DELETE" })).status).toBe(200);
+    expect((await call("ana", "/api/repos/ana/up/tags/v2", { method: "DELETE" })).status).toBe(404);
+    expect(await tags()).toEqual([["old", init], ["rc", b]]);
+    expect(await sh(`git --git-dir ${up} rev-parse v2`)).toBe(b);
+
+    // A repo that isn't a mirror has tags all the same, just no upstream to trade them with.
+    await post(call, "/api/repos", { name: "own" });
+    expect((await post(call, "/api/repos/ana/own/tags", { name: "v1" })).status).toBe(409);
+    await post(call, "/api/repos/ana/own/files", { path: "a.ts", content: "one" });
+    expect((await post(call, "/api/repos/ana/own/do/commit?path=a.ts", { message: "first" })).status).toBe(200);
+    expect((await post(call, "/api/repos/ana/own/tags", { name: "v1" })).status).toBe(201);
+    expect((await get(call, "/api/repos/ana/own/tags")).tags.map((t: any) => t.name)).toEqual(["v1"]);
+    expect((await call("ana", "/api/repos/ana/own/mirror/tags")).status).toBe(404);
+  });
+
   test("takes any git URL on the desktop, and says what's wrong with a bad one", async () => {
     const call = await boot();
     opened.push(call);
