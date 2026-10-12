@@ -16,7 +16,7 @@ import { hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
 import type { RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
-import { ConfigLoadFailed, UsageError, closest, flag, intFlag, renderError } from "./errors.ts";
+import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError } from "./errors.ts";
 import { infer, readPackageJson } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
@@ -25,7 +25,8 @@ import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { Profiler } from "./profile.ts";
-import { adoptNote, alchemyStage, linkSharedState, lockState, unlinkSharedState } from "./state.ts";
+import { adoptNote, alchemyStage, linkSharedState, lockState, noteChild, unlinkSharedState } from "./state.ts";
+import { runScoped, spawnScoped, step } from "./lifecycle.ts";
 import { commitsBehindMain, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
@@ -430,8 +431,18 @@ function underVarlock(cfg: RustyBunsConfig, cmd: string[], env: Record<string, s
 /** The Cloudflare API token the last runAlchemy handed Alchemy, if it had one; the post-deploy settings use it too. */
 let cloudflareToken: string | undefined;
 
-/** Run the project-local alchemy with the terminal attached, so its prompts work. */
-async function runAlchemy(args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}): Promise<number> {
+/**
+ * Run the project-local alchemy with the terminal attached, so its prompts work, for the life
+ * of the current scope: interrupted (a signal), it is stopped and waited for. `onStart` gets its pid.
+ */
+const alchemyProcess = (args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}, onStart?: (pid: number) => void) =>
+  step(() => alchemyCommand(args, cfg, extra)).pipe(Effect.flatMap(({ cmd, env }) => spawnScoped(cmd, { stdio: ["inherit", "inherit", "inherit"], env }, onStart)));
+
+/** runAlchemy outside plan/deploy/destroy (`login`). */
+const runAlchemy = (args: string[], cfg?: RustyBunsConfig) => runScoped(alchemyProcess(args, cfg));
+
+/** The alchemy command line and its env: Cloudflare login through wrangler, varlock for op secrets. */
+async function alchemyCommand(args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}) {
   let cmd = [...alchemyCli(), ...args];
   // Secret values come from .dev.vars; anything already exported in the shell wins.
   const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env, ...extra };
@@ -442,8 +453,7 @@ async function runAlchemy(args: string[], cfg?: RustyBunsConfig, extra: Record<s
     cloudflareToken = env.CLOUDFLARE_API_TOKEN;
   }
   if (cfg?.experimental?.wheel && existsSync(ENV_SCHEMA)) cmd = underVarlock(cfg, cmd, env);
-  const p = Bun.spawn(cmd, { stdio: ["inherit", "inherit", "inherit"], env });
-  return await p.exited;
+  return { cmd, env };
 }
 
 /**
@@ -482,23 +492,32 @@ function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { 
     `If ${deletes.length === 1 ? "it was" : "they were"} added on a branch this one lacks, rebase first; to delete on purpose, pass --allow-delete.`);
   if (!problems.length) return;
   if (sub === "plan") { console.log(problems.map((p) => "warning: " + p).join("\n") + "\n"); return; }
-  console.error(problems.join("\n"));
-  process.exit(2);
+  throw new DeployRefused({ message: problems.join("\n") });
 }
 
 /** Edge is on when asked for, or when nothing else is (as in gen/alchemy.ts). */
 const edgeOn = (c: RustyBunsConfig) => !!c.targets.edge || !c.targets.box;
 
 /** Run the Worker's build command in the app, with the env the stack's Build gets. */
-async function buildWorker(command: string) {
+const buildWorker = (command: string) => Effect.gen(function* () {
   console.log(`building the worker: ${command}`);
-  const p = Bun.spawn(["sh", "-c", command], { stdio: ["inherit", "inherit", "inherit"], env: { ...readDevVars(), ...process.env } });
-  const code = await p.exited;
-  if (code !== 0) throw new Error(`the worker build failed (exit ${code}): ${command}`);
-}
+  const code = yield* spawnScoped(["sh", "-c", command], { stdio: ["inherit", "inherit", "inherit"], env: { ...readDevVars(), ...process.env } });
+  if (code !== 0) return yield* Effect.fail(new Error(`the worker build failed (exit ${code}): ${command}`));
+});
 
-async function alchemy(sub: string, rawArgs: string[]) {
-  const cfg = await loadConfig();
+/** Time an Effect as one profile step, as Profiler.step does a Promise. */
+const timed = <A, E, R>(prof: Profiler, name: string, e: Effect.Effect<A, E, R>) => Effect.suspend(() => {
+  const t = performance.now();
+  return e.pipe(Effect.ensuring(Effect.sync(() => prof.steps.push({ name, ms: performance.now() - t }))));
+});
+
+/**
+ * plan, deploy, destroy and dev, as one scope: the state lock and every child (the worker
+ * build, alchemy) belong to it, so a signal or a failure stops the children and then frees
+ * the lock, in that order (lifecycle.ts).
+ */
+const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(function* () {
+  const cfg = yield* step(loadConfig);
   if (!cfg.worker && !cfg.targets.box) throw new Error("desktop-only app: no edge or box stack to plan or deploy");
   const profiled = sub === "plan" || sub === "deploy";
   if (profiled) { checkBox(cfg); checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
@@ -507,37 +526,35 @@ async function alchemy(sub: string, rawArgs: string[]) {
   const force = flagged.includes("--force"), allowDelete = flagged.includes("--allow-delete");
   const args = flagged.filter((a) => a !== "--force" && a !== "--allow-delete");
   const prof = new Profiler(sub);
-  await prof.step("generate", () => generate({ adopt: false }));
+  yield* step(() => prof.step("generate", () => generate({ adopt: false })));
+  let lockBase: string | null = null;
   if (cfg.state === "project") unlinkSharedState(process.cwd());
   else {
     const base = linkSharedState(process.cwd());
-    if (base) lockState(base, sub);
+    if (base) { yield* Effect.acquireRelease(Effect.sync(() => lockState(base, sub)), (release) => Effect.sync(release)); lockBase = base; }
   }
   const note = profiled ? adoptNote(process.cwd(), cfg, alchemyStage(args)) : null;
   if (note) console.log(note + "\n");
   if (profiled) guardDeploy(sub, cfg, alchemyStage(args), { force, allowDelete });
-  if (check) await checkStack(prof, checker);
-  const hash = await stackHash();
+  if (check) yield* step(() => checkStack(prof, checker));
+  const hash = yield* step(stackHash);
   const stampFile = ".rustybuns/planned";
   if (sub === "deploy" && !args.includes("--yes")) {
     // GUARDRAIL: deploy creates real resources. Require a plan for THIS exact
     // config first, so nobody provisions a stack they have not looked at.
-    const planned = (await Bun.file(stampFile).exists()) ? (await Bun.file(stampFile).text()).trim() : null;
-    if (planned !== hash) {
-      console.error(planned
-        ? "config changed since the last plan. Run `rustybuns plan` again, or pass --yes to skip."
-        : "no plan on record for this config. Run `rustybuns plan` first (creates nothing), or pass --yes to skip.");
-      process.exit(2);
-    }
+    const planned = (yield* step(() => Bun.file(stampFile).exists())) ? (yield* step(() => Bun.file(stampFile).text())).trim() : null;
+    if (planned !== hash) throw new DeployRefused({ message: planned
+      ? "config changed since the last plan. Run `rustybuns plan` again, or pass --yes to skip."
+      : "no plan on record for this config. Run `rustybuns plan` first (creates nothing), or pass --yes to skip." });
   }
   // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
   if (profiled && cfg.targets.box) {
-    console.log(`built ${await prof.step("build box", () => buildBox(cfg))}`);
+    console.log(`built ${yield* step(() => prof.step("build box", () => buildBox(cfg)))}`);
   }
   // The Worker hashes (and uploads) its bundle from disk at plan time, before the
   // stack's Build runs, so build it first or it ships the previous build (#362).
   const built = profiled && edgeOn(cfg) && !!cfg.worker?.build;
-  if (built) await prof.step("build worker", () => buildWorker(cfg.worker!.build!));
+  if (built) yield* timed(prof, "build worker", buildWorker(cfg.worker!.build!));
   // Name each map's module and give it app-relative sources, as wrangler does (#799).
   if (built && cfg.worker!.sourceMaps && cfg.worker!.builtMain) {
     const maps = tidySourceMaps(process.cwd(), cfg.worker!.builtMain);
@@ -545,22 +562,24 @@ async function alchemy(sub: string, rawArgs: string[]) {
   }
   // The stack's Build then only records dist, not rebuild it while the assets upload (#424).
   const buildEnv: Record<string, string> = built ? { RUSTYBUNS_BUILT: "1" } : {};
+  // The lock names alchemy's pid too, so a SIGKILLed rustybuns doesn't free the state while it runs.
+  const run = (a: string[]) => alchemyProcess(a, cfg, buildEnv, (pid) => lockBase && noteChild(lockBase, pid));
   if (sub === "plan") {
-    const code = await prof.step("alchemy plan", () => runAlchemy(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args], cfg, buildEnv));
-    await prof.finish();
-    if (code !== 0) process.exit(code);
-    await Bun.write(stampFile, hash);
+    const code = yield* timed(prof, "alchemy plan", run(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args]));
+    yield* step(() => prof.finish());
+    if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
+    yield* step(() => Bun.write(stampFile, hash));
     return;
   }
   // --yes satisfies our plan check above AND is forwarded to alchemy's own prompt.
-  const code = await prof.step(`alchemy ${sub}`, () => runAlchemy([sub, "--config", ".rustybuns/alchemy.run.ts", ...args], cfg, buildEnv));
-  if (profiled) await prof.finish();
-  if (code !== 0) process.exit(code);
-  if (sub === "deploy" && edgeOn(cfg) && cfg.worker?.redactQueryStrings) await redactAfterDeploy(cfg, alchemyStage(args));
+  const code = yield* timed(prof, `alchemy ${sub}`, run([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]));
+  if (profiled) yield* step(() => prof.finish());
+  if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
+  if (sub === "deploy" && edgeOn(cfg) && cfg.worker?.redactQueryStrings) yield* step(() => redactAfterDeploy(cfg, alchemyStage(args)));
   if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"
     ? "\nthe box bills by usage from now on (less while asleep); `rustybuns destroy` stops it."
     : "\nthe box bills hourly from now on; `rustybuns destroy` stops it.");
-}
+}));
 
 /** worker.redactQueryStrings: the upload just reset it, so set it again (src/redact.ts). A miss warns; the deploy itself went out. */
 async function redactAfterDeploy(cfg: RustyBunsConfig, stage: string) {
@@ -799,6 +818,7 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   Env:  RB_NO_BROWSER=1      do not open a browser; print the token URL instead
         RB_BUN=<path>        a Bun with \`bun check\` to type check with (e.g. a canary)
         RUSTYBUNS_NO_UPDATE_CHECK=1  skip the daily version check (CI skips it too)
+        RUSTYBUNS_STOP_GRACE_MS=<ms>  how long a stopped plan/deploy waits for Alchemy to exit (default 10000)
   Docs: README.md · GETTING_STARTED.md`);
   }
 } catch (e) {
