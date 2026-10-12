@@ -156,6 +156,48 @@ test("scheduler.spawn: runs the command in a slot; a timeout kills the child", a
   expect(s.stats().running.low).toBe(0);
 });
 
+const BUSY = new URL("./fixtures/busy.worker.ts", import.meta.url);
+
+test("scheduler.worker: a job on a worker thread; with warm, the next job reuses it and it counts against the budget", async () => {
+  const cold = scheduler({ cores: 4, everyMs: 0 });
+  expect(await cold.worker("low", BUSY, "a")).toEqual({ seen: 1, echo: "a" });
+  expect(await cold.worker("low", BUSY, "b")).toEqual({ seen: 1, echo: "b" });   // no pool: a fresh thread each time
+  expect(cold.stats().warm).toBe(0);
+
+  const s = scheduler({ cores: 4, everyMs: 0, warm: 1, workerMb: 40 });
+  await s.worker("low", BUSY, 1);
+  expect(await s.worker("normal", BUSY, 2)).toEqual({ seen: 2, echo: 2 });
+  expect(s.stats().warm).toBe(1);
+  expect(s.stats().memMb.used).toBe(40);
+  s.stop();
+  expect(s.stats().warm).toBe(0);
+});
+
+test("scheduler.worker: a timeout terminates the thread and frees the slot; a throw rejects and isn't pooled", async () => {
+  const s = scheduler({ cores: 1, budget: { cpu: 1, reserve: 0 }, everyMs: 0, warm: 1 });   // 1 slot
+  const spin = s.worker("low", BUSY, "spin", { timeoutMs: 100 });
+  const next = s.worker("low", BUSY, "next");
+  expect((await stopped(spin)).reason).toBe("timeout");
+  expect(await next).toEqual({ seen: 1, echo: "next" });
+  expect(s.stats().warm).toBe(1);
+  await expect(s.worker("low", BUSY, "throw")).rejects.toThrow("thrown in the worker");
+  expect(s.stats().warm).toBe(0);
+  expect(await s.worker("low", BUSY, "after")).toEqual({ seen: 1, echo: "after" });
+  s.stop();
+});
+
+test("scheduler.worker: the pool shrinks when the sampler backs off, and gives its memory to a job that needs it", async () => {
+  let load: Load = { cpu: 0.1, memory: 0.1 };
+  const s = scheduler({ cores: 4, budget: { cpu: 1, reserve: 0 }, totalMb: 1000, everyMs: 0, window: 1, warm: 3, workerMb: 100, sample: () => load });   // 4 slots, 500 MB
+  await Promise.all([1, 2, 3].map((n) => s.worker("low", BUSY, n)));
+  expect(s.stats().warm).toBe(3);
+  load = { cpu: 0.1, memory: 0.9 };
+  s.tick();                                             // low 4 -> 2
+  expect(s.stats().warm).toBe(2);
+  expect(await s.run("low", () => s.stats().warm, { memMb: 400 })).toBe(1);   // 200 idle + 400 > 500: one let go
+  s.stop();
+});
+
 test("treeMb: a process and its descendants, from ps", () => {
   const ps = ["  1     0  1024", " 10     1  2048", " 11    10  1024", " 12    11   512", " 20     1  4096", ""].join("\n");
   expect(treeMb(ps, [10, 20, 99])).toEqual(new Map([[10, 3.5], [20, 4], [99, 0]]));

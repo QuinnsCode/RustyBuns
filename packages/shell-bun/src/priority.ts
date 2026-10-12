@@ -16,6 +16,11 @@
 //   On Linux `maxMb` is also a hard cap, a cgroup through systemd-run; macOS stays watch-and-act.
 // - `timeoutMs` stops a job that hangs, so it can't hold a slot for good. A stop aborts the job's
 //   signal and frees its slot at once; plain JS that ignores the signal runs on, outside the budget.
+// - CPU-heavy JS runs on a worker thread through the same slots (`worker`), and a stop terminates the
+//   thread, so it is the one kind of JS job a stop really interrupts. Up to `warm` finished workers are
+//   kept loaded, so the next job for the same module skips the startup (#1047). An idle one counts
+//   `workerMb` against the memory budget, the pool shrinks with the low limit when the sampler backs
+//   off, and idle workers are let go first when a job needs their memory.
 //
 // Child processes of low work get OS background priority too (`lowPriorityCommand`), so the kernel
 // prefers everything else even while they run.
@@ -69,6 +74,10 @@ export interface SchedulerOptions {
   window?: number;
   /** How big each tracked process tree is, in MB. @default processTreeMb (ps) */
   measure?: (pids: number[]) => Map<number, number>;
+  /** Finished workers kept loaded for the next job on the same module. @default 0 */
+  warm?: number;
+  /** What a worker thread counts against the memory budget, idle or running, when its job doesn't say. @default 30 */
+  workerMb?: number;
   log?: (line: string) => void;
 }
 
@@ -78,6 +87,8 @@ export interface SchedulerStats {
   running: Record<Priority, number>;
   queued: { normal: number; low: number };
   memMb: { used: number; budget: number };
+  /** Idle workers kept loaded. */
+  warm: number;
   load: Load | null;
 }
 
@@ -196,6 +207,11 @@ export interface SpawnOptions extends RunOptions {
   graceMs?: number;
 }
 
+export interface WorkerOptions extends RunOptions {
+  /** Moved to the worker rather than copied. */
+  transfer?: Transferable[];
+}
+
 type Waiting = { priority: "normal" | "low"; memMb: number; start: () => void };
 type Live = { priority: Priority; memMb: number; measuredMb: number; maxMb?: number; pids: Set<number>; order: number; stop: (e: JobStopped) => void };
 const background = (p: Priority): p is "normal" | "low" => p === "normal" || p === "low";
@@ -210,16 +226,24 @@ export function scheduler(o: SchedulerOptions = {}) {
   const queue: Waiting[] = [];
   const live = new Set<Live>();
   let back: Backoff = { limit: slots, hot: 0, cool: 0 }, load: Load | null = null, seq = 0;
+  const warm = o.warm ?? 0, workerMb = o.workerMb ?? 30;
+  const idle: { url: string; w: Worker }[] = [];
 
-  // A background job counts for what it said it takes, or what it was last measured at if more.
-  const usedMb = () => { let mb = 0; for (const j of live) if (background(j.priority)) mb += Math.max(j.memMb, j.measuredMb); return mb; };
+  // A background job counts for what it said it takes, or what it was last measured at if more; an idle worker for workerMb.
+  const usedMb = () => { let mb = idle.length * workerMb; for (const j of live) if (background(j.priority)) mb += Math.max(j.memMb, j.measuredMb); return mb; };
+  // The pool never holds more than `warm`, nor more than low work may run at once.
+  const shrink = (to = Math.min(warm, back.limit)) => { while (idle.length > to) idle.shift()!.w.terminate(); };
 
   function fits(j: Waiting) {
     if (running.normal + running.low >= slots) return false;
     if (j.priority === "low" && running.low >= back.limit) return false;
     // nothing running: a job bigger than the whole budget still gets its turn alone
-    const used = usedMb();
-    return used === 0 || used + j.memMb <= memBudgetMb;
+    for (;;) {
+      const used = usedMb();
+      if (used === 0 || used + j.memMb <= memBudgetMb) return true;
+      if (!idle.length) return false;
+      idle.shift()!.w.terminate();        // an idle worker gives its memory to a job that needs it
+    }
   }
 
   function pump() {
@@ -293,6 +317,30 @@ export function scheduler(o: SchedulerOptions = {}) {
     }, opts);
   }
 
+  /** `data` posted to a worker thread on module `url`; its first message back is the result. A stop
+   *  terminates the thread. A worker that answered goes back to the warm pool (if there's room) for the
+   *  next job on the same `url`, so the module must handle one message after another; one that threw
+   *  is terminated. `memMb` defaults to `workerMb`. */
+  function worker<T = unknown>(priority: Priority, url: string | URL, data?: unknown, opts: WorkerOptions = {}) {
+    const href = String(url);
+    return run<T>(priority, (job) => new Promise<T>((resolve, reject) => {
+      const i = idle.findIndex((x) => x.url === href);
+      const w = i >= 0 ? idle.splice(i, 1)[0]!.w : new Worker(href);
+      w.ref();
+      const off = () => { w.onmessage = null; w.onerror = null; job.signal.removeEventListener("abort", stop); };
+      const stop = () => { off(); w.terminate(); reject(job.signal.reason); };
+      w.onmessage = (e: MessageEvent) => {
+        off();
+        // an idle worker doesn't keep the process alive
+        if (idle.length < Math.min(warm, back.limit)) { w.unref(); idle.push({ url: href, w }); } else w.terminate();
+        resolve(e.data as T);
+      };
+      w.onerror = (e: ErrorEvent) => { e.preventDefault(); off(); w.terminate(); reject(e.error ?? new Error(e.message)); };
+      job.signal.addEventListener("abort", stop, { once: true });
+      w.postMessage(data, opts.transfer ?? []);
+    }), { ...opts, memMb: opts.memMb ?? workerMb });
+  }
+
   /** Measure the jobs that track processes. One past its own maxMb is stopped. While the background work
    *  is over the memory budget, the newest measured job (low before normal) is put out; the oldest keeps going. */
   function watch() {
@@ -320,6 +368,7 @@ export function scheduler(o: SchedulerOptions = {}) {
     load = sample();
     const before = back.limit;
     back = adapt(back, load, budget, slots, window);
+    shrink();
     if (back.limit !== before) {
       const pct = (n: number) => `${Math.round(n * 100)}%`;
       log(`[priority] low ${before} -> ${back.limit} of ${slots} (cpu ${pct(load.cpu)}, memory ${pct(load.memory)}; budget ${pct(budget.cpu)} / ${pct(budget.memory)})`);
@@ -335,9 +384,11 @@ export function scheduler(o: SchedulerOptions = {}) {
   const stats = (): SchedulerStats => ({
     slots, lowLimit: back.limit, running: { ...running },
     queued: { normal: queue.filter((j) => j.priority === "normal").length, low: queue.filter((j) => j.priority === "low").length },
-    memMb: { used: Math.round(usedMb()), budget: Math.round(memBudgetMb) }, load,
+    memMb: { used: Math.round(usedMb()), budget: Math.round(memBudgetMb) }, warm: idle.length, load,
   });
-  return { run, spawn, tick, stats, budget, stop: () => clearInterval(timer) };
+  /** Stops the sampler and lets the idle workers go. */
+  const stop = () => { clearInterval(timer); shrink(0); };
+  return { run, spawn, worker, tick, stats, budget, stop };
 }
 
 /** Every descendant of `pid`, deepest last. */
