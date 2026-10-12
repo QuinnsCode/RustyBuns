@@ -62,7 +62,7 @@ test("needs work: webpack builds point at the Vite port issue", () => {
     const f = fit({ pkg: pkg(d), files: [] });
     expect(f.verdict).toBe("needs-work");
     expect(f.issue).toMatch(/issues\/404$/);
-    expect(f.reasons[0]).toContain("Vite");
+    expect(f.reasons[0]).toContain("--port-vite");
   }
   expect(fit({ pkg: pkg({ "@angular/core": "20" }), files: [] }).issue).toMatch(/issues\/318$/);
 });

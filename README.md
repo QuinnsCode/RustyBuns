@@ -188,7 +188,7 @@ Want to run them from source? [EXAMPLES.md](EXAMPLES.md) is two lines per app, n
 
 ## Get started
 
-You need Bun 1.4+ and an app that builds with `vite build`.
+You need Bun 1.4+ and an app that builds with `vite build`. On Create React App or Vue CLI? `rustybuns init --port-vite` moves it to Vite first.
 
 ```sh
 pnpm add -D @rustybuns/cli @rustybuns/shell-bun

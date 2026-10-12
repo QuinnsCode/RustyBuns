@@ -15,6 +15,7 @@ import { watchDesktop } from "./watch.ts";
 import type { RustyBunsConfig } from "./config.ts";
 import { infer, readPackageJson } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
+import { planPort } from "./glue/port-vite.ts";
 import { sourceLayout } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
@@ -111,7 +112,7 @@ function readDevVars(): Record<string, string> {
 
 async function init() {
   const force = rest.includes("--force");
-  const inf = infer();
+  let inf = infer();
   const spa = rest.includes("--spa");
   const src = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].find((f) => existsSync(f)) ?? null;
   // Refuse before printing or writing anything.
@@ -119,9 +120,14 @@ async function init() {
   if (existsSync("rustybuns.config.ts") && !force) throw new Error("rustybuns.config.ts already exists; init would overwrite it. Edit it directly, or pass --force to regenerate from scratch.");
   if (inf.isWorkspaceRoot && !src && !inf.vite.configPath && inf.framework === "unknown")
     throw new Error("this looks like a monorepo root (workspaces, no app here). cd into the package you want to ship and run init there.");
+  if (rest.includes("--port-vite")) { await portVite(inf.stack, force); inf = infer(); }
   const later = inf.framework === "unknown" ? unsupported(inf.stack) : null;
   if (later && !force && inf.stack === "react-router")
     throw new Error(`this React Router app doesn't build with @cloudflare/vite-plugin; Rusty Buns runs the Worker that plugin builds (Cloudflare's React Router template). cloudflareDevProxy, Remix v2 and the Node server are ${later.issue}. Pass --force to write a config anyway.`);
+  if (later && !force && (inf.stack === "cra" || inf.stack === "vue-cli"))
+    throw new Error(`${later.name} builds with webpack. \`rustybuns init --port-vite\` ports it to Vite (vite.config.ts, index.html, package.json) and goes on as a Vite app (${later.issue}).`);
+  if (later && !force && inf.stack === "webpack")
+    throw new Error(`a custom webpack build isn't supported yet; \`rustybuns init --port-vite\` lists what to port to Vite (${later.issue}). Pass --force to write a config anyway.`);
   if (later && !force)
     throw new Error(`${later.name} isn't supported yet (${later.issue}). Pass --force to write a config anyway.`);
   const astroAdapter = inf.framework === "astro" ? inf.astro?.adapter ?? null : null;
@@ -231,6 +237,20 @@ async function init() {
   console.log(astroWorker || rrWorker
     ? `\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}, or ${inf.execCmd("rustybuns plan")}`
     : `\nnext: rustybuns add desktop [--entry ./src/app/App.tsx#App]`);
+}
+
+/** `init --port-vite`: CRA or Vue CLI onto Vite (port-vite.ts). Refuses before writing if a file it writes exists. */
+async function portVite(stack: ReturnType<typeof infer>["stack"], force: boolean) {
+  const port = planPort(process.cwd(), stack);
+  if (typeof port === "string") throw new Error(port);
+  const taken = ["vite.config.ts", "index.html"].filter((f) => existsSync(f));
+  if (taken.length && !force) throw new Error(`--port-vite would overwrite ${taken.join(" and ")}. Move ${taken.length > 1 ? "them" : "it"} aside, or pass --force.`);
+  for (const [f, c] of Object.entries(port.writes)) await Bun.write(f, c);
+  for (const f of port.remove) await rm(f, { force: true });
+  console.log(`ported to Vite: wrote vite.config.ts, index.html (from ${port.remove.join(", ")}), package.json (vite, scripts)`);
+  for (const n of port.notes) console.log(`  todo: ${n}`);
+  const after = infer();
+  console.log(`  then: ${after.pm} install && ${after.execCmd("vite")} build\n`);
 }
 
 /**
@@ -697,6 +717,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              write rustybuns.config.ts + .rustybuns/alchemy.run.ts + wrangler.jsonc
                              (no wrangler, or --spa: desktop-only config + desktop/host.ts)
                              refuses to overwrite an existing config unless --force
+  init --port-vite           Create React App / Vue CLI: port to Vite first, then init;
+                             custom webpack: list what to port
   add desktop [--entry F#C]  scaffold packages/desktop (index.html, main.tsx, world.ts) and
                              vite.desktop.config.ts; keeps files that already exist
   add deploy [--dry-run]     install the pinned alchemy + effect set (and pnpm/npm overrides)

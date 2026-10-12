@@ -139,7 +139,9 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
     reasons.push(stack === "react-router"
       ? "React Router: `rustybuns init` reads it when @cloudflare/vite-plugin builds it (Cloudflare's current template), not through cloudflareDevProxy or a Node server."
       : TRACKED[stack] === 404
-        ? `${LABEL[stack]} builds with webpack; ported to Vite, \`rustybuns init\` reads it.`
+        ? stack === "webpack"
+          ? "A custom webpack build: ported to Vite by hand, `rustybuns init` reads it (`init --port-vite` lists what to port)."
+          : `${LABEL[stack]} builds with webpack: \`rustybuns init --port-vite\` ports it to Vite, then reads it.`
         : `${LABEL[stack]} has a Cloudflare build, but \`rustybuns init\` doesn't infer it yet.`);
   } else if (worker || fetchServer) {
     verdict = "ready";
