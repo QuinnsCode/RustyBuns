@@ -66,7 +66,7 @@ import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { toFile } from "./archive.ts";
-import { fromDisk, toDisk } from "./agent-run.ts";
+import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
@@ -917,7 +917,9 @@ export async function branchTree(env: Env, owner: string, repo: string, name: st
       // A binary file is a blob this git has already.
       if (blob) { await must(["update-index", "--add", "--cacheinfo", `${binMode ?? "100644"},${blob},${path}`], dir, e); continue; }
       const doc = (await (await toFile(env, owner, repo, path, "upstream", "file", {}, "", name)).json()) as Doc;
-      const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(toDisk(doc.lines)), stdout: "pipe", stderr: "pipe" });
+      // As main's commits write it (archive.ts pushCatalogues): the lines, ending in one newline (#1041).
+      const text = (t => t.endsWith("\n") ? t : t + "\n")(doc.lines.map((l) => l.text).join("\n"));
+      const put = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: new TextEncoder().encode(text), stdout: "pipe", stderr: "pipe" });
       const [, hash] = await Promise.all([put.exited, new Response(put.stdout).text()]);
       const mode = (await must(["ls-tree", baseTree, "--", path], dir)).split(" ")[0] || "100644";
       await must(["update-index", "--add", "--cacheinfo", `${mode},${hash.trim()},${path}`], dir, e);

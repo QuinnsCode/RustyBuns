@@ -1404,7 +1404,7 @@ describe("shares", () => {
 
     const r = await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", {});
     expect(r.status).toBe(409);
-    expect((await r.json() as any).conflicts).toEqual([{ path: "a.js", conflicts: [{ line: "L1", base: "x", main: "main", branch: "branch", choices: ["main", "branch", "both", "both:branch-first", "text"] }] }]);
+    expect((await r.json() as any).conflicts).toEqual([{ path: "a.js", leftover: "person", conflicts: [{ line: "L1", base: "x", main: "main", branch: "branch", choices: ["main", "branch", "both", "both:branch-first", "text"] }] }]);
     // Not even the clean file landed.
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=b.js")).json() as Doc)).toBe("z");
     expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.js": { L1: "branch" } } })).status).toBe(200);

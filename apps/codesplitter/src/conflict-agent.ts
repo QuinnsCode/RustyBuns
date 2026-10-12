@@ -63,6 +63,16 @@ export function settled(run: { code: number; out: string; text: string | null },
   return { text };
 }
 
+/**
+ * The agent a merge asks on its own (#1012), for a file whose policy hands its leftovers to AI:
+ * claude on its cheapest model where it's installed, else the first harness there is, on that
+ * CLI's own default (the others name models by provider, which only their owner knows).
+ */
+export function cheapest(installed: Harness[]): { harness: Harness; model?: string } | null {
+  if (installed.includes("claude")) return { harness: "claude", model: "haiku" };
+  return installed[0] ? { harness: installed[0] } : null;
+}
+
 export async function askAgent(box: Sandbox, o: { harness: Harness; model?: string; path: string; branch: string; conflict: Conflict; merged: Doc; said?: string[]; meant?: string; theirs?: string[] }, signal?: AbortSignal) {
   const given = markers(o.conflict);
   const cmd = harnessCommand(o.harness, conflictPrompt(o.path, o.branch, o.conflict, around(o.merged, o.conflict.line), o.said, o.meant, o.theirs), { model: o.model });
