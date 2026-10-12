@@ -10,6 +10,8 @@ The deploy side is built on Alchemy, which is built on [Effect](https://effect.w
 
 `plan` and `deploy` type check the generated stack before Alchemy runs (`--no-check` skips). `build desktop --check` type checks your app before the client build, so a type error costs well under a second instead of a full build. The checker is picked automatically: [`bun check`](https://bun.com/docs/runtime/check) on Bun 1.4.3 or newer (not in a stable release yet: `bun upgrade --canary`), else [tsc-rs](https://github.com/pingdotgg/ts-rust), else `tsc`. tsc-rs goes first when the tsconfig enables `@effect/language-service`, because only tsc-rs runs Effect's diagnostics (a stack step written without `yield*` silently never runs; tsc-rs flags it as TS377001). `--checker bun|tsc-rs|tsc` picks one yourself.
 
+Type errors print one line each, starting with `file(line,col)`. Each line is cut to 300 characters and at most 20 are shown, followed by a count of the rest, so a deep generic (an Effect, a query builder) can't fill a screen or an agent's context. `bun run typecheck --full` prints everything.
+
 `build desktop`, `plan` and `deploy` print how long each step took and save it to `.rustybuns/profile/`. The next run shows the change per step, so you can see what a checker or Bun upgrade actually saved. An illustration of the shape (the numbers are what `bun check` is expected to give, not a measured run):
 
 ```

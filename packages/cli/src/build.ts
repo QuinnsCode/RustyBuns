@@ -11,7 +11,7 @@ import { join, dirname, normalize } from "node:path";
 import type { DesktopOs, RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 import { Profiler } from "./profile.ts";
-import { BUN_CHECK_MIN, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
+import { BUN_CHECK_MIN, compactDiagnostics, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
 
 const EXTS = [".ts", ".tsx", ".mts", ".js", ".mjs", ".cjs", ".jsx"];
 
@@ -532,7 +532,7 @@ async function checkApp(prof: Profiler | undefined, want: CheckerName | "auto") 
   }
   const r = prof ? await prof.step("typecheck app", () => runCheck(c, tsconfig), c.name) : await runCheck(c, tsconfig);
   if (!r.ok) {
-    console.error(r.output);
+    console.error(compactDiagnostics(r.output));
     if (prof) await prof.finish();
     throw new Error(`type errors (${c.name}); nothing was built. Drop --check to build anyway.`);
   }
