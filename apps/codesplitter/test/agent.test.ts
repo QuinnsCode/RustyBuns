@@ -6,7 +6,7 @@ import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { harnessCommand, taskPrompt, HARNESSES } from "../src/harness.ts";
 import { execCommand, runAgent, toDisk, fromDisk, type Exec } from "../src/agent-run.ts";
-import { FileDurableObject, LEASE_CAP_MS, LEASE_MS, REST_MS } from "../src/file-do.ts";
+import { FileDurableObject, GRANT_MS, LEASE_CAP_MS, LEASE_MS, REST_MS } from "../src/file-do.ts";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -276,7 +276,7 @@ describe("claims", () => {
     ws.toBrowser = (d: string) => got.push(JSON.parse(d));
     return got;
   };
-  const until = async (ok: () => boolean, ms = 2000) => { for (const end = Date.now() + ms; !ok() && Date.now() < end;) await Bun.sleep(10); return ok(); };
+  const until = async (ok: () => boolean | Promise<boolean>, ms = 2000) => { for (const end = Date.now() + ms; !(await ok()) && Date.now() < end;) await Bun.sleep(10); return ok(); };
 
   test("an edit on a held line is a 409 naming the claim, who has it, and when to try again", async () => {
     const call = await local();
@@ -464,6 +464,123 @@ describe("claims", () => {
     expect(prompt).toContain("Someone else is working on these lines right now");
     expect(prompt).toContain(`line 3: "c" (held by @ryan)`);
     expect(prompt).not.toContain("line 1:");
+  });
+
+  /** Two more agents on the crew, so three can take turns. */
+  const crew = async (call: Call) => { for (const name of ["agent-y", "agent-z"]) await post(call, "ryan", "../collaborators", { name }); };
+  const wait = (call: Call, user: string, body: unknown) => post(call, user, "claims", { wait: true, timeout: 0, ...body as object });
+
+  test("agents waiting for held lines take turns in order, and one still asking gets them the moment they're free", async () => {
+    const call = await local();
+    await setup(call, "a\nb\nc");
+    await crew(call);
+    const got = await listen(call);
+    await post(call, "agent-x", "claims", { id: "run-x", lines: ["L1", "L2"] });
+    // Not waiting: refused, as ever.
+    expect((await post(call, "agent-y", "claims", { id: "run-y", lines: ["L1"] })).status).toBe(409);
+    const y = await wait(call, "agent-y", { id: "run-y", lines: ["L1"], task: "rename a" });
+    expect(y.status).toBe(202);
+    expect(await y.json()).toMatchObject({ queued: true, id: "run-y", place: 1, claims: [{ id: "run-x" }] });
+    expect(await (await wait(call, "agent-z", { id: "run-z", lines: ["L1", "L3"] })).json()).toMatchObject({ queued: true, place: 2 });
+    // L3 is free, but z is in line for L1 behind y, so it waits for both. And another agent can't take lines others are in line for.
+    const cut = await post(call, "agent-x", "claims", { id: "run-x3", lines: ["L3"] });
+    expect(cut.status).toBe(409);
+    expect(await cut.json()).toMatchObject({ queued: 1 });
+    // y asks again and waits; x lets go, and y's ask comes back with the claim.
+    const asking = wait(call, "agent-y", { id: "run-y", timeout: 5 });
+    await Bun.sleep(20);
+    await post(call, "agent-x", "release", { id: "run-x" });
+    const granted = await asking;
+    expect(granted.status).toBe(201);
+    expect(await granted.json()).toMatchObject({ id: "run-y", who: "agent-y", lines: ["L1"], task: "rename a", until: expect.any(Number) });
+    expect((await claims(call)).find((c) => c.id === "run-y")!.until! - Date.now()).toBeGreaterThan(LEASE_MS - 5_000);
+    // z's next: when y's done, z isn't asking, so it gets the lines for a grant window and hears so.
+    await post(call, "agent-y", "release", { id: "run-y" });
+    const z = (await claims(call)).find((c) => c.id === "run-z")!;
+    expect(z).toMatchObject({ who: "agent-z", lines: ["L1", "L3"] });
+    expect(z.until! - Date.now()).toBeLessThanOrEqual(GRANT_MS);
+    expect(await until(() => got.some((m) => m.type === "grant" && m.claim.id === "run-z"))).toBe(true);
+    // It takes them by claiming again by id: a lease like any other.
+    expect(await (await post(call, "agent-z", "claims", { id: "run-z" })).json()).toMatchObject({ until: expect.any(Number) });
+    expect((await claims(call))[0]!.until! - Date.now()).toBeGreaterThan(GRANT_MS);
+  });
+
+  test("a waiter that's gone is skipped after its grant window, and one that stops asking leaves the line", async () => {
+    const call = await local();
+    await setup(call, "a\nb");
+    await crew(call);
+    const t0 = Date.now();
+    try {
+      await post(call, "ryan", "claims", { lines: ["L1"] });
+      await wait(call, "agent-x", { id: "run-dead", lines: ["L1"] });
+      await wait(call, "agent-y", { id: "run-y", lines: ["L1"] });
+      await post(call, "ryan", "release", { id: (await claims(call))[0]!.id });
+      expect((await claims(call)).map((c) => c.id)).toEqual(["run-dead"]);
+      // run-dead never takes it; y keeps asking and gets it once the window's up.
+      setSystemTime(t0 + GRANT_MS + 1_000);
+      await wait(call, "agent-y", { id: "run-y" });
+      await claims(call);
+      expect(await until(async () => (await claims(call)).some((c) => c.id === "run-y"))).toBe(true);
+      // z gets in line behind y and then goes quiet: by the time y's done, z has left the line.
+      expect((await wait(call, "agent-z", { id: "run-z", lines: ["L1"] })).status).toBe(202);
+      setSystemTime(t0 + GRANT_MS + 1_000 + 61_000);
+      await post(call, "agent-y", "release", { id: "run-y" });
+      expect(await claims(call)).toEqual([]);
+      expect((await post(call, "ryan", "claims", { lines: ["L1"] })).status).toBe(201);
+    } finally { setSystemTime(); }
+  });
+
+  test("nobody waits while holding lines, here or in another file, and release_claim leaves the line", async () => {
+    const call = await local();
+    await setup(call, "a\nb");
+    await crew(call);
+    await post(call, "ryan", "../files", { path: "b.js", content: "x" });
+    await post(call, "ryan", "claims", { lines: ["L1"] });
+    // Holding L2 here and waiting for L1: refused.
+    await post(call, "agent-x", "claims", { id: "run-x", lines: ["L2"] });
+    const here = await wait(call, "agent-x", { id: "run-x2", lines: ["L1"] });
+    expect(here.status).toBe(409);
+    expect(await here.json()).toMatchObject({ claims: [{ id: "run-x" }] });
+    // Holding a line of b.js and waiting here: refused too, naming where.
+    const other = (route: string, body: unknown) => call("agent-y", `${file}/${route}?path=b.js`, { method: "POST", body: JSON.stringify(body) });
+    expect((await other("claims", { id: "run-b", lines: ["L1"] })).status).toBe(201);
+    let res: Response | undefined;
+    expect(await until(async () => (res = await wait(call, "agent-y", { id: "run-y", lines: ["L1"] })).status === 409)).toBe(true);
+    expect(await res!.json()).toMatchObject({ holding: [{ path: "b.js", id: "run-b" }] });
+    // An intent there doesn't count; let go of the claim and it may wait.
+    await other("release", { id: "run-b" });
+    expect((await other("claims", { id: "run-b2", lines: ["L1"], soft: true })).status).toBe(201);
+    expect(await until(async () => (await wait(call, "agent-y", { id: "run-y", lines: ["L1"] })).status === 202)).toBe(true);
+    // Leaving the line: the next one through gets the lines straight away.
+    expect(await (await post(call, "agent-y", "release", { id: "run-y" })).json()).toEqual({ released: true });
+    await post(call, "ryan", "release", { id: (await claims(call)).find((c) => c.who === "ryan")!.id });
+    expect((await claims(call)).map((c) => c.id)).toEqual(["run-x"]);
+  });
+
+  test("a soft claim is an intent: listed and following its lines, but it keeps nobody off", async () => {
+    const call = await local();
+    await setup(call, "a\nb\nc");
+    await crew(call);
+    const c = await post(call, "agent-x", "claims", { id: "plan-x", lines: ["L1", "L2"], task: "rewriting a–b", soft: true });
+    expect(c.status).toBe(201);
+    expect(await c.json()).toMatchObject({ soft: true, task: "rewriting a–b" });
+    // Others edit those lines, and claim them, soft or not.
+    expect((await post(call, "ryan", "ops", { ops: [{ kind: "set", line: "L1", base: 1, text: "A" }] })).status).toBe(200);
+    expect((await post(call, "agent-y", "claims", { id: "plan-y", lines: ["L2", "L3"], soft: true })).status).toBe(201);
+    expect((await post(call, "agent-z", "claims", { id: "run-z", lines: ["L2"] })).status).toBe(201);
+    expect((await claims(call)).map((c) => c.id).sort()).toEqual(["plan-x", "plan-y", "run-z"]);
+    // It follows its lines: its holder's inserts join, deleted lines leave.
+    await post(call, "agent-x", "ops", { claim: "plan-x", ops: [{ kind: "insert", after: "L1", text: "new" }] });
+    await post(call, "agent-z", "ops", { claim: "run-z", ops: [{ kind: "delete", line: "L2", base: 2 }] });
+    const now = await claims(call);
+    expect(now.find((c) => c.id === "plan-x")!.lines).toEqual(["L1", "L4"]);
+    expect(now.find((c) => c.id === "plan-y")!.lines).toEqual(["L3"]);
+    expect(now.find((c) => c.id === "run-z")).toBeUndefined();
+    // Made firm (soft: false), it's a claim like any other, and can't be laid over someone's hold.
+    await post(call, "ryan", "claims", { lines: ["L3"] });
+    expect((await post(call, "agent-y", "claims", { id: "plan-y", soft: false })).status).toBe(409);
+    expect(await (await post(call, "agent-x", "claims", { id: "plan-x", soft: false })).json()).not.toHaveProperty("soft");
+    expect((await post(call, "ryan", "ops", { ops: [{ kind: "set", line: "L1", base: 4, text: "x" }] })).status).toBe(409);
   });
 
   test("a thousand agents each on a line of their own", async () => {
