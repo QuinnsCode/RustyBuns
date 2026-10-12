@@ -22,6 +22,11 @@ export class D1PreparedStatement {
   }
 
   async all<T = Record<string, unknown>>(): Promise<D1Result<T>> {
+    return this.allSync<T>();
+  }
+
+  /** all() without the promise, so batch() can run every statement inside one sqlite transaction. */
+  allSync<T = Record<string, unknown>>(): D1Result<T> {
     const t0 = performance.now();
     // D1 reports writes made through all() too (INSERT ... RETURNING, or a
     // query builder that runs everything via all()); count them the same way.
@@ -75,13 +80,9 @@ export class D1Database {
     return new D1PreparedStatement(this.sqlite, sql);
   }
   async batch<T = Record<string, unknown>>(stmts: D1PreparedStatement[]): Promise<D1Result<T>[]> {
-    const out: D1Result<T>[] = [];
-    this.sqlite.transaction(() => { /* wrapped below */ });
-    const tx = this.sqlite.transaction(async () => {
-      for (const s of stmts) out.push(await s.all<T>());
-    });
-    await tx();
-    return out;
+    // D1 runs a batch as one transaction: a failing statement rolls back the ones before it.
+    // The callback must be synchronous; an async one returns at its first await and commits early.
+    return this.sqlite.transaction(() => stmts.map((s) => s.allSync<T>()))();
   }
   async exec(sql: string): Promise<{ count: number; duration: number }> {
     const t0 = performance.now();

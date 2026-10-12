@@ -23,6 +23,7 @@ export const APPS: Record<string, App> = {
   "agent-demo":        { test: "bun test test", drop: false },
   "agent-office":      { test: "bun test test", build: "bun scripts/rustybunsify.ts compile --all", smoke: "bun run desktop:build && bun run desktop:smoke" },
   "auto-rig":          { test: "bun test test", prep: "bun run build:native", perOs: true },
+  "borg":              { test: "bun test test", drop: false },
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true },
   "codesplitter":     { test: "bun test --parallel test" },
   "hippo-tycoon":      { test: "bun test --parallel test", prep: "bun run build:native", check: true },

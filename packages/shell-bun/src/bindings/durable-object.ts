@@ -85,6 +85,9 @@ const MAX_TAGS = 10, MAX_TAG_LEN = 256;
 
 export class LocalDurableObjectState {
   private gate: Promise<unknown> = Promise.resolve();
+  /** Storage calls still running, and the events waiting for them (CF's input gate). */
+  private inflight = 0;
+  private waiting: (() => void)[] = [];
   readonly storage: StoragePort & { getAlarm(): Promise<number | null> };
   pending: Promise<unknown>[] = [];
   /** Set by `namespace.evict()`. The instance is gone; see `evicted()`. */
@@ -111,7 +114,27 @@ export class LocalDurableObjectState {
       deleteAlarm: write(async () => { slot.alarmAt = null; if (slot.timer) clearTimeout(slot.timer); slot.timer = null; }, undefined),
       async getAlarm() { return slot.alarmAt; },
     };
+    // Input gate: count every storage call in flight. The gate reopens on a later macrotask, so
+    // the caller's own continuation (the put after a get) runs before another event can start.
+    for (const [k, v] of Object.entries(this.storage)) {
+      if (typeof v !== "function") continue;
+      (this.storage as any)[k] = (...a: unknown[]) => {
+        const r = v(...a);
+        if (!(r instanceof Promise)) return r;
+        this.inflight++;
+        r.finally(() => { if (--this.inflight === 0) setImmediate(() => this.release()); }).catch(() => {});
+        return r;
+      };
+    }
   }
+  private release() {
+    if (this.inflight > 0) return;
+    for (const w of this.waiting.splice(0)) w();
+  }
+  /** True while a storage call is in flight. Check it synchronously right before starting an event. */
+  gated() { return this.inflight > 0; }
+  /** Resolves when the gate next reopens; check gated() again, another event may have gone first. */
+  gateOpen() { return new Promise<void>((r) => this.waiting.push(r)); }
 
   waitUntil(p: Promise<unknown>) {
     // A rejected waitUntil is otherwise invisible: CF drops it, and a
@@ -216,6 +239,8 @@ export class LocalDurableObjectNamespace<Env> {
   private async deliver<T>(id: DurableObjectId, fn: (obj: DurableObjectLike) => T): Promise<Awaited<T>> {
     const { obj, state } = this.instance(id);
     await state.ready();
+    // Awaiting an open gate would yield, and every queued event would slip through together.
+    while (state.gated()) await state.gateOpen();
     return await fn(obj);
   }
 
