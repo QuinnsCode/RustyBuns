@@ -359,3 +359,29 @@ test("serve: /page serves page.html when nothing sits at /page, as Cloudflare an
   expect((await get("/data.json"))[0]).toBe(404);
   shell.stop?.();
 });
+
+test("serve: a missing page gets the nearest 404.html with status 404, as Cloudflare's 404-page and GitHub Pages do", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync("/tmp/rb-assets-");
+  mkdirSync(join(dir, "docs", "deep"), { recursive: true });
+  writeFileSync(join(dir, "404.html"), "<p>lost</p>");
+  writeFileSync(join(dir, "docs", "404.html"), "<p>no such doc</p>");
+  writeFileSync(join(dir, "_headers"), "/docs/*\n  X-Docs: yes\n");
+  const shell = serve({ assets: dir });
+  const get = async (p: string) => { const r = await fetch(shell.url + p); return [r.status, await r.text(), r.headers.get("content-type")?.split(";")[0]]; };
+  expect(await get("/nope")).toEqual([404, "<p>lost</p>", "text/html"]);
+  expect(await get("/a/b/c")).toEqual([404, "<p>lost</p>", "text/html"]);
+  expect(await get("/docs/nope")).toEqual([404, "<p>no such doc</p>", "text/html"]);
+  expect(await get("/docs/deep/er/nope")).toEqual([404, "<p>no such doc</p>", "text/html"]);
+  expect((await fetch(shell.url + "/docs/nope")).headers.get("x-docs")).toBe("yes");
+  // a handler that falls through asks the shell for the same page
+  shell.mount({ fetch: (req) => new URL(req.url).pathname === "/api" ? new Response("api") : shell.notFound(new URL(req.url)) }, {});
+  expect((await get("/api")).slice(0, 2)).toEqual([200, "api"]);
+  expect(await get("/docs/gone")).toEqual([404, "<p>no such doc</p>", "text/html"]);
+  await shell.stop();
+  // no 404.html: plain text, as before
+  const bare = serve({ assets: mkdtempSync("/tmp/rb-assets-") });
+  expect(await fetch(bare.url + "/nope").then(async (r) => [r.status, await r.text()])).toEqual([404, "not found"]);
+  await bare.stop();
+});
