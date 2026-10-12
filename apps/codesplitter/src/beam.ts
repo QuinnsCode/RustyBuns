@@ -41,7 +41,7 @@ import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startChecks } from "./checks.ts";
-import { branchNameError, json, type Env } from "./env.ts";
+import { branchNameError, json, readBody, type Body, type Env } from "./env.ts";
 import { access as artifactAccess, handleFor, readTree, toFile } from "./archive.ts";
 import { ancestors } from "./branches.ts";
 import { blobId, GIT_EMAIL_DOMAIN, push, setRef, ZERO, type Change as GitChange } from "./git.ts";
@@ -207,26 +207,29 @@ async function linesStack(env: Env, owner: string, repo: string, dir: string, ma
 }
 
 /** Beam branch `branch` of owner/repo, a git one or (`kind: "codesplitter"`) one of ours: see the top of this file. */
-export async function makeBeam(env: Env, owner: string, repo: string, user: string, body: any): Promise<Response> {
+export async function makeBeam(env: Env, owner: string, repo: string, user: string, body: Body<"branch" | "kind" | "onto" | "to" | "title" | "message" | "keep" | "drop">): Promise<Response> {
   const lg = localGit(env), r = await repoRow(env, owner, repo);
   if (!r) return json({ error: "no such repo" }, 404);
   if (!r.artifact) return json({ error: "this repo has no git yet" }, 409);
   const main = r.branch ?? "main";
   if (r.crew_artifact) return json({ error: "this repo has private lines, and its git holds them blank: a beam of it would carry the blanks" }, 409);
-  const branch = String(body?.branch ?? "");
+  const branch = typeof body.branch === "string" ? body.branch : "";
   const bad = branchNameError(branch);
   if (bad || branch === main) return json({ error: bad ?? `${main} is what a beam goes on top of: beam a branch off it` }, 400);
-  const kind = body?.kind ?? (lg ? "git" : "codesplitter");
+  const kind = body.kind ?? (lg ? "git" : "codesplitter");
   if (kind !== "git" && kind !== "codesplitter") return json({ error: 'kind: "git" or "codesplitter"' }, 400);
-  const onto = body?.onto ?? "main";
+  const onto = body.onto ?? "main";
   if (onto !== "main" && onto !== "upstream") return json({ error: 'onto: "main" or "upstream"' }, 400);
   const paths = (v: unknown) => Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-  const to = body?.to ? String(body.to) : null;
+  const to = typeof body.to === "string" && body.to ? body.to : null;
+  if (body.to && !to) return json({ error: "to: a handle" }, 400);
+  const askTitle = typeof body.title === "string" ? body.title : undefined, askMessage = typeof body.message === "string" ? body.message : undefined;
+  if ((body.title != null && askTitle === undefined) || (body.message != null && askMessage === undefined)) return json({ error: "title and message: text" }, 400);
   if (to && !await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(to).first()) return json({ error: `nobody here goes by ${to}` }, 404);
   if (!lg) {
     if (kind === "git") return json({ error: "git branches live in the desktop app's git: beam one from there, or beam a codeSplitter branch here" }, 501);
     if (onto === "upstream") return json({ error: "beaming onto upstream fetches it with git: beam onto main here, or onto upstream from the desktop app" }, 501);
-    return hostedBeam(env, owner, repo, user, main, { branch, to, title: body?.title, message: body?.message, keep: paths(body?.keep), drop: paths(body?.drop) });
+    return hostedBeam(env, owner, repo, user, main, { branch, to, title: askTitle, message: askMessage, keep: paths(body.keep), drop: paths(body.drop) });
   }
   const dir = lg.path(r.artifact);
 
@@ -234,7 +237,7 @@ export async function makeBeam(env: Env, owner: string, repo: string, user: stri
   if ("error" in st) return st.error;
   const { base, layers } = st, top = layers.at(-1)!;
   const mainTip = await must(["rev-parse", `refs/heads/${main}`], dir);
-  const { kept, dropped } = sortOut(changesOf(await must(["diff", "--name-status", "-z", "--no-renames", base, top.tip], dir)), { keep: paths(body?.keep), drop: paths(body?.drop) });
+  const { kept, dropped } = sortOut(changesOf(await must(["diff", "--name-status", "-z", "--no-renames", base, top.tip], dir)), { keep: paths(body.keep), drop: paths(body.drop) });
   if (!kept.length) return json({ error: "everything it changes is noise, so a beam of it would be empty: `keep` the files you meant", dropped }, 409);
 
   // Each layer's tree with the noise put back as it was where the stack began.
@@ -295,7 +298,7 @@ export async function makeBeam(env: Env, owner: string, repo: string, user: stri
     const authors = log.map((c) => ({ name: c.name, email: c.email }));
     const one = kind === "git" && new Set(authors.map((a) => a.email.toLowerCase())).size === 1 ? authors[0]! : null;
     const author = one ?? gitIdentity() ?? me;
-    const message = beamMessage({ title: mine ? body?.title : undefined, message: mine ? body?.message : undefined, subjects: log.map((c) => c.subject), body: log[0]?.body, author, authors });
+    const message = beamMessage({ title: mine ? askTitle : undefined, message: mine ? askMessage : undefined, subjects: log.map((c) => c.subject), body: log[0]?.body, author, authors });
     sha = await must(["commit-tree", trees[i]!, "-p", sha, "-F", "-"], dir, { ...env_, GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email }, message);
     const [title, ...rest] = message.trimEnd().split("\n");
     made.push({ branch: layer.branch, sha, title: title!, message: rest.join("\n").trim() });
@@ -508,7 +511,7 @@ export async function beamRoutes(req: Request, env: Env, p: string[], user: stri
     if (req.method === "POST") {
       if (!user) return json({ error: "sign in first" }, 401);
       if (!a.write) return json({ error: "only the crew can beam from this repo" }, 403);
-      return makeBeam(env, owner, repo, user, await req.json().catch(() => ({})));
+      return makeBeam(env, owner, repo, user, await readBody(req));
     }
     if (req.method !== "GET") return null;
     const { results } = await env.DB.prepare("SELECT * FROM beams WHERE owner = ? AND repo = ? ORDER BY created_at DESC LIMIT 100").bind(owner, repo).all();

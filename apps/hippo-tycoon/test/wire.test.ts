@@ -17,6 +17,8 @@ test("client messages are validated strictly", () => {
   expect(decodeClient("[1,2]")).toBeNull();
   expect(decodeClient("x".repeat(MAX_CLIENT_MESSAGE + 1))).toBeNull();
   expect(decodeClient(42)).toBeNull();
+  expect(decodeClient("null")).toBeNull();
+  expect(decodeClient("7")).toBeNull();
 });
 
 test("server messages that are the wrong shape are dropped", () => {

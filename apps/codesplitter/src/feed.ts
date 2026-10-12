@@ -17,7 +17,7 @@
 //   GET  /api/me/feed/digest           your latest digest: {harness, status, since, through, text?, error?, at} or null
 //   POST /api/me/feed/digest {harness, model?}  an agent digests what's new since the last one (202)
 
-import { json, type Env } from "./env.ts";
+import { json, type Env, readBody } from "./env.ts";
 import { listFollows, type Follow } from "./follows.ts";
 import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, type Exec, type Sandbox } from "./agent-run.ts";
@@ -185,8 +185,10 @@ export async function feedRoutes(req: Request, env: Env, p: string[], url: URL, 
   if (why) return json({ error: why }, 501);
   // Hosted digests bill the site's own keys: admins only, as with coding agents.
   if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
-  const { harness, model } = (await req.json().catch(() => ({}))) as { harness?: Harness; model?: string };
-  if (!harness || !HARNESSES.includes(harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
+  const { harness: h, model } = await readBody<"harness" | "model">(req);
+  const harness = HARNESSES.find((x) => x === h);
+  if (!harness) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
+  if (model !== undefined && typeof model !== "string") return json({ error: "model: text" }, 400);
   if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
   const now = Date.now(), last = await digestOf(env, user);
   if (last?.status === "running" && now - last.at < 15 * 60_000) return json({ error: "a digest is already being written" }, 409);

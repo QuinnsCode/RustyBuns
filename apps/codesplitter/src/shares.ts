@@ -6,7 +6,7 @@
 //   DELETE /api/shares/:id      whoever shared it, or the repo's owner
 
 import { materialize, toFile } from "./archive.ts";
-import { json, type Env } from "./env.ts";
+import { json, type Body, type Env } from "./env.ts";
 
 interface Line { id: string; text: string; by: string; rev: number; private?: true }
 // Anyone with the link reads it, so private lines come as placeholders.
@@ -14,7 +14,7 @@ const fileLines = async (env: Env, owner: string, repo: string, path: string) =>
   ((await (await toFile(env, owner, repo, path, "share", "file", { headers: { "x-codesplitter-crew": "0" } })).json()) as { lines: Line[] }).lines;
 
 /** Who may share from a repo: anyone who can read a public one; only its crew for a private one. */
-export async function createShare(env: Env, owner: string, repo: string, user: string | null, access: { read: boolean; write: boolean }, private_: boolean, body: any) {
+export async function createShare(env: Env, owner: string, repo: string, user: string | null, access: { read: boolean; write: boolean }, private_: boolean, body: Body<"path" | "from" | "to" | "note">) {
   if (!user) return json({ error: "sign in first" }, 401);
   if (private_ && !access.write) return json({ error: "only the crew can share lines from a private repo" }, 403);
   const path = String(body?.path ?? "");

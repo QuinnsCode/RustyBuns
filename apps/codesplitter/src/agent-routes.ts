@@ -45,7 +45,7 @@
 // works on the branch the stopped one left, whose batch waits, held, till it's done; after HANDOFFS
 // of them it's a person's turn. The run says how much it read (`spent`) and, under `handoff`, why it stopped.
 
-import { json, type Env } from "./env.ts";
+import { json, type Env, readBody } from "./env.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
@@ -217,12 +217,14 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (why) return json({ error: why }, 501);
   if (user !== owner) return json({ error: "only the repo's owner can start a coding agent" }, 403);
   if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
-  const { path, harness, task, model, lines } = (await req.json()) as { path?: string; harness?: Harness; task?: string; model?: string; lines?: string[] };
-  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l) => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
-  if (!path) return json({ error: "path required" }, 400);
-  if (!harness || !HARNESSES.includes(harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
+  const { path, harness: h, task, model, lines } = await readBody<"path" | "harness" | "task" | "model" | "lines">(req);
+  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l): l is string => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
+  if (typeof path !== "string" || !path) return json({ error: "path required" }, 400);
+  const harness = HARNESSES.find((x) => x === h);
+  if (!harness) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
   if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
-  if (!task?.trim()) return json({ error: "task required" }, 400);
+  if (typeof task !== "string" || !task.trim()) return json({ error: "task required" }, 400);
+  if (model !== undefined && model !== null && typeof model !== "string") return json({ error: "model: text" }, 400);
   const spent = await hostedBudget(env);
   if (spent) return spent;
 
@@ -249,9 +251,9 @@ async function launch(env: Env, self: (req: Request) => Promise<Response>, origi
 
 /** Stops the repo's running runs that match every filter given (none: all of them). */
 async function stopRuns(req: Request, env: Env, owner: string, repo: string, user: string, call: ReturnType<typeof caller>) {
-  const { ids, path, harness, lines } = (await req.json().catch(() => ({}))) as { ids?: number[]; path?: string; harness?: string; lines?: string[] };
-  if (ids !== undefined && !(Array.isArray(ids) && ids.every(Number.isInteger))) return json({ error: "ids: run ids" }, 400);
-  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l) => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
+  const { ids, path, harness, lines } = await readBody<"ids" | "path" | "harness" | "lines">(req);
+  if (ids !== undefined && !(Array.isArray(ids) && ids.every((i): i is number => Number.isInteger(i)))) return json({ error: "ids: run ids" }, 400);
+  if (lines !== undefined && !(Array.isArray(lines) && lines.every((l): l is string => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
   const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND status = 'running'").bind(owner, repo).all();
   const want = lines && new Set(lines);
   const hit = (results as Row[]).filter((r) => {
@@ -276,7 +278,7 @@ async function stopRuns(req: Request, env: Env, owner: string, repo: string, use
 
 /** Leaves a note for running run `id`, which its next run's prompt carries. */
 async function tell(req: Request, env: Env, owner: string, repo: string, id: number) {
-  const { text } = (await req.json().catch(() => ({}))) as { text?: string };
+  const { text } = await readBody<"text">(req);
   if (typeof text !== "string" || !text.trim()) return json({ error: "text required" }, 400);
   const row = await getRow(env, id);
   if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);

@@ -52,6 +52,13 @@ const project = { v: 1, bpm: 120, swing: 0, bars: 2, tracks: Array.from({ length
 afterEach(() => setSystemTime());
 const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
 
+test("a message that isn't an object is dropped, not thrown", async () => {
+  const { world, join } = await setup();
+  const { ws } = await join();
+  for (const m of ["null", "7", "\"op\"", "[]"]) expect(() => world.webSocketMessage(ws, m)).not.toThrow();
+  expect(ws.closed).toBeNull();
+});
+
 test("a room refuses sockets past its limit", async () => {
   const { join } = await setup();
   for (let i = 0; i < MAX_SOCKETS; i++) expect((await join()).status).not.toBe(503);
