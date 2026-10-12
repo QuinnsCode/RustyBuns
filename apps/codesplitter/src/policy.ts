@@ -1,4 +1,4 @@
-// Layout: policy per path: how live edits go, the merge rule, who settles what is left, an agent's budget; defaults under the repo's `.gitattributes`
+// Layout: policy per path: how live edits go, the merge rule, who settles what is left, how a settled merge is checked, an agent's budget; defaults under the repo's `.gitattributes`
 /**
  * Policy per path (#938): how live edits go, how a merge settles a file, and
  * who gets what the merge can't settle. Defaults cover most files; a repo
@@ -7,6 +7,7 @@
  *   src/features.json  codesplitter-live=line codesplitter-leftover=ai
  *   CHANGELOG.md       merge=union
  *   src/worker.ts      codesplitter-budget=80k codesplitter-over=escalate
+ *   scripts/*.ts       codesplitter-check=lint
  *
  * `codesplitter-merge` takes a merge rule by name; git's own `merge=union` is
  * honoured, and `merge=binary` or `-merge` keeps one side's file whole.
@@ -24,18 +25,24 @@ export type Leftover = "ai" | "person" | "ci";
  * note, a person does, or the same note goes to a cheaper model (mechanical work: merges, renames, retitles).
  */
 export type Over = "handoff" | "escalate" | "downshift";
+/**
+ * How a merge both sides changed is checked before it counts as settled (#1096): the lint alone (markers, parsing,
+ * lint.ts), or the repo's tests too, in a throwaway clone, where the repo turned on test_merges. A stale key or
+ * string the other side renamed builds; only a typecheck or a test sees it.
+ */
+export type Check = "lint" | "tests";
 /** `budget`: the context an agent run on the path may read, in tokens, before it's cut short. */
-export interface Policy { live: Live; merge: Rule; leftover: Leftover; budget: number; over: Over }
+export interface Policy { live: Live; merge: Rule; leftover: Leftover; check: Check; budget: number; over: Over }
 
 const LIVES: Live[] = ["free", "line", "locked"], RULES: Rule[] = ["lock", "keyed", "prose", "code", "union"], LEFTOVERS: Leftover[] = ["ai", "person", "ci"];
-const OVERS: Over[] = ["handoff", "escalate", "downshift"];
+const OVERS: Over[] = ["handoff", "escalate", "downshift"], CHECKS: Check[] = ["lint", "tests"];
 
 /** The defaults, by file kind. */
 export const DEFAULTS: Record<Kind, Policy> = {
-  lock: { live: "locked", merge: "lock", leftover: "ci", budget: 20_000, over: "downshift" },
-  keyed: { live: "free", merge: "keyed", leftover: "ai", budget: 60_000, over: "downshift" },
-  prose: { live: "free", merge: "prose", leftover: "ai", budget: 100_000, over: "handoff" },
-  code: { live: "free", merge: "code", leftover: "person", budget: 150_000, over: "handoff" },
+  lock: { live: "locked", merge: "lock", leftover: "ci", check: "lint", budget: 20_000, over: "downshift" },
+  keyed: { live: "free", merge: "keyed", leftover: "ai", check: "lint", budget: 60_000, over: "downshift" },
+  prose: { live: "free", merge: "prose", leftover: "ai", check: "lint", budget: 100_000, over: "handoff" },
+  code: { live: "free", merge: "code", leftover: "person", check: "tests", budget: 150_000, over: "handoff" },
 };
 
 /** A budget as written: tokens, or with k or m on the end (`80k`). NaN when it isn't one. */
@@ -64,6 +71,7 @@ export function parseAttributes(text: string): Rule1[] {
       else if (k === "codesplitter-merge" && RULES.includes(v as Rule)) set.merge = v as Rule;
       else if (k === "codesplitter-live" && LIVES.includes(v as Live)) set.live = v as Live;
       else if (k === "codesplitter-leftover" && LEFTOVERS.includes(v as Leftover)) set.leftover = v as Leftover;
+      else if (k === "codesplitter-check" && CHECKS.includes(v as Check)) set.check = v as Check;
       else if (k === "codesplitter-budget" && v && tokensOf(v) > 0) set.budget = tokensOf(v);
       else if (k === "codesplitter-over" && OVERS.includes(v as Over)) set.over = v as Over;
     }
