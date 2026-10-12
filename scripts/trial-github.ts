@@ -13,6 +13,8 @@
 //   --jobs <n>        apps at a time (default 2)
 //   --out <dir>       results.jsonl, summary.md, logs, clones (default .rustybuns-trial/, gitignored)
 //   --keep            keep node_modules after each app (default: removed, to bound disk use)
+//   --prof            time boot and 200 GETs of /, read the host's memory, and save a CPU profile per
+//                     mode (logs/<app>.<mode>.cpuprofile: open it in Chrome DevTools or speedscope.app)
 //
 // It runs each app's install scripts and build on this machine: only point it at code you'd run.
 // Each app's host keeps its data in <out>/data/<app>, so nothing lands in ~ and no two apps share sqlite.
@@ -26,7 +28,7 @@ const { values: o, positionals } = parseArgs({
   options: {
     dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, local: { type: "boolean" },
     modes: { type: "string", default: "spa,worker" }, jobs: { type: "string", default: "2" },
-    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" },
+    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" },
   },
 });
 const REPO = resolve(import.meta.dir, "..");
@@ -36,7 +38,8 @@ const VERSION = "0.1.11";
 for (const d of ["clones", "logs", "data"]) mkdirSync(join(OUT, d), { recursive: true });
 
 type App = { repo: string; sub: string; version?: string; stars?: number };
-type ModeResult = { stage: string; status?: number; bytes?: number; text?: string; error?: string };
+type Prof = { bootMs: number; p50: number; p95: number; max: number; rssMb: number; profile?: string };
+type ModeResult = { stage: string; status?: number; bytes?: number; text?: string; error?: string; prof?: Prof };
 type Result = App & { pm?: string; init?: string; error?: string; modes: Record<string, ModeResult> };
 
 /** The version range an app's package.json gives <dep>, or undefined. */
@@ -101,8 +104,10 @@ function packageManager(dir: string, root: string): { pm: string; at: string } {
 }
 
 /** Boots the dev host, logs in with the printed token like a browser does, and GETs /. */
-async function boot(dir: string, log: string): Promise<ModeResult> {
-  const host = Bun.spawn(["bun", ".rustybuns/dev/desktop.js"], { cwd: dir, stdout: "pipe", stderr: "pipe", env: ENV });
+async function boot(dir: string, log: string, profName?: string): Promise<ModeResult> {
+  const prof = profName ? ["--cpu-prof", `--cpu-prof-dir=${join(OUT, "logs")}`, `--cpu-prof-name=${profName}.cpuprofile`] : [];
+  const t0 = performance.now();
+  const host = Bun.spawn(["bun", ...prof, ".rustybuns/dev/desktop.js"], { cwd: dir, stdout: "pipe", stderr: "pipe", env: ENV });
   let buf = "";
   for (const s of [host.stdout, host.stderr]) void (async () => { for await (const c of s) buf += new TextDecoder().decode(c); })();
   try {
@@ -113,9 +118,19 @@ async function boot(dir: string, log: string): Promise<ModeResult> {
     const r = await fetch(new URL("/", url), { headers: { cookie }, redirect: "manual" });
     const html = await r.text();
     const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    return { stage: r.status < 400 ? "works" : "request", status: r.status, bytes: html.length, text: text.slice(0, 160) };
+    const res: ModeResult = { stage: r.status < 400 ? "works" : "request", status: r.status, bytes: html.length, text: text.slice(0, 160) };
+    if (profName && r.status < 400) {
+      const bootMs = Math.round(performance.now() - t0);
+      const times: number[] = [];
+      for (let i = 0; i < 200; i++) { const a = performance.now(); await (await fetch(new URL("/", url), { headers: { cookie } })).text(); times.push(performance.now() - a); }
+      times.sort((a, b) => a - b);
+      const rssMb = Math.round(Number((await $`ps -o rss= -p ${host.pid}`.quiet().nothrow().text()).trim()) / 1024);
+      const ms = (n: number) => Math.round(n * 100) / 100;
+      res.prof = { bootMs, p50: ms(times[100]!), p95: ms(times[190]!), max: ms(times.at(-1)!), rssMb, profile: join(OUT, "logs", `${profName}.cpuprofile`) };
+    }
+    return res;
   } finally {
-    Bun.spawnSync(["pkill", "-P", String(host.pid)]); host.kill(); await host.exited;
+    Bun.spawnSync(["pkill", "-P", String(host.pid)]); host.kill(profName ? "SIGINT" : "SIGTERM"); await host.exited;
     appendFileSync(log, `\n[host]\n${buf.replace(/token=[\w-]+/g, "token=<redacted>")}\n`);
   }
 }
@@ -166,7 +181,7 @@ async function trial(app: App): Promise<Result> {
       if (!s.ok) { r.modes[mode] = { stage: "add desktop", error: s.tail }; continue; }
     }
     s = await step(log, dir, [...cli, "build", "desktop", "--dev"], 600e3);
-    r.modes[mode] = s.ok ? await boot(dir, log) : { stage: "build", error: s.tail };
+    r.modes[mode] = s.ok ? await boot(dir, log, o.prof ? `${slug}.${mode}` : undefined) : { stage: "build", error: s.tail };
   }
   if (!o.keep) for (const d of new Set([dir, at])) rmSync(join(d, "node_modules"), { recursive: true, force: true });
   return r;
@@ -180,6 +195,10 @@ function summary(rs: Result[]) {
     MODES.map((m) => `${m}: ${ok(m)}/${rs.length} serve /`).join(" · "), "",
     `| app | version | ${MODES.join(" | ")} | first error |`, `|---|---|${MODES.map(() => "---|").join("")}---|`,
     ...rs.map((r) => `| [${r.repo}${r.sub ? `:${r.sub}` : ""}](https://github.com/${r.repo}${r.sub ? `/tree/HEAD/${r.sub}` : ""}) | ${r.version ?? ""} | ${MODES.map((m) => cell(r.modes[m]) || (r.error ? `❌ ${r.error.split(":")[0]}` : "")).join(" | ")} | ${note(r)} |`),
+    ...(o.prof ? ["", "## Perf (dev host, this machine)", "", "Boot is spawn to the first page; latency is 200 sequential GETs of /.", "",
+      "| app | mode | boot | p50 | p95 | max | rss | page |", "|---|---|---|---|---|---|---|---|",
+      ...rs.flatMap((r) => Object.entries(r.modes).filter(([, m]) => m.prof).map(([mode, m]) =>
+        `| ${r.repo}${r.sub ? `:${r.sub}` : ""} | ${mode} | ${m.prof!.bootMs} ms | ${m.prof!.p50} ms | ${m.prof!.p95} ms | ${m.prof!.max} ms | ${m.prof!.rssMb} MB | ${Math.round(m.bytes! / 1024)} KB |`))] : []),
   ].join("\n") + "\n";
 }
 
