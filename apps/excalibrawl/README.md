@@ -4,6 +4,10 @@
 
 The Rusty Buns port of [excalibrawl.com](https://excalibrawl.com). The original had GPT-4.1 mini write JSON draw ops through AI Gateway. Here the fighters are **Clef** and **Clef Flash** on Workers AI, and the starter's auth, Stripe and orgs are gone. A cron starts a fight on the hour, viewers watch it live, and every finished fight is a replay in R2.
 
+## The plan
+
+Clef only picks from options, so on its own it never decides that a DJ is a booth, a head, headphones and two arms. Once per fight, `src/engine/plan.ts` asks a text model (Llama 3.3 70B on Workers AI, about $0.001) for each fighter's list of parts. The list uses the same vocabulary as Clef: shape, colour, rough place, size and proportions, in drawing order. Anything outside that vocabulary is dropped. Each turn, Clef sees the plan with what's drawn and what's next. "Draw the next part" takes the plan's shape and colour, and Clef looks at the canvas to decide where it goes and how big. Once the plan is drawn, Clef can delete a shape or **pass** ("it's done"), so the spare turns don't clutter the drawing. Without a plan (the planner failed), Clef plays as before.
+
 ## How a turn works
 
 Each fighter takes 36 turns, one every 5 s, about four minutes in all.
@@ -46,7 +50,7 @@ curl localhost:5173/api/practice               # start a fight now instead of on
 bun test test                                  # rasterizer, questions, answers → ops, a whole fight
 ```
 
-Dev fights are always **practice**: random answers in Clef's shape, for $0. `vite.config.ts` turns off remote bindings, so dev never reaches the billed Workers AI.
+Dev fights are **practice** by default: random answers in Clef's shape, for $0. `vite.config.ts` turns off remote bindings, so dev never reaches the billed Workers AI. `EXCALIBRAWL_REAL_AI=1 bun run dev` connects the real one through your wrangler login, to see how Clef actually draws (about $0.02 a fight).
 
 ## Deploy
 
