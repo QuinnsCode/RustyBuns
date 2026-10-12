@@ -8,7 +8,7 @@ import { groundAt, parsePlace } from "../levels/place.ts";
 import type { Block, RepoSnapshot } from "../sim/codemap.ts";
 import { addWin, winKey } from "../sim/heads.ts";
 import type { ZoneData } from "../sim/terrain.ts";
-import { Game, scopeSway, stanceOf, type GameEvent, type Input } from "../sim/game.ts";
+import { Game, scopeSway, SHIELD_DELAY, stanceOf, type GameEvent, type Input } from "../sim/game.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { KEYS, keyLabel, ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { FIELD, place, play, VOICES } from "./audio.ts";
@@ -22,6 +22,9 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// A filmic curve keeps the orange flashes and lit ground from clipping flat.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
 const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 600);
 
 function resize() {
@@ -177,7 +180,7 @@ function start(def: LevelDef) {
   const game = Game.fromRepo(def.ground(), repo, def.seed, mission);
   const world = buildWorld(game.map, { head: me.head, build: me.build });
   current = { def, repo, game, world, started: performance.now() };
-  look.yaw = game.map.spawn.yaw, look.pitch = -0.05, prone = false, shake = 0;
+  look.yaw = game.map.spawn.yaw, look.pitch = -0.05, prone = false, shake = 0, cam.ready = false;
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = false;
   $("level-name").textContent = def.name;
   $("repo").textContent = `${repo.name}@${repo.ref}`;
@@ -268,7 +271,14 @@ function aimPoint(game: Game, world: World): { point: THREE.Vector3; block: Bloc
   return { point: camera.position.clone().addScaledVector(dir, best), block };
 }
 
-function placeCamera(game: Game) {
+/**
+ * The camera rides over your right shoulder. Aim turns it at once (a shooter's aim can't lag),
+ * but where it sits eases after you: the body's height through a crouch or going prone, how
+ * far back it pulls, and a dip when you land. The view widens in a dive-roll and while running,
+ * and closes in down the scope.
+ */
+const cam = { ready: false, x: 0, y: 0, z: 0, height: 1.75, back: 5.2, fov: 64, dip: 0 };
+function placeCamera(game: Game, dt: number) {
   const you = game.you();
 
   const sniping = zoom && you.weapon === "rebase";
@@ -276,17 +286,39 @@ function placeCamera(game: Game) {
   const sw = sniping ? scopeSway(game.time, stanceOf(you)) : { yaw: 0, pitch: 0 };
   const yaw = look.yaw + sw.yaw, pitch = look.pitch + sw.pitch;
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-  const back = sniping ? 0.4 : 6, side = sniping ? 0.35 : 1.15;
-  const pivot = new THREE.Vector3(you.x - fz * side, you.y + (you.prone ? 0.7 : you.crouch ? 1.3 : 1.75), you.z + fx * side);
+  const ease = (rate: number) => (cam.ready ? 1 - Math.exp(-rate * dt) : 1);
+  const follow = ease(18);
+  cam.x += (you.x - cam.x) * follow, cam.y += (you.y - cam.y) * ease(12), cam.z += (you.z - cam.z) * follow;
+  cam.height += ((you.prone ? 0.75 : you.crouch ? 1.3 : 1.7) - cam.height) * ease(9);
+  cam.back += ((sniping ? 0.4 : you.prone ? 4 : 5.2) - cam.back) * ease(sniping ? 30 : 8);
+  if (cam.ready && !you.grounded && you.vy < -6) cam.dip = Math.min(0.35, cam.dip + dt * 0.8);
+  cam.dip *= Math.exp(-dt * (you.grounded ? 6 : 0.5));
+  const run = Math.min(1, Math.hypot(you.vx, you.vz) / 7.5);
+  cam.fov += ((sniping ? 18 : 64 + (you.roll > 0 ? 8 : 0) + run * 4) - cam.fov) * ease(sniping ? 30 : 7);
+  cam.ready = true;
+  const side = sniping ? 0.35 : 1.1;
+  const pivot = new THREE.Vector3(cam.x - fz * side, cam.y + cam.height - (you.grounded ? cam.dip : 0), cam.z + fx * side);
   const j = () => (Math.random() - 0.5) * shake;
-  camera.position.set(pivot.x - fx * cp * back + j(), pivot.y - sp * back + 0.9 + j(), pivot.z - fz * cp * back + j());
+  camera.position.set(pivot.x - fx * cp * cam.back + j(), pivot.y - sp * cam.back + 0.55 + j(), pivot.z - fz * cp * cam.back + j());
   // Never under the ground.
   const floor = game.terrain.height(camera.position.x, camera.position.z) + 0.4;
   if (camera.position.y < floor) camera.position.y = floor;
   camera.lookAt(pivot.x + fx * cp * 50, pivot.y + sp * 50, pivot.z + fz * cp * 50);
-  const fov = sniping ? 18 : 62;
-  if (camera.fov !== fov) camera.fov = fov, camera.updateProjectionMatrix();
+  if (Math.abs(camera.fov - cam.fov) > 0.01) camera.fov = cam.fov, camera.updateProjectionMatrix();
   $("crosshair").classList.toggle("scope", sniping);
+}
+
+/** An orange arc round the crosshair, pointing at whoever just hit you. */
+function hitFrom(game: Game, by: number) {
+  const you = game.you(), s = game.soldiers[by];
+  if (!s || by === 0) return;
+  // The bearing to them against where you look: 0 straight ahead, clockwise positive.
+  const dx = s.x - you.x, dz = s.z - you.z;
+  const a = Math.atan2(dx * Math.cos(look.yaw) - dz * Math.sin(look.yaw), -dx * Math.sin(look.yaw) - dz * Math.cos(look.yaw));
+  const arc = document.createElement("i");
+  arc.style.transform = `rotate(${a}rad)`;
+  $("hits").append(arc);
+  setTimeout(() => arc.remove(), 900);
 }
 
 /* ---------------- HUD ---------------- */
@@ -340,6 +372,9 @@ function hud(game: Game, aimingAt: Block | null) {
   const you = game.you();
   $("hp").style.width = `${(you.hp / you.maxHp) * 100}%`;
   $("hp").classList.toggle("low", you.hp < 35);
+  $("shield").style.width = `${(you.shield / Math.max(1, you.maxShield)) * 100}%`;
+  $("shield-bar").classList.toggle("down", you.shield <= 0);
+  $("shield-bar").classList.toggle("charging", you.shield > 0 && you.shield < you.maxShield && you.shieldT >= SHIELD_DELAY);
   $("lives").textContent = "●".repeat(game.lives) + "○".repeat(Math.max(0, 3 - game.lives));
   const [line, tip] = objective(game);
   $("progress").textContent = line;
@@ -391,7 +426,8 @@ function sound(game: Game, e: GameEvent) {
     const { vol, pan } = at(e.x, e.z);
     play(FIELD.raze, vol, pan);
   } else if (e.kind === "pickup") play(FIELD.pickup);
-  else if (e.kind === "hit" && e.target === 0) play(FIELD.hurt);
+  else if (e.kind === "hit" && e.target === 0) play(e.shield ? FIELD.shieldHit : FIELD.hurt);
+  else if (e.kind === "shield" && e.id === 0) play(e.state === "broke" ? FIELD.shieldBroke : e.state === "charging" ? FIELD.shieldCharge : FIELD.shieldFull);
   else if (e.kind === "hit" && e.by === 0) play(FIELD.hitmark);
   else if (e.kind === "down") {
     if (e.by === 0 && e.id !== 0) play(FIELD.kill);
@@ -410,7 +446,7 @@ function frame(now: number) {
   if (!current) return;
   const { game, world } = current;
   const you = game.you();
-  placeCamera(game);
+  placeCamera(game, dt);
   const aim = aimPoint(game, world);
   const input: Input = {
     forward: (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0),
@@ -455,7 +491,10 @@ function frame(now: number) {
     else if (e.kind === "blamed") feed(`blamed ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "reverted") feed(`reverted ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "objective") banner(e.text), feed(e.text, true);
-    else if (e.kind === "hit" && e.target === 0) $("hud").classList.add("hurt"), setTimeout(() => $("hud").classList.remove("hurt"), 120);
+    else if (e.kind === "hit" && e.target === 0) {
+      hitFrom(game, e.by);
+      if (!e.shield) $("hud").classList.add("hurt"), setTimeout(() => $("hud").classList.remove("hurt"), 120);
+    } else if (e.kind === "shield" && e.id === 0 && e.state === "broke") feed("shield down", true);
   }
   world.sync(game, dt);
   hud(game, aim.block);
@@ -463,3 +502,6 @@ function frame(now: number) {
   if (before === "playing" && game.status !== "playing") results(game);
 }
 requestAnimationFrame(frame);
+
+// In dev, the running game is on the page for poking at from the console: `__recon.current.game`.
+if (import.meta.env.DEV) Object.assign(window, { __recon: { get current() { return current; }, look, cam } });

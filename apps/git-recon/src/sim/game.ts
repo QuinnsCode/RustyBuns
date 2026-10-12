@@ -51,6 +51,11 @@ export interface Soldier {
   pitch: number;
   hp: number;
   maxHp: number;
+  /** An energy shield over the HP: it soaks hits first, and refills SHIELD_DELAY seconds after the last one. */
+  shield: number;
+  maxShield: number;
+  /** Seconds since anything hurt it. */
+  shieldT: number;
   alive: boolean;
   /** A big compound's heavy: more HP, slower, carries the launcher. */
   heavy: boolean;
@@ -130,7 +135,9 @@ export interface Input {
 
 export type GameEvent =
   | { kind: "fire"; id: number; weapon: WeaponId }
-  | { kind: "hit"; target: number; by: number; damage: number }
+  | { kind: "hit"; target: number; by: number; damage: number; shield: boolean }
+  /** A shield popping, starting to refill, or full again. */
+  | { kind: "shield"; id: number; state: "broke" | "charging" | "full" }
   | { kind: "boom"; x: number; y: number; z: number; r: number }
   | { kind: "down"; id: number; by: number }
   | { kind: "respawn"; lives: number }
@@ -151,6 +158,8 @@ export const RUN = 7.5, CROUCH_SPEED = 3.2, PRONE_SPEED = 1.5, GRAVITY = 26, JUM
 export const ROLL_TIME = 0.42, ROLL_SPEED = 12.5, ROLL_COOLDOWN = 0.6;
 export const RADIUS = 0.45, HEIGHT = 1.8, CROUCH_HEIGHT = 1.2, PRONE_HEIGHT = 0.5, STEP = 0.6;
 export const MAX_HP = 100, HEAVY_HP = 260, LIVES = 3;
+/** Your shield and a heavy's; guards have none. It waits this long after a hit, then refills this much a second. */
+export const MAX_SHIELD = 70, HEAVY_SHIELD = 80, SHIELD_DELAY = 4, SHIELD_RATE = 35;
 /** How far a guard sees, and how far it strays from home chasing you. */
 export const SIGHT = 55, LEASH = 45;
 /** git revert sends a guard back this many seconds (as far as its trail goes). */
@@ -218,7 +227,7 @@ export class Game {
         s.brain!.role = g % 2 === 1 ? "flank" : "hold";
         s.brain!.side = g % 4 === 1 ? 1 : -1;
         if (g === 0 && c.guards >= 3) {
-          s.heavy = true, s.hp = s.maxHp = HEAVY_HP, s.ammo.push = 4;
+          s.heavy = true, s.hp = s.maxHp = HEAVY_HP, s.shield = s.maxShield = HEAVY_SHIELD, s.ammo.push = 4;
           s.name = `${c.folder} heavy`;
         }
         this.soldiers.push(s);
@@ -238,7 +247,7 @@ export class Game {
     const ammo = Object.fromEntries(ORDER.map((w) => [w, team === "you" ? WEAPONS[w].ammo : w === "commit" ? -1 : 0])) as Record<WeaponId, number>;
     return {
       id: this.soldiers.length, team, name, x, y: this.ground(x, z, Infinity), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0,
-      hp: MAX_HP, maxHp: MAX_HP, alive: true, heavy: false, weapon: "commit", ammo, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
+      hp: MAX_HP, maxHp: MAX_HP, shield: team === "you" ? MAX_SHIELD : 0, maxShield: team === "you" ? MAX_SHIELD : 0, shieldT: SHIELD_DELAY, alive: true, heavy: false, weapon: "commit", ammo, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
       grounded: true, crouch: false, prone: false, scoped: false, tagged: 0, heat: 0, burn: 0, burnBy: -1, burnT: 0, trail: [], compound,
       brain: team === "you" ? null : {
         home: { x, z }, alert: false, wait: 0, lost: 0, seen: null, strafe: 1, strafeT: 0, burst: 0, think: 0,
@@ -400,6 +409,14 @@ export class Game {
     s.rollCd = Math.max(0, s.rollCd - dt);
     s.tagged = Math.max(0, s.tagged - dt);
     s.heat = Math.max(0, s.heat - HEAT_COOL * dt);
+    if (s.alive && s.shield < s.maxShield) {
+      if (s.shieldT < SHIELD_DELAY && s.shieldT + dt >= SHIELD_DELAY) this.events.push({ kind: "shield", id: s.id, state: "charging" });
+      if (s.shieldT + dt >= SHIELD_DELAY) {
+        s.shield = Math.min(s.maxShield, s.shield + SHIELD_RATE * dt);
+        if (s.shield >= s.maxShield) this.events.push({ kind: "shield", id: s.id, state: "full" });
+      }
+    }
+    s.shieldT += dt;
     if (s.burn > 0) {
       // Stop, drop and roll: a dive-roll puts it out, and so does wading in.
       if (s.roll > 0 || wet(this.terrain, s.x, s.z)) s.burn = 0;
@@ -679,7 +696,7 @@ export class Game {
       if (w.effect === "reset") {
         // git reset --hard: the yard it lands in is wiped, every guard of it down wherever they stand.
         const ci = this.map.compounds.findIndex((c) => Math.hypot(c.x - p.x, c.z - p.z) < c.r + 2);
-        if (ci >= 0) for (const g of this.soldiers) if (g.alive && g.brain && g.compound === ci) this.hurt(g, g.hp, p.owner);
+        if (ci >= 0) for (const g of this.soldiers) if (g.alive && g.brain && g.compound === ci) this.hurt(g, g.hp + g.shield, p.owner);
       }
     } else if (direct) {
       const v = Math.hypot(p.vx, p.vz) || 1;
@@ -727,8 +744,12 @@ export class Game {
 
   hurt(s: Soldier, damage: number, by: number) {
     if (!s.alive || this.status !== "playing") return;
-    s.hp -= damage;
-    this.events.push({ kind: "hit", target: s.id, by, damage });
+    // The shield takes it first; what's left over comes off the HP.
+    const soak = Math.min(s.shield, damage);
+    s.shieldT = 0, s.shield -= soak;
+    if (soak > 0 && s.shield <= 0) this.events.push({ kind: "shield", id: s.id, state: "broke" });
+    s.hp -= damage - soak;
+    this.events.push({ kind: "hit", target: s.id, by, damage, shield: soak > 0 });
     // A revert's victim has forgotten you; anything else alarms its yard.
     if (s.brain && s.brain.wait < 1) this.alarm(s.compound);
     if (s.hp > 0) return;
@@ -751,7 +772,7 @@ export class Game {
       return this.lose();
     }
     const { x, z, yaw } = this.map.spawn;
-    Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, alive: true, roll: 0, cd: 0.5 });
+    Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5 });
     // Guards lose track of you (raiders keep coming).
     for (const g of this.soldiers) if (g.brain && !g.brain.raid) g.brain.alert = false, g.brain.seen = null;
     this.events.push({ kind: "respawn", lives: this.lives });

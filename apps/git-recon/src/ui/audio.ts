@@ -38,6 +38,11 @@ export const FIELD = {
   /** A file coming down. */
   raze: { noise: 220, tone: { wave: "triangle", from: 160, to: 50 }, seconds: 0.55, volume: 0.32 },
   down: { tone: { wave: "sawtooth", from: 400, to: 90 }, seconds: 0.5, volume: 0.2 },
+  /** Your shield: a hit fizzing off it, it popping, and the rising hum as it refills. */
+  shieldHit: { noise: 3200, tone: { wave: "sine", from: 1400, to: 900 }, seconds: 0.09, volume: 0.14 },
+  shieldBroke: { noise: 2400, tone: { wave: "square", from: 900, to: 120 }, seconds: 0.35, volume: 0.22 },
+  shieldCharge: { tone: { wave: "triangle", from: 220, to: 880 }, seconds: 0.9, volume: 0.1 },
+  shieldFull: { tone: { wave: "sine", from: 880, to: 1320 }, seconds: 0.15, volume: 0.1 },
 } satisfies Record<string, Voice>;
 
 let ctx: AudioContext | null = null;

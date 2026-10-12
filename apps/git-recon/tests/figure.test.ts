@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { BUILDS, buildFigure, pose, type BuildId, type Pose } from "../src/ui/figure.ts";
+import { BUILDS, buildFigure, pose, setGun, type BuildId, type Pose } from "../src/ui/figure.ts";
 
 const v = new THREE.Vector3();
 /** Where a figure's head is, and its lowest point, once posed. */
@@ -53,5 +53,39 @@ describe("figure", () => {
     expect(posed("stand", "thick").head.y).toBeLessThan(posed("stand", "average").head.y);
     expect(width("thick")).toBeGreaterThan(width("average"));
     expect(width("lank")).toBeLessThan(width("average"));
+  });
+
+  test("poses blend: a frame of a new pose moves part of the way, enough frames get there", () => {
+    const f = buildFigure(0, 0.3);
+    pose(f, { pose: "stand", speed: 0, dt: 0, roll: 0, pitch: 0 });
+    const legL = f.joints.legL!;
+    pose(f, { pose: "kneel", speed: 0, dt: 1 / 60, roll: 0, pitch: 0, blend: 14 });
+    expect(legL.rotation.x).toBeGreaterThan(0.1);
+    expect(legL.rotation.x).toBeLessThan(1.0);
+    for (let i = 0; i < 60; i++) pose(f, { pose: "kneel", speed: 0, dt: 1 / 60, roll: 0, pitch: 0, blend: 14 });
+    expect(legL.rotation.x).toBeCloseTo(1.5, 2);
+  });
+
+  test("strafing swings the legs sideways, running forward swings them fore and aft", () => {
+    const swing = (forward: number, side: number) => {
+      const f = buildFigure(0, 0.3);
+      // Mid-swing once this frame's step is taken.
+      f.stride = Math.PI / 2 - (7.5 * 1.9) / 60;
+      pose(f, { pose: "stand", speed: 7.5, forward, side, dt: 1 / 60, roll: 0, pitch: 0 });
+      const r = f.joints.legL!.rotation;
+      return { x: Math.abs(r.x), z: Math.abs(r.z) };
+    };
+    const ahead = swing(7.5, 0), sideways = swing(0, 7.5);
+    expect(ahead.x).toBeGreaterThan(ahead.z);
+    expect(sideways.z).toBeGreaterThan(ahead.z);
+  });
+
+  test("the gun in the hands is the weapon that's up", () => {
+    const f = buildFigure(0, 0.3);
+    expect(f.gun).toBe("commit");
+    setGun(f, "push");
+    const hand = f.joints.hand!;
+    expect(hand.getObjectByName("gun:push")!.visible).toBe(true);
+    expect(hand.getObjectByName("gun:commit")!.visible).toBe(false);
   });
 });
