@@ -279,6 +279,17 @@
   .gm-tile.upbranch, .gm-tile.done { padding: 6px 10px 5px; } .gm-tile.done { opacity: .6; }
   .gm-label { position: absolute; z-index: 2; padding: 1px 8px; font: 500 11.5px/18px var(--sans); color: var(--brown); white-space: nowrap; background: var(--paper); border: 1px solid #e3d3c1; border-radius: 10px; cursor: help; }
   .gm-label.hot { color: var(--accent-ink); border-color: var(--del-edge); background: var(--accent-soft); }
+  .gm-graph { flex: none; border-top: 1px solid var(--border); padding: 6px 0 2px; }
+  .cg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 0 12px; font-size: 12px; } .cg-head svg.lucide { width: 14px; height: 14px; }
+  .cg-key { display: inline-flex; align-items: center; gap: 5px; } .cg-key svg { width: 10px; height: 10px; } .cg-key rect { fill: var(--muted); }
+  .cg-scroll { overflow-x: auto; overflow-y: hidden; padding: 0 4px; }
+  .cg path, .cg-key path { fill: none; stroke: var(--border-2); stroke-width: 2; stroke-linecap: round; } .cg path.off { stroke-dasharray: 2 4; }
+  .cg g, .cg-key .u, .cg-key .m { cursor: default; } .cg .u, .cg-key .u { fill: var(--fg); } .cg .m, .cg-key .m { fill: var(--accent); }
+  .cg g:hover, .cg g:focus { outline: none; } .cg g:hover > *, .cg g:focus > *, .cg g.on > * { stroke: var(--accent-glow); stroke-width: 3; }
+  .cg g[data-hash] { cursor: pointer; }
+  .cg-pick { display: grid; gap: 6px; margin: 4px 12px 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); font-size: 12px; }
+  .cg-pick .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; } .cg-pick .btn { white-space: nowrap; } .cg-pick select { max-width: 14em; }
+  .cg-pick .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gm-key { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 12px; border-top: 1px solid var(--border); font-size: 12px; }
   .gm-key span { display: inline-flex; align-items: center; gap: 6px; } .gm-key svg { width: 28px; height: 6px; overflow: visible; }
   .gm-key path { fill: none; stroke: var(--brown); stroke-width: 1.6; stroke-linecap: round; } .gm-key path.fork { stroke-dasharray: 2 5; } .gm-key path.hot { stroke: var(--accent); }
@@ -714,6 +725,7 @@
   .gitpic .dots i.x { background: none; border: 1.5px dashed var(--accent); opacity: .6; } .gitpic .dots i.p { background: var(--bg); border: 3px solid var(--accent); }
   .gitpic .dots i.k, .gitpic .dots i.w { border-radius: 2px; transform: rotate(45deg) scale(.85); } .gitpic .dots i.k { background: var(--accent); } .gitpic .dots i.w { background: var(--fg); }
   .gitpic .dots i.k::before, .gitpic .dots i.w::before { display: none; }
+  .gitpic .dots i.r { background: repeating-linear-gradient(135deg, var(--accent) 0 2px, var(--bg) 2px 4px); border: 1.5px solid var(--accent); } .gitpic .dots i.c { background: var(--accent); box-shadow: inset 0 0 0 2px var(--fg); }
   .gitpic .say { flex-basis: 100%; color: var(--muted); }
   #mirror .gitpic { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); }
   #gitpop { position: fixed; z-index: 60; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--bg); box-shadow: 0 4px 16px rgb(0 0 0 / .12); pointer-events: none; max-width: min(420px, calc(100vw - 32px)); }
@@ -1984,6 +1996,35 @@ const gitCurve = (x1, y1, x2, y2, under) => {
   const dx = Math.max(40, Math.abs(x2 - x1) / 2), c1 = under ?? y1, c2 = under ?? y2;
   return { d: `M${x1} ${y1}C${x1 + dx} ${c1},${x2 - dx} ${c2},${x2} ${y2}`, mx: (x1 + x2) / 2, my: (y1 + 3 * c1 + 3 * c2 + y2) / 8 };
 };
+// The commit graph under the git map (#871): main's commits as a row of dots, oldest on the left, in gitPic's
+// colours (black upstream's, orange this copy's, a diamond for a merge), and each branch merged into main in a
+// lane of its own below, leaving main where it started and landing back on the merge.
+/** Where each commit sits: its column (every parent left of its children) and lane (0 is main; a merged branch takes the lowest lane free over the stretch it ran), and the lines between them. */
+const commitLanes = (commits, more = false) => {
+  const by = new Map(commits.map((c) => [c.hash, c])), order = [], seen = new Set();
+  const visit = (h) => { if (seen.has(h) || !by.has(h)) return; seen.add(h); for (const p of by.get(h).parents) visit(p); order.push(by.get(h)); };
+  for (const c of [...commits].reverse()) visit(c.hash);
+  const x = new Map(order.map((c, i) => [c.hash, i])), lane = new Map(), busy = [];
+  const runs = new Map();
+  for (const c of commits) c.side ? (runs.get(c.side) ?? runs.set(c.side, []).get(c.side)).push(c) : lane.set(c.hash, 0);
+  // Each run comes newest first: its last commit's parent is where it left main. Lanes go to the ones that left first.
+  const spans = [...runs].map(([merge, run]) => {
+    const xs = run.map((c) => x.get(c.hash)), base = run.at(-1).parents[0];
+    return { run, from: x.has(base) ? x.get(base) : Math.min(...xs) - 1, to: x.get(merge) ?? Math.max(...xs) + 1 };
+  }).sort((a, b) => a.from - b.from);
+  for (const { run, from, to } of spans) {
+    let l = 1;
+    while ((busy[l] ??= []).some(([a, b]) => from < b && a < to)) l++;
+    busy[l].push([from, to]);
+    for (const c of run) lane.set(c.hash, l);
+  }
+  const dots = order.map((c) => ({ ...c, x: x.get(c.hash), lane: lane.get(c.hash) ?? 0, merge: c.parents.length > 1 }));
+  const edges = dots.flatMap((c) => c.parents.filter((p) => x.has(p)).map((p) => ({ x1: x.get(p), l1: lane.get(p) ?? 0, x2: c.x, l2: c.lane })));
+  // Main goes back further than this: its oldest dot trails off to the left.
+  const oldest = dots.find((c) => c.lane === 0);
+  if (more && oldest) edges.push({ x1: -1, l1: 0, x2: oldest.x, l2: 0, off: true });
+  return { dots, edges, lanes: Math.max(1, busy.length) };
+};
 /** The git map of a repo: who it listens to, who listens to it, and its branches, wired with curves. */
 async function gitMap(c) {
   if ($("#gitmap")) return $("#gitmap").shut();
@@ -1992,6 +2033,7 @@ async function gitMap(c) {
   const el = document.createElement("div");
   el.className = "wiremap gitmap"; el.id = "gitmap"; el.shut = () => close();
   el.innerHTML = `<div class="wm-head">${icon("git-fork")}<b>${esc(owner)}/${esc(repo)}</b><span class="muted gm-story">…</span><span class="grow"></span><button class="btn ghost" id="gm-files" title="the files' wire map">${icon("network")}</button><button class="btn ghost" id="gm-x" title="close (esc)">${icon("x")}</button></div><div class="wm-scroll"><div class="gm-stage" id="gm-stage"></div></div>
+    <div class="gm-graph" id="gm-graph" hidden></div>
     <div class="gm-key muted"><span><svg viewBox="0 0 28 6"><path d="M1 3H27"/></svg>keeps listening</span><span><svg viewBox="0 0 28 6"><path class="fork" d="M1 3H27"/></svg>copied once</span><span><svg viewBox="0 0 28 6"><path class="hot" d="M1 3H27"/></svg>moving, or waiting on you</span><span>point at a label to see what it does</span></div>`;
   document.body.append(el);
   icons();
@@ -2000,10 +2042,11 @@ async function gitMap(c) {
   const r = await api(`/repos/${owner}/${repo}`).catch(() => null);
   if (!el.isConnected) return;
   if (!r) { $("#gm-stage").innerHTML = '<span class="muted">couldn\'t load this repo</span>'; return; }
-  const [branches, mirror, upBranches] = await Promise.all([
+  const [branches, mirror, upBranches, graph] = await Promise.all([
     api(`/repos/${owner}/${repo}/branches`).catch(() => []),
     r.mirror ? api(`/repos/${owner}/${repo}/mirror`).catch(() => null) : null,
     r.mirror ? api(`/repos/${owner}/${repo}/mirror/branches`).catch(() => []) : [],
+    api(`/repos/${owner}/${repo}/graph`).catch(() => null),
   ]);
   if (!el.isConnected) return;
   const map = gitMapModel({ owner, repo, r, branches, mirror, upBranches });
@@ -2031,9 +2074,59 @@ async function gitMap(c) {
     st.querySelector(".gm-wires").innerHTML = `<defs><marker id="gm-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L7 4L1 7"/></marker><marker id="gm-tail" viewBox="0 0 8 8" refX="1" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M7 1L1 4L7 7"/></marker></defs>${d}`;
   };
   wires();
+  const drawGraph = (graph) => {
+    if (!graph?.commits?.length) return;
+    const g = $("#gm-graph");
+    g.innerHTML = commitGraph(graph) + `<div class="cg-pick" id="cg-pick" data-pics hidden></div>`;
+    g.hidden = false;
+    icons();
+    // Newest on the right: start there.
+    const sc = g.querySelector(".cg-scroll"); sc.scrollLeft = sc.scrollWidth;
+    g.commits = new Map(graph.commits.map((c) => [c.hash, c]));
+  };
+  drawGraph(graph);
+  // A dot, clicked: revert it on main, or cherry-pick it onto main or an open branch (#880).
+  const open = branches.filter((b) => b.status === "open").map((b) => b.name);
+  const pickCard = (hash) => {
+    const c = $("#gm-graph").commits?.get(hash), box = $("#cg-pick");
+    if (!c || !box) return;
+    $("#gm-graph").querySelectorAll(".cg g.on").forEach((d) => d.classList.remove("on"));
+    $("#gm-graph").querySelector(`.cg g[data-hash="${CSS.escape(hash)}"]`)?.classList.add("on");
+    const short = hash.slice(0, 7), onto = open[0] ?? "main";
+    box.innerHTML = `<div class="row"><code>${esc(short)}</code><span class="what" title="${esc(c.message)}">${esc(c.message)}</span><span class="grow"></span><button class="btn ghost" data-cg="x" title="close">${icon("x")}</button></div>
+      ${r.canWrite ? `<div class="row"><button class="btn" data-cg="revert" title="a new commit on main that undoes this one"${picAttr("revert", { short })}>${icon("undo-2")}Revert</button>
+      <button class="btn" data-cg="pick" title="take this commit's changes again"${picAttr("pick", { short, onto })}>${icon("cherry")}Cherry-pick</button><select id="cg-onto" title="onto">${["main", ...open].map((b) => `<option${b === onto ? " selected" : ""}>${esc(b)}</option>`).join("")}</select></div>
+      <div class="gitpic-slot" data-pic="${esc(JSON.stringify(["revert", { short }]))}">${gitPic(["revert", { short }])}</div>` : `<span class="muted">The crew can revert it or cherry-pick it.</span>`}`;
+    box.hidden = false;
+    icons();
+    box.querySelector("#cg-onto")?.addEventListener("change", (e) => {
+      const b = box.querySelector('[data-cg="pick"]'), pic = JSON.stringify(["pick", { short, onto: e.target.value }]);
+      b.dataset.pic = pic; box.querySelector(".gitpic-slot").dataset.pic = pic; box.querySelector(".gitpic-slot").innerHTML = gitPic(pic);
+    });
+    box.onclick = async (e) => {
+      const b = e.target.closest("[data-cg]");
+      if (!b) return;
+      if (b.dataset.cg === "x") { box.hidden = true; return; }
+      const kind = b.dataset.cg, to = kind === "pick" ? box.querySelector("#cg-onto").value : "main";
+      b.disabled = true;
+      try {
+        const out = await api(`/repos/${owner}/${repo}/commits/${hash}/${kind}`, to === "main" ? {} : { branch: to });
+        const n = out.files.length, files = `${n} file${n === 1 ? "" : "s"}`;
+        toast(kind === "revert" ? `Reverted ${short}: ${files} on main` : to === "main" ? `Picked ${short} onto main: ${files}` : `Picked ${short} onto ${to}: ${files}, waiting for its merge`, 3600);
+        if (to === "main") drawGraph(await api(`/repos/${owner}/${repo}/graph`).catch(() => null));
+        else box.hidden = true;
+      } catch (err) { b.disabled = false; toast(err.message, 6000); }
+    };
+  };
+  el.addEventListener("keydown", (e) => {
+    const d = e.key === "Enter" || e.key === " " ? e.target.closest?.(".cg g[data-hash]") : null;
+    if (d) { e.preventDefault(); pickCard(d.dataset.hash); }
+  });
   el.addEventListener("scroll", wires, true);
   el.addEventListener("click", (e) => {
     e.stopPropagation();
+    const d = e.target.closest(".cg g[data-hash]");
+    if (d) return pickCard(d.dataset.hash);
     if (e.target.closest("#gm-x")) return close();
     if (e.target.closest("#gm-files")) { close(); return wireMap(c.view ? c : { ...c, view: "r" }); }
     if (e.target.closest("a.gm-tile[href^='#']")) close();
@@ -2043,6 +2136,30 @@ async function gitMap(c) {
   const onSize = () => { place(); wires(); };
   addEventListener("keydown", off); addEventListener("click", off); addEventListener("resize", onSize);
 }
+/** The commit graph's sheet: a head saying what it shows, and the dots and lanes, scrolled sideways. */
+const commitGraph = (g) => {
+  const DX = 22, LH = 20, PAD = 14, { dots, edges, lanes } = commitLanes(g.commits, g.more);
+  const X = (i) => PAD + 8 + i * DX, Y = (l) => PAD + l * LH;
+  const line = (e) => {
+    const [x1, y1, x2, y2] = [X(e.x1), Y(e.l1), X(e.x2), Y(e.l2)];
+    // A branch curves off main just after it leaves, and back on just before it lands.
+    const d = e.l1 === e.l2 ? `M${x1} ${y1}H${x2}`
+      : e.l2 > e.l1 ? `M${x1} ${y1}C${x1 + DX / 2} ${y1},${x1 + DX / 2} ${y2},${x1 + DX} ${y2}H${x2}`
+      : `M${x1} ${y1}H${x2 - DX}C${x2 - DX / 2} ${y1},${x2 - DX / 2} ${y2},${x2} ${y2}`;
+    return `<path${e.off ? ' class="off"' : ""} d="${d}"/>`;
+  };
+  const dot = (c) => {
+    const x = X(c.x), y = Y(c.lane);
+    const say = `${c.hash.slice(0, 7)} ${c.message}\n${c.author}, ${new Date(c.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${c.up ? "upstream's" : "this copy's"}${c.merge ? " merge" : ""}`;
+    const shape = c.merge ? `<rect x="${x - 4.5}" y="${y - 4.5}" width="9" height="9" rx="1.5" transform="rotate(45 ${x} ${y})"/>` : `<circle cx="${x}" cy="${y}" r="5"/>`;
+    return `<g class="${c.up ? "u" : "m"}" tabindex="0" data-hash="${esc(c.hash)}" aria-label="${esc(say)}"><title>${esc(say)}</title>${shape}</g>`;
+  };
+  const main = dots.filter((c) => c.lane === 0).length, side = dots.length - main;
+  const w = X(Math.max(0, dots.length - 1)) + PAD + 8, h = Y(lanes - 1) + PAD;
+  return `<div class="cg-head muted">${icon("git-commit-horizontal")}<span>${esc(g.branch)}: the last ${main} commit${main === 1 ? "" : "s"}${g.more ? " (older ones trail off left)" : ""}${side ? `, and ${side} on branches merged in` : ""}</span>
+    <span class="cg-key"><svg viewBox="0 0 10 10"><circle class="u" cx="5" cy="5" r="4"/></svg>upstream's</span><span class="cg-key"><svg viewBox="0 0 10 10"><circle class="m" cx="5" cy="5" r="4"/></svg>this copy's</span><span class="cg-key"><svg viewBox="0 0 10 10"><rect x="1.8" y="1.8" width="6.4" height="6.4" transform="rotate(45 5 5)"/></svg>a merge</span></div>
+    <div class="cg-scroll"><svg class="cg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(`${main} commits on ${g.branch}`)}">${edges.map(line).join("")}${dots.map(dot).join("")}</svg></div>`;
+};
 /** This browser's layout of the details side: its width (px, "66.667%" or "full"), the panels' order, and which are folded. */
 const dockPrefs = () => { try { return { w: "", order: [], shut: [], ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", order: [], shut: [] }; } };
 const saveDock = (d) => { try { localStorage.setItem("cs_dock", JSON.stringify(d)); } catch {} };
@@ -2937,6 +3054,7 @@ const views = {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
     return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p><button class="btn" data-gitmap title="who this repo listens to, and its branches, wired up">${icon("git-fork")}Git map</button>`)
       + (owner === me() && r.mirror ? sec("refresh-cw", "Upstream", `<div id="mirror"><span class="muted">…</span></div>`) : "")
+      + (!r.mirror && r.upstream?.startsWith("github:") && r.upstream_commit ? sec("git-fork", "Upstream", `<div id="listen" data-pics><span class="muted">…</span></div>`) : "")
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
@@ -3000,6 +3118,34 @@ const views = {
     }));
     views.wireMirrorBranches(owner, repo);
   },
+  /** A dug fork listening to its upstream (#870): how many commits upstream got since the dig, and Take them onto a branch. */
+  async wireListen(owner, repo, hear) {
+    const el = $("#listen");
+    if (!el) return;
+    const u = await api(`/repos/${owner}/${repo}/upstream${hear ? "/hear" : ""}`, hear ? {} : undefined).catch((e) => ({ failed: e.message }));
+    if (u.failed) { el.innerHTML = `<span class="muted">${esc(u.failed)}</span>`; return; }
+    const moved = u.tip && u.tip !== u.commit;
+    const n = u.behind ?? null, count = n === null ? "new upstream commits" : `${n} new upstream commit${n === 1 ? "" : "s"}`;
+    const head = !moved && !u.error ? `<span class="tag ok">up to date</span> with ${esc(u.repo)}'s ${esc(u.branch)}`
+      : moved ? `<span class="tag" style="color:var(--accent-ink)">${esc(count)}</span> on ${esc(u.repo)}'s ${esc(u.branch)} since <code>${esc(u.commit.slice(0, 7))}</code>`
+      : `<span class="muted">${esc(u.error)}</span>`;
+    const pic = ["pull", { branch: "a new branch", ref: u.branch }];
+    const mine = owner === me();
+    el.innerHTML = `<p>${head}${u.heardAt ? `, heard ${ago(u.heardAt)}` : ""}.${u.folder ? ` Only <code>${esc(u.folder)}</code> comes in.` : ""}</p>
+      ${moved && mine ? `<div class="gitpic-slot" data-pic="${esc(JSON.stringify(pic))}">${gitPic(pic)}</div>` : ""}
+      <div class="row" style="gap:6px;flex-wrap:wrap">${moved && mine ? `<button class="btn primary" id="listen-take"${picAttr(...pic)}>${icon("download")}Take them</button>` : ""}${mine ? `<button class="btn" id="listen-hear" title="ask GitHub now">${icon("refresh-cw")}Check now</button>` : ""}</div>
+      ${mine ? `<p class="muted" style="font-size:12px">They come in on a branch, to review and merge like any other. Checked every hour.</p>` : ""}`;
+    icons();
+    $("#listen-hear")?.addEventListener("click", () => { el.querySelector("p").textContent = "asking GitHub…"; views.wireListen(owner, repo, true); });
+    $("#listen-take")?.addEventListener("click", async (e) => {
+      e.target.closest("button").disabled = true; el.querySelector("p").textContent = "taking them…";
+      try {
+        const t = await api(`/repos/${owner}/${repo}/upstream/take`, {});
+        toast(`Opened ${t.name}: ${t.files.length + t.deleted.length} file${t.files.length + t.deleted.length === 1 ? "" : "s"} from upstream${t.skipped.length ? `; skipped ${t.skipped.join(", ")}` : ""}`);
+        location.hash = `#/b/${owner}/${repo}/${encodeURIComponent(t.name)}`;
+      } catch (err) { toast(err.message); views.wireListen(owner, repo); }
+    });
+  },
   /** Upstream's other branches: open one here as a branch, or go to the one that already follows it. */
   async wireMirrorBranches(owner, repo) {
     const el = $("#mirror-branches");
@@ -3061,6 +3207,7 @@ const views = {
         <div class="row">releases at least <input name="min_age_days" aria-label="minimum release age in days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
         <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
         <label title="${d.can_test ? "" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code)</span></label>
+        <label title="${d.can_preview ? "Each counts against your preview deploys, and is logged with them" : "Preview deploys run on the desktop app, with your own logins"}"><input type="checkbox" name="preview"${s.preview ? " checked" : ""}${d.can_preview ? "" : " disabled"}> Then deploy what passed as a preview, check it answers, and tear it down <span class="muted">(costs deploy time)</span></label>
         <div class="row" title="The connected AI for the 🤖 fix and 🔎 web search steps below">AI for 🤖 🔎 <select name="fix_with" aria-label="who fixes a break"${d.can_test ? "" : " disabled"}>${opt("", "none", s.fix_with ?? "")}${["claude", "pi", "opencode"].map((h) => opt(h, h, s.fix_with ?? "")).join("")}</select>
           up to <input name="fix_tries" aria-label="fix tries" type="number" min="1" max="5" value="${s.fix_tries}" style="width:3em"> tries a step</div>
         <div class="row">on a break, in order: <span class="chain" id="deps-chain"></span></div>
@@ -3074,6 +3221,7 @@ const views = {
         ${rep.updates.map((u) => depUpdate(u)).join("")}
         ${(rep.digs ?? []).map((g) => g.update ? depUpdate(g.update, g) : `<span>🪏 <code>${esc(g.name)}</code> <span class="muted">${esc(g.target)} · ${g.status === "in" ? `${esc(g.version)} is in the range already` : g.status === "held" ? `${esc(g.version)} is out, held back` : g.note ? esc(g.note) : "not out yet, watching"}</span></span>`).join("")}
         ${(rep.exposed ?? []).map((x) => `<span><b class="vuln">exposed</b> <code>${esc(x.name)}</code> ${esc(x.version)} <span class="muted">${x.ids.map(esc).join(", ")} · no update here fixes it</span></span>`).join("")}
+        ${(rep.previews ?? []).map((p) => `<span title="${esc(p.stage)}${p.url ? ` · ${esc(p.url)}` : ""}${p.note ? ` · ${esc(p.note)}` : ""}">${icon("rocket")} preview of ${p.names.map((n) => `<code>${esc(n)}</code>`).join(", ")} <span class="muted">· ${p.ok ? "answered, torn down" : `${esc(p.failed ?? "it")} failed`}</span></span>`).join("")}
         ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>${rep.lock ? `, with <code>${esc(rep.lock)}</code> to match` : ""}, ready to review above.</span>` : ""}
         ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}
       ${(d.malicious ?? []).length ? `<div class="run">${d.malicious.map((h) => `<span><b class="vuln">malicious</b> <code>${esc(h.name)}</code> ${esc(h.spec)} <span class="muted">${h.path !== "package.json" ? `${esc(h.path.replace(/\/package\.json$/, ""))} · ` : ""}<a href="https://osv.dev/vulnerability/${encodeURIComponent(h.id)}" target="_blank" rel="noopener">${esc(h.id)}</a>${h.summary ? ` · ${esc(h.summary)}` : ""} · remove it or pin a clean version</span></span>`).join("")}</div>` : ""}
@@ -3112,7 +3260,7 @@ const views = {
     $("#dig-add").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addDigs(); } });
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target; addDigs();
-      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value, digs }, "PUT"); toast("Saved"); }
+      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, preview: f.preview.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value, digs }, "PUT"); toast("Saved"); }
       catch (err) { toast(err.message); }
     });
     $("#deps-run").addEventListener("click", async () => {
@@ -3516,6 +3664,7 @@ const views = {
     views.wireDeps(owner, repo);
     views.wireFit(owner, repo);
     views.wireMirror(owner, repo);
+    views.wireListen(owner, repo);
     views.wirePreview(owner, repo);
     views.wireDeploy(owner, repo);
     views.wireHooks(owner, repo);
@@ -4797,8 +4946,10 @@ const GITPICS = {
   merge: ({ branch }) => [[["main", "oou"], [branch, "oomm"]], [["main", "oouk"], [branch, "oomm"]], "The branch's lines land on main. Commit the files to put them in git."],
   push: ({ branch, ref }) => [[[`upstream's ${ref}`, "oo"], [branch, "oomm"]], [[`upstream's ${ref}`, "oomm"], [branch, "oomm"]], `${branch}'s commits go up as upstream's ${ref}.`],
   pull: ({ branch, ref }) => [[[`upstream's ${ref}`, "oouu"], [branch, "oomm"]], [[`upstream's ${ref}`, "oouu"], [branch, "oouumm"]], `What upstream's ${ref} got since comes onto ${branch}.`],
+  revert: ({ short }) => [[["main", "ocm"], [`${short}'s lines`, "c"]], [["main", "ocmr"], [`${short}'s lines`, "r"]], `A new commit on main undoes ${short}'s changes, line by line; what came after it stays.`],
+  pick: ({ short, onto = "main" }) => [[[short, "oc"], [onto, "oom"]], [[short, "oc"], [onto, "oomc"]], onto === "main" ? `${short}'s changes land on main again, line by line, as a new commit.` : `${short}'s changes land on ${onto}, line by line, and reach main when it merges.`],
 };
-const GITDOT = { o: "a commit both sides have", u: "upstream's commit", m: "this copy's commit", p: "a commit with private lines", x: "off the branch, kept by a ref", k: "a merge: your lines win", w: "a merge: upstream's lines win" };
+const GITDOT = { o: "a commit both sides have", u: "upstream's commit", m: "this copy's commit", p: "a commit with private lines", x: "off the branch, kept by a ref", k: "a merge: your lines win", w: "a merge: upstream's lines win", c: "the commit picked, or its changes taken again", r: "a revert: a commit undoing one" };
 /** The picture for `data-pic` (a [kind, options] pair, as JSON). */
 const gitPic = (pic) => {
   const [kind, o = {}] = typeof pic === "string" ? JSON.parse(pic) : pic;

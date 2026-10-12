@@ -73,7 +73,7 @@ export async function agentGithubToken(env: Env, owner: string): Promise<string 
 export const openToken = async (env: Env, t: string) =>
   t.startsWith("$ba$") || (t.length % 2 === 0 && /^[0-9a-f]+$/i.test(t)) ? symmetricDecrypt({ key: env.BETTER_AUTH_SECRET!, data: t }) : t;
 
-const gh = (path: string, token?: string) => fetch(API + path, {
+export const gh = (path: string, token?: string) => fetch(API + path, {
   headers: { accept: "application/vnd.github+json", "user-agent": "codesplitter", ...(token ? { authorization: `Bearer ${token}` } : {}) },
 });
 
@@ -256,7 +256,7 @@ export async function gitRefs(repo: string): Promise<{ branch: string; sha: stri
 }
 
 /** A public repo's commit at the tip of `branch`, from git's ref list. */
-async function gitTip(repo: string, branch: string) {
+export async function gitTip(repo: string, branch: string) {
   const want = ` refs/heads/${branch}`;
   for (const line of ((await gitAdvert(repo)) ?? "").split("\n")) {
     const m = /([0-9a-f]{40})( [^\0]*)/.exec(line);

@@ -10,6 +10,9 @@ export interface D1Result<T = Record<string, unknown>> {
   meta: { changes: number; last_row_id: number; duration: number; rows_read: number; rows_written: number };
 }
 
+/** D1 refuses a query with more bound parameters than this; bun:sqlite would take 32766. */
+export const D1_MAX_PARAMS = 100;
+
 export class D1PreparedStatement {
   constructor(private db: Database, private sql: string, private params: unknown[] = []) {}
 
@@ -18,6 +21,7 @@ export class D1PreparedStatement {
   }
 
   private stmt(): Statement {
+    if (this.params.length > D1_MAX_PARAMS) throw new Error(`D1_ERROR: too many SQL variables: ${this.params.length} bound, D1 allows ${D1_MAX_PARAMS} per query: SQLITE_ERROR`);
     return this.db.query(this.sql);
   }
 

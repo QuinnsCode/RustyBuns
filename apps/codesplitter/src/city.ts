@@ -8,6 +8,8 @@
 //   WS  /api/users/:name/city/ws    walk it with others: its owner and their followers (a GameRoom, "c/:name")
 //   PUT /api/me/city {public}       switch your public city off, or back on
 // Private repos are never in it, nor a visitor's dig that has expired.
+// Each district's pulse sets its streets going: a week of commits and edits fills
+// its sidewalks, crosswalks and bike lanes, and failing checks put chaos in its traffic.
 
 import { handleFor, MAX_BYTES, readTree, toFile } from "./archive.ts";
 import { renderCity } from "./card.ts";
@@ -19,22 +21,31 @@ const DISTRICTS = 9, BUILDINGS = 36, WALK = 400;
 const FADE_MS = 7 * 86_400_000;
 /** The street grid: a building's cell and footprint (the gap is an alley), and the street between districts: two lanes and their sidewalks. city.js draws to these. */
 const CELL = 4.2, FOOT = 2.6, STREET = 10;
+/** A district's pulse looks back a week. */
+const WEEK = 7 * 86_400_000;
 
 export interface Building { path: string; lines: number; agent: number; last: number | null; glow: number; x: number; z: number; w: number; h: number }
-export interface District { repo: string; x: number; z: number; size: number; buildings: Building[] }
+/**
+ * How a district's streets move. bustle (0-1) is how busy its sidewalks are, from a week of
+ * commits and edits; chaos (0-1) is how wild its traffic is, from the checks failing now and the week's failure rate.
+ */
+export interface Pulse { commits: number; edits: number; passed: number; failed: number; failing: number; bustle: number; chaos: number }
+export interface District { repo: string; x: number; z: number; size: number; buildings: Building[]; pulse: Pulse }
 export interface City { name: string; public: boolean; districts: District[]; present: { who: string; repo: string; path: string; at: number }[]; files: number; lines: number }
 
 /** A building's height for its line count: a one-liner is a kiosk, a 5000-line file a tower. */
 export const heightOf = (lines: number) => Math.min(36, Math.round((1 + Math.sqrt(lines) * 0.5) * 10) / 10);
 
-/** Lines in each file of the repo's git at the tip of its branch (up to WALK files), by path; blobs are counted once and kept. */
-async function gitLines(env: Env, owner: string, repo: string): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
+/** Lines in each file of the repo's git at the tip of its branch (up to WALK files), by path, and its commits this week (of its last 100); blobs are counted once and kept. */
+async function gitLines(env: Env, owner: string, repo: string, now: number): Promise<{ lines: Map<string, number>; commits: number }> {
+  const out = new Map<string, number>(), git = { lines: out, commits: 0 };
   const h = await handleFor(env, owner, repo).catch(() => null);
-  if (!h) return out;
+  if (!h) return git;
   try {
-    const [tip] = await h.handle.log({ ref: h.branch, limit: 1 });
-    if (!tip) return out;
+    const log = await h.handle.log({ ref: h.branch, limit: 100 });
+    const tip = log[0];
+    if (!tip) return git;
+    git.commits = log.filter((c) => now - (c.authoredAt < 1e12 ? c.authoredAt * 1000 : c.authoredAt) < WEEK).length;
     const blobs: { path: string; hash: string }[] = [];
     for (const dirs = [{ dir: "", hash: tip.treeHash }]; dirs.length && blobs.length < WALK;) {
       const { dir, hash } = dirs.shift()!;
@@ -68,17 +79,40 @@ async function gitLines(env: Env, owner: string, repo: string): Promise<Map<stri
     // Binary files (no lines) aren't buildings.
     for (const b of blobs) if (known.get(b.hash)) out.set(b.path, known.get(b.hash)!);
   } catch {}
-  return out;
+  return git;
 }
 
-/** One repo's buildings, before they're laid out: live files (their DO knows each line's author) first, then git's. */
+/** A district's pulse: its week of commits and edits, and its checks (a check is failing when its latest finish this week failed). */
+export function pulseOf(commits: number, edits: number, runs: { name: string; status: string }[]): Pulse {
+  const passed = runs.filter((r) => r.status === "passed").length, failed = runs.length - passed;
+  // runs come newest first: each check's first is its latest.
+  const latest = new Map<string, string>();
+  for (const r of runs) if (!latest.has(r.name)) latest.set(r.name, r.status);
+  const failing = [...latest.values()].filter((s) => s === "failed").length;
+  const round = (x: number) => Math.round(x * 100) / 100;
+  return {
+    commits, edits, passed, failed, failing,
+    bustle: round(1 - Math.exp(-(commits + edits / 3) / 12)),
+    chaos: round(Math.min(1, failing * 0.35 + (runs.length ? failed / runs.length : 0) * 0.5)),
+  };
+}
+
+async function pulseIn(env: Env, owner: string, repo: string, commits: number, now: number): Promise<Pulse> {
+  const since = now - WEEK;
+  const edits = await env.DB.prepare("SELECT COUNT(*) AS n FROM line_events WHERE owner = ? AND repo = ? AND last_at > ?").bind(owner, repo, since).first() as { n: number } | null;
+  const { results } = await env.DB.prepare(
+    "SELECT name, status FROM check_runs WHERE owner = ? AND repo = ? AND finished_at > ? AND status IN ('passed', 'failed') ORDER BY finished_at DESC LIMIT 200").bind(owner, repo, since).all();
+  return pulseOf(commits, edits?.n ?? 0, results as { name: string; status: string }[]);
+}
+
+/** One repo's buildings, before they're laid out (live files first: their DO knows each line's author; then git's), and its pulse. */
 async function buildings(env: Env, owner: string, repo: string, now: number) {
   const { results: live } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? ORDER BY path LIMIT ?").bind(owner, repo, BUILDINGS).all();
   const { results: events } = await env.DB.prepare(
     "SELECT path, MAX(last_at) AS last, SUM(lines) AS lines, SUM(CASE WHEN who LIKE 'agent-%' THEN lines ELSE 0 END) AS agent FROM line_events WHERE owner = ? AND repo = ? GROUP BY path")
     .bind(owner, repo).all();
   const landed = new Map((events as { path: string; last: number; lines: number; agent: number }[]).map((e) => [e.path, e]));
-  const git = await gitLines(env, owner, repo);
+  const { lines: git, commits } = await gitLines(env, owner, repo, now);
   const paths = [...new Set([...(live as { path: string }[]).map((r) => r.path), ...git.keys()])].slice(0, BUILDINGS).sort();
   const out = await Promise.all(paths.map(async (path) => {
     let lines = git.get(path) ?? 0, agent = 0;
@@ -93,7 +127,7 @@ async function buildings(env: Env, owner: string, repo: string, now: number) {
     const last = landed.get(path)?.last ?? null;
     return { path, lines, agent: Math.round(agent * 100) / 100, last, glow: last ? Math.round(Math.exp(-(now - last) / FADE_MS) * 100) / 100 : 0 };
   }));
-  return out.filter((b) => b.lines > 0);
+  return { buildings: out.filter((b) => b.lines > 0), pulse: await pulseIn(env, owner, repo, commits, now) };
 }
 
 /**
@@ -123,7 +157,7 @@ async function presentIn(env: Env, owner: string, repos: string[]): Promise<City
 }
 
 /** Lay the districts out on a square grid of blocks, each its buildings on a square grid of cells, centred on the origin. */
-export function layout(repos: { repo: string; buildings: Omit<Building, "x" | "z" | "w" | "h">[] }[]): District[] {
+export function layout(repos: { repo: string; buildings: Omit<Building, "x" | "z" | "w" | "h">[]; pulse?: Pulse }[]): District[] {
   const cols = Math.ceil(Math.sqrt(repos.length)), rows = Math.ceil(repos.length / cols);
   const size = Math.max(1, ...repos.map((r) => Math.ceil(Math.sqrt(r.buildings.length)))) * CELL, pitch = size + STREET;
   const ox = ((cols - 1) * pitch + size) / 2, oz = ((rows - 1) * pitch + size) / 2;
@@ -131,7 +165,7 @@ export function layout(repos: { repo: string; buildings: Omit<Building, "x" | "z
     const x = (i % cols) * pitch - ox, z = Math.floor(i / cols) * pitch - oz, k = Math.max(1, Math.ceil(Math.sqrt(r.buildings.length)));
     // A smaller district sits in the middle of its block.
     const pad = (size - k * CELL) / 2;
-    return { repo: r.repo, x, z, size, buildings: r.buildings.map((b, j) => ({
+    return { repo: r.repo, x, z, size, pulse: r.pulse ?? pulseOf(0, 0, []), buildings: r.buildings.map((b, j) => ({
       ...b, x: x + pad + (j % k) * CELL + CELL / 2, z: z + pad + Math.floor(j / k) * CELL + CELL / 2, w: FOOT, h: heightOf(b.lines),
     })) };
   });
@@ -145,7 +179,7 @@ export async function cityOf(env: Env, name: string, viewer: string | null): Pro
   const { results } = await env.DB.prepare(
     "SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC LIMIT ?").bind(name, now, DISTRICTS).all();
   const repos = (results as { name: string }[]).map((r) => r.name);
-  const built = await Promise.all(repos.map(async (repo) => ({ repo, buildings: await buildings(env, name, repo, now) })));
+  const built = await Promise.all(repos.map(async (repo) => ({ repo, ...await buildings(env, name, repo, now) })));
   const districts = layout(built.filter((d) => d.buildings.length));
   const present = await presentIn(env, name, repos);
   const all = districts.flatMap((d) => d.buildings);

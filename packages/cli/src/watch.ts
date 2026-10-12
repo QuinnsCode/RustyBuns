@@ -16,6 +16,9 @@ import type { RustyBunsConfig } from "./config.ts";
 /** How long the tree has to be quiet before a build starts. */
 const QUIET_MS = 150;
 
+/** How far a file's mtime may trail Date.now() and still count as written after the watch began. */
+const CLOCK_SLACK_MS = 1000;
+
 /** Directories a build or a running host writes to, which must not start another build. */
 export function watchOutputs(c: RustyBunsConfig): string[] {
   const d = c.targets.desktop ?? {};
@@ -35,6 +38,8 @@ export function watchIgnored(rel: string, outputs: string[]): boolean {
  * Whether a file the OS reported really changed: its mtime or size moved, or it came or went.
  * macOS reports a file that was only read (the app's own build copying src/client.html, say),
  * and without this check the build that read it would start the next one.
+ * A file first seen counts if it was written after the check started, give or take
+ * CLOCK_SLACK_MS: Linux stamps mtimes from a coarse clock that can trail Date.now().
  */
 export function changeCheck(since = Date.now()) {
   const seen = new Map<string, string>();
@@ -43,7 +48,7 @@ export function changeCheck(since = Date.now()) {
     try { const s = statSync(abs); mtime = s.mtimeMs; now = `${s.mtimeMs}:${s.size}`; } catch {}
     const before = seen.get(abs);
     seen.set(abs, now);
-    return before === undefined ? now === "gone" || mtime >= since : before !== now;
+    return before === undefined ? now === "gone" || mtime >= since - CLOCK_SLACK_MS : before !== now;
   };
 }
 

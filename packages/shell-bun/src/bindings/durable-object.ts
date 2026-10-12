@@ -15,6 +15,7 @@
 // restore path, which never runs otherwise because the shell never evicts.
 
 import { Database } from "bun:sqlite";
+import { serialize } from "node:v8";
 import type { StoragePort } from "@rustybuns/ports";
 import { sqlStorage } from "./sql.ts";
 
@@ -82,6 +83,8 @@ interface Slot {
 }
 
 const MAX_TAGS = 10, MAX_TAG_LEN = 256;
+/** A SQLite-backed object stores values up to 2 MiB, measured as their structured clone. */
+export const DO_MAX_VALUE_BYTES = 2 * 1024 * 1024;
 
 export class LocalDurableObjectState {
   private gate: Promise<unknown> = Promise.resolve();
@@ -104,7 +107,11 @@ export class LocalDurableObjectState {
       (...a: A): Promise<R> => self.zombie() ? Promise.resolve(dead) : fn(...a);
     this.storage = {
       ...base,
-      put: write(base.put.bind(base), undefined),
+      put: write(async (k: string, v: unknown) => {
+        const n = serialize(v).byteLength;
+        if (n > DO_MAX_VALUE_BYTES) throw new RangeError(`Values cannot be larger than ${DO_MAX_VALUE_BYTES} bytes. A value of size ${n} was provided.`);
+        return base.put(k, v);
+      }, undefined),
       delete: write(base.delete.bind(base), false),
       setAlarm: write(async (at: number) => {
         slot.alarmAt = at;
