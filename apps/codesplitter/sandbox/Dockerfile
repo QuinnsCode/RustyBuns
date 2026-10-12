@@ -17,7 +17,7 @@ RUN groupadd --gid 1500 work && useradd --uid 1001 --gid 1500 --create-home --sh
   && chmod 700 /home/node && git config --system --add safe.directory '*'
 
 WORKDIR /srv
-COPY --chmod=644 server.mjs .
+COPY --chmod=644 server.mjs scoped.mjs .
 EXPOSE 8080
 # Egress (#681, src/egress.ts): the Worker gates this container's HTTP and HTTPS,
 # reading the HTTPS with a CA the runtime puts in at start. The system store

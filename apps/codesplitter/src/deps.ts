@@ -98,6 +98,7 @@ import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness
 import { hitsFor } from "./watch.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { charge } from "./limits.ts";
+import { scopedTest } from "../sandbox/scoped.mjs";
 import { logEnd, logStart, preview, runnerFor, runs as livePreviews, STEPS as PREVIEW_STEPS, type Run as PreviewDeploy } from "./preview.ts";
 
 export type Level = "patch" | "minor" | "major";
@@ -286,9 +287,10 @@ export function packageManager(top: string[], pkg: Record<string, any>): { pm: P
  * Install the repo with these files swapped in, in a clone of `remote`. With
  * `test`, a full install and then the test script; without, only the lockfile
  * is regenerated, install scripts off. ok: it all passed (or there is no test
- * script). `lock` is the lockfile afterwards, when it's text.
+ * script). `lock` is the lockfile afterwards, when it's text. With `only`, just the tests
+ * for those files, where the test script runs one runner straight (sandbox/scoped.mjs).
  */
-export type Tester = (remote: string, files: Record<string, string>, opts: { pm: PM; lock: string | null; test: boolean; hosts?: string[] }) => Promise<{ ok: boolean; out: string; lock?: string }>;
+export type Tester = (remote: string, files: Record<string, string>, opts: { pm: PM; lock: string | null; test: boolean; hosts?: string[]; only?: string[] }) => Promise<{ ok: boolean; out: string; lock?: string }>;
 
 /**
  * One update for a coding agent to make work: the clone has `files` swapped in
@@ -571,12 +573,18 @@ async function inClone<T>(remote: string, files: Record<string, string>, depth: 
   }
 }
 
-/** The test script, if there is one, after an install. */
-async function runTests(run: Run, repo: string, files: Record<string, string>, pm: PM, installed: string) {
-  const { readFileSync } = await import("node:fs");
+/** The test script, if there is one, after an install; with `only`, just the tests for those files where it can. */
+async function runTests(run: Run, repo: string, files: Record<string, string>, pm: PM, installed: string, only?: string[]) {
+  const { existsSync, readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   const pkg = JSON.parse(files["package.json"] ?? readFileSync(join(repo, "package.json"), "utf8"));
   if (!pkg.scripts?.test) return { ok: true, out: installed + "\n(no test script)" };
+  const tracked = only?.length ? (await run(["git", "ls-files"])).out.split("\n").slice(1).filter(Boolean) : [];
+  const scoped = scopedTest(pkg.scripts.test, only, tracked);
+  if (scoped && (scoped[0] === "bun" || existsSync(join(repo, scoped[0]!)))) {
+    const t = await run(scoped);
+    return { ok: t.code === 0, out: t.out };
+  }
   const t = await run([pm, "run", "test"]);
   return { ok: t.code === 0, out: t.out };
 }
@@ -589,7 +597,7 @@ async function installAndTest(run: Run, repo: string, files: Record<string, stri
 }
 
 /** A clone in a temp dir, an install, the test script if asked and there is one, then the clone is deleted. Desktop only. */
-export const localTester = (timeoutMs = 10 * 60_000): Tester => (remote, files, { pm, lock, test }) =>
+export const localTester = (timeoutMs = 10 * 60_000): Tester => (remote, files, { pm, lock, test, only }) =>
   inClone(remote, files, 1, timeoutMs, !test, async (repo, run) => {
     const { existsSync, readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
@@ -598,7 +606,7 @@ export const localTester = (timeoutMs = 10 * 60_000): Tester => (remote, files, 
     if (install.code !== 0) return { ok: false, out: install.out };
     const locked = lock && lock !== "bun.lockb" && existsSync(join(repo, lock)) ? { lock: readFileSync(join(repo, lock), "utf8") } : {};
     if (!test) return { ok: true, out: install.out, ...locked };
-    return { ...(await runTests(run, repo, files, pm, install.out)), ...locked };
+    return { ...(await runTests(run, repo, files, pm, install.out, only)), ...locked };
   }, (out) => ({ ok: false, out }));
 
 const LOCKFILES = /(^|\/)(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/;
@@ -696,9 +704,9 @@ const onDesktop = (env: Env) => typeof Bun !== "undefined" && !env.BETTER_AUTH_S
 const installerFor = (env: Env): Tester | null => (env.DEPS_TESTER as Tester | undefined) ?? (onDesktop(env) ? localTester() : null);
 
 /** The same run in a container of its own (sandbox/server.mjs, POST /deps-test), torn down after. */
-export const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester => async (remote, files, { pm, lock, test, hosts }) => {
+export const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester => async (remote, files, { pm, lock, test, hosts, only }) => {
   const stub = ns.get(ns.idFromName(crypto.randomUUID()));
-  const res = await stub.fetch(new Request("http://sandbox/deps-test", { method: "POST", body: JSON.stringify({ remote, files, pm, lock, test, hosts }) }));
+  const res = await stub.fetch(new Request("http://sandbox/deps-test", { method: "POST", body: JSON.stringify({ remote, files, pm, lock, test, hosts, only }) }));
   if (!res.ok) return { ok: false, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(remote, "<remote>")}` };
   return (await res.json()) as { ok: boolean; out: string; lock?: string };
 };
@@ -714,10 +722,10 @@ const testerFor = (env: Env, s: Settings, owner: string): Tester | null => s.run
 
 /**
  * A merge's answer tried as the doctor tries an update (#934): `files` swapped into a clone
- * of the repo, a full install, then its test script. Runs only where the owner lets the doctor
- * run tests; otherwise `skipped` says why not.
+ * of the repo, a full install, then its test script (with `only`, just the tests for those
+ * files, where it can). Runs only where the owner lets the doctor run tests; otherwise `skipped` says why not.
  */
-export async function tryInClone(env: Env, owner: string, repo: string, files: Record<string, string>): Promise<{ ok: boolean; out: string } | { skipped: string }> {
+export async function tryInClone(env: Env, owner: string, repo: string, files: Record<string, string>, only?: string[]): Promise<{ ok: boolean; out: string } | { skipped: string }> {
   const tester = testerFor(env, await settings(env, owner, repo), owner);
   if (!tester) return { skipped: "the doctor doesn't run this repo's tests here (its run tests setting)" };
   const h = await handleFor(env, owner, repo, true);
@@ -729,7 +737,7 @@ export async function tryInClone(env: Env, owner: string, repo: string, files: R
   try { parsed = JSON.parse(pkg ?? ""); } catch { return { skipped: "no package.json at the top of this repo" }; }
   const top = ((await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path NOT LIKE '%/%'").bind(owner, repo).all()).results as { path: string }[]).map((r) => r.path);
   const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
-  return tester(remote, files, { ...packageManager(top, parsed), test: true });
+  return tester(remote, files, { ...packageManager(top, parsed), test: true, only });
 }
 
 /**

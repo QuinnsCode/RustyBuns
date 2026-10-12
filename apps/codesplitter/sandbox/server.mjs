@@ -3,9 +3,10 @@
 // fresh directory, runs the CLI there, and answers {code, out, text} with what
 // it left (text: null if it removed the file). POST /test {files: {path: text}}
 // writes a cut's files (src/cuts.ts) and runs `bun test` there: {code, out,
-// report} (report: its JUnit XML). POST /deps-test {remote, files, pm, lock} is the
+// report} (report: its JUnit XML). POST /deps-test {remote, files, pm, lock, only?} is the
 // dependency doctor's run: a shallow clone of `remote` with `files` swapped in,
-// an install with the repo's package manager, the test script if there is one, then the clone is deleted
+// an install with the repo's package manager, the test script if there is one (with
+// `only`, just the tests for those files where it can: scoped.mjs), then the clone is deleted
 // (answers {ok, out}). POST /deps-fix {cmd, remote, files, pm, name, out, tries, until?}
 // is its fixer: a full clone with the update installed, where the agent (`cmd`,
 // whose prompt has {{try}}, {{out}}, {{changelog}}, {{history}} and {{sites}}
@@ -28,6 +29,7 @@ import { spawn } from "node:child_process";
 import { chmod, chown, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
+import { scopedTest } from "./scoped.mjs";
 
 /** An agent that runs longer than this is killed and reported as failed. */
 const LIMIT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 10 * 60_000);
@@ -115,21 +117,27 @@ async function inClone(remote, files, depth, work) {
 
 const install = (run, pm) => { const [bin, ...args] = INSTALL[pm] ?? INSTALL.bun; return run(bin, args); };
 
-/** The test script, if there is one. */
-async function testScript(run, repo, pm, installed) {
+/** The test script, if there is one; with `only`, just the tests for those files where it can (scoped.mjs). */
+async function testScript(run, repo, pm, installed, only) {
   const pkg = JSON.parse(await readFile(join(repo, "package.json"), "utf8").catch(() => "{}"));
   if (!pkg.scripts?.test) return { ok: true, out: installed + "\n(no test script)" };
+  const tracked = only?.length ? (await run("git", ["ls-files"])).out.split("\n").slice(1).filter(Boolean) : [];
+  const scoped = scopedTest(pkg.scripts.test, only, tracked);
+  if (scoped && (scoped[0] === "bun" || await readFile(join(repo, scoped[0])).then(() => true, () => false))) {
+    const t = await run(scoped[0], scoped.slice(1));
+    return { ok: t.code === 0, out: t.out };
+  }
   const t = await (pm === "bun" ? run("bun", ["run", "test"]) : run(...(pm === "npm" ? ["npm", ["run", "test"]] : ["corepack", [pm, "run", "test"]])));
   return { ok: t.code === 0, out: t.out };
 }
 
-export function depsTest({ remote, files, pm = "bun", lock = null }) {
+export function depsTest({ remote, files, pm = "bun", lock = null, only }) {
   return inClone(remote, files, 1, async (repo, run) => {
     const installed = await install(run, pm);
     if (installed.code !== 0) return { ok: false, out: installed.out };
     // The lockfile that install wrote, for the branch (bun.lockb is binary, so not that one).
     const locked = lock && lock !== "bun.lockb" ? await readFile(join(repo, lock), "utf8").then((l) => ({ lock: l }), () => ({})) : {};
-    return { ...(await testScript(run, repo, pm, installed.out)), ...locked };
+    return { ...(await testScript(run, repo, pm, installed.out, only)), ...locked };
   });
 }
 

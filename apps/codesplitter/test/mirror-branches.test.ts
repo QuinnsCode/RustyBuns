@@ -1,6 +1,7 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { upstreamMessages } from "../src/mirror.ts";
 import { root, up, sh, post, get, sync, file, editHere, upstreamRewrite, mirrored, upstreamCommit, upLog, commit, pushClash, upShow } from "./mirror-kit.ts";
 
 setDefaultTimeout(30_000);
@@ -64,6 +65,10 @@ describe("mirrors: branches and this copy's own git", () => {
     expect(await (await post(call, "/api/repos/ana/up/mirror/branches/Feature%2FShiny/push")).json()).toMatchObject({ ref: "Feature/Shiny", pushed: true, took: [] });
     expect(await sh(`git --git-dir ${up} log -1 --format=%P Feature/Shiny`)).toBe(bo);
     expect(await sh(`git --git-dir ${up} show Feature/Shiny:README`)).toBe("hello\nworld\nshinier");
+    // Why Bo changed each file, for the conflict agent: upstream's messages, newest first, not this copy's own push (#990).
+    expect(await upstreamMessages(call.env, "ana", "up", "Feature/Shiny", "NEW")).toEqual(["newer", "shiny"]);
+    expect(await upstreamMessages(call.env, "ana", "up", "Feature/Shiny", "README")).toEqual(["shiny"]);
+    expect(await upstreamMessages(call.env, "ana", "up", "nope", "README")).toEqual([]);
 
     // Bo again, before any sync: a push takes it in first rather than writing over it.
     await sh(`git pull -q origin Feature/Shiny && printf 'new\\nnewer\\nnewest\\n' > NEW && git commit -qam newest && git push -q origin Feature/Shiny`, work);
