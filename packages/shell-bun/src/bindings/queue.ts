@@ -53,12 +53,13 @@ export class LocalQueue<Body = unknown> {
   /** Asked for during a drain: go round again, up to the latest `until` asked for. */
   private again?: number;
 
-  constructor(path: string = ":memory:", readonly name = "queue") {
+  constructor(path: string = ":memory:", readonly name = "queue", renamedFrom?: string) {
     this.db = new Database(path, { create: true });
     this.db.exec(`CREATE TABLE IF NOT EXISTS queue_messages (
       id TEXT PRIMARY KEY, queue TEXT NOT NULL, body BLOB NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
       visible_at INTEGER NOT NULL, sent_at INTEGER NOT NULL)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS queue_messages_due ON queue_messages (queue, visible_at)`);
+    if (renamedFrom) this.db.query(`UPDATE queue_messages SET queue = ? WHERE queue = ?`).run(name, renamedFrom);
   }
 
   async send(body: Body, opts: QueueSendOptions = {}): Promise<void> {
@@ -163,4 +164,4 @@ export class LocalQueue<Body = unknown> {
   }
 }
 
-export const queue = <Body = unknown>(path?: string, name?: string) => new LocalQueue<Body>(path, name);
+export const queue = <Body = unknown>(path?: string, name?: string, renamedFrom?: string) => new LocalQueue<Body>(path, name, renamedFrom);

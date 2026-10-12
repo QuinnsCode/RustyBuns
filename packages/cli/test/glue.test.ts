@@ -579,6 +579,10 @@ test("queue: wrangler and alchemy bind the producer and the consumer; the deskto
   expect(host).toContain(`{"batchSize":5,"maxRetries":6}`);
   expect(host).not.toContain(`env.OUTBOX as any).consume`);
   expect(wranglerToConfig({ name: "g", queues: w.queues }).bindings).toEqual(c.bindings);
+  // Renamed: the desktop carries over what it had under the old names.
+  const renamed = desktopEntry({ ...c, bindings: { DB: { type: "d1", databaseName: "g-db", renamedFrom: "old-db" }, JOBS: { ...c.bindings.JOBS, renamedFrom: "old-jobs" } } });
+  expect(renamed).toContain(`DB: local.d1("g-db", "old-db"),`);
+  expect(renamed).toContain(`JOBS: local.queue("g-jobs", "old-jobs"),`);
 });
 
 test("container: wrangler and alchemy bind the class and its image; the desktop host leaves it out", () => {

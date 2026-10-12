@@ -385,7 +385,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   for (const [name, b] of Object.entries(c.bindings ?? {})) {
     switch (b.type) {
       case "d1":
-        bind.push(`  ${name}: local.d1(${JSON.stringify(b.databaseName)}),`);
+        bind.push(`  ${name}: local.d1(${[b.databaseName, b.renamedFrom].filter(Boolean).map((n) => JSON.stringify(n)).join(", ")}),`);
         if (b.migrationsDir) migrations.push([name, b.migrationsDir]);
         break;
       case "kv": bind.push(`  ${name}: local.kv(${JSON.stringify(name)}),`); break;
@@ -398,7 +398,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
         break;
       case "images": bind.push(`  ${name}: local.images(),`); break;
       case "queue": {
-        bind.push(`  ${name}: local.queue(${JSON.stringify(b.queueName)}),`);
+        bind.push(`  ${name}: local.queue(${[b.queueName, b.renamedFrom].filter(Boolean).map((n) => JSON.stringify(n)).join(", ")}),`);
         // maxWaitTimeMs is the edge's: here a send is delivered at once.
         if (b.consumer !== false) consumers.push([name, { batchSize: b.consumer?.batchSize, maxRetries: b.consumer?.maxRetries, retryDelay: b.consumer?.retryDelay }]);
         break;

@@ -15,13 +15,13 @@ export async function local(extra: Record<string, unknown> = {}) {
   env.GAMES = durableObject(GameRoom as any, env);
   env.SEARCH = durableObject(RepoSearch as any, env);
   // Webhook tries, consumed in-process as the desktop host does.
-  env.HOOKS = queue(":memory:", "codesplitters-hooks");
+  env.HOOKS = queue(":memory:", "codesplitter-hooks");
   const stopHooks = env.HOOKS.consume((batch: any) => worker.queue(batch, env));
   // Queued requests' messages, likewise.
-  env.JOBS = queue(":memory:", "codesplitters-jobs");
+  env.JOBS = queue(":memory:", "codesplitter-jobs");
   const stopJobs = env.JOBS.consume((batch: any) => worker.queue(batch, env));
   // Level digs, likewise: an import's first step, and a big level's parts.
-  env.LEVEL_DIGS = queue(":memory:", "codesplitters-level-digs");
+  env.LEVEL_DIGS = queue(":memory:", "codesplitter-level-digs");
   const stopDigs = env.LEVEL_DIGS.consume((batch: any) => worker.queue(batch, env), { maxRetries: 3 });
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
   const dir = mkdtempSync(join(tmpdir(), "codesplitter-artifacts-"));

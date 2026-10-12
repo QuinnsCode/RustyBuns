@@ -47,22 +47,34 @@ function declaredProviders(stack: string): Map<string, string> {
   return new Map([...stack.matchAll(/\b(Cloudflare|Hetzner|Railway|Command)\.[\w.]+\("([^"]+)"/g)].map((m) => [m[2]!, m[1]!]));
 }
 
+/** Each declared logical id with the `name` the stack gives it (D1, R2, queues and indexes under adopt). */
+function declaredNames(stack: string): Map<string, string> {
+  return new Map([...stack.matchAll(/\bCloudflare\.[\w.]+\("([^"]+)", \{ name: "([^"]+)"/g)].map((m) => [m[1]!, m[2]!]));
+}
+
 /**
  * Data-holding resources in this stage's state that the generated stack no
  * longer declares, so a deploy would delete them: R2, D1, KV, queues,
  * containers and volumes, plus Durable Object classes the Worker stops binding.
+ * One still declared under a new name counts too: Alchemy replaces it, making
+ * the new one (or adopting it, when it's there already) and deleting the old.
  */
 export function statefulDeletes(projectDir: string, cfg: Pick<RustyBunsConfig, "name" | "bindings">, stage: string, stack: string): string[] {
   const dir = join(projectDir, ".alchemy", "state", cfg.name, stage);
   if (!existsSync(dir)) return [];
-  const declared = declaredProviders(stack);
+  const declared = declaredProviders(stack), names = declaredNames(stack);
   const read = (f: string) => { try { return JSON.parse(readFileSync(join(dir, f), "utf8")); } catch { return null; } };
   const out: string[] = [];
   for (const f of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
     const s = read(f);
     const kind = s && STATEFUL[s.resourceType];
-    if (!kind || declared.get(s.logicalId) === s.resourceType.split(".")[0]) continue;
+    if (!kind) continue;
     const name = s.attr?.bucketName ?? s.attr?.databaseName ?? s.attr?.queueName ?? s.props?.name;
+    if (declared.get(s.logicalId) === s.resourceType.split(".")[0]) {
+      const to = names.get(s.logicalId);
+      if (name && to && to !== name) out.push(`${kind} ${s.logicalId} (${name}, renamed to ${to})`);
+      continue;
+    }
     out.push(`${kind} ${s.logicalId}${name && name !== s.logicalId ? ` (${name})` : ""}`);
   }
   const classes = new Set(Object.values(cfg.bindings ?? {}).flatMap((b) =>
@@ -70,4 +82,16 @@ export function statefulDeletes(projectDir: string, cfg: Pick<RustyBunsConfig, "
   for (const c of Object.keys(read("Worker.json")?.attr?.durableObjectNamespaces ?? {}))
     if (!classes.has(c)) out.push(`Durable Object class ${c}`);
   return out;
+}
+
+/**
+ * The app name that holds this stage's state, when it isn't the config's: the
+ * app was renamed and its state wasn't moved, so Alchemy would find none and
+ * make every resource again. Null when the state is where it should be, or
+ * there is none at all.
+ */
+export function strayState(projectDir: string, name: string, stage: string): string | null {
+  const root = join(projectDir, ".alchemy", "state");
+  if (!existsSync(root) || existsSync(join(root, name, stage))) return null;
+  return readdirSync(root).find((d) => d !== name && existsSync(join(root, d, stage))) ?? null;
 }

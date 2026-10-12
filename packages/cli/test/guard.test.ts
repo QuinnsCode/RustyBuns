@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commitsBehindMain, declaredIds, statefulDeletes } from "../src/guard.ts";
+import { commitsBehindMain, declaredIds, statefulDeletes, strayState } from "../src/guard.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import type { RustyBunsConfig } from "../src/config.ts";
 
@@ -79,4 +79,28 @@ test("stateful deletes: a bucket main added and this branch lacks is named; Work
 
   const withBucket = { ...cfg, bindings: { ...cfg.bindings, LEVEL_CHUNKS: { type: "r2", bucketName: "game-level-chunks" }, OLD_KV: { type: "kv" }, OLD: { type: "durable_object", className: "OldRoom" } } } as RustyBunsConfig;
   expect(statefulDeletes(dir, withBucket, "live_me", generateAlchemy(withBucket))).toEqual([]);
+});
+
+test("stateful deletes: renaming a database or queue replaces it, so it's named with its new name", () => {
+  const dir = stateDir({
+    "DB.json": { logicalId: "DB", resourceType: "Cloudflare.D1Database", attr: { databaseName: "game-db" } },
+    "JOBS.json": { logicalId: "JOBS", resourceType: "Cloudflare.Queues.Queue", attr: { queueName: "game-jobs" } },
+  });
+  const was = { ...cfg, bindings: { ...cfg.bindings, JOBS: { type: "queue", queueName: "game-jobs" } } } as RustyBunsConfig;
+  expect(statefulDeletes(dir, was, "live_me", generateAlchemy(was))).toEqual([]);
+  const renamed = { ...cfg, bindings: { ...cfg.bindings, DB: { type: "d1", databaseName: "games-db" }, JOBS: { type: "queue", queueName: "games-jobs" } } } as RustyBunsConfig;
+  expect(statefulDeletes(dir, renamed, "live_me", generateAlchemy(renamed)).sort()).toEqual([
+    "D1 DB (game-db, renamed to games-db)", "Queue JOBS (game-jobs, renamed to games-jobs)",
+  ]);
+  // Without adopt the stack names nothing, so there's no rename to see.
+  const unadopted = { ...renamed, targets: { edge: { provider: "cloudflare" } } } as RustyBunsConfig;
+  expect(statefulDeletes(dir, unadopted, "live_me", generateAlchemy(unadopted))).toEqual([]);
+});
+
+test("stray state: a stage's state still under the app's old name is found", () => {
+  const dir = stateDir({ "DB.json": { logicalId: "DB", resourceType: "Cloudflare.D1Database" } });
+  expect(strayState(dir, "game", "live_me")).toBeNull();
+  expect(strayState(dir, "games", "live_me")).toBe("game");
+  expect(strayState(dir, "games", "pr_1")).toBeNull();
+  expect(strayState(join(dir, "nowhere"), "games", "live_me")).toBeNull();
 });

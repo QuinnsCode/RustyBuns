@@ -1,7 +1,18 @@
 // The one file the developer owns. Everything else is generated from it.
 
 export type Binding =
-  | { type: "d1"; databaseName: string; migrationsDir?: string }
+  | {
+      type: "d1";
+      databaseName: string;
+      migrationsDir?: string;
+      /**
+       * The database's previous name, while renaming it. The desktop moves its
+       * `<renamedFrom>.sqlite` over when there's no file under the new name yet.
+       * On Cloudflare a rename replaces the database: copy its data into one
+       * under the new name first, and adopt takes that over.
+       */
+      renamedFrom?: string;
+    }
   | { type: "kv" }
   | { type: "r2"; bucketName: string }
   | { type: "durable_object"; className: string; scriptName?: string }
@@ -78,6 +89,12 @@ export type Binding =
       type: "queue";
       /** The queue's name on Cloudflare (with targets.edge.adopt; Alchemy names it otherwise). */
       queueName: string;
+      /**
+       * The queue's previous name, while renaming it. The desktop carries
+       * messages still waiting under it over to the new name. On Cloudflare a
+       * rename replaces the queue, so drain the old one first.
+       */
+      renamedFrom?: string;
       /** How this Worker consumes it, or false to only send to it. @default {} */
       consumer?: QueueConsumer | false;
     }
