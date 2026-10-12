@@ -13,6 +13,9 @@
 //
 // Child processes of low work get OS background priority too (`lowPriorityCommand`), so the kernel
 // prefers everything else even while they run.
+//
+// A host has one scheduler (`hostScheduler()`), so its crons and queue consumers share one budget.
+// They run as low unless they say otherwise; `RB_PERSONA` at launch picks the budget (#1018).
 
 import { availableParallelism, cpus, freemem, totalmem } from "node:os";
 
@@ -178,4 +181,18 @@ export function scheduler(o: SchedulerOptions = {}) {
     memMb: { used: usedMb, budget: Math.round(memBudgetMb) }, load,
   });
   return { run, tick, stats, budget, stop: () => clearInterval(timer) };
+}
+
+export type Scheduler = ReturnType<typeof scheduler>;
+
+let host: Scheduler | undefined;
+
+/** This process's scheduler, made on first use: crons and queue consumers run through it. Its
+ *  persona is `RB_PERSONA` (balanced when unset); a name it doesn't know is reported and ignored. */
+export function hostScheduler(): Scheduler {
+  if (host) return host;
+  const asked = process.env.RB_PERSONA;
+  const persona = asked && asked in PERSONAS ? asked as Persona : "balanced";
+  if (asked && persona !== asked) console.warn(`[priority] RB_PERSONA=${asked}: not one of ${Object.keys(PERSONAS).join(", ")}; using balanced`);
+  return (host = scheduler({ persona, log: (l) => console.log(l) }));
 }

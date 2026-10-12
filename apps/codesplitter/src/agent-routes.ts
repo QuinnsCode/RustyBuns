@@ -76,6 +76,8 @@ export interface Run {
   kept?: { line: string; yours: string | null; wanted: string | null }[];
   /** Its batch was thrown away. */
   rejected?: { at: number; by: string };
+  /** A fix task (heal.ts): it edits this open branch itself, and nothing of it lands on main. */
+  branch?: string;
 }
 
 export interface Note { text: string; at: number }
@@ -98,9 +100,9 @@ const REVIEWS = ["accept", "hold", "look", "reject"];
 /** The branch a run's batch waits on. */
 export const runBranch = (id: number) => `agent-run-${id}`;
 
-interface Row { id: number; owner: string; repo: string; path: string; harness: Harness; task: string; model: string | null; agent: string; status: Run["status"]; started: number; picked: number; log: string; result: string | null; notes: string }
+interface Row { id: number; owner: string; repo: string; path: string; harness: Harness; task: string; model: string | null; agent: string; status: Run["status"]; started: number; picked: number; log: string; result: string | null; notes: string; branch?: string | null }
 
-const toRun = (r: Row, env: Env): Run => ({ ...(env.AGENT_SANDBOX ? { deadline: r.started + HOSTED_RUN_MS } : {}), id: r.id, owner: r.owner, repo: r.repo, path: r.path, harness: r.harness, task: r.task, agent: r.agent, status: r.status, started: r.started, log: JSON.parse(r.log), notes: JSON.parse(r.notes ?? "[]"), ...(r.result ? JSON.parse(r.result) : {}) });
+const toRun = (r: Row, env: Env): Run => ({ ...(env.AGENT_SANDBOX ? { deadline: r.started + HOSTED_RUN_MS } : {}), ...(r.branch ? { branch: r.branch } : {}), id: r.id, owner: r.owner, repo: r.repo, path: r.path, harness: r.harness, task: r.task, agent: r.agent, status: r.status, started: r.started, log: JSON.parse(r.log), notes: JSON.parse(r.notes ?? "[]"), ...(r.result ? JSON.parse(r.result) : {}) });
 const getRow = (env: Env, id: number) => env.DB.prepare("SELECT * FROM agent_runs WHERE id = ?").bind(id).first() as Promise<Row | null>;
 /** Ends a run that's still going: one stopped meanwhile stays stopped. */
 const finish = (env: Env, id: number, status: "done" | "failed", result: Partial<Run>) =>
@@ -385,11 +387,14 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   // Stopped before it was picked up off the queue.
   if (!row || row.status !== "running") return;
   const { owner, repo, path, harness, agent } = row;
-  // Its batch waits on a branch of its own, made as its owner, unless there's no wait.
-  const wait = reviewMs(env), branch = wait ? runBranch(id) : undefined;
+  // Its batch waits on a branch of its own, made as its owner, unless there's no wait. A fix task
+  // (heal.ts) works on the branch it's fixing instead, which is left as it is whatever happens.
+  const wait = reviewMs(env), own = !row.branch && wait ? runBranch(id) : undefined, branch = row.branch ?? own;
   // Stop: on the desktop the route aborts it here; a hosted Stop lands on another
   // isolate, so this one checks D1 every couple of seconds, and right as the agent ends.
   const stopper = live.get(id) ?? new AbortController(), signal = stopper.signal;
+  // A desktop run off the queue (a fix task) is this process's too, so listing runs doesn't call it cut off.
+  if (!env.AGENT_SANDBOX && !live.has(id)) live.set(id, stopper);
   let given = 0;
   const peek = async () => {
     const r = await env.DB.prepare("SELECT status, notes FROM agent_runs WHERE id = ?").bind(id).first() as Pick<Row, "status" | "notes"> | null;
@@ -418,9 +423,14 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     }
     const log: string[] = JSON.parse(row.log);
     let logged = Promise.resolve();
-    if (branch) {
-      const made = await call(owner, `/api/repos/${owner}/${repo}/branches`, { method: "POST", body: JSON.stringify({ name: branch }) });
-      if (!made.ok) throw new Error(`making its branch ${branch}: ${await made.text()}`);
+    if (own) {
+      const made = await call(owner, `/api/repos/${owner}/${repo}/branches`, { method: "POST", body: JSON.stringify({ name: own }) });
+      if (!made.ok) throw new Error(`making its branch ${own}: ${await made.text()}`);
+    }
+    // A fix task wasn't started from the route, which adds the agent to the crew.
+    if (row.branch) {
+      const added = await call(owner, `/api/repos/${owner}/${repo}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
+      if (!added.ok) throw new Error(`adding ${agent}: ${await added.text()}`);
     }
     const r = await runAgent(call, {
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal, branch,
@@ -432,11 +442,11 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       },
     });
     await logged;
-    const pending = branch && r.applied ? { branch, until: Date.now() + wait } : undefined;
+    const pending = own && r.applied ? { branch: own, until: Date.now() + wait } : undefined;
     const done = await finish(env, id, "done", { ...extra, applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), ...(pending ? { pending } : {}) });
     // Stopped just as it ended: nothing waits.
     if (pending && done.meta?.changes) await landLater(env, id, origin, wait);
-    else if (branch) await dropBranch(env, owner, repo, branch, path);
+    else if (own) await dropBranch(env, owner, repo, own, path);
   } catch (e) {
     if (signal.aborted) {
       const stopped = await getRow(env, id);
@@ -444,6 +454,6 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ? AND status = 'stopped'").bind(JSON.stringify({ ...extra, error: was.error ?? "stopped" }), id).run();
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.
-    if (branch) await dropBranch(env, owner, repo, branch, path);
-  } finally { clearInterval(checking); clearTimeout(cutoff); }
+    if (own) await dropBranch(env, owner, repo, own, path);
+  } finally { clearInterval(checking); clearTimeout(cutoff); if (row.branch) live.delete(id); }
 }

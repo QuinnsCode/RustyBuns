@@ -618,6 +618,11 @@ test("queue: wrangler and alchemy bind the producer and the consumer; the deskto
   expect(host).toContain(`JOBS: local.queue("g-jobs"),`);
   expect(host).toContain(`(env.JOBS as any).consume((batch: unknown) => (worker as any).queue?.(batch, env, `);
   expect(host).toContain(`{"batchSize":5,"maxRetries":6}`);
+  // priority is the host's: the edge generators leave it out.
+  const hi = { ...c, bindings: { JOBS: { ...c.bindings.JOBS, consumer: { ...c.bindings.JOBS.consumer, priority: "high" } } } };
+  expect(desktopEntry(hi)).toContain(`{"batchSize":5,"maxRetries":6,"priority":"high"}`);
+  expect(generateWrangler(hi)).not.toContain("priority");
+  expect(generateAlchemy(hi)).not.toContain("priority");
   expect(host).not.toContain(`env.OUTBOX as any).consume`);
   expect(wranglerToConfig({ name: "g", queues: w.queues }).bindings).toEqual(c.bindings);
   // Renamed: the desktop carries over what it had under the old names.
@@ -655,6 +660,7 @@ test("crons: Cron Triggers on the edge, a minute timer on the desktop", () => {
   expect(host).toContain(`schedule(["0 * * * *"], (controller) => (worker as any).scheduled?.(controller, env,`);
   const none = desktopEntry({ ...c, worker: { ...c.worker, crons: undefined } });
   expect(none).not.toContain("schedule");
+  expect(desktopEntry({ ...c, worker: { ...c.worker, cronPriority: "normal" } })).toContain(`passThroughOnException() {} }), { priority: "normal" });`);
   expect(wranglerToConfig({ name: "g", triggers: { crons: ["*/5 * * * *"] } }).worker!.crons).toEqual(["*/5 * * * *"]);
 });
 

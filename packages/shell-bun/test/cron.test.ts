@@ -39,3 +39,17 @@ test("schedule fires matching crons at the top of the minute, and stops", async 
   stop();
   expect(fired).toEqual([{ cron: "0 13 * * *", scheduledTime: Date.UTC(2026, 9, 9, 13, 0) }]);
 });
+
+test("schedule runs each cron through the scheduler, low unless it says otherwise", async () => {
+  let t = Date.UTC(2026, 9, 9, 12, 59, 59, 980);
+  const asked: string[] = [];
+  const sched = { run: <T>(p: string, fn: () => T | Promise<T>) => { asked.push(p); return Promise.resolve().then(fn); } };
+  const fired: string[] = [];
+  const stopLow = schedule(["0 13 * * *"], (c) => { fired.push(c.cron); }, { now: () => t, scheduler: sched });
+  const stopHigh = schedule(["0 13 * * *"], (c) => { fired.push(c.cron); }, { now: () => t, scheduler: sched, priority: "high" });
+  t += 20;
+  await Bun.sleep(60);
+  stopLow(); stopHigh();
+  expect(asked).toEqual(["low", "high"]);
+  expect(fired).toEqual(["0 13 * * *", "0 13 * * *"]);
+});

@@ -131,6 +131,12 @@ export interface QueueConsumer {
   retryDelay?: number;
   /** Most batches the edge runs at once (up to 250); unset, it scales with the backlog. The desktop runs one at a time. */
   maxConcurrency?: number;
+  /**
+   * Desktop and box only: the priority class each batch runs at on the host's scheduler, which
+   * shares a budget (`RB_PERSONA` at launch) among the host's background work. The edge ignores it.
+   * @default "low"
+   */
+  priority?: "realtime" | "high" | "normal" | "low";
 }
 
 /**
@@ -362,6 +368,11 @@ export interface RustyBunsConfig {
      * own minute timer and call the same handler.
      */
     crons?: string[];
+    /**
+     * Desktop and box only: the priority class the crons run at on the host's scheduler, as for a
+     * queue consumer's `priority`. The edge ignores it. @default "low"
+     */
+    cronPriority?: "realtime" | "high" | "normal" | "low";
     /**
      * CPU time one invocation may use, in ms (`limits.cpu_ms`). Workers Paid
      * defaults to 30,000 and allows up to 300,000; the free plan is fixed at 10.
