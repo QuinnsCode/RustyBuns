@@ -11,7 +11,7 @@ Git was built for one person at one keyboard sending a patch by email. Now a doz
 - **People and agents use the same API, in the same ways.** The ⌘K palette, a REST API with an OpenAPI spec, personal tokens, OAuth, WebMCP in the browser, and now an **MCP server**. If you can click it, your agent can call it.
 - **Then why not just deploy your app as well?** The repo knows how to ship itself: preview deploys, real deploys, a log of every one. Only a person presses the button.
 
-Live at **[codesplitters.notryanquinn.workers.dev](https://codesplitters.notryanquinn.workers.dev)**. It's a proof of concept, built for Cloudflare's Artifacts challenge, and it moves fast.
+Live at **[codesplitter.notryanquinn.workers.dev](https://codesplitter.notryanquinn.workers.dev)**. It's a proof of concept, built for Cloudflare's Artifacts challenge, and it moves fast.
 
 ## What it does for you
 
@@ -23,12 +23,12 @@ The highest-value things, in order:
 4. **Share some lines, not the repo.** A live link to just a range, which follows those lines by id as the file changes. It works from a private repo, too.
 5. **Hook it to your AI in one command.**
    ```sh
-   claude mcp add --transport http codesplitters https://codesplitters.notryanquinn.workers.dev/api/mcp
+   claude mcp add --transport http codesplitters https://codesplitter.notryanquinn.workers.dev/api/mcp
    ```
    It signs in with OAuth. Every tool is an operation in the OpenAPI spec, so the MCP server and the API never drift, and the ones that can't be undone (merge, delete, deploy) are marked so your client asks first.
    Or from your shell, no checkout needed (Bun or Node 18+):
    ```sh
-   curl -fsSL https://codesplitters.notryanquinn.workers.dev/install.sh | sh
+   curl -fsSL https://codesplitter.notryanquinn.workers.dev/install.sh | sh
    codesplitters login     # paste a token from your profile page
    codesplitters tools     # every MCP tool, as a command
    codesplitters triage    # something broke? your coding agent asks what, digs in, drafts the issue

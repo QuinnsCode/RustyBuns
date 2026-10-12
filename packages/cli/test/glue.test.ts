@@ -61,6 +61,19 @@ test("targets.edge.adopt names resources as the config does and takes over the W
   expect(on).toContain("}).pipe(Alchemy.AdoptPolicy.adopt(true));");
 });
 
+test("targets.edge.workerName renames the Worker; renamedFrom moves its Durable Objects with their data", async () => {
+  const c = wranglerToConfig(parseWrangler(await Bun.file(root + "/wrangler.jsonc").text()));
+  const edge = { provider: "cloudflare", adopt: true, workerName: "new-name", renamedFrom: c.name } as const;
+  const a = generateAlchemy({ ...c, targets: { ...c.targets, edge } });
+  expect(a).toContain(`  name: "new-name",`);
+  const dos = [...a.matchAll(/Cloudflare\.DurableObject\("\w+", \{ className: "\w+"([^}]*) \}/g)].map((m) => m[1]);
+  expect(dos.length).toBeGreaterThan(0);
+  for (const rest of dos) expect(rest).toBe(`, transferredFrom: ${JSON.stringify(c.name)}`);
+  expect(JSON.parse(generateWrangler({ ...c, targets: { ...c.targets, edge } }).replace(/^\/\/.*$/gm, "")).name).toBe("new-name");
+  // Without them, nothing moves.
+  expect(generateAlchemy(c)).not.toContain("transferredFrom");
+});
+
 test("layout: app/ with ~ and #lib from tsconfig paths, no src/", () => {
   const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs");
   const { tmpdir } = require("node:os");

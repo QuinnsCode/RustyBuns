@@ -123,7 +123,7 @@ export default defineConfig({
     ...(checks ? { CI_RUNNER: { type: "container", className: "CiRunner", dockerfile: "deploy-sandbox/ci.Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
     // Accounts (Better Auth), GitHub and Google sign-in.
     BETTER_AUTH_SECRET: op("better-auth/secret"),
-    BETTER_AUTH_URL: { type: "var", value: "https://codesplitters.notryanquinn.workers.dev" },
+    BETTER_AUTH_URL: { type: "var", value: "https://codesplitter.notryanquinn.workers.dev" },
     GITHUB_CLIENT_ID: op("github-oauth/client-id"),
     GITHUB_CLIENT_SECRET: op("github-oauth/client-secret"),
     GOOGLE_CLIENT_ID: op("google-oauth/client-id"),
@@ -149,11 +149,13 @@ export default defineConfig({
     } : {}),
   },
   targets: {
-    // Live as Worker codesplitters + D1 codesplitters-db, first deployed with wrangler;
-    // adopted by rustybuns deploy on 2026-10-09 (#170). Keep adopt on: a new clone or stage
-    // starts with empty state, and adopt takes these over instead of duplicating them.
+    // Live as D1 codesplitters-db, first deployed with wrangler; adopted by rustybuns deploy on
+    // 2026-10-09 (#170). Keep adopt on: a new clone or stage starts with empty state, and adopt
+    // takes these over instead of duplicating them. The app (and its Alchemy state) keeps the
+    // name codesplitters; the Worker was renamed to codesplitter on 2026-10-11, and renamedFrom
+    // moved its files, game rooms and search over with their data. The containers started empty.
     // D1 migrations are Alchemy's (__alchemy_migrations); never apply them with wrangler (README).
-    edge: { provider: "cloudflare", adopt: true },
+    edge: { provider: "cloudflare", adopt: true, workerName: "codesplitter", renamedFrom: "codesplitters" },
     desktop: { mode: "worker", window: "app" },
   },
 });

@@ -4,7 +4,7 @@
 // Cloudflare.InferEnv. The generated file is readable and committable; the
 // eject path is "keep this file, delete the config".
 
-import type { Binding, RustyBunsConfig } from "../config.ts";
+import { workerName, type Binding, type RustyBunsConfig } from "../config.ts";
 import { BOX_DIR, RAILWAY_DATA, RAILWAY_DIR, boxDefaults, railwayDefaults } from "../box.ts";
 import { checkWheel, mintedSecrets } from "../wheel.ts";
 
@@ -78,6 +78,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   const w = c.worker!;   // only read when edge is on, which requires it
   const adopt = edge && !!c.targets.edge?.adopt;
   const bindings = c.bindings ?? {};
+  const renamedFrom = c.targets.edge?.renamedFrom;
   checkWheel(c);
   // experimental.wheel "agent": these secrets are minted by the stack itself.
   const minted = new Set(mintedSecrets(c));
@@ -117,7 +118,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
       const r = resource(name, b, adopt);
       if (r) { lines.push(r); envEntries.push(`${name}: ${ident(name)}`); }
       else if (b.type === "durable_object")
-        envEntries.push(`${name}: Cloudflare.DurableObject("${name}", { className: "${b.className}"${b.scriptName ? `, scriptName: "${b.scriptName}"` : ""} })`);
+        envEntries.push(`${name}: Cloudflare.DurableObject("${name}", { className: "${b.className}"${b.scriptName ? `, scriptName: "${b.scriptName}"`
+          : renamedFrom ? `, transferredFrom: ${JSON.stringify(renamedFrom)}` : ""} })`);
       else if (b.type === "var") envEntries.push(`${name}: ${JSON.stringify(b.value)}`);
       else if (b.type === "secret" && !b.boxOnly) envEntries.push(minted.has(name) ? `${name}: ${ident(name)}`
         : b.optional ? `...(process.env.${name} ? { ${name}: Config.redacted("${name}") } : {})`
@@ -136,7 +138,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     }
 
     const wb: string[] = [];
-    if (adopt) wb.push(`  name: ${JSON.stringify(c.name)},`);
+    if (adopt) wb.push(`  name: ${JSON.stringify(workerName(c))},`);
     // No main: assets-only, and Cloudflare's asset layer answers every request.
     if (w.builtMain ?? w.main) wb.push(`  main: ${JSON.stringify(w.builtMain ?? w.main)},`);
     if (w.builtMain) wb.push(`  bundle: false,  // vite already produced a runtime-ready ESM bundle`);
@@ -157,7 +159,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     wb.push(`  env: { ${envEntries.join(", ")} },`);
     // A wrangler-made Worker has no Alchemy tags, so plan and deploy refuse it as
     // someone else's unless this Worker opts in to taking it over.
-    if (adopt) lines.push(`// targets.edge.adopt: an existing Worker named ${JSON.stringify(c.name)} is taken over, not duplicated.`);
+    if (adopt) lines.push(`// targets.edge.adopt: an existing Worker named ${JSON.stringify(workerName(c))} is taken over, not duplicated.`);
     lines.push(...withMinted("Worker", "Cloudflare.Worker", wb, adopt ? ".pipe(Alchemy.AdoptPolicy.adopt(true))" : ""));
     lines.push(``);
     lines.push(`/** The typed env the Worker AND the desktop shell compile against. */`);

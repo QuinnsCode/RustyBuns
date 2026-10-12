@@ -2,7 +2,7 @@
 // infra; this file only feeds RWSDK's local dev. Do not hand-edit.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "codesplitters",
+  "name": "codesplitter",
   "main": "src/worker.ts",
   "compatibility_date": "2026-06-01",
   "compatibility_flags": [
@@ -143,7 +143,7 @@
     }
   ],
   "vars": {
-    "BETTER_AUTH_URL": "https://codesplitters.notryanquinn.workers.dev",
+    "BETTER_AUTH_URL": "https://codesplitter.notryanquinn.workers.dev",
     "ADMINS": "quinn",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFTyaxcLpAqRT0pg"
   },

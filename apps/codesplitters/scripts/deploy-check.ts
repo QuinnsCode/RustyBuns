@@ -20,7 +20,7 @@
 // the Cloudflare env above, a token scoped to Workers Scripts: Edit only.
 //
 //   CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... bun scripts/deploy-check.ts --hosted \
-//     --url https://codesplitters.notryanquinn.workers.dev --cookie '__Secure-better-auth.session_token=...'
+//     --url https://codesplitter.notryanquinn.workers.dev --cookie '__Secure-better-auth.session_token=...'
 //
 // It stores the key, deploys twice and checks the second updated the same Worker,
 // that the token never shows in the log, and that the deploy step's log grew while

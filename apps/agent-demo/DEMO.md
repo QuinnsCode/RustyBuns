@@ -7,7 +7,7 @@ coordination and conflicts, then ease of use.
 
 1. `cd apps/agent-demo && bun seed.ts`. It prints the repo link, the file link and three agent prompts.
 2. Open three terminals, each with Claude Code connected to codeSplitters
-   (`claude mcp add --transport http codesplitters https://codesplitters.notryanquinn.workers.dev/api/mcp`).
+   (`claude mcp add --transport http codesplitters https://codesplitter.notryanquinn.workers.dev/api/mcp`).
    Paste nothing yet.
 3. In the browser, open the file link (`src/tally.ts`) and sign in.
 

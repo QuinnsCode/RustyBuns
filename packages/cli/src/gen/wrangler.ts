@@ -2,7 +2,7 @@
 // RWSDK's Vite plugin (which reads wrangler.jsonc for local bindings) agrees
 // with what Alchemy deploys. Never hand-edit; edit the config.
 
-import type { DoMigration, QueueConsumer, RustyBunsConfig } from "../config.ts";
+import { workerName, type DoMigration, type QueueConsumer, type RustyBunsConfig } from "../config.ts";
 import { parseWrangler } from "../wrangler.ts";
 
 /**
@@ -59,7 +59,7 @@ export function generateWrangler(c: RustyBunsConfig, previous: string | null = n
   if (!c.worker) throw new Error("this config has no worker section (desktop-only app); there is no edge stack to generate");
   const w: Record<string, unknown> = {
     $schema: "node_modules/wrangler/config-schema.json",
-    name: c.name,
+    name: workerName(c),
     main: c.worker.main,
     compatibility_date: c.worker.compatibilityDate,
     compatibility_flags: c.worker.compatibilityFlags,

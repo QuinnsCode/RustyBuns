@@ -3,7 +3,7 @@
 // Cloudflare has no spend cap, so the rest is awareness; COSTS.md has the
 // account-side switches (Free plan, billing alerts) that actually cap a bill.
 
-import type { RustyBunsConfig } from "./config.ts";
+import { workerName, type RustyBunsConfig } from "./config.ts";
 import { boxDefaults, railwayDefaults } from "./box.ts";
 
 export interface Billable { what: string; kind: "fixed" | "usage"; note: string }
@@ -23,7 +23,7 @@ export function billables(c: RustyBunsConfig): Billable[] {
   const out: Billable[] = [];
   const edge = !!c.targets.edge || !c.targets.box;
   if (edge && c.worker) {
-    out.push({ what: `Cloudflare Worker "${c.name}"`, kind: "usage", note: "requests + CPU time" });
+    out.push({ what: `Cloudflare Worker "${workerName(c)}"`, kind: "usage", note: "requests + CPU time" });
     for (const [name, b] of Object.entries(c.bindings ?? {})) {
       if (b.type === "durable_object") out.push({ what: `Durable Object ${name}`, kind: "usage", note: "duration while awake: open sockets, timers, tick loops" });
       if (b.type === "d1") out.push({ what: `D1 ${name}`, kind: "usage", note: "rows read/written + storage" });

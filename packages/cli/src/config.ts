@@ -387,6 +387,21 @@ export interface RustyBunsConfig {
        * resources are replaced.
        */
       adopt?: boolean;
+      /**
+       * The Worker's name on Cloudflare, when it differs from the app's `name`
+       * (which also names the Alchemy state and the desktop's data dir, so it
+       * stays put). With `adopt` on, changing it replaces the Worker: Alchemy
+       * makes the new one, then deletes the old one and its workers.dev URL.
+       * @default name
+       */
+      workerName?: string;
+      /**
+       * The Worker's previous name, while renaming it with `workerName`. Each
+       * Durable Object it bound moves to the new Worker with its data
+       * (Cloudflare's `transferred_classes`). Container classes can't move:
+       * theirs start empty. Inert once the move is done, so it can stay.
+       */
+      renamedFrom?: string;
     };
     box?: BoxTarget;
     desktop?: DesktopTarget;
@@ -427,3 +442,6 @@ export interface RustyBunsConfig {
 }
 
 export function defineConfig(c: RustyBunsConfig): RustyBunsConfig { return c; }
+
+/** The Worker's name on Cloudflare: `targets.edge.workerName`, else the app's `name`. */
+export function workerName(c: Pick<RustyBunsConfig, "name" | "targets">): string { return c.targets.edge?.workerName ?? c.name; }
