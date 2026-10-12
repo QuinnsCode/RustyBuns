@@ -549,16 +549,24 @@ test("init: a Jekyll site's own defaults stay, after GitHub Pages' layouts; a Ge
   expect(gem.read("_config.rustybuns.yml")).not.toContain("defaults");
 });
 
-test("init: says when a Gemfile-less Jekyll site leans on GitHub Pages' other default plugins", () => {
-  const files = { "_config.yml": "exclude: [drafts]\n", "_layouts/default.html": "{{ content }}", "README.md": "# Docs\n\nRead [the guide](guide.md).\n", "guide.md": "# Guide\n", "drafts/wip.md": "# WIP\n", "_includes/x.md": "# x\n" };
+test("init: turns on the GitHub Pages default plugins a Gemfile-less Jekyll site leans on (#1123)", () => {
+  const files = { "_config.yml": "exclude: [drafts]\nplugins: [jekyll-feed]\n", "_layouts/default.html": "{{ content }}", "README.md": "# Docs\n\nRead [the guide](guide.md).\n", "guide.md": "# Guide\n", "drafts/wip.md": "# WIP\n", "_includes/x.md": "# x\n" };
   const pages = project(files);
   const out = pages.run("init").out;
-  expect(out).toMatch(/jekyll-optional-front-matter: .*\(guide\.md\)/);
-  expect(out).toMatch(/jekyll-relative-links: .*\(README\.md\)/);
-  expect(out).toMatch(/jekyll-readme-index: .*\(README\.md\)/);
-  expect(out).toContain(`gem "github-pages"`);
+  expect(out).toMatch(/jekyll-optional-front-matter, as on Pages: .*\(guide\.md\)/);
+  expect(out).toMatch(/jekyll-relative-links, as on Pages: .*\(README\.md\)/);
+  expect(out).toMatch(/jekyll-readme-index, as on Pages: .*\(README\.md\)/);
   expect(out).not.toContain("wip.md");
-  expect(project({ ...files, "Gemfile": "gem 'github-pages'\n" }).run("init").out).not.toContain("jekyll-relative-links");
+  const layer = (Bun as any).YAML.parse(pages.read("_config.rustybuns.yml"));
+  expect(layer.plugins).toEqual(["jekyll-feed", "jekyll-optional-front-matter", "jekyll-relative-links", "jekyll-titles-from-headings", "jekyll-readme-index"]);
+  expect(layer.gems).toBeUndefined();
+  // A site on the old `gems` key gets it too, since Jekyll lets it replace `plugins`.
+  const old = project({ ...files, "_config.yml": "gems: [jekyll-feed]\n" });
+  old.run("init");
+  expect((Bun as any).YAML.parse(old.read("_config.rustybuns.yml")).gems).toContain("jekyll-relative-links");
+  const gem = project({ ...files, "Gemfile": "gem 'github-pages'\n" });
+  expect(gem.run("init").out).not.toContain("jekyll-relative-links");
+  expect(gem.read("_config.rustybuns.yml")).not.toContain("plugins");
 });
 
 test("init --force: a wrangler.jsonc Rusty Buns generated doesn't hide the static site (#1113)", () => {

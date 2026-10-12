@@ -100,11 +100,23 @@ export function jekyllPagesPlugins(files: string[], read: (f: string) => string)
     if (!(fm && /^title\s*:/m.test(fm[1]!)) && /^\s*(#{1,6}[ \t]+\S|[^\n]+\r?\n(=+|-+)[ \t]*(\r?\n|$))/.test(body)) titles.push(f);
   }
   const hasIndex = (d: string) => files.some((f) => dir(f) === d && /^index\.(md|markdown|html?)$/i.test(f.split("/").pop()!));
-  const readmes = md.filter((f) => /^readme$/i.test(base(f)) && !hasIndex(dir(f)));
+  // As on GitHub, a README in a top-level docs/ is the root's index.
+  const readmes = md.filter((f) => /^readme$/i.test(base(f)) && !hasIndex(dir(f) === "docs" ? "" : dir(f)));
   return [
     { plugin: "jekyll-optional-front-matter", what: "Markdown with no front matter is copied raw here, not rendered", files: noMatter },
     { plugin: "jekyll-relative-links", what: "links to .md files 404 here, Pages points them at the .html", files: links },
     { plugin: "jekyll-titles-from-headings", what: "a page with no title takes its first heading on Pages, and has none here", files: titles },
     { plugin: "jekyll-readme-index", what: "a README is its folder's index on Pages, with no index.md; not here", files: readmes },
   ].filter((u) => u.files.length);
+}
+
+/**
+ * `plugins` for the layer, so a Gemfile-less build turns on the Pages plugins the site leans on, as Pages does.
+ * A layered config replaces a list rather than merging it, so the site's own plugins come first.
+ * Empty when there's nothing to add.
+ */
+export function jekyllPlugins(uses: PagesPluginUse[], own: unknown): string[] {
+  const mine = Array.isArray(own) ? own.map(String) : [];
+  const add = uses.map((u) => u.plugin).filter((p) => !mine.includes(p));
+  return add.length ? [...mine, ...add] : [];
 }
