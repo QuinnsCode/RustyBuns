@@ -16,7 +16,8 @@
 // phone that drops the request doesn't drop the run.
 //
 //   GET  /api/agents                                     which harnesses this machine can run
-//   POST /api/repos/:o/:r/agents {path, harness, task, model?, lines?}  start one; answers at once (202).
+//   POST /api/repos/:o/:r/agents {path, harness, task, model?, lines?}  start one; answers at once (202),
+//        with `busy` when open branches already rewrite its file or files its task names (#1163).
 //        With lines (ids), the run claims them: nobody else edits them till it's done.
 //   GET  /api/repos/:o/:r/agents?path=                   this file's runs (the repo's without path), newest first (owner only)
 //   POST /api/repos/:o/:r/agents/stop {ids?, path?, harness?, lines?}  stop the running ones that match all of these
@@ -57,6 +58,8 @@ import { text, type Doc } from "./lines.ts";
 import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
+import { dispatchHint } from "./branches.ts";
+import type { Busy } from "./merge-plan.ts";
 
 export interface Run {
   id: number;
@@ -98,6 +101,8 @@ export interface Run {
   handoff?: { at: number; why: string; over: Over; note: string; next?: number };
   /** It took over from run `from`, its task that run's note; `hops` handoffs into the task. */
   from?: number; hops?: number;
+  /** On the start's answer only (#1163): open branches already rewriting its file or the ones its task names. */
+  busy?: Busy[];
 }
 
 export interface Note { text: string; at: number }
@@ -239,8 +244,10 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     .bind(owner, repo, path, harness, task.trim().slice(0, 2000), model_, agent, Date.now(), lines?.length ? JSON.stringify({ lines: lines.slice(0, 5000) }) : null).first() as Row;
   await env.DB.prepare(`DELETE FROM agent_runs WHERE owner = ? AND repo = ? AND id NOT IN (SELECT id FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id DESC LIMIT ${KEEP})`)
     .bind(owner, repo, owner, repo).run();
+  // Heads up if an open branch is already rewriting its files: its batch will likely meet that one at merge.
+  const { busy } = await dispatchHint(env, owner, repo, task, [path]).catch(() => ({ busy: [] }));
   await launch(env, self, origin, row.id);
-  return json(toRun(row, env), 202);
+  return json({ ...toRun(row, env), ...(busy.length ? { busy } : {}) }, 202);
 }
 
 /** Starts run `id`: off the queue when hosted, in this process on the desktop. */

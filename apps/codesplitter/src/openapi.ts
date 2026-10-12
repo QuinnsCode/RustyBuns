@@ -327,11 +327,16 @@ const OPS: Record<string, Record<string, Op>> = {
       "Read it before merging a batch: merge a wave, then bring main into each branch of the next that names one of them in `after`, once.",
     ok: obj({ order: arr(str("a branch name")), held: arr(str("a branch its required checks hold")),
       waves: arr(arr(obj({ branch: str(), after: arr(obj({ branch: str("one it waits for"), files: arr(str("where they clash")), stacked: bool("it's built on that one") })) }))) }) } },
+  [`${repo}/dispatch-hint`]: { get: { id: "get_dispatch_hint", summary: "Before a task starts: its likely files, and the open branches already rewriting them", tag: "Branches",
+    description: "`files` is `paths` plus the repo's files the task's text names, whole or by a tail only one path ends in (`main.ts`, `src/main.ts`). " +
+      "`busy` lists the open branches that change any of them, the one sharing the most first. Their merges will likely meet the task's: hold it till they land, or open its branch on the first (start_branch with `parent`). start_agent's answer carries the same `busy`.",
+    query: { task: str("the task's text, an issue body say"), paths: str("files it will touch, comma separated") },
+    ok: obj({ files: arr(str()), busy: arr(obj({ branch: str(), files: arr(str("the task's files it changes")) })) }) } },
   [`${repo}/limits`]: { get: { id: "repo_limits", summary: "What this repo and you may do, and how close you are", tag: "Repos", ok: loose("{git, fresh, files, dig, you: [{label, used, max, window_s, on}]}") } },
   [`${repo}/agents`]: {
     get: { id: "list_agent_runs", summary: "A repo's coding-agent runs, newest first (owner only)", tag: "Agents", query: { path: str() }, ok: arr(loose("a run: {id, harness, task, status, …}")) },
     post: { id: "start_agent", summary: "Give a coding agent a task on a file (owner only)", tag: "Agents",
-      body: obj({ path: str(), harness: str("one GET /agents lists"), task: str(), model: str() }, ["path", "harness", "task"]), ok: loose("the run"), status: 202 },
+      body: obj({ path: str(), harness: str("one GET /agents lists"), task: str(), model: str() }, ["path", "harness", "task"]), ok: loose("the run, with `busy` when open branches already rewrite its file or ones its task names (get_dispatch_hint)"), status: 202 },
   },
   [`${repo}/agents/stop`]: { post: { id: "stop_agents", summary: "Stop running coding agents: by run, file, harness or the lines they claimed (owner only)", tag: "Agents", risky: true,
     description: "Every filter given must match; with none, every running agent on the repo stops. The CLI is killed (a hosted run's container destroyed within a few seconds), nothing more it does lands, and its claim on lines is lifted.",

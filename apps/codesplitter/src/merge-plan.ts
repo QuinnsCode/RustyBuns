@@ -5,6 +5,8 @@
 // codeSplitter's own merge (line ids, then the lint), not git's, so a pair it settles by itself
 // doesn't hold anything up. The route is GET /api/repos/:o/:r/merge-plan (branches.ts), and
 // scripts/merge-plan.ts replays real "merge main into the PR" fixes through it.
+// Before a task starts, taskFiles and busyOn say which open branches already rewrite its files
+// (#1163, GET .../dispatch-hint and the agent start's `busy`), so it can wait or stack on one.
 
 import { apply, merge, type Conflict, type Doc } from "./lines.ts";
 import { lintMerge } from "./lint.ts";
@@ -52,4 +54,31 @@ export function clashIn(path: string, main: Doc, first: Side, then: Side, rule?:
   const one = settle(path, main, first, rule);
   if (!one.after || settle(path, main, then, rule).conflicts.length) return [];
   return settle(path, one.after, then, rule).conflicts;
+}
+
+/**
+ * A task's files before it has any edits (#1163): the repo's paths its text names, whole (`src/main.ts`)
+ * or by a tail only one path ends in (`main.ts` when there's one, `two-fronts/src/main.ts` when there are
+ * several). A word with no dot or slash in it names nothing, so "main" isn't `main`.
+ */
+export function taskFiles(task: string, paths: string[]): string[] {
+  const out = new Set<string>();
+  for (const raw of task.match(/[\w@.\/-]+/g) ?? []) {
+    const word = raw.replace(/^\.\//, "").replace(/[.\/-]+$/, "");
+    if (!/[./]/.test(word)) continue;
+    const hits = paths.filter((p) => p === word || p.endsWith(`/${word}`));
+    if (hits.length === 1) out.add(hits[0]!);
+  }
+  return [...out].sort();
+}
+
+/** An open branch already rewriting some of a new task's files. */
+export interface Busy { branch: string; files: string[] }
+
+/** The open branches that change any of `files`, the one sharing the most first: what a new task would wait for, or stack on. */
+export function busyOn(files: string[], changed: { branch: string; path: string }[]): Busy[] {
+  const want = new Set(files), by = new Map<string, string[]>();
+  for (const c of changed) if (want.has(c.path)) by.set(c.branch, [...by.get(c.branch) ?? [], c.path]);
+  return [...by].map(([branch, f]) => ({ branch, files: [...new Set(f)].sort() }))
+    .sort((a, b) => b.files.length - a.files.length || a.branch.localeCompare(b.branch));
 }
