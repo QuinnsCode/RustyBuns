@@ -12,6 +12,14 @@ type Report = {
 };
 type Tally = Record<string, { passed: number; failed: number; skipped: number; failing: Set<string> }>;
 
+/** Bun-only failures we've looked into and aren't a gap, by test prefix, with why. */
+const KNOWN: Record<string, string> = {
+  // 0-4 of the fixture's WeakRefs outlive three gc() calls on Bun, in any mode, at any run count:
+  // 1,024 runs (64 MiB of history) end with 0 retained and the heap within 4 MiB of 4 runs (#983).
+  "src/orchestration-v2/ProviderTurnStartService.memory.test.ts >": "GC timing, not a leak (#983)",
+};
+const known = (test: string) => Object.entries(KNOWN).find(([prefix]) => test.startsWith(prefix))?.[1];
+
 /** Each runtime's totals and failing tests: "<file> > <test>", or "<file>" when the file itself failed. */
 export function tally(reports: Record<string, Report[]>): Tally {
   const out: Tally = {};
@@ -32,12 +40,15 @@ export function tally(reports: Record<string, Report[]>): Tally {
 
 export function summary(t: Tally): string {
   const node = t.node?.failing ?? new Set<string>(), bun = t.bun?.failing ?? new Set<string>();
-  const section = (title: string, s: string[]) =>
-    [`**${title} (${s.length})**`, s.length ? s.sort().map((x) => `- \`${x}\``).join("\n") : "none", ""];
+  const section = (title: string, s: string[], note = (_: string) => "") => [
+    `**${title} (${s.length})**`, s.length ? s.sort().map((x) => `- \`${x}\`${note(x)}`).join("\n") : "none", "",
+  ];
+  const bunOnly = [...bun].filter((x) => !node.has(x));
   return [
     "| Runtime | Passed | Failed | Skipped |", "|---|---|---|---|",
     ...Object.entries(t).map(([r, x]) => `| ${r} | ${x.passed} | ${x.failed} | ${x.skipped} |`), "",
-    ...section("Fail on Bun only", [...bun].filter((x) => !node.has(x))),
+    ...section("Fail on Bun only", bunOnly.filter((x) => !known(x))),
+    ...section("Known, on Bun only", bunOnly.filter(known), (x) => `: ${known(x)}`),
     ...section("Fail on Node only", [...node].filter((x) => !bun.has(x))),
     ...section("Fail on both", [...bun].filter((x) => node.has(x))),
   ].join("\n");
