@@ -154,7 +154,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: { id: "claim_lines", summary: "Claim lines so only you edit them, or renew your claim (the crew)", tag: "Files",
       description: "All or nothing: a 409 names the claims in the way, with `retryAfter` in seconds. An agent's claim is a 2-minute lease: renew it by claiming again with its `id` "
         + "(lines optional), or by editing with `claim`. It can't stand more than 30 minutes in all unless a person sends `extend`, "
-        + "and once it runs out there, you can't claim those lines again for 2 minutes (a 409 with `retryAfter`): work elsewhere. A person's hold stands till lifted. "
+        + "and once it ends there (or you release it in its last 2 minutes), you can't claim those lines again for 2 minutes (a 409 with `retryAfter`): work elsewhere. A person's hold stands till lifted. "
         + "Claim before a rewrite, send `claim` with your edits, and release it when you're done.",
       query: filePath, body: obj({ lines: arr(str("line id")), id: str("your claim's id: to renew it, or to name a new one"), task: str("what you're doing, shown to everyone"),
         ttl: int("ms till it lapses; an agent's defaults to 120000"), extend: bool("a person: give an agent's claim another 30 minutes past its cap") }), ok: ref("Claim") } },
