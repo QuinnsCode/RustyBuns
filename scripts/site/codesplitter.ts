@@ -206,14 +206,15 @@ function apiPages(api: Api, ref: string): Page[] {
 }
 
 // REFERENCE.md's "Features in detail": each `- **Lead.** …` bullet and `**Lead** …` paragraph is a
-// page, and so is each `###` under it (deploying, accounts, hosted deploys...).
+// page, and so is each `###` under it (deploying, accounts, hosted deploys...). The docs keep one
+// sentence per line (#935), so a line that starts in bold only starts a page after a blank line.
 function featurePages(reference: string): Page[] {
   const from = `${APP}/REFERENCE.md`;
   const section = reference.match(/\n## Features in detail\n([\s\S]*?)(?=\n## |$)/)?.[1] ?? "";
   const [blocks = "", ...subs] = section.split(/\n(?=### )/);
   const pages: Page[] = [];
   const seen = new Set<string>();
-  for (const block of blocks.split(/\n(?=- \*\*|\*\*)/)) {
+  for (const block of blocks.split(/\n(?=- \*\*)|\n\n(?=\*\*)/)) {
     const text = block.trim().replace(/^- /, "");
     const lead = text.match(/^\*\*(.+?)\*\*/)?.[1];
     if (!lead) continue;

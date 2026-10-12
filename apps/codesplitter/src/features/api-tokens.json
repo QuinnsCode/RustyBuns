@@ -1,0 +1,5 @@
+{
+  "icon": "key-round",
+  "title": "An API for outside agents",
+  "what": "An OpenAPI spec of every command, and personal API tokens that act as you, read-only or not, always expiring, never an admin."
+}

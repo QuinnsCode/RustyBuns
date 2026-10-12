@@ -1,0 +1,5 @@
+{
+  "icon": "git-graph",
+  "title": "A new way to think about a repo",
+  "what": "Not a pile of files and commits: living lines, each with its own author and history, that close back up as plain git whenever you like."
+}

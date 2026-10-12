@@ -1,0 +1,5 @@
+{
+  "icon": "eye-off",
+  "title": "Private lines in a public repo",
+  "what": "Hide some lines from everyone but the crew: on the page, in blame, in shares, and blank in git."
+}

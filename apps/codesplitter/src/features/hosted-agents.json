@@ -1,0 +1,5 @@
+{
+  "icon": "container",
+  "title": "Agents in their own containers",
+  "what": "On Cloudflare each agent run gets its own container, with only its own CLI's keys, stopped the moment it's done."
+}

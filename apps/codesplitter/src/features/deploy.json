@@ -1,0 +1,5 @@
+{
+  "icon": "rocket",
+  "title": "Deploy for real",
+  "what": "Ship the repo's stack to a stage you pick. Only a person ships; agents never start a deploy."
+}

@@ -1,0 +1,5 @@
+{
+  "icon": "bot",
+  "title": "Put a coding agent on a file",
+  "what": "claude, codex, pi or opencode edit a file, and their lines land live, blamed on the agent."
+}

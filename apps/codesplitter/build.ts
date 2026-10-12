@@ -2,6 +2,7 @@
 // the pages: the site, the game, the feature list the home page's strip reads, the API reference and the MCP page. No framework.
 import { mkdir, copyFile, readFile, writeFile } from "node:fs/promises";
 import { headersFile, inlineScriptHashes } from "./src/security.ts";
+import { features } from "./features.ts";
 
 await mkdir("dist/client", { recursive: true });
 await copyFile("src/client.html", "dist/client/index.html");
@@ -12,7 +13,8 @@ await copyFile("src/city.js", "dist/client/city.js");
 const qr = await Bun.build({ entrypoints: ["src/qr.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "qr.js" });
 if (!qr.success) { for (const l of qr.logs) console.error(l); process.exit(1); }
 await copyFile("src/features.html", "dist/client/features.html");
-await copyFile("src/features.json", "dist/client/features.json");
+// Built from src/features/, one file per feature (features.ts).
+await writeFile("dist/client/features.json", JSON.stringify(features()) + "\n");
 // Not api.html: Cloudflare serves that at /api, over the Worker's JSON.
 await copyFile("src/api.html", "dist/client/reference.html");
 await copyFile("src/mcp.html", "dist/client/mcp.html");

@@ -1,0 +1,5 @@
+{
+  "icon": "vault",
+  "title": "Deploy keys that never come back out",
+  "what": "Write-only, sealed in D1 under AES-GCM, shown only by their last 4, scrubbed from output, and kept from agent containers."
+}

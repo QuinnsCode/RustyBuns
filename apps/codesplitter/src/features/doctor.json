@@ -1,0 +1,5 @@
+{
+  "icon": "stethoscope",
+  "title": "The dependency doctor",
+  "what": "Proposes safe updates on a branch, tests them in a throwaway clone, and runs your on-fail chain on what broke: retry, AI fix, web search, hold back, roll back, alert. Rank the packages you care about and clashes settle by rule. Dig for a future release to try it the day it's out. Optionally it checks what passed with a preview deploy, then tears it down."
+}

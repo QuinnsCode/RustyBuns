@@ -9,7 +9,7 @@
 <style>
   /* Every feature on one page, in the order the home page's strip shows them.
      Drag a card (or use its arrows) to reorder, then copy the result over
-     src/features.json. The order lives only in this browser until you do. */
+     src/features/order.txt. The order lives only in this browser until you do. */
   :root { --bg: #fff; --canvas: #fafafa; --border: #e6e6e6; --border-2: #cfcfcf; --fg: #0a0a0a; --muted: #6b6b6b; --faint: #737373; --accent: #e8590c; --accent-soft: #fff4ec; --paper: #fcfbf8;
     --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
   * { box-sizing: border-box; }
@@ -46,11 +46,11 @@
 <div class="wrap">
   <a class="label" href="/">← codeSplitter</a>
   <h1>Every feature, <em>in order</em>.</h1>
-  <p>This is the order the strip on the home page shows them. Drag a card, or use its arrows, to move it. When it reads right, press “Copy features.json” and paste it over <code>src/features.json</code>.</p>
+  <p>This is the order the strip on the home page shows them. Drag a card, or use its arrows, to move it. When it reads right, press “Copy order.txt” and paste it over <code>src/features/order.txt</code>. Each feature’s words are its own file in <code>src/features/</code>.</p>
   <div class="bar">
     <span class="muted" id="state"></span><span class="grow"></span>
     <button class="btn" id="reset" type="button"><i data-lucide="rotate-ccw"></i>Back to the shipped order</button>
-    <button class="btn primary" id="copy" type="button"><i data-lucide="clipboard-copy"></i>Copy features.json</button>
+    <button class="btn primary" id="copy" type="button"><i data-lucide="clipboard-copy"></i>Copy order.txt</button>
   </div>
   <ol id="list"></ol>
 </div>
@@ -88,8 +88,8 @@ list.addEventListener("click", (e) => { const b = e.target.closest("button[data-
 
 document.getElementById("reset").addEventListener("click", () => { items = [...shipped]; try { localStorage.removeItem(KEY); } catch {} draw(); });
 document.getElementById("copy").addEventListener("click", async () => {
-  const json = "[\n" + items.map((f) => "  " + JSON.stringify(f).replace(/":/g, '": ').replace(/,"/g, ', "').replace(/^\{/, "{ ").replace(/\}$/, " }")).join(",\n") + "\n]\n";
-  try { await navigator.clipboard.writeText(json); toast("Copied. Paste it over src/features.json"); }
+  const order = items.map((f) => f.id + "\n").join("");
+  try { await navigator.clipboard.writeText(order); toast("Copied. Paste it over src/features/order.txt"); }
   catch { toast("Couldn't reach the clipboard"); }
 });
 

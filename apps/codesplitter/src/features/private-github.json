@@ -1,0 +1,5 @@
+{
+  "icon": "key-square",
+  "title": "Private GitHub repos, on the desktop",
+  "what": "Dig up your own private repos with your GitHub login, passed to git for the one clone and never written into the repo."
+}

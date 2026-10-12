@@ -1,0 +1,5 @@
+{
+  "icon": "shield-alert",
+  "title": "Build changes get a second look",
+  "what": "A branch that touches package.json, lockfiles or deploy config waits for “I've read the build changes”."
+}

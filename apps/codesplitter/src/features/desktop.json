@@ -1,0 +1,5 @@
+{
+  "icon": "laptop",
+  "title": "Runs on a laptop too",
+  "what": "The same app runs as a desktop binary, with sqlite standing in for D1 and git on disk standing in for Artifacts."
+}

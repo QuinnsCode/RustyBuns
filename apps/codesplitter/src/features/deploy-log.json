@@ -1,0 +1,5 @@
+{
+  "icon": "scroll-text",
+  "title": "Every deploy on the record",
+  "what": "Who, which commit, which stage, the result and the end of its output, for the last 50 deploys and previews."
+}

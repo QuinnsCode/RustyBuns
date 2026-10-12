@@ -1,0 +1,5 @@
+{
+  "icon": "timer",
+  "title": "Rate limits that queue",
+  "what": "Over the cap, a dig waits its turn in line instead of failing, and finds you on your profile when it's done."
+}

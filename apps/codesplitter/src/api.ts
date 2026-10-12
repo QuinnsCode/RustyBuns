@@ -6,6 +6,8 @@
 // Paths: :o/:r is a repo's owner and name, :path a file's path in the repo (a query
 // parameter, since paths have slashes). A [bracketed] part is optional.
 
+import { SETTING_KEYS } from "./deps.ts";
+
 export interface Endpoint {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "WS";
   path: string;
@@ -268,7 +270,7 @@ export const GROUPS: Group[] = [
       { method: "PUT", path: "/api/repos/:o/:r/deploy/key[/:provider]", body: "{token, account_id?}", who: OWNER, does: "store a deploy key" },
       { method: "DELETE", path: "/api/repos/:o/:r/deploy/key[/:provider]", who: OWNER, does: "forget it" },
       { method: "GET", path: "/api/repos/:o/:r/deps", who: OWNER, does: "the dependency doctor's settings and last report, and the supply-chain watch's malicious-package hits in this repo" },
-      { method: "PUT", path: "/api/repos/:o/:r/deps", body: "{on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held, rank, preview, digs}", who: OWNER, does: "the doctor's settings, its on-fail chain for an update that breaks the tests, the packages ranked to settle clashes, and whether what passed is checked with a preview deploy first; its 🪏 digs: future releases to watch, try and take ([{name, target, take}])" },
+      { method: "PUT", path: "/api/repos/:o/:r/deps", body: `{${SETTING_KEYS.join(", ")}}`, who: OWNER, does: "the doctor's settings, its on-fail chain for an update that breaks the tests, the packages ranked to settle clashes, and whether what passed is checked with a preview deploy first; its 🪏 digs: future releases to watch, try and take ([{name, target, take}])" },
       { method: "POST", path: "/api/repos/:o/:r/deps/run", body: "{rank?}", who: OWNER, does: "check now; a rank settles clashes for this run only" },
       { method: "GET", path: "/api/watch", who: "anyone", does: "the supply-chain watch: each agent platform's status line, and (signed in) malicious-package hits in your repos" },
       { method: "GET", path: "/api/repos/:o/:r/hooks", who: OWNER, does: "the webhooks, each with its last delivery" },

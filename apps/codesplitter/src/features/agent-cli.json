@@ -1,0 +1,5 @@
+{
+  "icon": "square-terminal",
+  "title": "Agents from your shell",
+  "what": "bun agent.ts does what the Agent button does, so a script or another agent can drive one."
+}

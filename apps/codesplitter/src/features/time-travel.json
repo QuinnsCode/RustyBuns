@@ -1,0 +1,5 @@
+{
+  "icon": "history",
+  "title": "Time travel",
+  "what": "Replay a file to any edit it ever had, with blame per line."
+}

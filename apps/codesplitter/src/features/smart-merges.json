@@ -1,0 +1,5 @@
+{
+  "icon": "git-merge",
+  "title": "Merges that know the file",
+  "what": "A lockfile conflicts whole, a config key can't land twice, lines added beside deleted code are flagged, and the merged files must still build before they land. A branch carrying git's conflict markers, or a merge that leaves JSON, YAML or TOML unparseable, is refused."
+}

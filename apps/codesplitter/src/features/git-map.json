@@ -1,0 +1,5 @@
+{
+  "icon": "git-fork",
+  "title": "See who your repo listens to",
+  "what": "A git map wires upstream, your repo and its branches with curves: solid keeps listening, dashed was copied once. Under it, main's commits as dots: black upstream's, orange yours, tags on top. Click one to revert it or cherry-pick it."
+}

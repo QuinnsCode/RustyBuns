@@ -1,0 +1,5 @@
+{
+  "icon": "list-checks",
+  "title": "Test results in the gutter",
+  "what": "A cut's test run marks each test's line pass or fail, and every line a failure's stack points at."
+}

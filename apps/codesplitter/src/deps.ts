@@ -84,7 +84,7 @@
 // on the branch. Previews run on the desktop, with its logins.
 //
 //   GET  /api/repos/:o/:r/deps        settings and the last report (owner only)
-//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held, rank, preview, digs}
+//   PUT  /api/repos/:o/:r/deps        any of the settings in FIELDS
 //   POST /api/repos/:o/:r/deps/run    check now; {rank} ranks the packages for this run only
 
 import type { Doc, Op } from "./lines.ts";
@@ -107,12 +107,22 @@ const LEVELS: Level[] = ["patch", "minor", "major"];
 export type Step = "retry" | "fix" | "search" | "hold" | "rollback" | "alert";
 export const STEPS: Step[] = ["retry", "fix", "search", "hold", "rollback", "alert"];
 
+// A new setting is a line here, its line in FIELDS (below), a migration and its input on the page.
 export interface Settings {
-  on: boolean; every_hours: number; max_level: Level; min_age_days: number; ignore: string[]; run_tests: boolean; fix_with: Harness | null; fix_tries: number;
+  on: boolean;
+  every_hours: number;
+  max_level: Level;
+  min_age_days: number;
+  ignore: string[];
+  run_tests: boolean;
+  fix_with: Harness | null;
+  fix_tries: number;
   /** What happens to an update that broke the tests, in order, until a step works. */
   on_fail: Step[];
   /** Limits over one update's whole chain: test runs and agent tries, minutes, and dollars of AI. */
-  chain_tries: number; chain_minutes: number; chain_usd: number;
+  chain_tries: number;
+  chain_minutes: number;
+  chain_usd: number;
   /** Releases held back ("name@version"), which no run proposes again. */
   held: string[];
   /** The packages the owner cares about most, first first: in a clash, a higher one keeps its target. */
@@ -122,7 +132,6 @@ export interface Settings {
   /** 🪏 Future releases to watch, try, and maybe take. */
   digs: Dig[];
 }
-export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false, fix_with: null, fix_tries: 3, on_fail: ["fix"], chain_tries: 6, chain_minutes: 30, chain_usd: 2, held: [], rank: [], preview: false, digs: [] };
 /** How many packages a ranking holds. */
 export const MAX_RANKED = 20;
 
@@ -135,7 +144,10 @@ export const MAX_DIGS = 10;
 
 /** One dependency to move, in the package.json at `path` (the top one, or a workspace's). */
 export interface Update {
-  name: string; from: string; to: string; level: Level;
+  name: string;
+  from: string;
+  to: string;
+  level: Level;
   status: "kept" | "fixed" | "broke" | "untested" | "held" | "yielded";
   /** The last failing test output. */
   out?: string;
@@ -156,9 +168,18 @@ export interface Exposed { name: string; version: string; ids: string[]; path?: 
 /** A preview deploy the run made: which updates went up, and whether it deployed and answered (else which step failed). */
 export interface PreviewRun { id: string; stage: string; ok: boolean; names: string[]; url?: string; failed?: string; note?: string }
 export interface Report {
-  at: number; checked: number; updates: Update[]; exposed?: Exposed[]; previews?: PreviewRun[]; digs?: Dug[]; branch?: string; lock?: string; note?: string;
+  at: number;
+  checked: number;
+  updates: Update[];
+  exposed?: Exposed[];
+  previews?: PreviewRun[];
+  digs?: Dug[];
+  branch?: string;
+  lock?: string;
+  note?: string;
   /** The ranking this run settled clashes by, and whether it was this run's alone. */
-  rank?: string[]; once?: boolean;
+  rank?: string[];
+  once?: boolean;
 }
 
 /** A known vulnerability, and the versions that fix it (on each line it affects). */
@@ -1234,17 +1255,100 @@ const tail = (s: string) => s.trim().slice(-1500);
 
 // ---- settings, routes and the schedule ----------------------------------------
 
+/**
+ * One setting, declared once: its default, its dep_watches column (the key's own name unless
+ * `column` says), how a row's value reads back, and how a PUT's value is checked and stored
+ * (an error to answer with when it doesn't check out). The reader, the SQL and the API sketch
+ * are all built from FIELDS.
+ */
+interface Field<K extends keyof Settings> {
+  default: Settings[K];
+  column?: string;
+  read: (v: any) => Settings[K];
+  write: (v: unknown) => { value: unknown } | { error: string };
+}
+
+const list = (v: unknown) => v ? String(v).split(",").filter(Boolean) : [];
+const csv = (v: unknown) => (Array.isArray(v) ? v.map(String) : String(v ?? "").split(",")).map((x) => x.trim()).filter(Boolean);
+const flag = (v: unknown) => ({ value: v ? 1 : 0 });
+/** A whole number from min to max. */
+const count = (key: string, min: number, max: number) => (v: unknown) => {
+  const n = Math.round(Number(v));
+  return n >= min && n <= max ? { value: n } : { error: `${key}: ${min} to ${max}` };
+};
+
+const FIELDS: { [K in keyof Settings]: Field<K> } = {
+  on: { default: false, column: "enabled", read: Boolean, write: flag },
+  every_hours: { default: 24, read: Number, write: count("every_hours", 6, 24 * 30) },
+  max_level: {
+    default: "minor",
+    read: (v) => v,
+    write: (v) => LEVELS.includes(v as Level) ? { value: v } : { error: "max_level: patch, minor or major" },
+  },
+  min_age_days: { default: 3, read: Number, write: count("min_age_days", 0, 90) },
+  ignore: { default: [], read: list, write: (v) => ({ value: csv(v).join(",") }) },
+  run_tests: { default: false, read: Boolean, write: flag },
+  fix_with: {
+    default: null,
+    read: (v) => FIX_HARNESSES.includes(v) ? v : null,
+    write: (v) => !v ? { value: null } : FIX_HARNESSES.includes(v as Harness) ? { value: v } : { error: `fix_with: ${FIX_HARNESSES.join(", ")} or null` },
+  },
+  fix_tries: { default: 3, read: Number, write: count("fix_tries", 1, 5) },
+  on_fail: {
+    default: ["fix"],
+    read: (v) => list(v).filter((x): x is Step => STEPS.includes(x as Step)),
+    write: (v) => {
+      const steps = csv(v);
+      return steps.some((x) => !STEPS.includes(x as Step)) || new Set(steps).size !== steps.length
+        ? { error: `on_fail: each of ${STEPS.join(", ")} at most once, in order` } : { value: steps.join(",") };
+    },
+  },
+  chain_tries: { default: 6, read: Number, write: count("chain_tries", 1, 20) },
+  chain_minutes: { default: 30, read: Number, write: count("chain_minutes", 1, 120) },
+  chain_usd: {
+    default: 2,
+    read: Number,
+    write: (v) => {
+      const usd = Number(v);
+      return usd >= 0 && usd <= 50 ? { value: Math.round(usd * 100) / 100 } : { error: "chain_usd: 0 to 50" };
+    },
+  },
+  held: {
+    default: [],
+    read: list,
+    write: (v) => {
+      const held = csv(v);
+      return held.some((x) => !/^(@[^@/\s]+\/)?[^@\s]+@\d+\.\d+\.\d+(-[\w.-]+)?$/.test(x)) ? { error: "held: name@version, comma-separated" } : { value: held.join(",") };
+    },
+  },
+  rank: {
+    default: [],
+    read: list,
+    write: (v) => {
+      const rank = rankOf(v);
+      return rank ? { value: rank.join(",") } : { error: RANK_ERROR };
+    },
+  },
+  preview: { default: false, read: Boolean, write: flag },
+  digs: {
+    default: [],
+    read: (v) => parseDigs(v),
+    write: (v) => {
+      const digs = Array.isArray(v) ? v.map(digOf) : [null];
+      return digs.some((d) => !d) || digs.length > MAX_DIGS || new Set(digs.map((d) => d!.name)).size !== digs.length
+        ? { error: `digs: up to ${MAX_DIGS} of {name, target: "major", a version or a dist-tag, take}, one per package` } : { value: JSON.stringify(digs) };
+    },
+  },
+};
+const fields = Object.entries(FIELDS) as [keyof Settings, Field<keyof Settings>][];
+/** The settings a PUT takes, in order: the API reference's sketch of its body. */
+export const SETTING_KEYS = fields.map(([k]) => k);
+export const DEFAULTS = Object.fromEntries(fields.map(([k, f]) => [k, f.default])) as unknown as Settings;
+
 export async function settings(env: Env, owner: string, repo: string): Promise<Settings> {
   const r = await env.DB.prepare("SELECT * FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
   if (!r) return { ...DEFAULTS };
-  const list = (v: unknown) => v ? String(v).split(",").filter(Boolean) : [];
-  return {
-    on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: list(r.ignore), run_tests: !!r.run_tests,
-    fix_with: FIX_HARNESSES.includes(r.fix_with as Harness) ? r.fix_with as Harness : null, fix_tries: r.fix_tries,
-    on_fail: list(r.on_fail).filter((x): x is Step => STEPS.includes(x as Step)), chain_tries: r.chain_tries, chain_minutes: r.chain_minutes, chain_usd: r.chain_usd, held: list(r.held), rank: list(r.rank),
-    preview: !!r.preview,
-    digs: parseDigs(r.digs),
-  };
+  return Object.fromEntries(fields.map(([k, f]) => [k, f.read(r[f.column ?? k])])) as unknown as Settings;
 }
 
 /** The digs as stored (JSON), keeping only well-formed ones. */
@@ -1306,34 +1410,18 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
   if (!p[5] && req.method === "PUT") {
     const b = (await req.json()) as Partial<Settings>;
     const s = { ...(await settings(env, owner, repo)), ...b };
-    if (!LEVELS.includes(s.max_level)) return json({ error: "max_level: patch, minor or major" }, 400);
-    const every = Math.round(Number(s.every_hours)), age = Math.round(Number(s.min_age_days));
-    if (!(every >= 6 && every <= 24 * 30)) return json({ error: "every_hours: 6 to 720" }, 400);
-    if (!(age >= 0 && age <= 90)) return json({ error: "min_age_days: 0 to 90" }, 400);
-    const fixWith = s.fix_with || null, tries = Math.round(Number(s.fix_tries));
-    if (fixWith && !FIX_HARNESSES.includes(fixWith)) return json({ error: `fix_with: ${FIX_HARNESSES.join(", ")} or null` }, 400);
-    if (!(tries >= 1 && tries <= 5)) return json({ error: "fix_tries: 1 to 5" }, 400);
-    const csv = (v: unknown) => (Array.isArray(v) ? v.map(String) : String(v ?? "").split(",")).map((x) => x.trim()).filter(Boolean);
-    const ignore = csv(s.ignore).join(",");
-    const onFail = csv(s.on_fail);
-    if (onFail.some((x) => !STEPS.includes(x as Step)) || new Set(onFail).size !== onFail.length) return json({ error: `on_fail: each of ${STEPS.join(", ")} at most once, in order` }, 400);
-    const chainTries = Math.round(Number(s.chain_tries)), minutes = Math.round(Number(s.chain_minutes)), usd = Number(s.chain_usd);
-    if (!(chainTries >= 1 && chainTries <= 20)) return json({ error: "chain_tries: 1 to 20" }, 400);
-    if (!(minutes >= 1 && minutes <= 120)) return json({ error: "chain_minutes: 1 to 120" }, 400);
-    if (!(usd >= 0 && usd <= 50)) return json({ error: "chain_usd: 0 to 50" }, 400);
-    const held = csv(s.held);
-    if (held.some((x) => !/^(@[^@/\s]+\/)?[^@\s]+@\d+\.\d+\.\d+(-[\w.-]+)?$/.test(x))) return json({ error: "held: name@version, comma-separated" }, 400);
-    const rank = rankOf(s.rank);
-    if (!rank) return json({ error: RANK_ERROR }, 400);
-    const digs = Array.isArray(s.digs) ? s.digs.map(digOf) : [null];
-    if (digs.some((d) => !d) || digs.length > MAX_DIGS || new Set(digs.map((d) => d!.name)).size !== digs.length)
-      return json({ error: `digs: up to ${MAX_DIGS} of {name, target: "major", a version or a dist-tag, take}, one per package` }, 400);
+    const set: [column: string, value: unknown][] = [];
+    for (const [k, f] of fields) {
+      const w = f.write(s[k]);
+      if ("error" in w) return json({ error: w.error }, 400);
+      set.push([f.column ?? k, w.value]);
+    }
     if (s.on) {
       const others = await env.DB.prepare("SELECT COUNT(*) AS n FROM dep_watches WHERE owner = ? AND repo != ? AND enabled = 1").bind(owner, repo).first();
       if ((others?.n as number) >= MAX_WATCHED) return json({ error: `the doctor watches ${MAX_WATCHED} of your repos at most: turn it off on one first` }, 400);
     }
-    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ?, on_fail = ?, chain_tries = ?, chain_minutes = ?, chain_usd = ?, held = ?, rank = ?, preview = ?, digs = ? WHERE owner = ? AND repo = ?")
-      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, onFail.join(","), chainTries, minutes, Math.round(usd * 100) / 100, held.join(","), rank.join(","), s.preview ? 1 : 0, JSON.stringify(digs), owner, repo).run();
+    await env.DB.prepare(`UPDATE dep_watches SET ${set.map(([c]) => `${c} = ?`).join(", ")} WHERE owner = ? AND repo = ?`)
+      .bind(...set.map(([, v]) => v), owner, repo).run();
     return json(await settings(env, owner, repo));
   }
   if (p[5] === "run" && req.method === "POST") {

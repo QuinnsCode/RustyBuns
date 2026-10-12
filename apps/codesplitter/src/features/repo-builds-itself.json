@@ -1,0 +1,5 @@
+{
+  "icon": "refresh-ccw-dot",
+  "title": "A repo that builds itself",
+  "what": "Its code, its deploy config, its dependency doctor and its agents in one place: agents propose on branches, the doctor keeps it fresh, previews prove it, and your commit ships it."
+}

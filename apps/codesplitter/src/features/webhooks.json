@@ -1,0 +1,5 @@
+{
+  "icon": "webhook",
+  "title": "Webhooks for CI/CD",
+  "what": "GitHub-shaped JSON, signed with HMAC-SHA256, logged, and retried when it fails."
+}

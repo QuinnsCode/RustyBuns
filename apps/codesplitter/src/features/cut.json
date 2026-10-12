@@ -1,0 +1,5 @@
+{
+  "icon": "scissors",
+  "title": "Cut",
+  "what": "Some lines plus everything they use, as their own branch: run the tests, then merge the fix back."
+}

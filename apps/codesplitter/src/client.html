@@ -3429,7 +3429,28 @@ const views = {
     $("#dig-add").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addDigs(); } });
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target; addDigs();
-      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, preview: f.preview.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value, rank, digs }, "PUT"); toast("Saved"); }
+      // One setting per line, so two branches adding one each merge as plain line inserts.
+      const body = {
+        on: f.on.checked,
+        every_hours: +f.every_hours.value,
+        max_level: f.max_level.value,
+        min_age_days: +f.min_age_days.value,
+        ignore: f.ignore.value,
+        run_tests: f.run_tests.checked,
+        preview: f.preview.checked,
+        fix_with: f.fix_with.value ,
+        ,
+         null,
+        fix_tries: +f.fix_tries.value,
+        on_fail: chain,
+        chain_tries: +f.chain_tries.value,
+        chain_minutes: +f.chain_minutes.value,
+        chain_usd: +f.chain_usd.value,
+        held: f.held.value,
+        rank,
+        digs,
+      };
+      try { await api(base, body, "PUT"); toast("Saved"); }
       catch (err) { toast(err.message); }
     });
     const runNow = async (body) => {
@@ -5288,7 +5309,7 @@ function wireFoot() {
   });
 }
 
-// The home page's feature strip, from features.json (reorder it at /features.html).
+// The home page's feature strip, from features.json, which build.ts makes from src/features/ (reorder it at /features.html).
 // Three copies of the list side by side; whenever the scroll passes into the third
 // copy it jumps back one copy's width (and the same going left), so it never ends.
 // It drifts slowly on its own, and stops while the pointer or focus is on it.

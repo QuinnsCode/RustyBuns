@@ -1,0 +1,5 @@
+{
+  "icon": "terminal",
+  "title": "Clone it with plain git",
+  "what": "Every repo has a git clone line with a read token that lasts an hour."
+}
