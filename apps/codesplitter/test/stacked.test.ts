@@ -83,6 +83,23 @@ describe("a branch on a branch", () => {
     expect(text(await (await call("ana", "/api/repos/ana/lab/do/file?path=n.ts")).json() as Doc)).toBe("new");
   });
 
+  test("lists the files the branch under it made and deleted, its own rows winning (#1039)", async () => {
+    const { call, post } = await lab();
+    await post("ana", "/api/repos/ana/lab/files", { path: "old.ts", content: "old" });
+    await post("ana", "/api/repos/ana/lab/branches", { name: "a" });
+    await post("ana", "/api/repos/ana/lab/branches", { name: "b", parent: "a" });
+    const tree = async (branch?: string) => ((await (await call("ana", `/api/repos/ana/lab/tree?path=${branch ? `&branch=${branch}` : ""}`)).json()) as any).entries.map((e: any) => e.path).sort();
+    expect(await tree("b")).toEqual(["a.ts", "old.ts"]);
+    expect((await post("ana", "/api/repos/ana/lab/files", { path: "n.ts", content: "new", branch: "a" })).status).toBe(201);
+    expect((await call("ana", "/api/repos/ana/lab/branches/a/files?path=old.ts", { method: "DELETE" })).status).toBe(200);
+    expect(await tree("b")).toEqual(["a.ts", "n.ts"]);
+    // B deleting A's new file wins over A having it.
+    expect((await call("ana", "/api/repos/ana/lab/branches/b/files?path=n.ts", { method: "DELETE" })).status).toBe(200);
+    expect(await tree("b")).toEqual(["a.ts"]);
+    expect(await tree("a")).toEqual(["a.ts", "n.ts"]);
+    expect(await tree()).toEqual(["a.ts", "old.ts"]);
+  });
+
   test("merges oldest first in one go, the one under it first", async () => {
     const { post, file, set } = await lab();
     await post("ana", "/api/repos/ana/lab/branches", { name: "a" });
