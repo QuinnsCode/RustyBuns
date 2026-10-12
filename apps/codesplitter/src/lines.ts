@@ -161,6 +161,8 @@ export function kindOf(path: string): Kind {
  *   JSON, YAML, TOML) the merge would define twice is a conflict; and in code,
  *   lines added right next to lines the other side deleted are a conflict too
  *   (the deleted lines may be what the new ones use). Prose is left loose.
+ * - a merge that would bring git's conflict markers into main, or leave a
+ *   JSON file that won't parse (see broken).
  *
  * Other new lines never conflict: each goes after the nearest line before it
  * that main still has. Inserts are given the ids main will assign them, so
@@ -317,7 +319,38 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
     }
   }
   if (kind === "keyed") twiceKeyed(main, branch, ops, by, conflicts, resolve, deleter, path);
+  conflicts.push(...broken(main, branch, ops, by, path, resolve, !conflicts.length));
   return { ops, by, conflicts };
+}
+
+/** A line that opens or closes a git conflict. `=======` alone is a markdown heading's underline too, so it doesn't count. */
+export const MARKER = /^(<{7}|>{7})( |$)/;
+
+/**
+ * What a merge won't call clean (#934), as `lint:` conflicts the branch's pick
+ * lands anyway: conflict markers it would bring into main (a half-done merge
+ * on the branch, like the one #884 committed into features.json), and, once
+ * every line is settled (`whole`), a JSON file both sides parse that the
+ * merged text doesn't. Markers main has already are CI's to catch
+ * (scripts/conflict-markers.ts), not every branch's.
+ */
+function broken(main: Doc, branch: Doc, ops: Op[], by: string[], path: string, resolve: Resolve, whole: boolean): Conflict[] {
+  if (!ops.length) return [];
+  const merged = structuredClone(main);
+  if (!apply(merged, ops, by, 0, main.rev).ok) return [];
+  const was = new Map(main.lines.map((l) => [l.id, l.text])), out: Conflict[] = [];
+  const marks = merged.lines.flatMap((l, i) => MARKER.test(l.text) && was.get(l.id) !== l.text ? [i + 1] : []);
+  if (marks.length && resolve["lint:markers"] !== "branch") out.push({ line: "lint:markers", base: "", main: null, branch: null, lint: `the branch has git's conflict markers in it (line ${marks.join(", ")})` });
+  if (whole && /\.json$/i.test(path) && resolve["lint:json"] !== "branch" && jsonError(text(main)) === null && jsonError(text(branch)) === null) {
+    const why = jsonError(text(merged));
+    if (why !== null) out.push({ line: "lint:json", base: "", main: null, branch: null, lint: `merged, it isn't valid JSON (${why})` });
+  }
+  return out;
+}
+
+/** Why `s` isn't JSON, or null when it is. */
+export function jsonError(s: string): string | null {
+  try { JSON.parse(s); return null; } catch (e) { return (e as Error).message; }
 }
 
 /**

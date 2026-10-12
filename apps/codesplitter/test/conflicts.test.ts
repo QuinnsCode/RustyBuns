@@ -7,6 +7,7 @@ import { markers, settled } from "../src/conflict-agent.ts";
 import { parseResolve } from "../src/branches.ts";
 import { local as boot } from "../src/local.ts";
 import type { Exec } from "../src/agent-run.ts";
+import type { Tester } from "../src/deps.ts";
 
 // End to end (in-process D1 and file DOs): fine alone, slow on a busy machine.
 setDefaultTimeout(20_000);
@@ -230,6 +231,30 @@ describe("settled without asking (#933)", () => {
   });
 });
 
+describe("refused, not merged clean (#934)", () => {
+  const MARKED = ["a", "<<<<<<< HEAD", "b", "=======", "c", ">>>>>>> origin/main", "d"].join("\n");
+
+  test("the branch's conflict markers are a conflict; settled as the branch they land, and main's own don't hold it", () => {
+    const s = sides("a\nd", "a\nd", MARKED);
+    expect(conflicts(s, "notes.md")).toEqual([{ line: "lint:markers", base: "", main: null, branch: null, lint: "the branch has git's conflict markers in it (line 2, 6)" }]);
+    expect(explain(conflicts(s, "notes.md")[0]!).choices).toEqual(["main", "branch"]);
+    expect(text(settle(s, { "lint:markers": "branch" }, "notes.md"))).toBe(MARKED);
+    // `=======` alone is a heading's underline.
+    expect(conflicts(sides("a", "a", "Title\n=======\na"), "notes.md")).toEqual([]);
+    // Markers main already has are CI's to catch, not this merge's.
+    expect(conflicts(sides(MARKED, MARKED, MARKED + "\ne"), "notes.md")).toEqual([]);
+  });
+
+  test("a JSON file both sides parse that the merge doesn't", () => {
+    const s = sides("[\n  1\n]", "[\n  1,\n  2\n]", "[\n  1,\n  3\n]");
+    expect(conflicts(s, "list.json")).toMatchObject([{ line: "lint:json", lint: expect.stringContaining("merged, it isn't valid JSON") }]);
+    expect(conflicts(s, "list.txt")).toEqual([]);
+    expect(text(settle(s, { "lint:json": "branch" }, "list.json"))).toBe("[\n  1,\n  2\n  3\n]");
+    // A file that didn't parse to begin with (comments in a tsconfig) isn't held for it.
+    expect(conflicts(sides("// c\n[\n  1\n]", "// c\n[\n  1,\n  2\n]", "// c\n[\n  1,\n  3\n]"), "tsconfig.json")).toEqual([]);
+  });
+});
+
 describe("over the API", () => {
   /** ana's repo r: a.ts with `x(1)` on main changed to `x(2)` and on branch b1 to `x(3)`. */
   async function app() {
@@ -281,7 +306,7 @@ describe("over the API", () => {
     expect((await ask("bob", { path: "a.ts", line: "L2", harness: "claude" })).status).toBe(403);
     const r = await ask("ana", { path: "a.ts", line: "L2", harness: "claude" });
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ path: "a.ts", line: "L2", harness: "claude", text: "x(2);\nx(3);" });
+    expect(await r.json()).toEqual({ path: "a.ts", line: "L2", harness: "claude", text: "x(2);\nx(3);", ok: true, tests: "skipped: the doctor doesn't run this repo's tests here (its run tests setting)" });
     expect(seen).toBe("<<<<<<< main\nx(2);\n||||||| base\nx(1);\n=======\nx(3);\n>>>>>>> branch\n");
     // It sees main's lines around the conflict.
     expect(prompt).toContain("const a = 1;");
@@ -291,6 +316,32 @@ describe("over the API", () => {
     const same = await ask("ana", { path: "a.ts", line: "L2", harness: "claude" });
     expect(same.status).toBe(502);
     expect((await same.json() as any).error).toBe("claude left the conflict as it was");
+  });
+
+  test("the agent's answer is checked: it must parse, and the tests run with it in a throwaway clone (#934)", async () => {
+    const { call, post } = await app();
+    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "scripts": { "test": "bun test" }\n}' });
+    for (const path of ["a.ts", "package.json"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "main: count from two" });
+    let answer = "x(2", prompt = "";
+    call.env.AGENT_EXEC = (async (cmd, cwd) => { prompt = cmd.args.join(" "); writeFileSync(join(cwd, "RESOLVE.ts"), answer + "\n"); return { code: 0, out: "" }; }) as Exec;
+    const ask = async () => await (await post("ana", "/api/repos/ana/r/branches/b1/conflicts/agent", { path: "a.ts", line: "L2", harness: "claude" })).json() as any;
+
+    // Main's commit messages since the fork, so it knows why main changed the line.
+    const broken = await ask();
+    expect(prompt).toContain("main's commits to a.ts said:\n- main: count from two");
+    expect(broken).toMatchObject({ text: "x(2", ok: false, tests: "not run" });
+    expect(broken.failure).toStartWith("merged, it doesn't parse: ");
+
+    // Tests on: the clone gets the merged file, and a failing run comes back with the answer.
+    expect((await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ run_tests: true }) })).status).toBe(200);
+    const ran: Record<string, string>[] = [];
+    let pass = false;
+    call.env.DEPS_TESTER = (async (_remote: string, files: Record<string, string>) => { ran.push(files); return pass ? { ok: true, out: "1 pass" } : { ok: false, out: "1 fail: x is 2" }; }) as Tester;
+    answer = "x(2);\nx(3);";
+    expect(await ask()).toEqual({ path: "a.ts", line: "L2", harness: "claude", text: answer, ok: false, tests: "failed", failure: "1 fail: x is 2" });
+    expect(ran[0]).toEqual({ "a.ts": "const a = 1;\nx(2);\nx(3);" });
+    pass = true;
+    expect(await ask()).toMatchObject({ ok: true, tests: "passed" });
   });
 
   test("merge_clean_branches: branches on different lines all land, one that conflicts stays open", async () => {
