@@ -1,10 +1,17 @@
 // Draws a Battle in three.js and turns the keyboard and mouse into the hero's Input.
 // Third person: WASD to move, the mouse to look, click to fire, Q for an orbital strike where
-// you're aiming, E to climb into or out of a tank.
+// you're aiming, E to climb into or out of a vehicle.
 import * as THREE from "three";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
-import { forest, marine, tank, turret, wooka } from "./models.ts";
-import { DT, HALF, POST_RADIUS, STATS, STRIKE_RADIUS, TIME_LIMIT, facing, heroUnit, startBattle, step, type Input, type Unit } from "./sim.ts";
+import { forest, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
+import { DT, EYE, HALF, POST_RADIUS, STATS, STRIKE_RADIUS, TIME_LIMIT, TROOPERS, altitude, facing, heroUnit, startBattle, step, type Input, type Trooper, type Unit } from "./sim.ts";
+
+// The light, ground and stone of each map.
+const LOOKS = {
+  forest: { sky: 0x8fa48a, fog: [30, 190], ground: 0x3b4a26, stone: 0x9aa4ad },
+  canyon: { sky: 0xd9a77a, fog: [40, 220], ground: 0xa8663f, stone: 0x8e4f32 },
+  jungle: { sky: 0x5f7a55, fog: [18, 130], ground: 0x2c3a1c, stone: 0x6f7a5e },
+} as const;
 
 
 export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
@@ -15,20 +22,20 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   const scene = new THREE.Scene();
-  // The forest moon: green gloom, light coming down through the canopy.
-  scene.background = new THREE.Color(0x8fa48a);
-  scene.fog = new THREE.Fog(0x8fa48a, 30, 190);
+  // The forest moon: green gloom, light coming down through the canopy. The canyon is dust and
+  // red rock, the jungle closer and darker still.
+  const look = LOOKS[spec.sector === "canyon" || spec.sector === "jungle" ? spec.sector : "forest"];
+  scene.background = new THREE.Color(look.sky);
+  scene.fog = new THREE.Fog(look.sky, look.fog[0], look.fog[1]);
   const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 600);
   scene.add(new THREE.HemisphereLight(0xd6e8c4, 0x2f2a1a, 1.5));
   const sun = new THREE.DirectionalLight(0xfff1d0, 1.2);
   sun.position.set(40, 120, 30);
   scene.add(sun);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2.6, HALF * 2.6), new THREE.MeshLambertMaterial({ color: 0x3b4a26 }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2.6, HALF * 2.6), new THREE.MeshLambertMaterial({ color: look.ground }));
   ground.rotation.x = -Math.PI / 2;
   scene.add(ground);
-  forest(scene, b.trees, spec.seed, HALF);
-  let seed = spec.seed;
-  const r = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+  forest(scene, b.trees, spec.seed, HALF, spec.sector === "canyon" ? "none" : spec.sector === "jungle" ? "jungle" : "redwood");
 
   // Command posts: a ring on the ground and a flag in the side's colour.
   const posts = b.posts.map((p) => {
@@ -42,35 +49,27 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     scene.add(ring, pole, flag);
     return { ring, flag };
   });
-  // The sector's landmark sits by the defender's keep, the last post.
+  // The scenery the sim laid out, which blocks movement and sight: buildings, rock and the
+  // landmark by the defender's keep in the map's stone, low walls as sandbags.
   const keep = b.posts.at(-1)!;
-  const concrete = new THREE.MeshLambertMaterial({ color: 0x9aa4ad });
+  const concrete = new THREE.MeshLambertMaterial({ color: look.stone });
+  const stone = spec.sector === "capital" ? new THREE.MeshLambertMaterial({ color: 0xc9c2b2 }) : concrete;
+  const sandbags = new THREE.MeshLambertMaterial({ color: spec.sector === "canyon" ? 0x6b5a48 : 0x8a7d5c });
   const box = (w: number, h: number, d: number, x: number, z: number, mat: THREE.Material = concrete) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(x, h / 2, z);
     scene.add(m);
     return m;
   };
-  // Clear of the posts and the lane between the spawns, so the scenery never hides a fight,
-  // and off the redwoods, so no block stands in a trunk.
-  const clear = (x: number, z: number) =>
-    Math.abs(x) > 18 && b.posts.every((p) => Math.hypot(p.x - x, p.z - z) > POST_RADIUS + 10) && b.trees.every((t) => Math.hypot(t.x - x, t.z - z) > t.r + 9);
+  for (const k of b.blocks) box(k.w, k.h, k.d, k.x, k.z, k.h < EYE ? sandbags : stone);
+  // Then the trimmings, which are only for show.
   if (spec.sector === "shield") {
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 9, 12), concrete);
-    core.position.set(keep.x - 6, 4.5, keep.z - 6);
     const dome = new THREE.Mesh(new THREE.SphereGeometry(26, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7fd8ff, transparent: true, opacity: 0.12, depthWrite: false }));
     dome.position.set(keep.x, 0, keep.z);
-    scene.add(core, dome);
+    scene.add(dome);
   } else if (spec.sector === "capital") {
-    // City blocks of the seed's heights, and the palace behind its keep.
     ground.material.color.setHex(0x8d8a82);
-    const walls = new THREE.MeshLambertMaterial({ color: 0xc9c2b2 });
-    for (let i = 0; i < 40; i++) {
-      const x = (r() - 0.5) * HALF * 1.9, z = (r() - 0.5) * HALF * 1.9;
-      if (clear(x, z)) box(6 + r() * 8, 6 + r() * 22, 6 + r() * 8, x, z, walls);
-    }
-    box(22, 12, 10, keep.x, keep.z - 18, walls);
-    box(8, 24, 8, keep.x, keep.z - 18, walls);
+    box(8, 24, 8, keep.x, keep.z - 18, stone); // the palace's tower
   } else if (spec.sector === "spaceport") {
     // Landing pads round the first post, and the control tower by the keep.
     ground.material.color.setHex(0x9b9688);
@@ -81,24 +80,30 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       pad.position.set(pads.x + dx, 0.2, pads.z + dz);
       scene.add(pad);
     }
-    box(5, 22, 5, keep.x + 10, keep.z - 10);
-    box(10, 4, 10, keep.x + 10, keep.z - 10).position.y = 24;
-  } else {
-    // The anti-ship cannon: a turret base with its barrel cocked at the sky.
+    box(10, 4, 10, keep.x + 10, keep.z - 10).position.y = 24; // the tower's cab
+  } else if (spec.sector === "cannon") {
+    // The anti-ship cannon: its barrel cocked at the sky over the base.
     ground.material.color.setHex(0x8f7f62);
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(8, 10, 6, 16), concrete);
-    base.position.set(keep.x - 10, 3, keep.z - 12);
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.8, 30, 12), new THREE.MeshLambertMaterial({ color: 0x5b6067 }));
-    barrel.position.set(keep.x - 10, 16, keep.z - 6);
+    barrel.position.set(keep.x - 12, 16, keep.z - 22);
     barrel.rotation.x = -0.6;
-    scene.add(base, barrel);
+    scene.add(barrel);
+  } else if (spec.sector === "canyon") {
+    // A conveyor from the mine head's rig, and its tower.
+    box(2, 1, 30, keep.x + 12, keep.z + 4, sandbags).position.y = 6;
+    box(3, 16, 3, keep.x + 16, keep.z - 16);
+  } else if (spec.sector === "jungle") {
+    // The temple's stepped top.
+    box(14, 4, 9, keep.x, keep.z - 22).position.y = 14;
+    box(8, 4, 5, keep.x, keep.z - 22).position.y = 18;
   }
 
   // Units, by id. Each side looks like its faction, whichever end of the field it's on.
   const meshes = new Map<number, THREE.Group>();
   const makeMesh = (u: Unit) => {
     const f = spec.factions[u.side];
-    const g = u.kind === "tank" ? tank() : u.kind === "turret" ? turret(f) : f === "wooka" ? wooka(u.kind === "hero") : marine(u.kind === "hero");
+    const g = u.kind === "tank" ? tank() : u.kind === "walker" ? walker() : u.kind === "speeder" ? speeder() : u.kind === "gunship" ? gunship()
+      : u.kind === "turret" ? turret(f) : f === "wooka" ? wooka(u.kind === "hero") : marine(u.kind === "hero", (TROOPERS as string[]).includes(u.kind) ? (u.kind as Trooper) : "assault");
     g.userData.last = { x: u.x, z: u.z };
     scene.add(g);
     return g;
@@ -162,6 +167,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
+    const riding = b.hero.inVehicle === null ? null : b.units.find((u) => u.id === b.hero.inVehicle);
     const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${s === mine ? "You" : "Enemy"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
     hud.innerHTML = `
       <div class="b-top">${bar(mine)}
@@ -172,10 +178,10 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         ${hero ? `<div class="hp"><i style="width:${(100 * hero.hp) / hero.maxHp}%"></i></div>` : `<div class="respawn">${b.hero.lives > 0 ? `Back in ${Math.ceil(b.hero.respawn)}s` : "Your hero is down"}</div>`}
         <span title="Lives">♥ ${b.hero.lives}</span>
         <span title="Orbital strikes (Q)">☄ ${b.strikesLeft[mine]}</span>
-        ${b.hero.inTank !== null ? `<span title="Driving a tank (E to get out)">▣</span>` : ""}
+        ${riding ? `<span title="Driving a ${riding.kind} (E to get out)">▣</span>` : ""}
       </div>
       <ul class="b-feed">${b.events.slice(-5).map((e) => `<li>${e}</li>`).join("")}</ul>
-      ${document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E tank · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
+      ${document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
   };
 
   return new Promise((resolve) => {
@@ -202,19 +208,20 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         seen.add(u.id);
         let m = meshes.get(u.id);
         if (!m) meshes.set(u.id, (m = makeMesh(u)));
-        m.position.set(u.x, 0, u.z);
+        m.position.set(u.x, altitude(u), u.z);
         m.rotation.y = u.yaw;
         // Wooka bounce when they run; Marine antennas wobble, more so on the move.
         const last = m.userData.last as { x: number; z: number }, moving = Math.hypot(u.x - last.x, u.z - last.z) > 0.01;
         last.x = u.x; last.z = u.z;
         const t = now / 1000 + u.id;
         if (m.userData.bob) m.userData.bob.position.y = moving ? Math.abs(Math.sin(t * 13)) * 0.14 : 0;
+        for (const [i, leg] of ((m.userData.legs ?? []) as THREE.Group[]).entries()) leg.rotation.x = moving ? Math.sin(t * 4 + i * Math.PI) * 0.35 : 0;
         if (m.userData.club) m.userData.club.rotation.x = -0.6 + (u.cool > STATS.wooka.cool - 0.2 ? -1.2 : 0);
         for (const [i, a] of ((m.userData.antennas ?? []) as THREE.Group[]).entries()) {
           a.rotation.z = Math.sin(t * (5 + i) + i) * (moving ? 0.18 : 0.05);
           a.rotation.x = Math.cos(t * (4 + i)) * (moving ? 0.12 : 0.03);
         }
-        m.visible = !(u.kind === "hero" && b.hero.inTank !== null);
+        m.visible = !(u.kind === "hero" && b.hero.inVehicle !== null);
       }
       for (const [id, m] of meshes) if (!seen.has(id)) { scene.remove(m); meshes.delete(id); }
       posts.forEach((p, i) => {
@@ -225,7 +232,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       const pts: number[] = [];
       let nb = 0;
       for (const f of b.fx) {
-        if (f.kind === "shot") pts.push(f.x, 1.4, f.z, f.tx, 1.2, f.tz);
+        if (f.kind === "shot") pts.push(f.x, (f.y ?? 0) + 1.4, f.z, f.tx, (f.ty ?? 0) + 1.2, f.tz);
         else { const m = pooled(blasts, nb++, () => new THREE.Mesh(blastGeo, blastMat)); m.position.set(f.x, 1, f.z); m.scale.setScalar(f.t > 0.3 ? STRIKE_RADIUS : 3); }
       }
       for (let i = nb; i < blasts.length; i++) blasts[i]!.visible = false;
@@ -233,14 +240,15 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       b.strikes.forEach((s, i) => { const m = pooled(marks, i, () => { const x = new THREE.Mesh(markGeo, markMat); x.rotation.x = -Math.PI / 2; return x; }); m.position.set(s.x, 0.1, s.z); });
       for (let i = b.strikes.length; i < marks.length; i++) marks[i]!.visible = false;
 
-      // Third-person camera over the hero's shoulder (or the tank's), or over the spawn while down.
+      // Third-person camera over the hero's shoulder (or the vehicle's), or over the spawn while down.
       const hero = heroUnit(b);
-      const body = (b.hero.inTank !== null && b.units.find((u) => u.id === b.hero.inTank)) || hero;
+      const body = (b.hero.inVehicle !== null && b.units.find((u) => u.id === b.hero.inVehicle)) || hero;
       const at = body ?? { x: 0, z: heroSide === "attacker" ? 100 : -100 };
-      const back = body?.kind === "tank" ? 13 : 7, up = body?.kind === "tank" ? 6 : 3.2;
+      const [back, high] = !body || body.kind === "hero" ? [7, 3.2] : body.kind === "walker" ? [15, 10] : body.kind === "gunship" ? [18, 6] : [13, 6];
+      const up = high + (body ? altitude(body) : 0);
       const f = facing(yaw);
       camera.position.set(at.x - f.x * back * Math.cos(pitch) + -f.z * 1.2, up - Math.sin(pitch) * back, at.z - f.z * back * Math.cos(pitch) + f.x * 1.2);
-      camera.lookAt(at.x + f.x * 20, 1.6 + Math.sin(pitch) * 20, at.z + f.z * 20);
+      camera.lookAt(at.x + f.x * 20, (body ? altitude(body) : 0) + 1.6 + Math.sin(pitch) * 20, at.z + f.z * 20);
 
       renderer.render(scene, camera);
       if (now - hudAt > 100 || b.over) { drawHud(); hudAt = now; }

@@ -2,7 +2,7 @@
 // Models stand on y = 0 and face -z, the way yaw 0 faces in the sim.
 import * as THREE from "three";
 import type { Faction } from "./contract.ts";
-import type { Tree } from "./sim.ts";
+import type { Tree, Trooper } from "./sim.ts";
 
 const lambert = (color: number, extra: THREE.MeshLambertMaterialParameters = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
 const box = (w: number, h: number, d: number, m: THREE.Material, x = 0, y = 0, z = 0) => {
@@ -34,7 +34,9 @@ const M = {
   tip: lambert(0xff3b3b, { emissive: 0x801010 }),
 };
 
-export function marine(hero = false) {
+// Each class carries its kit: the heavy a rocket tube on the shoulder, the sniper a long rifle,
+// the engineer an orange toolbox on the pack. Assault troopers and the hero carry the standard gun.
+export function marine(hero = false, kit: Trooper = "assault") {
   const g = new THREE.Group(), trim = hero ? M.gold : M.trim;
   g.add(
     box(0.22, 0.85, 0.26, M.armour, -0.15, 0.43, 0), box(0.22, 0.85, 0.26, M.armour, 0.15, 0.43, 0),
@@ -65,6 +67,15 @@ export function marine(hero = false) {
     a.add(rod(0.02, h, M.armour, 0, h / 2, 0), ball(0.06, M.tip, 0, h, 0, 8));
     antennas.push(a);
     g.add(a);
+  }
+  if (kit === "heavy") {
+    const tube = rod(0.14, 1.5, M.gun, 0.45, 1.75, -0.1);
+    tube.rotation.x = Math.PI / 2;
+    g.add(tube, rod(0.16, 0.08, M.snorkel, 0.45, 1.75, -0.86).rotateX(Math.PI / 2));
+  } else if (kit === "sniper") {
+    g.add(box(0.06, 0.06, 1.3, M.gun, 0.4, 1.05, -1.05), box(0.08, 0.1, 0.3, M.glass, 0.4, 1.15, -0.5));
+  } else if (kit === "engineer") {
+    g.add(box(0.7, 0.4, 0.3, M.snorkel, 0, 1.0, 1.0), box(0.06, 0.06, 0.5, M.trim, -0.42, 0.95, -0.3));
   }
   g.userData = { antennas };
   return g;
@@ -154,6 +165,52 @@ export function tank() {
   return g;
 }
 
+// A two-legged walker: a cockpit box high on long legs that swing as it strides.
+export function walker() {
+  const g = new THREE.Group(), legs: THREE.Group[] = [];
+  for (const x of [-1.1, 1.1]) {
+    const leg = new THREE.Group();
+    leg.position.set(x, 5, 0);
+    leg.add(box(0.5, 2.6, 0.5, M.armour, 0, -1.3, 0), box(0.45, 2.6, 0.45, M.armour, 0, -3.5, 0.4), box(1.1, 0.3, 1.6, M.trim, 0, -4.85, 0.2));
+    legs.push(leg);
+    g.add(leg);
+  }
+  g.add(box(3, 2, 4, M.armour, 0, 6, 0), box(3.05, 0.15, 4.05, M.trim, 0, 6.6, 0), box(2.2, 0.5, 0.06, M.glass, 0, 6.3, -2.02));
+  for (const x of [-1.7, 1.7]) {
+    const gun = rod(0.16, 2.4, M.gun, x, 5.6, -1.6);
+    gun.rotation.x = Math.PI / 2;
+    g.add(gun);
+  }
+  g.userData = { legs };
+  return g;
+}
+
+// A speeder: a long, low bike that floats a metre up.
+export function speeder() {
+  const g = new THREE.Group();
+  g.add(
+    box(0.8, 0.5, 3.6, M.armour, 0, 1, 0.2), box(0.82, 0.08, 3.62, M.trim, 0, 1.25, 0.2),
+    box(1.6, 0.1, 0.6, M.armour, 0, 1.1, -1.9), box(0.5, 0.5, 0.8, M.pack, 0, 1.4, 1),
+    box(0.3, 0.15, 0.2, M.tip, 0, 1, 2.05),
+  );
+  return g;
+}
+
+// A gunship: a fat hull, stub wings with an engine pod each, a chin gun. The view flies it.
+export function gunship() {
+  const g = new THREE.Group();
+  g.add(
+    box(2.6, 2, 7, M.armour, 0, 0, 0), box(2.62, 0.15, 7.02, M.trim, 0, 0.7, 0),
+    box(2.2, 0.8, 0.06, M.glass, 0, 0.3, -3.52), box(8, 0.3, 2, M.armour, 0, 0.3, 0.6),
+    box(0.8, 1.5, 1.2, M.armour, 0, 1.4, 3.2),
+  );
+  for (const x of [-4, 4]) g.add(rod(0.6, 2.6, M.pack, x, 0.3, 0.6).rotateX(Math.PI / 2), ball(0.4, M.tip, x, 0.3, 1.95, 8));
+  const gun = rod(0.12, 1.6, M.gun, 0, -1.1, -2.8);
+  gun.rotation.x = Math.PI / 2;
+  g.add(gun);
+  return g;
+}
+
 export function turret(f: Faction) {
   const g = new THREE.Group();
   if (f === "wooka") {
@@ -176,25 +233,30 @@ export function turret(f: Faction) {
 }
 
 // --- The forest: redwood trunks you can't walk through, their crowns lost in the fog, ferns
-// and fallen logs underfoot. ---
-export function forest(scene: THREE.Scene, trees: Tree[], seed: number, half: number) {
+// and fallen logs underfoot. The jungle is the same idea, lower, greener and thicker. The canyon
+// floor has neither. ---
+export type Woods = "redwood" | "jungle" | "none";
+export function forest(scene: THREE.Scene, trees: Tree[], seed: number, half: number, woods: Woods = "redwood") {
+  if (woods === "none") return;
+  const jungle = woods === "jungle";
   let s = seed >>> 0;
   const r = () => ((s = (s * 1103515245 + 12345) >>> 0) / 4294967296);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), k = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
 
-  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.8, 1, 1, 12), lambert(0x6e3220), trees.length);
-  const crowns = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 8), lambert(0x22361c), trees.length * 3);
+  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.8, 1, 1, 12), lambert(jungle ? 0x4d4630 : 0x6e3220), trees.length);
+  const crowns = new THREE.InstancedMesh(jungle ? new THREE.SphereGeometry(1, 8, 6) : new THREE.ConeGeometry(1, 1, 8), lambert(jungle ? 0x1f4a1a : 0x22361c), trees.length * 3);
   trees.forEach((t, i) => {
-    const h = 70 + r() * 50;
+    const h = jungle ? 22 + r() * 18 : 70 + r() * 50;
     trunks.setMatrixAt(i, m.compose(p.set(t.x, h / 2, t.z), q.identity(), k.set(t.r, h, t.r)));
     for (let j = 0; j < 3; j++) {
       const y = h * (0.55 + j * 0.15);
-      crowns.setMatrixAt(i * 3 + j, m.compose(p.set(t.x, y, t.z), q.setFromAxisAngle(up, r() * 6), k.set(t.r * 4 - j, 14, t.r * 4 - j)));
+      crowns.setMatrixAt(i * 3 + j, m.compose(p.set(t.x, y, t.z), q.setFromAxisAngle(up, r() * 6), jungle ? k.set(t.r * 5, 4, t.r * 5) : k.set(t.r * 4 - j, 14, t.r * 4 - j)));
     }
   });
-  const ferns = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 0.6, 7), lambert(0x3f6b2a), 420);
-  for (let i = 0; i < 420; i++) {
+  const nFerns = jungle ? 900 : 420;
+  const ferns = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 0.6, 7), lambert(jungle ? 0x2f7a2a : 0x3f6b2a), nFerns);
+  for (let i = 0; i < nFerns; i++) {
     const sz = 0.6 + r() * 1.4;
     ferns.setMatrixAt(i, m.compose(p.set((r() - 0.5) * half * 2.2, 0.25 * sz, (r() - 0.5) * half * 2.2), q.setFromAxisAngle(up, r() * 6), k.set(sz * 1.4, sz, sz * 1.4)));
   }
