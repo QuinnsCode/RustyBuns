@@ -23,11 +23,11 @@ const LABEL: Record<Stack, string> = {
 
 /**
  * Frameworks `init` doesn't infer yet, and the issue tracking each: #318 for the ones with a
- * Cloudflare build (ranked in FRAMEWORKS.md), #404 for the webpack builds a Vite port would fix.
+ * Cloudflare build (ranked in FRAMEWORKS.md), #404 for CRA and Vue CLI (`init --port-vite`), #849 for custom webpack.
  */
 const TRACKED: Partial<Record<Stack, number>> = {
   next: 318, sveltekit: 318, "react-router": 318, nuxt: 318, solidstart: 318, qwik: 318, angular: 318, gatsby: 318,
-  cra: 404, "vue-cli": 404, webpack: 404,
+  cra: 404, "vue-cli": 404, webpack: 849,
 };
 const ISSUES = "https://github.com/QuinnsCode/RustyBuns/issues/";
 
@@ -138,8 +138,10 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
     issue = unsupported(stack)!.issue;
     reasons.push(stack === "react-router"
       ? "React Router: `rustybuns init` reads it when @cloudflare/vite-plugin builds it (Cloudflare's current template), not through cloudflareDevProxy or a Node server."
-      : TRACKED[stack] === 404
-        ? `${LABEL[stack]} builds with webpack; ported to Vite, \`rustybuns init\` reads it.`
+      : TRACKED[stack] === 404 || stack === "webpack"
+        ? stack === "webpack"
+          ? "A custom webpack build: ported to Vite by hand, `rustybuns init` reads it (`init --port-vite` lists what to port)."
+          : `${LABEL[stack]} builds with webpack: \`rustybuns init --port-vite\` ports it to Vite, then reads it.`
         : `${LABEL[stack]} has a Cloudflare build, but \`rustybuns init\` doesn't infer it yet.`);
   } else if (worker || fetchServer) {
     verdict = "ready";

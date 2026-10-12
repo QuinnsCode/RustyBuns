@@ -10,6 +10,7 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 - **Verified:** Astro 7 with @astrojs/cloudflare 14 (Oct 9: SSR, API route, KV through `cloudflare:workers`, compiled binary, Railway box bundle, deploy). With no adapter it is a static site and `init` writes an `spa` config. `init` adds the `IMAGES` binding the adapter's `/_image` uses unless `imageService` doesn't need it (`compile`, `passthrough`); on the desktop it passes the original image through (Oct 10: `/_image` served from a dev desktop build).
 - **Verified:** EmDash, Cloudflare's Astro CMS (Oct 12, blog-cloudflare template, emdash 1.2.0): `init` reads it as Astro and carries over its D1, R2 and cron. On a dev desktop build, setup seeds posts into D1 (sqlite) and images into R2 (a folder), and pages, RSS and `/_emdash/api/media/file/*` serve from them. Setup needs `EMDASH_SITE_URL`. Its sandboxed plugins need Worker Loader, which has no local twin (the template leaves it off). Edge and box are not verified yet.
 - **Verified:** React Router 7 on `@cloudflare/vite-plugin` (Oct 12, Cloudflare's `react-router-starter-template`): `init` reads it with no flags, and the dev desktop build serves SSR (a loader reading a wrangler var) and the client assets from `build/client`. The older `cloudflareDevProxy` setup, Remix v2 and the Node server are still refused.
+- **Verified:** Create React App and Vue CLI through `rustybuns init --port-vite` (Oct 12). It writes `vite.config.ts`, moves `public/index.html` to the root with a module script, maps `%PUBLIC_URL%` / `<%= BASE_URL %>`, `REACT_APP_*` / `VUE_APP_*` (`loadEnv` + `define`) and Vue's `@` alias, swaps the build scripts, then `init` goes on as a Vite app. It refuses to overwrite `vite.config.ts` or `index.html` without `--force`, and prints what's left by hand (`setupProxy.js`, `vue.config.js`, svgr, `~` imports). Two real apps, no source edits: Flame's client (CRA 5, React 17, TypeScript) and Yacht's frontend (Vue CLI 4, Vue 2 + Vuetify, bumped to Vue 2.7 for `@vitejs/plugin-vue2`). Both `vite build` with no `require()` left in the bundle, and `init` writes an `spa` config. On the way, the port learned to bump `@types/node` below 20 (Vite 7's peer, which stops `npm install`), bundle `require()` in `.tsx`/`.vue` files, and read `<template lang="html">`. Yacht's own install needed `--legacy-peer-deps` and a fresh lockfile (npm 10 crashes on its old one, ported or not). Neither was rendered against its backend. A custom webpack config gets a printed list of what to port.
 - **Still to verify:** every other framework below.
 
 ## Status key
@@ -35,7 +36,8 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | Angular | `worker` | `AngularAppEngine` fetch handler from `@angular/ssr` | `Cloudflare.Worker` + assets | 🔧 |
 | Next.js | `worker`, or sidecar | OpenNext `worker.js`; fallback: `standalone` server as a child process | `Cloudflare.Website.Nextjs` | ⏳ |
 | Gatsby | `spa` | none: a static site in `public/` | `Cloudflare.Worker` + assets | ⏳ |
-| CRA, Vue CLI, webpack | `spa` after a Vite port | none | same as Vite | ⏳ the port step |
+| CRA, Vue CLI | `spa` after `init --port-vite` | none | same as Vite | ✅ `init` (Flame, Yacht, Oct 12) |
+| custom webpack | `spa` after a Vite port by hand | none | same as Vite | ⏳ `init --port-vite` lists what to port |
 
 The server output paths in this table come from each framework's usual layout. Record the real path when you build each sample app.
 
@@ -54,7 +56,7 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 | 7 | Angular | `@angular/ssr`'s `AngularAppEngine` is a fetch handler, but 4 of 5 sampled apps serve it through Express. |
 | 8 | Next.js | OpenNext works, but it's the heaviest build, and both sampled apps carry native addons (`sharp`, Prisma). |
 | 9 | Gatsby | Static output only, so it fits the `spa` path. The top repos are mostly Gatsby itself or libraries, not apps. |
-| 10 | CRA, Vue CLI, webpack | Not a Cloudflare build: a Vite port comes first (#404). |
+| 10 | CRA, Vue CLI, webpack | CRA and Vue CLI done: `init --port-vite`. Custom webpack configs are ported by hand from the list it prints (#849). |
 
 ## The sample app contract
 

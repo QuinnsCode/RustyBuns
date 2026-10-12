@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { inferTsconfigAliases, detectPm } from "../src/glue/infer.ts";
 import { parseWranglerToml, droppedWranglerKeys } from "../src/wrangler.ts";
 import { workspaceRoot } from "../src/glue/deploy-deps.ts";
+import { viteConfig } from "../src/glue/port-vite.ts";
 
 const CLI = new URL("../src/index.ts", import.meta.url).pathname;
 
@@ -357,11 +358,105 @@ test("init: React Router on @cloudflare/vite-plugin runs its Worker build, on th
   expect(existsSync(join(node.dir, "rustybuns.config.ts"))).toBe(false);
 });
 
-test("init: a webpack app (CRA) is refused with the Vite port issue", () => {
-  const p = project({ "package.json": JSON.stringify({ name: "cra", dependencies: { react: "^18", "react-scripts": "5" } }), "bun.lock": "" });
+const CRA = {
+  "package.json": JSON.stringify({ name: "cra", dependencies: { react: "^18", "react-scripts": "5", "@types/node": "^16.11.6" },
+    scripts: { start: "react-scripts start", build: "react-scripts build", test: "react-scripts test" } }, null, 2),
+  "bun.lock": "",
+  "public/index.html": `<html>\n  <head><link rel="icon" href="%PUBLIC_URL%/favicon.ico" /></head>\n  <body>\n    <div id="root"></div>\n  </body>\n</html>\n`,
+  "src/index.js": `import App from "./App";\nconst Icon = require("./icon");\nrender(<App version={process.env.REACT_APP_VERSION} />);\n`,
+  "src/setupProxy.js": `module.exports = require("http-proxy-middleware");\n`,
+};
+
+test("init: a webpack app (CRA) is refused, pointing at --port-vite", () => {
+  const p = project(CRA);
   const r = p.run("init");
   expect(r.code).not.toBe(0);
-  expect(r.out).toMatch(/Create React App isn't supported yet \(.*issues\/404\)/);
+  expect(r.out).toMatch(/Create React App builds with webpack\. `rustybuns init --port-vite`.*issues\/404/);
+  expect(existsSync(join(p.dir, "vite.config.ts"))).toBe(false);
+});
+
+test("init --port-vite: CRA becomes a Vite app, then init goes on", () => {
+  const p = project(CRA);
+  const r = p.run("init", "--port-vite");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/ported to Vite/);
+  expect(r.out).toMatch(/todo: src\/setupProxy\.js/);
+  expect(r.out).toMatch(/detected: vite-react app "cra"/);
+  expect(existsSync(join(p.dir, "public/index.html"))).toBe(false);
+  const html = p.read("index.html");
+  expect(html).toContain('href="/favicon.ico"');
+  expect(html).toContain('    <script type="module" src="/src/index.js"></script>\n  </body>');
+  const cfg = p.read("vite.config.ts");
+  expect(cfg).toContain('loadEnv(mode, process.cwd(), "REACT_APP_")');
+  expect(cfg).toContain('loader: "jsx"');              // JSX in src/index.js
+  expect(cfg).toContain("transformMixedEsModules");   // require() in src/index.js
+  const pkg = JSON.parse(p.read("package.json"));
+  expect(pkg.scripts).toMatchObject({ start: "vite", build: "vite build", test: "react-scripts test", preview: "vite preview" });
+  expect(pkg.devDependencies).toMatchObject({ vite: expect.any(String), "@vitejs/plugin-react": expect.any(String) });
+  expect(pkg.dependencies["@types/node"]).toBe("^20.19.0");
+  expect(p.read("rustybuns.config.ts")).toContain("vite build --outDir dist/ui");
+});
+
+test("init --port-vite: Vue CLI 2 gets plugin-vue2, Vue 2.7, the @ alias and BASE_URL", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "yacht", dependencies: { vue: "^2.6.12" }, devDependencies: { "@vue/cli-service": "~4.4.0" },
+      scripts: { serve: "vue-cli-service serve", build: "vue-cli-service build", lint: "vue-cli-service lint" } }),
+    "bun.lock": "",
+    "public/index.html": `<html><head><title><%= htmlWebpackPlugin.options.title %></title><link rel="icon" href="<%= BASE_URL %>favicon.ico"></head>\n<body>\n  <div id="app"></div>\n  <!-- built files will be auto injected -->\n</body></html>\n`,
+    "src/main.js": `import App from "@/App";\n`,
+    "src/App.vue": `<template lang="html"><div /></template>\n`,
+    "vue.config.js": `module.exports = {\n  publicPath: "./",\n  devServer: {\n    proxy: { "/api": {} },\n  },\n};\n`,
+  });
+  const r = p.run("init", "--port-vite");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/vue\.config\.js isn't read: port publicPath, devServer by hand/);
+  expect(r.out).toMatch(/source:\s+src\/ \(vite, aliases @->src\)/);
+  const html = p.read("index.html");
+  expect(html).toContain("<title>yacht</title>");
+  expect(html).toContain('href="/favicon.ico"');
+  expect(html).not.toContain("auto injected");
+  expect(html).toContain('<script type="module" src="/src/main.js"></script>');
+  const cfg = p.read("vite.config.ts");
+  expect(cfg).toContain('from "@vitejs/plugin-vue2"');
+  expect(cfg).toContain('"process.env.BASE_URL"');
+  expect(cfg).toContain('".vue"]');
+  expect(cfg).toContain("template-lang-html");
+  const pkg = JSON.parse(p.read("package.json"));
+  expect(pkg.dependencies.vue).toBe("^2.7.16");
+  expect(pkg.scripts).toMatchObject({ serve: "vite", build: "vite build", lint: "vue-cli-service lint" });
+});
+
+test("port-vite: a Vue 3 app gets @vitejs/plugin-vue, and nothing it doesn't need", () => {
+  const cfg = viteConfig({ stack: "vue-cli" });
+  expect(cfg).toContain('import vue from "@vitejs/plugin-vue";');
+  expect(cfg).not.toMatch(/commonjsOptions|esbuild|template-lang-html/);
+});
+
+test("init --port-vite: never overwrites vite.config.ts or index.html without --force", () => {
+  const p = project({ ...CRA, "index.html": "mine" });
+  const r = p.run("init", "--port-vite");
+  expect(r.code).toBe(1);
+  expect(r.out).toMatch(/would overwrite index\.html/);
+  expect(p.read("index.html")).toBe("mine");
+  expect(existsSync(join(p.dir, "vite.config.ts"))).toBe(false);
+  expect(existsSync(join(p.dir, "public/index.html"))).toBe(true);
+  expect(p.run("init", "--port-vite", "--force").code).toBe(0);
+  expect(p.read("index.html")).toContain("/src/index.js");
+});
+
+test("init --port-vite: a custom webpack build gets the list of what to port, and nothing written", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "w", devDependencies: { webpack: "5" } }), "bun.lock": "",
+    "webpack.config.js": "new webpack.DefinePlugin({}); new HtmlWebpackPlugin(); new HtmlWebpackPlugin(); devServer: {}",
+  });
+  expect(p.run("init").out).toMatch(/--port-vite` lists what to port/);
+  const r = p.run("init", "--port-vite");
+  expect(r.code).toBe(1);
+  expect(r.out).toMatch(/DefinePlugin -> define/);
+  expect(r.out).toMatch(/several HtmlWebpackPlugin pages/);
+  expect(r.out).toMatch(/devServer\.proxy -> server\.proxy/);
+  expect(r.out).not.toMatch(/ProvidePlugin/);
+  expect(existsSync(join(p.dir, "vite.config.ts"))).toBe(false);
 });
 
 test("init: an rwsdk app's desktop build runs what its release build runs before vite (prisma generate)", () => {

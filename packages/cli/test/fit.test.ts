@@ -61,8 +61,8 @@ test("needs work: webpack builds point at the Vite port issue", () => {
   for (const d of [{ "react-scripts": "5" }, { "@vue/cli-service": "5" }, { webpack: "5" }] as Record<string, string>[]) {
     const f = fit({ pkg: pkg(d), files: [] });
     expect(f.verdict).toBe("needs-work");
-    expect(f.issue).toMatch(/issues\/404$/);
-    expect(f.reasons[0]).toContain("Vite");
+    expect(f.issue).toMatch(d.webpack ? /issues\/849$/ : /issues\/404$/);
+    expect(f.reasons[0]).toContain("--port-vite");
   }
   expect(fit({ pkg: pkg({ "@angular/core": "20" }), files: [] }).issue).toMatch(/issues\/318$/);
 });
