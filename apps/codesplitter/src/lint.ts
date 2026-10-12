@@ -9,6 +9,9 @@
 // Babel's parser, pure JavaScript, runs in the Worker; it reports
 // redeclarations itself. The undefined-name check is a scope walk over its
 // tree, types left out.
+//
+// An HTML file gets one check: an id on two elements (#1044, git-recon's two
+// head pickers, each side's in its own place, both kept).
 
 import { parse } from "@babel/parser";
 import { apply, text, type Conflict, type Doc, type Op, type Resolve } from "./lines.ts";
@@ -16,9 +19,11 @@ import { apply, text, type Conflict, type Doc, type Op, type Resolve } from "./l
 export interface Problem { key: string; message: string; line: number }
 
 const EXT = /\.([cm]?[jt]sx?)$/;
-export const lintable = (path: string) => EXT.test(path);
+const HTML = /\.html?$/i;
+export const lintable = (path: string) => EXT.test(path) || HTML.test(path);
 
 export function problems(path: string, source: string): Problem[] {
+  if (HTML.test(path)) return duplicateIds(source);
   const ext = path.match(EXT)?.[1] ?? "js";
   let ast: any;
   try {
@@ -62,6 +67,22 @@ export function lintMerge(path: string, main: Doc, branch: Doc, m: { ops: Op[]; 
   return newProblems(path, text(merged), text(main), text(branch))
     .filter((p) => resolve[`lint:${p.key}`] !== "branch")
     .map((p) => ({ line: `lint:${p.key}`, base: "", main: null, branch: null, lint: `${p.message} (line ${p.line})` }));
+}
+
+// An `id` attribute (not `data-id`), its value quoted either way or bare.
+const ID = /<[a-z][^>]*?\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
+
+/** Each id an HTML file gives a second element, at the line of the second. Comments don't count. */
+function duplicateIds(source: string): Problem[] {
+  const html = source.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, " "));
+  const seen = new Set<string>(), out: Problem[] = [];
+  for (const m of html.matchAll(ID)) {
+    const id = m[1] ?? m[2] ?? m[3]!;
+    if (!id) continue;
+    if (!seen.has(id)) { seen.add(id); continue; }
+    out.push({ key: `duplicate-id:${id}`, message: `\`id="${id}"\` is on two elements`, line: html.slice(0, m.index! + m[0].length).split("\n").length });
+  }
+  return out;
 }
 
 interface Scope { names: Set<string>; parent: Scope | null; fn: boolean }

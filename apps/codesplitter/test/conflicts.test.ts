@@ -5,6 +5,7 @@ import { apply, empty, explain, fromText, merge, mergeWords, parseError, text, t
 import { diffToOps } from "../src/sync.ts";
 import { markers, settled } from "../src/conflict-agent.ts";
 import { materializeOn, parseResolve } from "../src/branches.ts";
+import { lintMerge } from "../src/lint.ts";
 import { local as boot } from "../src/local.ts";
 import { toFile } from "../src/archive.ts";
 import type { Exec } from "../src/agent-run.ts";
@@ -290,6 +291,21 @@ describe("found in shadow mode (#1014)", () => {
     expect(conflicts(s, ".gitignore")).toMatchObject([{ main: "!.env.schema", branch: "!.env.schema", doubled: true }]);
     // What landed was git's, the line twice; main's place keeps it once.
     expect(text(settle(s, { [conflicts(s, ".gitignore")[0]!.line]: "main" }, ".gitignore"))).toBe(".env\n.env.*\n!.env.schema\n!.env.example\n.dev.vars");
+  });
+
+  test("#960's index.html: each side added a head picker in its own place; git conflicted, ours kept both, so a duplicate id is a lint conflict", () => {
+    const was = "<body>\n<header><h1>git-recon</h1></header>\n<main>\n<canvas id=\"map\"></canvas>\n</main>\n</body>";
+    const s = sides(was,
+      "<body>\n<header><h1>git-recon</h1></header>\n<main>\n<canvas id=\"map\"></canvas>\n<div class=\"heads-row\"><span>Head</span><div id=\"heads\" class=\"heads\"></div></div>\n</main>\n</body>",
+      "<body>\n<header><h1>git-recon</h1><div id=\"heads\" class=\"heads\" role=\"radiogroup\" aria-label=\"Head\"></div></header>\n<main>\n<canvas id=\"map\"></canvas>\n</main>\n</body>");
+    const m = merge(s.base, s.branch, s.main, {}, "bot", "index.html");
+    expect(m.conflicts).toEqual([]);
+    expect(lintMerge("index.html", s.main, s.branch, m)).toEqual([{ line: "lint:duplicate-id:heads", base: "", main: null, branch: null, lint: "`id=\"heads\"` is on two elements (line 5)" }]);
+    // Resolved `branch`, it lands as merged; an id both sides already had twice, or one in a comment, isn't new.
+    expect(lintMerge("index.html", s.main, s.branch, m, { "lint:duplicate-id:heads": "branch" })).toEqual([]);
+    const twice = sides("<p id=a></p>\n<p id=a></p>\n<!-- <i id='b'> -->", "<p id=a></p>\n<p id=a></p>\n<!-- <i id='b'> -->\n<i id='b'></i>", "<p data-id=\"b\" id=a></p>\n<p id=a></p>\n<!-- <i id='b'> -->");
+    const t = merge(twice.base, twice.branch, twice.main, {}, "bot", "page.htm");
+    expect(lintMerge("page.htm", twice.main, twice.branch, t)).toEqual([]);
   });
 });
 
