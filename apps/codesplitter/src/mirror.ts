@@ -60,6 +60,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { toFile } from "./archive.ts";
 import { fromDisk, toDisk } from "./agent-run.ts";
+import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { startChecks, upstreamMoved } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
@@ -127,7 +128,7 @@ export function gitIdentity() {
   return identity;
 }
 const authorEnv = (): Record<string, string> => {
-  const id = gitIdentity() ?? { name: "codesplitter", email: "codesplitters@codesplitters.local" };
+  const id = gitIdentity() ?? { name: "codesplitter", email: `${GIT_BOT}@${GIT_EMAIL_DOMAIN}` };
   return { GIT_AUTHOR_NAME: id.name, GIT_AUTHOR_EMAIL: id.email, GIT_COMMITTER_NAME: id.name, GIT_COMMITTER_EMAIL: id.email };
 };
 
@@ -929,7 +930,7 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   } finally { rmSync(idx, { force: true }); }
   if (parents.length === 1 && parents[0] === prev && tree === await must(["rev-parse", `${prev}^{tree}`], dir)) return json({ ref, commit: prev, pushed: false, took });
 
-  const message = `${name}, from codeSplitter${br.by === owner ? "" : `\n\nCo-authored-by: ${br.by} <${br.by}@codesplitters.local>`}`;
+  const message = `${name}, from codeSplitter${br.by === owner ? "" : `\n\nCo-authored-by: ${br.by} <${br.by}@${GIT_EMAIL_DOMAIN}>`}`;
   const c = await must(["commit-tree", tree, ...parents.flatMap((p) => ["-p", p]), "-m", message], dir, authorEnv());
   const p = await git(["push", "--porcelain", r.mirror_url, `${c}:${heads}`], dir, net);
   if (p.code) {
