@@ -64,6 +64,7 @@ If something goes wrong here:
 
 - **pnpm 10 holds back packages less than a day old.** Add `minimumReleaseAgeExclude: ["alchemy", "effect", "@effect/*", "@rustybuns/*"]` to `pnpm-workspace.yaml`.
 - **In a monorepo,** `add deploy`'s version overrides go in the workspace root's `package.json`. Bun, npm and yarn ignore them in a member package.
+- **`not logged in to Cloudflare` or `Cloudflare refused the API token`:** `plan`, `deploy` and `destroy` check the login before they build anything. Run `rustybuns login cloudflare`, or set a working `CLOUDFLARE_API_TOKEN` with its `CLOUDFLARE_ACCOUNT_ID`.
 - **Several Cloudflare accounts:** `rustybuns login cloudflare --profile <name>`, then pass `--profile <name>` to `plan` and `deploy`.
 - **CI:** set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and pass `--yes`.
 
