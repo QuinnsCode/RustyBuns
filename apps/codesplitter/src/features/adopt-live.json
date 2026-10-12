@@ -1,0 +1,5 @@
+{
+  "icon": "link",
+  "title": "Takes over what's already live",
+  "what": "Adopts an existing Worker and D1 by name, storage intact, instead of making new ones."
+}

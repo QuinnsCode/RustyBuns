@@ -1,0 +1,5 @@
+{
+  "icon": "eye",
+  "title": "Preview deploys",
+  "what": "Spin up a throwaway preview of the repo before anything ships, logged like every deploy."
+}

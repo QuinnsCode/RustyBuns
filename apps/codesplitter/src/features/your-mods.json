@@ -1,0 +1,5 @@
+{
+  "icon": "stamp",
+  "title": "Your mods, marked",
+  "what": "A fork says where it came from and at which commit. Every line you changed is marked; the rest are blamed on upstream."
+}

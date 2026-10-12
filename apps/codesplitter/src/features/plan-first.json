@@ -1,0 +1,5 @@
+{
+  "icon": "clipboard-list",
+  "title": "Plan first, always",
+  "what": "A deploy refuses unless you planned this exact config, lists every billable resource first, and won't start a big server unless you allow it."
+}

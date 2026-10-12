@@ -1,0 +1,5 @@
+{
+  "icon": "globe",
+  "title": "Buy into Rusty Buns, deploy all over",
+  "what": "One config ships the same app as a desktop binary, a Cloudflare Worker, and a server on Hetzner or Railway."
+}

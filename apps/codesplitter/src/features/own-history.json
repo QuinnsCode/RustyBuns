@@ -1,0 +1,5 @@
+{
+  "icon": "archive",
+  "title": "Own your git history",
+  "what": "Every line, author and rev is yours, in a real git repo you can clone anywhere. Nobody upstream gets a say."
+}

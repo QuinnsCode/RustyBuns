@@ -1,0 +1,5 @@
+{
+  "icon": "git-commit-vertical",
+  "title": "Ship when you commit",
+  "what": "Turn it on and your own commits to main deploy. A commit mid-deploy ships once more afterwards."
+}

@@ -1,0 +1,5 @@
+{
+  "icon": "fingerprint",
+  "title": "Secrets from 1Password, behind Touch ID",
+  "what": "Deploy secrets come through varlock straight into the Worker. The repo commits names and references, never values."
+}

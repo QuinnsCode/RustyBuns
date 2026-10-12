@@ -1,0 +1,5 @@
+{
+  "icon": "flag",
+  "title": "Production is a choice",
+  "what": "A stack that takes over live resources only ships once the owner marks the repo as production."
+}

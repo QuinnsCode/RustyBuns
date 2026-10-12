@@ -1,0 +1,5 @@
+{
+  "icon": "feather",
+  "title": "Big repos, small bills",
+  "what": "A file only becomes a Durable Object when someone opens it, and a commit pushes only what changed: one edited line costs one blob."
+}

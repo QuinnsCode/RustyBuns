@@ -1,0 +1,5 @@
+{
+  "icon": "command",
+  "title": "One command palette, one API",
+  "what": "Press ⌘K. Every action is one API call, shown next to it, so people and agents do the same things the same way."
+}

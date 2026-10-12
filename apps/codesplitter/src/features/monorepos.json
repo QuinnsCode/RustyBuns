@@ -1,0 +1,5 @@
+{
+  "icon": "folder-tree",
+  "title": "Monorepos welcome",
+  "what": "Point deploys and previews at the app's own folder inside a bigger repo."
+}

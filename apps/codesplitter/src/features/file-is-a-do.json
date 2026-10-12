@@ -1,0 +1,5 @@
+{
+  "icon": "box",
+  "title": "A file is a Durable Object",
+  "what": "Each file has one writer, so every edit from every person and agent lands in one order."
+}

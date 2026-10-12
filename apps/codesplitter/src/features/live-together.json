@@ -1,0 +1,5 @@
+{
+  "icon": "pencil-line",
+  "title": "Edit live, together",
+  "what": "Lines have stable ids, so agents editing different lines never collide. Edits stream to every open page."
+}

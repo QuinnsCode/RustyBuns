@@ -1,0 +1,5 @@
+{
+  "icon": "git-commit-horizontal",
+  "title": "Closes up as a real git commit",
+  "what": "Cataloguing pushes a real commit to Cloudflare Artifacts, built by hand: no git library."
+}

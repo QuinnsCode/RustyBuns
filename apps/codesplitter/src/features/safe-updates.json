@@ -1,0 +1,5 @@
+{
+  "icon": "calendar-clock",
+  "title": "Updates that have aged",
+  "what": "The doctor skips releases younger than 3 days, regenerates lockfiles with install scripts off, and reads private registries from .npmrc."
+}

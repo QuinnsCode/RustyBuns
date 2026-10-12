@@ -1,0 +1,5 @@
+{
+  "icon": "git-branch",
+  "title": "Branches and merges, by line",
+  "what": "A three-way merge by line id: moved blocks keep their edits, and real conflicts are named one stretch at a time. Merge every branch that merges clean in one go: a README edit and a package.json bump both land."
+}

@@ -1,0 +1,5 @@
+{
+  "icon": "share-2",
+  "title": "Share some lines, not the repo",
+  "what": "A live link to a range that follows those lines as the file changes, even from a private repo."
+}

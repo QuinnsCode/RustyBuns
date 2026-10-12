@@ -3,58 +3,217 @@
 // Cloudflare and in-process under Bun on the desktop.
 
 import { fromText } from "./lines.ts";
-import { ensureCrewRemote, fileStub, handleFor, access as artifactAccess, listDir, materialize, pushCatalogue, toFile } from "./archive.ts";
-import { code, json, NAME, type DigMessage, type Env } from "./env.ts";
-import { accountsOn, actingAs, identityRoutes, identify, isAdmin, isAgentHandle } from "./identity.ts";
-import { privacyRoutes, scrubRoutes, sweepSessions } from "./privacy.ts";
-import { feedRoutes, runQueuedDigests, type DigestMessage } from "./feed.ts";
+import {
+  ensureCrewRemote,
+  fileStub,
+  handleFor,
+  access as artifactAccess,
+  listDir,
+  materialize,
+  pushCatalogue,
+  toFile,
+} from "./archive.ts";
+import {
+  code,
+  json,
+  NAME,
+  type DigMessage,
+  type Env,
+} from "./env.ts";
+import {
+  accountsOn,
+  actingAs,
+  identityRoutes,
+  identify,
+  isAdmin,
+  isAgentHandle,
+} from "./identity.ts";
+import {
+  privacyRoutes,
+  scrubRoutes,
+  sweepSessions,
+} from "./privacy.ts";
+import {
+  feedRoutes,
+  runQueuedDigests,
+  type DigestMessage,
+} from "./feed.ts";
 import { sweepLineEvents } from "./line-events.ts";
-import { levelRoutes, runDigs } from "./levels.ts";
-import { evict, githubRoutes } from "./github.ts";
+import {
+  levelRoutes,
+  runDigs,
+} from "./levels.ts";
+import {
+  evict,
+  githubRoutes,
+} from "./github.ts";
 import { gameRoutes } from "./game.ts";
-import { createShare, shareRoutes } from "./shares.ts";
-import { followers, followRoutes, listFollows } from "./follows.ts";
+import {
+  createShare,
+  shareRoutes,
+} from "./shares.ts";
+import {
+  followers,
+  followRoutes,
+  listFollows,
+} from "./follows.ts";
 import { cityRoutes } from "./city.ts";
-import { recentStamps, stampRoutes } from "./stamps.ts";
+import {
+  recentStamps,
+  stampRoutes,
+} from "./stamps.ts";
 import { agentProfile } from "./actors.ts";
-import { createCut, cutRoutes } from "./cuts.ts";
-import { branchRoutes, createOn, materializeOn, openBranch } from "./branches.ts";
-import { agentRoutes, runQueuedAgents, type AgentMessage } from "./agent-routes.ts";
-import { depRoutes, scheduledDoctor } from "./deps.ts";
-import { hearDue, listenRoute } from "./listen.ts";
-import { scheduledWatch, watchRoutes } from "./watch.ts";
-import { advanceAll, freshRoutes, startIfFull } from "./fresh.ts";
-import { counted, drainJobs, jobRoutes, limit, limitRoutes, ruleFor, RULES, runJobs, sweepLimits, type JobMessage } from "./limits.ts";
+import {
+  createCut,
+  cutRoutes,
+} from "./cuts.ts";
+import {
+  branchRoutes,
+  createOn,
+  materializeOn,
+  openBranch,
+} from "./branches.ts";
+import {
+  agentRoutes,
+  runQueuedAgents,
+  type AgentMessage,
+} from "./agent-routes.ts";
+import {
+  depRoutes,
+  scheduledDoctor,
+} from "./deps.ts";
+import {
+  hearDue,
+  listenRoute,
+} from "./listen.ts";
+import {
+  scheduledWatch,
+  watchRoutes,
+} from "./watch.ts";
+import {
+  advanceAll,
+  freshRoutes,
+  startIfFull,
+} from "./fresh.ts";
+import {
+  counted,
+  drainJobs,
+  jobRoutes,
+  limit,
+  limitRoutes,
+  ruleFor,
+  RULES,
+  runJobs,
+  sweepLimits,
+  type JobMessage,
+} from "./limits.ts";
 import { previewRoutes } from "./preview.ts";
-import { deployOnCommit, deployRoutes } from "./deploy.ts";
+import {
+  deployOnCommit,
+  deployRoutes,
+} from "./deploy.ts";
 import { clearOwn } from "./deploy-review.ts";
 import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { commitGraph } from "./graph.ts";
 import { tagRoutes } from "./tags.ts";
 import { pickRoute } from "./pick.ts";
-import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
-import { bearer, tokenRoutes } from "./tokens.ts";
-import { audit, auditRoutes, via } from "./audit.ts";
-import { invitePage, inviteRoutes, pendingInvites, repoInviteRoutes } from "./invites.ts";
+import {
+  deliverHooks,
+  emit,
+  hookRoutes,
+  type HookMessage,
+} from "./hooks.ts";
+import {
+  bearer,
+  tokenRoutes,
+} from "./tokens.ts";
+import {
+  audit,
+  auditRoutes,
+  via,
+} from "./audit.ts";
+import {
+  invitePage,
+  inviteRoutes,
+  pendingInvites,
+  repoInviteRoutes,
+} from "./invites.ts";
 import { openapi } from "./openapi.ts";
-import { catalogue, mcp } from "./mcp.ts";
-import { oauthRoutes, sweepOAuth, wellKnown } from "./oauth.ts";
+import {
+  catalogue,
+  mcp,
+} from "./mcp.ts";
+import {
+  oauthRoutes,
+  sweepOAuth,
+  wellKnown,
+} from "./oauth.ts";
 import { REFERENCE } from "./api.ts";
-import { checkRoutes, expireQueued, pollGithub, requeueStale, startChecks } from "./checks.ts";
-import { desktopRuns, kickQueued } from "./ci-runner.ts";
-import { ciTokenRoutes, ghCompatRoutes } from "./gh-compat.ts";
-import { callers, insightRoutes, record, sweepTraffic, tallied, viaMcp } from "./insights.ts";
+import {
+  checkRoutes,
+  expireQueued,
+  pollGithub,
+  requeueStale,
+  startChecks,
+} from "./checks.ts";
+import {
+  desktopRuns,
+  kickQueued,
+} from "./ci-runner.ts";
+import {
+  ciTokenRoutes,
+  ghCompatRoutes,
+} from "./gh-compat.ts";
+import {
+  callers,
+  insightRoutes,
+  record,
+  sweepTraffic,
+  tallied,
+  viaMcp,
+} from "./insights.ts";
 import { actionsRoutes } from "./actions-bill.ts";
 import { scaleRoutes } from "./scale.ts";
-import { embedDue, indexFile, restaleSearch, searchAll, searchRepo, searchRoutes } from "./search.ts";
+import {
+  embedDue,
+  indexFile,
+  restaleSearch,
+  searchAll,
+  searchRepo,
+  searchRoutes,
+} from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
 import { seenRoutes } from "./seen.ts";
 import { installScript } from "./install.ts";
-import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
+import {
+  crossSite,
+  edgeLimit,
+  secured,
+  turnstile,
+  wantsTurnstile,
+} from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
 import { beamRoutes } from "./beam.ts";
-import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorTagRoute, mirrorRoutes, mirrorsOn, hearPushes, pushClashes, pushHolds, seeGit, settlePush, syncDue, TRUTHS, turnRoute, upstreamRemote, type Truth } from "./mirror.ts";
+import {
+  kickMirror,
+  landPushes,
+  mirrorBranchRoute,
+  mirrorRepoRoute,
+  mirrorTagRoute,
+  mirrorRoutes,
+  mirrorsOn,
+  hearPushes,
+  pushClashes,
+  pushHolds,
+  seeGit,
+  settlePush,
+  syncDue,
+  TRUTHS,
+  turnRoute,
+  upstreamRemote,
+  type Truth,
+} from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";

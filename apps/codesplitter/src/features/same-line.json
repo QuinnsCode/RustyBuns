@@ -1,0 +1,5 @@
+{
+  "icon": "refresh-cw",
+  "title": "Same line? Retry, don't clobber",
+  "what": "Two edits to one line can't both win: the stale one gets a 409 and retries. An edit that depends on the whole file only lands if nothing moved since it was read."
+}

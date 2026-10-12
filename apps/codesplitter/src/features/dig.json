@@ -1,0 +1,5 @@
+{
+  "icon": "shovel",
+  "title": "Dig up any GitHub repo",
+  "what": "Paste a URL, a remote or a gh repo clone line and fork it into a git repo you own. Upstream never hears about it."
+}
