@@ -540,7 +540,7 @@ The caveats:
   That's a way out, not a way in, but if you want codeSplitter never to write to GitHub, don't commit to main here.
 - **Merged main doesn't queue checks here yet.** When the mirror takes upstream's commits it watches GitHub's results for the new tip and queues nothing here; checks start here on a commit made here, a branch opened from upstream or pushed to it, or a beam.
 
-Still missing, each its own issue: checks here on the main commits a mirror takes, a pull-only mirror, and runs as a sandbox user with no credentials (with a setting to run only the commands in the repo's settings).
+Still missing: checks here on the main commits a mirror takes (#1005), a pull-only mirror (#1006), and runs as a sandbox user with no credentials, with a setting to run only the commands in the repo's settings (#1007).
 
 ## Conventions
 
