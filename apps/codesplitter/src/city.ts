@@ -17,8 +17,8 @@ import { json, type Env } from "./env.ts";
 const DISTRICTS = 9, BUILDINGS = 36, WALK = 400;
 /** Lit fades by half about every five days without new lines. */
 const FADE_MS = 7 * 86_400_000;
-/** The street grid: a building's cell and footprint, and the street between districts. */
-const CELL = 3, FOOT = 2.2, STREET = 6;
+/** The street grid: a building's cell and footprint (the gap is an alley), and the street between districts: two lanes and their sidewalks. city.js draws to these. */
+const CELL = 4.2, FOOT = 2.6, STREET = 10;
 
 export interface Building { path: string; lines: number; agent: number; last: number | null; glow: number; x: number; z: number; w: number; h: number }
 export interface District { repo: string; x: number; z: number; size: number; buildings: Building[] }
