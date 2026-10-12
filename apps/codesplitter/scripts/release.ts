@@ -38,14 +38,18 @@ export function parseArgs(argv: string[]): Mode {
 
 // ---- the plan ----
 
+export const MOVE_PENDING = "the plan is the codesplitters move (#825), which hasn't run yet: DB, HOOKS, JOBS, LEVEL_DIGS and LEVEL_CHUNKS still have their old names. A plain release can't go out until it has.";
+
 export interface Row { line: string; id: string; binding: string | null; action: string }
 
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+/** Effect's logger, which Alchemy prints its plan through, starts each line `[00:01:08.172] INFO (#1): `. */
+const LOG = /^\[\d{2}:\d{2}:\d{2}\.\d{3}\] [A-Z]+ \(#\d+\): ?/;
 const ROW = /^\[([^\]]+)\] (create|update|adopted|replace|delete|orphaned|noop|unbind|run|drop)\b/;
 
 /** Alchemy's plan (LoggingCli formatPlanLines): `[ID] action`, `[ID/binding] action`, and a `Plan:` summary. */
 export function parsePlan(text: string) {
-  const lines = strip(text).split("\n").map((l) => l.trimEnd());
+  const lines = strip(text).split("\n").map((l) => l.replace(LOG, "").trimEnd());
   const rows: Row[] = [];
   for (const line of lines) {
     const m = ROW.exec(line);
@@ -62,7 +66,19 @@ export const deleteItems = (warning: string) =>
 
 const movedItem = new RegExp(`^(D1|Queue|R2) (${MOVED.join("|")}) \\(${OLD}-[\\w-]+, renamed to ${NEW}-[\\w-]+\\)$`);
 
-export interface Verdict { show: string[]; stop: string | null; behind: boolean }
+/** `move`: what stopped it is only the codesplitters move (#825), not run yet; --move is the release that does it. */
+/**
+ * A plain release's plan that stops only on the five renames: every risky row is one of MOVED, the old
+ * DB replaced or deleted among them, and the delete warning, if printed, names nothing else.
+ */
+function movePending(rows: Row[], warnings: string[]) {
+  const risky = rows.filter((r) => ["delete", "replace", "orphaned", "unbind", "drop", "create", "adopted"].includes(r.action) && !(r.binding && r.id === "Worker" && r.action === "create"));
+  if (!risky.some((r) => r.id === "DB" && !r.binding && ["replace", "delete"].includes(r.action)) || !risky.every((r) => MOVED.includes(r.id) && !r.binding)) return false;
+  if (warnings.some((w) => /Alchemy state is under the app name/.test(w))) return false;
+  return warnings.filter((w) => /would delete/.test(w)).every((w) => deleteItems(w).every((i) => movedItem.test(i)));
+}
+
+export interface Verdict { show: string[]; stop: string | null; behind: boolean; move?: boolean }
 
 /**
  * Whether a plan may go out as a release. A release only updates what's there: anything it makes,
@@ -73,6 +89,8 @@ export function checkPlan(text: string, mode: Mode): Verdict {
   const { summary, rows, warnings } = parsePlan(text);
   const show = [...warnings, ...(summary ? [summary] : []), ...rows.filter((r) => r.action !== "noop").map((r) => r.line)];
   const out = (stop: string | null, behind = false): Verdict => ({ show, stop, behind });
+  const toMove = (): Verdict => ({ show, stop: MOVE_PENDING, behind: false, move: true });
+  if (summary && !mode.move && movePending(rows, warnings)) return toMove();
   if (!summary) return out("the plan printed no summary. Not deploying; paste this to Claude.");
 
   for (const w of warnings) {
@@ -128,6 +146,8 @@ export interface IO {
 export interface Where { clone: string; wt: string; app: string; home: string }
 
 export class Stop extends Error {}
+/** Stopped only because the codesplitters move (#825) hasn't run: `main` offers to run it. */
+export class NeedsMove extends Stop {}
 const stop = (why: string): never => { throw new Stop(why); };
 
 const yellow = (s: string) => `\x1b[33m${s}\x1b[0m`;
@@ -153,6 +173,8 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
 
   const states = join(clone, ".git", "rustybuns", "alchemy", app, "state");
   if (!io.exists(states)) stop(`the live Alchemy state isn't in ${states}. Not deploying; tell Claude.`);
+  // The state still under the old app name means the move hasn't run: know that now, not after a minute's plan.
+  if (!mode.move && io.exists(join(states, OLD))) throw new NeedsMove(`the Alchemy state is still under the old app name (${join(states, OLD)}), so the codesplitters move (#825) hasn't run yet. A plain release can't go out until it has.`);
 
   // Puts the worktree on the newest main. Agents merge all day, so this runs again whenever main
   // moves before the deploy: the CLI refuses a copy behind main, and what you approve must be what goes out.
@@ -242,6 +264,7 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
       if (p.code !== 0) { io.say(p.out.split("\n").slice(-30).join("\n")); stop("plan failed (above). Not deploying; paste this to Claude."); }
       const v = checkPlan(p.out, mode);
       for (const l of v.show) io.say(`     ${l}`);
+      if (v.move) throw new NeedsMove(v.stop!);
       if (v.stop) stop(v.stop);
       if (!v.behind) return;
       io.say(yellow("     main moved during the plan; syncing and planning again"));
@@ -289,6 +312,21 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
   return stop("main kept moving (3 tries). Nothing was deployed; rerun in a minute.");
 }
 
+/**
+ * The release, and when a plain one finds the codesplitters move still to do, the offer to do it then
+ * and there: --move asks again before it copies anything, and before the deploy deletes anything.
+ */
+export async function main(io: IO, mode: Mode, where: Where, env: Record<string, string | undefined>) {
+  try { return await release(io, mode, where, env); }
+  catch (e) {
+    if (!(e instanceof NeedsMove) || mode.move) throw e;
+    io.say(yellow(`     ${e.message}`));
+    if (!(await io.ask("     Run the move now? (the same as --move: it copies the data first, and asks before deploying)")))
+      stop("not deployed; nothing changed. When you're ready:  zsh ~/release-codesplitters.sh --move");
+    return release(io, { ...mode, move: true }, where, env);
+  }
+}
+
 // ---- on the Mac ----
 
 export const realIO: IO = {
@@ -328,7 +366,7 @@ if (import.meta.main) {
   const clone = process.env.RELEASE_CLONE ?? `${home}/agent-office/QuinnsCode/RustyBuns`;
   const wt = process.env.RELEASE_WORKTREE ?? `${home}/agent-office/QuinnsCode/RustyBuns-release`;
   try {
-    const r = await release(realIO, parseArgs(process.argv.slice(2)), { clone, wt, app: "apps/codesplitter", home }, { ...process.env });
+    const r = await main(realIO, parseArgs(process.argv.slice(2)), { clone, wt, app: "apps/codesplitter", home }, { ...process.env });
     console.log(`\n\x1b[32m✔ deployed\x1b[0m  ${r.site}  (${r.head})`);
   } catch (e) {
     console.log(`\n\x1b[31m✖ ${e instanceof Stop ? e.message : `the release script crashed: ${(e as Error).stack ?? e}. Paste this to Claude.`}\x1b[0m`);

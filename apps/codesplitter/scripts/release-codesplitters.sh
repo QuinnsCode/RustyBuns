@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Release codeSplitter to the live site: zsh ~/release-codesplitters.sh [--checks | --move]
 # Run it from any folder. ~/release-codesplitters.sh is a copy of this file
-# (apps/codesplitter/scripts/release-codesplitters.sh); copy it again only when this changes.
+# (apps/codesplitter/scripts/release-codesplitters.sh), and each run refreshes it from main.
 # It puts the release worktree on origin/main and hands over to scripts/release.ts there,
 # which does the rest and is tested (test/release.test.ts), so a fix ships with main.
 set -e
@@ -20,4 +20,9 @@ git -C $WT checkout -q --detach origin/main || stop "the release worktree has lo
 cd $WT
 bun install >/dev/null 2>&1 || stop "bun install failed; tell Claude."
 cd $APP
+# Keep ~/release-codesplitters.sh the same as main's, so a fix to this file reaches the next run. A new
+# file moved into place: this run keeps reading the one it opened.
+if ! cmp -s scripts/release-codesplitters.sh $HOME/release-codesplitters.sh; then
+  cp scripts/release-codesplitters.sh $HOME/.release-codesplitters.sh.new && mv $HOME/.release-codesplitters.sh.new $HOME/release-codesplitters.sh
+fi
 exec bun scripts/release.ts "$@"
