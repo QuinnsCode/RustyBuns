@@ -186,7 +186,7 @@ async function init() {
   }
   // A package entry (@astrojs/cloudflare/entrypoints/server) resolves through node_modules, not a file here.
   const isFile = (m: string) => m.startsWith(".") || m.startsWith("/") || /\.[mc]?[jt]sx?$/.test(m);
-  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
+  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
   { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts, null);
     console.log(!cfg.worker!.build ? `build:    none (a plain Worker: Alchemy bundles ${cfg.worker!.main})`
       : `build:    ${cfg.worker!.build}  (${b.from === "default" || b.build !== cfg.worker!.build ? "no build script found; using the default" : `from "${b.from}" script`})`); }
@@ -210,8 +210,10 @@ async function init() {
     cfg.worker!.assets = `${inf.reactRouterBuild}/client`;
   }
   if (astroWorker) {
-    cfg.worker!.builtMain = "dist/server/entry.mjs";
-    cfg.worker!.assets = "dist/client";
+    // Older adapters (and their wrangler files) build dist/_worker.js and serve dist/; newer ones dist/server + dist/client.
+    const prebuilt = w.main && /^(\.\/)?dist\//.test(w.main) ? w.main.replace(/^\.\//, "") : null;
+    cfg.worker!.builtMain = prebuilt ?? "dist/server/entry.mjs";
+    cfg.worker!.assets = prebuilt ? (w.assets?.directory ?? "dist").replace(/^\.\//, "") : "dist/client";
     const kv = inf.astro!.sessionKV;
     if (!cfg.bindings[kv]) { cfg.bindings[kv] = { type: "kv" }; console.log(`sessions: ${kv} (KV, the binding @astrojs/cloudflare keeps sessions in)`); }
     const img = inf.astro!.images;
@@ -307,11 +309,16 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   clientBuild ??= vite("dist/ui");
   // The same build, put on the web as an assets-only Worker: Cloudflare serves the files, no
   // code of ours runs. Not for an app with a Node server: its frontend alone wouldn't work.
+  // A vite config that names its own outDir keeps it: plugins write there too (a sitemap, a
+  // service worker's precache list), and moving the build out from under them breaks it.
+  const own = !astro && inf.vite.outDir && !inf.vite.outDir.startsWith("/")
+    ? join(inf.vite.root ?? ".", inf.vite.outDir).split("\\").join("/") : null;
   const web = inf.serverDeps.length ? null : {
-    assets: "dist/web",
+    assets: own ?? "dist/web",
     compatibilityDate: new Date().toISOString().slice(0, 10),
     compatibilityFlags: [],
-    build: astro ? `${inf.execCmd("astro")} build --outDir dist/web` : vite("dist/web"),
+    build: astro ? `${inf.execCmd("astro")} build --outDir dist/web`
+      : own ? [...inf.prebuild, `${inf.execCmd("vite")} build${inf.vite.buildConfig ? ` --config ${inf.vite.buildConfig}` : ""}`].join(" && ") : vite("dist/web"),
     notFoundHandling: astro ? "404-page" : "single-page-application",
   };
   const cfg = {
@@ -334,7 +341,7 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   };
   await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
   const what = astro ? "a static Astro site" : "no wrangler found";
-  console.log(web ? `wrote rustybuns.config.ts (${what}: the desktop, and the web as static files on Workers, from dist/web)`
+  console.log(web ? `wrote rustybuns.config.ts (${what}: the desktop, and the web as static files on Workers, from ${web.assets})`
     : `wrote rustybuns.config.ts (desktop-only: it runs a Node server (${inf.serverDeps.join(", ")}), so its frontend alone can't go on the web)`);
   if (!(await Bun.file("desktop/host.ts").exists())) {
     await Bun.write("desktop/host.ts", `// Your desktop backend. Runs in the Bun host next to your built SPA.
