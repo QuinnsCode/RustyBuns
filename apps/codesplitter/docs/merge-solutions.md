@@ -257,7 +257,7 @@ change (#1095), were fixed in #1098.
 ### 2026-10-12 replay: a day of Two Fronts and README clashes
 
 That day's seven "merge main into the PR" commits, run through the same replay against main `08d6601`, and
-#1148's (`0fb458f`) against main `31aa72e`:
+#1148's (`0fb458f`) against main `31aa72e` and again, after #1156, against `9137d57`, with the same result:
 
 ```sh
 bun scripts/merge-replay.ts b070fd8 02e1045 401eeda e2f2145 2086218 db4095c 03e9127 0fb458f --json
@@ -284,7 +284,8 @@ and none lost a side:
 - **`rules.test.ts`, a real miss.** #1093 on main renamed `hero` to `heroes.<faction>`, and #1100's new test
   still says `won.hero.xp` and `lost.hero.woundedUntil`. The person renamed them; the merge kept them, so the file
   wouldn't typecheck. It's the #1096 case again. The replay is a dry run of the line merge, so it doesn't run
-  #1109's test check, which is what would send this back as a card.
+  #1109's test check, which is what would send this back as a card. Since #1156 the merge carries main's rename into
+  the branch's new lines, and this file replays exactly like the fix.
 - **#1148's `REFERENCE.md`, harmless.** Both sides added a clause to the one-line `hyperdrive` row. It kept
   both, main's PGlite clause before the branch's Neon one, where the person put Neon first and added
   "(or `urlSecret`)". Plus a trailing blank line.
@@ -308,8 +309,43 @@ and none lost a side:
 `war/table.ts` and two tests). codeSplitter's text matches git's clean merge in all five. The person wired
 #1087's galaxy pick through them in the merge commit itself, which no line merge can do.
 
-No new engine bugs: nothing dropped a side. Of the two semantic misses, `rules.test.ts` is a known class with a fix
-already in (#1109), and `config-schema.ts` is a real rewrite that only a test of the Neon-plus-`migrationsDir` case would send back.
+No new engine bugs: nothing dropped a side. Of the two semantic misses, `rules.test.ts` is a known class with fixes
+already in (#1109, and #1156, after which it replays exactly), and `config-schema.ts` is a real rewrite that only a test of the Neon-plus-`migrationsDir` case would send back.
+
+## 11. A merge plan: who waits for whom
+
+On 2026-10-12 the PR agent dry-ran pairs of about 40 open PRs, laid them out as waves, and told a worker to
+merge main in 9 times. The merge plan (`src/merge-plan.ts`, `GET …/merge-plan`, #1155) does the layout: a
+branch clashes with one before it when it merges clean into main now and not once that one has landed, and
+it goes one wave past the latest it clashes with. The test is codeSplitter's merge, not git's.
+
+`scripts/merge-plan.ts` replays that day's fixes with main's own history as the first branch: from each
+fix's merge base, every PR that landed before the fix, and whether the branch merged clean just before it and
+not just after it.
+
+```sh
+bun scripts/merge-plan.ts          # the 9 below; or pass merge commits; --json for the details
+```
+
+| PR (fix commit) | blocker by git's merge | by codeSplitter's |
+|---|---|---|
+| #1081 (`e49e19a`) | #1078: 7 files | #1078: README, `sim.ts`, `main.ts`, and `view.ts`, which git merges clean into code that doesn't build |
+| #1093 (`02e1045`) | #1087, the one the fix names: README, `main.ts`, `rules.ts` | #1087: README, `main.ts` |
+| #1093 (`b070fd8`) | #1102, the one the fix names: README, `main.ts` | #1102: `main.ts` |
+| #1100 (`401eeda`) | #1102: 4 files; #1093: root README, `styles.css` | #1102: two-fronts README, `main.ts`, `rules.ts` |
+| #1110 (`e2f2145`) | #1107: README | none |
+| #1115 (`2086218`) | #1110: README | #1110: README |
+| #1119 (`db4095c`) | #1116: `agent-run.ts` | none |
+| #1124 (`03e9127`) | #1120: `init.test.ts` | none |
+| #1148 (`0fb458f`) | #1146: 6 files | #1146: `build.ts` |
+
+By git's merge the plan puts all 9 behind a blocker that landed before the fix, the two named in a fix
+message included, in three waves: #1100 and #1115 wait on #1093 and #1110, which waited themselves, as they
+did that day. By codeSplitter's it's two waves, and 3 of the 9 (#1110, #1119, #1124) never wait: the replay
+in §10 has their files settling exactly or with the same lines in another order.
+
+Left for later: merging main into each branch that waits once its blocker lands (#1162), and warning before
+a task starts that an open branch is rewriting the same files (#1163).
 
 ## Next steps
 
