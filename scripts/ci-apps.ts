@@ -37,6 +37,7 @@ export const APPS: Record<string, App> = {
   "splat-desktop":     { test: "bun test", boot: true },
   "splat-rooms":       { test: "bun test test", boot: true },
   "splat-spray":       { test: "bun test --parallel", boot: true },
+  "two-fronts":        { test: "bun test test", drop: false },
   "tscircuit-desktop": { test: "bun test", prep: "bun run native", perOs: true, boot: true },
   "what-would-fantano-say": { test: "bun test test", drop: false },
 };
