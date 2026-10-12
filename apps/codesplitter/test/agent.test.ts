@@ -505,6 +505,8 @@ describe("word-level rebase (#928)", () => {
     expect((await clash.json() as any).conflicts[0].reason).toContain("not 1");
     expect((await post(call, "agent-x", { ...set("bar(1)"), ifRev: 1 })).status).toBe(409);
     expect((await post(call, "agent-x", { ops: [set("bar(1)").ops[0], { kind: "set", line: "L1", base: 1, text: "baz(1)" }] })).status).toBe(409);
+    // The same edit sent again adds nothing: stale, not a no-op write.
+    expect((await post(call, "ryan", set("foo(2)"))).status).toBe(409);
     expect(text(await doc(call))).toBe("foo(2)\nnext");
   });
 

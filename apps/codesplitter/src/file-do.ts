@@ -676,8 +676,9 @@ export class FileDurableObject {
       const was = from.get(`${op.line}@${op.base}`), now = this.doc.lines.find((l) => l.id === op.line);
       // A batch that touches the line twice is past rebasing.
       if (was === undefined || !now || now.rev === op.base || touched.filter((id) => id === op.line).length > 1) return op;
+      // Nothing left to add (the same edit sent again): stale, not a no-op write.
       const text = mergeWords(was, now.text, op.text);
-      return text === null ? op : { ...op, text, base: now.rev };
+      return text === null || text === now.text ? op : { ...op, text, base: now.rev };
     });
   }
 
