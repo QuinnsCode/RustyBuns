@@ -33,8 +33,11 @@ export const OPENCODE_PERMISSION = {
   external_directory: "deny",
 } as const;
 
-/** The command line that runs `harness` on `prompt` with `dir` as its working directory. */
-export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string } = {}): Command {
+/**
+ * The command line that runs `harness` on `prompt` with `dir` as its working directory.
+ * `usage`: answer in JSON that says what it read and cost, where the harness can (claude; budget.ts usageOf).
+ */
+export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string; usage?: boolean } = {}): Command {
   const model = opts.model ? (args: string[]) => [...args, "--model", opts.model!] : (args: string[]) => args;
   switch (harness) {
     // Print mode, edits allowed without asking, and only the file tools: no Bash,
@@ -42,7 +45,7 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
     // load, as a repo's .claude/settings.json can add hooks (shell commands run at
     // startup) and permissions, and no MCP servers, as a repo's .mcp.json starts them.
     case "claude":
-      return { bin: "claude", args: model(["-p", prompt, "--permission-mode", "acceptEdits", "--tools", CLAUDE_TOOLS, "--setting-sources", "user", "--strict-mcp-config"]) };
+      return { bin: "claude", args: model(["-p", prompt, "--permission-mode", "acceptEdits", "--tools", CLAUDE_TOOLS, "--setting-sources", "user", "--strict-mcp-config", ...opts.usage ? ["--output-format", "json"] : []]) };
     // Workspace-write sandbox: it can edit the scratch dir, not the rest of the machine
     // (a write to $HOME is refused). Needs `codex login` or a provider in ~/.codex/config.toml.
     case "codex":

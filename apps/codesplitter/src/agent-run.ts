@@ -9,7 +9,7 @@ import type { Call } from "./local.ts";
 import type { Doc, Line, Op } from "./lines.ts";
 import { harnessCommand, taskPrompt, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
-import { NOTE_ASK, tokens, tripped, type Budget, type Trip } from "./budget.ts";
+import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
 
 /** Runs a command in `cwd`; `signal` aborting kills it (Stop on a run). */
 export type Exec = (cmd: Command, cwd: string, signal?: AbortSignal) => Promise<{ code: number; out: string }>;
@@ -80,7 +80,7 @@ export interface Result {
   output: string;
   /** Which of its `also` files it changed. */
   edited?: string[];
-  /** About how many tokens it read and wrote, every run of the CLI counted (budget.ts). */
+  /** How many tokens it read and wrote, every run of the CLI counted: its own usage where it reports it, else about (budget.ts). */
   spent: number;
   /** Cut short before going round again (#1077): at how many tokens, and why. */
   tripped?: Trip;
@@ -224,14 +224,15 @@ export async function runAgent(call: Call, opts: {
     rev = snapshot.rev;
     const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.budget ? `\n${NOTE_ASK}` : "");
     heard = told.length;
-    const cmd = harnessCommand(opts.harness, prompt, { model: opts.model });
+    const cmd = harnessCommand(opts.harness, prompt, { model: opts.model, usage: true });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
     const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal);
     // Stopped: whatever it left is dropped.
     signal?.throwIfAborted();
-    output = run.out.trim();
-    // It read the prompt and every file, and wrote its reply and the files back.
-    spent += tokens(prompt.length + snapshot.lines.reduce((n, l) => n + l.text.length + 1, 0) * 2
+    // What it says it read and wrote, where its CLI says (#1088); else it read the prompt and every file, and wrote its reply and the files back.
+    const usage = usageOf(run.out);
+    output = (usage?.reply ?? run.out).trim();
+    spent += usage?.tokens ?? tokens(prompt.length + snapshot.lines.reduce((n, l) => n + l.text.length + 1, 0) * 2
       + others.reduce((n, d) => n + d.lines.reduce((k, l) => k + l.text.length + 1, 0) * 2, 0) + run.out.length);
     if (run.code !== 0) throw new Error(`${opts.harness} exited ${run.code}:\n${output.slice(-2000)}`);
     if (run.text === null) throw new Error(`${opts.harness} removed ${path}`);

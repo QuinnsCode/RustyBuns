@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { CONFLICT_ROUNDS, failureKey, handoffTask, noteFor, readNote, sameFailure, tokens, tripped, writeNote } from "../src/budget.ts";
+import { CONFLICT_ROUNDS, failureKey, handoffTask, noteFor, readNote, sameFailure, tokens, tripped, usageOf, writeNote } from "../src/budget.ts";
 
 describe("agent budgets (#1077)", () => {
+  test("claude's JSON answer gives its real usage and its reply (#1088)", () => {
+    const answer = JSON.stringify({ type: "result", result: "DONE: x", usage: { input_tokens: 6, cache_creation_input_tokens: 3678, cache_read_input_tokens: 12181, output_tokens: 350, server_tool_use: { web_search_requests: 0 } } });
+    expect(usageOf(answer)).toEqual({ reply: "DONE: x", tokens: 16215 });
+    expect(usageOf(`${answer}\nwarning: something on stderr`)).toEqual({ reply: "DONE: x", tokens: 16215 });
+    expect(usageOf("done, edited a.js")).toBeNull();
+    expect(usageOf('{"type":"system"}\n{not json')).toBeNull();
+  });
+
   test("tokens are counted at four characters each", () => {
     expect(tokens(0)).toBe(0);
     expect(tokens(4000)).toBe(1000);
