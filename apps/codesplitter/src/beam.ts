@@ -22,10 +22,10 @@
 // handle and it's in their inbox (GET /api/me/beams). It never writes to GitHub.
 //
 // On the hosted site there's no git to run, and no git branches: a codeSplitter
-// branch is beamed onto main by the Worker's own git (git.ts `push`), as one commit
-// pushed to refs/beams/<id> on the repo's Artifacts remote, and the diff and patch
-// are written in JS (patch.ts). Git branches, `onto: "upstream"` and stacked branches
-// (a commit per branch) stay desktop only.
+// branch is beamed onto main by the Worker's own git (git.ts `push`), as a commit per
+// branch in its stack pushed in one pack to refs/beams/<id> on the repo's Artifacts
+// remote, and the diff and patch are written in JS (patch.ts). Git branches and
+// `onto: "upstream"` stay desktop only.
 //
 //   GET    /api/repos/:o/:r/beams               the repo's beams; for the crew, the git and codeSplitter branches there are to beam too
 //                                               (and `hosted: true` on the hosted site, where only codeSplitter's go, onto main)
@@ -158,19 +158,20 @@ async function gitStack(dir: string, main: string, branch: string): Promise<Stac
   return { base, layers: [{ branch, tip, log }] };
 }
 
+type StackFile = { branch: string; path: string; deleted: number; blob: string | null; mode: string | null; source: string | null; by: string };
+
 /**
- * A codeSplitter branch: its files as they are now over main's tip, the commit a push upstream would
- * make. One stacked on others (#1025) is a commit per branch, the bottom one on main's tip and each
- * next one's files over it. Whoever opened each is a co-author, unless it's the repo's owner (as a push).
+ * A codeSplitter branch's stack: the branches it's stacked on, the bottom one first, then it, and every
+ * one's files in path order. 404 or 409 when it isn't an open branch, or when a copy is stale (below).
  */
-async function linesStack(env: Env, owner: string, repo: string, dir: string, main: string, branch: string): Promise<Stack> {
+async function stackFiles(env: Env, owner: string, repo: string, branch: string): Promise<{ error: Response } | { by: string; chain: string[]; rows: StackFile[] }> {
   const br = await env.DB.prepare("SELECT by, status FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, branch).first() as { by: string; status: string } | null;
   if (!br) return { error: json({ error: `this repo has no codeSplitter branch ${branch}` }, 404) };
   if (br.status !== "open") return { error: json({ error: `${branch} is ${br.status} already: nothing to beam` }, 409) };
   const chain = [...(await ancestors(env, owner, repo, branch)).reverse(), branch];
   const marks = chain.map(() => "?").join(", ");
-  const rows = (await env.DB.prepare(`SELECT f.branch, f.path, f.deleted, f.blob, f.source, b.by FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch
-    WHERE f.owner = ? AND f.repo = ? AND f.merged = 0 AND f.branch IN (${marks})`).bind(owner, repo, ...chain).all()).results as { branch: string; path: string; deleted: number; blob: string | null; source: string | null; by: string }[];
+  const rows = (await env.DB.prepare(`SELECT f.branch, f.path, f.deleted, f.blob, f.mode, f.source, b.by FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch
+    WHERE f.owner = ? AND f.repo = ? AND f.merged = 0 AND f.branch IN (${marks}) ORDER BY f.path`).bind(owner, repo, ...chain).all()).results as StackFile[];
   // A copy a branch made before the one under it touched that file has none of that one's change: laid
   // over it, it would take that change back out. Merging handles it line by line; a beam can't.
   const stale = rows.filter((f) => !f.deleted && !f.blob).filter((f) => {
@@ -179,13 +180,25 @@ async function linesStack(env: Env, owner: string, repo: string, dir: string, ma
     return there && !there.deleted && !there.blob && f.source !== under;
   });
   if (stale.length) return { error: json({ error: `${stale.map((f) => `${f.branch}'s ${f.path}`).join(", ")} forked from main before the branch under it changed that file: a beam would take that change back out`, clash: stale.map((f) => f.path) }, 409) };
+  return { by: br.by, chain, rows };
+}
+
+/**
+ * A codeSplitter branch: its files as they are now over main's tip, the commit a push upstream would
+ * make. One stacked on others (#1025) is a commit per branch, the bottom one on main's tip and each
+ * next one's files over it. Whoever opened each is a co-author, unless it's the repo's owner (as a push).
+ */
+async function linesStack(env: Env, owner: string, repo: string, dir: string, main: string, branch: string): Promise<Stack> {
+  const st = await stackFiles(env, owner, repo, branch);
+  if ("error" in st) return st;
+  const { chain, rows } = st;
 
   const base = await must(["rev-parse", `refs/heads/${main}`], dir), me = authorEnv();
   const layers: { branch: string; tip: string; log: Commit[] }[] = [];
   let tip = base;
   for (const name of chain) {
     const tree = await branchTree(env, owner, repo, name, dir, `${tip}^{tree}`);
-    const by = rows.find((f) => f.branch === name)?.by ?? br.by, subject = `${name}, from codeSplitter`;
+    const by = rows.find((f) => f.branch === name)?.by ?? st.by, subject = `${name}, from codeSplitter`;
     tip = await must(["commit-tree", tree, "-p", tip, "-m", subject], dir, me);
     layers.push({ branch: name, tip, log: [{ ...(by === owner ? { name: me.GIT_AUTHOR_NAME!, email: me.GIT_AUTHOR_EMAIL! } : { name: by, email: `${by}@${GIT_EMAIL_DOMAIN}` }), subject, body: "" }] });
   }
@@ -325,71 +338,126 @@ async function entryAt(env: Env, handle: Hosted["handle"], tree: string, path: s
 
 /**
  * Beam codeSplitter branch `branch` on the hosted site: its files as they are now, laid on main's tip
- * with the noise left as main has it, pushed by the Worker's git as one commit to refs/beams/<id>.
- * It's by whoever beams it, with whoever opened the branch as a co-author.
+ * with the noise left as main has it, pushed by the Worker's git to refs/beams/<id>. One stacked on
+ * others (#1025) is a commit per branch, the bottom one on main's tip and each next one's files over
+ * it, all in one pack. Each is by whoever beams it, with whoever opened that branch as a co-author.
  */
 async function hostedBeam(env: Env, owner: string, repo: string, user: string, main: string,
   o: { branch: string; to: string | null; title?: string; message?: string; keep: string[]; drop: string[] }): Promise<Response> {
   const h = await handleFor(env, owner, repo);
   if (!h) return json({ error: "this repo has no git yet" }, 409);
   const { branch } = o;
-  const br = await env.DB.prepare("SELECT by, status, parent FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, branch).first() as { by: string; status: string; parent: string | null } | null;
-  if (!br) return json({ error: `this repo has no codeSplitter branch ${branch}` }, 404);
-  if (br.status !== "open") return json({ error: `${branch} is ${br.status} already: nothing to beam` }, 409);
-  // A stacked one is a commit per branch, and the Worker's git pushes one: beam it from the desktop app, or once the one under it merges.
-  if (br.parent) return json({ error: `${branch} is stacked on ${br.parent}: a stacked branch beams from the desktop app, or here once ${br.parent} merges` }, 501);
+  const st = await stackFiles(env, owner, repo, branch);
+  if ("error" in st) return st.error;
   const [tip] = await h.handle.log({ ref: main, limit: 1 });
   if (!tip) return json({ error: `${main} has no commits yet: there's nothing to beam onto` }, 409);
 
-  // What the branch changes against main's tip, file by file.
-  const { results } = await env.DB.prepare("SELECT path, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 ORDER BY path").bind(owner, repo, branch).all();
-  const changes: Record<string, GitChange> = {}, list: Change[] = [];
-  for (const f of results as { path: string; deleted: number; blob: string | null; mode: string | null }[]) {
-    const was = await entryAt(env, h.handle, tip.treeHash, f.path);
-    if (was?.type === "tree") return json({ error: `${f.path} is a folder on ${main}` }, 409);
-    let next: GitChange;
-    if (f.deleted) next = null;
-    else if (f.blob) {
-      if (was?.hash === f.blob) continue;
-      const bytes = await (await h.handle.readBlob(f.blob))?.arrayBuffer();
-      if (!bytes) return json({ error: `${f.path}'s bytes aren't in this repo's git` }, 409);
-      next = { bytes: new Uint8Array(bytes), mode: f.mode ?? undefined };
-    } else {
-      const doc = (await (await toFile(env, owner, repo, f.path, "upstream", "file", {}, "", branch)).json()) as Doc;
-      // As main's commits write it (archive.ts pushCatalogues): the lines, ending in one newline.
-      next = (t => t.endsWith("\n") ? t : t + "\n")(text(doc));
-      if (was && await blobId(new TextEncoder().encode(next)) === was.hash) continue;
+  // What each branch changes over the one under it, the bottom one over main's tip. `now` is each
+  // path's blob as the branches so far leave it (null: gone), `onMain` what main's tip has there.
+  const now = new Map<string, string | null>(), onMain = new Map<string, string | null>();
+  const layers: { branch: string; by: string; changes: Record<string, GitChange> }[] = [];
+  for (const name of st.chain) {
+    const changes: Record<string, GitChange> = {}, mine = st.rows.filter((f) => f.branch === name);
+    for (const f of mine) {
+      if (!onMain.has(f.path)) {
+        const was = await entryAt(env, h.handle, tip.treeHash, f.path);
+        if (was?.type === "tree") return json({ error: `${f.path} is a folder on ${main}` }, 409);
+        onMain.set(f.path, was?.hash ?? null);
+      }
+      const under = now.has(f.path) ? now.get(f.path)! : onMain.get(f.path)!;
+      let next: GitChange, hash: string | null = null;
+      if (f.deleted) next = null;
+      else if (f.blob) {
+        if (under === f.blob) continue;
+        const bytes = await (await h.handle.readBlob(f.blob))?.arrayBuffer();
+        if (!bytes) return json({ error: `${f.path}'s bytes aren't in this repo's git` }, 409);
+        next = { bytes: new Uint8Array(bytes), mode: f.mode ?? undefined };
+        hash = f.blob;
+      } else {
+        const doc = (await (await toFile(env, owner, repo, f.path, "upstream", "file", {}, "", name)).json()) as Doc;
+        // As main's commits write it (archive.ts pushCatalogues): the lines, ending in one newline.
+        next = (t => t.endsWith("\n") ? t : t + "\n")(text(doc));
+        hash = await blobId(new TextEncoder().encode(next));
+      }
+      if (hash === under) continue;
+      changes[f.path] = next;
+      now.set(f.path, hash);
     }
-    if (next === null && !was) continue;
-    changes[f.path] = next;
-    list.push({ path: f.path, status: next === null ? "D" : was ? "M" : "A" });
+    layers.push({ branch: name, by: mine[0]?.by ?? st.by, changes });
   }
+
+  // What the stack changes against main's tip, file by file, and the noise in it, left as main has it in every commit.
+  const list: Change[] = [...now].filter(([path, hash]) => hash !== onMain.get(path)).sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([path, hash]) => ({ path, status: hash === null ? "D" : onMain.get(path) ? "M" : "A" }));
   if (!list.length) return json({ error: `${main} has all of ${branch} already: nothing to beam` }, 409);
   const { kept, dropped } = sortOut(list, { keep: o.keep, drop: o.drop });
   if (!kept.length) return json({ error: "everything it changes is noise, so a beam of it would be empty: `keep` the files you meant", dropped }, 409);
+  for (const l of layers) for (const d of dropped) delete l.changes[d.path];
 
-  const author = { name: user, email: `${user}@${GIT_EMAIL_DOMAIN}` }, by = { name: br.by, email: `${br.by}@${GIT_EMAIL_DOMAIN}` };
-  const message = beamMessage({ title: o.title, message: o.message, subjects: [`${branch}, from codeSplitter`], author, authors: [by] });
+  // A commit per branch that still changes something; yours to title is the top one.
+  const author = { name: user, email: `${user}@${GIT_EMAIL_DOMAIN}` };
+  const commits = layers.filter((l) => Object.keys(l.changes).length).map((l, i, all) => {
+    const top = i === all.length - 1;
+    const message = beamMessage({ title: top ? o.title : undefined, message: top ? o.message : undefined, subjects: [`${l.branch}, from codeSplitter`],
+      author, authors: [{ name: l.by, email: `${l.by}@${GIT_EMAIL_DOMAIN}` }] }).trimEnd();
+    return { branch: l.branch, changes: l.changes, message };
+  });
   const id = newId(), a = await artifactAccess(h.handle, h.remote, "write", 300);
-  const { commit } = await push(a.remote, a.token, { changes: Object.fromEntries(kept.map((c) => [c.path, changes[c.path]!])), message: message.trimEnd(),
+  const [first, ...then] = commits;
+  const pushed = await push(a.remote, a.token, { changes: first!.changes, message: first!.message, then,
     author: user, branch: main, base: h.handle, to: { ref: `refs/beams/${id}`, parent: tip.hash } });
-  const [title, ...rest] = message.trimEnd().split("\n");
-  return record(env, { id, owner, repo, branch, kind: "codesplitter", user, to: o.to, title: title!, message: rest.join("\n").trim(), onto: tip.hash, ontoLabel: main, sha: commit,
-    commits: 0, files: kept, dropped, stack: null });
+  const made = commits.map((c, i) => ({ branch: c.branch, sha: pushed.commits[i]!, title: c.message.split("\n")[0]! }));
+  const [title, ...rest] = commits.at(-1)!.message.split("\n");
+  return record(env, { id, owner, repo, branch, kind: "codesplitter", user, to: o.to, title: title!, message: rest.join("\n").trim(), onto: tip.hash, ontoLabel: main, sha: pushed.commit,
+    commits: 0, files: kept, dropped, stack: made.length > 1 ? JSON.stringify(made) : null });
+}
+
+/** One side of a file in tree `tree`: its blob's hash, mode and text (null when binary), or null when it isn't there. */
+async function sideAt(env: Env, h: Hosted, tree: string, path: string) {
+  const e = await entryAt(env, h.handle, tree, path);
+  if (!e || e.type === "tree") return null;
+  const text = await (await h.handle.readBlob(e.hash))?.text();
+  return { hash: e.hash, mode: e.mode, text: text === undefined || text.includes("\0") ? null : text };
+}
+const diffAt = (env: Env, h: Hosted, before: string, after: string, paths: string[]): Promise<FileDiff[]> =>
+  Promise.all(paths.map(async (path) => ({ path, before: await sideAt(env, h, before, path), after: await sideAt(env, h, after, path) })));
+
+/** The files that differ between two trees, read from the repo's Artifacts: only the subtrees that differ are walked. */
+async function changedPaths(env: Env, h: Hosted, a: string | null, b: string | null, dir = ""): Promise<string[]> {
+  if (a === b) return [];
+  const [x, y] = await Promise.all([a ? readTree(env, h.handle, a) : [], b ? readTree(env, h.handle, b) : []]);
+  const out: string[] = [];
+  for (const name of new Set([...(x ?? []), ...(y ?? [])].map((e) => e.name))) {
+    const ea = x?.find((e) => e.name === name), eb = y?.find((e) => e.name === name);
+    if (ea?.hash === eb?.hash && ea?.mode === eb?.mode) continue;
+    const ta = ea?.type === "tree" ? ea.hash : null, tb = eb?.type === "tree" ? eb.hash : null;
+    if (ta || tb) out.push(...await changedPaths(env, h, ta, tb, `${dir}${name}/`));
+    if ((ea && !ta) || (eb && !tb)) out.push(dir + name);
+  }
+  return out;
 }
 
 /** A hosted beam's files, both sides of each, read back from the repo's Artifacts; null when its commit is gone. */
 async function hostedFiles(env: Env, h: Hosted, b: BeamRow) {
   const [commit, onto] = await Promise.all([h.handle.readCommit(b.sha), h.handle.readCommit(b.onto)]);
   if (!commit || !onto) return null;
-  const side = async (tree: string, path: string) => {
-    const e = await entryAt(env, h.handle, tree, path);
-    if (!e || e.type === "tree") return null;
-    const text = await (await h.handle.readBlob(e.hash))?.text();
-    return { hash: e.hash, mode: e.mode, text: text === undefined || text.includes("\0") ? null : text };
-  };
-  const files: FileDiff[] = await Promise.all((JSON.parse(b.files) as Change[]).map(async (c) => ({ path: c.path, before: await side(onto.treeHash, c.path), after: await side(commit.treeHash, c.path) })));
-  return { files, commit };
+  return diffAt(env, h, onto.treeHash, commit.treeHash, (JSON.parse(b.files) as Change[]).map((c) => c.path));
+}
+
+/** A hosted beam as `git format-patch` writes it: a mail per commit, the bottom one first; null when one is gone. */
+async function hostedPatch(env: Env, h: Hosted, b: BeamRow) {
+  const shas = view(b)!.stack.map((c) => c.sha), onto = await h.handle.readCommit(b.onto);
+  if (!onto) return null;
+  let under = onto.treeHash, out = "";
+  for (const [i, sha] of shas.entries()) {
+    const commit = await h.handle.readCommit(sha);
+    if (!commit) return null;
+    const diff = unifiedDiff(await diffAt(env, h, under, commit.treeHash, await changedPaths(env, h, under, commit.treeHash)));
+    const at = commit.authoredAt < 1e12 ? commit.authoredAt * 1000 : commit.authoredAt;
+    out += formatPatch({ sha, author: commit.author, at, message: commit.message, ...shas.length > 1 && { n: i + 1, of: shas.length } }, diff);
+    under = commit.treeHash;
+  }
+  return out;
 }
 
 interface BeamRow {
@@ -483,14 +551,14 @@ export async function beamRoutes(req: Request, env: Env, p: string[], user: stri
   if (b.status !== "open") return p[3] ? json({ error: "this beam was withdrawn" }, 410) : json(view(b));
   if (p[3] && p[3] !== "patch") return null;
   if (!localGit(env)) {
-    const h = await handleFor(env, b.owner, b.repo), got = h && await hostedFiles(env, h, b);
-    if (!got) return json({ error: "this beam's commit is gone from the repo's git" }, 410);
-    const diff = unifiedDiff(got.files);
+    const h = await handleFor(env, b.owner, b.repo);
     if (p[3] === "patch") {
-      const at = got.commit.authoredAt < 1e12 ? got.commit.authoredAt * 1000 : got.commit.authoredAt;
-      return new Response(formatPatch({ sha: b.sha, author: got.commit.author, at, message: got.commit.message }, diff), { headers: patchHeaders(b.id) });
+      const patch = h && await hostedPatch(env, h, b);
+      return patch ? new Response(patch, { headers: patchHeaders(b.id) }) : json({ error: "this beam's commit is gone from the repo's git" }, 410);
     }
-    return json({ ...view(b), ...cut(diff) });
+    const files = h && await hostedFiles(env, h, b);
+    if (!files) return json({ error: "this beam's commit is gone from the repo's git" }, 410);
+    return json({ ...view(b), ...cut(unifiedDiff(files)) });
   }
   const g = await bareOf(env, b.owner, b.repo);
   if ("error" in g) return g.error;

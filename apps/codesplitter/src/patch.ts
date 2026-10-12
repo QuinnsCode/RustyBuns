@@ -82,10 +82,10 @@ export function fileDiff({ path, before, after }: FileDiff): string {
 /** `git diff` of several files, in path order as git prints them. */
 export const unifiedDiff = (files: FileDiff[]) => [...files].sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0)).map(fileDiff).join("");
 
-/** The commit as `git format-patch -1 --stdout` writes it: a mail `git am` takes. */
-export function formatPatch(c: { sha: string; author: { name: string; email: string }; at: number; message: string }, diff: string): string {
+/** The commit as `git format-patch --stdout` writes it: a mail `git am` takes. `n` of `of` when it's one of a series. */
+export function formatPatch(c: { sha: string; author: { name: string; email: string }; at: number; message: string; n?: number; of?: number }, diff: string): string {
   const [title, ...rest] = c.message.trimEnd().split("\n");
   const body = rest.join("\n").trim();
   const date = new Date(c.at).toUTCString().replace("GMT", "+0000");
-  return `From ${c.sha} Mon Sep 17 00:00:00 2001\nFrom: ${c.author.name} <${c.author.email}>\nDate: ${date}\nSubject: [PATCH] ${title}\n\n${body ? `${body}\n` : ""}---\n\n${diff}-- \ncodeSplitter\n\n`;
+  return `From ${c.sha} Mon Sep 17 00:00:00 2001\nFrom: ${c.author.name} <${c.author.email}>\nDate: ${date}\nSubject: [PATCH${c.of ? ` ${c.n}/${c.of}` : ""}] ${title}\n\n${body ? `${body}\n` : ""}---\n\n${diff}-- \ncodeSplitter\n\n`;
 }

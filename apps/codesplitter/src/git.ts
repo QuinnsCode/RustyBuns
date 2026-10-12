@@ -127,16 +127,31 @@ export interface Snapshot {
   base?: TreeReader;
   /** Make `ref`, a new ref, a commit on `parent` instead of moving `branch` (a beam, beam.ts). */
   to?: { ref: string; parent: string };
+  /** More commits after this one, each on the one before, all in the one pack; the ref moves once, to the last (a stacked beam). */
+  then?: { changes: Record<string, Change>; message: string }[];
 }
 
 /** The hash git uses for "no ref": the old side of a make, the new side of a delete. */
 export const ZERO = "0".repeat(40);
 
+/** A tree object's entries, read back from its body: how a commit in the pack reads the one before it, which the remote doesn't have yet. */
+function entriesOf(body: Uint8Array) {
+  const out: { name: string; mode: string; hash: string; type: string }[] = [], dec = new TextDecoder();
+  for (let o = 0; o < body.length;) {
+    const sp = body.indexOf(0x20, o), nul = body.indexOf(0, sp);
+    const mode = dec.decode(body.subarray(o, sp));
+    out.push({ mode, name: dec.decode(body.subarray(sp + 1, nul)), hash: hex(body.subarray(nul + 1, nul + 21)), type: mode === "40000" ? "tree" : mode === "160000" ? "commit" : "blob" });
+    o = nul + 21;
+  }
+  return out;
+}
+
 /**
  * Push a commit on `branch` that applies `changes` to whatever the branch
- * points at now. If someone moves it in between, rebuild on theirs and retry.
+ * points at now (and `then`'s commits on top of it). If someone moves it in
+ * between, rebuild on theirs and retry. `commits` is every commit made, the first first.
  */
-export async function push(remote: string, token: string, snap: Snapshot, tries = 3): Promise<{ commit: string; parent: string | null; bytes: number }> {
+export async function push(remote: string, token: string, snap: Snapshot, tries = 3): Promise<{ commit: string; commits: string[]; parent: string | null; bytes: number }> {
   const ref = snap.to?.ref ?? `refs/heads/${snap.branch ?? "main"}`;
   // Artifacts tokens carry their expiry after a "?"; the secret is before it.
   const auth = { authorization: `Bearer ${token.split("?")[0]}` };
@@ -149,17 +164,33 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
     const parent = snap.to?.parent ?? old;
 
     const objs: Obj[] = [];
-    const parentTree = parent !== ZERO && snap.base ? (await snap.base.readCommit(parent))?.treeHash ?? null : null;
-    const tree = (await apply(snap.base, parentTree, snap.changes, objs)) ?? (objs.push(await obj("tree", new Uint8Array())), objs.at(-1)!);
+    // The trees made so far are read from here: a commit after the first is built on the one before it.
+    const made = new Map<string, Obj>();
+    const reader: TreeReader = {
+      readCommit: async (h) => (await snap.base?.readCommit(h)) ?? null,
+      readTree: async (h) => { const o = made.get(h); return o ? entriesOf(o.body) : (await snap.base?.readTree(h)) ?? null; },
+    };
+    let tree: string | null = parent !== ZERO && snap.base ? (await snap.base.readCommit(parent))?.treeHash ?? null : null;
     const when = `${Math.floor((snap.at ?? Date.now()) / 1000)} +0000`;
     const who = `${snap.author} <${snap.email ?? `${snap.author}@${GIT_EMAIL_DOMAIN}`}> ${when}`;
-    const commit = await obj("commit", enc.encode(
-      `tree ${tree.id}\n${parent !== ZERO ? `parent ${parent}\n` : ""}author ${who}\ncommitter ${who}\n\n${snap.message}\n`));
-    objs.push(commit);
+    const commits: string[] = [];
+    let under = parent;
+    for (const c of [{ changes: snap.changes, message: snap.message }, ...snap.then ?? []]) {
+      const out: Obj[] = [];
+      const t = (await apply(reader, tree, c.changes, out)) ?? (out.push(await obj("tree", new Uint8Array())), out.at(-1)!);
+      for (const o of out) if (o.type === "tree") made.set(o.id, o);
+      const commit = await obj("commit", enc.encode(
+        `tree ${t.id}\n${under !== ZERO ? `parent ${under}\n` : ""}author ${who}\ncommitter ${who}\n\n${c.message}\n`));
+      objs.push(...out, commit);
+      commits.push(commit.id);
+      tree = t.id; under = commit.id;
+    }
 
-    const packed = await pack(objs);
-    const report = await receive(remote, auth, `${old} ${commit.id} ${ref}`, packed);
-    if (report.includes(`ok ${ref}`)) return { commit: commit.id, parent: parent === ZERO ? null : parent, bytes: packed.length };
+    // A file the same in two commits is one object in the pack.
+    const seen = new Set<string>();
+    const packed = await pack(objs.filter((o) => !seen.has(o.id) && !!seen.add(o.id)));
+    const report = await receive(remote, auth, `${old} ${under} ${ref}`, packed);
+    if (report.includes(`ok ${ref}`)) return { commit: under, commits, parent: parent === ZERO ? null : parent, bytes: packed.length };
     // Someone else pushed between our read and our write: rebuild on top of theirs.
     if (!snap.to && attempt < tries && report.some((l) => l.startsWith(`ng ${ref}`))) continue;
     throw new Error(`git: push rejected: ${report.join(" | ")}`);
