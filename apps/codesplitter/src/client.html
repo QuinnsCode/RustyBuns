@@ -3263,7 +3263,7 @@ const views = {
     if (!el) return;
     const d = await api(`/repos/${owner}/${repo}/beams`).catch(() => null);
     if (!d) { el.innerHTML = ""; return; }
-    const ready = (d.branches ?? []).filter((b) => b.ahead > 0), ours = d.codesplitter_branches ?? [], fork = !r.mirror && r.upstream?.startsWith("github:");
+    const ready = (d.branches ?? []).filter((b) => b.ahead > 0), ours = d.codesplitter_branches ?? [], fork = !d.hosted && !r.mirror && r.upstream?.startsWith("github:");
     const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
     const sent = d.beams.slice(0, 5).map((b) => `<div class="row" style="gap:6px"><a href="#/beam/${b.id}">${esc(b.title)}</a><span class="muted" style="font-size:12px">${b.status === "open" ? `${plural(b.files, "file")}${b.to ? ` → @${esc(b.to)}` : ""}` : "withdrawn"} · ${ago(b.created_at)}</span></div>`).join("");
     const opts = (label, list, kind, says) => list.length ? `<optgroup label="${label}">${list.map((b) => `<option value="${kind}:${esc(b.name)}">${esc(b.name)} · ${says(b)}</option>`).join("")}</optgroup>` : "";
@@ -3273,7 +3273,7 @@ const views = {
         <input name="to" placeholder="@handle to send it to (optional)" aria-label="send to">
         ${fork ? `<label class="row muted" style="font-size:13px;gap:6px"><input type="checkbox" name="upstream">On upstream's newest commit</label>` : ""}
         <button class="btn primary">${icon("zap")}Beam it</button></form>`
-      : `<p class="muted">Open a branch, or push a git branch here (the Clone button's Push back line), and beam it: its commits squashed into one clean commit, lockfile churn and leftovers left out, as a link and a patch.</p>`) + sent;
+      : `<p class="muted">Open a branch${d.hosted ? "" : ", or push a git branch here (the Clone button's Push back line),"} and beam it: its commits squashed into one clean commit, lockfile churn and leftovers left out, as a link and a patch.</p>`) + sent;
     icons();
     $("#beam-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();

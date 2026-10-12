@@ -120,13 +120,16 @@ The pitch is in [README.md](README.md).
   A run's worktree goes when it's removed (`DELETE .../worktrees/:name`) or after a day, a branch's once main holds the commits it made (or the branch is gone), and one with uncommitted changes stays.
   Every sync and every `GET .../worktrees` cleans up, and deleting the repo removes them all.
   `src/worktrees.ts`.
-- **Beam: a branch's stack, cleaned up and handed over (desktop).** `POST /api/repos/:o/:r/beams {branch, onto?, title?, message?, to?, keep?, drop?}` takes git branch `branch` (pushed with the Push back remote, or made in a worktree) from where it left main, and leaves out the noise, each with why: a lockfile the repo doesn't use, lockfile churn with no `package.json` change, `node_modules/` and tool caches, build output the branch added, OS and editor leftovers, and env files (`keep` and `drop` override, by path).
+- **Beam: a branch's stack, cleaned up and handed over.** `POST /api/repos/:o/:r/beams {branch, onto?, title?, message?, to?, keep?, drop?}` takes git branch `branch` (pushed with the Push back remote, or made in a worktree) from where it left main, and leaves out the noise, each with why: a lockfile the repo doesn't use, lockfile churn with no `package.json` change, `node_modules/` and tool caches, build output the branch added, OS and editor leftovers, and env files (`keep` and `drop` override, by path).
   What's left goes on main's tip, or with `onto: "upstream"` on a GitHub fork's upstream tip (a plain read-only `git fetch`), by `git merge-tree` with no checkout, and is squashed into one commit: the stack's author if it had one, else this machine's git identity with the others as `Co-authored-by`, the title given or the first commit's, and the stack's subjects as the body.
   A 409 says what clashes, or that nothing's left once the noise is out.
   The commit is kept at `refs/beams/<id>` and checked like a pushed branch.
   `GET /api/beams/:id` is the beam and its diff for anyone with the link, `GET /api/beams/:id/patch` is `git format-patch`'s output for `git am`, `to` puts it in that handle's inbox (`GET /api/me/beams`, shown on the feed), and `DELETE /api/beams/:id` withdraws it and drops the ref.
   A repo with private lines can't beam (its git holds them blank).
   Nothing goes to GitHub.
+  On the hosted site there's no git to run and no git branches, so `kind` defaults to `codesplitter` there and a beam goes onto main only (`kind: "git"` and `onto: "upstream"` are a 501, and `GET .../beams` says `hosted: true`).
+  The Worker's own git (`src/git.ts` `push`) lays the branch's files on main's tip, with the noise left as main has it, and pushes that as one commit to `refs/beams/<id>` on the repo's Artifacts remote, by whoever beams it with whoever opened the branch as `Co-authored-by`.
+  The diff and the patch are written in JS from both sides' blobs (`src/patch.ts`), byte for byte what `git diff` and `git format-patch` print, so `git am` takes the patch the same way.
   `src/beam.ts`.
 - **Cut: some lines out, run, shared, merged back.** Select lines and press Cut (`POST /api/repos/:o/:r/cuts {pieces: [{path, from, to}]}`): the cut is those lines plus what they use: the file's imports and declarations they use, and, following relative imports into the repo's other files, the declarations they import and what those use in turn (packages aren't followed).
   Add more ranges for anything else you want in it, like a test that covers them.
@@ -602,6 +605,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/mirror.ts` | mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading |
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
+| `src/patch.ts` | a unified diff and a `git format-patch` mail written in JS, for beams on the hosted site where there's no git to run |
 | `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left; defaults under the repo's `.gitattributes` |
 | `src/sandbox.ts` | the container Durable Object hosted agents run in |
 | `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |

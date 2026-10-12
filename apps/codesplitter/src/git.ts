@@ -39,6 +39,9 @@ async function obj(type: Obj["type"], body: Uint8Array): Promise<Obj> {
   return { type, body, id };
 }
 
+/** The hash git gives `bytes` as a blob. */
+export const blobId = async (bytes: Uint8Array) => (await obj("blob", bytes)).id;
+
 /** Reads an existing repo's commits and trees (the Artifacts repo handle has this shape). */
 export interface TreeReader {
   readCommit(hash: string): Promise<{ treeHash: string } | null>;
@@ -122,6 +125,8 @@ export interface Snapshot {
   email?: string;
   /** Reads the parent's trees. Without it, `changes` is the whole tree. */
   base?: TreeReader;
+  /** Make `ref`, a new ref, a commit on `parent` instead of moving `branch` (a beam, beam.ts). */
+  to?: { ref: string; parent: string };
 }
 
 /** The hash git uses for "no ref": the old side of a make, the new side of a delete. */
@@ -132,7 +137,7 @@ export const ZERO = "0".repeat(40);
  * points at now. If someone moves it in between, rebuild on theirs and retry.
  */
 export async function push(remote: string, token: string, snap: Snapshot, tries = 3): Promise<{ commit: string; parent: string | null; bytes: number }> {
-  const branch = snap.branch ?? "main", ref = `refs/heads/${branch}`;
+  const ref = snap.to?.ref ?? `refs/heads/${snap.branch ?? "main"}`;
   // Artifacts tokens carry their expiry after a "?"; the secret is before it.
   const auth = { authorization: `Bearer ${token.split("?")[0]}` };
   for (let attempt = 1; ; attempt++) {
@@ -140,21 +145,23 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
     if (!adv.ok) throw new Error(`git: ${adv.status} reading refs from ${remote}`);
     const refs = lines(new Uint8Array(await adv.arrayBuffer()));
     const old = refs.map((l) => l.split("\0")[0]!.split(" ")).find(([, r]) => r === ref)?.[0] ?? ZERO;
+    if (snap.to && old !== ZERO) throw new Error(`git: ${ref} already exists on ${remote}`);
+    const parent = snap.to?.parent ?? old;
 
     const objs: Obj[] = [];
-    const parentTree = old !== ZERO && snap.base ? (await snap.base.readCommit(old))?.treeHash ?? null : null;
+    const parentTree = parent !== ZERO && snap.base ? (await snap.base.readCommit(parent))?.treeHash ?? null : null;
     const tree = (await apply(snap.base, parentTree, snap.changes, objs)) ?? (objs.push(await obj("tree", new Uint8Array())), objs.at(-1)!);
     const when = `${Math.floor((snap.at ?? Date.now()) / 1000)} +0000`;
     const who = `${snap.author} <${snap.email ?? `${snap.author}@${GIT_EMAIL_DOMAIN}`}> ${when}`;
     const commit = await obj("commit", enc.encode(
-      `tree ${tree.id}\n${old !== ZERO ? `parent ${old}\n` : ""}author ${who}\ncommitter ${who}\n\n${snap.message}\n`));
+      `tree ${tree.id}\n${parent !== ZERO ? `parent ${parent}\n` : ""}author ${who}\ncommitter ${who}\n\n${snap.message}\n`));
     objs.push(commit);
 
     const packed = await pack(objs);
     const report = await receive(remote, auth, `${old} ${commit.id} ${ref}`, packed);
-    if (report.includes(`ok ${ref}`)) return { commit: commit.id, parent: old === ZERO ? null : old, bytes: packed.length };
+    if (report.includes(`ok ${ref}`)) return { commit: commit.id, parent: parent === ZERO ? null : parent, bytes: packed.length };
     // Someone else pushed between our read and our write: rebuild on top of theirs.
-    if (attempt < tries && report.some((l) => l.startsWith(`ng ${ref}`))) continue;
+    if (!snap.to && attempt < tries && report.some((l) => l.startsWith(`ng ${ref}`))) continue;
     throw new Error(`git: push rejected: ${report.join(" | ")}`);
   }
 }
