@@ -17,6 +17,8 @@ bun scripts/trial-github.ts --dep rwsdk --major 1 --stable --since 2026-01-01
 bun scripts/trial-github.ts --local --prof owner/repo owner/monorepo:apps/web
 ```
 
+The search spends the owner's GitHub REST budget, 5,000 calls an hour shared with every agent. Its answers keep in `.rustybuns-trial/gh-cache/`: search pages and repo meta for a day, each `package.json` until its repo is pushed to again. So a rerun costs a few calls, and `--fresh` asks again. Before the per-repo lookups it reads `gh api rate_limit`, and it stops if the uncached calls would leave fewer than 500.
+
 Results go to `.rustybuns-trial/summary.md` (gitignored). That file has a row per app, its first error, and pass rates by last push. `--prof` adds boot time, `GET /` latency, memory, and a `.cpuprofile` for each mode. Open the profile in Chrome DevTools (Performance, then Load profile) or on speedscope.app.
 
 The two modes measure different things. **`spa`** serves the client build and runs `"use server"` functions on the host. **`worker`** runs the app's own built Worker on the host: its server rendering, routes and server functions, against the local twins. Passing in `worker` mode is the stronger result.
