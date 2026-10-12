@@ -25,6 +25,9 @@ button.primary { background: var(--fg); color: #fff; }
 
 /* menu */
 .menu, .results { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(255, 255, 255, 0.86); }
+/* Six levels and the place field outgrow a laptop screen: centred when it fits, scrolls when it doesn't. */
+.menu { display: flex; overflow-y: auto; }
+.menu > .card { margin: auto; }
 .card { width: min(560px, 100%); background: var(--bg); border: 1px solid var(--line); padding: 28px; }
 .kicker { margin: 0; font: 12px var(--mono); color: var(--muted); }
 h1 { margin: 4px 0 8px; font-size: 40px; letter-spacing: -0.02em; }
@@ -34,6 +37,14 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .level { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; text-align: left; padding: 12px 14px; }
 .level b { font-size: 16px; }
 .level span { grid-column: 1; color: var(--muted); }
+.place { display: grid; gap: 6px; margin-top: 14px; }
+.place label { color: var(--muted); font-size: 13px; }
+.place .row { display: flex; gap: 8px; }
+.place input { flex: 1; min-width: 0; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; }
+.place input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.place button { white-space: nowrap; }
+.place-status { margin: 0; min-height: 1.4em; font-size: 13px; color: var(--muted); }
+.place-status.bad { color: var(--accent-ink); }
 .level code { grid-row: 1; grid-column: 2; font-size: 12px; color: var(--accent-ink); }
 .level em { grid-column: 1; font-style: normal; font-size: 12px; color: var(--accent-ink); }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 12px; }

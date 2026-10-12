@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { LEVELS } from "../src/levels/levels.ts";
+import { LEVELS, PLAY_RADIUS, placeLevel } from "../src/levels/levels.ts";
+import { groundAt, parsePlace, placeName, worldPx, type TileSource } from "../src/levels/place.ts";
 import { folderOf, heightOf, mapRepo, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
 import { AMMO_CRATE, Game, HEALTH_CRATE, HEAVY_HP, MAX_HP, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, type Input, type Objective } from "../src/sim/game.ts";
 import { briefing, missionFor, OVERRUN, type Mission } from "../src/sim/missions.ts";
-import { slope, stampTerrain, withPads, type Terrain } from "../src/sim/terrain.ts";
+import { contourStep, slope, stampTerrain, wet, withPads, type Terrain } from "../src/sim/terrain.ts";
 import { ORDER, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
 import { VOICES } from "../src/ui/audio.ts";
 
@@ -45,6 +46,57 @@ describe("terrain", () => {
   });
 });
 
+describe("ground", () => {
+  test("a water table floods what's below it", () => {
+    const t = withPads(stampTerrain({ R: 50, seed: 1, amp: 0, freq: 0.05, water: -1, stamps: [{ kind: "crater", x: 0, z: 0, r: 5, h: 2, falloff: 1 }] }), []);
+    expect(t.water).toBe(-1);
+    expect(wet(t, 0, 0)).toBe(true);
+    expect(wet(t, 20, 0)).toBe(false);
+    expect(wet(flat, 0, 0)).toBe(false);
+  });
+
+  test("contours space out with the relief", () => {
+    expect(contourStep(0, 2)).toBeLessThan(0.5);
+    expect(contourStep(0, 9)).toBe(1);
+    expect(contourStep(0, 130)).toBe(10);
+  });
+
+  test("a place reads as lat, long", () => {
+    expect(parsePlace("37.7459, -119.5332")).toEqual({ lat: 37.7459, lon: -119.5332 });
+    expect(parsePlace("51.5 -0.12")).toEqual({ lat: 51.5, lon: -0.12 });
+    expect(parsePlace("Half Dome")).toBeNull();
+    expect(parsePlace("91, 0")).toBeNull();
+    expect(placeName(-33.8568, 151.2153)).toBe("33.8568° S 151.2153° E");
+  });
+
+  // One Terrarium tile recorded from AWS Terrain Tiles: z14 2752/6334, the high country just east of Half Dome's summit.
+  const recorded: TileSource = async (z, x, y) => {
+    if (`${z}/${x}/${y}` !== "14/2752/6334") throw new Error(`no recorded tile ${z}/${x}/${y}`);
+    return new Uint8Array(await Bun.file(new URL("./fixtures/terrarium-14-2752-6334.png", import.meta.url)).arrayBuffer());
+  };
+  // The tile's centre, and a disc that stays inside it.
+  const [lat, lon] = [37.744657, -119.520264];
+
+  test("a lat/long becomes real ground from a recorded tile", async () => {
+    const [gx, gy] = worldPx(lon, lat);
+    expect([Math.floor(gx / 256), Math.floor(gy / 256)]).toEqual([2752, 6334]);
+    const zone = await groundAt(lat, lon, { realRadius: 700, tiles: recorded });
+    const h = new Int16Array(Uint8Array.from(atob(zone.heights), (c) => c.charCodeAt(0)).buffer);
+    expect(h.length).toBe(zone.n * zone.n);
+    // High Sierra granite: well above sea level, and hundreds of metres of relief.
+    const lo = Math.min(...h), hi = Math.max(...h);
+    expect(lo).toBeGreaterThan(1000);
+    expect(hi).toBeLessThan(3000);
+    expect(hi - lo).toBeGreaterThan(200);
+
+    const level = placeLevel(zone);
+    expect(level.ground().R).toBeCloseTo(PLAY_RADIUS);
+    const m = mapRepo(level.ground(), level.repo, level.seed);
+    expect(m.compounds.length).toBeGreaterThanOrEqual(4);
+    expect(m.blocks.length).toBeGreaterThan(40);
+  });
+});
+
 describe("codemap", () => {
   test("folders group as apps/x, packages/x and top folders", () => {
     expect(folderOf("apps/web/src/a.ts")).toBe("apps/web");
@@ -79,6 +131,9 @@ describe("codemap", () => {
     const m = mapRepo(l.ground(), l.repo, l.seed);
     expect(m.compounds.length).toBeGreaterThanOrEqual(4);
     expect(m.blocks.length).toBeGreaterThan(40);
+    // Nobody starts in the pond, and no folder is built under it.
+    expect(wet(m.terrain, m.spawn.x, m.spawn.z)).toBe(false);
+    for (const c of m.compounds) expect(wet(m.terrain, c.x, c.z)).toBe(false);
   });
 });
 
@@ -176,7 +231,7 @@ describe("game", () => {
   });
 });
 
-describe("Sarge's Heroes", () => {
+describe("toy-soldier combat", () => {
   type C = { x: number; z: number; guards: number };
   /** A flat field with compounds where you say, no files on it unless given. */
   function field(compounds: C[], opts: { blocks?: Block[]; mission?: Mission } = {}) {
