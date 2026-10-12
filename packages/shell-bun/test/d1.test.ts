@@ -5,7 +5,7 @@ test("batch is one transaction: a failing statement rolls back the ones before i
   const db = d1();
   await db.exec("CREATE TABLE t (n INTEGER)");
   await expect(db.batch([db.prepare("INSERT INTO t VALUES (1)"), db.prepare("INSERT INTO nope VALUES (2)")])).rejects.toThrow("no such table");
-  expect(await db.prepare("SELECT COUNT(*) AS c FROM t").first("c")).toBe(0);
+  expect(await db.prepare("SELECT COUNT(*) AS c FROM t").first<number>("c")).toBe(0);
 
   const out = await db.batch([db.prepare("INSERT INTO t VALUES (?)").bind(1), db.prepare("SELECT n FROM t")]);
   expect(out[0]!.meta.changes).toBe(1);
