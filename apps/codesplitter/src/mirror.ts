@@ -834,6 +834,20 @@ async function catchUp(env: Env, owner: string, repo: string, s: Setup, name: st
   return got;
 }
 
+/**
+ * Why upstream's branch `ref` changed `path`: its commit messages since it left main, newest first,
+ * up to the commit the branch here last took in or pushed. Read from this git, no fetch; the
+ * commits this copy pushed up ("…, from codeSplitter") and merges are left out (#990).
+ */
+export async function upstreamMessages(env: Env, owner: string, repo: string, ref: string, path: string, n = 10) {
+  const s = await branchSetup(env, owner, repo);
+  if ("error" in s) return [];
+  const tip = await taken(s, ref);
+  if (!tip) return [];
+  const log = await git(["log", "--no-merges", "--format=%s", `${await forkPoint(s, tip)}..${tip}`, "--", path], s.dir);
+  return log.code ? [] : log.out.split("\n").filter((m) => m && !m.endsWith(", from codeSplitter")).slice(0, n);
+}
+
 /** Open upstream's branch `ref` here as a codeSplitter branch of what it changed since it left main (see take). */
 export async function openUpstreamBranch(env: Env, owner: string, repo: string, ref: string, user: string, name?: string) {
   const s = await branchSetup(env, owner, repo);

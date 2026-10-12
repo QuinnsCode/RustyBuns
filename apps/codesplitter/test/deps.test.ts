@@ -6,6 +6,7 @@ import { gated } from "./fake-gate.ts";
 import type { Runner } from "../src/preview.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { depsFix as containerFix, depsTest as containerTest } from "../sandbox/server.mjs";
+import { scopedTest } from "../sandbox/scoped.mjs";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
@@ -975,6 +976,29 @@ describe("the container's /deps-test", () => {
     expect(gaveUp).toMatchObject({ ok: false, tries: 2, edits: [] });
     expect((await containerFix({ cmd, remote: "/no/such/repo", files, name: "kleur" }))).toMatchObject({ ok: false, tries: 0, edits: [] });
   }, 60_000);
+
+  test("with only, just the tests for those files: bun's named after them, vitest's and jest's related (#990)", async () => {
+    const tracked = ["src/a.ts", "src/b.ts", "test/a.test.ts", "test/b.spec.tsx", "README.md"];
+    expect(scopedTest("bun test --timeout 9000", ["src/a.ts"], tracked)).toEqual(["bun", "test", "--timeout", "9000", "./test/a.test.ts"]);
+    expect(scopedTest("bun test", ["test/b.spec.tsx"], tracked)).toEqual(["bun", "test", "./test/b.spec.tsx"]);
+    expect(scopedTest("bun test", ["src/c.ts"], tracked)).toBeNull();          // no test of its own: the whole script
+    expect(scopedTest("vitest run --silent", ["src/a.ts"], tracked)).toEqual(["node_modules/.bin/vitest", "related", "--run", "--silent", "src/a.ts"]);
+    expect(scopedTest("jest", ["src/a.ts"], tracked)).toEqual(["node_modules/.bin/jest", "--passWithNoTests", "--findRelatedTests", "src/a.ts"]);
+    for (const script of ["bun test && eslint .", "turbo run test", "bun run --filter '*' test"]) expect(scopedTest(script, ["src/a.ts"], tracked)).toBeNull();
+    expect(scopedTest("bun test", [], tracked)).toBeNull();
+
+    const remote = await repo("bun test");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(`${remote}/a.test.ts`, `import { test } from "bun:test";\ntest("a", () => {});\n`);
+    writeFileSync(`${remote}/b.test.ts`, `import { expect, test } from "bun:test";\ntest("b", () => expect(1).toBe(2));\n`);
+    Bun.spawnSync(["git", "add", "."], { cwd: remote });
+    Bun.spawnSync(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "tests"], { cwd: remote });
+    const files = { "a.ts": "export const a = 1;\n" };
+    expect((await containerTest({ remote, files })).ok).toBe(false);
+    const scoped = await containerTest({ remote, files, only: ["a.ts"] });
+    expect(scoped).toMatchObject({ ok: true });
+    expect(scoped.out).toContain("$ bun test ./a.test.ts");
+  }, 30_000);
 
   test("a bad remote or a path out of the clone fails cleanly", async () => {
     expect((await containerTest({ remote: "/no/such/repo", files: {} })).ok).toBe(false);

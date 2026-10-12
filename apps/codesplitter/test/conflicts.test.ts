@@ -360,12 +360,14 @@ describe("over the API", () => {
 
     // Tests on: the clone gets the merged file, and a failing run comes back with the answer.
     expect((await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ run_tests: true }) })).status).toBe(200);
-    const ran: Record<string, string>[] = [];
+    const ran: Record<string, string>[] = [], only: (string[] | undefined)[] = [];
     let pass = false;
-    call.env.DEPS_TESTER = (async (_remote: string, files: Record<string, string>) => { ran.push(files); return pass ? { ok: true, out: "1 pass" } : { ok: false, out: "1 fail: x is 2" }; }) as Tester;
+    call.env.DEPS_TESTER = (async (_remote: string, files: Record<string, string>, o: { only?: string[] }) => { ran.push(files); only.push(o.only); return pass ? { ok: true, out: "1 pass" } : { ok: false, out: "1 fail: x is 2" }; }) as Tester;
     answer = "x(2);\nx(3);";
     expect(await ask()).toEqual({ path: "a.ts", line: "L2", harness: "claude", text: answer, ok: false, tests: "failed", failure: "1 fail: x is 2" });
     expect(ran[0]).toEqual({ "a.ts": "const a = 1;\nx(2);\nx(3);" });
+    // Only the tests for the settled file, where the runner can tell which (#990).
+    expect(only[0]).toEqual(["a.ts"]);
     pass = true;
     expect(await ask()).toMatchObject({ ok: true, tests: "passed" });
   });
