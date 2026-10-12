@@ -185,11 +185,12 @@ const OPS: Record<string, Record<string, Op>> = {
     delete: { id: "delete_share", summary: "Revoke a share (whoever shared it, or the repo's owner)", tag: "Sharing", risky: true, ok: ref("Ok") },
   },
   [`${repo}/beams`]: {
-    get: { id: "list_beams", summary: "A repo's beams; for the crew, the git branches there are to beam too", tag: "Sharing",
-      ok: obj({ beams: arr(ref("BeamSummary")), branches: arr(obj({ name: str(), sha: str(), ahead: int("commits past main") })) }) },
-    post: { id: "beam_branch", summary: "Beam a git branch: its stack squashed into one clean commit on main (or upstream's tip), its noise left out, as a link and a patch (the crew, desktop)", tag: "Sharing",
-      description: "Lockfiles from another package manager, lockfile churn with no package.json change, installed packages, build output, OS and editor leftovers and env files are left out, each with why; `keep` and `drop` override. Nothing is written to GitHub. 409 with `clash` when it doesn't sit cleanly on `onto`, or with `dropped` when nothing's left.",
-      body: obj({ branch: str("a git branch in the repo's git"), onto: { type: "string", enum: ["main", "upstream"] }, title: str(), message: str(), to: str("a handle whose inbox it goes in"),
+    get: { id: "list_beams", summary: "A repo's beams; for the crew, the git and codeSplitter branches there are to beam too", tag: "Sharing",
+      ok: obj({ beams: arr(ref("BeamSummary")), branches: arr(obj({ name: str(), sha: str(), ahead: int("commits past main") })),
+        codesplitter_branches: arr(obj({ name: str(), by: str(), parent: { type: ["string", "null"], description: "the branch it's stacked on" }, files: int("files it has of its own") })) }) },
+    post: { id: "beam_branch", summary: "Beam a branch, git or codeSplitter: its work squashed into one clean commit on main (or upstream's tip), its noise left out, as a link and a patch (the crew, desktop)", tag: "Sharing",
+      description: "An agent hands its work over this way: `kind: \"codesplitter\"` beams a codeSplitter branch, its files as they are now on main's tip; one stacked on another is a commit per branch, the one under it first (`stack`). Lockfiles from another package manager, lockfile churn with no package.json change, installed packages, build output, OS and editor leftovers and env files are left out, each with why; `keep` and `drop` override. Nothing is written to GitHub. 409 with `clash` when it doesn't sit cleanly on `onto`, or with `dropped` when nothing's left.",
+      body: obj({ branch: str("a git branch in the repo's git, or a codeSplitter branch with `kind`"), kind: { type: "string", enum: ["git", "codesplitter"], description: "which kind of branch `branch` is; git when left out" }, onto: { type: "string", enum: ["main", "upstream"] }, title: str(), message: str(), to: str("a handle whose inbox it goes in"),
         keep: arr(str("path")), drop: arr(str("path")) }, ["branch"]), ok: ref("Beam"), status: 201 },
   },
   "/beams/{id}": {
@@ -242,7 +243,8 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/branches`]: {
     get: { id: "list_branches", summary: "A repo's branches", tag: "Branches", open: true, ok: arr(ref("Branch")) },
     post: { id: "start_branch", summary: "Open a branch, named as git allows (slashes, dots, capitals; no spaces): edit its files with ?branch=, then merge it (the crew)", tag: "Branches",
-      body: obj({ name: str() }, ["name"]), ok: ref("Branch"), status: 201 },
+      description: "With `parent`, it's stacked on that open branch: each file it opens forks from the parent's copy where the parent has one, it can't merge until the parent has, and a beam of it is a commit per branch.",
+      body: obj({ name: str(), parent: str("an open branch to stack it on") }, ["name"]), ok: ref("Branch"), status: 201 },
   },
   [`${repo}/branches/{branch}`]: { get: { id: "review_branch", summary: "A branch's review: each file's ops against main now, and its conflicts", tag: "Branches", open: true,
     description: "Each conflict is {line, base, main, branch, choices, suggestion?}: settle it in merge_branch's `resolve` by its `line` with one of its `choices` " +
@@ -352,8 +354,9 @@ const OPS: Record<string, Record<string, Op>> = {
 const SCHEMAS: Record<string, Schema> = {
   Error: obj({ error: str() }, ["error"]),
   Ok: obj({ ok: bool() }),
-  Beam: obj({ id: str(), owner: str(), repo: str(), branch: str(), by: str(), to: { type: ["string", "null"] }, title: str(), message: str(),
-    onto: obj({ sha: str(), label: str('"main", or "upstream <repo>@<branch>"') }), sha: str("the one clean commit, at refs/beams/{id}"), commits: int("commits in the stack it squashed"),
+  Beam: obj({ id: str(), owner: str(), repo: str(), branch: str(), kind: { type: "string", enum: ["git", "codesplitter"] }, by: str(), to: { type: ["string", "null"] }, title: str(), message: str(),
+    onto: obj({ sha: str(), label: str('"main", or "upstream <repo>@<branch>"') }), sha: str("the clean commit, at refs/beams/{id}: the top one of a stacked branch's"), commits: int("commits in the stack it squashed; 0 for a codeSplitter branch"),
+    stack: { ...arr(obj({ branch: str(), sha: str(), title: str() })), description: "its commits, the bottom one first: one per branch for a stacked codeSplitter branch, else just the one" },
     files: arr(obj({ path: str(), status: str("git's A, M or D") })), dropped: arr(obj({ path: str(), why: str() })),
     status: { type: "string", enum: ["open", "withdrawn"] }, created_at: int(), page: str("open it at /#/beam/{id}"), patch: str() }),
   BeamSummary: loose("A Beam with `files` and `dropped` as counts"),
@@ -375,7 +378,7 @@ const SCHEMAS: Record<string, Schema> = {
   Claim: obj({ id: str(), who: str("who holds it"), bot: bool("an agent's: a lease that lapses"), lines: arr(str("line id")), task: str(), at: int("ms: when it was laid"),
     until: { type: ["integer", "null"], description: "ms: when it lapses; null stands till lifted" }, cap: int("ms: an agent's claim can't be renewed past this"), soft: bool("an intent: shown, but it keeps nobody off") }, ["id", "who", "bot", "lines", "at", "until"]),
   Commit: obj({ n: int(), sha: str(), parent: { type: ["string", "null"] }, rev: int(), by: str(), at: int(), message: str() }),
-  Branch: obj({ name: str(), by: str(), status: str("open or merged"), created_at: int(), merged_by: { type: ["string", "null"] }, merged_at: { type: ["integer", "null"] } }),
+  Branch: obj({ name: str(), by: str(), status: str("open or merged"), parent: { type: ["string", "null"], description: "the branch it's stacked on" }, created_at: int(), merged_by: { type: ["string", "null"] }, merged_at: { type: ["integer", "null"] } }),
   Playlist: obj({ id: int(), owner: str(), title: str() }),
   Follow: obj({ id: int("unfollow by this"), kind: { type: "string", enum: ["user", "agent", "repo", "lines"] }, name: str("user or agent: the handle"),
     owner: str(), repo: str(), path: str("lines: the file"), ids: arr(str("lines: every line id in the range when followed")),
