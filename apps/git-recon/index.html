@@ -20,6 +20,13 @@
           <div id="builds" class="chips" role="radiogroup" aria-label="Build"></div>
           <div id="heads" class="heads" role="radiogroup" aria-label="Head"></div>
         </div>
+        <form id="repo-form" class="repo-form">
+          <label for="repo-slug">Fight any repo</label>
+          <input id="repo-slug" name="slug" placeholder="owner/repo" autocomplete="off" spellcheck="false" />
+          <button id="repo-load" type="submit">Load</button>
+          <button id="repo-reset" type="button" title="Back to Rusty Buns" hidden>×</button>
+          <p id="repo-status" class="repo-status" role="status"></p>
+        </form>
         <div id="levels" class="levels"></div>
         <form id="place" class="place" autocomplete="off">
           <label for="place-at">Or fight anywhere: a latitude, longitude</label>

@@ -47,6 +47,14 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .place-status.bad { color: var(--accent-ink); }
 .level code { grid-row: 1; grid-column: 2; font-size: 12px; color: var(--accent-ink); }
 .level em { grid-column: 1; font-style: normal; font-size: 12px; color: var(--accent-ink); }
+.repo-form { display: grid; grid-template-columns: auto 1fr auto auto; gap: 6px 8px; align-items: center; margin: 0 0 12px; }
+.repo-form label { font: 12px var(--mono); color: var(--muted); }
+.repo-form input { font: 13px var(--mono); padding: 7px 10px; border: 1px solid var(--line); border-radius: 3px; min-width: 0; }
+.repo-form input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.repo-form button { padding: 6px 12px; }
+.repo-status { grid-column: 1 / -1; margin: 0; min-height: 1.2em; font: 12px var(--mono); color: var(--muted); }
+.repo-status.err { color: var(--accent-ink); }
+.heads button:disabled { opacity: 0.35; cursor: default; box-shadow: none; filter: grayscale(1); }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 12px; }
 .keys dt { font-family: var(--mono); }
 .keys dd { margin: 0; color: var(--muted); }
@@ -91,6 +99,8 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 
 @media (max-width: 560px) {
   .card { padding: 18px; }
+  .repo-form { grid-template-columns: 1fr auto auto; }
+  .repo-form label { grid-column: 1 / -1; }
   h1 { font-size: 30px; }
   .health { width: 120px; }
 }
@@ -98,7 +108,7 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 /* your soldier: a build and a head */
 .look { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; }
 .look-label { font: 12px var(--mono); color: var(--muted); }
-.chips, .heads { display: flex; gap: 6px; }
+.chips, .heads { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips button { padding: 4px 10px; font-size: 13px; white-space: nowrap; }
 .heads button { width: 34px; height: 34px; padding: 2px; }
 .heads canvas { width: 100%; height: 100%; display: block; }

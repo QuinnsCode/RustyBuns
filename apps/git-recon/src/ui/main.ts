@@ -2,15 +2,18 @@
 // The game itself is src/sim/game.ts; this only draws it and feeds it input.
 
 import * as THREE from "three";
+import { loadRepoCached, LoadError, parseSlug } from "../levels/github.ts";
 import { LEVELS, placeLevel, type LevelDef } from "../levels/levels.ts";
 import { groundAt, parsePlace } from "../levels/place.ts";
+import type { RepoSnapshot } from "../sim/codemap.ts";
+import { addWin, winKey } from "../sim/heads.ts";
 import type { ZoneData } from "../sim/terrain.ts";
 import { Game, scopeSway, stanceOf, type GameEvent, type Input } from "../sim/game.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { FIELD, place, play, VOICES } from "./audio.ts";
 import { BUILDS, type BuildId } from "./figure.ts";
-import { headById, headCanvas, HEADS } from "./heads.ts";
+import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
 import { buildWorld, type World } from "./scene.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -34,7 +37,20 @@ const lock = () => void Promise.resolve(canvas.requestPointerLock?.()).catch(() 
 
 /* ---------------- menu ---------------- */
 
-let current: { def: LevelDef; game: Game; world: World; started: number } | null = null;
+let current: { def: LevelDef; repo: RepoSnapshot; game: Game; world: World; started: number } | null = null;
+/** A repo loaded from GitHub to fight instead of each level's own. */
+let chosen: RepoSnapshot | null = null;
+
+/** Kept in the browser; a page that can't keep them just starts over each visit. */
+const store = {
+  get<T>(key: string, fallback: T): T {
+    try { return (JSON.parse(localStorage.getItem(`git-recon:${key}`) ?? "null") as T) ?? fallback; } catch { return fallback; }
+  },
+  set(key: string, value: unknown) {
+    try { localStorage.setItem(`git-recon:${key}`, JSON.stringify(value)); } catch {}
+  },
+};
+let wins = store.get<string[]>("wins", []);
 
 const list = $("levels");
 for (const def of LEVELS) {
@@ -44,10 +60,45 @@ for (const def of LEVELS) {
   b.querySelector("b")!.textContent = def.name;
   b.querySelector("span")!.textContent = def.blurb;
   b.querySelector("em")!.textContent = briefing(missionFor(def.id));
-  b.querySelector("code")!.textContent = `${def.repo.name}@${def.repo.ref}`;
+  b.querySelector("code")!.dataset.level = def.id;
   b.onclick = () => start(def);
   list.append(b);
 }
+function showRepo() {
+  for (const code of list.querySelectorAll<HTMLElement>("code[data-level]")) {
+    const r = chosen ?? LEVELS.find((l) => l.id === code.dataset.level)!.repo;
+    code.textContent = `${r.name}@${r.ref}`;
+  }
+  $("repo-reset").hidden = !chosen;
+}
+showRepo();
+
+/* ---------------- any repo ---------------- */
+
+$("repo-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const input = $<HTMLInputElement>("repo-slug"), status = $("repo-status"), go = $<HTMLButtonElement>("repo-load");
+  const slug = parseSlug(input.value);
+  status.classList.remove("err");
+  if (!slug) return (status.textContent = "Type it as owner/repo, like oven-sh/bun"), status.classList.add("err");
+  status.textContent = `Checking out ${slug} from GitHub…`, go.disabled = true;
+  try {
+    chosen = await loadRepoCached(slug);
+    const f = chosen.failing?.length ? ` · ${chosen.failing.length} checks failing` : "";
+    status.textContent = `${chosen.name}@${chosen.ref}: ${chosen.files.length} files, ${chosen.links?.length ?? 0} roads${f}. Pick a level.`;
+    showRepo();
+  } catch (err) {
+    status.textContent = err instanceof LoadError ? err.message : `Couldn't reach GitHub (${(err as Error).message})`;
+    status.classList.add("err");
+  } finally {
+    go.disabled = false;
+  }
+};
+$("repo-reset").onclick = () => {
+  chosen = null, $("repo-status").textContent = "", $<HTMLInputElement>("repo-slug").value = "";
+  showRepo();
+};
+
 
 // Any lat/long: the ground is read from AWS Terrain Tiles in the page, then kept
 // in this browser so the same place loads instantly (and offline) next time.
@@ -97,6 +148,7 @@ const me = {
   build: (savedBuild && savedBuild in BUILDS ? savedBuild : "average") as BuildId,
   head: headById(saved("head") ?? "ball"),
 };
+if (!isOpen(me.head, wins.length)) me.head = HEADS[0]!;
 
 function radios<T>(box: HTMLElement, items: T[], label: (t: T) => string, fill: (b: HTMLButtonElement, t: T) => void, on: (t: T) => boolean, pick: (t: T) => void) {
   const draw = () => box.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-checked", String(on(items[i]!))));
@@ -111,19 +163,28 @@ function radios<T>(box: HTMLElement, items: T[], label: (t: T) => string, fill: 
   draw();
 }
 radios($("builds"), Object.keys(BUILDS) as BuildId[], (id) => BUILDS[id].name, (b, id) => (b.textContent = BUILDS[id].name), (id) => id === me.build, (id) => (me.build = id, save("build", id)));
-radios($("heads"), HEADS, (h) => h.name, (b, h) => b.append(headCanvas(h)), (h) => h.id === me.head.id, (h) => (me.head = h, save("head", h.id)));
+/** The heads, toy ones greyed out until you've won enough levels; redrawn after a win. */
+function showHeads() {
+  const box = $("heads");
+  box.innerHTML = "";
+  radios(box, HEADS, (h) => isOpen(h, wins.length) ? (h.nod ? `${h.name}: a nod to ${h.nod}` : h.name) : `Locked: win ${h.wins! - wins.length} more ${h.wins! - wins.length === 1 ? "level" : "levels"}`,
+    (b, h) => (b.append(headCanvas(h)), (b.disabled = !isOpen(h, wins.length))), (h) => h.id === me.head.id, (h) => (me.head = h, save("head", h.id)));
+}
+showHeads();
 
 function start(def: LevelDef) {
-  const mission = missionFor(def.id);
-  const game = Game.fromRepo(def.ground(), def.repo, def.seed, mission);
+  const mission = missionFor(def.id), repo = chosen ?? def.repo;
+  const game = Game.fromRepo(def.ground(), repo, def.seed, mission);
   const world = buildWorld(game.map, { head: me.head, build: me.build });
-  current = { def, game, world, started: performance.now() };
+  current = { def, repo, game, world, started: performance.now() };
   look.yaw = game.map.spawn.yaw, look.pitch = -0.05, prone = false;
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = false;
   $("level-name").textContent = def.name;
-  $("repo").textContent = `${def.repo.name}@${def.repo.ref}`;
+  $("repo").textContent = `${repo.name}@${repo.ref}`;
   $("feed").innerHTML = "";
-  feed(`checked out ${def.repo.name}. ${game.map.compounds.length} folders in conflict.`);
+  feed(`checked out ${repo.name}. ${game.map.compounds.length} folders in conflict.`);
+  const burning = game.map.compounds.filter((c) => c.burning);
+  if (burning.length) feed(`checks failing: ${burning.map((c) => c.folder).join(", ")} on fire`, true);
   banner(briefing(mission));
   lock();
 }
@@ -132,6 +193,7 @@ function toMenu() {
   current = null;
   document.exitPointerLock?.();
   $("menu").hidden = false, $("hud").hidden = true, $("results").hidden = true;
+  showHeads();
 }
 $("again").onclick = () => current && start(current.def);
 $("back").onclick = toMenu;
@@ -287,9 +349,14 @@ function results(game: Game) {
   $("results-body").textContent = won
     ? o.kind === "carry" ? `The commit made it to HEAD in ${clock(game.time)}, with ${spare}.`
       : o.kind === "defend" && o.held >= o.seconds ? `main held for ${clock(o.held)}, with ${spare}.`
-      : `Every conflict in ${current!.def.repo.name} resolved in ${clock(game.time)}, with ${spare}.`
+      : `Every conflict in ${current!.repo.name} resolved in ${clock(game.time)}, with ${spare}.`
     : o.kind === "defend" && o.overrun >= OVERRUN ? `main was overwritten after ${clock(o.held)}.`
     : `Out of reflog. ${game.cleared.filter(Boolean).length} of ${game.cleared.length} folders merged in ${clock(game.time)}.`;
+  if (won) {
+    const got = addWin(wins, winKey(current!.def.id, current!.repo.name));
+    wins = got.wins, store.set("wins", wins);
+    if (got.head) $("results-body").textContent += ` Unlocked a head: ${got.head.name.toLowerCase()}.`;
+  }
   $("results").hidden = false;
 }
 

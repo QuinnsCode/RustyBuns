@@ -12,7 +12,7 @@ import { COMPOUNDS, mapRepo, type RepoSnapshot } from "../sim/codemap.ts";
 import elCapitan from "./data/el-capitan.json";
 import glacierPoint from "./data/glacier-point.json";
 import halfDome from "./data/half-dome.json";
-import rustybuns from "./repos/rustybuns.json";
+import rustybunsSnapshot from "./repos/rustybuns.json";
 
 export interface LevelDef {
   id: string;
@@ -31,6 +31,9 @@ const realGround = (zone: ZoneData) => () => heightmapTerrain(zone, zone.realRad
 function legs(cx: number, cz: number, half: number, r: number, h: number): Stamp[] {
   return [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => ({ kind: "plateau" as const, x: cx + sx! * half, z: cz + sz! * half, r, h, falloff: 0.5 }));
 }
+
+// JSON infers links as plain arrays, not [a, b, n] tuples.
+const rustybuns = rustybunsSnapshot as RepoSnapshot;
 
 export const REPOS: Record<string, RepoSnapshot> = { rustybuns };
 
