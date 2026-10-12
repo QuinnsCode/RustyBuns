@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { shadow } from "../scripts/shadow.ts";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { failures, shadow, testRuns, useRepo, writeMerge } from "../scripts/shadow.ts";
 
 // scripts/shadow.ts (#1014): codeSplitter's merge beside git's, one file's three versions at a time.
 describe("shadow mode", () => {
@@ -45,5 +48,62 @@ describe("shadow mode", () => {
 
   test("both conflict", () => {
     expect(shadow("a.ts", "foo(1)\n", "foo(2)\n", "foo(3)\n").verdict).toBe("both");
+  });
+});
+
+// --check (#1043): build and test each merge git conflicted on and ours didn't.
+describe("shadow --check", () => {
+  test("runs each touched app's tests as that tree's ci-apps.ts did, and packages' for packages/", () => {
+    const ciApps = `export const APPS = {
+  "codesplitters":     { test: "bun test --parallel test", boot: true },
+  "example":           { boot: true, drop: false },
+  "two-fronts":        { test: "bun test test", drop: false },
+};`;
+    expect(testRuns(ciApps, ["apps/codesplitters/src/a.ts", "apps/codesplitters/test/a.test.ts", "apps/example/x.ts", "packages/cli/y.ts", "README.md"])).toEqual([
+      { dir: "apps/codesplitters", cmd: "bun test --parallel test" },
+      { dir: ".", cmd: "bun test packages" },
+    ]);
+    expect(testRuns(ciApps, ["apps/two-fronts/a.ts"])).toEqual([{ dir: "apps/two-fronts", cmd: "bun test test" }]);
+    expect(testRuns("", ["apps/two-fronts/a.ts"])).toEqual([]);
+  });
+
+  test("names the tests a run failed, so only the ones that pass as landed count", () => {
+    const run = { dir: "apps/codesplitters", cmd: "bun test test" };
+    const out = "(pass) ok [1.00ms]\n(fail) the container's /test > a bad remote fails cleanly [14.37ms]\n(fail) slow one [5001.11ms]\n  ^ this test timed out\n(fail) the container's /test > a bad remote fails cleanly [14.37ms]\n";
+    expect(failures(run, out)).toEqual(["apps/codesplitters: the container's /test > a bad remote fails cleanly", "apps/codesplitters: slow one"]);
+    expect(failures(run, "error: Cannot find module")).toEqual(["apps/codesplitters: bun test test"]);
+  });
+
+  test("writes git's merge with ours over its conflicts and what landed over the rest", () => {
+    const repo = mkdtempSync(join(tmpdir(), "shadow-repo-"));
+    const out = join(repo, "..", `${repo.split("/").pop()}-out`);
+    const sh = (cmd: string) => {
+      const r = Bun.spawnSync(["sh", "-c", cmd], { cwd: repo, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+      if (r.exitCode) throw new Error(r.stderr.toString());
+      return r.stdout.toString().trim();
+    };
+    const commit = (files: Record<string, string>) => {
+      for (const [p, t] of Object.entries(files)) writeFileSync(join(repo, p), t);
+      sh("git add -A && git commit -qm c");
+      return sh("git rev-parse HEAD");
+    };
+    try {
+      sh("git init -q");
+      const base = commit({ "a.ts": "a\nb\nc\n", "b.ts": "x\n", "c.ts": "1\n2\n3\n4\n5\n" });
+      const main = commit({ "a.ts": "A\nb\nc\n", "b.ts": "main\n", "c.ts": "one\n2\n3\n4\n5\n" });
+      sh(`git checkout -q ${base}`);
+      const branch = commit({ "a.ts": "a\nB\nc\n", "b.ts": "branch\n", "c.ts": "1\n2\n3\n4\nfive\n" });
+      const landed = commit({ "a.ts": "A\nB\nc\n", "b.ts": "both\n", "c.ts": "landed's own\n" });
+      useRepo(repo);
+      writeMerge(out, main, branch, landed, new Map([["a.ts", "A\nB\nc\n"]]));
+      expect(readFileSync(join(out, "a.ts"), "utf8")).toBe("A\nB\nc\n");   // ours over git's conflict
+      expect(readFileSync(join(out, "b.ts"), "utf8")).toBe("both\n");        // a conflict ours didn't take: what landed
+      expect(readFileSync(join(out, "c.ts"), "utf8")).toBe("one\n2\n3\n4\nfive\n"); // git's clean merge, not what landed
+      expect(existsSync(join(out, ".git"))).toBe(false);
+    } finally {
+      useRepo();
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(out, { recursive: true, force: true });
+    }
   });
 });
