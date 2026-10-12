@@ -4,7 +4,7 @@ The details behind the [README](README.md): every command, every config key, how
 
 ## Typed deploys, thanks to Effect
 
-The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, Railway, soon Fly) is a typed Layer. Swap a target by changing one line of config, and the compiler tells you what's missing before anything is created. `plan` type checks the generated stack first, then shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
+The deploy side is built on Alchemy, which is built on [Effect](https://effect.website). Your `rustybuns.config.ts` is typed, the generated stack is typed, and every provider (Cloudflare, Hetzner, Railway, soon Fly) is a typed Layer. Swap a target by changing one line of config, and every command checks the config when it loads it (an Effect Schema, so `bindings.DB.databaseName: missing` instead of a failure halfway into a deploy) before anything is created. `plan` type checks the generated stack first, then shows the diff, and `deploy` refuses to run without a plan for that exact config. You get infrastructure-as-code that feels like writing a function, and you never have to write the Effect yourself unless you want to (`rustybuns eject` hands you the program).
 
 ## Type checking and per-step timing
 
@@ -219,7 +219,7 @@ At launch the host checks the app's `package.json` version against it, with the 
 
 ## Config
 
-`rustybuns.config.ts` is the one file you own. `init` writes it, and every generated file comes from it.
+`rustybuns.config.ts` is the one file you own. `init` writes it, and every generated file comes from it. Every command checks it on load and lists each problem as one line naming the field: a missing key, a typo'd binding type or key, a value out of the range the docs below give.
 
 `worker` is only needed for the Cloudflare deploy. Leave it out for a desktop-only or box-only app.
 

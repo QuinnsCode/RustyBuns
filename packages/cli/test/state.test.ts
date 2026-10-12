@@ -91,4 +91,6 @@ test("alchemy stage: --stage, then $ALCHEMY_STAGE, then live_$USER", () => {
   expect(alchemyStage(["--yes", "--stage=pr_2"], { USER: "me" })).toBe("pr_2");
   expect(alchemyStage([], { ALCHEMY_STAGE: "prod", USER: "me" })).toBe("prod");
   expect(alchemyStage([], { USER: "me" })).toBe("live_me");
+  // No name after --stage: it used to take the next flag, or "".
+  for (const args of [["--stage", "--yes"], ["--stage"], ["--stage="]]) expect(() => alchemyStage(args, { USER: "me" })).toThrow("--stage needs a name");
 });

@@ -14,6 +14,9 @@ import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
 import { hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
 import type { RustyBunsConfig } from "./config.ts";
+import { Effect } from "effect";
+import { decodeConfig } from "./config-schema.ts";
+import { ConfigLoadFailed, UsageError, closest, flag, intFlag, renderError } from "./errors.ts";
 import { infer, readPackageJson } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
@@ -41,10 +44,17 @@ import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, compactDiagnostics, pickChec
 const [cmd, ...rest] = process.argv.slice(2);
 const VERSION = (await Bun.file(new URL("../package.json", import.meta.url)).json()).version as string;
 
+/** rustybuns.config.ts, checked against config-schema.ts: a bad one stops here, naming each field. */
 async function loadConfig(): Promise<RustyBunsConfig> {
-  const f = Bun.file("rustybuns.config.ts");
-  if (!(await f.exists())) throw new Error("no rustybuns.config.ts; run `rustybuns init` first");
-  return (await import(`${process.cwd()}/rustybuns.config.ts`)).default as RustyBunsConfig;
+  const path = `${process.cwd()}/rustybuns.config.ts`;
+  if (!(await Bun.file(path).exists())) throw new ConfigLoadFailed({ message: "no rustybuns.config.ts here; run `rustybuns init` first" });
+  let mod: { default?: unknown };
+  try { mod = await import(path); } catch (e) {
+    const at = (e as { position?: { line: number; column: number } }).position;
+    throw new ConfigLoadFailed({ message: `rustybuns.config.ts${at ? `:${at.line}:${at.column}` : ""} doesn't load: ${(e as Error).message}` });
+  }
+  if (mod.default === undefined) throw new ConfigLoadFailed({ message: "rustybuns.config.ts has no default export; it should end `export default defineConfig({ ... })`" });
+  return Effect.runPromise(decodeConfig(mod.default));
 }
 
 async function writeIfChanged(path: string, content: string, opts: { adopt?: boolean } = {}) {
@@ -569,7 +579,6 @@ async function redactAfterDeploy(cfg: RustyBunsConfig, stage: string) {
   }
 }
 
-const flagValue = (args: string[], n: string) => { const i = args.indexOf("--" + n); return i >= 0 ? args[i + 1] : undefined; };
 
 /**
  * The deployed box `rustybuns <cmd>` talks to: its URL (--url, else the Alchemy state) and, when
@@ -593,7 +602,7 @@ async function boxTarget(cmd: string, args: string[], withSecret: boolean, say: 
     if (problem) throw new Error(problem);
   }
   const stage = alchemyStage(args);
-  const url = flagValue(args, "url") ?? boxUrl(process.cwd(), cfg, stage);
+  const url = flag(args, "url") ?? boxUrl(process.cwd(), cfg, stage);
   if (!url) throw new Error(`no box URL in the Alchemy state for stage ${stage}. Deploy first, or pass --url.`);
   if (withSecret && url.startsWith("http://")) say(`note: ${url} is plain HTTP, so the secret crosses the network unencrypted. Rotate it if that matters.`);
   return { cfg, url, secret: secret ?? "" };
@@ -602,12 +611,11 @@ async function boxTarget(cmd: string, args: string[], withSecret: boolean, say: 
 /** `rustybuns prof`: sample the deployed box's CPU, save the .cpuprofile here and print its hottest frames. */
 async function prof(args: string[]) {
   const json = args.includes("--json"), say = json ? console.error : console.log;
-  const seconds = Number(flagValue(args, "seconds") ?? 10);
-  if (!(seconds > 0 && seconds <= 60)) throw new Error("--seconds takes 1 to 60");
+  const seconds = intFlag(args, "seconds", 1, 60, 10), top = intFlag(args, "top", 1, 1000, 10);
   const { cfg, url, secret } = await boxTarget("prof", args, true, say);
   say(`sampling ${url} for ${seconds}s...`);
   const file = await fetchProfile({ url, secret, seconds, outDir: join(".rustybuns", "prof"), name: cfg.name });
-  const summary = summarizeProfile(JSON.parse(readFileSync(file, "utf8")), Number(flagValue(args, "top")) || 10);
+  const summary = summarizeProfile(JSON.parse(readFileSync(file, "utf8")), top);
   if (json) return console.log(JSON.stringify({ url, file, seconds, summary }, null, 2));
   console.log(`saved ${file}\n\n${formatProfileSummary(summary)}\n\nfor the flame graph, open it in Chrome DevTools > Performance (Load profile), or drop it on https://www.speedscope.app`);
 }
@@ -625,7 +633,7 @@ async function historyCommand(args: string[]) {
   const json = args.includes("--json");
   const { url, secret } = await boxTarget("history", args, true, json ? console.error : console.log);
   const runs = await fetchHistory({ url, secret });
-  const max = Number(flagValue(args, "runs")) || 5;
+  const max = intFlag(args, "runs", 1, 1000, 5);
   console.log(json ? JSON.stringify({ url, runs: runs.slice(0, max) }, null, 2) : formatHistory(runs, max));
 }
 
@@ -644,6 +652,7 @@ async function triageCommand(args: string[]) {
   });
 }
 
+const COMMANDS = ["init", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "build", "eject", "version"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -714,6 +723,10 @@ try {
       break;
     }
     default:
+      if (cmd && cmd !== "help" && cmd !== "--help" && cmd !== "-h") {
+        const near = closest(cmd, COMMANDS);
+        throw new UsageError({ message: `unknown command ${JSON.stringify(cmd)}${near ? `; did you mean \`rustybuns ${near}\`?` : ""} (\`rustybuns help\` lists them)` });
+      }
       console.log(`rustybuns ${VERSION}
 Box and ship the web app you already have. A dev dependency, never in prod.
 
@@ -789,6 +802,7 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   Docs: README.md · GETTING_STARTED.md`);
   }
 } catch (e) {
-  console.error(String((e as Error).message ?? e));
-  process.exit(1);
+  const { text, code } = renderError(e);
+  console.error(text);
+  process.exit(code);
 }
