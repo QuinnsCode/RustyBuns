@@ -98,12 +98,14 @@ describe("what the review says about each conflict", () => {
   const pre = "  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks ";
   const base = pre + "triage\\n`);", vale = pre + "triage vale\\n`);", cs = pre + "triage codesplitter\\n`);";
 
-  test("words both added at one spot still conflict, but come back as a suggestion keeping both, main's first", () => {
+  test("words both added at one spot merge, main's first; a conflict over them comes back with that as a suggestion", () => {
     expect(mergeWords(base, vale, cs)).toBeNull();
     expect(mergeWords(base, vale, cs, true)).toBe(pre + "triage vale codesplitter\\n`);");
     // Two rewrites of the same word aren't two inserts: no suggestion.
     expect(mergeWords("foo(1)", "foo(2)", "foo(3)", true)).toBeNull();
-    const c = conflicts(sides(`x\n${base}\ny`, `x\n${vale}\ny`, `x\n${cs}\ny`))[0]!;
+    // The merge settles it (#933), so it's only a conflict when it comes from elsewhere.
+    expect(text(settle(sides(`x\n${base}\ny`, `x\n${vale}\ny`, `x\n${cs}\ny`), {}))).toBe(`x\n${pre}triage vale codesplitter\\n\`);\ny`);
+    const c = { line: "L2", base, main: vale, branch: cs };
     expect(explain(c)).toEqual({ ...c, choices: ["main", "branch", "both", "both:branch-first", "text"], suggestion: pre + "triage vale codesplitter\\n`);" });
   });
 
@@ -133,6 +135,98 @@ describe("what the review says about each conflict", () => {
     expect(settled({ code: 0, out: "", text: given }, "claude", given)).toEqual({ error: "claude left the conflict as it was" });
     expect(settled({ code: 0, out: "", text: "b\n=======\nc" }, "claude", given)).toEqual({ error: "claude left git's markers in" });
     expect(settled({ code: 2, out: "rate limited", text: null }, "claude", given)).toEqual({ error: "claude exited 2: rate limited" });
+  });
+});
+
+// The hunks git conflicted on between main and #893 / #886 (docs/merge-solutions.md), cut down.
+describe("settled without asking (#933)", () => {
+  const merged = (was: string, onMain: string, onBranch: string, path = "x.ts") => text(settle(sides(was, onMain, onBranch), {}, path));
+
+  test("an import main changed under a new one it added still word-merges with the branch's (worker.ts)", () => {
+    const was = "// routes\nimport { kick, land, seeGit } from \"./mirror.ts\";";
+    expect(merged(was, "// routes\nimport { beamRoutes } from \"./beam.ts\";\nimport { kick, land, seeGit, turnRoute } from \"./mirror.ts\";", "// routes\nimport { kick, land, mirrorTag, seeGit } from \"./mirror.ts\";"))
+      .toBe("// routes\nimport { beamRoutes } from \"./beam.ts\";\nimport { kick, land, mirrorTag, seeGit, turnRoute } from \"./mirror.ts\";");
+  });
+
+  test("in prose and comments the rename guard skips short and common words; code keeps it whole (the README bullet)", () => {
+    const was = "- **The map.** A panel opens a map of where it came from. Click a dot to revert it.";
+    const onMain = "- **The vein.** The panel opens the vein, its history: where it came from. Click a dot to revert it.";
+    const onBranch = "- **The map.** A panel opens a map of where it came from. A tagged commit wears a tag. Click a dot to revert it.";
+    expect(mergeWords(was, onMain, onBranch)).toBeNull();
+    expect(merged(was, onMain, onBranch, "README.md")).toBe("- **The vein.** The panel opens the vein, its history: where it came from. A tagged commit wears a tag. Click a dot to revert it.");
+    expect(merged(`// ${was}`, `// ${onMain}`, `// ${onBranch}`)).toBe(`// ${onMain.replace("Click", "A tagged commit wears a tag. Click")}`);
+    // A word that says something still trips it: main renamed `map`, the branch wrote it again.
+    expect(mergeWords(was, onMain, was.replace("revert it.", "revert it on the map."), false, true)).toBeNull();
+  });
+
+  test("the same line in two new blocks isn't doubled; at the same level it still is (deps.test.ts)", () => {
+    const setup = "    const pkg = JSON.parse(files[\"package.json\"]!);";
+    const t = (name: string) => `test("${name}", async () => {\n  const tester = async (files) => {\n${setup}\n  };\n});`;
+    expect(merged("a\nz", `a\n${t("digs")}\nz`, `a\n${t("rank")}\nz`)).toBe(`a\n${t("digs")}\n${t("rank")}\nz`);
+    expect(conflicts(sides("a\nb", "import { z } from './z'\na\nb", "a\nimport { z } from './z'\nb"))).toMatchObject([{ doubled: true }]);
+  });
+
+  test("two new tests after the last one, each ending as it does, land whole: main's, then the branch's (deps.test.ts)", () => {
+    // Read top-down, each side's new test could start inside the old one's tail: both slide down to the blank line under it.
+    const t = (name: string) => `test("${name}", async () => {\n  ${name}();\n  await run();\n  expect(told.length).toBe(1);\n});\n`;
+    const was = `import { a } from "x";\nimport { b } from "y";\n${t("chain")}\ntest("search", () => {});\n// a\n// b`;
+    const onMain = `import { a, dig } from "x";\nimport { b } from "y";\n${t("chain")}\n${t("dig")}\ntest("search", () => {});\n// a, main's\n// b`;
+    const onBranch = `import { a } from "x";\nimport { b, rank } from "y";\n${t("chain")}\n${t("rank")}\ntest("search", () => {});\n// a\n// b, the branch's`;
+    expect(merged(was, onMain, onBranch)).toBe(`import { a, dig } from "x";\nimport { b, rank } from "y";\n${t("chain")}\n${t("dig")}\n${t("rank")}\ntest("search", () => {});\n// a, main's\n// b, the branch's`);
+  });
+
+  test("new lines both added at one spot: main's first", () => {
+    expect(merged("a\nz", "a\nm1\nm2\nz", "a\nb1\nz")).toBe("a\nm1\nm2\nb1\nz");
+    // A line both added lands once, where main has it.
+    expect(merged("a\nz", "a\nm1\nsame\nz", "a\nsame\nb1\nz")).toBe("a\nm1\nsame\nb1\nz");
+  });
+
+  test("items both added to one list: main's first, or in order if the list was sorted; one key added two ways is a conflict", () => {
+    // The deps save body in client.html, both appended.
+    const save = (x: string) => `await api(base, { on: f.on.checked, held: f.held.value${x} }, "PUT");`;
+    expect(merged(save(""), save(", digs"), save(", rank"))).toBe(save(", digs, rank"));
+    expect(mergeWords("import { a, c, e } from \"x\";", "import { a, c, d, e } from \"x\";", "import { a, c, b, e } from \"x\";".replace("c, b", "b, c"), true)).toBe("import { a, b, c, d, e } from \"x\";");
+    expect(mergeWords("import { a, b, c } from \"x\";", "import { a, b, c, z } from \"x\";", "import { a, b, c, d } from \"x\";", true)).toBe("import { a, b, c, d, z } from \"x\";");
+    // Two items is too few to call it sorted: main's first.
+    expect(mergeWords("f(a, c)", "f(a, c, z)", "f(a, c, d)", true)).toBe("f(a, c, z, d)");
+    // The commit graph's <g class>: a class each, at one spot, and the branch's rename further on.
+    const g = (cls: string, attrs: string) => `return \`<g class="\${c.up ? "u" : "m"}${cls}" ${attrs}>\`;`;
+    expect(merged(g("", "tabindex=\"0\" data-hash=\"${esc(c.hash)}\""), g("${c === tip ? \" tip\" : \"\"}", "tabindex=\"0\" data-hash=\"${esc(c.hash)}\""), g("${o.sel === c.hash ? \" sel\" : \"\"}", "data-h=\"${c.hash}\" tabindex=\"0\"")))
+      .toBe(g("${c === tip ? \" tip\" : \"\"}${o.sel === c.hash ? \" sel\" : \"\"}", "data-h=\"${c.hash}\" tabindex=\"0\""));
+    const s = sides("const D = { on: false, held: [] };", "const D = { on: false, held: [], rank: [] };", "const D = { on: false, held: [], rank: null };");
+    expect(conflicts(s)).toHaveLength(1);
+  });
+
+  test("a stretch both reshaped: lines paired, list items merged in each pair, lines only one side added kept whole (deps.ts)", () => {
+    // DEFAULTS, a one-liner both added to, with declarations both added under it.
+    const d = (x: string) => `export const DEFAULTS = { on: false, held: [], ${x}preview: false };`;
+    expect(merged(`${d("")}\n\nz`, `${d("").replace(" };", ", digs: [] };")}\nexport const MAX_DIGS = 10;\n\nz`, `${d("rank: [], ")}\nexport const MAX_RANKED = 20;\n\nz`))
+      .toBe(`${d("rank: [], ").replace(" };", ", digs: [] };")}\nexport const MAX_DIGS = 10;\nexport const MAX_RANKED = 20;\n\nz`);
+    // Report: a one-liner main added to and the branch reflowed onto lines of its own.
+    const report = "export interface Report { at: number; updates: Update[]; previews?: Run[]; branch?: string; note?: string }";
+    expect(merged(`${report}\n\nz`, `${report.replace("Run[];", "Run[]; digs?: Dug[];")}\n\nz`, "export interface Report {\n  at: number; updates: Update[]; previews?: Run[]; branch?: string; note?: string;\n  rank?: string[];\n}\n\nz"))
+      .toBe("export interface Report {\n  at: number; updates: Update[]; previews?: Run[]; digs?: Dug[]; branch?: string; note?: string;\n  rank?: string[];\n}\n\nz");
+    // The registry fetch: both appended to the cast and the return, and the branch added a line between.
+    const was = "  const doc = (await res.json()) as { versions?: Record<string, unknown>; time?: Record<string, string> };\n  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {} };\n};";
+    const onMain = "  const doc = (await res.json()) as { versions?: Record<string, unknown>; time?: Record<string, string>; \"dist-tags\"?: Record<string, string> };\n  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {}, tags: doc[\"dist-tags\"] ?? {} };\n};";
+    const onBranch = "  const doc = (await res.json()) as { versions?: Record<string, { peers?: Peers } | null>; time?: Record<string, string> };\n  const peers = peersOf(doc.versions);\n  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {}, peers };\n};";
+    expect(merged(was, onMain, onBranch)).toBe("  const doc = (await res.json()) as { versions?: Record<string, { peers?: Peers } | null>; time?: Record<string, string>; \"dist-tags\"?: Record<string, string> };\n  const peers = peersOf(doc.versions);\n  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {}, tags: doc[\"dist-tags\"] ?? {}, peers };\n};");
+  });
+
+  test("a CSS rule line both added rules to, with rules added under it (client.html)", () => {
+    const was = "  .cg g:hover > *, .cg g.on > * { stroke: red; }\n  .cg g[data-hash] { cursor: pointer; }\n  .cg-pick { display: grid; }";
+    const onMain = "  .cg g:hover > *, .cg g.on > * { stroke: red; }\n  .cg g[data-hash] { cursor: pointer; } .cg g.beat > * { stroke: gold; }\n  .cg .bead { fill: gold; }\n  .cg-pick { display: grid; }";
+    const onBranch = "  .cg g:hover > *, .cg g.sel > * { stroke: red; }\n  .cg path.t { fill: brown; } .cg g[data-h] { cursor: pointer; }\n  .cg-tag { gap: 3px; }\n  .cg-pick { display: grid; }";
+    expect(merged(was, onMain, onBranch, "client.html")).toBe("  .cg g:hover > *, .cg g.sel > * { stroke: red; }\n  .cg path.t { fill: brown; } .cg g[data-h] { cursor: pointer; } .cg g.beat > * { stroke: gold; }\n  .cg .bead { fill: gold; }\n  .cg-tag { gap: 3px; }\n  .cg-pick { display: grid; }");
+  });
+
+  test("real rewrites stay conflicts: code hung under a line the other side removed, or one item rewritten two ways", () => {
+    // drawGraph in client.html: the branch dropped the call, main hung the pulse code under it.
+    expect(conflicts(sides("  };\n  drawGraph(graph);\n  el.on();", "  };\n  drawGraph(graph);\n  let beatAt = 0;\n  el.on();", "  };\n  el.on();"), "client.html")).toHaveLength(1);
+    // Registry: main pulled the type out into Meta, the branch added a field inside it.
+    const was = "/** Its versions. */\nexport type Registry = (n: string) => Promise<{ versions: string[] } | null>;";
+    const onMain = "/** Its versions. */\nexport interface Meta { versions: string[]; tags?: Tags }\nexport type Registry = (n: string) => Promise<Meta | null>;";
+    expect(conflicts(sides(was, onMain, was.replace("string[] }", "string[]; peers?: Peers }")))).toHaveLength(1);
   });
 });
 

@@ -13,23 +13,88 @@ import type { Doc, Line, Op } from "./lines.ts";
 export function diffToOps(base: Line[], next: string[]): Op[] {
   const pairs = keptPairs(base.map((l) => l.text), next);
   pairs.push({ i: base.length, j: next.length }); // sentinel: the end of both
+  slideDown(pairs, next);
 
   const ops: Op[] = [];
   let anchor: string | null = null; // id of the last base line before this gap
   let prevI = -1, prevJ = -1;
   for (const { i, j } of pairs) {
     const old = base.slice(prevI + 1, i), fresh = next.slice(prevJ + 1, j);
-    const paired = Math.min(old.length, fresh.length);
-    for (let t = 0; t < paired; t++) ops.push({ kind: "set", line: old[t]!.id, base: old[t]!.rev, text: fresh[t]! });
-    if (paired > 0) anchor = old[paired - 1]!.id;
-    for (let t = paired; t < old.length; t++) ops.push({ kind: "delete", line: old[t]!.id, base: old[t]!.rev });
-    // All inserts go after the same anchor, so emit them last-first to land in text order.
-    for (let t = fresh.length - 1; t >= paired; t--) ops.push({ kind: "insert", after: anchor, text: fresh[t]! });
+    // A changed line keeps the id of the old line it's most like, not just the next one in order.
+    const from = pairUp(old.map((l) => l.text), fresh), kept = new Set(from);
+    for (let t = 0; t < old.length; t++) if (!kept.has(t)) ops.push({ kind: "delete", line: old[t]!.id, base: old[t]!.rev });
+    // New lines between two kept ones all go after the same anchor, so emit them last-first to land in text order.
+    let run: string[] = [];
+    const flush = () => { for (const text of run.reverse()) ops.push({ kind: "insert", after: anchor, text }); run = []; };
+    fresh.forEach((text, t) => {
+      const o = old[from[t]!];
+      if (!o) { run.push(text); return; }
+      flush();
+      ops.push({ kind: "set", line: o.id, base: o.rev, text });
+      anchor = o.id;
+    });
+    flush();
     if (i < base.length) anchor = base[i]!.id;
     prevI = i;
     prevJ = j;
   }
   return ops;
+}
+
+/**
+ * A block of new lines that repeats the lines under it (a new test after the
+ * last one: both end in `expect(…)`, `});` and a blank) could be read as added
+ * a few lines higher, inside the test before it. Slide each one as far down as
+ * it goes, so two sides that added a block at the end of one section both add
+ * it at the same spot, whole. In place, on `pairs` with its end sentinel.
+ */
+function slideDown(pairs: { i: number; j: number }[], next: string[]) {
+  for (let k = 0; k < pairs.length - 1; k++) {
+    const prev = k ? pairs[k - 1]! : { i: -1, j: -1 };
+    let start = prev.j + 1;
+    // Only lines added: no base line in this gap.
+    if (pairs[k]!.i !== prev.i + 1 || pairs[k]!.j === start) continue;
+    while (k < pairs.length - 1 && next[start] === next[pairs[k]!.j]) {
+      // The base line now keeps the block's first line, and the block moves down one.
+      pairs[k] = { i: pairs[k]!.i, j: start++ };
+      if (pairs[k + 1]!.i !== pairs[k]!.i + 1) break;
+      k++;
+    }
+  }
+}
+
+/** How alike two lines are, 0 to 1: the words they share (Dice's coefficient). */
+export function alike(a: string, b: string): number {
+  if (a === b) return 1;
+  const x = new Set(a.match(/\w+/g)), y = new Set(b.match(/\w+/g));
+  if (!x.size || !y.size) return 0;
+  let both = 0;
+  for (const w of x) if (y.has(w)) both++;
+  return (2 * both) / (x.size + y.size);
+}
+
+/**
+ * Which old line each new line of a gap rewrote (-1: none, it's new). As many
+ * pairs as the shorter side has lines, in order, the most alike overall (ties
+ * go to the earliest), so a line added above a changed one doesn't take its
+ * id. A huge gap pairs by position, as it's mostly a rewrite anyway.
+ */
+function pairUp(old: string[], fresh: string[]): number[] {
+  const n = Math.min(old.length, fresh.length);
+  if (old.length === fresh.length || !n || old.length * fresh.length > 40_000) return fresh.map((_, t) => t < n ? t : -1);
+  const [xs, ys] = old.length < fresh.length ? [old, fresh] : [fresh, old];
+  // best[a][b]: the most alike pairing of xs[0..a) into ys[0..b), each x paired.
+  const best = Array.from({ length: xs.length + 1 }, () => new Float64Array(ys.length + 1).fill(-Infinity));
+  best[0]!.fill(0);
+  for (let a = 1; a <= xs.length; a++) for (let b = a; b <= ys.length; b++) best[a]![b] = Math.max(best[a]![b - 1]!, best[a - 1]![b - 1]! + alike(xs[a - 1]!, ys[b - 1]!));
+  const to = new Array<number>(xs.length);
+  for (let a = xs.length, b = ys.length; a > 0; b--) {
+    if (b > a && best[a]![b - 1]! >= best[a - 1]![b - 1]! + alike(xs[a - 1]!, ys[b - 1]!)) continue;
+    to[--a] = b - 1;
+  }
+  const from = fresh.map(() => -1);
+  to.forEach((y, x) => { if (xs === old) from[y] = x; else from[x] = y; });
+  return from;
 }
 
 /**

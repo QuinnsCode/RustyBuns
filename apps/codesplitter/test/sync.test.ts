@@ -39,6 +39,30 @@ describe("diffToOps", () => {
     const ops = diffToOps(doc.lines, ["a", "B", "c"]);
     expect(ops).toEqual([{ kind: "set", line: "L2", base: 2, text: "B" }]);
   });
+
+  test("a changed line keeps the id of the old line it's most like, not the next one in order (#933)", () => {
+    // worker.ts in #893: main added an import above the one it changed.
+    const doc = docFrom("// routes\nimport { a, b } from \"./m.ts\";\nrun();");
+    const ops = diffToOps(doc.lines, ["// routes", "import { beam } from \"./beam.ts\";", "import { a, b, turn } from \"./m.ts\";", "run();"]);
+    expect(ops).toEqual([
+      { kind: "insert", after: "L1", text: "import { beam } from \"./beam.ts\";" },
+      { kind: "set", line: "L2", base: 2, text: "import { a, b, turn } from \"./m.ts\";" },
+    ]);
+    expect(apply(doc, ops, "agent").ok).toBe(true);
+    expect(doc.lines.map((l) => l.id)).toEqual(["L1", "L4", "L2", "L3"]);
+  });
+
+  test("a block added under lines it repeats goes in as far down as it can, whole (#933)", () => {
+    // A new test after the last one: read top-down, it could start inside the old one's tail.
+    const t = (name: string) => [`test("${name}", async () => {`, `  ${name}();`, "  await run();", "  expect(told.length).toBe(1);", "});"];
+    const doc = docFrom(["above", ...t("chain"), "", "test(\"search\", () => {", "below"].join("\n"));
+    const next = ["above, edited", ...t("chain"), "", ...t("digs"), "", "test(\"search\", () => {", "below, edited"];
+    const ops = diffToOps(doc.lines, next);
+    // All of it under the blank line (L7), none inside the chain test.
+    expect(ops.filter((o) => o.kind === "insert").map((o) => o.kind === "insert" && o.after)).toEqual(Array(6).fill("L7"));
+    expect(apply(doc, ops, "agent").ok).toBe(true);
+    expect(text(doc)).toBe(next.join("\n"));
+  });
 });
 
 describe("rebase", () => {
