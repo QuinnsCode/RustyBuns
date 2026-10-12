@@ -54,8 +54,15 @@
 // most (claude says what each try cost; the others don't, so they aren't
 // counted), and the report says which step settled each update.
 //
+// 🪏 A dig (#863) is a future release the owner asked to watch: the next major, a
+// dist-tag (beta, next, rc) or an exact version, of one package. Each run looks for
+// it, past the level and the ignore list since the owner named it, and once it's
+// out tries it in the throwaway clone on top of what passes, down the on-fail
+// chain if it breaks. The report says how it went. With "take it when it's green"
+// on, one that passes goes on the branch, once it's as old as the minimum age.
+//
 //   GET  /api/repos/:o/:r/deps        settings and the last report (owner only)
-//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held}
+//   PUT  /api/repos/:o/:r/deps        {on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held, digs}
 //   POST /api/repos/:o/:r/deps/run    check now
 
 import type { Doc, Op } from "./lines.ts";
@@ -83,8 +90,17 @@ export interface Settings {
   chain_tries: number; chain_minutes: number; chain_usd: number;
   /** Releases held back ("name@version"), which no run proposes again. */
   held: string[];
+  /** 🪏 Future releases to watch, try, and maybe take. */
+  digs: Dig[];
 }
-export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false, fix_with: null, fix_tries: 3, on_fail: ["fix"], chain_tries: 6, chain_minutes: 30, chain_usd: 2, held: [] };
+export const DEFAULTS: Settings = { on: false, every_hours: 24, max_level: "minor", min_age_days: 3, ignore: [], run_tests: false, fix_with: null, fix_tries: 3, on_fail: ["fix"], chain_tries: 6, chain_minutes: 30, chain_usd: 2, held: [], digs: [] };
+
+/** 🪏 A future release of one package to watch for: "major" (the next major), a dist-tag like beta, or an exact version. `take`: onto the branch once it's green. */
+export interface Dig { name: string; target: string; take: boolean }
+/** What came of a dig this run: not out yet, already in the range, held back, or out and tried (`update`). */
+export interface Dug extends Dig { path?: string; version?: string; status: "waiting" | "in" | "held" | "out"; update?: Update; taken?: boolean; note?: string }
+/** The most digs one repo keeps. */
+export const MAX_DIGS = 10;
 
 /** One dependency to move, in the package.json at `path` (the top one, or a workspace's). */
 export interface Update {
@@ -104,7 +120,7 @@ export interface Update {
 }
 /** A dependency whose version has a known vulnerability that no release fixes yet (or that's on the ignore list). */
 export interface Exposed { name: string; version: string; ids: string[]; path?: string }
-export interface Report { at: number; checked: number; updates: Update[]; exposed?: Exposed[]; branch?: string; lock?: string; note?: string }
+export interface Report { at: number; checked: number; updates: Update[]; exposed?: Exposed[]; digs?: Dug[]; branch?: string; lock?: string; note?: string }
 
 /** A known vulnerability, and the versions that fix it (on each line it affects). */
 export interface Vuln { id: string; summary: string; fixed: string[] }
@@ -138,8 +154,9 @@ export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (p
   return out;
 };
 
-/** What npm says about a package: its versions and when each was published. */
-export type Registry = (name: string) => Promise<{ versions: string[]; time: Record<string, string> } | null>;
+/** What npm says about a package: its versions, when each was published, and its dist-tags. */
+export interface Meta { versions: string[]; time: Record<string, string>; tags?: Record<string, string> }
+export type Registry = (name: string) => Promise<Meta | null>;
 
 /** What an .npmrc says about registries: the default, one per scope, and a token per host. */
 export interface Npmrc { registry?: string; scopes: Record<string, string>; tokens: Record<string, string> }
@@ -179,8 +196,8 @@ export const npmrcRegistry = (rcs: Npmrc[]): Registry => async (name) => {
   const { url, token } = registryUrl(rcs, name);
   const res = await fetch(url, { headers: { accept: "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) } });
   if (!res.ok) return null;
-  const doc = (await res.json()) as { versions?: Record<string, unknown>; time?: Record<string, string> };
-  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {} };
+  const doc = (await res.json()) as { versions?: Record<string, unknown>; time?: Record<string, string>; "dist-tags"?: Record<string, string> };
+  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {}, tags: doc["dist-tags"] ?? {} };
 };
 
 export const npmRegistry: Registry = npmrcRegistry([]);
@@ -329,6 +346,35 @@ export async function outdated(pkg: Record<string, any>, s: Settings, registry: 
   const checked = (await Promise.all(checks)).reduce((a: number, b) => a + b, 0);
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
   return { checked, updates: found.sort(byName), exposed: exposed.sort(byName) };
+}
+
+/** An exact version, a prerelease too (5.0.0-beta.1). */
+const VERSION = /^\d+\.\d+\.\d+(-[\w.-]+)?$/;
+
+/** The release a dig points at, if it's out: the newest of the next major line, the dist-tag's, or the exact one. */
+export function dugVersion(spec: string, target: string, meta: Meta): string | null {
+  if (target === "major") {
+    const r = range(spec);
+    const next = r ? meta.versions.map(parse).filter((v): v is V => !!v && cmp(v, r.v) > 0 && levelOf(r.v, v) === "major").sort(cmp) : [];
+    return next.length ? next.filter((v) => levelOf(next[0]!, v) !== "major").at(-1)!.join(".") : null;
+  }
+  if (VERSION.test(target)) return meta.versions.includes(target) ? target : null;
+  const v = meta.tags?.[target];
+  return v && meta.versions.includes(v) ? v : null;
+}
+
+/** Has the range already reached `version`: at or past it, or allowing it? A prerelease is never allowed by a range, only reached. */
+export function reached(spec: string, version: string): boolean {
+  const r = range(spec), dash = version.indexOf("-");
+  const v = parse(dash < 0 ? version : version.slice(0, dash));
+  if (!r || !v) return true;
+  return cmp(v, r.v) <= 0 || (dash < 0 && allows(r, v));
+}
+
+/** The dig as an update of `spec`: a prerelease is pinned exactly, a release keeps the range's ^ or ~. */
+export function digUpdate(name: string, spec: string, version: string): Omit<Update, "status"> {
+  const r = range(spec)!, pre = version.includes("-");
+  return { name, from: spec, to: (pre ? "" : r.prefix) + version, level: levelOf(r.v, parse(version.split("-")[0]!)!) };
 }
 
 /** package.json with these updates applied, line by line, so everything else stays as written. */
@@ -597,7 +643,7 @@ export async function runDoctor(env: Env, call: Call, owner: string, repo: strin
     const row = await env.DB.prepare("SELECT alerted FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     const news = whatsNew(row?.alerted ? String(row.alerted).split("\n") : [], report);
     await env.DB.prepare("UPDATE dep_watches SET alerted = ? WHERE owner = ? AND repo = ?").bind(news.seen.join("\n"), owner, repo).run();
-    if (news.exposed.length || news.fixes.length || news.broke.length) await alert(env, owner, repo, report, news).catch((e) => console.error("codeSplitter: dependency alert failed", String((e as Error)?.message ?? e)));
+    if (news.exposed.length || news.fixes.length || news.broke.length || news.dug.length) await alert(env, owner, repo, report, news).catch((e) => console.error("codeSplitter: dependency alert failed", String((e as Error)?.message ?? e)));
   }
   return report;
 }
@@ -606,11 +652,11 @@ export async function runDoctor(env: Env, call: Call, owner: string, repo: strin
 
 /**
  * What this report has that the owner wasn't told about yet: advisories no update
- * fixes, security fixes on its branch, and broken updates whose on-fail chain
- * ended in 🔔. `seen` is what to remember for next time: everything in this
+ * fixes, security fixes on its branch, broken updates whose on-fail chain
+ * ended in 🔔, and 🪏 digs that came out and were tried. `seen` is what to remember for next time: everything in this
  * report, so one that goes away and comes back is news again.
  */
-export function whatsNew(told: string[], report: Report): { exposed: Exposed[]; fixes: Update[]; broke: Update[]; seen: string[] } {
+export function whatsNew(told: string[], report: Report): { exposed: Exposed[]; fixes: Update[]; broke: Update[]; dug: Dug[]; seen: string[] } {
   const was = new Set(told), seen: string[] = [];
   const key = (kind: string, path: string | undefined, nameAt: string, id: string) => { const k = `${kind} ${path ?? "package.json"} ${nameAt} ${id}`; seen.push(k); return !was.has(k); };
   const exposed = (report.exposed ?? []).map((x) => ({ ...x, ids: x.ids.filter((id) => key("exposed", x.path, `${x.name}@${x.version}`, id)) })).filter((x) => x.ids.length);
@@ -618,8 +664,11 @@ export function whatsNew(told: string[], report: Report): { exposed: Exposed[]; 
   const tested = report.updates.some((u) => u.status !== "untested");
   const taken = report.branch ? report.updates.filter((u) => u.fixes?.length && (tested ? u.status === "kept" || u.status === "fixed" : true)) : [];
   const fixes = taken.filter((u) => u.fixes!.map((id) => key("fix", u.path, `${u.name}@${u.to}`, id)).some(Boolean));
-  const broke = report.updates.filter((u) => u.chain?.at(-1)?.step === "alert" && u.chain.at(-1)!.ok).filter((u) => key("broke", u.path, `${u.name}@${u.to}`, "tests"));
-  return { exposed, fixes, broke, seen };
+  const dugs = (report.digs ?? []).filter((d) => d.update && d.update.status !== "untested");
+  const broke = [...report.updates, ...dugs.map((d) => d.update!)].filter((u) => u.chain?.at(-1)?.step === "alert" && u.chain.at(-1)!.ok).filter((u) => key("broke", u.path, `${u.name}@${u.to}`, "tests"));
+  // A dig is news when its release is first tried, and again when it's taken.
+  const dug = dugs.filter((d) => key("dug", d.path, `${d.name}@${d.version}`, d.taken ? "taken" : "tried"));
+  return { exposed, fixes, broke, dug, seen };
 }
 
 /** Says a short thing to the owner: a subject, some lines, a link. */
@@ -637,7 +686,9 @@ async function alert(env: Env, owner: string, repo: string, report: Report, news
     ...news.exposed.map((x) => `  ${x.name}@${x.version}${x.path && x.path !== "package.json" ? ` (${x.path})` : ""}: ${x.ids.join(", ")}`));
   if (news.broke.length) lines.push(`${news.broke.length === 1 ? "An update breaks" : `${news.broke.length} updates break`} the tests, and nothing in the on-fail chain got ${news.broke.length === 1 ? "it" : "them"} through, so ${news.broke.length === 1 ? "it's" : "they're"} left out:`,
     ...news.broke.map((u) => `  ${u.name} ${u.from} → ${u.to}${u.path && u.path !== "package.json" ? ` (${u.path})` : ""}: tried ${u.chain!.slice(0, -1).map((c) => c.step).join(", ") || "nothing"}`));
-  const subject = news.exposed.length ? `${owner}/${repo}: a dependency is exposed` : news.fixes.length ? `${owner}/${repo}: security fixes on ${report.branch}` : `${owner}/${repo}: an update breaks the tests`;
+  if (news.dug.length) lines.push(`${news.dug.length === 1 ? "A release you're digging for is" : `${news.dug.length} releases you're digging for are`} out:`,
+    ...news.dug.map((d) => `  ${d.name} ${d.version} (${d.target}): ${d.taken ? `tests pass, on the branch ${report.branch}` : d.update!.status === "kept" || d.update!.status === "fixed" ? `tests pass${d.update!.status === "fixed" ? " with a fix" : ""}${d.note ? `, ${d.note}` : ""}` : "it breaks the tests"}`));
+  const subject = news.exposed.length ? `${owner}/${repo}: a dependency is exposed` : news.fixes.length ? `${owner}/${repo}: security fixes on ${report.branch}` : news.broke.length ? `${owner}/${repo}: an update breaks the tests` : `${owner}/${repo}: ${news.dug.map((d) => `${d.name} ${d.version}`).join(", ")} is out`;
   const link = `${(env.BETTER_AUTH_URL ?? "").replace(/\/$/, "")}/#/r/${owner}/${repo}`;
   await notifierFor(env)?.(owner, subject, lines, link);
 }
@@ -688,9 +739,24 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
     found.push(...r.updates.map((u) => ({ ...u, path })));
     exposed.push(...r.exposed.filter((x) => !own.has(x.name)).map((x) => ({ ...x, path })));
   }
-  const also = exposed.length ? { exposed } : {};
+  // 🪏 Each dig, past the level and the ignore list, since the owner named it. Only one that's out gets tried.
+  const digs: Dug[] = [];
+  for (const d of s.digs) {
+    const at = [...manifests].find(([, m]) => typeof { ...m.pkg.dependencies, ...m.pkg.devDependencies }[d.name] === "string");
+    if (!at || own.has(d.name)) { digs.push({ ...d, status: "waiting", note: "not a dependency here" }); continue; }
+    const [path, m] = at, spec: string = { ...m.pkg.dependencies, ...m.pkg.devDependencies }[d.name];
+    if (!range(spec)) { digs.push({ ...d, path, status: "waiting", note: `its range (${spec}) isn't one the doctor moves` }); continue; }
+    const meta = await once(d.name).catch(() => null);
+    const version = meta && dugVersion(spec, d.target, meta);
+    if (!version) digs.push({ ...d, path, status: "waiting", ...(meta ? {} : { note: "couldn't read the registry" }) });
+    else if (reached(spec, version)) digs.push({ ...d, path, version, status: "in" });
+    else if (s.held.includes(`${d.name}@${version}`)) digs.push({ ...d, path, version, status: "held" });
+    else digs.push({ ...d, path, version, status: "out", update: { ...digUpdate(d.name, spec, version), status: "untested", path } });
+  }
+  const out = digs.filter((d) => d.status === "out");
+  const also = { ...(exposed.length ? { exposed } : {}), ...(digs.length ? { digs } : {}) };
   if (exposed.length) note = [note, `${exposed.length} dependenc${exposed.length === 1 ? "y has a known vulnerability" : "ies have known vulnerabilities"} no update here fixes`].filter(Boolean).join("; ");
-  if (!found.length) return { at: now, checked, updates: [], ...also, note: note ?? "everything is up to date" };
+  if (!found.length && !out.length) return { at: now, checked, updates: [], ...also, note: note ?? "everything is up to date" };
 
   const { pm, lock } = packageManager(top, manifests.get("package.json")!.pkg);
   const filesFor = (us: Update[]) => Object.fromEntries([...manifests].filter(([path]) => us.some((u) => (u.path ?? "package.json") === path))
@@ -720,15 +786,15 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
       tested = true;
       // With a deadline (the cron's time limit), a try only starts if there's room for one as slow as the slowest so far.
       let slowest = 0, short = false;
-      const tryWith = async (us: Update[]) => {
+      const tryWith = async (us: Update[], files = filesFor(us)) => {
         if (deadline && Date.now() + slowest > deadline) { short = true; return null; }
         const t0 = Date.now();
-        const t = await tester(r, filesFor(us), { pm, lock, test: true, hosts });
+        const t = await tester(r, files, { pm, lock, test: true, hosts });
         slowest = Math.max(slowest, Date.now() - t0);
         tried.set(key(us), t);
         return t;
       };
-      const all = await tryWith(updates);
+      const all = updates.length ? await tryWith(updates) : null;
       if (all?.ok) updates = updates.map((u) => ({ ...u, status: "kept" }));
       else if (all && updates.length === 1) updates = [{ ...updates[0]!, status: "broke", out: tail(all.out) }];
       else if (all) {
@@ -741,14 +807,13 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
           return { at: now, checked, updates, ...also, note };
         }
       }
-      if (short) note = [note, "ran out of time before every test ran; only what passed went on a branch, and the next run tries the rest"].filter(Boolean).join("; ");
       // Each broken update goes down the owner's on-fail chain in turn, on top of what's kept and fixed so far.
       const fixer = fixerFor(env, s, owner);
-      for (const u of updates.filter((u) => u.status === "broke")) {
+      /** One update down the chain, tested with `files`; a fix's edits go into `mine`. */
+      const runChain = async (u: Update, files: () => Record<string, string>, mine: Edit[], dig = false) => {
         const until = Math.min(deadline ?? Infinity, Date.now() + s.chain_minutes * 60_000);
         let tries = s.chain_tries, usd = s.chain_usd;
         const chain: NonNullable<Update["chain"]> = u.chain = [];
-        const files = () => ({ ...Object.fromEntries(edits.map((e) => [e.path, e.after])), ...filesFor(updates.filter((x) => x === u || x.status === "kept" || x.status === "fixed")) });
         const room = () => tries > 0 && Date.now() + slowest <= until;
         const test = async () => {
           tries--;
@@ -775,8 +840,8 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
             const by = `agent-${s.fix_with}`, spent = f.usd ? { usd: f.usd } : {};
             if (!f.ok) { Object.assign(u, { out: tail(f.out), fix: { by, tries: f.tries, files: [] } }); return { ok: false, ...spent }; }
             for (const e of f.edits) {
-              const had = edits.find((x) => x.path === e.path);
-              if (had) had.after = e.after; else edits.push(e);
+              const had = mine.find((x) => x.path === e.path);
+              if (had) had.after = e.after; else mine.push(e);
             }
             Object.assign(u, { status: "fixed", out: undefined, fix: { by, tries: f.tries, files: f.edits.map((e) => e.path) } });
             return { ok: true, ...spent };
@@ -784,6 +849,8 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
           if (step === "rollback") {
             // The advisory says which version is safe, so a security fix never steps back.
             if (u.fixes) return { ok: false, note: "a security fix isn't rolled back" };
+            // The owner asked for this release by name.
+            if (dig) return { ok: false, note: "a dig isn't rolled back" };
             // A major that broke tries the newest minor, then the newest patch.
             for (const level of LEVELS.slice(0, LEVELS.indexOf(u.level)).reverse()) {
               const smaller = (await outdated({ dependencies: { [u.name]: u.from } }, { ...s, max_level: level, ignore: [], held: [...s.held, ...held] }, once, now)).updates[0];
@@ -807,13 +874,40 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
           chain.push({ step, ...got });
           if (got.ok) break;
         }
+      };
+      for (const u of updates.filter((u) => u.status === "broke"))
+        await runChain(u, () => ({ ...Object.fromEntries(edits.map((e) => [e.path, e.after])), ...filesFor(updates.filter((x) => x === u || x.status === "kept" || x.status === "fixed")) }), edits);
+      // 🪏 Each dig that's out, on top of what passes (in place of an update of the same package), then down the chain if it breaks.
+      // Its fix's edits stay its own unless it's taken.
+      for (const d of out) {
+        const u = d.update!, mine = edits.map((e) => ({ ...e }));
+        const same = (x: Update) => x.name === u.name && x.path === u.path;
+        const set = [...updates.filter((x) => (x.status === "kept" || x.status === "fixed") && !same(x)), ...out.filter((x) => x.taken).map((x) => x.update!), u];
+        const files = () => ({ ...Object.fromEntries(mine.map((e) => [e.path, e.after])), ...filesFor(set) });
+        const t = await tryWith(set, files());
+        if (!t) continue;
+        if (t.ok) u.status = "kept";
+        else { Object.assign(u, { status: "broke", out: tail(t.out) }); await runChain(u, files, mine, true); }
+        if (!d.take || (u.status !== "kept" && u.status !== "fixed")) continue;
+        // Taking it waits out the minimum age, like any update; trying it didn't.
+        const published = Date.parse((await once(u.name).catch(() => null))?.time[d.version!] ?? "");
+        if (!(published <= now - s.min_age_days * 86_400_000)) { d.note = `taken once it's ${s.min_age_days} day${s.min_age_days === 1 ? "" : "s"} old`; continue; }
+        d.taken = true;
+        edits = mine;
       }
+      if (short) note = [note, "ran out of time before every test ran; only what passed went on a branch, and the next run tries the rest"].filter(Boolean).join("; ");
     }
   }
+  if (out.length && !tested) note = [note, "a dig is tried only with tests on"].filter(Boolean).join("; ");
   if (held.length) await env.DB.prepare("UPDATE dep_watches SET held = ? WHERE owner = ? AND repo = ?").bind([...new Set([...s.held, ...held])].join(","), owner, repo).run();
   // Once tests ran, only what passed them goes on the branch.
-  const take = updates.filter((u) => tested ? (u.status === "kept" || u.status === "fixed") : u.status !== "broke");
-  if (!take.length) return { at: now, checked, updates, ...also, note: [note, "every update broke the tests; nothing was put on a branch"].filter(Boolean).join("; ") };
+  // A dig that's taken goes in place of the package's own update.
+  const dug = out.filter((d) => d.taken).map((d) => d.update!);
+  const take = [...updates.filter((u) => (tested ? (u.status === "kept" || u.status === "fixed") : u.status !== "broke") && !dug.some((x) => x.name === u.name && x.path === u.path)), ...dug];
+  if (!take.length) {
+    note = [note, updates.length ? "every update broke the tests; nothing was put on a branch" : ""].filter(Boolean).join("; ");
+    return { at: now, checked, updates, ...also, ...(note ? { note } : {}) };
+  }
 
   // The lockfile to match, from the install that passed, else one made for it.
   let locked: string | undefined;
@@ -904,7 +998,23 @@ export async function settings(env: Env, owner: string, repo: string): Promise<S
     on: !!r.enabled, every_hours: r.every_hours, max_level: r.max_level, min_age_days: r.min_age_days, ignore: list(r.ignore), run_tests: !!r.run_tests,
     fix_with: FIX_HARNESSES.includes(r.fix_with as Harness) ? r.fix_with as Harness : null, fix_tries: r.fix_tries,
     on_fail: list(r.on_fail).filter((x): x is Step => STEPS.includes(x as Step)), chain_tries: r.chain_tries, chain_minutes: r.chain_minutes, chain_usd: r.chain_usd, held: list(r.held),
+    digs: parseDigs(r.digs),
   };
+}
+
+/** The digs as stored (JSON), keeping only well-formed ones. */
+function parseDigs(v: unknown): Dig[] {
+  let raw: unknown;
+  try { raw = JSON.parse(String(v ?? "[]")); } catch { return []; }
+  return Array.isArray(raw) ? raw.flatMap((d) => digOf(d) ?? []) : [];
+}
+
+const PACKAGE = /^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i;
+/** One dig from a request or the table: a package name, and "major", an exact version or a dist-tag. */
+function digOf(d: any): Dig | null {
+  const name = String(d?.name ?? "").trim(), target = String(d?.target ?? "").trim();
+  if (!PACKAGE.test(name) || !(target === "major" || VERSION.test(target) || /^[a-z][\w.-]{0,39}$/i.test(target))) return null;
+  return { name, target, take: !!d.take };
 }
 
 /** Repos one owner may have the doctor watching on a schedule: each costs registry lookups every cron it's due. */
@@ -959,13 +1069,16 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     if (!(minutes >= 1 && minutes <= 120)) return json({ error: "chain_minutes: 1 to 120" }, 400);
     if (!(usd >= 0 && usd <= 50)) return json({ error: "chain_usd: 0 to 50" }, 400);
     const held = csv(s.held);
-    if (held.some((x) => !/^(@[^@/\s]+\/)?[^@\s]+@\d+\.\d+\.\d+$/.test(x))) return json({ error: "held: name@version, comma-separated" }, 400);
+    if (held.some((x) => !/^(@[^@/\s]+\/)?[^@\s]+@\d+\.\d+\.\d+(-[\w.-]+)?$/.test(x))) return json({ error: "held: name@version, comma-separated" }, 400);
+    const digs = Array.isArray(s.digs) ? s.digs.map(digOf) : [null];
+    if (digs.some((d) => !d) || digs.length > MAX_DIGS || new Set(digs.map((d) => d!.name)).size !== digs.length)
+      return json({ error: `digs: up to ${MAX_DIGS} of {name, target: "major", a version or a dist-tag, take}, one per package` }, 400);
     if (s.on) {
       const others = await env.DB.prepare("SELECT COUNT(*) AS n FROM dep_watches WHERE owner = ? AND repo != ? AND enabled = 1").bind(owner, repo).first();
       if ((others?.n as number) >= MAX_WATCHED) return json({ error: `the doctor watches ${MAX_WATCHED} of your repos at most: turn it off on one first` }, 400);
     }
-    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ?, on_fail = ?, chain_tries = ?, chain_minutes = ?, chain_usd = ?, held = ? WHERE owner = ? AND repo = ?")
-      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, onFail.join(","), chainTries, minutes, Math.round(usd * 100) / 100, held.join(","), owner, repo).run();
+    await env.DB.prepare("UPDATE dep_watches SET enabled = ?, every_hours = ?, max_level = ?, min_age_days = ?, ignore = ?, run_tests = ?, fix_with = ?, fix_tries = ?, on_fail = ?, chain_tries = ?, chain_minutes = ?, chain_usd = ?, held = ?, digs = ? WHERE owner = ? AND repo = ?")
+      .bind(s.on ? 1 : 0, every, s.max_level, age, ignore, s.run_tests ? 1 : 0, fixWith, tries, onFail.join(","), chainTries, minutes, Math.round(usd * 100) / 100, held.join(","), JSON.stringify(digs), owner, repo).run();
     return json(await settings(env, owner, repo));
   }
   if (p[5] === "run" && req.method === "POST") {

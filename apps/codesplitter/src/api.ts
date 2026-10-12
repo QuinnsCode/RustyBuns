@@ -245,7 +245,7 @@ export const GROUPS: Group[] = [
       { method: "PUT", path: "/api/repos/:o/:r/deploy/key[/:provider]", body: "{token, account_id?}", who: OWNER, does: "store a deploy key" },
       { method: "DELETE", path: "/api/repos/:o/:r/deploy/key[/:provider]", who: OWNER, does: "forget it" },
       { method: "GET", path: "/api/repos/:o/:r/deps", who: OWNER, does: "the dependency doctor's settings and last report, and the supply-chain watch's malicious-package hits in this repo" },
-      { method: "PUT", path: "/api/repos/:o/:r/deps", body: "{on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held}", who: OWNER, does: "the doctor's settings, and its on-fail chain for an update that breaks the tests" },
+      { method: "PUT", path: "/api/repos/:o/:r/deps", body: "{on, every_hours, max_level, min_age_days, ignore, run_tests, fix_with, fix_tries, on_fail, chain_tries, chain_minutes, chain_usd, held, digs}", who: OWNER, does: "the doctor's settings, its on-fail chain for an update that breaks the tests, and its 🪏 digs: future releases to watch, try and take ([{name, target, take}])" },
       { method: "POST", path: "/api/repos/:o/:r/deps/run", who: OWNER, does: "check now" },
       { method: "GET", path: "/api/watch", who: "anyone", does: "the supply-chain watch: each agent platform's status line, and (signed in) malicious-package hits in your repos" },
       { method: "GET", path: "/api/repos/:o/:r/hooks", who: OWNER, does: "the webhooks, each with its last delivery" },

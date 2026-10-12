@@ -2587,6 +2587,8 @@ const DEP_STEPS = {
   rollback: ["↩️", "roll back to the newest smaller release that passes"],
   alert: ["🔔", "tell me"],
 };
+/** One update in the doctor's report; `dig` when it's a 🪏 dig's release. */
+const depUpdate = (u, dig) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${dig ? `🪏 ${esc(dig.target)} · ` : ""}${u.level}${u.fixes ? ` · <b class="vuln">fixes ${u.fixes.map(esc).join(", ")}</b>` : ""} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? (u.was ? `broke the tests at ${esc(u.was)}; rolled back, tests pass` : "tests pass") : u.status === "held" ? "broke the tests, held back" : "untested"}${dig ? (dig.taken ? " · on the branch" : dig.note ? ` · ${esc(dig.note)}` : !dig.take ? " · not taken" : "") : ""}${u.chain?.length ? ` · ${u.chain.map((c) => `<span title="${esc(DEP_STEPS[c.step][1])}: ${c.ok ? "worked" : esc(c.note ?? "didn't work")}${c.usd ? ` ($${c.usd.toFixed(2)})` : ""}">${DEP_STEPS[c.step][0]}${c.ok ? "✓" : c.note ? "–" : "✗"}</span>`).join(" ")}${u.chain.some((c) => c.ok) ? "" : " gave up"}` : ""}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`;
 const views = {
   async home() {
     ctx = { view: "home" };
@@ -3065,10 +3067,12 @@ const views = {
         <div class="row" title="Over one update's whole chain: test runs and agent tries, wall-clock minutes, and dollars of AI (claude reports its cost; pi and opencode don't, so they aren't counted)">at most <input name="chain_tries" aria-label="chain tries" type="number" min="1" max="20" value="${s.chain_tries}" style="width:3em"> tries,
           <input name="chain_minutes" aria-label="chain minutes" type="number" min="1" max="120" value="${s.chain_minutes}" style="width:3.5em"> min, $<input name="chain_usd" aria-label="chain dollar cap" type="number" min="0" max="50" step="0.5" value="${s.chain_usd}" style="width:3.5em"> of AI</div>
         <input name="held" placeholder="held back: vite@6.0.0" aria-label="releases held back" value="${esc(s.held.join(", "))}">
+        <div class="row" title="Future releases to watch for and try when they're out, past the level and the never list: the next major, a dist-tag (beta, next, rc) or an exact version. 🧺 takes one onto the branch once its tests pass">🪏 <span class="chain" id="deps-digs"></span><input id="dig-add" placeholder="dig: vite@major, react@beta" aria-label="add a dig" style="flex:1;min-width:10em"></div>
         <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deps-run"${d.running ? " disabled" : ""}>${icon("refresh-cw")}${d.running ? "Checking…" : "Check now"}</button></div>
       </form>
       ${rep ? `<div class="run"><span class="st">last checked ${new Date(rep.at).toLocaleString()} · ${rep.checked} package${rep.checked === 1 ? "" : "s"}</span>
-        ${rep.updates.map((u) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${u.level}${u.fixes ? ` · <b class="vuln">fixes ${u.fixes.map(esc).join(", ")}</b>` : ""} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? (u.was ? `broke the tests at ${esc(u.was)}; rolled back, tests pass` : "tests pass") : u.status === "held" ? "broke the tests, held back" : "untested"}${u.chain?.length ? ` · ${u.chain.map((c) => `<span title="${esc(DEP_STEPS[c.step][1])}: ${c.ok ? "worked" : esc(c.note ?? "didn't work")}${c.usd ? ` ($${c.usd.toFixed(2)})` : ""}">${DEP_STEPS[c.step][0]}${c.ok ? "✓" : c.note ? "–" : "✗"}</span>`).join(" ")}${u.chain.some((c) => c.ok) ? "" : " gave up"}` : ""}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`).join("")}
+        ${rep.updates.map((u) => depUpdate(u)).join("")}
+        ${(rep.digs ?? []).map((g) => g.update ? depUpdate(g.update, g) : `<span>🪏 <code>${esc(g.name)}</code> <span class="muted">${esc(g.target)} · ${g.status === "in" ? `${esc(g.version)} is in the range already` : g.status === "held" ? `${esc(g.version)} is out, held back` : g.note ? esc(g.note) : "not out yet, watching"}</span></span>`).join("")}
         ${(rep.exposed ?? []).map((x) => `<span><b class="vuln">exposed</b> <code>${esc(x.name)}</code> ${esc(x.version)} <span class="muted">${x.ids.map(esc).join(", ")} · no update here fixes it</span></span>`).join("")}
         ${rep.branch ? `<span>On branch <code>${esc(rep.branch)}</code>${rep.lock ? `, with <code>${esc(rep.lock)}</code> to match` : ""}, ready to review above.</span>` : ""}
         ${rep.note ? `<span class="muted">${esc(rep.note)}</span>` : ""}</div>` : ""}
@@ -3087,9 +3091,28 @@ const views = {
       box.querySelectorAll("[data-up]").forEach((b) => b.addEventListener("click", () => { const i = chain.indexOf(b.dataset.up); chain.splice(i - 1, 0, ...chain.splice(i, 1)); drawChain(); }));
     };
     drawChain();
+    // 🪏 Digs: a chip each; 🧺 toggles taking it when green, × drops it. Enter (or Save) adds what's typed.
+    const digs = s.digs.map((g) => ({ ...g }));
+    const drawDigs = () => {
+      const box = $("#deps-digs");
+      box.innerHTML = digs.map((g, i) => `<span class="step on"><span style="padding:2px 4px">${esc(g.name)}@${esc(g.target)}</span><button type="button" data-take="${i}" title="take it when it's green${g.take ? "" : " (off)"}" aria-pressed="${g.take}" style="${g.take ? "" : "opacity:.4"}">🧺</button><button type="button" class="up" data-drop="${i}" title="stop digging" aria-label="stop digging for ${esc(g.name)}">×</button></span>`).join("");
+      box.querySelectorAll("[data-take]").forEach((b) => b.addEventListener("click", () => { digs[+b.dataset.take].take = !digs[+b.dataset.take].take; drawDigs(); }));
+      box.querySelectorAll("[data-drop]").forEach((b) => b.addEventListener("click", () => { digs.splice(+b.dataset.drop, 1); drawDigs(); }));
+    };
+    const addDigs = () => {
+      const f = $("#dig-add");
+      for (const t of f.value.split(",").map((x) => x.trim()).filter(Boolean)) {
+        const at = t.lastIndexOf("@"), name = at > 0 ? t.slice(0, at) : t, target = at > 0 ? t.slice(at + 1) : "major";
+        const had = digs.find((g) => g.name === name);
+        if (had) had.target = target; else digs.push({ name, target, take: false });
+      }
+      f.value = ""; drawDigs();
+    };
+    drawDigs();
+    $("#dig-add").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addDigs(); } });
     $("#deps-form").addEventListener("submit", async (e) => {
-      e.preventDefault(); const f = e.target;
-      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value }, "PUT"); toast("Saved"); }
+      e.preventDefault(); const f = e.target; addDigs();
+      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value, digs }, "PUT"); toast("Saved"); }
       catch (err) { toast(err.message); }
     });
     $("#deps-run").addEventListener("click", async () => {
