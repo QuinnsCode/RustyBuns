@@ -375,6 +375,19 @@ ${LAUNCH_CHECK}${appCheck(c, true)}${h.launch}`;
 }
 
 
+/** import(`x`) with no ${...} in it, as import("x"), so the bundler resolves it statically. */
+export const plainDynamicImports = (js: string) => js.replace(/\bimport\(`([^`$\\]+)`\)/g, (_, spec: string) => `import(${JSON.stringify(spec)})`);
+
+/** The Worker the host imports: builtMain, unless the build says otherwise. @cloudflare/vite-plugin
+ *  writes a wrangler.json beside its output whose main names the real file (worker.js vs index.js). */
+export function builtEntry(c: RustyBunsConfig, cwd = process.cwd()): string | undefined {
+  const built = c.worker!.builtMain;
+  if (!built || existsSync(join(cwd, built))) return built ?? c.worker!.main;
+  const w = join(cwd, dirname(built), "wrangler.json");
+  const main = existsSync(w) ? (JSON.parse(readFileSync(w, "utf8")) as { main?: string }).main : undefined;
+  return main && existsSync(join(cwd, dirname(built), main)) ? join(dirname(built), main) : built;
+}
+
 export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string {
   const h = hostParts(c, host, c.targets.desktop?.dataDir ?? `~/.${c.name}`);
   const bind: string[] = [];
@@ -415,14 +428,13 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
     }
   }
   const crons = c.worker!.crons ?? [];
-  const entry = c.worker!.builtMain ?? c.worker!.main;
+  const entry = builtEntry(c);
   if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 // First: workerd's globalThis.Cloudflare, read by nodejs_compat builds as they load.
 import "@rustybuns/shell-bun/workerd-global";
 import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
-import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
 // Bun's own process: a Worker built with nodejs_compat (unenv) swaps globalThis.process for
 // one whose cwd() is "/" and argv is empty, and that would move assets and flags (#741).
 import process from "node:process";
@@ -452,11 +464,14 @@ ${bind.join("\n")}
 // D1 is sqlite: your wrangler migrations apply here unchanged, tracked in
 // d1_migrations. Embedded via --asset so the binary carries its own schema.
 ${migrations.map(([n, m]) => `for (const f of await applyD1Migrations(env.${n} as any, assetDir(${JSON.stringify(m)})!)) console.log("[migrate] " + f);`).join("\n")}
-// Durable Objects run in-process. Bound after env exists because a DO's
-// constructor receives this same env (a DO can use DB, KV, other DOs).
-${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
-// Lets import { env } from "cloudflare:workers" see the local bindings.
+// Lets import { env } from "cloudflare:workers" see the local bindings, before the Worker loads:
+// workerd gives a module its env at import, and apps read it at the top level
+// (export const repo = makeRepo(await getDb())).
 globalThis.__RB_ENV = env;
+const { default: worker, ${dos.map((d) => `${d.className}, `).join("")}} = await import(${JSON.stringify("../" + entry)});
+// Durable Objects run in-process. Bound once the Worker has loaded (the classes are its exports)
+// and into this same env, because a DO's constructor receives it (a DO can use DB, KV, other DOs).
+${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
 
 const token = ${h.token};
 const shell = serve<typeof env>({
@@ -587,9 +602,12 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   // After the glue (the app imports the generated stubs), before the client build:
   // a type error shouldn't cost a full UI build and a 100 MB compile first.
   if (opts.check) await checkApp(prof, opts.check);
-  // The app's bins on PATH, as under `pnpm exec`, so a step like `prisma generate` resolves
-  // when rustybuns itself was started some other way.
-  const bin = { ...process.env, PATH: `${join(process.cwd(), "node_modules", ".bin")}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}` };
+  // The app's bins on PATH, nearest first as npm puts them, so a step like `prisma generate`
+  // resolves when rustybuns was started some other way, and so does a vite hoisted to a
+  // workspace root.
+  const bins: string[] = [];
+  for (let d = process.cwd(); ; d = dirname(d)) { bins.push(join(d, "node_modules", ".bin")); if (dirname(d) === d) break; }
+  const bin = { ...process.env, PATH: [...bins, process.env.PATH ?? ""].join(process.platform === "win32" ? ";" : ":") };
   if (build) await step("client build", () => $`sh -c ${build}`.env(bin));
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(entry, mode === "spa" ? spaEntry(c, host) : desktopEntry(c, host));
@@ -602,6 +620,15 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     setup(b: any) {
       // Host side: the worker-runtime modules become the local runtime.
       b.onResolve({ filter: /^(cloudflare:workers|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
+      // Vite writes some dynamic imports with a template literal (import(`cloudflare:workers`)), which
+      // the bundler leaves to runtime, past the line above. In the built Worker, a literal with no
+      // ${...} is made a plain string so it resolves here like any other import.
+      if (mode === "worker" && c.worker?.builtMain) {
+        const dir = join(process.cwd(), dirname(c.worker.builtMain)).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        b.onLoad({ filter: new RegExp(`^${dir}[\\\\/].*\\.m?js$`) }, async (args: { path: string }) => ({
+          contents: plainDynamicImports(await Bun.file(args.path).text()), loader: "js",
+        }));
+      }
       // The app's aliases ("@/x", "~/x", "#lib/x"), resolved the way tsconfig/vite do.
       b.onResolve({ filter: /^[@~#]/ }, (args: { path: string }) => {
         for (const [alias, dir] of aliasEntries) {
