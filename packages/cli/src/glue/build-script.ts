@@ -60,6 +60,14 @@ export function inferStaticBuild(scripts: Record<string, string>): { pre: string
 
 const isViteBuild = (p: string) => /(?:^|\s)vite\s+build\b/.test(p);
 
+/** The steps a build command runs before its vite build:
+ *  "prisma generate && RWSDK_DEPLOY=1 vite build" -> ["prisma generate"]. No vite build, no steps. */
+export function preViteSteps(build: string): string[] {
+  const parts = build.split(/\s*&&\s*/).map((p) => p.trim()).filter(Boolean);
+  const at = parts.findIndex(isViteBuild);
+  return at > 0 ? parts.slice(0, at) : [];
+}
+
 // The script names a run-p / run-s / npm-run-all step runs, minus flags, `{@}`-style
 // arg placeholders and everything from `--` on.
 //   run-p type-check "build-only {@}" --  ->  ["type-check", "build-only"]

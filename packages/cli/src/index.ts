@@ -198,14 +198,17 @@ async function init() {
   const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k]);
   for (const k of secrets) cfg.bindings[k] = { type: "secret" };
   if (secrets.length) console.log(`secrets:  ${secrets.join(" ")}  (names from .dev.vars)`);
-  // Desktop client build: always the vite.desktop.config.ts that `add desktop` generates.
-  // Never the app's own scripts: they can point at files Rusty Buns doesn't own.
+  // Desktop client build: always the vite.desktop.config.ts that `add desktop` generates,
+  // never the app's own vite config: it can point at files Rusty Buns doesn't own. What the
+  // app's build runs before vite (prisma generate, codegen) runs first, as in initSpa (#403).
   const host = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   // Astro and React Router: the desktop runs the Worker build under Bun, same bundle as the edge.
   if (astroWorker || rrWorker) cfg.targets.desktop = { mode: "worker", targets: [host as any] };
   else {
     const d = cfg.targets.desktop!;
-    d.clientBuild = `${inf.execCmd("vite")} build --config vite.desktop.config.ts`;
+    const { preViteSteps } = await import("./glue/build-script.ts");
+    const pre = [...new Set([...inf.prebuild, ...preViteSteps(cfg.worker?.build ?? "")])];
+    d.clientBuild = [...pre, `${inf.execCmd("vite")} build --config vite.desktop.config.ts`].join(" && ");
     d.targets = [host as any];
   }
   console.log(`desktop:  building for ${host} only; add other targets in rustybuns.config.ts`);

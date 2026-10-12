@@ -363,3 +363,14 @@ test("init: a webpack app (CRA) is refused with the Vite port issue", () => {
   expect(r.code).not.toBe(0);
   expect(r.out).toMatch(/Create React App isn't supported yet \(.*issues\/404\)/);
 });
+
+test("init: an rwsdk app's desktop build runs what its release build runs before vite (prisma generate)", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "todos", dependencies: { rwsdk: "1.7.0", react: "19" }, devDependencies: { vite: "7" },
+      scripts: { build: "vite build", release: "rw-scripts ensure-deploy-env && prisma generate && RWSDK_DEPLOY=1 vite build && wrangler deploy" } }),
+    "wrangler.jsonc": JSON.stringify({ name: "todos", main: "src/worker.tsx", compatibility_date: "2025-10-08" }),
+    "src/worker.tsx": "export default {}", "bun.lock": "",
+  });
+  expect(p.run("init").code).toBe(0);
+  expect(p.read("rustybuns.config.ts")).toContain('"clientBuild": "prisma generate && bunx vite build --config vite.desktop.config.ts"');
+});
