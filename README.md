@@ -185,7 +185,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [spa-example](apps/spa-example/README.md) | Not an app: a slice of a real RWSDK game that the tests use to check `init` reads it right |
 | [agent-demo](apps/agent-demo/README.md) | A small snack-vote Worker seeded into codeSplitter, so several coding agents can build it at once and settle a merge conflict on camera |
 | [borg](apps/borg/README.md) | Not an app: a small Worker that uses every binding once, so one suite can check the local twins against a real deploy |
-| [what-would-fantano-say](apps/what-would-fantano-say/README.md) | A parody music critic as an RWSDK Worker: the song is measured in the browser, and one Claude call sits behind a rate limit, Turnstile and an edge cache, its key from 1Password |
+| [what-would-fantano-say](apps/what-would-fantano-say/README.md) | A parody music critic as an RWSDK Worker: the phone decodes the song and picks a 15 s clip, and Cloudflare's Clef-omni judges it for about $4 per 100,000 reviews, behind a rate limit, Turnstile, an edge cache and a daily budget |
 
 **Try one without building anything:** download the desktop binary for [Hippo Tycoon](https://github.com/QuinnsCode/RustyBuns/releases?q=hippo-tycoon-v&expanded=true), [Park Hide & Seek](https://github.com/QuinnsCode/RustyBuns/releases?q=park-hide-seek-v&expanded=true), [Splat Spray](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true) or [FM Groovebox](https://github.com/QuinnsCode/RustyBuns/releases?q=fm-daw-v&expanded=true). Each is one file for Mac, Windows or Linux. They aren't signed yet, so the first launch takes one Terminal command on a Mac (the release page has it) and a click past SmartScreen on Windows.
 
