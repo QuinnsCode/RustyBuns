@@ -14,6 +14,7 @@
 //   --modes spa,worker  desktop modes to try; worker swaps init's mode for the app's own Worker build
 //   --jobs <n>        apps at a time (default 2)
 //   --out <dir>       results.jsonl, summary.md, logs, clones (default .rustybuns-trial/, gitignored)
+//   --list            print the apps a search finds (stars, last push, version) and stop
 //   --keep            keep node_modules after each app (default: removed, to bound disk use)
 //   --prof            time boot and 200 GETs of /, read the host's memory, and save a CPU profile per
 //                     mode (logs/<app>.<mode>.cpuprofile: open it in Chrome DevTools or speedscope.app)
@@ -30,7 +31,7 @@ const { values: o, positionals } = parseArgs({
   options: {
     dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, since: { type: "string" }, stable: { type: "boolean" }, local: { type: "boolean" },
     modes: { type: "string", default: "spa,worker" }, jobs: { type: "string", default: "2" },
-    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" },
+    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" }, list: { type: "boolean" },
   },
 });
 const REPO = resolve(import.meta.dir, "..");
@@ -66,19 +67,22 @@ async function search(dep: string): Promise<App[]> {
   }
   const meta = new Map<string, { stars: number; archived: boolean; pushed: string }>();
   const apps: App[] = [];
-  await Promise.all([...hits.values()].map(async (a) => {
+  // 8 at a time: GitHub's secondary rate limit answers a burst with an error body, not data
+  const queue = [...hits.values()];
+  await Promise.all(Array.from({ length: 8 }, async () => { for (let a; (a = queue.shift()); ) await (async (a: App) => {
     const raw = await $`gh api repos/${a.repo}/contents/${a.sub ? `${a.sub}/` : ""}package.json -H ${"Accept: application/vnd.github.raw"}`.quiet().nothrow().text();
     let v: string | undefined;
     try { v = depVersion(JSON.parse(raw), dep); } catch { return; }
     if (!v || (o.major && !isMajor(v, o.major)) || (o.stable && /\d-[a-z]/i.test(v))) return;
     if (!meta.has(a.repo)) {
       const m = await $`gh api repos/${a.repo} --jq ${"[.stargazers_count,.archived,.pushed_at]"}`.quiet().nothrow().text();
-      const [stars, archived, pushed] = m ? JSON.parse(m) : [0, true, ""];
+      let parsed: unknown; try { parsed = JSON.parse(m); } catch {}
+      const [stars, archived, pushed] = Array.isArray(parsed) ? parsed : [0, true, ""];
       meta.set(a.repo, { stars, archived, pushed: String(pushed).slice(0, 10) });
     }
     const m = meta.get(a.repo)!;
     if (!m.archived && (!o.since || m.pushed >= o.since)) apps.push({ ...a, version: v, stars: m.stars, pushed: m.pushed });
-  }));
+  })(a); }));
   return apps.sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0) || a.repo.localeCompare(b.repo));
 }
 
@@ -245,6 +249,11 @@ if (import.meta.main) {
   if (o.dep) apps.push(...await search(o.dep));
   if (!apps.length) throw new Error("usage: bun scripts/trial-github.ts [--dep <name> [--major <n>]] [owner/repo[:subdir] ...]");
   if (o.limit) apps = apps.slice(0, Number(o.limit));
+  if (o.list) {
+    for (const a of apps) console.log(`${String(a.stars ?? "").padStart(6)}  ${a.pushed ?? "          "}  ${(a.version ?? "").padEnd(16)}  ${a.repo}${a.sub ? `:${a.sub}` : ""}`);
+    console.log(`${apps.length} apps`);
+    process.exit(0);
+  }
   console.log(`trying ${apps.length} apps, ${o.jobs} at a time, modes ${MODES.join(",")}; results in ${OUT}`);
   const results: Result[] = [];
   // One worker per repo at a time: apps in the same clone would install over each other.
