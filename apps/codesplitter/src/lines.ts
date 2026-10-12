@@ -10,6 +10,7 @@
 // reassigned?") passes `ifRev`: the whole file must still be at that rev.
 
 import { parse as parseToml } from "smol-toml";
+import type { Rule } from "./policy.ts";
 import { parseAllDocuments } from "yaml";
 import { alike, keptPairs } from "./sync.ts";
 
@@ -160,7 +161,8 @@ export function kindOf(path: string): Kind {
  * - one line both rewrote in the same words.
  * - the same line added on both sides in different places in one block
  *   (`doubled`): it would land twice.
- * - by `path` (see `kindOf`): a lockfile both changed is one whole-file
+ * - by `rule`, the path's merge rule (`kindOf`, or the repo's policy.ts
+ *   override; `union` keeps both sides of what they both rewrote): a lockfile both changed is one whole-file
  *   conflict, since a line merge of one is never valid; a config key (.env,
  *   JSON, YAML, TOML) the merge would define twice is a conflict; and in code,
  *   lines added right next to lines the other side deleted are a conflict too
@@ -173,10 +175,21 @@ export function kindOf(path: string): Kind {
  * the batch must land on `main` exactly as passed. Deleted lines leave no
  * blame, so their ops are credited to `deleter`.
  */
-export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter) {
+export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule: Rule = kindOf(path)): { ops: Op[]; by: string[]; conflicts: Conflict[] } {
+  if (rule === "union") {
+    // git's merge=union: what both rewrote keeps both, main's first; a line both added lands once. Markers and broken data still refuse.
+    const first = merge(base, branch, main, given, deleter, path, writer, "prose");
+    const keep = (c: Conflict): Pick => {
+      if (c.doubled) return "main";
+      const m = c.main?.split("\n") ?? [], b = c.branch?.split("\n") ?? [], fresh = b.filter((l) => !m.includes(l));
+      return fresh.length === b.length ? "both" : { text: [...m, ...fresh].join("\n") };
+    };
+    const both: Resolve = Object.fromEntries(first.conflicts.filter((c) => !sideOnly(c.line)).map((c) => [c.line, keep(c)]));
+    return merge(base, branch, main, { ...both, ...given }, deleter, path, writer, "prose");
+  }
   // What only takes a side keeps only a side.
   const resolve: Resolve = Object.fromEntries(Object.entries(given).filter(([id, v]) => !sideOnly(id) || v === "main" || v === "branch"));
-  const kind = kindOf(path);
+  const kind = rule;
   if (kind === "lock") {
     const [b, m, br] = [base, main, branch].map(text);
     if (b !== m && b !== br && m !== br) return wholeFile(branch, main, resolve.file as "main" | "branch" | undefined, deleter);
