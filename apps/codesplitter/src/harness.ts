@@ -66,23 +66,27 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
  * On a re-run, `conflicts` lists the lines someone else changed while the agent
  * worked; their version is already in the file and the agent must keep it.
  * `notes` are what its owner told it since it started (a note sends it round again).
+ * `also` are other files beside it the agent may edit too (a fix task's, heal.ts).
  */
 /** A line someone else holds while the agent works: its number (from 1), text, and who has it. */
 export interface HeldLine { n: number; text: string; why: string }
 /** Held lines named in a prompt at most; past that it says how many more. */
 const HELD_LISTED = 40;
 
-export function taskPrompt(path: string, task: string, conflicts: Conflict[] = [], notes: string[] = [], held: HeldLine[] = []): string {
-  const moved = conflicts.filter((c) => !c.held).map(({ op, now }) =>
-    now === null ? `- a line you ${op.kind === "insert" ? "anchored an insert to" : "changed"} was deleted by someone else`
-    : `- ${JSON.stringify(now.text)} (changed by ${now.by}; you had ${op.kind === "set" ? JSON.stringify(op.text) : op.kind === "delete" ? "deleted it" : `inserted ${JSON.stringify(op.text)} after it`})`);
+export function taskPrompt(path: string, task: string, conflicts: Conflict[] = [], notes: string[] = [], held: HeldLine[] = [], also: string[] = []): string {
+  // With other files in front of it, each line says which file it's in.
+  const moved = conflicts.filter((c) => !c.held).map(({ op, now, path: p }) => {
+    const at = also.length ? ` in ${p ?? path}` : "";
+    return now === null ? `- a line you ${op.kind === "insert" ? "anchored an insert to" : "changed"}${at} was deleted by someone else`
+      : `- ${JSON.stringify(now.text)}${at} (changed by ${now.by}; you had ${op.kind === "set" ? JSON.stringify(op.text) : op.kind === "delete" ? "deleted it" : `inserted ${JSON.stringify(op.text)} after it`})`;
+  });
   return [
-    `You are editing one file, ${path}, in the current directory.`,
+    also.length ? `You are editing ${path}, and may edit ${also.join(", ")} too, in the current directory.` : `You are editing one file, ${path}, in the current directory.`,
     `Task: ${task}`,
     ...(moved.length ? [
       `You already worked on this task once. While you worked, someone else changed these lines, so your edits to them did not land:`,
       ...moved,
-      `The file now has their version and your other edits. Keep their changes, and finish the task on the file as it is now.`,
+      `The ${also.length ? "files now have" : "file now has"} their version and your other edits. Keep their changes, and finish the task on the file as it is now.`,
     ] : []),
     // Notes its owner sent while it worked: they come in on the next run, as the CLI can't take messages mid-run.
     ...(notes.length ? [
@@ -97,7 +101,8 @@ export function taskPrompt(path: string, task: string, conflicts: Conflict[] = [
       ...held.slice(0, HELD_LISTED).map((h) => `- line ${h.n}: ${JSON.stringify(h.text)} (${h.why})`),
       ...(held.length > HELD_LISTED ? [`- and ${held.length - HELD_LISTED} more held lines`] : []),
     ] : []),
-    `Edit ${path} in place. Change only what the task needs, keep every other line as it is, and do not add files.`,
+    also.length ? `Edit those files in place. Change only what the task needs, keep every other line as it is, and do not add or remove files.`
+    : `Edit ${path} in place. Change only what the task needs, keep every other line as it is, and do not add files.`,
     `Do not run git commands.`,
   ].join("\n");
 }

@@ -22,8 +22,13 @@ describe("the container's server", () => {
     expect((await run({ cmd: { bin: "rm", args: ["a.js"] }, path: "a.js", text: "x\n" })).text).toBeNull();
     expect((await run({ cmd: { bin: "no-such-agent-cli", args: [] }, path: "a.js", text: "" })).code).toBe(127);
   });
+  test("a fix task's other files go in beside it, and come back as it left them (#1037)", async () => {
+    const r = await run({ cmd: { bin: "sh", args: ["-c", "cat a.js test/a.test.js && echo z > test/a.test.js && rm b.js"] }, path: "a.js", text: "a\n", also: { "test/a.test.js": "t\n", "b.js": "b\n" } });
+    expect(r).toEqual({ code: 0, out: "a\nt\n", text: "a\n", also: { "test/a.test.js": "z\n", "b.js": null } });
+  });
   test("a path that climbs out of the directory is refused", async () => {
     expect((await run({ cmd: { bin: "true", args: [] }, path: "../escape.js", text: "" })).code).toBe(2);
+    expect((await run({ cmd: { bin: "true", args: [] }, path: "a.js", text: "", also: { "../escape.js": "" } })).code).toBe(2);
     expect((await testCut({ files: { "../escape.test.ts": "" } })).code).toBe(2);
   });
   test("runs bun test over a cut's files, with a JUnit report", async () => {

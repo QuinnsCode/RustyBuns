@@ -1,6 +1,7 @@
 // The server inside the agent container. One request runs one coding agent on
-// one file: POST /run {cmd: {bin, args, env?}, path, text} writes the file into a
-// fresh directory, runs the CLI there, and answers {code, out, text} with what
+// one file: POST /run {cmd: {bin, args, env?}, path, text, also?} writes the file
+// (and `also`'s {path: text}, the other files a fix task may edit) into a fresh
+// directory, runs the CLI there, and answers {code, out, text, also?} with what
 // it left (text: null if it removed the file). POST /test {files: {path: text}}
 // writes a cut's files (src/cuts.ts) and runs `bun test` there: {code, out,
 // report} (report: its JUnit XML). POST /deps-test {remote, files, pm, lock, only?} is the
@@ -59,17 +60,20 @@ async function hand(dir, as) {
   if (as.uid !== undefined) await exec("chown", ["-R", `${as.uid}:${as.gid}`, dir], dir, {}, { env: {} });
 }
 
-export async function run({ cmd, path, text }) {
+export async function run({ cmd, path, text, also }) {
   const dir = await workdir("agent-", USERS.agent);
   try {
-    const at = join(dir, path);
-    if (relative(dir, at).startsWith("..")) return { code: 2, out: `bad path: ${path}`, text: null };
-    await mkdir(dirname(at), { recursive: true });
-    await writeFile(at, text);
+    const files = { ...also, [path]: text }, at = (p) => join(dir, p);
+    for (const p of Object.keys(files)) if (relative(dir, at(p)).startsWith("..")) return { code: 2, out: `bad path: ${p}`, text: null };
+    for (const [p, t] of Object.entries(files)) {
+      await mkdir(dirname(at(p)), { recursive: true });
+      await writeFile(at(p), t);
+    }
     await hand(dir, USERS.agent);
     const { code, out } = await exec(cmd.bin, cmd.args, dir, cmd.env);
-    const left = await readFile(at, "utf8").catch(() => null);
-    return { code, out, text: left };
+    const left = (p) => readFile(at(p), "utf8").catch(() => null);
+    const back = also ? { also: Object.fromEntries(await Promise.all(Object.keys(also).map(async (p) => [p, await left(p)]))) } : {};
+    return { code, out, text: await left(path), ...back };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

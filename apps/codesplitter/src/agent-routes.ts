@@ -78,6 +78,9 @@ export interface Run {
   rejected?: { at: number; by: string };
   /** A fix task (heal.ts): it edits this open branch itself, and nothing of it lands on main. */
   branch?: string;
+  /** A fix task's other files of the branch, beside `path`, that it may edit; and those it did. */
+  also?: string[];
+  edited?: string[];
 }
 
 export interface Note { text: string; at: number }
@@ -406,8 +409,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   const cutoff = env.AGENT_SANDBOX ? setTimeout(() => void env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'")
     .bind(`out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}`, id).run().catch(() => {}).finally(() => stopper.abort()), Math.max(0, row.started + HOSTED_RUN_MS - Date.now())) : undefined;
   const call = caller(self, origin);
-  const { lines } = row.result ? JSON.parse(row.result) as Partial<Run> : {};
-  const extra: Partial<Run> = lines ? { lines } : {};
+  const { lines, also } = row.result ? JSON.parse(row.result) as Partial<Run> : {};
+  const extra: Partial<Run> = { ...(lines && { lines }), ...(also && { also }) };
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
     // A Stop between checks still keeps what the agent left from landing.
@@ -417,7 +420,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const gh = env.AGENT_SANDBOX ? await agentGithubToken(env, owner).catch(() => null) : null;
     if (gh) {
       const inner = sandbox;
-      sandbox = (cmd, file) => inner({ ...cmd, env: { ...cmd.env, GH_TOKEN: gh, GITHUB_TOKEN: gh } }, file);
+      sandbox = (cmd, file, sig) => inner({ ...cmd, env: { ...cmd.env, GH_TOKEN: gh, GITHUB_TOKEN: gh } }, file, sig);
       extra.github = true;
       await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ?").bind(JSON.stringify(extra), id).run();
     }
@@ -433,7 +436,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       if (!added.ok) throw new Error(`adding ${agent}: ${await added.text()}`);
     }
     const r = await runAgent(call, {
-      user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal, branch,
+      user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal, branch, also,
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map((n) => n.text); given = all.length; return fresh; },
       log: (s) => {
         log.push(s);
@@ -443,7 +446,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     });
     await logged;
     const pending = own && r.applied ? { branch: own, until: Date.now() + wait } : undefined;
-    const done = await finish(env, id, "done", { ...extra, applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), ...(pending ? { pending } : {}) });
+    const done = await finish(env, id, "done", { ...extra, applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), ...(r.edited && { edited: r.edited }), ...(pending ? { pending } : {}) });
     // Stopped just as it ended: nothing waits.
     if (pending && done.meta?.changes) await landLater(env, id, origin, wait);
     else if (own) await dropBranch(env, owner, repo, own, path);
