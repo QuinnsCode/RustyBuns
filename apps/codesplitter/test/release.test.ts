@@ -3,23 +3,77 @@
 // edge case each. Nothing here runs a command or touches Cloudflare.
 
 import { describe, expect, test } from "bun:test";
-import { checkPlan, deleteItems, dirtyFiles, parseArgs, readyLevels, realIO, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
+import { checkPlan, deleteItems, dirtyFiles, main, MOVE_PENDING, NeedsMove, parseArgs, readyLevels, realIO, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
 
 const plain: Mode = { checksNew: false, move: false };
 const move: Mode = { checksNew: false, move: true };
 const plan = (...lines: string[]) => lines.join("\n");
+/** As `rustybuns plan` really prints it: Alchemy logs the plan through Effect, a prefix on every line; the CLI's own warnings are plain. */
+const logged = (...lines: string[]) => lines.map((l) => l.startsWith("warning: ") || !l ? l : `[00:01:08.172] INFO (#1): ${l}`).join("\n");
 
 // What a normal release prints: an update to the Worker, everything else noop.
-const UPDATE = plan("building the worker: bun run build.ts", "Plan: 1 to update", "[AGENT_SANDBOX] noop", "[DB] noop", "[Worker] update", "[Worker/DB] noop");
+const UPDATE = "building the worker: bun run build.ts\n" + logged("Plan: 1 to update", "[AGENT_SANDBOX] noop", "[DB] noop", "[Worker] update", "[Worker/DB] noop");
 // #825: the five renamed resources replaced, the CLI warning that they're deleted.
 const MOVE_WARNING = "warning: this deploy would delete D1 DB (codesplitters-db, renamed to codesplitter-db), Queue HOOKS (codesplitters-hooks, renamed to codesplitter-hooks), " +
   "Queue JOBS (codesplitters-jobs, renamed to codesplitter-jobs), Queue LEVEL_DIGS (codesplitters-level-digs, renamed to codesplitter-level-digs), " +
   "R2 LEVEL_CHUNKS (codesplitters-level-chunks, renamed to codesplitter-level-chunks), and the data in them. If they were added on a branch this one lacks, rebase first; to delete on purpose, pass --allow-delete.";
-const MOVE = plan(MOVE_WARNING, "", "Plan: 1 to update, 5 to replace, 4 binding changes",
+const MOVE = logged(MOVE_WARNING, "", "Plan: 1 to update, 5 to replace, 4 binding changes",
   "[DB] replace", "[HOOKS] replace", "[JOBS] replace", "[LEVEL_CHUNKS] replace", "[LEVEL_DIGS] replace",
   "[Worker] update", "[Worker/DB] update", "[Worker/HOOKS] update", "[Worker/JOBS] update", "[Worker/LEVEL_DIGS] update");
 
+// The owner's first run after #841, word for word: the move not run yet, under a plain release.
+const REAL = `[00:01:08.172] INFO (#1): Plan: 5 to update, 5 to replace, 7 binding changes
+[00:01:08.172] INFO (#1): [Build] update
+[00:01:08.172] INFO (#1): [DB] replace
+[00:01:08.172] INFO (#1): [HOOKS] replace
+[00:01:08.172] INFO (#1): [HOOKSConsumer] update
+[00:01:08.172] INFO (#1): [JOBS] replace
+[00:01:08.172] INFO (#1): [JOBSConsumer] update
+[00:01:08.172] INFO (#1): [LEVEL_CHUNKS] replace
+[00:01:08.172] INFO (#1): [LEVEL_DIGS] replace
+[00:01:08.172] INFO (#1): [LEVEL_DIGSConsumer] update
+[00:01:08.172] INFO (#1): [Worker] update
+[00:01:08.172] INFO (#1): [Worker/AGENT_SANDBOX] update
+[00:01:08.172] INFO (#1): [Worker/DB] update
+[00:01:08.172] INFO (#1): [Worker/DEPLOY_RUNNER] update
+[00:01:08.172] INFO (#1): [Worker/HOOKS] update
+[00:01:08.172] INFO (#1): [Worker/JOBS] update
+[00:01:08.172] INFO (#1): [Worker/LEVEL_CHUNKS] update
+[00:01:08.172] INFO (#1): [Worker/LEVEL_DIGS] update`;
+
+describe("the real plan", () => {
+  test("is read through Effect's log prefix, rows and summary alike", () => {
+    const v = checkPlan(REAL, move);
+    expect(v.stop).toBeNull();
+    expect(v.show[0]).toBe("Plan: 5 to update, 5 to replace, 7 binding changes");
+    expect(v.show).toContain("[DB] replace");
+  });
+
+  test("under a plain release, it's the move still to do, said as that", () => {
+    expect(checkPlan(REAL, plain)).toMatchObject({ stop: MOVE_PENDING, move: true });
+    expect(checkPlan(MOVE_WARNING + "\n" + REAL, plain)).toMatchObject({ move: true });
+  });
+
+  test("anything risky besides the renames is a plain stop, not the move", () => {
+    for (const extra of ["[FILES] delete", "[Worker] replace", "[DB/X] replace", "[VECTORS] create"]) {
+      const v = checkPlan(REAL + `\n[00:01:08.172] INFO (#1): ${extra}`, plain);
+      expect(v.move).toBeUndefined();
+      expect(v.stop).not.toBeNull();
+    }
+    const v = checkPlan(MOVE_WARNING.replace(", and the data in them", ", Durable Object class CiRunner, and the data in them") + "\n" + REAL, plain);
+    expect(v.move).toBeUndefined();
+    expect(v.stop).toContain("CiRunner");
+  });
+
+  test("a plain update isn't the move", () => expect(checkPlan(UPDATE, plain).move).toBeUndefined());
+});
+
 describe("checkPlan", () => {
+  test("plans without Effect's prefix still read", () => {
+    expect(checkPlan(plan("Plan: 1 to update", "[Worker] update"), plain).stop).toBeNull();
+    expect(checkPlan(plan("Plan: 1 to delete", "[FILES] delete"), plain).stop).toContain("[FILES] delete");
+  });
+
   test("a release that only updates goes out, and noops aren't shown", () => {
     const v = checkPlan(UPDATE, plain);
     expect(v.stop).toBeNull();
@@ -53,7 +107,7 @@ describe("checkPlan", () => {
 
   test("--move lets exactly the five renames through", () => {
     expect(checkPlan(MOVE, move).stop).toBeNull();
-    expect(checkPlan(MOVE, plain).stop).toContain("would delete");
+    expect(checkPlan(MOVE, plain)).toMatchObject({ stop: MOVE_PENDING, move: true });
     // The new database already there is adopted, the old one deleted: as good as a replace.
     expect(checkPlan(plan("Plan: 2 to adopted, 2 to delete", "[DB] adopted", "[DB] delete", "[HOOKS] create", "[HOOKS] delete"), move).stop).toBeNull();
   });
@@ -79,7 +133,7 @@ describe("checkPlan", () => {
     expect(checkPlan(plan(`warning: stage live_ryanquinn's Alchemy state is under the app name "codesplitters", not "codesplitter": …`, UPDATE), plain).stop).toContain("old name");
   });
 
-  test("Effect's log lines aren't taken for plan rows", () => {
+  test("Effect's other log lines aren't taken for plan rows", () => {
     expect(checkPlan(plan("[12:00:00.123] INFO (#1): delete the old bucket later", UPDATE), plain).stop).toBeNull();
   });
 });
@@ -264,6 +318,36 @@ describe("release", () => {
     const mac = new Mac(); mac.answers = [true]; mac.files.delete("/h/.codesplitters-checks-on");
     await go(mac);
     expect(mac.envs[mac.at(/rustybuns plan/)]!.CODESPLITTER_CHECKS).toBe("0");
+  });
+});
+
+describe("the move not run yet", () => {
+  test("state under the old name is caught before the plan, and the move is offered", async () => {
+    const mac = new Mac(); mac.files.add(`${STATES}/codesplitters`);
+    const e = await go(mac).then(() => null, (e) => e);
+    expect(e).toBeInstanceOf(NeedsMove);
+    expect(mac.ran(/rustybuns plan/)).toEqual([]);
+  });
+
+  test("main: yes runs the move there and then, with every question --move asks", async () => {
+    const mac = new Mac(); mac.plans = [REAL]; mac.answers = [true, true, true];
+    await main(mac, plain, WHERE, {});
+    expect(mac.asked[0]).toContain("Run the move now?");
+    expect(mac.asked[1]).toContain("backlog of 0");
+    expect(mac.asked[2]).toContain("Copy the data and deploy");
+    expect(mac.ran(/rustybuns deploy/)).toEqual(["bunx rustybuns deploy --yes --allow-delete"]);
+  });
+
+  test("main: no copies and deploys nothing, and says how to run it later", async () => {
+    const mac = new Mac(); mac.plans = [REAL]; mac.answers = [false];
+    await stopsWith(main(mac, plain, WHERE, {}), "--move");
+    expect(mac.ran(/move-resources|rustybuns deploy/)).toEqual([]);
+  });
+
+  test("main: any other stop is passed on, with no offer", async () => {
+    const mac = new Mac(); mac.plans = [logged("Plan: 1 to delete", "[FILES] delete")];
+    await stopsWith(main(mac, plain, WHERE, {}), "[FILES] delete");
+    expect(mac.asked).toEqual([]);
   });
 });
 
