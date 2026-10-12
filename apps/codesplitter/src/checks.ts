@@ -167,10 +167,11 @@ export const shaped = (r: CheckRun) => ({
 
 export const get = (env: Env, id: number) => env.DB.prepare("SELECT * FROM check_runs WHERE id = ?").bind(id).first() as Promise<CheckRun | null>;
 
-/** A run started or finished: the webhook, and (when asked for) our own result on GitHub. */
+/** A run started or finished: the webhook, (when asked for) our own result on GitHub, and a failure on a branch its fix task (heal.ts). */
 async function told(env: Env, run: CheckRun, action: "created" | "completed", by: string) {
   await emit(env, run.owner, run.repo, "check_run", by, { action, check_run: shaped(run) });
   if (run.runner !== "github") await postStatus(env, run).catch(() => null);
+  if (action === "completed" && run.status === "failed" && run.ref !== "main") await (await import("./heal.ts")).checkFailed(env, run).catch(() => null);
 }
 
 /** The status context we post our runs under. */
@@ -562,7 +563,9 @@ export async function mergeBlock(env: Env, owner: string, repo: string, ref: str
   if (c.gate.ok) return null;
   const why = [c.stale && "the branch changed since its checks ran", c.gate.failed.length && `${c.gate.failed.join(", ")} failed`, c.gate.waiting.length && `waiting on ${c.gate.waiting.join(", ")}`].filter(Boolean).join("; ");
   const tip = c.offline && c.gate.waiting.length ? ". GitHub is down: run checks here, and once they pass, GitHub's wait until it's back" : "";
-  return { error: `required checks haven't passed: ${why}${tip}`, checks: c.gate };
+  const heal = c.gate.failed.length && ref !== "main" ? await (await import("./heal.ts")).heals(env, owner, repo, ref).catch(() => null) : null;
+  const fixing = heal?.running ? ". A fix task is on it" : heal?.gave_up ? `. Self-healing gave up after ${heal.attempts.length} fix tasks: it waits for a person` : "";
+  return { error: `required checks haven't passed: ${why}${tip}${fixing}`, checks: c.gate, ...(heal?.attempts.length && { heal }) };
 }
 
 /** What `ref` is in git right now, to run checks on: main's commit, or the commit a branch last went upstream as. */
@@ -586,7 +589,12 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
   const body = async <T>() => (await req.json().catch(() => ({}))) as T;
   const crew = () => a.write ? null : json({ error: "no write access" }, 403);
 
-  if (!p[5] && req.method === "GET") return json(await refChecks(env, owner, repo, url.searchParams.get("ref") || "main"));
+  if (!p[5] && req.method === "GET") {
+    const ref = url.searchParams.get("ref") || "main";
+    // A branch's fix tasks so far (heal.ts), with whether it waits for a person now.
+    const heal = ref === "main" ? null : await (await import("./heal.ts")).heals(env, owner, repo, ref);
+    return json({ ...(await refChecks(env, owner, repo, ref)), ...(heal && { heal }) });
+  }
   if (!p[5] && req.method === "POST") {
     const no = crew(); if (no) return no;
     const b = await body<{ ref?: string; sha?: string; name?: string; runner?: Runner; status?: Status; url?: string }>();

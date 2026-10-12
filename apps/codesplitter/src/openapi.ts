@@ -264,13 +264,15 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { path: { ...str(), required: true } }, ok: obj({ path: str(), branch: str(), deleted: bool() }) } },
   [`${repo}/checks`]: {
     get: { id: "checks", summary: "A ref's check runs, ours and GitHub Actions', and whether a merge may go", tag: "Checks", open: true,
-      description: "Like `gh pr checks`: the newest run of each name on the ref's latest sha. gate.ok false means merging waits: on gate.waiting, or for gate.failed to be fixed. While GitHub is down (offline), required checks only GitHub runs are deferred once our own have passed. A branch edited since its runs is stale: every required check waits again.",
+      description: "Like `gh pr checks`: the newest run of each name on the ref's latest sha. gate.ok false means merging waits: on gate.waiting, or for gate.failed to be fixed. While GitHub is down (offline), required checks only GitHub runs are deferred once our own have passed. A branch edited since its runs is stale: every required check waits again. " +
+        "With self-healing on, a required check failing on a branch starts a fix task there (a coding agent on the failing log): `heal` lists them, and after `max` the branch waits for a person (gave_up).",
       query: { ref: str("main or a branch's name; main by default") },
       ok: obj({ ref: str(), sha: { type: ["string", "null"] }, where: { type: ["string", "null"] }, runs: arr(ref("CheckRun")),
         here: bool("whether our own checks run"), offline: bool("the mirror can't reach GitHub"),
         stale: bool("the branch changed since these runs saw it"), changed_at: { type: ["integer", "null"], description: "when the branch last changed (ms), null on main" },
         gate: obj({ required: arr(str("the ones this ref needs")), ok: bool(), passed: arr(str()), waiting: arr(str()), failed: arr(str()), deferred: arr(str("GitHub's, put off while it's down")),
-          skipped: arr(str("required checks scoped to paths this branch doesn't touch")) }) }) },
+          skipped: arr(str("required checks scoped to paths this branch doesn't touch")) }),
+        heal: obj({ max: int(), running: bool(), gave_up: bool("its fix tasks are spent: a person's turn"), attempts: arr(loose("{id, path, harness, status, started, why, applied?, error?}")) }) }) },
     post: { id: "record_check", summary: "Record a check run by hand (the crew queues one; only the owner may give it a status past queued)", tag: "Checks",
       body: obj({ ref: str(), sha: str(), name: str(), runner: { type: "string", enum: ["desktop", "container", "github", "external"] }, status: ref("CheckStatus"), url: str() }, ["ref", "sha", "name"]),
       ok: ref("CheckRun"), status: 201 },
@@ -304,7 +306,7 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/branches/{branch}/merge`]: { post: { id: "merge_branch", summary: "Merge a branch into main (the crew)", tag: "Branches", risky: true,
     description: "Conflicts merge nothing (409, with each conflict's choices); settle each one in `resolve` by its line: \"main\", \"branch\", \"both\" (main's first), " +
       "\"both:branch-first\", or {\"text\": \"...\"} (one or more lines, in its place). Lockfiles, doubled config keys and code that won't build take only main or branch. " +
-      "A branch that changes build or deploy files needs `build_ok` when commits deploy.",
+      "A branch that changes build or deploy files needs `build_ok` when commits deploy. With self-healing on, a guard tripping (git's markers, a file that won't parse or build) starts a fix task on the branch, its run id in `fix`.",
     body: obj({ resolve: loose("{path: {line: \"main\" | \"branch\" | \"both\" | \"both:branch-first\" | {text}}}"), build_ok: bool() }),
     ok: obj({ status: str("merged or open"), merged: arr(obj({ path: str(), rev: int(), ops: int(), deleted: bool() })), conflicts: arr(loose("{path, conflicts}")) }) } },
   [`${repo}/merges`]: { post: { id: "merge_clean_branches", summary: "Merge every open branch that merges clean, oldest first (the crew)", tag: "Branches", risky: true,
