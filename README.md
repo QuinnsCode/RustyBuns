@@ -268,6 +268,7 @@ pnpm exec rustybuns destroy        # removes everything it created
 
 - [ABOUT.md](ABOUT.md): why it exists (it started with grass) and who makes it
 - [GETTING_STARTED.md](GETTING_STARTED.md): the full walkthrough, step by step
+- [AGENT_PROMPTS.md](AGENT_PROMPTS.md): prompts to paste into your coding agent to try it on your repo
 - [REFERENCE.md](REFERENCE.md): every command, config key, the host, the Hetzner and Railway boxes, LAN multiplayer, who holds the keys to secrets
 - [ADOPTION.md](ADOPTION.md): who it's for, and how to adopt it (and leave)
 - [COSTS.md](COSTS.md): what each deploy can bill you for, and how to cap it

@@ -4,7 +4,7 @@
 //   wrangler.*    -> bindings, compat, assets   (see ../wrangler.ts)
 // Everything is best-effort text analysis; nothing here executes user code.
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, resolve, relative, sep } from "node:path";
 import { parseJsonc } from "./jsonc.ts";
 import { workspaceRoot } from "./deploy-deps.ts";
@@ -44,6 +44,8 @@ export interface Inferred {
     outDir: string | null;
     aliases: Record<string, string>;
     desktopConfigPath: string | null;
+    /** Paths `server.proxy` hands to another server in dev ("/api"): the build alone doesn't answer them. */
+    proxy: string[];
   };
   /** astro.config.*: its adapter by package name and its `output`. Null when there is no config. */
   astro: AstroInfo | null;
@@ -144,10 +146,11 @@ export function inferVite(root: string, buildConfig: string | null = null) {
   if (buildConfig && !existsSync(join(root, buildConfig))) buildConfig = null;
   const configPath = buildConfig ? join(root, buildConfig) : cands.map((c) => join(root, c)).find(existsSync) ?? null;
   const desktopConfigPath = ["vite.desktop.config.ts", "vite.desktop.config.mts"].map((c) => join(root, c)).find(existsSync) ?? null;
-  const out = { configPath, buildConfig, plugins: [] as string[], root: null as string | null, outDir: null as string | null, aliases: {} as Record<string, string>, desktopConfigPath };
+  const out = { configPath, buildConfig, plugins: [] as string[], root: null as string | null, outDir: null as string | null, aliases: {} as Record<string, string>, desktopConfigPath, proxy: [] as string[] };
   if (!configPath) return out;
   const src = readFileSync(configPath, "utf8");
   out.plugins = vitePlugins(src);
+  out.proxy = viteProxyPaths(src);
   out.root = viteRoot(src);
   out.outDir = src.match(/\boutDir:\s*["']([^"']+)["']/)?.[1] ?? null;
   const dir = (d: string) => d.replace(/^\.\//, "").replace(/\/$/, "") || ".";
@@ -156,6 +159,54 @@ export function inferVite(root: string, buildConfig: string | null = null) {
   for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*(?:\w+\.)?fileURLToPath\(\s*new\s+URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*\)\s*\)/g)) out.aliases[m[1]!] ??= dir(m[2]!);
   for (const m of src.matchAll(/["'](@[\w/-]*|~)["']\s*:\s*["']([^"']+)["']/g)) out.aliases[m[1]!] ??= dir(m[2]!);
   return out;
+}
+
+/** The keys of vite's `server.proxy` object ("/api", "^/ws/.*"), from the config's text. */
+export function viteProxyPaths(src: string): string[] {
+  const at = src.search(/\bproxy\s*:\s*\{/);
+  if (at < 0) return [];
+  const open = src.indexOf("{", at);
+  let end = open;
+  for (let depth = 0; end < src.length; end++) {
+    if (src[end] === "{") depth++;
+    else if (src[end] === "}" && --depth === 0) break;
+  }
+  // Drop the nested option objects ({ target, changeOrigin }) so only the top-level keys remain.
+  let body = src.slice(open + 1, end);
+  for (let prev = ""; prev !== body; ) { prev = body; body = body.replace(/\{[^{}]*\}/g, ""); }
+  return [...body.matchAll(/["'`]([^"'`]+)["'`]\s*:/g)].map((m) => m[1]!);
+}
+
+/**
+ * Folders beside `root` that look like the server its dev proxy points at: a package.json with
+ * a Node server framework, or a `start` script that runs node. "../api (node server.js)".
+ */
+export function siblingServers(root: string): { dir: string; runs: string }[] {
+  const parent = dirname(resolve(root)), self = resolve(root);
+  const out: { dir: string; runs: string }[] = [];
+  let names: string[] = [];
+  try { names = readdirSync(parent); } catch { return out; }
+  for (const n of names.sort()) {
+    const d = join(parent, n);
+    if (d === self || n.startsWith(".") || n === "node_modules") continue;
+    const pkg = readJson(join(d, "package.json"));
+    if (!pkg) continue;
+    const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+    const fw = SERVER_DEPS.filter((x) => deps[x]);
+    const start = String(pkg.scripts?.start ?? "");
+    if (fw.length || /^(node|bun|tsx|ts-node)\s/.test(start)) out.push({ dir: `../${n}`, runs: start || fw.join(", ") });
+  }
+  return out;
+}
+
+/** Apps init can box one level down (frontend/, web/, apps/*, packages/*), for a repo root that isn't one. */
+export function appsBelow(root: string): string[] {
+  const kids = (d: string) => { try { return readdirSync(join(root, d), { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules").map((e) => d ? `${d}/${e.name}` : e.name); } catch { return []; } };
+  const dirs = kids("").flatMap((d) => d === "apps" || d === "packages" ? kids(d) : [d]);
+  return dirs.filter((d) => {
+    if (!existsSync(join(root, d, "package.json"))) return false;
+    try { return infer(join(root, d)).framework !== "unknown"; } catch { return false; }
+  }).sort();
 }
 
 export interface AstroInfo {
