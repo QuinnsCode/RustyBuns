@@ -29,6 +29,9 @@ test("names each field, every problem at once", async () => {
   expect(await problems({ ...ok, extra: 1 })).toEqual(["extra: not a config key"]);
   expect(await problems({ ...ok, targets: { box: { provider: "railway", persona: "background-burner" } } })).toEqual([]);
   expect(await problems({ ...ok, targets: { box: { provider: "railway", persona: "turbo" } } })).toHaveLength(1);
+  expect(await problems({ ...ok, targets: { desktop: { mode: "spa", warm: 1 } } })).toEqual([]);
+  expect(await problems({ ...ok, targets: { desktop: { mode: "spa", warm: -1 } } })).toHaveLength(1);
+  expect(await problems({ ...ok, targets: { desktop: { mode: "spa", warm: 1.5 } } })).toHaveLength(1);
   expect(await problems({ ...ok, name: "My App", targets: { edge: { provider: "cloudflare" } } })).toHaveLength(1);
 });
 
