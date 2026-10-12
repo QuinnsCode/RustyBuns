@@ -94,3 +94,12 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
   h1 { font-size: 30px; }
   .health { width: 120px; }
 }
+
+/* your soldier: a build and a head */
+.look { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; }
+.look-label { font: 12px var(--mono); color: var(--muted); }
+.chips, .heads { display: flex; gap: 6px; }
+.chips button { padding: 4px 10px; font-size: 13px; white-space: nowrap; }
+.heads button { width: 34px; height: 34px; padding: 2px; }
+.heads canvas { width: 100%; height: 100%; display: block; }
+.chips button[aria-checked="true"], .heads button[aria-checked="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
