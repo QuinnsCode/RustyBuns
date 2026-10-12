@@ -37,7 +37,7 @@ Secrets live in 1Password vault `fantano` (`.env.schema`): `anthropic/api-key` a
 1. Create a Turnstile widget for the hostname and put its site key in `turnstileSiteKey` in `rustybuns.config.ts`.
 2. `bun run gen` to refresh `wrangler.jsonc` and `.env.schema`, then `bun run deploy`. That runs `rustybuns deploy`, and varlock unlocks the secrets with Touch ID.
 
-`REVIEW_MODEL` picks the model (default `claude-opus-5-5`). `claude-haiku-5-5` is about 40× cheaper per review.
+`REVIEW_MODEL` picks the model. The default is `claude-haiku-5-5`, the cheapest, at about $0.0004 a review (10,000 reviews ≈ $4). `claude-opus-5-5` writes sharper jokes at about 40× the cost.
 
 ## Not built yet
 
