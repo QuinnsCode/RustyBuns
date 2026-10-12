@@ -53,8 +53,10 @@ function galaxy(def: GalaxyDef): Galaxy {
   };
 }
 
-// Most worlds are one capital sector. Kessa, on the front line, is a whole planet of three
-// sectors, and Lumen and Morrow each guard their side of the Narrows with an anti-ship cannon.
+// Most worlds are one capital sector. Kessa and Lumen, the two worlds of the Narrows, are whole
+// planets of three sectors, and Corva and Morrow each guard the way into their side's home region
+// with an anti-ship cannon. Turned half a turn around, Aster lands on Orin, Brill on Nyx, Corva on
+// Morrow and Kessa on Lumen, each with the other side's start.
 const SHORT = galaxy({
   id: "short",
   name: "Short war",
@@ -66,14 +68,14 @@ const SHORT = galaxy({
     { id: "east", name: "Wooka Wilds", bonus: 2, label: [81, 98] },
   ],
   systems: [
-    { id: "aster", name: "Aster", region: "west", x: 10, y: 30, sectors: ["capital"] },
+    { id: "aster", name: "Aster", region: "west", x: 10, y: 28, sectors: ["capital"] },
     { id: "brill", name: "Brill", region: "west", x: 14, y: 72, sectors: ["capital"] },
-    { id: "corva", name: "Corva", region: "west", x: 32, y: 50, sectors: ["capital"] },
-    { id: "kessa", name: "Kessa", region: "core", x: 50, y: 30, sectors: ["shield", "spaceport", "capital"] },
-    { id: "lumen", name: "Lumen", region: "core", x: 50, y: 74, sectors: ["cannon", "capital"] },
-    { id: "morrow", name: "Morrow", region: "east", x: 68, y: 50, sectors: ["cannon", "capital"] },
-    { id: "nyx", name: "Nyx", region: "east", x: 88, y: 28, sectors: ["capital"] },
-    { id: "orin", name: "Orin", region: "east", x: 86, y: 72, sectors: ["capital"] },
+    { id: "corva", name: "Corva", region: "west", x: 32, y: 49, sectors: ["cannon", "capital"] },
+    { id: "kessa", name: "Kessa", region: "core", x: 50, y: 26, sectors: ["shield", "spaceport", "capital"] },
+    { id: "lumen", name: "Lumen", region: "core", x: 50, y: 72, sectors: ["shield", "spaceport", "capital"] },
+    { id: "morrow", name: "Morrow", region: "east", x: 68, y: 49, sectors: ["cannon", "capital"] },
+    { id: "nyx", name: "Nyx", region: "east", x: 86, y: 26, sectors: ["capital"] },
+    { id: "orin", name: "Orin", region: "east", x: 90, y: 70, sectors: ["capital"] },
   ],
   lanes: [
     ["aster", "brill"], ["aster", "corva"], ["brill", "corva"],
@@ -82,14 +84,14 @@ const SHORT = galaxy({
     ["morrow", "nyx"], ["morrow", "orin"], ["nyx", "orin"],
   ],
   start: {
-    aster: { owner: "marines", fleets: 3, armies: 2 },
+    aster: { owner: "marines", fleets: 2, armies: 2 },
     brill: { owner: "marines", fleets: 1, armies: 2 },
-    corva: { owner: "marines", fleets: 3, armies: 3 },
-    lumen: { owner: "marines", fleets: 1, armies: 1 },
+    corva: { owner: "marines", fleets: 3, armies: 2 },
+    lumen: { owner: "marines", fleets: 2, armies: 1 },
     kessa: { owner: "wooka", fleets: 2, armies: 1 },
     morrow: { owner: "wooka", fleets: 3, armies: 2 },
-    nyx: { owner: "wooka", fleets: 2, armies: 2 },
-    orin: { owner: "wooka", fleets: 1, armies: 2 },
+    nyx: { owner: "wooka", fleets: 1, armies: 2 },
+    orin: { owner: "wooka", fleets: 2, armies: 2 },
   },
 });
 

@@ -14,53 +14,63 @@ const reachable = (g: Galaxy, from: string) => {
   return seen;
 };
 const none = (c: Campaign): Orders[] => [{ faction: "marines", orders: [] }, { faction: "wooka", orders: [] }];
+// A system's twin: where it lands when the map turns half a turn around its centre.
+const twinOf = (g: Galaxy) => {
+  const at = new Map(g.systems.map((s) => [`${s.x},${s.y}`, s]));
+  return (id: string) => {
+    const s = g.system(id), t = at.get(`${g.width - s.x},${98 - s.y}`);
+    if (!t) throw new Error(`${id} has no twin`);
+    return t.id;
+  };
+};
 
-test("the short galaxy: 8 systems, joined up, Kessa in three sectors, a cannon each side of the Narrows", () => {
+// Turn either map half a turn around its centre and every world, lane and army lands on its twin.
+for (const id of ["short", "full"] as const) {
+  test(`the ${id} galaxy is the same for both sides`, () => {
+    const g = GALAXIES[id], twin = twinOf(g);
+    for (const s of g.systems) {
+      expect(g.start[s.id]).toBeDefined();
+      const t = g.system(twin(s.id)), a = g.start[s.id]!, b = g.start[t.id]!;
+      expect(t.sectors).toEqual(s.sectors);
+      expect(g.regions.find((r) => r.id === t.region)!.bonus).toBe(g.regions.find((r) => r.id === s.region)!.bonus);
+      expect({ ...b, owner: a.owner }).toEqual(a);
+      expect(b.owner).not.toBe(a.owner);
+    }
+    for (const [a, b] of g.lanes) expect(g.adjacent(twin(a), twin(b))).toBe(true);
+    // The list runs in twin order, so each side's AI can read it from its own end.
+    expect(g.systems.map((s) => twin(s.id))).toEqual(g.systems.map((s) => s.id).reverse());
+    const c = newCampaign(1, "marines", id);
+    expect(keyShare(c, "marines")).toBe(0.5);
+    expect(income(c, "marines")).toBe(income(c, "wooka"));
+  });
+}
+
+test("the short galaxy: 8 systems, joined up, Kessa and Lumen in three sectors, a cannon on each way in", () => {
   const g = GALAXIES.short;
   expect(g.systems).toHaveLength(8);
   expect(reachable(g, "aster").size).toBe(8);
   expect(g.system("kessa").sectors).toEqual(["shield", "spaceport", "capital"]);
-  expect(g.systems.filter((s) => s.sectors.includes("cannon")).map((s) => s.id)).toEqual(["lumen", "morrow"]);
+  expect(g.system("lumen").sectors).toEqual(["shield", "spaceport", "capital"]);
+  expect(g.systems.filter((s) => s.sectors.includes("cannon")).map((s) => s.id)).toEqual(["corva", "morrow"]);
 });
 
-test("the full galaxy: 30 systems in 7 regions, joined up, the same for both sides", () => {
+test("the full galaxy: 30 systems in 7 regions, joined up", () => {
   const g = GALAXIES.full;
   expect(g.systems).toHaveLength(30);
   expect(g.regions).toHaveLength(7);
   expect(reachable(g, "aster").size).toBe(30);
-  for (const s of g.systems) {
-    expect(g.regions.some((r) => r.id === s.region)).toBe(true);
-    expect(g.start[s.id]).toBeDefined();
-  }
+  for (const s of g.systems) expect(g.regions.some((r) => r.id === s.region)).toBe(true);
   expect(g.systems.filter((s) => s.sectors.length > 1).length).toBeGreaterThanOrEqual(8);
   const has = (k: string) => g.systems.filter((s) => s.sectors.includes(k as never)).map((s) => s.id).sort();
   expect(has("canyon")).toEqual(["tarn", "umber"]);
   expect(has("jungle")).toEqual(["rook", "xan"]);
-  // Turn the map half a turn around its centre and every world, lane and army lands on its twin.
-  const at = new Map(g.systems.map((s) => [`${s.x},${s.y}`, s]));
-  const twin = (id: string) => {
-    const s = g.system(id), t = at.get(`${g.width - s.x},${98 - s.y}`);
-    if (!t) throw new Error(`${id} has no twin`);
-    return t;
-  };
-  for (const s of g.systems) {
-    const t = twin(s.id), a = g.start[s.id]!, b = g.start[t.id]!;
-    expect(t.sectors).toEqual(s.sectors);
-    expect({ ...b, owner: a.owner }).toEqual(a);
-    expect(b.owner).not.toBe(a.owner);
-  }
-  for (const [a, b] of g.lanes) expect(g.adjacent(twin(a).id, twin(b).id)).toBe(true);
-  // The list runs in twin order, so each side's AI can read it from its own end.
-  expect(g.systems.map((s) => twin(s.id).id)).toEqual(g.systems.map((s) => s.id).reverse());
-  const c = newCampaign(1, "marines", "full");
-  expect(keyShare(c, "marines")).toBe(0.5);
-  expect(income(c, "marines")).toBe(income(c, "wooka"));
 });
 
 test("income counts sectors and the region bonus, and halves when morale breaks", () => {
   const c = newCampaign();
-  // Thunder Marines: four capitals (12), Lumen's cannon (1) and the whole Thunder Reach (2).
-  expect(income(c, "marines")).toBe(15);
+  // Thunder Marines: four capitals (12), Lumen's shield (1) and spaceport (2), Corva's cannon (1)
+  // and the whole Thunder Reach (2).
+  expect(income(c, "marines")).toBe(18);
   for (const s of Object.values(c.systems)) for (const x of s.sectors) if (s.id !== "aster") x.owner = "wooka";
   expect(keyShare(c, "marines")).toBeLessThan(0.3);
   expect(income(c, "marines")).toBe(1); // 3 halved, rounded down
@@ -69,9 +79,9 @@ test("income counts sectors and the region bonus, and halves when morale breaks"
 test("orders are checked against what the earlier ones left", () => {
   const c = newCampaign();
   const d = planOrders(c, [{ faction: "marines", orders: [
-    { kind: "build", unit: "fleet", at: { system: "corva", sector: 0 } },
-    { kind: "build", unit: "fleet", at: { system: "corva", sector: 0 } },
-    { kind: "build", unit: "fleet", at: { system: "corva", sector: 0 } }, // out of credits
+    { kind: "build", unit: "fleet", at: { system: "corva", sector: 1 } },
+    { kind: "build", unit: "fleet", at: { system: "corva", sector: 1 } },
+    { kind: "build", unit: "fleet", at: { system: "corva", sector: 1 } }, // out of credits
     { kind: "fleet", from: "corva", to: "kessa", count: 5 },
     { kind: "fleet", from: "aster", to: "kessa", count: 1 },                 // no lane
     { kind: "build", unit: "army", at: { system: "kessa", sector: 0 } },   // not ours
@@ -110,7 +120,7 @@ test("troops land only under their own orbit", () => {
   ] }]);
   // One ship against two: the landing almost always turns back.
   if (lands.systems.kessa!.orbit !== "marines") {
-    expect(lands.systems.corva!.sectors[0]!.armies.marines).toBe(3);
+    expect(lands.systems.corva!.sectors[0]!.armies.marines).toBe(2);
     expect(lands.log.some((l) => l.includes("turned back"))).toBe(true);
   }
   const won = newCampaign();
@@ -121,7 +131,7 @@ test("troops land only under their own orbit", () => {
     { kind: "army", from: { system: "corva", sector: 0 }, to: { system: "kessa", sector: 0 }, count: 2 },
   ] }]);
   expect(t.systems.kessa!.orbit).toBe("marines");
-  expect(t.systems.corva!.sectors[0]!.armies.marines).toBe(1);
+  expect(t.systems.corva!.sectors[0]!.armies.marines).toBe(0);
   expect(t.log.some((l) => l.startsWith("Ground battle at Kessa shield generator"))).toBe(true);
 });
 
@@ -225,22 +235,23 @@ test("the hero can fly the space battle instead: the landings wait on who wins t
 
 test("an anti-ship cannon knocks a ship a turn out of a blockade, and can break it", () => {
   const c = newCampaign();
-  const lumen = c.systems.lumen!;
-  lumen.fleets = { marines: 0, wooka: 2 };
-  lumen.orbit = "wooka";
+  const corva = c.systems.corva!;
+  corva.fleets = { marines: 0, wooka: 2 };
+  corva.orbit = "wooka";
   const one = resolveTurn(c, none(c));
-  expect(one.systems.lumen!.fleets.wooka).toBe(1);
-  expect(one.systems.lumen!.orbit).toBe("wooka");
-  expect(one.log).toContain("The cannon on Lumen knocks out 1 Wooka ship.");
+  expect(one.systems.corva!.fleets.wooka).toBe(1);
+  expect(one.systems.corva!.orbit).toBe("wooka");
+  expect(one.log).toContain("The cannon on Corva knocks out 1 Wooka ship.");
   const two = resolveTurn(one, none(one));
-  expect(two.systems.lumen!.fleets.wooka).toBe(0);
-  expect(two.systems.lumen!.orbit).toBeNull();
-  expect(two.log).toContain("Wooka's blockade of Lumen is broken.");
+  expect(two.systems.corva!.fleets.wooka).toBe(0);
+  expect(two.systems.corva!.orbit).toBeNull();
+  expect(two.log).toContain("Wooka's blockade of Corva is broken.");
   // Taken by the enemy, the cannon turns on its old owner's fleet.
   const lost = newCampaign();
-  lost.systems.lumen!.sectors[0]!.owner = "wooka";
-  lost.systems.lumen!.sectors[0]!.armies = { marines: 0, wooka: 1 };
-  expect(resolveTurn(lost, none(lost)).systems.lumen!.fleets.marines).toBe(0);
+  lost.systems.corva!.sectors[0]!.owner = "wooka";
+  lost.systems.corva!.sectors[0]!.armies = { marines: 0, wooka: 1 };
+  lost.systems.corva!.fleets.marines = 1;
+  expect(resolveTurn(lost, none(lost)).systems.corva!.fleets.marines).toBe(0);
 });
 
 test("forces cut off from a capital lose an army a turn, down to one", () => {
@@ -264,7 +275,7 @@ test("forces cut off from a capital lose an army a turn, down to one", () => {
   expect(resolveTurn(open, none(open)).systems.kessa!.sectors[0]!.armies.marines).toBe(4);
   // A blockade further back cuts off everything past it: no Thunder Marines capital, no supply.
   const deep = newCampaign();
-  for (const id of ["aster", "brill", "corva"]) deep.systems[id]!.sectors[0]!.owner = "wooka";
+  for (const id of ["aster", "brill", "corva"]) for (const x of deep.systems[id]!.sectors) x.owner = "wooka";
   deep.systems.corva!.orbit = "wooka";
   expect([...supplied(deep, "marines")].sort()).toEqual(["lumen"]);
 });
@@ -281,27 +292,26 @@ test("the AI's orders are all legal, and a whole war is deterministic", () => {
   };
   const a = play(7), b = play(7);
   expect(a).toEqual(b);
-  expect(a.turn).toBeGreaterThan(5);
+  expect(a.turn).toBeGreaterThan(3);
 });
 
-// On the symmetric full map the Wooka's first orders are the Marines' turned half a turn around:
-// the AI doesn't play a better game for the side whose worlds come first in the list (#1086).
-test("the AI gives each side the mirror image of the other's opening orders", () => {
-  const g = GALAXIES.full, ids = g.systems.map((s) => s.id);
-  const twin = (id: string) => ids[ids.length - 1 - ids.indexOf(id)]!;
-  let c = newCampaign(1, "marines", "full");
+// On a symmetric map the Wooka's first orders are the Marines' turned half a turn around: the AI
+// doesn't play a better game for the side whose worlds come first in the list (#1086).
+for (const [id, least] of [["short", 3], ["full", 10]] as const) test(`the AI gives each side the mirror image of the other's opening orders on the ${id} map`, () => {
+  const twin = twinOf(GALAXIES[id]);
+  let c = newCampaign(1, "marines", id);
   for (let i = 0; i < 3; i++) c = resolveTurn(c, none(c)); // a few quiet turns' income to spend
   const mirrored = aiOrders(c, "marines").orders.map((o) =>
     o.kind === "build" ? { ...o, at: { ...o.at, system: twin(o.at.system) } }
     : o.kind === "fleet" ? { ...o, from: twin(o.from), to: twin(o.to) }
     : { ...o, from: { ...o.from, system: twin(o.from.system) }, to: { ...o.to, system: twin(o.to.system) } });
-  expect(mirrored.length).toBeGreaterThan(10);
+  expect(mirrored.length).toBeGreaterThan(least);
   expect(aiOrders(c, "wooka").orders).toEqual(mirrored);
 });
 
 // Pacing, AI against AI: every war ends, a full one runs longer than a short one, and the AI
-// spends the bigger galaxy's income rather than banking it. These seeds' wars run 5-17 turns on
-// the short map and 10-36 on the full one.
+// spends the bigger galaxy's income rather than banking it. These seeds' wars run 4-12 turns on
+// the short map and 12-30 on the full one.
 test("a full campaign runs longer than the short war, still ends, and the AI spends its income", () => {
   const war = (galaxy: GalaxyId, seed: number) => {
     let c = newCampaign(seed, "marines", galaxy);
