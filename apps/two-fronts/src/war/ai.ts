@@ -21,7 +21,7 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     const wantShips = credits >= COST.fleet && (i % 2 === 1 || !front.length);
     let placed = false;
     for (const s of front.length ? front : mine) {
-      const at = s.sectors.findIndex((x) => x.owner === f && (wantShips ? x.kind !== "shield" : x.kind === "capital"));
+      const at = s.sectors.findIndex((x) => x.owner === f && (wantShips ? x.kind === "spaceport" || x.kind === "capital" : x.kind === "capital"));
       if (at >= 0 && tryAdd({ kind: "build", unit: wantShips ? "fleet" : "army", at: { system: s.id, sector: at } })) {
         credits -= COST[wantShips ? "fleet" : "army"];
         placed = true;

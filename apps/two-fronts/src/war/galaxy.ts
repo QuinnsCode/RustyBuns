@@ -1,5 +1,6 @@
-// The first slice's galaxy: eight systems in three regions. Most worlds are one capital sector;
-// Kessa, on the front line, is a whole planet of three sectors.
+// The galaxy: eight systems in three regions. Most worlds are one capital sector. Kessa, on the
+// front line, is a whole planet of three sectors, and Lumen and Morrow each guard their side of
+// the Narrows with an anti-ship cannon.
 import type { Faction, SectorKind } from "../battle/contract.ts";
 
 export interface SystemDef {
@@ -24,8 +25,8 @@ export const SYSTEMS: SystemDef[] = [
   { id: "brill", name: "Brill", region: "west", x: 14, y: 72, sectors: ["capital"] },
   { id: "corva", name: "Corva", region: "west", x: 32, y: 50, sectors: ["capital"] },
   { id: "kessa", name: "Kessa", region: "core", x: 50, y: 30, sectors: ["shield", "spaceport", "capital"] },
-  { id: "lumen", name: "Lumen", region: "core", x: 50, y: 74, sectors: ["capital"] },
-  { id: "morrow", name: "Morrow", region: "east", x: 68, y: 50, sectors: ["capital"] },
+  { id: "lumen", name: "Lumen", region: "core", x: 50, y: 74, sectors: ["cannon", "capital"] },
+  { id: "morrow", name: "Morrow", region: "east", x: 68, y: 50, sectors: ["cannon", "capital"] },
   { id: "nyx", name: "Nyx", region: "east", x: 88, y: 28, sectors: ["capital"] },
   { id: "orin", name: "Orin", region: "east", x: 86, y: 72, sectors: ["capital"] },
 ];
@@ -37,17 +38,18 @@ export const LANES: [string, string][] = [
   ["morrow", "nyx"], ["morrow", "orin"], ["nyx", "orin"],
 ];
 
-export const SECTOR_NAMES: Record<SectorKind, string> = { capital: "Capital", spaceport: "Spaceport", shield: "Shield generator" };
+export const SECTOR_NAMES: Record<SectorKind, string> = { capital: "Capital", spaceport: "Spaceport", shield: "Shield generator", cannon: "Anti-ship cannon" };
 // Credits a sector earns its holder each turn.
-export const SECTOR_INCOME: Record<SectorKind, number> = { capital: 3, spaceport: 2, shield: 1 };
+export const SECTOR_INCOME: Record<SectorKind, number> = { capital: 3, spaceport: 2, shield: 1, cannon: 1 };
 
+// Armies are per sector.
 export const START: Record<string, { owner: Faction; fleets: number; armies: number }> = {
   aster: { owner: "concord", fleets: 3, armies: 2 },
   brill: { owner: "concord", fleets: 1, armies: 2 },
   corva: { owner: "concord", fleets: 3, armies: 3 },
   lumen: { owner: "concord", fleets: 1, armies: 1 },
   kessa: { owner: "hegemony", fleets: 2, armies: 1 },
-  morrow: { owner: "hegemony", fleets: 3, armies: 3 },
+  morrow: { owner: "hegemony", fleets: 3, armies: 2 },
   nyx: { owner: "hegemony", fleets: 2, armies: 2 },
   orin: { owner: "hegemony", fleets: 1, armies: 2 },
 };
