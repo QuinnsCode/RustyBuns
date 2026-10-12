@@ -23,6 +23,7 @@ export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, We
 
 import type { MemoryPort, Reporter } from "@rustybuns/ports";
 import type { BunShell } from "./serve.ts";
+import { existsSync, renameSync } from "node:fs";
 import { d1 } from "./bindings/d1.ts";
 import { kv } from "./bindings/kv.ts";
 import { storage, type StorageOptions } from "./bindings/storage.ts";
@@ -71,7 +72,13 @@ export interface GuestState {
 /** Local binding bundle: everything a desktop build hands to the Worker's env. */
 export function localBindings(dataDir: string) {
   return {
-    d1: (name: string) => d1(`${dataDir}/${name}.sqlite`),
+    /** With `renamedFrom`, its file (and WAL) move over when there's none under `name` yet. */
+    d1: (name: string, renamedFrom?: string) => {
+      const file = `${dataDir}/${name}.sqlite`, was = `${dataDir}/${renamedFrom}.sqlite`;
+      if (renamedFrom && !existsSync(file) && existsSync(was))
+        for (const ext of ["-wal", "-shm", ""]) if (existsSync(was + ext)) renameSync(was + ext, file + ext);
+      return d1(file);
+    },
     kv: (name: string) => kv(`${dataDir}/kv.sqlite`, name),
     storage: (name: string, opts?: StorageOptions) => storage(`${dataDir}/do_${name}.sqlite`, opts),
     /** R2 over a directory. With `dir` (an embedded/synced set, possibly read-only) reads come
@@ -82,7 +89,8 @@ export function localBindings(dataDir: string) {
     /** Cloudflare Images as a passthrough: info() reads the header, output() returns the original. */
     images,
     /** A Cloudflare Queue over sqlite. Its consumer is whoever calls `consume()`, in this process. */
-    queue: (name: string) => queue(`${dataDir}/queues.sqlite`, name),
+    /** With `renamedFrom`, messages still waiting under that name are carried over to `name`. */
+    queue: (name: string, renamedFrom?: string) => queue(`${dataDir}/queues.sqlite`, name, renamedFrom),
     durableObject: <Env>(Ctor: DurableObjectCtor<Env>, env: Env, binding: string, opts?: { codec?: "json" | "v8" }) =>
       durableObject(Ctor, env, { storage: (id) => storage(`${dataDir}/do_${binding}_${id}.sqlite`, { codec: opts?.codec }) }),
   };

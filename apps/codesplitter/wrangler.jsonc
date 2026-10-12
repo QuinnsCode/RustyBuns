@@ -29,14 +29,14 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "codesplitters-db",
+      "database_name": "codesplitter-db",
       "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [
     {
       "binding": "LEVEL_CHUNKS",
-      "bucket_name": "codesplitters-level-chunks"
+      "bucket_name": "codesplitter-level-chunks"
     }
   ],
   "artifacts": [
@@ -59,30 +59,30 @@
     "producers": [
       {
         "binding": "HOOKS",
-        "queue": "codesplitters-hooks"
+        "queue": "codesplitter-hooks"
       },
       {
         "binding": "JOBS",
-        "queue": "codesplitters-jobs"
+        "queue": "codesplitter-jobs"
       },
       {
         "binding": "LEVEL_DIGS",
-        "queue": "codesplitters-level-digs"
+        "queue": "codesplitter-level-digs"
       }
     ],
     "consumers": [
       {
-        "queue": "codesplitters-hooks",
+        "queue": "codesplitter-hooks",
         "max_batch_size": 10,
         "max_batch_timeout": 1
       },
       {
-        "queue": "codesplitters-jobs",
+        "queue": "codesplitter-jobs",
         "max_batch_size": 10,
         "max_batch_timeout": 1
       },
       {
-        "queue": "codesplitters-level-digs",
+        "queue": "codesplitter-level-digs",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_retries": 3,

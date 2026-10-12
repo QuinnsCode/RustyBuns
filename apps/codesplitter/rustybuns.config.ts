@@ -37,8 +37,12 @@ const privacyNotice = "";
 const turnstileSiteKey = "0x4AAAAAAFTyaxcLpAqRT0pg";
 const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitter/${ref}`, optional });
 
+// Everything below was named codesplitters until #809. On Cloudflare the names moved together,
+// their data copied first by scripts/move-resources.ts (a deploy that renames one without
+// --allow-delete is refused). renamedFrom has the desktop pick its old database and queued
+// messages up under the new names.
 export default defineConfig({
-  name: "codesplitters",
+  name: "codesplitter",
   experimental: { wheel: "human" },
   worker: {
     main: "src/worker.ts",
@@ -57,7 +61,7 @@ export default defineConfig({
     // (#348): Alchemy's dig took 9.9 s of CPU, and Bun's level import to R2 8.9 s. That's under
     // the default 30 s, but a bigger repo has room to grow. This is a cap, billed per ms used.
     cpuMs: 300_000,
-    // Smart Placement (#611): most requests make several round trips to codesplitters-db and the
+    // Smart Placement (#611): most requests make several round trips to codesplitter-db and the
     // file Durable Objects, so the Worker runs near those instead of near the visitor.
     placement: { mode: "smart" },
     // Workers Logs drop each URL's query string (OAuth codes, ?confirm= handles), as #/privacy
@@ -68,7 +72,7 @@ export default defineConfig({
   },
   bindings: {
     // Profiles, repos, playlists and the search index.
-    DB: { type: "d1", databaseName: "codesplitters-db", migrationsDir: "migrations" },
+    DB: { type: "d1", databaseName: "codesplitter-db", renamedFrom: "codesplitters-db", migrationsDir: "migrations" },
     // One Durable Object per file.
     FILES: { type: "durable_object", className: "FileDurableObject" },
     // One game room per level or repo: the lobby on its page, then the relay.
@@ -78,25 +82,26 @@ export default defineConfig({
     // Search across repos: one vector index over every repo's committed code, and Workers AI
     // (bge-small-en-v1.5, 384 dimensions) to embed it. Without them, it fans out (src/search.ts).
     ...(vectors ? {
-      VECTORS: { type: "vectorize", indexName: "codesplitters-vectors", dimensions: 384, metadataIndexes: { repo: "string", pub: "boolean" } } as const,
+      VECTORS: { type: "vectorize", indexName: "codesplitter-vectors", dimensions: 384, metadataIndexes: { repo: "string", pub: "boolean" } } as const,
       AI: { type: "ai" } as const,
     } : {}),
     // Webhook tries, one message each; this Worker's queue() sends them and books the
     // retries with a delay (src/hooks.ts). The desktop runs it in-process on sqlite.
-    HOOKS: { type: "queue", queueName: "codesplitters-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
+    HOOKS: { type: "queue", queueName: "codesplitter-hooks", renamedFrom: "codesplitters-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
     // Queued requests (digs, previews, dependency checks over a limit that queues): one
     // message each, delayed until the caller's window has room (src/limits.ts).
-    JOBS: { type: "queue", queueName: "codesplitters-jobs", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
+    JOBS: { type: "queue", queueName: "codesplitter-jobs", renamedFrom: "codesplitters-jobs", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
     // Level digs: an import's first step, then a big level's parts (src/swarm.ts), one
     // message each, several at once. maxConcurrency caps how hard GitHub gets hit.
-    LEVEL_DIGS: { type: "queue", queueName: "codesplitters-level-digs", consumer: { batchSize: 1, maxWaitTimeMs: 1000, maxRetries: 3, retryDelay: 20, maxConcurrency: 8 } },
+    LEVEL_DIGS: { type: "queue", queueName: "codesplitter-level-digs", renamedFrom: "codesplitters-level-digs", consumer: { batchSize: 1, maxWaitTimeMs: 1000, maxRetries: 3, retryDelay: 20, maxConcurrency: 8 } },
     // One git repo per excavation; cataloguing pushes to it.
+    // Still the old name: each repo's remote, stored in D1, names it, so it moves on its own (#823).
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
     // Levels too big for an Artifacts repo even from the tarball, as ~8 MB chunks of their text files
     // (src/chunks.ts), read through the Cache API. None so far: Bun and Alchemy fit in Artifacts
     // from the tarball (#356), so the bucket is empty. No desktop twin yet; the desktop's local
     // git takes any size anyway.
-    LEVEL_CHUNKS: { type: "r2", bucketName: "codesplitters-level-chunks" },
+    LEVEL_CHUNKS: { type: "r2", bucketName: "codesplitter-level-chunks" },
     // Hosted coding agents (super experimental): one container per run, each CLI
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
     // The desktop has no twin and runs the CLIs on the machine instead.
@@ -152,11 +157,14 @@ export default defineConfig({
   targets: {
     // Live as D1 codesplitters-db, first deployed with wrangler; adopted by rustybuns deploy on
     // 2026-10-09 (#170). Keep adopt on: a new clone or stage starts with empty state, and adopt
-    // takes these over instead of duplicating them. The app (and its Alchemy state) keeps the
-    // name codesplitter; the Worker was renamed to codesplitter on 2026-10-11, and renamedFrom
-    // moved its files, game rooms and search over with their data. The containers started empty.
+    // takes these over instead of duplicating them (it's how the copies made by
+    // scripts/move-resources.ts are taken over, too). The Worker was renamed to codesplitter on
+    // 2026-10-11, and renamedFrom moved its files, game rooms and search over with their data.
+    // The containers started empty.
     // D1 migrations are Alchemy's (__alchemy_migrations); never apply them with wrangler (README).
     edge: { provider: "cloudflare", adopt: true, workerName: "codesplitter", renamedFrom: "codesplitters" },
-    desktop: { mode: "worker", window: "app" },
+    // The desktop's data stays in ~/.codesplitters, where its repos, scripts/phone.ts and
+    // scripts/runner.ts find it; the app's name would put it in ~/.codesplitter.
+    desktop: { mode: "worker", window: "app", dataDir: "~/.codesplitters" },
   },
 });

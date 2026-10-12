@@ -21,7 +21,7 @@ import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-sc
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { Profiler } from "./profile.ts";
 import { adoptNote, alchemyStage, linkSharedState, lockState, unlinkSharedState } from "./state.ts";
-import { commitsBehindMain, statefulDeletes } from "./guard.ts";
+import { commitsBehindMain, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
@@ -431,6 +431,9 @@ function guardDeploy(sub: string, cfg: RustyBunsConfig, stage: string, waive: { 
   const behind = cfg.targets.edge?.adopt && !waive.force ? commitsBehindMain(process.cwd()) : null;
   if (behind) problems.push(`HEAD is ${behind} commit${behind === 1 ? "" : "s"} behind origin/main, and this is a live site (targets.edge.adopt): ` +
     `deploying would roll back what main shipped since. Rebase on origin/main first, or pass --force.`);
+  const stray = waive.force ? null : strayState(process.cwd(), cfg.name, stage);
+  if (stray) problems.push(`stage ${stage}'s Alchemy state is under the app name "${stray}", not "${cfg.name}": deploying would make every resource again. ` +
+    `Move .alchemy/state/${stray} to .alchemy/state/${cfg.name} first, or pass --force.`);
   const deletes = waive.allowDelete ? [] : statefulDeletes(process.cwd(), cfg, stage, readFileSync(".rustybuns/alchemy.run.ts", "utf8"));
   if (deletes.length) problems.push(`this deploy would delete ${deletes.join(", ")}, and the data in ${deletes.length === 1 ? "it" : "them"}. ` +
     `If ${deletes.length === 1 ? "it was" : "they were"} added on a branch this one lacks, rebase first; to delete on purpose, pass --allow-delete.`);
@@ -713,9 +716,10 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              type checks the generated stack first (--no-check skips)
   deploy [--yes]             alchemy deploy; refuses unless plan ran for this exact config
          [--force]           a live site (targets.edge.adopt) also refuses a HEAD behind
-                             origin/main unless --force
-         [--allow-delete]    and any deploy refuses to delete a D1, R2, KV, queue, container,
-                             volume or Durable Object class unless --allow-delete
+                             origin/main, or state left under the app's old name, unless --force
+         [--allow-delete]    and any deploy refuses to delete (or rename, which replaces) a D1,
+                             R2, KV, queue, container, volume or Durable Object class unless
+                             --allow-delete
                              plan and deploy list the stack's billable resources first, and
                              refuse a large Hetzner server without box.allowLargeServer (COSTS.md)
   destroy                    alchemy destroy: removes everything the stack created
