@@ -15,6 +15,7 @@
 //                  alarm is set for the earliest lapse, so a lapsed claim goes out as `unclaim`
 //   rest:<id>      an agent's claim that ended within a lease of its cap: who, its lines, and
 //                  till when that agent may not claim them again (see REST_MS)
+//   wait:<id>      someone waiting in line for lines (see Waiter), granted them in order
 //   where          [owner, repo, path] on main's copy, so its edits reach the home feed (feed.ts)
 //   branch         [owner, repo, branch] on a branch's copy, so its edits mark the branch changed (checks.ts)
 //   authors        who is named here that D1's authors already has for the repo, so a scrub finds it (#748)
@@ -65,10 +66,20 @@ type Shown = Line & { private?: true };
  * or edit with `claim`), and never past `cap` unless a person extends it, so one agent
  * can't keep lines from everyone else. `until` comes from this object's clock; clients
  * only ever send durations, so their clock skew never matters.
+ *
+ * A soft claim is an intent ("rewriting 40–80"): shown and listed like any other, renewed and
+ * lapsing the same way, but it keeps nobody off its lines, and other claims may overlap it.
  */
-export interface Claim { id: string; who: string; bot: boolean; lines: string[]; task?: string; at: number; until: number | null; cap?: number }
+export interface Claim { id: string; who: string; bot: boolean; lines: string[]; task?: string; at: number; until: number | null; cap?: number; soft?: true }
 /** An agent's claim that ended within a lease of its cap: `who` may not claim any of `lines` again till `until`. */
 interface Rest { who: string; lines: string[]; until: number }
+/**
+ * Someone waiting in line for lines (`claim_lines` with `wait`). Once none of its lines is held,
+ * and nobody ahead in line wants any of them, it's granted them: as a claim straight away when
+ * it's still asking, or else for GRANT_MS, its grant window, to take by claiming again by id.
+ * It keeps its place while it keeps asking: one quiet for WAIT_KEEP_MS leaves the line.
+ */
+interface Waiter { id: string; who: string; lines: string[]; task?: string; at: number; seen: number }
 
 /** An agent's claim lapses after this unless it's renewed, so a run that dies frees its lines in minutes. */
 export const LEASE_MS = 2 * 60_000;
@@ -82,6 +93,15 @@ export const LEASE_CAP_MS = 30 * 60_000;
 export const REST_MS = LEASE_MS;
 /** An edit renews its claim only once the lease has run down this much, so renewing costs a write a minute at most. */
 const RENEW_SLACK = 30_000;
+/** How long a waiter that isn't asking right then has to take lines it's granted, before the next in line gets them. */
+export const GRANT_MS = 15_000;
+/**
+ * How long one ask with `wait` is held open, at most, before it answers "still in line". An open
+ * request keeps the object awake (duration billed), so it's short and the waiter asks again.
+ */
+export const WAIT_POLL_MS = 20_000;
+/** A waiter that hasn't asked for this long has gone: it leaves the line. Well past WAIT_POLL_MS. */
+export const WAIT_KEEP_MS = 60_000;
 /** Presence goes out at most this often, so a thousand sockets opening at once isn't a million messages. */
 const PRESENCE_MS = 250;
 
@@ -96,6 +116,10 @@ export class FileDurableObject {
   claimOf = new Map<string, Claim>();
   /** Claim id -> an agent's claim that ended near its cap, which its holder may not lay again till `until`. */
   rests = new Map<string, Rest>();
+  /** Who's waiting in line for lines, first come first. */
+  waits: Waiter[] = [];
+  /** Waiter id -> its ask that's being held open, to answer with the claim when it's granted. */
+  polls = new Map<string, (c: Claim | null) => void>();
   /** When the alarm that lets lapsed claims go is set for, as far as this instance knows. */
   alarmAt: number | null = null;
   presenceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -139,6 +163,9 @@ export class FileDurableObject {
       if (this.trimmed) this.sweeping = this.sweep().catch(() => {});
       for (const c of ((await ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
       this.rests = new Map([...((await ctx.storage.list({ prefix: "rest:" })) as Map<string, Rest>)].map(([k, r]) => [k.slice(5), r]));
+      // Each waiter gets WAIT_KEEP_MS from now to ask again; it's been asking all along, as far as it knows.
+      const now = Date.now();
+      this.waits = [...((await ctx.storage.list({ prefix: "wait:" })) as Map<string, Waiter>).values()].sort((a, b) => a.at - b.at).map((w) => ({ ...w, seen: now }));
       // Cloudflare keeps an alarm through eviction; the desktop and a box lose theirs on restart (a
       // setTimeout), so it's set again from the claims themselves.
       this.alarmAt = (await ctx.storage.getAlarm?.()) ?? null;
@@ -152,17 +179,19 @@ export class FileDurableObject {
     await this.expire();
   }
 
-  /** Let lapsed claims go (each one an `unclaim`), then set the alarm for the next lapse. */
+  /** Let lapsed claims go (each one an `unclaim`) and quiet waiters leave, then set the alarm for the next lapse. */
   async expire() {
     const now = Date.now();
     for (const c of [...this.claims.values()]) if (c.until !== null && c.until <= now) await this.release(c.id, false);
+    await this.serve();
     await this.arm();
   }
 
-  /** Set the alarm for the earliest lapse, or clear it when no claim lapses. */
+  /** Set the alarm for the earliest lapse (or quiet waiter), or clear it when nothing lapses. */
   async arm() {
     let next: number | null = null;
     for (const c of this.claims.values()) if (c.until !== null && (next === null || c.until < next)) next = c.until;
+    for (const w of this.waits) if (next === null || w.seen + WAIT_KEEP_MS < next) next = w.seen + WAIT_KEEP_MS;
     if (next === this.alarmAt) return;
     this.alarmAt = next;
     if (next === null) await this.ctx.storage.deleteAlarm?.();
@@ -241,7 +270,7 @@ export class FileDurableObject {
     if (req.method === "GET" && route === "claims") return json(this.live());
     if (req.method === "POST" && route === "claims") {
       // Crew only (the Worker checks). Any of the crew may lift any claim: that's how a person steers an agent off lines.
-      const b = (await req.json()) as { id?: string; lines?: string[]; task?: string; ttl?: number | null; extend?: boolean; release?: boolean };
+      const b = (await req.json()) as ClaimAsk & { release?: boolean };
       if (b.release) return json({ released: await this.release(b.id ?? "") });
       return this.claim(by, b);
     }
@@ -255,7 +284,9 @@ export class FileDurableObject {
       await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
       [this.doc, this.base, this.commits, this.secret, this.where, this.onBranch, this.snaps, this.trimmed, this.authors] = [empty(), null, 0, new Set(), null, null, [], 0, new Set()];
       this.docs.clear(); this.bases.clear();
-      this.claims.clear(); this.claimOf.clear(); this.rests.clear(); this.recent.clear();
+      this.claims.clear(); this.claimOf.clear(); this.rests.clear(); this.recent.clear(); this.waits = [];
+      for (const answer of this.polls.values()) answer(null);
+      this.polls.clear();
       await this.arm();
       return json({ ok: true });
     }
@@ -343,7 +374,7 @@ export class FileDurableObject {
     const r = apply(this.doc, ops, by, Date.now(), ifRev);
     if (!r.ok) return { ok: false as const, rev: this.doc.rev, conflicts: r.conflicts };
     if (claim && typeof by === "string") await this.renew(by, claim);
-    if (this.claimOf.size) await this.follow(typeof by === "string" ? by : "", r.applied, claim);
+    if (this.claims.size) await this.follow(typeof by === "string" ? by : "", r.applied, claim);
     this.noteAuthors(r.applied.map((a) => a.by));
     await Promise.all([...this.docs.save(this.doc, r.applied.map((a) => a.line)), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad(a.rev), a))]);
     if (this.doc.rev - (this.snaps.at(-1) ?? this.base?.rev ?? 0) >= SNAP_EVERY) await this.snapshot();
@@ -397,6 +428,7 @@ export class FileDurableObject {
     this.base = await this.bases.load();
     this.claims.clear(); this.claimOf.clear();
     for (const c of ((await this.ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
+    for (const w of this.waits) if (w.who === from) w.who = to;
     return changed;
   }
 
@@ -580,15 +612,16 @@ export class FileDurableObject {
 
   index(c: Claim) {
     this.claims.set(c.id, c);
-    for (const id of c.lines) this.claimOf.set(id, c);
+    if (!c.soft) for (const id of c.lines) this.claimOf.set(id, c);
   }
 
   /**
    * Lay a claim on lines, or renew one (same id, same holder; lines optional). A person may
    * `extend` an agent's claim past its cap, for another LEASE_CAP_MS. 409 names the claims in
    * the way, and `retryAfter`: seconds till the first of them lapses (null: people's holds).
+   * Lines someone is waiting in line for are taken in turn: with `wait`, it joins the line (see `wait`).
    */
-  async claim(by: string, b: { id?: string; lines?: string[]; task?: string; ttl?: number | null; extend?: boolean }) {
+  async claim(by: string, b: ClaimAsk) {
     this.live();
     const bot = by.startsWith("agent-"), now = Date.now();
     const old = b.id ? this.claims.get(b.id) : undefined;
@@ -602,14 +635,24 @@ export class FileDurableObject {
       return json(old);
     }
     const have = new Set(this.doc.lines.map((l) => l.id));
-    const lines = [...new Set(b.lines ?? old?.lines ?? [])].filter((id) => have.has(id));
+    const lines = [...new Set(b.lines ?? old?.lines ?? this.waits.find((w) => w.id === b.id && w.who === by)?.lines ?? [])].filter((id) => have.has(id));
     if (!lines.length) return json({ error: "lines required: ids of lines in the file" }, 400);
-    const clash = [...new Set(lines.map((id) => this.claimOf.get(id)).filter((c) => c && c !== old))] as Claim[];
-    if (clash.length) return json({ error: `held by ${clash.map((c) => "@" + c.who).join(", ")}`, claims: clash, retryAfter: retryAfter(clash) }, 409);
+    // An intent keeps nobody off its lines, so nothing's in its way.
+    const soft = b.soft ?? old?.soft ?? false, want = new Set(lines);
     // An agent whose claim just ended at or near its cap can't lay a fresh one (and a fresh cap) on those lines straight away.
-    const want = new Set(lines);
-    const rest = old ? undefined : [...this.rests.values()].filter((r) => r.who === by && r.lines.some((id) => want.has(id))).sort((a, b) => b.until - a.until)[0];
+    const rest = old || soft ? undefined : [...this.rests.values()].filter((r) => r.who === by && r.lines.some((id) => want.has(id))).sort((a, b) => b.until - a.until)[0];
     if (rest) return json({ error: `@${by} just held these lines for ${LEASE_CAP_MS / 60_000} minutes: others get a turn first`, retryAfter: Math.max(1, Math.ceil((rest.until - now) / 1000)) }, 409);
+    if (!soft) {
+      const clash = [...new Set(lines.map((id) => this.claimOf.get(id)).filter((c) => c && c !== old))] as Claim[];
+      // People steer agents: a person's hold doesn't wait behind agents in line for free lines.
+      const ahead = bot || b.wait ? this.ahead(b.id, want) : [];
+      if (clash.length || ahead.length) {
+        if (b.wait) return this.wait(by, b, lines);
+        if (clash.length) return json({ error: `held by ${clash.map((c) => "@" + c.who).join(", ")}`, claims: clash, retryAfter: retryAfter(clash) }, 409);
+        const blocking = this.blocking(ahead);
+        return json({ error: `${ahead.length} waiting in line for these lines: claim with wait to join them`, queued: ahead.length, claims: blocking, retryAfter: retryAfter(blocking) }, 409);
+      }
+    }
     // An agent's claim is a lease (LEASE_MS unless it asks for less or more, never past its cap);
     // a person's hold stands until they lift it, unless they give it a ttl.
     const ttl = b.ttl === undefined || (bot && b.ttl === null) ? (bot ? LEASE_MS : null) : Math.max(0, Number(b.ttl) || 0);
@@ -617,36 +660,159 @@ export class FileDurableObject {
     const cap = bot ? old?.cap ?? now + LEASE_CAP_MS : undefined;
     const until = ttl === null ? null : Math.min(now + ttl, cap ?? Infinity);
     const task = b.task ?? old?.task;
-    const c: Claim = { id: b.id ?? `c${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`, who: by, bot, lines, ...(task ? { task: task.slice(0, 200) } : {}), at: old?.at ?? now, until, ...(cap !== undefined && { cap }) };
-    if (old) for (const id of old.lines) this.claimOf.delete(id);
+    const c: Claim = { id: b.id ?? newId(now), who: by, bot, lines, ...(task ? { task: task.slice(0, 200) } : {}), at: old?.at ?? now, until, ...(cap !== undefined && { cap }), ...(soft && { soft: true as const }) };
+    if (old) for (const id of old.lines) if (this.claimOf.get(id) === old) this.claimOf.delete(id);
     this.index(c);
+    // A waiter whose lines came free as it asked again takes them like this.
+    if (await this.unwait(c.id)) this.answer(c.id, c);
     await this.ctx.storage.put("claim:" + c.id, c);
     this.broadcast({ type: "claim", claim: c });
+    if (soft !== !!old?.soft || !old) this.noteHeld(c, !soft);
+    // Lines it gave up (fewer of them, or it went soft) go to whoever's waiting.
+    if (old) await this.serve();
     await this.arm();
     return json(c, old ? 200 : 201);
   }
 
+  /** Waiters ahead of waiter `id` (or all of them, for someone not in line) who want any of `want`. */
+  ahead(id: string | undefined, want: Set<string>) {
+    const i = this.waits.findIndex((w) => w.id === id);
+    return (i < 0 ? this.waits : this.waits.slice(0, i)).filter((w) => w.lines.some((l) => want.has(l)));
+  }
+
+  /** The claims holding any of these waiters' lines. */
+  blocking(waits: Waiter[]) {
+    return [...new Set(waits.flatMap((w) => w.lines.map((id) => this.claimOf.get(id))).filter(Boolean))] as Claim[];
+  }
+
   /**
-   * Let a claim go, however it ends: lapsed, released or lifted. If it was an agent's and it ends
-   * within a lease of its cap, its holder rests: it may not claim those lines again for REST_MS,
-   * so letting go just before the cap doesn't buy a fresh one (#966).
+   * Get in line for lines that are held, or that others are already in line for, and wait for them
+   * up to `timeout` seconds (WAIT_POLL_MS at most): 201 with the claim when it's granted meanwhile,
+   * else 202 `{queued, id, place}`, and it asks again with that id at once to keep its place.
+   * Someone holding lines here may not wait (nor, the Worker sees to it, in another file): holding
+   * some lines while waiting for others is how two waiters end up waiting on each other for ever.
+   */
+  async wait(by: string, b: ClaimAsk, lines: string[]) {
+    const holding = [...this.claims.values()].filter((c) => c.who === by && !c.soft);
+    if (holding.length) return json({ error: `you hold lines here (${holding.map((c) => c.id).join(", ")}): finish with them and let go before you wait for more`, claims: holding }, 409);
+    const now = Date.now();
+    let w = this.waits.find((x) => x.id === b.id);
+    if (w && w.who !== by) return json({ error: `${b.id} is @${w.who}'s place in line` }, 409);
+    if (!w) {
+      w = { id: b.id ?? newId(now), who: by, lines, ...(b.task ? { task: b.task.slice(0, 200) } : {}), at: now, seen: now };
+      this.waits.push(w);
+      await this.ctx.storage.put("wait:" + w.id, w);
+    } else {
+      w.seen = now;
+      if (b.lines && lines.join() !== w.lines.join()) { w.lines = lines; await this.ctx.storage.put("wait:" + w.id, w); }
+    }
+    await this.arm();
+    const id = w.id, ms = Math.min(WAIT_POLL_MS, Math.max(0, (b.timeout ?? WAIT_POLL_MS / 1000) * 1000));
+    const got = ms ? await new Promise<Claim | null>((done) => {
+      this.answer(id, null);
+      const t = setTimeout(() => { if (this.polls.get(id) === answer) this.polls.delete(id); done(null); }, ms);
+      const answer = (c: Claim | null) => { clearTimeout(t); done(c); };
+      this.polls.set(id, answer);
+    }) : null;
+    if (got) return json(got, 201);
+    const still = this.waits.find((x) => x.id === id);
+    if (!still) {
+      // Granted as the ask ended, or it left the line (released, or the file was wiped).
+      const c = this.claims.get(id);
+      return c?.who === by ? json(c, 201) : json({ error: "no longer in line: claim again" }, 409);
+    }
+    still.seen = Date.now();
+    const place = this.waits.indexOf(still) + 1;
+    return json({ queued: true, id, place, waiting: this.waits.length, claims: this.blocking([still, ...this.ahead(id, new Set(still.lines))]) }, 202);
+  }
+
+  /** Answer the ask a waiter is holding open, if it is. */
+  answer(id: string, c: Claim | null) {
+    const done = this.polls.get(id);
+    if (!done) return;
+    this.polls.delete(id);
+    done(c);
+  }
+
+  /** Take a waiter out of line. False if it wasn't in it. */
+  async unwait(id: string) {
+    const i = this.waits.findIndex((w) => w.id === id);
+    if (i < 0) return false;
+    this.waits.splice(i, 1);
+    await this.ctx.storage.delete("wait:" + id);
+    return true;
+  }
+
+  /**
+   * Grant lines to whoever's waiting for them, first come first: a waiter goes once none of its
+   * lines is held and nobody ahead of it wants any of them. Still asking, it gets a claim like any
+   * other; not, it gets GRANT_MS to take it (claiming again by id), and then it lapses to the next
+   * in line. Waiters whose lines are all gone, or that stopped asking, leave the line.
+   */
+  async serve() {
+    if (!this.waits.length) return;
+    const now = Date.now(), have = new Set(this.doc.lines.map((l) => l.id)), spoken = new Set<string>();
+    for (const w of [...this.waits]) {
+      if (!this.waits.includes(w)) continue;
+      w.lines = w.lines.filter((id) => have.has(id));
+      const asking = this.polls.has(w.id);
+      if (!w.lines.length || (!asking && w.seen + WAIT_KEEP_MS <= now)) { await this.unwait(w.id); this.answer(w.id, null); continue; }
+      const free = w.lines.every((id) => !this.claimOf.has(id) && !spoken.has(id));
+      for (const id of w.lines) spoken.add(id);
+      if (!free) continue;
+      const bot = w.who.startsWith("agent-");
+      const c: Claim = { id: w.id, who: w.who, bot, lines: w.lines, ...(w.task ? { task: w.task } : {}), at: now, until: asking ? (bot ? now + LEASE_MS : null) : now + GRANT_MS, ...(bot && { cap: now + LEASE_CAP_MS }) };
+      this.index(c);
+      await this.unwait(w.id);
+      await this.ctx.storage.put("claim:" + c.id, c);
+      this.broadcast({ type: "claim", claim: c });
+      this.broadcast({ type: "grant", claim: c });
+      this.noteHeld(c, true);
+      this.answer(c.id, c);
+    }
+  }
+
+  /**
+   * Main's copy keeps D1's `held` rows in step with its claims that keep others off (not intents),
+   * so the Worker can refuse `wait` to someone holding lines in another file.
+   */
+  noteHeld(c: Claim, on: boolean) {
+    if (!this.where || !this.env.DB) return;
+    const [owner, repo, path] = this.where;
+    this.logging = this.logging.then(() => on
+      ? this.env.DB.prepare("INSERT OR REPLACE INTO held (owner, repo, path, id, who) VALUES (?, ?, ?, ?, ?)").bind(owner, repo, path, c.id, c.who).run()
+      : this.env.DB.prepare("DELETE FROM held WHERE owner = ? AND repo = ? AND path = ? AND id = ?").bind(owner, repo, path, c.id).run()).catch(() => {});
+  }
+
+  /**
+   * Let a claim go, however it ends: lapsed, released or lifted, and its lines go to whoever's
+   * waiting. If it was an agent's and it ends within a lease of its cap, its holder rests: it may
+   * not claim those lines again for REST_MS, so letting go just before the cap doesn't buy a fresh
+   * one (#966). Releasing a place in line leaves the line.
    */
   async release(id: string, rearm = true) {
     const c = this.claims.get(id);
-    if (!c) return false;
+    if (!c) {
+      if (!(await this.unwait(id))) return false;
+      this.answer(id, null);
+      if (rearm) { await this.serve(); await this.arm(); }
+      return true;
+    }
     this.claims.delete(id);
     for (const l of c.lines) if (this.claimOf.get(l) === c) this.claimOf.delete(l);
     // The rest is in memory before the first await: `live()` doesn't wait for this, and a claim checks rests right after.
-    const now = Date.now(), rest = c.bot && c.cap !== undefined && c.lines.length && now >= c.cap - LEASE_MS;
+    const now = Date.now(), rest = c.bot && !c.soft && c.cap !== undefined && c.lines.length && now >= c.cap - LEASE_MS;
     if (rest) this.rests.set(c.id, { who: c.who, lines: c.lines, until: now + REST_MS });
     await this.ctx.storage.delete("claim:" + id);
     if (rest) await this.ctx.storage.put("rest:" + c.id, this.rests.get(c.id));
     this.broadcast({ type: "unclaim", id });
+    if (!c.soft) this.noteHeld(c, false);
+    await this.serve();
     if (rearm) await this.arm();
     return true;
   }
 
-  /** The ops that land on someone else's claim, as conflicts. An insert lands on the line it goes after. */
+  /** The ops that land on someone else's claim, as conflicts. An insert lands on the line it goes after. Intents keep nobody off. */
   held(by: string, ops: Op[], claim?: string) {
     if (!this.claimOf.size) return [];
     const now = Date.now(), out: { index: number; reason: string; claim: string }[] = [];
@@ -659,16 +825,24 @@ export class FileDurableObject {
     return out;
   }
 
-  /** Keep claims on the lines they cover: the holder's inserts inside join, deleted lines leave. */
+  /** Keep claims (intents too) on the lines they cover: the holder's inserts inside join, deleted lines leave. */
   async follow(by: string, applied: Applied[], claim?: string) {
     const changed = new Set<Claim>();
+    // Intents may overlap, so a line can be in several.
+    const softOf = new Map<string, Claim[]>();
+    for (const c of this.claims.values()) if (c.soft) for (const id of c.lines) softOf.set(id, [...softOf.get(id) ?? [], c]);
+    const on = (id: string) => [this.claimOf.get(id), ...softOf.get(id) ?? []].filter(Boolean) as Claim[];
     for (const a of applied) {
       if (a.op.kind === "delete") {
-        const c = this.claimOf.get(a.line);
-        if (c) { c.lines = c.lines.filter((id) => id !== a.line); this.claimOf.delete(a.line); changed.add(c); }
+        for (const c of on(a.line)) { c.lines = c.lines.filter((id) => id !== a.line); changed.add(c); }
+        this.claimOf.delete(a.line);
       } else if (a.op.kind === "insert" && a.op.after) {
-        const c = this.claimOf.get(a.op.after);
-        if (c && c.who === by && (!c.bot || claim === c.id)) { c.lines.push(a.line); this.claimOf.set(a.line, c); changed.add(c); }
+        for (const c of on(a.op.after)) {
+          if (c.who !== by || (c.bot && claim !== c.id)) continue;
+          c.lines.push(a.line); changed.add(c);
+          if (c.soft) softOf.set(a.line, [...softOf.get(a.line) ?? [], c]);
+          else this.claimOf.set(a.line, c);
+        }
       }
     }
     for (const c of changed) {
@@ -677,6 +851,11 @@ export class FileDurableObject {
     }
   }
 }
+
+/** What `claim_lines` takes: see `claim` and `wait`. `timeout` is seconds. */
+type ClaimAsk = { id?: string; lines?: string[]; task?: string; ttl?: number | null; extend?: boolean; soft?: boolean; wait?: boolean; timeout?: number };
+
+const newId = (now: number) => `c${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 /** What a refused edit answers: its conflicts, and when lines are held, the claims in the way and when to try again. */
 const refused = (r: { rev: number; conflicts: unknown[]; claims?: Claim[]; retryAfter?: number | null }) =>
