@@ -71,7 +71,7 @@ describe("AgentSandbox", () => {
       await new AgentSandbox(gated(c), env).fetch(new Request("http://sandbox/run", { method: "POST", body: JSON.stringify({ cmd: { bin, args: [] }, path: "a.js", text: "" }) }));
       return seen.started?.env;
     };
-    expect(await started("claude")).toEqual({ ANTHROPIC_API_KEY: "sk-a", CLAUDE_CODE_OAUTH_TOKEN: "oat" });
+    expect(await started("claude")).toEqual({ ANTHROPIC_API_KEY: "sk-a" });   // never the subscription login (#559)
     expect(await started("codex")).toEqual({ OPENAI_API_KEY: "sk-o" });
   });
 });
