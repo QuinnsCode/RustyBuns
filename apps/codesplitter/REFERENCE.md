@@ -415,6 +415,7 @@ A run has a budget, from its path's policy (#1077, `src/budget.ts`): `codesplitt
 What a run reads is counted from what goes in and out of its CLI, every round, at four characters to the token.
 Before it goes round again (a note, or lines that moved under it) it stops if it's past the budget, failed the same way as last round, or would start a third conflict round.
 It leaves a caveman-terse note, its own `DONE:`/`NEXT:`/`BROKE:`/`DONT:` lines if it ended its reply with them (the prompt asks), else what's known: what landed, the task, what broke.
+Notes its owner sent that it never acted on (one that came in as it stopped, say) lead the note's `NEXT:` in their words, so the fresh agent still gets them (#1090).
 `handoff` starts a fresh agent with that note as its whole task, on the branch the stopped one left, whose batch waits, held, till the fresh one is done and then lands as any batch does; `downshift` does the same on the cheapest model; `escalate`, or a third handoff, leaves the held batch and the note to a person.
 A self-healing fix task that fails the same way as the one before (the same test or error text, times and durations aside) doesn't get the same task again: the next starts from a note saying what was tried, or under `escalate` it's a person's turn.
 Each run on the page says about how many tokens it read and, when it stopped short, "handed off at ~N tokens because …", with its note.

@@ -508,9 +508,11 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     });
     await logged;
     // Cut short: a note, and who carries on from it. A fresh agent works on the branch with this one's edits.
+    // Notes its owner sent that it never read, the ones since its last look too, go in the note's NEXT (#1090).
+    const unheard = r.tripped ? [...r.unheard ?? [], ...(await peek().catch(() => [])).slice(given).map((n) => n.text)] : [];
     const handoff = r.tripped && await handOff(env, self, origin, row, policy, {
       ...r.tripped, hops: hops ?? 0, branch: r.applied ? branch : row.branch ?? undefined, lines, also,
-      note: noteFor({ path, task: row.task, why: r.tripped.why, applied: r.applied, edited: r.edited, conflicts: r.conflicts, failures: r.failures, output: r.output }),
+      note: noteFor({ path, task: row.task, why: r.tripped.why, applied: r.applied, edited: r.edited, conflicts: r.conflicts, failures: r.failures, output: r.output, notes: unheard }),
     });
     // Its batch waits for whoever took over: held till the fresh agent is done, or for a person.
     const pending = !own || !r.applied ? undefined : !handoff ? { branch: own, until: Date.now() + wait }
