@@ -25,6 +25,7 @@ export interface WranglerJson {
   send_email?: { name: string; allowed_sender_addresses?: string[] }[];
   ratelimits?: { name: string; namespace_id: string; simple: { limit: number; period: 10 | 60 } }[];
   ai?: { binding: string };
+  hyperdrive?: { binding: string; id?: string; localConnectionString?: string }[];
   queues?: {
     producers?: { binding: string; queue: string }[];
     consumers?: { queue: string; max_batch_size?: number; max_batch_timeout?: number; max_retries?: number; retry_delay?: number; max_concurrency?: number }[];
@@ -44,7 +45,7 @@ export function parseWranglerToml(src: string): WranglerJson {
 /** Top-level keys that Rusty Buns reads. Anything else in a wrangler file is not carried into the config. */
 const HANDLED = new Set([
   "$schema", "name", "main", "compatibility_date", "compatibility_flags", "assets",
-  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "ratelimits", "ai", "queues", "placement",
+  "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "ratelimits", "ai", "queues", "placement", "hyperdrive",
 ]);
 
 /** Wrangler keys (bindings, routes, per-env overrides) that `init` cannot represent yet. */
@@ -69,6 +70,12 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
   for (const e of w.send_email ?? []) bindings[e.name] = { type: "send_email", ...(e.allowed_sender_addresses ? { allowedSenderAddresses: e.allowed_sender_addresses } : {}) };
   for (const l of w.ratelimits ?? []) bindings[l.name] = { type: "ratelimit", namespaceId: String(l.namespace_id), simple: l.simple };
   if (w.ai?.binding) bindings[w.ai.binding] = { type: "ai" };
+  // The origin lives in the Hyperdrive config on Cloudflare, not in wrangler: its URL becomes a secret.
+  for (const [i, h] of (w.hyperdrive ?? []).entries()) {
+    const urlSecret = i === 0 ? "DATABASE_URL" : `${h.binding}_URL`;
+    bindings[urlSecret] ??= { type: "secret" };
+    bindings[h.binding] = { type: "hyperdrive", urlSecret };
+  }
   for (const q of w.queues?.producers ?? []) {
     const c = w.queues?.consumers?.find((c) => c.queue === q.queue);
     bindings[q.binding] = { type: "queue", queueName: q.queue, ...(c ? { consumer: JSON.parse(JSON.stringify({

@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inferTsconfigAliases, detectPm } from "../src/glue/infer.ts";
+import { inferTsconfigAliases, detectPm, inferPostgres } from "../src/glue/infer.ts";
 import { parseWranglerToml, droppedWranglerKeys } from "../src/wrangler.ts";
 import { workspaceRoot } from "../src/glue/deploy-deps.ts";
 import { viteConfig } from "../src/glue/port-vite.ts";
@@ -582,4 +582,29 @@ test("init --force: a wrangler.jsonc Rusty Buns generated doesn't hide the stati
   // A hand-written one still means a Worker app.
   writeFileSync(join(p.dir, "wrangler.jsonc"), '{ "name": "docs", "main": "src/worker.ts" }');
   expect(p.run("init", "--force").out).not.toContain("detected: Jekyll site");
+});
+
+test("init: a Postgres app gets a Hyperdrive binding in front of DATABASE_URL", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5", pg: "^8" } }),
+    "wrangler.jsonc": `{ "name": "r", "main": "src/worker.ts" }`,
+    "src/worker.ts": "export default {}",
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/postgres: HYPERDRIVE \(Hyperdrive, for pg\) in front of the DATABASE_URL secret/);
+  const cfg = p.read("rustybuns.config.ts");
+  expect(cfg).toMatch(/"DATABASE_URL": \{\s*"type": "secret"\s*\}/);
+  expect(cfg).toMatch(/"HYPERDRIVE": \{\s*"type": "hyperdrive",\s*"urlSecret": "DATABASE_URL"\s*\}/);
+  expect(p.read("wrangler.generated.jsonc")).toContain('"hyperdrive"');
+});
+
+test("postgres: drivers, and Drizzle or Prisma only when set to postgresql", () => {
+  const pg = (files: Record<string, string>, deps: Record<string, string>) => inferPostgres(project(files).dir, deps);
+  expect(pg({}, { postgres: "3" })).toBe("postgres");
+  expect(pg({}, { "@neondatabase/serverless": "1" })).toBeNull();
+  expect(pg({ "drizzle.config.ts": `export default defineConfig({ dialect: "postgresql" })` }, { "drizzle-orm": "1" })).toBe("drizzle (postgresql)");
+  expect(pg({ "drizzle.config.ts": `export default defineConfig({ dialect: "sqlite" })` }, { "drizzle-orm": "1" })).toBeNull();
+  expect(pg({ "prisma/schema.prisma": `datasource db {\n  provider = "postgresql"\n}` }, { prisma: "6" })).toBe("prisma (postgresql)");
+  expect(pg({ "prisma/schema.prisma": `datasource db {\n  provider = "sqlite"\n}` }, { prisma: "6" })).toBeNull();
 });

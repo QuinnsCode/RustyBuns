@@ -21,7 +21,7 @@ const problems = (c: unknown) =>
 test("names each field, every problem at once", async () => {
   expect(await problems(ok)).toEqual([]);
   expect(await problems({ ...ok, bindings: { KV: { type: "kvv" }, DB: { type: "d1" } }, state: "shard" })).toEqual([
-    `bindings.KV.type: "kvv" isn't one of d1, kv, r2, durable_object, artifacts, images, send_email, ratelimit, vectorize, ai, container, queue, var, secret`,
+    `bindings.KV.type: "kvv" isn't one of d1, kv, r2, durable_object, artifacts, images, send_email, ratelimit, vectorize, ai, container, queue, hyperdrive, var, secret`,
     "bindings.DB.databaseName: missing",
     `state: expected "shared" | "project", got "shard"`,
   ]);
@@ -30,4 +30,13 @@ test("names each field, every problem at once", async () => {
   expect(await problems({ ...ok, targets: { box: { provider: "railway", persona: "background-burner" } } })).toEqual([]);
   expect(await problems({ ...ok, targets: { box: { provider: "railway", persona: "turbo" } } })).toHaveLength(1);
   expect(await problems({ ...ok, name: "My App", targets: { edge: { provider: "cloudflare" } } })).toHaveLength(1);
+});
+
+test("hyperdrive: its urlSecret has to be a secret binding", async () => {
+  const pg = (bindings: object) => problems({ ...ok, bindings });
+  expect(await pg({ DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL", caching: false } })).toEqual([]);
+  expect(await pg({ HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL" } }))
+    .toEqual([`bindings.HYPERDRIVE.urlSecret: "DATABASE_URL" isn't a secret binding; add DATABASE_URL: { type: "secret" } with the postgres:// URL`]);
+  expect(await pg({ DATABASE_URL: { type: "var", value: "postgres://x" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL" } })).toHaveLength(1);
+  expect(await pg({ DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL", caching: { maxAge: 0 } } })).toHaveLength(1);
 });

@@ -109,6 +109,8 @@ Bun is the one runtime that has every piece built in:
 
 The twins refuse what the edge refuses, with the edge's error: more than 100 bound parameters in a D1 query, a KV key over 512 bytes, a queue message over 128 KB, a Durable Object value over 2 MiB. So a query that works locally doesn't fail on the first deploy. Memory and CPU limits aren't enforced yet.
 
+A Postgres app (Supabase, Neon, RDS) keeps its database: a `hyperdrive` binding puts Cloudflare Hyperdrive in front of it on the edge, and the desktop and box connect to the same `DATABASE_URL` directly. `init` adds one when the app uses `pg`, `postgres`, or Drizzle or Prisma on postgresql.
+
 D1 migrations apply at boot, and `"use server"` functions run for real against sqlite. It adds up to [a full-stack framework, by accident](REFERENCE.md#a-full-stack-framework-by-accident).
 
 </details>
