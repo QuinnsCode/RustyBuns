@@ -3,7 +3,8 @@
 // guard (git's conflict markers, a JSON, YAML or TOML file that won't parse, code that won't build:
 // the `lint:` conflicts in lines.ts), a coding agent is started on that branch on its own: an agent
 // run (agent-routes.ts) whose task carries the failing log or the guard's words, on the file
-// involved. It edits the branch's copy itself, so when it's done the branch has changed, its checks
+// involved, with the branch's other changed files in front of it too (#1037): a test and the code
+// it tests get fixed in one attempt. It edits the branch's copies itself, so when it's done the branch has changed, its checks
 // run again (checks.ts branchEdited), and nothing lands on main. One runs at a time per branch, and
 // a branch gets MAX_ATTEMPTS of them. After that it waits for a person: the merge gate says so, and
 // GET .../checks?ref=<branch> lists the attempts under `heal`.
@@ -22,6 +23,8 @@ import { adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from 
 export const MAX_ATTEMPTS = 2;
 /** How much of a failing log goes into the task. */
 const LOG_CHARS = 1500;
+/** The branch's other files a fix task gets beside its own, at most: those the log names most come first. */
+export const MAX_ALSO = 20;
 
 /** Why no fix task starts for `owner`'s repos here, or null when one may. */
 export function healUnavailable(env: Env, owner: string): string | null {
@@ -48,18 +51,18 @@ export async function heals(env: Env, owner: string, repo: string, branch: strin
   const a = await attempts(env, owner, repo, branch);
   if (!a) return null;
   const list = a.runs.map((r) => {
-    const x = r.result ? JSON.parse(r.result) as { applied?: number; error?: string } : {};
-    return { id: r.id, path: r.path, harness: r.harness, status: r.status, started: r.started, why: r.task.split("\n")[0], ...(x.applied !== undefined && { applied: x.applied }), ...(x.error && { error: x.error }) };
+    const x = r.result ? JSON.parse(r.result) as { applied?: number; error?: string; also?: string[]; edited?: string[] } : {};
+    return { id: r.id, path: r.path, harness: r.harness, status: r.status, started: r.started, why: r.task.split("\n")[0], ...(x.applied !== undefined && { applied: x.applied }), ...(x.error && { error: x.error }), ...(x.also && { also: x.also }), ...(x.edited && { edited: x.edited }) };
   });
   const running = list.some((r) => r.status === "running");
   return { max: MAX_ATTEMPTS, attempts: list, running, gave_up: !running && list.length >= MAX_ATTEMPTS };
 }
 
 /**
- * Start a fix task on `branch`'s `path`, unless one's running there, the branch has had its
- * MAX_ATTEMPTS, or self-healing is off. Its id, or why not.
+ * Start a fix task on `branch`'s `path`, which may edit `also` too, unless one's running there,
+ * the branch has had its MAX_ATTEMPTS, or self-healing is off. Its id, or why not.
  */
-export async function openFix(env: Env, owner: string, repo: string, branch: string, path: string, task: string): Promise<{ id: number } | { skipped: string }> {
+export async function openFix(env: Env, owner: string, repo: string, branch: string, path: string, task: string, also: string[] = []): Promise<{ id: number } | { skipped: string }> {
   if (branch === "main" || /^agent-run-\d+$/.test(branch)) return { skipped: "not a branch self-healing works on" };
   const off = healUnavailable(env, owner);
   if (off) return { skipped: off };
@@ -71,10 +74,11 @@ export async function openFix(env: Env, owner: string, repo: string, branch: str
   if (spent) return { skipped: ((await spent.json()) as { error: string }).error };
   const harness = installedHarnesses(env)[0]!;
   // One statement, so two failures at once open one task, and never more than MAX_ATTEMPTS.
-  const row = await env.DB.prepare(`INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started, branch)
-    SELECT ?, ?, ?, ?, ?, ?, 'running', ?, ? WHERE NOT EXISTS (SELECT 1 FROM agent_runs WHERE owner = ? AND repo = ? AND branch = ? AND status = 'running')
+  // Its other files ride in its result, as a run's lines do, for the queue to hand the agent.
+  const row = await env.DB.prepare(`INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started, branch, result)
+    SELECT ?, ?, ?, ?, ?, ?, 'running', ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM agent_runs WHERE owner = ? AND repo = ? AND branch = ? AND status = 'running')
     AND (SELECT COUNT(*) FROM agent_runs WHERE owner = ? AND repo = ? AND branch = ? AND started >= ?) < ? RETURNING id`)
-    .bind(owner, repo, path, harness, task.slice(0, 4000), `agent-${harness}`, Date.now(), branch, owner, repo, branch, owner, repo, branch, a.since, MAX_ATTEMPTS).first();
+    .bind(owner, repo, path, harness, task.slice(0, 4000), `agent-${harness}`, Date.now(), branch, also.length ? JSON.stringify({ also }) : null, owner, repo, branch, owner, repo, branch, a.since, MAX_ATTEMPTS).first();
   if (!row) return { skipped: "another fix task got there first" };
   const id = row.id as number;
   // The queue runs it, as it does a hosted run: on the desktop too, in this process.
@@ -88,28 +92,31 @@ async function editable(env: Env, owner: string, repo: string, branch: string) {
   return (results as { path: string }[]).map((r) => r.path);
 }
 
-/** The file a failing log is most likely about: the one it names most, else the first. */
-export function blame(paths: string[], log: string) {
-  let best = paths[0], most = 0;
-  for (const p of paths) {
-    const n = log.split(p).length - 1;
-    if (n > most) { best = p; most = n; }
-  }
-  return best;
+/** `paths` by how often a failing log names them, most first; ties keep their order. */
+export function ranked(paths: string[], log: string) {
+  const n = new Map(paths.map((p) => [p, log.split(p).length - 1]));
+  return [...paths].sort((a, b) => n.get(b)! - n.get(a)!);
 }
+
+/** The file a failing log is most likely about: the one it names most, else the first. */
+export const blame = (paths: string[], log: string) => ranked(paths, log)[0];
+
+/** The files a fix task on `path` gets beside it: the branch's others, those `log` names most first, up to MAX_ALSO. */
+export const alsoFor = (paths: string[], path: string, log = "") => ranked(paths.filter((p) => p !== path), log).slice(0, MAX_ALSO);
 
 export function checkTask(run: Pick<CheckRun, "name" | "ref">, path: string, others: string[], log: string) {
   const tail = log.trim().slice(-LOG_CHARS);
   return [
-    `Fix the failing check "${run.name}" on branch ${run.ref}: change ${path} so it passes.`,
-    ...(others.length ? [`The branch also changes ${others.join(", ")}; only ${path} is in front of you.`] : []),
+    `Fix the failing check "${run.name}" on branch ${run.ref}: change ${path}${others.length ? ", or the branch's other files," : ""} so it passes.`,
+    ...(others.length ? [`The branch also changes ${others.join(", ")}; they're in front of you too.`] : []),
     `The end of its log:`, tail,
   ].join("\n");
 }
 
-export const guardTask = (branch: string, path: string, lints: string[]) => [
+export const guardTask = (branch: string, path: string, lints: string[], others: { path: string; lints: string[] }[] = []) => [
   `Merging branch ${branch} into main tripped a guard on ${path}: fix the branch's copy so it merges clean.`,
   ...lints.map((l) => `- ${l}`),
+  ...others.flatMap((o) => [`It tripped one on ${o.path} too:`, ...o.lints.map((l) => `- ${l}`)]),
 ].join("\n");
 
 /** A check finished on a branch (checks.ts): a required one that failed opens a fix task. */
@@ -122,12 +129,16 @@ export async function checkFailed(env: Env, run: CheckRun) {
   const paths = await editable(env, run.owner, run.repo, run.ref);
   if (!paths.length) return null;
   const log = (await get(env, run.id))?.log ?? "";
-  const path = blame(paths, log)!;
-  return openFix(env, run.owner, run.repo, run.ref, path, checkTask(run, path, paths.filter((p) => p !== path), log));
+  const path = blame(paths, log)!, also = alsoFor(paths, path, log);
+  return openFix(env, run.owner, run.repo, run.ref, path, checkTask(run, path, also, log), also);
 }
 
-/** A merge of `branch` was refused over `lint:` conflicts (branches.ts): a fix task on the first file that tripped one. */
+/** A merge of `branch` was refused over `lint:` conflicts (branches.ts): a fix task on the first file that tripped one, the others it changed beside it. */
 export async function guardTripped(env: Env, owner: string, repo: string, branch: string, trips: { path: string; lints: string[] }[]) {
   const t = trips.find((x) => x.lints.length);
-  return t ? openFix(env, owner, repo, branch, t.path, guardTask(branch, t.path, t.lints)) : null;
+  if (!t) return null;
+  const others = trips.filter((x) => x !== t && x.lints.length);
+  // The others that tripped one come first.
+  const also = alsoFor(await editable(env, owner, repo, branch), t.path, others.map((x) => x.path).join("\n"));
+  return openFix(env, owner, repo, branch, t.path, guardTask(branch, t.path, t.lints, others), also);
 }

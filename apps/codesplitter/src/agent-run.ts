@@ -14,10 +14,11 @@ import { diffToOps, rebase } from "./sync.ts";
 export type Exec = (cmd: Command, cwd: string, signal?: AbortSignal) => Promise<{ code: number; out: string }>;
 
 /**
- * Where the agent works: write the file, run the command beside it, read back
- * what it left (null if it removed the file). `signal` aborting stops the agent.
+ * Where the agent works: write the file (and `also`, the other files it may edit), run the
+ * command beside it, read back what it left (null if it removed one). `signal` aborting stops the agent.
  */
-export type Sandbox = (cmd: Command, file: { path: string; text: string }, signal?: AbortSignal) => Promise<{ code: number; out: string; text: string | null }>;
+export type Sandbox = (cmd: Command, file: { path: string; text: string; also?: Record<string, string> }, signal?: AbortSignal) =>
+  Promise<{ code: number; out: string; text: string | null; also?: Record<string, string | null> }>;
 
 /**
  * Runs the CLI with its working directory set to `cwd`, capturing stdout and stderr.
@@ -42,11 +43,13 @@ export const localSandbox = (exec: Exec = execCommand): Sandbox => async (cmd, f
   const { dirname, join } = await import("node:path");
   const dir = mkdtempSync(join(tmpdir(), "codesplitter-agent-"));
   try {
-    const at = join(dir, file.path);
-    mkdirSync(dirname(at), { recursive: true });
-    writeFileSync(at, file.text);
+    const at = (p: string) => join(dir, p), left = (p: string) => existsSync(at(p)) ? readFileSync(at(p), "utf8") : null;
+    for (const [p, text] of Object.entries({ ...file.also, [file.path]: file.text })) {
+      mkdirSync(dirname(at(p)), { recursive: true });
+      writeFileSync(at(p), text);
+    }
     const run = await exec(cmd, dir, signal);
-    return { ...run, text: existsSync(at) ? readFileSync(at, "utf8") : null };
+    return { ...run, text: left(file.path), ...(file.also && { also: Object.fromEntries(Object.keys(file.also).map((p) => [p, left(p)])) }) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -59,6 +62,8 @@ export interface Conflict {
   now: Line | null;
   /** Why it couldn't land, when someone holds the line: "held by @ana". */
   held?: string;
+  /** The file it's in, when that's one of the run's `also` rather than its own. */
+  path?: string;
 }
 
 export interface Result {
@@ -72,6 +77,8 @@ export interface Result {
   conflicts: Conflict[];
   rev: number;
   output: string;
+  /** Which of its `also` files it changed. */
+  edited?: string[];
 }
 
 /** What a file's text looks like on disk: lines joined by \n with one trailing \n. */
@@ -93,6 +100,11 @@ export async function runAgent(call: Call, opts: {
   lines?: string[];
   /** The claim's id; one run's claim, since every agent of a harness edits under one name. */
   claim?: string;
+  /**
+   * Other files it may edit beside `path` (a fix task's: the rest of the branch's changes, heal.ts).
+   * Same branch, no claim on them; what it changes there is posted to each file as it is to `path`.
+   */
+  also?: string[];
   /** Re-runs allowed when lines change under the agent (default 2; 0 keeps the other writer's lines at once). */
   retries?: number;
   /**
@@ -112,10 +124,11 @@ export async function runAgent(call: Call, opts: {
   const log = opts.log ?? (() => {});
   const sandbox = opts.sandbox ?? localSandbox(opts.exec);
   const file = `/api/repos/${owner}/${repo}/do`, onMain = `?path=${encodeURIComponent(path)}`;
-  const q = onMain + (opts.branch ? `&branch=${encodeURIComponent(opts.branch)}` : "");
-  const get = async () => {
-    const res = await call(user, `${file}/file${q}`);
-    if (!res.ok) throw new Error(`read ${path}: ${res.status} ${await res.text()}`);
+  const at = (p: string) => `?path=${encodeURIComponent(p)}` + (opts.branch ? `&branch=${encodeURIComponent(opts.branch)}` : "");
+  const q = at(path), also = (opts.also ?? []).filter((p) => p !== path);
+  const get = async (p = path) => {
+    const res = await call(user, `${file}/file${at(p)}`);
+    if (!res.ok) throw new Error(`read ${p}: ${res.status} ${await res.text()}`);
     return (await res.json()) as Doc;
   };
 
@@ -150,51 +163,62 @@ export async function runAgent(call: Call, opts: {
   async function work(): Promise<Result> {
   const retries = opts.retries ?? 2, signal = opts.signal;
   let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "";
-  const told: string[] = [];
+  const told: string[] = [], touched = new Set<string>();
+
+  /**
+   * Posts what the agent left in `p` as ops on the lines unchanged since `snapshot`, retrying on a race.
+   * Ops on lines someone holds are left out, and come back as conflicts that say so. The file's
+   * rev after, or 0 when the agent didn't change it. Only `path` carries the run's claim.
+   */
+  async function post(p: string, snapshot: Doc, text: string): Promise<number> {
+    const ops = diffToOps(snapshot.lines, fromDisk(text));
+    if (!ops.length) return 0;
+    changed = true;
+    const mine = p === path, tag = (c: Conflict): Conflict => mine ? c : { ...c, path: p };
+    const held = new Map<Op, string>();
+    const lineOf = (op: Op) => op.kind === "insert" ? op.after : op.line;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      signal?.throwIfAborted();
+      const current = await get(p);
+      const r = rebase(ops.filter((op) => !held.has(op)), current);
+      const now = (op: Op) => current.lines.find((l) => l.id === lineOf(op)) ?? null;
+      const lost = [...r.skipped.map((op) => ({ op, now: now(op) })), ...[...held].map(([op, why]) => ({ op, now: now(op), held: why }))].map(tag);
+      if (!r.ops.length) { conflicts.push(...lost); return current.rev; }
+      const res = await call(user, `${file}/ops${at(p)}`, { method: "POST", body: JSON.stringify({ ops: r.ops, ...(claim && mine ? { claim } : {}) }) });
+      if (res.ok) {
+        const body = (await res.json()) as { rev: number; applied: unknown[] };
+        applied += body.applied.length;
+        conflicts.push(...lost);
+        return body.rev;
+      } else if (res.status !== 409) throw new Error(`ops: ${res.status} ${await res.text()}`);
+      else for (const c of ((await res.json()) as { conflicts?: { index: number; reason: string; claim?: string }[] }).conflicts ?? [])
+        if (c.claim && r.ops[c.index]) held.set(r.ops[c.index]!, c.reason);
+    }
+    throw new Error(`${p} kept changing while ${opts.harness} worked; nothing was posted`);
+  }
   for (;;) {
     runs++;
     signal?.throwIfAborted();
-    // 1. Snapshot the file, and 2. let the agent edit a copy of it in the sandbox.
+    // 1. Snapshot the file (and its `also`), and 2. let the agent edit a copy of them in the sandbox.
     const snapshot = await get();
+    const others = await Promise.all(also.map((p) => get(p)));
     rev = snapshot.rev;
-    const cmd = harnessCommand(opts.harness, taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot)), { model: opts.model });
-    log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path} (rev ${snapshot.rev})`);
-    const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines) }, signal);
+    const cmd = harnessCommand(opts.harness, taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also), { model: opts.model });
+    log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
+    const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal);
     // Stopped: whatever it left is dropped.
     signal?.throwIfAborted();
     output = run.out.trim();
     if (run.code !== 0) throw new Error(`${opts.harness} exited ${run.code}:\n${output.slice(-2000)}`);
     if (run.text === null) throw new Error(`${opts.harness} removed ${path}`);
+    const gone = also.find((p) => typeof run.also?.[p] !== "string");
+    if (gone) throw new Error(`${opts.harness} removed ${gone}`);
 
-    // 3. Diff what it left against the snapshot, and post the change.
-    const ops = diffToOps(snapshot.lines, fromDisk(run.text));
+    // 3. Diff what it left against the snapshot, and post the change: its own file's, then each other's.
     conflicts = [];
-    if (ops.length) {
-      changed = true;
-      // Post the ops whose lines are unchanged since the snapshot; retry on a race.
-      // Ops on lines someone holds are left out, and come back as conflicts that say so.
-      let landed = false;
-      const held = new Map<Op, string>();
-      const lineOf = (op: Op) => op.kind === "insert" ? op.after : op.line;
-      for (let attempt = 0; attempt < 4 && !landed; attempt++) {
-        signal?.throwIfAborted();
-        const current = await get();
-        const r = rebase(ops.filter((op) => !held.has(op)), current);
-        const now = (op: Op) => current.lines.find((l) => l.id === lineOf(op)) ?? null;
-        conflicts = [...r.skipped.map((op) => ({ op, now: now(op) })), ...[...held].map(([op, why]) => ({ op, now: now(op), held: why }))];
-        if (!r.ops.length) { rev = current.rev; landed = true; break; }
-        const res = await call(user, `${file}/ops${q}`, { method: "POST", body: JSON.stringify({ ops: r.ops, ...(claim ? { claim } : {}) }) });
-        if (res.ok) {
-          const body = (await res.json()) as { rev: number; applied: unknown[] };
-          applied += body.applied.length;
-          rev = body.rev;
-          landed = true;
-        } else if (res.status !== 409) throw new Error(`ops: ${res.status} ${await res.text()}`);
-        else for (const c of ((await res.json()) as { conflicts?: { index: number; reason: string; claim?: string }[] }).conflicts ?? [])
-          if (c.claim && r.ops[c.index]) held.set(r.ops[c.index]!, c.reason);
-      }
-      if (!landed) throw new Error(`${path} kept changing while ${opts.harness} worked; nothing was posted`);
-    }
+    const own = await post(path, snapshot, run.text);
+    if (own) rev = own;
+    for (const [i, p] of also.entries()) if (await post(p, others[i]!, run.also![p]!)) touched.add(p);
     const fresh = (await opts.notes?.()) ?? [];
     told.push(...fresh);
     if (fresh.length && noteRuns < NOTE_RUNS) {
@@ -211,6 +235,6 @@ export async function runAgent(call: Call, opts: {
     const res = await call(user, `${file}/commit${q}`, { method: "POST", body: JSON.stringify({ message: opts.commit }) });
     if (!res.ok) throw new Error(`commit: ${res.status} ${await res.text()}`);
   }
-  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output };
+  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, ...(touched.size && { edited: [...touched] }) };
   }
 }

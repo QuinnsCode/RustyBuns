@@ -1,9 +1,9 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { local as boot } from "../src/local.ts";
 import type { Exec } from "../src/agent-run.ts";
-import { blame, healUnavailable, MAX_ATTEMPTS } from "../src/heal.ts";
+import { alsoFor, blame, healUnavailable, MAX_ALSO, MAX_ATTEMPTS } from "../src/heal.ts";
 
 // End to end, with real git and the in-process queue: a full run on a busy machine can stretch one past bun's 5s default.
 setDefaultTimeout(20_000);
@@ -121,7 +121,35 @@ test("a merge guard tripping (git's markers on the branch) opens a fix task, and
   expect((await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {})).status).toBe(200);
 });
 
-test("blame: the file the log names most", () => {
+test("a fix task gets the branch's other changed files too, and can fix a test and its code in one go (#1037)", async () => {
+  const { call, send, fail, runs, settled, file, prompts } = await app();
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "a.test.ts", content: "expect(one)" });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.test.ts", { message: "its test" });
+  const t = (await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.test.ts&branch=tidy")).json() as { lines: { id: string; rev: number }[] }).lines;
+  await send("ryan", "/api/repos/ryan/lab/do/ops?path=a.test.ts&branch=tidy", { ops: [{ kind: "set", line: t[0]!.id, text: "expect(ONE)", base: t[0]!.rev }] });
+  const seen: string[][] = [];
+  const lower = call.env.AGENT_EXEC as Exec;
+  call.env.AGENT_EXEC = (async (cmd, cwd) => {
+    seen.push(["a.ts", "a.test.ts"].filter((p) => existsSync(join(cwd, p))));
+    writeFileSync(join(cwd, "a.test.ts"), "expect(two)\n");
+    return lower(cmd, cwd);
+  }) as Exec;
+  await fail(sha("a"));
+  await until(async () => (await runs()).length > 0);
+  await settled();
+  const [run] = await runs();
+  expect(run).toMatchObject({ path: "a.ts", status: "done", also: ["a.test.ts"], edited: ["a.test.ts"], applied: 2 });
+  expect(seen[0]).toEqual(["a.ts", "a.test.ts"]);
+  expect(run.task).toContain("The branch also changes a.test.ts; they're in front of you too.");
+  expect(prompts[0]).toContain("You are editing a.ts, and may edit a.test.ts too");
+  expect((await file("tidy")).map((l) => l.text)).toEqual(["one", "two"]);
+  const b = (await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.test.ts&branch=tidy")).json() as { lines: { text: string; by: string }[] }).lines;
+  expect(b.map((l) => [l.text, l.by])).toEqual([["expect(two)", "agent-claude"]]);
+});
+
+test("blame: the file the log names most; alsoFor: the rest, those it names first", () => {
   expect(blame(["a.ts", "b.ts"], "b.ts:3 x\nb.ts:4 y\na.ts:1")).toBe("b.ts");
   expect(blame(["a.ts", "b.ts"], "nothing")).toBe("a.ts");
+  expect(alsoFor(["a.ts", "b.ts", "c.ts"], "a.ts", "c.ts:1")).toEqual(["c.ts", "b.ts"]);
+  expect(alsoFor(Array.from({ length: MAX_ALSO + 5 }, (_, i) => `f${i}.ts`), "f0.ts").length).toBe(MAX_ALSO);
 });

@@ -275,7 +275,7 @@ const OPS: Record<string, Record<string, Op>> = {
         stale: bool("the branch changed since these runs saw it"), changed_at: { type: ["integer", "null"], description: "when the branch last changed (ms), null on main" },
         gate: obj({ required: arr(str("the ones this ref needs")), ok: bool(), passed: arr(str()), waiting: arr(str()), failed: arr(str()), deferred: arr(str("GitHub's, put off while it's down")),
           skipped: arr(str("required checks scoped to paths this branch doesn't touch")) }),
-        heal: obj({ max: int(), running: bool(), gave_up: bool("its fix tasks are spent: a person's turn"), attempts: arr(loose("{id, path, harness, status, started, why, applied?, error?}")) }) }) },
+        heal: obj({ max: int(), running: bool(), gave_up: bool("its fix tasks are spent: a person's turn"), attempts: arr(loose("{id, path, harness, status, started, why, applied?, error?, also?: the branch's other files it could edit, edited?: those it did}")) }) }) },
     post: { id: "record_check", summary: "Record a check run by hand (the crew queues one; only the owner may give it a status past queued)", tag: "Checks",
       body: obj({ ref: str(), sha: str(), name: str(), runner: { type: "string", enum: ["desktop", "container", "github", "external"] }, status: ref("CheckStatus"), url: str() }, ["ref", "sha", "name"]),
       ok: ref("CheckRun"), status: 201 },

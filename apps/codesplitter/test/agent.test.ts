@@ -84,6 +84,15 @@ describe("harnessCommand", () => {
     expect(p).toContain("a line you changed was deleted by someone else");
     expect(p).toContain("Keep their changes");
   });
+
+  test("with other files beside it, the prompt names them, and which file a moved line is in", () => {
+    const now = { id: "L1", text: "theirs", by: "ryan", rev: 5 }, op = { kind: "set", line: "L1", base: 1, text: "mine" } as const;
+    const p = taskPrompt("a.ts", "x", [{ op, now }, { op, now, path: "a.test.ts" }], [], [], ["a.test.ts"]);
+    expect(p).toContain("You are editing a.ts, and may edit a.test.ts too");
+    expect(p).toContain(`"theirs" in a.ts (changed by ryan`);
+    expect(p).toContain(`"theirs" in a.test.ts (changed by ryan`);
+    expect(p).toContain("Edit those files in place");
+  });
 });
 
 // Build a repo with one file and an agent collaborator, through the app's own API.
