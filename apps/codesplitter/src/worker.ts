@@ -31,6 +31,7 @@ import { clearOwn } from "./deploy-review.ts";
 import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { commitGraph } from "./graph.ts";
+import { tagRoutes } from "./tags.ts";
 import { pickRoute } from "./pick.ts";
 import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
 import { bearer, tokenRoutes } from "./tokens.ts";
@@ -53,7 +54,7 @@ import { installScript } from "./install.ts";
 import { crossSite, edgeLimit, secured, turnstile, wantsTurnstile } from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
 import { beamRoutes } from "./beam.ts";
-import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorRoutes, mirrorsOn, hearPushes, pushClashes, pushHolds, seeGit, settlePush, syncDue, TRUTHS, turnRoute, upstreamRemote, type Truth } from "./mirror.ts";
+import { kickMirror, landPushes, mirrorBranchRoute, mirrorRepoRoute, mirrorTagRoute, mirrorRoutes, mirrorsOn, hearPushes, pushClashes, pushHolds, seeGit, settlePush, syncDue, TRUTHS, turnRoute, upstreamRemote, type Truth } from "./mirror.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
@@ -334,6 +335,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         throw e;
       }
     }
+    // GET|POST /api/repos/:o/:r/tags, DELETE .../tags/:name  the repo's tags, made and deleted (tags.ts)
+    if (p[4] === "tags") { const r = await tagRoutes(req, env, p, owner, repo, user); if (r) return r; }
     // POST /api/repos/:o/:r/commits/:sha/revert {branch?}  a commit undone, as line edits (pick.ts)
     // POST /api/repos/:o/:r/commits/:sha/pick {branch?}  a commit taken again, onto main or an open branch
     if (p[4] === "commits" && p[5] && (p[6] === "revert" || p[6] === "pick") && !p[7] && req.method === "POST") {
@@ -397,6 +400,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "mirror" && p[5] === "turn" && !p[6]) return turnRoute(req, env, owner, repo, user);
     // GET|POST /api/repos/:o/:r/mirror/branches[/:b/pull|push]  upstream's branches, opened here; ours, pushed there
     if (p[4] === "mirror") { const r = await mirrorBranchRoute(req, env, p, owner, repo, user); if (r) return r; }
+    // GET|POST /api/repos/:o/:r/mirror/tags[/:name/push]  upstream's tags, fetched here; ours, pushed there
+    if (p[4] === "mirror") { const r = await mirrorTagRoute(req, env, p, owner, repo, user); if (r) return r; }
     // GET /api/repos/:o/:r/upstream, POST .../upstream/hear|take  a dug fork listens to its upstream (listen.ts)
     if (p[4] === "upstream") { const r = await listenRoute(req, env, p, owner, repo, user); if (r) return r; }
     // GET|POST /api/repos/:o/:r/worktrees, DELETE .../worktrees/:name  real checkouts off the desktop's bare git (worktrees.ts)

@@ -170,6 +170,9 @@
   .chain { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; } .chain .step { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
   .chain .step button { border: 0; background: none; cursor: pointer; padding: 2px 6px; font: inherit; color: inherit; } .chain .step:not(.on) { opacity: .45; } .chain .step.on { border-color: var(--accent); }
   .chain .step sup { font: 600 9px var(--mono); color: var(--muted); margin-right: 2px; } .chain .step .up { padding: 2px 3px; color: var(--muted); } .unverified { color: var(--accent-ink); font-weight: 600; }
+  .rank { display: inline-flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; } .rank li { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 6px; border: 1px solid var(--accent); border-radius: 6px; background: var(--bg); cursor: grab; white-space: nowrap; }
+  .rank li sup { font: 600 9px var(--mono); color: var(--muted); } .rank li button { border: 0; background: none; cursor: pointer; padding: 0 2px; color: var(--muted); font: inherit; }
+  .pkg-letter { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 3px; background: var(--fg); color: var(--bg); font: 600 10px var(--mono); text-transform: uppercase; }
   .watch { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } .watch .badge { white-space: nowrap; text-decoration: none; }
   .watch .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); } .watch .none .dot { background: var(--fg); } .watch .unknown .dot { background: none; border: 1px solid var(--muted); } .watch .minor .dot { background: var(--accent); } .watch .major .dot, .watch .critical .dot { background: var(--del-fg); }
   .sec .run .tell { display: flex; align-items: center; gap: 4px; margin-top: 2px; } .sec .run .tell input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px; }
@@ -285,10 +288,15 @@
   .cg-scroll { overflow-x: auto; overflow-y: hidden; padding: 0 4px; }
   .cg path, .cg-key path { fill: none; stroke: var(--border-2); stroke-width: 2; stroke-linecap: round; } .cg path.off { stroke-dasharray: 2 4; }
   .cg g, .cg-key .u, .cg-key .m { cursor: default; } .cg .u, .cg-key .u { fill: var(--fg); } .cg .m, .cg-key .m { fill: var(--accent); }
-  .cg g:hover, .cg g:focus { outline: none; } .cg g:hover > *, .cg g:focus > *, .cg g.on > * { stroke: var(--accent-glow); stroke-width: 3; }
-  .cg g[data-hash] { cursor: pointer; } .cg g.beat > * { stroke: var(--accent-glow); stroke-width: 3; }
+  .cg g:hover, .cg g:focus { outline: none; } .cg g:hover > *, .cg g:focus > *, .cg g.sel > * { stroke: var(--accent-glow); stroke-width: 3; }
+  .cg path.t { fill: var(--brown); stroke: none; } .cg g[data-h] { cursor: pointer; } .cg g.beat > * { stroke: var(--accent-glow); stroke-width: 3; }
   /* The pulse travelling the vein: a glowing bead that runs into main's newest commit as the crew lands lines. */
   .cg .bead, .cg-key .bead { fill: var(--accent-glow); } .cg .bead { filter: drop-shadow(0 0 3px var(--accent)); pointer-events: none; }
+  .cg-tags { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .cg-tag { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; font: 500 11.5px/18px var(--mono); color: var(--fg); background: var(--paper); border: 1px solid var(--border-2); border-radius: 9px; cursor: pointer; }
+  .cg-tag.off { color: var(--muted); border-style: dashed; } .cg-tag button { display: inline-flex; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; } .cg-tag button:hover { color: var(--accent-ink); }
+  .cg-act { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 12px 2px; font-size: 12px; } .cg-act .msg { flex: 0 1 auto; max-width: 40ch; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cg-act form { display: inline-flex; gap: 4px; } .cg-act input { width: 9em; padding: 2px 6px; font: 12px var(--mono); } .cg-act .btn { padding: 2px 8px; }
   .cg-pick { display: grid; gap: 6px; margin: 4px 12px 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); font-size: 12px; }
   .cg-pick .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; } .cg-pick .btn { white-space: nowrap; } .cg-pick select { max-width: 14em; }
   .cg-pick .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2032,6 +2040,12 @@ const commitLanes = (commits, more = false) => {
   if (more && oldest) edges.push({ x1: -1, l1: 0, x2: oldest.x, l2: 0, off: true });
   return { dots, edges, lanes: Math.max(1, busy.length) };
 };
+/** The tags on the commits shown ({hash: [names]}), and the names of those on commits that aren't (#879). */
+const tagMarks = (commits, tags = []) => {
+  const shown = new Set(commits.map((c) => c.hash)), on = {}, off = [];
+  for (const t of tags) shown.has(t.commit) ? (on[t.commit] ??= []).push(t.name) : off.push(t.name);
+  return { on, off };
+};
 /** The vein of a repo: who it listens to, who listens to it, its branches wired with curves, and its history,
  *  which the pulse runs along as the crew lands lines (beat()). */
 async function gitMap(c) {
@@ -2050,11 +2064,12 @@ async function gitMap(c) {
   const r = await api(`/repos/${owner}/${repo}`).catch(() => null);
   if (!el.isConnected) return;
   if (!r) { $("#gm-stage").innerHTML = '<span class="muted">couldn\'t load this repo</span>'; return; }
-  const [branches, mirror, upBranches, graph] = await Promise.all([
+  const [branches, mirror, upBranches, firstGraph, tagList] = await Promise.all([
     api(`/repos/${owner}/${repo}/branches`).catch(() => []),
     r.mirror ? api(`/repos/${owner}/${repo}/mirror`).catch(() => null) : null,
     r.mirror ? api(`/repos/${owner}/${repo}/mirror/branches`).catch(() => []) : [],
     api(`/repos/${owner}/${repo}/graph`).catch(() => null),
+    api(`/repos/${owner}/${repo}/tags`).then((t) => t.tags, () => []),
   ]);
   if (!el.isConnected) return;
   const map = gitMapModel({ owner, repo, r, branches, mirror, upBranches });
@@ -2082,17 +2097,21 @@ async function gitMap(c) {
     st.querySelector(".gm-wires").innerHTML = `<defs><marker id="gm-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L7 4L1 7"/></marker><marker id="gm-tail" viewBox="0 0 8 8" refX="1" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M7 1L1 4L7 7"/></marker></defs>${d}`;
   };
   wires();
-  const drawGraph = (graph) => {
+  // The owner tags a commit by picking its dot (#879); a mirror's tags go up to upstream and come down from it.
+  let graph = firstGraph;
+  const tagger = { mine: me() === owner, mirror: !!r.mirror, sel: null };
+  let tags = tagList;
+  const drawGraph = () => {
     if (!graph?.commits?.length) return;
-    const g = $("#gm-graph");
-    g.innerHTML = commitGraph(graph) + `<div class="cg-pick" id="cg-pick" data-pics hidden></div>`;
+    const g = $("#gm-graph"), was = g.querySelector(".cg-scroll")?.scrollLeft;
+    g.innerHTML = commitGraph(graph, tags, tagger) + `<div class="cg-pick" id="cg-pick" data-pics hidden></div>`;
     g.hidden = false;
     icons();
     // Newest on the right: start there.
-    const sc = g.querySelector(".cg-scroll"); sc.scrollLeft = sc.scrollWidth;
+    const sc = g.querySelector(".cg-scroll"); sc.scrollLeft = was ?? sc.scrollWidth;
     g.commits = new Map(graph.commits.map((c) => [c.hash, c]));
+    if (tagger.sel) pickCard(tagger.sel);
   };
-  drawGraph(graph);
   // The pulse: lines landing here send a bead down the vein into main's newest commit, one at a time.
   let beatAt = 0;
   el.beat = () => {
@@ -2113,8 +2132,6 @@ async function gitMap(c) {
   const pickCard = (hash) => {
     const c = $("#gm-graph").commits?.get(hash), box = $("#cg-pick");
     if (!c || !box) return;
-    $("#gm-graph").querySelectorAll(".cg g.on").forEach((d) => d.classList.remove("on"));
-    $("#gm-graph").querySelector(`.cg g[data-hash="${CSS.escape(hash)}"]`)?.classList.add("on");
     const short = hash.slice(0, 7), onto = open[0] ?? "main";
     box.innerHTML = `<div class="row"><code>${esc(short)}</code><span class="what" title="${esc(c.message)}">${esc(c.message)}</span><span class="grow"></span><button class="btn ghost" data-cg="x" title="close">${icon("x")}</button></div>
       ${r.canWrite ? `<div class="row"><button class="btn" data-cg="revert" title="a new commit on main that undoes this one"${picAttr("revert", { short })}>${icon("undo-2")}Revert</button>
@@ -2129,27 +2146,42 @@ async function gitMap(c) {
     box.onclick = async (e) => {
       const b = e.target.closest("[data-cg]");
       if (!b) return;
-      if (b.dataset.cg === "x") { box.hidden = true; return; }
+      if (b.dataset.cg === "x") { tagger.sel = null; drawGraph(); return; }
       const kind = b.dataset.cg, to = kind === "pick" ? box.querySelector("#cg-onto").value : "main";
       b.disabled = true;
       try {
         const out = await api(`/repos/${owner}/${repo}/commits/${hash}/${kind}`, to === "main" ? {} : { branch: to });
         const n = out.files.length, files = `${n} file${n === 1 ? "" : "s"}`;
         toast(kind === "revert" ? `Reverted ${short}: ${files} on main` : to === "main" ? `Picked ${short} onto main: ${files}` : `Picked ${short} onto ${to}: ${files}, waiting for its merge`, 3600);
-        if (to === "main") drawGraph(await api(`/repos/${owner}/${repo}/graph`).catch(() => null));
-        else box.hidden = true;
+        if (to === "main") { graph = await api(`/repos/${owner}/${repo}/graph`).catch(() => graph); drawGraph(); }
+        else { tagger.sel = null; drawGraph(); }
       } catch (err) { b.disabled = false; toast(err.message, 6000); }
     };
   };
-  el.addEventListener("keydown", (e) => {
-    const d = e.key === "Enter" || e.key === " " ? e.target.closest?.(".cg g[data-hash]") : null;
-    if (d) { e.preventDefault(); pickCard(d.dataset.hash); }
+  drawGraph();
+  const retag = async (say) => { toast(say); tags = await api(`/repos/${owner}/${repo}/tags`).then((t) => t.tags, () => tags); if (el.isConnected) drawGraph(); };
+  const tagDo = async (b, run) => { b.disabled = true; try { await run(); } catch (err) { b.disabled = false; toast(err.message); } };
+  el.addEventListener("submit", (e) => {
+    if (e.target.id !== "cg-new") return;
+    e.preventDefault();
+    const name = e.target.elements.tag.value.trim(), b = e.target.querySelector("button");
+    if (name) tagDo(b, async () => { await api(`/repos/${owner}/${repo}/tags`, { name, commit: tagger.sel }); await retag(`Tagged ${tagger.sel.slice(0, 7)} ${name}`); });
   });
+  $("#gm-graph").addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.matches?.(".cg g[data-h]")) { e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", { bubbles: true })); } });
   el.addEventListener("scroll", wires, true);
   el.addEventListener("click", (e) => {
     e.stopPropagation();
-    const d = e.target.closest(".cg g[data-hash]");
-    if (d) return pickCard(d.dataset.hash);
+    const t = e.target.closest("[data-tag-del], [data-tag-push], #cg-fetch, .cg g[data-h], .cg-tag[data-at]");
+    if (t?.dataset.tagDel) return tagDo(t, async () => { await api(`/repos/${owner}/${repo}/tags/${encodeURIComponent(t.dataset.tagDel)}`, undefined, "DELETE"); await retag(`Deleted the tag ${t.dataset.tagDel}`); });
+    if (t?.dataset.tagPush) return tagDo(t, async () => { const p = await api(`/repos/${owner}/${repo}/mirror/tags/${encodeURIComponent(t.dataset.tagPush)}/push`, {}); toast(p.pushed ? `Pushed ${p.name} to upstream` : `Upstream already has ${p.name}`); });
+    if (t?.id === "cg-fetch") return tagDo(t, async () => {
+      const f = await api(`/repos/${owner}/${repo}/mirror/tags`, {});
+      await retag(`${f.fetched.length ? `Fetched ${f.fetched.length} of upstream's tags` : "No new tags upstream"}${f.kept.length ? `; kept ours of ${f.kept.join(", ")}` : ""}`);
+    });
+    // A dot, or a tag in the head: pick that commit (the owner's bar shows it), or let it go.
+    const h = t?.dataset.h ?? t?.dataset.at;
+    if (h && $(`.cg g[data-h="${h}"]`)) { tagger.sel = tagger.sel === h && t.dataset.h ? null : h; drawGraph(); if (tagger.mine) $("#cg-new input")?.focus(); return; }
+    if (h) return $(`.cg g[data-h="${h}"]`)?.scrollIntoView({ block: "nearest", inline: "center" });
     if (e.target.closest("#gm-x")) return close();
     if (e.target.closest("#gm-files")) { close(); return wireMap(c.view ? c : { ...c, view: "r" }); }
     if (e.target.closest("a.gm-tile[href^='#']")) close();
@@ -2160,8 +2192,8 @@ async function gitMap(c) {
   addEventListener("keydown", off); addEventListener("click", off); addEventListener("resize", onSize);
 }
 /** The vein's history: a head saying what it shows, and the dots and lanes, scrolled sideways. */
-const commitGraph = (g) => {
-  const DX = 22, LH = 20, PAD = 14, { dots, edges, lanes } = commitLanes(g.commits, g.more);
+const commitGraph = (g, tags = [], o = {}) => {
+  const DX = 22, LH = 20, PAD = 14, { dots, edges, lanes } = commitLanes(g.commits, g.more), marks = tagMarks(g.commits, tags);
   const X = (i) => PAD + 8 + i * DX, Y = (l) => PAD + l * LH;
   const line = (e) => {
     const [x1, y1, x2, y2] = [X(e.x1), Y(e.l1), X(e.x2), Y(e.l2)];
@@ -2175,16 +2207,27 @@ const commitGraph = (g) => {
   const tip = dots.filter((c) => c.lane === 0).at(-1);
   const dot = (c) => {
     const x = X(c.x), y = Y(c.lane);
-    const say = `${c.hash.slice(0, 7)} ${c.message}\n${c.author}, ${new Date(c.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${c.up ? "upstream's" : "this copy's"}${c.merge ? " merge" : ""}`;
+    const on = marks.on[c.hash];
+    const say = `${c.hash.slice(0, 7)} ${c.message}\n${c.author}, ${new Date(c.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${c.up ? "upstream's" : "this copy's"}${c.merge ? " merge" : ""}${on ? `\ntagged ${on.join(", ")}` : ""}`;
     const shape = c.merge ? `<rect x="${x - 4.5}" y="${y - 4.5}" width="9" height="9" rx="1.5" transform="rotate(45 ${x} ${y})"/>` : `<circle cx="${x}" cy="${y}" r="5"/>`;
-    return `<g class="${c.up ? "u" : "m"}${c === tip ? " tip" : ""}" tabindex="0" data-hash="${esc(c.hash)}" aria-label="${esc(say)}"><title>${esc(say)}</title>${shape}</g>`;
+    // A tagged commit wears a little tag above its dot.
+    const flag = on ? `<path class="t" d="M${x - 4} ${y - 13}h5l3 3l-3 3h-5z"/>` : "";
+    return `<g class="${c.up ? "u" : "m"}${c === tip ? " tip" : ""}${o.sel === c.hash ? " sel" : ""}" data-h="${c.hash}" tabindex="0" aria-label="${esc(say)}"><title>${esc(say)}</title>${flag}${shape}</g>`;
   };
   const main = dots.filter((c) => c.lane === 0).length, side = dots.length - main;
   const w = X(Math.max(0, dots.length - 1)) + PAD + 8, h = Y(lanes - 1) + PAD;
   return `<div class="cg-head muted">${icon("git-commit-horizontal")}<span>The vein, ${esc(g.branch)}: the last ${main} commit${main === 1 ? "" : "s"}${g.more ? " (older ones trail off left)" : ""}${side ? `, and ${side} on branches merged in` : ""}</span>
-    <span class="cg-key"><svg viewBox="0 0 10 10"><circle class="u" cx="5" cy="5" r="4"/></svg>upstream's</span><span class="cg-key"><svg viewBox="0 0 10 10"><circle class="m" cx="5" cy="5" r="4"/></svg>this copy's</span><span class="cg-key"><svg viewBox="0 0 10 10"><rect x="1.8" y="1.8" width="6.4" height="6.4" transform="rotate(45 5 5)"/></svg>a merge</span><span class="cg-key" title="when the crew lands lines here, a bead runs down the vein into main's newest commit"><svg viewBox="0 0 10 10"><circle class="bead" cx="5" cy="5" r="3"/></svg>the pulse</span></div>
-    <div class="cg-scroll"><svg class="cg" width="${w}" height="${h}"${tip ? ` data-tip="${X(tip.x)},${Y(0)},${X(Math.max(0, tip.x - 8))}"` : ""} viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(`${main} commits on ${g.branch}`)}">${edges.map(line).join("")}${dots.map(dot).join("")}</svg></div>`;
+    <span class="cg-key"><svg viewBox="0 0 10 10"><circle class="u" cx="5" cy="5" r="4"/></svg>upstream's</span><span class="cg-key"><svg viewBox="0 0 10 10"><circle class="m" cx="5" cy="5" r="4"/></svg>this copy's</span><span class="cg-key"><svg viewBox="0 0 10 10"><rect x="1.8" y="1.8" width="6.4" height="6.4" transform="rotate(45 5 5)"/></svg>a merge</span><span class="cg-key" title="when the crew lands lines here, a bead runs down the vein into main's newest commit"><svg viewBox="0 0 10 10"><circle class="bead" cx="5" cy="5" r="3"/></svg>the pulse</span>${tagHead(tags, marks, o)}</div>
+    <div class="cg-scroll"><svg class="cg${o.mine ? " mine" : ""}" width="${w}" height="${h}"${tip ? ` data-tip="${X(tip.x)},${Y(0)},${X(Math.max(0, tip.x - 8))}"` : ""} viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(`${main} commits on ${g.branch}`)}">${edges.map(line).join("")}${dots.map(dot).join("")}</svg></div>${tagBar(dots.find((c) => c.hash === o.sel), marks, o)}`;
 };
+/** The graph head's tags: each a chip (dashed when its commit isn't shown), and for a mirror's owner, fetch upstream's. */
+const tagHead = (tags, marks, o) => !tags.length && !(o.mine && o.mirror) ? "" : `<span class="cg-tags">${icon("tag")}${tags.slice(0, 12).map((t) => {
+  const off = marks.off.includes(t.name);
+  return `<span class="cg-tag${off ? " off" : ""}" data-at="${t.commit}" title="${esc(t.name)} on ${t.commit.slice(0, 7)}${off ? ", further back than the graph goes" : ""}">${esc(t.name)}</span>`;
+}).join("")}${tags.length > 12 ? `<span title="${esc(tags.slice(12).map((t) => t.name).join(", "))}">+${tags.length - 12}</span>` : ""}${o.mine && o.mirror ? `<button class="btn ghost" id="cg-fetch" title="fetch upstream's tags">${icon("download")}</button>` : ""}</span>`;
+/** The owner's bar for the picked commit: its tags (delete, or push up on a mirror), and a box to tag it. */
+const tagBar = (c, marks, o) => !c || !o.mine ? "" : `<div class="cg-act"><code>${c.hash.slice(0, 7)}</code><span class="msg muted" title="${esc(c.message)}">${esc(c.message)}</span>${(marks.on[c.hash] ?? []).map((n) => `<span class="cg-tag">${esc(n)}${o.mirror ? `<button data-tag-push="${esc(n)}" title="push it to upstream">${icon("upload")}</button>` : ""}<button data-tag-del="${esc(n)}" title="delete this tag">${icon("x")}</button></span>`).join("")}
+  <form id="cg-new"><input name="tag" placeholder="v1.0" aria-label="a new tag's name" autocomplete="off" spellcheck="false"><button class="btn" title="tag this commit">${icon("tag")}</button></form></div>`;
 /** This browser's layout of the details side: its width (px, "66.667%" or "full"), the panels' order, and which are folded. */
 const dockPrefs = () => { try { return { w: "", order: [], shut: [], ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", order: [], shut: [] }; } };
 const saveDock = (d) => { try { localStorage.setItem("cs_dock", JSON.stringify(d)); } catch {} };
@@ -2747,7 +2790,7 @@ const DEP_STEPS = {
   alert: ["🔔", "tell me"],
 };
 /** One update in the doctor's report; `dig` when it's a 🪏 dig's release. */
-const depUpdate = (u, dig) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${dig ? `🪏 ${esc(dig.target)} · ` : ""}${u.level}${u.fixes ? ` · <b class="vuln">fixes ${u.fixes.map(esc).join(", ")}</b>` : ""} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? (u.was ? `broke the tests at ${esc(u.was)}; rolled back, tests pass` : "tests pass") : u.status === "held" ? "broke the tests, held back" : "untested"}${dig ? (dig.taken ? " · on the branch" : dig.note ? ` · ${esc(dig.note)}` : !dig.take ? " · not taken" : "") : ""}${u.chain?.length ? ` · ${u.chain.map((c) => `<span title="${esc(DEP_STEPS[c.step][1])}: ${c.ok ? "worked" : esc(c.note ?? "didn't work")}${c.usd ? ` ($${c.usd.toFixed(2)})` : ""}">${DEP_STEPS[c.step][0]}${c.ok ? "✓" : c.note ? "–" : "✗"}</span>`).join(" ")}${u.chain.some((c) => c.ok) ? "" : " gave up"}` : ""}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`;
+const depUpdate = (u, dig) => `<span>${u.path && u.path !== "package.json" ? `<span class="muted">${esc(u.path.replace(/\/package\.json$/, ""))}</span> ` : ""}<code>${esc(u.name)}</code> ${esc(u.from)} → <b>${esc(u.to)}</b> <span class="muted">${dig ? `🪏 ${esc(dig.target)} · ` : ""}${u.level}${u.fixes ? ` · <b class="vuln">fixes ${u.fixes.map(esc).join(", ")}</b>` : ""} · ${u.status === "broke" ? (u.fix ? `broke the tests; ${esc(u.fix.by)} gave up after ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}, left out` : "broke the tests, left out") : u.status === "fixed" ? `broke the tests; ${esc(u.fix.by)} fixed ${u.fix.files.map((f) => `<code>${esc(f)}</code>`).join(", ") || "it"} in ${u.fix.tries} tr${u.fix.tries === 1 ? "y" : "ies"}` : u.status === "kept" ? (u.was ? `broke the tests at ${esc(u.was)}; rolled back, tests pass` : "tests pass") : u.status === "held" ? "broke the tests, held back" : u.status === "yielded" ? `gave way to ${u.yields.to.map((n) => `<code>${esc(n)}</code>`).join(", ")}${u.yields.why === "peer" ? "'s peer range" : ": they break together"}, left out` : "untested"}${u.yields?.was ? ` · re-picked from ${esc(u.yields.was)} to fit ${u.yields.to.map((n) => `<code>${esc(n)}</code>`).join(", ")}` : ""}${dig ? (dig.taken ? " · on the branch" : dig.note ? ` · ${esc(dig.note)}` : !dig.take ? " · not taken" : "") : ""}${u.chain?.length ? ` · ${u.chain.map((c) => `<span title="${esc(DEP_STEPS[c.step][1])}: ${c.ok ? "worked" : esc(c.note ?? "didn't work")}${c.usd ? ` ($${c.usd.toFixed(2)})` : ""}">${DEP_STEPS[c.step][0]}${c.ok ? "✓" : c.note ? "–" : "✗"}</span>`).join(" ")}${u.chain.some((c) => c.ok) ? "" : " gave up"}` : ""}</span></span>${u.out ? `<pre>${esc(u.out)}</pre>` : ""}`;
 const views = {
   async home() {
     ctx = { view: "home" };
@@ -3308,10 +3351,13 @@ const views = {
         <div class="row" title="Over one update's whole chain: test runs and agent tries, wall-clock minutes, and dollars of AI (claude reports its cost; pi and opencode don't, so they aren't counted)">at most <input name="chain_tries" aria-label="chain tries" type="number" min="1" max="20" value="${s.chain_tries}" style="width:3em"> tries,
           <input name="chain_minutes" aria-label="chain minutes" type="number" min="1" max="120" value="${s.chain_minutes}" style="width:3.5em"> min, $<input name="chain_usd" aria-label="chain dollar cap" type="number" min="0" max="50" step="0.5" value="${s.chain_usd}" style="width:3.5em"> of AI</div>
         <input name="held" placeholder="held back: vite@6.0.0" aria-label="releases held back" value="${esc(s.held.join(", "))}">
+        <div class="row" title="In a clash (peer ranges, or updates that pass alone but not together), a higher package keeps its target and a lower one gives way. Unranked ones work as before. Drag to reorder.">in a clash, keep first: <ol class="rank" id="deps-rank"></ol>
+          <input id="deps-rank-add" list="deps-rank-names" placeholder="+ package" aria-label="rank a package" style="width:9em"><datalist id="deps-rank-names">${[...new Set((rep?.updates ?? []).map((u) => u.name))].map((n) => `<option value="${esc(n)}">`).join("")}</datalist></div>
         <div class="row" title="Future releases to watch for and try when they're out, past the level and the never list: the next major, a dist-tag (beta, next, rc) or an exact version. 🧺 takes one onto the branch once its tests pass">🪏 <span class="chain" id="deps-digs"></span><input id="dig-add" placeholder="dig: vite@major, react@beta" aria-label="add a dig" style="flex:1;min-width:10em"></div>
-        <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deps-run"${d.running ? " disabled" : ""}>${icon("refresh-cw")}${d.running ? "Checking…" : "Check now"}</button></div>
+        <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deps-run"${d.running ? " disabled" : ""}>${icon("refresh-cw")}${d.running ? "Checking…" : "Check now"}</button>
+          <button class="btn" type="button" id="deps-run-once" title="Check now with this ranking, once: bring these up and solve around them, without saving it" aria-label="check once with this ranking"${d.running ? " disabled" : ""}>${icon("list-ordered")}</button></div>
       </form>
-      ${rep ? `<div class="run"><span class="st">last checked ${new Date(rep.at).toLocaleString()} · ${rep.checked} package${rep.checked === 1 ? "" : "s"}</span>
+      ${rep ? `<div class="run"><span class="st">last checked ${new Date(rep.at).toLocaleString()} · ${rep.checked} package${rep.checked === 1 ? "" : "s"}${rep.rank?.length ? ` · ranked ${rep.rank.map(esc).join(" › ")}${rep.once ? " (this run only)" : ""}` : ""}</span>
         ${rep.updates.map((u) => depUpdate(u)).join("")}
         ${(rep.digs ?? []).map((g) => g.update ? depUpdate(g.update, g) : `<span>🪏 <code>${esc(g.name)}</code> <span class="muted">${esc(g.target)} · ${g.status === "in" ? `${esc(g.version)} is in the range already` : g.status === "held" ? `${esc(g.version)} is out, held back` : g.note ? esc(g.note) : "not out yet, watching"}</span></span>`).join("")}
         ${(rep.exposed ?? []).map((x) => `<span><b class="vuln">exposed</b> <code>${esc(x.name)}</code> ${esc(x.version)} <span class="muted">${x.ids.map(esc).join(", ")} · no update here fixes it</span></span>`).join("")}
@@ -3333,6 +3379,33 @@ const views = {
       box.querySelectorAll("[data-up]").forEach((b) => b.addEventListener("click", () => { const i = chain.indexOf(b.dataset.up); chain.splice(i - 1, 0, ...chain.splice(i, 1)); drawChain(); }));
     };
     drawChain();
+    // The ranking: packages the owner cares about most, highest first. Drag one to move it; ‹ moves it up, ✕ drops it.
+    const rank = [...s.rank];
+    let dragged = null;
+    const drawRank = () => {
+      const box = $("#deps-rank");
+      box.innerHTML = rank.map((n, i) => `<li draggable="true" data-rank="${esc(n)}" title="${esc(n)}"><sup>${i + 1}</sup>${pkgIcon(n)}<span>${esc(n)}</span>${i ? `<button type="button" data-rank-up="${i}" title="higher" aria-label="${esc(n)}: higher">‹</button>` : ""}<button type="button" data-rank-drop="${i}" title="unrank" aria-label="unrank ${esc(n)}">✕</button></li>`).join("");
+      box.querySelectorAll("[data-rank-up]").forEach((b) => b.addEventListener("click", () => { const i = +b.dataset.rankUp; rank.splice(i - 1, 0, ...rank.splice(i, 1)); drawRank(); }));
+      box.querySelectorAll("[data-rank-drop]").forEach((b) => b.addEventListener("click", () => { rank.splice(+b.dataset.rankDrop, 1); drawRank(); }));
+      box.querySelectorAll("li").forEach((li) => {
+        li.addEventListener("dragstart", (e) => { dragged = li.dataset.rank; e.dataTransfer.effectAllowed = "move"; });
+        li.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          const to = rank.indexOf(li.dataset.rank), from = rank.indexOf(dragged);
+          if (from < 0 || to === from) return;
+          rank.splice(to, 0, ...rank.splice(from, 1)); drawRank();
+        });
+        li.addEventListener("dragend", () => { dragged = null; });
+      });
+    };
+    drawRank();
+    $("#deps-rank-add").addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const n = e.target.value.trim();
+      if (n && !rank.includes(n)) { rank.push(n); drawRank(); }
+      e.target.value = "";
+    });
     // 🪏 Digs: a chip each; 🧺 toggles taking it when green, × drops it. Enter (or Save) adds what's typed.
     const digs = s.digs.map((g) => ({ ...g }));
     const drawDigs = () => {
@@ -3354,15 +3427,17 @@ const views = {
     $("#dig-add").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addDigs(); } });
     $("#deps-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target; addDigs();
-      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, preview: f.preview.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value, digs }, "PUT"); toast("Saved"); }
+      try { await api(base, { on: f.on.checked, every_hours: +f.every_hours.value, max_level: f.max_level.value, min_age_days: +f.min_age_days.value, ignore: f.ignore.value, run_tests: f.run_tests.checked, preview: f.preview.checked, fix_with: f.fix_with.value || null, fix_tries: +f.fix_tries.value, on_fail: chain, chain_tries: +f.chain_tries.value, chain_minutes: +f.chain_minutes.value, chain_usd: +f.chain_usd.value, held: f.held.value, rank, digs }, "PUT"); toast("Saved"); }
       catch (err) { toast(err.message); }
     });
-    $("#deps-run").addEventListener("click", async () => {
-      $("#deps-run").disabled = true; $("#deps-run").textContent = "Checking…";
-      try { await api(`${base}/run`, {}); } catch (err) { toast(err.message); }
+    const runNow = async (body) => {
+      $("#deps-run").disabled = $("#deps-run-once").disabled = true; $("#deps-run").textContent = "Checking…";
+      try { await api(`${base}/run`, body); } catch (err) { toast(err.message); }
       for (let i = 0; i < 1200 && (await api(base).catch(() => ({}))).running; i++) await new Promise((r) => setTimeout(r, 1000));
       route();
-    });
+    };
+    $("#deps-run-once").addEventListener("click", () => runNow({ rank }));
+    $("#deps-run").addEventListener("click", () => runNow({}));
     icons();
   },
   /** Deploy for real: the same steps as a preview, minus the teardown, to the stage the owner picks. And the log of every deploy. */
@@ -5051,6 +5126,14 @@ const LOGOS = {
   "React Router": "M12.118 5.466a2.306 2.306 0 00-.623.08c-.278.067-.702.332-.953.583-.41.423-.49.609-.662 1.469-.08.423.41 1.43.847 1.734.45.317 1.085.502 2.065.608 1.429.16 1.84.636 1.84 2.197 0 1.377-.385 1.747-1.96 1.906-1.707.172-2.58.834-2.765 2.117-.106.781.41 1.76 1.125 2.091 1.627.768 3.15-.198 3.467-2.196.211-1.284.622-1.642 1.998-1.747 1.588-.133 2.409-.675 2.713-1.787.278-1.02-.304-2.157-1.297-2.554-.264-.106-.873-.238-1.35-.291-1.495-.16-1.879-.424-2.038-1.39-.225-1.337-.317-1.562-.794-2.09a2.174 2.174 0 00-1.613-.73zm-4.785 4.36a2.145 2.145 0 00-.497.048c-1.469.318-2.17 2.051-1.35 3.295 1.178 1.774 3.944.953 3.97-1.177.012-1.193-.98-2.143-2.123-2.166zM2.089 14.19a2.22 2.22 0 00-.427.052c-2.158.476-2.237 3.626-.106 4.182.53.145.582.145 1.111.013 1.191-.318 1.866-1.456 1.549-2.607-.278-1.02-1.144-1.664-2.127-1.64zm19.824.008c-.233.002-.477.058-.784.162-1.39.477-1.866 2.092-.98 3.336.557.794 1.96 1.058 2.82.516 1.416-.874 1.363-3.057-.093-3.746-.38-.186-.663-.271-.963-.268z",
   "Remix": "M21.511 18.508c.216 2.773.216 4.073.216 5.492H15.31c0-.309.006-.592.011-.878.018-.892.036-1.821-.109-3.698-.19-2.747-1.374-3.358-3.55-3.358H1.574v-5h10.396c2.748 0 4.122-.835 4.122-3.049 0-1.946-1.374-3.125-4.122-3.125H1.573V0h11.541c6.221 0 9.313 2.938 9.313 7.632 0 3.511-2.176 5.8-5.114 6.182 2.48.497 3.93 1.909 4.198 4.694ZM1.573 24v-3.727h6.784c1.133 0 1.379.84 1.379 1.342V24Z",
   "Nuxt": "M13.4642 19.8295h8.9218c.2834 0 .5618-.0723.8072-.2098a1.5899 1.5899 0 0 0 .5908-.5732 1.5293 1.5293 0 0 0 .216-.783 1.529 1.529 0 0 0-.2167-.7828L17.7916 7.4142a1.5904 1.5904 0 0 0-.5907-.573 1.6524 1.6524 0 0 0-.807-.2099c-.2833 0-.5616.0724-.807.2098a1.5904 1.5904 0 0 0-.5907.5731L13.4642 9.99l-2.9954-5.0366a1.5913 1.5913 0 0 0-.591-.573 1.6533 1.6533 0 0 0-.8071-.2098c-.2834 0-.5617.0723-.8072.2097a1.5913 1.5913 0 0 0-.591.573L.2168 17.4808A1.5292 1.5292 0 0 0 0 18.2635c-.0001.2749.0744.545.216.783a1.59 1.59 0 0 0 .5908.5732c.2454.1375.5238.2098.8072.2098h5.6003c2.219 0 3.8554-.9454 4.9813-2.7899l2.7337-4.5922L16.3935 9.99l4.3944 7.382h-5.8586ZM7.123 17.3694l-3.9083-.0009 5.8586-9.8421 2.9232 4.921-1.9572 3.2892c-.7478 1.1967-1.5972 1.6328-2.9163 1.6328z",
+};
+/** npm packages that have a logo above, for the doctor's ranking. */
+const PKG_LOGOS = { react: "React", "react-dom": "React", rwsdk: "RedwoodSDK", vite: "Vite", typescript: "TypeScript", hono: "hono", "@types/bun": "Bun", "bun-types": "Bun",
+  wrangler: "Cloudflare Worker", next: "Next.js", astro: "Astro", "@sveltejs/kit": "SvelteKit", "react-router": "React Router", "@remix-run/react": "Remix", nuxt: "Nuxt", "@tanstack/react-start": "TanStack Start" };
+/** A package's logo when it has one, else its first letter in a box. */
+const pkgIcon = (name) => {
+  const w = PKG_LOGOS[name];
+  return w ? `<svg class="fw" viewBox="0 0 24 24" aria-hidden="true"><path d="${LOGOS[w]}"/></svg>` : `<span class="pkg-letter" aria-hidden="true">${esc(name.replace(/^@[^/]+\//, "")[0] ?? "?")}</span>`;
 };
 /** A fit label ("Vite + React, TypeScript") as logos, each titled with its name; words with no logo stay words. */
 const stackLogos = (label) => label.split(/, | \+ | \/ /).map((w) => LOGOS[w]

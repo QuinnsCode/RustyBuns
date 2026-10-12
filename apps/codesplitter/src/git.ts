@@ -123,7 +123,8 @@ export interface Snapshot {
   base?: TreeReader;
 }
 
-const ZERO = "0".repeat(40);
+/** The hash git uses for "no ref": the old side of a make, the new side of a delete. */
+export const ZERO = "0".repeat(40);
 
 /**
  * Push a commit on `branch` that applies `changes` to whatever the branch
@@ -280,7 +281,37 @@ async function receive(remote: string, auth: Record<string, string>, command: st
   return lines(new Uint8Array(await res.arrayBuffer()));
 }
 
-/** A raw object as another repo holds it: a blob's bytes, or a tree's entries (built back to the same hash). */
+/**
+ * A remote's refs, as its git advertises them: {ref: hash}. Peeled, an annotated
+ * tag is the commit it points at (git's `^{}` line), so every tag names a commit;
+ * unpeeled, it's the tag object, which is what a push to that ref checks against.
+ */
+export async function remoteRefs(remote: string, token: string, peel = true): Promise<Map<string, string>> {
+  const res = await fetch(`${remote}/info/refs?service=git-upload-pack`, { headers: { authorization: `Bearer ${token.split("?")[0]}` } });
+  if (!res.ok) throw new Error(`git: ${res.status} reading refs from ${remote}`);
+  const out = new Map<string, string>();
+  for (const l of lines(new Uint8Array(await res.arrayBuffer()))) {
+    const [hash, ref] = l.split("\0")[0]!.split(" ");
+    if (!hash || !/^[0-9a-f]{40,64}$/.test(hash) || !ref) continue;
+    if (ref.endsWith("^{}")) { if (peel) out.set(ref.slice(0, -3), hash); }
+    else if (!out.has(ref)) out.set(ref, hash);
+  }
+  return out;
+}
+
+/**
+ * Point `ref` at `to` (an object the remote already has), if it's at `from` now:
+ * ZERO for `from` makes it, ZERO for `to` deletes it. No objects go with it, so
+ * a make sends an empty pack and a delete none, as git does. Null when it went,
+ * else the remote's reason.
+ */
+export async function setRef(remote: string, token: string, ref: string, from: string, to: string): Promise<string | null> {
+  const report = await receive(remote, { authorization: `Bearer ${token.split("?")[0]}` }, `${from} ${to} ${ref}`, to === ZERO ? new Uint8Array() : await pack([]));
+  if (report.includes(`ok ${ref}`)) return null;
+  return report.find((l) => l.startsWith(`ng ${ref}`))?.slice(`ng ${ref} `.length) || report.join(" | ") || "the remote didn't say";
+}
+
+/** A raw object as another repo holds it:a blob's bytes, or a tree's entries (built back to the same hash). */
 export type Raw = { type: "blob"; body: Uint8Array } | { type: "tree"; entries: { name: string; mode: string; hash: string; type: string }[] };
 
 export async function rawObj(r: Raw): Promise<Obj> {

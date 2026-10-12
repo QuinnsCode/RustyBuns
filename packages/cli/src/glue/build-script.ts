@@ -13,16 +13,23 @@ export function inferWorkerBuild<F extends string | null = string>(scripts: Reco
     if (!src) continue;
     const kept: string[] = [];
     for (let p of src.split(/\s*&&\s*/).map((p) => p.trim()).filter(Boolean)) {
+      // "<pm> run x" is judged by what x runs
+      const ref = p.match(/^(?:pnpm|npm|bun|yarn)\s+(?:run\s+)?([\w:.-]+)$/)?.[1];
+      const runs = ref && scripts[ref] && ref !== from ? `${ref} ${scripts[ref]}` : p;
       // drop the deploy itself and deploy-only env checks
-      if (/\bwrangler\s+(deploy|publish|versions)\b/.test(p)) continue;
+      if (/\bwrangler\s+(deploy|publish|versions)\b/.test(runs) || (ref && /^deploy\b/.test(ref))) continue;
       if (/ensure-deploy-env|ensure-env\b/.test(p)) continue;
       if (/\bclean(:\w+)?\b/.test(p) && /^(pnpm|npm|bun|yarn)\b/.test(p)) continue;   // cache cleans are not part of a build
+      // migrations change a database (often the remote one); checks only gate a release
+      if (/\bmigrat(e|ions)\b|\bdrizzle-kit\s+(generate|push|migrate)\b/.test(runs)) continue;
+      if (/^(check|test|lint|typecheck|types|format)(:|$)/.test(ref ?? "") || /^(eslint|prettier|biome|vitest|jest)\b/.test(p)) continue;
       // inline "<pm> run build" to the actual build script so the command is pm-agnostic
       const m = p.match(/^(?:(\w+=\S+\s+)+)?(?:pnpm|npm|bun|yarn)\s+(?:run\s+)?build$/);
       if (m && scripts["build"]) p = (m[0].match(/^(?:\w+=\S+\s+)+/)?.[0] ?? "") + scripts["build"];
       kept.push(p);
     }
-    if (kept.length) return { build: kept.join(" && "), from };
+    // a release that never runs a build (node scripts/release.mjs) says nothing about the build
+    if (kept.length && (fallback === null || kept.some((p) => /(?:^|\s)(?:vite:)?build\b/.test(p)))) return { build: kept.join(" && "), from };
   }
   return { build: fallback, from: "default" };
 }

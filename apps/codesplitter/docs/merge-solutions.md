@@ -182,7 +182,8 @@ For the 3 D hunks here, every right answer can be checked by a build or a test. 
 
 ## 7. Found along the way
 
-- **main's `src/features.json` didn't parse.** #884's squash merge committed `<<<<<<< HEAD`, so the home page's feature strip fell back to `[]`. This PR fixes it with the deterministic answer: both of main's sentences, the dig sentence first. The guard against it recurring is part of the second next step below.
+- **main's `src/features.json` didn't parse.** #884's squash merge committed `<<<<<<< HEAD`, so the home page's feature strip fell back to `[]`. This PR first fixed it with the deterministic answer: both of main's sentences, the dig sentence first. main has since fixed it the same way, so the PR no longer changes the file. The guard against it recurring is part of the second next step below.
+- **The `doctor` line conflicted again after #886 merged.** It's one line in `features.json`, and every doctor feature adds a sentence to it. #886 added "Rank the packages…", and #893 (and this PR) then conflicted on the same line a second time, although neither touched what the other added. A single-line registry entry that two PRs both extend conflicts every time. One entry per sentence, or a generated file (next step 3), would avoid it.
 - **`migrations/0069_*` will clash** once #886 lands. `test/migrations.test.ts` catches it, so #886 has to renumber.
 
 ## Next steps

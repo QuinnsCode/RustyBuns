@@ -11,6 +11,14 @@ export class UsageError extends Schema.TaggedError<UsageError>()("UsageError", {
 /** rustybuns.config.ts is missing, doesn't load, or doesn't export a config. */
 export class ConfigLoadFailed extends Schema.TaggedError<ConfigLoadFailed>()("ConfigLoadFailed", { message: Schema.String }) {}
 
+/** plan/deploy refused to go ahead (a guard, or no plan on record). Exits 2: nothing ran. */
+export class DeployRefused extends Schema.TaggedError<DeployRefused>()("DeployRefused", { message: Schema.String, exitCode: Schema.optional(Schema.Number) }) {}
+
+/** alchemy itself exited non-zero. Its own output is above; this is the one line that says so. */
+export class AlchemyFailed extends Schema.TaggedError<AlchemyFailed>()("AlchemyFailed", { sub: Schema.String, exitCode: Schema.Number }) {
+  override get message() { return `alchemy ${this.sub} exited ${this.exitCode} (its output is above)`; }
+}
+
 const BUGS = [TypeError, ReferenceError, RangeError];
 
 /** Where an error was thrown: the first stack frame outside node_modules, relative to `cwd`. */
@@ -25,8 +33,8 @@ export function throwSite(e: Error, cwd = process.cwd()): string | null {
 /** The text and exit code for whatever reached the top. */
 export function renderError(e: unknown, cwd = process.cwd()): { text: string; code: number } {
   if (e && typeof e === "object" && typeof (e as { _tag?: unknown })._tag === "string") {
-    const t = e as { _tag: string; message?: string };
-    return { text: `✗ [${t._tag}] ${t.message ?? ""}`, code: t._tag === "UsageError" ? 2 : 1 };
+    const t = e as { _tag: string; message?: string; exitCode?: number };
+    return { text: `✗ [${t._tag}] ${t.message ?? ""}`, code: t.exitCode ?? (t._tag === "UsageError" || t._tag === "DeployRefused" ? 2 : 1) };
   }
   if (e instanceof Error && BUGS.some((B) => e instanceof B)) {
     const at = throwSite(e, cwd);
