@@ -5,8 +5,10 @@ import * as THREE from "three";
 import { LEVELS, placeLevel, type LevelDef } from "../levels/levels.ts";
 import { groundAt, parsePlace } from "../levels/place.ts";
 import type { ZoneData } from "../sim/terrain.ts";
-import { Game, MAX_HP, type Input } from "../sim/game.ts";
+import { Game, scopeSway, stanceOf, type GameEvent, type Input } from "../sim/game.ts";
+import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
+import { FIELD, place, play, VOICES } from "./audio.ts";
 import { buildWorld, type World } from "./scene.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -36,9 +38,10 @@ const list = $("levels");
 for (const def of LEVELS) {
   const b = document.createElement("button");
   b.className = "level";
-  b.innerHTML = `<b></b><span></span><code></code>`;
+  b.innerHTML = `<b></b><span></span><code></code><em></em>`;
   b.querySelector("b")!.textContent = def.name;
   b.querySelector("span")!.textContent = def.blurb;
+  b.querySelector("em")!.textContent = briefing(missionFor(def.id));
   b.querySelector("code")!.textContent = `${def.repo.name}@${def.repo.ref}`;
   b.onclick = () => start(def);
   list.append(b);
@@ -83,15 +86,17 @@ $("place").onsubmit = async (e) => {
 };
 
 function start(def: LevelDef) {
-  const game = Game.fromRepo(def.ground(), def.repo, def.seed);
+  const mission = missionFor(def.id);
+  const game = Game.fromRepo(def.ground(), def.repo, def.seed, mission);
   const world = buildWorld(game.map);
   current = { def, game, world, started: performance.now() };
-  look.yaw = game.map.spawn.yaw, look.pitch = -0.05;
+  look.yaw = game.map.spawn.yaw, look.pitch = -0.05, prone = false;
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = false;
   $("level-name").textContent = def.name;
   $("repo").textContent = `${def.repo.name}@${def.repo.ref}`;
   $("feed").innerHTML = "";
   feed(`checked out ${def.repo.name}. ${game.map.compounds.length} folders in conflict.`);
+  banner(briefing(mission));
   lock();
 }
 
@@ -107,12 +112,15 @@ $("back").onclick = toMenu;
 
 const keys = new Set<string>();
 const look = { yaw: 0, pitch: 0 };
-let fire = false, zoom = false, jump = false, roll = false, pick: WeaponId | undefined;
+let fire = false, zoom = false, jump = false, roll = false, prone = false, pick: WeaponId | undefined;
 
 window.addEventListener("keydown", (e) => {
   if (!current) return;
   keys.add(e.code);
-  if (e.code === "Space") jump = true, e.preventDefault();
+  if (e.code === "Space") jump = true, prone = false, e.preventDefault();
+  // Z drops you prone and gets you up again; crouching or jumping gets you up too.
+  if (e.code === "KeyZ" && !e.repeat) prone = !prone;
+  if (e.code === "KeyC" || e.code === "ControlLeft") prone = false;
   if (e.code === "ShiftLeft" || e.code === "ShiftRight") roll = true;
   const n = Number(e.key);
   if (n >= 1 && n <= ORDER.length) pick = ORDER[n - 1];
@@ -170,10 +178,14 @@ function aimPoint(game: Game, world: World): { point: THREE.Vector3; path: strin
 
 function placeCamera(game: Game) {
   const you = game.you();
-  const fx = -Math.sin(look.yaw), fz = -Math.cos(look.yaw), cp = Math.cos(look.pitch), sp = Math.sin(look.pitch);
+
   const sniping = zoom && you.weapon === "rebase";
+  // Down the scope the sight wanders: less crouched, least lying down.
+  const sw = sniping ? scopeSway(game.time, stanceOf(you)) : { yaw: 0, pitch: 0 };
+  const yaw = look.yaw + sw.yaw, pitch = look.pitch + sw.pitch;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   const back = sniping ? 0.4 : 6, side = sniping ? 0.35 : 1.15;
-  const pivot = new THREE.Vector3(you.x - fz * side, you.y + (you.crouch ? 1.3 : 1.75), you.z + fx * side);
+  const pivot = new THREE.Vector3(you.x - fz * side, you.y + (you.prone ? 0.7 : you.crouch ? 1.3 : 1.75), you.z + fx * side);
   camera.position.set(pivot.x - fx * cp * back, pivot.y - sp * back + 0.9, pivot.z - fz * cp * back);
   // Never under the ground.
   const floor = game.terrain.height(camera.position.x, camera.position.z) + 0.4;
@@ -206,16 +218,34 @@ function banner(text: string) {
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
+/** The mission's line in the top bar, and its tooltip. */
+function objective(game: Game): [string, string] {
+  const o = game.objective, merged = `${game.cleared.filter(Boolean).length} / ${game.cleared.length} merged`;
+  if (o.kind === "carry") {
+    // Carrying it: how far to HEAD. Not yet: how far to the commit.
+    const you = game.you(), to = o.carried ? game.map.spawn : o, d = Math.round(Math.hypot(to.x - you.x, to.z - you.z));
+    return [o.carried ? `carrying the commit · ${d} m to HEAD` : `the commit is ${d} m off`, "Bring the commit (the orange diamond) back to HEAD, the dashed ring where you started. Go down and you drop it."];
+  }
+  if (o.kind === "defend") {
+    return [`main ${clock(Math.max(0, o.seconds - o.held))} · overrun ${Math.round((o.overrun / OVERRUN) * 100)}%`, "Hold main, the dashed ring where you started, until the clock runs down. Guards standing in it overwrite it."];
+  }
+  return [merged, "Down every guard in a compound to merge its folder. Merge them all to win."];
+}
+
 function hud(game: Game, aimingAt: string | null) {
   const you = game.you();
-  $("hp").style.width = `${(you.hp / MAX_HP) * 100}%`;
+  $("hp").style.width = `${(you.hp / you.maxHp) * 100}%`;
   $("hp").classList.toggle("low", you.hp < 35);
   $("lives").textContent = "●".repeat(game.lives) + "○".repeat(Math.max(0, 3 - game.lives));
-  const merged = game.cleared.filter(Boolean).length;
-  $("progress").textContent = `${merged} / ${game.cleared.length} merged`;
+  const [line, tip] = objective(game);
+  $("progress").textContent = line;
+  $("progress").title = tip;
   $("clock").textContent = clock(game.time);
+  $("stance").textContent = you.prone ? "prone" : you.crouch ? "crouched" : "";
+  // Weapons you have; git reset --hard only once you've found one.
   $("weapons").innerHTML = ORDER.map((w, i) => {
     const a = you.ammo[w];
+    if (w === "reset" && a === 0) return "";
     return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${i + 1}</kbd><code>${WEAPONS[w].cmd}</code><span>${a < 0 ? "∞" : a}</span></li>`;
   }).join("");
   $("target").textContent = aimingAt ?? "";
@@ -224,11 +254,34 @@ function hud(game: Game, aimingAt: string | null) {
 function results(game: Game) {
   document.exitPointerLock?.();
   const won = game.status === "won";
+  const o = game.objective, spare = `${game.lives} reflog ${game.lives === 1 ? "entry" : "entries"} to spare`;
   $("results-title").textContent = won ? "Merged." : "Merge failed.";
   $("results-body").textContent = won
-    ? `Every conflict in ${current!.def.repo.name} resolved in ${clock(game.time)}, with ${game.lives} reflog ${game.lives === 1 ? "entry" : "entries"} to spare.`
+    ? o.kind === "carry" ? `The commit made it to HEAD in ${clock(game.time)}, with ${spare}.`
+      : o.kind === "defend" && o.held >= o.seconds ? `main held for ${clock(o.held)}, with ${spare}.`
+      : `Every conflict in ${current!.def.repo.name} resolved in ${clock(game.time)}, with ${spare}.`
+    : o.kind === "defend" && o.overrun >= OVERRUN ? `main was overwritten after ${clock(o.held)}.`
     : `Out of reflog. ${game.cleared.filter(Boolean).length} of ${game.cleared.length} folders merged in ${clock(game.time)}.`;
   $("results").hidden = false;
+}
+
+/* ---------------- sound ---------------- */
+
+function sound(game: Game, e: GameEvent) {
+  const you = game.you();
+  const at = (x: number, z: number) => place(x - you.x, z - you.z, look.yaw);
+  if (e.kind === "fire") {
+    const s = game.soldiers[e.id]!, { vol, pan } = at(s.x, s.z);
+    play(VOICES[e.weapon], vol, pan);
+  } else if (e.kind === "boom") {
+    const { vol, pan } = at(e.x, e.z);
+    play(FIELD.boom, vol, pan);
+  } else if (e.kind === "pickup") play(FIELD.pickup);
+  else if (e.kind === "hit" && e.target === 0) play(FIELD.hurt);
+  else if (e.kind === "down") {
+    const s = game.soldiers[e.id]!, { vol, pan } = at(s.x, s.z);
+    play(FIELD.down, vol, pan);
+  }
 }
 
 /* ---------------- loop ---------------- */
@@ -248,7 +301,8 @@ function frame(now: number) {
     right: (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0),
     yaw: look.yaw,
     pitch: look.pitch,
-    jump, roll, crouch: keys.has("KeyC") || keys.has("ControlLeft"),
+    jump, roll, crouch: keys.has("KeyC") || keys.has("ControlLeft"), prone,
+    scope: zoom,
     // The commit rifle fires while held; everything else once per click.
     fire: fire && document.pointerLockElement === canvas,
     aim: { x: aim.point.x, y: aim.point.y, z: aim.point.z },
@@ -258,6 +312,7 @@ function frame(now: number) {
   jump = roll = false, pick = undefined;
   const before = game.status;
   for (const e of game.step(dt, input)) {
+    sound(game, e);
     if (e.kind === "boom") world.boom(e.x, e.y, e.z, e.r);
     else if (e.kind === "down" && e.id !== 0) feed(`resolved ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "down") feed("you went down", true);
@@ -265,10 +320,14 @@ function frame(now: number) {
     else if (e.kind === "cleared") {
       const c = game.map.compounds[e.compound]!;
       banner(`${c.folder} merged`);
-      feed(`merged ${c.folder}: +40 hp, more ammo`);
-    } else if (e.kind === "hit" && e.target === 0) $("hud").classList.add("hurt"), setTimeout(() => $("hud").classList.remove("hurt"), 120);
+      feed(`merged ${c.folder}: crates in the yard`);
+    } else if (e.kind === "pickup") feed(e.item === "health" ? "health crate: +40 hp" : e.item === "ammo" ? "ammo crate" : "found git reset --hard (9)", e.item === "reset");
+    else if (e.kind === "blamed") feed(`blamed ${game.soldiers[e.id]!.name}`);
+    else if (e.kind === "reverted") feed(`reverted ${game.soldiers[e.id]!.name}`);
+    else if (e.kind === "objective") banner(e.text), feed(e.text, true);
+    else if (e.kind === "hit" && e.target === 0) $("hud").classList.add("hurt"), setTimeout(() => $("hud").classList.remove("hurt"), 120);
   }
-  world.sync(game.soldiers, game.shots, game.cleared, dt);
+  world.sync(game, dt);
   hud(game, aim.path);
   renderer.render(world.scene, camera);
   if (before === "playing" && game.status !== "playing") results(game);

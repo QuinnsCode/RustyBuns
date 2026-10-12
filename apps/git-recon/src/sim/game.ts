@@ -1,12 +1,14 @@
 // The whole game, with no rendering: a toy-soldier third-person shooter on a codebase.
-// You run, strafe, jump and dive-roll (no damage from direct hits mid-roll) round
-// a repo's compounds and take each one by downing its guards. Clear them all and
-// the level is merged. Go down and you come back from the reflog, three times.
+// You run, strafe, jump, crouch, go prone and dive-roll (no damage from direct hits
+// mid-roll) round a repo's compounds and take each one by downing its guards. The
+// level's mission (missions.ts) says what wins it. Go down and you come back from the
+// reflog, three times. Crates in the field and in cleared yards hold ammo and health.
 //
 // Coordinates as in terrain.ts: x east, z south, y up. Facing: yaw 0 looks
 // along -z; forward is (-sin yaw, -cos yaw).
 
 import { mapRepo, mulberry32, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
+import { BRANCH_RADIUS, HEAD_RADIUS, OVERRUN, type Mission } from "./missions.ts";
 import { CLIFF, type Terrain } from "./terrain.ts";
 import { ORDER, splashDamage, WEAPONS, type WeaponId } from "./weapons.ts";
 
@@ -17,13 +19,24 @@ export interface Brain {
   alert: boolean;
   /** Seconds until it reacts to what it saw. */
   wait: number;
-  /** Seconds since it last saw you. */
+  /** Seconds since it last saw you (or a stash it took for you). */
   lost: number;
-  seen: { x: number; z: number } | null;
+  /** Where it's shooting: you, or the stash it's been fooled by. */
+  seen: { x: number; y: number; z: number } | null;
   strafe: number;
   strafeT: number;
   burst: number;
   think: number;
+  /** A squad's guards either hold the yard or swing round your side. */
+  role: "hold" | "flank";
+  side: number;
+  /** Where it's taking cover, and for how long it stays down there. */
+  cover: { x: number; z: number } | null;
+  coverT: number;
+  /** HP last time it thought: a drop sends it into cover. */
+  lastHp: number;
+  /** Sent at the branch in a defend mission: it goes there, whatever it sees. */
+  raid: boolean;
 }
 
 export interface Soldier {
@@ -35,7 +48,10 @@ export interface Soldier {
   yaw: number;
   pitch: number;
   hp: number;
+  maxHp: number;
   alive: boolean;
+  /** A big compound's heavy: more HP, slower, carries the launcher. */
+  heavy: boolean;
   weapon: WeaponId;
   ammo: Record<WeaponId, number>;
   cd: number;
@@ -45,6 +61,13 @@ export interface Soldier {
   rollDir: { x: number; z: number };
   grounded: boolean;
   crouch: boolean;
+  prone: boolean;
+  /** Looking down the rebase scope: the sight sways. */
+  scoped: boolean;
+  /** Seconds left of a git blame tag: you see it through walls. */
+  tagged: number;
+  /** Where it has been, one sample every TRAIL_EVERY seconds, oldest first: what git revert sends it back to. */
+  trail: { x: number; y: number; z: number }[];
   /** For guards: the compound they hold. */
   compound: number;
   brain: Brain | null;
@@ -59,7 +82,25 @@ export interface Shot {
   vx: number; vy: number; vz: number;
   age: number;
   dead: boolean;
+  /** The soldier a cherry-pick picked. */
+  target?: number;
 }
+
+/** A git stash on the ground: cover you hide behind, and a decoy the guards shoot at. */
+export interface Stash extends Block {
+  id: number;
+  hp: number;
+  /** Seconds before it pops by itself. */
+  ttl: number;
+}
+
+export type PickupKind = "ammo" | "health" | "reset";
+export interface Pickup { id: number; kind: PickupKind; x: number; y: number; z: number }
+
+export type Objective =
+  | { kind: "clear" }
+  | { kind: "carry"; x: number; y: number; z: number; carried: boolean; delivered: boolean }
+  | { kind: "defend"; x: number; z: number; seconds: number; wave: number; held: number; overrun: number; raids: number };
 
 export interface Input {
   /** -1..1: strafe right (+) and forward (+). */
@@ -70,6 +111,9 @@ export interface Input {
   jump: boolean;
   roll: boolean;
   crouch: boolean;
+  prone?: boolean;
+  /** Looking down the rebase scope. */
+  scope?: boolean;
   fire: boolean;
   /** What the crosshair is on; shots go from the muzzle to here. Without it, straight along yaw and pitch. */
   aim?: { x: number; y: number; z: number };
@@ -83,37 +127,65 @@ export type GameEvent =
   | { kind: "down"; id: number; by: number }
   | { kind: "respawn"; lives: number }
   | { kind: "cleared"; compound: number }
+  | { kind: "pickup"; item: PickupKind }
+  | { kind: "blamed"; id: number }
+  | { kind: "reverted"; id: number }
+  | { kind: "stashed"; x: number; y: number; z: number }
+  | { kind: "objective"; text: string }
   | { kind: "won" }
   | { kind: "lost" };
 
-export const RUN = 7.5, CROUCH_SPEED = 3.2, GRAVITY = 26, JUMP = 8.5;
+export const RUN = 7.5, CROUCH_SPEED = 3.2, PRONE_SPEED = 1.5, GRAVITY = 26, JUMP = 8.5;
 export const ROLL_TIME = 0.42, ROLL_SPEED = 12.5, ROLL_COOLDOWN = 0.6;
-export const RADIUS = 0.45, HEIGHT = 1.8, CROUCH_HEIGHT = 1.2, STEP = 0.6;
-export const MAX_HP = 100, LIVES = 3;
+export const RADIUS = 0.45, HEIGHT = 1.8, CROUCH_HEIGHT = 1.2, PRONE_HEIGHT = 0.5, STEP = 0.6;
+export const MAX_HP = 100, HEAVY_HP = 260, LIVES = 3;
 /** How far a guard sees, and how far it strays from home chasing you. */
 export const SIGHT = 55, LEASH = 45;
+/** git revert sends a guard back this many seconds (as far as its trail goes). */
+export const TRAIL_EVERY = 0.25, TRAIL_SECONDS = 3;
+export const STASH_HP = 150, STASH_TTL = 30, STASHES = 2, BLAME_SECONDS = 20;
+/** What a crate gives. */
+export const HEALTH_CRATE = 40;
+export const AMMO_CRATE: Partial<Record<WeaponId, number>> = { push: 2, merge: 2, rebase: 3, cherry: 2, revert: 1, stash: 1, blame: 2 };
+/** Field crates a level scatters, besides the one git reset --hard. */
+export const FIELD_PICKUPS = 6;
 const TICK = 1 / 120;
 
 const fwd = (yaw: number) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
 const yawTo = (dx: number, dz: number) => Math.atan2(-dx, -dz);
 
+export const bodyHeight = (s: Soldier) => (s.prone ? PRONE_HEIGHT : s.crouch ? CROUCH_HEIGHT : HEIGHT);
+
+/** How far the rebase scope wanders off where you point it, in radians of yaw and pitch, at time t. Steadier crouched, steadiest prone. */
+export function scopeSway(t: number, stance: "stand" | "crouch" | "prone"): { yaw: number; pitch: number } {
+  const a = stance === "prone" ? 0.0025 : stance === "crouch" ? 0.006 : 0.013;
+  return { yaw: a * Math.sin(t * 1.3) + a * 0.4 * Math.sin(t * 3.1), pitch: a * 0.7 * Math.sin(t * 1.9 + 1) };
+}
+export const stanceOf = (s: Soldier): "stand" | "crouch" | "prone" => (s.prone ? "prone" : s.crouch ? "crouch" : "stand");
+
 export class Game {
   readonly map: CodeMap;
   readonly terrain: Terrain;
+  readonly mission: Mission;
   readonly soldiers: Soldier[] = [];
   shots: Shot[] = [];
+  stashes: Stash[] = [];
+  pickups: Pickup[] = [];
+  objective: Objective;
   events: GameEvent[] = [];
   time = 0;
   lives = LIVES;
   status: "playing" | "won" | "lost" = "playing";
   readonly cleared: boolean[];
   private rand: () => number;
-  private nextShot = 1;
+  private nextId = 1;
   private acc = 0;
+  private trailT = 0;
 
-  constructor(map: CodeMap, seed = 1) {
+  constructor(map: CodeMap, seed = 1, mission: Mission = { kind: "clear" }) {
     this.map = map;
     this.terrain = map.terrain;
+    this.mission = mission;
     this.rand = mulberry32(seed);
     this.cleared = map.compounds.map(() => false);
     this.soldiers.push(this.soldier("you", "you", map.spawn.x, map.spawn.z, map.spawn.yaw, -1));
@@ -121,15 +193,22 @@ export class Game {
       for (let g = 0; g < c.guards; g++) {
         const a = (g / c.guards) * Math.PI * 2 + this.rand(), d = 2 + this.rand() * 2;
         const s = this.soldier("conflict", `${c.folder} #${g + 1}`, c.x + Math.cos(a) * d, c.z + Math.sin(a) * d, this.rand() * 6.28, ci);
-        // The first guard of a big compound carries a launcher.
-        if (g === 0 && c.guards >= 3) s.ammo.push = 3;
+        // A squad of two or more: every other guard flanks. A big compound's first guard is its heavy.
+        s.brain!.role = g % 2 === 1 ? "flank" : "hold";
+        s.brain!.side = g % 4 === 1 ? 1 : -1;
+        if (g === 0 && c.guards >= 3) {
+          s.heavy = true, s.hp = s.maxHp = HEAVY_HP, s.ammo.push = 4;
+          s.name = `${c.folder} heavy`;
+        }
         this.soldiers.push(s);
       }
     });
+    this.scatterPickups(seed);
+    this.objective = this.brief(mission);
   }
 
-  static fromRepo(ground: Terrain, repo: RepoSnapshot, seed = 1): Game {
-    return new Game(mapRepo(ground, repo, seed), seed);
+  static fromRepo(ground: Terrain, repo: RepoSnapshot, seed = 1, mission?: Mission): Game {
+    return new Game(mapRepo(ground, repo, seed), seed, mission);
   }
 
   you(): Soldier { return this.soldiers[0]!; }
@@ -138,17 +217,58 @@ export class Game {
     const ammo = Object.fromEntries(ORDER.map((w) => [w, team === "you" ? WEAPONS[w].ammo : w === "commit" ? -1 : 0])) as Record<WeaponId, number>;
     return {
       id: this.soldiers.length, team, name, x, y: this.ground(x, z, Infinity), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0,
-      hp: MAX_HP, alive: true, weapon: "commit", ammo, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 }, grounded: true, crouch: false, compound,
-      brain: team === "you" ? null : { home: { x, z }, alert: false, wait: 0, lost: 0, seen: null, strafe: 1, strafeT: 0, burst: 0, think: 0 },
+      hp: MAX_HP, maxHp: MAX_HP, alive: true, heavy: false, weapon: "commit", ammo, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
+      grounded: true, crouch: false, prone: false, scoped: false, tagged: 0, trail: [], compound,
+      brain: team === "you" ? null : {
+        home: { x, z }, alert: false, wait: 0, lost: 0, seen: null, strafe: 1, strafeT: 0, burst: 0, think: 0,
+        role: "hold", side: 1, cover: null, coverT: 0, lastHp: MAX_HP, raid: false,
+      },
     };
+  }
+
+  /** Crates out in the field, beside the field's own crates (the files from elsewhere), on the side facing the start. The farthest holds git reset --hard. */
+  private scatterPickups(seed: number) {
+    const r = mulberry32(seed ^ 0x9e3779b9), { spawn } = this.map;
+    const field = this.map.blocks.filter((b) => b.compound < 0)
+      .map((b) => ({ b, d: Math.hypot(b.x - spawn.x, b.z - spawn.z) }))
+      .sort((a, b) => a.d - b.d);
+    if (!field.length) return;
+    const at = (b: Block) => {
+      const dx = spawn.x - b.x, dz = spawn.z - b.z, d = Math.hypot(dx, dz) || 1, off = Math.max(b.w, b.d) / 2 + 1.2;
+      const x = b.x + (dx / d) * off, z = b.z + (dz / d) * off;
+      return { x, y: this.terrain.height(x, z), z };
+    };
+    const n = Math.min(FIELD_PICKUPS, field.length - 1);
+    for (let i = 0; i < n; i++) {
+      const pick = field[Math.min(field.length - 2, Math.floor(((i + r()) / n) * (field.length - 1)))]!;
+      this.pickups.push({ id: this.nextId++, kind: i % 2 ? "health" : "ammo", ...at(pick.b) });
+    }
+    this.pickups.push({ id: this.nextId++, kind: "reset", ...at(field[field.length - 1]!.b) });
+  }
+
+  private brief(m: Mission): Objective {
+    if (m.kind === "carry") {
+      // The commit sits in the yard of the compound farthest from HEAD.
+      const { spawn } = this.map;
+      const far = [...this.map.compounds].sort((a, b) => Math.hypot(b.x - spawn.x, b.z - spawn.z) - Math.hypot(a.x - spawn.x, a.z - spawn.z))[0];
+      const x = far?.x ?? spawn.x, z = far?.z ?? spawn.z;
+      return { kind: "carry", x, y: this.terrain.height(x, z), z, carried: false, delivered: false };
+    }
+    if (m.kind === "defend") return { kind: "defend", x: this.map.spawn.x, z: this.map.spawn.z, seconds: m.seconds, wave: m.wave, held: 0, overrun: 0, raids: 0 };
+    return { kind: "clear" };
   }
 
   /* ---------------- the world's solids ---------------- */
 
+  /** The files on the ground, and any stashes thrown down among them. */
+  blocks(): Block[] {
+    return this.stashes.length ? [...this.map.blocks, ...this.stashes] : this.map.blocks;
+  }
+
   /** The highest thing to stand on under (x, z) that a body whose feet are at y can step up onto. */
   ground(x: number, z: number, y: number): number {
     let g = this.terrain.height(x, z);
-    for (const b of this.map.blocks) {
+    for (const b of this.blocks()) {
       const top = b.y + b.h;
       if (top <= g || top > y + STEP) continue;
       if (Math.abs(x - b.x) < b.w / 2 + RADIUS * 0.5 && Math.abs(z - b.z) < b.d / 2 + RADIUS * 0.5) g = top;
@@ -158,7 +278,7 @@ export class Game {
 
   /** The block a point is inside, if any. */
   blockAt(x: number, y: number, z: number): Block | null {
-    for (const b of this.map.blocks) {
+    for (const b of this.blocks()) {
       if (y >= b.y - 0.5 && y <= b.y + b.h && Math.abs(x - b.x) <= b.w / 2 && Math.abs(z - b.z) <= b.d / 2) return b;
     }
     return null;
@@ -198,34 +318,56 @@ export class Game {
     for (const s of this.soldiers) if (s.alive) this.move(s, dt);
     this.separate();
     this.fly(dt);
+    this.record(dt);
+    for (const st of this.stashes) st.ttl -= dt;
+    this.stashes = this.stashes.filter((st) => st.hp > 0 && st.ttl > 0);
+    this.collect();
+    this.pursue(dt);
+  }
+
+  private record(dt: number) {
+    this.trailT += dt;
+    if (this.trailT < TRAIL_EVERY) return;
+    this.trailT -= TRAIL_EVERY;
+    const keep = Math.round(TRAIL_SECONDS / TRAIL_EVERY) + 1;
+    for (const s of this.soldiers) if (s.alive && s.team !== "you") {
+      s.trail.push({ x: s.x, y: s.y, z: s.z });
+      if (s.trail.length > keep) s.trail.shift();
+    }
   }
 
   private control(s: Soldier, input: Input, dt: number) {
     s.yaw = input.yaw;
     s.pitch = input.pitch;
-    s.crouch = input.crouch && s.grounded;
+    s.prone = !!input.prone && s.grounded;
+    s.crouch = !s.prone && input.crouch && s.grounded;
+    s.scoped = !!input.scope && s.weapon === "rebase";
     if (input.weapon && s.ammo[input.weapon] !== 0) s.weapon = input.weapon;
     const f = fwd(s.yaw), r = { x: -f.z, z: f.x };
     let mx = f.x * input.forward + r.x * input.right, mz = f.z * input.forward + r.z * input.right;
     const m = Math.hypot(mx, mz);
     if (m > 1) mx /= m, mz /= m;
     if (input.roll && s.grounded && s.roll <= 0 && s.rollCd <= 0) {
-      // Dive the way you're moving, or forward when standing still.
-      const dir = m > 0.1 ? { x: mx / Math.max(m, 1e-6), z: mz / Math.max(m, 1e-6) } : f;
+      // Prone: a log roll to the side (right unless you're pushing left). Otherwise dive the way
+      // you're moving, so strafing out from behind cover goes sideways, or forward standing still.
+      const side = input.right < 0 ? -1 : 1;
+      const dir = s.prone ? { x: r.x * side, z: r.z * side } : m > 0.1 ? { x: mx / Math.max(m, 1e-6), z: mz / Math.max(m, 1e-6) } : f;
       s.roll = ROLL_TIME, s.rollCd = ROLL_TIME + ROLL_COOLDOWN, s.rollDir = dir;
     }
-    this.walk(s, mx, mz, dt, input.forward < 0 ? 0.75 : 1);
-    if (input.jump && s.grounded && s.roll <= 0) s.vy = JUMP, s.grounded = false;
+    const carrying = this.objective.kind === "carry" && this.objective.carried;
+    this.walk(s, mx, mz, dt, (input.forward < 0 ? 0.75 : 1) * (carrying ? 0.85 : 1));
+    if (input.jump && s.grounded && s.roll <= 0 && !s.prone) s.vy = JUMP, s.grounded = false;
     if (input.fire) this.fire(s, input.aim);
   }
 
   /** Steers velocity towards the wished direction; a roll overrides it. */
   private walk(s: Soldier, mx: number, mz: number, dt: number, k = 1) {
     if (s.roll > 0) {
-      s.vx = s.rollDir.x * ROLL_SPEED, s.vz = s.rollDir.z * ROLL_SPEED;
+      const v = s.prone ? ROLL_SPEED * 0.45 : ROLL_SPEED;
+      s.vx = s.rollDir.x * v, s.vz = s.rollDir.z * v;
       return;
     }
-    const top = (s.crouch ? CROUCH_SPEED : RUN) * k, accel = s.grounded ? 60 : 20;
+    const top = (s.prone ? PRONE_SPEED : s.crouch ? CROUCH_SPEED : RUN) * k * (s.heavy ? 0.7 : 1), accel = s.grounded ? 60 : 20;
     const tx = mx * top, tz = mz * top;
     const dx = tx - s.vx, dz = tz - s.vz, d = Math.hypot(dx, dz), a = Math.min(d, accel * dt);
     if (d > 0) s.vx += (dx / d) * a, s.vz += (dz / d) * a;
@@ -235,6 +377,7 @@ export class Game {
     s.cd = Math.max(0, s.cd - dt);
     s.roll = Math.max(0, s.roll - dt);
     s.rollCd = Math.max(0, s.rollCd - dt);
+    s.tagged = Math.max(0, s.tagged - dt);
     const R = this.terrain.R;
     const tryTo = (nx: number, nz: number) => {
       // Cliffs: no walking up ground that rises faster than CLIFF, unless you're already above it.
@@ -262,8 +405,8 @@ export class Game {
   }
 
   private pushOutOfBlocks(s: Soldier) {
-    const h = s.crouch ? CROUCH_HEIGHT : HEIGHT;
-    for (const b of this.map.blocks) {
+    const h = bodyHeight(s);
+    for (const b of this.blocks()) {
       if (s.y >= b.y + b.h - STEP || s.y + h <= b.y) continue;
       const px = Math.max(b.x - b.w / 2, Math.min(s.x, b.x + b.w / 2)), pz = Math.max(b.z - b.d / 2, Math.min(s.z, b.z + b.d / 2));
       const dx = s.x - px, dz = s.z - pz, d = Math.hypot(dx, dz);
@@ -289,10 +432,85 @@ export class Game {
     }
   }
 
+  /* ---------------- pickups and the mission ---------------- */
+
+  private collect() {
+    const you = this.you();
+    if (!you.alive) return;
+    const near = (x: number, y: number, z: number) => Math.hypot(x - you.x, z - you.z) < 1.5 && Math.abs(y - you.y) < 2.2;
+    this.pickups = this.pickups.filter((p) => {
+      if (!near(p.x, p.y, p.z)) return true;
+      if (p.kind === "health") {
+        // A full-health soldier leaves it for later.
+        if (you.hp >= you.maxHp) return true;
+        you.hp = Math.min(you.maxHp, you.hp + HEALTH_CRATE);
+      } else if (p.kind === "ammo") {
+        for (const [w, n] of Object.entries(AMMO_CRATE) as [WeaponId, number][]) you.ammo[w] += n;
+      } else you.ammo.reset++;
+      this.events.push({ kind: "pickup", item: p.kind });
+      return false;
+    });
+    const o = this.objective;
+    if (o.kind === "carry" && !o.carried && near(o.x, o.y, o.z)) {
+      o.carried = true;
+      this.events.push({ kind: "objective", text: "got the commit: carry it to HEAD" });
+    }
+  }
+
+  /** The mission's own clock and win: a carried commit reaching HEAD, a branch held or overrun. */
+  private pursue(dt: number) {
+    if (this.status !== "playing") return;
+    const o = this.objective, you = this.you();
+    if (o.kind === "carry") {
+      if (!o.carried) return;
+      o.x = you.x, o.y = you.y + HEIGHT + 0.4, o.z = you.z;
+      const { spawn } = this.map;
+      if (Math.hypot(you.x - spawn.x, you.z - spawn.z) < HEAD_RADIUS) {
+        o.delivered = true;
+        this.events.push({ kind: "objective", text: "commit landed on HEAD" });
+        this.win();
+      }
+    } else if (o.kind === "defend") {
+      o.held += dt;
+      // A raid every wave seconds, nearest compound first, the first a few seconds in.
+      const due = Math.floor((o.held + o.wave - 5) / o.wave);
+      if (due > o.raids) this.raid(o);
+      for (const g of this.soldiers) if (g.alive && g.team === "conflict" && Math.hypot(g.x - o.x, g.z - o.z) < BRANCH_RADIUS) o.overrun += dt;
+      if (o.overrun >= OVERRUN) return this.lose();
+      if (o.held >= o.seconds) {
+        this.events.push({ kind: "objective", text: "main held" });
+        this.win();
+      }
+    }
+  }
+
+  private raid(o: Extract<Objective, { kind: "defend" }>) {
+    o.raids++;
+    const order = this.map.compounds.map((c, i) => ({ i, d: Math.hypot(c.x - o.x, c.z - o.z) })).filter(({ i }) => !this.cleared[i]).sort((a, b) => a.d - b.d);
+    const next = order[0];
+    if (!next) return;
+    for (const g of this.soldiers) if (g.alive && g.brain && g.compound === next.i && !g.brain.raid) {
+      Object.assign(g.brain, { raid: true, alert: true, wait: 0.5, home: { x: o.x, z: o.z }, cover: null, coverT: 0 });
+    }
+    this.events.push({ kind: "objective", text: `${this.map.compounds[next.i]!.folder} is raiding main` });
+  }
+
+  private win() {
+    if (this.status !== "playing") return;
+    this.status = "won";
+    this.events.push({ kind: "won" });
+  }
+
+  private lose() {
+    if (this.status !== "playing") return;
+    this.status = "lost";
+    this.events.push({ kind: "lost" });
+  }
+
   /* ---------------- shooting ---------------- */
 
   muzzle(s: Soldier) {
-    const f = fwd(s.yaw), eye = s.crouch ? 1.0 : 1.4;
+    const f = fwd(s.yaw), eye = s.prone ? 0.35 : s.crouch ? 1.0 : 1.4;
     // Held at the right hip, a little ahead: the over-the-shoulder camera sees it go.
     return { x: s.x + f.x * 0.5 - f.z * 0.3, y: s.y + eye, z: s.z + f.z * 0.5 + f.x * 0.3 };
   }
@@ -308,19 +526,37 @@ export class Game {
     let dx: number, dy: number, dz: number;
     if (aim) dx = aim.x - m.x, dy = aim.y - m.y, dz = aim.z - m.z;
     else {
-      const f = fwd(s.yaw);
-      dx = f.x * Math.cos(s.pitch), dy = Math.sin(s.pitch), dz = f.z * Math.cos(s.pitch);
+      // No crosshair point: along the facing, with the scope's sway on it.
+      const sw = s.scoped ? scopeSway(this.time, stanceOf(s)) : { yaw: 0, pitch: 0 };
+      const f = fwd(s.yaw + sw.yaw), p = s.pitch + sw.pitch;
+      dx = f.x * Math.cos(p), dy = Math.sin(p), dz = f.z * Math.cos(p);
     }
     const d = Math.hypot(dx, dy, dz) || 1;
-    const spread = w.spread + extraSpread;
+    // Lying down steadies a rifle; crouching, a little.
+    const spread = (w.spread + extraSpread) * (s.prone ? 0.3 : s.crouch ? 0.6 : 1);
     dx = dx / d + (this.rand() - 0.5) * 2 * spread, dy = dy / d + (this.rand() - 0.5) * 2 * spread, dz = dz / d + (this.rand() - 0.5) * 2 * spread;
     // A lob goes up a little more than you aim, so a grenade clears the crate in front of you.
     if (w.gravity > 5) dy += 0.25;
     const n = Math.hypot(dx, dy, dz);
-    this.shots.push({ id: this.nextShot++, owner: s.id, team: s.team, weapon: s.weapon, x: m.x, y: m.y, z: m.z, vx: (dx / n) * w.speed, vy: (dy / n) * w.speed, vz: (dz / n) * w.speed, age: 0, dead: false });
+    const shot: Shot = { id: this.nextId++, owner: s.id, team: s.team, weapon: s.weapon, x: m.x, y: m.y, z: m.z, vx: (dx / n) * w.speed, vy: (dy / n) * w.speed, vz: (dz / n) * w.speed, age: 0, dead: false };
+    if (w.homing > 0) shot.target = this.pickTarget(s, m, dx / n, dy / n, dz / n);
+    this.shots.push(shot);
     s.cd = w.cooldown;
     if (s.ammo[s.weapon]! > 0) s.ammo[s.weapon]!--;
     this.events.push({ kind: "fire", id: s.id, weapon: s.weapon });
+  }
+
+  /** The enemy closest to the line of fire, within 20 degrees of it and 90 m: what a cherry-pick follows. */
+  private pickTarget(s: Soldier, m: { x: number; y: number; z: number }, ux: number, uy: number, uz: number): number | undefined {
+    let best: Soldier | undefined, bestA = 0.35;
+    for (const t of this.soldiers) {
+      if (!t.alive || t.team === s.team) continue;
+      const dx = t.x - m.x, dy = t.y + 1 - m.y, dz = t.z - m.z, d = Math.hypot(dx, dy, dz);
+      if (d > 90 || d < 1e-6) continue;
+      const a = Math.acos(Math.max(-1, Math.min(1, (dx * ux + dy * uy + dz * uz) / d)));
+      if (a < bestA) bestA = a, best = t;
+    }
+    return best?.id;
   }
 
   private fly(dt: number) {
@@ -328,6 +564,14 @@ export class Game {
       const w = WEAPONS[p.weapon];
       p.age += dt;
       p.vy -= w.gravity * dt;
+      const t = p.target !== undefined ? this.soldiers[p.target] : undefined;
+      if (w.homing > 0 && t?.alive) {
+        // Turn towards it, keeping speed.
+        const dx = t.x - p.x, dy = t.y + bodyHeight(t) / 2 - p.y, dz = t.z - p.z, d = Math.hypot(dx, dy, dz) || 1, k = Math.min(1, w.homing * dt);
+        p.vx += ((dx / d) * w.speed - p.vx) * k, p.vy += ((dy / d) * w.speed - p.vy) * k, p.vz += ((dz / d) * w.speed - p.vz) * k;
+        const v = Math.hypot(p.vx, p.vy, p.vz) || 1;
+        p.vx *= w.speed / v, p.vy *= w.speed / v, p.vz *= w.speed / v;
+      }
       const len = Math.hypot(p.vx, p.vy, p.vz) * dt, n = Math.max(1, Math.ceil(len / 0.5));
       for (let i = 0; i < n && !p.dead; i++) {
         const ox = p.x, oy = p.y, oz = p.z;
@@ -339,8 +583,12 @@ export class Game {
         }
         const g = this.terrain.height(p.x, p.z), b = this.blockAt(p.x, p.y, p.z);
         if (p.y <= g || b) {
-          if (w.impact) this.land(p, null);
-          else {
+          if (b && "hp" in b) (b as Stash).hp -= w.damage;
+          if (w.impact) {
+            // A stash lands on top of what it hit, not inside it.
+            if (w.effect === "stash") p.x = ox, p.y = oy, p.z = oz;
+            this.land(p, null);
+          } else {
             // Bounce: back out, lose most of the speed, flip the way it came in.
             p.x = ox, p.y = oy, p.z = oz;
             if (b) p.vx *= -0.4, p.vz *= -0.4, p.vy *= 0.5;
@@ -350,7 +598,7 @@ export class Game {
         }
       }
       if (!p.dead && (p.age >= w.life || Math.hypot(p.x, p.z) > this.terrain.R + 20)) {
-        if (w.splash > 0) this.land(p, null);
+        if (w.splash > 0 || w.effect === "stash") this.land(p, null);
         else p.dead = true;
       }
     }
@@ -363,8 +611,7 @@ export class Game {
       if (!s.alive || s.team === p.team) continue;
       // Rolling: direct hits pass through.
       if (s.roll > 0) continue;
-      const h = s.crouch ? CROUCH_HEIGHT : HEIGHT;
-      if (p.y < s.y || p.y > s.y + h) continue;
+      if (p.y < s.y || p.y > s.y + bodyHeight(s)) continue;
       if (Math.hypot(p.x - s.x, p.z - s.z) < RADIUS + 0.1) return s;
     }
     return null;
@@ -373,13 +620,18 @@ export class Game {
   private land(p: Shot, direct: Soldier | null) {
     p.dead = true;
     const w = WEAPONS[p.weapon];
+    if (w.effect === "stash") return this.stash(p.x, p.z, p.y);
     if (w.splash > 0) {
       this.events.push({ kind: "boom", x: p.x, y: p.y, z: p.z, r: w.splash });
+      for (const st of this.stashes) {
+        const d = Math.hypot(st.x - p.x, st.y + st.h / 2 - p.y, st.z - p.z);
+        st.hp -= splashDamage(w, d);
+      }
       for (const s of this.soldiers) {
         if (!s.alive) continue;
         const own = s.id === p.owner;
-        // No friendly fire, but your own blast still hurts you (half), the toy-soldier rule.
-        if (s.team === p.team && !own) continue;
+        // No friendly fire, but your own blast still hurts you (half), the toy-soldier rule. Except a reset: it only wipes the yard.
+        if (s.team === p.team && (!own || w.effect === "reset")) continue;
         const dx = s.x - p.x, dy = s.y + 0.9 - p.y, dz = s.z - p.z, d = Math.hypot(dx, dy, dz);
         const dmg = splashDamage(w, d) * (own ? 0.5 : 1) * (s.roll > 0 ? 0.5 : 1);
         if (dmg <= 0) continue;
@@ -387,18 +639,43 @@ export class Game {
         s.vx += (dx / hd) * k, s.vz += (dz / hd) * k, s.vy += k * 0.45, s.grounded = false;
         this.hurt(s, dmg, p.owner);
       }
+      if (w.effect === "reset") {
+        // git reset --hard: the yard it lands in is wiped, every guard of it down wherever they stand.
+        const ci = this.map.compounds.findIndex((c) => Math.hypot(c.x - p.x, c.z - p.z) < c.r + 2);
+        if (ci >= 0) for (const g of this.soldiers) if (g.alive && g.brain && g.compound === ci) this.hurt(g, g.hp, p.owner);
+      }
     } else if (direct) {
       const v = Math.hypot(p.vx, p.vz) || 1;
       direct.vx += (p.vx / v) * w.knock, direct.vz += (p.vz / v) * w.knock;
+      if (w.effect === "blame") direct.tagged = BLAME_SECONDS, this.events.push({ kind: "blamed", id: direct.id });
+      if (w.effect === "revert") this.revert(direct);
       this.hurt(direct, w.damage, p.owner);
     }
+  }
+
+  /** Throws a stash down where a round landed: a box to crouch behind. Only the newest few stay. */
+  private stash(x: number, z: number, y: number) {
+    const base = this.ground(x, z, y + 1);
+    this.stashes.push({ id: this.nextId++, path: `stash@{${this.stashes.length}}`, lines: 0, compound: -1, x, z, y: base, w: 1.6, d: 1.6, h: 1.3, hp: STASH_HP, ttl: STASH_TTL });
+    while (this.stashes.length > STASHES) this.stashes.shift();
+    this.events.push({ kind: "stashed", x, y: base, z });
+  }
+
+  /** git revert: back where it was TRAIL_SECONDS ago, and it has forgotten you. */
+  private revert(s: Soldier) {
+    const back = s.trail[0];
+    if (back) Object.assign(s, { x: back.x, y: back.y, z: back.z, vx: 0, vy: 0, vz: 0 });
+    s.trail = back ? [back] : [];
+    if (s.brain) Object.assign(s.brain, { alert: false, seen: null, wait: 1.5, cover: null, coverT: 0, burst: 0 });
+    this.events.push({ kind: "reverted", id: s.id });
   }
 
   hurt(s: Soldier, damage: number, by: number) {
     if (!s.alive || this.status !== "playing") return;
     s.hp -= damage;
     this.events.push({ kind: "hit", target: s.id, by, damage });
-    if (s.brain) this.alarm(s.compound);
+    // A revert's victim has forgotten you; anything else alarms its yard.
+    if (s.brain && s.brain.wait < 1) this.alarm(s.compound);
     if (s.hp > 0) return;
     s.alive = false, s.hp = 0;
     this.events.push({ kind: "down", id: s.id, by });
@@ -408,30 +685,34 @@ export class Game {
 
   private respawn(s: Soldier) {
     this.lives--;
+    // A carried commit drops where you fell.
+    const o = this.objective;
+    if (o.kind === "carry" && o.carried) {
+      o.carried = false, o.x = s.x, o.y = this.ground(s.x, s.z, s.y + 1), o.z = s.z;
+      this.events.push({ kind: "objective", text: "dropped the commit" });
+    }
     if (this.lives < 0) {
-      this.lives = 0, this.status = "lost";
-      this.events.push({ kind: "lost" });
-      return;
+      this.lives = 0;
+      return this.lose();
     }
     const { x, z, yaw } = this.map.spawn;
-    Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: MAX_HP, alive: true, roll: 0, cd: 0.5 });
-    // Guards lose track of you.
-    for (const g of this.soldiers) if (g.brain) g.brain.alert = false, g.brain.seen = null;
+    Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, alive: true, roll: 0, cd: 0.5 });
+    // Guards lose track of you (raiders keep coming).
+    for (const g of this.soldiers) if (g.brain && !g.brain.raid) g.brain.alert = false, g.brain.seen = null;
     this.events.push({ kind: "respawn", lives: this.lives });
   }
 
   private checkCleared(ci: number) {
-    if (this.cleared[ci] || this.soldiers.some((g) => g.compound === ci && g.alive)) return;
+    if (ci < 0 || this.cleared[ci] || this.soldiers.some((g) => g.compound === ci && g.alive)) return;
     this.cleared[ci] = true;
-    // Taking a compound resupplies you, like a crate in the yard.
-    const you = this.you();
-    you.hp = Math.min(MAX_HP, you.hp + 40);
-    you.ammo.push += 2, you.ammo.merge += 2, you.ammo.rebase += 3;
-    this.events.push({ kind: "cleared", compound: ci });
-    if (this.cleared.every(Boolean)) {
-      this.status = "won";
-      this.events.push({ kind: "won" });
+    // A taken yard leaves its crates behind: health and ammo.
+    const c = this.map.compounds[ci]!;
+    for (const [kind, dx] of [["health", -1.5], ["ammo", 1.5]] as const) {
+      this.pickups.push({ id: this.nextId++, kind, x: c.x + dx, y: this.ground(c.x + dx, c.z, Infinity), z: c.z });
     }
+    this.events.push({ kind: "cleared", compound: ci });
+    // Every compound taken: the repo is merged, whatever the mission, unless a commit still has to get home.
+    if (this.cleared.every(Boolean) && this.objective.kind !== "carry") this.win();
   }
 
   private alarm(ci: number) {
@@ -442,22 +723,56 @@ export class Game {
 
   /* ---------------- guards ---------------- */
 
+  /** Where to crouch behind a block, out of sight of a threat: the far side of the nearest one within 12 m and the leash. */
+  coverFrom(s: Soldier, threat: { x: number; z: number }): { x: number; z: number } | null {
+    let best: { x: number; z: number } | null = null, bestD = 12;
+    const home = s.brain?.home;
+    for (const b of this.blocks()) {
+      if (b.h < CROUCH_HEIGHT) continue;
+      const dx = b.x - threat.x, dz = b.z - threat.z, d = Math.hypot(dx, dz) || 1, off = Math.max(b.w, b.d) / 2 + RADIUS + 0.4;
+      const x = b.x + (dx / d) * off, z = b.z + (dz / d) * off, from = Math.hypot(x - s.x, z - s.z);
+      if (from >= bestD || (home && Math.hypot(x - home.x, z - home.z) > LEASH)) continue;
+      // Behind it means it's between you and the threat.
+      if (Math.hypot(x - threat.x, z - threat.z) < d) continue;
+      best = { x, z }, bestD = from;
+    }
+    return best;
+  }
+
+  /** What a guard can see to shoot at: you, or a stash it takes for you (the nearer, if it sees both). */
+  private spot(s: Soldier): { x: number; y: number; z: number } | null {
+    const you = this.you(), eye = s.y + 1.5;
+    const reach = SIGHT * (you.prone ? 0.4 : you.crouch ? 0.6 : 1);
+    const dYou = Math.hypot(you.x - s.x, you.z - s.z);
+    const sees = you.alive && dYou < reach && this.clear(s.x, eye, s.z, you.x, you.y + bodyHeight(you) * 0.67, you.z);
+    let decoy: Stash | null = null, dDecoy = Infinity;
+    for (const st of this.stashes) {
+      const d = Math.hypot(st.x - s.x, st.z - s.z);
+      if (d < SIGHT && d < dDecoy && this.clear(s.x, eye, s.z, st.x, st.y + st.h + 0.4, st.z)) decoy = st, dDecoy = d;
+    }
+    if (decoy && (!sees || dDecoy < dYou + 10)) return { x: decoy.x, y: decoy.y + decoy.h * 0.6, z: decoy.z };
+    return sees ? { x: you.x, y: you.y + bodyHeight(you) * 0.6, z: you.z } : null;
+  }
+
   private think(s: Soldier, dt: number) {
     const b = s.brain!, you = this.you();
     b.think -= dt;
+    b.coverT = Math.max(0, b.coverT - dt);
     if (b.think <= 0) {
       b.think = 0.2;
-      const d = Math.hypot(you.x - s.x, you.z - s.z);
-      const sees = you.alive && d < SIGHT * (you.crouch ? 0.6 : 1) && this.clear(s.x, s.y + 1.5, s.z, you.x, you.y + 1.2, you.z);
-      if (sees) {
+      const seen = this.spot(s);
+      if (seen) {
         if (!b.alert) this.alarm(s.compound);
-        b.seen = { x: you.x, z: you.z }, b.lost = 0;
+        b.seen = seen, b.lost = 0;
       } else b.lost += 0.2;
-      if (b.alert && b.lost > 6) b.alert = false, b.seen = null;
+      if (b.alert && b.lost > 6 && !b.raid) b.alert = false, b.seen = null;
+      // Hit: duck behind something.
+      if (s.hp < b.lastHp && b.alert && b.seen && !b.cover) this.takeCover(s, 1.2);
+      b.lastHp = s.hp;
     }
     let mx = 0, mz = 0;
     const toHome = Math.hypot(b.home.x - s.x, b.home.z - s.z);
-    if (!b.alert || !b.seen) {
+    if (!b.alert || (!b.seen && !b.raid)) {
       // On watch: drift about the yard.
       if (toHome > 3) mx = (b.home.x - s.x) / toHome * 0.4, mz = (b.home.z - s.z) / toHome * 0.4;
       s.crouch = false;
@@ -465,28 +780,64 @@ export class Game {
       return;
     }
     b.wait -= dt;
-    const dx = b.seen.x - s.x, dz = b.seen.z - s.z, d = Math.hypot(dx, dz) || 1;
+    const tgt = b.seen ?? { x: b.home.x, y: 0, z: b.home.z };
+    const dx = tgt.x - s.x, dz = tgt.z - s.z, d = Math.hypot(dx, dz) || 1;
     s.yaw = yawTo(dx, dz);
-    // Keep 12-25 m off, strafing side to side; never stray past the leash.
-    const close = b.lost === 0 ? (d > 25 ? 1 : d < 12 ? -1 : 0) : 1;
+    s.crouch = false;
     b.strafeT -= dt;
     if (b.strafeT <= 0) b.strafe = this.rand() < 0.5 ? -1 : 1, b.strafeT = 0.8 + this.rand() * 1.4;
-    mx = (dx / d) * close + (-dz / d) * b.strafe * 0.7;
-    mz = (dz / d) * close + (dx / d) * b.strafe * 0.7;
-    if (toHome > LEASH && (mx * (b.home.x - s.x) + mz * (b.home.z - s.z)) < 0) mx = (b.home.x - s.x) / toHome, mz = (b.home.z - s.z) / toHome;
+    const to = (x: number, z: number, k = 1) => {
+      const ex = x - s.x, ez = z - s.z, e = Math.hypot(ex, ez);
+      if (e > 0.6) mx = (ex / e) * k, mz = (ez / e) * k;
+      return e;
+    };
+    if (b.cover && b.coverT > 0) {
+      // In cover: get there and crouch till the reload's done.
+      if (to(b.cover.x, b.cover.z) < 0.8) s.crouch = true;
+    } else if (b.raid) {
+      // Raiders head for the branch, shooting you if they see you on the way.
+      to(b.home.x, b.home.z);
+    } else {
+      b.cover = null;
+      // Keep 12-25 m off, strafing side to side. Flankers swing out round your side first.
+      const close = b.lost === 0 ? (d > 25 ? 1 : d < 12 ? -1 : 0) : 1;
+      mx = (dx / d) * close + (-dz / d) * b.strafe * 0.7;
+      mz = (dz / d) * close + (dx / d) * b.strafe * 0.7;
+      if (b.role === "flank" && b.lost === 0) {
+        const p = this.flankPoint(s);
+        if (Math.hypot(p.x - s.x, p.z - s.z) > 3) to(p.x, p.z);
+      }
+      if (toHome > LEASH && (mx * (b.home.x - s.x) + mz * (b.home.z - s.z)) < 0) mx = (b.home.x - s.x) / toHome, mz = (b.home.z - s.z) / toHome;
+    }
     this.walk(s, mx * 0.8, mz * 0.8, dt);
-    if (b.wait > 0 || b.lost > 0 || !you.alive) return;
-    // Bursts of commits; a launcher round when you're far enough off not to catch the blast.
-    const aim = { x: you.x, y: you.y + 1.1, z: you.z };
-    if (s.ammo.push > 0 && d > 12 && s.cd <= 0 && this.rand() < 0.01) s.weapon = "push";
+    if (b.wait > 0 || b.lost > 0 || !b.seen || !you.alive || b.coverT > 0) return;
+    // Bursts of commits; a launcher round when the target's far enough off not to catch the blast.
+    const aim = b.seen;
+    if (s.ammo.push > 0 && d > 12 && s.cd <= 0 && this.rand() < (s.heavy ? 0.03 : 0.01)) s.weapon = "push";
     else if (s.ammo.push === 0 || d <= 12) s.weapon = "commit";
     if (s.cd <= 0) {
-      if (b.burst >= 5) {
+      if (b.burst >= (s.heavy ? 9 : 5)) {
         b.burst = 0, s.cd = 0.9 + this.rand() * 0.6;
+        // Reloading: half the time, from behind something.
+        if (this.rand() < 0.5) this.takeCover(s, s.cd + 0.6);
         return;
       }
       this.fire(s, aim, 0.05 + Math.min(0.05, d / 1000));
       b.burst++;
     }
+  }
+
+  private takeCover(s: Soldier, seconds: number) {
+    const b = s.brain!;
+    if (!b.seen || b.raid) return;
+    const c = this.coverFrom(s, b.seen);
+    if (c) b.cover = c, b.coverT = seconds;
+  }
+
+  /** Where a flanker heads: off to one side of you, square to the line from you to its yard. */
+  flankPoint(s: Soldier): { x: number; z: number } {
+    const b = s.brain!, t = b.seen ?? this.you();
+    const ux = b.home.x - t.x, uz = b.home.z - t.z, u = Math.hypot(ux, uz) || 1;
+    return { x: t.x + (-uz / u) * b.side * 15, z: t.z + (ux / u) * b.side * 15 };
   }
 }

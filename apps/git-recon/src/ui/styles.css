@@ -46,6 +46,7 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .place-status { margin: 0; min-height: 1.4em; font-size: 13px; color: var(--muted); }
 .place-status.bad { color: var(--accent-ink); }
 .level code { grid-row: 1; grid-column: 2; font-size: 12px; color: var(--accent-ink); }
+.level em { grid-column: 1; font-style: normal; font-size: 12px; color: var(--accent-ink); }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 12px; }
 .keys dt { font-family: var(--mono); }
 .keys dd { margin: 0; color: var(--muted); }
@@ -66,8 +67,10 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .health i { display: block; height: 100%; background: var(--fg); transition: width 0.15s; }
 .health i.low { background: var(--accent); }
 .lives { font-size: 13px; letter-spacing: 2px; color: var(--accent); }
+.stance { font: 11px var(--mono); color: var(--muted); min-width: 8ch; }
+#progress { font-variant-numeric: tabular-nums; pointer-events: auto; cursor: help; }
 .weapons { position: absolute; right: 12px; bottom: 12px; margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
-.weapons li { display: grid; grid-template-columns: 2ch 15ch 3ch; gap: 8px; align-items: center; padding: 3px 8px; background: rgba(255, 255, 255, 0.9); border: 1px solid var(--hair); font-size: 12px; }
+.weapons li { display: grid; grid-template-columns: 2ch 17ch 3ch; gap: 8px; align-items: center; padding: 3px 8px; background: rgba(255, 255, 255, 0.9); border: 1px solid var(--hair); font-size: 12px; }
 .weapons li.on { border-color: var(--line); box-shadow: inset 3px 0 0 var(--accent); }
 .weapons li.out { opacity: 0.4; }
 .weapons kbd { color: var(--muted); }

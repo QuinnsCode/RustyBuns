@@ -5,8 +5,9 @@
 import * as THREE from "three";
 import type { CodeMap } from "../sim/codemap.ts";
 import { contourStep } from "../sim/terrain.ts";
-import type { Shot, Soldier } from "../sim/game.ts";
-import { HEIGHT, CROUCH_HEIGHT } from "../sim/game.ts";
+import type { Game } from "../sim/game.ts";
+import { bodyHeight, HEIGHT, ROLL_TIME } from "../sim/game.ts";
+import { BRANCH_RADIUS, HEAD_RADIUS } from "../sim/missions.ts";
 
 export const INK = 0x1f1f1f, ORANGE = 0xe8590c, PAPER = 0xffffff, GREY = 0xbdbdbd;
 
@@ -15,7 +16,7 @@ export interface World {
   terrainMesh: THREE.Mesh;
   /** Everything a shot can be aimed at: ground and blocks. */
   solids: THREE.Object3D[];
-  sync(soldiers: Soldier[], shots: Shot[], cleared: boolean[], dt: number): void;
+  sync(game: Game, dt: number): void;
   boom(x: number, y: number, z: number, r: number): void;
 }
 
@@ -60,6 +61,12 @@ function pillar(color: number): THREE.Group {
   gun.position.set(0.32, 1.25, -0.35);
   gun.castShadow = true;
   gun.name = "gun";
+  // A git blame tag: the same body, drawn over everything, so you see it through walls.
+  const ghost = new THREE.Mesh(body.geometry, new THREE.MeshBasicMaterial({ color: ORANGE, transparent: true, opacity: 0.45, depthTest: false, depthWrite: false }));
+  ghost.renderOrder = 10;
+  ghost.visible = false;
+  ghost.name = "ghost";
+  body.add(ghost);
   g.add(body, gun);
   return g;
 }
@@ -180,29 +187,102 @@ export function buildWorld(map: CodeMap): World {
   const booms: { m: THREE.Mesh; t: number; r: number }[] = [];
   const boomGeo = new THREE.SphereGeometry(1, 24, 16);
 
+  // Crates: white boxes, orange-edged for ammo, an orange cross for health, solid orange for git reset --hard.
+  const crateGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8), crateEdges = new THREE.EdgesGeometry(crateGeo);
+  const crossGeo = new THREE.BoxGeometry(0.5, 0.62, 0.14);
+  const orangeMat = new THREE.MeshLambertMaterial({ color: ORANGE }), edgeOrange = new THREE.LineBasicMaterial({ color: ORANGE });
+  function crate(kind: string): THREE.Object3D {
+    const m = new THREE.Mesh(crateGeo, kind === "reset" ? orangeMat : boxMat);
+    m.castShadow = true;
+    m.add(new THREE.LineSegments(crateEdges, kind === "ammo" ? edgeOrange : edgeInk));
+    if (kind === "health") {
+      const a = new THREE.Mesh(crossGeo, orangeMat), b = a.clone();
+      b.rotation.y = Math.PI / 2;
+      m.add(a, b);
+    }
+    return m;
+  }
+  const crates = new Map<number, THREE.Object3D>();
+  // Stashes: white boxes with ink edges, the ones you throw down.
+  const stashes = new Map<number, THREE.Mesh>();
+  const stashGeo = new THREE.BoxGeometry(1, 1, 1), stashEdges = new THREE.EdgesGeometry(stashGeo);
+  // The mission on the ground: the commit to carry, and a ring for HEAD or the branch.
+  const commit = new THREE.Mesh(new THREE.OctahedronGeometry(0.45), orangeMat);
+  commit.visible = false;
+  scene.add(commit);
+  let ring: THREE.Line | null = null;
+  function placeRing(x: number, z: number, r: number) {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 64; i++) {
+      const a = (i / 64) * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      pts.push(new THREE.Vector3(px, map.terrain.height(px, pz) + 0.1, pz));
+    }
+    ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineDashedMaterial({ color: ORANGE, dashSize: 0.8, gapSize: 0.5 }));
+    ring.computeLineDistances();
+    scene.add(ring);
+  }
+
   return {
     scene,
     terrainMesh,
     solids,
-    sync(soldiers, shots, cleared, dt) {
+    sync(game, dt) {
+      const { soldiers, shots, cleared } = game;
       for (const s of soldiers) {
         let g = bodies.get(s.id);
-        if (!g) bodies.set(s.id, (g = pillar(s.team === "you" ? INK : ORANGE))), scene.add(g);
+        if (!g) {
+          bodies.set(s.id, (g = pillar(s.team === "you" ? INK : ORANGE))), scene.add(g);
+          if (s.heavy) g.scale.setScalar(1.25);
+        }
         g.visible = s.alive;
         g.position.set(s.x, s.y, s.z);
         g.rotation.y = s.yaw;
         const body = g.getObjectByName("body")!;
-        const h = s.crouch ? CROUCH_HEIGHT : HEIGHT;
+        // Prone lies the pillar down instead of shrinking it.
+        const h = s.prone ? HEIGHT : bodyHeight(s);
         body.scale.y = h / HEIGHT;
         body.position.y = h / 2;
+        (body.getObjectByName("ghost") as THREE.Mesh).visible = s.tagged > 0;
         // A dive-roll tips the pillar over in the direction it's going.
-        g.rotation.x = s.roll > 0 ? -Math.sin(((0.42 - s.roll) / 0.42) * Math.PI) * 1.3 : 0;
+        g.rotation.x = s.prone ? -Math.PI / 2 + 0.15 : s.roll > 0 ? -Math.sin(((ROLL_TIME - s.roll) / ROLL_TIME) * Math.PI) * 1.3 : 0;
+        if (s.prone) g.position.y += 0.4;
+      }
+      const have = new Set<number>();
+      for (const p of game.pickups) {
+        have.add(p.id);
+        let m = crates.get(p.id);
+        if (!m) crates.set(p.id, (m = crate(p.kind))), scene.add(m);
+        m.position.set(p.x, p.y + 0.45 + Math.sin(game.time * 2 + p.id) * 0.1, p.z);
+        m.rotation.y = game.time * 0.8 + p.id;
+      }
+      for (const [id, m] of crates) if (!have.has(id)) scene.remove(m), crates.delete(id);
+      have.clear();
+      for (const st of game.stashes) {
+        have.add(st.id);
+        let m = stashes.get(st.id);
+        if (!m) {
+          stashes.set(st.id, (m = new THREE.Mesh(stashGeo, boxMat)));
+          m.add(new THREE.LineSegments(stashEdges, edgeInk));
+          m.scale.set(st.w, st.h, st.d);
+          m.position.set(st.x, st.y + st.h / 2, st.z);
+          m.castShadow = m.receiveShadow = true;
+          scene.add(m);
+        }
+      }
+      for (const [id, m] of stashes) if (!have.has(id)) scene.remove(m), stashes.delete(id);
+      const o = game.objective;
+      if (!ring && o.kind === "carry") placeRing(map.spawn.x, map.spawn.z, HEAD_RADIUS);
+      if (!ring && o.kind === "defend") placeRing(o.x, o.z, BRANCH_RADIUS);
+      if (o.kind === "carry") {
+        commit.visible = !o.delivered;
+        commit.position.set(o.x, o.y + (o.carried ? 0 : 1 + Math.sin(game.time * 2) * 0.15), o.z);
+        commit.rotation.y = game.time * 1.5;
       }
       const live = new Set<number>();
       for (const p of shots) {
         live.add(p.id);
         let m = shotMeshes.get(p.id);
-        if (!m) shotMeshes.set(p.id, (m = new THREE.Mesh(p.weapon === "commit" || p.weapon === "rebase" ? shotGeo : bigShotGeo, shotMat[p.team]))), scene.add(m);
+        if (!m) shotMeshes.set(p.id, (m = new THREE.Mesh(p.weapon === "commit" || p.weapon === "rebase" || p.weapon === "blame" || p.weapon === "revert" ? shotGeo : bigShotGeo, shotMat[p.team]))), scene.add(m);
         m.position.set(p.x, p.y, p.z);
       }
       for (const [id, m] of shotMeshes) if (!live.has(id)) scene.remove(m), shotMeshes.delete(id);

@@ -14,7 +14,7 @@
       <div class="card">
         <p class="kicker">A Rusty Buns example</p>
         <h1>Git Recon</h1>
-        <p class="lede">A codebase on real ground. Its biggest folders are compounds in conflict, its files are the buildings. Take every one and merge.</p>
+        <p class="lede">A codebase on real ground. Its biggest folders are compounds in conflict, its files are the buildings. Each level is a mission: merge every folder, carry a commit home, or hold main.</p>
         <div id="levels" class="levels"></div>
         <form id="place" class="place" autocomplete="off">
           <label for="place-at">Or fight anywhere: a latitude, longitude</label>
@@ -25,9 +25,10 @@
           <dt>WASD · mouse</dt><dd>move · aim</dd>
           <dt>Click</dt><dd>fire</dd>
           <dt>Shift</dt><dd>dive-roll</dd>
-          <dt>Space · C</dt><dd>jump · crouch</dd>
-          <dt>1-4 · wheel</dt><dd>git commit · push · merge · rebase</dd>
-          <dt>Right click</dt><dd>scope (rebase)</dd>
+          <dt>Space · C · Z</dt><dd>jump · crouch · prone</dd>
+          <dt>1-8 · wheel</dt><dd>git commit · push · merge · rebase · cherry-pick · revert · stash · blame</dd>
+          <dt>9</dt><dd>git reset --hard, if you find one</dd>
+          <dt>Right click</dt><dd>scope (rebase; it sways, less lying down)</dd>
         </dl>
       </div>
     </main>
@@ -40,6 +41,7 @@
       <div class="bl">
         <div class="health"><i id="hp"></i></div>
         <span id="lives" class="lives" title="Reflog entries: lives left"></span>
+        <span id="stance" class="stance"></span>
       </div>
       <ul id="weapons" class="weapons"></ul>
       <ul id="feed" class="feed"></ul>
