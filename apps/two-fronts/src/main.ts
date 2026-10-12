@@ -8,10 +8,12 @@ import {
 import { aiOrders } from "./war/ai.ts";
 import { drawMap } from "./ui/map.ts";
 import { FLAVOR, run } from "./battle/sim.ts";
-import type { BattleResult, BattleSpec, Side } from "./battle/contract.ts";
+import { VEHICLE_KINDS, type BattleResult, type BattleSpec, type Side } from "./battle/contract.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const SAVE = "two-fronts:v4"; // v2 gained the cannon sectors, v3 renamed the factions, v4 has a galaxy per campaign
+// v2 gained the cannon sectors, v3 renamed the factions, v4 has a galaxy per campaign, v5 has
+// canyon and jungle sectors and a vehicle pool per battle
+const SAVE = "two-fronts:v5";
 
 function load(): { campaign: Campaign; orders: Orders } | null {
   try { return JSON.parse(localStorage.getItem(SAVE) ?? "null"); } catch { return null; }
@@ -88,6 +90,8 @@ function render() {
       <p class="orbit">Orbit: ${s.orbit ? `<b class="${s.orbit}">${FACTION_NAMES[s.orbit]}</b>` : "nobody"} · ▲ ${s.fleets[me]} yours, ${s.fleets[foe]} theirs</p>
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? `<p class="warn">Cut off from supply: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.</p>` : ""}
       ${s.sectors.some((x) => x.kind === "cannon") ? `<p class="small">The anti-ship cannon knocks a ship a turn out of an enemy fleet in orbit.</p>` : ""}
+      ${s.sectors.some((x) => x.kind === "canyon") ? `<p class="small">The mining canyon's ore pays its holder as well as a capital.</p>` : ""}
+      ${s.sectors.some((x) => x.kind === "jungle") ? `<p class="small">Whoever holds the jungle fights from the trees: they defend it as if they held the orbit.</p>` : ""}
       ${ds.fleets[me] ? `<div class="act">Send <select id="ship-n">${opts(ds.fleets[me])}</select> ships to
         <select id="ship-to">${neighbours(selected).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>
         <button type="button" id="send-ships">Go</button></div>` : ""}
@@ -162,7 +166,12 @@ function endTurn() {
 // The hero battle's briefing: what the map has given each side for this fight.
 function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
   const me = spec.hero, foe = me === "attacker" ? "defender" : "attacker";
-  const horde = spec.factions[foe] === "wooka", tanks = (s: Side) => (spec.factions[s] === "wooka" ? "none, just more Wooka" : spec.vehicles[s]);
+  const horde = spec.factions[foe] === "wooka";
+  const vehicles = (s: Side) => {
+    if (spec.factions[s] === "wooka") return "none, just more Wooka";
+    const list = VEHICLE_KINDS.filter((k) => spec.vehicles[s][k]).map((k) => `${spec.vehicles[s][k]} ${k}${spec.vehicles[s][k]! > 1 ? "s" : ""}`);
+    return list.join(", ") || "none";
+  };
   const row = (label: string, a: number | string, b: number | string) => `<tr><th>${label}</th><td>${a}</td><td>${b}</td></tr>`;
   showModal(`<h2>Hero battle: ${spec.system}, ${SECTOR_NAMES[spec.sector].toLowerCase()}</h2>
     <p>You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain" : "a Thunder Marine"}. Take the command posts and run their tickets out.</p>
@@ -170,12 +179,12 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
     <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>
       ${row("Armies", spec.armies[me], spec.armies[foe])}
       ${row("Tickets", spec.tickets[me], spec.tickets[foe])}
-      ${row("Tanks", tanks(me), tanks(foe))}
+      ${row("Vehicles", vehicles(me), vehicles(foe))}
       ${row("Orbital strikes", spec.strikes[me], spec.strikes[foe])}
       ${row("Drop pods", spec.reinforcements[me] ? `+${spec.reinforcements[me]}` : "none", spec.reinforcements[foe] ? `+${spec.reinforcements[foe]}` : "none")}
       ${row("Turrets", me === "defender" ? spec.turrets : 0, me === "attacker" ? spec.turrets : 0)}
     </table>
-    <p class="small">Strikes and drop pods come from holding the orbit. A shield generator held by the other side cuts strikes to one.</p>
+    <p class="small">Strikes, drop pods and gunships come from holding the orbit, and walkers from holding the world's capital. A shield generator held by the other side cuts strikes to one.</p>
     <button type="button" id="drop-in" class="primary">Drop in</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
   $("drop-in").onclick = async () => {
     hideModal();
@@ -205,7 +214,7 @@ function skirmish(asWooka: boolean) {
     id: `skirmish-${Date.now()}`, turn: 0, system: "the forest moon", sector: "shield",
     factions: { attacker: "wooka", defender: "marines" }, hero: asWooka ? "attacker" : "defender", heroLevel: 1,
     armies: { attacker: 4, defender: 3 }, tickets: { attacker: 200, defender: 150 },
-    vehicles: { attacker: 1, defender: 1 }, strikes: { attacker: 0, defender: 2 },
+    vehicles: { attacker: { tank: 1 }, defender: { walker: 1, speeder: 1 } }, strikes: { attacker: 0, defender: 2 },
     reinforcements: { attacker: 0, defender: 30 }, turrets: 2, seed: Math.floor(Math.random() * 2 ** 31),
   };
   brief(spec, (r) => {

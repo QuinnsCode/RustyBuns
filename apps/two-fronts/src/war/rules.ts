@@ -3,7 +3,7 @@
 // fire, bombardment, supply, income). One ground
 // battle a turn can be handed to the player as a hero battle; the turn pauses on it until the
 // BattleResult comes back.
-import type { BattleResult, BattleSpec, Faction, SectorKind } from "../battle/contract.ts";
+import type { BattleResult, BattleSpec, Faction, SectorKind, VehicleKind, VehiclePool } from "../battle/contract.ts";
 import { other as otherSide } from "../battle/contract.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
 
@@ -247,7 +247,8 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
       c.pending = { spec: buildSpec(c, at, Math.floor(r() * 2 ** 31)), at };
       return;
     }
-    const [a, b] = diceBattle(x.armies[att], x.armies[x.owner], r, { att: s.orbit === att, def: s.orbit === x.owner });
+    // Orbit gives either side cover from above; a jungle gives the side that holds it cover in the trees.
+    const [a, b] = diceBattle(x.armies[att], x.armies[x.owner], r, { att: s.orbit === att, def: s.orbit === x.owner || x.kind === "jungle" });
     c.log.push(`Ground battle at ${where(c, at)}: ${FACTION_NAMES[a ? att : x.owner]} wins.`);
     x.armies[att] = a; x.armies[x.owner] = b;
     if (a) x.owner = att;
@@ -274,12 +275,26 @@ export function buildSpec(c: Campaign, at: Where, seed: number): BattleSpec {
     heroLevel: c.hero.level,
     armies: { attacker: x.armies[att], defender: x.armies[def] },
     tickets: { attacker: x.armies[att] * TICKETS_PER_ARMY, defender: x.armies[def] * TICKETS_PER_ARMY },
-    vehicles: { attacker: Math.min(3, Math.floor(x.armies[att] / 2)), defender: Math.min(3, Math.floor(x.armies[def] / 2)) },
+    vehicles: { attacker: vehiclePool(s, att, x.armies[att]), defender: vehiclePool(s, def, x.armies[def]) },
     strikes: { attacker: strikes(att), defender: strikes(def) },
     reinforcements: { attacker: reinf(att), defender: reinf(def) },
     turrets: x.kind === "shield" || x.kind === "cannon" ? 2 : 1,
     seed,
   };
+}
+
+// The vehicles a side brings to a hero battle: one per two armies, up to three. Tanks and speeders
+// come with any army. Gunships come down from a fleet holding the orbit, and walkers out of the
+// factories of a capital the side holds on the world. The Wooka have no vehicles, so the battle
+// turns their share into more Wooka.
+export function vehiclePool(s: SystemState, f: Faction, armies: number): VehiclePool {
+  const kinds: VehicleKind[] = ["tank"];
+  if (s.orbit === f) kinds.push("gunship");
+  if (s.sectors.some((x) => x.kind === "capital" && x.owner === f)) kinds.push("walker");
+  kinds.push("speeder");
+  const pool: VehiclePool = {};
+  for (let i = 0; i < Math.min(3, Math.floor(armies / 2)); i++) { const k = kinds[i % kinds.length]!; pool[k] = (pool[k] ?? 0) + 1; }
+  return pool;
 }
 
 // The battle's survivors stay on the map, scaled by the tickets left; the loser's army there is gone.
