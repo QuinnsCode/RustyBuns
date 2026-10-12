@@ -375,6 +375,9 @@ ${LAUNCH_CHECK}${appCheck(c, true)}${h.launch}`;
 }
 
 
+/** import(`x`) with no ${...} in it, as import("x"), so the bundler resolves it statically. */
+export const plainDynamicImports = (js: string) => js.replace(/\bimport\(`([^`$\\]+)`\)/g, (_, spec: string) => `import(${JSON.stringify(spec)})`);
+
 /** The Worker the host imports: builtMain, unless the build says otherwise. @cloudflare/vite-plugin
  *  writes a wrangler.json beside its output whose main names the real file (worker.js vs index.js). */
 export function builtEntry(c: RustyBunsConfig, cwd = process.cwd()): string | undefined {
@@ -432,7 +435,6 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
 // First: workerd's globalThis.Cloudflare, read by nodejs_compat builds as they load.
 import "@rustybuns/shell-bun/workerd-global";
 import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
-import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
 // Bun's own process: a Worker built with nodejs_compat (unenv) swaps globalThis.process for
 // one whose cwd() is "/" and argv is empty, and that would move assets and flags (#741).
 import process from "node:process";
@@ -462,11 +464,14 @@ ${bind.join("\n")}
 // D1 is sqlite: your wrangler migrations apply here unchanged, tracked in
 // d1_migrations. Embedded via --asset so the binary carries its own schema.
 ${migrations.map(([n, m]) => `for (const f of await applyD1Migrations(env.${n} as any, assetDir(${JSON.stringify(m)})!)) console.log("[migrate] " + f);`).join("\n")}
-// Durable Objects run in-process. Bound after env exists because a DO's
-// constructor receives this same env (a DO can use DB, KV, other DOs).
-${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
-// Lets import { env } from "cloudflare:workers" see the local bindings.
+// Lets import { env } from "cloudflare:workers" see the local bindings, before the Worker loads:
+// workerd gives a module its env at import, and apps read it at the top level
+// (export const repo = makeRepo(await getDb())).
 globalThis.__RB_ENV = env;
+const { default: worker, ${dos.map((d) => `${d.className}, `).join("")}} = await import(${JSON.stringify("../" + entry)});
+// Durable Objects run in-process. Bound once the Worker has loaded (the classes are its exports)
+// and into this same env, because a DO's constructor receives it (a DO can use DB, KV, other DOs).
+${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
 
 const token = ${h.token};
 const shell = serve<typeof env>({
@@ -615,6 +620,15 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     setup(b: any) {
       // Host side: the worker-runtime modules become the local runtime.
       b.onResolve({ filter: /^(cloudflare:workers|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
+      // Vite writes some dynamic imports with a template literal (import(`cloudflare:workers`)), which
+      // the bundler leaves to runtime, past the line above. In the built Worker, a literal with no
+      // ${...} is made a plain string so it resolves here like any other import.
+      if (mode === "worker" && c.worker?.builtMain) {
+        const dir = join(process.cwd(), dirname(c.worker.builtMain)).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        b.onLoad({ filter: new RegExp(`^${dir}[\\\\/].*\\.m?js$`) }, async (args: { path: string }) => ({
+          contents: plainDynamicImports(await Bun.file(args.path).text()), loader: "js",
+        }));
+      }
       // The app's aliases ("@/x", "~/x", "#lib/x"), resolved the way tsconfig/vite do.
       b.onResolve({ filter: /^[@~#]/ }, (args: { path: string }) => {
         for (const [alias, dir] of aliasEntries) {
