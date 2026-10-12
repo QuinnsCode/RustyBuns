@@ -9,6 +9,15 @@ plugin({
   setup(b) {
     // node:sea (single executable apps): T3 only asks isSea(); under Bun it never is.
     b.module("node:sea", () => ({ exports: { isSea: () => false, getAsset: () => { throw new Error("not a SEA"); } }, loader: "object" }));
+    // Vitest's import.meta.resolve(id, parent) passes the test file's file:///C:/… URL as the
+    // parent, and Bun on Windows can't resolve from a URL there (a path works). Hand it the path.
+    b.onLoad({ filter: /[\\/]vitest[\\/]dist[\\/]chunks[\\/]index\.[\w-]+\.js$/ }, async ({ path }) => ({
+      loader: "js",
+      contents: (await Bun.file(path).text()).replace(
+        "import.meta.resolve(specifier, importer)",
+        'import.meta.resolve(specifier, importer.startsWith("file:") ? Bun.fileURLToPath(importer) : importer)',
+      ),
+    }));
   },
 });
 
@@ -29,6 +38,34 @@ class Socket extends BunSocket {
   }
 }
 net.Socket = Socket;
+
+// ws's WebSocketServer({ perMessageDeflate: true }) never compresses under Bun 1.4: its
+// handleUpgrade goes through the Bun.serve that node:http starts, whose websocket options
+// leave deflate off. Once a server asks for it, turn it on in those (live and later ones).
+const serve = Bun.serve;
+type NodeServeOptions = { onNodeHTTPRequest?: unknown; websocket?: object };
+const nodeHttpServers = new Map<{ reload(o: object): unknown }, NodeServeOptions>();
+let deflate = false;
+const withDeflate = (o: NodeServeOptions) => ({ ...o, websocket: { ...o.websocket, perMessageDeflate: true } });
+Bun.serve = ((options: NodeServeOptions) => {
+  if (!options?.onNodeHTTPRequest || !options.websocket) return serve(options as never);
+  const server = serve((deflate ? withDeflate(options) : options) as never);
+  nodeHttpServers.set(server as never, options);
+  return server;
+}) as typeof Bun.serve;
+const ws = require("ws");
+const BunWebSocketServer = ws.WebSocketServer;
+class WebSocketServer extends BunWebSocketServer {
+  constructor(options?: { perMessageDeflate?: unknown }, callback?: () => void) {
+    super(options, callback);
+    if (!options?.perMessageDeflate || deflate) return;
+    deflate = true;
+    for (const [server, o] of nodeHttpServers) {
+      try { server.reload(withDeflate(o)); } catch { nodeHttpServers.delete(server); }
+    }
+  }
+}
+ws.WebSocketServer = ws.Server = WebSocketServer;
 
 // v8.queryObjects(Ctor, { format: "count" }): count live instances by class name in a JSC heap snapshot.
 const v8 = require("node:v8");
