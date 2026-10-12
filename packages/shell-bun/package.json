@@ -25,8 +25,9 @@
     "./history": "./src/history.ts",
     "./intro": "./src/intro.tsx",
     "./memwatch": "./src/memwatch.ts",
-    "./profsummary": "./src/profsummary.ts",
+    "./pglite": "./src/bindings/pglite.ts",
     "./priority": "./src/priority.ts",
+    "./profsummary": "./src/profsummary.ts",
     "./shims": "./src/shims.ts",
     "./webmcp": "./src/webmcp.ts",
     "./workerd-global": "./src/workerd-global.ts"
@@ -41,13 +42,21 @@
   },
   "peerDependencies": {
     "react": "*",
-    "react-dom": "*"
+    "react-dom": "*",
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true
     },
     "react-dom": {
+      "optional": true
+    },
+    "@electric-sql/pglite": {
+      "optional": true
+    },
+    "@electric-sql/pglite-socket": {
       "optional": true
     }
   },
@@ -57,5 +66,9 @@
     "desktop",
     "durable-objects",
     "sqlite"
-  ]
+  ],
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11"
+  }
 }

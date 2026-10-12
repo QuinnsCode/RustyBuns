@@ -4,7 +4,7 @@ import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
-import { desktopEntry, spaEntry, builtEntry, plainDynamicImports } from "../src/build.ts";
+import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports } from "../src/build.ts";
 
 const root = new URL("../../../apps/spa-example", import.meta.url).pathname;
 
@@ -874,4 +874,21 @@ test("hyperdrive: alchemy fronts the URL secret, wrangler binds it for local dev
     DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL" },
     REPLICA_URL: { type: "secret" }, REPLICA: { type: "hyperdrive", urlSecret: "REPLICA_URL" },
   });
+});
+
+test("hyperdrive local pglite: with the URL unset, PGlite in the data dir, its files and migrations embedded", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { DATABASE_URL: { type: "secret" }, PG: { type: "hyperdrive", urlSecret: "DATABASE_URL", local: "pglite", migrationsDir: "drizzle" } },
+    targets: { desktop: { mode: "worker" } },
+  } as any;
+  const d = desktopEntry(c);
+  expect(d).toContain(`import { pgliteHyperdrive } from "@rustybuns/shell-bun/pglite";`);
+  expect(d).toContain(`import pglite0 from "./pglite/pglite.wasm" with { type: "file" };`);
+  expect(d).toContain(`PG: process.env["DATABASE_URL"] ? local.hyperdrive(process.env["DATABASE_URL"], "PG") : await pgliteHyperdrive(join(dataDir, "pglite", "PG"), "PG", { ...pgliteFiles, migrations: assetDir("drizzle")! }),`);
+  expect(spaEntry({ ...c, targets: { desktop: { mode: "spa", clientDir: "dist" } } })).toContain(`migrations: resolveDir("drizzle") }),`);
+  expect(embeddedDirs(c).migrationDirs).toEqual(["drizzle"]);
+  // Without local, nothing of PGlite's is imported: the app needn't install it.
+  const url = { ...c, bindings: { ...c.bindings, PG: { type: "hyperdrive", urlSecret: "DATABASE_URL" } } };
+  expect(desktopEntry(url)).not.toContain("pglite");
 });

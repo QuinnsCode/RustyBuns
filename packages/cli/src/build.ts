@@ -8,7 +8,7 @@ import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 import { join, dirname, normalize, relative, resolve } from "node:path";
-import type { DesktopOs, RustyBunsConfig } from "./config.ts";
+import type { Binding, DesktopOs, RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 import { Profiler } from "./profile.ts";
 import { BUN_CHECK_MIN, compactDiagnostics, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
@@ -112,6 +112,44 @@ const webmcp = webMcpRoute();
 /** targets.box.webmcp, on a box host only. */
 const webmcpOn = (c: RustyBunsConfig, box: boolean) => box && c.targets.box?.webmcp === true;
 
+/** Where the build copies PGlite's WASM and data, beside the entry, so the binary embeds them. */
+export const PGLITE_STAGE = ".rustybuns/pglite";
+const PGLITE_FILES = ["pglite.wasm", "initdb.wasm", "pglite.data"];
+
+/** Hyperdrive bindings whose offline twin is PGlite (`local: "pglite"`). */
+function pgliteTwins(c: RustyBunsConfig) {
+  return Object.entries(c.bindings ?? {}).flatMap(([n, b]) => b.type === "hyperdrive" && b.local === "pglite" ? [[n, b] as const] : []);
+}
+
+/** The entry's PGlite imports: the twin and its files, embedded by the compile (`type: "file"`). */
+function pgliteImports(c: RustyBunsConfig): string {
+  if (!pgliteTwins(c).length) return "";
+  return `import { pgliteHyperdrive } from "@rustybuns/shell-bun/pglite";
+${PGLITE_FILES.map((f, i) => `import pglite${i} from "./pglite/${f}" with { type: "file" };`).join("\n")}
+// Compiled: $bunfs paths. A dev bundle: paths beside it.
+const pgliteFiles = { wasm: resolve(import.meta.dir, pglite0), initdb: resolve(import.meta.dir, pglite1), data: resolve(import.meta.dir, pglite2) };
+`;
+}
+
+/** env.NAME for a hyperdrive binding off the edge: the origin's URL, or with `local: "pglite"`
+ *  and the URL unset, PGlite in the data dir. `dir` resolves an embedded project dir. */
+function hyperdriveBinding(name: string, b: Extract<Binding, { type: "hyperdrive" }>, dir: (rel: string) => string): string {
+  const url = `process.env[${JSON.stringify(b.urlSecret)}]`;
+  const viaUrl = `local.hyperdrive(${url}, ${JSON.stringify(name)})`;
+  if (b.local !== "pglite") return viaUrl;
+  const migrations = b.migrationsDir ? `, migrations: ${dir(b.migrationsDir)}` : "";
+  return `${url} ? ${viaUrl} : await pgliteHyperdrive(join(dataDir, "pglite", ${JSON.stringify(name)}), ${JSON.stringify(name)}, { ...pgliteFiles${migrations} })`;
+}
+
+/** Copy PGlite's files from the app's node_modules into PGLITE_STAGE. */
+async function stagePglite(cwd = process.cwd()) {
+  let dist: string;
+  try { dist = dirname(Bun.resolveSync("@electric-sql/pglite", cwd)); }
+  catch { throw new Error(`a hyperdrive binding has local: "pglite", so the app needs @electric-sql/pglite and @electric-sql/pglite-socket: add them to its dependencies`); }
+  await mkdir(PGLITE_STAGE, { recursive: true });
+  for (const f of PGLITE_FILES) await Bun.write(join(PGLITE_STAGE, f), Bun.file(join(dist, f)));
+}
+
 export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string {
   const d = c.targets.desktop ?? {};
   const h = hostParts(c, host, d.dataDir ?? `~/.${c.name}`);
@@ -130,7 +168,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
   const d1s = Object.entries(bindings).filter(([, b]) => b.type === "d1").map(([n, b]) => [n, (b as any).databaseName as string, (b as any).migrationsDir as string | undefined] as const);
   const vars = Object.entries(bindings).filter(([, b]) => b.type === "var").map(([n, b]) => [n, (b as any).value as string]);
   const r2s = Object.entries(bindings).filter(([, b]) => b.type === "r2").map(([n, b]) => [n, (b as any).bucketName as string] as const);
-  const pgs = Object.entries(bindings).filter(([, b]) => b.type === "hyperdrive").map(([n, b]) => [n, (b as any).urlSecret as string] as const);
+  const pgs = Object.entries(bindings).flatMap(([n, b]) => b.type === "hyperdrive" ? [[n, b] as const] : []);
   // Desktop has no secrets; a box reads them from its env file.
   const secrets = h.box ? Object.entries(bindings).filter(([, b]) => b.type === "secret").map(([n]) => n) : [];
   const mounts = d.mounts ?? {};
@@ -145,8 +183,8 @@ ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/d
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
 import { mkdirSync, existsSync${h.box ? ", statSync, readFileSync, writeFileSync" : ""} } from "node:fs";
-import { basename, join, isAbsolute } from "node:path";
-
+import { basename, join, isAbsolute, resolve } from "node:path";
+${pgliteImports(c)}
 declare const RB_VERSION: string, RB_RUSTYBUNS: string, RB_DEV: boolean;
 // What a guest on the LAN would type: this machine's non-loopback IPv4 addresses.
 const lanAddresses = (): string[] => Object.values(networkInterfaces()).flatMap((l) => l ?? [])
@@ -186,7 +224,7 @@ ${d1s.map(([n, db]) => `  ${n}: local.d1(${JSON.stringify(db)}),`).join("\n")}
 ${vars.map(([n, v]) => `  ${n}: ${JSON.stringify(v)},`).join("\n")}
 ${r2s.map(([n, bucket]) => { const dir = d.r2?.[n]; return `  ${n}: local.r2(${JSON.stringify(bucket)}${dir ? `, resolveDir(${JSON.stringify(dir)})` : ""}),`; }).join("\n")}
 ${secrets.map((n) => `  ${n}: process.env[${JSON.stringify(n)}] ?? "",`).join("\n")}
-${pgs.map(([n, url]) => `  ${n}: local.hyperdrive(process.env[${JSON.stringify(url)}], ${JSON.stringify(n)}),`).join("\n")}
+${pgs.map(([n, b]) => `  ${n}: ${hyperdriveBinding(n, b, (m) => `resolveDir(${JSON.stringify(m)})`)},`).join("\n")}
   LOG_PIPELINE: { send: async () => {} },
   LOG_COLDSTORE_PIPELINE: { send: async () => {} },
 };
@@ -465,7 +503,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
       case "ratelimit": bind.push(`  // ${name}: Workers Rate Limiting has no local twin; the app runs without it`); break;
       // No pool off the edge: the app gets the origin's URL in Hyperdrive's shape.
-      case "hyperdrive": bind.push(`  ${name}: local.hyperdrive(process.env[${JSON.stringify(b.urlSecret)}], ${JSON.stringify(name)}),`); break;
+      case "hyperdrive": bind.push(`  ${name}: ${hyperdriveBinding(name, b, (m) => `assetDir(${JSON.stringify(m)})!`)},`); break;
       case "vectorize": bind.push(`  // ${name}: Cloudflare Vectorize has no local twin; the app runs without it`); break;
       case "ai": bind.push(`  // ${name}: Workers AI has no local twin; the app runs without it`); break;
       case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;
@@ -488,8 +526,8 @@ import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutR
 import process from "node:process";
 import { homedir } from "node:os";
 import { mkdirSync, existsSync } from "node:fs";
-import { basename, join, isAbsolute } from "node:path";
-
+import { basename, join, isAbsolute, resolve } from "node:path";
+${pgliteImports(c)}
 declare const RB_VERSION: string, RB_RUSTYBUNS: string, RB_DEV: boolean;
 // Compiled: --asset embeds the dir at /$bunfs/root/<basename>. Dev: use the real path.
 function assetDir(rel: string): string | undefined {
@@ -666,6 +704,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   }
   if (build) await step("client build", () => $`sh -c ${build}`.env(bin));
   await mkdir(".rustybuns", { recursive: true });
+  if (pgliteTwins(c).length) await stagePglite();
   await Bun.write(entry, mode === "spa" ? spaEntry(c, host) : desktopEntry(c, host));
   const assets = mode === "spa" ? (d.clientDir ?? "dist/desktop") : c.worker!.assets;
 
@@ -801,7 +840,8 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
 export function embeddedDirs(c: RustyBunsConfig) {
   const d = c.targets.desktop ?? {};
   const assets = (d.mode ?? "spa") === "spa" ? (d.clientDir ?? "dist/desktop") : c.worker?.assets;
-  const migrationDirs = Object.values(c.bindings ?? {}).filter((b) => b.type === "d1" && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
+  // D1's, and a PGlite twin's (a hyperdrive with a URL set leaves its schema to its origin).
+  const migrationDirs = Object.values(c.bindings ?? {}).filter((b) => (b.type === "d1" || (b.type === "hyperdrive" && b.local === "pglite")) && (b as any).migrationsDir).map((b) => (b as any).migrationsDir as string);
   // External mounts (~ or absolute) stay on disk; only project dirs are embedded.
   const external = (dir: string) => dir.startsWith("~") || dir.startsWith("/");
   const mountDirs = Object.values(d.mounts ?? {}).filter((dir) => !external(dir));
