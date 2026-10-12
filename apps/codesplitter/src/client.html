@@ -3736,10 +3736,15 @@ const views = {
       return;
     }
     const reviews = await Promise.all(open.map((b) => api(`${base}/${encodeURIComponent(b.name)}`)));
+    // Two or more open: the waves to merge them in (#1155), GET /api/repos/:o/:r/merge-plan.
+    const plan = !only && open.length > 1 ? await api(`/repos/${owner}/${repo}/merge-plan`).catch(() => null) : null;
     // Which coding agents can write a conflict's settled lines here, for each card's Ask.
     const agents = full && r.canWrite && reviews.some((b) => b.files.some((f) => f.conflicts.length))
       ? await api("/agents").then((a) => a.available && !a.admins_only ? a.harnesses : []).catch(() => []) : [];
-    el.innerHTML = reviews.map((b) => {
+    // Each wave merges together; a branch that clashes with one before it says which, on hover.
+    const waits = (w) => w.after.map((a) => `${a.branch}${a.stacked ? " (stacked on it)" : ""}${a.files.length ? `: ${a.files.join(", ")}` : ""}`).join("; ");
+    const planned = plan?.waves.length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="merge a wave, then bring main into the next wave's branches once">${icon("git-merge")} ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
+    el.innerHTML = planned + reviews.map((b) => {
       // A file only opened on the branch (the switcher reads through its copy) changes nothing: not counted.
       const files = b.files.filter((f) => !f.merged && (f.ops.length || f.deleted || f.binary || f.conflicts.length)), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
       const ops = files.reduce((n, f) => n + f.ops.length, 0), build = files.filter((f) => f.build), gone = files.filter((f) => f.deleted), bins = files.filter((f) => f.binary);
