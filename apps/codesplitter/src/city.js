@@ -6,8 +6,11 @@
 // owner and their followers can walk them together (a GameRoom, "c/<name>").
 // A file's kind picks its architecture (code is a tower, docs a hall, config the
 // works, tests a lab, markup a round tower) and its path seeds the details, so a
-// building looks the same to everyone. The traffic, the crowds under umbrellas,
-// the code-birds and the blimp are only for the look of the place.
+// building looks the same to everyone. The streets run on each district's pulse
+// (city.ts): a week of commits and edits fills its sidewalks, crosswalks and bike
+// lanes, and failing checks bring chaos: drivers brake-check, stall and run reds,
+// bikes wobble, people jaywalk, and the signals go out to blinking amber. The
+// code-birds and the blimp are only for the look of the place.
 import * as THREE from "three";
 
 const name = decodeURIComponent(location.hash.slice(3).split("?")[0] ?? "");
@@ -30,7 +33,7 @@ document.body.insertAdjacentHTML("beforeend", `
   <p class="muted" id="city-sum" style="margin:6px 0 0">…</p>
   <div class="legend"><span><i class="stone"></i>people's lines</span><span><i class="glass"></i>agents' lines</span><span><i class="lit"></i>lines landed lately</span></div>
   <div class="row"><button class="primary" id="city-walk">walk in</button><a class="btn" id="city-card" target="_blank" rel="noopener">postcard</a><span class="muted" id="city-msg"></span></div>
-  <div class="keys"><kbd>WASD</kbd> walk · <kbd>mouse</kbd> look · <kbd>shift</kbd> run · <kbd>esc</kbd> back up to the skyline<br>a district per public repo, a building per file: tall is long, lit is lately</div>
+  <div class="keys"><kbd>WASD</kbd> walk · <kbd>mouse</kbd> look · <kbd>shift</kbd> run · <kbd>esc</kbd> back up to the skyline<br>a district per public repo, a building per file: tall is long, lit is lately<br>busy streets are a week of commits; traffic chaos is failing checks</div>
   <p class="exits"><a href="/#/u/${encodeURIComponent(name)}">← @${esc(name)}'s profile</a></p>
 </div></div>`);
 $("#title").textContent = `@${name}'s city`;
@@ -110,10 +113,11 @@ kit("water", CYL, std("#5d7686", { roughness: 0.05, metalness: 0.4 }));
 kit("lamp", BALL, glow("#ffe2b3"), { shadow: false });
 kit("redLight", BALL, glow("#ff2a1a"), { shadow: false });
 kit("orange", BOX, glow("#e8590c"), { shadow: false });
-kit("go", BOX, glow("#41d17a"), { shadow: false });
 kit("paint", BOX, std("#e9ecee", { roughness: 0.8 }), { shadow: false });
 kit("skyline", BOX, std("#59626b", { roughness: 0.9 }), { shadow: false });
 kit("panel", BOX, std("#24303b", { roughness: 0.15, metalness: 0.6 }));
+kit("bikeLane", BOX, std("#3d6b5b", { roughness: 0.6 }), { shadow: false });
+kit("neon", BOX, glow("#f4f5f5"), { shadow: false });
 const pool = canvasTex(128, 128, (g, w) => { const r = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2); r.addColorStop(0, "rgba(255,190,120,.9)"); r.addColorStop(1, "rgba(255,190,120,0)"); g.fillStyle = r; g.fillRect(0, 0, w, w); });
 kit("pool", new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: pool, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 }), { shadow: false });
 
@@ -168,8 +172,9 @@ if (!res.ok) {
   await new Promise(() => {});
 }
 const all = city.districts.flatMap((d) => d.buildings.map((b) => ({ ...b, repo: d.repo })));
+const commits = city.districts.reduce((k, d) => k + (d.pulse?.commits ?? 0), 0), failing = city.districts.reduce((k, d) => k + (d.pulse?.failing ?? 0), 0);
 $("#city-sum").textContent = all.length
-  ? `${n(city.districts.length, "district")}, ${n(all.length, "building")}, ${n(city.lines, "line")}${city.present.length ? ` · ${n(city.present.length, "walker")} in town` : ""}${city.public ? "" : " · only you can see it"}`
+  ? `${n(city.districts.length, "district")}, ${n(all.length, "building")}, ${n(city.lines, "line")}${city.present.length ? ` · ${n(city.present.length, "walker")} in town` : ""}${commits ? ` · ${n(commits, "commit")} this week` : ""}${failing ? ` · ${n(failing, "check")} failing` : ""}${city.public ? "" : " · only you can see it"}`
   : `No public repos to build with yet.`;
 
 // The street grid as city.ts lays it: districts on a square grid of blocks, a street between.
@@ -205,7 +210,7 @@ const paving = canvasTex(128, 128, (g, w) => { g.fillStyle = "#d4d8da"; g.fillRe
 paving.wrapS = paving.wrapT = THREE.RepeatWrapping;
 
 // Lane paint: a dashed centre line down every street, zebra crossings at every junction.
-const half = STREET / 2;
+const half = STREET / 2, manholes = [];
 for (const rx of roadsX) for (let j = 0; j < roadsZ.length - 1; j++) {
   const a = roadsZ[j] + half + 1.6, b = roadsZ[j + 1] - half - 1.6;
   for (let z = a; z < b; z += 2.2) put("paint", rx, 0.01, z + 0.6, 0.12, 0.02, 1.2);
@@ -221,27 +226,56 @@ for (const rx of roadsX) for (const rz of roadsZ) for (const [dx, dz] of [[0, -1
     else put("paint", rx + dx * (half - 0.6), 0.012, rz + k * 0.6, 1.1, 0.02, 0.32);
   }
 }
-// Traffic lights on two corners of every junction, green for no one in particular.
-for (const rx of roadsX) for (const rz of roadsZ) for (const [sx, sz] of [[1, 1], [-1, -1]]) {
+// Bike lanes down both kerbs of every street, and a stop line before each crossing.
+const BIKE = LANE + 1.05;
+for (const rx of roadsX) for (let j = 0; j < roadsZ.length - 1; j++) {
+  const a = roadsZ[j] + half + 0.2, b = roadsZ[j + 1] - half - 0.2;
+  for (const s of [-1, 1]) {
+    put("bikeLane", rx + s * BIKE, 0.008, (a + b) / 2, 0.75, 0.02, b - a);
+    put("paint", rx + s * (BIKE - 0.42), 0.011, (a + b) / 2, 0.06, 0.02, b - a);
+    put("paint", rx + s * 1.1, 0.012, s > 0 ? b - 0.15 : a + 0.15, 2.1, 0.02, 0.22);
+  }
+  // A manhole in the middle of the block, steaming.
+  manholes.push([rx, (a + b) / 2 + 2.3]);
+}
+for (const rz of roadsZ) for (let i = 0; i < roadsX.length - 1; i++) {
+  const a = roadsX[i] + half + 0.2, b = roadsX[i + 1] - half - 0.2;
+  for (const s of [-1, 1]) {
+    put("bikeLane", (a + b) / 2, 0.008, rz + s * BIKE, b - a, 0.02, 0.75);
+    put("paint", (a + b) / 2, 0.011, rz + s * (BIKE - 0.42), b - a, 0.02, 0.06);
+    put("paint", s < 0 ? b - 0.15 : a + 0.15, 0.012, rz + s * 1.1, 0.22, 0.02, 2.1);
+  }
+  manholes.push([(a + b) / 2 - 2.3, rz]);
+}
+for (const [x, z] of manholes) put("cylMetal", x, 0.012, z, 0.8, 0.02, 0.8);
+// Traffic lights on two corners of every junction: one for each street, with a walk sign under it.
+const signals = [];
+for (const rx of roadsX) for (const rz of roadsZ) for (const [sx, sz, axis] of [[1, 1, "z"], [-1, -1, "x"]]) {
   const x = rx + sx * (half - SIDEWALK * 0.35), z = rz + sz * (half - SIDEWALK * 0.35);
+  // Its lamps face across the junction, at the traffic coming the other way into it.
+  const [fx, fz] = axis === "z" ? [0, -sz] : [-sx, 0];
   put("cylMetal", x, 1.3, z, 0.09, 2.6, 0.09);
-  put("metal", x, 2.45, z, 0.26, 0.7, 0.24);
-  put("go", x - sx * 0.13, 2.25, z, 0.05, 0.12, 0.12);
-  put("redLight", x, 2.65, z - sz * 0.13, 0.1, 0.1, 0.05);
+  put("metal", x + fx * 0.02, 2.45, z + fz * 0.02, axis === "z" ? 0.26 : 0.22, 0.82, axis === "z" ? 0.22 : 0.26);
+  put("metal", x + fx * 0.1, 1.75, z + fz * 0.1, 0.22, 0.24, 0.22);
+  signals.push({ rx, rz, axis, lamps: [0.27, 0, -0.27].map((dy) => [x + fx * 0.13, 2.45 + dy, z + fz * 0.13]), walk: [x + fx * 0.22, 1.75, z + fz * 0.22] });
 }
 
 // ---- the blocks: a kerb, a sidewalk, lamps, trees, benches, hydrants -------------------
-const kerb = new THREE.LineBasicMaterial({ color: "#e8590c" });
+const kerb = new THREE.LineBasicMaterial({ color: "#e8590c" }), alarms = [];
 const towers = [], solids = [], lamps = [], blocks = [];
 for (const d of city.districts) {
   const cx = d.x + d.size / 2, cz = d.z + d.size / 2, e = d.size / 2 + SIDEWALK;
-  blocks.push({ cx, cz, e });
+  const pulse = d.pulse ?? { bustle: 0, chaos: 0, failing: 0 };
+  blocks.push({ cx, cz, e, bustle: pulse.bustle, chaos: pulse.chaos });
+  // A district with checks failing has its kerb's neon blinking red.
+  const neon = pulse.failing ? new THREE.LineBasicMaterial({ color: "#ff2a1a" }) : kerb;
+  if (pulse.failing) alarms.push(neon);
   const p = paving.clone(); p.repeat.set(e * 0.9, e * 0.9); p.needsUpdate = true;
   const slab = new THREE.Mesh(new THREE.BoxGeometry(e * 2, CURB, e * 2), std("#ffffff", { map: p, roughness: 0.75 }));
   slab.position.set(cx, CURB / 2, cz); slab.receiveShadow = true;
   scene.add(slab);
   // The streets' neon: an orange line round every block's kerb.
-  scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([[-e, -e], [e, -e], [e, e], [-e, e]].map(([x, z]) => new THREE.Vector3(cx + x, CURB + 0.01, cz + z))), kerb));
+  scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([[-e, -e], [e, -e], [e, e], [-e, e]].map(([x, z]) => new THREE.Vector3(cx + x, CURB + 0.01, cz + z))), neon));
   const sign = label(d.repo);
   sign.position.set(cx, 1.3, d.z + d.size + SIDEWALK + 0.4);
   scene.add(sign);
@@ -268,12 +302,19 @@ for (const d of city.districts) {
       put("leaf", x, CURB + 1.4 + s * 0.3, z, 1.0 * s, 1.15 * s, 1.0 * s, r() * 6, pick(r, ["#5f7f63", "#6d8a6a", "#4f6e58", "#7a956f"]));
     } else if (r() < 0.45) {
       // Something for the sidewalk: a bench, a bin, a hydrant, a bollard or a newsstand.
-      const what = pick(r, ["bench", "bench", "bin", "hydrant", "bollards", "kiosk"]);
+      const what = pick(r, ["bench", "bench", "bin", "hydrant", "bollards", "kiosk", "shelter"]);
       const ry = nx ? Math.PI / 2 : 0;
       if (what === "bench") { put("tint", x - nx * 0.35, CURB + 0.28, z - nz * 0.35, nx ? 0.35 : 1.1, 0.06, nz ? 0.35 : 1.1, 0, "#7b6450"); put("metal", x - nx * 0.5, CURB + 0.45, z - nz * 0.5, nx ? 0.05 : 1.1, 0.3, nz ? 0.05 : 1.1); }
       else if (what === "bin") put("cylMetal", x, CURB + 0.3, z, 0.32, 0.6, 0.32);
       else if (what === "hydrant") { put("cylTint", x, CURB + 0.25, z, 0.2, 0.5, 0.2, 0, "#e8590c"); put("cylTint", x, CURB + 0.52, z, 0.14, 0.1, 0.14, 0, "#c24a0a"); }
       else if (what === "bollards") for (const o of [-0.6, 0, 0.6]) put("cyl", x + (nz ? o : 0), CURB + 0.25, z + (nx ? o : 0), 0.14, 0.5, 0.14);
+      else if (what === "shelter") {
+        // A bus shelter: a glass back, a white roof, an ad lit at one end.
+        put("panel", x - nx * 0.55, CURB + 0.65, z - nz * 0.55, nx ? 0.05 : 1.7, 1.1, nz ? 0.05 : 1.7);
+        put("white", x - nx * 0.3, CURB + 1.25, z - nz * 0.3, nx ? 0.75 : 1.85, 0.07, nz ? 0.75 : 1.85);
+        put("neon", x - nx * 0.3 + nz * 0.85, CURB + 0.7, z - nz * 0.3 + nx * 0.85, nx ? 0.6 : 0.05, 0.95, nz ? 0.6 : 0.05);
+        put("tint", x - nx * 0.4, CURB + 0.3, z - nz * 0.4, nx ? 0.3 : 1.2, 0.06, nz ? 0.3 : 1.2, 0, "#7b6450");
+      }
       else { put("tint", x - nx * 0.3, CURB + 0.6, z - nz * 0.3, 0.8, 1.2, 0.6, ry, "#1e2328"); put("orange", x - nx * 0.3, CURB + 1.24, z - nz * 0.3, 0.9, 0.06, 0.7, ry); }
     }
   });
@@ -325,6 +366,12 @@ function raise(b, repo, r) {
     put("white", b.x, y0 + ph + 0.04, b.z, pw + 0.08, 0.08, pw + 0.08);
     const [fx, fz] = face;
     put("tint", b.x + fx * (pw / 2 + 0.25), y0 + ph * 0.82, b.z + fz * (pw / 2 + 0.25), fx ? 0.5 : pw * 0.8, 0.05, fz ? 0.5 : pw * 0.8, 0, pick(r, ["#e8590c", "#16191c", "#f4f5f5", "#e8590c"]), fz * 0.25, -fx * 0.25);
+    // A neon blade sign sticking out over the sidewalk at one end of the front.
+    if (r() < 0.5) {
+      const t = (r() < 0.5 ? -1 : 1) * pw * 0.38, k = r() < 0.6 ? "orange" : "neon";
+      put("metal", b.x + fx * (pw / 2 + 0.22) + fz * t, y0 + ph + 0.55, b.z + fz * (pw / 2 + 0.22) + fx * t, fx ? 0.4 : 0.06, 1.0, fz ? 0.4 : 0.06);
+      put(k, b.x + fx * (pw / 2 + 0.22) + fz * t, y0 + ph + 0.55, b.z + fz * (pw / 2 + 0.22) + fx * t, fx ? 0.34 : 0.08, 0.9, fz ? 0.34 : 0.08);
+    }
     top += ph;
   }
 
@@ -439,53 +486,223 @@ for (const b of all.filter((b) => kindOf(b.path) === "tower" && b.h >= 6).sort((
 }
 buildKits();
 
-// ---- traffic: cars along both lanes of every street -------------------------------------
+// ---- the streets' pulse: busy where commits land, chaos where checks fail --------------
+/** The most of a pulse (bustle or chaos) among the districts whose streets x, z is on. */
+const near = (k, x, z) => blocks.reduce((m, b) => Math.max(Math.abs(x - b.cx) < b.e + half + 1 && Math.abs(z - b.cz) < b.e + half + 1 ? b[k] : 0, m), 0);
+const _r = rng(hash(`${name}/streets`));
+
+// Every junction's lights cycle: the z street green, amber, then the x street. Near a district
+// with checks failing badly they've gone out, blinking amber, and everyone takes their chances.
+const junctions = new Map();
+for (const rx of roadsX) for (const rz of roadsZ) junctions.set(`${rx},${rz}`, { x: rx, z: rz, off: _r() * 10, chaos: near("chaos", rx, rz), bustle: near("bustle", rx, rz) });
+for (const j of junctions.values()) j.out = j.chaos >= 0.5;
+const CYCLE = 10;
+/** What the light says to the traffic along `axis` at junction j: go, amber, stop, or out. */
+function light(j, axis, time) {
+  if (j.out) return "out";
+  const p = (time + j.off) % CYCLE;
+  if (axis === "z") return p < 4 ? "go" : p < 5 ? "amber" : "stop";
+  return p >= 5 && p < 9 ? "go" : p >= 9 ? "amber" : "stop";
+}
+/** Whether people may cross the street that runs along `axis` (its traffic has a red). */
+const walkOn = (j, axis, time) => { const p = (time + j.off) % CYCLE; return axis === "z" ? p >= 5 && p < 8.5 : p < 3.5; };
+
+const C = (h) => new THREE.Color(h);
+const LIT = { red: C("#ff2a1a"), amber: C("#ffb020"), green: C("#41d17a"), walk: C("#f4f5f5"), dont: C("#e8590c") };
+const DIM = { red: C("#3a0a06"), amber: C("#3a2a06"), green: C("#0a2a14"), off: C("#1a1d20") };
+const lampMesh = new THREE.InstancedMesh(BALL, glow("#ffffff"), signals.length * 3), walkMesh = new THREE.InstancedMesh(BOX, glow("#ffffff"), signals.length);
+signals.forEach((g, i) => {
+  g.j = junctions.get(`${g.rx},${g.rz}`);
+  g.lamps.forEach(([x, y, z], k) => lampMesh.setMatrixAt(i * 3 + k, place(new THREE.Matrix4(), x, y, z, 0.14, 0.14, 0.14)));
+  walkMesh.setMatrixAt(i, place(new THREE.Matrix4(), ...g.walk, 0.12, 0.14, 0.12));
+});
+scene.add(lampMesh, walkMesh);
+function updateSignals(time) {
+  const blinkOn = time % 1 < 0.5;
+  signals.forEach((g, i) => {
+    const st = light(g.j, g.axis, time);
+    lampMesh.setColorAt(i * 3, st === "stop" ? LIT.red : DIM.red);
+    lampMesh.setColorAt(i * 3 + 1, st === "amber" || (st === "out" && blinkOn) ? LIT.amber : DIM.amber);
+    lampMesh.setColorAt(i * 3 + 2, st === "go" ? LIT.green : DIM.green);
+    // The walk sign under it: people may cross this street while its light is red.
+    walkMesh.setColorAt(i, g.j.out ? (blinkOn ? LIT.dont : DIM.off) : walkOn(g.j, g.axis, time) ? LIT.walk : LIT.dont);
+  });
+  lampMesh.instanceColor.needsUpdate = walkMesh.instanceColor.needsUpdate = true;
+}
+
+// ---- traffic: cars in both lanes of every street, bikes along the kerbs ------------------
+// A lane is a loop along its street. Everyone in it keeps their distance from whoever's ahead,
+// stops at the line on a red and for anyone crossing, unless chaos says otherwise.
+const lanes = [];
+for (const rx of roadsX) for (const [o, dir, bike] of [[LANE, 1, false], [-LANE, -1, false], [BIKE, 1, true], [-BIKE, -1, true]])
+  lanes.push({ axis: "z", at: rx + o, road: rx, dir, bike, from: z0 - half, len: z1 - z0 + STREET, cross: roadsZ.map((c) => junctions.get(`${rx},${c}`)), movers: [] });
+for (const rz of roadsZ) for (const [o, dir, bike] of [[-LANE, 1, false], [LANE, -1, false], [-BIKE, 1, true], [BIKE, -1, true]])
+  lanes.push({ axis: "x", at: rz + o, road: rz, dir, bike, from: x0 - half, len: x1 - x0 + STREET, cross: roadsX.map((c) => junctions.get(`${c},${rz}`)), movers: [] });
+/** Where along its street a lane's s is (s runs the way its traffic does). */
+const alongOf = (l, s) => l.from + (l.dir > 0 ? s : l.len - s);
+const sOf = (l, d) => (l.dir > 0 ? d - l.from : l.from + l.len - d);
+const CAR_COLORS = ["#f4f5f5", "#f4f5f5", "#16191c", "#16191c", "#8e979e", "#e8590c", "#5a6670"];
+const cars = [], bikes = [];
+for (const l of lanes) {
+  // How busy a street is: the busiest of the districts along it, sampled down its length.
+  let bustle = 0;
+  for (let k = 0; k <= 6; k++) { const d = l.from + (l.len * k) / 6; bustle = Math.max(bustle, l.axis === "z" ? near("bustle", l.road, d) : near("bustle", d, l.road)); }
+  const m = l.bike ? Math.round((l.len / 26) * (0.4 + bustle * 2.6)) : Math.max(1, Math.round(l.len / (16 - 9 * bustle)));
+  const room = Math.floor(l.len / (l.bike ? 2.4 : 4.2)), count = Math.min(m, room);
+  for (let k = 0; k < count; k++) {
+    const v = { l, s: ((k + _r() * 0.4) / count) * l.len, v: 0, half: l.bike ? 0.5 : 0.95, wob: _r() * 6, stall: 0, skid: 0, reckless: false, decided: null, chaos: 0 };
+    v.vmax = l.bike ? 2.6 + _r() * 1.6 : 4.5 + _r() * 3.5;
+    if (l.bike) bikes.push(Object.assign(v, { coat: pick(_r, ["#16191c", "#f4f5f5", "#e8590c", "#3a4148"]), helmet: pick(_r, ["#f4f5f5", "#e8590c", "#16191c"]) }));
+    else cars.push(Object.assign(v, { color: pick(_r, CAR_COLORS) }));
+    l.movers.push(v);
+  }
+}
+
+// ---- people: round their blocks, over the crossings, and (in chaos) straight across ------
+const people = [];
+for (const b of blocks) for (let k = 0, m = Math.round(5 + 35 * b.bustle); k < m; k++)
+  people.push({ b, t: _r() * 4, off: 0.55 + _r() * 0.7, speed: (0.025 + _r() * 0.03) * (1 + b.chaos) * (_r() < 0.5 ? -1 : 1), coat: pick(_r, ["#16191c", "#2e3439", "#f4f5f5", "#6b7680", "#8a5a3c"]), brolly: pick(_r, ["#16191c", "#16191c", "#f4f5f5", "#e8590c", "#3a4148"]), bob: _r() * 6 });
+/** People who cross the street. axis is the street's (they walk across it); jaywalkers cross mid-block. */
+const crossers = [], CURBX = half - SIDEWALK + 0.4;
+for (const j of junctions.values()) {
+  const m = Math.min(10, Math.round(1 + 5 * j.bustle + 4 * j.chaos));
+  for (let k = 0; k < m; k++) {
+    const p = { j, axis: _r() < 0.5 ? "z" : "x", arm: _r() < 0.5 ? -1 : 1, from: _r() < 0.5 ? -1 : 1, wait: _r() * 4, walking: false, lean: (_r() - 0.5) * 0.6, speed: 1.1 + _r() * 0.5, jump: 0, bob: _r() * 6,
+      coat: pick(_r, ["#16191c", "#2e3439", "#f4f5f5", "#6b7680", "#8a5a3c"]), brolly: pick(_r, ["#16191c", "#f4f5f5", "#e8590c", "#3a4148"]) };
+    p.u = p.from;
+    reroll(p);
+    crossers.push(p);
+  }
+}
+/** Pick where a crosser crosses next: at the zebra, or (with the junction's chaos) anywhere down the block. */
+function reroll(p) {
+  p.jay = Math.random() < p.j.chaos * 0.6;
+  if (!p.jay) return;
+  const cs = p.axis === "z" ? roadsZ : roadsX, c = p.axis === "z" ? p.j.z : p.j.x, i = cs.indexOf(c), dn = i < cs.length - 1 ? 1 : -1;
+  const lo = c + dn * (half + 1.2), hi = cs[i + dn] - dn * (half + 1.2);
+  p.along = lo + Math.random() * (hi - lo);
+}
+/** A crosser's spot: x, z. u runs -1..1 from one kerb to the other. */
+function crosserAt(p) {
+  const across = p.u * CURBX + p.lean * 0.4;
+  if (p.axis === "z") return [p.j.x + across, p.jay ? p.along : p.j.z + p.arm * (half - 0.6) + p.lean];
+  return [p.jay ? p.along : p.j.x + p.arm * (half - 0.6) + p.lean, p.j.z + across];
+}
+function updateCrossers(dt, time) {
+  for (const p of crossers) {
+    p.jump = Math.max(0, p.jump - dt);
+    if (still) { [p.x, p.z] = crosserAt(p); continue; }
+    if (!p.walking) {
+      p.wait -= dt;
+      // At the kerb: go on the walk sign, or whenever, if they're jaywalking or the lights are out.
+      if (p.wait <= 0 && (p.jay || p.j.out || walkOn(p.j, p.axis, time) || Math.random() < p.j.chaos * dt * 0.3)) p.walking = true;
+    } else {
+      // Caught mid-crossing by the red: hurry.
+      const hurry = p.jay || p.j.out || walkOn(p.j, p.axis, time) ? 1 : 1.7;
+      p.u -= p.from * (p.speed * hurry * dt) / CURBX;
+      if (p.u * -p.from >= 1) { p.u = -p.from; p.from = -p.from; p.walking = false; p.wait = 1 + Math.random() * 5; reroll(p); }
+    }
+    [p.x, p.z] = crosserAt(p);
+    p.onRoad = p.walking && Math.abs(p.u) < 0.95;
+  }
+}
+
+/** Move everyone in a lane on by dt: distance, lights, crossers and chaos. */
+function drive(l, dt, time, crossing) {
+  const m = l.movers, n = m.length;
+  for (let i = 0; i < n; i++) {
+    const c = m[i], d = alongOf(l, c.s);
+    const [x, z] = l.axis === "z" ? [l.at, d] : [d, l.at];
+    c.chaos = near("chaos", x, z);
+    let target = c.vmax * (1 + c.chaos * 0.35);
+    // Chaos: a sudden stop, hazards on, nose swung out.
+    if (c.stall > 0) { c.stall -= dt; target = 0; }
+    else if (Math.random() < c.chaos * (l.bike ? 0.12 : 0.22) * dt) { c.stall = 0.6 + Math.random() * 2; c.skid = Math.random() < 0.5 ? -1 : 1; }
+    // The next junction ahead, and its stop line.
+    const front = c.s + c.half;
+    let jn = null, gapJ = Infinity;
+    for (const j of l.cross) { const g = (sOf(l, l.axis === "z" ? j.z : j.x) - half - 0.45 - front + l.len) % l.len; if (g < gapJ) { gapJ = g; jn = j; } }
+    if (jn && gapJ < 8) {
+      if (c.decided !== jn) { c.decided = jn; c.reckless = Math.random() < c.chaos * 0.7; }
+      const st = light(jn, l.axis, time);
+      if (st === "out") { if (gapJ < 3) target = Math.min(target, 2.2); }
+      else if (st !== "go" && !c.reckless && !(st === "amber" && gapJ < 1.2)) target = Math.min(target, gapJ * 1.6);
+    }
+    // Anyone crossing in front.
+    for (const p of crossing) {
+      if (p.axis === l.axis) continue;
+      const lat = l.axis === "z" ? p.x - l.at : p.z - l.at;
+      if (Math.abs(lat) > (l.bike ? 0.55 : 1.1)) continue;
+      const ahead = (l.axis === "z" ? p.z - d : p.x - d) * l.dir - c.half;
+      if (ahead > 0 && ahead < 5) {
+        target = Math.min(target, Math.max(0, ahead - 0.7) * 1.5);
+        // Too close: they jump out of the way.
+        if (ahead < 1.1 && c.v > 1.5) p.jump = 0.45;
+      }
+    }
+    // Keep a car's length back from whoever's ahead.
+    let room = Infinity;
+    if (n > 1) { const lead = m[(i + 1) % n]; room = ((lead.s - lead.half - front) % l.len + l.len) % l.len - 0.35; target = Math.min(target, Math.max(0, room) * 1.8); }
+    c.brake = target < c.v - 0.3;
+    c.v = target < c.v ? Math.max(target, c.v - 18 * dt) : Math.min(target, c.v + (l.bike ? 2.5 : 5) * dt);
+    c.s = (c.s + Math.min(c.v * dt, Math.max(0, room))) % l.len;
+  }
+}
+
+const _m = new THREE.Matrix4();
+/** A mover's matrix: along its lane, wobbling across it with chaos, its nose out while it's stalled. */
+function poseOf(c, time) {
+  const l = c.l, d = alongOf(l, c.s), wob = Math.sin(time * (l.bike ? 3.1 : 1.7) + c.wob) * (l.bike ? 0.04 + c.chaos * 0.35 : c.chaos * 0.25);
+  const yaw = (l.axis === "z" ? (l.dir > 0 ? 0 : Math.PI) : (l.dir > 0 ? Math.PI / 2 : -Math.PI / 2)) + (c.stall > 0 ? c.skid * 0.22 : 0) + wob * 0.15;
+  const lean = l.bike ? -wob * 0.3 : 0;
+  return l.axis === "z" ? place(_m, l.at + wob, 0, d, 1, 1, 1, yaw, 0, lean) : place(_m, d, 0, l.at + wob, 1, 1, 1, yaw, 0, lean);
+}
+
 const car = {
   body: new THREE.BoxGeometry(0.9, 0.42, 1.9).translate(0, 0.33, 0),
   cabin: new THREE.BoxGeometry(0.78, 0.34, 0.95).translate(0, 0.71, -0.1),
   head: new THREE.BoxGeometry(0.74, 0.1, 0.04).translate(0, 0.42, 0.96),
   tail: new THREE.BoxGeometry(0.74, 0.08, 0.04).translate(0, 0.45, -0.96),
 };
-const lanes = [];
-for (const rx of roadsX) { lanes.push({ x: rx + LANE, dir: 1, axis: "z", from: z0 - half, len: z1 - z0 + STREET }); lanes.push({ x: rx - LANE, dir: -1, axis: "z", from: z0 - half, len: z1 - z0 + STREET }); }
-for (const rz of roadsZ) { lanes.push({ z: rz - LANE, dir: 1, axis: "x", from: x0 - half, len: x1 - x0 + STREET }); lanes.push({ z: rz + LANE, dir: -1, axis: "x", from: x0 - half, len: x1 - x0 + STREET }); }
-const cars = [];
-{
-  const r = rng(hash(`${name}/traffic`));
-  for (const l of lanes) for (let k = 0, m = Math.max(1, Math.round(l.len / 14)); k < m; k++) cars.push({ l, t: (k + r() * 0.6) / m, speed: 4 + r() * 4, color: pick(r, ["#f4f5f5", "#f4f5f5", "#16191c", "#16191c", "#8e979e", "#e8590c", "#5a6670"]) });
-}
-const carMeshes = [[car.body, std("#ffffff", { roughness: 0.25, metalness: 0.5 })], [car.cabin, std("#14181b", { roughness: 0.1, metalness: 0.8 })], [car.head, glow("#fff1d0")], [car.tail, glow("#ff2a1a")]]
-  .map(([g, m]) => { const im = new THREE.InstancedMesh(g, m, Math.max(1, cars.length)); im.count = cars.length; im.castShadow = m instanceof THREE.MeshStandardMaterial; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(im); return im; });
-cars.forEach((c, i) => carMeshes[0].setColorAt(i, new THREE.Color(c.color)));
-const _m = new THREE.Matrix4();
-function updateCars(dt) {
-  for (const [i, c] of cars.entries()) {
-    const l = c.l;
-    if (!still) c.t = (c.t + (c.speed * dt) / l.len) % 1;
-    const d = l.from + (l.dir > 0 ? c.t : 1 - c.t) * l.len;
-    if (l.axis === "z") place(_m, l.x, 0, d, 1, 1, 1, l.dir > 0 ? 0 : Math.PI);
-    else place(_m, d, 0, l.z, 1, 1, 1, l.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+const instanced = (geo, mat, count, shadow = true) => { const im = new THREE.InstancedMesh(geo, mat, Math.max(1, count)); im.count = count; im.castShadow = shadow; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(im); return im; };
+const carMeshes = [[car.body, std("#ffffff", { roughness: 0.25, metalness: 0.5 })], [car.cabin, std("#14181b", { roughness: 0.1, metalness: 0.8 })], [car.head, glow("#fff1d0")], [car.tail, glow("#ffffff")]]
+  .map(([g, m]) => instanced(g, m, cars.length, m instanceof THREE.MeshStandardMaterial));
+cars.forEach((c, i) => carMeshes[0].setColorAt(i, C(c.color)));
+const TAIL = C("#7a1008");
+const bike = {
+  wheels: (() => { const g = new THREE.TorusGeometry(0.28, 0.035, 6, 16).rotateY(Math.PI / 2); return [g.clone().translate(0, 0.31, 0.42), g.translate(0, 0.31, -0.42)]; })(),
+  frame: new THREE.BoxGeometry(0.05, 0.05, 0.8).translate(0, 0.55, 0),
+  rider: new THREE.CapsuleGeometry(0.13, 0.36, 3, 8).rotateX(0.45).translate(0, 0.98, 0.05),
+  helmet: new THREE.SphereGeometry(0.11, 10, 8).translate(0, 1.32, 0.2),
+};
+const bikeMeshes = [
+  ...bike.wheels.map((g) => [g, std("#16191c", { roughness: 0.5 }), null]),
+  [bike.frame, std("#c9ced2", { roughness: 0.3, metalness: 0.7 }), null],
+  [bike.rider, std("#ffffff", { roughness: 0.8 }), "coat"],
+  [bike.helmet, std("#ffffff", { roughness: 0.4 }), "helmet"],
+].map(([g, m, col]) => { const im = instanced(g, m, bikes.length); if (col) bikes.forEach((b, i) => im.setColorAt(i, C(b[col]))); return im; });
+function updateTraffic(dt, time) {
+  if (!still) { const crossing = crossers.filter((p) => p.onRoad); for (const l of lanes) drive(l, dt, time, crossing); }
+  const blinkOn = time % 0.8 < 0.4;
+  cars.forEach((c, i) => {
+    poseOf(c, time);
     for (const im of carMeshes) im.setMatrixAt(i, _m);
-  }
-  for (const im of carMeshes) im.instanceMatrix.needsUpdate = true;
+    carMeshes[3].setColorAt(i, c.stall > 0 ? (blinkOn ? LIT.amber : DIM.off) : c.brake || c.v < 0.3 ? LIT.red : TAIL);
+  });
+  bikes.forEach((b, i) => { poseOf(b, time); for (const im of bikeMeshes) im.setMatrixAt(i, _m); });
+  for (const im of [...carMeshes, ...bikeMeshes]) im.instanceMatrix.needsUpdate = true;
+  if (carMeshes[3].instanceColor) carMeshes[3].instanceColor.needsUpdate = true;
 }
 
-// ---- crowds: people walking round the blocks under umbrellas ----------------------------
-const people = [];
-{
-  const r = rng(hash(`${name}/people`));
-  for (const b of blocks) for (let k = 0; k < 9; k++) people.push({ b, t: r() * 4, off: 0.55 + r() * 0.7, speed: (0.025 + r() * 0.03) * (r() < 0.5 ? -1 : 1), coat: pick(r, ["#16191c", "#2e3439", "#f4f5f5", "#6b7680", "#8a5a3c"]), brolly: pick(r, ["#16191c", "#16191c", "#f4f5f5", "#e8590c", "#3a4148"]), bob: r() * 6 });
-}
+// One crowd: the people round the blocks, then the crossers.
+const everyone = [...people, ...crossers];
 const crowd = [
   [new THREE.CapsuleGeometry(0.14, 0.42, 3, 8).translate(0, 0.38, 0), std("#ffffff", { roughness: 0.8 }), "coat"],
   [new THREE.SphereGeometry(0.1, 10, 8).translate(0, 0.78, 0), std("#d8b59a", { roughness: 0.8 }), null],
   [new THREE.ConeGeometry(0.42, 0.18, 10).translate(0, 1.06, 0), std("#ffffff", { roughness: 0.4 }), "brolly"],
-].map(([g, m, col]) => {
-  const im = new THREE.InstancedMesh(g, m, Math.max(1, people.length)); im.count = people.length; im.castShadow = true; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  if (col) people.forEach((p, i) => im.setColorAt(i, new THREE.Color(p[col])));
-  scene.add(im); return im;
-});
+].map(([g, m, col]) => { const im = instanced(g, m, everyone.length); if (col) everyone.forEach((p, i) => im.setColorAt(i, C(p[col]))); return im; });
 function updatePeople(dt, time) {
+  updateCrossers(dt, time);
   for (const [i, p] of people.entries()) {
     if (!still) p.t = (p.t + p.speed * dt + 4) % 4;
     const side = Math.floor(p.t), f = p.t - side, e = p.b.e - p.off, a = -e + 2 * e * f;
@@ -493,8 +710,33 @@ function updatePeople(dt, time) {
     place(_m, x, CURB + (still ? 0 : Math.abs(Math.sin(time * 7 + p.bob)) * 0.03), z, 1, 1, 1, ry + (p.speed < 0 ? Math.PI : 0));
     for (const im of crowd) im.setMatrixAt(i, _m);
   }
+  for (const [k, p] of crossers.entries()) {
+    // On the kerb they stand on the sidewalk; a startled one hops.
+    const y = (Math.abs(p.u) >= 0.95 ? CURB : 0) + (p.jump > 0 ? Math.sin((p.jump / 0.45) * Math.PI) * 0.4 : p.walking && !still ? Math.abs(Math.sin(time * 8 + p.bob)) * 0.03 : 0);
+    const ry = p.axis === "z" ? (p.from > 0 ? -Math.PI / 2 : Math.PI / 2) : (p.from > 0 ? Math.PI : 0);
+    place(_m, p.x, y, p.z, 1, 1, 1, ry);
+    for (const im of crowd) im.setMatrixAt(people.length + k, _m);
+  }
   for (const im of crowd) im.instanceMatrix.needsUpdate = true;
 }
+
+// ---- steam from the manholes: orange where the district's checks are failing ------------
+const PUFFS = still ? 0 : 5;
+const steam = instanced(BALL, new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.22, depthWrite: false }), manholes.length * PUFFS, false);
+manholes.forEach(([x, z], i) => { const hot = near("chaos", x, z) > 0.3; for (let k = 0; k < PUFFS; k++) steam.setColorAt(i * PUFFS + k, C(hot ? "#ff7a3a" : "#e6ebee")); });
+function updateSteam(time) {
+  if (!PUFFS) return;
+  manholes.forEach(([x, z], i) => {
+    for (let k = 0; k < PUFFS; k++) {
+      const f = (time * 0.35 + k / PUFFS + i * 0.37) % 1, s = 0.3 + f * 1.4 * (1 - f * 0.6);
+      place(_m, x + Math.sin(time * 0.8 + k) * f * 0.4, 0.15 + f * 3.2, z + Math.cos(time * 0.6 + i) * f * 0.3, s, s * 0.8, s);
+      steam.setMatrixAt(i * PUFFS + k, _m);
+    }
+  });
+  steam.instanceMatrix.needsUpdate = true;
+}
+// The kerbs of districts with checks failing blink red.
+const blinkAlarms = (time) => { for (const m of alarms) m.color.setHex(still || time % 1.2 < 0.6 ? 0xff2a1a : 0x3a0a06); };
 
 // ---- the sky over it: code-birds round the tallest tower, and a blimp with the owner's name
 const tallest = all.reduce((a, b) => (b.h > (a?.h ?? -1) ? b : a), null);
@@ -686,8 +928,11 @@ function frame(now) {
   if (walking) updateWalk(dt, now); else updateSkyline(time);
   updateWalkers(time);
   updateVisitors(dt);
-  updateCars(dt);
+  updateSignals(time);
+  updateTraffic(dt, time);
   updatePeople(dt, time);
+  updateSteam(time);
+  blinkAlarms(time);
   updateBirds(time);
   updateBlimp(time);
   updateRain(dt);
