@@ -57,6 +57,13 @@ describe("harnessCommand", () => {
     expect(permission.bash).toBeUndefined();
     expect(permission.edit).toBe("allow");
   });
+  test("asked for usage, each harness answers in JSON (#1118)", () => {
+    const flags = { claude: ["--output-format", "json"], codex: ["--json"], pi: ["--mode", "json"], opencode: ["--format", "json"] };
+    for (const h of HARNESSES) {
+      expect(harnessCommand(h, "do it", { usage: true }).args.join(" ")).toContain(flags[h].join(" "));
+      expect(harnessCommand(h, "do it").args.join(" ")).not.toContain(flags[h].join(" "));
+    }
+  });
   test("execCommand passes the harness env to the CLI", async () => {
     const r = await execCommand({ bin: "sh", args: ["-c", "echo $OPENCODE_CONFIG_CONTENT"], env: { OPENCODE_CONFIG_CONTENT: "{}" } }, tmpdir());
     expect(r.out.trim()).toBe("{}");

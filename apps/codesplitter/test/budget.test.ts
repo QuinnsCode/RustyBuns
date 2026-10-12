@@ -10,6 +10,44 @@ describe("agent budgets (#1077)", () => {
     expect(usageOf('{"type":"system"}\n{not json')).toBeNull();
   });
 
+  // Shapes from each CLI's own types and docs: codex-sdk's ThreadEvent, pi's docs/json.md, opencode run's emitter (#1118).
+  const lines = (...o: unknown[]) => o.map((x) => JSON.stringify(x)).join("\n");
+  test("codex's JSONL: usage from each turn.completed, the reply from its last agent_message", () => {
+    const out = lines(
+      { type: "thread.started", thread_id: "t" }, { type: "turn.started" },
+      { type: "item.completed", item: { id: "item_0", type: "reasoning", text: "thinking" } },
+      { type: "item.completed", item: { id: "item_1", type: "agent_message", text: "DONE: const" } },
+      { type: "turn.completed", usage: { input_tokens: 12000, cached_input_tokens: 9000, cache_write_input_tokens: 0, output_tokens: 300, reasoning_output_tokens: 120 } },
+    );
+    expect(usageOf(`${out}\n2026-10-12T21:31:15Z WARN stderr chatter`)).toEqual({ reply: "DONE: const", tokens: 12300 });
+    expect(usageOf(lines({ type: "turn.started" }, { type: "turn.failed", error: { message: "401" } }))).toBeNull();
+  });
+
+  test("pi's JSONL: every assistant message_end's usage, the last one's text", () => {
+    const usage = (input: number, output: number, cacheRead: number, cacheWrite: number) => ({ input, output, cacheRead, cacheWrite, totalTokens: input + output + cacheRead + cacheWrite, cost: { total: 0.01 } });
+    const out = lines(
+      { type: "session", version: 3, id: "s", cwd: "/x" },
+      { type: "message_end", message: { role: "user", content: "do it" } },
+      { type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", id: "c" }], usage: usage(100, 20, 0, 900), stopReason: "toolUse" } },
+      { type: "message_end", message: { role: "toolResult", content: [{ type: "text", text: "ok" }] } },
+      { type: "message_end", message: { role: "assistant", content: [{ type: "thinking", thinking: "hm" }, { type: "text", text: "done" }], usage: usage(50, 10, 900, 0), stopReason: "stop" } },
+      { type: "agent_end", messages: [] },
+    );
+    expect(usageOf(out)).toEqual({ reply: "done", tokens: 1980 });
+  });
+
+  test("opencode's JSONL: tokens from each step_finish, the reply from its text parts", () => {
+    const out = lines(
+      { type: "step_start", timestamp: 1, sessionID: "s", part: { type: "step-start" } },
+      { type: "text", timestamp: 2, sessionID: "s", part: { type: "text", text: "Changing it.\n" } },
+      { type: "step_finish", timestamp: 3, sessionID: "s", part: { type: "step-finish", tokens: { input: 40, output: 30, reasoning: 5, cache: { read: 2000, write: 500 } }, cost: 0 } },
+      { type: "text", timestamp: 4, sessionID: "s", part: { type: "text", text: "DONE: const" } },
+      { type: "step_finish", timestamp: 5, sessionID: "s", part: { type: "step-finish", tokens: { input: 10, output: 15, reasoning: 0, cache: { read: 2500, write: 0 } }, cost: 0 } },
+    );
+    expect(usageOf(out)).toEqual({ reply: "Changing it.\nDONE: const", tokens: 5100 });
+    expect(usageOf(lines({ type: "error", sessionID: "s", error: { name: "APIError" } }))).toBeNull();
+  });
+
   test("tokens are counted at four characters each", () => {
     expect(tokens(0)).toBe(0);
     expect(tokens(4000)).toBe(1000);

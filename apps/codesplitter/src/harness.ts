@@ -35,7 +35,7 @@ export const OPENCODE_PERMISSION = {
 
 /**
  * The command line that runs `harness` on `prompt` with `dir` as its working directory.
- * `usage`: answer in JSON that says what it read and cost, where the harness can (claude; budget.ts usageOf).
+ * `usage`: answer in JSON that says what it read, which budget.ts usageOf reads back (#1088, #1118).
  */
 export function harnessCommand(harness: Harness, prompt: string, opts: { model?: string; usage?: boolean } = {}): Command {
   const model = opts.model ? (args: string[]) => [...args, "--model", opts.model!] : (args: string[]) => args;
@@ -49,18 +49,18 @@ export function harnessCommand(harness: Harness, prompt: string, opts: { model?:
     // Workspace-write sandbox: it can edit the scratch dir, not the rest of the machine
     // (a write to $HOME is refused). Needs `codex login` or a provider in ~/.codex/config.toml.
     case "codex":
-      return { bin: "codex", args: model(["exec", "--skip-git-repo-check", "-s", "workspace-write", prompt]) };
+      return { bin: "codex", args: model(["exec", "--skip-git-repo-check", "-s", "workspace-write", ...opts.usage ? ["--json"] : [], prompt]) };
     // Print mode, no session saved. Only the file tools, no bash, and no
     // extensions, MCP or project-local config that could add tools back.
     // pi defaults to Google, so pass --model as provider/id (e.g. anthropic/claude-sonnet-4-5).
     case "pi":
-      return { bin: "pi", args: model(["-p", "--no-session", "--tools", "read,edit,write", "--no-extensions", "--no-mcp", "--no-approve", prompt]) };
+      return { bin: "pi", args: model(["-p", "--no-session", "--tools", "read,edit,write", "--no-extensions", "--no-mcp", "--no-approve", ...opts.usage ? ["--mode", "json"] : [], prompt]) };
     // Permissions as above: no shell, no web, nothing outside the working directory.
     // --pure skips third-party plugins, which run code when they load. It takes its
     // project dir from $PWD, which execCommand sets. Its free models refuse this
     // locked-down config, so it needs `opencode auth login` and a provider's model.
     case "opencode":
-      return { bin: "opencode", args: model(["run", "--pure", prompt]), env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: OPENCODE_PERMISSION }) } };
+      return { bin: "opencode", args: model(["run", "--pure", ...opts.usage ? ["--format", "json"] : [], prompt]), env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: OPENCODE_PERMISSION }) } };
   }
 }
 
