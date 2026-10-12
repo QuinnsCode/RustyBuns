@@ -1,6 +1,8 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
-// A single-player game with no backend: the campaign and the ground battle both run in the page.
+// The campaign and the ground battle run in the page: against the AI or hotseat, no backend. An
+// online campaign needs the Worker and its Durable Object (wrangler.jsonc), so the desktop build
+// plays the first two.
 export default defineConfig({
   name: "two-fronts",
   source: { dir: "src", aliases: {} },

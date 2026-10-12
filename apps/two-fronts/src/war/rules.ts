@@ -20,10 +20,10 @@ export interface Where { system: string; sector: number }
 export interface Campaign {
   turn: number;
   seed: number;
-  player: Faction;
+  player: Faction; // the human side against the AI; in a two-player game, the Marines
   credits: Count;
   systems: Record<string, SystemState>;
-  hero: Hero;
+  heroes: Record<Faction, Hero>; // each side's hero, though only the human sides send one in
   pending: { spec: BattleSpec; at: Where } | null;
   winner: Faction | null;
   log: string[]; // this turn's events, newest last
@@ -61,7 +61,7 @@ export function newCampaign(seed = 1, player: Faction = "marines"): Campaign {
   return {
     turn: 1, seed, player,
     credits: { marines: START_CREDITS, wooka: START_CREDITS },
-    systems, hero: { level: 1, xp: 0, woundedUntil: 0 },
+    systems, heroes: { marines: { level: 1, xp: 0, woundedUntil: 0 }, wooka: { level: 1, xp: 0, woundedUntil: 0 } },
     pending: null, winner: null, log: [],
   };
 }
@@ -230,8 +230,9 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
     }
   }
 
-  // Ground battles: one may be the hero's, the rest roll dice.
-  const pick = all.find((o) => o.faction === c.player)?.hero;
+  // Ground battles: one may be a hero's, the rest roll dice. With two players picking, the turn
+  // still has one hero battle: the first pick the sweep reaches, and the other side's AI fights it.
+  const picks = all.filter((o) => o.hero && heroReady(c, o.faction));
   for (const s of Object.values(c.systems)) s.sectors.forEach((x, i) => {
     const att = enemy(x.owner);
     if (!x.armies[att]) return;
@@ -241,8 +242,9 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
       c.log.push(`${FACTION_NAMES[att]} takes ${where(c, at)} unopposed.`);
       return;
     }
-    if (pick && pick.system === s.id && pick.sector === i && !c.pending && heroReady(c)) {
-      c.pending = { spec: buildSpec(c, at, Math.floor(r() * 2 ** 31)), at };
+    const pick = c.pending ? undefined : picks.find((o) => o.hero!.system === s.id && o.hero!.sector === i);
+    if (pick) {
+      c.pending = { spec: buildSpec(c, at, Math.floor(r() * 2 ** 31), pick.faction), at };
       return;
     }
     const [a, b] = diceBattle(x.armies[att], x.armies[x.owner], r, { att: s.orbit === att, def: s.orbit === x.owner });
@@ -253,11 +255,11 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
   return c.pending ? c : upkeep(c);
 }
 
-export const heroReady = (c: Campaign) => c.hero.woundedUntil <= c.turn;
+export const heroReady = (c: Campaign, f: Faction = c.player) => c.heroes[f].woundedUntil <= c.turn;
 
 // --- The hero battle, through the contract ---
 
-export function buildSpec(c: Campaign, at: Where, seed: number): BattleSpec {
+export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction = c.player): BattleSpec {
   const s = c.systems[at.system]!, x = s.sectors[at.sector]!;
   const def = x.owner, att = enemy(def);
   const strikes = (f: Faction) => (s.orbit !== f ? 0 : holdsShield(s, enemy(f)) ? 1 : 3);
@@ -268,8 +270,8 @@ export function buildSpec(c: Campaign, at: Where, seed: number): BattleSpec {
     system: name(at.system),
     sector: x.kind,
     factions: { attacker: att, defender: def },
-    hero: att === c.player ? "attacker" : "defender",
-    heroLevel: c.hero.level,
+    hero: att === heroOf ? "attacker" : "defender",
+    heroLevel: c.heroes[heroOf].level,
     armies: { attacker: x.armies[att], defender: x.armies[def] },
     tickets: { attacker: x.armies[att] * TICKETS_PER_ARMY, defender: x.armies[def] * TICKETS_PER_ARMY },
     vehicles: { attacker: Math.min(3, Math.floor(x.armies[att] / 2)), defender: Math.min(3, Math.floor(x.armies[def] / 2)) },
@@ -291,16 +293,16 @@ export function applyBattleResult(c0: Campaign, res: BattleResult): Campaign {
   x.armies[spec.factions[win]] = survivors;
   x.armies[spec.factions[lose]] = 0;
   x.owner = spec.factions[win];
-  const heroWon = win === spec.hero;
+  const heroWon = win === spec.hero, f = spec.factions[spec.hero], hero = c.heroes[f], who = `${FACTION_NAMES[f]}'s hero`;
   c.log.push(`Hero battle at ${where(c, p.at)}: ${FACTION_NAMES[spec.factions[win]]} wins with ${survivors} ${survivors === 1 ? "army" : "armies"} left.`);
   if (res.heroDown) {
-    c.hero.woundedUntil = c.turn + 3;
-    c.log.push(`The hero is wounded and out until turn ${c.hero.woundedUntil}.`);
+    hero.woundedUntil = c.turn + 3;
+    c.log.push(`${who} is wounded and out until turn ${hero.woundedUntil}.`);
   } else {
-    c.hero.xp += heroWon ? 2 : 1;
-    const level = 1 + Math.floor(c.hero.xp / 3);
-    if (level > c.hero.level) c.log.push(`The hero reaches level ${level}.`);
-    c.hero.level = level;
+    hero.xp += heroWon ? 2 : 1;
+    const level = 1 + Math.floor(hero.xp / 3);
+    if (level > hero.level) c.log.push(`${who} reaches level ${level}.`);
+    hero.level = level;
   }
   c.pending = null;
   return upkeep(c);

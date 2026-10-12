@@ -135,13 +135,13 @@ test("the hero battle pauses the turn on a BattleSpec and the result writes back
   expect(after.turn).toBe(2);
   expect(after.pending).toBeNull();
   expect(after.systems.kessa!.sectors[0]).toMatchObject({ owner: "marines", armies: { marines: 1, wooka: 0 } });
-  expect(after.hero.xp).toBe(2);
+  expect(after.heroes.marines.xp).toBe(2);
   // With the shield gone, the orbit bombards the rest of Kessa.
   expect(after.systems.kessa!.sectors[1]!.armies.wooka).toBe(0);
 
   const lost = applyBattleResult(paused, { id: spec.id, winner: "defender", tickets: { attacker: 0, defender: 10 }, heroDown: true });
   expect(lost.systems.kessa!.sectors[0]!.owner).toBe("wooka");
-  expect(lost.hero.woundedUntil).toBe(4);
+  expect(lost.heroes.marines.woundedUntil).toBe(4);
   const wounded = resolveTurn(lost, [{ faction: "marines", hero: { system: "kessa", sector: 1 }, orders: [] }]);
   expect(wounded.pending).toBeNull();
 });

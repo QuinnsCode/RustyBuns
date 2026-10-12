@@ -1,0 +1,12 @@
+// Two Fronts online: the built page as static assets, and one CampaignRoom Durable Object per
+// campaign (src/edge/worker.ts), its SQLite holding the table and a row per resolved turn.
+// `bun run edge:dev` to try it locally, `bun run deploy` to ship it.
+{
+  "name": "two-fronts",
+  "main": "src/edge/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": { "binding": "ASSETS", "directory": "dist/ui" },
+  "durable_objects": { "bindings": [{ "name": "CAMPAIGN", "class_name": "CampaignRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CampaignRoom"] }],
+  "observability": { "enabled": true }
+}

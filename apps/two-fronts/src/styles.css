@@ -98,3 +98,8 @@ body.in-battle .war-room { display: none; }
 .quick { display: flex; gap: 8px; margin: 10px 0; }
 .quick button { flex: 1; }
 .flavor { font-style: italic; color: var(--wooka); }
+.seat .dot { margin-right: 6px; vertical-align: -1px; }
+.seat button.link { font-size: 14px; padding: 0; }
+.choices { display: flex; gap: 8px; margin: 12px 0; }
+.choices button { flex: 1; padding: 8px 6px; }
+.seat-link { width: 100%; font: 12px ui-monospace, monospace; color: inherit; background: #10151d; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
