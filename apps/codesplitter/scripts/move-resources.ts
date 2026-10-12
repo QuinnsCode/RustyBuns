@@ -13,7 +13,12 @@
 //   Alchemy state  .alchemy/state/codesplitters moves to .alchemy/state/codesplitter, the app's
 //                  new name, so the deploy finds the stack it made
 //   D1             codesplitters-db is exported (the .sql stays in .rustybuns/moved as a backup)
-//                  and loaded into a new codesplitter-db in the same region; row counts compared
+//                  and loaded into a new codesplitter-db in the same region; row counts compared.
+//                  A codesplitter-db left by an earlier run that stopped before deploying is
+//                  stale, so it's deleted and copied again, but only while the live Worker is
+//                  seen reading codesplitters-db; once it reads codesplitter-db there's no copying
+//
+// The release does all of this in order: zsh ~/release-codesplitters.sh --move (scripts/release.ts).
 //   R2             each object of codesplitters-level-chunks copied into codesplitter-level-chunks
 //                  (none so far, so usually nothing)
 //   Queues         not copied: the deploy makes codesplitter-* and the old ones go with what they
@@ -102,15 +107,23 @@ async function counts(id: string) {
 }
 const dbFrom = await dbByName(DB.from);
 let dbTo = await dbByName(DB.to);
+// The database the live Worker reads. A copy it doesn't read yet is a snapshot from an earlier
+// run that stopped before deploying, so it's stale: --copy deletes it and copies again.
+const liveDb = (((await api(`/workers/scripts/${NEW}/settings`, {}, true))?.bindings ?? []) as any[]).find((b) => b.type === "d1" && b.name === "DB")?.id ?? null;
 if (!dbFrom) say(`  no ${DB.from}${dbTo ? `; ${DB.to} is there` : ""}: nothing to copy`);
+else if (dbTo && liveDb === dbTo.uuid) say(`  the live Worker already reads ${DB.to}: nothing to copy`);
+else if (liveDb !== dbFrom.uuid) problems.push(`the live Worker ${NEW} reads ${liveDb ? `database ${liveDb}` : "no database it could find"}, neither ${DB.from} nor ${DB.to}`);
 else {
   const fromTables = await tables(dbFrom.uuid);
   const virtual = fromTables.filter((t) => /^CREATE VIRTUAL/i.test(t.sql)).map((t) => t.name);
   // wrangler d1 export refuses a database with virtual tables.
   if (virtual.length) problems.push(`${DB.from} has virtual tables (${virtual.join(", ")}), which D1 can't export`);
-  const toTables = dbTo ? await tables(dbTo.uuid) : [];
-  if (toTables.length) say(`  ${DB.to} already has ${toTables.length} tables: comparing, not copying`);
-  else if (!problems.length) {
+  let toTables = dbTo ? await tables(dbTo.uuid) : [];
+  if (toTables.length) {
+    todo(`delete ${DB.to}: a copy from an earlier run that the live Worker doesn't read (it reads ${DB.from}), so it's stale; then copy again`);
+    if (copy && !problems.length) { await api(`/d1/database/${dbTo!.uuid}`, { method: "DELETE" }); dbTo = null; toTables = []; }
+  }
+  if (!toTables.length && !problems.length) {
     const region = (await api(`/d1/database/${dbFrom.uuid}`)).running_in_region as string | undefined;
     const file = join(app, ".rustybuns", "moved", `${DB.from}-${new Date().toISOString().replace(/[:.]/g, "-")}.sql`);
     todo(`export ${DB.from} (${fromTables.length} tables) to ${file}`);
@@ -123,7 +136,8 @@ else {
       say(`  copied at ${new Date().toISOString()}: writes to ${DB.from} after the export aren't in it, so deploy now`);
     }
   }
-  if (dbTo && (copy || toTables.length)) {
+  // Only a copy just made is compared: a stale one differs by whatever the site wrote since.
+  if (dbTo && copy) {
     const [a, b] = [await counts(dbFrom.uuid), await counts(dbTo.uuid)];
     const off = [...new Set([...a.keys(), ...b.keys()])].filter((t) => a.get(t) !== b.get(t));
     if (off.length) problems.push(`${DB.to} differs from ${DB.from} in ${off.map((t) => `${t} (${a.get(t) ?? "missing"} vs ${b.get(t) ?? "missing"})`).join(", ")}`);
