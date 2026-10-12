@@ -31,6 +31,7 @@ import { clearOwn } from "./deploy-review.ts";
 import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { commitGraph } from "./graph.ts";
+import { pickRoute } from "./pick.ts";
 import { deliverHooks, emit, hookRoutes, type HookMessage } from "./hooks.ts";
 import { bearer, tokenRoutes } from "./tokens.ts";
 import { audit, auditRoutes, via } from "./audit.ts";
@@ -328,6 +329,12 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (code(e) === "NOT_FOUND") return json({ lost: true, commits: [] });
         throw e;
       }
+    }
+    // POST /api/repos/:o/:r/commits/:sha/revert {branch?}  a commit undone, as line edits (pick.ts)
+    // POST /api/repos/:o/:r/commits/:sha/pick {branch?}  a commit taken again, onto main or an open branch
+    if (p[4] === "commits" && p[5] && (p[6] === "revert" || p[6] === "pick") && !p[7] && req.method === "POST") {
+      if (!a.write) return json({ error: "no write access" }, 403);
+      return pickRoute(env, owner, repo, user!, p[6], p[5], await req.json().catch(() => ({})) as { branch?: unknown });
     }
     // GET /api/repos/:o/:r/tree?path=dir[&branch=b]  the repo's git tree, plus files written here but not catalogued yet
     if (p[4] === "tree") {
