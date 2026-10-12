@@ -13,6 +13,8 @@
 //   private        ids of lines only the crew may read (in a public repo too)
 //   claim:<id>     who is working on which lines right now (see Claim), one key each. The
 //                  alarm is set for the earliest lapse, so a lapsed claim goes out as `unclaim`
+//   rest:<id>      an agent's claim that ran out at its cap: who, its lines, and till when
+//                  that agent may not claim them again (see REST_MS)
 //   where          [owner, repo, path] on main's copy, so its edits reach the home feed (feed.ts)
 //   branch         [owner, repo, branch] on a branch's copy, so its edits mark the branch changed (checks.ts)
 //   authors        who is named here that D1's authors already has for the repo, so a scrub finds it (#748)
@@ -65,11 +67,19 @@ type Shown = Line & { private?: true };
  * only ever send durations, so their clock skew never matters.
  */
 export interface Claim { id: string; who: string; bot: boolean; lines: string[]; task?: string; at: number; until: number | null; cap?: number }
+/** An agent's claim that ran out at its cap: `who` may not claim any of `lines` again till `until`. */
+interface Rest { who: string; lines: string[]; until: number }
 
 /** An agent's claim lapses after this unless it's renewed, so a run that dies frees its lines in minutes. */
 export const LEASE_MS = 2 * 60_000;
 /** How long an agent's claim may stand in all, from when it was laid or a person last extended it. */
 export const LEASE_CAP_MS = 30 * 60_000;
+/**
+ * After an agent's claim runs out at its cap, its holder waits this long before it may claim any
+ * of those lines again, so people and other agents get the first turn at them (#962). It's by
+ * name, so every agent of that harness waits.
+ */
+export const REST_MS = LEASE_MS;
 /** An edit renews its claim only once the lease has run down this much, so renewing costs a write a minute at most. */
 const RENEW_SLACK = 30_000;
 /** Presence goes out at most this often, so a thousand sockets opening at once isn't a million messages. */
@@ -84,6 +94,8 @@ export class FileDurableObject {
   claims = new Map<string, Claim>();
   /** Line id -> the claim it is in. */
   claimOf = new Map<string, Claim>();
+  /** Claim id -> an agent's claim that ran out at its cap, which its holder may not lay again till `until`. */
+  rests = new Map<string, Rest>();
   /** When the alarm that lets lapsed claims go is set for, as far as this instance knows. */
   alarmAt: number | null = null;
   presenceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -126,6 +138,7 @@ export class FileDurableObject {
       // A sweep the object was evicted in the middle of picks up where it stopped.
       if (this.trimmed) this.sweeping = this.sweep().catch(() => {});
       for (const c of ((await ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
+      this.rests = new Map([...((await ctx.storage.list({ prefix: "rest:" })) as Map<string, Rest>)].map(([k, r]) => [k.slice(5), r]));
       // Cloudflare keeps an alarm through eviction; the desktop and a box lose theirs on restart (a
       // setTimeout), so it's set again from the claims themselves.
       this.alarmAt = (await ctx.storage.getAlarm?.()) ?? null;
@@ -142,7 +155,7 @@ export class FileDurableObject {
   /** Let lapsed claims go (each one an `unclaim`), then set the alarm for the next lapse. */
   async expire() {
     const now = Date.now();
-    for (const c of [...this.claims.values()]) if (c.until !== null && c.until <= now) await this.release(c.id, false);
+    for (const c of [...this.claims.values()]) if (c.until !== null && c.until <= now) await this.lapse(c, false);
     await this.arm();
   }
 
@@ -242,7 +255,7 @@ export class FileDurableObject {
       await Promise.all([...all.keys()].map((k) => this.ctx.storage.delete(k)));
       [this.doc, this.base, this.commits, this.secret, this.where, this.onBranch, this.snaps, this.trimmed, this.authors] = [empty(), null, 0, new Set(), null, null, [], 0, new Set()];
       this.docs.clear(); this.bases.clear();
-      this.claims.clear(); this.claimOf.clear(); this.recent.clear();
+      this.claims.clear(); this.claimOf.clear(); this.rests.clear(); this.recent.clear();
       await this.arm();
       return json({ ok: true });
     }
@@ -548,8 +561,23 @@ export class FileDurableObject {
   /** The claims still standing; lapsed ones go (the alarm lets them go too, a moment later at most). */
   live(): Claim[] {
     const now = Date.now();
-    for (const c of this.claims.values()) if (c.until !== null && c.until <= now) void this.release(c.id);
+    for (const c of [...this.claims.values()]) if (c.until !== null && c.until <= now) void this.lapse(c);
+    for (const [id, r] of this.rests) if (r.until <= now) { this.rests.delete(id); void this.ctx.storage.delete("rest:" + id); }
     return [...this.claims.values()];
+  }
+
+  /**
+   * A claim whose time is up goes. If it was an agent's and it ran to its cap, its holder rests:
+   * it may not claim those lines again for REST_MS. The claim's lines are free the moment this is called.
+   */
+  async lapse(c: Claim, rearm = true) {
+    const gone = this.release(c.id, rearm);
+    if (c.bot && c.cap !== undefined && c.until !== null && c.until >= c.cap) {
+      const r: Rest = { who: c.who, lines: c.lines, until: Date.now() + REST_MS };
+      this.rests.set(c.id, r);
+      await this.ctx.storage.put("rest:" + c.id, r);
+    }
+    await gone;
   }
 
   /** An edit under an agent's claim renews its lease, once it has run down by RENEW_SLACK. */
@@ -592,6 +620,10 @@ export class FileDurableObject {
     if (!lines.length) return json({ error: "lines required: ids of lines in the file" }, 400);
     const clash = [...new Set(lines.map((id) => this.claimOf.get(id)).filter((c) => c && c !== old))] as Claim[];
     if (clash.length) return json({ error: `held by ${clash.map((c) => "@" + c.who).join(", ")}`, claims: clash, retryAfter: retryAfter(clash) }, 409);
+    // An agent that just ran a claim to its cap can't lay a fresh one (and a fresh cap) on those lines straight away.
+    const want = new Set(lines);
+    const rest = old ? undefined : [...this.rests.values()].filter((r) => r.who === by && r.lines.some((id) => want.has(id))).sort((a, b) => b.until - a.until)[0];
+    if (rest) return json({ error: `@${by} just held these lines for ${LEASE_CAP_MS / 60_000} minutes: others get a turn first`, retryAfter: Math.max(1, Math.ceil((rest.until - now) / 1000)) }, 409);
     // An agent's claim is a lease (LEASE_MS unless it asks for less or more, never past its cap);
     // a person's hold stands until they lift it, unless they give it a ttl.
     const ttl = b.ttl === undefined || (bot && b.ttl === null) ? (bot ? LEASE_MS : null) : Math.max(0, Number(b.ttl) || 0);
