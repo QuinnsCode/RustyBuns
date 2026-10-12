@@ -114,11 +114,6 @@ describe("beaming from the hosted site", () => {
     expect((await post("ana", "/api/repos/ana/lab/beams", { branch: "tune", kind: "git" })).status).toBe(501);
     expect((await post("ana", "/api/repos/ana/lab/beams", { branch: "tune", onto: "upstream" })).status).toBe(501);
     expect((await post("ana", "/api/repos/ana/lab/beams", { branch: "nope" })).status).toBe(404);
-    // A stacked one is a commit per branch, and the Worker's git pushes one: the desktop app beams it.
-    expect((await post("bo", "/api/repos/ana/lab/branches", { name: "atop", parent: "tune" })).status).toBe(201);
-    const stacked = await post("ana", "/api/repos/ana/lab/beams", { branch: "atop" });
-    expect(stacked.status).toBe(501);
-    expect((await stacked.json() as any).error).toContain("stacked on tune");
 
     // codeSplitter is the kind here, without saying so.
     const res = await post("ana", "/api/repos/ana/lab/beams", { branch: "tune", to: "bo" });
@@ -156,6 +151,54 @@ describe("beaming from the hosted site", () => {
     expect((await call("ana", `/api/beams/${beam.id}`, { method: "DELETE" })).status).toBe(200);
     expect(await g(`rev-parse --verify --quiet refs/beams/${beam.id} || true`)).toBe("");
     expect((await call(null, `/api/beams/${beam.id}/patch`)).status).toBe(410);
+  });
+
+  test("beams a stacked branch as a commit per branch, in one push, and a patch of each for git am (#1055)", async () => {
+    const { call, post, bare } = await hosted();
+    const set = async (branch: string, path: string, i: number, t: string) => {
+      const doc = await (await call("bo", `/api/repos/ana/lab/do/file?path=${path}&branch=${branch}`)).json() as any, l = doc.lines[i];
+      expect((await post("bo", `/api/repos/ana/lab/do/ops?path=${path}&branch=${branch}`, { ops: [{ kind: "set", line: l.id, text: t, base: l.rev }] })).status).toBe(200);
+    };
+    await post("bo", "/api/repos/ana/lab/branches", { name: "first" });
+    await set("first", "src/a.ts", 0, "export const a = 10;");
+    expect((await post("bo", "/api/repos/ana/lab/files", { path: "debug.log", content: "x\n", branch: "first" })).status).toBe(201);
+    await post("bo", "/api/repos/ana/lab/branches", { name: "second", parent: "first" });
+    await set("second", "src/a.ts", 1, "export const b = 20;");
+    expect((await post("bo", "/api/repos/ana/lab/files", { path: "src/c.ts", content: "export const c = 3;", branch: "second" })).status).toBe(201);
+    const g = (args: string) => sh(`git --git-dir ${bare} ${args}`).then((s) => s.trim());
+    const main = await g("rev-parse main");
+
+    const res = await post("ana", "/api/repos/ana/lab/beams", { branch: "second", title: "b is twenty" });
+    expect(res.status).toBe(201);
+    const beam = await res.json() as any;
+    expect(beam.stack.map((c: any) => [c.branch, c.title])).toEqual([["first", "first, from codeSplitter"], ["second", "b is twenty"]]);
+    expect(beam).toMatchObject({ sha: beam.stack[1].sha, files: [{ path: "src/a.ts", status: "M" }, { path: "src/c.ts", status: "A" }],
+      dropped: [{ path: "debug.log", why: "an editor, log or patch leftover" }] });
+    expect(await g(`rev-parse refs/beams/${beam.id}`)).toBe(beam.stack[1].sha);
+    expect(await g(`rev-parse ${beam.sha}^`)).toBe(beam.stack[0].sha);
+    expect(await g(`rev-parse ${beam.sha}^^`)).toBe(main);
+    expect(await g(`show ${beam.stack[0].sha}:src/a.ts`)).toBe("export const a = 10;\nexport const b = 2;");
+    expect(await g(`diff --name-only ${main} ${beam.stack[0].sha}`)).toBe("src/a.ts");
+    expect(await g(`diff --name-only ${beam.stack[0].sha} ${beam.sha}`)).toBe("src/a.ts\nsrc/c.ts");
+    expect(await g(`show ${beam.sha}:src/a.ts`)).toBe("export const a = 10;\nexport const b = 20;");
+
+    // The page is the whole stack's diff; the patch is a mail per commit, and git am lands both.
+    expect((await (await call(null, `/api/beams/${beam.id}`)).json() as any).diff).toBe(await sh(`git --git-dir ${bare} diff --no-color ${main} ${beam.sha}`));
+    const patch = await (await call(null, `/api/beams/${beam.id}/patch`)).text();
+    expect(patch).toContain("Subject: [PATCH 1/2] first, from codeSplitter");
+    expect(patch).toContain("Subject: [PATCH 2/2] b is twenty");
+    writeFileSync(join(root, "stacked.patch"), patch);
+    const them = mkdtempSync(join(root, "them-"));
+    await sh(`git clone -q ${bare} . && git am -q ${join(root, "stacked.patch")}`, them);
+    expect(await sh("git rev-parse HEAD~1^{tree} HEAD^{tree}", them)).toBe(await sh(`git --git-dir ${bare} rev-parse ${beam.stack[0].sha}^{tree} ${beam.sha}^{tree}`));
+
+    // A copy made before the branch under it touched that file would take that change back out: it says so.
+    await post("bo", "/api/repos/ana/lab/branches", { name: "third", parent: "second" });
+    expect((await call("bo", "/api/repos/ana/lab/do/file?path=keep.md&branch=third")).status).toBe(200);
+    await set("second", "keep.md", 0, "moved");
+    const stale = await post("ana", "/api/repos/ana/lab/beams", { branch: "third" });
+    expect(stale.status).toBe(409);
+    expect((await stale.json() as any).clash).toEqual(["keep.md"]);
   });
 
   test("refuses a branch main already has, and one that's only noise unless you keep it", async () => {

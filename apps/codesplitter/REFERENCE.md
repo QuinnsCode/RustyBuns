@@ -136,7 +136,7 @@ The pitch is in [README.md](README.md).
   `GET /api/beams/:id` is the beam and its diff for anyone with the link, `GET /api/beams/:id/patch` is `git format-patch`'s output for `git am`, `to` puts it in that handle's inbox (`GET /api/me/beams`, shown on the feed), and `DELETE /api/beams/:id` withdraws it and drops the ref.
   A repo with private lines can't beam (its git holds them blank).
   Nothing goes to GitHub.
-  On the hosted site there's no git to run and no git branches, so `kind` defaults to `codesplitter` there and a beam goes onto main only, as one commit (`kind: "git"`, `onto: "upstream"` and a stacked branch are a 501, and `GET .../beams` says `hosted: true`).
+  On the hosted site there's no git to run and no git branches, so `kind` defaults to `codesplitter` there and a beam goes onto main only, a commit per branch for a stacked one (`kind: "git"` and `onto: "upstream"` are a 501, and `GET .../beams` says `hosted: true`).
   The Worker's own git (`src/git.ts` `push`) lays the branch's files on main's tip, with the noise left as main has it, and pushes that as one commit to `refs/beams/<id>` on the repo's Artifacts remote, by whoever beams it with whoever opened the branch as `Co-authored-by`.
   The diff and the patch are written in JS from both sides' blobs (`src/patch.ts`), byte for byte what `git diff` and `git format-patch` print, so `git am` takes the patch the same way.
   `src/beam.ts`.
