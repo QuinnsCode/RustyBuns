@@ -7,8 +7,7 @@
 //     runner picks up and reports on with PUT .../checks/:id;
 //   - GitHub Actions: a sha the mirror sent up is watched, and its check runs and
 //     commit statuses come back in as `github` runs (the cron polls; POST .../checks/github
-//     polls now). Our own results can go the other way, as `codesplitter/<name>` statuses
-//     (and `codesplitters/<name>`, the pre-rename name, until #821);
+//     polls now). Our own results can go the other way, as `codesplitter/<name>` statuses;
 //   - anyone in the crew, by hand, with POST .../checks: labelled so, and only the owner's
 //     may say how it went (a collaborator's is queued, for a runner to claim);
 //   - other CI, through the GitHub-shaped API under /api/gh/v3 with a repo's CI token,
@@ -173,21 +172,22 @@ async function told(env: Env, run: CheckRun, action: "created" | "completed", by
   if (run.runner !== "github") await postStatus(env, run).catch(() => null);
 }
 
+/** The status context we post our runs under. */
+const CONTEXT = "codesplitter/";
 /**
- * Status contexts we post our runs under. `codesplitters/` is the name from before the rename (#805):
- * branch protection on a GitHub repo may require it by name, so it's posted beside the new one
- * until owners have moved their rules over, then dropped (#821).
+ * Contexts that are ours when importing GitHub's statuses: `codesplitters/` is the name from before
+ * the rename (#805), no longer posted (#821) but still on older commits.
  */
-const CONTEXTS = ["codesplitter/", "codesplitters/"];
+const OURS = [CONTEXT, "codesplitters/"];
 
-/** Our own run as a commit status on GitHub, under each of CONTEXTS, when the owner turned that on. */
+/** Our own run as a commit status on GitHub, when the owner turned that on. */
 async function postStatus(env: Env, run: CheckRun) {
   const s = await checkSettings(env, run.owner, run.repo);
   if (!s.post_statuses || !s.github || !/^[0-9a-f]{40}$/.test(run.sha)) return;
   const state = run.status === "passed" ? "success" : run.status === "failed" ? "failure" : run.status === "cancelled" ? "error" : "pending";
-  for (const prefix of CONTEXTS) await gh(env, run.owner, `/repos/${s.github}/statuses/${run.sha}`, {
+  await gh(env, run.owner, `/repos/${s.github}/statuses/${run.sha}`, {
     method: "POST",
-    body: JSON.stringify({ state, context: `${prefix}${run.name}`, description: `${run.runner}: ${run.status}`.slice(0, 140) }),
+    body: JSON.stringify({ state, context: `${CONTEXT}${run.name}`, description: `${run.runner}: ${run.status}`.slice(0, 140) }),
   });
 }
 
@@ -481,7 +481,7 @@ export async function importGithub(env: Env, owner: string, repo: string, ref: s
       started_at: c.started_at ? Date.parse(c.started_at) : null, finished_at: c.completed_at ? Date.parse(c.completed_at) : null,
     })) ?? [],
     ...(statuses.ok ? ((await statuses.json()) as { statuses?: any[] }).statuses ?? [] : [])
-      .filter((s) => !CONTEXTS.some((p) => String(s.context).startsWith(p)))
+      .filter((s) => !OURS.some((p) => String(s.context).startsWith(p)))
       .map((s) => ({
         external_id: `status:${s.context}`, name: String(s.context), status: fromState(s.state), url: s.target_url ?? null,
         started_at: s.created_at ? Date.parse(s.created_at) : null, finished_at: s.state !== "pending" && s.updated_at ? Date.parse(s.updated_at) : null,
