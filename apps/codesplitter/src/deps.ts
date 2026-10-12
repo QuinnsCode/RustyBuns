@@ -735,6 +735,13 @@ export async function tryInClone(env: Env, owner: string, repo: string, files: R
   if (!(await settings(env, owner, repo)).test_merges) return { skipped: "this repo's merge answers aren't tested (its test merges setting)" };
   const tester = testerAt(env, owner);
   if (!tester) return { skipped: noTester(env) };
+  const c = await cloneOf(env, owner, repo, files);
+  if ("skipped" in c) return c;
+  return tester(c.remote, files, { ...c.pm, test: true, only });
+}
+
+/** What a throwaway clone of the repo needs: its remote with a read token, and its package manager. */
+async function cloneOf(env: Env, owner: string, repo: string, files: Record<string, string>): Promise<{ remote: string; pm: { pm: PM; lock: string | null } } | { skipped: string }> {
   const h = await handleFor(env, owner, repo, true);
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   if (!art) return { skipped: "the repo isn't in git yet" };
@@ -743,8 +750,23 @@ export async function tryInClone(env: Env, owner: string, repo: string, files: R
   let parsed: Record<string, any>;
   try { parsed = JSON.parse(pkg ?? ""); } catch { return { skipped: "no package.json at the top of this repo" }; }
   const top = ((await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path NOT LIKE '%/%'").bind(owner, repo).all()).results as { path: string }[]).map((r) => r.path);
-  const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
-  return tester(remote, files, { ...packageManager(top, parsed), test: true, only });
+  return { remote: art.remote.replace("://", `://x:${art.token.split("?")[0]}@`), pm: packageManager(top, parsed) };
+}
+
+/**
+ * A lockfile both sides of a merge changed, made again (#1012) as the doctor makes one for a
+ * deps-* branch: `files` (main's lockfile, the manifests as merged) in a throwaway clone, a
+ * lockfile-only install with install scripts off, and the lockfile it wrote. Only where the
+ * doctor regenerates one, the desktop; otherwise `skipped` says why not.
+ */
+export async function regenerateLock(env: Env, owner: string, repo: string, lock: string, files: Record<string, string>): Promise<{ ok: boolean; out: string; lock?: string } | { skipped: string }> {
+  if (lock.includes("/")) return { skipped: "only a lockfile at the top of the repo is regenerated here" };
+  if (lock === "bun.lockb") return { skipped: "bun.lockb is binary: run `bun install --save-text-lockfile` to switch to bun.lock" };
+  const installer = installerFor(env);
+  const c = await cloneOf(env, owner, repo, files);
+  if ("skipped" in c) return c;
+  if (!installer) return { skipped: `lockfiles are regenerated on the desktop app: run \`${c.pm.pm} install\` on the branch` };
+  return installer(c.remote, files, { pm: c.pm.pm, lock, test: false });
 }
 
 /**

@@ -21,7 +21,7 @@
 import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, type Doc, type Op, type Pick, type Resolve } from "./lines.ts";
 import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy } from "./policy.ts";
-import { tryInClone } from "./deps.ts";
+import { regenerateLock, tryInClone } from "./deps.ts";
 import { catalogueBlob, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { mergeBlock, refChecks } from "./checks.ts";
@@ -34,8 +34,8 @@ import { HARNESSES, type Harness } from "./harness.ts";
 import { localSandbox, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
-import { askAgent } from "./conflict-agent.ts";
-import { guardTripped } from "./heal.ts";
+import { askAgent, cheapest } from "./conflict-agent.ts";
+import { guardTripped, healUnavailable } from "./heal.ts";
 import { hunks, revertOps } from "./review.ts";
 
 const TEXT_MAX = 20_000;
@@ -160,16 +160,143 @@ async function fileHunks(env: Env, owner: string, repo: string, branch: string, 
   return { doc: doc!, hunks: hunks(base ?? empty(), doc!) };
 }
 
+type BranchRow = { name: string; by: string; created_at?: unknown; upstream_ref?: unknown };
+type FileRow = { path: string; merged: number; deleted: number; blob: string | null; mode: string | null };
+/** A coding agent's answer to one conflict, checked: `ok` only when the merged file parses and the tests pass (or don't run). */
+export interface Answer { harness: Harness; model?: string; text?: string; ok: boolean; tests: string; failure?: string }
+
+/** The branch's other files that merge clean, as merged: what a throwaway clone gets beside the file in question. */
+async function cleanMerged(env: Env, owner: string, repo: string, branch: BranchRow, rows: FileRow[], skip: string, user: string) {
+  const others = rows.filter((x) => x.path !== skip && !x.merged && !x.deleted && !x.blob);
+  const clean = await Promise.all(others.map(async (x) => {
+    const m = await mergeFile(env, owner, repo, branch, x.path, user, undefined, true);
+    if (m.conflicts.length) return null;
+    const d = await (await toFile(env, owner, repo, x.path, user, "file")).json() as Doc;
+    return apply(d, m.ops ?? [], m.ops?.map(() => user) ?? [], 0, d.rev).ok ? [x.path, text(d)] as const : null;
+  }));
+  return Object.fromEntries(clean.filter((x) => !!x)) as Record<string, string>;
+}
+
+/**
+ * A coding agent writes the settled text for conflict `c` in `path`, and it's checked (#934): offered as
+ * settled only if the merged file parses and the tests pass; otherwise a person gets it with the failure.
+ */
+async function checkedAnswer(env: Env, owner: string, repo: string, branch: BranchRow, rows: FileRow[], path: string, c: Conflict,
+  ask: { harness: Harness; model?: string }, user: string, signal?: AbortSignal): Promise<Answer | { error: string }> {
+  const name = branch.name;
+  const doc = async (op: string, on?: string) => (await toFile(env, owner, repo, path, user, op, {}, "", on)).json() as Promise<Doc>;
+  const [main, base, ours] = await Promise.all([doc("file"), doc("base", name), doc("file", name)]);
+  const rule = (await pathPolicy(env, owner, repo, path, user)).merge;
+  // The file as the merge leaves it: every other change in, and this conflict settled as `resolve` says.
+  const mergedWith = (resolve: Resolve) => {
+    const m = merge(base, ours, main, resolve, String(branch.by), path, user, rule), d = structuredClone(main);
+    return { m, d, ok: apply(d, m.ops, m.by, 0, main.rev).ok };
+  };
+  // Why main changed the file since the branch forked: its commit messages. A branch doesn't commit.
+  const log = await (await toFile(env, owner, repo, path, user, "commits")).json().catch(() => []) as { at: number; message: string }[];
+  const said = (Array.isArray(log) ? log : []).filter((x) => x.at >= Number(branch.created_at) && x.message !== "commit").map((x) => x.message).slice(0, 10);
+  // Why the branch changed it: the task of the agent run that made it (agent-routes.ts runBranch), if one did.
+  const run = /^agent-run-(\d+)$/.exec(name);
+  const meant = run ? ((await env.DB.prepare("SELECT task FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(run[1])).first()) as { task: string } | null)?.task : undefined;
+  // Or, for one that follows a branch upstream, that branch's commit messages to the file (#990).
+  const ref = branch.upstream_ref as string | null | undefined;
+  const theirs = ref ? await (await import("./mirror.ts")).upstreamMessages(env, owner, repo, ref, path) : [];
+  const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
+  const r = await askAgent(box, { ...ask, path, branch: name, conflict: c, merged: mergedWith({}).d, said, meant, theirs }, signal);
+  if ("error" in r) return r;
+  const answer = { harness: ask.harness, ...(ask.model && { model: ask.model }), text: r.text };
+  const settled = mergedWith({ [c.line]: { text: r.text } });
+  const broken = [...settled.m.conflicts.filter((x) => x.lint), ...(settled.ok ? lintMerge(path, main, ours, settled.m) : [])].map((x) => x.lint);
+  if (!settled.ok || settled.m.conflicts.some((x) => x.line === c.line)) broken.unshift("the answer doesn't settle the conflict");
+  if (broken.length) return { ...answer, ok: false, failure: `merged, it doesn't parse: ${broken.join("; ")}`, tests: "not run" };
+  // The test run gets this file as merged, and the branch's other files that merge cleanly;
+  // only the tests for the settled file, where the repo's test script runs one runner straight (#990).
+  const t = await tryInClone(env, owner, repo, { ...(await cleanMerged(env, owner, repo, branch, rows, path, user)), [path]: text(settled.d) }, [path]);
+  if ("skipped" in t) return { ...answer, ok: true, tests: `skipped: ${t.skipped}` };
+  const left = settled.m.conflicts.length ? ` (${settled.m.conflicts.length} other conflict${settled.m.conflicts.length > 1 ? "s" : ""} in ${path} ran as main's)` : "";
+  return { ...answer, ok: t.ok, tests: (t.ok ? "passed" : "failed") + left, ...(!t.ok && { failure: t.out.slice(-4000) }) };
+}
+
+/** Conflicts one merge asks a coding agent about on its own, at most: each is a run on the site's budget. */
+export const MAX_ASKED = 3;
+
+/** Which conflict an answer was for: the same line in another conflict needs another answer. */
+async function conflictKey(c: Conflict) {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([c.line, c.base, c.main, c.branch])));
+  return [...new Uint8Array(hash)].map((x) => x.toString(16).padStart(2, "0")).join("").slice(0, 32);
+}
+
+/** The answers kept for the branch's conflicts, by `path\nline`, with the conflict each was for. */
+async function keptAnswers(env: Env, owner: string, repo: string, branch: string) {
+  const { results } = await env.DB.prepare("SELECT path, line, key, answer FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, branch).all();
+  return new Map((results as { path: string; line: string; key: string; answer: string }[]).map((r) => [`${r.path}\n${r.line}`, { key: r.key, answer: JSON.parse(r.answer) as Answer }]));
+}
+
+/** The kept answer to `c`, if it was for this conflict as it stands. */
+async function answerFor(kept: Awaited<ReturnType<typeof keptAnswers>>, path: string, c: Conflict) {
+  const k = kept.get(`${path}\n${c.line}`);
+  return k && k.key === await conflictKey(c) ? k.answer : undefined;
+}
+
+/**
+ * A merge's leftovers in files whose policy gives them to AI (#1012): a coding agent answers each one
+ * that takes a text, on its own, as suggest_resolution would, on the cheapest model there is. Its answer
+ * is kept, so merging again asks nothing until the conflict changes. It runs where self-healing does
+ * (heal.ts), and each run takes one from the site's `hosted` budget. Why none was asked, if so.
+ */
+async function askLeftovers(env: Env, owner: string, repo: string, branch: BranchRow, rows: FileRow[], leftovers: { path: string; conflicts: Conflict[] }[], user: string) {
+  const kept = await keptAnswers(env, owner, repo, branch.name), answers = new Map<string, Answer>();
+  const off = healUnavailable(env, owner), ask = off ? null : cheapest(installedHarnesses(env));
+  let asked = 0, why: string | null = null;
+  for (const f of leftovers) for (const c of f.conflicts) {
+    if (!explain(c).choices.includes("text")) continue;
+    const id = `${f.path}\n${c.line}`, had = await answerFor(kept, f.path, c);
+    if (had) { answers.set(id, had); continue; }
+    if (!ask) { why = off ?? "no coding agent's CLI is installed here"; continue; }
+    if (asked >= MAX_ASKED) { why = `a merge asks about ${MAX_ASKED} conflicts at most: merge again for the rest`; continue; }
+    const spent = await hostedBudget(env);
+    if (spent) { why = ((await spent.json()) as { error: string }).error; continue; }
+    asked++;
+    const r = await checkedAnswer(env, owner, repo, branch, rows, f.path, c, ask, user).catch((e) => ({ error: String((e as Error)?.message ?? e) }));
+    const a: Answer = "error" in r ? { harness: ask.harness, ...(ask.model && { model: ask.model }), ok: false, tests: "not run", failure: r.error.slice(-4000) } : r;
+    answers.set(id, a);
+    await env.DB.prepare(`INSERT INTO leftover_answers (owner, repo, branch, path, line, key, answer, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (owner, repo, branch, path, line) DO UPDATE SET key = excluded.key, answer = excluded.answer, at = excluded.at`)
+      .bind(owner, repo, branch.name, f.path, c.line, await conflictKey(c), JSON.stringify(a), Date.now()).run();
+  }
+  return { answers, why };
+}
+
+/**
+ * A lockfile both sides changed, in a file whose policy gives its leftovers to CI (#1012): made again
+ * from main's lockfile and the branch's manifests as merged, in a throwaway clone (deps.ts), and put on
+ * the branch, so the merge takes it whole. Null when it's on the branch; else why not.
+ */
+async function regenerated(env: Env, owner: string, repo: string, branch: BranchRow, rows: FileRow[], path: string, user: string): Promise<string | null> {
+  const main = await toFile(env, owner, repo, path, user, "file");
+  if (!main.ok) return "not regenerated: main has no copy to start from";
+  const t = await regenerateLock(env, owner, repo, path, { ...(await cleanMerged(env, owner, repo, branch, rows, path, user)), [path]: text(await main.json() as Doc) + "\n" });
+  if ("skipped" in t) return `not regenerated: ${t.skipped}`;
+  if (!t.ok || t.lock === undefined) return `couldn't be regenerated: ${t.out.trim().slice(-300)}`;
+  const ours = await (await toFile(env, owner, repo, path, user, "file", {}, "", branch.name)).json() as Doc;
+  const ops = diffToOps(ours.lines, t.lock.replace(/\n$/, "").split("\n"));
+  if (ops.length) {
+    const res = await toFile(env, owner, repo, path, user, "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: ours.rev }) }, "", branch.name);
+    if (!res.ok) return "not regenerated: the branch's copy changed meanwhile";
+  }
+  return null;
+}
+
 /**
  * Merge an open branch into main: a dry run first, so a conflict anywhere merges nothing (409),
  * then each file for real. `resolve` settles conflicts by line; `build_ok` lets build files land.
  */
-async function mergeBranch(env: Env, owner: string, repo: string, branch: { name: string; by: string }, user: string, body: { resolve?: unknown; build_ok?: boolean }): Promise<Response> {
+async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: boolean }): Promise<Response> {
   const name = branch.name;
-  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as { path: string; merged: number; deleted: number; blob: string | null; mode: string | null }[]);
+  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[]);
   const resolve = parseResolve(body.resolve), build_ok = body.build_ok;
   if (typeof resolve === "string") return json({ error: resolve }, 400);
-  const todo = (await files()).filter((f) => !f.merged);
+  const rows = await files(), todo = rows.filter((f) => !f.merged);
   // Build or deploy files on a merge the owner's next commit would ship: read them first.
   const build = todo.map((f) => f.path).filter(isBuildFile);
   if (build.length && !build_ok && (await deploySettings(env, owner, repo)).on_commit) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok", build }, 409);
@@ -178,13 +305,33 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: { name
   if (held) return json(held, 409);
   // A dry run first, so a conflict anywhere merges nothing. A deletion or a binary file never conflicts.
   const dry = await Promise.all(todo.filter((f) => !f.deleted && !f.blob).map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], true)) })));
-  const blocked = dry.filter((d) => d.conflicts.length).map(({ path, conflicts }) => ({ path, conflicts: conflicts.map(explain) }));
+  // What the merge leaves goes where each file's policy says (#1012). A lockfile both changed, to CI: made again
+  // on the branch and taken whole, unless the merger picked a side already.
+  const notes = new Map<string, string>();
+  for (const d of dry) {
+    if (d.policy.leftover !== "ci" || !d.conflicts.some((c) => c.whole) || resolve[d.path]?.file) continue;
+    const why = await regenerated(env, owner, repo, branch, rows, d.path, user);
+    if (why) { notes.set(d.path, why); continue; }
+    resolve[d.path] = { ...resolve[d.path], file: "branch" };
+    Object.assign(d, await mergeFile(env, owner, repo, branch, d.path, user, resolve[d.path], true));
+  }
+  const left = dry.filter((d) => d.conflicts.length);
   // Settling a stretch can leave code that won't build: say so, as the review (settling nothing) can't show it.
-  const broken = blocked.flatMap((b) => b.conflicts.filter((c) => c.lint).map((c) => `${b.path}: ${c.lint}`));
-  if (blocked.length) {
+  const broken = left.flatMap((b) => b.conflicts.filter((c) => c.lint).map((c) => `${b.path}: ${c.lint}`));
+  if (left.length) {
     // A guard tripped (git's markers, a file that won't parse or build): a fix task on the branch, when self-healing is on (heal.ts).
-    const trips = blocked.map((b) => ({ path: b.path, lints: b.conflicts.flatMap((c) => c.lint ? [c.lint] : []) }));
+    const trips = left.map((b) => ({ path: b.path, lints: b.conflicts.flatMap((c) => c.lint ? [c.lint] : []) }));
     const fix = await guardTripped(env, owner, repo, name, trips).catch(() => null);
+    // To AI: a checked agent's answer to each, offered with the conflict, ok or with its failure for a person.
+    const ai = left.filter((d) => d.policy.leftover === "ai" && !broken.length);
+    const { answers, why } = ai.length ? await askLeftovers(env, owner, repo, branch, rows, ai, user) : { answers: new Map<string, Answer>(), why: null };
+    const blocked = left.map(({ path, policy, conflicts }) => {
+      const note = notes.get(path) ?? (policy.leftover === "ai" && ai.length > 0 && why ? `no agent asked: ${why}` : undefined);
+      return {
+        path, leftover: policy.leftover, ...(note && { note }),
+        conflicts: conflicts.map((c) => { const a = answers.get(`${path}\n${c.line}`); return { ...explain(c), ...(a && { answer: a }) }; }),
+      };
+    });
     return json({ error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked, ...(fix && "id" in fix && { fix: fix.id }) }, 409);
   }
 
@@ -219,6 +366,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: { name
   if (!conflicts.length) {
     const at = Date.now();
     await env.DB.prepare("UPDATE branches SET status = 'merged', merged_by = ?, merged_at = ? WHERE owner = ? AND repo = ? AND name = ?").bind(user, at, owner, repo, name).run();
+    await env.DB.prepare("DELETE FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, name).run();
     // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
     await emit(env, owner, repo, "branch.merged", user, {
       action: "closed",
@@ -292,6 +440,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   // A file that runs at build or deploy time says so, with its changed lines spelled out,
   // and `deploys` says whether the owner's commit after this merge would ship.
   if (!p[6] && req.method === "GET") {
+    // A merge's agent answers to its leftovers (#1012), for the crew: one quotes the file's lines.
+    const kept = a.write ? await keptAnswers(env, owner, repo, name) : new Map();
     const out = await Promise.all((await files()).map(async (f) => {
       const build = isBuildFile(f.path);
       if (f.merged) return { path: f.path, merged: true, build, ops: [], conflicts: [], ...(f.deleted && { deleted: true }) };
@@ -309,7 +459,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       const lines = build ? changedLines(await (await toFile(env, owner, repo, f.path, user ?? "anon", "file")).json() as Doc, ops) : undefined;
       // What the branch itself changed, a stretch at a time, to accept or reject (#735).
       const changed = (await fileHunks(env, owner, repo, name, f.path, user ?? "anon", a.write)).hunks;
-      return { path: f.path, merged: false, build, policy: m.policy, ops, conflicts: conflicts.map(explain), hunks: changed, ...(lines && { lines }) };
+      const shown = await Promise.all(conflicts.map(async (c) => { const answer = await answerFor(kept, f.path, c); return { ...explain(c), ...(answer && { answer }) }; }));
+      return { path: f.path, merged: false, build, policy: m.policy, ops, conflicts: shown, hunks: changed, ...(lines && { lines }) };
     }));
     return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out });
   }
@@ -346,51 +497,16 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (!b.harness || !HARNESSES.includes(b.harness)) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
     if (!installedHarnesses(env).includes(b.harness)) return json({ error: `${b.harness} isn't installed on this machine` }, 400);
     if (!b.path || !b.line) return json({ error: "path and line: a conflict the review lists" }, 400);
-    const f = (await files()).find((x) => x.path === b.path && !x.merged && !x.deleted && !x.blob);
+    const rows = await files();
+    const f = rows.find((x) => x.path === b.path && !x.merged && !x.deleted && !x.blob);
     const c = f && (await mergeFile(env, owner, repo, branch, f.path, user!, undefined, true)).conflicts.find((x) => x.line === b.line);
     if (!c) return json({ error: `no conflict ${b.line} in ${b.path} on ${name}` }, 404);
     if (!explain(c).choices.includes("text")) return json({ error: "this conflict only takes main or branch" }, 400);
     const spent = await hostedBudget(env);
     if (spent) return spent;
-    const doc = async (op: string, on?: string) => (await toFile(env, owner, repo, b.path!, user!, op, {}, "", on)).json() as Promise<Doc>;
-    const [main, base, ours] = await Promise.all([doc("file"), doc("base", name), doc("file", name)]);
-    const rule = (await pathPolicy(env, owner, repo, b.path, user!)).merge;
-    // The file as the merge leaves it: every other change in, and this conflict settled as `resolve` says.
-    const mergedWith = (resolve: Resolve) => {
-      const m = merge(base, ours, main, resolve, String(branch.by), b.path!, user!, rule), d = structuredClone(main);
-      return { m, d, ok: apply(d, m.ops, m.by, 0, main.rev).ok };
-    };
-    // Why main changed the file since the branch forked: its commit messages. A branch doesn't commit.
-    const log = await (await toFile(env, owner, repo, b.path, user!, "commits")).json().catch(() => []) as { at: number; message: string }[];
-    const said = (Array.isArray(log) ? log : []).filter((x) => x.at >= Number(branch.created_at) && x.message !== "commit").map((x) => x.message).slice(0, 10);
-    // Why the branch changed it: the task of the agent run that made it (agent-routes.ts runBranch), if one did.
-    const run = /^agent-run-(\d+)$/.exec(name);
-    const meant = run ? ((await env.DB.prepare("SELECT task FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(run[1])).first()) as { task: string } | null)?.task : undefined;
-    // Or, for one that follows a branch upstream, that branch's commit messages to the file (#990).
-    const ref = branch.upstream_ref as string | null;
-    const theirs = ref ? await (await import("./mirror.ts")).upstreamMessages(env, owner, repo, ref, b.path) : [];
-    const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
-    const r = await askAgent(box, { harness: b.harness, model: b.model?.trim() || undefined, path: b.path, branch: name, conflict: c, merged: mergedWith({}).d, said, meant, theirs }, req.signal);
+    const r = await checkedAnswer(env, owner, repo, branch, rows, b.path, c, { harness: b.harness, model: b.model?.trim() || undefined }, user!, req.signal);
     if ("error" in r) return json({ error: r.error }, 502);
-    const answer = { path: b.path, line: b.line, harness: b.harness, text: r.text };
-    // It's offered as settled only if the merged file parses and the tests pass; otherwise a person gets it with the failure (#934).
-    const settled = mergedWith({ [b.line]: { text: r.text } });
-    const broken = [...settled.m.conflicts.filter((x) => x.lint), ...(settled.ok ? lintMerge(b.path, main, ours, settled.m) : [])].map((x) => x.lint);
-    if (!settled.ok || settled.m.conflicts.some((x) => x.line === b.line)) broken.unshift("the answer doesn't settle the conflict");
-    if (broken.length) return json({ ...answer, ok: false, failure: `merged, it doesn't parse: ${broken.join("; ")}`, tests: "not run" });
-    // The test run gets this file as merged, and the branch's other files that merge cleanly.
-    const others = (await files()).filter((x) => x.path !== b.path && !x.merged && !x.deleted && !x.blob);
-    const clean = await Promise.all(others.map(async (x) => {
-      const m = await mergeFile(env, owner, repo, branch, x.path, user!, undefined, true);
-      if (m.conflicts.length) return null;
-      const d = await (await toFile(env, owner, repo, x.path, user!, "file")).json() as Doc;
-      return apply(d, m.ops ?? [], m.ops?.map(() => user!) ?? [], 0, d.rev).ok ? [x.path, text(d)] as const : null;
-    }));
-    // Only the tests for the settled file, where the repo's test script runs one runner straight (#990).
-    const t = await tryInClone(env, owner, repo, { ...Object.fromEntries(clean.filter((x) => !!x)), [b.path]: text(settled.d) }, [b.path]);
-    if ("skipped" in t) return json({ ...answer, ok: true, tests: `skipped: ${t.skipped}` });
-    const left = settled.m.conflicts.length ? ` (${settled.m.conflicts.length} other conflict${settled.m.conflicts.length > 1 ? "s" : ""} in ${b.path} ran as main's)` : "";
-    return json({ ...answer, ok: t.ok, tests: (t.ok ? "passed" : "failed") + left, ...(!t.ok && { failure: t.out.slice(-4000) }) });
+    return json({ path: b.path, line: b.line, ...r });
   }
 
   // POST /api/repos/:o/:r/branches/:b/merge {resolve?: {path: {lineId: pick}}}, a pick being
