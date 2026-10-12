@@ -8,7 +8,8 @@
 // main's, the branch's, both, or a text of the merger's (Pick in lines.ts).
 // The review says which picks each conflict takes, and suggests a text where
 // both sides only added words at one spot; a coding agent can write one too
-// (POST .../conflicts/agent, conflict-agent.ts). A merged JavaScript or TypeScript file that
+// (POST .../conflicts/agent, conflict-agent.ts), offered as settled only when the merged file parses
+// and the repo's tests pass with it in a throwaway clone. A merged JavaScript or TypeScript file that
 // would no longer build (lint.ts) is a conflict too. Git hears about it when
 // main is catalogued. A branch can delete a file too: its row is marked
 // deleted, and merging deletes it from main, and from git there and then.
@@ -16,7 +17,9 @@
 // A binary file a mirror branch took from upstream has no lines: its row holds
 // the git blob (#446), which the review shows as changed and the merge writes into main's git.
 
-import { empty, explain, fromText, PICKS, type Conflict, type Doc, type Op, type Pick, type Resolve } from "./lines.ts";
+import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, type Doc, type Op, type Pick, type Resolve } from "./lines.ts";
+import { lintMerge } from "./lint.ts";
+import { tryInClone } from "./deps.ts";
 import { catalogueBlob, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { mergeBlock, refChecks } from "./checks.ts";
@@ -334,10 +337,37 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (!explain(c).choices.includes("text")) return json({ error: "this conflict only takes main or branch" }, 400);
     const spent = await hostedBudget(env);
     if (spent) return spent;
-    const main = await (await toFile(env, owner, repo, b.path, user!, "file")).json() as Doc;
+    const doc = async (op: string, on?: string) => (await toFile(env, owner, repo, b.path!, user!, op, {}, "", on)).json() as Promise<Doc>;
+    const [main, base, ours] = await Promise.all([doc("file"), doc("base", name), doc("file", name)]);
+    // The file as the merge leaves it: every other change in, and this conflict settled as `resolve` says.
+    const mergedWith = (resolve: Resolve) => {
+      const m = merge(base, ours, main, resolve, String(branch.by), b.path!, user!), d = structuredClone(main);
+      return { m, d, ok: apply(d, m.ops, m.by, 0, main.rev).ok };
+    };
+    // Why main changed the file since the branch forked: its commit messages. A branch doesn't commit.
+    const log = await (await toFile(env, owner, repo, b.path, user!, "commits")).json().catch(() => []) as { at: number; message: string }[];
+    const said = (Array.isArray(log) ? log : []).filter((x) => x.at >= Number(branch.created_at) && x.message !== "commit").map((x) => x.message).slice(0, 10);
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
-    const r = await askAgent(box, { harness: b.harness, model: b.model?.trim() || undefined, path: b.path, branch: name, conflict: c, main }, req.signal);
-    return "error" in r ? json({ error: r.error }, 502) : json({ path: b.path, line: b.line, harness: b.harness, text: r.text });
+    const r = await askAgent(box, { harness: b.harness, model: b.model?.trim() || undefined, path: b.path, branch: name, conflict: c, merged: mergedWith({}).d, said }, req.signal);
+    if ("error" in r) return json({ error: r.error }, 502);
+    const answer = { path: b.path, line: b.line, harness: b.harness, text: r.text };
+    // It's offered as settled only if the merged file parses and the tests pass; otherwise a person gets it with the failure (#934).
+    const settled = mergedWith({ [b.line]: { text: r.text } });
+    const broken = [...settled.m.conflicts.filter((x) => x.lint), ...(settled.ok ? lintMerge(b.path, main, ours, settled.m) : [])].map((x) => x.lint);
+    if (!settled.ok || settled.m.conflicts.some((x) => x.line === b.line)) broken.unshift("the answer doesn't settle the conflict");
+    if (broken.length) return json({ ...answer, ok: false, failure: `merged, it doesn't parse: ${broken.join("; ")}`, tests: "not run" });
+    // The test run gets this file as merged, and the branch's other files that merge cleanly.
+    const others = (await files()).filter((x) => x.path !== b.path && !x.merged && !x.deleted && !x.blob);
+    const clean = await Promise.all(others.map(async (x) => {
+      const m = await mergeFile(env, owner, repo, branch, x.path, user!, undefined, true);
+      if (m.conflicts.length) return null;
+      const d = await (await toFile(env, owner, repo, x.path, user!, "file")).json() as Doc;
+      return apply(d, m.ops ?? [], m.ops?.map(() => user!) ?? [], 0, d.rev).ok ? [x.path, text(d)] as const : null;
+    }));
+    const t = await tryInClone(env, owner, repo, { ...Object.fromEntries(clean.filter((x) => !!x)), [b.path]: text(settled.d) });
+    if ("skipped" in t) return json({ ...answer, ok: true, tests: `skipped: ${t.skipped}` });
+    const left = settled.m.conflicts.length ? ` (${settled.m.conflicts.length} other conflict${settled.m.conflicts.length > 1 ? "s" : ""} in ${b.path} ran as main's)` : "";
+    return json({ ...answer, ok: t.ok, tests: (t.ok ? "passed" : "failed") + left, ...(!t.ok && { failure: t.out.slice(-4000) }) });
   }
 
   // POST /api/repos/:o/:r/branches/:b/merge {resolve?: {path: {lineId: pick}}}, a pick being

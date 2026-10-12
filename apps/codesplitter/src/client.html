@@ -3753,13 +3753,17 @@ const views = {
       card.querySelector("[data-ask]")?.addEventListener("click", async (e) => {
         const btn = e.currentTarget, harness = card.querySelector("[data-harness]").value, at = card.querySelector("[data-asking]");
         btn.disabled = true;
-        at.innerHTML = ticker(Date.now(), null, `${harness} is writing the settled lines; usually under a minute. Nothing lands until you merge.`);
+        at.innerHTML = ticker(Date.now(), null, `${harness} is writing the settled lines, then they're parsed and the tests run with them. Nothing lands until you merge.`);
+        let failed = "";
         try {
           const a = await api(`${base}/${encodeURIComponent(st.branch)}/conflicts/agent`, { path: st.c.path, line: st.c.line, harness });
           clashSet(card, "text", a.text);
-          toast(`${harness} wrote it: check it, then merge`);
+          // A failed check comes with the attempt: it's yours to fix or drop, never merged on its say-so.
+          if (a.ok) toast(`${harness} wrote it (tests ${a.tests}): check it, then merge`);
+          else failed = `<details class="muted"><summary>${icon("triangle-alert")} ${esc(harness)}'s answer failed its check (tests ${esc(a.tests)})</summary><pre>${esc(a.failure ?? "")}</pre></details>`;
         } catch (err) { toast(`${harness} couldn't: ${err.message}`); }
-        at.innerHTML = "";
+        at.innerHTML = failed;
+        if (failed) icons();
         btn.disabled = false;
       });
     });

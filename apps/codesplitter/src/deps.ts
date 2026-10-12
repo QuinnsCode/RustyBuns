@@ -88,7 +88,7 @@
 //   POST /api/repos/:o/:r/deps/run    check now; {rank} ranks the packages for this run only
 
 import type { Doc, Op } from "./lines.ts";
-import { access as artifactAccess, handleFor } from "./archive.ts";
+import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
 import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
@@ -711,6 +711,26 @@ function testerAt(env: Env, owner: string): Tester | null {
 }
 
 const testerFor = (env: Env, s: Settings, owner: string): Tester | null => s.run_tests ? testerAt(env, owner) : null;
+
+/**
+ * A merge's answer tried as the doctor tries an update (#934): `files` swapped into a clone
+ * of the repo, a full install, then its test script. Runs only where the owner lets the doctor
+ * run tests; otherwise `skipped` says why not.
+ */
+export async function tryInClone(env: Env, owner: string, repo: string, files: Record<string, string>): Promise<{ ok: boolean; out: string } | { skipped: string }> {
+  const tester = testerFor(env, await settings(env, owner, repo), owner);
+  if (!tester) return { skipped: "the doctor doesn't run this repo's tests here (its run tests setting)" };
+  const h = await handleFor(env, owner, repo, true);
+  const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
+  if (!art) return { skipped: "the repo isn't in git yet" };
+  const res = await toFile(env, owner, repo, "package.json", owner, "file");
+  const pkg = files["package.json"] ?? (res.ok ? ((await res.json()) as Doc).lines.map((l) => l.text).join("\n") : null);
+  let parsed: Record<string, any>;
+  try { parsed = JSON.parse(pkg ?? ""); } catch { return { skipped: "no package.json at the top of this repo" }; }
+  const top = ((await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path NOT LIKE '%/%'").bind(owner, repo).all()).results as { path: string }[]).map((r) => r.path);
+  const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
+  return tester(remote, files, { ...packageManager(top, parsed), test: true });
+}
 
 /**
  * The same fix in a container of its own (sandbox/server.mjs, POST /deps-fix), torn down after.
