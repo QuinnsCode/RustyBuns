@@ -5,10 +5,10 @@ export function Home({ siteKey }: { siteKey: string }) {
     <main>
       <header>
         <h1>What Would <span>Fantano</span> Say?</h1>
-        <p className="sub">Drop a track. Get judged. The song stays on your device; only a few numbers about it leave.</p>
+        <p className="sub">Pick your track and your best 15 seconds. Get judged. Only that clip leaves your phone.</p>
       </header>
       <Critic siteKey={siteKey} />
-      <footer>Parody. Not affiliated with, endorsed by, or written by any real critic. Reviews are written by AI.</footer>
+      <footer>Parody. Not affiliated with, endorsed by, or written by any real critic. Clips are judged by AI and not stored.</footer>
     </main>
   );
 }

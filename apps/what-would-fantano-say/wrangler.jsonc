@@ -12,6 +12,9 @@
     "binding": "ASSETS",
     "directory": "dist/client"
   },
+  "ai": {
+    "binding": "AI"
+  },
   "ratelimits": [
     {
       "name": "REVIEW_LIMIT",
@@ -22,8 +25,24 @@
       }
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BUDGET",
+        "class_name": "ReviewBudget"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "ReviewBudget"
+      ]
+    }
+  ],
   "vars": {
-    "TURNSTILE_SITE_KEY": "",
-    "REVIEW_MODEL": "claude-haiku-5-5"
+    "DAILY_REVIEWS": "25000",
+    "TURNSTILE_SITE_KEY": ""
   }
 }

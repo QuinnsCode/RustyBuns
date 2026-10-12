@@ -67,8 +67,9 @@ export function analyze(samples: Float32Array, rate: number): Features {
     bpm,
     pulse,
     bass: total > 0 ? round(Math.min(1, low / total), 2) : 0,
-    // Speech and most music cross zero ~0.02–0.15 of samples; hiss and cymbals go higher.
-    brightness: round(Math.min(1, zcr / 0.2), 2),
+    // Zero crossings a second, so it reads the same at any sample rate. Most music sits
+    // around 500–3000; hiss and cymbals go higher.
+    brightness: round(Math.min(1, (zcr * rate) / 4410), 2),
     silence: round(silent / levels.length, 2),
   };
 }
