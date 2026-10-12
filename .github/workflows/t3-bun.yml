@@ -60,8 +60,10 @@ jobs:
       - name: T3 Code at the pinned commit, plus our adapter
         run: |
           git init -q t3 && cd t3
+          # Windows checkouts turn LF into CRLF: keep T3's files as they are, and the patch's too.
+          git config core.autocrlf false
           git fetch -q --depth 1 "$T3_REPO" "$T3_SHA" && git checkout -q FETCH_HEAD
-          git apply ../.github/t3-bun/bun-pty.patch
+          tr -d '\r' < ../.github/t3-bun/bun-pty.patch | git apply
       - name: Install (scripts off)
         working-directory: t3
         run: |
@@ -102,8 +104,10 @@ jobs:
       - name: T3 Code at the pinned commit, plus our adapter
         run: |
           git init -q t3 && cd t3
+          # Windows checkouts turn LF into CRLF: keep T3's files as they are, and the patch's too.
+          git config core.autocrlf false
           git fetch -q --depth 1 "$T3_REPO" "$T3_SHA" && git checkout -q FETCH_HEAD
-          git apply ../.github/t3-bun/bun-pty.patch
+          tr -d '\r' < ../.github/t3-bun/bun-pty.patch | git apply
       - working-directory: t3
         run: bun install --filter t3 --ignore-scripts
       - working-directory: t3/apps/server
