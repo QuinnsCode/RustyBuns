@@ -31,3 +31,21 @@ export function copySite(from: string, to: string) {
   for (const e of readdirSync(src)) if (keep(join(src, e))) cpSync(join(src, e), join(dest, e), { recursive: true, filter: keep });
   if (!existsSync(join(dest, "index.html"))) throw new Error(`no index.html in ${from}: nothing to serve`);
 }
+
+/** A Jekyll site's own files under `root`, "/"-separated: no dotfiles, _folders, Rusty Buns' files or `exclude`d top-level paths. */
+export function jekyllSiteFiles(root: string, exclude: string[], limit = 5000): string[] {
+  const out: string[] = [];
+  const skip = new Set(exclude.map((e) => e.replace(/^\.?\/|\/$/g, "")));
+  const walk = (d: string) => {
+    let entries;
+    try { entries = readdirSync(join(root, d), { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = d ? `${d}/${e.name}` : e.name;
+      if (out.length >= limit || /^[._]/.test(e.name) || e.name === "node_modules" || skip.has(p)) continue;
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile()) out.push(p);
+    }
+  };
+  walk("");
+  return out;
+}

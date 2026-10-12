@@ -548,3 +548,15 @@ test("init: a Jekyll site's own defaults stay, after GitHub Pages' layouts; a Ge
   expect(gem.run("init").code).toBe(0);
   expect(gem.read("_config.rustybuns.yml")).not.toContain("defaults");
 });
+
+test("init: says when a Gemfile-less Jekyll site leans on GitHub Pages' other default plugins", () => {
+  const files = { "_config.yml": "exclude: [drafts]\n", "_layouts/default.html": "{{ content }}", "README.md": "# Docs\n\nRead [the guide](guide.md).\n", "guide.md": "# Guide\n", "drafts/wip.md": "# WIP\n", "_includes/x.md": "# x\n" };
+  const pages = project(files);
+  const out = pages.run("init").out;
+  expect(out).toMatch(/jekyll-optional-front-matter: .*\(guide\.md\)/);
+  expect(out).toMatch(/jekyll-relative-links: .*\(README\.md\)/);
+  expect(out).toMatch(/jekyll-readme-index: .*\(README\.md\)/);
+  expect(out).toContain(`gem "github-pages"`);
+  expect(out).not.toContain("wip.md");
+  expect(project({ ...files, "Gemfile": "gem 'github-pages'\n" }).run("init").out).not.toContain("jekyll-relative-links");
+});

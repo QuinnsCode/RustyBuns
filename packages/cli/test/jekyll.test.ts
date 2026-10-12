@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import { jekyllPlan, JEKYLL_IMAGE, type JekyllEnv } from "../src/glue/jekyll.ts";
+import { jekyllPagesPlugins } from "../src/glue/static-site.ts";
 
 const env = (ruby: string, bins: string[], gemfile = false): JekyllEnv => ({ ruby, has: (b) => bins.includes(b), gemfile, cwd: "/w/site" });
 const args = ["build", "--destination", "dist/ui"];
@@ -31,4 +32,25 @@ test("jekyll: no usable Ruby and no Docker says what to install", () => {
   expect(old.how === "none" && old.why).toMatch(/ruby 2\.6\.10 is too old.*install Docker/);
   const missing = jekyllPlan(args, env("3.3.0", [], true));
   expect(missing.how === "none" && missing.why).toMatch(/bundle is not on PATH.*bundle install/);
+});
+
+test("jekyll: spots a site leaning on GitHub Pages' other default plugins", () => {
+  const site: Record<string, string> = {
+    "index.md": "---\nlayout: default\ntitle: Home\n---\nSee [the guide](guide.md#setup) and [docs](https://x.dev/a.md).\n",
+    "guide.md": "# Guide\n\nNo front matter here.\n",
+    "about.md": "---\nlayout: page\n---\n\nAbout us\n========\n",
+    "docs/README.md": "# Docs\n\n[back]: ../index.md\n",
+    "LICENSE.md": "MIT",
+    "styles.css": "",
+  };
+  const uses = jekyllPagesPlugins(Object.keys(site), (f) => site[f]!);
+  expect(Object.fromEntries(uses.map((u) => [u.plugin, u.files]))).toEqual({
+    "jekyll-optional-front-matter": ["guide.md"],
+    "jekyll-relative-links": ["index.md", "docs/README.md"],
+    "jekyll-titles-from-headings": ["guide.md", "about.md", "docs/README.md"],
+    "jekyll-readme-index": ["docs/README.md"],
+  });
+  // A site written for plain Jekyll needs none of them.
+  const plain: Record<string, string> = { "index.html": "---\nlayout: default\n---\nhi", "about.md": "---\ntitle: About\n---\n# About\n[home](/)" };
+  expect(jekyllPagesPlugins(Object.keys(plain), (f) => plain[f]!)).toEqual([]);
 });
