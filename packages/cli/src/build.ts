@@ -585,7 +585,10 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   // After the glue (the app imports the generated stubs), before the client build:
   // a type error shouldn't cost a full UI build and a 100 MB compile first.
   if (opts.check) await checkApp(prof, opts.check);
-  if (build) await step("client build", () => $`sh -c ${build}`);
+  // The app's bins on PATH, as under `pnpm exec`, so a step like `prisma generate` resolves
+  // when rustybuns itself was started some other way.
+  const bin = { ...process.env, PATH: `${join(process.cwd(), "node_modules", ".bin")}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}` };
+  if (build) await step("client build", () => $`sh -c ${build}`.env(bin));
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(entry, mode === "spa" ? spaEntry(c, host) : desktopEntry(c, host));
   const assets = mode === "spa" ? (d.clientDir ?? "dist/desktop") : c.worker!.assets;
