@@ -34,6 +34,7 @@ The highest-value things, in order:
    Agents settle the same conflicts over MCP, the CLI or WebMCP.
    Hot spots get their own rules in `.gitattributes`, as git's merge drivers do: `CHANGELOG.md merge=union` and its rewrites stack instead of conflicting.
    Each path gives an agent a budget too: past it, failing the same way twice or on a third conflict round, it stops and leaves a four-line note (DONE, NEXT, BROKE, DONT), and a fresh agent, a cheaper model or a person picks up from that.
+   A branch whose merge meets changed conflicts a third time gets the same: the next answer comes from fresh eyes reading a note of what the last ones tried, or a person.
 2. **Your git keeps going when the other git doesn't.** Make a repo a mirror of GitHub, GitLab or any git URL, or turn a fork you dug up on the desktop into one with a click (its About panel says which of its commits go up first, and asks).
    When upstream goes down, you keep editing, committing, branching and running agents.
    The Upstream panel says it's down and how many commits are waiting, and it catches up by itself once upstream answers.

@@ -37,11 +37,13 @@ export const resolveFile = (path: string) => `RESOLVE${/\.[\w-]+$/.exec(path)?.[
 
 /**
  * `said`: main's commit messages for the file since the branch forked, why main changed it; `meant`: why the branch did,
- * the task an agent run made it for; `theirs`: or the commit messages of the upstream branch a mirror's branch follows.
+ * the task an agent run made it for; `theirs`: or the commit messages of the upstream branch a mirror's branch follows;
+ * `note`: from a third conflict round on (#1089), the terse note of what the rounds before tried.
  */
-export function conflictPrompt(path: string, branch: string, c: Conflict, context: string, said: string[] = [], meant?: string, theirs: string[] = []) {
+export function conflictPrompt(path: string, branch: string, c: Conflict, context: string, said: string[] = [], meant?: string, theirs: string[] = [], note?: string) {
   const file = resolveFile(path);
   return [
+    ...(note ? [`Fresh eyes: ${branch}'s conflicts came back again, and the agents before you left this note. Don't repeat what it says failed.`, note] : []),
     `${file} in the current directory holds one merge conflict from ${path}, merging the branch ${branch} into main, as git's markers:`,
     `main's version, then the base both started from, then the branch's.`,
     ...(context ? [`Around it, ${path} as the merge leaves it, every other change already in (the conflicted line marked >):`, context] : []),
@@ -73,8 +75,8 @@ export function cheapest(installed: Harness[]): { harness: Harness; model?: stri
   return installed[0] ? { harness: installed[0] } : null;
 }
 
-export async function askAgent(box: Sandbox, o: { harness: Harness; model?: string; path: string; branch: string; conflict: Conflict; merged: Doc; said?: string[]; meant?: string; theirs?: string[] }, signal?: AbortSignal) {
+export async function askAgent(box: Sandbox, o: { harness: Harness; model?: string; path: string; branch: string; conflict: Conflict; merged: Doc; said?: string[]; meant?: string; theirs?: string[]; note?: string }, signal?: AbortSignal) {
   const given = markers(o.conflict);
-  const cmd = harnessCommand(o.harness, conflictPrompt(o.path, o.branch, o.conflict, around(o.merged, o.conflict.line), o.said, o.meant, o.theirs), { model: o.model });
+  const cmd = harnessCommand(o.harness, conflictPrompt(o.path, o.branch, o.conflict, around(o.merged, o.conflict.line), o.said, o.meant, o.theirs, o.note), { model: o.model });
   return settled(await box(cmd, { path: resolveFile(o.path), text: given }, signal), o.harness, given);
 }
