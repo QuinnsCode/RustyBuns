@@ -120,9 +120,11 @@ The pitch is in [README.md](README.md).
   A run's worktree goes when it's removed (`DELETE .../worktrees/:name`) or after a day, a branch's once main holds the commits it made (or the branch is gone), and one with uncommitted changes stays.
   Every sync and every `GET .../worktrees` cleans up, and deleting the repo removes them all.
   `src/worktrees.ts`.
-- **Beam: a branch's stack, cleaned up and handed over (desktop).** `POST /api/repos/:o/:r/beams {branch, onto?, title?, message?, to?, keep?, drop?}` takes git branch `branch` (pushed with the Push back remote, or made in a worktree) from where it left main, and leaves out the noise, each with why: a lockfile the repo doesn't use, lockfile churn with no `package.json` change, `node_modules/` and tool caches, build output the branch added, OS and editor leftovers, and env files (`keep` and `drop` override, by path).
+- **Beam: a branch's stack, cleaned up and handed over (desktop).** `POST /api/repos/:o/:r/beams {branch, kind?, onto?, title?, message?, to?, keep?, drop?}` takes git branch `branch` (pushed with the Push back remote, or made in a worktree) from where it left main, and leaves out the noise, each with why: a lockfile the repo doesn't use, lockfile churn with no `package.json` change, `node_modules/` and tool caches, build output the branch added, OS and editor leftovers, and env files (`keep` and `drop` override, by path).
   What's left goes on main's tip, or with `onto: "upstream"` on a GitHub fork's upstream tip (a plain read-only `git fetch`), by `git merge-tree` with no checkout, and is squashed into one commit: the stack's author if it had one, else this machine's git identity with the others as `Co-authored-by`, the title given or the first commit's, and the stack's subjects as the body.
   A 409 says what clashes, or that nothing's left once the noise is out.
+  With `kind: "codesplitter"`, `branch` is a codeSplitter branch instead: its files as they are now, laid on main's tip the way a push upstream lays them, are the stack, cleaned up and squashed the same way (by this machine's git identity, whoever opened the branch as `Co-authored-by`).
+  That's how an agent hands its work over as one commit: the MCP server's `beam_branch` and `get_beam` tools are these routes.
   The commit is kept at `refs/beams/<id>` and checked like a pushed branch.
   `GET /api/beams/:id` is the beam and its diff for anyone with the link, `GET /api/beams/:id/patch` is `git format-patch`'s output for `git am`, `to` puts it in that handle's inbox (`GET /api/me/beams`, shown on the feed), and `DELETE /api/beams/:id` withdraws it and drops the ref.
   A repo with private lines can't beam (its git holds them blank).
@@ -594,7 +596,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `deploy-sandbox/` | the deploy container image: git, bun, and the server that runs one command; `ci.Dockerfile` is the check container's image, the same server without the deploy tools |
 | `src/checks.ts` | checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results |
 | `src/ci-runner.ts` | the built-in check runners: the desktop draining its own queue, and the per-repo `CiRunner` that runs each check in a container |
-| `src/beam.ts` | beams: a git branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
+| `src/beam.ts` | beams: a git or codeSplitter branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
 | `src/cuts.ts` | cuts: picking lines and following what they use across files, the cut's branch, running its tests, the share page |
 | `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
 | `features.ts`, `src/features/` | the home page's feature strip: a file per feature and their order, built into `features.json` |

@@ -184,11 +184,12 @@ const OPS: Record<string, Record<string, Op>> = {
     delete: { id: "delete_share", summary: "Revoke a share (whoever shared it, or the repo's owner)", tag: "Sharing", risky: true, ok: ref("Ok") },
   },
   [`${repo}/beams`]: {
-    get: { id: "list_beams", summary: "A repo's beams; for the crew, the git branches there are to beam too", tag: "Sharing",
-      ok: obj({ beams: arr(ref("BeamSummary")), branches: arr(obj({ name: str(), sha: str(), ahead: int("commits past main") })) }) },
-    post: { id: "beam_branch", summary: "Beam a git branch: its stack squashed into one clean commit on main (or upstream's tip), its noise left out, as a link and a patch (the crew, desktop)", tag: "Sharing",
-      description: "Lockfiles from another package manager, lockfile churn with no package.json change, installed packages, build output, OS and editor leftovers and env files are left out, each with why; `keep` and `drop` override. Nothing is written to GitHub. 409 with `clash` when it doesn't sit cleanly on `onto`, or with `dropped` when nothing's left.",
-      body: obj({ branch: str("a git branch in the repo's git"), onto: { type: "string", enum: ["main", "upstream"] }, title: str(), message: str(), to: str("a handle whose inbox it goes in"),
+    get: { id: "list_beams", summary: "A repo's beams; for the crew, the git and codeSplitter branches there are to beam too", tag: "Sharing",
+      ok: obj({ beams: arr(ref("BeamSummary")), branches: arr(obj({ name: str(), sha: str(), ahead: int("commits past main") })),
+        codesplitter_branches: arr(obj({ name: str(), by: str(), files: int("files it has of its own") })) }) },
+    post: { id: "beam_branch", summary: "Beam a branch, git or codeSplitter: its work squashed into one clean commit on main (or upstream's tip), its noise left out, as a link and a patch (the crew, desktop)", tag: "Sharing",
+      description: "An agent hands its work over this way: `kind: \"codesplitter\"` beams a codeSplitter branch, its files as they are now on main's tip. Lockfiles from another package manager, lockfile churn with no package.json change, installed packages, build output, OS and editor leftovers and env files are left out, each with why; `keep` and `drop` override. Nothing is written to GitHub. 409 with `clash` when it doesn't sit cleanly on `onto`, or with `dropped` when nothing's left.",
+      body: obj({ branch: str("a git branch in the repo's git, or a codeSplitter branch with `kind`"), kind: { type: "string", enum: ["git", "codesplitter"], description: "which kind of branch `branch` is; git when left out" }, onto: { type: "string", enum: ["main", "upstream"] }, title: str(), message: str(), to: str("a handle whose inbox it goes in"),
         keep: arr(str("path")), drop: arr(str("path")) }, ["branch"]), ok: ref("Beam"), status: 201 },
   },
   "/beams/{id}": {
@@ -349,8 +350,8 @@ const OPS: Record<string, Record<string, Op>> = {
 const SCHEMAS: Record<string, Schema> = {
   Error: obj({ error: str() }, ["error"]),
   Ok: obj({ ok: bool() }),
-  Beam: obj({ id: str(), owner: str(), repo: str(), branch: str(), by: str(), to: { type: ["string", "null"] }, title: str(), message: str(),
-    onto: obj({ sha: str(), label: str('"main", or "upstream <repo>@<branch>"') }), sha: str("the one clean commit, at refs/beams/{id}"), commits: int("commits in the stack it squashed"),
+  Beam: obj({ id: str(), owner: str(), repo: str(), branch: str(), kind: { type: "string", enum: ["git", "codesplitter"] }, by: str(), to: { type: ["string", "null"] }, title: str(), message: str(),
+    onto: obj({ sha: str(), label: str('"main", or "upstream <repo>@<branch>"') }), sha: str("the one clean commit, at refs/beams/{id}"), commits: int("commits in the stack it squashed; 0 for a codeSplitter branch"),
     files: arr(obj({ path: str(), status: str("git's A, M or D") })), dropped: arr(obj({ path: str(), why: str() })),
     status: { type: "string", enum: ["open", "withdrawn"] }, created_at: int(), page: str("open it at /#/beam/{id}"), patch: str() }),
   BeamSummary: loose("A Beam with `files` and `dropped` as counts"),
