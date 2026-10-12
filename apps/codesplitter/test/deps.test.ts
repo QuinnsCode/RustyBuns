@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { bump, costOf, fixCommand, fixPrompt, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, registryUrl, runDoctor, scheduledDoctor, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
+import { bump, costOf, digUpdate, dugVersion, fixCommand, fixPrompt, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, reached, registryUrl, runDoctor, scheduledDoctor, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "./fake-gate.ts";
 import type { Runner } from "../src/preview.ts";
@@ -382,6 +382,90 @@ test("the on-fail chain stops spending at its dollar cap, and its alert tells th
   await send("ryan", "/api/repos/ryan/lab/deps/run", {});
   await settle(call);
   expect(told.length).toBe(1);
+});
+
+test("🪏 a dig points at the next major's newest, a dist-tag's release or an exact one, once it's out (#863)", () => {
+  const meta = { versions: ["1.2.0", "2.0.0", "2.3.1", "3.0.0", "4.0.0-beta.2"], time: {}, tags: { latest: "3.0.0", beta: "4.0.0-beta.2", next: "1.2.0" } };
+  expect(dugVersion("^1.2.0", "major", meta)).toBe("2.3.1");
+  expect(dugVersion("^3.0.0", "major", meta)).toBeNull();
+  expect(dugVersion("~0.3.1", "major", { versions: ["0.3.1", "0.4.0", "0.4.2", "0.5.0"], time: {} })).toBe("0.4.2");
+  expect(dugVersion("^1.2.0", "beta", meta)).toBe("4.0.0-beta.2");
+  expect(dugVersion("^1.2.0", "rc", meta)).toBeNull();
+  expect(dugVersion("^1.2.0", "3.0.0", meta)).toBe("3.0.0");
+  expect(dugVersion("^1.2.0", "5.0.0", meta)).toBeNull();
+  // Already reached: at or past it, or the range allows it. A prerelease of the floor is behind it.
+  expect(reached("^1.2.0", "1.2.0")).toBe(true);
+  expect(reached("^1.2.0", "1.9.0")).toBe(true);
+  expect(reached("^1.2.0", "2.0.0")).toBe(false);
+  expect(reached("^2.0.0", "2.0.0-rc.1")).toBe(true);
+  expect(reached("^1.2.0", "2.0.0-rc.1")).toBe(false);
+  // A prerelease is pinned; a release keeps the range's prefix.
+  expect(digUpdate("x", "^1.2.0", "4.0.0-beta.2")).toEqual({ name: "x", from: "^1.2.0", to: "4.0.0-beta.2", level: "major" });
+  expect(digUpdate("x", "~1.2.0", "1.4.0")).toEqual({ name: "x", from: "~1.2.0", to: "~1.4.0", level: "minor" });
+});
+
+test("🪏 digs: tried past the level and the ignore list, reported, and taken only when asked and green (#863)", async () => {
+  const seen: Record<string, string>[] = [];
+  const tester: Tester = async (_remote, files) => {
+    const pkg = JSON.parse(files["package.json"]!), deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    seen.push(deps);
+    return { ok: true, out: "pass" };
+  };
+  const { call, send } = await app(tester);
+  const npm = registry({ ...{ mitt: { "3.0.0": 400 }, ky: { "1.0.0": 300 }, clsx: { "1.2.1": 500 } }, kleur: { "3.0.0": 900, "4.1.5": 30 }, hono: { "4.0.0": 90, "5.0.0-rc.1": 1 } });
+  call.env.DEPS_REGISTRY = (async (name: string) => { const m = await npm(name); return m && name === "hono" ? { ...m, tags: { latest: "4.0.0", rc: "5.0.0-rc.1" } } : m; }) satisfies Registry;
+  const told: string[] = [];
+  call.env.DEPS_NOTIFY = (async (_owner, subject, lines) => { told.push([subject, ...lines].join("\n")); }) satisfies Notify;
+  const put = (b: unknown) => send("ryan", "/api/repos/ryan/lab/deps", b, "PUT");
+  expect((await put({ digs: [{ name: "kleur", target: "^4" }] })).status).toBe(400);
+  expect((await put({ digs: [{ name: "kleur", target: "major" }, { name: "kleur", target: "beta" }] })).status).toBe(400);
+  expect((await put({ digs: "kleur@major" })).status).toBe(400);
+  const digs = [{ name: "kleur", target: "major", take: true }, { name: "hono", target: "rc", take: true }, { name: "clsx", target: "3.0.0", take: false }, { name: "mitt", target: "major", take: false }];
+  const s = await (await put({ max_level: "patch", ignore: "kleur, ky", run_tests: true, digs })).json();
+  expect(s.digs).toEqual(digs);
+
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const { report } = await settle(call);
+  expect(report.updates).toEqual([]);
+  const by = Object.fromEntries(report.digs.map((d: any) => [d.name, d]));
+  // kleur's on the ignore list and a major past the level, but the owner dug for it: tried, green, taken.
+  expect(by.kleur).toMatchObject({ status: "out", version: "4.1.5", taken: true, update: { to: "^4.1.5", level: "major", status: "kept" } });
+  // hono's rc is tried the day it's out, but taking it waits out the minimum age.
+  expect(by.hono).toMatchObject({ status: "out", version: "5.0.0-rc.1", update: { to: "5.0.0-rc.1", status: "kept" }, note: "taken once it's 3 days old" });
+  expect(by.hono.taken).toBeUndefined();
+  expect(by.clsx).toMatchObject({ status: "waiting" });
+  expect(by.mitt).toMatchObject({ status: "waiting" });
+  expect(seen.map((d) => [d.kleur, d.hono])).toEqual([["^4.1.5", "4.0.0"], ["^4.1.5", "5.0.0-rc.1"]]);
+  const pkg = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=package.json&branch=${report.branch}`)).json();
+  expect(pkg.lines.map((l: any) => l.text).filter((t: string) => /kleur|hono/.test(t))).toEqual([`    "kleur": "^4.1.5",`, `    "hono": "4.0.0",`]);
+  // The owner hears once that each is out.
+  expect(told.length).toBe(1);
+  expect(told[0]).toContain("kleur 4.1.5 (major): tests pass, on the branch");
+  expect(told[0]).toContain("hono 5.0.0-rc.1 (rc): tests pass, taken once it's 3 days old");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  await settle(call);
+  expect(told.length).toBe(1);
+});
+
+test("🪏 a dig that breaks goes down the chain, and its fix stays off the branch unless it's taken (#863)", async () => {
+  const fixer: Fixer = async () => ({ ok: true, tries: 1, out: "pass", edits: [{ path: "src/paint.ts", before: COLOR, after: COLOR.replace("kleur.red", "kleur.r") }] });
+  const { call, send } = await app(kleurTester(), fixer);
+  await send("ryan", "/api/repos/ryan/lab/deps", { max_level: "patch", ignore: "ky", run_tests: true, fix_with: "claude", on_fail: ["rollback", "fix"], digs: [{ name: "kleur", target: "major", take: false }] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  const { report } = await settle(call);
+  const kleur = report.digs[0];
+  expect(kleur.update).toMatchObject({ status: "fixed", fix: { by: "agent-claude", files: ["src/paint.ts"] } });
+  expect(kleur.update.chain).toEqual([{ step: "rollback", ok: false, note: "a dig isn't rolled back" }, { step: "fix", ok: true }]);
+  // Not taken, so no branch carries kleur 4 or its fix (hono's patch has nothing newer within the level).
+  expect(kleur.taken).toBeUndefined();
+  expect(report.branch).toBeUndefined();
+
+  // Held back from the chain, a dig says so and isn't tried again.
+  await send("ryan", "/api/repos/ryan/lab/deps", { on_fail: ["hold"] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  expect((await settle(call)).report.digs[0].update.status).toBe("held");
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  expect((await settle(call)).report.digs[0]).toMatchObject({ status: "held", version: "4.1.5" });
 });
 
 test("the 🔎 step: claude gets web search and a prompt to look for known breakage; every claude try says its cost", () => {

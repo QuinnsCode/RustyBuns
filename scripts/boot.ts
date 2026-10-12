@@ -4,9 +4,13 @@
 //
 //   1. no token: 403            2. with the token: / is 200
 //   3. cross-origin isolated (COOP same-origin, COEP require-corp or credentialless), so SharedArrayBuffer works
+//
+// The host is code you may not have read, so it runs the way `run desktop --sandbox` does: no .env,
+// no auto-install, no credential env vars, and on macOS under Seatbelt (RB_SANDBOX=0 turns that off).
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hostCommand, hostEnv } from "../packages/cli/src/sandbox.ts";
 
 const cli = join(import.meta.dir, "../packages/cli/src/index.ts");
 const token = "boot-check-token";
@@ -18,9 +22,9 @@ const build = Bun.spawnSync(["bun", cli, "build", "desktop", "--dev"], { stdout:
 if (build.exitCode !== 0) { console.error("boot: build desktop --dev failed"); process.exit(1); }
 console.log(`boot: dev host built in ${ms()}`);
 
-const host = Bun.spawn(["bun", ".rustybuns/dev/desktop.js"], {
+const host = Bun.spawn(hostCommand(".rustybuns/dev/desktop.js", [], { sandbox: process.env.RB_SANDBOX !== "0" }), {
   stdout: "pipe", stderr: "inherit",
-  env: { ...process.env, HOME: home, RB_NO_BROWSER: "1", RB_TOKEN: token },
+  env: { ...hostEnv(process.env), HOME: home, RB_NO_BROWSER: "1", RB_TOKEN: token },
 });
 const fails: string[] = [];
 try {

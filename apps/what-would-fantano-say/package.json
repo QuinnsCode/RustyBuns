@@ -1,0 +1,28 @@
+{
+  "name": "what-would-fantano-say",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "gen": "bun ../../packages/cli/src/index.ts generate",
+    "test": "bun test test",
+    "deploy": "bun ../../packages/cli/src/index.ts deploy"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-server-dom-webpack": "19.2.8",
+    "rwsdk": "1.7.4"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.60.2",
+    "@cloudflare/workers-types": "5.20260801.1",
+    "@rustybuns/cli": "workspace:*",
+    "@types/react": "19",
+    "@types/react-dom": "19",
+    "vite": "8.3.1",
+    "wrangler": "4.141.0"
+  }
+}

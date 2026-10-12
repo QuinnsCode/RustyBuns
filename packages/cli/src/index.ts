@@ -12,7 +12,11 @@ import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
 import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
+import { hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
 import type { RustyBunsConfig } from "./config.ts";
+import { Effect } from "effect";
+import { decodeConfig } from "./config-schema.ts";
+import { ConfigLoadFailed, UsageError, closest, flag, intFlag, renderError } from "./errors.ts";
 import { infer, readPackageJson } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
@@ -35,15 +39,22 @@ import { formatHistory } from "@rustybuns/shell-bun/history";
 import { TRIAGE_USAGE, triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
 import { checkDisabled, checkVersion } from "./advisories.ts";
-import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
+import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, compactDiagnostics, pickChecker, runCheck, stackTsconfig, type CheckerName } from "./typecheck.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
 const VERSION = (await Bun.file(new URL("../package.json", import.meta.url)).json()).version as string;
 
+/** rustybuns.config.ts, checked against config-schema.ts: a bad one stops here, naming each field. */
 async function loadConfig(): Promise<RustyBunsConfig> {
-  const f = Bun.file("rustybuns.config.ts");
-  if (!(await f.exists())) throw new Error("no rustybuns.config.ts; run `rustybuns init` first");
-  return (await import(`${process.cwd()}/rustybuns.config.ts`)).default as RustyBunsConfig;
+  const path = `${process.cwd()}/rustybuns.config.ts`;
+  if (!(await Bun.file(path).exists())) throw new ConfigLoadFailed({ message: "no rustybuns.config.ts here; run `rustybuns init` first" });
+  let mod: { default?: unknown };
+  try { mod = await import(path); } catch (e) {
+    const at = (e as { position?: { line: number; column: number } }).position;
+    throw new ConfigLoadFailed({ message: `rustybuns.config.ts${at ? `:${at.line}:${at.column}` : ""} doesn't load: ${(e as Error).message}` });
+  }
+  if (mod.default === undefined) throw new ConfigLoadFailed({ message: "rustybuns.config.ts has no default export; it should end `export default defineConfig({ ... })`" });
+  return Effect.runPromise(decodeConfig(mod.default));
 }
 
 async function writeIfChanged(path: string, content: string, opts: { adopt?: boolean } = {}) {
@@ -445,7 +456,7 @@ async function checkStack(prof: Profiler, want: CheckerName | "auto") {
   if (!c) { prof.steps.push({ name: "typecheck stack", ms: 0, note: `skipped: no checker (Bun >= ${BUN_CHECK_MIN}, tsc-rs or typescript)` }); return; }
   const r = await prof.step("typecheck stack", () => runCheck(c, STACK_TSCONFIG), c.name);
   if (!r.ok) {
-    console.error(r.output);
+    console.error(compactDiagnostics(r.output));
     await prof.finish();
     throw new Error(`the generated stack does not type check (${c.name}). Fix rustybuns.config.ts, or pass --no-check to skip.`);
   }
@@ -568,7 +579,6 @@ async function redactAfterDeploy(cfg: RustyBunsConfig, stage: string) {
   }
 }
 
-const flagValue = (args: string[], n: string) => { const i = args.indexOf("--" + n); return i >= 0 ? args[i + 1] : undefined; };
 
 /**
  * The deployed box `rustybuns <cmd>` talks to: its URL (--url, else the Alchemy state) and, when
@@ -592,7 +602,7 @@ async function boxTarget(cmd: string, args: string[], withSecret: boolean, say: 
     if (problem) throw new Error(problem);
   }
   const stage = alchemyStage(args);
-  const url = flagValue(args, "url") ?? boxUrl(process.cwd(), cfg, stage);
+  const url = flag(args, "url") ?? boxUrl(process.cwd(), cfg, stage);
   if (!url) throw new Error(`no box URL in the Alchemy state for stage ${stage}. Deploy first, or pass --url.`);
   if (withSecret && url.startsWith("http://")) say(`note: ${url} is plain HTTP, so the secret crosses the network unencrypted. Rotate it if that matters.`);
   return { cfg, url, secret: secret ?? "" };
@@ -601,12 +611,11 @@ async function boxTarget(cmd: string, args: string[], withSecret: boolean, say: 
 /** `rustybuns prof`: sample the deployed box's CPU, save the .cpuprofile here and print its hottest frames. */
 async function prof(args: string[]) {
   const json = args.includes("--json"), say = json ? console.error : console.log;
-  const seconds = Number(flagValue(args, "seconds") ?? 10);
-  if (!(seconds > 0 && seconds <= 60)) throw new Error("--seconds takes 1 to 60");
+  const seconds = intFlag(args, "seconds", 1, 60, 10), top = intFlag(args, "top", 1, 1000, 10);
   const { cfg, url, secret } = await boxTarget("prof", args, true, say);
   say(`sampling ${url} for ${seconds}s...`);
   const file = await fetchProfile({ url, secret, seconds, outDir: join(".rustybuns", "prof"), name: cfg.name });
-  const summary = summarizeProfile(JSON.parse(readFileSync(file, "utf8")), Number(flagValue(args, "top")) || 10);
+  const summary = summarizeProfile(JSON.parse(readFileSync(file, "utf8")), top);
   if (json) return console.log(JSON.stringify({ url, file, seconds, summary }, null, 2));
   console.log(`saved ${file}\n\n${formatProfileSummary(summary)}\n\nfor the flame graph, open it in Chrome DevTools > Performance (Load profile), or drop it on https://www.speedscope.app`);
 }
@@ -624,7 +633,7 @@ async function historyCommand(args: string[]) {
   const json = args.includes("--json");
   const { url, secret } = await boxTarget("history", args, true, json ? console.error : console.log);
   const runs = await fetchHistory({ url, secret });
-  const max = Number(flagValue(args, "runs")) || 5;
+  const max = intFlag(args, "runs", 1, 1000, 5);
   console.log(json ? JSON.stringify({ url, runs: runs.slice(0, max) }, null, 2) : formatHistory(runs, max));
 }
 
@@ -643,6 +652,7 @@ async function triageCommand(args: string[]) {
   });
 }
 
+const COMMANDS = ["init", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "build", "eject", "version"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -677,14 +687,14 @@ try {
       await addDesktop(rest.slice(1)); break;
     }
     case "run": {
-      if (rest[0] !== "desktop") throw new Error("usage: rustybuns run desktop [--watch]");
-      const hostArgs = rest.slice(1).filter((a) => a !== "--watch");
+      if (rest[0] !== "desktop") throw new Error("usage: rustybuns run desktop [--watch] [--sandbox]");
+      const { on: sandbox, args: hostArgs } = wantsSandbox(rest.slice(1).filter((a) => a !== "--watch"));
       if (rest.includes("--watch")) {
         const cfg = await loadConfig();
-        await watchDesktop(cfg, () => buildDesktop(cfg, { noCompile: true }), hostArgs);
+        await watchDesktop(cfg, () => buildDesktop(cfg, { noCompile: true }), hostArgs, sandbox);
       }
       if (!(await Bun.file(".rustybuns/dev/desktop.js").exists())) await buildDesktop(await loadConfig(), { noCompile: true });
-      const p = Bun.spawn(["bun", ".rustybuns/dev/desktop.js", ...hostArgs], { stdio: ["inherit", "inherit", "inherit"] });
+      const p = Bun.spawn(hostCommand(".rustybuns/dev/desktop.js", hostArgs, { sandbox }), { stdio: ["inherit", "inherit", "inherit"], env: hostEnv(process.env) });
       process.exit(await p.exited);
     }
     case "boundary": { const { modules, excluded } = await boundary(); console.log(report(modules, excluded)); break; }
@@ -713,6 +723,10 @@ try {
       break;
     }
     default:
+      if (cmd && cmd !== "help" && cmd !== "--help" && cmd !== "-h") {
+        const near = closest(cmd, COMMANDS);
+        throw new UsageError({ message: `unknown command ${JSON.stringify(cmd)}${near ? `; did you mean \`rustybuns ${near}\`?` : ""} (\`rustybuns help\` lists them)` });
+      }
       console.log(`rustybuns ${VERSION}
 Box and ship the web app you already have. A dev dependency, never in prod.
 
@@ -737,6 +751,9 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   run desktop                start the dev host (bun .rustybuns/dev/desktop.js)
             [--watch]        rebuild (--dev) on save and restart the host; a failed build
                              keeps the old one up, and the window stays (reload it)
+            [--sandbox]      macOS: run it under Seatbelt, kept out of ~/.ssh, ~/.aws, gh,
+                             wrangler, keychains and the project's .env (or RB_SANDBOX=1).
+                             Always: no .env load, no auto-install, no credential env vars
   build box [--target T]     the same host for the box: Hetzner gets a linux binary + node
                              launcher in .rustybuns/box/, Railway a Bun bundle + Dockerfile
                              in .rustybuns/railway/ (plan and deploy run this for you)
@@ -785,6 +802,7 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   Docs: README.md · GETTING_STARTED.md`);
   }
 } catch (e) {
-  console.error(String((e as Error).message ?? e));
-  process.exit(1);
+  const { text, code } = renderError(e);
+  console.error(text);
+  process.exit(code);
 }

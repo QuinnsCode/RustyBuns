@@ -11,6 +11,7 @@
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { workerName, type RustyBunsConfig } from "./config.ts";
+import { UsageError } from "./errors.ts";
 
 /** `<git common dir>/rustybuns/alchemy/<app path in repo>`, or null outside git. */
 export function sharedStateBase(projectDir: string): string | null {
@@ -99,11 +100,18 @@ export function lockState(base: string, what: string): () => void {
   throw new Error(`could not take the state lock ${file}`);
 }
 
-/** The stage Alchemy will use: `--stage`, else $ALCHEMY_STAGE, else `live_$USER`. */
+/**
+ * The stage Alchemy will use: `--stage`, else $ALCHEMY_STAGE, else `live_$USER`. A `--stage`
+ * with no name after it is a usage error: it used to read the next flag (`--stage --yes` was
+ * stage "--yes"), so the deploy guards checked a stage other than the one Alchemy deployed.
+ */
 export function alchemyStage(args: string[], env: Record<string, string | undefined> = process.env): string {
   const at = args.findIndex((a) => a === "--stage" || a.startsWith("--stage="));
-  if (at >= 0) return args[at].includes("=") ? args[at].slice("--stage=".length) : args[at + 1] ?? "";
-  return env.ALCHEMY_STAGE || `live_${env.USER ?? ""}`;
+  if (at < 0) return env.ALCHEMY_STAGE || `live_${env.USER ?? ""}`;
+  const v = args[at]!.includes("=") ? args[at]!.slice("--stage=".length) : args[at + 1];
+  if (!v || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(v))
+    throw new UsageError({ message: `--stage needs a name (letters, digits, _ and -), got ${v === undefined ? "nothing" : JSON.stringify(v)}` });
+  return v;
 }
 
 /**

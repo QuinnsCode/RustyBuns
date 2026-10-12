@@ -11,7 +11,7 @@ import { join, dirname, normalize } from "node:path";
 import type { DesktopOs, RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 import { Profiler } from "./profile.ts";
-import { BUN_CHECK_MIN, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
+import { BUN_CHECK_MIN, compactDiagnostics, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
 
 const EXTS = [".ts", ".tsx", ".mts", ".js", ".mjs", ".cjs", ".jsx"];
 
@@ -419,6 +419,8 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   if (!entry) throw new Error("worker-mode desktop needs worker.main: an assets-only Worker has no code to run on the desktop. Use desktop mode \"spa\".");
   return `// GENERATED ${host} entry. The RWSDK worker runs here, outside Cloudflare,
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
+// First: workerd's globalThis.Cloudflare, read by nodejs_compat builds as they load.
+import "@rustybuns/shell-bun/workerd-global";
 import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 import worker, { ${dos.map((d) => d.className).join(", ")} } from ${JSON.stringify("../" + entry)};
 // Bun's own process: a Worker built with nodejs_compat (unenv) swaps globalThis.process for
@@ -532,7 +534,7 @@ async function checkApp(prof: Profiler | undefined, want: CheckerName | "auto") 
   }
   const r = prof ? await prof.step("typecheck app", () => runCheck(c, tsconfig), c.name) : await runCheck(c, tsconfig);
   if (!r.ok) {
-    console.error(r.output);
+    console.error(compactDiagnostics(r.output));
     if (prof) await prof.finish();
     throw new Error(`type errors (${c.name}); nothing was built. Drop --check to build anyway.`);
   }
@@ -620,6 +622,8 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     // The RustyBuns this was built with, and whether it is a dev host: see launchCheck.
     RB_RUSTYBUNS: JSON.stringify(rustybuns),
     RB_DEV: JSON.stringify(!!opts.noCompile),
+    // globalThis.Cloudflare.compatibilityFlags on a worker-mode host (shell-bun/workerd-global).
+    RB_COMPAT_FLAGS: JSON.stringify((c.worker?.compatibilityFlags ?? []).join(",")),
   };
   for (const [k, v] of Object.entries(d.define ?? {})) defineMap[k] = JSON.stringify(v);
 

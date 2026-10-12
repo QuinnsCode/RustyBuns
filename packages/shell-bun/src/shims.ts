@@ -17,6 +17,9 @@ export class DurableObject<E = unknown> {
   constructor(public ctx: any, public env: E) {}
 }
 export class WorkerEntrypoint<E = unknown> { constructor(public ctx: any, public env: E) {} }
+export class WorkflowEntrypoint<E = unknown> { constructor(public ctx: any, public env: E) {} }
+/** Base class for objects passed by reference over RPC; capnweb (in rwsdk) extends it at load. */
+export class RpcTarget {}
 
 /** rwsdk/worker's requestInfo, local edition. */
 export const requestInfo = {
@@ -25,7 +28,10 @@ export const requestInfo = {
   request: null as Request | null,
   response: { headers: new Headers(), status: 200 },
 };
-export const waitUntil = (p: Promise<unknown>) => { void p.catch((e) => console.error("[waitUntil]", e)); };
+export const getRequestInfo = () => requestInfo;
+/** rwsdk's defineScript (seed scripts and the like): a function that runs fn with the env. */
+export const defineScript = (fn: (a: { env: Record<string, any> }) => unknown) => () => fn({ env });
+export const waitUntil =(p: Promise<unknown>) => { void p.catch((e) => console.error("[waitUntil]", e)); };
 export const defineApp = (routes: unknown) => ({ fetch: async () => new Response("rwsdk app is not run on the desktop; use spa mode", { status: 501 }), routes });
 export const route = (..._a: unknown[]) => null;
 export const render = (..._a: unknown[]) => null;

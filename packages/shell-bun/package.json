@@ -27,7 +27,8 @@
     "./memwatch": "./src/memwatch.ts",
     "./profsummary": "./src/profsummary.ts",
     "./shims": "./src/shims.ts",
-    "./webmcp": "./src/webmcp.ts"
+    "./webmcp": "./src/webmcp.ts",
+    "./workerd-global": "./src/workerd-global.ts"
   },
   "files": [
     "src",

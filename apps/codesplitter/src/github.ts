@@ -132,7 +132,7 @@ export async function evict(env: Env, owner: string, name: string) {
   await wipeSearch(env, owner, name);
   // Checkouts off its git, on the desktop (worktrees.ts).
   await (await import("./worktrees.ts")).dropWorktrees(env, owner, name).catch(() => {});
-  await env.DB.batch(["repos|owner = ? AND name = ?", "collaborators", "files", "repo_search", "branches", "branch_files", "shares", "stamps", "tracks", "webhooks", "webhook_deliveries",
+  await env.DB.batch(["repos|owner = ? AND name = ?", "collaborators", "files", "repo_search", "branches", "branch_files", "shares", "beams", "stamps", "tracks", "webhooks", "webhook_deliveries",
     "cuts", "deploys", "deploy_settings", "deploy_keys", "deploy_cleared", "dep_watches", "fit_cache", "check_runs", "check_settings", "check_watches", "ci_tokens", "follows", "line_events", "authors", "invites", "worktrees"].map((t) => {
     const [table, where = "owner = ? AND repo = ?"] = t.split("|");
     return env.DB.prepare(`DELETE FROM ${table} WHERE ${where}`).bind(owner, name);
