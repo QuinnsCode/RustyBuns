@@ -173,6 +173,8 @@ There's no downloadable build yet; that's one command from source.
   Checks planned from package.json install first (`bun install`, frozen when there's a `bun.lock`), since a runner's fresh clone has no node_modules.
   Required checks gate Merge, scoped by path when you like (a change in `apps/a` doesn't wait on `b-tests`), and agents watch them with the `checks` MCP tool the way they'd run `gh pr checks`.
   GitHub is the backup, not a dependency: running checks here is always on offer, and while GitHub is down the desktop checks here in its place, merges on its own checks passing, and lets GitHub's verdict catch up on main once the mirror syncs.
+- **CI that heals itself.** A required check failing on a branch, or its merge tripping a guard (conflict markers, a JSON file that won't parse), starts a coding agent on that branch with the failing log, and the checks run again on its fix.
+  Two tries, one at a time; then the branch waits for a person, the attempts listed beside its checks. On with hosted agents (admins only, on the hosted budget), or on the desktop with `HEAL=1`.
 - **Build changes are flagged.** A branch that touches `package.json`, a lockfile, a Dockerfile, CI or the deploy config shows every changed line, and its merge waits for a person to say they've read them.
   Agents can be prompt-injected; this is where it gets caught.
 - **Accounts and limits.** GitHub, Google or email sign-in.

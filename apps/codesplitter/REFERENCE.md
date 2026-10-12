@@ -594,6 +594,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
 | `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
 | `src/harness.ts` | the coding-agent CLIs and the prompt each one gets |
+| `src/heal.ts` | self-healing CI: a failed required check, or a merge guard tripping, opens a fix task on the branch |
 | `src/hooks.ts` | outgoing webhooks: the owner's hooks, signed deliveries, the log, retries |
 | `src/identity.ts` | accounts (Better Auth) or aliases, and handles |
 | `src/levels.ts` | the levels: import, browse, fork |
