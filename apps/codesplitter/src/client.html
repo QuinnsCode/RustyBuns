@@ -401,6 +401,7 @@
   .pop { position: relative; }
   .pop > .panel { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 340px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px -8px rgba(0,0,0,.14); display: grid; gap: 9px; }
   .pop > .panel[hidden] { display: none; }
+  .pop > .panel.open-right { left: 0; right: auto; }
   .pair-qr { width: min(220px, 100%); margin: 0 auto 10px; border-radius: 8px; overflow: hidden; } .pair-qr svg { display: block; width: 100%; height: auto; }
   .copyline { display: flex; gap: 6px; } .copyline input { flex: 1; min-width: 0; font: 12px var(--mono); }
 
@@ -1533,7 +1534,18 @@ async function signOut() {
 /** A button that opens the panel next to it; a click elsewhere closes it. */
 function popover(btn) {
   const panel = btn.nextElementSibling;
-  btn.addEventListener("click", (e) => { e.stopPropagation(); panel.hidden = !panel.hidden; panel.querySelector("input")?.focus(); });
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation(); panel.hidden = !panel.hidden;
+    // It opens leftward from the button; a button near the left edge of a pane that clips
+    // (the editor) would hide it, so it opens rightward there instead.
+    if (!panel.hidden) {
+      panel.classList.remove("open-right");
+      let clip = 0;
+      for (let p = panel.parentElement; p; p = p.parentElement) if (getComputedStyle(p).overflowX !== "visible") { clip = p.getBoundingClientRect().left; break; }
+      if (panel.getBoundingClientRect().left < clip + 8) panel.classList.add("open-right");
+    }
+    panel.querySelector("input")?.focus();
+  });
   panel.addEventListener("click", (e) => e.stopPropagation());
   document.addEventListener("click", () => (panel.hidden = true));
   return panel;
