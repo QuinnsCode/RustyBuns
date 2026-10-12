@@ -3142,7 +3142,7 @@ const views = {
       // Once it's up it's up: the first click says so, the second does it.
       if (t.ahead && !go.dataset.sure) { go.dataset.sure = "1"; go.textContent = `Sure? ${t.ahead === 1 ? "It goes" : "They go"} upstream`; return; }
       go.disabled = true; go.textContent = "syncing…";
-      try { await api(`/repos/${owner}/${repo}/mirror/turn`, {}); toast(`${repo} is a mirror of ${t.url} now`); route(); }
+      try { await api(`/repos/${owner}/${repo}/mirror/turn`, { ahead: t.ahead }); toast(`${repo} is a mirror of ${t.url} now`); route(); }
       catch (err) { go.disabled = false; toast(err.message); views.wireMirrorTurn(owner, repo); }
     });
   },
