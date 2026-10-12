@@ -8,7 +8,7 @@
 // see one state per app. A lock beside it keeps two of them from running
 // Alchemy against it at once.
 
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { workerName, type RustyBunsConfig } from "./config.ts";
 import { UsageError } from "./errors.ts";
@@ -54,6 +54,15 @@ export function linkSharedState(projectDir: string): string | null {
   return base;
 }
 
+/** Record in the lock this process holds the pid of the child doing the work (alchemy). */
+export function noteChild(base: string, pid: number) {
+  const file = join(base, "lock");
+  try {
+    const held = JSON.parse(readFileSync(file, "utf8"));
+    if (held.pid === process.pid) writeFileSync(file, JSON.stringify({ ...held, child: pid }));
+  } catch { /* no lock: nothing to note */ }
+}
+
 /** Turn a shared-state symlink back into a project-local dir (`state: "project"`). */
 export function unlinkSharedState(projectDir: string) {
   const local = join(projectDir, ".alchemy", "state");
@@ -68,7 +77,9 @@ const alive = (pid: number) => {
 
 /**
  * Take `<base>/lock` for this process, or throw naming who holds it. A lock
- * whose process is gone is taken over. Returns the release function.
+ * whose process is gone is taken over, unless the alchemy it started (noteChild)
+ * is still running: a SIGKILLed deploy leaves that one writing the state.
+ * Returns the release function.
  */
 export function lockState(base: string, what: string): () => void {
   const file = join(base, "lock");
@@ -79,10 +90,12 @@ export function lockState(base: string, what: string): () => void {
       fd = openSync(file, "wx");
     } catch (e: any) {
       if (e?.code !== "EEXIST") throw e;
-      let held: { pid?: number; cwd?: string; what?: string } = {};
+      let held: { pid?: number; cwd?: string; what?: string; child?: number } = {};
       try { held = JSON.parse(readFileSync(file, "utf8")); } catch { /* half-written: treat as stale */ }
       if (held.pid && held.pid !== process.pid && alive(held.pid))
         throw new Error(`another \`rustybuns ${held.what ?? "deploy"}\` (pid ${held.pid}, in ${held.cwd ?? "?"}) is using this app's shared Alchemy state. Wait for it, or stop it.`);
+      if (held.child && alive(held.child))
+        throw new Error(`the alchemy a stopped \`rustybuns ${held.what ?? "deploy"}\` started (pid ${held.child}, in ${held.cwd ?? "?"}) is still running against this app's shared Alchemy state. Wait for it to finish, or stop it (kill -INT ${held.child}).`);
       rmSync(file, { force: true });
       continue;
     }

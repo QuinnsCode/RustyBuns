@@ -38,8 +38,9 @@ bun test test     # analysis, clip, boxes, judge, writer, budget, the door
 
 The only secret is `turnstile/secret` in the 1Password vault `fantano` (`.env.schema`). Then:
 
-1. Create a Turnstile widget for the hostname and put its site key in `turnstileSiteKey` in `rustybuns.config.ts`.
-2. `bun run gen` to refresh `wrangler.jsonc` and `.env.schema`, then `bun run deploy`. That runs `rustybuns deploy`, and varlock unlocks the secret with Touch ID.
+1. `bunx rustybuns add deploy` once, to install the pinned Alchemy set.
+2. Create a Turnstile widget for the hostname and put its site key in `turnstileSiteKey` in `rustybuns.config.ts`.
+3. `bun run gen` to refresh `wrangler.jsonc` and `.env.schema`, then `bun run deploy`. That runs `rustybuns deploy`, and varlock unlocks the secret with Touch ID.
 
 ## Not built yet
 

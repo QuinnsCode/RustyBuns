@@ -202,6 +202,8 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 
 `--profile <name>` and `--stage <name>` pass through to Alchemy. `RB_NO_BROWSER=1` prints the desktop token URL instead of opening a browser.
 
+Stopping `plan`, `deploy` or `destroy` partway (Ctrl-C, a `kill`, an agent's timeout, a closed terminal) asks Alchemy to stop the way Ctrl-C does, waits up to 10 seconds (`RUSTYBUNS_STOP_GRACE_MS`) for it to finish what it's writing, then frees the state lock. If rustybuns is killed outright (`kill -9`), the lock stays held until that Alchemy exits, so a second deploy can't run against the same state beside it.
+
 ### Known-bad versions
 
 [`advisories.json`](advisories.json) lists releases to move off, and which way to go (`upgrade`, or `downgrade` to a given version). Each command checks the installed version against it and against npm's latest at most once a day (cached in `~/.cache/rustybuns/`, 1.5 s timeout). On a listed version it prints how to move before running. It never fails a command, and it is off in CI and with `RUSTYBUNS_NO_UPDATE_CHECK=1`. To flag a release, add an entry, merge it, then run `bun run deprecate:bad` (needs your npm login) so installs warn too.
