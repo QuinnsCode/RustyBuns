@@ -1,7 +1,8 @@
-// Heads you can wear on the black pillar, earned by merging levels: every level you win
+// Heads you can wear on your soldier, earned by merging levels: every level you win
 // (a level on a repo you haven't won it on before) unlocks the next one. Each is our own
 // toy-like design built from a few primitives, a nod to a big name in open source, hosting
-// or infra, never its logo traced or anyone's face. src/ui/characters.ts draws them.
+// or infra, never its logo traced or anyone's face. src/ui/characters.ts draws them, and
+// src/ui/heads.ts lists them after the heads everyone has.
 
 export interface Head {
   id: string;
@@ -10,7 +11,7 @@ export interface Head {
   nod: string;
 }
 
-export const HEADS: Head[] = [
+export const UNLOCKABLE: Head[] = [
   { id: "bun", name: "Steamed bun", nod: "Bun, the runtime this repo is named for" },
   { id: "crab", name: "Crab", nod: "Rust's unofficial crab mascot" },
   { id: "penguin", name: "Penguin", nod: "Linux's penguin" },
@@ -29,11 +30,11 @@ export const HEADS: Head[] = [
 export const winKey = (levelId: string, repo: string) => `${levelId}:${repo}`;
 
 /** The heads open to someone with these wins: one per distinct level won, in order. */
-export const unlocked = (wins: readonly string[]): Head[] => HEADS.slice(0, new Set(wins).size);
+export const unlocked = (wins: readonly string[]): Head[] => UNLOCKABLE.slice(0, new Set(wins).size);
 
 /** Record a win; says which head it unlocked, if any. */
 export function addWin(wins: readonly string[], key: string): { wins: string[]; head: Head | null } {
   if (wins.includes(key)) return { wins: [...wins], head: null };
   const next = [...wins, key];
-  return { wins: next, head: HEADS[new Set(next).size - 1] ?? null };
+  return { wins: next, head: UNLOCKABLE[new Set(next).size - 1] ?? null };
 }

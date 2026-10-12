@@ -8,6 +8,8 @@
 export interface Terrain {
   /** Radius of the playable disc. */
   readonly R: number;
+  /** The water table: ground below it is under water (a pond). None on dry levels. */
+  readonly water?: number;
   height(x: number, z: number): number;
 }
 
@@ -91,13 +93,14 @@ function vnoise(seed: number, x: number, z: number): number {
   return a + (b - a) * u + (d - a) * v + (a - b - d + e) * u * v;
 }
 
-export interface StampSpec { R: number; seed: number; amp: number; freq: number; stamps: Stamp[] }
+export interface StampSpec { R: number; seed: number; amp: number; freq: number; stamps: Stamp[]; water?: number }
 
-/** Rolling noise (±amp) with the stamps summed on top. */
+/** Rolling noise (±amp) with the stamps summed on top, and water standing in anything below `water`. */
 export function stampTerrain(spec: StampSpec): Terrain {
-  const { R, seed, amp, freq, stamps } = spec;
+  const { R, seed, amp, freq, stamps, water } = spec;
   return {
     R,
+    water,
     height(x, z) {
       const n = vnoise(seed, x * freq, z * freq) * 0.7 + vnoise(seed ^ 0x9e37, x * freq * 2.7 + 100, z * freq * 2.7 + 100) * 0.3;
       let h = (n - 0.5) * 2 * amp;
@@ -105,6 +108,18 @@ export function stampTerrain(spec: StampSpec): Terrain {
       return h;
     },
   };
+}
+
+/** Under water at (x, z): below the water table, if the level has one. */
+export const wet = (t: Terrain, x: number, z: number) => t.water !== undefined && t.height(x, z) < t.water;
+
+/**
+ * Metres between contour lines for ground spanning lo..hi: a round 1-2-5 step
+ * giving about a dozen lines, so a 2 m backyard and a 120 m cliff both read.
+ */
+export function contourStep(lo: number, hi: number, lines = 12): number {
+  const raw = Math.max(0.1, (hi - lo) / lines), p = 10 ** Math.floor(Math.log10(raw)), m = raw / p;
+  return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
 }
 
 /* ---------------- level pads ---------------- */
@@ -119,6 +134,7 @@ export function withPads(t: Terrain, pads: Pad[], skirt = 6): Terrain {
   const floors = pads.map((p) => t.height(p.x, p.z));
   return {
     R: t.R,
+    water: t.water,
     height(x, z) {
       let h = t.height(x, z);
       for (let i = 0; i < pads.length; i++) {

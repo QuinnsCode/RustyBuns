@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { loadRepo, LoadError, parseSlug } from "../src/levels/github.ts";
 import { LEVELS } from "../src/levels/levels.ts";
 import { checkHits, churnGuards, mapRepo, type RepoSnapshot } from "../src/sim/codemap.ts";
-import { addWin, HEADS, unlocked, winKey } from "../src/sim/heads.ts";
+import { addWin, UNLOCKABLE as HEADS, unlocked, winKey } from "../src/sim/heads.ts";
+import { HEADS as ALL_HEADS, isOpen } from "../src/ui/heads.ts";
 import { folderLinks, importsOf, isAgentCommit, resolveImport, tally, workspacePackages } from "../src/sim/intel.ts";
 import type { Terrain } from "../src/sim/terrain.ts";
 import { headModel } from "../src/ui/characters.ts";
@@ -209,5 +210,11 @@ describe("heads", () => {
       expect(m.children.length).toBeGreaterThan(0);
     }
     expect(headModel(null)).toBeNull();
+  });
+
+  test("the head list keeps the plain and logo heads open and the toy heads locked until won", () => {
+    expect(ALL_HEADS.filter((h) => isOpen(h, 0)).map((h) => h.id)).toEqual(["ball", "rustybuns", "codesplitter"]);
+    expect(ALL_HEADS.filter((h) => h.toy && isOpen(h, 2)).map((h) => h.id)).toEqual([HEADS[0]!.id, HEADS[1]!.id]);
+    expect(new Set(ALL_HEADS.map((h) => h.id)).size).toBe(ALL_HEADS.length);
   });
 });

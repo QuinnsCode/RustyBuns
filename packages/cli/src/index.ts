@@ -161,6 +161,9 @@ async function init() {
     if (src) console.log(`ignoring ${src}: ${spa ? "--spa" : "no @astrojs/cloudflare adapter"}, so this is a static site with a desktop-only config.`);
     await initSpa(inf, `${inf.execCmd("astro")} build --outDir dist/ui`); return;
   }
+  // TanStack Start off Cloudflare (Vercel, Netlify, Node) renders on its server and has no
+  // index.html, so a SPA build serves nothing. The desktop runs its production server instead.
+  if (inf.framework === "tanstack-start" && !src && !spa) { await initStart(inf); return; }
   if ((!src && !astroWorker) || spa) {
     if (src && spa) console.log(`ignoring ${src} (--spa): desktop-only config. Remove the flag to carry its bindings over.`);
     await initSpa(inf); return;
@@ -274,6 +277,25 @@ async function portVite(stack: ReturnType<typeof infer>["stack"], force: boolean
  * your `vite build` output, served by the Bun host, plus an optional host
  * module for the backend routes the app needs (files, native, exports).
  */
+async function initStart(inf: ReturnType<typeof infer>) {
+  const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
+  const { startLayout } = await import("./glue/start-layout.ts");
+  const l = startLayout(inf.vite.configPath ? readFileSync(inf.vite.configPath, "utf8") : "");
+  const build = [...inf.prebuild, `${l.env}${inf.execCmd("vite")} build${inf.vite.buildConfig ? ` --config ${inf.vite.buildConfig}` : ""}`].join(" && ");
+  const cfg = {
+    name: inf.name.replace(/^@[^/]+\//, ""),
+    source: { dir: inf.srcDir, aliases: inf.aliases },
+    worker: { main: l.builtMain, builtMain: l.builtMain, assets: l.assets, build, compatibilityDate: new Date().toISOString().slice(0, 10), compatibilityFlags: ["nodejs_compat"] },
+    bindings: {},
+    targets: { desktop: { mode: "worker", targets: [hostTag] } },
+  };
+  await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
+  console.log(`wrote rustybuns.config.ts (TanStack Start: the desktop runs its production server, ${l.builtMain})`);
+  console.log(`build:    ${build}`);
+  if (l.warn) console.log(`warning:  ${l.warn}`);
+  console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}`);
+}
+
 async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   const hostTag = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   const astro = inf.framework === "astro";

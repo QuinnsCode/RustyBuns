@@ -15,6 +15,11 @@
         <p class="kicker">A Rusty Buns example</p>
         <h1>Git Recon</h1>
         <p class="lede">A codebase on real ground. Its biggest folders are compounds in conflict, its files are the buildings. Each level is a mission: merge every folder, carry a commit home, or hold main.</p>
+        <div class="look">
+          <span class="look-label">You</span>
+          <div id="builds" class="chips" role="radiogroup" aria-label="Build"></div>
+          <div id="heads" class="heads" role="radiogroup" aria-label="Head"></div>
+        </div>
         <form id="repo-form" class="repo-form">
           <label for="repo-slug">Fight any repo</label>
           <input id="repo-slug" name="slug" placeholder="owner/repo" autocomplete="off" spellcheck="false" />
@@ -23,7 +28,11 @@
           <p id="repo-status" class="repo-status" role="status"></p>
         </form>
         <div id="levels" class="levels"></div>
-        <div class="heads-row"><span>Head</span><div id="heads" class="heads"></div></div>
+        <form id="place" class="place" autocomplete="off">
+          <label for="place-at">Or fight anywhere: a latitude, longitude</label>
+          <div class="row"><input id="place-at" name="at" inputmode="decimal" placeholder="36.0566, -112.1251" spellcheck="false" /><button id="place-go" class="primary" title="Read the ground there and fight on it">Deploy</button></div>
+          <p id="place-status" class="place-status" role="status"></p>
+        </form>
         <dl class="keys">
           <dt>WASD · mouse</dt><dd>move · aim</dd>
           <dt>Click</dt><dd>fire</dd>

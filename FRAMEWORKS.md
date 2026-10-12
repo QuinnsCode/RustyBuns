@@ -26,7 +26,7 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | Vite + Svelte (SPA) | `spa` | none | same | 🧪 |
 | Vite + Solid (SPA) | `spa` | none | same | 🧪 |
 | RWSDK | `spa` from `init`; `worker` by hand | `dist/worker/index.js` | `Cloudflare.Worker` | ✅ live; 153 of 180 GitHub apps ([coverage](FRAMEWORK_COVERAGE.md#rwsdk)) |
-| TanStack Start | `worker` | `dist/server/server.js` | `Cloudflare.Website.Vite` | ✅ desktop, 🧪 edge |
+| TanStack Start | `worker` | `dist/server/server.js` | `Cloudflare.Website.Vite` | ✅ desktop, 🧪 edge; 8 of 13 sampled GitHub apps ([coverage](FRAMEWORK_COVERAGE.md#tanstack-start)) |
 | SvelteKit | `worker` | adapter-cloudflare `_worker.js` | `Cloudflare.Website.SvelteKit` | 🧪 |
 | Astro | `worker` (adapter), `spa` (static) | @astrojs/cloudflare 14: `dist/server/entry.mjs` + `dist/client` | `Cloudflare.Worker` + assets | ✅ `init`, desktop, box and edge (sample app, Oct 9) |
 | Nuxt | `worker` | Nitro `cloudflare-module` preset | `Cloudflare.Website.Nuxt` | 🧪 |
@@ -40,6 +40,32 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | custom webpack | `spa` after a Vite port by hand | none | same as Vite | ⏳ `init --port-vite` lists what to port |
 
 The server output paths in this table come from each framework's usual layout. Record the real path when you build each sample app.
+
+## Each framework, as the five primitives
+
+The [five primitives](ADOPTION.md#the-five-primitives) are what Rusty Buns gives every target. This table is the other side: the framework feature you'd reach for, and which primitive it lands on. Every row reaches its bindings the same way, through `env` from `cloudflare:workers` or the framework's own handle on it (named below). So storage is D1, KV and R2 on the edge, and sqlite and a folder on the desktop or a box.
+
+Two primitives are the same for every framework because the host owns them. **memory** is the Bun process (or the isolate on the edge). **identity** arrives as `X-User-Id` and `X-User-Name` request headers, which the framework's middleware or loaders read.
+
+Support links to the row in the [matrix](#matrix), and to [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md) once a framework has had a real-app run. Known issues are this repo's open issues for the framework (there are no per-framework labels yet, so it's a name search plus the tracking issues).
+
+| Framework | http | storage | comms | Support | Known issues |
+|---|---|---|---|---|---|
+| Vite SPAs (React, Vue, Svelte, Solid) | `"use server"` functions, run on the host | `env` from `cloudflare:workers` inside them | a Durable Object class the app exports | ✅ React ([`apps/spa-example`](apps/spa-example)), 🧪 the others: [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+vite) |
+| RWSDK | `route()` handlers, middleware, `"use server"` functions | `env` from `cloudflare:workers` | Durable Objects, and its realtime layer built on them | ✅ [matrix](#matrix), [153 of 180 apps](FRAMEWORK_COVERAGE.md#rwsdk) | [what still fails](FRAMEWORK_COVERAGE.md#what-still-fails), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+rwsdk) |
+| TanStack Start | server routes, `createServerFn` | `env` from `cloudflare:workers` | a Durable Object exported beside the handler | ✅ desktop, 🧪 edge: [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+tanstack) |
+| Astro, EmDash | pages, API routes (`src/pages/api/*`), Actions, middleware | `env` from `cloudflare:workers`; sessions on a KV binding; `/_image` on `IMAGES`; EmDash's content in D1 and R2 | a Durable Object exported beside the handler | ✅ `init`, desktop, box, edge: [matrix](#matrix) | [#845](https://github.com/QuinnsCode/RustyBuns/issues/845), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+astro) |
+| React Router 7 | loaders, actions, resource routes | `context.cloudflare.env` | a Durable Object exported beside the handler | ✅ `init`, desktop; 🔧 `cloudflareDevProxy`: [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+%22react+router%22) |
+| SvelteKit | `+server.ts` endpoints, `load`, form actions | `platform.env` | a Durable Object exported beside the handler | 🧪 [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+sveltekit) |
+| Nuxt | Nitro `server/api` routes | `event.context.cloudflare.env`; Nitro's `useStorage()` on a KV binding | Nitro WebSocket handlers on a Durable Object | 🧪 [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+nuxt) |
+| SolidStart | API routes, `"use server"` functions | Nitro's `useStorage()`, or `env` from `cloudflare:workers` | Nitro WebSocket handlers | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+solidstart) |
+| Qwik City | `routeLoader$`, `routeAction$`, `server$`, endpoints | `platform.env` | a Durable Object in a wrapping Worker | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+qwik) |
+| Angular | `AngularAppEngine`'s fetch handler | `env` from `cloudflare:workers` in server code | a Durable Object exported beside the handler | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+angular) |
+| Next.js | route handlers, server actions, middleware | OpenNext's `getCloudflareContext().env`; its cache on R2 or KV | a Durable Object exported beside the handler | ⏳ [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+next.js) |
+| Gatsby | none: a static site (its Functions don't build for Workers) | none | none | ⏳ [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+gatsby) |
+| CRA, Vue CLI, custom webpack | as a Vite SPA, after `init --port-vite` | as a Vite SPA | as a Vite SPA | ✅ CRA and Vue CLI, ⏳ webpack: [matrix](#matrix) | [#849](https://github.com/QuinnsCode/RustyBuns/issues/849), [#850](https://github.com/QuinnsCode/RustyBuns/issues/850), [#851](https://github.com/QuinnsCode/RustyBuns/issues/851) |
+
+The 🧪, 🔧 and ⏳ rows describe what each framework's Cloudflare build offers, not something Rusty Buns has run. Each row gets checked, and corrected here, when its sample app lands.
 
 ## Real apps from GitHub
 

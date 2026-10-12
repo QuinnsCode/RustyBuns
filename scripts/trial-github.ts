@@ -7,13 +7,16 @@
 //
 //   --dep <name>      search for package.json files that depend on <name> (needs `gh` logged in)
 //   --major <n>       keep only apps whose <dep> version is <n>.x
-//   --limit <n>       try at most n apps (default: all found)
+//   --limit <n>       try at most n apps (default: all found): the first n, most stars first
+//   --sample <n>      try n apps spread evenly across the list: a fair picture in minutes, not hours
 //   --stable          skip prerelease versions (1.0.0-beta.9, 1.3.0-canary.5): betas fail more, for the betas' own churn
 //   --since <date>    keep only repos pushed to on or after this date (e.g. 2026-01-01)
 //   --local           test this checkout's cli and shell-bun instead of the npm release
 //   --modes spa,worker  desktop modes to try; worker swaps init's mode for the app's own Worker build
 //   --jobs <n>        apps at a time (default 2)
 //   --out <dir>       results.jsonl, summary.md, logs, clones (default .rustybuns-trial/, gitignored)
+//   --from <file>     the apps a saved --list printed, instead of searching again (no API calls)
+//   --list            print the apps a search finds (stars, last push, version) and stop
 //   --keep            keep node_modules after each app (default: removed, to bound disk use)
 //   --prof            time boot and 200 GETs of /, read the host's memory, and save a CPU profile per
 //                     mode (logs/<app>.<mode>.cpuprofile: open it in Chrome DevTools or speedscope.app)
@@ -21,16 +24,16 @@
 // It runs each app's install scripts and build on this machine, with none of its logins (see ENV).
 // Each app's host keeps its data in <out>/data/<app>, so nothing lands in ~ and no two apps share sqlite.
 import { $ } from "bun";
-import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { parseArgs } from "node:util";
 
 const { values: o, positionals } = parseArgs({
   allowPositionals: true,
   options: {
-    dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, since: { type: "string" }, stable: { type: "boolean" }, local: { type: "boolean" },
+    dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, sample: { type: "string" }, since: { type: "string" }, stable: { type: "boolean" }, local: { type: "boolean" },
     modes: { type: "string", default: "spa,worker" }, jobs: { type: "string", default: "2" },
-    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" },
+    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" }, list: { type: "boolean" }, from: { type: "string" },
   },
 });
 const REPO = resolve(import.meta.dir, "..");
@@ -42,7 +45,7 @@ for (const d of ["clones", "logs", "data"]) mkdirSync(join(OUT, d), { recursive:
 type App = { repo: string; sub: string; version?: string; stars?: number; pushed?: string };
 type Prof = { bootMs: number; p50: number; p95: number; max: number; rssMb: number; profile?: string };
 type ModeResult = { stage: string; status?: number; bytes?: number; text?: string; error?: string; prof?: Prof };
-type Result = App & { pm?: string; init?: string; error?: string; modes: Record<string, ModeResult> };
+type Result = App & { fakeSecrets?: string[]; traits?: string[]; pm?: string; init?: string; error?: string; modes: Record<string, ModeResult> };
 
 /** The version range an app's package.json gives <dep>, or undefined. */
 export function depVersion(pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }, dep: string) {
@@ -66,19 +69,22 @@ async function search(dep: string): Promise<App[]> {
   }
   const meta = new Map<string, { stars: number; archived: boolean; pushed: string }>();
   const apps: App[] = [];
-  await Promise.all([...hits.values()].map(async (a) => {
+  // 8 at a time: GitHub's secondary rate limit answers a burst with an error body, not data
+  const queue = [...hits.values()];
+  await Promise.all(Array.from({ length: 8 }, async () => { for (let a; (a = queue.shift()); ) await (async (a: App) => {
     const raw = await $`gh api repos/${a.repo}/contents/${a.sub ? `${a.sub}/` : ""}package.json -H ${"Accept: application/vnd.github.raw"}`.quiet().nothrow().text();
     let v: string | undefined;
     try { v = depVersion(JSON.parse(raw), dep); } catch { return; }
     if (!v || (o.major && !isMajor(v, o.major)) || (o.stable && /\d-[a-z]/i.test(v))) return;
     if (!meta.has(a.repo)) {
       const m = await $`gh api repos/${a.repo} --jq ${"[.stargazers_count,.archived,.pushed_at]"}`.quiet().nothrow().text();
-      const [stars, archived, pushed] = m ? JSON.parse(m) : [0, true, ""];
+      let parsed: unknown; try { parsed = JSON.parse(m); } catch {}
+      const [stars, archived, pushed] = Array.isArray(parsed) ? parsed : [0, true, ""];
       meta.set(a.repo, { stars, archived, pushed: String(pushed).slice(0, 10) });
     }
     const m = meta.get(a.repo)!;
     if (!m.archived && (!o.since || m.pushed >= o.since)) apps.push({ ...a, version: v, stars: m.stars, pushed: m.pushed });
-  }));
+  })(a); }));
   return apps.sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0) || a.repo.localeCompare(b.repo));
 }
 
@@ -104,8 +110,32 @@ const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 /** The last lines of a failed step's output worth reading: no stack frames. */
 const tail = (s: string) => strip(s).trim().split("\n").filter((l) => !/^\s+at /.test(l) && !/^Bun v\d/.test(l) && l.trim()).slice(-4).join("\n");
 
-async function step(log: string, cwd: string, cmd: string[], ms: number) {
-  const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", env: ENV });
+// On macOS the OS enforces the rest (sandbox-exec). Every app command: no reads or writes under
+// the real home except the toolchains and package caches it needs (so no ~/.ssh, keychains,
+// ~/.wrangler). After install: no network but localhost, so a build or a booted server can't send
+// anything out or reach anyone's real service. Install keeps the network: packages come from registries.
+type Net = "net" | "offline";
+const PROFILES: Partial<Record<Net, string>> = {};
+function profile(net: Net): string | undefined {
+  if (process.platform !== "darwin" || !Bun.which("sandbox-exec")) return undefined;
+  if (PROFILES[net]) return PROFILES[net];
+  const ok = [join(realHome, ".bun"), join(realHome, ".nvm"), join(realHome, ".npm"), join(realHome, "Library/pnpm"), REPO, OUT];
+  const sb = [
+    "(version 1)", "(allow default)",
+    `(deny file-read* file-write* (subpath ${JSON.stringify(realHome)}))`,
+    // later rules win: these stay reachable
+    ...ok.map((p) => `(allow file-read* file-write* (subpath ${JSON.stringify(p)}))`),
+    `(allow file-read* (literal ${JSON.stringify(realHome)}))`,
+    ...(net === "offline" ? ["(deny network-outbound)", '(allow network-outbound (remote ip "localhost:*"))', "(allow network-outbound (remote unix-socket))"] : []),
+  ].join("\n");
+  const f = join(OUT, `sandbox-${net}.sb`);
+  writeFileSync(f, sb + "\n");
+  return (PROFILES[net] = f);
+}
+const sandboxed = (cmd: string[], net: Net) => { const f = profile(net); return f ? ["sandbox-exec", "-f", f, ...cmd] : cmd; };
+
+async function step(log: string, cwd: string, cmd: string[], ms: number, net: Net = "offline", fakes: Record<string, string> = {}) {
+  const p = Bun.spawn(sandboxed(cmd, net), { cwd, stdout: "pipe", stderr: "pipe", env: { ...fakes, ...ENV } });
   const t = setTimeout(() => p.kill(), ms);
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   const code = await p.exited; clearTimeout(t);
@@ -125,10 +155,10 @@ function packageManager(dir: string, root: string): { pm: string; at: string } {
 }
 
 /** Boots the dev host, logs in with the printed token like a browser does, and GETs /. */
-async function boot(dir: string, log: string, profName?: string): Promise<ModeResult> {
+async function boot(dir: string, log: string, profName?: string, fakes: Record<string, string> = {}): Promise<ModeResult> {
   const prof = profName ? ["--cpu-prof", `--cpu-prof-dir=${join(OUT, "logs")}`, `--cpu-prof-name=${profName}.cpuprofile`] : [];
   const t0 = performance.now();
-  const host = Bun.spawn(["bun", ...prof, ".rustybuns/dev/desktop.js"], { cwd: dir, stdout: "pipe", stderr: "pipe", env: ENV });
+  const host = Bun.spawn(sandboxed(["bun", ...prof, ".rustybuns/dev/desktop.js"], "offline"), { cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...fakes, ...ENV } });
   let buf = "";
   for (const s of [host.stdout, host.stderr]) void (async () => { for await (const c of s) buf += new TextDecoder().decode(c); })();
   try {
@@ -163,6 +193,80 @@ function setMode(cfg: string, mode: "spa" | "worker", dataDir: string) {
   return s;
 }
 
+/** A plausible fake for a secret, by its name. Never real: enough for an app to boot logged-out. */
+export function fakeSecret(name: string): string | undefined {
+  const hex = (n: number) => Buffer.from(crypto.getRandomValues(new Uint8Array(n))).toString("hex");
+  if (/^(NODE_ENV|PORT|HOST|HOSTNAME|CI|HOME|PATH|TZ|PWD)$|^CLOUDFLARE_/.test(name)) return undefined;
+  // Clerk checks the format: pk_<env>_ + base64("<frontend api host>$")
+  if (/CLERK.*PUBLISHABLE|PUBLISHABLE.*CLERK/.test(name)) return `pk_test_${Buffer.from("rustybuns-trial.clerk.accounts.dev$").toString("base64")}`;
+  if (/CLERK.*SECRET/.test(name)) return `sk_test_${hex(20)}`;
+  if (/STRIPE.*PUBLISHABLE/.test(name)) return `pk_test_${hex(24)}`;
+  if (/STRIPE.*SECRET/.test(name)) return `sk_test_${hex(24)}`;
+  // addresses go nowhere: port 9 (discard) refuses at once, and the sandbox has no network anyway
+  if (/(DATABASE|DB|POSTGRES|PG).*(URL|URI)|^DATABASE_URL$/.test(name)) return "postgres://trial:trial@127.0.0.1:9/trial";
+  if (/(MYSQL).*(URL|URI)/.test(name)) return "mysql://trial:trial@127.0.0.1:9/trial";
+  if (/(REDIS|KV).*(URL|URI)/.test(name)) return "redis://127.0.0.1:9";
+  if (/(URL|URI|ENDPOINT|ORIGIN|BASE)$/.test(name)) return "http://127.0.0.1:9";
+  if (/SECRET|KEY|TOKEN|PASSWORD|PASS$|SALT|PRIVATE|SIGNING/.test(name)) return hex(32);
+  if (/EMAIL|FROM$/.test(name)) return "trial@example.invalid";
+  if (/^VITE_|^PUBLIC_|^NEXT_PUBLIC_/.test(name)) return "rustybuns-trial";
+  return undefined;
+}
+
+/** The secret names an app declares (.env.example and friends) or reads (process.env.X, env.X) in its own code. */
+export function declaredSecrets(dir: string): string[] {
+  const names = new Set<string>();
+  const examples = /^\.(env|dev\.vars)(\..+)?\.(example|sample|template)$|^\.env\.(example|sample|template)$/;
+  const code = /\.(m?[jt]sx?)$/;
+  let files = 0;
+  const walk = (d: string, depth: number) => {
+    if (depth > 6 || files > 2000) return;
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (/^(node_modules|\.git|dist|build|\.output|\.vercel|\.wrangler|\.rustybuns)$/.test(e.name)) continue;
+      const p = join(d, e.name);
+      if (e.isDirectory()) { walk(p, depth + 1); continue; }
+      if (examples.test(e.name)) for (const m of readFileSync(p, "utf8").matchAll(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]+)\s*=/gm)) names.add(m[1]!);
+      else if (code.test(e.name) && files++ < 2000) {
+        const src = readFileSync(p, "utf8");
+        for (const m of src.matchAll(/\b(?:process\.env|import\.meta\.env|env)\.([A-Z][A-Z0-9_]{2,})\b/g)) names.add(m[1]!);
+        for (const m of src.matchAll(/\b(?:process\.env|env)\[["']([A-Z][A-Z0-9_]{2,})["']\]/g)) names.add(m[1]!);
+      }
+    }
+  };
+  walk(dir, 0);
+  // SDKs that read their own variables, which the app's code never names
+  const pkg = (() => { try { return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")); } catch { return {}; } })();
+  const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+  for (const [dep, vars] of Object.entries(IMPLICIT)) if (deps.some((d) => d === dep || d.startsWith(dep + "/"))) vars.forEach((v) => names.add(v));
+  return [...names].sort();
+}
+
+/** Variables an SDK reads by itself when present. */
+const IMPLICIT: Record<string, string[]> = {
+  "@clerk": ["CLERK_SECRET_KEY", "CLERK_PUBLISHABLE_KEY", "VITE_CLERK_PUBLISHABLE_KEY"],
+  "better-auth": ["BETTER_AUTH_SECRET", "BETTER_AUTH_URL"],
+  "next-auth": ["AUTH_SECRET", "NEXTAUTH_SECRET", "NEXTAUTH_URL"], "@auth": ["AUTH_SECRET", "AUTH_URL"],
+  "convex": ["CONVEX_URL", "VITE_CONVEX_URL"], "@convex-dev": ["CONVEX_URL", "VITE_CONVEX_URL"],
+  "@supabase": ["SUPABASE_URL", "SUPABASE_ANON_KEY", "VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY"],
+  "stripe": ["STRIPE_SECRET_KEY"], "resend": ["RESEND_API_KEY"], "openai": ["OPENAI_API_KEY"],
+  "@anthropic-ai": ["ANTHROPIC_API_KEY"], "@neondatabase": ["DATABASE_URL"], "@prisma/client": ["DATABASE_URL"], "postgres": ["DATABASE_URL"],
+};
+
+/** .env, .env.production, .dev.vars and the like anywhere in a clone (not .env.example), deleted; returns their paths. */
+export function removeCommittedSecrets(root: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name === ".git") continue;
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/^\.(env|dev\.vars)(\..+)?$/.test(e.name) && !/\.(example|sample|template|schema|defaults)$/.test(e.name)) { rmSync(p); out.push(p.slice(root.length + 1)); }
+    }
+  };
+  walk(root);
+  return out;
+}
+
 async function trial(app: App): Promise<Result> {
   const slug = `${app.repo.replace("/", "__")}${app.sub ? `__${app.sub.replace(/\//g, "_")}` : ""}`;
   const log = join(OUT, "logs", `${slug}.log`);
@@ -171,13 +275,29 @@ async function trial(app: App): Promise<Result> {
   const dir = join(root, app.sub);
   const r: Result = { ...app, modes: {} };
   if (!existsSync(root)) {
-    const s = await step(log, OUT, ["git", "clone", "--depth", "1", `https://github.com/${app.repo}`, root], 180e3);
+    const s = await step(log, OUT, ["git", "clone", "--depth", "1", `https://github.com/${app.repo}`, root], 180e3, "net");
     if (!s.ok) return { ...r, error: `clone: ${s.tail}` };
   }
+  // Some repos commit their real secrets (.env with a production DATABASE_URL, .dev.vars). Nothing
+  // here may use them: they go before any of the app's code runs. Examples and templates stay.
+  const removed = removeCommittedSecrets(root);
+  if (removed.length) appendFileSync(log, `\nremoved committed secrets files: ${removed.join(", ")}\n`);
+  // In their place, fakes for every secret the app declares or reads, so a missing key doesn't stop it
+  // booting: .env (Vite, dotenv), .dev.vars (Workers, init's secret bindings), and the process itself.
+  const fakes: Record<string, string> = {};
+  for (const n of declaredSecrets(dir)) { const v = fakeSecret(n); if (v) fakes[n] = v; }
+  if (Object.keys(fakes).length) {
+    const lines = Object.entries(fakes).map(([k, v]) => `${k}=${v}`).join("\n") + "\n";
+    writeFileSync(join(dir, ".env"), lines);
+    writeFileSync(join(dir, ".dev.vars"), lines);
+    r.fakeSecrets = Object.keys(fakes);
+    appendFileSync(log, `\nfake secrets: ${Object.keys(fakes).join(" ")}\n`);
+  }
+  r.traits = traits(dir, root);
   let { pm, at } = packageManager(dir, root);
-  let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3);
+  let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3, "net");
   // an npm lockfile that npm itself can't install (peer conflicts): pnpm reads package.json alone
-  if (!s.ok && pm === "npm") { pm = "pnpm"; s = await step(log, at, ["pnpm", "install", "--config.minimum-release-age=0"], 600e3); }
+  if (!s.ok && pm === "npm") { pm = "pnpm"; s = await step(log, at, ["pnpm", "install", "--config.minimum-release-age=0"], 600e3, "net"); }
   r.pm = pm;
   if (!s.ok) return { ...r, error: `install: ${s.tail}` };
   const cli = o.local ? ["bun", join(REPO, "packages/cli/src/index.ts")] : [join(dir, "node_modules/.bin/rustybuns")];
@@ -187,31 +307,79 @@ async function trial(app: App): Promise<Result> {
     for (const p of ["cli", "shell-bun"]) { rmSync(join(dir, "node_modules/@rustybuns", p), { recursive: true, force: true }); symlinkSync(join(REPO, "packages", p), join(dir, "node_modules/@rustybuns", p)); }
   } else {
     const add = pm === "npm" ? ["npm", "i", "-D"] : [pm, "add", "-D", ...(pm === "pnpm" ? ["--config.minimum-release-age=0"] : [])];
-    s = await step(log, dir, [...add, `@rustybuns/cli@${VERSION}`, `@rustybuns/shell-bun@${VERSION}`], 300e3);
+    s = await step(log, dir, [...add, `@rustybuns/cli@${VERSION}`, `@rustybuns/shell-bun@${VERSION}`], 300e3, "net");
     if (!s.ok) return { ...r, error: `add rustybuns: ${s.tail}` };
   }
-  s = await step(log, dir, [...cli, "init", "--force"], 120e3);
+  s = await step(log, dir, [...cli, "init", "--force"], 120e3, "offline", fakes);
   if (!s.ok) return { ...r, error: `init: ${s.tail}` };
   r.init = strip(s.out).match(/^detected: (.*)$/m)?.[1];
   const initCfg = readFileSync(join(dir, "rustybuns.config.ts"), "utf8");
   const initMode = initCfg.match(/"mode": "(\w+)"/)?.[1];
   for (const mode of MODES) {
     if (mode === "worker" && !/"builtMain"/.test(initCfg)) { r.modes[mode] = { stage: "skipped", error: "init found no Worker build" }; continue; }
+    // init chose worker itself (TanStack Start's server, Astro's adapter): there is no SPA to try
+    if (mode === "spa" && initMode === "worker") { r.modes[mode] = { stage: "skipped", error: "init chose worker mode" }; continue; }
     writeFileSync(join(dir, "rustybuns.config.ts"), setMode(initCfg, mode, join(OUT, "data", slug, mode)));
     appendFileSync(log, `\n===== mode ${mode} =====\n`);
     if (mode === "spa" && initMode === "spa" && !existsSync(join(dir, "vite.desktop.config.ts"))) {
-      s = await step(log, dir, [...cli, "add", "desktop"], 300e3);
+      s = await step(log, dir, [...cli, "add", "desktop"], 300e3, "offline", fakes);
       if (!s.ok) { r.modes[mode] = { stage: "add desktop", error: s.tail }; continue; }
     }
-    s = await step(log, dir, [...cli, "build", "desktop", "--dev"], 600e3);
-    r.modes[mode] = s.ok ? await boot(dir, log, o.prof ? `${slug}.${mode}` : undefined) : { stage: "build", error: s.tail };
+    s = await step(log, dir, [...cli, "build", "desktop", "--dev"], 600e3, "offline", fakes);
+    r.modes[mode] = s.ok ? await boot(dir, log, o.prof ? `${slug}.${mode}` : undefined, fakes) : { stage: "build", error: s.tail };
   }
   if (!o.keep) for (const d of new Set([dir, at])) rmSync(join(d, "node_modules"), { recursive: true, force: true });
   return r;
 }
 
+/** n apps across kinds, not just the long tail of small ones: big and other monorepo apps, popular,
+ *  mid and unstarred standalone apps, an equal share each, spread within each kind. A short kind's
+ *  unused share goes to the others. */
+export function stratified<T extends { sub: string; stars?: number }>(apps: T[], n: number): T[] {
+  const kinds: ((a: T) => boolean)[] = [
+    (a) => !!a.sub && (a.stars ?? 0) >= 20, (a) => !!a.sub && (a.stars ?? 0) < 20,
+    (a) => !a.sub && (a.stars ?? 0) >= 10, (a) => !a.sub && (a.stars ?? 0) >= 1 && (a.stars ?? 0) < 10, (a) => !a.sub && !(a.stars ?? 0),
+  ];
+  const groups = kinds.map((k) => apps.filter(k));
+  const take = groups.map(() => 0);
+  for (let left = n; left > 0;) {
+    const open = groups.map((g, i) => i).filter((i) => take[i]! < groups[i]!.length);
+    if (!open.length) break;
+    for (const i of open) if (left > 0) { take[i]!++; left--; }
+  }
+  return groups.flatMap((g, i) => { const k = take[i]!, step = g.length / Math.max(k, 1); return Array.from({ length: k }, (_, j) => g[Math.floor(j * step + step / 2)]!); });
+}
+
+/** What kind of app it is, read from its package.json and Vite config: deploy target, auth, database, monorepo. */
+export function traits(dir: string, root: string): string[] {
+  const read = (f: string) => { try { return readFileSync(join(dir, f), "utf8"); } catch { return ""; } };
+  const pkg = (() => { try { return JSON.parse(read("package.json")); } catch { return {}; } })();
+  const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).join(" ");
+  const vite = ["vite.config.ts", "vite.config.mts", "vite.config.js", "app.config.ts"].map(read).join("\n");
+  const has = (re: RegExp) => re.test(deps);
+  const t: string[] = [];
+  const preset = vite.match(/\bpreset\s*:\s*["']([\w-]+)["']/)?.[1];
+  t.push(/cloudflare\(/.test(vite) || existsSync(join(dir, "wrangler.jsonc")) || existsSync(join(dir, "wrangler.toml")) ? "cloudflare"
+    : preset ? preset : /\bnitro\(/.test(vite) ? "node" : /netlify/.test(deps + vite) ? "netlify" : /vercel/.test(deps + vite) ? "vercel" : "start-only");
+  if (has(/@clerk\//)) t.push("clerk"); if (has(/\bbetter-auth\b/)) t.push("better-auth"); if (has(/next-auth|@auth\//)) t.push("authjs");
+  if (has(/@supabase\//)) t.push("supabase"); if (has(/\bconvex\b/)) t.push("convex");
+  if (has(/@prisma\/client|\bprisma\b/)) t.push("prisma"); if (has(/drizzle-orm/)) t.push("drizzle"); if (has(/@neondatabase|\bpostgres\b|\bpg\b/)) t.push("postgres");
+  if (dir !== root) t.push("monorepo");
+  return t;
+}
+
 const cell = (m?: ModeResult) => !m ? "" : m.stage === "works" ? `✅ ${m.status}` : m.stage === "skipped" ? "—" : `❌ ${m.stage}`;
 const note = (r: Result) => (r.error ?? Object.values(r.modes).find((m) => m.error)?.error ?? "").split("\n").at(-1)!.replace(/\|/g, "\\|").replace(/\/[^\s"']*\/(clones|node_modules)\//g, "…/").slice(0, 140);
+/** Pass rates by trait (deploy target, auth, database, monorepo): which kinds of app lag. */
+function byTrait(rs: Result[]): string[] {
+  const names = [...new Set(rs.flatMap((r) => r.traits ?? []))].sort();
+  if (!names.length) return [];
+  const works = (r: Result) => MODES.some((m) => r.modes[m]?.stage === "works");
+  return ["", "## By kind of app", "", "| trait | apps | install | serve / |", "|---|---|---|---|",
+    ...names.map((t) => { const b = rs.filter((r) => r.traits?.includes(t)); const i = b.filter((r) => !r.error);
+      return `| ${t} | ${b.length} | ${i.length} | ${b.filter(works).length} of ${i.length} |`; })];
+}
+
 /** Pass rates by how long ago the repo was last pushed to: is a failure Rusty Buns, or an abandoned app? */
 function freshness(rs: Result[]): string[] {
   const dated = rs.filter((r) => r.pushed);
@@ -232,7 +400,7 @@ function summary(rs: Result[]) {
     MODES.map((m) => `${m}: ${ok(m)}/${rs.length} serve /`).join(" · "), "",
     `| app | version | ${MODES.join(" | ")} | first error |`, `|---|---|${MODES.map(() => "---|").join("")}---|`,
     ...rs.map((r) => `| [${r.repo}${r.sub ? `:${r.sub}` : ""}](https://github.com/${r.repo}${r.sub ? `/tree/HEAD/${r.sub}` : ""}) | ${r.version ?? ""} | ${MODES.map((m) => cell(r.modes[m]) || (r.error ? `❌ ${r.error.split(":")[0]}` : "")).join(" | ")} | ${note(r)} |`),
-    ...freshness(rs),
+    ...freshness(rs), ...byTrait(rs),
     ...(o.prof ? ["", "## Perf (dev host, this machine)", "", "Boot is spawn to the first page; latency is 200 sequential GETs of /.", "",
       "| app | mode | boot | p50 | p95 | max | rss | page |", "|---|---|---|---|---|---|---|---|",
       ...rs.flatMap((r) => Object.entries(r.modes).filter(([, m]) => m.prof).map(([mode, m]) =>
@@ -242,9 +410,20 @@ function summary(rs: Result[]) {
 
 if (import.meta.main) {
   let apps: App[] = positionals.map((p) => { const [repo, sub = ""] = p.split(":"); return { repo: repo!, sub }; });
-  if (o.dep) apps.push(...await search(o.dep));
+  if (o.from) for (const line of readFileSync(o.from, "utf8").split("\n")) {
+    const m = line.match(/^\s*(\d*)\s+(\d{4}-\d\d-\d\d)?\s+(\S+)\s+([\w.-]+\/[\w.-]+)(?::(\S+))?\s*$/);
+    if (!m || (o.since && m[2]! < o.since)) continue;
+    apps.push({ repo: m[4]!, sub: m[5] ?? "", stars: Number(m[1]) || 0, pushed: m[2], version: m[3] });
+  }
+  if (o.dep && !o.from) apps.push(...await search(o.dep));
   if (!apps.length) throw new Error("usage: bun scripts/trial-github.ts [--dep <name> [--major <n>]] [owner/repo[:subdir] ...]");
   if (o.limit) apps = apps.slice(0, Number(o.limit));
+  if (o.sample && Number(o.sample) < apps.length) apps = stratified(apps, Number(o.sample));
+  if (o.list) {
+    for (const a of apps) console.log(`${String(a.stars ?? "").padStart(6)}  ${a.pushed ?? "          "}  ${(a.version ?? "").padEnd(16)}  ${a.repo}${a.sub ? `:${a.sub}` : ""}`);
+    console.log(`${apps.length} apps`);
+    process.exit(0);
+  }
   console.log(`trying ${apps.length} apps, ${o.jobs} at a time, modes ${MODES.join(",")}; results in ${OUT}`);
   const results: Result[] = [];
   // One worker per repo at a time: apps in the same clone would install over each other.

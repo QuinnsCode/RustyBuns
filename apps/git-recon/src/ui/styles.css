@@ -25,6 +25,9 @@ button.primary { background: var(--fg); color: #fff; }
 
 /* menu */
 .menu, .results { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(255, 255, 255, 0.86); }
+/* Six levels and the place field outgrow a laptop screen: centred when it fits, scrolls when it doesn't. */
+.menu { display: flex; overflow-y: auto; }
+.menu > .card { margin: auto; }
 .card { width: min(560px, 100%); background: var(--bg); border: 1px solid var(--line); padding: 28px; }
 .kicker { margin: 0; font: 12px var(--mono); color: var(--muted); }
 h1 { margin: 4px 0 8px; font-size: 40px; letter-spacing: -0.02em; }
@@ -34,6 +37,14 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .level { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; text-align: left; padding: 12px 14px; }
 .level b { font-size: 16px; }
 .level span { grid-column: 1; color: var(--muted); }
+.place { display: grid; gap: 6px; margin-top: 14px; }
+.place label { color: var(--muted); font-size: 13px; }
+.place .row { display: flex; gap: 8px; }
+.place input { flex: 1; min-width: 0; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; }
+.place input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.place button { white-space: nowrap; }
+.place-status { margin: 0; min-height: 1.4em; font-size: 13px; color: var(--muted); }
+.place-status.bad { color: var(--accent-ink); }
 .level code { grid-row: 1; grid-column: 2; font-size: 12px; color: var(--accent-ink); }
 .level em { grid-column: 1; font-style: normal; font-size: 12px; color: var(--accent-ink); }
 .repo-form { display: grid; grid-template-columns: auto 1fr auto auto; gap: 6px 8px; align-items: center; margin: 0 0 12px; }
@@ -43,14 +54,7 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .repo-form button { padding: 6px 12px; }
 .repo-status { grid-column: 1 / -1; margin: 0; min-height: 1.2em; font: 12px var(--mono); color: var(--muted); }
 .repo-status.err { color: var(--accent-ink); }
-.heads-row { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
-.heads-row > span { font: 12px var(--mono); color: var(--muted); }
-.heads { display: flex; flex-wrap: wrap; gap: 4px; }
-.heads button { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; box-shadow: 0 1px 0 var(--line); }
-.heads button img { width: 32px; height: 32px; }
-.heads button.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .heads button:disabled { opacity: 0.35; cursor: default; box-shadow: none; filter: grayscale(1); }
-.heads button.plain i { display: block; width: 8px; height: 22px; border-radius: 4px; background: var(--fg); }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 12px; }
 .keys dt { font-family: var(--mono); }
 .keys dd { margin: 0; color: var(--muted); }
@@ -100,3 +104,12 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
   h1 { font-size: 30px; }
   .health { width: 120px; }
 }
+
+/* your soldier: a build and a head */
+.look { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; }
+.look-label { font: 12px var(--mono); color: var(--muted); }
+.chips, .heads { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { padding: 4px 10px; font-size: 13px; white-space: nowrap; }
+.heads button { width: 34px; height: 34px; padding: 2px; }
+.heads canvas { width: 100%; height: 100%; display: block; }
+.chips button[aria-checked="true"], .heads button[aria-checked="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }

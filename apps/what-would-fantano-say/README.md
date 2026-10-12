@@ -6,7 +6,7 @@ Pick a track, drag to your best 15 seconds, and get a parody review in the style
 
 ## How a review works
 
-1. **On the phone** (`src/app/Critic.tsx`, `src/analyze.ts`, `src/clip.ts`): the browser decodes the file at 16 kHz mono. That covers anything it can play: mp3, wav, m4a/aac, flac, ogg/opus, and the audio in mp4/mov/webm. It then measures tempo, loudness, dynamic range, bass and brightness, suggests the loudest 15 s, and lets you drag the window and preview it. Only that clip leaves the device, as a 480 KB WAV.
+1. **On the phone** (`src/app/Critic.tsx`, `src/analyze.ts`, `src/clip.ts`): the browser decodes the file at 16 kHz mono. That covers anything it can play: mp3, wav, m4a/aac, flac, ogg/opus, and the audio in mp4/mov/webm. When it can't (wma, ALAC on Chrome, odd aiff), `src/decode.ts` falls back to **ffmpeg.wasm**, still on the device: `src/app/ffmpeg.ts` is its own chunk, imported only after a decode fails, and fetches the pinned ~30 MB core from jsDelivr (too big for Workers assets) once per visit. The first load never pays for it. It then measures tempo, loudness, dynamic range, bass and brightness, suggests the loudest 15 s, and lets you drag the window and preview it. Only that clip leaves the device, as a 480 KB WAV.
 2. **On the Worker** (`src/api.ts`): the numbers narrow twelve hand-written boxes (`src/boxes.ts`) to the six nearest. **Clef-omni**, Cloudflare's audio-capable decision model on Workers AI, listens to the clip and answers three typed questions (`src/judge.ts`): which of those six boxes it is, how well made, and how original. It returns probabilities, not text, so nobody can talk it into saying anything.
 3. **The text** (`src/write.ts`) comes from templates: Clef's answers set the box and the tone, and the phone's numbers set the best and worst bits. The same clip always gets the same review.
 
@@ -31,7 +31,7 @@ With no Turnstile secret, or no AI binding, or a failing call, the review is the
 ```sh
 cd apps/what-would-fantano-say
 bun run dev       # http://localhost:5173: estimated reviews, $0
-bun test test     # analysis, clip, boxes, judge, writer, budget, the door
+bun test test     # analysis, clip, decode fallback, boxes, judge, writer, budget, the door
 ```
 
 ## Deploy
@@ -45,4 +45,3 @@ The only secret is `turnstile/secret` in the 1Password vault `fantano` (`.env.sc
 ## Not built yet
 
 - The boxes are written by hand. Building them from the critic's actual reviews is a follow-up.
-- A file the browser can't decode (wma, some ALAC on Chrome) gets an error. Converting those on the device too (ffmpeg.wasm, loaded only when needed) is a follow-up.

@@ -3,14 +3,17 @@
 
 import * as THREE from "three";
 import { loadRepoCached, LoadError, parseSlug } from "../levels/github.ts";
-import { LEVELS, type LevelDef } from "../levels/levels.ts";
+import { LEVELS, placeLevel, type LevelDef } from "../levels/levels.ts";
+import { groundAt, parsePlace } from "../levels/place.ts";
 import type { RepoSnapshot } from "../sim/codemap.ts";
-import { addWin, HEADS, unlocked, winKey } from "../sim/heads.ts";
+import { addWin, winKey } from "../sim/heads.ts";
+import type { ZoneData } from "../sim/terrain.ts";
 import { Game, scopeSway, stanceOf, type GameEvent, type Input } from "../sim/game.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { FIELD, place, play, VOICES } from "./audio.ts";
-import { headThumbs } from "./characters.ts";
+import { BUILDS, type BuildId } from "./figure.ts";
+import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
 import { buildWorld, type World } from "./scene.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -48,7 +51,6 @@ const store = {
   },
 };
 let wins = store.get<string[]>("wins", []);
-let head = store.get<string | null>("head", null);
 
 const list = $("levels");
 for (const def of LEVELS) {
@@ -97,34 +99,83 @@ $("repo-reset").onclick = () => {
   showRepo();
 };
 
-/* ---------------- heads ---------------- */
 
-const thumbs = headThumbs(HEADS.map((h) => h.id));
+// Any lat/long: the ground is read from AWS Terrain Tiles in the page, then kept
+// in this browser so the same place loads instantly (and offline) next time.
+const placeKey = (lat: number, lon: number) => `git-recon:ground:${lat.toFixed(4)},${lon.toFixed(4)}`;
+async function groundFor(lat: number, lon: number): Promise<ZoneData> {
+  try {
+    const hit = localStorage.getItem(placeKey(lat, lon));
+    if (hit) return JSON.parse(hit) as ZoneData;
+  } catch {}
+  const zone = await groundAt(lat, lon);
+  try {
+    localStorage.setItem(placeKey(lat, lon), JSON.stringify(zone));
+  } catch {}
+  return zone;
+}
+
+$("place").onsubmit = async (e) => {
+  e.preventDefault();
+  const status = $("place-status"), go = $<HTMLButtonElement>("place-go");
+  const at = parsePlace($<HTMLInputElement>("place-at").value);
+  status.classList.remove("bad");
+  if (!at) {
+    status.textContent = "Two numbers, like 36.0566, -112.1251.";
+    status.classList.add("bad");
+    return;
+  }
+  go.disabled = true, status.textContent = "Reading the ground (a few seconds the first time)…";
+  try {
+    const def = placeLevel(await groundFor(at.lat, at.lon));
+    status.textContent = "";
+    start(def);
+  } catch (err) {
+    status.textContent = err instanceof Error ? err.message : String(err);
+    status.classList.add("bad");
+  } finally {
+    go.disabled = false;
+  }
+};
+
+/* ---------------- your soldier ---------------- */
+
+// Remembered in this browser; a blocked storage just means the defaults every time.
+const saved = (k: string) => { try { return localStorage.getItem(`git-recon:${k}`); } catch { return null; } };
+const save = (k: string, v: string) => { try { localStorage.setItem(`git-recon:${k}`, v); } catch {} };
+const savedBuild = saved("build");
+const me = {
+  build: (savedBuild && savedBuild in BUILDS ? savedBuild : "average") as BuildId,
+  head: headById(saved("head") ?? "ball"),
+};
+if (!isOpen(me.head, wins.length)) me.head = HEADS[0]!;
+
+function radios<T>(box: HTMLElement, items: T[], label: (t: T) => string, fill: (b: HTMLButtonElement, t: T) => void, on: (t: T) => boolean, pick: (t: T) => void) {
+  const draw = () => box.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-checked", String(on(items[i]!))));
+  for (const t of items) {
+    const b = document.createElement("button");
+    b.setAttribute("role", "radio");
+    b.title = label(t);
+    fill(b, t);
+    b.onclick = () => (pick(t), draw());
+    box.append(b);
+  }
+  draw();
+}
+radios($("builds"), Object.keys(BUILDS) as BuildId[], (id) => BUILDS[id].name, (b, id) => (b.textContent = BUILDS[id].name), (id) => id === me.build, (id) => (me.build = id, save("build", id)));
+/** The heads, toy ones greyed out until you've won enough levels; redrawn after a win. */
 function showHeads() {
-  const open = new Set(unlocked(wins).map((h) => h.id)), row = $("heads");
-  if (head && !open.has(head)) head = null;
-  row.innerHTML = "";
-  const plain = document.createElement("button");
-  plain.className = `plain${head === null ? " on" : ""}`, plain.title = "The black pillar", plain.innerHTML = "<i></i>";
-  plain.onclick = () => ((head = null), store.set("head", head), showHeads());
-  row.append(plain);
-  HEADS.forEach((h, i) => {
-    const b = document.createElement("button"), img = document.createElement("img");
-    img.src = thumbs.get(h.id) ?? "", img.alt = "";
-    b.append(img);
-    b.className = head === h.id ? "on" : "";
-    b.disabled = !open.has(h.id);
-    b.title = open.has(h.id) ? `${h.name}: a nod to ${h.nod}` : `Locked: win ${i + 1 - open.size} more ${i + 1 - open.size === 1 ? "level" : "levels"}`;
-    b.onclick = () => ((head = h.id), store.set("head", head), showHeads());
-    row.append(b);
-  });
+  const box = $("heads");
+  box.innerHTML = "";
+  radios(box, HEADS, (h) => isOpen(h, wins.length) ? (h.nod ? `${h.name}: a nod to ${h.nod}` : h.name) : `Locked: win ${h.wins! - wins.length} more ${h.wins! - wins.length === 1 ? "level" : "levels"}`,
+    (b, h) => (b.append(headCanvas(h)), (b.disabled = !isOpen(h, wins.length))), (h) => h.id === me.head.id, (h) => (me.head = h, save("head", h.id)));
 }
 showHeads();
 
 function start(def: LevelDef) {
   const mission = missionFor(def.id), repo = chosen ?? def.repo;
   const game = Game.fromRepo(def.ground(), repo, def.seed, mission);
-  const world = buildWorld(game.map, head);
+  const world = buildWorld(game.map, { head: me.head, build: me.build });
   current = { def, repo, game, world, started: performance.now() };
   look.yaw = game.map.spawn.yaw, look.pitch = -0.05, prone = false;
   $("menu").hidden = true, $("results").hidden = true, $("hud").hidden = false;
