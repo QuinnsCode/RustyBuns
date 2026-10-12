@@ -343,6 +343,31 @@ describe("claims", () => {
     } finally { setSystemTime(); }
   });
 
+  test("an agent that lets go within a lease of its cap rests all the same, so it can't buy a fresh cap", async () => {
+    const call = await local();
+    await setup(call, "a\nb");
+    try {
+      const c = await (await post(call, "agent-x", "claims", { id: "run-1", lines: ["L1"] })).json() as any;
+      // A lease before the cap, letting go and claiming again is fine.
+      setSystemTime(c.cap - LEASE_MS - 1);
+      await post(call, "agent-x", "release", { id: "run-1" });
+      const d = await (await post(call, "agent-x", "claims", { id: "run-2", lines: ["L1"] })).json() as any;
+      // Inside the last lease, letting go starts the rest, as if it ran to its cap.
+      setSystemTime(d.cap - 1000);
+      expect(await (await post(call, "agent-x", "release", { id: "run-2" })).json()).toEqual({ released: true });
+      const res = await post(call, "agent-x", "claims", { id: "run-3", lines: ["L1"] });
+      expect(res.status).toBe(409);
+      expect((await res.json() as any).retryAfter).toBe(REST_MS / 1000);
+      // Lifted by a person near its cap, the same.
+      const e = await (await post(call, "agent-x", "claims", { id: "run-4", lines: ["L2"] })).json() as any;
+      setSystemTime(e.cap - 1000);
+      await post(call, "ryan", "release", { id: "run-4" });
+      expect((await post(call, "agent-x", "claims", { id: "run-5", lines: ["L2"] })).status).toBe(409);
+      setSystemTime(e.cap - 1000 + REST_MS);
+      expect((await post(call, "agent-x", "claims", { id: "run-6", lines: ["L1", "L2"] })).status).toBe(201);
+    } finally { setSystemTime(); }
+  });
+
   test("an agent whose claim lapses before its cap (or that lets go) may claim the lines again at once", async () => {
     const call = await local();
     await setup(call, "a\nb");
