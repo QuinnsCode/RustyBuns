@@ -5,6 +5,7 @@
 // older local Bun. Errors print one line each, cut short (`--full` for all of it).
 // Exits non-zero if any project has errors.
 import { existsSync, readdirSync } from "node:fs";
+import { availableParallelism } from "node:os";
 import { compactDiagnostics } from "../packages/cli/src/typecheck.ts";
 
 const bunCheck = Bun.semver.satisfies(Bun.version, ">=1.4.3-0");
@@ -13,11 +14,19 @@ const cmd = (p: string) => bunCheck
   : ["bunx", "tsgo", "-p", p, "--noEmit", "--pretty", "false"];
 
 const projects = ["tsconfig.json", ...readdirSync("apps").sort().map((a) => `apps/${a}/tsconfig.json`).filter((p) => existsSync(p))];
-const results = await Promise.all(projects.map(async (p) => {
-  const proc = Bun.spawn(cmd(p), { stdout: "pipe", stderr: "pipe" });
-  const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());
-  return { p, code: await proc.exited, out: out.trim() };
+// At most one checker per core. All 18 at once took the same wall time (median 2.4s vs 2.2s on
+// 8 cores, noisy) and more memory (peak ~2.2 GB vs ~1.4 GB), which counts when several worktrees
+// type check side by side. packages/cli/bench/concurrency.ts has the measurements.
+const limit = availableParallelism();
+const queue = [...projects], results: { p: string; code: number; out: string }[] = [];
+await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, async () => {
+  for (let p; (p = queue.shift()); ) {
+    const proc = Bun.spawn(cmd(p), { stdout: "pipe", stderr: "pipe" });
+    const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());
+    results.push({ p, code: await proc.exited, out: out.trim() });
+  }
 }));
+results.sort((a, b) => projects.indexOf(a.p) - projects.indexOf(b.p));
 const full = process.argv.includes("--full");
 const failed = results.filter((r) => r.code !== 0);
 for (const r of failed) console.error(`✗ ${r.p}\n${full ? r.out : compactDiagnostics(r.out)}\n`);

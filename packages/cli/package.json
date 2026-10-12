@@ -29,8 +29,9 @@
     "README.md"
   ],
   "dependencies": {
-    "@rustybuns/shell-bun": "workspace:*",
     "@rustybuns/ports": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "effect": "4.0.0-rc.112",
     "varlock": "1.22.0"
   },
   "keywords": [
