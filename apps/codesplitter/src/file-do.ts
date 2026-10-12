@@ -35,6 +35,7 @@ import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { apply, empty, merge, mergeWords, replay, sha, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
+import type { Rule } from "./policy.ts";
 
 /** `writers`: everyone whose edits since the file's last commit this one carries (a hosted deploy asks about others', deploy.ts). */
 interface Commit { n: number; sha: string; parent: string | null; rev: number; by: string; at: number; message: string; writers: string[] }
@@ -319,8 +320,8 @@ export class FileDurableObject {
     if (req.method === "POST" && route === "merge") {
       // Main's copy merges a branch into itself: computed and applied with no
       // await between, so nothing lands in the middle and the ids line up.
-      const { base, branch, resolve, dry, deleter, path, writer } = (await req.json()) as { base: Doc; branch: Doc; resolve?: Resolve; dry?: boolean; deleter?: string; path?: string; writer?: string };
-      const m = merge(base, branch, this.doc, resolve, deleter, path, writer);
+      const { base, branch, resolve, dry, deleter, path, writer, rule } = (await req.json()) as { base: Doc; branch: Doc; resolve?: Resolve; dry?: boolean; deleter?: string; path?: string; writer?: string; rule?: Rule };
+      const m = merge(base, branch, this.doc, resolve, deleter, path, writer, rule);
       // Every line settled: check the merged code still builds before it lands.
       if (!m.conflicts.length && path) m.conflicts = lintMerge(path, this.doc, branch, m, resolve);
       if (m.conflicts.length || dry || !m.ops.length) return json({ rev: this.doc.rev, ops: m.ops, conflicts: m.conflicts }, m.conflicts.length && !dry ? 409 : 200);

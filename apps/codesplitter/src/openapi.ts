@@ -247,8 +247,8 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/branches/{branch}`]: { get: { id: "review_branch", summary: "A branch's review: each file's ops against main now, and its conflicts", tag: "Branches", open: true,
     description: "Each conflict is {line, base, main, branch, choices, suggestion?}: settle it in merge_branch's `resolve` by its `line` with one of its `choices` " +
       "(\"text\" meaning {\"text\": \"...\"}). `suggestion`, where there is one, keeps both sides' words: merge with {\"text\": suggestion} to take it. " +
-      "suggest_resolution has a coding agent write one.",
-    ok: loose("the branch row, plus {deploys, files: [{path, merged, build, deleted?, binary?, blob?, ops, conflicts: [{line, base, main, branch, choices, suggestion?, doubled?, whole?, lint?}], hunks, lines?}]}; " +
+      "suggest_resolution has a coding agent write one. `policy` is the file's rule from the repo's .gitattributes or the defaults: `live` free, line (claim the lines first) or locked (regenerated, don't edit), `merge` its merge rule, and `leftover` who should settle a conflict: ai (ask suggest_resolution), person or ci.",
+    ok: loose("the branch row, plus {deploys, files: [{path, merged, build, deleted?, binary?, blob?, policy?: {live, merge, leftover}, ops, conflicts: [{line, base, main, branch, choices, suggestion?, doubled?, whole?, lint?}], hunks, lines?}]}; " +
       "hunks are what the branch itself changed since it forked: [{key, at, from, del: [{id, text}], add: [{id, text}], before}]") } },
   [`${repo}/branches/{branch}/hunks/reject`]: { post: { id: "reject_hunk", summary: "Reject one hunk of a branch: its copy of the file reads as it did where the branch forked, there only (the crew)", tag: "Branches",
     description: "Name the hunk by the `key` review_branch lists for it. The rest of the branch stays. A 404 means the hunk changed or went: review again.",

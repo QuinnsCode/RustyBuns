@@ -20,6 +20,7 @@
 
 import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, type Doc, type Op, type Pick, type Resolve } from "./lines.ts";
 import { lintMerge } from "./lint.ts";
+import { policyOf, type Policy } from "./policy.ts";
 import { tryInClone } from "./deps.ts";
 import { catalogueBlob, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
@@ -136,12 +137,19 @@ async function blobOnMain(env: Env, owner: string, repo: string, f: { path: stri
   await kickMirror(env, owner, repo);
 }
 
-/** Ask main's copy of `path` to merge the branch's: a dry run, or for real. */
+/** The policy for `path` (#938): its kind's defaults, under main's `.gitattributes`. */
+export async function pathPolicy(env: Env, owner: string, repo: string, path: string, user: string): Promise<Policy> {
+  const res = await toFile(env, owner, repo, ".gitattributes", user, "file");
+  return policyOf(path, res.ok ? text(await res.json() as Doc) : "");
+}
+
+/** Ask main's copy of `path` to merge the branch's, by the path's merge rule: a dry run, or for real. */
 async function mergeFile(env: Env, owner: string, repo: string, branch: { name: string; by: string }, path: string, user: string, resolve: Resolve | undefined, dry: boolean) {
-  const [base, doc] = await Promise.all(["base", "file"].map(async (op) => (await toFile(env, owner, repo, path, user, op, {}, "", branch.name)).json() as Promise<Doc>));
+  const read = async (op: string) => (await toFile(env, owner, repo, path, user, op, {}, "", branch.name)).json() as Promise<Doc>;
+  const [base, doc, policy] = await Promise.all([read("base"), read("file"), pathPolicy(env, owner, repo, path, user)]);
   // Text the merger writes is theirs; deleted lines are the branch's doing.
-  const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by, path, writer: user }) });
-  return { status: res.status, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[] }) };
+  const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by, path, writer: user, rule: policy.merge }) });
+  return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[] }) };
 }
 
 /** What the branch changed in `path`, as hunks against its fork point; private lines blank outside the crew. */
@@ -295,7 +303,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       const lines = build ? changedLines(await (await toFile(env, owner, repo, f.path, user ?? "anon", "file")).json() as Doc, ops) : undefined;
       // What the branch itself changed, a stretch at a time, to accept or reject (#735).
       const changed = (await fileHunks(env, owner, repo, name, f.path, user ?? "anon", a.write)).hunks;
-      return { path: f.path, merged: false, build, ops, conflicts: conflicts.map(explain), hunks: changed, ...(lines && { lines }) };
+      return { path: f.path, merged: false, build, policy: m.policy, ops, conflicts: conflicts.map(explain), hunks: changed, ...(lines && { lines }) };
     }));
     return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out });
   }
@@ -340,9 +348,10 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (spent) return spent;
     const doc = async (op: string, on?: string) => (await toFile(env, owner, repo, b.path!, user!, op, {}, "", on)).json() as Promise<Doc>;
     const [main, base, ours] = await Promise.all([doc("file"), doc("base", name), doc("file", name)]);
+    const rule = (await pathPolicy(env, owner, repo, b.path, user!)).merge;
     // The file as the merge leaves it: every other change in, and this conflict settled as `resolve` says.
     const mergedWith = (resolve: Resolve) => {
-      const m = merge(base, ours, main, resolve, String(branch.by), b.path!, user!), d = structuredClone(main);
+      const m = merge(base, ours, main, resolve, String(branch.by), b.path!, user!, rule), d = structuredClone(main);
       return { m, d, ok: apply(d, m.ops, m.by, 0, main.rev).ok };
     };
     // Why main changed the file since the branch forked: its commit messages. A branch doesn't commit.

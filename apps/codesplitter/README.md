@@ -32,6 +32,7 @@ The highest-value things, in order:
    Agents work on branches, and a three-way merge **by line id** settles what git would call a conflict (a moved block that someone else edited, the same line added twice).
    What's left is a card each on the branch's merge page: keep main's, the branch's, both, or write it, with a suggestion when both sides added words at one spot and an Ask button for a coding agent's answer, which is offered only once the merged file parses and the repo's tests for that file pass with it in a throwaway clone, where you turn that on in the dependency doctor's settings. The agent hears why each side changed the file: main's commit messages, and the branch's agent task or, for a branch from upstream, its upstream commit messages.
    Agents settle the same conflicts over MCP, the CLI or WebMCP.
+   Hot spots get their own rules in `.gitattributes`, as git's merge drivers do: `CHANGELOG.md merge=union` and its rewrites stack instead of conflicting.
 2. **Your git keeps going when the other git doesn't.** Make a repo a mirror of GitHub, GitLab or any git URL, or turn a fork you dug up on the desktop into one with a click (its About panel says which of its commits go up first, and asks).
    When upstream goes down, you keep editing, committing, branching and running agents.
    The Upstream panel says it's down and how many commits are waiting, and it catches up by itself once upstream answers.
@@ -183,6 +184,25 @@ There's no downloadable build yet; that's one command from source.
 
 Make a CI token for the repo (`POST /api/repos/:owner/:repo/checks/tokens`), then set your CI's GitHub API base URL (the GitHub Enterprise option) to `https://<this site>/api/gh/v3` and use that token as its GitHub token.
 Its commit statuses and check runs show up in the repo's checks as `external` runs, and required ones gate Merge.
+
+### CI for your public repo, on your own machine
+
+Run your public repo's heavy checks on a machine you own, a spare Mac at home say, with no way in for strangers.
+
+```
+GitHub ──mirror──▶ codeSplitter ◀──pulls work── your machine
+(fork PRs stay there)             (nothing listens)
+```
+
+GitHub warns against self-hosted runners on public repos because a fork PR can edit `.github/workflows` and run on your box, and a personal account can't fence runners off (that takes an organization's runner groups).
+Here, fork PRs never mirror: a mirror fetches upstream's own branches, never `refs/pull/*`.
+Only trusted code runs: your branches and your agents', and main as merged on GitHub, which you reviewed (that one doesn't queue by itself yet; see the caveats).
+Your machine pulls its runs, so it needs no open port.
+GitHub's free runners keep doing the quick PR checks.
+
+It isn't new in kind: GitLab's CI for external repos, Buildkite's agents and GitOps (Argo CD, Flux) all pull the same way.
+What's new is the size: the enterprise pull model for one person and a spare Mac, with no Kubernetes, GitLab or organization.
+The caveats and what's still missing are in [REFERENCE.md](REFERENCE.md#ci-for-your-public-repo-on-your-own-machine).
 
 ## Hard to copy
 
