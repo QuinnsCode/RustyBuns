@@ -1,5 +1,5 @@
-# The codeSplitters dependency doctor on RustyBuns itself (#615): weekly, the same outdated()
-# and osv.dev check the app runs on its repos (apps/codesplitters/scripts/deps-doctor.ts).
+# The codeSplitter dependency doctor on RustyBuns itself (#615): weekly, the same outdated()
+# and osv.dev check the app runs on its repos (apps/codesplitter/scripts/deps-doctor.ts).
 # What's worth taking goes on the deps-doctor branch as one PR, rebuilt from main each week;
 # a dependency no release fixes yet gets an issue. Merging stays a person's call.
 name: deps-doctor
@@ -32,7 +32,7 @@ jobs:
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile --ignore-scripts
       - id: d
-        run: bun apps/codesplitters/scripts/deps-doctor.ts --write --report "$RUNNER_TEMP/report.md" >> "$GITHUB_OUTPUT"
+        run: bun apps/codesplitter/scripts/deps-doctor.ts --write --report "$RUNNER_TEMP/report.md" >> "$GITHUB_OUTPUT"
       - run: cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
 
       # The lockfile, with no install scripts, so none of the new versions' code runs here.

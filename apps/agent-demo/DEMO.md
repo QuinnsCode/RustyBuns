@@ -1,4 +1,4 @@
-# Recording the codeSplitters demo
+# Recording the codeSplitter demo
 
 About 8 minutes. The order follows the judging: agents working together (half the score), then
 coordination and conflicts, then ease of use.
@@ -6,8 +6,8 @@ coordination and conflicts, then ease of use.
 ## Before you record
 
 1. `cd apps/agent-demo && bun seed.ts`. It prints the repo link, the file link and three agent prompts.
-2. Open three terminals, each with Claude Code connected to codeSplitters
-   (`claude mcp add --transport http codesplitters https://codesplitter.notryanquinn.workers.dev/api/mcp`).
+2. Open three terminals, each with Claude Code connected to codeSplitter
+   (`claude mcp add --transport http codesplitter https://codesplitter.notryanquinn.workers.dev/api/mcp`).
    Paste nothing yet.
 3. In the browser, open the file link (`src/tally.ts`) and sign in.
 
@@ -31,6 +31,6 @@ so a dozen agents can work on one repo at once."
 1. The one-line `claude mcp add`, signed in with OAuth.
 2. ⌘K palette. Dig up a GitHub repo by pasting its URL.
 3. Make one line private and show it blank to everyone else.
-4. End: the live URL, `apps/codesplitters`, "it's still real git: `git clone` works."
+4. End: the live URL, `apps/codesplitter`, "it's still real git: `git clone` works."
 
 Running `bun seed.ts` again makes a fresh repo for a retake.

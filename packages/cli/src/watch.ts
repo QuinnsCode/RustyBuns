@@ -1,7 +1,7 @@
 // rustybuns run desktop --watch: rebuild the dev host on save and swap it in.
 //
 // The old host keeps running while the new one builds (a --dev rebuild is the client build plus
-// one bundle: about 0.2 s for codeSplitters). A good build stops the old host and starts the new
+// one bundle: about 0.2 s for codeSplitter). A good build stops the old host and starts the new
 // one; a failed one leaves the old one up. Saves that land mid-build fold into one more build, so
 // a burst of writes (an agent editing ten files) costs two builds, not ten.
 //

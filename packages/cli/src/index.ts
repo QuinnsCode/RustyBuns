@@ -657,9 +657,10 @@ try {
       const [what, ...flags] = rest;
       const t = flags.indexOf("--target");
       if (what === "box") { console.log(`built ${await buildBox(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined })}`); break; }
-      if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--dev] [--check] [--checker bun|tsc-rs|tsc] [--target darwin-arm64] | build box [--target linux-x64]");
+      if (what !== "desktop") throw new Error("usage: rustybuns build desktop [--dev] [--check] [--checker bun|tsc-rs|tsc] [--target darwin-arm64] [--outfile dist/app-darwin-arm64] | build box [--target linux-x64]");
       const { on: check, checker } = checkFlags(flags, false);
-      const out = await buildDesktop(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined, noCompile: flags.includes("--dev"), check: check ? checker : undefined, profile: true });
+      const o = flags.indexOf("--outfile");
+      const out = await buildDesktop(await loadConfig(), { target: t >= 0 ? flags[t + 1] : undefined, outfile: o >= 0 ? flags[o + 1] : undefined, noCompile: flags.includes("--dev"), check: check ? checker : undefined, profile: true });
       console.log(`built ${out}`);
       break;
     }

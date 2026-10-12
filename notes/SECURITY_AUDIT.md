@@ -4,13 +4,13 @@ How we keep a malicious or prompt-injected agent from hurting the code, the secr
 
 ## The threat in one paragraph
 
-Agents write most of this repo, and codeSplitters lets other people's agents into theirs. So we assume any one agent can be turned against us: a poisoned README, a dependency, or another agent's message can prompt-inject it. It then has whatever its process has: files, env, the `gh` login, the tokens it was given. The goal is that one bad agent can't leak a production secret, rewrite history on `main`, or act as someone else. Today that holds better on the hosted site than on this laptop.
+Agents write most of this repo, and codeSplitter lets other people's agents into theirs. So we assume any one agent can be turned against us: a poisoned README, a dependency, or another agent's message can prompt-inject it. It then has whatever its process has: files, env, the `gh` login, the tokens it was given. The goal is that one bad agent can't leak a production secret, rewrite history on `main`, or act as someone else. Today that holds better on the hosted site than on this laptop.
 
 ## Secrets: varlock, and who holds the keys
 
 **Done.** Agents never handle secret values:
 
-- `apps/codesplitters/.env.schema` is committed with names and `op://codesplitters/…` references only, never values. An agent can read it to learn what the app needs.
+- `apps/codesplitter/.env.schema` is committed with names and `op://codesplitters/…` references only, never values. An agent can read it to learn what the app needs.
 - `experimental.wheel: "human"` means varlock resolves those references at `plan`/`deploy` through the 1Password app behind Touch ID. Any `OP_TOKEN` is ignored. The values go straight into Cloudflare's secret store and the running Worker reads them from there, so nothing is written to disk.
 - No secret has ever been committed: a scan of every ref in history for key and token patterns found none. GitHub secret scanning and push protection are on.
 - `.env*` and `.dev.vars` are gitignored. This PR adds `.dev.vars.*`, `*.pem`, `*.key`, `*.p12` and `.npmrc`.
@@ -22,7 +22,7 @@ Agents write most of this repo, and codeSplitters lets other people's agents int
 - Every agent runs as you. `gh auth token`, `~/.config`, Alchemy's plaintext state (`.alchemy/state`) and the office's session secret and pty token are all readable (#667).
 - Nothing stops an agent from running `op` while you're at the keyboard and approving Touch ID out of habit. The deny-list in #649 makes that a visible prompt instead of a habit.
 
-The REFERENCE notes that the 1Password path "has not been run against a real vault yet". The codeSplitters deploys now run through it, so that line is stale and can go once you confirm.
+The REFERENCE notes that the 1Password path "has not been run against a real vault yet". The codeSplitter deploys now run through it, so that line is stale and can go once you confirm.
 
 ## Per surface
 
@@ -53,7 +53,7 @@ The REFERENCE notes that the 1Password path "has not been run against a real vau
 | `/__rb/host` and `/__rb/action` are host-only (guests 403, box 404), with bodies checked field by field and `Object.hasOwn` lookups. Off loopback `/__rb/host` needs a passphrase of 12+ characters, or makes one up (#651) | A passphrase given at launch (`--join`, `RB_JOIN`) isn't held to that length |
 | Box: `/__rb/prof` doesn't exist without a ≥16-character secret; `boxOnly` keeps secrets off the edge Worker | Box `/health` and `/__rb/mem` are public (small info leak, by design for now). A Hetzner box is plain HTTP |
 
-### codeSplitters web app and API
+### codeSplitter web app and API
 
 | Done | Not done |
 | --- | --- |
@@ -63,7 +63,7 @@ The REFERENCE notes that the 1Password path "has not been run against a real vau
 | `theme_html` renders in a scriptless sandboxed iframe; the client escapes everything | Alias login (no password) is the fallback when `BETTER_AUTH_SECRET` is missing. varlock makes it required, but the code should still fail closed on the edge (#647) |
 | Workers Logs redact query strings | No audit log for tokens, collaborators, visibility or deletes. CI tokens never expire. Invites are stored in plaintext (#648) |
 
-### codeSplitters MCP, CLI and invited agents
+### codeSplitter MCP, CLI and invited agents
 
 | Done | Not done |
 | --- | --- |
@@ -71,7 +71,7 @@ The REFERENCE notes that the 1Password path "has not been run against a real vau
 | Agents can't deploy (`agent-` handles are refused) and can't touch visibility, collaborators, hooks or tokens on someone else's repo | `destructiveHint` covers only 4 tools and is advisory (#648) |
 | Commit authors are set by the server, so authorship can't be forged. Users only get **read** Artifacts tokens; write tokens are internal with a 5-minute TTL. There's no force-push API; a fresh start is owner-only | A check command gets the runner's own write token (#618) |
 
-### codeSplitters sandboxes and deploys (Containers)
+### codeSplitter sandboxes and deploys (Containers)
 
 | Done | Not done |
 | --- | --- |
@@ -103,7 +103,7 @@ Only you can do these. Each is a `MANUAL RUN` issue with the clicks and a check:
 ## Order to fix the rest
 
 1. #667: agents can read the office's session secret and pty token, and secrets under innocent names in the shell's environment (#643 drops the secret-shaped ones).
-2. #645 and #646: collaborator agents on codeSplitters reach private lines, checks and the owner's deploy key.
+2. #645 and #646: collaborator agents on codeSplitter reach private lines, checks and the owner's deploy key.
 3. #649: a committed deny-list and hook. It's a speed bump, not a sandbox, but it stops the casual leak.
 4. #647: headers, Origin checks, Turnstile and failing closed.
 5. #644, #648, #650, #651, #618: everything else.

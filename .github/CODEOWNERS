@@ -9,8 +9,8 @@ scripts/                                         @QuinnsCode
 bunfig.toml                                      @QuinnsCode
 **/.env.schema                                   @QuinnsCode
 **/rustybuns.config.ts                           @QuinnsCode
-apps/codesplitters/src/identity.ts               @QuinnsCode
-apps/codesplitters/src/tokens.ts                 @QuinnsCode
-apps/codesplitters/src/oauth.ts                  @QuinnsCode
-apps/codesplitters/src/deploy*.ts                @QuinnsCode
-apps/codesplitters/src/sandbox.ts                @QuinnsCode
+apps/codesplitter/src/identity.ts               @QuinnsCode
+apps/codesplitter/src/tokens.ts                 @QuinnsCode
+apps/codesplitter/src/oauth.ts                  @QuinnsCode
+apps/codesplitter/src/deploy*.ts                @QuinnsCode
+apps/codesplitter/src/sandbox.ts                @QuinnsCode

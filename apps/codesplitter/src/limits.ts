@@ -1,0 +1,472 @@
+// Rate limits on what costs money or invites abuse: signing in and up, digging
+// up repos (Artifacts imports), the GitHub calls the site's token pays for,
+// commits (Artifacts pushes), live line edits, and the things a spammer would
+// make by the thousand, and external CI's reports. Each rule counts per caller (their
+// handle, else their IP; a CI token for external CI's reports) in fixed
+// windows, in D1. Admins tune them on the rate limits page (#/admin/limits,
+// GET|PUT /api/admin/limits): each rule's cap and window, and what happens to a
+// caller over it: reject (a 429), log (let it through, note it), flag (let it
+// through, and list the caller at the top of the page), or, for slow and costly
+// jobs only, queue (hold it, and run it once the caller's window has room). The
+// first time a caller goes over in a window is logged either way, and an admin
+// can reset a caller.
+//
+// A queued request answers 202 with its place in line. It waits in limit_jobs
+// and is replayed as the caller, not counted again but taking one of their
+// window's slots, when the page polls GET /api/jobs/:id (or the caller's list,
+// GET /api/jobs, which their profile shows), or, for callers who closed the
+// page, when its message on the JOBS queue comes due: each queued request sends
+// one, delayed until its window ends, and books another if it still can't run
+// then. The hourly cron sweeps up any line a message missed. Digs,
+// preview deploys, hosted deploys and dependency-doctor runs can queue: each
+// answers the replay as it would the request (a deploy's or preview's {run}, a
+// doctor's report or {running}),
+// and the page then polls the run itself. Line edits can't: they're pinned to
+// the file's rev, so a queued one would come back a conflict. Neither can hosted
+// deploys: one replayed while another runs would only get a 409, so by default
+// they go through and flag the caller instead. Sign-ins should stay rejected.
+//
+// Only requests from the internet are counted: Cloudflare stamps those with
+// cf-connecting-ip. The desktop, the tests, and the Worker's own calls (hosted
+// agents, the dependency doctor) carry none. A tool call over MCP carries only
+// the token, so it counts as the MCP call it serves (viaMcp). Admins are never limited. One
+// rule counts work the site starts itself rather than a request: container
+// check runs (ci-runner.ts), charged to the repo's owner as each one starts.
+//
+// Two rules are site-wide budgets (per "site"), counted for everyone at once, admins
+// included, since what they cap is the site's bill rather than one caller's share:
+// hosted agent runs (agent-routes.ts, feed.ts, branches.ts), and the minutes container
+// checks run for (ci-runner.ts).
+//
+// Edits sent over a file's WebSocket skip the Worker, so the Worker works out
+// who a socket counts as when it opens (or that it isn't counted) and the
+// file's DO counts each edit with a Tally: in memory, written to D1 in the
+// background, so a keystroke never waits on D1.
+
+import { json, type Env } from "./env.ts";
+import { actingAs } from "./identity.ts";
+
+export const ACTIONS = ["reject", "log", "flag", "queue"] as const;
+export type Action = (typeof ACTIONS)[number];
+export interface Rule { name: string; label: string; what: string; group: string; per: "ip" | "user" | "token" | "site"; max: number; window_s: number; on_fail: Action; queueable?: true }
+
+const MIN = 60, HOUR = 3600, DAY = 86400;
+export const RULES: Rule[] = [
+  { name: "signin", label: "Sign in", what: "password and social sign-ins", group: "Accounts", per: "ip", max: 10, window_s: 10 * MIN, on_fail: "reject" },
+  { name: "signup", label: "Create account", what: "new email accounts", group: "Accounts", per: "ip", max: 5, window_s: HOUR, on_fail: "reject" },
+  { name: "mail", label: "Account email", what: "verification and password reset emails sent", group: "Accounts", per: "ip", max: 5, window_s: HOUR, on_fail: "reject" },
+  { name: "oauth", label: "App sign-ins", what: "OAuth token swaps, refreshes and app registrations", group: "Accounts", per: "ip", max: 30, window_s: 10 * MIN, on_fail: "reject" },
+  { name: "join", label: "Join by invite", what: "invites claimed, and the agents they make", group: "Accounts", per: "ip", max: 20, window_s: HOUR, on_fail: "reject" },
+  { name: "handle", label: "Claim a handle", what: "picking your @handle", group: "Accounts", per: "ip", max: 10, window_s: HOUR, on_fail: "reject" },
+  { name: "dig", label: "Dig up a repo", what: "GitHub digs and level forks (Artifacts imports)", group: "GitHub", per: "user", max: 5, window_s: HOUR, on_fail: "reject", queueable: true },
+  { name: "github", label: "GitHub lookups", what: "repo lists and search, on the site's GitHub token", group: "GitHub", per: "user", max: 30, window_s: MIN, on_fail: "reject" },
+  { name: "search", label: "Code search", what: "full-text search over committed code", group: "Repos", per: "user", max: 30, window_s: MIN, on_fail: "reject" },
+  { name: "repo", label: "New repos", what: "empty repos made here", group: "Repos", per: "user", max: 10, window_s: DAY, on_fail: "reject" },
+  { name: "file", label: "New files", what: "files added to a repo", group: "Repos", per: "user", max: 120, window_s: HOUR, on_fail: "reject" },
+  { name: "edit", label: "Line edits", what: "live edits to a file's lines, over its socket or POST", group: "Editing and sharing", per: "user", max: 300, window_s: MIN, on_fail: "reject" },
+  { name: "commit", label: "Commits", what: "pushes to Artifacts, branch merges included", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
+  { name: "branch", label: "New branches", what: "branches made on a repo", group: "Repos", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
+  { name: "fresh", label: "Fresh starts", what: "repos copied onto new git (an Artifacts repo each)", group: "Repos", per: "user", max: 3, window_s: DAY, on_fail: "reject" },
+  { name: "hook", label: "Webhooks", what: "webhooks added to repos", group: "Repos", per: "user", max: 20, window_s: HOUR, on_fail: "reject" },
+  { name: "invite", label: "Invites", what: "crew invites made, emailed ones included", group: "Editing and sharing", per: "user", max: 30, window_s: HOUR, on_fail: "reject" },
+  { name: "share", label: "Shares, stamps and collections", what: "share links, line stamps, collections and tracks, and follows", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
+  { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", group: "Agents", per: "user", max: 20, window_s: DAY, on_fail: "reject" },
+  { name: "hosted", label: "Hosted runs", what: "coding agent, conflict agent and feed digest runs on the site's API keys, everyone's together, admins included", group: "Agents", per: "site", max: 30, window_s: DAY, on_fail: "reject" },
+  { name: "preview", label: "Preview deploys", what: "stacks stood up and torn down to try a repo", group: "Deploys and checks", per: "user", max: 6, window_s: HOUR, on_fail: "reject", queueable: true },
+  { name: "deploy", label: "Deploys", what: "deploys started with the Deploy button (hosted, on the owner's deploy key)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "flag" },
+  { name: "ci", label: "CI reports", what: "statuses and check runs external CI sends to /api/gh/v3, counted per CI token", group: "Deploys and checks", per: "token", max: 600, window_s: HOUR, on_fail: "reject" },
+  { name: "checks", label: "Container checks", what: "check runs in a codeSplitter container (CI_RUNNER), counted against the repo's owner", group: "Deploys and checks", per: "user", max: 30, window_s: HOUR, on_fail: "reject" },
+  { name: "doctor", label: "Dependency checks", what: "dependency-doctor runs started by hand (registry lookups, installs and tests)", group: "Deploys and checks", per: "user", max: 10, window_s: HOUR, on_fail: "reject", queueable: true },
+  { name: "containers", label: "Container minutes", what: "minutes container checks ran for (CI_RUNNER), every owner's together, admins included", group: "Deploys and checks", per: "site", max: 600, window_s: DAY, on_fail: "reject" },
+];
+
+/** Who a site-wide rule counts as. */
+export const SITE = "site";
+
+/** Which rule a request counts against, if any. */
+export function ruleFor(method: string, p: string[]): string | null {
+  if (method === "GET") {
+    if (p[1] === "github" && (p[2] === "repos" || p[2] === "search")) return "github";
+    if (p[1] === "search") return "search";
+    return null;
+  }
+  if (method !== "POST") return null;
+  if (p[1] === "auth") return p[2] === "sign-in" ? "signin" : p[2] === "sign-up" ? "signup"
+    : p[2] === "request-password-reset" || p[2] === "send-verification-email" ? "mail" : null;
+  if (p[1] === "handle") return "handle";
+  if (p[1] === "invites" && p[2] === "claim") return "join";
+  if (p[1] === "repos" && p[4] === "invites" && !p[5]) return "invite";
+  if (p[1] === "oauth" && (p[2] === "token" || p[2] === "register")) return "oauth";
+  if (p[1] === "github" && p[2] === "dig") return "dig";
+  if (p[1] === "levels" && p[3] === "fork") return "dig";
+  if (p[1] === "playlists") return "share";
+  if (p[1] === "follows") return "share";
+  if (p[1] === "repos" && !p[2]) return "repo";
+  if (p[1] === "repos" && p[4] === "files") return "file";
+  if (p[1] === "repos" && (p[4] === "shares" || p[4] === "stamps")) return "share";
+  if (p[1] === "repos" && p[4] === "branches" && !p[5]) return "branch";
+  if (p[1] === "repos" && p[4] === "branches" && p[6] === "merge" && !p[7]) return "commit";
+  if (p[1] === "repos" && p[4] === "fresh" && !p[5]) return "fresh";
+  if (p[1] === "repos" && p[4] === "hooks" && !p[5]) return "hook";
+  if (p[1] === "repos" && p[4] === "agents") return "agent";
+  if (p[1] === "repos" && p[4] === "preview" && !p[5]) return "preview";
+  if (p[1] === "repos" && p[4] === "deploy" && !p[5]) return "deploy";
+  if (p[1] === "repos" && p[4] === "deps" && p[5] === "run") return "doctor";
+  if (p[1] === "repos" && p[4] === "do" && p[5] === "commit") return "commit";
+  if (p[1] === "repos" && p[4] === "do" && p[5] === "ops") return "edit";
+  return null;
+}
+
+// An admin's changes, read at most every 30 seconds per isolate.
+let cache: { at: number; env: object; rules: Map<string, Rule & { enabled: boolean }> } | null = null;
+const isAction = (a: unknown): a is Action => ACTIONS.includes(a as Action);
+async function rules(env: Env) {
+  if (cache && cache.env === env && Date.now() - cache.at < 30_000) return cache.rules;
+  const { results } = await env.DB.prepare("SELECT name, max, window_s, enabled, on_fail FROM limit_rules").all();
+  const saved = new Map((results as { name: string; max: number; window_s: number; enabled: number; on_fail: string }[]).map((r) => [r.name, r]));
+  const out = new Map(RULES.map((r) => {
+    const s = saved.get(r.name);
+    return [r.name, { ...r, ...(s ? { max: s.max, window_s: s.window_s, on_fail: isAction(s.on_fail) ? s.on_fail : r.on_fail } : {}), enabled: s ? !!s.enabled : true }];
+  }));
+  cache = { at: Date.now(), env, rules: out };
+  return out;
+}
+
+/** Where `user` stands under each per-person rule in its current window. */
+export async function usage(env: Env, user: string) {
+  const now = Date.now();
+  return Promise.all([...(await rules(env)).values()].filter((r) => r.per === "user").map(async (r) => {
+    const span = r.window_s * 1000, win = Math.floor(now / span) * span;
+    const row = await env.DB.prepare("SELECT count FROM limit_hits WHERE rule = ? AND who = ? AND win = ?").bind(r.name, `@${user}`, win).first();
+    return { name: r.name, label: r.label, what: r.what, max: r.max, window_s: r.window_s, on: r.enabled, used: (row?.count as number) ?? 0, resets_at: win + span };
+  }));
+}
+
+/** MCP's inner requests (mcp.ts), and the call from the internet each one serves. */
+export const viaMcp = new WeakMap<Request, Request>();
+/** Where a request came from on the internet: its own stamp, or for a tool call, the MCP call's, since a tool call carries only the token. */
+const ipOf = (req: Request) => req.headers.get("cf-connecting-ip") ?? viaMcp.get(req)?.headers.get("cf-connecting-ip") ?? null;
+
+/** Who a request counts as under a rule, or null when it isn't counted (not from the internet, an admin, or no such rule). A `token` rule's `user` is the CI token. */
+export function counted(req: Request, rule: string | null, user: string | null, admin: boolean): string | null {
+  const ip = ipOf(req), r = RULES.find((d) => d.name === rule);
+  if (!r || !ip || admin) return null;
+  if (r.per === "token") return user ? `ci:${user}` : ip;
+  return r.per === "user" && user ? `@${user}` : ip;
+}
+
+/** Count `n` hits against the rule for `who`; when that's over the limit and the rule rejects, why, and how many seconds to wait, or with `queue` a queueing rule says so (and which window it was) instead. */
+async function hit(env: Env, rule: string, who: string, queue: boolean, n = 1): Promise<{ error: string; wait: number } | { queue: Rule; win: number } | null> {
+  const r = (await rules(env)).get(rule);
+  if (!r?.enabled) return null;
+  const span = r.window_s * 1000, win = Math.floor(Date.now() / span) * span;
+  const row = await env.DB.prepare(
+    "INSERT INTO limit_hits (rule, who, win, count) VALUES (?, ?, ?, ?) ON CONFLICT (rule, who, win) DO UPDATE SET count = count + excluded.count RETURNING count")
+    .bind(rule, who, win, n).first();
+  const count = row?.count as number;
+  if (count <= r.max) return null;
+  // The first time over in a window goes in the log, whatever the rule does about it.
+  if (count - n <= r.max)
+    await env.DB.prepare("INSERT INTO limit_events (rule, who, win, action, at) VALUES (?, ?, ?, ?, ?)").bind(rule, who, win, r.on_fail, Date.now()).run();
+  if (r.on_fail === "queue" && r.queueable && queue) return { queue: r, win };
+  if (r.on_fail !== "reject" && r.on_fail !== "queue") return null;
+  return slowDown(r, win);
+}
+
+/**
+ * Count `n` hits of something the site starts itself, not a request (a container check run,
+ * ci-runner.ts), against `who` (`@handle`, or SITE for a site-wide rule): why it can't go when
+ * that's over a rule that rejects or queues, else null. Nothing is held for later: the caller says no.
+ */
+export async function charge(env: Env, rule: string, who: string, n = 1): Promise<string | null> {
+  const over = await hit(env, rule, who, false, n);
+  return over && "error" in over ? over.error : null;
+}
+
+function slowDown(r: Rule, win: number) {
+  const wait = Math.ceil((win + r.window_s * 1000 - Date.now()) / 1000);
+  if (r.per === "site") return { error: `The site's ${r.label.toLowerCase()} for the ${every(r.window_s)} are used up (${r.max}). Try again in ${every(wait)}.`, wait };
+  return { error: `Slow down: ${r.label.toLowerCase()} is limited to ${r.max} per ${every(r.window_s)}. Try again in ${every(wait)}.`, wait };
+}
+
+/** How often a Tally writes what it has counted. */
+export const TALLY_MS = 1000;
+
+/**
+ * A rule's count for the hot path, without waiting on D1: a file's DO counts its sockets' edits
+ * in memory, decides from that, and adds them to limit_hits in the background, one write
+ * per caller every TALLY_MS. Each write hands back the caller's count across every file
+ * and the POST route, so other files' edits catch up within a tally; until then a caller
+ * editing several files at once can run a little over. A write that fails is tried again
+ * with the next one. Never queues (line edits can't).
+ */
+export class Tally {
+  private seen = new Map<string, { who: string; win: number; known: number; sending: number; pending: number }>();
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  constructor(private env: Env, private rule: string) {}
+
+  async hit(who: string): Promise<{ error: string; wait: number } | null> {
+    const r = (await rules(this.env)).get(this.rule);
+    if (!r?.enabled) return null;
+    const span = r.window_s * 1000, win = Math.floor(Date.now() / span) * span, key = `${who} ${win}`;
+    let s = this.seen.get(key);
+    if (!s) this.seen.set(key, s = { who, win, known: 0, sending: 0, pending: 0 });
+    s.pending++;
+    this.timer ??= setTimeout(() => void this.flush(), TALLY_MS);
+    if (s.known + s.sending + s.pending <= r.max || (r.on_fail !== "reject" && r.on_fail !== "queue")) return null;
+    return slowDown(r, win);
+  }
+
+  /** Write what's been counted since the last tally; the first write over the max goes in the log. */
+  async flush() {
+    this.timer = null;
+    const r = (await rules(this.env)).get(this.rule);
+    const now = Date.now();
+    await Promise.all([...this.seen].map(async ([key, s]) => {
+      if (!s.pending) {
+        if (!s.sending && r && s.win + r.window_s * 1000 <= now) this.seen.delete(key);
+        return;
+      }
+      const n = s.pending;
+      s.pending = 0, s.sending += n;
+      try {
+        const row = await this.env.DB.prepare(
+          "INSERT INTO limit_hits (rule, who, win, count) VALUES (?, ?, ?, ?) ON CONFLICT (rule, who, win) DO UPDATE SET count = count + excluded.count RETURNING count")
+          .bind(this.rule, s.who, s.win, n).first();
+        const count = row?.count as number;
+        s.known = count;
+        if (r && count > r.max && count - n <= r.max)
+          await this.env.DB.prepare("INSERT INTO limit_events (rule, who, win, action, at) VALUES (?, ?, ?, ?, ?)").bind(this.rule, s.who, s.win, r.on_fail, Date.now()).run();
+      } catch (e) {
+        s.pending += n;
+        console.error("codeSplitter: edit tally failed", String((e as Error)?.message ?? e));
+      } finally { s.sending -= n; }
+    }));
+    if ([...this.seen.values()].some((s) => s.pending)) this.timer ??= setTimeout(() => void this.flush(), TALLY_MS);
+  }
+}
+
+/** A 429 when this caller is over the rule's limit, or a 202 when it queues them; else null (and the hit is counted). */
+export async function limit(req: Request, env: Env, rule: string | null, user: string | null, admin: boolean): Promise<Response | null> {
+  const who = counted(req, rule, user, admin);
+  // Only a signed-in caller can be queued: the job runs as them, and only they may poll it.
+  const over = who ? await hit(env, rule!, who, !!user) : null;
+  if (!over) return null;
+  if ("error" in over) return json({ error: over.error }, 429, { "retry-after": String(over.wait) });
+  const r = over.queue, span = r.window_s * 1000;
+  // The line holds one window's worth; past that, it's a 429 like any other.
+  const ahead = (await env.DB.prepare("SELECT COUNT(*) AS n FROM limit_jobs WHERE rule = ? AND who = ? AND state != 'done'").bind(r.name, who).first())?.n as number;
+  if (ahead >= r.max) {
+    const wait = Math.ceil((over.win + span - Date.now()) / 1000);
+    return json({ error: `Slow down: ${r.label.toLowerCase()} is limited to ${r.max} per ${every(r.window_s)}, and your line is full. Try again in ${every(wait)}.` }, 429, { "retry-after": String(wait) });
+  }
+  const url = new URL(req.url), body = req.method === "GET" ? null : await req.clone().text();
+  const row = await env.DB.prepare("INSERT INTO limit_jobs (rule, who, user, method, path, body, state, at) VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?) RETURNING id")
+    .bind(r.name, who, user, req.method, url.pathname + url.search, body, Date.now()).first();
+  const queued = await place(env, row!.id as number);
+  await book(env, queued);
+  return json({ queued }, 202);
+}
+
+/** A queued request's message on the JOBS queue: run its caller's line. */
+export type JobMessage = { job: number };
+/** Cloudflare Queues holds a message back 12 hours at most; a longer wait books another when this one comes due. */
+const MAX_DELAY_S = 12 * 3600;
+
+/** Book a waiting job's message for when its turn comes. A lost one is picked up by the hourly sweep, so a failed send doesn't fail the request. */
+async function book(env: Env, pl: Awaited<ReturnType<typeof place>>) {
+  if (!pl || !("eta" in pl)) return;
+  // A second late, so the window has turned over when it lands.
+  const delaySeconds = Math.min(MAX_DELAY_S, Math.max(0, Math.ceil((pl.eta - Date.now()) / 1000) + 1));
+  try { await env.JOBS.send({ job: pl.id } satisfies JobMessage, { delaySeconds }); } catch {}
+}
+
+type Job = { id: number; rule: string; who: string; user: string; method: string; path: string; body: string | null; state: string; at: number; status: number | null; result: string | null };
+
+/** Where a job stands: its place in its caller's line and about when it runs, or how it came out. */
+async function place(env: Env, id: number) {
+  const j = await env.DB.prepare("SELECT * FROM limit_jobs WHERE id = ?").bind(id).first() as Job | null;
+  if (!j) return null;
+  const out = { id: j.id, rule: j.rule, state: j.state };
+  if (j.state === "done") return { ...out, status: j.status, result: j.result ? JSON.parse(j.result) : null };
+  if (j.state === "running") return out;
+  const r = (await rules(env)).get(j.rule)!, span = r.window_s * 1000, win = Math.floor(Date.now() / span) * span;
+  const n = (await env.DB.prepare("SELECT COUNT(*) AS n FROM limit_jobs WHERE rule = ? AND who = ? AND state = 'waiting' AND id <= ?").bind(j.rule, j.who, j.id).first())?.n as number;
+  // Each window lets `max` through: the first `max` in line go when this one ends, the next when the one after does.
+  return { ...out, place: n, label: r.label, eta: win + span * (1 + Math.floor((n - 1) / r.max)) };
+}
+
+/** Run what's at the front of this caller's line while their window has room, oldest first. */
+async function drain(env: Env, rule: string, who: string, self: (r: Request) => Promise<Response>) {
+  const r = (await rules(env)).get(rule);
+  if (!r) return;
+  for (;;) {
+    const j = await env.DB.prepare("SELECT * FROM limit_jobs WHERE rule = ? AND who = ? AND state = 'waiting' ORDER BY id LIMIT 1").bind(rule, who).first() as Job | null;
+    if (!j) return;
+    // Two polls can race for the same job; whoever marks it running runs it.
+    const claimed = await env.DB.prepare("UPDATE limit_jobs SET state = 'running', started = ? WHERE id = ? AND state = 'waiting'").bind(Date.now(), j.id).run();
+    if (!claimed.meta?.changes) continue;
+    // Then it takes one of the window's slots, if there's one left (a switched-off rule has room for everyone).
+    const span = r.window_s * 1000, win = Math.floor(Date.now() / span) * span;
+    const slot = await env.DB.prepare(
+      "INSERT INTO limit_hits (rule, who, win, count) VALUES (?, ?, ?, 1) ON CONFLICT (rule, who, win) DO UPDATE SET count = count + 1 WHERE count < ? OR ? RETURNING count")
+      .bind(rule, who, win, r.max, r.enabled ? 0 : 1).first();
+    if (!slot) { await env.DB.prepare("UPDATE limit_jobs SET state = 'waiting', started = NULL WHERE id = ?").bind(j.id).run(); return; }
+    const req = new Request("http://codesplitter.local" + j.path, { method: j.method, headers: j.body === null ? {} : { "content-type": "application/json" }, body: j.body });
+    actingAs.set(req, j.user);
+    let status = 500, result = JSON.stringify({ error: "the queued job failed" });
+    try { const res = await self(req); status = res.status; result = await res.text(); } catch (e) { result = JSON.stringify({ error: String((e as Error)?.message ?? e) }); }
+    await env.DB.prepare("UPDATE limit_jobs SET state = 'done', status = ?, result = ? WHERE id = ?").bind(status, result, j.id).run();
+  }
+}
+
+/**
+ * The JOBS queue's consumer: each message runs its job's line, if the job is still waiting
+ * (the page may have run it already), and books the job again if there's still no room.
+ */
+export async function runJobs(batch: { messages: readonly { body: JobMessage; ack(): void }[] }, env: Env, self: (r: Request) => Promise<Response>) {
+  for (const m of batch.messages) {
+    const j = await env.DB.prepare("SELECT rule, who FROM limit_jobs WHERE id = ? AND state = 'waiting'").bind(m.body.job).first() as Pick<Job, "rule" | "who"> | null;
+    if (j) {
+      await drain(env, j.rule, j.who, self);
+      await book(env, await place(env, m.body.job));
+    }
+    m.ack();
+  }
+}
+
+/** The hourly cron's backstop: run every line that has room, in case a message went missing. */
+export async function drainJobs(env: Env, self: (r: Request) => Promise<Response>) {
+  const { results } = await env.DB.prepare("SELECT DISTINCT rule, who FROM limit_jobs WHERE state = 'waiting'").all();
+  for (const { rule, who } of results as { rule: string; who: string }[]) await drain(env, rule, who, self);
+}
+
+/** The repo a queued preview or dependency check runs on, from its path. */
+const repoRun = (path: string) => /^\/api\/repos\/([^/?]+)\/([^/?]+)\/(preview|deps\/run)\b/.exec(path);
+
+/** What a queued job was for, in a few words: the GitHub repo a dig names, the level a fork copies, or the repo a preview or check runs on. */
+function what(j: Pick<Job, "path" | "body">) {
+  const fork = /^\/api\/levels\/([^/?]+)\/fork/.exec(j.path);
+  if (fork) return `fork of ${decodeURIComponent(fork[1])}`;
+  const run = repoRun(j.path);
+  if (run) return `${run[3] === "preview" ? "preview of" : "dependency check of"} ${decodeURIComponent(run[1])}/${decodeURIComponent(run[2])}`;
+  try { const b = JSON.parse(j.body ?? "{}"); if (typeof b.repo === "string") return b.repo; } catch {}
+  return j.path.replace(/^\/api/, "");
+}
+
+/**
+ * GET /api/jobs  the caller's own queued requests from the last week, newest first: waiting ones with their
+ * place in line, and finished ones with the repo they made ({owner, name}) or the error they hit. Like polling
+ * one job, it runs whatever is due first, so coming back to the page is enough to move the line along.
+ * GET /api/jobs/:id  a queued request: its place in line, or, once it has run, the answer it would have had. Polling runs it when it's due.
+ */
+export async function jobRoutes(req: Request, env: Env, p: string[], user: string | null, admin: boolean, self: (r: Request) => Promise<Response>): Promise<Response | null> {
+  if (p[1] !== "jobs" || p[3] || req.method !== "GET") return null;
+  if (!p[2]) {
+    if (!user) return json({ error: "sign in first" }, 401);
+    const { results: lines } = await env.DB.prepare("SELECT DISTINCT rule, who FROM limit_jobs WHERE user = ? AND state = 'waiting'").bind(user).all();
+    for (const { rule, who } of lines as { rule: string; who: string }[]) await drain(env, rule, who, self);
+    const { results } = await env.DB.prepare("SELECT id, path, body, at FROM limit_jobs WHERE user = ? ORDER BY id DESC LIMIT 50").bind(user).all();
+    const jobs = [];
+    for (const j of results as Pick<Job, "id" | "path" | "body" | "at">[]) {
+      const pl = await place(env, j.id);
+      if (!pl) continue;
+      // A finished job keeps only what the page links to, not the whole response.
+      if ("result" in pl) {
+        const r = (pl.result ?? {}) as { owner?: string; name?: string; error?: string; message?: string }, ok = pl.status! < 400;
+        // A preview or check links to its repo, whose page follows the run; a dig to the repo it made.
+        const run = repoRun(j.path), repo = run ? { owner: decodeURIComponent(run[1]!), name: decodeURIComponent(run[2]!) } : { owner: r.owner, name: r.name };
+        jobs.push({ ...pl, result: ok ? repo : { error: r.error || r.message || `failed (${pl.status})` }, what: what(j), at: j.at });
+      } else jobs.push({ ...pl, what: what(j), at: j.at });
+    }
+    return json({ jobs });
+  }
+  const j = await env.DB.prepare("SELECT rule, who, user FROM limit_jobs WHERE id = ?").bind(Number(p[2])).first() as Pick<Job, "rule" | "who" | "user"> | null;
+  if (!j || (j.user !== user && !admin)) return json({ error: "not found" }, 404);
+  await drain(env, j.rule, j.who, self);
+  return json(await place(env, Number(p[2])));
+}
+
+/** "10 minutes", "hour", "2 days". */
+export function every(s: number) {
+  const [n, unit] = s % DAY === 0 ? [s / DAY, "day"] : s % HOUR === 0 ? [s / HOUR, "hour"] : s >= MIN ? [Math.ceil(s / MIN), "minute"] : [s, "second"];
+  return n === 1 ? unit : `${n} ${unit}s`;
+}
+
+/** The hourly cron: drop windows that have ended, log entries and finished jobs older than a week, and give up on jobs stuck running. */
+export async function sweepLimits(env: Env, now = Date.now()) {
+  const longest = Math.max(...[...(await rules(env)).values()].map((r) => r.window_s)) * 1000;
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM limit_hits WHERE win < ?").bind(now - longest),
+    env.DB.prepare("DELETE FROM limit_events WHERE at < ?").bind(now - 7 * DAY * 1000),
+    env.DB.prepare("DELETE FROM limit_jobs WHERE state = 'done' AND at < ?").bind(now - 7 * DAY * 1000),
+    env.DB.prepare("UPDATE limit_jobs SET state = 'done', status = 504, result = ? WHERE state = 'running' AND started < ?").bind(JSON.stringify({ error: "the queued job never finished" }), now - 15 * MIN * 1000),
+  ]);
+}
+
+/**
+ * What callers actually get under a rule: spread over every (caller, window) the sweep has
+ * kept, from a histogram of counts ([count, how many caller-windows had it], ascending).
+ * Windows a caller sent nothing in aren't kept, so this is how busy callers were when active.
+ */
+export function spread(hist: [number, number][], max: number) {
+  const n = hist.reduce((a, [, k]) => a + k, 0);
+  if (!n) return null;
+  // The nearest-rank percentile: the smallest count at least p% of caller-windows are at or under.
+  const at = (p: number) => { const rank = Math.ceil((p / 100) * n); let seen = 0; for (const [c, k] of hist) if ((seen += k) >= rank) return c; return hist.at(-1)![0]; };
+  const over = hist.reduce((a, [c, k]) => a + (c > max ? k : 0), 0);
+  return { windows: n, low: hist[0]![0], p50: at(50), mean: Math.round((hist.reduce((a, [c, k]) => a + c * k, 0) / n) * 10) / 10,
+    p90: at(90), p95: at(95), p99: at(99), worst: hist.at(-1)![0], over };
+}
+
+/**
+ * GET  /api/admin/limits  every rule with this window's traffic (callers, hits, and how many are over),
+ *                          how much callers used per window across the windows still kept (spread),
+ *                          the last week's log of callers going over, and who's flagged.
+ * PUT  /api/admin/limits {rules: [{name, max, window_s, enabled, on_fail?}]}
+ * POST /api/admin/limits/reset {who, rule?}  clear a caller's counts (one rule's, or all) and their log entries.
+ */
+export async function limitRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
+  if (p[1] !== "admin" || p[2] !== "limits") return null;
+  if (!admin) return json({ error: "admins only" }, 403);
+  if (p[3] === "reset" && req.method === "POST") {
+    const b = (await req.json().catch(() => ({}))) as { who?: string; rule?: string };
+    if (!b.who) return json({ error: "who required" }, 400);
+    const only = b.rule ? " AND rule = ?" : "", args = b.rule ? [b.who, b.rule] : [b.who];
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM limit_hits WHERE who = ?" + only).bind(...args),
+      env.DB.prepare("DELETE FROM limit_events WHERE who = ?" + only).bind(...args),
+    ]);
+    return json({ ok: true });
+  }
+  if (p[3]) return null;
+  if (req.method === "PUT") {
+    const b = (await req.json().catch(() => ({}))) as { rules?: { name: string; max: number; window_s: number; enabled: boolean; on_fail?: string }[] };
+    for (const r of b.rules ?? []) {
+      if (!RULES.some((d) => d.name === r.name)) return json({ error: `no rule ${r.name}` }, 400);
+      if (!(Number.isInteger(r.max) && r.max >= 1 && r.max <= 100_000)) return json({ error: `${r.name}: max is a whole number, 1 to 100000` }, 400);
+      if (!(Number.isInteger(r.window_s) && r.window_s >= 1 && r.window_s <= 30 * DAY)) return json({ error: `${r.name}: the window is 1 second to 30 days` }, 400);
+      if (r.on_fail !== undefined && !isAction(r.on_fail)) return json({ error: `${r.name}: on_fail is ${ACTIONS.join(", ")}` }, 400);
+      if (r.on_fail === "queue" && !RULES.find((d) => d.name === r.name)!.queueable) return json({ error: `${r.name}: only slow, costly jobs can queue` }, 400);
+    }
+    const current = await rules(env);
+    await env.DB.batch((b.rules ?? []).map((r) => env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES (?, ?, ?, ?, ?) ON CONFLICT (name) DO UPDATE SET max = excluded.max, window_s = excluded.window_s, enabled = excluded.enabled, on_fail = excluded.on_fail")
+      .bind(r.name, r.max, r.window_s, r.enabled ? 1 : 0, r.on_fail ?? current.get(r.name)!.on_fail)));
+    cache = null;
+  } else if (req.method !== "GET") return null;
+  const now = Date.now();
+  const out = [];
+  for (const r of (await rules(env)).values()) {
+    const span = r.window_s * 1000, win = Math.floor(now / span) * span;
+    const s = await env.DB.prepare("SELECT COUNT(*) AS callers, COALESCE(SUM(count), 0) AS hits, COALESCE(SUM(count > ?), 0) AS blocked FROM limit_hits WHERE rule = ? AND win = ?")
+      .bind(r.max, r.name, win).first();
+    const { results: hist } = await env.DB.prepare("SELECT count, COUNT(*) AS n, MIN(win) AS since FROM limit_hits WHERE rule = ? GROUP BY count ORDER BY count").bind(r.name).all();
+    const h = hist as { count: number; n: number; since: number }[], since = h.length ? Math.min(...h.map((x) => x.since)) : null;
+    const { name, label, what, group, per, max, window_s, enabled, on_fail, queueable = false } = r;
+    out.push({ name, label, what, group, per, max, window_s, enabled, on_fail, queueable, defaults: RULES.find((d) => d.name === name), now: s,
+      spread: since === null ? null : { ...spread(h.map((x) => [x.count, x.n]), max)!, since } });
+  }
+  const { results: events } = await env.DB.prepare("SELECT rule, who, win, action, at FROM limit_events ORDER BY at DESC, id DESC LIMIT 100").all();
+  const { results: flagged } = await env.DB.prepare("SELECT who, GROUP_CONCAT(DISTINCT rule) AS rules, MAX(at) AS last, COUNT(*) AS times FROM limit_events WHERE action = 'flag' GROUP BY who ORDER BY last DESC").all();
+  return json({ rules: out, events, flagged: (flagged as { who: string; rules: string; last: number; times: number }[]).map((f) => ({ ...f, rules: f.rules.split(",") })) });
+}

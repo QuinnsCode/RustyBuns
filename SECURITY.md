@@ -6,13 +6,13 @@ Please report anything that looks like a vulnerability privately, with **Report 
 
 ## Dependencies
 
-codeSplitters' [dependency doctor](apps/codesplitters/README.md) keeps a repo's dependencies current on a schedule, so nobody has to remember to:
+codeSplitter' [dependency doctor](apps/codesplitter/README.md) keeps a repo's dependencies current on a schedule, so nobody has to remember to:
 
 - A new release isn't taken until it has been out for a few days, since a bad or hijacked release is usually pulled by then.
 - Each dependency is checked against [OSV](https://osv.dev) (GitHub's and npm's advisories). A vulnerable one is moved to its fixed release right away, and one with no fix yet is flagged.
 - Updates are installed with install scripts off and tested in a throwaway clone before anyone is asked to merge them.
 
-Any repo hosted on codeSplitters can turn it on. Running it on this repo is [#615](https://github.com/QuinnsCode/RustyBuns/issues/615).
+Any repo hosted on codeSplitter can turn it on. Running it on this repo is [#615](https://github.com/QuinnsCode/RustyBuns/issues/615).
 
 ## The examples
 
