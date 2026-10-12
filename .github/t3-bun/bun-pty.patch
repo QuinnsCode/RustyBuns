@@ -1,0 +1,233 @@
+From 5c6b709802e8f8d7d7181a7790a3174485c4b8b5 Mon Sep 17 00:00:00 2001
+From: Ryan Quinn <theqntbr+git@gmail.com>
+Date: Mon, 12 Oct 2026 02:28:38 -0700
+Subject: [PATCH] server: a Bun PTY adapter, picked when the server runs on Bun
+
+node-pty loads under Bun but never delivers data or exit events, so the
+terminal drawer stayed blank. BunPtyAdapter implements the same PtyAdapter
+contract on Bun.spawn({ terminal }): no native addon, no spawn-helper.
+server.ts picks it when `Bun` is defined; Node keeps NodePtyAdapter.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ apps/server/src/server.ts                     |   4 +-
+ .../src/terminal/BunPtyAdapter.bun-test.ts    |  73 ++++++++++++
+ apps/server/src/terminal/BunPtyAdapter.ts     | 104 ++++++++++++++++++
+ 3 files changed, 180 insertions(+), 1 deletion(-)
+ create mode 100644 apps/server/src/terminal/BunPtyAdapter.bun-test.ts
+ create mode 100644 apps/server/src/terminal/BunPtyAdapter.ts
+
+diff --git a/apps/server/src/server.ts b/apps/server/src/server.ts
+index 3c1539a7..fac9985d 100644
+--- a/apps/server/src/server.ts
++++ b/apps/server/src/server.ts
+@@ -33,6 +33,7 @@ import { fixPath } from "./os-jank.ts";
+ import * as Ws from "./ws.ts";
+ import * as AgentScopeLive from "./process/agentScope.ts";
+ import * as ExternalLauncher from "./process/externalLauncher.ts";
++import * as BunPtyAdapter from "./terminal/BunPtyAdapter.ts";
+ import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
+ import * as PullRequestHttp from "./pullRequest/http.ts";
+ import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
+@@ -223,7 +224,8 @@ const layerProviderEventLoggers = Layer.effect(
+   }),
+ );
+ 
+-const layerPtyAdapter = NodePtyAdapter.layer;
++// node-pty never delivers output under Bun; Bun has its own terminal.
++const layerPtyAdapter = typeof Bun !== "undefined" ? BunPtyAdapter.layer : NodePtyAdapter.layer;
+ 
+ const layerServerSettings = ServerSettings.layer.pipe(
+   Layer.provide(ServerSecretStore.layer),
+diff --git a/apps/server/src/terminal/BunPtyAdapter.bun-test.ts b/apps/server/src/terminal/BunPtyAdapter.bun-test.ts
+new file mode 100644
+index 00000000..c0a0ce51
+--- /dev/null
++++ b/apps/server/src/terminal/BunPtyAdapter.bun-test.ts
+@@ -0,0 +1,73 @@
++// Runs under Bun (`bun test src/terminal/BunPtyAdapter.bun-test.ts`), not vitest: the adapter needs Bun's terminal.
++// On Windows the terminal is ConPTY and the shell cmd.exe; elsewhere a pty and /bin/sh.
++import { expect, test } from "bun:test";
++import * as Effect from "effect/Effect";
++import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
++
++import * as BunPtyAdapter from "./BunPtyAdapter.ts";
++
++const windows = process.platform === "win32";
++const shell = windows ? "cmd.exe" : "/bin/sh";
++
++const spawn = (input: Partial<PtyAdapter.PtySpawnInput>) =>
++  Effect.runPromise(
++    Effect.gen(function* () {
++      const adapter = yield* PtyAdapter.PtyAdapter;
++      return yield* adapter.spawn({ shell, cwd: process.cwd(), cols: 80, rows: 24, env: process.env, ...input });
++    }).pipe(Effect.provide(BunPtyAdapter.layer)),
++  );
++
++const collect = (pty: PtyAdapter.PtyProcess) => {
++  let out = "";
++  pty.onData((d) => (out += d));
++  const exited = new Promise<PtyAdapter.PtyExitEvent>((r) => pty.onExit(r));
++  return { out: () => out, exited };
++};
++
++test("streams a command's output, then its exit", async () => {
++  const pty = await spawn({ args: windows ? ["/c", "echo pty-ok & exit /b 3"] : ["-c", "printf 'pty-ok ✓'; exit 3"] });
++  const run = collect(pty);
++  expect(pty.pid).toBeGreaterThan(0);
++  expect(await run.exited).toEqual({ exitCode: 3, signal: null });
++  expect(run.out()).toContain("pty-ok");
++});
++
++test("is a real terminal that takes input and resizes", async () => {
++  const pty = await spawn({ args: [] });
++  const run = collect(pty);
++  pty.resize(100, 40);
++  if (windows) {
++    // ConPTY: `mode con` reports the console's size.
++    pty.write("echo tty-yes\r\nmode con\r\nexit\r\n");
++    await run.exited;
++    expect(run.out()).toContain("tty-yes");
++    expect(run.out()).toMatch(/Lines:\s+40/);
++    expect(run.out()).toMatch(/Columns:\s+100/);
++  } else {
++    pty.write("[ -t 0 ] && echo tty-yes; stty size; echo TERM=$TERM; exit\n");
++    await run.exited;
++    expect(run.out()).toContain("tty-yes");
++    expect(run.out()).toContain("40 100");
++    expect(run.out()).toContain("TERM=xterm-256color");
++  }
++});
++
++test("kill ends it", async () => {
++  const pty = await spawn({ args: windows ? ["/c", "ping -n 30 127.0.0.1 >nul"] : ["-c", "sleep 30"] });
++  const run = collect(pty);
++  pty.kill("SIGTERM");
++  const exit = await run.exited;
++  // Windows has no signals: the process is terminated and reports an exit code.
++  if (!windows) expect(exit.signal).toBe(15);
++});
++
++test("a shell that isn't there fails as a PtySpawnError", async () => {
++  await expect(spawn({ shell: "/no/such/shell" })).rejects.toThrow(/Failed to spawn PTY process '\/no\/such\/shell' with bun-terminal/);
++});
++
++test("an exit listener added after exit still hears it", async () => {
++  const pty = await spawn({ args: windows ? ["/c", "exit /b 0"] : ["-c", "exit 0"] });
++  await collect(pty).exited;
++  const late = await new Promise<PtyAdapter.PtyExitEvent>((r) => pty.onExit(r));
++  expect(late.exitCode).toBe(0);
++});
+diff --git a/apps/server/src/terminal/BunPtyAdapter.ts b/apps/server/src/terminal/BunPtyAdapter.ts
+new file mode 100644
+index 00000000..44c5d098
+--- /dev/null
++++ b/apps/server/src/terminal/BunPtyAdapter.ts
+@@ -0,0 +1,104 @@
++import * as NodeOs from "node:os";
++
++import * as Effect from "effect/Effect";
++import * as Layer from "effect/Layer";
++import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
++
++/**
++ * BunPtyAdapter - PTY processes from Bun's built-in terminal (`Bun.spawn({ terminal })`).
++ *
++ * Under Bun, node-pty loads but never delivers data or exit events, and Bun needs
++ * no native addon or spawn-helper, so the server picks this adapter whenever it
++ * runs on Bun (see server.ts).
++ */
++
++const signalNumber = (name: string | null | undefined): number | null =>
++  name ? ((NodeOs.constants.signals as Record<string, number>)[name] ?? null) : null;
++
++class BunPtyProcess implements PtyAdapter.PtyProcess {
++  private readonly dataListeners = new Set<(data: string) => void>();
++  private readonly exitListeners = new Set<(event: PtyAdapter.PtyExitEvent) => void>();
++  private readonly decoder = new TextDecoder();
++  private exitEvent: PtyAdapter.PtyExitEvent | undefined;
++  readonly process: Bun.Subprocess;
++
++  constructor(input: PtyAdapter.PtySpawnInput, env: NodeJS.ProcessEnv) {
++    this.process = Bun.spawn([input.shell, ...(input.args ?? [])], {
++      cwd: input.cwd,
++      env,
++      terminal: {
++        cols: input.cols,
++        rows: input.rows,
++        // A multi-byte character can straddle two reads, so decode as a stream.
++        data: (_terminal, bytes) => this.emitData(this.decoder.decode(bytes, { stream: true })),
++      },
++    });
++    void this.process.exited.then((exitCode) => {
++      // Let output already read from the terminal reach listeners before the exit.
++      setTimeout(() => {
++        const rest = this.decoder.decode();
++        if (rest) this.emitData(rest);
++        this.exitEvent = { exitCode, signal: signalNumber(this.process.signalCode) };
++        for (const listener of this.exitListeners) listener(this.exitEvent);
++        this.exitListeners.clear();
++      }, 0);
++    });
++  }
++
++  private emitData(data: string): void {
++    if (!data) return;
++    for (const listener of this.dataListeners) listener(data);
++  }
++
++  get pid(): number {
++    return this.process.pid;
++  }
++
++  write(data: string): void {
++    if (this.exitEvent) return;
++    this.process.terminal?.write(data);
++  }
++
++  resize(cols: number, rows: number): void {
++    if (this.exitEvent) return;
++    this.process.terminal?.resize(cols, rows);
++  }
++
++  kill(signal?: string): void {
++    this.process.kill(signal as NodeJS.Signals | undefined);
++  }
++
++  onData(callback: (data: string) => void): () => void {
++    this.dataListeners.add(callback);
++    return () => {
++      this.dataListeners.delete(callback);
++    };
++  }
++
++  onExit(callback: (event: PtyAdapter.PtyExitEvent) => void): () => void {
++    if (this.exitEvent) {
++      callback(this.exitEvent);
++      return () => {};
++    }
++    this.exitListeners.add(callback);
++    return () => {
++      this.exitListeners.delete(callback);
++    };
++  }
++}
++
++export const make = Effect.fn("BunPtyAdapter.make")(function* () {
++  return PtyAdapter.PtyAdapter.of({
++    spawn: Effect.fn("BunPtyAdapter.spawn")(function* (input) {
++      // node-pty sets TERM from its `name` option; Bun's terminal leaves the env as given.
++      const env = input.env["TERM"] === undefined ? { ...input.env, TERM: "xterm-256color" } : input.env;
++      return yield* Effect.try({
++        try: () => new BunPtyProcess(input, env),
++        catch: (cause) =>
++          new PtyAdapter.PtySpawnError({ adapter: "bun-terminal", shell: input.shell, cause }),
++      });
++    }),
++  });
++});
++
++export const layer = Layer.effect(PtyAdapter.PtyAdapter, make());
+-- 
+2.39.3 (Apple Git-145)
+
