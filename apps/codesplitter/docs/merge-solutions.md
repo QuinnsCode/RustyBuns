@@ -196,6 +196,35 @@ So one bad merge commit turns into a conflict for every branch open at the time.
 - **Parse JSON registries in a test.** A test that loads `features.json` (and the other JSON registries) with `JSON.parse` fails on markers, and on any other break.
 - **`migrations/0069_*` will clash** once #886 lands. `test/migrations.test.ts` catches it, so #886 has to renumber.
 
+## 9. Shadow mode: every merge this repo already made
+
+Sections 1–8 measured two PRs. `scripts/shadow.ts` (#1014) replays every merged PR from local git
+history: the squash onto main (main just before it, the PR's head) and each time a branch took main in
+on the way. Every file both sides changed goes through `git merge-file` and through `merge()` +
+`lintMerge()`, as a branch merge runs them. Each clean result is checked against what landed.
+
+```sh
+bun scripts/shadow.ts      # every merged PR; --pr 893,886 for some; --json for the details
+```
+
+On 2026-10-12, against main `177f16f`: 653 merges from 543 PRs, 619 files both sides changed.
+
+| Verdict | Files | What it was |
+|---|---|---|
+| Agree | 406 | the same clean result |
+| Both conflict | 59 | |
+| **git conflicts, ours is clean** | 139 | 61 exactly what landed. 29 the same lines in another order. 49 differ, mostly fixes the resolver made in the merge commit (a renamed endpoint's calls, #241). Build and test them next: #1043 |
+| Ours conflicts, git is clean | 1 | #244's `.gitignore`: both added `!.env.schema` a line apart, and git kept it twice. Ours asks. Now a fixture |
+| A guard tripped | 6 | redeclared names, an undefined name, code that won't parse. git conflicted on all 6 too, so none hid a merge git called clean |
+| Lockfile both changed | 8 | a conflict by design (keep a side, regenerate). git's line merge is what landed |
+| Both clean, different text | 0 | |
+
+One mistake turned up, in the 49: #960's `index.html` got two head pickers with the same `id="heads"`. Each side
+added one in a different place, and a line merge keeps both (#1044).
+
+Most PRs merged as a squash of a branch already up to date with main, so their final merge is trivial.
+The real conflicts were settled when a branch took main in.
+
 ## Next steps
 
 Filed as issues, linked from the PR:
