@@ -3005,6 +3005,7 @@ const views = {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
     return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p><button class="btn" data-gitmap title="who this repo listens to, and its branches, wired up">${icon("git-fork")}Git map</button>`)
       + (owner === me() && r.mirror ? sec("refresh-cw", "Upstream", `<div id="mirror"><span class="muted">…</span></div>`) : "")
+      + (!r.mirror && r.upstream?.startsWith("github:") && r.upstream_commit ? sec("git-fork", "Upstream", `<div id="listen" data-pics><span class="muted">…</span></div>`) : "")
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
@@ -3067,6 +3068,34 @@ const views = {
       el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, { pushCrew: b.dataset.crew === "1" });
     }));
     views.wireMirrorBranches(owner, repo);
+  },
+  /** A dug fork listening to its upstream (#870): how many commits upstream got since the dig, and Take them onto a branch. */
+  async wireListen(owner, repo, hear) {
+    const el = $("#listen");
+    if (!el) return;
+    const u = await api(`/repos/${owner}/${repo}/upstream${hear ? "/hear" : ""}`, hear ? {} : undefined).catch((e) => ({ failed: e.message }));
+    if (u.failed) { el.innerHTML = `<span class="muted">${esc(u.failed)}</span>`; return; }
+    const moved = u.tip && u.tip !== u.commit;
+    const n = u.behind ?? null, count = n === null ? "new upstream commits" : `${n} new upstream commit${n === 1 ? "" : "s"}`;
+    const head = !moved && !u.error ? `<span class="tag ok">up to date</span> with ${esc(u.repo)}'s ${esc(u.branch)}`
+      : moved ? `<span class="tag" style="color:var(--accent-ink)">${esc(count)}</span> on ${esc(u.repo)}'s ${esc(u.branch)} since <code>${esc(u.commit.slice(0, 7))}</code>`
+      : `<span class="muted">${esc(u.error)}</span>`;
+    const pic = ["pull", { branch: "a new branch", ref: u.branch }];
+    const mine = owner === me();
+    el.innerHTML = `<p>${head}${u.heardAt ? `, heard ${ago(u.heardAt)}` : ""}.${u.folder ? ` Only <code>${esc(u.folder)}</code> comes in.` : ""}</p>
+      ${moved && mine ? `<div class="gitpic-slot" data-pic="${esc(JSON.stringify(pic))}">${gitPic(pic)}</div>` : ""}
+      <div class="row" style="gap:6px;flex-wrap:wrap">${moved && mine ? `<button class="btn primary" id="listen-take"${picAttr(...pic)}>${icon("download")}Take them</button>` : ""}${mine ? `<button class="btn" id="listen-hear" title="ask GitHub now">${icon("refresh-cw")}Check now</button>` : ""}</div>
+      ${mine ? `<p class="muted" style="font-size:12px">They come in on a branch, to review and merge like any other. Checked every hour.</p>` : ""}`;
+    icons();
+    $("#listen-hear")?.addEventListener("click", () => { el.querySelector("p").textContent = "asking GitHub…"; views.wireListen(owner, repo, true); });
+    $("#listen-take")?.addEventListener("click", async (e) => {
+      e.target.closest("button").disabled = true; el.querySelector("p").textContent = "taking them…";
+      try {
+        const t = await api(`/repos/${owner}/${repo}/upstream/take`, {});
+        toast(`Opened ${t.name}: ${t.files.length + t.deleted.length} file${t.files.length + t.deleted.length === 1 ? "" : "s"} from upstream${t.skipped.length ? `; skipped ${t.skipped.join(", ")}` : ""}`);
+        location.hash = `#/b/${owner}/${repo}/${encodeURIComponent(t.name)}`;
+      } catch (err) { toast(err.message); views.wireListen(owner, repo); }
+    });
   },
   /** Upstream's other branches: open one here as a branch, or go to the one that already follows it. */
   async wireMirrorBranches(owner, repo) {
@@ -3563,6 +3592,7 @@ const views = {
     views.wireDeps(owner, repo);
     views.wireFit(owner, repo);
     views.wireMirror(owner, repo);
+    views.wireListen(owner, repo);
     views.wirePreview(owner, repo);
     views.wireDeploy(owner, repo);
     views.wireHooks(owner, repo);
