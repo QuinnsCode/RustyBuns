@@ -1,8 +1,8 @@
-// The hero ground battle as a pure, fixed-step simulation: two command posts on a shield
-// generator plain, AI troopers and tanks on both sides, the defender's turrets, orbital strikes
+// The hero ground battle as a pure, fixed-step simulation: command posts laid out by the sector
+// being fought over, AI troopers and tanks on both sides, the defender's turrets, orbital strikes
 // and drop-pod reinforcements from the spec. The view draws it and feeds the hero's input; the
 // tests run it headless with the autopilot.
-import { other, type BattleResult, type BattleSpec, type PerSide, type Side } from "./contract.ts";
+import { other, type BattleResult, type BattleSpec, type PerSide, type SectorKind, type Side } from "./contract.ts";
 
 export type UnitKind = "trooper" | "tank" | "turret" | "hero";
 export interface Unit { id: number; side: Side; kind: UnitKind; x: number; z: number; yaw: number; hp: number; maxHp: number; cool: number; jx: number; jz: number; guard?: boolean }
@@ -38,6 +38,15 @@ export const HALF = 120;           // the plain runs -HALF..HALF on x and z
 export const TIME_LIMIT = 600;
 export const SPAWN: PerSide<{ x: number; z: number }> = { attacker: { x: 0, z: 100 }, defender: { x: 10, z: -100 } };
 export const POST_RADIUS = 12;
+
+// Each kind of sector is its own map. The last post is the defender's keep: it starts theirs,
+// and their turrets ring it. The view adds the scenery to match.
+export const LAYOUTS: Record<SectorKind, { name: string; posts: { name: string; x: number; z: number }[] }> = {
+  shield: { name: "Shield generator plain", posts: [{ name: "Relay ridge", x: -40, z: 20 }, { name: "Generator", x: 30, z: -50 }] },
+  capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 45, z: 25 }, { name: "Market square", x: -35, z: -5 }, { name: "Palace", x: 5, z: -60 }] },
+  spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -30, z: 5 }, { name: "Control tower", x: 35, z: -55 }] },
+  cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 40, z: 10 }, { name: "Cannon", x: -25, z: -55 }] },
+};
 export const STRIKE_RADIUS = 10;
 const STRIKE_DELAY = 2.5;
 const WAVE_EVERY = 8;              // seconds between reinforcement waves
@@ -67,10 +76,7 @@ export function startBattle(spec: BattleSpec): Battle {
   const b: Battle = {
     spec, time: 0,
     tickets: { ...spec.tickets },
-    posts: [
-      { name: "Relay ridge", x: -40, z: 20, owner: null, progress: 0 },
-      { name: spec.sector === "shield" ? "Generator" : "Command bunker", x: 30, z: -50, owner: "defender", progress: -1 },
-    ],
+    posts: LAYOUTS[spec.sector].posts.map((p, i, all) => (i === all.length - 1 ? { ...p, owner: "defender", progress: -1 } : { ...p, owner: null, progress: 0 })),
     units: [], strikes: [], fx: [], events: [],
     strikesLeft: { ...spec.strikes },
     vehiclesLeft: { ...spec.vehicles },
@@ -80,7 +86,7 @@ export function startBattle(spec: BattleSpec): Battle {
     aiStrikeAt: { attacker: 20, defender: 25 },
     spawnAt: { attacker: 0, defender: 0 },
   };
-  const gen = b.posts[1]!;
+  const gen = b.posts.at(-1)!;
   for (let i = 0; i < spec.turrets; i++) {
     const a = (i / Math.max(1, spec.turrets)) * Math.PI * 2 + 0.6;
     add(b, "defender", "turret", gen.x + Math.cos(a) * 18, gen.z + Math.sin(a) * 18);

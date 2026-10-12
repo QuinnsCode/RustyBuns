@@ -2,7 +2,7 @@
 // itself, and back. The campaign is saved in this browser after every change.
 import { SECTOR_NAMES, FACTION_NAMES, neighbours, systemDef, SYSTEMS } from "./war/galaxy.ts";
 import {
-  COST, applyBattleResult, enemy, heroReady, income, keyShare, newCampaign, planOrders, resolveTurn,
+  COST, applyBattleResult, enemy, heroReady, income, keyShare, newCampaign, planOrders, resolveTurn, supplied,
   type Campaign, type Order, type Orders, type Where,
 } from "./war/rules.ts";
 import { aiOrders } from "./war/ai.ts";
@@ -11,7 +11,7 @@ import { run } from "./battle/sim.ts";
 import type { BattleResult } from "./battle/contract.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const SAVE = "two-fronts:v1";
+const SAVE = "two-fronts:v2"; // v2: Lumen and Morrow gained cannon sectors
 
 function load(): { campaign: Campaign; orders: Orders } | null {
   try { return JSON.parse(localStorage.getItem(SAVE) ?? "null"); } catch { return null; }
@@ -74,6 +74,8 @@ function render() {
     ];
     html = `<h2>${d.name}</h2>
       <p class="orbit">Orbit: ${s.orbit ? `<b class="${s.orbit}">${FACTION_NAMES[s.orbit]}</b>` : "nobody"} · ▲ ${s.fleets[me]} yours, ${s.fleets[foe]} theirs</p>
+      ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? `<p class="warn">Cut off from supply: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.</p>` : ""}
+      ${s.sectors.some((x) => x.kind === "cannon") ? `<p class="small">The anti-ship cannon knocks a ship a turn out of an enemy fleet in orbit.</p>` : ""}
       ${ds.fleets[me] ? `<div class="act">Send <select id="ship-n">${opts(ds.fleets[me])}</select> ships to
         <select id="ship-to">${neighbours(selected).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>
         <button type="button" id="send-ships">Go</button></div>` : ""}

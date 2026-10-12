@@ -3,7 +3,7 @@
 // imports the other, so each is tested on its own with fixtures.
 
 export type Faction = "concord" | "hegemony";
-export type SectorKind = "capital" | "spaceport" | "shield";
+export type SectorKind = "capital" | "spaceport" | "shield" | "cannon";
 export type Side = "attacker" | "defender";
 export type PerSide<T> = Record<Side, T>;
 
@@ -11,7 +11,7 @@ export interface BattleSpec {
   id: string;
   turn: number;
   system: string;          // the star system's name, for the HUD
-  sector: SectorKind;      // sets the layout: a shield sector puts the generator dome on the map
+  sector: SectorKind;      // sets the map: each kind of sector has its own layout and scenery
   factions: PerSide<Faction>;
   hero: Side;              // the side the player fights on
   heroLevel: number;       // carries over between battles: more health
