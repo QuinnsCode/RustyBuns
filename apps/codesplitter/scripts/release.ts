@@ -162,6 +162,8 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
   const flags = { CODESPLITTER_DEPLOYS: "1", CODESPLITTER_AGENTS: "1", CODESPLITTER_CHECKS: checks ? "1" : "0" };
   const git = (...args: string[]) => io.run(["git", "-C", wt, ...args]);
 
+  // The plan runs first, always, and the deploy waits on a y/N after it: say so up front, since that's the step that gets left.
+  io.say(yellow(`Heads up: this plans first (a minute or two, changes nothing), then asks y/N before ${mode.move ? "copying the data and deploying" : "deploying"}. Stay close: a notification pings you when it asks.`));
   io.say("1/5  1Password: unlock it if Touch ID asks");
   if ((await io.run(["op", "vault", "list"])).code !== 0) {
     await io.run(["open", "-a", "1Password"]);
@@ -329,6 +331,12 @@ export async function main(io: IO, mode: Mode, where: Where, env: Record<string,
 
 // ---- on the Mac ----
 
+/** A macOS notification with a sound, for when the release waits on you: osascript with the text quoted for AppleScript. */
+export const notifyCmd = (title: string, text: string) => {
+  const q = (t: string) => `"${t.replace(/\s+/g, " ").trim().replace(/[\\"]/g, (c) => `\\${c}`)}"`;
+  return ["osascript", "-e", `display notification ${q(text)} with title ${q(title)} sound name "Glass"`];
+};
+
 export const realIO: IO = {
   async run(cmd, opts = {}) {
     const env = opts.env ? Object.fromEntries(Object.entries(opts.env).filter(([, v]) => v !== undefined)) as Record<string, string> : undefined;
@@ -348,7 +356,13 @@ export const realIO: IO = {
     await Promise.all([pump(p.stdout), pump(p.stderr)]);
     return { code: await p.exited, out };
   },
-  async ask(q) { const a = prompt(`\x1b[1;38;5;117m${q} [y/N]\x1b[0m`); return a?.trim().toLowerCase() === "y"; },
+  async ask(q) {
+    // Ping: the terminal's bell, and a notification that reaches you in another app. Best effort.
+    process.stdout.write("\x07");
+    try { Bun.spawn(notifyCmd("codeSplitter release is waiting on you", q), { stdout: "ignore", stderr: "ignore" }); } catch {}
+    const a = prompt(`\x1b[1;38;5;117m${q} [y/N]\x1b[0m`);
+    return a?.trim().toLowerCase() === "y";
+  },
   say: (l) => console.log(l),
   sleep: (ms) => Bun.sleep(ms),
   exists: existsSync,

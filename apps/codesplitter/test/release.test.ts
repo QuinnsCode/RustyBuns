@@ -3,7 +3,7 @@
 // edge case each. Nothing here runs a command or touches Cloudflare.
 
 import { describe, expect, test } from "bun:test";
-import { checkPlan, deleteItems, dirtyFiles, main, MOVE_PENDING, NeedsMove, parseArgs, readyLevels, realIO, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
+import { checkPlan, deleteItems, dirtyFiles, main, MOVE_PENDING, NeedsMove, notifyCmd, parseArgs, readyLevels, realIO, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
 
 const plain: Mode = { checksNew: false, move: false };
 const move: Mode = { checksNew: false, move: true };
@@ -149,6 +149,10 @@ describe("helpers", () => {
     expect(dirtyFiles(s, "apps/codesplitter")).toEqual([" M apps/codesplitter/src/api.ts"]);
   });
 
+  test("notifyCmd quotes the question for AppleScript", () => {
+    expect(notifyCmd("waiting", 'Deploy "this"?\n  ok\\')).toEqual(["osascript", "-e", 'display notification "Deploy \\"this\\"? ok\\\\" with title "waiting" sound name "Glass"']);
+  });
+
   test("readyLevels", () => {
     expect(readyLevels(JSON.stringify([{ status: "ready" }, { status: "digging" }, { status: "ready" }]))).toBe(2);
     expect(readyLevels("<html>")).toBeNull();
@@ -248,6 +252,8 @@ describe("release", () => {
     // The token left in the terminal never reaches wrangler's login check.
     expect(mac.envs[mac.at(/wrangler whoami/)]!.CLOUDFLARE_API_TOKEN).toBeUndefined();
     expect(mac.ran(/move-resources/)).toEqual([]);
+    // Warned up front that a y/N follows the plan.
+    expect(mac.said[0]).toContain("then asks y/N before deploying");
   });
 
   test("the files plan regenerated are put back before syncing; anything else stops it", async () => {
