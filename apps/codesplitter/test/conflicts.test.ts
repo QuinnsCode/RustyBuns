@@ -332,7 +332,7 @@ describe("over the API", () => {
     expect((await ask("bob", { path: "a.ts", line: "L2", harness: "claude" })).status).toBe(403);
     const r = await ask("ana", { path: "a.ts", line: "L2", harness: "claude" });
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ path: "a.ts", line: "L2", harness: "claude", text: "x(2);\nx(3);", ok: true, tests: "skipped: the doctor doesn't run this repo's tests here (its run tests setting)" });
+    expect(await r.json()).toEqual({ path: "a.ts", line: "L2", harness: "claude", text: "x(2);\nx(3);", ok: true, tests: "skipped: this repo's merge answers aren't tested (its test merges setting)" });
     expect(seen).toBe("<<<<<<< main\nx(2);\n||||||| base\nx(1);\n=======\nx(3);\n>>>>>>> branch\n");
     // It sees main's lines around the conflict.
     expect(prompt).toContain("const a = 1;");
@@ -358,12 +358,18 @@ describe("over the API", () => {
     expect(broken).toMatchObject({ text: "x(2", ok: false, tests: "not run" });
     expect(broken.failure).toStartWith("merged, it doesn't parse: ");
 
-    // Tests on: the clone gets the merged file, and a failing run comes back with the answer.
-    expect((await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ run_tests: true }) })).status).toBe(200);
     const ran: Record<string, string>[] = [], only: (string[] | undefined)[] = [];
     let pass = false;
     call.env.DEPS_TESTER = (async (_remote: string, files: Record<string, string>, o: { only?: string[] }) => { ran.push(files); only.push(o.only); return pass ? { ok: true, out: "1 pass" } : { ok: false, out: "1 fail: x is 2" }; }) as Tester;
     answer = "x(2);\nx(3);";
+    const put = async (body: unknown) => expect((await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify(body) })).status).toBe(200);
+    // The doctor's run tests setting alone doesn't test merge answers: they have their own switch (#998).
+    await put({ run_tests: true });
+    expect(await ask()).toMatchObject({ ok: true, tests: "skipped: this repo's merge answers aren't tested (its test merges setting)" });
+    expect(ran).toEqual([]);
+
+    // Merge tests on, the doctor's off: the clone gets the merged file, and a failing run comes back with the answer.
+    await put({ run_tests: false, test_merges: true });
     expect(await ask()).toEqual({ path: "a.ts", line: "L2", harness: "claude", text: answer, ok: false, tests: "failed", failure: "1 fail: x is 2" });
     expect(ran[0]).toEqual({ "a.ts": "const a = 1;\nx(2);\nx(3);" });
     // Only the tests for the settled file, where the runner can tell which (#990).

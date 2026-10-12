@@ -9,6 +9,13 @@ const rulesFor = (cls: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
   .flatMap(([, sel, body]) => sel!.split(",").map((s) => ({ sel: s.trim(), body: body! })))
   .filter(({ sel }) => new RegExp(String.raw`\.${cls}(?![\w-])`).test(sel));
 
+// #989 split the doctor's Save body one setting a line and lost an `||`, so no script on the page ran.
+test("every inline script on the page parses", () => {
+  const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
+  expect(scripts.length).toBeGreaterThan(0);
+  for (const s of scripts) expect(() => new Bun.Transpiler({ loader: "js" }).transformSync(s)).not.toThrow();
+});
+
 // The ⌘K palette opened as a narrow, tall box twice (#609, #678): a bare `.sheet` rule for
 // another widget (the repo tabs, max-width: 200px) also styled the palette's sheet.
 describe("the command palette and the drawer keep their size", () => {
