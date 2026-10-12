@@ -49,7 +49,7 @@ if (process.argv.includes("--hosted")) {
     h = all.find((x) => x.id === h.id) ?? h;
   }
   if (h.status === "failed") { console.error(h.error); process.exit(1); }
-  r = { harness, path, changed: !!h.applied, applied: h.applied ?? 0, runs: h.runs ?? 1, conflicts: h.conflicts ?? [], rev: h.rev ?? 0, output: h.output ?? "" };
+  r = { harness, path, changed: !!h.applied, applied: h.applied ?? 0, runs: h.runs ?? 1, conflicts: h.conflicts ?? [], rev: h.rev ?? 0, output: h.output ?? "", spent: h.spent ?? 0 };
 } else r = await runAgent(call, { ...run, user: as, log: console.log });
 
 console.log(`\n${r.harness} on ${r.path}: ${r.changed ? `${r.applied} line ops landed at rev ${r.rev}` : "no changes"}${r.runs > 1 ? ` (${r.runs} runs)` : ""}`);

@@ -14,10 +14,15 @@
 // site's `hosted` budget; on the desktop only with HEAL=1, since the CLI runs on its owner's login.
 // HEAL=off turns it off anywhere. A branch an agent run made for its batch (agent-run-<id>) is left
 // be: its batch already waits for a person.
+//
+// A fix task that failed the same way as the last one (#1077: the same test, the same error text)
+// doesn't get the same task again. Its path's policy says `escalate`: it's a person's turn now.
+// Otherwise the next one starts from a terse note saying what was tried, so it doesn't try it again.
 
 import type { Env } from "./env.ts";
 import type { CheckRun } from "./checks.ts";
-import { adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
+import { adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses, policyFor } from "./agent-routes.ts";
+import { sameFailure, writeNote } from "./budget.ts";
 
 /** Fix tasks a branch gets before it waits for a person. */
 export const MAX_ATTEMPTS = 2;
@@ -70,6 +75,12 @@ export async function openFix(env: Env, owner: string, repo: string, branch: str
   if (!a) return { skipped: "no open branch" };
   if (a.runs.some((r) => r.status === "running")) return { skipped: "a fix task is running on it already" };
   if (a.runs.length >= MAX_ATTEMPTS) return { skipped: `it had ${MAX_ATTEMPTS} fix tasks: a person's turn` };
+  const last = a.runs.at(-1);
+  if (last && sameFailure(last.task.replace(/^[\s\S]*\nTASK: /, ""), task)) {
+    if ((await policyFor(env, owner, repo, path)).over === "escalate") return { skipped: "the same failure twice: a person's turn" };
+    const x = last.result ? JSON.parse(last.result) as { edited?: string[] } : {};
+    task = `${writeNote({ done: [`fix task ${last.id} edited ${[last.path, ...x.edited ?? []].join(", ")}`], broke: ["same failure after it"], dont: ["that fix again; find the real cause"] })}\nTASK: ${task}`;
+  }
   const spent = await hostedBudget(env);
   if (spent) return { skipped: ((await spent.json()) as { error: string }).error };
   const harness = installedHarnesses(env)[0]!;

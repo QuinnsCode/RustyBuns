@@ -101,7 +101,7 @@ function gated(call: { env: any }) {
     await gate;
     const f = join(cwd, "a.js");
     writeFileSync(f, readFileSync(f, "utf8").toUpperCase());
-    return { code: 0, out: "done" };
+    return { code: 0, out: "done\nDONE: shouted a\nNEXT: shout b (a.js:2)" };
   }) as Exec;
   /** Waits for its `n`th run to start. */
   const started = (n: number) => until(async () => prompts.length >= n);
@@ -151,6 +151,48 @@ test("a note to a running agent goes into its next run's prompt: it goes round a
   // A finished run takes no notes.
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "x" })).status).toBe(409);
   expect((await post("ryan", "/api/repos/ryan/lab/agents/999/notes", { text: "x" })).status).toBe(404);
+});
+
+/** A run on a.js under a 10-token budget that a note sends round again, so it trips before its second go. */
+async function overBudget(over: string) {
+  const { call, post } = await app();
+  await post("ryan", "/api/repos/ryan/lab/files", { path: ".gitattributes", content: `a.js codesplitter-budget=10 codesplitter-over=${over}` });
+  const cli = gated(call);
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "codex", task: "shout every line" })).json() as any;
+  await cli.started(1);
+  await post("ryan", `/api/repos/ryan/lab/agents/${run.id}/notes`, { text: "and b" });
+  cli.go();
+  await until(async () => (await runsOf(call)).find((r) => r.id === run.id).status !== "running");
+  return { call, cli, run };
+}
+
+test("past its path's budget a run hands off: a fresh agent starts from its terse note alone, on its branch, and the batch lands after (#1077)", async () => {
+  const { call, cli, run } = await overBudget("handoff");
+  const first = (await runsOf(call)).find((r) => r.id === run.id);
+  expect(first).toMatchObject({ status: "done", runs: 1, applied: 2, handoff: { why: "context past 10 tokens", over: "handoff" }, pending: { until: null } });
+  expect(first.spent).toBeGreaterThan(10);
+  expect(first.handoff.note).toBe("DONE: shouted a\nNEXT: shout b (a.js:2)\nBROKE: context past 10 tokens");
+  expect(cli.prompts[0]).toContain("caveman-terse");
+  await cli.started(2);
+  // The fresh one gets the note and nothing else: not the old task, not the notes.
+  expect(cli.prompts[1]).toContain("Fresh eyes on a.js: the last agent stopped (context past 10 tokens)");
+  expect(cli.prompts[1]).toContain("NEXT: shout b (a.js:2)");
+  expect(cli.prompts[1]).not.toContain("and b");
+  const next = (await runsOf(call)).find((r) => r.id === first.handoff.next);
+  expect(next).toMatchObject({ from: run.id, hops: 1, branch: `agent-run-${run.id}` });
+  cli.go();
+  await until(async () => !!(await runsOf(call)).find((r) => r.id === run.id).landed);
+  expect((await runsOf(call)).find((r) => r.id === run.id)).toMatchObject({ landed: { by: "auto" } });
+});
+
+test("a path whose policy escalates waits for a person instead, its note attached", async () => {
+  const { call, cli, run } = await overBudget("escalate");
+  const first = (await runsOf(call)).find((r) => r.id === run.id);
+  expect(first).toMatchObject({ handoff: { over: "escalate" }, pending: { until: null } });
+  expect(first.handoff.next).toBeUndefined();
+  expect(first.pending.why).toContain("(context past 10 tokens): a person's turn");
+  expect(cli.prompts.length).toBe(1);
+  expect((await runsOf(call)).length).toBe(1);
 });
 
 test("bulk Stop: by harness, by the lines they claimed, or all of them", async () => {

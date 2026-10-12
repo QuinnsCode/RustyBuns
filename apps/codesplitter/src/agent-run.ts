@@ -9,6 +9,7 @@ import type { Call } from "./local.ts";
 import type { Doc, Line, Op } from "./lines.ts";
 import { harnessCommand, taskPrompt, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
+import { NOTE_ASK, tokens, tripped, type Budget, type Trip } from "./budget.ts";
 
 /** Runs a command in `cwd`; `signal` aborting kills it (Stop on a run). */
 export type Exec = (cmd: Command, cwd: string, signal?: AbortSignal) => Promise<{ code: number; out: string }>;
@@ -79,6 +80,12 @@ export interface Result {
   output: string;
   /** Which of its `also` files it changed. */
   edited?: string[];
+  /** About how many tokens it read and wrote, every run of the CLI counted (budget.ts). */
+  spent: number;
+  /** Cut short before going round again (#1077): at how many tokens, and why. */
+  tripped?: Trip;
+  /** Each round's failure, for the handoff note: the lines that moved under it. */
+  failures?: string[];
 }
 
 /** What a file's text looks like on disk: lines joined by \n with one trailing \n. */
@@ -116,6 +123,8 @@ export async function runAgent(call: Call, opts: {
   signal?: AbortSignal;
   /** Where the agent runs (default: a scratch dir here, running `exec`). */
   sandbox?: Sandbox;
+  /** Its path's budget (#1077): past it, the same failure twice, or a third conflict round, it stops instead of going round again. */
+  budget?: Budget;
   /** How often its claim is renewed while it works (default HEARTBEAT_MS). */
   heartbeat?: number;
   exec?: Exec; log?: (s: string) => void;
@@ -162,8 +171,14 @@ export async function runAgent(call: Call, opts: {
 
   async function work(): Promise<Result> {
   const retries = opts.retries ?? 2, signal = opts.signal;
-  let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "";
-  const told: string[] = [], touched = new Set<string>();
+  let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = 0, trip: Trip | undefined;
+  const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
+  /** Whether going round again would blow its budget: if so it stops, and says why. */
+  const over = () => {
+    const why = opts.budget && tripped({ spent, budget: opts.budget.tokens, failures, conflictRounds: failures.length });
+    if (why) { trip = { at: spent, why }; log(`${opts.harness}: stopping at ~${spent} tokens: ${why}`); }
+    return !!why;
+  };
 
   /**
    * Posts what the agent left in `p` as ops on the lines unchanged since `snapshot`, retrying on a race.
@@ -203,12 +218,16 @@ export async function runAgent(call: Call, opts: {
     const snapshot = await get();
     const others = await Promise.all(also.map((p) => get(p)));
     rev = snapshot.rev;
-    const cmd = harnessCommand(opts.harness, taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also), { model: opts.model });
+    const prompt = taskPrompt(path, opts.task, conflicts, told, await heldLines(snapshot), also) + (opts.budget ? `\n${NOTE_ASK}` : "");
+    const cmd = harnessCommand(opts.harness, prompt, { model: opts.model });
     log(`${opts.harness}: ${runs === 1 ? "working on" : `re-running on`} ${path}${also.length ? ` and ${also.length} more` : ""} (rev ${snapshot.rev})`);
     const run = await sandbox(cmd, { path, text: toDisk(snapshot.lines), ...(also.length && { also: Object.fromEntries(also.map((p, i) => [p, toDisk(others[i]!.lines)])) }) }, signal);
     // Stopped: whatever it left is dropped.
     signal?.throwIfAborted();
     output = run.out.trim();
+    // It read the prompt and every file, and wrote its reply and the files back.
+    spent += tokens(prompt.length + snapshot.lines.reduce((n, l) => n + l.text.length + 1, 0) * 2
+      + others.reduce((n, d) => n + d.lines.reduce((k, l) => k + l.text.length + 1, 0) * 2, 0) + run.out.length);
     if (run.code !== 0) throw new Error(`${opts.harness} exited ${run.code}:\n${output.slice(-2000)}`);
     if (run.text === null) throw new Error(`${opts.harness} removed ${path}`);
     const gone = also.find((p) => typeof run.also?.[p] !== "string");
@@ -221,13 +240,17 @@ export async function runAgent(call: Call, opts: {
     for (const [i, p] of also.entries()) if (await post(p, others[i]!, run.also![p]!)) touched.add(p);
     const fresh = (await opts.notes?.()) ?? [];
     told.push(...fresh);
+    // A round whose edits moved under it failed, and says on which lines.
+    const moved = conflicts.filter((c) => !c.held);
+    if (moved.length) failures.push(`edits lost on ${moved.map((c) => `${c.path ?? path}:${c.op.kind === "insert" ? c.op.after : c.op.line}`).sort().join(" ")}`);
     if (fresh.length && noteRuns < NOTE_RUNS) {
+      if (over()) break;
       noteRuns++;
       log(`${opts.harness}: told ${fresh.length === 1 ? "something" : `${fresh.length} things`} while it worked; going again`);
       continue;
     }
     // Held lines stay held, so running again won't land them.
-    if (!conflicts.some((c) => !c.held) || retried >= retries) break;
+    if (!moved.length || retried >= retries || over()) break;
     retried++;
     log(`${opts.harness}: ${conflicts.length} line(s) changed by someone else while it worked`);
   }
@@ -235,6 +258,6 @@ export async function runAgent(call: Call, opts: {
     const res = await call(user, `${file}/commit${q}`, { method: "POST", body: JSON.stringify({ message: opts.commit }) });
     if (!res.ok) throw new Error(`commit: ${res.status} ${await res.text()}`);
   }
-  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, ...(touched.size && { edited: [...touched] }) };
+  return { harness: opts.harness, path, changed, applied, runs, conflicts, rev, output, spent, ...(touched.size && { edited: [...touched] }), ...(trip && { tripped: trip, failures }) };
   }
 }

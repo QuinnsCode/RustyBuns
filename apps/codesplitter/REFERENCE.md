@@ -409,6 +409,14 @@ Come back to the page after a while away and a bar steps you through what change
 The crew sees the same waiting batch on the file and their reading it counts too: they can Hold it, while Accept, Reject and leaving a stretch out stay the owner's.
 Anyone else who can read the file sees the ghost diff with no controls, with private lines blank (`GET /api/repos/:o/:r/agents/waiting?path=`).
 
+A run has a budget, from its path's policy (#1077, `src/budget.ts`): `codesplitter-budget=80k` in `.gitattributes` is the context it may read, in tokens, and `codesplitter-over=handoff|escalate|downshift` is what happens past it (defaults: lockfiles 20k and config 60k downshift, prose 100k and code 150k hand off).
+What a run reads is counted from what goes in and out of its CLI, every round, at four characters to the token.
+Before it goes round again (a note, or lines that moved under it) it stops if it's past the budget, failed the same way as last round, or would start a third conflict round.
+It leaves a caveman-terse note, its own `DONE:`/`NEXT:`/`BROKE:`/`DONT:` lines if it ended its reply with them (the prompt asks), else what's known: what landed, the task, what broke.
+`handoff` starts a fresh agent with that note as its whole task, on the branch the stopped one left, whose batch waits, held, till the fresh one is done and then lands as any batch does; `downshift` does the same on the cheapest model; `escalate`, or a third handoff, leaves the held batch and the note to a person.
+A self-healing fix task that fails the same way as the one before (the same test or error text, times and durations aside) doesn't get the same task again: the next starts from a note saying what was tried, or under `escalate` it's a person's turn.
+Each run on the page says about how many tokens it read and, when it stopped short, "handed off at ~N tokens because …", with its note.
+
 > **⚠️ Super experimental, run at your own risk.** Coding agents run real CLIs that can edit files and run shell commands, and hosted runs spend your API keys.
 > They're off by default on Cloudflare: a deploy only includes them when you set `CODESPLITTER_AGENTS=1`.
 > Their keys come from 1Password, like the accounts secrets, so there's nothing else to export.
@@ -591,6 +599,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/audit.ts` | the security audit log: tokens, crews, invites, visibility, webhooks, deploy keys and repo deletes, append-only |
 | `src/beam.ts` | beams: a git or codeSplitter branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
 | `src/branches.ts` | branches: forking a file onto one, review, merge |
+| `src/budget.ts` | agent budgets (#1077): what a run reads, when it's cut short, and the caveman-terse note fresh eyes start from |
 | `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
 | `src/check-env.ts` | what a check's command sees: a scrubbed environment, its own empty HOME and TMPDIR, and the sandbox user if one is set |
 | `src/checks.ts` | checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results |
@@ -616,7 +625,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
 | `src/patch.ts` | a unified diff and a `git format-patch` mail written in JS, for beams on the hosted site where there's no git to run |
-| `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left; defaults under the repo's `.gitattributes` |
+| `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left, an agent's budget; defaults under the repo's `.gitattributes` |
 | `src/sandbox.ts` | the container Durable Object hosted agents run in |
 | `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
