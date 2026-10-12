@@ -32,7 +32,7 @@ export const SHAPES = {
 export type ShapeKind = keyof typeof SHAPES;
 if (Object.keys(SHAPES).join() !== SHAPE_KINDS.join()) throw new Error("shapes drifted");
 
-const COLORS: Record<string, string> = {
+export const COLORS: Record<string, string> = {
   black: "#1e1e1e",
   red: "#e03131",
   green: "#2f9e44",

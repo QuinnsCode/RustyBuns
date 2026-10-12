@@ -90,7 +90,7 @@ function sanitizeStyle<T extends Partial<BaseEl>>(el: T): T {
 
 // --- bounding boxes ----------------------------------------------------------
 
-function bboxOf(el: SkeletonEl): Bounds {
+export function bboxOf(el: SkeletonEl): Bounds {
   if (el.type === "line" || el.type === "arrow") {
     const pts = el.points.length ? el.points : [[0, 0] as [number, number]];
     let minX = Infinity,
