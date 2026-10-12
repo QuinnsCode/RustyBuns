@@ -144,7 +144,8 @@ export function kindOf(path: string): Kind {
  * A moved line or block (deleted and the same text inserted elsewhere) keeps
  * the other side's edit, and lines the branch added under a line main moved
  * go under it where it is now. New lines both added at one spot land main's
- * first; the same new line added at the same spot on both sides lands once.
+ * first, or in order in a sorted block (an import block, keys one per line);
+ * the same new line added at the same spot on both sides lands once.
  * A stretch both sides reshaped settles line by line where it can (see blend).
  *
  * Conflicts, each settled by `resolve` (by its `line`: main's, the branch's,
@@ -201,8 +202,27 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
   };
   // Main's new lines right at this spot go first (it landed first). A line both added was a twin already.
   const movedIn = new Set([...movedOnMain.values()].map((l) => l.id)), fresh = (m: Line) => !was.has(m.id) && !movedIn.has(m.id) && !taken.has(m.id);
-  const behindMain = () => {
-    for (let i = after === null ? 0 : (at.get(after) ?? Infinity) + 1; i < main.lines.length && fresh(main.lines[i]!); i++) after = main.lines[i]!.id;
+  // In a sorted block (see runs), main's new lines go first only while they sort before the branch's `t`;
+  // `resume` is where main's new lines carry on after a branch line that went in among them.
+  const run = runs(base.lines), atBase = new Map(base.lines.map((l, i) => [l.id, i]));
+  let resume: { id: string; i: number } | null = null;
+  const sortedAt = (i: number, t: string) => {
+    let p = i - 1, n = i;
+    while (p >= 0 && !atBase.has(main.lines[p]!.id)) p--;
+    while (n < main.lines.length && !atBase.has(main.lines[n]!.id)) n++;
+    const rp = p >= 0 ? run[atBase.get(main.lines[p]!.id)!] : undefined, rn = n < main.lines.length ? run[atBase.get(main.lines[n]!.id)!] : undefined;
+    const r = rp ?? rn;
+    return !!r && (!rp || !rn || rp === rn) && r.indent === indent(t);
+  };
+  const behindMain = (t: string) => {
+    let i = after === null ? 0 : after === resume?.id ? resume.i : (at.get(after) ?? Infinity) + 1;
+    const inOrder = i < main.lines.length && fresh(main.lines[i]!) && sortedAt(i, t);
+    for (; i < main.lines.length && fresh(main.lines[i]!); i++) {
+      const m = main.lines[i]!.text;
+      if (inOrder && indent(m) === indent(t) && sortKey(m) > sortKey(t)) return i;
+      after = main.lines[i]!.id;
+    }
+    return null;
   };
   const written = (pick: Pick | undefined) => typeof pick === "object" ? pick.text.split("\n") : null;
   // A stretch both reshaped: keep main's as is, swap in the branch's whole or a text of the writer's, or keep both.
@@ -269,8 +289,9 @@ export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, de
         for (const t of written(twice) ?? []) insert(t, writer);
         continue;
       }
-      behindMain();
+      const stop = behindMain(l.text);
       insert(l.text, l.by);
+      if (stop !== null) resume = { id: after!, i: stop };
       continue;
     }
     const moved = !now.has(l.id) && movedOnMain.get(l.id);
@@ -568,6 +589,25 @@ const keysOf = (ws: string[]) => new Set([...ws.join("").matchAll(/([\w$]+)\??\s
 function sorted(line: string) {
   const parts = line.split(","), names = parts.map((p, i) => (i ? p.match(/[\w$]+/) : p.match(/[\w$]+(?=[^\w$]*$)/))?.[0]?.toLowerCase());
   return names.length >= 3 && names.every((n, i) => n && (!i || names[i - 1]! <= n));
+}
+
+const indent = (t: string) => t.match(/^\s*/)![0];
+const sortKey = (t: string) => t.trim().toLowerCase();
+/**
+ * The sorted blocks among `lines`: three or more non-blank lines in a row at
+ * one indentation, in order (an import block, keys one per line). Each line
+ * of one maps to it; new lines both sides add there go in sorted too.
+ */
+function runs(lines: Line[]) {
+  const out: ({ indent: string } | undefined)[] = [];
+  for (let i = 0; i < lines.length;) {
+    const at = indent(lines[i]!.text);
+    let j = i + 1;
+    while (j < lines.length && lines[i]!.text.trim() && lines[j]!.text.trim() && indent(lines[j]!.text) === at) j++;
+    const block = lines.slice(i, j).map((l) => sortKey(l.text)), r = block.length >= 3 && block.every((k, n) => !n || block[n - 1]! <= k) ? { indent: at } : undefined;
+    for (; i < j; i++) out.push(r);
+  }
+  return out;
 }
 
 /**
