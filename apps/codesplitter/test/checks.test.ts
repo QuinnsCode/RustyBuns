@@ -150,14 +150,13 @@ test("GitHub's results for a sha sent up come back in beside ours, and ours go o
 
   // The branch went up as SHA: our check is queued, and GitHub's is watched.
   await startChecks(call.env, "ryan", "lab", "tidy", SHA, "ryan");
-  // Under codesplitter/ only; the pre-rename codesplitters/ is no longer posted (#821).
+  // Under codesplitter/ only; the pre-rename codesplitters/ is gone (#821).
   expect(github.posted).toEqual([
     { path: `/repos/QuinnsCode/RustyBuns/statuses/${SHA}`, body: { state: "pending", context: "codesplitter/test", description: "desktop: queued" } }]);
 
   github.runs = [{ id: 7, name: "typecheck", status: "in_progress", conclusion: null, started_at: "2026-10-10T10:00:00Z", html_url: "https://github.com/QuinnsCode/RustyBuns/actions/runs/1/job/7" }];
   github.statuses = [
     { context: "codesplitter/test", state: "pending" },    // ours, echoed back
-    { context: "codesplitters/test", state: "pending" },   // and under the old name, on older commits
     { context: "ci/other", state: "success", target_url: "https://ci.example/1", created_at: "2026-10-10T10:00:00Z", updated_at: "2026-10-10T10:01:00Z" },
   ];
   const polled = await (await send("ryan", "/api/repos/ryan/lab/checks/github", { ref: "tidy" })).json();
