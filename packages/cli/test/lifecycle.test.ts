@@ -80,7 +80,7 @@ process.on("SIGINT", () => { clearInterval(t); setTimeout(() => { require("fs").
   Bun.spawnSync(["git", "init", "-q"], { cwd: dir });
   const cli = Bun.spawn([process.execPath, resolve(import.meta.dir, "../src/index.ts"), "deploy", "--yes", "--no-check"], {
     cwd: dir, stdout: "pipe", stderr: "pipe",
-    env: { ...process.env, CLOUDFLARE_API_TOKEN: "fake", CLOUDFLARE_ACCOUNT_ID: "fake", RUSTYBUNS_NO_UPDATE_CHECK: "1", CI: "1" },
+    env: { ...process.env, CLOUDFLARE_API_TOKEN: "fake", CLOUDFLARE_ACCOUNT_ID: "fake", RUSTYBUNS_NO_UPDATE_CHECK: "1", RUSTYBUNS_NO_LOGIN_CHECK: "1", CI: "1" },
   });
   expect(await waitFor(() => existsSync(join(dir, "alchemy.pid")), 20_000)).toBe(true);
   const child = Number(readFileSync(join(dir, "alchemy.pid"), "utf8"));

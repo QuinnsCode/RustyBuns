@@ -119,7 +119,7 @@ test("actions include/exclude globs", async () => {
 });
 
 test("deploy guardrail: refuses without a matching plan, accepts --yes", async () => {
-  const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
+  const { mkdtempSync, writeFileSync, mkdirSync, existsSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const r = mkdtempSync(tmpdir() + "/rbdeploy-");
   // the worker build is a stub too: it logs, so the test sees it run before Alchemy (#362), and whether it saw the token (#1114)
@@ -130,7 +130,9 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   // stub the project's alchemy so no real one runs; record what it was called with
   const bin = r + "/node_modules/.bin"; mkdirSync(bin, { recursive: true });
   writeFileSync(bin + "/alchemy", `#!/bin/sh\necho "STUB alchemy $@ built=$RUSTYBUNS_BUILT" >> ${r}/calls.log\n`); require("node:fs").chmodSync(bin + "/alchemy", 0o755);
-  const env = { ...process.env, CLOUDFLARE_API_TOKEN: "test-token" };
+  // a token with no account id leaves Alchemy to its profile, here an empty ALCHEMY_HOME until the login below (#1170)
+  const { CLOUDFLARE_ACCOUNT_ID: _a, CI: _ci, ...shell } = process.env;
+  const env = { ...shell, CLOUDFLARE_API_TOKEN: "test-token", ALCHEMY_HOME: r + "/alchemy-home" };
   // --no-check on plan/deploy: the stub alchemy has no types, and on Bun >= 1.4.3 bun check is always there to fail on it
   const run = (...a: string[]) => Bun.spawnSync(["bun", cli, ...a, ...(a[0] === "plan" || a[0] === "deploy" ? ["--no-check"] : [])], { cwd: r, env, stdout: "pipe", stderr: "pipe" });
   // init needs @rustybuns/cli resolvable for the config import; link the package dir
@@ -138,6 +140,13 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   require("node:fs").symlinkSync(new URL("..", import.meta.url).pathname, r + "/node_modules/@rustybuns/cli");
   const i = run("init"); if (i.exitCode !== 0) console.log(i.stdout.toString(), i.stderr.toString());
   expect(i.exitCode).toBe(0);
+  // no Cloudflare login: one line, before the worker build
+  const p0 = run("plan");
+  expect(p0.exitCode).toBe(1);
+  expect(p0.stderr.toString().trim()).toMatch(/^✗ not logged in to Cloudflare .*`rustybuns login cloudflare`/);
+  expect(existsSync(r + "/calls.log")).toBe(false);
+  mkdirSync(r + "/alchemy-home/profiles/default", { recursive: true });
+  writeFileSync(r + "/alchemy-home/profiles/default/cloudflare.json", "{}");
   const d1 = run("deploy");
   expect(d1.exitCode).toBe(2);
   expect(d1.stderr.toString()).toContain("no plan on record");
