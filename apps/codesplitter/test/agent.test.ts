@@ -6,7 +6,7 @@ import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { harnessCommand, taskPrompt, HARNESSES } from "../src/harness.ts";
 import { execCommand, runAgent, toDisk, fromDisk, type Exec } from "../src/agent-run.ts";
-import { FileDurableObject, LEASE_CAP_MS, LEASE_MS } from "../src/file-do.ts";
+import { FileDurableObject, LEASE_CAP_MS, LEASE_MS, REST_MS } from "../src/file-do.ts";
 
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
@@ -317,6 +317,42 @@ describe("claims", () => {
       expect((await claims(call))[0]).toMatchObject({ until: c.cap });
       expect(await (await post(call, "ryan", "claims", { id: "run-1", extend: true })).json()).toMatchObject({ who: "agent-x", cap: t0 + 2 * LEASE_CAP_MS - 30_000 });
       expect((await post(call, "ryan", "claims", { id: "run-1" })).status).toBe(409);
+    } finally { setSystemTime(); }
+  });
+
+  test("an agent whose claim ran out at its cap can't claim those lines again till others have had a turn", async () => {
+    const call = await local();
+    await setup(call, "a\nb\nc");
+    try {
+      const c = await (await post(call, "agent-x", "claims", { id: "run-1", lines: ["L1", "L2"], ttl: LEASE_CAP_MS })).json() as any;
+      expect(c.until).toBe(c.cap);
+      setSystemTime(c.cap + 1);
+      // Same lines (or some of them) under a fresh id or the old one: refused, with when to come back.
+      for (const b of [{ id: "run-2", lines: ["L2", "L3"] }, { id: "run-1", lines: ["L1"] }]) {
+        const res = await post(call, "agent-x", "claims", b);
+        expect(res.status).toBe(409);
+        expect((await res.json() as any).retryAfter).toBe(REST_MS / 1000);
+      }
+      expect(await claims(call)).toEqual([]);
+      // Other lines are fine, and anyone else may take these.
+      expect((await post(call, "agent-x", "claims", { id: "run-3", lines: ["L3"] })).status).toBe(201);
+      expect((await post(call, "ryan", "claims", { lines: ["L2"] })).status).toBe(201);
+      // Once the rest is over, it may claim them again.
+      setSystemTime(c.cap + 1 + REST_MS);
+      expect((await post(call, "agent-x", "claims", { id: "run-5", lines: ["L1"] })).status).toBe(201);
+    } finally { setSystemTime(); }
+  });
+
+  test("an agent whose claim lapses before its cap (or that lets go) may claim the lines again at once", async () => {
+    const call = await local();
+    await setup(call, "a\nb");
+    const t0 = Date.now();
+    try {
+      await post(call, "agent-x", "claims", { id: "run-1", lines: ["L1"] });
+      setSystemTime(t0 + LEASE_MS + 1);
+      expect((await post(call, "agent-x", "claims", { id: "run-2", lines: ["L1"] })).status).toBe(201);
+      await post(call, "agent-x", "release", { id: "run-2" });
+      expect((await post(call, "agent-x", "claims", { id: "run-3", lines: ["L1"] })).status).toBe(201);
     } finally { setSystemTime(); }
   });
 

@@ -19,7 +19,7 @@ A design doc, not a feature. The question: what line-locking model should codeSp
 
 **Optimistic vs serialized.** Each file is one Durable Object, the only writer for that file. `held()` and `apply()` run synchronously on the in-memory doc, so two edits never interleave: **within a file, edits are totally ordered**, and conflicts are detected rather than prevented. Nothing serializes **across files**: a cross-file rename is N independent batches. Branches are optimistic too, and their conflicts surface at merge.
 
-**Gaps in claims before Phase 1** (Phase 1 has shipped, #926: leases are 2 minutes, renewed by edits, an explicit renew and a run's heartbeat, capped at 30 minutes; the alarm sends `unclaim`; the 409 carries `claims` and `retryAfter`; `list_claims`, `claim_lines` and `release_claim` are in the spec and the palette):
+**Gaps in claims before Phase 1** (Phase 1 has shipped, #926: leases are 2 minutes, renewed by edits, an explicit renew and a run's heartbeat, capped at 30 minutes, after which the holder may not claim those lines again for 2 minutes (#962); the alarm sends `unclaim`; the 409 carries `claims` and `retryAfter`; `list_claims`, `claim_lines` and `release_claim` are in the spec and the palette):
 
 | Gap | Effect |
 |---|---|
