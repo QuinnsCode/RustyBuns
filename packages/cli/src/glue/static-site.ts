@@ -45,6 +45,19 @@ export function jekyllExcludes(own: unknown): string[] {
   return [...new Set([...mine, ...NOT_SITE, ".rustybuns", "_config.rustybuns.yml"])];
 }
 
+/**
+ * GitHub Pages' jekyll-default-layout, as front-matter defaults: on Pages a page with no `layout`
+ * gets `page` (or `default`) and a post `post` (or `default`); plain Jekyll gives them none, so they
+ * render bare. Front matter still wins, and the site's own defaults come after ours, so they win ties.
+ * `layouts` are the names in _layouts/. Empty when there's nothing to add.
+ */
+export function jekyllDefaults(layouts: string[], own: unknown): unknown[] {
+  const pick = (...names: string[]) => names.find((n) => layouts.includes(n));
+  const ours = ([["pages", pick("page", "default")], ["posts", pick("post", "default")]] as const)
+    .filter(([, layout]) => layout).map(([type, layout]) => ({ scope: { path: "", type }, values: { layout } }));
+  return ours.length ? [...ours, ...(Array.isArray(own) ? own : [])] : [];
+}
+
 /** The build that puts the site in `out`, as a shell command. */
 export function staticBuild(s: StaticSite, out: string, opts: { jekyllConfig?: string; exec: (bin: string) => string }): string {
   switch (s.kind) {
