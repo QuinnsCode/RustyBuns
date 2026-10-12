@@ -511,6 +511,7 @@ ${LAUNCH_CHECK}${appCheck(c, false)}${h.launch}`;
 import { sourceLayout } from "./glue/source.ts";
 import { analyze } from "./glue/boundary.ts";
 import { generateBoundaryFiles } from "./glue/desktop-scaffold.ts";
+import { workspacePrebuild } from "./glue/workspace-build.ts";
 
 // Rust cdylibs from native/dist/<crate>/<os>-<arch>/ ride inside the binary at
 // /$bunfs/root/native/<crate>/<os>-<arch>/, where @rustybuns/native looks.
@@ -620,6 +621,11 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   const bins: string[] = [];
   for (let d = process.cwd(); ; d = dirname(d)) { bins.push(join(d, "node_modules", ".bin")); if (dirname(d) === d) break; }
   const bin = { ...process.env, PATH: [...bins, process.env.PATH ?? ""].join(process.platform === "win32" ? ";" : ":") };
+  // A monorepo app's workspace packages that ship as source with a build step are built first.
+  for (const pre of workspacePrebuild(process.cwd())) {
+    console.log(`building a workspace dependency: ${pre}`);
+    await step("workspace build", () => $`sh -c ${pre}`.env(bin));
+  }
   if (build) await step("client build", () => $`sh -c ${build}`.env(bin));
   await mkdir(".rustybuns", { recursive: true });
   await Bun.write(entry, mode === "spa" ? spaEntry(c, host) : desktopEntry(c, host));
