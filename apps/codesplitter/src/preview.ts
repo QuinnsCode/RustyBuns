@@ -116,13 +116,15 @@ export async function logEnd(env: Env, run: Run) {
 /**
  * The last 20 logged runs of one kind, and the run going now. One still "running" but not in this
  * process died with an earlier one. `live` is read after the query: a run that started while it
- * ran is already in the log, and isn't one that died.
+ * ran is already in the log, and isn't one that died. Nor is one logged after the live run began:
+ * it's logged a moment before it's handed the live slot (a deploy queued behind the last one).
  */
 export async function history(env: Env, owner: string, repo: string, previews: boolean, live: () => Run | null | Promise<Run | null>) {
   const { results } = await env.DB.prepare(`SELECT id, stage, by, trigger, status, commit_hash, url, at, ms, note, out, runner, key_last4 FROM deploys
     WHERE owner = ? AND repo = ? AND trigger ${previews ? "= 'preview'" : "!= 'preview'"} ORDER BY at DESC LIMIT 20`).bind(owner, repo).all();
   const run = await live();
-  return { run, history: (results as any[]).map((d) => d.status === "running" && run?.id !== d.id ? { ...d, status: "interrupted" } : d) };
+  const died = (d: any) => d.status === "running" && run?.id !== d.id && !(run && d.at > run.at);
+  return { run, history: (results as any[]).map((d) => died(d) ? { ...d, status: "interrupted" } : d) };
 }
 
 /** The deployed URL from Alchemy's printed outputs: `url: "https://..."`, else the last workers.dev or railway one. */
