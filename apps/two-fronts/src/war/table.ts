@@ -3,7 +3,9 @@
 // orders then. The rules stay pure; this only stores and sequences them, so the page runs it for
 // a game against the AI or a hotseat game, and the campaign's Durable Object runs the same code
 // for a game played a turn at a time over days.
-import type { BattleResult, Faction, SpaceBattleResult } from "../battle/contract.ts";
+import { other, type BattleResult, type Faction, type PerSide, type SpaceBattleResult } from "../battle/contract.ts";
+import { run } from "../battle/sim.ts";
+import { runSpace } from "../battle/space.ts";
 import { aiOrders } from "./ai.ts";
 import type { GalaxyId } from "./galaxy.ts";
 import {
@@ -65,24 +67,40 @@ export function handIn(t: Table, f: Faction, o: Orders): Step {
 }
 
 // The hero's side reports how their battle went, on the ground or in orbit, and the turn finishes.
+// A result can come from a stranger's browser, so it's checked: a battle left to the AI is run
+// again here and that run counts, and a played one has to fit the battle (no side ends with more
+// than it started with).
 export function report(t: Table, f: Faction, res: BattleResult | SpaceBattleResult): Step {
   const c = t.campaign;
   if (!c.pending) return { ok: false, error: "No battle is being fought" };
   if (heroFaction(c) !== f) return { ok: false, error: "That battle isn't yours" };
   if (!res || res.id !== c.pending.spec.id || (res.winner !== "attacker" && res.winner !== "defender")) return { ok: false, error: "That isn't the battle being fought" };
-  const heroDown = res.heroDown === true;
-  let after: Campaign;
+  if (typeof res.heroDown !== "boolean" || (res.auto !== undefined && res.auto !== true)) return { ok: false, error: "That result doesn't add up" };
+  let after: Campaign, battle: BattleResult | SpaceBattleResult;
   if (c.pending.kind === "space") {
-    const fleets = (res as Partial<SpaceBattleResult>).fleets;
-    after = applySpaceResult(c, { id: res.id, winner: res.winner, fleets: { attacker: num(fleets?.attacker), defender: num(fleets?.defender) }, heroDown });
+    const r = res.auto ? { ...runSpace(c.pending.spec).over!, auto: true as const } : (res as SpaceBattleResult);
+    if (!res.auto && !fits(r.fleets, c.pending.spec.fleets)) return { ok: false, error: "That result doesn't add up" };
+    const clean = { id: r.id, winner: r.winner, fleets: { attacker: r.fleets.attacker, defender: r.fleets.defender }, heroDown: r.heroDown, ...(r.auto && { auto: true as const }) };
+    after = applySpaceResult(c, clean);
+    battle = clean;
   } else {
-    const tickets = (res as Partial<BattleResult>).tickets;
-    after = applyBattleResult(c, { id: res.id, winner: res.winner, tickets: { attacker: num(tickets?.attacker), defender: num(tickets?.defender) }, heroDown });
+    const spec = c.pending.spec;
+    const r = res.auto ? { ...run(spec).over!, auto: true as const } : (res as BattleResult);
+    const most = { attacker: spec.tickets.attacker + spec.reinforcements.attacker, defender: spec.tickets.defender + spec.reinforcements.defender };
+    // The winner ran the loser's tickets out, or had more of them at the time limit.
+    if (!res.auto && (!fits(r.tickets, most) || r.tickets[r.winner] < r.tickets[other(r.winner)])) return { ok: false, error: "That result doesn't add up" };
+    const clean = { id: r.id, winner: r.winner, tickets: { attacker: r.tickets.attacker, defender: r.tickets.defender }, heroDown: r.heroDown, ...(r.auto && { auto: true as const }) };
+    after = applyBattleResult(c, clean);
+    battle = clean;
   }
-  return { ok: true, table: { ...t, campaign: after, resolving: null }, done: { turn: c.turn, orders: t.resolving ?? [], battle: res, log: after.log } };
+  return { ok: true, table: { ...t, campaign: after, resolving: null }, done: { turn: c.turn, orders: t.resolving ?? [], battle, log: after.log } };
 }
 
-const num = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0);
+// Each side's count a whole number from none up to what it had.
+const fits = (n: unknown, most: PerSide<number>) => {
+  const p = n as Partial<PerSide<unknown>> | null;
+  return !!p && typeof p === "object" && (["attacker", "defender"] as const).every((s) => Number.isInteger(p[s]) && (p[s] as number) >= 0 && (p[s] as number) <= most[s]);
+};
 
 // Orders from a stranger's browser: the right shape, every one legal, and a hero who can fight.
 function checkOrders(c: Campaign, f: Faction, o: Orders): string | null {

@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { handIn, newTable, report, waitingOn, type Step, type Table } from "../src/war/table.ts";
 import { ORBIT, resolveTurn, type Where } from "../src/war/rules.ts";
+import { run } from "../src/battle/sim.ts";
+import { runSpace } from "../src/battle/space.ts";
 
 const ok = (s: Step) => {
   if (!s.ok) throw new Error(s.error);
@@ -103,4 +105,55 @@ test("a space hero battle goes through the table too, and its result finishes th
   expect(done.table.campaign.systems.kessa!).toMatchObject({ orbit: "wooka", fleets: { marines: 0, wooka: 1 } });
   expect(done.table.campaign.heroes.wooka.xp).toBe(2);
   expect(done.done).toMatchObject({ turn: 1, battle: res });
+});
+
+// The Marines' hero landing on Kessa's shield generator: the battle the next tests report on.
+function heroAtKessa() {
+  const t = newTable({ marines: "human", wooka: "human" }, "short", 7);
+  const marines = { ...kessaFight(t), hero: { system: "kessa", sector: 0 } };
+  return ok(handIn(ok(handIn(t, "marines", marines)).table, "wooka", empty("wooka"))).table;
+}
+
+test("a played result has to fit the battle: no tickets from nowhere, and the winner has the most", () => {
+  const paused = heroAtKessa();
+  const spec = paused.campaign.pending!.kind === "ground" ? paused.campaign.pending!.spec : null!;
+  const most = spec.tickets.attacker + spec.reinforcements.attacker;
+  const bad = { ok: false as const, error: "That result doesn't add up" };
+  const res = (tickets: { attacker: unknown; defender: unknown }, more = {}) => ({ id: spec.id, winner: "attacker" as const, tickets, heroDown: false, ...more }) as never;
+  expect(report(paused, "marines", res({ attacker: most + 1, defender: 0 }))).toEqual(bad);
+  expect(report(paused, "marines", res({ attacker: -1, defender: 0 }))).toEqual(bad);
+  expect(report(paused, "marines", res({ attacker: 1.5, defender: 0 }))).toEqual(bad);
+  expect(report(paused, "marines", res({ attacker: "70", defender: 0 }))).toEqual(bad);
+  expect(report(paused, "marines", res({ attacker: 5, defender: 10 }))).toEqual(bad);
+  expect(report(paused, "marines", res({ attacker: 5, defender: 0 }, { heroDown: "no" }))).toEqual(bad);
+  expect(report(paused, "marines", res({ attacker: 5, defender: 0 }, { auto: false }))).toEqual(bad);
+  // Junk riding along with a good result stays out of the history.
+  const done = ok(report(paused, "marines", res({ attacker: most, defender: 0 }, { junk: "x".repeat(100) })));
+  expect(done.done!.battle).toEqual({ id: spec.id, winner: "attacker", tickets: { attacker: most, defender: 0 }, heroDown: false });
+});
+
+test("a ground battle left to the AI is fought again at the table, and that run counts", () => {
+  const paused = heroAtKessa();
+  const spec = paused.campaign.pending!.kind === "ground" ? paused.campaign.pending!.spec : null!;
+  const real = run(spec).over!;
+  const claimed = { id: spec.id, winner: spec.hero, tickets: { attacker: 999, defender: 999 }, heroDown: false, auto: true as const };
+  const done = ok(report(paused, "marines", claimed));
+  expect(done.done!.battle).toEqual({ ...real, auto: true });
+});
+
+test("a space battle left to the AI is fought again too, and a played one can't bring more cruisers than it had", () => {
+  const t = newTable({ marines: "human", wooka: "human" }, "short", 7);
+  t.campaign.systems.corva!.fleets.marines = 3;
+  const k = t.campaign.systems.kessa!;
+  k.fleets = { marines: 0, wooka: 2 };
+  k.orbit = "wooka";
+  const marines = { faction: "marines" as const, orders: [{ kind: "fleet" as const, from: "corva", to: "kessa", count: 3 }] };
+  const paused = ok(handIn(ok(handIn(t, "marines", marines)).table, "wooka", empty("wooka", { system: "kessa", sector: ORBIT }))).table;
+  const p = paused.campaign.pending!;
+  if (p.kind !== "space") throw new Error("expected a space battle");
+  expect(report(paused, "wooka", { id: p.spec.id, winner: "defender", fleets: { attacker: 0, defender: 3 }, heroDown: false }))
+    .toEqual({ ok: false, error: "That result doesn't add up" });
+  const real = runSpace(p.spec).over!;
+  const done = ok(report(paused, "wooka", { id: p.spec.id, winner: "defender", fleets: { attacker: 0, defender: 2 }, heroDown: false, auto: true }));
+  expect(done.done!.battle).toEqual({ ...real, auto: true });
 });
