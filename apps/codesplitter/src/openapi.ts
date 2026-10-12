@@ -145,7 +145,8 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${repo}/do/ops`]: { post: { id: "edit_lines", summary: "Edit a file's lines: insert, set and delete by line id, all or nothing (the crew)", tag: "Files",
     description: "Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts, unless a set changed other words of the line than the edit since did: then it lands on top of that one. `ifRev` pins the batch to the whole file's rev. "
       + "An agent editing lines it claimed names the claim, which renews it. When someone else holds a line, the 409 also has `claims` (who, task, until) and `retryAfter` (seconds; null for a person's hold, which stands till lifted): "
-      + "work elsewhere in the file first, then try those lines again no sooner than retryAfter, or ask a person to lift the claim. Don't poll.",
+      + "work elsewhere in the file first, then try those lines again no sooner than retryAfter, or ask a person to lift the claim. Don't poll. "
+      + "The path's policy (the review's `live`) can refuse it too, with an `error`: on a `line` file an agent edits only lines it claimed (claim_lines, with wait to get in line), and a `locked` one (lockfiles) takes no live edits or claims: regenerate it or push it.",
     query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int(), claim: str("your claim's id, when you're an agent editing lines you claimed") }, ["ops"]),
     ok: obj({ rev: int(), applied: arr(ref("Applied")) }) } },
   [`${repo}/do/claims`]: {

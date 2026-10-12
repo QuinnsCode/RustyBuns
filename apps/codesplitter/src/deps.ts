@@ -1214,19 +1214,23 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
     else if (r.status !== 409) throw new Error(`opening a branch: ${r.status} ${await r.text()}`);
   }
   if (!branch) throw new Error("no free branch name today");
-  /** Turn a file on the branch into `next`, line by line, so untouched lines keep their authors. */
-  const write = async (path: string, next: (lines: string[]) => string[]) => {
+  /**
+   * Turn a file on the branch into `next`, line by line, so untouched lines keep their authors.
+   * A regenerated lockfile goes to the file itself: it's locked to live edits (#1011), and this is the regenerating.
+   */
+  const write = async (path: string, next: (lines: string[]) => string[], regenerated = false) => {
     const copy = (await (await call(agent, `${base}/do/file${fileQ(path, branch)}`)).json()) as Doc;
     const ops = diffToOps(copy.lines, next(copy.lines.map((l) => l.text)));
     if (!ops.length) return;
-    const posted = await call(agent, `${base}/do/ops${fileQ(path, branch)}`, { method: "POST", body: JSON.stringify({ ops }) });
+    const init = { method: "POST", body: JSON.stringify({ ops }) };
+    const posted = regenerated ? await toFile(env, owner, repo, path, agent, "ops", init, "", branch) : await call(agent, `${base}/do/ops${fileQ(path, branch)}`, init);
     if (!posted.ok) throw new Error(`editing ${path} on ${branch}: ${posted.status}`);
   };
   for (const path of manifests.keys()) {
     const mine = take.filter((u) => (u.path ?? "package.json") === path);
     if (mine.length) await write(path, (lines) => bump(lines, mine));
   }
-  if (locked !== undefined) await write(lock!, () => locked!.split("\n"));
+  if (locked !== undefined) await write(lock!, () => locked!.split("\n"), true);
   if (edits.length) {
     const { merged, skipped } = await landFix(call, owner, base, branch, `agent-${s.fix_with}`, edits);
     if (merged.length) note = [note, `the fix was merged into live edits, untested together: ${merged.join(", ")}`].filter(Boolean).join("; ");
