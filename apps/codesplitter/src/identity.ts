@@ -1,3 +1,4 @@
+// Layout: accounts (Better Auth) or aliases, and handles
 // Who is asking. Two modes:
 //   accounts  Better Auth (email and password, plus GitHub and Google when their
 //             keys are set). On whenever BETTER_AUTH_SECRET is set. After signing

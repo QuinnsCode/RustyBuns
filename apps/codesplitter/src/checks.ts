@@ -1,3 +1,4 @@
+// Layout: checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results
 // Checks: one place to see whether a change is good, wherever it ran. A check run
 // is one record (migrations/0038_check_runs.sql): a name, the ref and sha it ran
 // on, its runner and its status. Four things write them:

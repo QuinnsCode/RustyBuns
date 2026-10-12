@@ -1,3 +1,4 @@
+// Layout: the file page's Agent button: start a run, list runs
 // Coding agents from the file page. The repo owner picks a harness (claude,
 // codex, pi, opencode), types a task, and the agent runs on this machine with
 // the CLI's own login, or in a container when AGENT_SANDBOX is bound (Cloudflare;

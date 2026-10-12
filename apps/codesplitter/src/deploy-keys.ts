@@ -1,3 +1,4 @@
+// Layout: hosted deploys' write-only keys: sealing, the owner's routes, who may deploy
 // Hosted deploys' keys: a scoped token per provider (Cloudflare's with its
 // account; Railway's or Hetzner's for a box target) the repo's owner stores so
 // the site can deploy the repo without the owner's machine.

@@ -1,3 +1,4 @@
+// Layout: the file Durable Object: ops, log, time travel, commits, a live socket
 // One Durable Object per file. It is the only writer for that file, so every
 // edit from every agent lands in one order. Thousands of files means thousands
 // of independent objects: they scale out, not up.

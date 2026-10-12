@@ -1,3 +1,4 @@
+// Layout: the security audit log: tokens, crews, invites, visibility, webhooks, deploy keys and repo deletes, append-only
 // The security audit log (#648): a trail of what changes who can get in, beyond the
 // row it changes. Append-only (a trigger refuses updates); a row goes only with an
 // account that's erased (privacy.ts). Each says who, signed in how, did what, in

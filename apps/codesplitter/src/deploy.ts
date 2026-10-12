@@ -1,3 +1,4 @@
+// Layout: deploys: settings, the log, the desktop runner
 // Deploy for real: the repo's own Rusty Buns stack, shipped to the stage its
 // owner picks and left up. The same steps as a preview (preview.ts) minus the
 // destroy: clone, install, deploy, check.

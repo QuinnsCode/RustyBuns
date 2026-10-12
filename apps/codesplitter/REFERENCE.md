@@ -527,49 +527,50 @@ These keep growth to whole lines, which merge as plain inserts (#935):
   The doctor's settings each have a line in `FIELDS` (`src/deps.ts`), and the SQL, the reader, the checks and the API reference are built from it.
 - **Migrations are named for when they were written,** `YYYYMMDDHHMMSS_name.sql` in UTC, not the next number, which two branches can both take.
 - **A feature is its own file** in `src/features/`, built into `features.json`.
+- **A file says its own Layout row** on its first line, `// Layout: what it is`, and `bun run layout` builds the table below from those (`layout.ts`). Two branches that each add a row and collide in the table settle it by running it again.
 
 ## Layout
 
 | File | What |
 |---|---|
-| `src/lines.ts` | the line model: ops, conflicts, replay. Pure functions |
-| `src/file-do.ts` | the file Durable Object: ops, log, time travel, commits, a live socket |
-| `src/worker.ts` | routes, visibility, profiles, playlists, search |
-| `src/branches.ts` | branches: forking a file onto one, review, merge |
-| `src/conflict-agent.ts` | one merge conflict handed to a coding agent: git's markers in, the settled lines out |
-| `src/identity.ts` | accounts (Better Auth) or aliases, and handles |
-| `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
-| `src/audit.ts` | the security audit log: tokens, crews, invites, visibility, webhooks, deploy keys and repo deletes, append-only |
-| `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
-| `src/levels.ts` | the levels: import, browse, fork |
-| `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
-| `src/chunks.ts` | levels too big for Artifacts at all: their text files as chunks in R2, read through the cache |
-| `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
-| `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
-| `src/archive.ts` | Artifacts: trees (cached), files, first-open materializing, catalogue pushes |
-| `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
-| `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
-| `migrations/` | the D1 schema. A new one is named for when it was written, `YYYYMMDDHHMMSS_name.sql` in UTC, not the next number (`test/migrations.test.ts`) |
-| `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
-| `src/harness.ts` | the coding-agent CLIs and the prompt each one gets |
-| `src/agent-run.ts` | runs an agent on a file: snapshot, edit in a sandbox, diff, post, re-run on conflicts |
-| `src/sandbox.ts` | the container Durable Object hosted agents run in |
-| `src/deploy.ts` | deploys: settings, the log, the desktop runner |
-| `src/mirror.ts` | mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading |
-| `src/worktrees.ts` | real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done |
-| `src/deploy-keys.ts` | hosted deploys' write-only keys: sealing, the owner's routes, who may deploy |
-| `src/deploy-runner.ts` | the per-repo Durable Object that runs a hosted deploy in its own container |
-| `src/deploy-review.ts` | what a deploy (hosted or desktop) may run with the owner's keys: the owner's own commits, or what they approved after reading the diff |
-| `deploy-sandbox/` | the deploy container image: git, bun, and the server that runs one command; `ci.Dockerfile` is the check container's image, the same server without the deploy tools |
-| `src/checks.ts` | checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results |
-| `src/ci-runner.ts` | the built-in check runners: the desktop draining its own queue, and the per-repo `CiRunner` that runs each check in a container |
-| `src/beam.ts` | beams: a git branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
-| `src/cuts.ts` | cuts: picking lines and following what they use across files, the cut's branch, running its tests, the share page |
-| `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
-| `features.ts`, `src/features/` | the home page's feature strip: a file per feature and their order, built into `features.json` |
-| `src/fit.ts` | the Rusty Buns fit check: how easily `rustybuns init` could box the repo |
-| `sandbox/` | the container image: the CLIs, and the server that runs one on one file |
-| `agents.ts` | the three-agent demo |
 | `agent.ts` | one real coding agent on one file |
-| `src/hooks.ts` | outgoing webhooks: the owner's hooks, signed deliveries, the log, retries |
+| `agents.ts` | the three-agent demo |
+| `deploy-sandbox/` | the deploy container image: git, bun, and the server that runs one command; `ci.Dockerfile` is the check container's image, the same server without the deploy tools |
+| `features.ts`, `src/features/` | the home page's feature strip: a file per feature and their order, built into `features.json` |
+| `migrations/` | the D1 schema. A new one is named for when it was written, `YYYYMMDDHHMMSS_name.sql` in UTC, not the next number (`test/migrations.test.ts`) |
+| `sandbox/` | the container image: the CLIs, and the server that runs one on one file |
 | `src/agent-routes.ts` | the file page's Agent button: start a run, list runs |
+| `src/agent-run.ts` | runs an agent on a file: snapshot, edit in a sandbox, diff, post, re-run on conflicts |
+| `src/archive.ts` | Artifacts: trees (cached), files, first-open materializing, catalogue pushes |
+| `src/audit.ts` | the security audit log: tokens, crews, invites, visibility, webhooks, deploy keys and repo deletes, append-only |
+| `src/beam.ts` | beams: a git branch's stack cleaned of noise and squashed into one commit at `refs/beams/<id>`, its page, patch and inbox |
+| `src/branches.ts` | branches: forking a file onto one, review, merge |
+| `src/card.ts`, `src/font.ts`, `src/font-geist.ts` | the cut's social card: a PNG drawn with a bitmap of DejaVu Sans Mono, or Geist Mono |
+| `src/checks.ts` | checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results |
+| `src/chunks.ts` | levels too big for Artifacts at all: their text files as chunks in R2, read through the cache |
+| `src/ci-runner.ts` | the built-in check runners: the desktop draining its own queue, and the per-repo `CiRunner` that runs each check in a container |
+| `src/conflict-agent.ts` | one merge conflict handed to a coding agent: git's markers in, the settled lines out |
+| `src/cuts.ts` | cuts: picking lines and following what they use across files, the cut's branch, running its tests, the share page |
+| `src/deploy-keys.ts` | hosted deploys' write-only keys: sealing, the owner's routes, who may deploy |
+| `src/deploy-review.ts` | what a deploy (hosted or desktop) may run with the owner's keys: the owner's own commits, or what they approved after reading the diff |
+| `src/deploy-runner.ts` | the per-repo Durable Object that runs a hosted deploy in its own container |
+| `src/deploy.ts` | deploys: settings, the log, the desktop runner |
+| `src/file-do.ts` | the file Durable Object: ops, log, time travel, commits, a live socket |
+| `src/fit.ts` | the Rusty Buns fit check: how easily `rustybuns init` could box the repo |
+| `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
+| `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
+| `src/harness.ts` | the coding-agent CLIs and the prompt each one gets |
+| `src/hooks.ts` | outgoing webhooks: the owner's hooks, signed deliveries, the log, retries |
+| `src/identity.ts` | accounts (Better Auth) or aliases, and handles |
+| `src/levels.ts` | the levels: import, browse, fork |
+| `src/lines.ts` | the line model: ops, conflicts, replay. Pure functions |
+| `src/mirror.ts` | mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading |
+| `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
+| `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
+| `src/sandbox.ts` | the container Durable Object hosted agents run in |
+| `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
+| `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
+| `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
+| `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
+| `src/worker.ts` | routes, visibility, profiles, playlists, search |
+| `src/worktrees.ts` | real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done |

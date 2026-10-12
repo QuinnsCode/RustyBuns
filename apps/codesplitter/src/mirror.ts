@@ -1,3 +1,4 @@
+// Layout: mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading
 // Mirrors: Git going when git stops going. On the desktop, a repo can be a
 // mirror of the real one it was cloned from (GitHub, GitLab, any git remote
 // this machine can reach). Its local git keeps working whatever upstream does,
