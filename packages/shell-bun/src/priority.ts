@@ -19,6 +19,14 @@
 // - a long job calls `checkpoint()` now and then (#1048). There a stopped job throws its JobStopped, and
 //   a low job gives its slot back while normal work waits for one, or while the sampler has cut low
 //   below what is running. It waits at the front of its class for a slot again, still holding its memory.
+//   `checkpoint(release)` can let memory go first (drop caches, spill to disk): the hook says the job's new
+//   size, the scheduler counts it at that, and a job with one also steps aside while background work is
+//   over the memory budget, coming back once what it let go fits again (#1065).
+// - a job with `pause` (and child processes it tracks) is paused rather than put out when it pushes the
+//   background work over the memory budget: its process trees get SIGSTOP, it gives its slot back, and
+//   SIGCONT once it fits again. A paused child stops growing and the kernel can page it out; each sample
+//   counts it at what it measures. Not on Windows, which has no SIGSTOP: there it is put out as before.
+// - parked or paused, a job's `timeoutMs` clock stops: the timeout is for time spent holding a slot.
 // - `runEffect` runs an Effect as the job, in a fiber a stop interrupts: wherever it is, its finalizers
 //   run (an acquireRelease child is killed) and nothing of it runs on outside the budget.
 // - CPU-heavy JS runs on a worker thread through the same slots (`worker`), and a stop terminates the
@@ -94,6 +102,8 @@ export interface SchedulerStats {
   queued: { normal: number; low: number };
   /** Jobs that gave their slot back at a checkpoint and wait for one again. */
   parked: number;
+  /** Jobs whose processes were paused (SIGSTOP) over the memory budget, waiting for room to go on. */
+  paused: number;
   memMb: { used: number; budget: number };
   /** Idle workers kept loaded. */
   warm: number;
@@ -189,14 +199,26 @@ export class JobStopped extends Error {
   constructor(readonly reason: "timeout" | "memory" | "evicted", message: string) { super(message); this.name = "JobStopped"; }
 }
 
+/** Lets memory go before a job parks (drop caches, spill to disk) and says the job's size after, in MB.
+ *  Nothing returned: it let nothing go. */
+export type Release = () => number | void | Promise<number | void>;
+
 /** What a job is handed. `signal` aborts (with a JobStopped) when the scheduler stops it; the job should
  *  stop its work then. `track(pid)` counts a child process and its descendants against the memory budget.
  *  `checkpoint()` is a safe place to stop or step aside: it rejects with the JobStopped if the job was
- *  stopped, and for a low job that should make room it gives the slot back and resolves once it has one again. */
-export interface JobContext { signal: AbortSignal; track(pid: number): void; checkpoint(): Promise<void> }
+ *  stopped, and for a low job that should make room it gives the slot back and resolves once it has one again.
+ *  With a `release`, it runs that before stepping aside, and steps aside too while background work is over
+ *  the memory budget. */
+export interface JobContext { signal: AbortSignal; track(pid: number): void; checkpoint(release?: Release): Promise<void> }
 
-/** What an Effect job is handed: the same, with `checkpoint` an Effect to yield* between steps. */
-export interface EffectJobContext { signal: AbortSignal; track(pid: number): void; checkpoint: Effect.Effect<void> }
+/** What an Effect job is handed: the same, with `checkpoint` an Effect to yield* between steps, and
+ *  `checkpointWith(release)` the one that lets memory go first. */
+export interface EffectJobContext {
+  signal: AbortSignal;
+  track(pid: number): void;
+  checkpoint: Effect.Effect<void>;
+  checkpointWith(release: Effect.Effect<number | void>): Effect.Effect<void>;
+}
 
 export interface RunOptions {
   /** What the job usually takes, in MB. It starts only if that fits what the memory budget has left. */
@@ -209,6 +231,9 @@ export interface RunOptions {
   /** Times the job may be put out for memory and queued again (at the front, sized as it was measured)
    *  before it rejects. Only for a job that can start over: `fn` runs again. @default 0 */
   requeues?: number;
+  /** Over the memory budget, pause the job's tracked processes (SIGSTOP) instead of putting it out, and
+   *  go on (SIGCONT) once it fits again. For a job that can't start over cheaply. Not on Windows. */
+  pause?: boolean;
 }
 
 export interface SpawnOptions extends RunOptions {
@@ -225,8 +250,12 @@ export interface WorkerOptions extends RunOptions {
   transfer?: Transferable[];
 }
 
-type Waiting = { priority: "normal" | "low"; memMb: number; start: () => void };
-type Live = { priority: Priority; memMb: number; measuredMb: number; maxMb?: number; pids: Set<number>; order: number; parked: boolean; stop: (e: JobStopped) => void };
+// `self`: a job already running that gave its slot back, and waits for one again.
+type Waiting = { priority: "normal" | "low"; memMb: number; start: () => void; self?: Live };
+type Live = {
+  priority: Priority; memMb: number; measuredMb: number; maxMb?: number; pause: boolean; pids: Set<number>; order: number;
+  away: "parked" | "paused" | null; stop: (e: JobStopped) => void; hold: () => void;
+};
 const background = (p: Priority): p is "normal" | "low" => p === "normal" || p === "low";
 // With the DOM lib loaded, the global Worker types as the DOM's; at run time it's Bun's, which has ref/unref.
 type BunWorker = Worker & Pick<Bun.Worker, "ref" | "unref">;
@@ -245,17 +274,18 @@ export function scheduler(o: SchedulerOptions = {}) {
   const idle: { url: string; w: BunWorker }[] = [];
 
   // A background job counts for what it said it takes, or what it was last measured at if more; an idle worker for workerMb.
-  const usedMb = () => { let mb = idle.length * workerMb; for (const j of live) if (background(j.priority)) mb += Math.max(j.memMb, j.measuredMb); return mb; };
+  const held = (j: Live) => Math.max(j.memMb, j.measuredMb);
+  const usedMb = () => { let mb = idle.length * workerMb; for (const j of live) if (background(j.priority)) mb += held(j); return mb; };
   // The pool never holds more than `warm`, nor more than low work may run at once.
   const shrink = (to = Math.min(warm, back.limit)) => { while (idle.length > to) idle.shift()!.w.terminate(); };
 
   function fits(j: Waiting) {
     if (running.normal + running.low >= slots) return false;
     if (j.priority === "low" && running.low >= back.limit) return false;
-    // nothing running: a job bigger than the whole budget still gets its turn alone
+    // nothing else running: a job bigger than the whole budget still gets its turn alone
     for (;;) {
       const used = usedMb();
-      if (used === 0 || used + j.memMb <= memBudgetMb) return true;
+      if (used === (j.self ? held(j.self) : 0) || used + j.memMb <= memBudgetMb) return true;
       if (!idle.length) return false;
       idle.shift()!.w.terminate();        // an idle worker gives its memory to a job that needs it
     }
@@ -274,13 +304,16 @@ export function scheduler(o: SchedulerOptions = {}) {
   }
 
   // A low job steps aside at a checkpoint when the sampler has cut low below what is running, or when
-  // the slots are full and a normal job waits that would fit in the one it gives back.
-  function crowded(j: Live) {
+  // the slots are full and a normal job waits that would fit in the one it gives back. One that can let
+  // memory go (low or normal) steps aside too while background work is over the memory budget.
+  function crowded(j: Live, releasing: boolean) {
+    if (!background(j.priority)) return false;
+    if (releasing && usedMb() > memBudgetMb) return true;
     if (j.priority !== "low") return false;
     if (running.low > back.limit) return true;
     if (running.normal + running.low < slots) return false;
     const used = usedMb();
-    return queue.some((w) => w.priority === "normal" && (used === 0 || used + w.memMb <= memBudgetMb));
+    return queue.some((w) => w.priority === "normal" && !w.self && (used === 0 || used + w.memMb <= memBudgetMb));
   }
 
   function run<T>(priority: Priority, fn: (job: JobContext) => T | Promise<T>, opts: RunOptions = {}): Promise<T> {
@@ -289,15 +322,25 @@ export function scheduler(o: SchedulerOptions = {}) {
       const start = () => {
         const ctrl = new AbortController();
         let done = false;
-        const job: Live = { priority, memMb, measuredMb: 0, maxMb: opts.maxMb, pids: new Set(), order: ++seq, parked: false, stop: () => {} };
+        const job: Live = { priority, memMb, measuredMb: 0, maxMb: opts.maxMb, pause: !!opts.pause && process.platform !== "win32", pids: new Set(), order: ++seq, away: null, stop: () => {}, hold: () => {} };
         let parking: { w: Waiting; resume: () => void; fail: (e: unknown) => void } | undefined;
-        const timer = opts.timeoutMs ? setTimeout(() => job.stop(new JobStopped("timeout", `stopped after ${opts.timeoutMs} ms`)), opts.timeoutMs) : undefined;
-        (timer as any)?.unref?.();
+        // The timeout counts time spent holding a slot: parked or paused, the clock stops.
+        let left = opts.timeoutMs, since = 0, timer: ReturnType<typeof setTimeout> | undefined;
+        const clock = (on: boolean) => {
+          if (left === undefined) return;
+          if (on && !timer) {
+            since = Date.now();
+            timer = setTimeout(() => job.stop(new JobStopped("timeout", `stopped after ${opts.timeoutMs} ms`)), left);
+            (timer as any).unref?.();
+          } else if (!on && timer) { clearTimeout(timer); timer = undefined; left = Math.max(0, left - (Date.now() - since)); }
+        };
+        const cont = () => signalTrees(job.pids, "SIGCONT");
         const finish = (settle: () => void, stopped?: JobStopped) => {
           if (done) return;
           done = true;
-          clearTimeout(timer);
-          if (!job.parked) running[priority]--;
+          clock(false);
+          if (!job.away) running[priority]--;
+          if (job.away === "paused") cont();      // a stopped child can't act on the SIGTERM a stop sends
           live.delete(job);
           if (stopped) ctrl.abort(stopped);
           if (parking) {
@@ -313,20 +356,35 @@ export function scheduler(o: SchedulerOptions = {}) {
         job.stop = (e) => finish(() => reject(e), e);
         running[priority]++;
         live.add(job);
+        clock(true);
         let out: Promise<T>;
-        // Hand the slot back and wait at the front of the class, holding the memory: a parked job
-        // still counts in usedMb, so its way back in claims none.
-        const checkpoint = (): Promise<void> => {
-          if (ctrl.signal.aborted) return Promise.reject(ctrl.signal.reason);
-          if (done || parking || !crowded(job)) return Promise.resolve();
+        // Hand the slot back and wait at the front of the class, still counted in usedMb, so the way back
+        // in claims only `need`: what the job let go and will take again.
+        const park = (away: "parked" | "paused", need: number, resume: () => void, fail: (e: unknown) => void) => {
+          const w: Waiting = { priority: priority as "normal" | "low", memMb: need, self: job, start: () => { parking = undefined; job.away = null; running[priority]++; clock(true); resume(); } };
+          parking = { w, resume, fail };
+          job.away = away;
+          running[priority]--;
+          clock(false);
+          queue.unshift(w);
+          pump();
+        };
+        job.hold = () => { signalTrees(job.pids, "SIGSTOP"); park("paused", 0, cont, () => {}); };
+        const checkpoint = async (release?: Release): Promise<void> => {
+          if (ctrl.signal.aborted) throw ctrl.signal.reason;
+          if (done || parking || !crowded(job, !!release)) return;
+          const before = held(job);
+          const after = release ? await release() : undefined;
+          if (ctrl.signal.aborted) throw ctrl.signal.reason;
+          if (done || parking) return;
+          let need = 0;
+          if (typeof after === "number" && after < before) {
+            job.memMb = after; job.measuredMb = Math.min(job.measuredMb, after); need = before - after;
+            log(`[priority] a ${priority} job let ${Math.round(need)} MB go at a checkpoint`);
+          }
           return new Promise<void>((resume, fail) => {
-            const w: Waiting = { priority: "low", memMb: 0, start: () => { parking = undefined; job.parked = false; running[priority]++; resume(); } };
-            parking = { w, resume, fail };
-            job.parked = true;
-            running[priority]--;
-            queue.unshift(w);
-            log(`[priority] a low job gave its slot back at a checkpoint`);
-            pump();
+            park("parked", need, () => { if (need) job.memMb = before; resume(); }, fail);
+            log(`[priority] a ${priority} job gave its slot back at a checkpoint`);
           });
         };
         try { out = Promise.resolve(fn({ signal: ctrl.signal, track: (pid) => void job.pids.add(pid), checkpoint })); } catch (e) { out = Promise.reject(e); }
@@ -346,7 +404,11 @@ export function scheduler(o: SchedulerOptions = {}) {
    *  is, so its finalizers run and none of it goes on outside the budget. `yield* job.checkpoint` between
    *  steps lets a low job give its slot back to normal work. */
   function runEffect<A, E>(priority: Priority, make: (job: EffectJobContext) => Effect.Effect<A, E>, opts: RunOptions = {}): Promise<A> {
-    return run(priority, (job) => Effect.runPromise(make({ ...job, checkpoint: Effect.promise(() => job.checkpoint()) }), { signal: job.signal }), opts);
+    return run(priority, (job) => Effect.runPromise(make({
+      ...job,
+      checkpoint: Effect.promise(() => job.checkpoint()),
+      checkpointWith: (release) => Effect.promise(() => job.checkpoint(() => Effect.runPromise(release))),
+    }), { signal: job.signal }), opts);
   }
 
   /** `cmd` as a job: low runs at the OS's background priority, `maxMb` is a hard cap where the OS has one
@@ -396,7 +458,9 @@ export function scheduler(o: SchedulerOptions = {}) {
   }
 
   /** Measure the jobs that track processes. One past its own maxMb is stopped. While the background work
-   *  is over the memory budget, the newest measured job (low before normal) is put out; the oldest keeps going. */
+   *  is over the memory budget, the newest measured job (low before normal) is put out, or paused if it
+   *  asked to be; the oldest running keeps going. A pause frees nothing yet, so it counts as room made
+   *  until the next sample measures what the kernel paged out. */
   function watch() {
     const tracked = [...live].filter((j) => j.pids.size);
     if (!tracked.length) return;
@@ -406,13 +470,19 @@ export function scheduler(o: SchedulerOptions = {}) {
       log(`[priority] stopped a ${j.priority} job at ${Math.round(j.measuredMb)} MB, over its ${j.maxMb} MB`);
       j.stop(new JobStopped("memory", `took ${Math.round(j.measuredMb)} MB, over its ${j.maxMb} MB`));
     }
-    for (;;) {
+    for (let room = 0; ;) {
       const used = usedMb();
-      if (used <= memBudgetMb) break;
-      const bg = [...live].filter((j) => background(j.priority)).sort((a, b) => a.order - b.order);
+      if (used - room <= memBudgetMb) break;
+      const bg = [...live].filter((j) => background(j.priority) && !j.away).sort((a, b) => a.order - b.order);
       const victim = bg.slice(1).filter((j) => j.measuredMb > 0)
         .sort((a, b) => a.priority === b.priority ? b.order - a.order : a.priority === "low" ? -1 : 1)[0];
       if (!victim) break;
+      if (victim.pause && victim.pids.size) {
+        log(`[priority] paused a ${victim.priority} job at ${Math.round(victim.measuredMb)} MB: background work at ${Math.round(used)} of ${Math.round(memBudgetMb)} MB`);
+        room += victim.measuredMb;
+        victim.hold();
+        continue;
+      }
       log(`[priority] put out a ${victim.priority} job at ${Math.round(victim.measuredMb)} MB: background work at ${Math.round(used)} of ${Math.round(memBudgetMb)} MB`);
       victim.stop(new JobStopped("evicted", `put out at ${Math.round(victim.measuredMb)} MB to keep background work under ${Math.round(memBudgetMb)} MB`));
     }
@@ -435,16 +505,21 @@ export function scheduler(o: SchedulerOptions = {}) {
   const timer = everyMs > 0 ? setInterval(tick, everyMs) : undefined;
   (timer as any)?.unref?.();
 
-  const parked = () => { let n = 0; for (const j of live) if (j.parked) n++; return n; };
+  const away = (a: Live["away"]) => { let n = 0; for (const j of live) if (j.away === a) n++; return n; };
   const stats = (): SchedulerStats => ({
     slots, lowLimit: back.limit, running: { ...running },
-    queued: { normal: queue.filter((j) => j.priority === "normal").length, low: queue.filter((j) => j.priority === "low").length - parked() },
-    parked: parked(),
+    queued: { normal: queue.filter((j) => j.priority === "normal" && !j.self).length, low: queue.filter((j) => j.priority === "low" && !j.self).length },
+    parked: away("parked"), paused: away("paused"),
     memMb: { used: Math.round(usedMb()), budget: Math.round(memBudgetMb) }, warm: idle.length, load,
   });
   /** Stops the sampler and lets the idle workers go. */
   const stop = () => { clearInterval(timer); shrink(0); };
   return { run, runEffect, spawn, worker, tick, stats, budget, stop };
+}
+
+/** `signal` to each of `pids` and its descendants. One that's gone, or a signal the OS lacks, is skipped. */
+function signalTrees(pids: Iterable<number>, signal: NodeJS.Signals) {
+  for (const pid of pids) for (const p of [pid, ...treeDescendants(pid)]) try { process.kill(p, signal); } catch {}
 }
 
 /** Every descendant of `pid`, deepest last. */
