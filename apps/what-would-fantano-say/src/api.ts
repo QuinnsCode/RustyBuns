@@ -1,22 +1,23 @@
-// POST /api/review. Rate limit, Turnstile, then one Claude call, with identical
-// requests answered from the edge cache so a repeat costs nothing. With no key or
-// no Turnstile the review is canned, so a half-configured deploy never spends.
+// POST /api/review. In order: size cap, per-address rate limit, Turnstile, the edge
+// cache, the daily budget, then one Clef-omni call (~$0.00004). Anything missing or
+// failing falls back to the free estimate, so nothing here can run up a bill.
 
-import Anthropic from "@anthropic-ai/sdk";
-import { pickBoxes } from "./boxes.ts";
-import { cannedReview } from "./fake.ts";
+import { boxById, pickBoxes } from "./boxes.ts";
 import { turnstileOk, youtubeId, youtubeTitle } from "./guard.ts";
-import { parseRequest, parseReview, REVIEW_SCHEMA, SYSTEM, userPrompt, type Review } from "./review.ts";
+import { clefRequest, estimate, MODEL, parseClef, type Verdict } from "./judge.ts";
+import { MAX_CLIP, parseRequest } from "./review.ts";
+import { writeReview } from "./write.ts";
 
 export interface ReviewEnv {
-  ANTHROPIC_API_KEY?: string;
+  AI?: { run(model: string, input: unknown): Promise<unknown> };
+  BUDGET?: { take(cap: number): Promise<boolean> };
+  DAILY_REVIEWS?: string;
   TURNSTILE_SECRET?: string;
   TURNSTILE_SITE_KEY?: string;
-  REVIEW_MODEL?: string;
   REVIEW_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
 }
 
-const MAX_BODY = 8 * 1024;
+const MAX_BODY = MAX_CLIP + 8 * 1024;
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 export async function handleReview(request: Request, env: ReviewEnv, cache?: Cache): Promise<Response> {
@@ -32,7 +33,7 @@ export async function handleReview(request: Request, env: ReviewEnv, cache?: Cac
     return json({ error: "slow down. even he only drops one review a day." }, 429);
   }
 
-  const live = !!(env.ANTHROPIC_API_KEY && env.TURNSTILE_SECRET && env.TURNSTILE_SITE_KEY);
+  const live = !!(env.AI && env.BUDGET && env.TURNSTILE_SECRET && env.TURNSTILE_SITE_KEY && req.clip);
   if (live && !(await turnstileOk(env.TURNSTILE_SECRET!, req.turnstile, ip))) return json({ error: "turnstile said no" }, 403);
 
   if (req.youtube) {
@@ -41,38 +42,26 @@ export async function handleReview(request: Request, env: ReviewEnv, cache?: Cac
     req.title = (await youtubeTitle(id).catch(() => null)) ?? req.title;
   }
 
-  const boxes = pickBoxes(req.features, `${req.hint} ${req.title}`);
-  if (!live) return json(cannedReview(req, boxes));
+  // The numbers narrow twelve boxes to six, so Clef reads (and bills) fewer options.
+  const boxes = pickBoxes(req.features, `${req.hint} ${req.title}`, 6);
+  let verdict: Verdict = estimate(req.features, boxes);
 
-  const prompt = userPrompt(req, boxes);
-  const key = cache && new Request(`https://review.cache/${await sha256(prompt)}`);
-  const hit = key && (await cache!.match(key));
-  if (hit) return json(await hit.json());
-
-  let review: Review;
-  try {
-    review = await askClaude(env, prompt);
-  } catch (e) {
-    console.error("review failed", e);
-    return json({ ...cannedReview(req, boxes), note: "the critic is out of office; here's the canned take" });
+  if (live) {
+    const input = clefRequest(req.clip, boxes, req.title, req.hint);
+    const key = cache && new Request(`https://review.cache/${await sha256(JSON.stringify(input))}`);
+    const hit = key && (await cache!.match(key));
+    if (hit) verdict = (await hit.json()) as Verdict;
+    else if (await env.BUDGET!.take(Number(env.DAILY_REVIEWS) || 0)) {
+      try {
+        verdict = parseClef(await env.AI!.run(MODEL, input), boxes);
+        if (key) await cache!.put(key, Response.json(verdict, { headers: { "Cache-Control": "max-age=86400" } }));
+      } catch (e) {
+        console.error("clef failed", e);
+      }
+    }
   }
-  if (key) await cache!.put(key, Response.json(review, { headers: { "Cache-Control": "max-age=86400" } }));
-  return json(review);
-}
 
-async function askClaude(env: ReviewEnv, prompt: string): Promise<Review> {
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 30_000 });
-  const res = await client.messages.create({
-    model: env.REVIEW_MODEL || "claude-haiku-5-5",
-    max_tokens: 2000,
-    output_config: { effort: "low", format: { type: "json_schema", schema: REVIEW_SCHEMA } },
-    system: SYSTEM,
-    messages: [{ role: "user", content: prompt }],
-  });
-  if (res.stop_reason === "refusal") throw new Error("refused");
-  const block = res.content.find((b) => b.type === "text");
-  if (!block || block.type !== "text") throw new Error("no text");
-  return parseReview(block.text);
+  return json(writeReview(verdict, boxById(verdict.box) ?? boxes[0]!, req.features, req.title));
 }
 
 async function sha256(s: string): Promise<string> {

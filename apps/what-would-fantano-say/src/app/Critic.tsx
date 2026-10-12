@@ -2,10 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { analyze, type Features } from "../analyze.ts";
-import type { Review } from "../review.ts";
+import { CLIP_SECONDS, RATE, clock, cut, encodeWav, loudestWindow, peaks } from "../clip.ts";
+import type { Review } from "../write.ts";
 
-const RATE = 22050;
-const MAX_BYTES = 80 * 1024 * 1024;
+const MAX_BYTES = 200 * 1024 * 1024;
+// Anything the browser can decode: phones and desktops cover mp3, wav, aac/m4a, flac,
+// ogg/opus and the audio in mp4/mov/webm video. The extensions help iOS's picker.
+const ACCEPT = "audio/*,video/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.oga,.opus,.webm,.mp4,.mov,.aif,.aiff,.caf";
 
 declare global {
   interface Window {
@@ -13,31 +16,41 @@ declare global {
   }
 }
 
-/** Decode in the browser, mixed to mono at 22 kHz, and measure it. Nothing is uploaded. */
-async function listen(file: File): Promise<Features> {
+interface Track { name: string; samples: Float32Array; features: Features; bars: number[]; duration: number }
+
+/** Decode on the device at 16 kHz, mix to mono, measure. Nothing is uploaded here. */
+async function load(file: File): Promise<Track> {
   const ctx = new OfflineAudioContext(1, 1, RATE);
   const buf = await ctx.decodeAudioData(await file.arrayBuffer());
-  const mono = new Float32Array(buf.length);
+  const samples = new Float32Array(buf.length);
   for (let c = 0; c < buf.numberOfChannels; c++) {
     const ch = buf.getChannelData(c);
-    for (let i = 0; i < ch.length; i++) mono[i]! += ch[i]! / buf.numberOfChannels;
+    for (let i = 0; i < ch.length; i++) samples[i]! += ch[i]! / buf.numberOfChannels;
   }
-  return analyze(mono, buf.sampleRate);
+  return { name: file.name.replace(/\.[^.]+$/, ""), samples, features: analyze(samples, RATE), bars: peaks(samples, 120), duration: buf.length / RATE };
 }
 
-type Stage = { kind: "idle" } | { kind: "busy"; what: string } | { kind: "done"; review: Review; features: Features | null } | { kind: "error"; message: string };
+function toDataUrl(wav: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < wav.length; i += 0x8000) bin += String.fromCharCode(...wav.subarray(i, i + 0x8000));
+  return `data:audio/wav;base64,${btoa(bin)}`;
+}
+
+type Stage = { kind: "idle" } | { kind: "busy"; what: string } | { kind: "done"; review: Review } | { kind: "error"; message: string };
 
 export function Critic({ siteKey }: { siteKey: string }) {
-  const [file, setFile] = useState<File | null>(null);
+  const [track, setTrack] = useState<Track | null>(null);
+  const [start, setStart] = useState(0);
   const [link, setLink] = useState("");
   const [hint, setHint] = useState("");
   const [token, setToken] = useState("");
   const [stage, setStage] = useState<Stage>({ kind: "idle" });
-  const [drag, setDrag] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const widget = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
+  const player = useRef<{ ctx: AudioContext; src: AudioBufferSourceNode } | null>(null);
 
-  // Turnstile only loads when the deploy has a site key; locally there's none and reviews are canned.
+  // Turnstile only loads when the deploy has a site key; locally there's none and reviews are estimates.
   useEffect(() => {
     if (!siteKey || !widget.current) return;
     const mount = () => {
@@ -52,71 +65,131 @@ export function Critic({ siteKey }: { siteKey: string }) {
     document.head.appendChild(s);
   }, [siteKey]);
 
-  const pick = (f: File | undefined) => {
+  const stop = () => { player.current?.src.stop(); player.current?.ctx.close(); player.current = null; setPlaying(false); };
+  useEffect(() => stop, []);
+
+  async function pick(f: File | undefined) {
     if (!f) return;
-    if (f.size > MAX_BYTES) return setStage({ kind: "error", message: "That file's over 80 MB. Even double albums aren't that long." });
-    setFile(f);
-    setLink("");
-    setStage({ kind: "idle" });
-  };
+    stop();
+    if (f.size > MAX_BYTES) return setStage({ kind: "error", message: "That file's over 200 MB. Even a double album isn't that long." });
+    setStage({ kind: "busy", what: "decoding on your device…" });
+    try {
+      const t = await load(f);
+      setTrack(t);
+      setStart(loudestWindow(t.samples, RATE));
+      setLink("");
+      setStage({ kind: "idle" });
+    } catch {
+      setStage({ kind: "error", message: "Your browser can't decode that one. Try mp3, wav, m4a, flac or ogg." });
+    }
+  }
+
+  function preview() {
+    if (playing || !track) return stop();
+    const ctx = new AudioContext();
+    const clip = cut(track.samples, RATE, start);
+    const buf = ctx.createBuffer(1, clip.length, RATE);
+    buf.getChannelData(0).set(clip);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.onended = stop;
+    src.start();
+    player.current = { ctx, src };
+    setPlaying(true);
+  }
 
   async function judge() {
+    stop();
     try {
-      let features: Features | null = null;
-      if (file) {
-        setStage({ kind: "busy", what: "listening (on your device)…" });
-        features = await listen(file);
-      }
-      setStage({ kind: "busy", what: "forming an opinion…" });
+      setStage({ kind: "busy", what: "listening…" });
+      const clip = track ? toDataUrl(encodeWav(cut(track.samples, RATE, start), RATE)) : "";
       const res = await fetch("/api/review", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ features, hint, title: file ? file.name.replace(/\.[^.]+$/, "") : "", youtube: file ? "" : link, turnstile: token }),
+        body: JSON.stringify({ features: track?.features ?? null, clip, hint, title: track?.name ?? "", youtube: track ? "" : link, turnstile: token }),
       });
       const body = (await res.json()) as Review & { error?: string };
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-      setStage({ kind: "done", review: body, features });
+      setStage({ kind: "done", review: body });
     } catch (e) {
-      setStage({ kind: "error", message: e instanceof DOMException ? "Couldn't decode that file. Try an mp3, wav, m4a or ogg." : (e as Error).message });
+      setStage({ kind: "error", message: (e as Error).message });
     } finally {
       if (widgetId.current) { window.turnstile?.reset(widgetId.current); setToken(""); }
     }
   }
 
-  const ready = (file || link.trim()) && (!siteKey || token) && stage.kind !== "busy";
+  const busy = stage.kind === "busy";
+  const ready = (track || link.trim()) && (!siteKey || token) && !busy;
 
   return (
     <section className="critic">
-      <label
-        className={`drop${drag ? " over" : ""}${file ? " has" : ""}`}
-        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={(e) => { e.preventDefault(); setDrag(false); pick(e.dataTransfer.files[0]); }}
-      >
-        <input type="file" accept="audio/*" onChange={(e) => pick(e.target.files?.[0])} />
-        <span className="big">{file ? file.name : "DROP YOUR TRACK"}</span>
-        <span className="small">{file ? `${(file.size / 1e6).toFixed(1)} MB · stays on your device` : "or click. mp3, wav, m4a, ogg"}</span>
-      </label>
+      {!track ? (
+        <label className="drop">
+          <input type="file" accept={ACCEPT} onChange={(e) => pick(e.target.files?.[0])} />
+          <span className="big">{busy ? stage.what : "PICK YOUR TRACK"}</span>
+          <span className="small">any audio or video file · decoded on your device</span>
+        </label>
+      ) : (
+        <ClipPicker track={track} start={start} setStart={(s) => { stop(); setStart(s); }} playing={playing} onPreview={preview}
+          onClear={() => { stop(); setTrack(null); setStage({ kind: "idle" }); }} />
+      )}
 
-      <div className="or">or</div>
-      <input className="field" type="url" placeholder="paste a YouTube link (judged on its title alone)" value={link} disabled={!!file}
-        onChange={(e) => setLink(e.target.value)} />
-      <input className="field" type="text" maxLength={80} placeholder="sounds like… (optional: 'death grips', 'sad folk', 'hyperpop')" value={hint}
-        onChange={(e) => setHint(e.target.value)} />
+      {!track && (
+        <input className="field" type="url" inputMode="url" placeholder="…or paste a YouTube link (judged on its title)" value={link} onChange={(e) => setLink(e.target.value)} />
+      )}
+      <input className="field" type="text" maxLength={80} placeholder="sounds like… (optional)" value={hint} onChange={(e) => setHint(e.target.value)} />
 
       {siteKey && <div ref={widget} className="turnstile" />}
-      <div className="actions">
-        <button className="go" disabled={!ready} onClick={judge}>{stage.kind === "busy" ? stage.what : "JUDGE ME"}</button>
-        {file && <button className="clear" onClick={() => { setFile(null); setStage({ kind: "idle" }); }} title="Clear">✕</button>}
-      </div>
+      <button className="go" disabled={!ready} onClick={judge}>{busy && track ? stage.what : "JUDGE ME"}</button>
 
       {stage.kind === "error" && <p className="error">{stage.message}</p>}
-      {stage.kind === "done" && <Card review={stage.review} features={stage.features} />}
+      {stage.kind === "done" && <Card review={stage.review} />}
     </section>
   );
 }
 
-function Card({ review, features }: { review: Review; features: Features | null }) {
+/** The waveform with a draggable window: the listener picks the 15 seconds that get judged. */
+function ClipPicker({ track, start, setStart, playing, onPreview, onClear }: {
+  track: Track; start: number; setStart(s: number): void; playing: boolean; onPreview(): void; onClear(): void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const span = Math.min(CLIP_SECONDS, track.duration);
+  const at = (clientX: number) => {
+    const r = box.current!.getBoundingClientRect();
+    const t = ((clientX - r.left) / r.width) * track.duration - span / 2;
+    setStart(Math.max(0, Math.min(track.duration - span, t)));
+  };
+  return (
+    <div className="picker">
+      <div className="picker-head">
+        <span className="name">{track.name}</span>
+        <button className="icon" onClick={onClear} title="Pick another track" aria-label="Pick another track">✕</button>
+      </div>
+      <div className="wave" ref={box}
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); at(e.clientX); }}
+        onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) at(e.clientX); }}>
+        {track.bars.map((h, i) => <i key={i} style={{ height: `${Math.max(4, h * 100)}%` }} />)}
+        <div className="window" style={{ left: `${(start / track.duration) * 100}%`, width: `${(span / track.duration) * 100}%` }} />
+      </div>
+      <div className="picker-foot">
+        <button className="icon play" onClick={onPreview} title={playing ? "Stop" : "Play this bit"} aria-label={playing ? "Stop" : "Play this bit"}>{playing ? "■" : "▶"}</button>
+        <span className="when">{clock(start)}–{clock(start + span)}</span>
+        <span className="tip">drag to pick your best {CLIP_SECONDS}s</span>
+      </div>
+    </div>
+  );
+}
+
+function Card({ review }: { review: Review }) {
+  const [shared, setShared] = useState(false);
+  async function share() {
+    const text = `What Would Fantano Say? ${review.verdict} ${review.score}/10: "${review.headline}"`;
+    try {
+      if (navigator.share) await navigator.share({ text, url: location.origin });
+      else { await navigator.clipboard.writeText(`${text} ${location.origin}`); setShared(true); }
+    } catch { /* the share sheet was closed */ }
+  }
   return (
     <article className={`card v-${review.verdict.replace(" ", "-").toLowerCase()}`}>
       <div className="score">
@@ -124,18 +197,15 @@ function Card({ review, features }: { review: Review; features: Features | null 
         <span className="num">{review.score}</span>
         <span className="of">/10</span>
       </div>
+      <p className="box">{review.box}</p>
       <h2>{review.headline}</h2>
       <p>{review.review}</p>
       <dl>
         <dt>Best</dt><dd>{review.bestBit}</dd>
         <dt>Worst</dt><dd>{review.worstBit}</dd>
       </dl>
-      {features && (
-        <p className="nums" title="What the critic 'heard': measured in your browser">
-          {features.bpm} BPM · {features.loudnessDb} dBFS · {features.dynamicsDb} dB range · {Math.round(features.bass * 100)}% bass
-        </p>
-      )}
-      {review.by === "canned" && <p className="canned">Canned review: this deploy has no critic on staff.</p>}
+      {review.by === "estimate" && <p className="canned">Estimated from the numbers: the critic didn't listen to this one.</p>}
+      <button className="share" onClick={share}>{shared ? "COPIED" : "SHARE"}</button>
     </article>
   );
 }
