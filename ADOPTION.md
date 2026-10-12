@@ -28,6 +28,20 @@ Your app comes down to five things. Each one has a real implementation on every 
 
 So one app runs as a Worker + Durable Object + D1 + R2 on the edge, as `Bun.serve()` + an in-process object + sqlite + a folder on the desktop, and the same way on a Hetzner or Railway volume. One config, three columns. The full provider matrix is in [notes/ROADMAP.md](notes/ROADMAP.md).
 
+### The same five, elsewhere
+
+If you know another platform, here's roughly what each primitive maps to there. Rusty Buns doesn't deploy to these (Fly is [on the roadmap](notes/ROADMAP.md)); the table is for finding your bearings.
+
+| Primitive | AWS | Vercel | Fly.io |
+|---|---|---|---|
+| **http** | Lambda behind a function URL or API Gateway | Vercel Functions | a Machine running your server |
+| **comms** | API Gateway WebSockets, state in DynamoDB | none built in: Pusher, Ably or PartyKit | a long-lived process holding the sockets |
+| **storage** | RDS or Aurora (SQL), DynamoDB (KV), S3 (blob) | Postgres and Redis from the Marketplace, Vercel Blob | sqlite on a volume, Fly Postgres, Tigris (blob) |
+| **memory** | per-invocation, sized by the function's memory setting | per-invocation | the whole process |
+| **identity** | Cognito, or IAM between services | middleware plus Clerk or Auth.js | your own auth, or a proxy in front |
+
+The difference: on each of those the five pieces are separate products with separate APIs. Here they're the Cloudflare shapes everywhere, with a local twin for each, so the laptop, the edge and the box run the same code.
+
 ## It's a Bun app underneath
 
 Anything Bun can reach, your app can reach:
