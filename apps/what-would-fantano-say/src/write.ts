@@ -77,6 +77,37 @@ function worst(f: Features | null): string {
   return "It plays it a little safe.";
 }
 
+/** The title or hint names the critic himself. */
+export const namesHim = (text: string) => /fantano|needle ?drop|\bmelon\b/i.test(text);
+
+/**
+ * The two gags that replace a review: a clip that names him gets his cheesy self-review,
+ * and a clip Clef heard as talking with no music gets told it's a podcast. Nothing is
+ * spent on either: the name is a text match, and "talking" rides along on the one Clef call.
+ */
+export function cameo(v: Verdict, title: string, hint: string): Review | null {
+  const by = v.by;
+  if (namesHim(`${title} ${hint}`)) {
+    return {
+      score: 10, verdict: "STRONG", box: "Self-review", by,
+      headline: "Well hey, what is going on here?",
+      review: "Hold on. I know that voice. I know me when I know me. The delivery is impeccable, the opinions are correct, and the head is shining like a freshly waxed melon. I'm feeling a strong 10, and I'm not biased at all. Transition!",
+      bestBit: "The host. Incredible host.",
+      worstBit: "Not enough Death Grips references.",
+    };
+  }
+  if (v.talking) {
+    return {
+      score: 0, verdict: "NOT GOOD", box: "Podcast", by,
+      headline: `${title || "This"}: somebody pressed record and started talking`,
+      review: "Hi everyone. I waited for the beat to drop and it never did, because there isn't one. This is a podcast. Possibly a voice memo. I review music, buddy. Not good. Transition!",
+      bestBit: "Clear enunciation.",
+      worstBit: "No song.",
+    };
+  }
+  return null;
+}
+
 /** The real review in this box nearest the score, so the parody points at something he actually said. */
 export function realReview(box: Box, score: number, seed: number): string {
   const near = Math.min(...box.examples.map((e) => Math.abs(e.score - score)));
