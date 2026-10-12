@@ -7,7 +7,7 @@
 //   - a file agents mostly wrote is black glass, not paper (codeSplitter's city does this); a failing check sets its compound on fire
 // The same repo on the same ground with the same seed is always the same level.
 
-import { CLIFF, slope, withPads, type Pad, type Terrain } from "./terrain.ts";
+import { CLIFF, slope, wet, withPads, type Pad, type Terrain } from "./terrain.ts";
 
 export interface RepoFile {
   path: string;
@@ -148,12 +148,12 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
   const rand = mulberry32(seed ^ hashString(repo.name));
   const R = ground.R;
 
-  // Candidate spots: walkable, inside the disc. The spawn is the flattest one out near the rim.
+  // Candidate spots: walkable, dry, inside the disc. The spawn is the flattest one out near the rim.
   const spots: { x: number; z: number; s: number }[] = [];
   for (let i = 0; i < 1400; i++) {
     const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * (R - 14);
     const x = Math.cos(a) * d, z = Math.sin(a) * d, s = slope(ground, x, z);
-    if (s < 0.5) spots.push({ x, z, s });
+    if (s < 0.5 && !wet(ground, x, z)) spots.push({ x, z, s });
   }
   if (!spots.length) throw new Error("no flat ground on this level");
   const rim = spots.filter((p) => Math.hypot(p.x, p.z) > R * 0.55);

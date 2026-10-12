@@ -131,9 +131,10 @@ describe("codemap", () => {
     const m = mapRepo(l.ground(), l.repo, l.seed);
     expect(m.compounds.length).toBeGreaterThanOrEqual(4);
     expect(m.blocks.length).toBeGreaterThan(40);
-    // Nobody starts in the pond, and no folder is built under it.
+    // Nobody starts in the pond, and no folder or crate is built under it.
     expect(wet(m.terrain, m.spawn.x, m.spawn.z)).toBe(false);
     for (const c of m.compounds) expect(wet(m.terrain, c.x, c.z)).toBe(false);
+    for (const b of m.blocks) expect(wet(m.terrain, b.x, b.z)).toBe(false);
   });
 });
 
