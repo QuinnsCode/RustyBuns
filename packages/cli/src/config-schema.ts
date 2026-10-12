@@ -53,6 +53,7 @@ const Binding = Schema.Union([
       project: opt(Str), branch: opt(Str), region: opt(Str), pgVersion: opt(Schema.Literals([14, 15, 16, 17, 18])), apiKeyOp: opt(Str),
     }) })),
     caching: opt(Schema.Union([Schema.Literal(false), Schema.Struct({ maxAge: opt(int(1, 3600)), staleWhileRevalidate: opt(int(0, 3600)) })])),
+    local: opt(Schema.Literal("pglite")), migrationsDir: opt(Str),
   }),
   Schema.Struct({ type: Schema.Literal("var"), value: Str }),
   Schema.Struct({ type: Schema.Literal("secret"), op: opt(Str), optional: opt(Bool), boxOnly: opt(Bool) }),
@@ -74,7 +75,7 @@ const DesktopTarget = Schema.Struct({
   actions: opt(Schema.Struct({ include: opt(Strs), exclude: opt(Strs) })),
   mounts: opt(StrMap), r2: opt(StrMap),
   storageCodec: opt(Schema.Literals(["json", "v8"])),
-  advisories: opt(Str), define: opt(StrMap), workers: opt(Strs),
+  advisories: opt(Str), define: opt(StrMap), workers: opt(Strs), warm: opt(int(0, Number.MAX_SAFE_INTEGER)),
 });
 
 const BoxCommon = { memMaxMb: opt(int(64, 1_048_576)), webmcp: opt(Bool), persona: opt(Schema.Literals(Object.keys(PERSONAS) as [Persona, ...Persona[]])), region: opt(Str), port: opt(Port) };
@@ -183,9 +184,11 @@ export const decodeConfig = (input: unknown): Effect.Effect<RustyBunsConfig, Con
       const b = c.bindings;
       // Or the stack owns a Neon branch, and urlSecret is only the twin's.
       const bad = Object.entries(b).flatMap(([n, h]) => h.type !== "hyperdrive" ? []
-        : h.urlSecret === undefined ? (h.origin?.neon ? [] : [`bindings.${n}: needs urlSecret (a secret with the postgres:// URL) or origin: { neon: {} }`])
-        : b[h.urlSecret]?.type !== "secret"
-          ? [`bindings.${n}.urlSecret: ${JSON.stringify(h.urlSecret)} isn't a secret binding; add ${h.urlSecret}: { type: "secret" } with the postgres:// URL`] : []);
+        : h.urlSecret === undefined && !h.origin?.neon ? [`bindings.${n}: needs urlSecret (a secret with the postgres:// URL) or origin: { neon: {} }`]
+        : h.urlSecret !== undefined && b[h.urlSecret]?.type !== "secret"
+          ? [`bindings.${n}.urlSecret: ${JSON.stringify(h.urlSecret)} isn't a secret binding; add ${h.urlSecret}: { type: "secret" } with the postgres:// URL`]
+        : h.migrationsDir && h.local !== "pglite"
+          ? [`bindings.${n}.migrationsDir: only a PGlite twin takes migrations at boot; add local: "pglite", or migrate your Postgres yourself`] : []);
       return bad.length ? Effect.fail(new ConfigInvalid({ problems: bad })) : Effect.succeed(c);
     }),
     Effect.as(input as RustyBunsConfig),   // the schema only checks; the config stays what the developer wrote

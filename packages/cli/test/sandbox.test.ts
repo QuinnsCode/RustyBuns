@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildEnv, HOST_FLAGS, hostCommand, hostEnv, seatbeltProfile, wantsSandbox } from "../src/sandbox.ts";
+import { buildEnv, emptyHome, HOST_FLAGS, hostCommand, hostEnv, seatbeltProfile, wantsSandbox } from "../src/sandbox.ts";
 
 test("buildEnv drops the deploy's logins and keeps what a build reads (#1114)", () => {
   const env = buildEnv({
@@ -12,6 +12,32 @@ test("buildEnv drops the deploy's logins and keeps what a build reads (#1114)", 
     AWS_SECRET_ACCESS_KEY: "x", AWS_ACCESS_KEY_ID: "x", GONE: undefined,
   });
   expect(Object.keys(env).sort()).toEqual(["GITHUB_SHA", "HOME", "JEKYLL_ENV", "NODE_ENV", "NPM_TOKEN", "PATH", "VITE_API"]);
+});
+
+test("emptyHome swaps HOME, keeps the caches that exist and drops pointers at real config (#1128)", () => {
+  const real = new Set(["/Users/me/.npm", "/Users/me/.bun", "/Users/me/.bun/install/cache", "/Users/me/.rbenv", "/Users/me/.cache"]);
+  const env = emptyHome({
+    PATH: "/bin", HOME: "/Users/me", NODE_ENV: "production", XDG_CONFIG_HOME: "/Users/me/.config", DOCKER_CONFIG: "/Users/me/.docker",
+    NPM_CONFIG_USERCONFIG: "/Users/me/.npmrc", CARGO_HOME: "/opt/cargo",
+  }, "/app/.rustybuns/home", "/Users/me", (p) => real.has(p));
+  expect(env).toEqual({
+    PATH: "/bin", NODE_ENV: "production", CARGO_HOME: "/opt/cargo",
+    HOME: "/app/.rustybuns/home", XDG_CONFIG_HOME: "/app/.rustybuns/home/.config", GH_CONFIG_DIR: "/app/.rustybuns/home/.config/gh",
+    npm_config_cache: "/Users/me/.npm", BUN_INSTALL: "/Users/me/.bun", BUN_INSTALL_CACHE_DIR: "/Users/me/.bun/install/cache",
+    RBENV_ROOT: "/Users/me/.rbenv", XDG_CACHE_HOME: "/Users/me/.cache",
+    GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "credential.helper", GIT_CONFIG_VALUE_0: "", GIT_TERMINAL_PROMPT: "0",
+  });
+  // an existing GIT_CONFIG_* list keeps its entries
+  const more = emptyHome({ GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "safe.directory", GIT_CONFIG_VALUE_0: "*" }, "/h", "/Users/me", () => false);
+  expect([more.GIT_CONFIG_COUNT, more.GIT_CONFIG_KEY_0, more.GIT_CONFIG_KEY_1, more.GIT_CONFIG_VALUE_1]).toEqual(["2", "safe.directory", "credential.helper", ""]);
+});
+
+test("a build under emptyHome sees the empty HOME, not the real one", () => {
+  const home = mkdtempSync(join(tmpdir(), "home-"));
+  try {
+    const r = Bun.spawnSync(["sh", "-c", 'echo "$HOME"; ls -A ~'], { env: emptyHome(buildEnv(process.env), home), stdout: "pipe" });
+    expect(r.stdout.toString()).toBe(`${home}\n`);
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
 test("hostEnv drops credentials and keeps what a host runs on", () => {

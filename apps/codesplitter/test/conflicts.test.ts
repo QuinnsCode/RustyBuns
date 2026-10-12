@@ -485,6 +485,66 @@ describe("over the API", () => {
     expect((await call.env.DB.prepare("SELECT COUNT(*) AS n FROM leftover_answers").first() as { n: number }).n).toBe(0);
   });
 
+  test("a branch's third conflict round goes to fresh eyes with a note, then to a person (#1089)", async () => {
+    const { call, post } = await app({ HEAL: "1" });
+    const prompts: string[][] = [];
+    call.env.AGENT_EXEC = (async (cmd, cwd) => { prompts.push(cmd.args); writeFileSync(join(cwd, "RESOLVE.ts"), `x(${prompts.length}0);\n`); return { code: 0, out: "" }; }) as Exec;
+    await post("ana", "/api/repos/ana/r/files", { path: ".gitattributes", content: "*.ts codesplitter-leftover=ai" });
+    const merge = async () => await (await post("ana", "/api/repos/ana/r/branches/b1/merge", {})).json() as any;
+    // Main moves under the branch: the conflict changes, and the next merge asks again.
+    const move = async (n: number) => {
+      const rev = (await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc).rev;
+      await post("ana", "/api/repos/ana/r/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L2", base: rev, text: `x(${n});` }] });
+    };
+    const rounds = async () => (await call.env.DB.prepare("SELECT conflict_rounds AS n FROM branches WHERE name = 'b1'").first() as { n: number }).n;
+
+    // Rounds one and two: the cheapest model, no note. Merging again over the same conflict is no new round.
+    expect((await merge()).conflicts[0].conflicts[0].answer).toMatchObject({ model: "haiku", text: "x(10);" });
+    await merge();
+    expect(await rounds()).toBe(1);
+    await move(4);
+    expect((await merge()).conflicts[0].conflicts[0].answer.note).toBeUndefined();
+    expect(await rounds()).toBe(2);
+    expect(prompts.map((p) => p.join(" ")).some((p) => p.includes("Fresh eyes"))).toBe(false);
+
+    // Round three: code's policy says handoff, so fresh eyes on the CLI's own model, from the note.
+    await move(5);
+    const third = (await merge()).conflicts[0].conflicts[0].answer;
+    expect(third).toMatchObject({ harness: "claude", text: "x(30);", round: 3 });
+    expect(third.model).toBeUndefined();
+    expect(third.note).toBe('DONE: 2 conflict rounds on b1, an agent\'s answer each\nNEXT: settle a.ts:L2 as main stands now\nBROKE: last answer held, then main moved again\nDONT: last answer again: "x(20);"');
+    expect(prompts.at(-1)).not.toContain("--model");
+    expect(prompts.at(-1)!.join(" ")).toContain(`Fresh eyes: b1's conflicts came back again, and the agents before you left this note.`);
+    expect(prompts.at(-1)!.join(" ")).toContain(third.note);
+
+    // After HANDOFFS of them a person's turn: no agent asked, the note says why.
+    await move(6);
+    await merge();
+    await move(7);
+    const asked = prompts.length, out = await merge();
+    expect(prompts.length).toBe(asked);
+    expect(out.conflicts[0].note).toStartWith("conflict round 5 on b1: a person's turn\nDONE: 4 conflict rounds on b1");
+    expect(out.conflicts[0].conflicts[0].answer).toBeUndefined();
+    // Merging again asks nobody, and counts no further round.
+    expect((await merge()).conflicts[0].note).toStartWith("conflict round 5 on b1");
+    expect(await rounds()).toBe(4);
+  });
+
+  test("a third conflict round in a file whose policy escalates: a person's, with the note (#1089)", async () => {
+    const { call, post } = await app({ HEAL: "1" });
+    let asked = 0;
+    call.env.AGENT_EXEC = (async (_cmd, cwd) => { asked++; writeFileSync(join(cwd, "RESOLVE.ts"), "x(9);\n"); return { code: 0, out: "" }; }) as Exec;
+    await post("ana", "/api/repos/ana/r/files", { path: ".gitattributes", content: "*.ts codesplitter-leftover=ai codesplitter-over=escalate" });
+    for (const n of [4, 5]) {
+      await post("ana", "/api/repos/ana/r/branches/b1/merge", {});
+      const rev = (await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc).rev;
+      await post("ana", "/api/repos/ana/r/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L2", base: rev, text: `x(${n});` }] });
+    }
+    const out = await (await post("ana", "/api/repos/ana/r/branches/b1/merge", {})).json() as any;
+    expect(asked).toBe(2);
+    expect(out.conflicts[0].note).toStartWith("conflict round 3 on b1: a person's turn\nDONE: 2 conflict rounds on b1");
+  });
+
   test("leftovers to AI where agents don't run on their own: the conflict goes to a person, saying why", async () => {
     const { call, post } = await app();
     let asked = 0;

@@ -4,7 +4,8 @@
 import * as THREE from "three";
 import { FACTION_COLORS, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./contract.ts";
 import { cruiser, fighter } from "./models.ts";
-import { DT, LINE, SPACE_LIMIT, SPACE_STATS, heading, heroCraft, startSpaceBattle, stepSpace, type SpaceInput } from "./space.ts";
+import { spaceRecorder } from "./replay.ts";
+import { DT, LINE, SPACE_LIMIT, SPACE_STATS, heading, heroCraft, startSpaceBattle, stepSpace } from "./space.ts";
 
 const BOLT_COLORS = { marines: 0xff4a4a, wooka: 0x8cff5a };
 
@@ -106,12 +107,13 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
 
   return new Promise((resolve) => {
     let last = performance.now(), acc = 0, hudAt = 0, raf = 0;
+    const rec = spaceRecorder();
     const frame = (now: number) => {
       acc += Math.min(0.25, (now - last) / 1000);
       last = now;
       while (handOver && !b.over) stepSpace(b, null);
       while (acc >= DT && !b.over) {
-        const input: SpaceInput = { yaw: aimYaw, pitch: aimPitch, throttle: (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0), fire: firing };
+        const input = rec.take({ yaw: aimYaw, pitch: aimPitch, throttle: (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0), fire: firing });
         stepSpace(b, input);
         acc -= DT;
       }
@@ -168,7 +170,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
         if (document.pointerLockElement === canvas) document.exitPointerLock();
         renderer.dispose();
         hud.onpointerdown = null;
-        resolve(b.over);
+        resolve({ ...b.over, inputs: rec.log() });
         return;
       }
       raf = requestAnimationFrame(frame);

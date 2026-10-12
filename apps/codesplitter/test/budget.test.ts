@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CONFLICT_ROUNDS, failureKey, handoffTask, noteFor, readNote, sameFailure, tokens, tripped, usageOf, writeNote } from "../src/budget.ts";
+import { CONFLICT_ROUNDS, conflictNote, conflictRound, failureKey, HANDOFFS, handoffTask, noteFor, readNote, sameFailure, tokens, tripped, usageOf, writeNote } from "../src/budget.ts";
 
 describe("agent budgets (#1077)", () => {
   test("claude's JSON answer gives its real usage and its reply (#1088)", () => {
@@ -69,6 +69,20 @@ describe("agent budgets (#1077)", () => {
     expect(tripped({ spent: 0, budget: 100, failures: ["edits lost on a.ts:L1"], conflictRounds: 1 })).toBeNull();
     expect(tripped({ spent: 0, budget: 100, failures: ["edits lost on a.ts:L1", "edits lost on a.ts:L1"], conflictRounds: 2 })).toBe("same failure twice");
     expect(tripped({ spent: 0, budget: 100, failures: ["edits lost on a.ts:L1", "edits lost on a.ts:L2"], conflictRounds: CONFLICT_ROUNDS - 1 })).toBe("a third conflict round");
+  });
+
+  test("a branch's conflict rounds: the agent as usual, fresh eyes from the third as the policy says, then a person (#1089)", () => {
+    expect(conflictRound(1, "handoff")).toBe("ask");
+    expect(conflictRound(CONFLICT_ROUNDS - 1, "handoff")).toBe("ask");
+    expect(conflictRound(CONFLICT_ROUNDS, "handoff")).toBe("handoff");
+    expect(conflictRound(CONFLICT_ROUNDS, "downshift")).toBe("downshift");
+    expect(conflictRound(CONFLICT_ROUNDS, "escalate")).toBe("escalate");
+    expect(conflictRound(CONFLICT_ROUNDS + HANDOFFS - 1, "handoff")).toBe("handoff");
+    expect(conflictRound(CONFLICT_ROUNDS + HANDOFFS, "handoff")).toBe("escalate");
+    expect(conflictNote({ branch: "b1", path: "a.ts", line: "L2", rounds: 2, last: { text: "x(2);", ok: false, failure: "...\n1 fail: x is 2" } }))
+      .toBe('DONE: 2 conflict rounds on b1, an agent\'s answer each\nNEXT: settle a.ts:L2 as main stands now\nBROKE: 1 fail: x is 2\nDONT: last answer again: "x(2);"');
+    expect(conflictNote({ branch: "b1", path: "a.ts", line: "L2", rounds: 2, last: { text: "x(2);", ok: true } }))
+      .toContain("BROKE: last answer held, then main moved again");
   });
 
   test("the note is four blunt lines, empty ones left out, and reads back from an agent's reply", () => {

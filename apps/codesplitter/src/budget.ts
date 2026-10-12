@@ -2,7 +2,7 @@
 // Agents get worse per dollar as their context grows: every run of the CLI reads the prompt and the
 // files again, and a long session drifts. So a run has a budget, from its path's policy (policy.ts),
 // and is cut short before it grinds on: past the budget, the same failure twice, or a third round of
-// conflicts. What it did and what's left go in a short, blunt note, and the next agent (agent-routes.ts)
+// conflicts. A branch whose merge keeps meeting new conflicts gets fresh eyes on its third round too (#1089). What it did and what's left go in a short, blunt note, and the next agent (agent-routes.ts)
 // starts from that note and nothing else: a fresh one, a cheaper model, or a person, as the policy says.
 // What a run read comes from the CLI's own usage, as each reports it in JSON (#1088, #1118); a run
 // whose CLI said nothing is counted from what went in and came out of it: four characters to the token.
@@ -124,6 +124,25 @@ export function noteFor(r: { path: string; task: string; why: string; applied: n
     broke: own.broke ?? [...(last ? [last] : []), ...(lost ? [`${lost} edits lost to others' changes`] : []), r.why],
     dont: own.dont ?? (r.why === "same failure twice" ? ["same fix again"] : lost ? ["redo lines others changed; work round them"] : []),
   }, told.length ? { next: LINE_CHARS + OWNER_CHARS } : {});
+}
+
+/**
+ * Who answers a branch's conflicts in its merge round `round` (1 the first, #1089): the conflict agent as
+ * usual for the first two; from the CONFLICT_ROUNDS-th, fresh eyes as the file's policy says, HANDOFFS
+ * times, then a person.
+ */
+export const conflictRound = (round: number, over: Over): "ask" | Over =>
+  round < CONFLICT_ROUNDS ? "ask" : round - CONFLICT_ROUNDS >= HANDOFFS ? "escalate" : over;
+
+/** The note fresh eyes on a conflict start from: how many rounds it's been, and the last answer to it and why it didn't hold. */
+export function conflictNote(r: { branch: string; path: string; line: string; rounds: number; last?: { text?: string; ok: boolean; failure?: string } }): string {
+  const failed = r.last && !r.last.ok && r.last.failure?.trim().split("\n").at(-1);
+  return writeNote({
+    done: [`${r.rounds} conflict rounds on ${r.branch}, an agent's answer each`],
+    next: [`settle ${r.path}:${r.line} as main stands now`],
+    broke: r.last ? [failed || (r.last.ok ? "last answer held, then main moved again" : "last answer failed")] : [],
+    dont: r.last?.text ? [`last answer again: ${JSON.stringify(r.last.text)}`] : [],
+  });
 }
 
 /** What the next agent is told: the note, and nothing else. */

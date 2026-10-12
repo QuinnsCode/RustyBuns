@@ -17,12 +17,20 @@
 /** The variables a check keeps: enough to find its tools and speak the machine's language, nothing that logs anything in. */
 const KEEP = ["PATH", "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "TERM", "TZ"];
 
+/**
+ * No keychain for git. macOS's own git config sets `credential.helper = osxkeychain`, so a fetch
+ * that gets a 401 (GitHub's answer for a repo that isn't there) asks the login keychain, and under
+ * an empty HOME there isn't one: macOS pops "Keychain Not Found" on the owner's screen, once per
+ * fetch. An empty helper clears the list, and git fails quietly instead.
+ */
+export const NO_KEYCHAIN = { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "credential.helper", GIT_CONFIG_VALUE_0: "", GIT_TERMINAL_PROMPT: "0" };
+
 /** The directories a run gets under its own temp dir: the clone, and its own empty HOME and TMPDIR. */
 export const runDirs = (base: string) => ({ repo: `${base}/repo`, home: `${base}/home`, tmp: `${base}/tmp` });
 
 /**
  * The environment a check's command runs with: KEEP from `from`, an empty `home` and `tmp`,
- * and CI=1. Running as the owner, the package caches still point at the owner's (installs stay
+ * CI=1 and NO_KEYCHAIN. Running as the owner, the package caches still point at the owner's (installs stay
  * fast); a sandbox user can't read those, so it gets its own under `home`.
  */
 export function checkEnv(from: Record<string, string | undefined>, home: string, tmp: string, user?: string): Record<string, string> {
@@ -33,7 +41,7 @@ export function checkEnv(from: Record<string, string | undefined>, home: string,
     env.BUN_INSTALL_CACHE_DIR = from.BUN_INSTALL_CACHE_DIR ?? `${own}/.bun/install/cache`;
     env.npm_config_cache = from.npm_config_cache ?? `${own}/.npm`;
   }
-  return { ...env, HOME: home, TMPDIR: tmp, CI: "1" };
+  return { ...env, ...NO_KEYCHAIN, HOME: home, TMPDIR: tmp, CI: "1" };
 }
 
 /**

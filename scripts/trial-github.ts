@@ -165,6 +165,9 @@ const ENV: Record<string, string | undefined> = {
   HOME: SANDBOX_HOME, XDG_CONFIG_HOME: join(SANDBOX_HOME, ".config"), GH_CONFIG_DIR: join(SANDBOX_HOME, ".config/gh"),
   CLOUDFLARE_API_TOKEN: "rustybuns-trial-has-no-credentials", CLOUDFLARE_ACCOUNT_ID: "rustybuns-trial-no-account",
   WRANGLER_SEND_METRICS: "false", GIT_TERMINAL_PROMPT: "0",
+  // macOS's git config hands credentials to the keychain, and this HOME has none: a 401 would pop
+  // "Keychain Not Found" on screen. An empty helper clears the list.
+  GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "credential.helper", GIT_CONFIG_VALUE_0: "",
   npm_config_cache: join(realHome, ".npm"), npm_config_store_dir: join(realHome, "Library/pnpm/store"),
   BUN_INSTALL_CACHE_DIR: join(realHome, ".bun/install/cache"),
   CI: "1", RUSTYBUNS_NO_UPDATE_CHECK: "1", RB_NO_BROWSER: "1",

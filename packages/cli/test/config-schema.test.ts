@@ -29,6 +29,9 @@ test("names each field, every problem at once", async () => {
   expect(await problems({ ...ok, extra: 1 })).toEqual(["extra: not a config key"]);
   expect(await problems({ ...ok, targets: { box: { provider: "railway", persona: "background-burner" } } })).toEqual([]);
   expect(await problems({ ...ok, targets: { box: { provider: "railway", persona: "turbo" } } })).toHaveLength(1);
+  expect(await problems({ ...ok, targets: { desktop: { mode: "spa", warm: 1 } } })).toEqual([]);
+  expect(await problems({ ...ok, targets: { desktop: { mode: "spa", warm: -1 } } })).toHaveLength(1);
+  expect(await problems({ ...ok, targets: { desktop: { mode: "spa", warm: 1.5 } } })).toHaveLength(1);
   expect(await problems({ ...ok, name: "My App", targets: { edge: { provider: "cloudflare" } } })).toHaveLength(1);
 });
 
@@ -43,4 +46,7 @@ test("hyperdrive: its urlSecret has to be a secret binding", async () => {
   expect(await pg({ HYPERDRIVE: { type: "hyperdrive", origin: { neon: { branch: "prod", pgVersion: 17 } } } })).toEqual([]);
   expect(await pg({ HYPERDRIVE: { type: "hyperdrive" } })).toEqual([`bindings.HYPERDRIVE: needs urlSecret (a secret with the postgres:// URL) or origin: { neon: {} }`]);
   expect(await pg({ HYPERDRIVE: { type: "hyperdrive", origin: { neon: { pgVersion: 13 } } } })).toHaveLength(1);
+  expect(await pg({ DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL", local: "pglite", migrationsDir: "drizzle" } })).toEqual([]);
+  expect(await pg({ DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL", migrationsDir: "drizzle" } }))
+    .toEqual([`bindings.HYPERDRIVE.migrationsDir: only a PGlite twin takes migrations at boot; add local: "pglite", or migrate your Postgres yourself`]);
 });

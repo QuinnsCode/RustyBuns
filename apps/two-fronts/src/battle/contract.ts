@@ -37,6 +37,7 @@ export interface BattleResult {
   tickets: PerSide<number>; // left at the end
   heroDown: boolean;        // the hero used up every life
   auto?: true;              // left to the AI: whoever checks it can run the battle again
+  inputs?: string;          // played: the hero's input log (replay.ts), so whoever checks it can play it again
 }
 
 // The playable space battle: the fleets over one system, the hero flying a fighter in it. Each
@@ -58,6 +59,7 @@ export interface SpaceBattleResult {
   fleets: PerSide<number>;    // cruisers still flying at the end
   heroDown: boolean;
   auto?: true;                // left to the AI, as on the ground
+  inputs?: string;            // played: the hero's input log, as on the ground
 }
 
 export const other = (s: Side): Side => (s === "attacker" ? "defender" : "attacker");

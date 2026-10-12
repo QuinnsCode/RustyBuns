@@ -3,8 +3,9 @@
 // you're aiming, E to climb into or out of a vehicle.
 import * as THREE from "three";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
+import { groundRecorder } from "./replay.ts";
 import { forest, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
-import { DT, EYE, HALF, POST_RADIUS, STATS, STRIKE_RADIUS, TIME_LIMIT, TROOPERS, altitude, facing, heroUnit, startBattle, step, type Input, type Trooper, type Unit } from "./sim.ts";
+import { DT, EYE, HALF, POST_RADIUS, STATS, STRIKE_RADIUS, TIME_LIMIT, TROOPERS, altitude, facing, heroUnit, startBattle, step, type Trooper, type Unit } from "./sim.ts";
 
 // The light, ground and stone of each map.
 const LOOKS = {
@@ -186,17 +187,18 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
 
   return new Promise((resolve) => {
     let last = performance.now(), acc = 0, hudAt = 0, raf = 0;
+    const rec = groundRecorder();
     const frame = (now: number) => {
       acc += Math.min(0.25, (now - last) / 1000);
       last = now;
       while (handOver && !b.over) step(b, null);
       while (acc >= DT && !b.over) {
-        const input: Input = {
+        const input = rec.take({
           forward: (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0),
           right: (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0),
           yaw, fire: firing, use,
           strike: strike ? aimPoint() ?? undefined : undefined,
-        };
+        });
         strike = use = false;
         step(b, input);
         acc -= DT;
@@ -259,7 +261,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         if (document.pointerLockElement === canvas) document.exitPointerLock();
         renderer.dispose();
         hud.onpointerdown = null;
-        resolve(b.over);
+        resolve({ ...b.over, inputs: rec.log() });
         return;
       }
       raf = requestAnimationFrame(frame);

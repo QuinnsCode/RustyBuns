@@ -42,6 +42,7 @@ import { apply, empty, fromText, merge, text, type Conflict, type Doc } from "..
 import { diffToOps } from "../src/sync.ts";
 import { lintMerge } from "../src/lint.ts";
 import { policyOf } from "../src/policy.ts";
+import { NO_KEYCHAIN } from "../src/check-env.ts";
 
 export type Verdict = "agree" | "both" | "git-only" | "ours-only" | "differ" | "guard" | "lock";
 export interface Shadow {
@@ -214,10 +215,11 @@ export interface Check {
 }
 
 // Nothing from this shell (tokens, account ids) reaches the tests: an empty HOME, bun's cache kept,
-// and a git identity for the tests that commit.
+// a git identity for the tests that commit, and no keychain prompts.
 function sandbox(home: string) {
   const who = { NAME: "shadow", EMAIL: "shadow@localhost" };
   return {
+    ...NO_KEYCHAIN,
     PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home, TMPDIR: tmpdir(), CI: "1", NO_COLOR: "1",
     BUN_INSTALL_CACHE_DIR: join(homedir(), ".bun/install/cache"),
     GIT_AUTHOR_NAME: who.NAME, GIT_AUTHOR_EMAIL: who.EMAIL, GIT_COMMITTER_NAME: who.NAME, GIT_COMMITTER_EMAIL: who.EMAIL,

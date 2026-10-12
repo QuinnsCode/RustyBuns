@@ -4,7 +4,7 @@ import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
-import { desktopEntry, spaEntry, builtEntry, plainDynamicImports } from "../src/build.ts";
+import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports } from "../src/build.ts";
 
 const root = new URL("../../../apps/spa-example", import.meta.url).pathname;
 
@@ -343,6 +343,9 @@ test("box host: public bind, no token, /health, secrets from env, no browser", (
   expect(box).not.toContain("RB_PERSONA ||=");
   expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "hetzner", persona: "background-burner" } } }, "box")).toContain('process.env.RB_PERSONA ||= "background-burner";');
   expect(spaEntry({ ...c, targets: { ...c.targets, box: { provider: "hetzner", persona: "background-burner" } } })).not.toContain("RB_PERSONA ||=");
+  // desktop.warm: workers the host's scheduler keeps loaded, on either host, RB_WARM still the last word.
+  expect(box).not.toContain("RB_WARM ||=");
+  for (const host of ["desktop", "box"] as const) expect(spaEntry({ ...c, targets: { ...c.targets, desktop: { ...c.targets.desktop, warm: 1 } } }, host)).toContain('process.env.RB_WARM ||= "1";');
   // CPU profiles: /__rb/prof behind RB_PROF_SECRET, and one before a ceiling restart.
   expect(box).toContain(", memWatch, cpuProfile, profRoute, history, summarizeProfile");
   expect(box).toContain('profRoute({ secret: process.env.RB_PROF_SECRET, dir: join(dataDir, "prof"), history: hist })');
@@ -914,4 +917,21 @@ test("hyperdrive origin.neon: the stack owns a Neon branch, Hyperdrive fronts it
   expect(generateEnvSchema(vaulted)).toContain("# @sensitive @required\nNEON_API_KEY=op(op://rb/neon/credential)\n");
   expect(generateAlchemy(vaulted)).not.toContain("NEON_API_KEY");
   expect(() => generateAlchemy({ ...vaulted, experimental: undefined })).toThrow(/NEON_API_KEY has an op reference/);
+});
+
+test("hyperdrive local pglite: with the URL unset, PGlite in the data dir, its files and migrations embedded", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: { DATABASE_URL: { type: "secret" }, PG: { type: "hyperdrive", urlSecret: "DATABASE_URL", local: "pglite", migrationsDir: "drizzle" } },
+    targets: { desktop: { mode: "worker" } },
+  } as any;
+  const d = desktopEntry(c);
+  expect(d).toContain(`import { pgliteHyperdrive } from "@rustybuns/shell-bun/pglite";`);
+  expect(d).toContain(`import pglite0 from "./pglite/pglite.wasm" with { type: "file" };`);
+  expect(d).toContain(`PG: process.env["DATABASE_URL"] ? local.hyperdrive(process.env["DATABASE_URL"], "PG") : await pgliteHyperdrive(join(dataDir, "pglite", "PG"), "PG", { ...pgliteFiles, migrations: assetDir("drizzle")! }),`);
+  expect(spaEntry({ ...c, targets: { desktop: { mode: "spa", clientDir: "dist" } } })).toContain(`migrations: resolveDir("drizzle") }),`);
+  expect(embeddedDirs(c).migrationDirs).toEqual(["drizzle"]);
+  // Without local, nothing of PGlite's is imported: the app needn't install it.
+  const url = { ...c, bindings: { ...c.bindings, PG: { type: "hyperdrive", urlSecret: "DATABASE_URL" } } };
+  expect(desktopEntry(url)).not.toContain("pglite");
 });

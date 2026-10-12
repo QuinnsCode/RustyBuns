@@ -23,6 +23,7 @@
 import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, type Doc, type Line, type Op, type Pick, type Resolve } from "./lines.ts";
 import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
+import { conflictNote, conflictRound } from "./budget.ts";
 import { regenerateLock, tryInClone } from "./deps.ts";
 import { catalogueBlob, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
@@ -238,7 +239,7 @@ async function fileHunks(env: Env, owner: string, repo: string, branch: string, 
 type BranchRow = { name: string; by: string; created_at?: unknown; upstream_ref?: unknown };
 type FileRow = { path: string; merged: number; deleted: number; blob: string | null; mode: string | null };
 /** A coding agent's answer to one conflict, checked: `ok` only when the merged file parses and the tests pass (or don't run). */
-export interface Answer { harness: Harness; model?: string; text?: string; ok: boolean; tests: string; failure?: string }
+export interface Answer { harness: Harness; model?: string; text?: string; ok: boolean; tests: string; failure?: string; round?: number; note?: string }
 
 /** The branch's other files that merge clean, as merged: what a throwaway clone gets beside the file in question. */
 async function cleanMerged(env: Env, owner: string, repo: string, branch: BranchRow, rows: FileRow[], skip: string, user: string) {
@@ -257,7 +258,7 @@ async function cleanMerged(env: Env, owner: string, repo: string, branch: Branch
  * settled only if the merged file parses and the tests pass; otherwise a person gets it with the failure.
  */
 async function checkedAnswer(env: Env, owner: string, repo: string, branch: BranchRow, rows: FileRow[], path: string, c: Conflict,
-  ask: { harness: Harness; model?: string }, user: string, signal?: AbortSignal): Promise<Answer | { error: string }> {
+  ask: { harness: Harness; model?: string; note?: string }, user: string, signal?: AbortSignal): Promise<Answer | { error: string }> {
   const name = branch.name;
   const doc = async (op: string, on?: string) => (await toFile(env, owner, repo, path, user, op, {}, "", on)).json() as Promise<Doc>;
   const [main, base, ours] = await Promise.all([doc("file"), doc("base", name), doc("file", name)]);
@@ -318,28 +319,48 @@ async function answerFor(kept: Awaited<ReturnType<typeof keptAnswers>>, path: st
  * that takes a text, on its own, as suggest_resolution would, on the cheapest model there is. Its answer
  * is kept, so merging again asks nothing until the conflict changes. It runs where self-healing does
  * (heal.ts), and each run takes one from the site's `hosted` budget. Why none was asked, if so.
+ *
+ * A merge that asks again about a conflict answered before, because main moved under it, is another
+ * conflict round on the branch (#1089). From the third (budget.ts conflictRound) the file's policy says who
+ * answers, from a terse note of the rounds before: `handoff` fresh eyes on the CLI's own default model,
+ * `downshift` the cheapest again, `escalate` a person, as everyone does after HANDOFFS of them. `notes`: why
+ * a file's conflicts wait for a person.
  */
-async function askLeftovers(env: Env, owner: string, repo: string, branch: BranchRow, rows: FileRow[], leftovers: { path: string; conflicts: Conflict[] }[], user: string) {
-  const kept = await keptAnswers(env, owner, repo, branch.name), answers = new Map<string, Answer>();
-  const off = healUnavailable(env, owner), ask = off ? null : cheapest(installedHarnesses(env));
-  let asked = 0, why: string | null = null;
+async function askLeftovers(env: Env, owner: string, repo: string, branch: BranchRow, rows: FileRow[], leftovers: { path: string; policy: Policy; conflicts: Conflict[] }[], user: string) {
+  const kept = await keptAnswers(env, owner, repo, branch.name), answers = new Map<string, Answer>(), notes = new Map<string, string>();
+  const off = healUnavailable(env, owner), cheap = off ? null : cheapest(installedHarnesses(env));
+  const on = [owner, repo, branch.name] as const;
+  let asked = 0, why: string | null = null, counted = false;
+  let rounds = Number((await env.DB.prepare("SELECT conflict_rounds FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(...on).first())?.conflict_rounds ?? 0);
   for (const f of leftovers) for (const c of f.conflicts) {
     if (!explain(c).choices.includes("text")) continue;
     const id = `${f.path}\n${c.line}`, had = await answerFor(kept, f.path, c);
     if (had) { answers.set(id, had); continue; }
-    if (!ask) { why = off ?? "no coding agent's CLI is installed here"; continue; }
+    if (!cheap) { why = off ?? "no coding agent's CLI is installed here"; continue; }
     if (asked >= MAX_ASKED) { why = `a merge asks about ${MAX_ASKED} conflicts at most: merge again for the rest`; continue; }
+    // The first ask is round one; asking again about a line answered before is the next, once a merge.
+    // One a person gets isn't counted, so merging again doesn't run the count up.
+    const round = !counted && (!rounds || kept.has(id)) ? rounds + 1 : rounds;
+    const who = conflictRound(round, f.policy.over);
+    const note = who === "ask" ? undefined : conflictNote({ branch: branch.name, path: f.path, line: c.line, rounds: round - 1, last: kept.get(id)?.answer });
+    if (who === "escalate") { notes.set(f.path, `conflict round ${round} on ${branch.name}: a person's turn\n${note}`); continue; }
     const spent = await hostedBudget(env);
     if (spent) { why = ((await spent.json()) as { error: string }).error; continue; }
+    if (round > rounds) {
+      counted = true;
+      rounds = Number((await env.DB.prepare("UPDATE branches SET conflict_rounds = conflict_rounds + 1 WHERE owner = ? AND repo = ? AND name = ? RETURNING conflict_rounds").bind(...on).first())?.conflict_rounds ?? round);
+    }
     asked++;
+    // Fresh eyes under `handoff`: the same CLI on its own default model, not the cheapest that missed twice.
+    const ask = { ...(who === "handoff" ? { harness: cheap.harness } : cheap), ...(note && { note }) };
     const r = await checkedAnswer(env, owner, repo, branch, rows, f.path, c, ask, user).catch((e) => ({ error: String((e as Error)?.message ?? e) }));
-    const a: Answer = "error" in r ? { harness: ask.harness, ...(ask.model && { model: ask.model }), ok: false, tests: "not run", failure: r.error.slice(-4000) } : r;
+    const a: Answer = { ...("error" in r ? { harness: ask.harness, ...(ask.model && { model: ask.model }), ok: false, tests: "not run", failure: r.error.slice(-4000) } : r), ...(note && { round: rounds, note }) };
     answers.set(id, a);
     await env.DB.prepare(`INSERT INTO leftover_answers (owner, repo, branch, path, line, key, answer, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (owner, repo, branch, path, line) DO UPDATE SET key = excluded.key, answer = excluded.answer, at = excluded.at`)
       .bind(owner, repo, branch.name, f.path, c.line, await conflictKey(c), JSON.stringify(a), Date.now()).run();
   }
-  return { answers, why };
+  return { answers, why, notes };
 }
 
 /**
@@ -442,9 +463,9 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     const fix = await guardTripped(env, owner, repo, name, trips).catch(() => null);
     // To AI: a checked agent's answer to each, offered with the conflict, ok or with its failure for a person.
     const ai = left.filter((d) => d.policy.leftover === "ai" && !broken.length);
-    const { answers, why } = ai.length ? await askLeftovers(env, owner, repo, branch, rows, ai, user) : { answers: new Map<string, Answer>(), why: null };
+    const { answers, why, notes: waits } = ai.length ? await askLeftovers(env, owner, repo, branch, rows, ai, user) : { answers: new Map<string, Answer>(), why: null, notes: new Map<string, string>() };
     const blocked = left.map(({ path, policy, conflicts }) => {
-      const note = notes.get(path) ?? (policy.leftover === "ai" && ai.length > 0 && why ? `no agent asked: ${why}` : undefined);
+      const note = notes.get(path) ?? waits.get(path) ?? (policy.leftover === "ai" && ai.length > 0 && why ? `no agent asked: ${why}` : undefined);
       return {
         path, leftover: policy.leftover, ...(note && { note }),
         conflicts: conflicts.map((c) => { const a = answers.get(`${path}\n${c.line}`); return { ...explain(c), ...(a && { answer: a }) }; }),
