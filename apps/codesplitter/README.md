@@ -185,6 +185,25 @@ There's no downloadable build yet; that's one command from source.
 Make a CI token for the repo (`POST /api/repos/:owner/:repo/checks/tokens`), then set your CI's GitHub API base URL (the GitHub Enterprise option) to `https://<this site>/api/gh/v3` and use that token as its GitHub token.
 Its commit statuses and check runs show up in the repo's checks as `external` runs, and required ones gate Merge.
 
+### CI for your public repo, on your own machine
+
+Run your public repo's heavy checks on a machine you own, a spare Mac at home say, with no way in for strangers.
+
+```
+GitHub ──mirror──▶ codeSplitter ◀──pulls work── your machine
+(fork PRs stay there)             (nothing listens)
+```
+
+GitHub warns against self-hosted runners on public repos because a fork PR can edit `.github/workflows` and run on your box, and a personal account can't fence runners off (that takes an organization's runner groups).
+Here, fork PRs never mirror: a mirror fetches upstream's own branches, never `refs/pull/*`.
+Only trusted code runs: your branches and your agents', and main as merged on GitHub, which you reviewed (that one doesn't queue by itself yet; see the caveats).
+Your machine pulls its runs, so it needs no open port.
+GitHub's free runners keep doing the quick PR checks.
+
+It isn't new in kind: GitLab's CI for external repos, Buildkite's agents and GitOps (Argo CD, Flux) all pull the same way.
+What's new is the size: the enterprise pull model for one person and a spare Mac, with no Kubernetes, GitLab or organization.
+The caveats and what's still missing are in [REFERENCE.md](REFERENCE.md#ci-for-your-public-repo-on-your-own-machine).
+
 ## Hard to copy
 
 What would take someone else the longest to build:

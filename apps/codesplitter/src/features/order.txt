@@ -19,6 +19,7 @@ activity
 blame
 branches
 build-changes
+own-hardware-ci
 commit-to-git
 clone
 levels
