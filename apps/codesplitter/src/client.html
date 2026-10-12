@@ -127,12 +127,14 @@
   .tree a.on { background: #e9e9e9; box-shadow: inset 2px 0 var(--fg); font-weight: 500; }
   .tree svg.lucide { width: 14px; height: 14px; vertical-align: 0; }
   .tree .chev { color: var(--muted); } .tree .ic-dir { color: var(--fg); fill: #ededed; } .tree .ic-file { color: var(--faint); margin-left: 19px; }
-  .editor { display: flex; flex-direction: column; overflow: hidden; }
+  .editor { display: flex; flex-direction: column; overflow: hidden; container: editor / inline-size; }
   .tabs { display: flex; background: var(--canvas); border-bottom: 1px solid var(--border); flex: none; }
   .tab { display: flex; align-items: center; gap: 6px; padding: 6px 14px; font-size: 13px; background: var(--bg); border-right: 1px solid var(--border); box-shadow: inset 0 2px var(--accent); margin-bottom: -1px; }
-  .crumbbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 12px; border-bottom: 1px solid var(--border); font-size: 13px; flex: none; min-height: 34px; }
-  .crumbbar .btn { padding: 1px 8px; font-size: 12.5px; }
-  .crumbbar .crumbs { font-weight: 500; font-size: 13px; }
+  /* One row, however narrow the editor gets: the buttons drop their words for icons (the word's in the tooltip), and the path ellipses. */
+  .crumbbar { display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-bottom: 1px solid var(--border); font-size: 13px; flex: none; min-height: 34px; overflow-x: auto; scrollbar-width: thin; }
+  .crumbbar .btn { padding: 1px 8px; font-size: 12.5px; white-space: nowrap; flex: none; }
+  .crumbbar .crumbs { font-weight: 500; font-size: 13px; min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @container editor (max-width: 980px) { .crumbbar .btn { font-size: 0; gap: 0; padding: 3px 6px; } .crumbbar .btn span { display: none; } }
   .editor .scroll { flex: 1; min-height: 0; overflow: auto; }
   .details { border-left: 1px solid var(--border); font-size: 13px; container-type: inline-size; }
   /* The details side (dock()): drag its left edge to widen it, or snap it to 2/3 or the whole bench.
@@ -4034,7 +4036,7 @@ const views = {
         ${r.canWrite ? `<button class="btn" id="hold" disabled title="select lines first. Held lines are yours alone: agents and everyone else leave them be till you let go">${icon("hand")}<span>Hold</span></button>` : ""}
         ${r.canWrite && !branch ? `<button class="btn" id="lock" disabled title="select lines first. Only the crew reads a private line; everyone else, git and search get it blank">${icon("lock")}<span>Make private</span></button>` : ""}
         ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><label id="agent-only" class="muted" style="font-size:13px" hidden><input type="checkbox" name="only" checked> Only <span></span>: they're held for it while it works</label><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
-        ${r.canWrite && !branch ? `<div class="pop"><button class="btn primary" id="commit">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
+        ${r.canWrite && !branch ? `<div class="pop"><button class="btn primary" id="commit" title="commit this file to git">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
       // A push to the repo's git (the desktop's Push back) that clashed with edits here: its commit waits on a pick (#788).
       body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div>`,
       details: sec("radio", "Here now", `<p id="who-here" class="muted">just you</p><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div>`)
