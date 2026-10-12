@@ -40,7 +40,7 @@ If you know another platform, here's roughly what each primitive maps to there. 
 | **memory** | per-invocation, sized by the function's memory setting | per-invocation | the whole process |
 | **identity** | Cognito, or IAM between services | middleware plus Clerk or Auth.js | your own auth, or a proxy in front |
 
-The difference: on each of those the five pieces are separate products with separate APIs. Here they're the Cloudflare shapes everywhere, with a local twin for each, so the laptop, the edge and the box run the same code.
+The difference: on each of those the five pieces are separate products with separate APIs. Here they're the Cloudflare shapes everywhere, with a local twin for each, so the laptop, the edge and the box run the same code. Which framework feature lands on which primitive (Astro API routes, SvelteKit form actions, Nuxt's storage) is in [Each framework, as the five primitives](FRAMEWORKS.md#each-framework-as-the-five-primitives).
 
 ## It's a Bun app underneath
 
