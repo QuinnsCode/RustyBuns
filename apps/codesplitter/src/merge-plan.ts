@@ -1,4 +1,4 @@
-// Layout: merge plan (#1155): the open branches in waves, by codeSplitter's own merge as the clash test
+// Layout: merge plan (#1155): the open branches in waves, by codeSplitter's own merge as the clash test; the dispatch hint's file guess (#1163)
 // The order to merge the open branches in, as waves. Everything in a wave merges
 // together; a branch waits for the ones before it that it clashes with. Two branches clash when the
 // second still merges into main by itself, but no longer once the first has landed. The test is
