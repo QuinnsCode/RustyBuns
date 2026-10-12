@@ -15,6 +15,10 @@ pnpm exec rustybuns init
 
 It also finds D1 migrations in `./migrations`, takes secret *names* from `.dev.vars` (the values never leave your machine), and gitignores what it generates.
 
+Run it in the app's own folder. At a repo root that isn't the app, `init` names the folders below that are (`frontend/`, `apps/web/`). A Vite app whose dev server proxies paths to a server of its own (`server.proxy` sending `/api` to an `api/` folder running `node server.js`) stays desktop-only: the build alone can't answer those paths on the web. `init` prints a `backend:` line naming them and the server it found.
+
+Would rather hand this to your coding agent? [AGENT_PROMPTS.md](AGENT_PROMPTS.md) has prompts to paste.
+
 ## 2. Desktop
 
 ```sh

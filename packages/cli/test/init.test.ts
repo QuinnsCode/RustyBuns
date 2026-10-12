@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inferTsconfigAliases, detectPm, inferPostgres } from "../src/glue/infer.ts";
+import { inferTsconfigAliases, detectPm, inferPostgres, viteProxyPaths } from "../src/glue/infer.ts";
 import { parseWranglerToml, droppedWranglerKeys } from "../src/wrangler.ts";
 import { workspaceRoot } from "../src/glue/deploy-deps.ts";
 import { viteConfig } from "../src/glue/port-vite.ts";
@@ -229,7 +229,8 @@ test("init: a plain Vite SPA goes on the web as an assets-only Worker; one with 
   const r = p.run("init");
   expect(r.code).toBe(0);
   expect(r.out).toMatch(/the desktop, and the web as static files on Workers/);
-  expect(r.out).toMatch(/rustybuns plan/);
+  expect(r.out).toContain("bunx rustybuns add deploy then bunx rustybuns plan");
+  expect(p.read(".gitignore")).toContain(".rustybuns/");
   const c = p.read("rustybuns.config.ts");
   expect(c).toContain('"edge": {\n      "provider": "cloudflare"');
   expect(c).toContain('"assets": "dist/web"');
@@ -248,6 +249,70 @@ test("init: a plain Vite SPA goes on the web as an assets-only Worker; one with 
   expect(kr.code).toBe(0);
   expect(kr.out).toMatch(/desktop-only: it runs a Node server \(express, socket\.io\)/);
   expect(k.read("rustybuns.config.ts")).not.toContain('"edge"');
+});
+
+test("init: a repo whose app is a folder down names that folder instead of refusing blind", () => {
+  // A self-hosted app: the Vite frontend and a plain Node API side by side, a root package.json for tooling.
+  const p = project({ "package.json": JSON.stringify({ devDependencies: { "js-yaml": "^4" } }), "frontend/package.json": VITE, "frontend/src/main.tsx": "", "api/package.json": JSON.stringify({ scripts: { start: "node server.js" } }) });
+  const r = p.run("init");
+  expect(r.code).toBe(1);
+  expect(r.out).toContain("Found an app in frontend/: `cd frontend && rustybuns init`");
+  expect(r.out).not.toMatch(/--force/);
+  const bare = project({ "README.md": "# hi", "web/package.json": VITE, "apps/site/package.json": VITE });
+  expect(bare.run("init").out).toContain("Found apps in apps/site/, web/");
+});
+
+test("vite server.proxy: its top-level paths, not the option keys inside", () => {
+  expect(viteProxyPaths(`export default defineConfig({ server: { fs: { allow: ['..'] }, proxy: {
+    '/api': { target: backend, changeOrigin: true, headers: { Origin: apiOrigin } },
+    "/img": { target: media },
+    '^/ws/.*': 'ws://localhost:3001',
+  } }, build: { outDir: 'x' } })`)).toEqual(["/api", "/img", "^/ws/.*"]);
+  expect(viteProxyPaths("export default { plugins: [] }")).toEqual([]);
+});
+
+test("init: a Vite app that proxies to its own server in dev stays desktop-only and names the server", () => {
+  const p = project({
+    "frontend/package.json": VITE, "frontend/src/main.tsx": "", "frontend/package-lock.json": "{}",
+    "frontend/vite.config.js": "export default { server: { proxy: { '/api': { target: 'http://127.0.0.1:3000' }, '/img': 'http://127.0.0.1:8888' } } }\n",
+    "api/package.json": JSON.stringify({ scripts: { start: "node server.js" } }),
+  });
+  const run = (...args: string[]) => { const x = Bun.spawnSync(["bun", CLI, ...args], { cwd: join(p.dir, "frontend"), env: { ...process.env, npm_config_user_agent: "" } }); return { code: x.exitCode, out: x.stdout.toString() + x.stderr.toString() }; };
+  const r = run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("desktop-only: vite.config.js proxies /api, /img to a separate server in dev");
+  expect(r.out).toContain("backend:  ../api (node server.js) looks like that server");
+  expect(p.read("frontend/rustybuns.config.ts")).not.toContain('"edge"');
+  expect(p.read("frontend/.gitignore")).toContain(".alchemy/");
+  expect(run("plan").out).toMatch(/desktop-only app/);
+});
+
+test("plan: Alchemy not installed yet says to run add deploy, not to fix the config", () => {
+  const p = project({ "package.json": VITE, "bun.lock": "", "src/main.tsx": "" });
+  expect(p.run("init").code).toBe(0);
+  const r = p.run("plan");
+  expect(r.code).toBe(1);
+  expect(r.out).toContain("Alchemy and Effect aren't installed here. Run `bunx rustybuns add deploy`, then plan again.");
+});
+
+test("plan: a config that can't import @rustybuns/cli says how to install it", () => {
+  // node_modules without Rusty Buns in it (the app's own install), so Bun won't auto-install it.
+  const p = project({ "package.json": VITE, "package-lock.json": "{}", "src/main.tsx": "", "node_modules/.package-lock.json": "{}" });
+  expect(p.run("init").code).toBe(0);
+  const r = p.run("plan");
+  expect(r.out).toContain("[ConfigLoadFailed]");
+  expect(r.out).toContain("@rustybuns/cli isn't installed in this app: `npm i -D @rustybuns/cli @rustybuns/shell-bun`");
+});
+
+test("init --force after plan: the wrangler.jsonc plan wrote isn't the app's own", () => {
+  const p = project({ "package.json": VITE, "bun.lock": "", "src/main.tsx": "" });
+  expect(p.run("init").code).toBe(0);
+  expect(p.run("generate").code).toBe(0);
+  expect(p.read("wrangler.jsonc")).toMatch(/^\/\/ GENERATED by rustybuns/);
+  const r = p.run("init", "--force");
+  expect(r.code).toBe(0);
+  expect(r.out).not.toMatch(/from wrangler\.jsonc|worker entry/);
+  expect(p.read("rustybuns.config.ts")).toContain('"mode": "spa"');
 });
 
 test("init: a plain Worker from wrangler gets no RWSDK build; a Vite-plugin one builds where the plugin writes", () => {
