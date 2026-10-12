@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { bump, costOf, digUpdate, dugVersion, fixCommand, fixPrompt, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, reached, registryUrl, runDoctor, scheduledDoctor, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
+import { bump, costOf, digUpdate, dugVersion, fixCommand, fixPrompt, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, reached, registryUrl, runDoctor, satisfies, scheduledDoctor, settlePeers, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "./fake-gate.ts";
 import type { Runner } from "../src/preview.ts";
@@ -382,6 +382,105 @@ test("the on-fail chain stops spending at its dollar cap, and its alert tells th
   await send("ryan", "/api/repos/ryan/lab/deps/run", {});
   await settle(call);
   expect(told.length).toBe(1);
+});
+
+test("satisfies reads peer ranges the way npm does, and calls what it can't read a fit", () => {
+  const yes: [string, string][] = [["^18.0.0 || ^19.0.0", "19.2.0"], [">=18", "19.0.0"], [">=18.2.0 <20", "19.9.9"], ["18.x", "18.3.1"], ["~1.2", "1.2.9"], ["^0.2.3", "0.2.9"], ["*", "3.0.0"], ["1.2.3 - 2.0.0", "9.9.9"], ["^19", "19.0.0-rc.1"]];
+  const no: [string, string][] = [["^18.0.0", "19.0.0"], [">=18 <19.2", "19.2.0"], ["~1.2.3", "1.3.0"], ["^0.2.3", "0.3.0"], ["<=18", "19.0.0"], [">18", "18.9.0"], ["1.2.3", "1.2.4"]];
+  for (const [range, v] of yes) expect([range, v, satisfies(range, v)]).toEqual([range, v, true]);
+  for (const [range, v] of no) expect([range, v, satisfies(range, v)]).toEqual([range, v, false]);
+});
+
+/** A fake npm with peerDependencies: each package's versions as [days ago, peers]. */
+const peerRegistry = (pkgs: Record<string, Record<string, [number, Record<string, string>?]>>): Registry => async (name) => {
+  const v = pkgs[name];
+  return v ? { versions: Object.keys(v), time: Object.fromEntries(Object.entries(v).map(([k, [d]]) => [k, daysAgo(d)])), peers: Object.fromEntries(Object.entries(v).flatMap(([k, [, p]]) => p ? [[k, p]] : [])) } : null;
+};
+
+test("settlePeers: a higher-ranked package keeps its target, and a lower one is re-picked to fit its peer range or left out (#862)", async () => {
+  const npm = peerRegistry({
+    rwsdk: { "1.0.0": [300], "1.2.0": [30, { react: ">=19.0.0 <19.2.0", "react-dom": ">=19.0.0 <19.2.0" }] },
+    react: { "18.3.1": [400], "19.0.0": [200], "19.1.0": [100], "19.2.0": [20] },
+    "react-dom": { "18.3.1": [400], "19.2.0": [20, { react: "^19.2.0" }] },
+    effect: { "3.0.0": [300], "3.5.0": [30, { react: "^19.2.0" }] },
+  });
+  const s = { ...DEFAULTS, max_level: "major" as const };
+  const fresh = (): Update[] => [
+    { name: "effect", from: "^3.0.0", to: "^3.5.0", level: "minor", status: "untested" },
+    { name: "react", from: "^18.3.1", to: "^19.2.0", level: "major", status: "untested" },
+    { name: "react-dom", from: "^18.3.1", to: "^19.2.0", level: "major", status: "untested" },
+    { name: "rwsdk", from: "^1.0.0", to: "^1.2.0", level: "minor", status: "untested" },
+  ];
+  // Unranked, nothing gives way: the tests decide, as before.
+  const before = fresh();
+  await settlePeers(before, [], s, npm, NOW);
+  expect(before).toEqual(fresh());
+
+  // rwsdk first: react is re-picked to 19.1.0; react-dom has no release that fits, so it stays where it is.
+  // effect, unranked and so below react, wants react 19.2 and has nothing older to fall back on: it gives way too.
+  const us = fresh();
+  await settlePeers(us, ["rwsdk", "react"], s, npm, NOW);
+  const by = Object.fromEntries(us.map((u) => [u.name, u]));
+  expect(by.rwsdk).toMatchObject({ to: "^1.2.0", status: "untested" });
+  expect(by.rwsdk.yields).toBeUndefined();
+  expect(by.react).toMatchObject({ to: "^19.1.0", level: "major", status: "untested", yields: { to: ["rwsdk"], why: "peer", was: "^19.2.0" } });
+  expect(by["react-dom"]).toMatchObject({ to: "^19.2.0", status: "yielded", yields: { to: ["rwsdk"], why: "peer" } });
+  expect(by.effect).toMatchObject({ to: "^3.5.0", status: "yielded", yields: { to: ["react"], why: "peer" } });
+
+  // react first: it keeps 19.2.0, so rwsdk 1.2.0 (which wants react below it) gives way, and effect, ranked under it, keeps its target.
+  const flipped = fresh();
+  await settlePeers(flipped, ["react", "rwsdk", "effect"], s, npm, NOW);
+  expect(Object.fromEntries(flipped.map((u) => [u.name, [u.to, u.status]]))).toEqual({ react: ["^19.2.0", "untested"], rwsdk: ["^1.2.0", "yielded"], "react-dom": ["^19.2.0", "untested"], effect: ["^3.5.0", "untested"] });
+
+  // A security fix never gives way: the advisory says which version is safe.
+  const vuln = fresh();
+  vuln[1]!.fixes = ["GHSA-x"];
+  await settlePeers(vuln, ["rwsdk"], s, npm, NOW);
+  expect(vuln[1]).toMatchObject({ to: "^19.2.0", status: "untested" });
+});
+
+test("ranked updates that pass alone but not together: the higher keeps its place, the lower gives way; a one-off run ranks for itself (#862)", async () => {
+  // clsx 2 and kleur 4 each pass alone but break together; hono passes with anything.
+  const tester: Tester = async (_remote, files) => {
+    const pkg = JSON.parse(files["package.json"]!), deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    return deps.clsx === "~2.0.0" && deps.kleur === "^4.1.5" ? { ok: false, out: "clsx 2 and kleur 4 clash" } : { ok: true, out: "pass" };
+  };
+  const { call, send } = await app(tester);
+  const put = (b: unknown) => send("ryan", "/api/repos/ryan/lab/deps", b, "PUT");
+  expect((await put({ rank: ["react", "react"] })).status).toBe(400);
+  expect((await put({ rank: "not a name!" })).status).toBe(400);
+  expect((await send("ryan", "/api/repos/ryan/lab/deps/run", { rank: ["a b"] })).status).toBe(400);
+
+  // Unranked: today's behaviour, nothing goes on a branch.
+  await put({ max_level: "major", ignore: "ky", run_tests: true });
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  let got = await settle(call);
+  expect(got.report.branch).toBeUndefined();
+  expect(got.report.note).toContain("passes alone but not together");
+
+  // Saved ranking: kleur first, so clsx gives way and hono, unranked, goes along.
+  expect((await (await put({ rank: "kleur, clsx" })).json()).rank).toEqual(["kleur", "clsx"]);
+  await send("ryan", "/api/repos/ryan/lab/deps/run", {});
+  got = await settle(call);
+  expect(got.report.rank).toEqual(["kleur", "clsx"]);
+  expect(got.report.once).toBeUndefined();
+  expect(got.report.updates.map((u: any) => [u.name, u.status])).toEqual([["clsx", "yielded"], ["hono", "kept"], ["kleur", "kept"]]);
+  expect(got.report.updates[0].yields).toEqual({ to: ["kleur"], why: "tests" });
+  const pkg = await (await call("ryan", `/api/repos/ryan/lab/do/file?path=package.json&branch=${got.report.branch}`)).json();
+  expect(pkg.lines.map((l: any) => l.text).filter((t: string) => /clsx|hono|kleur/.test(t))).toEqual([`    "kleur": "^4.1.5",`, `    "clsx": "~1.2.1",`, `    "hono": "4.6.0",`]);
+
+  // A one-off run: clsx first this time, and the saved ranking stays.
+  await send("ryan", "/api/repos/ryan/lab/deps/run", { rank: ["clsx", "kleur"] });
+  got = await settle(call);
+  expect(got.report).toMatchObject({ rank: ["clsx", "kleur"], once: true });
+  expect(got.report.updates.map((u: any) => [u.name, u.status])).toEqual([["clsx", "kept"], ["hono", "kept"], ["kleur", "yielded"]]);
+  expect(got.settings.rank).toEqual(["kleur", "clsx"]);
+
+  // Only clsx ranked: the unranked ones stay or go together, as before, so kleur and hono both wait.
+  await send("ryan", "/api/repos/ryan/lab/deps/run", { rank: ["clsx"] });
+  got = await settle(call);
+  expect(got.report.updates.map((u: any) => [u.name, u.status])).toEqual([["clsx", "kept"], ["hono", "untested"], ["kleur", "untested"]]);
+  expect(got.report.note).toContain("hono, kleur pass alone but not with the ranked ones");
 });
 
 test("🪏 a dig points at the next major's newest, a dist-tag's release or an exact one, once it's out (#863)", () => {

@@ -4,7 +4,7 @@ import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
-import { desktopEntry, spaEntry } from "../src/build.ts";
+import { desktopEntry, spaEntry, builtEntry, plainDynamicImports } from "../src/build.ts";
 
 const root = new URL("../../../apps/spa-example", import.meta.url).pathname;
 
@@ -186,6 +186,19 @@ test("infer worker build from the release script", async () => {
   // A deploy script that is only the deploy says nothing: the build script is read next, else the fallback.
   expect(inferWorkerBuild({ deploy: "wrangler deploy", build: "tsc -b && vite build" })).toEqual({ build: "tsc -b && vite build", from: "build" });
   expect(inferWorkerBuild({ deploy: "wrangler deploy" }, null)).toEqual({ build: null, from: "default" });
+});
+
+test("infer worker build: migrations, deploys, checks and opaque release scripts are not the build", async () => {
+  const { inferWorkerBuild } = await import("../src/glue/build-script.ts");
+  // from public RWSDK apps (scripts/trial-github.ts): each ran something a local build must not
+  expect(inferWorkerBuild({ build: "vite build", "migrate:new": "drizzle-kit generate", "migrate:prd": "wrangler d1 migrations apply DB --remote",
+    release: "bun migrate:new && bun migrate:prd && RWSDK_DEPLOY=1 vite build" })).toEqual({ build: "RWSDK_DEPLOY=1 vite build", from: "release" });
+  expect(inferWorkerBuild({ build: "vite build", "deploy:backend": "wrangler deploy", "deploy:frontend": "wrangler pages deploy dist",
+    deploy: "npm run deploy:backend && npm run deploy:frontend" })).toEqual({ build: "vite build", from: "build" });
+  expect(inferWorkerBuild({ check: "biome check .", test: "vitest run", deploy: "pnpm check && pnpm test && tsc -b && vite build && wrangler deploy" }))
+    .toEqual({ build: "tsc -b && vite build", from: "deploy" });
+  expect(inferWorkerBuild({ release: "node scripts/release.mjs", build: "vite build" })).toEqual({ build: "vite build", from: "build" });
+  expect(inferWorkerBuild({ release: "bash scripts/release.sh" })).toEqual({ build: "vite build", from: "default" });
 });
 
 import { entryImport, entryName } from "../src/glue/desktop-scaffold.ts";
@@ -513,7 +526,10 @@ test("worker-mode host: R2 is a directory bucket, and Bun's process survives a n
   // unenv's process polyfill replaces globalThis.process when the Worker is imported (cwd() is "/")
   expect(host).toContain(`import process from "node:process";`);
   // workerd's globalThis.Cloudflare is set before the Worker loads: unenv's preset reads it at import
-  expect(host.indexOf(`import "@rustybuns/shell-bun/workerd-global";`)).toBeLessThan(host.indexOf("import worker"));
+  expect(host.indexOf(`import "@rustybuns/shell-bun/workerd-global";`)).toBeLessThan(host.indexOf("await import("));
+  // and the bindings exist before it loads too: apps read env at the top level (await getDb())
+  expect(host.indexOf("globalThis.__RB_ENV = env;")).toBeGreaterThan(-1);
+  expect(host.indexOf("globalThis.__RB_ENV = env;")).toBeLessThan(host.indexOf("await import("));
   expect(wranglerToConfig({ name: "g", images: { binding: "IMG" } }).bindings).toEqual({ IMG: { type: "images" } });
 });
 
@@ -731,4 +747,23 @@ test("a Worker with no bindings key generates instead of crashing (#247)", () =>
   const c = { name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01" }, targets: { edge: { provider: "cloudflare" } } } as any;
   expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, "")).main).toBe("src/worker.ts");
   expect(generateAlchemy(c)).toContain(`Cloudflare.Worker("Worker"`);
+});
+
+test("builtEntry: builtMain, or the main the Vite plugin's wrangler.json names when builtMain isn't there", () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs") as typeof import("node:fs");
+  const dir = mkdtempSync(require("node:os").tmpdir() + "/rb-built-");
+  const c = { name: "w", worker: { main: "src/worker.tsx", builtMain: "dist/worker/index.js" } } as any;
+  expect(builtEntry(c, dir)).toBe("dist/worker/index.js");          // nothing built yet: keep the config's
+  mkdirSync(dir + "/dist/worker", { recursive: true });
+  writeFileSync(dir + "/dist/worker/worker.js", "");                 // rwsdk 1.0.0-alpha's name
+  writeFileSync(dir + "/dist/worker/wrangler.json", JSON.stringify({ main: "worker.js" }));
+  expect(builtEntry(c, dir)).toBe("dist/worker/worker.js");
+  writeFileSync(dir + "/dist/worker/index.js", "");
+  expect(builtEntry(c, dir)).toBe("dist/worker/index.js");
+});
+
+test("plainDynamicImports: import(`x`) becomes import(\"x\") so the shim resolves it; ${...} is left alone", () => {
+  expect(plainDynamicImports("const { env: e } = await import(`cloudflare:workers`);")).toBe('const { env: e } = await import("cloudflare:workers");');
+  expect(plainDynamicImports("import(`./page-${id}.js`)")).toBe("import(`./page-${id}.js`)");
+  expect(plainDynamicImports('import("rwsdk/worker")')).toBe('import("rwsdk/worker")');
 });
