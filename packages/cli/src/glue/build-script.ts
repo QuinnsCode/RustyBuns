@@ -7,6 +7,12 @@
 // A script that is only the deploy ("deploy": "wrangler deploy") says nothing about
 // the build, so the next one is read. With none left, `fallback`: vite build for a
 // Vite-built Worker, null for a plain one, which Alchemy bundles from its main.
+/** A step that changes something outside this machine: a migration, a schema push, a seed or a
+ *  deploy. A local build must never run one: it would act on the app's real database or account. */
+export const isRemoteStep = (cmd: string) =>
+  /\bmigrat(e|ions)\b|\b(db|schema)\s+push\b|\bdrizzle-kit\s+(generate|push|migrate)\b|\bseed\b/.test(cmd) ||
+  /\bwrangler\s+(deploy|publish|versions)\b|\b(vercel|netlify|firebase|flyctl|fly)\s+deploy\b|\bvercel\s+--prod\b|\brailway\s+up\b|\bconvex\s+deploy\b|\bsupabase\s+(db|migration)\b/.test(cmd);
+
 export function inferWorkerBuild<F extends string | null = string>(scripts: Record<string, string>, fallback: F = "vite build" as F): { build: string | F; from: string } {
   for (const from of ["release", "deploy", "build:worker", "build"]) {
     const src = scripts[from];
@@ -17,11 +23,10 @@ export function inferWorkerBuild<F extends string | null = string>(scripts: Reco
       const ref = p.match(/^(?:pnpm|npm|bun|yarn)\s+(?:run\s+)?([\w:.-]+)$/)?.[1];
       const runs = ref && scripts[ref] && ref !== from ? `${ref} ${scripts[ref]}` : p;
       // drop the deploy itself and deploy-only env checks
-      if (/\bwrangler\s+(deploy|publish|versions)\b/.test(runs) || (ref && /^deploy\b/.test(ref))) continue;
+      if (isRemoteStep(runs) || (ref && /^deploy\b/.test(ref))) continue;
       if (/ensure-deploy-env|ensure-env\b/.test(p)) continue;
       if (/\bclean(:\w+)?\b/.test(p) && /^(pnpm|npm|bun|yarn)\b/.test(p)) continue;   // cache cleans are not part of a build
-      // migrations change a database (often the remote one); checks only gate a release
-      if (/\bmigrat(e|ions)\b|\bdrizzle-kit\s+(generate|push|migrate)\b/.test(runs)) continue;
+      // checks only gate a release
       if (/^(check|test|lint|typecheck|types|format)(:|$)/.test(ref ?? "") || /^(eslint|prettier|biome|vitest|jest)\b/.test(p)) continue;
       // inline "<pm> run build" to the actual build script so the command is pm-agnostic
       const m = p.match(/^(?:(\w+=\S+\s+)+)?(?:pnpm|npm|bun|yarn)\s+(?:run\s+)?build$/);
@@ -60,7 +65,9 @@ export function inferStaticBuild(scripts: Record<string, string>): { pre: string
   const vite = at >= 0 ? build[at]! : "";
   const pre = [...steps("prebuild"), ...(at >= 0 ? build.slice(0, at) : [])]
     // cleans are for the app's own dist; ours is emptied by --emptyOutDir
-    .filter((p) => !/^(?:rm\s+-r|rimraf\b)/.test(p) && !(/\bclean(:\w+)?\b/.test(p) && /^(pnpm|npm|bun|yarn)\b/.test(p)));
+    .filter((p) => !/^(?:rm\s+-r|rimraf\b)/.test(p) && !(/\bclean(:\w+)?\b/.test(p) && /^(pnpm|npm|bun|yarn)\b/.test(p)))
+    // "build": "prisma migrate deploy && vite build" migrates the real database on Vercel; not here
+    .filter((p) => !isRemoteStep(p));
   const config = vite.match(/\s(?:--config|-c)(?:=|\s+)(["']?)([^\s"']+)\1/)?.[2] ?? null;
   return { pre, config };
 }

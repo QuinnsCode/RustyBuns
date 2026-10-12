@@ -22,7 +22,7 @@
 // It runs each app's install scripts and build on this machine, with none of its logins (see ENV).
 // Each app's host keeps its data in <out>/data/<app>, so nothing lands in ~ and no two apps share sqlite.
 import { $ } from "bun";
-import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, writeFileSync, rmSync, symlinkSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -167,6 +167,21 @@ function setMode(cfg: string, mode: "spa" | "worker", dataDir: string) {
   return s;
 }
 
+/** .env, .env.production, .dev.vars and the like anywhere in a clone (not .env.example), deleted; returns their paths. */
+export function removeCommittedSecrets(root: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name === ".git") continue;
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/^\.(env|dev\.vars)(\..+)?$/.test(e.name) && !/\.(example|sample|template|schema|defaults)$/.test(e.name)) { rmSync(p); out.push(p.slice(root.length + 1)); }
+    }
+  };
+  walk(root);
+  return out;
+}
+
 async function trial(app: App): Promise<Result> {
   const slug = `${app.repo.replace("/", "__")}${app.sub ? `__${app.sub.replace(/\//g, "_")}` : ""}`;
   const log = join(OUT, "logs", `${slug}.log`);
@@ -178,6 +193,10 @@ async function trial(app: App): Promise<Result> {
     const s = await step(log, OUT, ["git", "clone", "--depth", "1", `https://github.com/${app.repo}`, root], 180e3);
     if (!s.ok) return { ...r, error: `clone: ${s.tail}` };
   }
+  // Some repos commit their real secrets (.env with a production DATABASE_URL, .dev.vars). Nothing
+  // here may use them: they go before any of the app's code runs. Examples and templates stay.
+  const removed = removeCommittedSecrets(root);
+  if (removed.length) appendFileSync(log, `\nremoved committed secrets files: ${removed.join(", ")}\n`);
   let { pm, at } = packageManager(dir, root);
   let s = await step(log, at, pm === "yarn" ? ["npx", "-y", "yarn@1", "install"] : pm === "pnpm" ? ["pnpm", "install", "--config.minimum-release-age=0"] : [pm, "install"], 600e3);
   // an npm lockfile that npm itself can't install (peer conflicts): pnpm reads package.json alone

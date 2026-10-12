@@ -21,7 +21,12 @@ Results go to `.rustybuns-trial/summary.md` (gitignored). That file has a row pe
 
 The two modes measure different things. **`spa`** serves the client build and runs `"use server"` functions on the host. **`worker`** runs the app's own built Worker on the host: its server rendering, routes and server functions, against the local twins. Passing in `worker` mode is the stronger result.
 
-The apps are strangers' code, so their scripts run with **none of this machine's logins**. HOME is an empty directory, Cloudflare's variables hold dead values, and only the package caches point back at the real ones. This matters because a release script can run `wrangler d1 migrations apply --remote` or `wrangler deploy`. The point is to prove each app on Rusty Buns' local twins, never on someone's real cloud.
+The apps are strangers' code, so their scripts run with **none of this machine's logins**. HOME is an empty directory, Cloudflare's variables hold dead values, and only the package caches point back at the real ones. This matters because a release script can run `wrangler d1 migrations apply --remote` or `wrangler deploy`. The point is to prove each app on Rusty Buns' local twins, never on someone's real cloud or data.
+
+The apps' own credentials are kept out too, in two ways:
+
+- **Secrets files are deleted.** Before any of the app's code runs, committed secrets files (`.env`, `.env.production`, `.dev.vars` and the like, but not the `.example` ones) are removed from the clone.
+- **Remote steps are dropped from the build.** `init` leaves out any step that would act on a real database or account (migrations, `db push`, seeds and deploys to wrangler, Vercel, Netlify, Convex or Supabase). So a Vercel-style `"build": "prisma migrate deploy && vite build"` runs only the build.
 
 ## RWSDK
 

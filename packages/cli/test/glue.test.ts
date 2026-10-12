@@ -188,6 +188,17 @@ test("infer worker build from the release script", async () => {
   expect(inferWorkerBuild({ deploy: "wrangler deploy" }, null)).toEqual({ build: null, from: "default" });
 });
 
+test("isRemoteStep: migrations, schema pushes, seeds and deploys never run in a local build", async () => {
+  const { isRemoteStep, inferStaticBuild } = await import("../src/glue/build-script.ts");
+  for (const cmd of ["prisma migrate deploy", "prisma db push", "drizzle-kit push", "drizzle-kit migrate", "wrangler d1 migrations apply DB --remote",
+    "tsx src/db/seed.ts", "npx convex deploy --cmd 'vite build'", "vercel deploy --prod", "netlify deploy", "supabase db push", "railway up", "wrangler deploy"])
+    expect([cmd, isRemoteStep(cmd)]).toEqual([cmd, true]);
+  for (const cmd of ["vite build", "prisma generate", "tsc -b", "node scripts/vercel-config.js", "vinxi build", "paraglide-js compile"])
+    expect([cmd, isRemoteStep(cmd)]).toEqual([cmd, false]);
+  // a Vercel-style build: the migration runs against the real database there, so it is left out here
+  expect(inferStaticBuild({ build: "prisma generate && prisma migrate deploy && vite build" }).pre).toEqual(["prisma generate"]);
+});
+
 test("infer worker build: migrations, deploys, checks and opaque release scripts are not the build", async () => {
   const { inferWorkerBuild } = await import("../src/glue/build-script.ts");
   // from public RWSDK apps (scripts/trial-github.ts): each ran something a local build must not
