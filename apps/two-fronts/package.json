@@ -8,7 +8,9 @@
     "build": "vite build",
     "test": "bun test test",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
-    "desktop:build": "rustybuns build desktop --check"
+    "desktop:build": "rustybuns build desktop --check",
+    "edge:dev": "vite build && bunx wrangler dev",
+    "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
     "@rustybuns/shell-bun": "workspace:*",
