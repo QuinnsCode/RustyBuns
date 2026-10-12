@@ -2,6 +2,8 @@
 
 How many real apps on each framework run under Rusty Buns with no changes, measured on public GitHub repos. [FRAMEWORKS.md](FRAMEWORKS.md) is the roadmap, and this page is the scoreboard.
 
+Frameworks are the first axis of absorption. Providers (Supabase first) are the next, in [notes/PROVIDERS.md](notes/PROVIDERS.md).
+
 ## How it's measured
 
 `scripts/trial-github.ts` code-searches GitHub for `package.json` files that depend on a framework and drops forks and archived repos. For each app it then:

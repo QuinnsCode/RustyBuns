@@ -1,10 +1,26 @@
-# Supabase apps and Rusty Buns
+# Providers: the borg's next axis
+
+The borg absorbs apps onto Rusty Buns. Frameworks were the first axis: [FRAMEWORK_COVERAGE.md](../FRAMEWORK_COVERAGE.md)
+measures how many real RWSDK and TanStack Start apps boot unchanged. Providers are the next. An app also
+leans on hosted services (a database, auth, storage, realtime), and absorbing it means taking those over
+too. That's the "who hosts the data" choice from thick borg
+([#856](https://github.com/QuinnsCode/RustyBuns/issues/856)): one adapter per provider, never one per
+combination.
+
+Each provider gets two adapter options:
+
+- **keep**: the app still talks to the provider, and Rusty Buns runs the code around it.
+- **swap**: the provider's pieces move to Cloudflare primitives that have Rusty Buns local twins.
+
+Supabase is the first provider story.
+
+## Supabase
 
 Research, October 2026: a friend builds mostly on Supabase. Can Alchemy provision it, and do we bring
-him in with Supabase as it is, or move him off it? The easy order is two steps: adopt Rusty Buns first,
-then leave Supabase later if he wants. This note covers both paths.
+him in with Supabase as it is, or swap it out? The easy order is two steps: keep it while he adopts
+Rusty Buns, then swap it out piece by piece if he wants. This section covers both adapters.
 
-## Does Alchemy cover Supabase?
+### Does Alchemy cover Supabase?
 
 **No.** Alchemy v2 (we pin `2.0.0-beta.77`; `beta.81` is the newest in the local cache) ships providers
 for Cloudflare, AWS, GCP, Neon, PlanetScale, Prisma, Railway, Fly, Hetzner, Stripe, GitHub, Docker and
@@ -27,7 +43,7 @@ If we ever want Supabase inside a Rusty Buns deploy graph, a small Alchemy v2 pr
 Management API (project, secrets, maybe an Edge Function) is doable. It's not worth building before
 someone actually needs it.
 
-## Path A: adopt Rusty Buns, keep Supabase
+### Adapter: keep it (supabase-js and Hyperdrive)
 
 His app keeps talking to Supabase. Rusty Buns takes over the parts Supabase doesn't do: the desktop
 binary, the Worker and the Linux box.
@@ -52,7 +68,7 @@ local stack (`supabase start`, which needs Docker). That's fine for a first step
 
 **Cost to him:** almost none. `rustybuns init`, add the env vars, done. Nothing in Supabase moves.
 
-## Path B: leave Supabase
+### Adapter: swap it out (D1, R2 and auth)
 
 Each Supabase piece has a Cloudflare shape, and with it a Rusty Buns twin:
 
@@ -68,9 +84,9 @@ Each Supabase piece has a Cloudflare shape, and with it a Rusty Buns twin:
 | Vectors (`pgvector`) | **Vectorize**, or keep pgvector on Neon | medium | |
 
 
-## Own your auth: Better Auth
+### Own your auth: Better Auth
 
-Better Auth is the proposal for auth on either path. It's a TypeScript library, not a service: users,
+Better Auth is the proposal for auth with either adapter. It's a TypeScript library, not a service: users,
 sessions and accounts are rows in *your* database (D1, sqlite, Postgres or PGlite), and it runs in the
 `fetch` handler on all three targets. Supabase Auth bills per user over 100k MAU. Better Auth costs
 nothing per user, because a user is a row. It covers email and password, OAuth, magic links, passkeys,
@@ -81,7 +97,7 @@ It also fits the identity primitive as it is. Better Auth checks the session, an
 guide](https://better-auth.com/docs/guides/supabase-migration-guide) copies users and password hashes,
 and the one cost is that everyone logs in again once.
 
-## The simple database options
+### The simple database options
 
 Not every app needs a hosted Postgres. From simplest up:
 
@@ -99,7 +115,7 @@ Not every app needs a hosted Postgres. From simplest up:
 
 PGlite locally, Hyperdrive to Neon or Supabase in the cloud: that's the shape #1067 should take.
 
-## The toolchain: an agent, `cf` and Rusty Buns
+### The toolchain: an agent, `cf` and Rusty Buns
 
 What used to sell Supabase is that one dashboard does everything. An agent with the right tools now
 does that job, against primitives you own:
@@ -118,7 +134,7 @@ does that job, against primitives you own:
   Functions as Worker routes, ports the SQL, runs the Better Auth user copy, and `rclone`s the buckets.
   Supabase's moat was the convenience; an agent covers the convenience.
 
-## Napkin math
+### Napkin math
 
 List prices as of October 2026 ([Supabase](https://supabase.com/pricing),
 [Workers, D1, R2, DOs](https://developers.cloudflare.com/workers/platform/pricing/),
@@ -167,14 +183,14 @@ What the math says:
   2.5x saving.
 - The Cloudflare side keeps its own sharp edge: request and CPU charges grow with traffic. A heavy
   5ms+ handler at 200M requests is real money, so profile it (and that's where Rust pays off).
-- **The agent's cost** is the Claude plan he already pays for, plus a few sessions of migration. Paths
-  A, then auth, then storage are small steps an agent can do in a day each. At the small-SaaS size the
+- **The agent's cost** is the Claude plan he already pays for, plus a few sessions of migration. Keeping it,
+  then swapping auth, then storage are small steps an agent can do in a day each. At the small-SaaS size the
   saving is about $30 a month, which won't move anyone by itself. The pitch for him is the desktop
   binary, owning his auth and data, and not getting a bill shock when the app takes off.
 
-## Recommendation
+### Recommendation
 
-1. **Path A first.** Rusty Buns as a dev dependency, Supabase untouched. That's an afternoon's work, and
+1. **Keep it first.** Rusty Buns as a dev dependency, Supabase untouched. That's an afternoon's work, and
    he gets the binary and the Worker.
 2. **Own the auth next: Better Auth.** It takes the biggest line at scale to zero, and it doesn't wait
    on the database.
@@ -185,3 +201,14 @@ What the math says:
 The gap is ours: **Rusty Buns has no Postgres/Hyperdrive binding**
 ([#1067](https://github.com/QuinnsCode/RustyBuns/issues/1067)). With PGlite as its local twin, it makes
 "keep your Postgres" first-class on every target.
+
+## Next providers
+
+Candidates only, nothing started. Each would get the same keep and swap adapters:
+
+- **Firebase**: Firestore, Auth and Storage. Swap is the big one (documents to D1 or Durable Objects,
+  Auth to Better Auth, Storage to R2).
+- **Neon**: already Postgres, so keep is Hyperdrive ([#1067](https://github.com/QuinnsCode/RustyBuns/issues/1067)).
+  Alchemy has `Neon.Project`, so it can sit inside the deploy graph.
+- **PlanetScale**: MySQL or Postgres behind Hyperdrive. Alchemy has a provider.
+- **Clerk**: auth only. Keep verifies its JWT and passes on `X-User-Id`, swap moves users to Better Auth.
