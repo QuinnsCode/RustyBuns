@@ -560,3 +560,18 @@ test("init: says when a Gemfile-less Jekyll site leans on GitHub Pages' other de
   expect(out).not.toContain("wip.md");
   expect(project({ ...files, "Gemfile": "gem 'github-pages'\n" }).run("init").out).not.toContain("jekyll-relative-links");
 });
+
+test("init --force: a wrangler.jsonc Rusty Buns generated doesn't hide the static site (#1113)", () => {
+  const p = project({ "_config.yml": "title: Docs\n", "_layouts/default.html": "{{ content }}", "index.md": "# hi" });
+  expect(p.run("init").code).toBe(0);
+  expect(p.run("generate").code).toBe(0);
+  expect(p.read("wrangler.jsonc")).toStartWith("// GENERATED");
+  const cfg = p.read("rustybuns.config.ts");
+  const r = p.run("init", "--force");
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("detected: Jekyll site");
+  expect(p.read("rustybuns.config.ts")).toBe(cfg);
+  // A hand-written one still means a Worker app.
+  writeFileSync(join(p.dir, "wrangler.jsonc"), '{ "name": "docs", "main": "src/worker.ts" }');
+  expect(p.run("init", "--force").out).not.toContain("detected: Jekyll site");
+});

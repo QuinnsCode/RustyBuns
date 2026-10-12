@@ -28,6 +28,19 @@ export function hostEnv(env: Record<string, string | undefined>): Record<string,
   return out;
 }
 
+// The deploy's own logins: every Cloudflare variable (the account id too), Alchemy's, and the other
+// providers' tokens. A Worker build needs none of them, and it runs the app's code: a stranger's, when
+// you box someone else's repo (a Jekyll plugin, a Vite plugin, a postinstall). The rest stays, since a
+// build may read the app's .dev.vars, NPM_TOKEN for a private package, or GITHUB_SHA for a version.
+const DEPLOY_LOGIN = /^(CLOUDFLARE|CF|WRANGLER|ALCHEMY)_|^(HCLOUD|HETZNER|RAILWAY|OP|AWS|AZURE|GCP|VERCEL|DOCKER|GH|GITHUB)_.*(TOKEN|SECRET|PASSW|CREDENTIAL|KEY)/i;
+
+/** The environment plan and deploy build the Worker in: everything but the deploy's logins (#1114). */
+export function buildEnv(env: Record<string, string | undefined>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) if (v !== undefined && !DEPLOY_LOGIN.test(k)) out[k] = v;
+  return out;
+}
+
 /** Under $HOME: where credentials live. */
 const HOME_SECRETS = [
   ".ssh", ".aws", ".azure", ".gnupg", ".kube", ".docker", ".netrc", ".npmrc", ".git-credentials", ".pypirc",

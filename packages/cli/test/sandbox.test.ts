@@ -2,7 +2,17 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HOST_FLAGS, hostCommand, hostEnv, seatbeltProfile, wantsSandbox } from "../src/sandbox.ts";
+import { buildEnv, HOST_FLAGS, hostCommand, hostEnv, seatbeltProfile, wantsSandbox } from "../src/sandbox.ts";
+
+test("buildEnv drops the deploy's logins and keeps what a build reads (#1114)", () => {
+  const env = buildEnv({
+    PATH: "/bin", HOME: "/h", NODE_ENV: "production", VITE_API: "u", NPM_TOKEN: "n", GITHUB_SHA: "abc", JEKYLL_ENV: "production",
+    CLOUDFLARE_API_TOKEN: "x", CLOUDFLARE_ACCOUNT_ID: "x", CF_API_TOKEN: "x", ALCHEMY_PASSWORD: "x", WRANGLER_API_TOKEN: "x",
+    HCLOUD_TOKEN: "x", RAILWAY_API_TOKEN: "x", OP_SERVICE_ACCOUNT_TOKEN: "x", GITHUB_TOKEN: "x", GH_TOKEN: "x",
+    AWS_SECRET_ACCESS_KEY: "x", AWS_ACCESS_KEY_ID: "x", GONE: undefined,
+  });
+  expect(Object.keys(env).sort()).toEqual(["GITHUB_SHA", "HOME", "JEKYLL_ENV", "NODE_ENV", "NPM_TOKEN", "PATH", "VITE_API"]);
+});
 
 test("hostEnv drops credentials and keeps what a host runs on", () => {
   const env = hostEnv({
