@@ -1,6 +1,7 @@
 // The page's end of a battle: one WebSocket to a world (this machine's, or a friend's on the
 // LAN), the welcome and snapshots coming in, this page's Input going out. Inputs go about 30
-// times a second, and straight away when a key is tapped, so a quick click is never lost.
+// times a second, and straight away when a key is tapped, so a quick click is never lost. They
+// go even when nothing changed: the world echoes the newest one's number to replay from.
 
 import { worldSocket } from "@rustybuns/shell-bun/client";
 import type { Input } from "../sim/game.ts";
@@ -52,7 +53,6 @@ export class Battle {
     const tap = i.jump || i.roll || i.weapon !== undefined || (i.fire && !this.lastSent.includes('"fire":true'));
     if (!tap && now - this.sentAt < SEND_MS) return;
     const s = JSON.stringify(i);
-    if (!tap && s === this.lastSent && now - this.sentAt < 250) return;
     this.sentAt = now, this.lastSent = s;
     this.raw({ t: "in", i });
   }

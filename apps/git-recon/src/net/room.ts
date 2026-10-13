@@ -6,7 +6,7 @@
 
 import { LEVELS, placeLevel, type LevelDef } from "../levels/levels.ts";
 import { placeName } from "../levels/place.ts";
-import { Game, type GameEvent, type Input } from "../sim/game.ts";
+import { Game, MAX_REWIND, type GameEvent, type Input } from "../sim/game.ts";
 import { missionFor } from "../sim/missions.ts";
 import type { ZoneData } from "../sim/terrain.ts";
 import { ORDER } from "../sim/weapons.ts";
@@ -77,6 +77,8 @@ export class Room {
   private names = new Map<string, string>();
   private looks = new Map<number, Look>();
   private held = new Map<number, Input>();
+  /** The newest input seq from each player, echoed in their snapshot. */
+  private acked = new Map<number, number>();
   /** Taps since the last step (a jump, a roll, a weapon, a single shot): they act even if the key's already up. */
   private taps = new Map<number, Pick<Input, "jump" | "roll" | "fire" | "weapon" | "reload">>();
   private events: GameEvent[] = [];
@@ -106,7 +108,7 @@ export class Room {
     const id = this.ids.get(key);
     if (id === undefined) return;
     this.game.leave(id);
-    this.ids.delete(key), this.names.delete(key), this.looks.delete(id), this.held.delete(id), this.taps.delete(id);
+    this.ids.delete(key), this.names.delete(key), this.looks.delete(id), this.held.delete(id), this.taps.delete(id), this.acked.delete(id);
   }
 
   idOf(key: string): number | undefined { return this.ids.get(key); }
@@ -115,6 +117,9 @@ export class Room {
     const id = this.ids.get(key), i = cleanInput(raw);
     if (id === undefined || !i) return;
     this.held.set(id, i);
+    if (i.seq !== undefined) this.acked.set(id, i.seq);
+    // How far behind the battle they see everyone else (the link both ways, and the page's INTERP): their rounds are checked that far back.
+    if (i.view !== undefined) this.game.lags.set(id, Math.max(0, Math.min(MAX_REWIND, this.game.time - i.view)));
     const t = this.taps.get(id) ?? { jump: false, roll: false, fire: false, reload: false };
     this.taps.set(id, { jump: t.jump || i.jump, roll: t.roll || i.roll, fire: t.fire || i.fire, weapon: i.weapon ?? t.weapon, reload: t.reload || i.reload });
   }
@@ -141,7 +146,7 @@ export class Room {
     const keys = [...this.ids.keys()];
     const looks = new Map(keys.map((k) => [k, this.looks.get(this.ids.get(k)!)!]));
     this.game = battleGame(this.setup);
-    this.ids.clear(), this.looks.clear(), this.held.clear(), this.taps.clear(), this.files.clear();
+    this.ids.clear(), this.looks.clear(), this.held.clear(), this.taps.clear(), this.acked.clear(), this.files.clear();
     this.events = [], this.roster = "", this.endedAt = null, this.round++;
     for (const k of keys) {
       const s = this.game.join(this.names.get(k) ?? "soldier");
@@ -190,7 +195,7 @@ export class Room {
     const stashes: StashState[] = g.stashes.map((s) => [s.id, r2(s.x), r2(s.y), r2(s.z)]);
     return {
       t: "snap", time: g.time, status: g.status, winner: g.winner, soldiers,
-      you: { ammo: ORDER.map((w) => me.ammo[w]), loaded: ORDER.map((w) => me.loaded[w]), reload: r2(me.reload), cd: r2(me.cd), heat: me.heat, shieldT: r2(me.shieldT), rollCd: r2(me.rollCd) },
+      you: { ammo: ORDER.map((w) => me.ammo[w]), loaded: ORDER.map((w) => me.loaded[w]), reload: r2(me.reload), cd: r2(me.cd), heat: me.heat, shieldT: r2(me.shieldT), rollCd: r2(me.rollCd), seq: this.acked.get(me.id) ?? 0 },
       shots, stashes, pickups: g.pickups, objective: g.objective, cleared: g.cleared, files: shared.files, events: shared.events,
       ...(shared.roster ? { roster: shared.roster } : {}),
     };

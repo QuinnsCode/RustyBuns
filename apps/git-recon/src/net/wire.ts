@@ -32,8 +32,8 @@ export type SoldierState = number[];
 export type ShotState = [id: number, owner: number, team: Team, weapon: WeaponId, x: number, y: number, z: number, vx: number, vy: number, vz: number, age: number];
 export type StashState = [id: number, x: number, y: number, z: number];
 
-/** What only your own soldier needs: ammo per weapon (in ORDER), cooldowns, the shield's clock. */
-export interface Private { ammo: number[]; loaded: number[]; reload: number; cd: number; heat: number; shieldT: number; rollCd: number }
+/** What only your own soldier needs: ammo per weapon (in ORDER), cooldowns, the shield's clock, and the newest input of yours it has. */
+export interface Private { ammo: number[]; loaded: number[]; reload: number; cd: number; heat: number; shieldT: number; rollCd: number; seq: number }
 
 export type ToWorld =
   | { t: "setup"; setup: Setup }
@@ -94,5 +94,7 @@ export function cleanInput(raw: unknown): Input | null {
     yaw: num(i.yaw, -1e6, 1e6), pitch: num(i.pitch, -1.6, 1.6),
     jump: i.jump === true, roll: i.roll === true, crouch: i.crouch === true, prone: i.prone === true, scope: i.scope === true, fire: i.fire === true, reload: i.reload === true,
     aim, weapon: ORDER.includes(i.weapon as WeaponId) ? (i.weapon as WeaponId) : undefined,
+    ...(typeof i.seq === "number" && Number.isInteger(i.seq) && i.seq >= 0 ? { seq: i.seq } : {}),
+    ...(typeof i.view === "number" && Number.isFinite(i.view) ? { view: i.view } : {}),
   };
 }
