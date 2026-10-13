@@ -296,6 +296,20 @@ test("build desktop refuses a client build in dist/, where the binary goes", asy
   } finally { process.chdir(cwd); }
 });
 
+test("build desktop says to run add desktop when init's desktop files aren't there", async () => {
+  const { buildDesktop } = await import("../src/build.ts");
+  const dir = require("node:fs").mkdtempSync(require("node:path").join(require("node:os").tmpdir(), "rb-"));
+  const cwd = process.cwd();
+  process.chdir(dir);
+  try {
+    const desktop = { mode: "spa", clientBuild: "vite build --config vite.desktop.config.ts", clientDir: "dist/desktop", world: "packages/desktop/world.ts" };
+    await expect(buildDesktop({ name: "x", targets: { desktop } } as any))
+      .rejects.toThrow(/vite\.desktop\.config\.ts and packages\/desktop\/world\.ts are missing\. Run `rustybuns add desktop`/);
+    await expect(buildDesktop({ name: "x", targets: { desktop: { ...desktop, world: false } } } as any))
+      .rejects.toThrow(/vite\.desktop\.config\.ts is missing/);
+  } finally { process.chdir(cwd); }
+});
+
 test("boundary vite plugin swaps actions when vite reports a Windows path", async () => {
   const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs");
   const { tmpdir } = require("node:os");
