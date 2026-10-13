@@ -357,3 +357,27 @@ describe("the isometric pulse", () => {
     expect(svg).toContain("10 lines</title>");
   });
 });
+
+// Picking lines from the keyboard, as in VS Code: arrows, shift+arrows, ⌘A, ⌘L, Esc.
+describe("lineKey", () => {
+  const src = html.slice(html.indexOf("function lineKey"), html.indexOf("/** Our own right-click menu"));
+  const lineKey = new Function(`${src}; return lineKey;`)();
+  const st = (picked: number[], anchor: number | null, cursor: number | null) => ({ picked: new Set(picked), anchor, cursor });
+  const got = (r: any) => r && { picked: [...r.picked].sort((a: number, b: number) => a - b), anchor: r.anchor, cursor: r.cursor };
+
+  test("arrows move one line, shift grows the pick from where it started", () => {
+    expect(got(lineKey("ArrowDown", false, false, st([2], 2, 2), 6))).toEqual({ picked: [3], anchor: 3, cursor: 3 });
+    expect(got(lineKey("ArrowDown", true, false, st([2], 2, 2), 6))).toEqual({ picked: [2, 3], anchor: 2, cursor: 3 });
+    expect(got(lineKey("ArrowUp", true, false, st([2, 3], 2, 3), 6))).toEqual({ picked: [2], anchor: 2, cursor: 2 });
+    expect(got(lineKey("ArrowDown", false, false, st([5], 5, 5), 6))).toEqual({ picked: [5], anchor: 5, cursor: 5 });
+  });
+
+  test("⌘A picks all, ⌘L adds the next line, Esc drops the pick", () => {
+    expect(got(lineKey("a", false, true, st([], null, null), 4))).toEqual({ picked: [0, 1, 2, 3], anchor: 0, cursor: 3 });
+    expect(got(lineKey("l", false, true, st([], null, 1), 4))).toEqual({ picked: [1], anchor: 1, cursor: 1 });
+    expect(got(lineKey("l", false, true, st([1], 1, 1), 4))).toEqual({ picked: [1, 2], anchor: 1, cursor: 2 });
+    expect(got(lineKey("Escape", false, false, st([1, 2], 1, 2), 4))).toEqual({ picked: [], anchor: null, cursor: 2 });
+    expect(lineKey("Escape", false, false, st([], null, 2), 4)).toBeNull();
+    expect(lineKey("c", false, true, st([1], 1, 1), 4)).toBeNull();
+  });
+});

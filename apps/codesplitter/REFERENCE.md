@@ -81,6 +81,7 @@ The pitch is in [README.md](README.md).
   The owner can delete a repo here, typing its name back to confirm (`DELETE /api/repos/:o/:r?confirm=:r`): its rows, its files' and branches' Durable Objects, its cuts, shares, logs and settings, and its git go together, as an expired dig's do.
   GitHub never hears, and a stack it deployed stays up.
 - **Share some lines, not the repo.** Select a range (click a line number, shift-click another) and share it: a live link to just those lines that follows them by id as the file changes, and works from a private repo without opening anything else.
+- **Right-click is ours on the code.** Right-click (ctrl-click on a Mac) a line for copy and every line command (share, stamp, hold, make private, cut) on what's picked. ⌘-click lines anywhere on them to pick scattered ones, say to blank them before you stream. Keys as in VS Code once the code has focus: ↑/↓, shift+↑/↓, ⌘A, ⌘L, ⌘C, Enter to edit, Esc. Shift+right-click still gets the browser's menu.
   GitHub's permalinks freeze a commit and need the whole repo public.
   Revocable by whoever shared it or the owner.
 - **Private lines in a public repo.** Select some lines and make them private: only the repo's crew (owner and collaborators) reads them.

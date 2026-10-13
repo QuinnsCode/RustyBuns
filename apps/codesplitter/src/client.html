@@ -131,6 +131,8 @@
   .ctx button { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 0; border-radius: 4px; background: none; color: var(--fg); text-align: left; cursor: pointer; font: inherit; }
   .ctx button:hover { background: var(--select); } .ctx svg.lucide { width: 14px; height: 14px; color: var(--muted); }
   .ctx input { margin: 2px; font: 12.5px var(--mono); }
+  .ctx button span { flex: 1; } .ctx kbd { color: var(--muted); font: 11.5px var(--mono); padding-left: 16px; } .ctx hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
+  .ctx button:focus-visible { outline: none; background: var(--select); } #lines:focus { outline: none; }
   .tree a { display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px 0 calc(8px + var(--d, 0) * 12px); color: var(--fg); font-size: 13px; white-space: nowrap; cursor: pointer; }
   .tree a:hover { background: #f0f0f0; text-decoration: none; }
   .tree a.on { background: #e9e9e9; box-shadow: inset 2px 0 var(--fg); font-weight: 500; }
@@ -2715,14 +2717,20 @@ function diffRows(then, now) {
 }
 const PICK_TIP = "select lines first: click a line number, shift-click another, ⌘-click to add one, or drag down the numbers";
 const SHARE_TIP = PICK_TIP + ". A share is one run of lines";
+// ⌘ on a Mac, Ctrl elsewhere. On a Mac ctrl-click is a right-click, so it opens the menu instead of picking.
+const MAC = /Mac|iP(hone|ad)/.test(navigator.platform);
+const kb = (k) => (MAC ? "⌘" : "Ctrl+") + k;
 /**
  * Pick lines by their numbers, as in VS Code: click one, shift-click another for the lines
  * between, ⌘-click (ctrl-click) to add or drop one, or drag down the gutter for a run.
- * Calls back with the picked lines' runs, [[from, to], ...] (1-based, in order).
+ * ⌘-click on the code itself adds or drops its line too, and once the code has focus the
+ * keys work (lineKey). Calls back with the picked lines' runs, [[from, to], ...] (1-based, in order).
+ * Gives back `at(e)`, the line under a pointer event, and `set(picked)`, for a menu that picks it.
  */
 function selectable(box, onChange) {
-  let anchor = null, picked = new Set(), drag = null;
-  const at = (e) => { const n = e.target.closest?.(".n"); return n && box.contains(n) ? Number(n.parentElement.dataset.i) : null; };
+  let anchor = null, cursor = null, picked = new Set(), drag = null;
+  box.tabIndex = 0;
+  const at = (e, row = false) => { const n = e.target.closest?.(row ? ".ln[data-i]" : ".n"); return n && box.contains(n) ? Number((row ? n : n.parentElement).dataset.i) : null; };
   const span = (a, b) => Array.from({ length: Math.abs(b - a) + 1 }, (_, k) => Math.min(a, b) + k);
   const pick = (next) => {
     picked = next;
@@ -2730,9 +2738,16 @@ function selectable(box, onChange) {
     onChange(runsOf(picked));
   };
   box.addEventListener("mousedown", (e) => {
-    const i = at(e); if (i === null || e.button) return;
-    e.preventDefault();
-    const more = e.metaKey || e.ctrlKey;
+    if (e.button || e.target.closest("input, textarea, button, a")) return;
+    const more = e.metaKey || (e.ctrlKey && !MAC);
+    let i = at(e);
+    if (i === null) {
+      // On the code: a plain click puts the cursor there for the keys; ⌘-click picks the line.
+      if ((i = at(e, true)) === null) return;
+      if (!more) return void (cursor = i);
+    }
+    e.preventDefault(); box.focus({ preventScroll: true });
+    cursor = i;
     if (e.shiftKey && anchor !== null) return pick(new Set([...(more ? picked : []), ...span(anchor, i)]));
     anchor = i;
     if (more && picked.has(i)) { const next = new Set(picked); next.delete(i); return pick(next); }
@@ -2741,6 +2756,60 @@ function selectable(box, onChange) {
   });
   box.addEventListener("mouseover", (e) => { if (!drag) return; const i = at(e); if (i !== null) pick(new Set([...drag.keep, ...span(drag.from, i)])); });
   addEventListener("mouseup", () => (drag = null));
+  box.addEventListener("keydown", (e) => {
+    if (e.target !== box || e.altKey) return;
+    const next = lineKey(e.key, e.shiftKey, MAC ? e.metaKey : e.ctrlKey, { picked, anchor, cursor }, box.querySelectorAll(".ln[data-i]").length);
+    if (!next) return;
+    e.preventDefault();
+    ({ anchor, cursor } = next);
+    pick(next.picked);
+    box.querySelector(`.ln[data-i="${cursor}"]`)?.scrollIntoView({ block: "nearest" });
+  });
+  return { at: (e) => at(e, true), get picked() { return picked; }, set(next) { anchor = cursor = Math.min(...next); pick(next); } };
+}
+/**
+ * The VS Code keys for picking lines: ↑/↓ move, shift+↑/↓ grow the pick, ⌘A picks all, ⌘L picks
+ * the line and then the next one each press, Esc drops the pick. Null for any other key.
+ */
+function lineKey(key, shift, mod, { picked, anchor, cursor }, n) {
+  if (!n) return null;
+  const span = (a, b) => new Set(Array.from({ length: Math.abs(b - a) + 1 }, (_, k) => Math.min(a, b) + k));
+  if (key === "Escape") return picked.size ? { picked: new Set(), anchor: null, cursor } : null;
+  if (mod && key.toLowerCase() === "a") return { picked: span(0, n - 1), anchor: 0, cursor: n - 1 };
+  if (mod && key.toLowerCase() === "l") {
+    const c = cursor === null ? 0 : picked.has(cursor) ? Math.min(cursor + 1, n - 1) : cursor;
+    return { picked: new Set([...picked, c]), anchor: anchor ?? c, cursor: c };
+  }
+  if (mod || (key !== "ArrowUp" && key !== "ArrowDown")) return null;
+  const c = cursor === null ? (key === "ArrowUp" ? n - 1 : 0) : Math.max(0, Math.min(n - 1, cursor + (key === "ArrowUp" ? -1 : 1)));
+  if (shift) { const a = anchor ?? cursor ?? c; return { picked: span(a, c), anchor: a, cursor: c }; }
+  return { picked: new Set([c]), anchor: c, cursor: c };
+}
+/** Our own right-click menu: items are {ic, title, key?, run} or "-" for a rule. ↑/↓ walk it, Esc shuts it. */
+function ctxMenu(x, y, items) {
+  $(".ctx")?.remove();
+  const m = document.createElement("div"); m.className = "ctx"; m.setAttribute("role", "menu");
+  m.innerHTML = items.map((it, k) => it === "-" ? "<hr>" : `<button type="button" role="menuitem" data-k="${k}">${icon(it.ic)}<span>${esc(it.title)}</span>${it.key ? `<kbd>${esc(it.key)}</kbd>` : ""}</button>`).join("");
+  document.body.append(m); icons();
+  m.style.left = Math.max(8, Math.min(x, innerWidth - m.offsetWidth - 8)) + "px"; m.style.top = Math.max(8, Math.min(y, innerHeight - m.offsetHeight - 8)) + "px";
+  const back = document.activeElement;
+  const close = () => { m.remove(); removeEventListener("mousedown", out, true); removeEventListener("keydown", keys, true); removeEventListener("scroll", close, true); back?.focus?.({ preventScroll: true }); };
+  const out = (e) => { if (!m.contains(e.target)) close(); };
+  const keys = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); return close(); }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const bs = [...m.querySelectorAll("button")], k = bs.indexOf(document.activeElement);
+    bs[(k + (e.key === "ArrowDown" ? 1 : -1) + bs.length) % bs.length]?.focus();
+  };
+  addEventListener("mousedown", out, true); addEventListener("keydown", keys, true); addEventListener("scroll", close, true);
+  m.addEventListener("click", async (e) => {
+    const it = items[e.target.closest("button")?.dataset.k];
+    if (!it) return;
+    close();
+    try { await it.run(); } catch (err) { toast(String(err.message || err)); }
+  });
+  m.querySelector("button")?.focus();
 }
 /** Picked line indexes (0-based) as runs of line numbers: {2, 3, 4, 9} is [[3, 5], [10, 10]]. */
 function runsOf(picked) {
@@ -4175,7 +4244,7 @@ const views = {
       body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div>`,
       details: sec("radio", "Here now", `<p id="who-here" class="muted">just you</p><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div>`)
         + sec("activity", "Activity", `<div class="act-bar"><div class="seg" id="act-kinds" role="group" aria-label="show">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === "all"}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who" aria-label="filter by who"></div><div class="acts" id="acts"></div>`)
-        + (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click to add a line, or drag down the numbers.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
+        + (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click a line to add it, or drag down the numbers. Right-click the code for what you can do with the lines. Keys as in VS Code: ↑/↓, shift+↑/↓, ⌘A, ⌘L, ⌘C, Esc.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
         + (owner === me() && r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
         + sec("scroll-text", "Commits", `<div id="commits"></div>`)
         + views.repoDetails(owner, repo, r),
@@ -4425,7 +4494,7 @@ const views = {
       if (live && r.canWrite) for (const el of box.querySelectorAll(".ln")) el.addEventListener("dblclick", () => edit(el));
       folds.forEach(([el, after]) => after ? after.after(el) : box.prepend(el)); folds = [];
     };
-    selectable(box, (runs) => {
+    const picker = selectable(box, (runs) => {
       sel = runs.length ? runs : null;
       const label = sel ? runsLabel(runs) : "";
       for (const b of ["#share", "#stamp", "#collect", "#lock", "#cut", "#hold"]) if ($(b)) $(b).disabled = !sel;
@@ -4439,6 +4508,30 @@ const views = {
     });
     const selLines = () => sel ? sel.flatMap(([a, b]) => doc.lines.slice(a - 1, b)) : [];
     const selPrivate = () => selLines().length > 0 && selLines().every((l) => l.private);
+    // ⌘C with no text selected copies the picked lines whole; Enter edits a single picked line.
+    const copyLines = () => copy(selLines().map((l) => l.text).join("\n"), `Copied ${runsLabel(sel)}`);
+    box.addEventListener("keydown", (e) => {
+      if (e.target !== box || !sel) return;
+      if ((MAC ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "c" && getSelection().isCollapsed) { e.preventDefault(); copyLines(); }
+      else if (e.key === "Enter" && r.canWrite && viewing === null && picker.picked.size === 1) { e.preventDefault(); edit(box.querySelector(`.ln[data-i="${[...picker.picked][0]}"]`)); }
+    });
+    // Right-click (ctrl-click on a Mac) is ours: it picks the line under it unless it's already in the pick, then
+    // offers copy and this file's line commands, the ⌘K palette's own. Shift+right-click still gets the browser's menu.
+    box.addEventListener("contextmenu", async (e) => {
+      const i = picker.at(e);
+      if (e.shiftKey || i === null || viewing !== null || e.target.closest("input, textarea")) return;
+      e.preventDefault();
+      const text = getSelection().toString();
+      if (!picker.picked.has(i)) picker.set(new Set([i]));
+      const mine = (await commands()).filter((c) => c.group === "This file" && !c.ask);
+      ctxMenu(e.clientX, e.clientY, [
+        { ic: "copy", title: text ? "Copy" : `Copy ${runsLabel(sel)}`, key: kb("C"), run: () => text ? copy(text) : copyLines() },
+        ...(mine.length ? ["-", ...mine] : []),
+        "-",
+        { ic: "list-checks", title: "Select all lines", key: kb("A"), run: () => picker.set(new Set(doc.lines.map((_, k) => k))) },
+        { ic: "command", title: "More commands", key: kb("K"), run: () => palette.open() },
+      ]);
+    });
     // Lines went private or public: the server says what this reader may see.
     const privateChanged = async () => {
       doc = await api(`${base}/file${q}`);
