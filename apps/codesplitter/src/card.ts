@@ -34,16 +34,25 @@ class Canvas {
     for (let j = Math.max(0, y); j < Math.min(H, y + h); j++)
       for (let i = Math.max(0, x); i < Math.min(W, x + w); i++) this.px.set(c, (j * W + i) * 3);
   }
-  /** Fill a convex polygon, row by row. */
+  /** Fill a convex polygon, antialiased: four sub-scanlines a row, fractional coverage at each end. */
   poly(pts: [number, number][], c: RGB) {
-    const ys = pts.map((p) => p[1]);
-    for (let y = Math.max(0, Math.ceil(Math.min(...ys))); y < Math.min(H, Math.max(...ys)); y++) {
-      let lo = Infinity, hi = -Infinity;
-      pts.forEach(([x0, y0], i) => {
-        const [x1, y1] = pts[(i + 1) % pts.length]!;
-        if ((y0 <= y && y < y1) || (y1 <= y && y < y0)) { const x = x0 + ((y - y0) / (y1 - y0)) * (x1 - x0); lo = Math.min(lo, x); hi = Math.max(hi, x); }
-      });
-      if (lo <= hi) this.rect(Math.round(lo), y, Math.round(hi) - Math.round(lo) + 1, 1, c);
+    const ys = pts.map((p) => p[1]), SUB = 4;
+    for (let y = Math.max(0, Math.floor(Math.min(...ys))); y < Math.min(H, Math.ceil(Math.max(...ys))); y++) {
+      const cov = new Map<number, number>();
+      for (let k = 0; k < SUB; k++) {
+        const sy = y + (k + 0.5) / SUB;
+        let lo = Infinity, hi = -Infinity;
+        pts.forEach(([x0, y0], i) => {
+          const [x1, y1] = pts[(i + 1) % pts.length]!;
+          if ((y0 <= sy && sy < y1) || (y1 <= sy && sy < y0)) { const x = x0 + ((sy - y0) / (y1 - y0)) * (x1 - x0); lo = Math.min(lo, x); hi = Math.max(hi, x); }
+        });
+        for (let x = Math.max(0, Math.floor(lo)); x < Math.min(W, Math.ceil(hi)); x++)
+          cov.set(x, (cov.get(x) ?? 0) + (Math.min(hi, x + 1) - Math.max(lo, x)) / SUB);
+      }
+      for (const [x, a] of cov) {
+        const o = (y * W + x) * 3, t = Math.min(1, a);
+        for (let k = 0; k < 3; k++) this.px[o + k] = Math.round(this.px[o + k]! + (c[k]! - this.px[o + k]!) * t);
+      }
     }
   }
   /** Draw text from (x, y), clipped at `maxX`; returns where it stopped. */
