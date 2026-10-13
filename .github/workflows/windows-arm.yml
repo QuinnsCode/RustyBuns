@@ -1,6 +1,7 @@
 # Bun on Windows on Arm (Snapdragon laptops), on GitHub's free windows-11-arm runner.
 # Native bun-windows-aarch64, not setup-bun, which has fallen back to x64 on Windows Arm
-# (oven-sh/setup-bun#164). It runs Bun's own terminal test (agent terminals with no
+# (oven-sh/setup-bun#164). Every step runs in Git Bash: the runner's pwsh is PowerShell 7.6 on
+# .NET 10, which crashes at random on Windows Arm (dotnet/runtime#131636, #919). It runs Bun's own terminal test (agent terminals with no
 # node-pty) and says which of the rest works there: bun:ffi (off on Windows Arm per
 # oven-sh/bun#28055), bun:sqlite and a compiled binary. On demand, and on a PR that changes it.
 name: windows-arm
@@ -20,17 +21,19 @@ jobs:
     timeout-minutes: 15
     env:
       BUN_VERSION: "1.4.3"
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Native Bun for Arm64
-        shell: pwsh
         run: |
-          $zip = "$env:RUNNER_TEMP\bun.zip"
-          Invoke-WebRequest "https://github.com/oven-sh/bun/releases/download/bun-v$env:BUN_VERSION/bun-windows-aarch64.zip" -OutFile $zip
-          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\bun"
-          "$env:RUNNER_TEMP\bun\bun-windows-aarch64" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          curl -fsSL -o "$RUNNER_TEMP/bun.zip" "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/bun-windows-aarch64.zip"
+          mkdir -p "$RUNNER_TEMP/bun"
+          # Windows' own bsdtar reads zips; Git Bash's tar doesn't
+          /c/Windows/System32/tar.exe -xf "$RUNNER_TEMP/bun.zip" -C "$RUNNER_TEMP/bun"
+          echo "$RUNNER_TEMP\bun\bun-windows-aarch64" >> "$GITHUB_PATH"
       - name: What Bun sees
-        shell: pwsh
         run: |
           bun --version
           bun -e "console.log(process.platform, process.arch)"
@@ -39,10 +42,9 @@ jobs:
       - name: Bun's terminal (ConPTY)
         run: bun test packages/shell-bun/test/terminal.test.ts
       - name: The rest, reported not required
-        shell: pwsh
         run: |
           bun -e "const { Database } = require('bun:sqlite'); console.log('bun:sqlite', new Database(':memory:').query('select 1 as x').get().x === 1 ? 'ok' : 'wrong')"
           bun -e "try { const { dlopen } = require('bun:ffi'); const k = dlopen('kernel32.dll', { GetCurrentProcessId: { returns: 'u32' } }); console.log('bun:ffi ok, pid', k.symbols.GetCurrentProcessId()) } catch (e) { console.log('bun:ffi unavailable:', e.message) }"
-          Set-Content "$env:RUNNER_TEMP\hi.ts" "console.log('compiled ok', process.arch)"
-          bun build --compile "$env:RUNNER_TEMP\hi.ts" --outfile "$env:RUNNER_TEMP\hi.exe"
-          & "$env:RUNNER_TEMP\hi.exe"
+          echo "console.log('compiled ok', process.arch)" > "$RUNNER_TEMP/hi.ts"
+          bun build --compile "$RUNNER_TEMP/hi.ts" --outfile "$RUNNER_TEMP/hi.exe"
+          "$RUNNER_TEMP/hi.exe"
