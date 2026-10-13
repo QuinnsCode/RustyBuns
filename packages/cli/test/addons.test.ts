@@ -63,7 +63,7 @@ test("a static addon is carried; one a package finds at run time is named, and s
   expect(addons.carried[0]).toMatch(/^server-0-fast-\w+\.node$/);
   expect(readdirSync(outdir).sort()).toEqual([addons.carried[0], "server-0.js"].sort());
   expect(addons.missed).toEqual([{ pkg: "@db/sqlish", files: expect.arrayContaining(["binding.gyp", "build/Release/sqlish.node"]) }]);
-  const err = addonProblems("../api/server.js", addons, ["linux-x64"])!;
+  const err = addonProblems("../api/server.js", addons, outdir, ["linux-x64"])!;
   expect(err).toContain("desktop.server ../api/server.js: native addons the binary can't run");
   expect(err).toContain("@db/sqlish loads a native addon");
   expect(err).not.toContain("fast");                         // linux-x64 is what it's built for
@@ -72,12 +72,12 @@ test("a static addon is carried; one a package finds at run time is named, and s
 test("a carried addon built for another OS names the targets it won't load on", async () => {
   const dir = join(root, "cross");
   fixture(dir, MACHO_ARM64, false);
-  const { addons } = await bundle(dir);
+  const { addons, outdir } = await bundle(dir);
   expect(addons.missed).toEqual([]);
-  expect(addonProblems("server.js", addons, ["darwin-arm64"])).toBeNull();
-  expect(addonProblems("server.js", addons, null)).toBeNull();      // the dev host: this machine
-  const err = addonProblems("server.js", addons, ["darwin-arm64", "linux-x64", "windows-x64"])!;
-  expect(err).toContain("staticaddon/build/Release/fast.node is built for darwin-arm64, so it won't load on linux-x64, windows-x64");
+  expect(addonProblems("server.js", addons, outdir, ["darwin-arm64"])).toBeNull();
+  expect(addonProblems("server.js", addons, outdir, null)).toBeNull();      // the dev host: this machine
+  const err = addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64", "windows-x64"])!;
+  expect(err).toContain("fast.node is built for darwin-arm64, so it won't load on linux-x64, windows-x64");
 });
 
 // better-sqlite3's shape: `require("bindings")("name")`, built into build/Release (and Debug).
@@ -99,8 +99,8 @@ test("an addon found through bindings is carried: the build/Release one, by the 
   expect(addons.sources).toEqual([join(nm, "sqlite-ish/build/Release/sqlite_ish.node")]);
   expect(addons.carried).toEqual([expect.stringMatching(/^server-0-sqlite_ish-\w+\.node$/)]);
   expect(readFileSync(join(outdir, "server-0.js"), "utf8")).toContain(addons.carried[0]);
-  expect(addonProblems("server.js", addons, ["linux-x64"])).toBeNull();
-  expect(addonProblems("server.js", addons, ["darwin-arm64"])).toContain("sqlite-ish/build/Release/sqlite_ish.node is built for linux-x64");
+  expect(addonProblems("server.js", addons, outdir, ["linux-x64"])).toBeNull();
+  expect(addonProblems("server.js", addons, outdir, ["darwin-arm64"])).toContain("sqlite_ish.node is built for linux-x64");
   // A name it wasn't built with says so when asked for, without loading anything.
   const { open } = await import(join(outdir, "server-0.js"));
   expect(() => open("other")).toThrow("bindings: other.node wasn't in sqlite-ish when this binary was built");
@@ -151,24 +151,22 @@ test("an addon found through node-gyp-build is carried for every target, and a t
   for (const f of addons.carried) expect(js).toContain(f);
   expect(js).toContain('"darwin-arm64"');
   expect(js).toContain('"linux-x64"');
-  const err = addonProblems("server.js", addons, targets)!;
+  const err = addonProblems("server.js", addons, outdir, targets)!;
   expect(err).toContain("hashish has no addon for windows-x64");
   expect(err).not.toContain("is built for");                   // each target's file loads on it
-  expect(addonProblems("server.js", addons, ["darwin-arm64", "linux-x64"])).toBeNull();
+  expect(addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64"])).toBeNull();
 });
 
 // napi-rs packages ship a build per OS, each its own package; the server loads the one for where it runs.
 test("an addon with a prebuilt per OS needs one build per target, not every build on every target", () => {
-  const dir = join(root, "per-os", "node_modules/@node-rs");
-  mkdirSync(join(dir, "bcrypt-darwin-arm64"), { recursive: true });
-  mkdirSync(join(dir, "bcrypt-linux-x64-gnu"), { recursive: true });
-  const mac = join(dir, "bcrypt-darwin-arm64/bcrypt.darwin-arm64.node"), linux = join(dir, "bcrypt-linux-x64-gnu/bcrypt.linux-x64-gnu.node");
-  writeFileSync(mac, MACHO_ARM64);
-  writeFileSync(linux, ELF_X64);
+  const dir = join(root, "per-os");
+  mkdirSync(dir, { recursive: true });
+  const mac = "server-0-bcrypt.darwin-arm64-bk1yghyr.node", linux = "server-0-bcrypt.linux-x64-gnu-ge3w5gb0.node";
+  writeFileSync(join(dir, mac), MACHO_ARM64);
+  writeFileSync(join(dir, linux), ELF_X64);
   expect([mac, linux].map(addonName)).toEqual(["bcrypt", "bcrypt"]);
-  const addons = { carried: [], sources: [mac, linux], perTarget: [], missed: [] };
-  expect(addonProblems("server.js", addons, ["darwin-arm64", "linux-x64"])).toBeNull();
-  const err = addonProblems("server.js", addons, ["linux-x64", "windows-x64"])!;
+  expect(addonProblems("server.js", { carried: [mac, linux], sources: [], perTarget: [], missed: [] }, dir, ["darwin-arm64", "linux-x64"])).toBeNull();
+  const err = addonProblems("server.js", { carried: [mac, linux], sources: [], perTarget: [], missed: [] }, dir, ["linux-x64", "windows-x64"])!;
   expect(err).toContain("bcrypt.node is built for darwin-arm64, linux-x64, so it won't load on windows-x64");
 });
 
@@ -245,9 +243,9 @@ test("sharp's addon and libvips go in a tree per target, the ones npm skipped fe
     expect(js).toContain('"linux-x64": "server-0-native/@img/sharp-linux-x64/lib/sharp-linux-x64.node"');
     expect(js).toContain("import.meta.dir");
     expect(js).not.toContain("@img/sharp-${p}");               // sharp's own loader is gone
-    const err = addonProblems("server.js", addons, targets)!;
+    const err = addonProblems("server.js", addons, outdir, targets)!;
     expect(err).toContain("sharp has no addon for windows-x64 (no @img/sharp-<os>-<arch> installed, or on the npm registry");
-    expect(addonProblems("server.js", addons, ["darwin-arm64", "linux-x64"])).toBeNull();
+    expect(addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64"])).toBeNull();
     // A second build reads the cache; only the target with nothing to fetch asks again.
     const asked = reg.asked.length;
     await build();
@@ -285,10 +283,10 @@ test("a prebuild-install package gets each other target's prebuild from its rele
       expect(addons.sources.filter((f) => f.startsWith(join(dir, "cache")))).toHaveLength(2);
       expect(addons.sources).toContain(join(nm, "sqlite-ish/build/Release/sqlite_ish.node"));
       expect(perTarget).toEqual([expect.objectContaining({ pkg: "sqlite-ish", missing: ["windows-x64"] })]);
-      const err = addonProblems("server.js", addons, targets)!;
+      const err = addonProblems("server.js", addons, outdir, targets)!;
       expect(err).toContain(`sqlite-ish has no addon for windows-x64 (prebuild-install's release has none: ${rel.url}/v1.2.3/)`);
       expect(err).not.toContain("is built for");
-      expect(addonProblems("server.js", addons, ["darwin-arm64", "linux-x64", "linux-arm64"])).toBeNull();
+      expect(addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64", "linux-arm64"])).toBeNull();
     });
   } finally { rel.stop(); }
 });
@@ -316,8 +314,8 @@ test("better-sqlite3's own loader gets each target's prebuild by a static path",
   expect(addons.missed).toEqual([]);
   expect(addons.carried).toHaveLength(2);
   expect(addons.perTarget).toEqual([expect.objectContaining({ pkg: "better-sqlite3", missing: ["windows-x64"] })]);
-  expect(addonProblems("server.js", addons, targets)).toContain("better-sqlite3 has no addon for windows-x64");
-  expect(addonProblems("server.js", addons, ["darwin-arm64", "linux-x64"])).toBeNull();
+  expect(addonProblems("server.js", addons, outdir, targets)).toContain("better-sqlite3 has no addon for windows-x64");
+  expect(addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64"])).toBeNull();
   // A binding passed in is still used as is, without loading the carried one.
   const { getBinding } = await import(join(outdir, "server-0.js"));
   expect(getBinding({ mine: true })).toEqual({ mine: true });

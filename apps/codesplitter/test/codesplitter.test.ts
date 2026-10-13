@@ -187,8 +187,29 @@ describe("merge", () => {
     expect([m.conflicts[0]!.main, m.conflicts[0]!.branch].some((t) => t?.includes("merge(up"))).toBe(false);
     const moved = at("  ", [...tail.slice(0, 4), "await drop(squashRef(ref));", "await forget(name);"]).join("\n");
     const pick = (p: Pick) => { const d = structuredClone(main), r = merge(base, branch, main, { [m.conflicts[0]!.line]: p }, "bot"); expect(r.conflicts).toEqual([]); return land(d, r); };
-    expect(pick("branch")).toBe(`${onBranch.split("\n").slice(0, 6).join("\n")}\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
-    expect(pick({ text: "  if (open) {\n    await sync(ref);" })).toBe(`for (const br of rows) {\n  if (open) {\n    await sync(ref);\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
+    // Main's `continue;` sits outside the card on the id of the `catchUp` line the branch moved into it: it stays whatever the pick (#1248).
+    expect(pick("main")).toBe(`${onMain.split("\n").slice(0, 8).join("\n")}\n${moved}\n}`);
+    expect(pick("branch")).toBe(`${onBranch.split("\n").slice(0, 6).join("\n")}\n    continue;\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
+    expect(pick({ text: "  if (open) {\n    await sync(ref);" })).toBe(`for (const br of rows) {\n  if (open) {\n    await sync(ref);\n    continue;\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
+  });
+
+  test("an edit to a statement the other side joined or wrapped merges word by word, laid out as the side that moved the breaks (#1256)", () => {
+    // A join (#1214's git-recon main.ts): main adds an argument, the branch folds the line above into the call.
+    const was = "function tick() {\n    net.mirror.frame(dt, input);\n    net.battle.input(input, now);\n}";
+    const joined = "function tick() {\n    net.battle.input(net.mirror.frame(dt, input), now);\n}";
+    const fix = "function tick() {\n    net.battle.input(net.mirror.frame(dt, input), now, net.mirror.acked);\n}";
+    expect(clean(was, was.replace("now)", "now, net.mirror.acked)"), joined)).toBe(fix);
+    // The other way round: main joined it, the branch added the argument.
+    expect(clean(was, joined, was.replace("now)", "now, net.mirror.acked)"))).toBe(fix);
+    // A wrap (#1191's openapi.ts): both add a last field, main on the line, the branch on a new continuation line.
+    const ok = "  get: {\n    ok: obj({ status: str(), conflicts: arr(loose(\"{path}\")) }) } },\n  };";
+    const wrapped = ok.replace(")) })", ")),\n      took: arr(obj({ branch: str() })) })");
+    expect(clean(ok, ok.replace(")) })", ")), regenerated: arr(str()) })"), wrapped))
+      .toBe("  get: {\n    ok: obj({ status: str(), conflicts: arr(loose(\"{path}\")), regenerated: arr(str()),\n      took: arr(obj({ branch: str() })) }) } },\n  };");
+    // Edits that touch different words merge; the same words are still a card.
+    expect(clean(was, was.replace("(input, now)", "(input, later)"), joined)).toBe(joined.replace("now", "later"));
+    const { base, main, branch } = sides(was, was.replace("(input, now)", "(cmd, now)"), joined);
+    expect(merge(base, branch, main, {}, "bot").conflicts).toHaveLength(1);
   });
 
   test("the same new line added at the same spot on both sides lands once", () => {

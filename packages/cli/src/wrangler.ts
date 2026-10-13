@@ -80,7 +80,8 @@ const localImage = (image: string) => /^\.{0,2}\//.test(image) || /(^|\/)Dockerf
 
 /** Wrangler keys that `init` cannot represent yet; `env.<name>.<key>` for one inside an env block. */
 export function droppedWranglerKeys(w: WranglerJson): string[] {
-  const top = Object.keys(w).filter((k) => !HANDLED.has(k) || (k === "containers" && (w.containers ?? []).some((c) => !localImage(c.image))));
+  const top = Object.keys(w).filter((k) => !HANDLED.has(k) || (k === "containers" && (w.containers ?? []).some((c) => !localImage(c.image)))
+    || (k === "limits" && Object.keys(w.limits ?? {}).some((l) => l !== "cpu_ms")));
   const envs = Object.entries(w.env ?? {}).flatMap(([n, e]) => !STAGE_NAME.test(n) ? [`env.${n}`]
     : Object.keys(e ?? {}).filter((k) => !ENV_HANDLED.has(k) && JSON.stringify(e[k]) !== JSON.stringify(w[k])).map((k) => `env.${n}.${k}`));
   return [...top, ...envs];

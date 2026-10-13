@@ -29,6 +29,7 @@
 //   POST /api/repos/:o/:r/agents/:id/hold                 stop its clock till someone accepts it (crew)
 //   POST /api/repos/:o/:r/agents/:id/look                 someone's reading it: put the landing off a little (crew)
 //   POST /api/repos/:o/:r/agents/:id/reject               throw it away (owner only)
+//   GET  /api/repos/:o/:r/agents/engine                   the ENGINE lines rebuild tasks ended with, newest first (owner only, #1226)
 //
 // A run's batch doesn't land on main as it's written (#745). The agent works on a branch of its own,
 // agent-run-<id>, and when it ends the batch waits there for AGENT_REVIEW_MS (8 seconds by default),
@@ -60,6 +61,7 @@ import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
 import { dispatchHint } from "./branches.ts";
 import type { Busy } from "./merge-plan.ts";
+import { engineLines, type Engine } from "./heal.ts";
 
 export interface Run {
   id: number;
@@ -95,6 +97,11 @@ export interface Run {
   /** A fix task's other files of the branch, beside `path`, that it may edit; and those it did. */
   also?: string[];
   edited?: string[];
+  /** A rebuild task (#1219): the branch whose merge it rebuilds this one on. When it ends, the branch goes upstream (`pushed`, #1226). */
+  rebuild?: string;
+  pushed?: { ok: boolean; error?: string };
+  /** A rebuild task's ENGINE lines (heal.ts engineLines): per clash, whether a merge rule could have settled it. */
+  engine?: Engine[];
   /** About how many tokens it read and wrote (budget.ts). */
   spent?: number;
   /** It stopped short of its budget (#1077): at how many tokens, why, its note, and who took over: run `next`, or a person. */
@@ -188,10 +195,16 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   const [owner, repo] = [p[2], p[3]];
   const stop = p[5] === "stop" && !p[6], one = !!p[5] && /^\d+$/.test(p[5]) && !p[7];
   const note = one && p[6] === "notes", review = one && REVIEWS.includes(p[6] ?? ""), waiting = p[5] === "waiting" && !p[6];
-  if (p[5] && !stop && !note && !review && !waiting) return null;
+  const engine = p[5] === "engine" && !p[6];
+  if (p[5] && !stop && !note && !review && !waiting && !engine) return null;
   const a = await access(owner, repo);
   if (!a.read) return json({ error: "not found" }, 404);
   if (waiting) return req.method === "GET" ? waitingOn(env, self, url, owner, repo, user, a.write) : null;
+  if (engine) {
+    if (req.method !== "GET") return null;
+    if (user !== owner) return json({ error: "only the repo's owner can see its coding agents" }, 403);
+    return json(await engineSaid(env, owner, repo));
+  }
   if (stop || note || review) {
     if (req.method !== "POST") return null;
     // The crew can put a batch off (look) or stop its clock (hold); landing or binning it is the owner's.
@@ -421,7 +434,7 @@ async function dropBranch(env: Env, owner: string, repo: string, name: string, p
  * hosted budget has one; else a person.
  */
 async function handOff(env: Env, self: (req: Request) => Promise<Response>, origin: string, row: Row, policy: Policy,
-  t: { at: number; why: string; note: string; hops: number; branch?: string; lines?: string[]; also?: string[] }): Promise<NonNullable<Run["handoff"]>> {
+  t: { at: number; why: string; note: string; hops: number; branch?: string; lines?: string[]; also?: string[]; rebuild?: string }): Promise<NonNullable<Run["handoff"]>> {
   const base = { at: t.at, why: t.why, note: t.note };
   const over: Over = t.hops >= HANDOFFS ? "escalate" : policy.over;
   if (over === "escalate") return { ...base, over };
@@ -429,7 +442,7 @@ async function handOff(env: Env, self: (req: Request) => Promise<Response>, orig
   if (!pick || await hostedBudget(env)) return { ...base, over: "escalate" };
   const agent = `agent-${pick.harness}`;
   if (pick.harness !== row.harness) await caller(self, origin)(row.owner, `/api/repos/${row.owner}/${row.repo}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
-  const result = { ...(t.lines && { lines: t.lines }), ...(t.also && { also: t.also }), from: row.id, hops: t.hops + 1 };
+  const result = { ...(t.lines && { lines: t.lines }), ...(t.also && { also: t.also }), ...(t.rebuild && { rebuild: t.rebuild }), from: row.id, hops: t.hops + 1 };
   const next = await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, model, agent, status, started, branch, result) VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?) RETURNING id")
     .bind(row.owner, row.repo, row.path, pick.harness, handoffTask(row.path, t.why, t.note).slice(0, 4000), pick.model ?? null, agent, Date.now(), t.branch ?? null, JSON.stringify(result)).first();
   if (!next) return { ...base, over: "escalate" };
@@ -443,6 +456,25 @@ async function resume(env: Env, origin: string, id: number, wait: number) {
   if (!run.pending || run.pending.until !== null || run.handoff?.next === undefined) return;
   const pending = { branch: run.pending.branch, until: Date.now() + wait };
   if (await swap(env, id, run, { ...run, pending })) await landLater(env, id, origin, wait);
+}
+
+/**
+ * What rebuild tasks said a merge rule could have settled (#1226): one row per run that said anything, newest
+ * first, out of the runs the repo keeps. The `yes` ones are what a new rule in lines.ts would take off agents.
+ */
+async function engineSaid(env: Env, owner: string, repo: string) {
+  const { results } = await env.DB.prepare("SELECT id, branch, started, result FROM agent_runs WHERE owner = ? AND repo = ? AND json_extract(result, '$.engine') IS NOT NULL ORDER BY id DESC")
+    .bind(owner, repo).all();
+  return (results as { id: number; branch: string; started: number; result: string }[]).map((r) => {
+    const x = JSON.parse(r.result) as Partial<Run>;
+    return { run: r.id, branch: r.branch, after: x.rebuild, started: r.started, engine: x.engine! };
+  });
+}
+
+/** A rebuild task on `branch` is done: the branch goes upstream (branches.ts rebuiltUpstream), and how that went, for its result. */
+async function pushRebuilt(env: Env, owner: string, repo: string, branch: string): Promise<Run["pushed"]> {
+  const up = await (await import("./branches.ts")).rebuiltUpstream(env, owner, repo, branch).catch((e) => ({ pushed: false, error: `not pushed upstream: ${String((e as Error)?.message ?? e)}` }));
+  return up ? { ok: up.pushed, ...(up.error && { error: up.error }) } : undefined;
 }
 
 /** Runs the agent of run `id`, keeping its log and result in D1. Only once: a second try (the queue's retry after a cut-off consumer) fails it instead. */
@@ -476,8 +508,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   const cutoff = env.AGENT_SANDBOX ? setTimeout(() => void env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'")
     .bind(`out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}`, id).run().catch(() => {}).finally(() => stopper.abort()), Math.max(0, row.started + HOSTED_RUN_MS - Date.now())) : undefined;
   const call = caller(self, origin);
-  const { lines, also, from, hops } = row.result ? JSON.parse(row.result) as Partial<Run> : {};
-  const extra: Partial<Run> = { ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }) };
+  const { lines, also, from, hops, rebuild } = row.result ? JSON.parse(row.result) as Partial<Run> : {};
+  const extra: Partial<Run> = { ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }), ...(rebuild && { rebuild }) };
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
     // A Stop between checks still keeps what the agent left from landing.
@@ -518,13 +550,18 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     // Notes its owner sent that it never read, the ones since its last look too, go in the note's NEXT (#1090).
     const unheard = r.tripped ? [...r.unheard ?? [], ...(await peek().catch(() => [])).slice(given).map((n) => n.text)] : [];
     const handoff = r.tripped && await handOff(env, self, origin, row, policy, {
-      ...r.tripped, hops: hops ?? 0, branch: r.applied ? branch : row.branch ?? undefined, lines, also,
+      ...r.tripped, hops: hops ?? 0, branch: r.applied ? branch : row.branch ?? undefined, lines, also, rebuild,
       note: noteFor({ path, task: row.task, why: r.tripped.why, applied: r.applied, edited: r.edited, conflicts: r.conflicts, failures: r.failures, output: r.output, notes: unheard }),
     });
     // Its batch waits for whoever took over: held till the fresh agent is done, or for a person.
     const pending = !own || !r.applied ? undefined : !handoff ? { branch: own, until: Date.now() + wait }
       : { branch: own, until: null, why: handoff.next ? `handed off to run ${handoff.next}` : `stopped at ~${short(handoff.at)} tokens (${handoff.why}): a person's turn` };
-    const done = await finish(env, id, "done", { ...extra, applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
+    const engine = rebuild ? engineLines(r.output) : [];
+    // A rebuild that ended with both sides on its branch takes it upstream, so its pull request stops clashing (#1226).
+    // It goes while the run still says running, so a sync takes main in for it meanwhile (takeMainUpstream) leaves it be.
+    // One handed off waits for whoever took over.
+    const pushed = rebuild && row.branch && !handoff && !signal.aborted ? await pushRebuilt(env, owner, repo, row.branch) : undefined;
+    const done = await finish(env, id, "done", { ...extra, ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
     // Stopped just as it ended: nothing waits.
     if (pending?.until && done.meta?.changes) await landLater(env, id, origin, wait);
     else if (own && !pending) await dropBranch(env, owner, repo, own, path);

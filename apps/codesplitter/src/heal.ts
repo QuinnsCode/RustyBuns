@@ -83,9 +83,10 @@ export async function fixUnavailable(env: Env, owner: string, repo: string, bran
  * Start a fix task on `branch`'s `path`, which may edit `also` too, unless one's running there,
  * the branch has had its MAX_ATTEMPTS, or self-healing is off. Its id, or why not. `before` runs once
  * the task is booked and before the agent sees the branch (a rebuild's restart from main's copies);
- * when it throws, the task fails unrun.
+ * when it throws, the task fails unrun. `rebuild` (the branch that merged) marks a rebuild task: when it
+ * ends, the branch goes upstream and its ENGINE lines are kept (agent-routes.ts, #1226).
  */
-export async function openFix(env: Env, owner: string, repo: string, branch: string, path: string, task: string, also: string[] = [], before?: () => Promise<void>): Promise<{ id: number } | { skipped: string }> {
+export async function openFix(env: Env, owner: string, repo: string, branch: string, path: string, task: string, also: string[] = [], o: { before?: () => Promise<void>; rebuild?: string } = {}): Promise<{ id: number } | { skipped: string }> {
   const no = await fixUnavailable(env, owner, repo, branch);
   if (no) return { skipped: no };
   const a = (await attempts(env, owner, repo, branch))!;
@@ -103,10 +104,10 @@ export async function openFix(env: Env, owner: string, repo: string, branch: str
   const row = await env.DB.prepare(`INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started, branch, result)
     SELECT ?, ?, ?, ?, ?, ?, 'running', ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM agent_runs WHERE owner = ? AND repo = ? AND branch = ? AND status = 'running')
     AND (SELECT COUNT(*) FROM agent_runs WHERE owner = ? AND repo = ? AND branch = ? AND started >= ?) < ? RETURNING id`)
-    .bind(owner, repo, path, harness, task.slice(0, 4000), `agent-${harness}`, Date.now(), branch, also.length ? JSON.stringify({ also }) : null, owner, repo, branch, owner, repo, branch, a.since, MAX_ATTEMPTS).first();
+    .bind(owner, repo, path, harness, task.slice(0, 4000), `agent-${harness}`, Date.now(), branch, also.length || o.rebuild ? JSON.stringify({ ...(also.length && { also }), ...(o.rebuild && { rebuild: o.rebuild }) }) : null, owner, repo, branch, owner, repo, branch, a.since, MAX_ATTEMPTS).first();
   if (!row) return { skipped: "another fix task got there first" };
   const id = row.id as number;
-  try { await before?.(); }
+  try { await o.before?.(); }
   catch (e) {
     const error = String((e as Error)?.message ?? e);
     await env.DB.prepare("UPDATE agent_runs SET status = 'failed', result = ? WHERE id = ?").bind(JSON.stringify({ error }), id).run();
@@ -168,6 +169,17 @@ export function rebuildTask(branch: string, blocker: string, clashes: { path: st
     `Generated text is rebuilt when the branch merges: leave it as it is. The branch's checks run again once you're done.`,
     `End with one line per clash: ENGINE <path> <line> yes|no: whether a merge rule could have settled it with no agent, and how.`,
   ].join("\n");
+}
+
+/** A rebuild task's verdict on one clash: whether a merge rule could have settled it with no agent, and how. */
+export interface Engine { path: string; line: string; yes: boolean; how: string }
+
+/** The ENGINE lines a rebuild task ended with (rebuildTask), in its output; the last one per clash counts. */
+export function engineLines(output: string): Engine[] {
+  const by = new Map<string, Engine>();
+  for (const m of output.matchAll(/^[ \t*>`-]*ENGINE[ \t]+(\S+)[ \t]+(\S+)[ \t]+(yes|no)\b[ \t:]*(.*)$/gim))
+    by.set(`${m[1]}\n${m[2]}`, { path: m[1]!, line: m[2]!, yes: m[3]!.toLowerCase() === "yes", how: m[4]!.replace(/`+$/, "").trim().slice(0, 300) });
+  return [...by.values()];
 }
 
 /** A check finished on a branch (checks.ts): a required one that failed opens a fix task. */

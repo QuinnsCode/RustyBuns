@@ -856,7 +856,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
       const r = await Bun.build({ entrypoints: [src], outdir, naming: { entry: name.replace(/\.js$/, ".[ext]"), asset: `${name.replace(/\.js$/, "")}-[name]-[hash].[ext]` }, target: "bun", metafile: true, plugins: [addonLookups(targets ?? [hostTag], perTarget, { tree })], throw: false } as any);
       if (!r.success) throw new Error(`desktop.server ${s.entry}:\n${buildErrors(r)}`);
       const addons = serverAddons(r as any, perTarget);
-      const problem = addonProblems(s.entry, addons, targets ?? null);
+      const problem = addonProblems(s.entry, addons, outdir, targets ?? null);
       if (problem) throw new Error(problem);
       const carried = [...addons.carried, ...copyTrees(outdir, tree, perTarget)];
       if (carried.length) writeFileSync(join(outdir, addonsManifest(name)), JSON.stringify(carried));

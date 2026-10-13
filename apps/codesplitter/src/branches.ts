@@ -524,11 +524,12 @@ async function afterBlocker(env: Env, owner: string, repo: string, name: string,
  * once main's commit has gone up. When every file it changed merges into main by line id with nothing left, it
  * takes main in (takeMain) and pushes that merge, so upstream's pull request stops showing a conflict. A line
  * that clashes here too is a person's, and a branch still waiting in the merge plan takes main in when its
- * blocker merges (afterBlocker): null for both.
+ * blocker merges (afterBlocker): null for both. So is one a rebuild task is on: it pushes when it ends (#1226).
  */
 export async function takeMainUpstream(env: Env, owner: string, repo: string, name: string): Promise<Took | null> {
   const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, name).first() as (BranchRow & { waits_on: string | null }) | null;
   if (!b?.upstream_ref || b.waits_on || (await ancestors(env, owner, repo, name)).length) return null;
+  if (await env.DB.prepare("SELECT 1 FROM agent_runs WHERE owner = ? AND repo = ? AND branch = ? AND status = 'running' AND json_extract(result, '$.rebuild') IS NOT NULL").bind(owner, repo, name).first()) return null;
   const rows = (await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL ORDER BY path").bind(owner, repo, name).all()).results as { path: string }[];
   for (const f of rows) if ((await mergeFile(env, owner, repo, b, f.path, b.by, undefined, true)).conflicts.length) return null;
   return takeMain(env, owner, repo, b, b.by, { push: true });
@@ -557,13 +558,30 @@ async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, use
   }
   const { files, moved } = await onMainCopies(env, owner, repo, b, run.dry);
   // One that follows a branch upstream takes it there too, as a merge of main's tip.
-  const ref = b.upstream_ref as string | null | undefined;
+  const up = files.length || (o.push && !moved) ? await pushTookMain(env, owner, repo, b) : null;
+  return { branch: name, status: "updated", files, ...up };
+}
+
+/**
+ * Branch `b`, which took main in by line id, goes to the branch it follows upstream as a merge of main's tip,
+ * even where git alone would clash (mirror.ts pushBranch). Null when it follows none, or nothing mirrors here.
+ */
+async function pushTookMain(env: Env, owner: string, repo: string, b: BranchRow): Promise<{ pushed: boolean; error?: string } | null> {
   const { mirrorsOn, pushBranch } = await import("./mirror.ts");
-  if (!ref || !mirrorsOn(env) || !(files.length || (o.push && !moved))) return { branch: name, status: "updated", files };
-  const res = await pushBranch(env, owner, repo, name, { tookMain: true });
-  if (!res) return { branch: name, status: "updated", files };
+  if (!(b.upstream_ref as string | null | undefined) || !mirrorsOn(env)) return null;
+  const res = await pushBranch(env, owner, repo, b.name, { tookMain: true });
+  if (!res) return null;
   const out = await res.json() as { pushed?: boolean; error?: string };
-  return { branch: name, status: "updated", files, pushed: res.ok && !!out.pushed, ...(!res.ok && { error: `not pushed upstream: ${out.error}` }) };
+  return { pushed: res.ok && !!out.pushed, ...(!res.ok && { error: `not pushed upstream: ${out.error}` }) };
+}
+
+/**
+ * A rebuild task on open branch `name` finished (agent-routes.ts, #1226): main's side is back beside the
+ * branch's, so it goes upstream as takeMain's would, and its pull request stops showing the conflict.
+ */
+export async function rebuiltUpstream(env: Env, owner: string, repo: string, name: string) {
+  const b = await openBranch(env, owner, repo, name) as BranchRow | null;
+  return b ? pushTookMain(env, owner, repo, b) : null;
 }
 
 /**
@@ -597,6 +615,7 @@ const REBUILD_ROUNDS = 3;
  * so none of the branch's work goes; its files start again from main's copies with that on top (onMainCopies);
  * and a fix task (heal.ts rebuildTask) is told main's side of each, to put back. The restart waits until the
  * task is booked, so a branch nobody would rebuild stays as it was, its cards for a person: null then.
+ * One that follows a branch upstream goes there when the task ends (rebuiltUpstream), not now: only then has it both sides.
  */
 async function rebuildOnMain(env: Env, owner: string, repo: string, b: BranchRow, blocker: string, rows: FileRow[], resolve: Record<string, Resolve>, left: { path: string; conflicts: (Conflict & { answer?: Answer })[] }[], user: string): Promise<Took | null> {
   const name = b.name;
@@ -617,7 +636,7 @@ async function rebuildOnMain(env: Env, owner: string, repo: string, b: BranchRow
   const path = clashes[0]?.path ?? left[0]!.path;
   const editable = rows.filter((x) => !x.merged && !x.deleted && !x.blob).map((x) => x.path);
   const also = alsoFor(editable, path, left.map((f) => f.path).join("\n"));
-  const fix = await openFix(env, owner, repo, name, path, rebuildTask(name, blocker, clashes), also, async () => { await onMainCopies(env, owner, repo, b, dry); });
+  const fix = await openFix(env, owner, repo, name, path, rebuildTask(name, blocker, clashes), also, { before: async () => { await onMainCopies(env, owner, repo, b, dry); }, rebuild: blocker });
   return "id" in fix ? { branch: name, status: "rebuilding", files: left.map((f) => f.path), fix: fix.id } : null;
 }
 
