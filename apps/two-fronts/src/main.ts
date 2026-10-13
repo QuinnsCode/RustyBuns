@@ -4,7 +4,7 @@
 // is one seat at it.
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
-  COST, ORBIT, enemy, heroReady, income, keyShare, planOrders, supplied,
+  COST, ORBIT, enemy, heroReady, income, incomeBreakdown, keyShare, planOrders, supplied,
   type Campaign, type Order, type Orders, type Where,
 } from "./war/rules.ts";
 import { handIn, heroFaction, humans, newTable, report, waitingOn, type Seats, type Table } from "./war/table.ts";
@@ -78,6 +78,7 @@ function render() {
   const share = keyShare(c, me);
   $("status").innerHTML = `
     <div class="row"><b>Turn ${c.turn}</b><span title="Credits now, and next turn's income">◈ ${draft.credits[me]} <small>+${income(c, me)}/turn</small></span></div>
+    ${reinforcements()}
     <div class="war" title="Key sectors held (capitals and spaceports). Hold 75% to win; fall under 30% and your income halves.">
       <i class="marines" style="width:${keyShare(c, "marines") * 100}%"></i><i class="wooka" style="width:${keyShare(c, "wooka") * 100}%"></i>
     </div>
@@ -142,6 +143,16 @@ function render() {
   end.toggleAttribute("disabled", busy || !myTurn());
   end.textContent = g ? (myTurn() ? "Send orders" : waitingLine()) : hotseat() ? "Hand in orders" : "End turn";
   if (c.winner) showModal(`<h2>${hotseat() ? `${FACTION_NAMES[c.winner]} win` : c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
+}
+
+// Next turn's income, counted out like reinforcements: sectors, each region held, broken morale.
+function reinforcements() {
+  const b = incomeBreakdown(c, me);
+  return `<ul class="reinf" title="Next turn's income">
+    <li><span>Sectors held</span><b>+${b.sectors}</b></li>
+    ${b.regions.map((r) => `<li><span>${esc(r.name)} held</span><b>+${r.bonus}</b></li>`).join("")}
+    ${b.morale ? `<li class="bad"><span>Morale broken</span><b>${b.morale}</b></li>` : ""}
+    <li class="sum"><span>Next turn</span><b>+${b.total}</b></li></ul>`;
 }
 
 function waitingLine() {
@@ -304,8 +315,8 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
   };
   const row = (label: string, a: number | string, b: number | string) => `<tr><th>${label}</th><td>${a}</td><td>${b}</td></tr>`;
   showModal(`<h2>Hero battle: ${spec.system}, ${SECTOR_NAMES[spec.sector].toLowerCase()}</h2>
-    <p>You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain" : "a Thunder Marine"}. Take the command posts and run their tickets out.</p>
-    ${horde ? `<p class="flavor">“${FLAVOR[Math.floor(Math.random() * FLAVOR.length)]}”</p>` : ""}
+    <p>You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain. The armoured ones came to hunt. Show them who the forest belongs to" : "a Thunder Marine"}. Take the command posts and run their tickets out.</p>
+    ${horde ? `<p class="small">${spec.factions[me] === "marines" ? "You are not the hunter here. They know the trees, they know your smell, and they are already in the ferns." : ""}</p><p class="flavor">“${FLAVOR[Math.floor(Math.random() * FLAVOR.length)]}”</p>` : ""}
     <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>
       ${row("Armies", spec.armies[me], spec.armies[foe])}
       ${row("Tickets", spec.tickets[me], spec.tickets[foe])}
@@ -394,11 +405,11 @@ async function finish(result: BattleResult) {
     ${backButton(spec.factions[spec.hero])}`);
 }
 
-// Quick play, outside the campaign: the Wooka come for the shield generator. Hold the line as a
-// Thunder Marine, or be the horde.
+// Quick play, outside the campaign, on Doren, the forest moon: the Marines came to hunt and found
+// themselves the quarry. Hold the line as a Thunder Marine, or be the horde that stalks them.
 function skirmish(asWooka: boolean) {
   const spec: BattleSpec = {
-    id: `skirmish-${Date.now()}`, turn: 0, system: "the forest moon", sector: "shield",
+    id: `skirmish-${Date.now()}`, turn: 0, system: "Doren", sector: "shield",
     factions: { attacker: "wooka", defender: "marines" }, hero: asWooka ? "attacker" : "defender", heroLevel: 1,
     armies: { attacker: 4, defender: 3 }, tickets: { attacker: 200, defender: 150 },
     vehicles: { attacker: { tank: 1 }, defender: { walker: 1, speeder: 1 } }, strikes: { attacker: 0, defender: 2 },
@@ -406,8 +417,8 @@ function skirmish(asWooka: boolean) {
   };
   brief(spec, (r) => {
     const won = r.winner === spec.hero;
-    showModal(`<h2>${asWooka ? (won ? "The forest is ours" : "Driven back into the ferns") : won ? "Horde repelled" : "Overrun"}</h2>
-      <p>${asWooka ? (won ? "The generator is in pieces and someone is wearing a backpack as a hat." : "The Marines held. For now.") : won ? "They'll be back. They always come back." : "They got into the backpacks."}</p>
+    showModal(`<h2>${asWooka ? (won ? "The hunt is over" : "Driven back into the ferns") : won ? "Still breathing" : "Hunted down"}</h2>
+      <p>${asWooka ? (won ? "The generator is in pieces, the armoured ones are running, and someone is wearing a backpack as a hat." : "The Marines held. The forest remembers their smell.") : won ? "You came to Doren to hunt. You leave knowing what it is to be hunted. They'll be back. They always come back." : "Nobody heard them coming. They got into the backpacks."}</p>
       <button type="button" id="close" class="primary">Back to the map</button>`);
   });
 }
@@ -416,13 +427,13 @@ $("be-horde").onclick = () => skirmish(true);
 // Quick play in orbit: three Marine cruisers hold the orbit against three Wooka ones.
 $("dogfight").onclick = () => {
   const spec: SpaceBattleSpec = {
-    id: `dogfight-${Date.now()}`, turn: 0, system: "the forest moon", factions: { attacker: "wooka", defender: "marines" },
+    id: `dogfight-${Date.now()}`, turn: 0, system: "Doren", factions: { attacker: "wooka", defender: "marines" },
     hero: "defender", heroLevel: 1, fleets: { attacker: 3, defender: 3 }, seed: Math.floor(Math.random() * 2 ** 31),
   };
   briefSpace(spec, (r) => {
     const won = r.winner === spec.hero;
     showModal(`<h2>${won ? "Orbit held" : "Orbit lost"}</h2>
-      <p>${won ? "The log gliders are drifting home. Some of them are still on fire." : "There are Wooka in the cruisers now. They are pressing every button."}</p>
+      <p>${won ? "The log gliders are drifting back to Doren. Some of them are still on fire." : "There are Wooka in the cruisers now. They are pressing every button."}</p>
       <button type="button" id="close" class="primary">Back to the map</button>`);
   });
 };

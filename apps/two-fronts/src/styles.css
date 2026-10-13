@@ -16,24 +16,57 @@ select { font: inherit; color: inherit; background: #222a37; border: 1px solid v
 .hint { color: var(--dim); }
 
 .war-room { display: grid; grid-template-columns: 1fr 360px; height: 100vh; }
-.map { display: flex; align-items: center; justify-content: center; padding: 16px; min-width: 0; }
-.galaxy { width: 100%; height: 100%; max-height: calc(100vh - 32px); }
-.lane { stroke: #3a4354; stroke-width: 0.5; }
-.region { fill: #4b5566; font-size: 2.6px; text-anchor: middle; letter-spacing: 0.1px; text-transform: uppercase; }
+.map { display: flex; align-items: center; justify-content: center; padding: 16px; min-width: 0; background: radial-gradient(ellipse at 50% 40%, #121a26 0%, #0a0d13 70%); }
+.galaxy { width: 100%; height: 100%; max-height: calc(100vh - 32px); border-radius: 10px; }
+/* The war table: a dark holo board with a faint grid, star dust and a vignette. */
+.board { fill: #0b111a; }
+.grid { fill: none; stroke: #1b2635; stroke-width: 0.12; }
+.stars circle { fill: #c9d6ea; }
+/* Territories, tinted by who holds the capital; hatched when the enemy holds the orbit. */
+.land { fill: #1a2230; stroke: #0b111a; stroke-width: 0.5; cursor: pointer; transition: fill 0.2s; }
+.land.marines { fill: #2c3a4c; } .land.wooka { fill: #4a3220; }
+.land:hover { filter: brightness(1.25); }
+.land.reach { stroke: var(--accent); stroke-width: 0.35; stroke-dasharray: 0.8 0.6; }
+.blockade { fill: url(#hatch); pointer-events: none; }
+.hatch { stroke: #e0483a; stroke-width: 0.35; opacity: 0.55; }
+.borders line { stroke-width: 0.7; stroke-linecap: round; opacity: 0.9; }
+.lane { stroke: #4a5a70; stroke-width: 0.35; stroke-dasharray: 0.5 0.7; pointer-events: none; }
+.lane.front { stroke: #ff5a2a; stroke-width: 0.6; stroke-dasharray: 1.4 0.8; animation: march 1.2s linear infinite; }
+@keyframes march { to { stroke-dashoffset: -2.2; } }
+.region { fill: #8592a6; font-size: 2.6px; font-weight: 700; text-anchor: middle; letter-spacing: 0.15px; text-transform: uppercase; paint-order: stroke; stroke: #0b111a; stroke-width: 0.6px; }
+.badge path { fill: #1a2230; stroke: #5b6678; stroke-width: 0.3; }
+.badge text { fill: #9aa3b2; font-size: 2.2px; font-weight: 700; text-anchor: middle; }
+.badge.held.marines path { fill: var(--marines); stroke: #fff; } .badge.held.marines text { fill: #111; }
+.badge.held.wooka path { fill: var(--wooka); stroke: #ffd29a; } .badge.held.wooka text { fill: #111; }
 .system { cursor: pointer; outline: none; }
-.system .orbit { fill: var(--bg); stroke-width: 0.8; }
+.system .orbit { fill: #0b111a; stroke-width: 0.7; }
 .system.selected .orbit, .system:focus-visible .orbit { stroke: var(--accent); stroke-width: 1.2; }
-.wedge { stroke: var(--bg); stroke-width: 0.4; }
-.system .name { fill: var(--text); font-size: 3px; text-anchor: middle; }
-.system .armies { font-size: 2.5px; text-anchor: middle; }
-.system .ships { font-size: 2.6px; font-weight: 700; }
-.hero-mark { fill: var(--gold); font-size: 4px; text-anchor: middle; pointer-events: none; }
-.move { stroke: #e5e7eb; stroke-width: 0.45; fill: none; }
-.move.army { stroke-dasharray: 1 0.7; }
+.system.reach .orbit { stroke: var(--accent); stroke-width: 0.9; stroke-dasharray: 1 0.6; }
+.planet, .wedge { stroke: #0b111a; stroke-width: 0.3; }
+.system .name { fill: var(--text); font-size: 2.8px; font-weight: 600; text-anchor: middle; paint-order: stroke; stroke: #0b111a; stroke-width: 0.7px; }
+/* Board pieces: round army counters and fleet chevrons, each with its count. */
+.piece circle, .piece path { stroke: #0b111a; stroke-width: 0.45; }
+.piece.marines circle, .piece.marines path { fill: var(--marines); } .piece.wooka circle, .piece.wooka path { fill: var(--wooka); }
+.piece text { font-size: 2.6px; font-weight: 800; text-anchor: middle; fill: #111; }
+.piece.fleet text { font-size: 2.2px; paint-order: stroke; stroke: #0b111a; stroke-width: 0.5px; }
+.piece.fleet.marines text { fill: var(--marines); } .piece.fleet.wooka text { fill: var(--wooka); }
+.hero-mark path { fill: none; stroke: var(--gold); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.hero-mark { pointer-events: none; }
+.move { stroke-width: 0.6; fill: none; pointer-events: none; }
+.move.army { stroke: #ff7a1a; } .move.fleet { stroke: #7fd0ff; stroke-dasharray: 1.2 0.6; }
+.tip.army { fill: #ff7a1a; } .tip.fleet { fill: #7fd0ff; }
+.move-n { fill: #0b111a; stroke-width: 0.4; } .move-g.army .move-n { stroke: #ff7a1a; } .move-g.fleet .move-n { stroke: #7fd0ff; }
+.move-t { fill: #fff; font-size: 2.2px; font-weight: 700; text-anchor: middle; pointer-events: none; }
 
 .panel { background: var(--panel); border-left: 1px solid var(--line); padding: 12px 16px; overflow-y: auto; }
 .panel header { display: flex; justify-content: space-between; align-items: center; }
 .panel h1 { font-size: 18px; margin: 0; letter-spacing: 0.04em; }
+.tagline { margin: 2px 0 0; font-size: 12px; font-style: italic; color: var(--wooka); }
+.reinf { list-style: none; margin: 6px 0 2px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #10151d; font-size: 12px; }
+.reinf li { display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; color: var(--dim); }
+.reinf li b { color: var(--text); font-variant-numeric: tabular-nums; }
+.reinf li.bad, .reinf li.bad b { color: #f5734c; }
+.reinf li.sum { border-top: 1px solid var(--line); margin-top: 3px; padding-top: 3px; color: var(--text); }
 .panel h2 { font-size: 16px; margin: 4px 0; }
 .panel h3 { font-size: 12px; text-transform: uppercase; color: var(--dim); margin: 14px 0 4px; }
 .status .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }

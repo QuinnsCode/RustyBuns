@@ -117,13 +117,24 @@ export function canPushFromSurface(s: SystemState, f: Faction) {
   return s.sectors.filter((x) => x.owner === f).length / s.sectors.length > 1 / 3;
 }
 
-export function income(c: Campaign, f: Faction) {
-  let n = 0;
-  for (const s of Object.values(c.systems)) for (const x of s.sectors) if (x.owner === f) n += SECTOR_INCOME[x.kind];
-  const g = galaxyOf(c);
-  for (const r of g.regions) if (g.systems.filter((d) => d.region === r.id).every((d) => holds(c.systems[d.id]!, f))) n += r.bonus;
-  return keyShare(c, f) < MORALE_SHARE ? Math.floor(n / 2) : n;
+// Who holds every capital in a region, and so takes its bonus: one side, or nobody.
+export function regionHolder(c: Campaign, region: string): Faction | null {
+  const g = galaxyOf(c), ids = g.systems.filter((d) => d.region === region).map((d) => d.id);
+  return FACTIONS.find((f) => ids.every((id) => holds(c.systems[id]!, f))) ?? null;
 }
+
+// Next turn's income, itemised like a reinforcement count: what the sectors pay, each region's
+// bonus held, and how much a broken morale (under MORALE_SHARE of the key sectors) takes off.
+export function incomeBreakdown(c: Campaign, f: Faction) {
+  let sectors = 0;
+  for (const s of Object.values(c.systems)) for (const x of s.sectors) if (x.owner === f) sectors += SECTOR_INCOME[x.kind];
+  const regions = galaxyOf(c).regions.filter((r) => regionHolder(c, r.id) === f).map((r) => ({ name: r.name, bonus: r.bonus }));
+  const gross = sectors + regions.reduce((n, r) => n + r.bonus, 0);
+  const total = keyShare(c, f) < MORALE_SHARE ? Math.floor(gross / 2) : gross;
+  return { sectors, regions, morale: total - gross, total };
+}
+
+export const income = (c: Campaign, f: Faction) => incomeBreakdown(c, f).total;
 
 // --- Orders ---
 

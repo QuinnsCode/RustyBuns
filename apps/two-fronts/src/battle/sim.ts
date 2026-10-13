@@ -96,6 +96,10 @@ export const FLAVOR = [
   "The forest has gone quiet. It is never quiet.",
   "Do not feed them. Do not make eye contact. Keep them off the backpacks.",
   "They've started singing. Nobody likes it when they sing.",
+  "We came to hunt them. Somewhere along the way it went the other way round.",
+  "Found Sergeant Vance's helmet. On a pole. Facing us.",
+  "Two eyes in the ferns. Then six. Then none, which is worse.",
+  "Whatever you do, don't run. They like it when you run.",
 ];
 
 export const STATS: Record<UnitKind, { hp: number; speed: number; range: number; cool: number; dmg: number; aim: number; cost: number }> = {
