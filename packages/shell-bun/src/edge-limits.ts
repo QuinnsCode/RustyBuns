@@ -9,6 +9,11 @@
 // first time: pages a big request freed are reused by the next one without growing it again.
 // Good enough to catch a request that would blow up on the edge, not a meter.
 
+// Taken once, at import, before any app code runs: a bundle built with nodejs_compat swaps
+// globalThis.process for unenv's, whose cpuUsage and memoryUsage.rss throw "not implemented".
+const cpuUsage = process.cpuUsage.bind(process);
+const rss = process.memoryUsage.rss.bind(process.memoryUsage);
+
 /** An isolate's memory on the edge, every plan. */
 export const EDGE_MEMORY_MB = 128;
 
@@ -27,15 +32,15 @@ export function edgeLimits(cpuMs?: number, env: Record<string, string | undefine
 
 /** Run one request's fetch() under the edge's limits. */
 export async function capped(limits: EdgeLimits, run: () => Response | Promise<Response>): Promise<Response> {
-  const cpu0 = process.cpuUsage(), rss0 = process.memoryUsage.rss();
+  const cpu0 = cpuUsage(), rss0 = rss();
   const res = await run();
   // A 101 hands a live socket to the shell; it isn't the request's to refuse.
   if (res.status === 101) return res;
-  const grewMb = (process.memoryUsage.rss() - rss0) / 2 ** 20;
+  const grewMb = (rss() - rss0) / 2 ** 20;
   const memMb = limits.memoryMb ?? EDGE_MEMORY_MB;
   if (grewMb > memMb) return exceeded(`memory grew ${Math.round(grewMb)} MB, over the isolate's ${memMb} MB`);
   if (limits.cpuMs !== undefined) {
-    const used = process.cpuUsage(cpu0), ms = (used.user + used.system) / 1000;
+    const used = cpuUsage(cpu0), ms = (used.user + used.system) / 1000;
     if (ms > limits.cpuMs) return exceeded(`used ${Math.round(ms)} ms of CPU, over cpuMs ${limits.cpuMs}`);
   }
   return res;
