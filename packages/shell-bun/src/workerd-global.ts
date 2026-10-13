@@ -2,8 +2,12 @@
 // preset) reads while it loads: `globalThis.Cloudflare.compatibilityFlags.<flag>`. The worker-mode
 // host imports this before the Worker. Only the flags the app lists are true; flags workerd would
 // imply from the compatibility date read as unset, which keeps unenv on its polyfills.
+import { cfCachedFetch } from "./cf-cache.ts";
+
 declare const RB_COMPAT_FLAGS: string | undefined;
 const flags = typeof RB_COMPAT_FLAGS === "string" && RB_COMPAT_FLAGS ? RB_COMPAT_FLAGS.split(",") : [];
 const g = globalThis as { Cloudflare?: { compatibilityFlags: Record<string, boolean> } };
 g.Cloudflare ??= { compatibilityFlags: Object.fromEntries(flags.map((f) => [f, true])) };
-export {};
+// And workerd's edge cache for fetch(url, { cf: { cacheTtl, cacheEverything } }), kept in process (#908).
+const f = globalThis as { fetch: typeof fetch & { __rbCfCache?: true } };
+if (!f.fetch.__rbCfCache) f.fetch = Object.assign(cfCachedFetch(f.fetch), { __rbCfCache: true as const });
