@@ -10,7 +10,9 @@
     "snapshot": "bun scripts/snapshot.ts",
     "battle": "bun scripts/battle.ts",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
-    "desktop:build": "rustybuns build desktop --check"
+    "desktop:build": "rustybuns build desktop --check",
+    "edge:dev": "vite build && bunx wrangler dev",
+    "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
     "@rustybuns/shell-bun": "workspace:*",
