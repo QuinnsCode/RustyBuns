@@ -4,12 +4,14 @@
 // snapshot is a delta against the last one the page acked (it says which with each Input): only
 // the soldiers that changed, and of those only the fields that did; the soldiers that left your
 // view by id. A round in flight comes once and the page flies it on, again only if it strays
-// from that (gravity, homing, a bounce); the rarer stuff (pickups, the objective, your ammo,
-// events, files, the roster) rides as a short JSON tail, and only when it changed.
+// from that (gravity, homing, a bounce). Your ammo and clocks, and the events, are binary too;
+// the rarer stuff (pickups, the objective, files, the roster) rides as a short JSON tail, and
+// only when it changed.
 
 import type { RepoSnapshot } from "../sim/codemap.ts";
-import type { GameEvent, Input, Mode, Objective, Pickup, Soldier, Team } from "../sim/game.ts";
+import type { GameEvent, Input, Mode, Objective, Pickup, PickupKind, Soldier, Team } from "../sim/game.ts";
 import type { ZoneData } from "../sim/terrain.ts";
+import type { VehicleKind } from "../sim/vehicles.ts";
 import { ORDER, type WeaponId } from "../sim/weapons.ts";
 
 /** Snapshots a second, and players a room holds. */
@@ -200,13 +202,49 @@ export function cleanInput(raw: unknown): Input | null {
 //   u16 n · n × shot (u32 id · u16 owner · u8 team · u8 weapon · i32 x y z vx vy vz in cm · u16 age in cs)
 //   u16 n · n × u32 spent id
 //   u16 n · n × stash (u32 id · i32 x y z in cm)
+//   you: u8 0 (as in the base), 1 (none), or 2 then u8 n · n × (i16 ammo · i16 loaded) · i16 reload cd heat shieldT rollCd in cs
+//   u16 n · n × event (u8 kind, as EVENTS orders them · its fields, as EVENTS says)
 //   the rest: UTF-8 JSON of the optional fields that are there, to the end
 
 const TAG = 1;
 const STATUS: Status[] = ["playing", "won", "lost"];
 const TEAMS: Team[] = ["you", "conflict", "ours", "theirs"];
 const SIZE: Record<Kind, number> = { i8: 1, u8: 1, i16: 2, u16: 2, i32: 4 };
-const TAIL = ["winner", "you", "pickups", "objective", "cleared", "files", "events", "roster"] as const;
+const TAIL = ["winner", "pickups", "objective", "cleared", "files", "roster"] as const;
+const CLOCKS = ["reload", "cd", "heat", "shieldT", "rollCd"] as const;
+
+// Each event kind's fields, in order, and how each goes: a soldier id (u16), any other id or
+// count (i32), a length in cm (i32), a weapon, a yes/no, a string, or one of a few words (u8).
+type EventField = "soldier" | "int" | "cm" | "weapon" | "bool" | "str" | readonly string[];
+const VEHICLE: VehicleKind[] = ["buggy", "heli"], PICKUP: PickupKind[] = ["ammo", "health", "reset"];
+const EVENTS: { [K in GameEvent["kind"]]: [keyof Extract<GameEvent, { kind: K }>, EventField][] } = {
+  fire: [["id", "soldier"], ["weapon", "weapon"]],
+  hit: [["target", "soldier"], ["by", "int"], ["damage", "cm"], ["shield", "bool"]],
+  shield: [["id", "soldier"], ["state", ["broke", "charging", "full"]]],
+  boom: [["x", "cm"], ["y", "cm"], ["z", "cm"], ["r", "cm"]],
+  down: [["id", "soldier"], ["by", "int"]],
+  respawn: [["id", "soldier"], ["lives", "int"]],
+  cleared: [["compound", "int"]],
+  pickup: [["id", "soldier"], ["item", PICKUP]],
+  blamed: [["id", "soldier"]],
+  reverted: [["id", "soldier"]],
+  stashed: [["x", "cm"], ["y", "cm"], ["z", "cm"]],
+  impact: [["x", "cm"], ["y", "cm"], ["z", "cm"], ["weapon", "weapon"]],
+  razed: [["path", "str"], ["lines", "int"], ["by", "int"], ["x", "cm"], ["y", "cm"], ["z", "cm"], ["w", "cm"], ["h", "cm"], ["d", "cm"]],
+  objective: [["text", "str"]],
+  reload: [["id", "soldier"], ["weapon", "weapon"]],
+  streak: [["vehicle", VEHICLE], ["kills", "int"]],
+  board: [["vehicle", VEHICLE], ["on", "bool"]],
+  vehicleHit: [["id", "int"], ["damage", "cm"]],
+  wrecked: [["id", "int"], ["vehicle", VEHICLE]],
+  won: [],
+  lost: [],
+  joined: [["id", "soldier"]],
+  left: [["id", "soldier"]],
+};
+const KINDS = Object.keys(EVENTS) as GameEvent["kind"][];
+
+const text = new TextEncoder(), untext = new TextDecoder();
 
 class Out {
   private buf = new ArrayBuffer(1024);
@@ -230,6 +268,7 @@ class Out {
   /** n scaled to an integer of that width, clamped. */
   num(n: number, scale: number, kind: Kind) { this.put(kind, Math.round(fit(n, scale, kind) * scale)); }
   bytes(b: Uint8Array) { this.room(b.length); new Uint8Array(this.buf).set(b, this.at); this.at += b.length; }
+  str(t: string) { const b = text.encode(t); this.put("u16", b.length), this.bytes(b); }
   done(): Uint8Array { return new Uint8Array(this.buf, 0, this.at); }
 }
 
@@ -244,9 +283,13 @@ class In {
       : kind === "i32" ? v.getInt32(at, true) : kind === "u32" ? v.getUint32(at, true) : v.getFloat64(at, true);
   }
   num(scale: number, kind: Kind) { return this.get(kind) / scale; }
+  str(): string {
+    const n = this.get("u16"), at = this.at;
+    if (at + n > this.b.length) throw new RangeError("short string");
+    this.at += n;
+    return untext.decode(this.b.subarray(at, at + n));
+  }
 }
-
-const text = new TextEncoder(), untext = new TextDecoder();
 
 export function encodeSnap(s: Snap): Uint8Array {
   const o = new Out();
@@ -273,10 +316,26 @@ export function encodeSnap(s: Snap): Uint8Array {
     o.put("u32", id);
     for (const n of [x, y, z]) o.num(n, 100, "i32");
   }
+  o.put("u8", s.you === undefined ? 0 : s.you === null ? 1 : 2);
+  if (s.you) {
+    o.put("u8", s.you.ammo.length);
+    s.you.ammo.forEach((n, i) => (o.num(n, 1, "i16"), o.num(s.you!.loaded[i] ?? 0, 1, "i16")));
+    for (const k of CLOCKS) o.num(s.you[k], 100, "i16");
+  }
+  o.put("u16", s.events.length);
+  for (const e of s.events) {
+    o.put("u8", KINDS.indexOf(e.kind));
+    for (const [k, f] of EVENTS[e.kind] as [string, EventField][]) {
+      const v = (e as any)[k];
+      if (f === "soldier") o.num(v, 1, "u16"); else if (f === "int") o.num(v, 1, "i32"); else if (f === "cm") o.num(v, 100, "i32");
+      else if (f === "weapon") o.put("u8", ORDER.indexOf(v)); else if (f === "bool") o.put("u8", v ? 1 : 0);
+      else if (f === "str") o.str(v); else o.put("u8", f.indexOf(v));
+    }
+  }
   const tail: Record<string, unknown> = {};
   for (const k of TAIL) {
     const v = s[k];
-    if (v !== undefined && !(Array.isArray(v) && !v.length && (k === "files" || k === "events"))) tail[k] = v;
+    if (v !== undefined && !(k === "files" && !s.files.length)) tail[k] = v;
   }
   if (Object.keys(tail).length) o.bytes(text.encode(JSON.stringify(tail)));
   return o.done();
@@ -306,8 +365,28 @@ export function decodeSnap(bytes: ArrayBuffer | Uint8Array): Snap | null {
     for (let n = r.get("u16"); n > 0; n--) spent.push(r.get("u32"));
     const stashes: StashState[] = [];
     for (let n = r.get("u16"); n > 0; n--) stashes.push([r.get("u32"), r.num(100, "i32"), r.num(100, "i32"), r.num(100, "i32")]);
+    const has = r.get("u8");
+    let you: Private | null | undefined = has === 0 ? undefined : null;
+    if (has === 2) {
+      const ammo: number[] = [], loaded: number[] = [];
+      for (let n = r.get("u8"); n > 0; n--) ammo.push(r.get("i16")), loaded.push(r.get("i16"));
+      you = { ammo, loaded } as Private;
+      for (const k of CLOCKS) you[k] = r.num(100, "i16");
+    }
+    const events: GameEvent[] = [];
+    for (let n = r.get("u16"); n > 0; n--) {
+      const kind = KINDS[r.get("u8")];
+      if (!kind) return null;
+      const e: Record<string, unknown> = { kind };
+      for (const [k, f] of EVENTS[kind] as [string, EventField][]) {
+        e[k] = f === "soldier" ? r.get("u16") : f === "int" ? r.get("i32") : f === "cm" ? r.num(100, "i32")
+          : f === "weapon" ? ORDER[r.get("u8")] ?? "commit" : f === "bool" ? r.get("u8") === 1 : f === "str" ? r.str() : f[r.get("u8")] ?? f[0];
+      }
+      events.push(e as GameEvent);
+    }
     const tail = r.at < b.length ? JSON.parse(untext.decode(b.subarray(r.at))) : {};
-    const snap: Snap = { t: "snap", seq, base, input, time, status, soldiers, gone, shots, spent, stashes, files: tail.files ?? [], events: tail.events ?? [] };
+    const snap: Snap = { t: "snap", seq, base, input, time, status, soldiers, gone, shots, spent, stashes, files: tail.files ?? [], events };
+    if (you !== undefined) snap.you = you;
     for (const k of TAIL) if (tail[k] !== undefined) (snap as any)[k] = tail[k];
     return snap;
   } catch {

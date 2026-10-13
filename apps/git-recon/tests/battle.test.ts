@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, te
 import { LEVELS } from "../src/levels/levels.ts";
 import { groundAt } from "../src/levels/place.ts";
 import type { Block } from "../src/sim/codemap.ts";
-import { FFA_SCORE, Game, MAX_REWIND, RESPAWN, type Input, type Mode } from "../src/sim/game.ts";
+import { FFA_SCORE, Game, MAX_REWIND, RESPAWN, type GameEvent, type Input, type Mode } from "../src/sim/game.ts";
 import { Mirror } from "../src/net/mirror.ts";
 import { battleGame, cleanSetup, Room } from "../src/net/room.ts";
 import { cleanInput, decodeSnap, encodeSnap, MAX_PLAYERS, packSoldier, unpackSoldier, VIEW, type FromWorld, type Setup, type Snap } from "../src/net/wire.ts";
@@ -142,12 +142,31 @@ describe("the wire", () => {
       soldiers: [[3, 1.25, null, -80.5, null, null, null, 6.283, null, 100, null, 5, 2, null], [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
       gone: [4, 7], shots: [[123_456, 3, "theirs", "push", 1.5, 2, -3.25, 110, 0, -5.5, 0.42]], spent: [200_000], stashes: [[99, 1, 2, 3]],
       cleared: [true, false], files: [["src/a.ts", 0, 0]], events: [{ kind: "cleared", compound: 1 }],
+      you: { ammo: [-1, 30, 0], loaded: [-1, 12, 0], reload: 1.25, cd: 0.08, heat: 0.3, shieldT: 4, rollCd: 0 },
     };
     const bytes = encodeSnap(snap);
     expect(decodeSnap(bytes)).toEqual(snap);
+    expect(decodeSnap(encodeSnap({ ...snap, you: null }))!.you).toBeNull();
     // Nothing optional, nothing in the tail: just the header and the counts.
-    expect(encodeSnap({ ...snap, winner: undefined, cleared: undefined, files: [], events: [], soldiers: [], gone: [], shots: [], spent: [], stashes: [] }).length).toBe(32);
+    expect(encodeSnap({ ...snap, winner: undefined, cleared: undefined, you: undefined, files: [], events: [], soldiers: [], gone: [], shots: [], spent: [], stashes: [] }).length).toBe(35);
     expect(decodeSnap(new Uint8Array([9, 9, 9]))).toBeNull();
+  });
+
+  test("every kind of event goes through the frame and back, to the centimetre", () => {
+    const events: GameEvent[] = [
+      { kind: "fire", id: 3, weapon: "push" }, { kind: "hit", target: 3, by: -1, damage: 12.5, shield: true },
+      { kind: "shield", id: 3, state: "charging" }, { kind: "boom", x: 1.25, y: -2, z: 300.5, r: 4.5 }, { kind: "down", id: 3, by: 9 },
+      { kind: "respawn", id: 3, lives: -1 }, { kind: "cleared", compound: 2 }, { kind: "pickup", id: 3, item: "reset" },
+      { kind: "blamed", id: 4 }, { kind: "reverted", id: 4 }, { kind: "stashed", x: 1, y: 2, z: 3 }, { kind: "impact", x: 0.01, y: 0, z: -9.99, weapon: "fetch" },
+      { kind: "razed", path: "src/ünïcode.ts", lines: 120, by: 3, x: 1, y: 0, z: 2, w: 4.5, h: 12, d: 6 },
+      { kind: "objective", text: "main held" }, { kind: "reload", id: 3, weapon: "add" }, { kind: "streak", vehicle: "heli", kills: 5 },
+      { kind: "board", vehicle: "buggy", on: false }, { kind: "vehicleHit", id: 100_000, damage: 40 }, { kind: "wrecked", id: 100_000, vehicle: "heli" },
+      { kind: "won" }, { kind: "lost" }, { kind: "joined", id: 7 }, { kind: "left", id: 7 },
+    ];
+    const snap: Snap = { t: "snap", seq: 1, base: 0, input: 0, time: 0, status: "playing", soldiers: [], gone: [], shots: [], spent: [], stashes: [], files: [], events };
+    expect(decodeSnap(encodeSnap(snap))!.events).toEqual(events);
+    // A fire event is 4 bytes, where its JSON was about 35.
+    expect(encodeSnap({ ...snap, events: [events[0]!] }).length - encodeSnap({ ...snap, events: [] }).length).toBe(4);
   });
 
   test("inputs are cleaned: numbers in range, real weapons, a finite aim", () => {
