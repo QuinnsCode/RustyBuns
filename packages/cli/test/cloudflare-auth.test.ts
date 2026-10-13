@@ -91,6 +91,13 @@ test("cloudflareEnv: no wrangler at all: Alchemy's profile, with the way to get 
   expect(lines[0]).toContain("bun add -d wrangler");
 });
 
+test("cloudflareEnv: an empty CLOUDFLARE_API_TOKEN is called out", async () => {
+  const lines: string[] = [];
+  expect(await cloudflareEnv(cfg({}), { CLOUDFLARE_API_TOKEN: "" }, null, (s) => lines.push(s))).toBeNull();
+  expect(lines[0]).toContain("set but empty");
+  expect(lines[1]).toContain("bun add -d wrangler");
+});
+
 test("cloudflareEnv: several accounts need CLOUDFLARE_ACCOUNT_ID, which is then passed through", async () => {
   const two = me({ accounts: [{ id: "a1", name: "One" }, { id: "a2", name: "Two" }] });
   await expect(cloudflareEnv(cfg({}), {}, fake([two]).w, quiet)).rejects.toThrow("a2  Two");
