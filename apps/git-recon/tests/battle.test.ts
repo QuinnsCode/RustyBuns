@@ -7,7 +7,7 @@ import { FFA_SCORE, Game, RESPAWN, type Input, type Mode } from "../src/sim/game
 import { Mirror } from "../src/net/mirror.ts";
 import { cleanSetup, Room } from "../src/net/room.ts";
 import { cleanInput, MAX_PLAYERS, packSoldier, unpackSoldier, VIEW, type FromWorld, type Setup, type Snap } from "../src/net/wire.ts";
-import World, { CLOSE_FULL, CLOSE_REPLACED } from "../src/net/world.ts";
+import World, { CLOSE_FULL, CLOSE_IDLE, CLOSE_REPLACED, IDLE_MS } from "../src/net/world.ts";
 
 setDefaultTimeout(30_000);
 
@@ -284,6 +284,78 @@ describe("the world", () => {
     guest.close(1000);
     w.webSocketClose(guest);
     expect(w.room!.count).toBe(1);
+  });
+});
+
+describe("the world online", () => {
+  let real: unknown;
+  beforeAll(() => { real = (globalThis as any).WebSocketPair; (globalThis as any).WebSocketPair = FakePair; });
+  afterAll(() => { (globalThis as any).WebSocketPair = real; });
+
+  function world() {
+    const socks: Sock[] = [];
+    const w = new World({ acceptWebSocket: (s: Sock) => socks.push(s), getWebSockets: () => socks.filter((s) => s.readyState === 1) }, { ONLINE: "1" });
+    const join = async (uid: string) => {
+      await w.fetch(new Request("https://world/ws", { headers: { Upgrade: "websocket", "X-User-Id": uid, "X-User-Name": uid, "X-RB-Principal": "guest" } }));
+      return socks.at(-1)!;
+    };
+    const stop = () => clearInterval((w as any).timer);
+    return { w, join, stop };
+  }
+
+  test("everyone's a guest: the first to pick owns the room, and only they pick again", async () => {
+    const { w, join, stop } = world();
+    const a = await join("player-a"), b = await join("player-b");
+    w.webSocketMessage(a, JSON.stringify({ t: "setup", setup: setup("coop") }));
+    expect(w.room!.setup.mode).toBe("coop");
+    w.webSocketMessage(b, JSON.stringify({ t: "setup", setup: setup("ffa") }));
+    expect(w.room!.setup.mode).toBe("coop");
+    w.webSocketMessage(a, JSON.stringify({ t: "setup", setup: setup("ffa") }));
+    expect(w.room!.setup.mode).toBe("ffa");
+    expect(b.last("welcome")!.setup.mode).toBe("ffa");
+    stop();
+  });
+
+  test("the battle ends once everyone's left, and the code is free for a new pick", async () => {
+    const { w, join } = world();
+    const a = await join("player-a");
+    w.webSocketMessage(a, JSON.stringify({ t: "setup", setup: setup("coop") }));
+    a.close(1000), w.webSocketClose(a);
+    expect(w.room).toBeNull();
+    expect((w as any).timer).toBeNull();
+    const b = await join("player-b");
+    expect(b.sent[0]).toEqual({ t: "wait" });
+    w.webSocketMessage(b, JSON.stringify({ t: "setup", setup: setup("teams") }));
+    expect(b.last("welcome")!.setup.mode).toBe("teams");
+    clearInterval((w as any).timer);
+  });
+
+  test("a room nobody plays in closes after IDLE_MS, so it stops costing", async () => {
+    const { w, join } = world();
+    const a = await join("player-a");
+    w.webSocketMessage(a, JSON.stringify({ t: "setup", setup: setup("coop") }));
+    w.webSocketMessage(a, JSON.stringify({ t: "in", i: idle }));
+    (w as any).tick();
+    expect(a.closed).toBeNull();
+    (w as any).lastInput = Date.now() - IDLE_MS - 1;
+    (w as any).tick();
+    expect(a.closed).toBe(CLOSE_IDLE);
+    expect(w.room).toBeNull();
+    expect((w as any).timer).toBeNull();
+  });
+
+  test("on the desktop the idle rule is off", async () => {
+    const { w, join } = (() => {
+      const socks: Sock[] = [];
+      const w = new World({ acceptWebSocket: (s: Sock) => socks.push(s), getWebSockets: () => socks.filter((s) => s.readyState === 1) }, {});
+      return { w, join: async (uid: string) => (await w.fetch(new Request("https://world/ws", { headers: { Upgrade: "websocket", "X-User-Id": uid } })), socks.at(-1)!) };
+    })();
+    const host = await join("host-1");
+    w.webSocketMessage(host, JSON.stringify({ t: "setup", setup: setup("coop") }));
+    (w as any).lastInput = Date.now() - IDLE_MS - 1;
+    (w as any).tick();
+    expect(host.closed).toBeNull();
+    clearInterval((w as any).timer);
   });
 });
 
