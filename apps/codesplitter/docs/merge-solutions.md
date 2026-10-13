@@ -399,6 +399,17 @@ Since #1255 the `scene.ts` and `wrangler.ts` lines are 1 card each. When both si
 they join with different ones of `&&`, `||` and `??`, or if one joins with any of them and the other opens or closes
 a paren it doesn't close or open. The five default replays don't change.
 
+### Settled, but untrue
+
+The commonest miss in the replay of 14 later "merge main" fixes (#1254) was a README paragraph one side wrote
+while the other side changed the facts it states: a bandwidth figure, a player cap, a price. The line merge
+keeps both sides' words faithfully and the text is out of date. Since #1254 a prose merge returns `checks`
+beside its conflicts: a stretch both sides changed where git would have stopped, or a line one side wrote
+stating a number or `name` the other side took out of that section. The branch review shows each as a card
+that doesn't hold Merge, with the facts the sides differ on, and Ask hands it to the checked agent with both
+sides' commits. Of that replay's five rows, the four that settled silently (`4b8666b`, `2d8cd97`, `d7ffea8`,
+`137baa3`) each come back with checks on the stretch the person fixed; `04a8fff` was a card already.
+
 ## 11. A merge plan: who waits for whom
 
 On 2026-10-12 the PR agent dry-ran pairs of about 40 open PRs, laid them out as waves, and told a worker to

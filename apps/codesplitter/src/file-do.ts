@@ -328,7 +328,8 @@ export class FileDurableObject {
       // Every line settled: check the merged code still builds before it lands.
       if (!m.conflicts.length && path) m.conflicts = lintMerge(path, this.doc, branch, m, resolve);
       // Generated text both sides touched kept main's copy: its command runs once the merge lands.
-      const regen = m.regenerate && { regenerate: m.regenerate };
+      // Prose that settled but may say something untrue now goes back as checks for the review (#1254).
+      const regen = { ...m.regenerate && { regenerate: m.regenerate }, ...m.checks && { checks: m.checks } };
       if (m.conflicts.length || dry || !m.ops.length) return json({ rev: this.doc.rev, ops: m.ops, conflicts: m.conflicts, ...regen }, m.conflicts.length && !dry ? 409 : 200);
       const r = await this.edit(m.by, m.ops);
       return r.ok ? json({ rev: r.rev, ops: m.ops, applied: r.applied, conflicts: [], ...regen }) : json(refused(r), 409);
