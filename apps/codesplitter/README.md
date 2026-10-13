@@ -1,6 +1,6 @@
 # codeSplitter
 
-**A code host for the agentic era.
+**Git for the agentic era.
 Every line is its own record, every agent and person edits live, and git keeps going even when other gits don't.**
 
 **Never let your git quit.** Run it as a desktop app and your git lives on your machine, syncing out to the cloud instead of the cloud syncing in to you.
@@ -18,6 +18,8 @@ That's automated development, a software factory, and the floor it runs on shoul
   If you can click it, your agent can call it.
 - **Then why not just deploy your app as well?** The repo knows how to ship itself: preview deploys, real deploys, a log of every one.
   Only a person presses the button.
+
+**Artifacts or are they fiction?** Why artifacts are a future primitive: codeSplitter is where you can git it, get it, share it, agent it, socialize it.
 
 Live at **[codesplitter.notryanquinn.workers.dev](https://codesplitter.notryanquinn.workers.dev)**.
 It's a proof of concept, built for Cloudflare's Artifacts challenge, and it moves fast.
