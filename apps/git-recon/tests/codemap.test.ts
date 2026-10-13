@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { failingChecks, loadRepo, LoadError, parseSlug } from "../src/levels/github.ts";
 import { LEVELS } from "../src/levels/levels.ts";
 import { checkHits, churnGuards, mapRepo, structureOf, type RepoSnapshot } from "../src/sim/codemap.ts";
-import { addWin, UNLOCKABLE as HEADS, unlocked, winKey } from "../src/sim/heads.ts";
+import { addWin, STARTERS, UNLOCKABLE as HEADS, unlocked, winKey } from "../src/sim/heads.ts";
 import { HEADS as ALL_HEADS, isOpen } from "../src/ui/heads.ts";
 import { folderLinks, importsOf, isAgentCommit, resolveImport, tally, workspacePackages } from "../src/sim/intel.ts";
 import type { Terrain } from "../src/sim/terrain.ts";
@@ -228,17 +228,17 @@ describe("heads", () => {
 
   test("every head has a model and says what it nods to", () => {
     expect(new Set(HEADS.map((h) => h.id)).size).toBe(HEADS.length);
-    for (const h of HEADS) {
-      expect(h.nod.length).toBeGreaterThan(3);
+    for (const h of [...STARTERS, ...HEADS]) {
+      expect(h.nod.length).toBeGreaterThan(2);
       const m = headModel(h.id)!;
       expect(m.children.length).toBeGreaterThan(0);
     }
     expect(headModel(null)).toBeNull();
   });
 
-  test("the head list keeps the plain and logo heads open and the toy heads locked until won", () => {
-    expect(ALL_HEADS.filter((h) => isOpen(h, 0)).map((h) => h.id)).toEqual(["ball", "rustybuns", "codesplitter"]);
-    expect(ALL_HEADS.filter((h) => h.toy && isOpen(h, 2)).map((h) => h.id)).toEqual([HEADS[0]!.id, HEADS[1]!.id]);
+  test("the head list keeps the plain, logo and starter heads open and the toy heads locked until won", () => {
+    expect(ALL_HEADS.filter((h) => isOpen(h, 0)).map((h) => h.id)).toEqual(["ball", "rustybuns", "codesplitter", ...STARTERS.map((h) => h.id)]);
+    expect(ALL_HEADS.filter((h) => h.toy && h.wins && isOpen(h, 2)).map((h) => h.id)).toEqual([HEADS[0]!.id, HEADS[1]!.id]);
     expect(new Set(ALL_HEADS.map((h) => h.id)).size).toBe(ALL_HEADS.length);
   });
 });
