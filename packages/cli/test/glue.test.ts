@@ -1057,6 +1057,27 @@ test("worker host: DO bindings exist before the Worker loads, for top-level crea
   expect(src).toContain(`process.on("unhandledRejection"`);
 });
 
+test("rwsdk's virtual lookup modules (#912) bundle as empty tables on the host", async () => {
+  const { RWSDK_LOOKUPS, rwsdkLookupStub } = await import("../src/build.ts");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "rb-912-"));
+  const entry = join(dir, "e.js");
+  writeFileSync(entry, `import { useClientLookup } from "virtual:use-client-lookup.js";
+const { useServerLookup } = await import("virtual:use-server-lookup.js");
+console.log(JSON.stringify([useClientLookup, useServerLookup]));`);
+  const r = await Bun.build({ entrypoints: [entry], outdir: join(dir, "out"), target: "bun", throw: false, plugins: [{
+    name: "t", setup(b) {
+      b.onResolve({ filter: RWSDK_LOOKUPS }, a => ({ path: a.path, namespace: "rwsdk-lookup" }));
+      b.onLoad({ filter: /.*/, namespace: "rwsdk-lookup" }, a => ({ contents: rwsdkLookupStub(a.path), loader: "js" }));
+    },
+  }] });
+  expect(r.logs.map(l => l.message)).toEqual([]);
+  const out = await Bun.$`bun ${join(dir, "out", "e.js")}`.text();
+  expect(out.trim()).toBe("[{},{}]");
+});
+
 test("spa entry imports reflect-metadata first when the app's tree has it (#910)", async () => {
   const { reflectMetadataImport } = await import("../src/build.ts");
   const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");

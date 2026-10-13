@@ -453,6 +453,13 @@ ${LAUNCH_CHECK}${appCheck(c, true)}${h.launch}`;
 }
 
 
+/** rwsdk's "use client"/"use server" lookup tables are virtual modules its Vite plugin writes. A
+ *  host bundle that reaches rwsdk/client (through a shared module) has no such plugin, and renders
+ *  no client components or server functions by id, so each table is empty here. */
+export const RWSDK_LOOKUPS = /^virtual:use-(client|server)-lookup\.js$/;
+export const rwsdkLookupStub = (spec: string) =>
+  spec.includes("client") ? "export const useClientLookup = {};" : "export const useServerLookup = {};";
+
 /** import(`x`) with no ${...} in it, as import("x"), so the bundler resolves it statically. */
 export const plainDynamicImports = (js: string) => js.replace(/\bimport\(`([^`$\\]+)`\)/g, (_, spec: string) => `import(${JSON.stringify(spec)})`);
 
@@ -803,6 +810,8 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     setup(b: any) {
       // Host side: the worker-runtime modules become the local runtime.
       b.onResolve({ filter: /^(cloudflare:workers|cloudflare:workflows|cloudflare:email|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
+      b.onResolve({ filter: RWSDK_LOOKUPS }, (args: { path: string }) => ({ path: args.path, namespace: "rwsdk-lookup" }));
+      b.onLoad({ filter: /.*/, namespace: "rwsdk-lookup" }, (args: { path: string }) => ({ contents: rwsdkLookupStub(args.path), loader: "js" }));
       // A dependency's optional import that isn't installed (pg's pg-cloudflare and pg-native, only
       // loaded on those platforms) stays a runtime import instead of failing the bundle. The app's
       // own imports aren't covered: a missing one of those should still fail here.
