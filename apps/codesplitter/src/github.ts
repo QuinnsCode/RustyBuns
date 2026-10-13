@@ -442,7 +442,8 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
       ? `GitHub has no ${full} that this machine can read. If it's private, accept its invite on GitHub, then sign in to git as that account (gh auth login)`
       : `GitHub has no public ${full}. A private one, even one you're invited to, can't be dug up here (Cloudflare Artifacts imports public repos only): dig it up in the desktop app`;
     if (t) {
-      const meta = await gh(`/repos/${full}`, t.token);
+      // The tip rides along with the metadata (HEAD is the default branch), one round trip, not two.
+      const [meta, head] = await Promise.all([gh(`/repos/${full}`, t.token), gh(`/repos/${full}/commits/HEAD`, t.token)]);
       if (meta.status === 404) {
         // The token can't see it, but this machine's git might: logged in to git as the account that was invited.
         const refs = await machineRefs(env, full);
@@ -455,7 +456,6 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
         info = (await meta.json()) as typeof info;
         // A private repo needs a clone that carries the token, which only local git does.
         if (info.private && !privateDigs(env)) return json({ error: `${full} is private on GitHub. Cloudflare Artifacts can only import public repos, so dig it up in the desktop app instead` }, 422);
-        const head = await gh(`/repos/${info.full_name}/commits/${info.default_branch}`, t.token);
         sha = head.ok ? ((await head.json()) as { sha: string }).sha : null;
       }
     } else {
@@ -475,14 +475,13 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     }
     const upstream = `github:${info.full_name}${folder ? `/tree/${info.default_branch}/${folder}` : ""}`;
 
-    if (expires) await makeRoom(env, 1);
+    // No row owns this name (checked above), so an Artifact under it is an orphan: an import cut
+    // off halfway stays "being imported" on Cloudflare and would block the name for good (#348).
+    await Promise.all([expires ? makeRoom(env, 1) : null, env.ARTIFACTS.delete?.(`${user}--${name}`).catch(() => false)]);
 
     // Shallow, like the levels; writable, because it's yours now.
     let art;
     try {
-      // No row owns this name (checked above), so an Artifact under it is an orphan: an import cut
-      // off halfway stays "being imported" on Cloudflare and would block the name for good (#348).
-      await env.ARTIFACTS.delete?.(`${user}--${name}`).catch(() => false);
       art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: machine ? undefined : t?.token, private: info.private && !machine, folder: folder || undefined },
         { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}${folder ? `'s ${folder}` : ""}` } });
     } catch (e) {
