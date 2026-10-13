@@ -229,6 +229,24 @@ export interface DesktopTarget {
    */
   host?: string;
   /**
+   * spa: the app's own Node server, run beside the host. The build bundles `entry` with Bun
+   * (its imports and node_modules with it) into the binary; the host starts it as a child with
+   * PORT (a free port, or `port`) and DATA_DIR (the host's data dir), and proxies `paths` to it,
+   * as the Vite dev server's server.proxy did:
+   *   server: { entry: "../api/server.js", paths: ["/api"] }
+   * Desktop and box only: a Worker can't run a node:http server, so the edge needs it ported.
+   * Plain HTTP; a WebSocket upgrade on those paths isn't proxied.
+   */
+  server?: {
+    entry: string;
+    /** vite server.proxy keys: "/api" is a prefix, "^/ws/.*" a regex. */
+    paths: string[];
+    /** A server that ignores PORT: the port it always listens on. */
+    port?: number;
+    /** More env for it (ORIGIN, say). The host's own env and PORT, DATA_DIR come first. */
+    env?: Record<string, string>;
+  };
+  /**
    * Response header overrides. The default is full cross-origin isolation
    * (COEP require-corp) for SharedArrayBuffer; apps that load CDN resources
    * without CORP headers want { "Cross-Origin-Embedder-Policy": "credentialless" }.
