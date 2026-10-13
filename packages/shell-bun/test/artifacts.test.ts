@@ -152,3 +152,12 @@ test("tokens are per repo", async () => {
   expect(ns.check("a1", a.token.split("?")[0]!, true)).toBe(true);
   expect(ns.check("b1", a.token.split("?")[0]!, false)).toBe(false);
 });
+
+test("meta reads the rb.* stamp in one go and follows the config file", async () => {
+  await ns.create("m1", { description: "has a\nnewline", readOnly: true });
+  expect(ns.meta("m1")).toMatchObject({ description: "has a\nnewline", readOnly: true, source: null });
+  expect(ns.meta("m1")).toBe(ns.meta("m1")); // unchanged config: no second spawn
+  expect((await sh(["git", "config", "rb.readonly", "false"], ns.path("m1"))).ok).toBe(true);
+  expect(ns.meta("m1").readOnly).toBe(false);
+  expect(ns.meta("nope")).toEqual({ id: "", source: null, readOnly: false, description: null });
+});

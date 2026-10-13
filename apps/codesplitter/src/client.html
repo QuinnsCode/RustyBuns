@@ -3358,6 +3358,7 @@ const views = {
       <button class="btn ghost" id="tour-here" title="Let's show you around: this page, a step at a time">${icon("compass")}</button>
       ${playButton(`r/${owner}/${repo}`)}
       <a class="btn ghost" href="/gitpath?repo=${encodeURIComponent(owner)}/${encodeURIComponent(repo)}" title="gitpath: this repo's busiest files as a git graph, with a runner on the hot path" aria-label="gitpath">${icon("route")}</a>
+      ${isOwner ? `<a class="btn ghost" href="#/health/${owner}/${repo}" title="dependencies: each package against the latest release, with a health score" aria-label="dependencies">${icon("heart-pulse")}</a>` : ""}
       ${followButton({ owner, repo })}
       <a class="btn" href="#/m/${owner}/${repo}" title="this repo's agents and branches, laid out for a phone">${icon("smartphone")}Phone</a>
       ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. A handle or an email lets that person in; leave it empty for a link anyone can use once, a person or an agent.</span><input name="who" placeholder="@handle, email, or empty for a link"><input name="note" placeholder="a note for them (optional)" maxlength="280"><button class="btn primary">${icon("link")}Make the invite</button><div id="invite-made"></div></form></div>` : ""}
@@ -3440,7 +3441,7 @@ const views = {
       + (r.canWrite ? sec("zap", "Beam", `<div id="beams"><span class="muted">…</span></div>`) : "")
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
-      + (owner === me() ? sec("package", "Dependencies", `<div id="deps"><span class="muted">…</span></div>`) : "")
+      + (owner === me() ? sec("package", "Dependencies", `<a class="btn ghost" href="#/health/${owner}/${repo}" title="Repo health: your versions against the latest" aria-label="repo health">${icon("heart-pulse")}</a><div id="deps"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("send", "Deploy", `<div id="deploy"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("webhook", "Webhooks", `<div id="hooks"><span class="muted">…</span></div>`) : "")
@@ -4200,6 +4201,58 @@ const views = {
     </div>`;
     icons();
     await views.wireBranches(owner, repo, r, { only: branch, full: true });
+  },
+  /** How a repo's dependencies stand against the registry, in two layouts behind tabs A and B. */
+  async health(owner, repo) {
+    app.innerHTML = `<div class="wrap" style="padding-top:24px"><h1><a href="#/r/${owner}/${repo}" title="back to ${esc(repo)}" aria-label="back to ${esc(repo)}">${icon("arrow-left")}</a> ${icon("heart-pulse")}<b>${esc(repo)}</b></h1><div class="box"><div class="body" id="health"><span class="muted">${icon("loader")} reading the registry…</span></div></div></div>`;
+    icons();
+    const h = await api(`/repos/${owner}/${repo}/deps/health`).catch((e) => ({ error: e.message }));
+    const el = $("#health");
+    if (!el) return;
+    if (h.error) { el.innerHTML = `<span class="muted">${esc(h.error)}</span>`; return; }
+    const tone = (n) => n >= 80 ? "ok" : n >= 50 ? "warn" : "vuln";
+    const watching = new Map((h.digs ?? []).map((g) => [g.name, g]));
+    const where = (p) => p.path !== "package.json" ? ` <span class="muted">${esc(p.path.replace(/\/package\.json$/, ""))}</span>` : "";
+    const digTip = (dig) => `${esc(dig.target)}: ${dig.status === "in" ? `${esc(dig.version)} is in the range already` : dig.status === "held" ? `${esc(dig.version)} is out, held back` : dig.status === "out" ? `${esc(dig.version)} is out` : dig.note ? esc(dig.note) : "not out yet, watching"}`;
+    const top = `${h.malicious?.length ? `<p><b class="vuln" title="the supply-chain watch found these in this repo">${icon("skull")} ${h.malicious.map((m) => `<code>${esc(m.name)}</code>`).join(", ")}</b></p>` : ""}${h.note ? `<p class="muted">${esc(h.note)}</p>` : ""}`;
+    // Layout A: icon status per row, the score big above the table.
+    const dot = { patch: ["circle-dot", "a patch behind"], minor: ["triangle-alert", "a minor behind"], major: ["octagon-alert", "a major behind"] };
+    const rowA = (p) => {
+      const [ic, says] = p.behind ? dot[p.behind] : p.version ? ["circle-check", "up to date"] : ["minus", "a range the doctor doesn't read"];
+      const dig = watching.get(p.name);
+      return `<tr title="${esc(p.name)} ${esc(p.spec)}">
+        <td>${pkgIcon(p.name)} <code>${esc(p.name)}</code>${where(p)}</td>
+        <td title="what the repo pins">${esc(p.version ?? p.spec)}</td>
+        <td title="the registry's latest">${esc(p.latest ?? "")}</td>
+        <td title="${esc(says)}${p.versions ? ` · ${p.versions} release${p.versions === 1 ? "" : "s"}, ${p.days} day${p.days === 1 ? "" : "s"} behind` : ""}">${icon(ic)}${p.versions ? ` ${p.versions} · ${p.days}d` : ""}</td>
+        <td>${p.vulns.length ? `<b class="vuln" title="known vulnerabilities: ${p.vulns.map(esc).join(", ")}">${icon("shield-alert")} ${p.vulns.length}</b>` : ""}</td>
+        <td>${dig ? `<span title="${digTip(dig)}">🪏 ${esc(dig.target)}</span>` : ""}</td></tr>`;
+    };
+    const viewA = `<p style="display:flex;gap:12px;align-items:baseline"><b class="${h.score === null ? "muted" : tone(h.score)}" style="font-size:40px" title="health: 100 is every dependency on its latest, none with a known vulnerability">${h.score ?? "–"}</b>
+        <span class="muted" title="packages">${icon("package")} ${h.packages.length}</span></p>
+      ${h.packages.length ? `<table style="width:100%;font-size:13px"><thead><tr><th title="package">${icon("package")}</th><th title="yours">${icon("pin")}</th><th title="latest">${icon("sparkles")}</th><th title="how far behind: releases · days">${icon("history")}</th><th title="vulnerabilities">${icon("shield")}</th><th title="digs: future releases being watched">🪏</th></tr></thead><tbody>${h.packages.map(rowA).join("")}</tbody></table>` : ""}`;
+    // Layout B: the score as n / 100, the gap as a letter, releases and days.
+    const lv = { patch: "p", minor: "m", major: "M" };
+    const rowB = (x) => `<tr title="${esc(x.name)} ${esc(x.spec)} in ${esc(x.path)}${x.dev ? " (dev)" : ""}">
+        <td>${pkgIcon(x.name)} <code>${esc(x.name)}</code>${where(x)}</td>
+        <td align="right">${esc(x.version ?? x.spec)}</td><td align="right">${x.latest ? esc(x.latest) : "?"}</td>
+        <td align="right">${x.behind ? `<span title="${x.behind} behind: ${x.versions} release${x.versions === 1 ? "" : "s"}, ${x.days} days">${lv[x.behind]} · ${x.versions} · ${x.days}d</span>` : x.latest ? `<span title="up to date">${icon("check")}</span>` : ""}</td>
+        <td align="center">${x.vulns.length ? `<b class="vuln" title="${esc(x.vulns.join(", "))}">${x.vulns.length}</b>` : ""}</td>
+        <td align="center">${x.dig ? `<span title="${esc(x.dig.target)}: ${esc(x.dig.status)}">${esc(x.dig.status)}</span>` : ""}</td></tr>`;
+    const viewB = `<div class="${h.score === null ? "muted" : tone(h.score)}" style="display:flex;gap:6px;align-items:baseline" title="Health: the mean of each package's distance from latest. A vulnerable one counts for nothing."><b style="font-size:32px">${h.score ?? "–"}</b><span class="muted">/ 100</span></div>
+      ${h.packages.length ? `<table style="border-collapse:collapse;font-size:13px;width:100%"><thead><tr><th align="left">${icon("package")}</th><th align="right" title="the version your range starts at">${icon("pin")}</th><th align="right" title="the newest stable release">${icon("arrow-up-to-line")}</th><th align="right" title="how far behind: the biggest part that differs, releases between, and days between the two">${icon("history")}</th><th title="known vulnerabilities (OSV)">${icon("shield-alert")}</th><th title="a future release to watch, try and take">🪏</th></tr></thead><tbody>${h.packages.map(rowB).join("")}</tbody></table>` : ""}`;
+    const views = { A: viewA, B: viewB };
+    let on = "A";
+    try { on = localStorage.getItem("cs_health_tab") === "B" ? "B" : "A"; } catch {}
+    el.innerHTML = `<div class="seg" role="tablist" style="width:max-content;margin-bottom:12px">${Object.keys(views).map((k) => `<button type="button" role="tab" data-tab="${k}" title="layout ${k}" aria-label="layout ${k}">${k}</button>`).join("")}</div>${top}<div id="health-view"></div>`;
+    const show = (k) => {
+      $("#health-view").innerHTML = views[k];
+      el.querySelectorAll("[data-tab]").forEach((b) => { b.classList.toggle("on", b.dataset.tab === k); b.setAttribute("aria-selected", String(b.dataset.tab === k)); });
+      try { localStorage.setItem("cs_health_tab", k); } catch {}
+      icons();
+    };
+    el.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
+    show(on);
   },
   async m(owner, repo) {
     const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=`).catch(() => ({ entries: [] }))]);
@@ -6407,7 +6460,7 @@ addEventListener("keydown", (e) => {
 });
 
 // Views and how many plain segments come before a path tail: #/f/owner/repo/<path>.
-const FIXED = { f: 2, r: 2, l: 1, b: 2 };
+const FIXED = { f: 2, r: 2, l: 1, b: 2, health: 2 };
 // Settles when the page has drawn, so an agent's tool call can answer with where it landed.
 let routing = Promise.resolve();
 async function route() {
