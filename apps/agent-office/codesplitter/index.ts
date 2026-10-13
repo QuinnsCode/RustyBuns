@@ -3,7 +3,11 @@
 // wall in the 3D office, a badge on its tab on /lite. A dot on the mark, and on the tab's favicon, says that
 // board's twin on codeSplitter has news (news.ts); clicking the mark opens the repo there and clears its dot.
 // The news comes from the office's /__rb/codesplitter (server.ts), every 30s.
+// On, it also asks codeSplitter's dispatch hint before a task goes on the 📋 queue (#1187): when open branches already
+// change the files the task (or its issue) names, a card offers to stack it on the busiest, queue it anyway, or wait.
 import { CanvasTexture, Group, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, SRGBColorSpace, Vector2, type Camera, type Object3D, type Scene } from "three";
+import { issueText, issuesIn } from "../queue/match.ts";
+import { queueAdd, stackedPrompt, taskText, type Hint, type QueueAdd } from "./hint.ts";
 import { faviconWithDot, markCanvas, markSvg } from "./mark.ts";
 import { BOARDS, fresh, type Board, type Summary } from "./news.ts";
 
@@ -165,6 +169,63 @@ function clicked(e: MouseEvent, a: App) {
   if (hit && hit.distance < 25) open(hit.object.userData.board as Board);
 }
 
+// ---- the dispatch hint: a card before a task is queued on files an open branch is changing ---------------
+
+const issues = new Map<number, string>();
+// the client's socket, with its sends looked at and the issue boards' text kept (queue/match.ts); wrapped before the
+// office's own bundle opens it
+const Native = window.WebSocket;
+window.WebSocket = class extends Native {
+  constructor(url: string | URL, protocols?: string | string[]) {
+    super(url, protocols);
+    this.addEventListener("message", (e) => {
+      for (const i of issuesIn(e.data) ?? []) issues.set(i.number, issueText(i));
+    });
+  }
+  override send(data: Parameters<WebSocket["send"]>[0]) {
+    const msg = queueAdd(data);
+    const { on, repo } = load();
+    if (!msg || !on || !repo) return super.send(data);
+    void hinted(repo, msg).then((m) => m && this.readyState === Native.OPEN && super.send(JSON.stringify(m)));
+  }
+};
+
+/** The message to send: as it was, stacked on a busy branch, or none (wait). Quiet and as it was if codeSplitter
+ * doesn't answer in a few seconds. */
+async function hinted(repo: string, msg: QueueAdd): Promise<QueueAdd | null> {
+  let hint: Hint | null = null;
+  try {
+    const task = taskText(msg, msg.issue === undefined ? undefined : issues.get(msg.issue));
+    const r = await fetch(`/__rb/codesplitter/hint?repo=${encodeURIComponent(repo)}&task=${encodeURIComponent(task)}`, { signal: AbortSignal.timeout(5000) });
+    if (r.ok) hint = await r.json() as Hint;
+  } catch {}
+  const top = hint?.busy[0];
+  if (!top) return msg;
+  return new Promise((done) => card(msg, hint!.busy, done));
+}
+
+function card(msg: QueueAdd, busy: Hint["busy"], done: (m: QueueAdd | null) => void) {
+  const top = busy[0]!;
+  const what = msg.issue === undefined ? "This task" : `#${msg.issue}`;
+  const list = el("ul", {}, ...busy.slice(0, 5).map((b) => el("li", {}, el("code", {}, b.branch), ` changes ${b.files.join(", ")}`)));
+  const button = (label: string, cls: string, tip: string, then: () => QueueAdd | null) => {
+    const b = el("button", { type: "button", className: cls, title: tip }, label);
+    b.addEventListener("click", () => { box.remove(); done(then()); });
+    return b;
+  };
+  const box = el("div", { className: "rb-hint", role: "alertdialog", ariaLabel: "codeSplitter dispatch hint" },
+    el("div", { className: "rb-hint-head" }, el("span", { innerHTML: markSvg(false, 18) }), `${what} touches files open branches are changing`),
+    list,
+    el("p", {}, "Its branch would likely conflict with theirs. Stack it on the first, or wait till they merge."),
+    el("div", { className: "rb-hint-buttons" },
+      button("Wait", "rb-hint-wait", "Don't queue it now; queue it again once they merge", () => null),
+      button("Queue anyway", "rb-hint-anyway", "Queue it from main, as usual", () => msg),
+      button(`Stack on ${top.branch}`, "rb-hint-stack", `Queue it, branched from ${top.branch} with its pull request onto it`,
+        () => ({ ...msg, prompt: stackedPrompt(msg.prompt, top) }))));
+  document.body.append(box);
+  box.querySelector<HTMLButtonElement>(".rb-hint-stack")?.focus();
+}
+
 // ---- the setting --------------------------------------------------------------------------------------------
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
@@ -186,7 +247,8 @@ function setting() {
   repo.addEventListener("change", changed);
   const scope = el("span", { className: "scope you", title: "Only for you, kept in this browser" }, "Just you");
   const note = el("p", { className: "setting-note" },
-    "The codeSplitter mark beside the issues, queue and PR boards, with a dot when its checks, agents or branches have news.");
+    "The codeSplitter mark beside the issues, queue and PR boards, with a dot when its checks, agents or branches have news. " +
+    "Before a task is queued, a card when open branches there already change its files.");
   return el("div", { className: "setting rb-codesplitter" },
     el("div", { className: "setting-head" }, el("h4", {}, "codeSplitter"), scope),
     el("label", {}, box, " Show it"), repo, note);
@@ -201,7 +263,14 @@ function start() {
   const style = document.createElement("style");
   style.textContent = ".lite-nav #btn-issues,.lite-nav #btn-pulls,.lite-nav #btn-queue{position:relative}" +
     ".rb-cs{position:absolute;top:-9px;right:-9px;padding:2px;background:#fff;border:2px solid var(--ink,#222);" +
-    "border-radius:8px;cursor:pointer;line-height:0}.rb-cs svg{display:block}";
+    "border-radius:8px;cursor:pointer;line-height:0}.rb-cs svg{display:block}" +
+    ".rb-hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483000;width:min(460px,calc(100vw - 32px));" +
+    "font:14px/1.4 system-ui,sans-serif;background:#fffdf7;color:#222;border:2px solid #e8a33d;border-radius:10px;padding:10px 12px;box-shadow:0 6px 20px #0004}" +
+    ".rb-hint-head{display:flex;align-items:center;gap:8px;font-weight:600}.rb-hint-head svg{display:block}" +
+    ".rb-hint ul{margin:6px 0;padding-left:18px;max-height:8em;overflow:auto;overflow-wrap:anywhere}.rb-hint p{margin:6px 0 8px}" +
+    ".rb-hint-buttons{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}" +
+    ".rb-hint button{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;border:0;border-radius:6px;padding:6px 14px;font:inherit;font-weight:600;cursor:pointer;background:#e9e4d8;color:#222}" +
+    ".rb-hint .rb-hint-stack{background:#e8a33d;color:#222}";
   document.head.append(style);
   document.querySelectorAll(".modal.settings").forEach(addTo);
   new MutationObserver((records) => {

@@ -10,6 +10,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import type { Hint } from "./hint.ts";
 import { summarize, type AgentRun, type Branch, type CheckRun, type Summary } from "./news.ts";
 
 export const LIVE = "https://codesplitter.notryanquinn.workers.dev";
@@ -66,9 +67,16 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
     return { site: s.url, repo, boards: none ? null : summarize(branches, checks?.runs ?? null, runs) };
   };
   return async (method: string, url: URL): Promise<{ status: number; body: unknown } | null> => {
-    if (url.pathname !== "/__rb/codesplitter") return null;
+    if (url.pathname !== "/__rb/codesplitter" && url.pathname !== "/__rb/codesplitter/hint") return null;
     if (method !== "GET") return { status: 405, body: { error: `GET ${url.pathname}` } };
     const repo = url.searchParams.get("repo") ?? "";
+    // GET /__rb/codesplitter/hint?repo=&task=  the dispatch hint (#1187): the open branches already changing the
+    // files a task names, asked before it's queued. Nothing busy when codeSplitter can't say.
+    if (url.pathname.endsWith("/hint")) {
+      if (!REPO.test(repo)) return { status: 400, body: { error: "repo is owner/name" } };
+      const task = (url.searchParams.get("task") ?? "").slice(0, 4000);
+      return { status: 200, body: await api<Hint>(`/repos/${repo}/dispatch-hint?task=${encodeURIComponent(task)}`) ?? { files: [], busy: [] } };
+    }
     if (!repo) return { status: 200, body: { site: s.url, repo: null, boards: null } };
     if (!REPO.test(repo)) return { status: 400, body: { error: "repo is owner/name" } };
     const hit = cache.get(repo);
