@@ -65,7 +65,7 @@
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_BYTES, MAX_LINES, toFile } from "./archive.ts";
+import { MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { githubToken, parseRepo } from "./github.ts";
@@ -739,10 +739,52 @@ async function taken(s: Setup, ref: string) {
   const t = await git(["rev-parse", "--verify", "--quiet", `${tracking(ref)}^{commit}`], s.dir);
   return t.code ? null : t.out.trim();
 }
-/** Where upstream's commit `c` left main; a shallow clone may not reach that far, and then it's main as it is. */
+/**
+ * Where upstream's commit `c` left main; a shallow clone may not reach that far, and then it's main as it is.
+ * One stacked on a branch main has since taken in as a squash left it at that branch's last head (#1200).
+ */
 async function forkPoint(s: Setup, c: string) {
-  const ours = await must(["rev-parse", `refs/heads/${s.main}`], s.dir), mb = await git(["merge-base", ours, c], s.dir);
-  return mb.code ? ours : mb.out.trim();
+  const ours = await must(["rev-parse", `refs/heads/${s.main}`], s.dir), mb = await mergeBase(s, c);
+  return mb === ours ? ours : await squashedUnder(s.dir, mb, ours, c) ?? mb;
+}
+/** Git's own merge base of main and `c`, or main as it is when the clone doesn't reach that far. */
+async function mergeBase(s: Setup, c: string) {
+  const ours = `refs/heads/${s.main}`, mb = await git(["merge-base", ours, c], s.dir);
+  return mb.code ? await must(["rev-parse", ours], s.dir) : mb.out.trim();
+}
+
+/** How many commits squashedUnder looks through on each side, newest first. */
+const SQUASH_LOOK = 50;
+/**
+ * The newest commit on `c`'s side of `base` whose changes main held at one of its commits since, or null (#1200):
+ * the head of a parent branch that was squash-merged onto main, so git's merge base would replay its commits as
+ * `c`'s own. Main's commit holds a file's changes when it has the same text, or its other changes since `base`,
+ * laid on the commit's copy, give its text (sync.ts merge3). Main may change the file again after the squash.
+ */
+async function squashedUnder(dir: string, base: string, main: string, c: string) {
+  if (base === main || base === c) return null;
+  const changed = async (to: string) => (await must(["diff", "--name-only", "--no-renames", base, to], dir)).split("\n").filter(Boolean);
+  const list = async (...args: string[]) => (await must(["rev-list", `--max-count=${SQUASH_LOOK}`, ...args, `^${base}`], dir)).split("\n").filter(Boolean);
+  const mains = await Promise.all((await list("--first-parent", main)).map(async (m) => ({ m, files: new Set(await changed(m)) })));
+  const texts = new Map<string, Promise<string | null>>();
+  const at = (rev: string, path: string) => texts.get(`${rev}:${path}`) ?? texts.set(`${rev}:${path}`, show(dir, rev, path)).get(`${rev}:${path}`)!;
+  const holds = async (rev: string, m: string, path: string) => {
+    const [was, now, mine] = await Promise.all([at(base, path), at(m, path), at(rev, path)]);
+    if (mine === now) return true;
+    if (was === null || now === null || mine === null) return false;
+    // Main's changes past this commit's, laid on base, then this commit's on top: main's text only if it held them.
+    const others = merge3(fromDisk(mine), fromDisk(was), fromDisk(now));
+    const both = others && merge3(fromDisk(was), others, fromDisk(mine));
+    return !!both && both.join("\n") === fromDisk(now).join("\n");
+  };
+  for (const rev of await list("--topo-order", c)) {
+    const files = await changed(rev);
+    if (!files.length) continue;
+    for (const { m, files: on } of mains) {
+      if (files.every((f) => on.has(f)) && (await Promise.all(files.map((f) => holds(rev, m, f)))).every(Boolean)) return rev;
+    }
+  }
+  return null;
 }
 
 /** Upstream's branches other than the default, newest commit first, each with its tip and the branch here that follows it, if any. */
@@ -861,10 +903,49 @@ export async function blobMovedOnMain(env: Env, owner: string, repo: string, nam
 
 /** Branch `name` takes upstream's `ref` up to `theirs`: what it got since the branch here last took it in or pushed. */
 async function catchUp(env: Env, owner: string, repo: string, s: Setup, name: string, ref: string, theirs: string) {
-  const from = await taken(s, ref) ?? await forkPoint(s, theirs);
+  const had = await taken(s, ref);
+  if (had) await ontoSquash(env, owner, repo, s, name, ref, had);
+  const from = had ?? await forkPoint(s, theirs);
   const got = from === theirs ? { files: [], deleted: [], skipped: [] } : await take(env, owner, repo, s, name, from, theirs);
   await must(["update-ref", tracking(ref), theirs], s.dir);
   return got;
+}
+
+/** The head of the squash-merged branch a branch's copies were last re-based on (ontoSquash). */
+const squashRef = (ref: string) => `refs/upstream-squashed/${ref}`;
+/**
+ * Branch `name`, at upstream's `had`, was stacked on a branch main has since taken in as a squash (#1200):
+ * its copies move onto main's files, so it merges only what's its own. A file only the parent changed goes
+ * back to main's; one it changed too starts again from main's copy with its own changes on top (sync.ts merge3).
+ * A copy edited here since it came from upstream is left as it is. Once per squash.
+ */
+async function ontoSquash(env: Env, owner: string, repo: string, s: Setup, name: string, ref: string, had: string) {
+  const under = await forkPoint(s, had);
+  if (under === await mergeBase(s, had)) return;
+  const done = await git(["rev-parse", "--verify", "--quiet", squashRef(ref)], s.dir);
+  if (!done.code && done.out.trim() === under) return;
+  const mine = new Set((await must(["diff", "--name-only", "--no-renames", under, had], s.dir)).split("\n").filter(Boolean));
+  const { results } = await env.DB.prepare("SELECT path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NULL").bind(owner, repo, name).all();
+  const drop = (path: string) => env.DB.prepare("DELETE FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, path).run();
+  for (const f of results as { path: string; deleted: number; blob: string | null }[]) {
+    if (f.deleted || f.blob) { if (!mine.has(f.path)) await drop(f.path); continue; }
+    const read = async (op: string, on?: string) => (await toFile(env, owner, repo, f.path, "upstream", op, {}, "", on)).json() as Promise<Doc>;
+    const [base, copy] = await Promise.all([read("base", name), read("file", name)]);
+    // Lines written here, not taken in from upstream: somebody's edit, which a re-base would lose.
+    const was = new Map(base.lines.map((l) => [l.id, l.rev]));
+    if (copy.lines.some((l) => was.get(l.id) !== l.rev && l.by !== "upstream")) continue;
+    // Main has no copy to start from: the branch's stays.
+    const next = await show(s.dir, had, f.path);
+    if ("error" in await materialize(env, owner, repo, f.path) || (mine.has(f.path) && next === null)) continue;
+    await toFile(env, owner, repo, f.path, "upstream", "wipe", { method: "POST" }, "", name);
+    if (!mine.has(f.path)) { await drop(f.path); continue; }
+    const doc = await read("file");
+    await toFile(env, owner, repo, f.path, "upstream", "fork", { method: "POST", body: JSON.stringify({ doc }) }, "", name);
+    const lines = doc.lines.map((l) => l.text), theirs = fromDisk(next!);
+    const ops = diffToOps(doc.lines, merge3(fromDisk((await show(s.dir, under, f.path)) ?? ""), lines, theirs) ?? theirs);
+    if (ops.length) await toFile(env, owner, repo, f.path, "upstream", "ops", { method: "POST", body: JSON.stringify({ ops }) }, "", name);
+  }
+  await must(["update-ref", squashRef(ref), under], s.dir);
 }
 
 /**
@@ -897,6 +978,8 @@ export async function openUpstreamBranch(env: Env, owner: string, repo: string, 
   if (!claim.meta?.changes) return json({ error: "branch exists" }, 409);
   const got = await take(env, owner, repo, s, b, base, theirs);
   await must(["update-ref", tracking(ref), theirs], s.dir);
+  // Taken in from a squashed parent's head already: nothing to re-base.
+  if (base !== await mergeBase(s, theirs)) await must(["update-ref", squashRef(ref), base], s.dir);
   const { emit } = await import("./hooks.ts");
   await emit(env, owner, repo, "branch.opened", user, { ref: b, ref_type: "branch", master_branch: "main" });
   await startChecks(env, owner, repo, b, theirs, user);
@@ -984,6 +1067,9 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
     // Git clashes, but the branch just took main in by line id (branches.ts takeMain, #1162): its copies of
     // those files are the settled ones, so the merge commit is main's tree with them on top.
     if (clash.length && o.tookMain && await allText(env, owner, repo, name, clash)) [parents, baseTree] = [[prev, tip], `${tip}^{tree}`];
+    // Git replays a squash-merged parent's commits as clashes (#1200): the files only the parent changed are
+    // main's, and the branch's own are its copies, already re-based on main's (ontoSquash).
+    else if (clash.length && await onSquash(env, owner, repo, s, name, prev, clash)) [parents, baseTree] = [[prev, tip], `${tip}^{tree}`];
     else if (m.code) return json({ error: `upstream's ${ref} and main ${m.code === 1 ? "changed the same lines" : "share no history"}: settle it upstream, then push again`, clash }, 409);
     else [parents, baseTree] = [[prev, tip], m.out.trim().split("\n")[0]!];
   }
@@ -1004,6 +1090,19 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   // A branch pushed upstream gets checked, here and on GitHub, as that commit.
   await startChecks(env, owner, repo, name, c, br.by);
   return json({ ref, commit: c, pushed: true, took });
+}
+
+/** Whether upstream's `prev` is stacked on a squash-merged parent, and `name` has a copy of each file it changed past it (one with lines where git clashes). */
+async function onSquash(env: Env, owner: string, repo: string, s: Setup, name: string, prev: string, clash: string[]) {
+  const under = await forkPoint(s, prev);
+  if (under === await mergeBase(s, prev)) return false;
+  const mine = new Set((await must(["diff", "--name-only", "--no-renames", under, prev], s.dir)).split("\n").filter(Boolean));
+  const own = clash.filter((p) => mine.has(p));
+  if (own.length && !await allText(env, owner, repo, name, own)) return false;
+  // The tree starts from main's, so every file the branch changed must be one of its copies.
+  const { results } = await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, name).all();
+  const kept = new Set((results as { path: string }[]).map((r) => r.path));
+  return [...mine].every((p) => kept.has(p));
 }
 
 /** Whether `name` has a copy of its own, with lines, of each of `paths`. */
@@ -1032,9 +1131,12 @@ async function followBranches(env: Env, owner: string, repo: string) {
       const ref = br.upstream_ref, tip = tips.get(ref), had = await taken(s, ref);
       if (!tip) { if (br.status === "merged") await forget(br.name); continue; }
       if (br.status === "open") {
+        // Main may have taken in a branch this one's stacked on (ontoSquash), even when this one didn't move.
         const theirs = tip === had ? tip : await fetchBranch(s, ref);
-        if (theirs && theirs !== had) await catchUp(env, owner, repo, s, br.name, ref, theirs);
-        if (theirs) await clashOnlyInGit(env, owner, repo, s, br.name, theirs);
+        if (theirs) {
+          await catchUp(env, owner, repo, s, br.name, ref, theirs);
+          await clashOnlyInGit(env, owner, repo, s, br.name, theirs);
+        }
         continue;
       }
       // Deleting a merged branch upstream is a push too: a pull-only mirror leaves it be.
@@ -1044,6 +1146,7 @@ async function followBranches(env: Env, owner: string, repo: string) {
       const d = await git(["push", "--porcelain", `--force-with-lease=refs/heads/${ref}:${tip}`, s.r.mirror_url, `:refs/heads/${ref}`], s.dir, s.net);
       if (d.code) continue;
       await git(["update-ref", "-d", tracking(ref)], s.dir);
+      await git(["update-ref", "-d", squashRef(ref)], s.dir);
       await forget(br.name);
     } catch { /* that branch tries again next sync */ }
   }

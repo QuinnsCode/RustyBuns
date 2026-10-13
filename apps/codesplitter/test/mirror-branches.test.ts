@@ -1,7 +1,7 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pushBranch, upstreamMessages } from "../src/mirror.ts";
+import { git, pushBranch, upstreamMessages } from "../src/mirror.ts";
 import { root, up, sh, post, get, sync, file, editHere, upstreamRewrite, mirrored, upstreamCommit, upLog, commit, pushClash, upShow } from "./mirror-kit.ts";
 
 setDefaultTimeout(30_000);
@@ -136,6 +136,38 @@ describe("mirrors: branches and this copy's own git", () => {
     const pushed = await sh(`git --git-dir ${up} rev-parse late`);
     expect(await sync(call)).toMatchObject({ state: "ok" });
     expect(await sh(`git --git-dir ${up} rev-parse late`)).toBe(pushed);
+  });
+
+  test("a branch stacked on one main took in as a squash brings and pushes only its own change (#1200)", async () => {
+    const call = await mirrored("squash");
+    const work = mkdtempSync(join(root, "work-"));
+    const files = async (b: string) => (await get(call, `/api/repos/ana/up/branches/${b}`)).files.map((f: any) => [f.path, f.conflicts.length]);
+    // Bo's parent branch, and a child stacked on it (pushed twice, one to open later).
+    await sh(`git clone -q ${up} . && git config user.name Bo && git config user.email bo@example.com && git checkout -qb parent &&
+      printf 'export const a = 1\\nexport const b = 2\\n' > src/a.ts && printf 'export const p = 1\\n' > src/p.ts && git add -A && git commit -qm parent && git push -q origin parent &&
+      git checkout -qb child && printf 'hello\\nworld, child\\n' > README && git commit -qam child && git push -q origin child child:late`, work);
+    // Opened while the parent's still open, it carries the parent's files too.
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches", { ref: "child" })).json()).toMatchObject({ files: ["README", "src/a.ts", "src/p.ts"] });
+    // The parent lands on main as one squash, and main changes one of its files again: git's merge clashes.
+    await sh(`git checkout -q main && git merge -q --squash parent && git commit -qm "parent (#1)" && printf 'export const p = 2\\n' > src/p.ts && git commit -qam "p again" && git push -q origin main`, work);
+    expect((await git(["merge-tree", "--write-tree", "main", "child"], up)).code).toBe(1);
+    // The next sync moves the open one onto the squash: the parent's files are main's again.
+    const prev = await sh(`git --git-dir ${up} rev-parse child`);
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    expect(await files("child")).toEqual([["README", 0]]);
+    expect((await file(call, "README")).lines.map((l: any) => l.text)).toEqual(["hello", "world"]);
+    expect((await get(call, "/api/repos/ana/up/do/file?path=README&branch=child")).lines.map((l: any) => l.text)).toEqual(["hello", "world, child"]);
+    // Opened after, it starts from the parent's head.
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches", { ref: "late" })).json()).toMatchObject({ files: ["README"] });
+    expect(await upstreamMessages(call.env, "ana", "up", "late", "README")).toEqual(["child"]);
+    // It clashed with main only in git, so that sync pushed it too (#1190): a merge of main's tip, main's copy
+    // of the parent's files, its own change on top. Pushing again has nothing new.
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/child/push")).json()).toMatchObject({ pushed: false });
+    expect(await sh(`git --git-dir ${up} log -1 --format=%P child`)).toBe(`${prev} ${await upLog("%H")}`);
+    expect(await sh(`git --git-dir ${up} show child:src/p.ts`)).toBe("export const p = 2");
+    expect(await sh(`git --git-dir ${up} show child:README`)).toBe("hello\nworld, child");
+    expect((await post(call, "/api/repos/ana/up/branches/child/merge")).status).toBe(200);
+    expect((await file(call, "README")).lines.map((l: any) => l.text)).toEqual(["hello", "world, child"]);
   });
 
   test("branches carry deletions and binary files both ways, and merging one deletes upstream too (#440, #446)", async () => {
