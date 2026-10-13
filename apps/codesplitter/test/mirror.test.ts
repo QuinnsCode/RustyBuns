@@ -20,7 +20,7 @@ describe("mirrors", () => {
     expect(made.status).toBe(201);
     expect(await made.json()).toMatchObject({ owner: "ana", name: "up", mirror: true, upstream: `file://${up}` });
     expect(await sh(`git --git-dir ${call.artifacts.path("ana--up")} rev-parse --is-shallow-repository`)).toBe("true");
-    expect(await get(call, "/api/repos/ana/up")).toMatchObject({ mirror: true, branch: "main" });
+    expect(await get(call, "/api/repos/ana/up")).toMatchObject({ mirror: true, pullOnly: false, branch: "main" });
     expect(await sync(call)).toMatchObject({ state: "ok", ahead: 0, behind: 0, identity: { name: "Ana Real", email: "ana@example.com" } });
 
     // A commit here goes upstream, as this machine's git identity.

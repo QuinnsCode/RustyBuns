@@ -429,7 +429,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
     // GET /api/repos/:o/:r
     if (!p[4] && req.method === "GET") {
-      const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, created_at, expires_at, mirror_url IS NOT NULL AS mirror FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, created_at, expires_at, mirror_url IS NOT NULL AS mirror, mirror_pull_only IS 1 AS pullOnly FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
       const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
       // Anyone who can read the repo can clone its artifact, with an hour-long read token;
       // the crew also gets their own remote's, with private lines' real text, once there is one.
@@ -451,7 +451,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       const pushClash = home === "local" && a.write ? Object.keys((await pushClashes(env, owner, repo)).clashes) : [];
       // A fork the owner dug up here could be a two-way mirror (#875): the About panel offers it.
       const mirrorable = user === owner && !r?.mirror && mirrorsOn(env) && !!r?.upstream_commit && !!upstreamRemote(r?.upstream as string | null);
-      return json({ ...r, mirror: !!r?.mirror, ...(mirrorable && { mirrorable }), collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home, ...(push && { push }), ...(pushClash.length && { pushClash }), ...invites });
+      return json({ ...r, mirror: !!r?.mirror, pullOnly: !!r?.pullOnly, ...(mirrorable && { mirrorable }), collaborators: collaborators.map((c: any) => c.name), canWrite: a.write, clone, crewClone, home, ...(push && { push }), ...(pushClash.length && { pushClash }), ...invites });
     }
     // PUT /api/repos/:o/:r {visibility}  (owner only)
     if (!p[4] && req.method === "PUT") {
