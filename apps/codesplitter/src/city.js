@@ -143,6 +143,14 @@ const SHOPS = {
   archive: { sign: "ARCHIVE", neon: "#19d3ff", spines: ["#5a6670", "#6c7882", "#4a545c"], style: "cabinets" },
 };
 const shopTex = new Map();
+// ---- shop interiors: the ground floor is a room, built the first time you come near ------------
+// A shop kind names the module that stocks it in city-shops/<module>.js, which exports
+// buildInterior(ctx) with ctx = { b, repo, r, pw, ph, y0, put, scene, THREE, door: [fx, fz], lines, path }
+// (and kind, for a module that serves several). put() is the kit's put, into that room's own instanced
+// meshes; scene is the room's Group. It may return { aisles: [[x, z]..], clerk: [x, z] } (world coords) for
+// the shoppers' route and the clerk's post. A kind with no entry here, or a module that fails, gets generic.js.
+const SHOP_MODULES = { video: "media", comics: "media", records: "media", lava: "media" };
+const rooms = [];
 // The lava lamps are alive: one shared wall of them, blobs rising and sinking, redrawn a few times a second.
 const lava = (() => {
   const c = document.createElement("canvas"); c.width = 256; c.height = 128;
@@ -225,6 +233,7 @@ function stock(b, repo, r, pw, ph, y0, [fx, fz], hall, hq) {
     scene.add(shelves, sign);
   }
   put("pool", b.x + fx * (pw / 2 + 1.1), CURB + 0.02, b.z + fz * (pw / 2 + 1.1), 3.2, 1, 3.2, 0, SHOPS[key].neon);
+  rooms.push({ b, repo, kind: key, pw, ph, y0, door: [fx, fz], state: 0, group: null, folks: [], light: SHOPS[key].neon });
 }
 
 // ---- facades: 8 bays by 8 storeys a tile, some windows lit, drawn once per style ------
@@ -826,13 +835,20 @@ function updateTraffic(dt, time) {
 // One crowd: the people round the blocks, then the crossers.
 const everyone = [...people, ...crossers];
 const FOLK = 0.6; // crowd scale: the people are small next to the towers
+const SHOPPERS = 64, HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0); // spare crowd slots for the people inside the shops
 const crowd = [
   [new THREE.BoxGeometry(0.2, 0.26, 0.12).translate(0, 0.13, 0), std("#ffffff", { roughness: 0.8 }), "pants"],
   [new THREE.CapsuleGeometry(0.13, 0.3, 3, 8).translate(0, 0.4, 0), std("#ffffff", { roughness: 0.8 }), "coat"],
   [new THREE.SphereGeometry(0.15, 12, 10).translate(0, 0.83, 0), std("#ffffff", { roughness: 0.8 }), "skin"],
   [new THREE.SphereGeometry(0.16, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.55).translate(0, 0.84, 0.01), std("#ffffff", { roughness: 0.6 }), "hair"],
   [new THREE.ConeGeometry(0.42, 0.18, 10).translate(0, 1.12, 0), std("#ffffff", { roughness: 0.4 }), "brolly"],
-].map(([g, m, col]) => { const im = instanced(g, m, everyone.length); if (col) everyone.forEach((p, i) => im.setColorAt(i, C(p[col]))); return im; });
+].map(([g, m, col]) => {
+  const im = instanced(g, m, everyone.length + SHOPPERS);
+  if (col) everyone.forEach((p, i) => im.setColorAt(i, C(p[col])));
+  im.frustumCulled = false; // its people are spread over the city and move; shop folk fill the spare slots
+  for (let i = everyone.length; i < everyone.length + SHOPPERS; i++) im.setMatrixAt(i, HIDDEN);
+  return im;
+});
 function updatePeople(dt, time) {
   updateCrossers(dt, time);
   for (const [i, p] of people.entries()) {
@@ -850,6 +866,78 @@ function updatePeople(dt, time) {
     for (const im of crowd) im.setMatrixAt(people.length + k, _m);
   }
   for (const im of crowd) im.instanceMatrix.needsUpdate = true;
+}
+
+// ---- inside the shops: built on approach, shown while near, with shoppers and a clerk -------------
+// The people are the crowd's own instances (spare slots at the end), lent to a room while it is shown.
+const SHOP_NEAR = 12, SHOP_FAR = 16, slots = Array.from({ length: SHOPPERS }, (_, i) => everyone.length + i);
+const roomLights = [0, 1].map(() => { const l = new THREE.PointLight("#ffd29a", 0, 4, 2); scene.add(l); return l; });
+const mods = new Map();
+const shopModule = (name) => { if (!mods.has(name)) mods.set(name, import(`./city-shops/${name}.js`).catch((e) => { console.warn("shop module", name, e); return null; })); return mods.get(name); };
+async function buildRoom(s) {
+  s.state = 1;
+  const { b, repo, kind, pw, ph, y0, door } = s, lists = new Map(), group = new THREE.Group();
+  const ctx = { b, repo, kind, r: rng(hash(`${repo}/${b.path}/shop`)), pw, ph, y0, scene: group, THREE, door, lines: b.lines, path: b.path,
+    put: (key, x, y, z, sx, sy, sz, ry, color, rx, rz) => { if (!lists.has(key)) lists.set(key, []); lists.get(key).push({ m: place(new THREE.Matrix4(), x, y, z, sx, sy, sz, ry, rx, rz), color }); } };
+  let out;
+  for (const name of [SHOP_MODULES[kind], "generic"]) {
+    const mod = name && await shopModule(name);
+    if (!mod) continue;
+    lists.clear();
+    try { out = mod.buildInterior(ctx) ?? {}; break; } catch (e) { console.warn("shop interior", kind, e); }
+  }
+  if (!out) { s.state = 3; return; } // nothing could stock it: the shop stays a shell
+  for (const [key, list] of lists) {
+    const k = kits.get(key);
+    if (!k) continue;
+    const im = new THREE.InstancedMesh(k.geo, k.mat, list.length);
+    list.forEach((p, i) => { im.setMatrixAt(i, p.m); if (p.color) im.setColorAt(i, C(p.color)); });
+    if (list.some((p) => p.color)) for (let i = 0; i < list.length; i++) if (!list[i].color) im.setColorAt(i, C("#ffffff"));
+    group.add(im);
+  }
+  const ih = pw / 2 - 0.1, [fx, fz] = door;
+  s.aisles = out.aisles?.length ? out.aisles : [[b.x - ih * 0.4, b.z - ih * 0.4], [b.x + ih * 0.4, b.z - ih * 0.4], [b.x + ih * 0.4, b.z + ih * 0.4], [b.x - ih * 0.4, b.z + ih * 0.4]];
+  s.clerk = out.clerk ?? [b.x - fx * ih * 0.8, b.z - fz * ih * 0.8];
+  s.group = group; group.visible = false; scene.add(group); s.state = 2;
+}
+/** Hand a room's people their crowd slots (and look) while it is shown, take them back when it is not. */
+function staff(s, on) {
+  if (!on) { for (const f of s.folks) { for (const im of crowd) im.setMatrixAt(f.slot, HIDDEN); slots.push(f.slot); } s.folks = []; return; }
+  const r = rng(hash(`${s.repo}/${s.b.path}/folk`)), n = 1 + Math.min(3, 2 + Math.floor(r() * 2));
+  for (let k = 0; k < n && slots.length; k++) {
+    const slot = slots.pop(), clerk = k === 0, look = folk(r), [x, z] = clerk ? s.clerk : s.aisles[Math.floor(r() * s.aisles.length)];
+    const cols = { ...look, coat: clerk ? "#e8590c" : pick(r, ["#16191c", "#2e3439", "#f4f5f5", "#6b7680", "#8a5a3c", "#3a6b8a"]), brolly: "#ffffff" };
+    crowd.forEach((im, i) => { const col = ["pants", "coat", "skin", "hair", "brolly"][i]; im.setColorAt(slot, C(cols[col])); if (im.instanceColor) im.instanceColor.needsUpdate = true; });
+    s.folks.push({ slot, clerk, x, z, tx: x, tz: z, ry: r() * 6.28, wait: r() * 3, bob: r() * 6 });
+  }
+}
+function updateShops(dt, time) {
+  const px = player.pos.x, pz = player.pos.z, near = [];
+  let built = false;
+  for (const s of rooms) {
+    const d2 = (s.b.x - px) ** 2 + (s.b.z - pz) ** 2, show = walking && d2 < SHOP_FAR * SHOP_FAR;
+    if (walking && !built && s.state === 0 && d2 < SHOP_NEAR * SHOP_NEAR) { built = true; buildRoom(s); }
+    if (s.state !== 2) continue;
+    if (show !== s.group.visible) { s.group.visible = show; staff(s, show); }
+    if (show) near.push([d2, s]);
+  }
+  near.sort((a, c) => a[0] - c[0]);
+  roomLights.forEach((l, i) => { const s = near[i]?.[1]; l.intensity = s ? 3 : 0; if (s) { l.color.set(s.light); l.position.set(s.b.x, s.y0 + s.ph * 0.8, s.b.z); } });
+  for (const [, s] of near) for (const f of s.folks) {
+    // Shoppers drift between aisles and browse the shelves; the clerk stays at the till and now and then steps out to restock.
+    const dx = f.tx - f.x, dz = f.tz - f.z, d = Math.hypot(dx, dz), [cx, cz] = s.clerk, away = Math.atan2(f.x - s.b.x, f.z - s.b.z);
+    let stepping = false;
+    if (d > 0.04) { const step = Math.min(d, 0.3 * dt); f.x += dx / d * step; f.z += dz / d * step; f.ry = Math.atan2(dx, dz); stepping = !still; f.moving = true; }
+    else {
+      if (f.moving) { f.moving = false; f.ry = away + (f.clerk ? Math.PI : 0); } // arrived: face the shelves; the clerk faces the room
+      if ((f.wait -= dt) <= 0) {
+        if (f.clerk) { const atPost = Math.hypot(f.x - cx, f.z - cz) < 0.05; [f.tx, f.tz] = atPost && Math.random() < 0.4 ? s.aisles[Math.floor(Math.random() * s.aisles.length)] : [cx, cz]; f.wait = atPost ? 4 + Math.random() * 6 : 6 + Math.random() * 8; }
+        else { [f.tx, f.tz] = s.aisles[Math.floor(Math.random() * s.aisles.length)]; f.wait = 1.5 + Math.random() * 4; }
+      }
+    }
+    place(_m, f.x, s.y0 + (stepping ? Math.abs(Math.sin(time * 7 + f.bob)) * 0.03 : 0), f.z, FOLK, FOLK, FOLK, f.ry);
+    crowd.forEach((im, i) => im.setMatrixAt(f.slot, i === 4 ? HIDDEN : _m)); // no umbrellas indoors
+  }
 }
 
 // ---- steam from the manholes: orange where the district's checks are failing ------------
@@ -1175,6 +1263,7 @@ function frame(now) {
   updateSignals(time);
   updateTraffic(dt, time);
   updatePeople(dt, time);
+  updateShops(dt, time);
   updateSteam(time);
   blinkAlarms(time);
   updateBirds(time);
