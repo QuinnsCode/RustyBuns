@@ -92,6 +92,7 @@ The pitch is in [README.md](README.md).
   Everyone else's clone gets the public text.
   Text already pushed before you marked it stays in git's history, so treat a leaked secret as leaked.
   `POST /api/repos/:o/:r/do/private?path= {lines: [ids], private}`.
+  Use cases and the gaps in the way: [docs/private-lines.md](docs/private-lines.md).
 - **Mirrors: Git going when git stops going (desktop).** Tick "keep it in sync" in the dig box and the repo becomes a mirror of the real one: GitHub, GitLab, or any git URL this machine can reach (`POST /api/mirrors {url}`, with this machine's own credentials: the GitHub token digs use, else git's credential helper or ssh keys).
   Every 5 minutes, and right after each commit, it fetches upstream's branch into the local bare repo, takes what's new (a fast-forward, or a merge commit made with `git merge-tree`, nothing checked out), lands it in any file open here as line edits by `upstream`, merged into live edits, and pushes back what upstream doesn't have yet.
   It never force-pushes.
@@ -627,7 +628,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/fit.ts` | the Rusty Buns fit check: how easily `rustybuns init` could box the repo |
 | `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
 | `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
-| `src/gitwiz/gitwiz.ts`, `src/gitwiz/page.ts`, `src/gitwiz/build.ts`, `src/gitwiz/serve.ts` | gitwiz, a file's commit graph run down a guitar-neck highway by a runner on the hot path (page.ts draws it; gitwiz.ts is the pure parts, tested in `test/gitwiz.test.ts`; `bun run gitwiz` serves it; data from `scripts/gitwiz-log.ts`) |
+| `src/gitpath/gitpath.ts`, `src/gitpath/scene.ts`, `src/gitpath/models.ts`, `src/gitpath/page.ts`, `src/gitpath/build.ts`, `src/gitpath/serve.ts` | gitpath, a file's commit graph in 3D (three.js), a unicycle game on the hot path, and a model per piece of the stack (gitpath.ts is the pure parts, tested in `test/gitpath.test.ts`; scene.ts and models.ts draw the 3D; page.ts is the controls and the game; `bun run gitpath` serves it; data from `scripts/gitpath-log.ts`) |
 | `src/harness.ts` | the coding-agent CLIs and the prompt each one gets |
 | `src/heal.ts` | self-healing CI: a failed required check, or a merge guard tripping, opens a fix task on the branch |
 | `src/hooks.ts` | outgoing webhooks: the owner's hooks, signed deliveries, the log, retries |

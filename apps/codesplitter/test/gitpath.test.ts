@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { Box3, PerspectiveCamera, Vector3 } from "three";
 import { join } from "node:path";
 import {
-  AHEAD, FALLOFF, buildNotes, cleanRefs, clockAt, currentIndex, depthAtY, edgeSlotAt, formatAge, formatClock, geometry,
-  keptAncestors, kindOf, layoutGraph, multiplier, orderCommits, paceAt, parseDag, parsePatchLog, pathSlotAt, project, qToScrub,
-  readInput, runnerOffset, scaleAt, scoreAt, scrubToIndex, scrubToQ, simplifyParents, slotOf, slotX, stepQ, strideRate, topFiles,
+  AHEAD, FOV, LANE_W, RIDE, SPACING, STACK, TILT, boardHalf, edgeSamples, fitDistance, stackOf, worldX, worldZ, buildNotes, eventPush, filterRange, gustRide, newRide, qAtFrac, qAtTime, remount, rideEvents, stepRide, tapGrade, tapRide, timeFracAt, timeTicks, type Side,
+  breeze, cleanRefs, clockAt, currentIndex, edgeSlotAt, formatAge, formatClock, geometry,
+  keptAncestors, kindOf, layoutGraph, multiplier, orderCommits, parseDag, parsePatchLog, pathSlotAt, qToScrub,
+  readInput, scoreAt, scrubToIndex, scrubToQ, simplifyParents, slotOf, stepQ, topFiles,
   type Commit,
-} from "../src/gitwiz/gitwiz.ts";
+} from "../src/gitpath/gitpath.ts";
+import { COLORS, eventKinds, eventModel, model, modelIds, pose, setBadge, unicyclist } from "../src/gitpath/models.ts";
 
 const commit = (over: Partial<Commit> = {}): Commit => ({ hash: "a".repeat(40), author: "ada", date: "2026-01-01T00:00:00Z", subject: "s", added: 1, removed: 0, ...over });
 const at = (day: number, over: Partial<Commit> = {}) => commit({ date: new Date(Date.UTC(2026, 0, day)).toISOString(), hash: String(day).padStart(40, "0"), ...over });
@@ -113,7 +116,7 @@ describe("reading the JSON", () => {
   });
 
   test("the sample from this repo loads as a graph with branches", () => {
-    const sample = readInput(readFileSync(join(import.meta.dir, "../src/gitwiz/sample.json"), "utf8"));
+    const sample = readInput(readFileSync(join(import.meta.dir, "../src/gitpath/sample.json"), "utf8"));
     expect(sample.files[0]!.path).toBe("apps/codesplitter/src/client.html");
     const notes = buildNotes(sample.histories[sample.files[0]!.path]!);
     expect(notes.length).toBeGreaterThan(150);
@@ -269,50 +272,168 @@ describe("the graph's layout", () => {
     expect(pathSlotAt(layoutGraph([]), 3)).toBe(0);
     expect(pathSlotAt(layoutGraph(buildNotes([at(1)])), 3)).toBe(0);
   });
+});
 
-  test("slots map to the board's width, with the outer lanes inside its edges", () => {
-    expect(slotX(0, 0)).toBe(0);
-    expect(slotX(2, 2)).toBeCloseTo(0.8); expect(slotX(-2, 2)).toBeCloseTo(-0.8);
-    expect(Math.abs(slotX(3, 3))).toBeLessThan(1);
+describe("the overlay's measures", () => {
+  test("the strum line is inside the canvas, below the horizon", () => {
+    for (const [w, h] of [[300, 300], [1600, 500], [500, 1200]] as const) {
+      const x = geometry(w, h);
+      expect(x.horizon).toBeLessThan(x.strum); expect(x.strum).toBeLessThan(h); expect(x.cx).toBe(w / 2);
+    }
   });
 });
 
-describe("the board's perspective", () => {
-  const g = geometry(1000, 600);
-  test("scale is 1 at the strum line, shrinks toward the horizon, and carries on past the strum line", () => {
-    expect(scaleAt(0)).toBe(1);
-    expect(scaleAt(AHEAD)).toBeCloseTo(1 / (1 + FALLOFF));
-    let prev = Infinity;
-    for (let d = -1; d <= AHEAD; d += 0.5) { const s = scaleAt(d); expect(s).toBeLessThan(prev); expect(s).toBeGreaterThan(0); prev = s; }
-    const e = 1e-4;
-    expect((scaleAt(0) - scaleAt(e)) / e).toBeCloseTo((scaleAt(-e) - scaleAt(0)) / e, 1);
+describe("the 3D board", () => {
+  test("slots map across the board with the outer lanes inside its rails, and notes go down it one commit apart", () => {
+    expect(worldX(0)).toBe(0); expect(worldX(2)).toBe(2 * LANE_W); expect(worldX(-1)).toBe(-LANE_W);
+    expect(worldZ(0) - worldZ(1)).toBeCloseTo(SPACING);
+    expect(worldZ(-1)).toBeCloseTo(0);   // the note just before the first sits on the strum line
+    for (const extent of [0, 1, 4]) expect(worldX(extent) + LANE_W / 2).toBeLessThan(boardHalf(extent));
   });
 
-  test("the strum line is at the strum y, and lanes converge on the vanishing point", () => {
-    expect(project(g, 0, 0)).toEqual({ x: g.cx, y: g.strum, s: 1 });
-    const edgeNear = project(g, 1, 0), edgeFar = project(g, 1, AHEAD);
-    expect(edgeNear.x - g.cx).toBeCloseTo(g.half);
-    expect(edgeFar.x - g.cx).toBeCloseTo(g.half / (1 + FALLOFF));
-    expect(edgeFar.y).toBeGreaterThan(g.horizon);
-    const [a, b] = [project(g, 0.5, 2), project(g, 0.5, 9)];
-    expect((a.x - g.cx) / (a.y - g.horizon)).toBeCloseTo((b.x - g.cx) / (b.y - g.horizon));
+  test("an edge is sampled only where it bends", () => {
+    const notes = buildNotes(graph(["m1", [], 1], ["b1", ["m1"], 2], ["b2", ["b1"], 3], ["m2", ["m1"], 4], ["mm", ["m2", "b2"], 5, 1, ["main"]]));
+    const lay = layoutGraph(notes);
+    const byHash = Object.fromEntries(notes.map((n) => [n.hash, n.i]));
+    const straight = edgeSamples(lay, { lo: byHash.b1!, hi: byHash.b2! });
+    expect(straight).toEqual([byHash.b1!, byHash.b2!]);
+    const fork = edgeSamples(lay, { lo: byHash.m1!, hi: byHash.b1! });
+    expect(fork.length).toBeGreaterThan(3);
+    expect(fork[0]).toBe(byHash.m1); expect(fork[fork.length - 1]).toBe(byHash.b1);
+    expect([...fork].sort((a, b) => a - b)).toEqual(fork);
+    // the samples trace the same curve edgeSlotAt gives, and stay between the two lanes
+    for (const t of fork) { const x = edgeSlotAt(lay, { lo: byHash.m1!, hi: byHash.b1! }, t); expect(x).toBeGreaterThanOrEqual(0); expect(x).toBeLessThanOrEqual(1); }
   });
 
-  test("frets bunch up toward the horizon", () => {
-    const ys = [0, 1, 2, 3, 4, 5].map((d) => project(g, 0, d).y);
-    const gaps = ys.slice(1).map((y, i) => ys[i]! - y);
-    for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeLessThan(gaps[i - 1]!);
-  });
-
-  test("depthAtY undoes project", () => {
-    for (const d of [-0.8, -0.1, 0, 0.7, 3, 11, AHEAD]) expect(depthAtY(g, project(g, 0, d).y)).toBeCloseTo(d, 6);
-  });
-
-  test("the geometry keeps the strum line inside the canvas, below the horizon", () => {
-    for (const [w, h] of [[300, 300], [1600, 500], [500, 1200]] as const) {
-      const x = geometry(w, h);
-      expect(x.horizon).toBeLessThan(x.strum); expect(x.strum).toBeLessThan(h); expect(x.half * 2).toBeLessThanOrEqual(w);
+  test("the camera fits the board's width at the strum line for any shape of canvas", () => {
+    for (const extent of [0, 2, 4]) for (const aspect of [0.6, 1, 1.6, 2.4]) {
+      const half = boardHalf(extent), d = fitDistance(half, aspect);
+      const cam = new PerspectiveCamera(FOV, aspect, 0.1, 200);
+      cam.position.set(0, d * Math.sin((TILT * Math.PI) / 180), d * Math.cos((TILT * Math.PI) / 180));
+      cam.lookAt(0, 0.6, -AHEAD * SPACING * 0.3);
+      cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+      const right = new Vector3(half, 0, 0).project(cam), left = new Vector3(-half, 0, 0).project(cam);
+      // fitDistance stops at 60, which only an extreme shape reaches
+      if (d < 60 && d > 9) { expect(right.x).toBeLessThanOrEqual(1); expect(left.x).toBeGreaterThanOrEqual(-1); }
     }
+    expect(fitDistance(boardHalf(4), 1)).toBeGreaterThan(fitDistance(boardHalf(0), 1));
+    expect(fitDistance(boardHalf(2), 0.6)).toBeGreaterThan(fitDistance(boardHalf(2), 2));
+    expect(fitDistance(1, 3)).toBe(9);
+  });
+
+  test("the board rises and narrows toward the horizon", () => {
+    const half = boardHalf(2), d = fitDistance(half, 1.6);
+    const cam = new PerspectiveCamera(FOV, 1.6, 0.1, 200);
+    cam.position.set(0, d * Math.sin((TILT * Math.PI) / 180), d * Math.cos((TILT * Math.PI) / 180));
+    cam.lookAt(0, 0.6, -AHEAD * SPACING * 0.3);
+    cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+    const at = (x: number, depth: number) => new Vector3(x, 0, -depth * SPACING).project(cam);
+    let prevY = -Infinity, prevHalf = Infinity;
+    for (let depth = 0; depth <= AHEAD; depth += 2) {
+      const l = at(-half, depth), r = at(half, depth);
+      expect(l.y).toBeGreaterThan(prevY); prevY = l.y;   // farther is higher up the screen
+      expect(r.x - l.x).toBeLessThan(prevHalf); prevHalf = r.x - l.x;
+    }
+  });
+});
+
+describe("the stack", () => {
+  test("a commit that names a piece of the stack calls it up, the specific before the general", () => {
+    const pick = (s: string) => stackOf(s);
+    expect([
+      pick("codeSplitter: a D1 migration"), pick("move levels to R2"), pick("the job queue retries"), pick("Durable Objects hibernate"), pick("a DO per file"),
+      pick("sandbox container for agents"), pick("Artifacts remote"), pick("rate limit sign-ups"), pick("serve static assets"), pick("a Worker route"),
+      pick("deploy to Cloudflare"), pick("tidy the readme"),
+    ]).toEqual(["d1", "r2", "queues", "durable-objects", "durable-objects", "containers", "artifacts", "rate-limit", "assets", "workers", "cloud", undefined]);
+    // D1 wins over Workers when a commit names both
+    expect(stackOf("D1 on a Worker")).toBe("d1");
+  });
+
+  test("every piece has its own id and a model, and so does the orange cloud", () => {
+    const ids = STACK.map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(modelIds()).toContain(id);
+    expect(modelIds()).toContain("cloud");
+    for (const p of STACK) expect(p.name.length).toBeGreaterThan(0);
+  });
+
+  test("each model is a group of meshes about a unit across, centred", () => {
+    for (const id of modelIds()) {
+      const g = model(id);
+      let meshes = 0;
+      g.traverse((o: { isMesh?: boolean }) => { if (o.isMesh) meshes++; });
+      expect(meshes).toBeGreaterThan(0);
+      const box = new Box3().setFromObject(g);
+      const size = box.getSize(new Vector3());
+      expect(Math.max(size.x, size.y, size.z)).toBeGreaterThan(0.5);
+      expect(Math.max(size.x, size.y, size.z)).toBeLessThan(2);
+      const centre = box.getCenter(new Vector3());
+      expect(Math.hypot(centre.x, centre.y, centre.z)).toBeLessThan(0.4);
+    }
+    expect(() => model("nope")).toThrow("no model for nope");
+  });
+
+  test("each call makes a new model, so two coins don't share one", () => {
+    expect(model("d1")).not.toBe(model("d1"));
+  });
+});
+
+describe("the road's events and the unicyclist", () => {
+  test("every kind of event rideEvents makes has a model", () => {
+    for (const kind of ["merge", "fork", "branch", "squash"]) expect(eventKinds()).toContain(kind);
+    for (const kind of eventKinds()) {
+      const g = eventModel(kind);
+      let meshes = 0;
+      g.traverse((o: { isMesh?: boolean }) => { if (o.isMesh) meshes++; });
+      expect(meshes).toBeGreaterThan(0);
+      const box = new Box3().setFromObject(g), size = box.getSize(new Vector3());
+      expect(box.min.y).toBeGreaterThan(-0.2);
+      expect(Math.max(size.x, size.y, size.z)).toBeLessThan(3);
+    }
+    expect(() => eventModel("nope")).toThrow("no model for the nope event");
+  });
+
+  test("the unicyclist is about as tall as it should be on a wheel on the ground, in orange and black", () => {
+    const u = unicyclist();
+    const box = new Box3().setFromObject(u.group);
+    expect(box.min.y).toBeGreaterThan(-0.2); expect(box.min.y).toBeLessThan(0.1);
+    expect(box.max.y).toBeGreaterThan(4); expect(box.max.y).toBeLessThan(5);
+    const colours = new Set<number>();
+    u.group.traverse((o: { material?: { color?: { getHex(): number } } }) => { if (o.material?.color) colours.add(o.material.color.getHex()); });
+    expect(colours.has(COLORS.orange)).toBe(true); expect(colours.has(COLORS.ink)).toBe(true);
+  });
+
+  test("the pedals go round the hub half a turn apart, and the legs follow them", () => {
+    const u = unicyclist();
+    pose(u, { lean: 0, crank: 0, wheel: 0, tip: 0 });
+    const [l, r] = [u.pedals[0].position, u.pedals[1].position];
+    expect(l.y - 0.9).toBeCloseTo(-(r.y - 0.9)); expect(l.z).toBeCloseTo(-r.z);
+    const before = l.y;
+    pose(u, { lean: 0, crank: 0.25, wheel: 0, tip: 0 });
+    expect(u.pedals[0].position.y).not.toBeCloseTo(before);
+    // a leg is as long as the distance from the hip to its pedal
+    for (const k of [0, 1] as const) expect(u.legs[k].scale.y).toBeGreaterThan(1);
+  });
+
+  test("it tips with the lean and brings the arm on that side down", () => {
+    const u = unicyclist();
+    pose(u, { lean: 0, crank: 0, wheel: 0, tip: 0 });
+    const level = [u.arms[0].rotation.z, u.arms[1].rotation.z];
+    expect(level[0]).toBeCloseTo(-level[1]!);
+    pose(u, { lean: 1, crank: 0, wheel: 0, tip: 0.5 });
+    expect(u.tilt.rotation.z).toBeCloseTo(-0.5);
+    // leaning right (+x) lowers the right arm (its hinge angle shrinks) and raises the left
+    expect(Math.abs(u.arms[1].rotation.z)).toBeLessThan(Math.abs(level[1]!));
+    expect(Math.abs(u.arms[0].rotation.z)).toBeGreaterThan(Math.abs(level[0]!));
+  });
+
+  test("a picture goes on the back of the shirt, and comes off again", () => {
+    const u = unicyclist();
+    expect(u.badge.visible).toBe(false);
+    setBadge(u, {});
+    expect(u.badge.visible).toBe(true);
+    setBadge(u, null);
+    expect(u.badge.visible).toBe(false);
   });
 });
 
@@ -363,36 +484,174 @@ describe("the playhead", () => {
   });
 });
 
-describe("the runner", () => {
-  // Five hot-path commits: three small, then two big.
-  const notes = buildNotes([1, 2, 3, 4, 5].map((d) => at(d, { added: [1, 1, 1, 90, 90][d - 1]! })));
-  const hot = [0, 1, 2, 3, 4];
-  test("pace is cold in a quiet stretch and hot in a busy one, between -1 and 1", () => {
-    expect(paceAt(notes, hot, 2)).toBe(-1);
-    expect(paceAt(notes, hot, 4)).toBeGreaterThan(0);
-    for (let i = -1; i < 8; i++) { const p = paceAt(notes, hot, i); expect(p).toBeGreaterThanOrEqual(-1); expect(p).toBeLessThanOrEqual(1); }
-    expect(paceAt(notes, hot, -1)).toBe(0);
-    expect(paceAt(notes, [], 3)).toBe(0);
-  });
-  test("it pulls ahead when hot and falls back when cold, never behind the board's near edge", () => {
-    expect(runnerOffset(1)).toBeGreaterThan(runnerOffset(0));
-    expect(runnerOffset(0)).toBeGreaterThan(runnerOffset(-1));
-    expect(runnerOffset(-1)).toBeGreaterThanOrEqual(-0.5);
-    expect(runnerOffset(-99)).toBe(-0.5);
-    expect(runnerOffset(1)).toBeLessThan(AHEAD);
-  });
-  test("it strides faster when hot", () => {
-    expect(strideRate(1)).toBeGreaterThan(strideRate(-1));
-    expect(strideRate(-1)).toBeGreaterThan(0);
-    expect(strideRate(9)).toBe(strideRate(1));
-  });
-});
-
 describe("words", () => {
   test("the clock is fixed-width, in UTC", () => {
     expect(formatClock(Date.UTC(2026, 9, 12, 22, 5))).toBe("2026-10-12 22:05");
     expect(formatClock(Date.UTC(2026, 0, 2, 3, 4))).toHaveLength(16);
     expect(formatAge(Date.UTC(2026, 0, 11), Date.UTC(2026, 0, 1))).toBe("0010d");
     expect(formatAge(0, 99)).toBe("0000d");
+  });
+});
+
+describe("the time slider", () => {
+  // Three commits a day, a day, then ten days apart: the slider goes by date, not by commit.
+  const notes = buildNotes(graph(["a", [], 1], ["b", ["a"], 2], ["c", ["b"], 12]));
+  test("the thumb sits where the clock is between the first and last commit", () => {
+    expect(timeFracAt(notes, 0)).toBe(0);
+    expect(timeFracAt(notes, 3)).toBe(1);
+    expect(timeFracAt(notes, 2)).toBeCloseTo(1 / 11, 6);
+    expect(timeFracAt(buildNotes([commit()]), 1)).toBe(0);
+  });
+  test("a date is a q, and back again", () => {
+    for (const q of [2, 2.5, 2.9]) expect(qAtTime(notes, clockAt(notes, q))).toBeCloseTo(q, 6);
+    expect(qAtTime(notes, notes[0]!.t - 1)).toBe(0);
+    expect(qAtTime(notes, notes[2]!.t + 1)).toBe(3);
+    expect(qAtFrac(notes, 0.5)).toBeGreaterThan(2);
+    expect(qAtFrac(notes, 2)).toBe(3);
+    expect(qAtFrac([], 0.5)).toBe(0);
+  });
+  test("ticks are month starts, few enough to read, with a year label once they're yearly", () => {
+    const t = timeTicks(Date.UTC(2026, 0, 15), Date.UTC(2026, 3, 20), 5);
+    expect(t.map((x) => x.label)).toEqual(["2026-02", "2026-03", "2026-04"]);
+    expect(t.every((x) => x.frac > 0 && x.frac < 1)).toBe(true);
+    expect(timeTicks(Date.UTC(2020, 5, 1), Date.UTC(2026, 5, 1), 5).map((x) => x.label)).toEqual(["2022", "2024", "2026"]);
+    expect(timeTicks(Date.UTC(2026, 0, 15), Date.UTC(2026, 5, 20), 5).map((x) => x.label)).toEqual(["2026-04"]);
+    expect(timeTicks(5, 5)).toEqual([]);
+  });
+  test("a date range keeps the days it names, both included", () => {
+    const c = graph(["a", [], 1], ["b", ["a"], 2], ["c", ["b"], 3]);
+    expect(filterRange(c, "2026-01-02", "2026-01-02").map((x) => x.hash)).toEqual(["b"]);
+    expect(filterRange(c, "2026-01-02").map((x) => x.hash)).toEqual(["b", "c"]);
+    expect(filterRange(c, undefined, "2026-01-01").map((x) => x.hash)).toEqual(["a"]);
+    expect(filterRange(c, "nonsense", "")).toHaveLength(3);
+  });
+});
+
+describe("the ride", () => {
+  /** Runs `secs` of pedalling at the beat, alternating, with a bot that favours the leaning side when it must. */
+  const ride = (secs: number, opts: { bot?: boolean; wind?: number; gustAt?: number; push?: number; pedal?: boolean } = {}) => {
+    const r = newRide(), dt = 1 / 60;
+    let next = 0.1, side: Side = 1, fell = -1;
+    const pedal = opts.pedal ?? true;
+    for (let k = 0; k < secs * 60; k++) {
+      if (opts.gustAt !== undefined && Math.abs(r.t - opts.gustAt) < dt / 2) gustRide(r, opts.push ?? 3);
+      if (pedal && r.t >= next) {
+        // The bot leans on its pedals: where the lean is heading decides the side, which costs speed but keeps it up.
+        const heading = r.lean + 0.5 * r.omega;
+        if (opts.bot && Math.abs(heading) > 0.12) side = heading > 0 ? 1 : -1; else side = side === 1 ? -1 : 1;
+        tapRide(r, side);
+        next = r.t + RIDE.period * (opts.bot ? 0.6 : 1);
+      }
+      if (stepRide(r, dt, opts.wind ?? breeze(r.t))) { fell = r.t; break; }
+    }
+    return { r, fell };
+  };
+
+  test("a tap on the beat, on the other side, is graded well; the same side twice, or mashing, is not", () => {
+    const r = newRide();
+    expect(tapGrade(r, 1)).toBe(0.6);
+    tapRide(r, 1);
+    r.t += RIDE.period;
+    expect(tapGrade(r, -1)).toBeCloseTo(1, 6);
+    expect(tapGrade(r, 1)).toBe(0);
+    r.t -= RIDE.period * 0.9;
+    expect(tapGrade(r, -1)).toBeLessThan(0.3);
+    r.t += RIDE.period * 2;
+    expect(tapGrade(r, -1)).toBe(0);
+  });
+
+  test("alternating on the beat builds speed, and never past the top; stopping coasts to a halt", () => {
+    const { r } = ride(8);
+    expect(r.speed).toBeGreaterThan(1);
+    expect(r.speed).toBeLessThanOrEqual(RIDE.maxSpeed);
+    for (let k = 0; k < 600; k++) stepRide(r, 1 / 60, 0);
+    expect(r.speed).toBeLessThan(0.02);
+  });
+
+  test("a tap kicks the lean away from its side", () => {
+    const r = newRide();
+    tapRide(r, 1);
+    expect(r.omega).toBeLessThan(0);
+    const l = newRide();
+    tapRide(l, -1);
+    expect(l.omega).toBeGreaterThan(0);
+  });
+
+  test("steady pedalling in a light breeze stays up", () => {
+    const { fell } = ride(30, { bot: true });
+    expect(fell).toBe(-1);
+  });
+
+  test("with no pedalling, the unicycle falls over on its own", () => {
+    expect(ride(30, { pedal: false }).fell).toBeGreaterThan(0);
+  });
+
+  test("a car's gust tips an unattended rider over, and a rider who favours the leaning side survives it", () => {
+    const hit = (bot: boolean) => ride(12, { bot, gustAt: 4, push: 3.2 }).fell;
+    expect(hit(true)).toBe(-1);
+    const idle = newRide();
+    gustRide(idle, 3.2);
+    let over = false;
+    for (let k = 0; k < 300 && !over; k++) over = stepRide(idle, 1 / 60, 0);
+    expect(over).toBe(true);
+  });
+
+  test("a gust dies down, and the breeze is gentle", () => {
+    const r = newRide();
+    gustRide(r, 2);
+    for (let k = 0; k < 600; k++) stepRide(r, 1 / 60, 0);
+    expect(Math.abs(r.gust)).toBeLessThan(0.001);
+    for (let t = 0; t < 60; t += 0.1) expect(Math.abs(breeze(t))).toBeLessThanOrEqual(0.46 + 1e-9);
+  });
+
+  test("remounting stands the rider up and keeps the clock", () => {
+    const r = newRide();
+    tapRide(r, 1); r.lean = 0.9; r.t = 7;
+    remount(r);
+    expect([r.lean, r.omega, r.speed, r.last, r.t]).toEqual([0, 0, 0, 0, 7]);
+  });
+});
+
+describe("what git does to the rider", () => {
+  const evs = (rows: [string, string[], number, number?, string[]?][], subjects: Record<string, string> = {}) => {
+    const commits = graph(...rows).map((c) => ({ ...c, subject: subjects[c.hash] ?? c.subject }));
+    const notes = buildNotes(commits);
+    return { notes, lay: layoutGraph(notes), events: rideEvents(notes, layoutGraph(notes)) };
+  };
+
+  test("a straight line is a quiet road", () => {
+    expect(evs([["a", [], 1], ["b", ["a"], 2], ["c", ["b"], 3]]).events).toEqual([]);
+  });
+
+  test("a merge is a car, a fork is a fork, the first commit on a branch is a branch", () => {
+    const { notes, events } = evs([
+      ["a", [], 1], ["b", ["a"], 2, 1, []], ["x", ["a"], 3], ["y", ["x"], 4], ["m", ["b", "y"], 5, 1, ["main"]],
+    ]);
+    const by = (h: string) => events.find((e) => notes[e.i]!.hash === h);
+    expect(by("m")?.kind).toBe("merge");
+    expect(by("a")?.kind).toBe("fork");
+    expect(by("x")?.kind).toBe("branch");
+    expect(by("y")).toBeUndefined();
+    // The car comes from the side lane the merge joins, and pushes the other way.
+    const car = by("m")!;
+    expect(eventPush(car)).toBe(-car.side * 3);
+    expect(Math.abs(eventPush(car))).toBeGreaterThan(Math.abs(eventPush(by("x")!)));
+  });
+
+  test("a big commit landed as a squash merge is a boulder, and a small one is nothing", () => {
+    const { notes, events } = evs(
+      [["a", [], 1, 1], ["b", ["a"], 2, 500], ["c", ["b"], 3, 2]],
+      { a: "start (#1)", b: "add the thing (#2)", c: "tweak (#3)" },
+    );
+    expect(events.map((e) => [notes[e.i]!.hash, e.kind])).toEqual([["b", "squash"]]);
+  });
+
+  test("a merge's push is big enough to put an unattended rider off", () => {
+    const { events } = evs([["a", [], 1], ["x", ["a"], 2], ["m", ["a", "x"], 3, 1, ["main"]]]);
+    const r = newRide();
+    gustRide(r, eventPush(events.find((e) => e.kind === "merge")!));
+    let over = false;
+    for (let k = 0; k < 300 && !over; k++) over = stepRide(r, 1 / 60, 0);
+    expect(over).toBe(true);
   });
 });

@@ -1,0 +1,5 @@
+{
+  "icon": "route",
+  "title": "gitpath",
+  "what": "A file's git graph in 3D with a time rail, a model per piece of the stack, and a hidden game: ride the hot path on a unicycle."
+}

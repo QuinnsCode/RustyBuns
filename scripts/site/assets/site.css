@@ -71,3 +71,12 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line);
 }
 .copy { margin-left: auto; font: inherit; font-size: 14px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px; cursor: pointer; white-space: nowrap; }
 .copy:hover { border-color: var(--accent); }
+.theme { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-left: 8px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--fg); cursor: pointer; }
+.theme:hover { border-color: var(--accent); }
+.theme svg { width: 22px; height: 22px; overflow: visible; }
+.theme .moon { fill: var(--fg); }
+.theme .disc { fill: var(--accent); transform-box: fill-box; transform-origin: center; transition: transform .5s cubic-bezier(.6, 0, .3, 1); }
+.theme .rays { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; fill: none; transition: opacity .3s; }
+:root[data-theme="dark"] .theme .disc { transform: scale(0); }
+:root[data-theme="dark"] .theme .rays { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .theme .disc, .theme .rays { transition: none; } }

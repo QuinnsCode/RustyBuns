@@ -115,12 +115,14 @@ function layout(site: Site, page: Page, pages: Page[], body: string, src: Source
 <title>${esc(page.title === site.name ? site.name : `${page.title} · ${site.name}`)}</title>
 <meta name="description" content="${esc(site.tagline)}">
 <link rel="alternate" type="text/markdown" href="${esc(posix.basename(page.path).replace(/\.html$/, ".md"))}">
+<script>try{var t=localStorage.getItem("theme");document.documentElement.dataset.theme=t==="light"||t==="dark"?t:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}catch(e){}</script>
 <link rel="stylesheet" href="${esc(posix.join(root, "site.css"))}">
 </head>
 <body>
 <header>
   <a class="brand" href="${href(pages[0]!)}">${esc(site.name)}</a>
   <button type="button" class="copy" data-md="${esc(posix.basename(page.path).replace(/\.html$/, ".md"))}" title="Copy this page as markdown, with a prompt, for your coding agent">Copy for agent</button>
+  <button class="theme" type="button" aria-label="Day mode" title="Day mode"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="rays"><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></g><path class="moon" d="M15.5 4.6A8 8 0 1 0 19.4 15.5 6.5 6.5 0 0 1 15.5 4.6Z"/><circle class="disc" cx="12" cy="12" r="8.2"/></svg></button>
   <label class="version">Version <select data-root="${esc(root)}" data-page="${esc(page.path)}">${options}</select></label>
 </header>
 <div class="wrap">
