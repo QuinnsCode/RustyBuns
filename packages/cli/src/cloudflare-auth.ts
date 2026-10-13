@@ -97,6 +97,8 @@ export async function cloudflareEnv(c: RustyBunsConfig, env: Record<string, stri
   interactive = true): Promise<Record<string, string> | null> {
   if (env.CLOUDFLARE_API_TOKEN || env.CLOUDFLARE_API_KEY) return {};
   if (!w) {
+    // `export CLOUDFLARE_API_TOKEN=$(failing command)` leaves an empty string: say so instead of silently using a stale profile.
+    if (env.CLOUDFLARE_API_TOKEN === "") log("Cloudflare: CLOUDFLARE_API_TOKEN is set but empty (did the command that fills it fail?), so it is ignored.");
     log("Cloudflare: no wrangler in this project or on PATH, so Alchemy's own profile logs in (`rustybuns login cloudflare`). `bun add -d wrangler` to log in through wrangler with only the scopes this app needs.\n");
     return null;
   }
