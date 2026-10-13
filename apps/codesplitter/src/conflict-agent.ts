@@ -1,4 +1,4 @@
-// Layout: one merge conflict handed to a coding agent: git's markers in, the settled lines out
+// Layout: one merge conflict (or a settled stretch to fact-check) handed to a coding agent: git's markers in, the settled lines out
 // Hand one merge conflict to a coding agent. It gets the conflict as git's markers in a file of its own
 // (main's, the base's and the branch's version), the merge of the rest of the file around it, and what
 // main's commits to the file said since the branch forked, and edits the file into the settled text. branches.ts then checks it: the
@@ -44,13 +44,16 @@ export function conflictPrompt(path: string, branch: string, c: Conflict, contex
   const file = resolveFile(path);
   return [
     ...(note ? [`Fresh eyes: ${branch}'s conflicts came back again, and the agents before you left this note. Don't repeat what it says failed.`, note] : []),
-    `${file} in the current directory holds one merge conflict from ${path}, merging the branch ${branch} into main, as git's markers:`,
+    c.check
+      ? `${file} in the current directory holds a stretch of ${path} that main and the branch ${branch} both changed, as git's markers. The merge settled it on its own, but one side may have changed a fact the other's words state (a number, a cap, a name)${c.facts?.length ? `; they differ on ${c.facts.slice(0, 12).join(", ")}` : ""}:`
+      : `${file} in the current directory holds one merge conflict from ${path}, merging the branch ${branch} into main, as git's markers:`,
     `main's version, then the base both started from, then the branch's.`,
     ...(context ? [`Around it, ${path} as the merge leaves it, every other change already in (the conflicted line marked >):`, context] : []),
     ...(said.length ? [`Since ${branch} forked, main's commits to ${path} said:`, ...said.map((m) => `- ${m}`)] : []),
     ...(meant ? [`${branch} is a coding agent's work on the task: ${meant}`] : []),
     ...(theirs.length ? [`${branch} follows a branch upstream, whose commits to ${path} said:`, ...theirs.map((m) => `- ${m}`)] : []),
     `Rewrite ${file} in place as the settled text: keep what each side meant to change. When both added something, keep both.`,
+    ...(c.check ? [`Make every fact in it true of the merged work: where one side's commits changed a number or a name, the other side's sentences take the new one.`] : []),
     `Leave no markers. Keep the indentation. Write only the lines that replace the conflict, nothing around them.`,
     `Do not add files, and do not run git commands. The merged file is parsed and the repo's tests run on your answer after you stop.`,
   ].join("\n");
@@ -77,6 +80,6 @@ export function cheapest(installed: Harness[]): { harness: Harness; model?: stri
 
 export async function askAgent(box: Sandbox, o: { harness: Harness; model?: string; path: string; branch: string; conflict: Conflict; merged: Doc; said?: string[]; meant?: string; theirs?: string[]; note?: string }, signal?: AbortSignal) {
   const given = markers(o.conflict);
-  const cmd = harnessCommand(o.harness, conflictPrompt(o.path, o.branch, o.conflict, around(o.merged, o.conflict.line), o.said, o.meant, o.theirs, o.note), { model: o.model });
+  const cmd = harnessCommand(o.harness, conflictPrompt(o.path, o.branch, o.conflict, around(o.merged, o.conflict.line.replace(/^check:/, "")), o.said, o.meant, o.theirs, o.note), { model: o.model });
   return settled(await box(cmd, { path: resolveFile(o.path), text: given }, signal), o.harness, given);
 }

@@ -185,7 +185,7 @@ async function mergeFile(env: Env, owner: string, repo: string, branch: { name: 
   const [base, doc, policy] = await Promise.all([read("base"), read("file"), pathPolicy(env, owner, repo, path, user)]);
   // Text the merger writes is theirs; deleted lines are the branch's doing.
   const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by, path, writer: user, rule: policy.merge }) });
-  return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[]; regenerate?: string[] }) };
+  return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[] }) };
 }
 
 /**
@@ -883,7 +883,10 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       // What the branch itself changed, a stretch at a time, to accept or reject (#735).
       const changed = (await fileHunks(env, owner, repo, name, f.path, user ?? "anon", a.write)).hunks;
       const shown = await Promise.all(conflicts.map(async (c) => { const answer = await answerFor(kept, f.path, c); return { ...explain(c), ...(answer && { answer }) }; }));
-      return { path: f.path, merged: false, build, policy: m.policy, ops, conflicts: shown, hunks: changed, ...(lines && { lines }) };
+      // Prose that settled faithful to both sides, which may now state something one side changed (#1254).
+      // For the crew: a stretch can hold main's private lines.
+      const checks = a.write ? (m.checks ?? []).map(explain) : [];
+      return { path: f.path, merged: false, build, policy: m.policy, ops, conflicts: shown, hunks: changed, ...(checks.length && { checks }), ...(lines && { lines }) };
     }));
     return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out });
   }
@@ -924,7 +927,9 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (b.model !== undefined && b.model !== null && typeof b.model !== "string") return json({ error: "model: text" }, 400);
     const rows = await files();
     const f = rows.find((x) => x.path === b.path && !x.merged && !x.deleted && !x.blob);
-    const c = f && (await mergeFile(env, owner, repo, branch, f.path, user!, undefined, true)).conflicts.find((x) => x.line === b.line);
+    const m = f && await mergeFile(env, owner, repo, branch, f.path, user!, undefined, true);
+    // A fact check (#1254) is asked about as a conflict is: the stretch both changed, to settle true.
+    const c = m && [...m.conflicts, ...m.checks ?? []].find((x) => x.line === b.line);
     if (!c) return json({ error: `no conflict ${b.line} in ${b.path} on ${name}` }, 404);
     if (!explain(c).choices.includes("text")) return json({ error: "this conflict only takes main or branch" }, 400);
     const spent = await hostedBudget(env);

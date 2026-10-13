@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { apply, empty, explain, fromText, generatedRegions, merge, mergeWords, parseError, text, type Doc, type Resolve } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
-import { markers, settled } from "../src/conflict-agent.ts";
+import { conflictPrompt, markers, settled } from "../src/conflict-agent.ts";
 import { materializeOn, parseResolve } from "../src/branches.ts";
 import { lintMerge } from "../src/lint.ts";
 import { local as boot } from "../src/local.ts";
@@ -338,6 +338,58 @@ describe("generated text (#1154)", () => {
     const one = sides(was, was.replace("## Layout", "## The layout"), ref(["| `a.ts` | a |", "| `d.ts` | d |"]));
     expect(merge(one.base, one.branch, one.main, {}, "bot", "REFERENCE.md").regenerate).toBeUndefined();
     expect(text(settle(one, {}, "REFERENCE.md"))).toBe(ref(["| `a.ts` | a |", "| `d.ts` | d |"]).replace("## Layout", "## The layout"));
+  });
+});
+
+describe("settled, check the facts (#1254)", () => {
+  const readme = (online: string[], how: string[]) => ["# Game", "", "## Online", "", ...online, "", "## How it's built", "", ...how, "", "## Credits", "", "Made by us."].join("\n");
+  const room = "- `room.ts` packs each player a snapshot of what's within 90 m.";
+
+  test("the branch wrote a line right under one main rewrote: settled, flagged with what the sides differ on (#1205's 66 KB/s)", () => {
+    const s = sides(readme(["Up to 32 players."], [room]), readme(["Up to 32 players."], ["- `room.ts` packs each player a binary delta of what's within 90 m."]),
+      readme(["Up to 32 players."], [room, "- `worker.ts` sends each room about 66 KB/s a player."]));
+    const m = merge(s.base, s.branch, s.main, {}, "bot", "README.md");
+    expect(m.conflicts).toEqual([]);
+    expect(m.checks).toEqual([{ line: "check:L9", base: room, main: "- `room.ts` packs each player a binary delta of what's within 90 m.",
+      branch: [room, "- `worker.ts` sends each room about 66 KB/s a player."].join("\n"), check: true, facts: ["`worker.ts`", "66"] }]);
+    // It never holds the merge: the text is both sides', as before.
+    expect(text(settle(s, {}, "README.md"))).toBe(readme(["Up to 32 players."], ["- `room.ts` packs each player a binary delta of what's within 90 m.", "- `worker.ts` sends each room about 66 KB/s a player."]));
+  });
+
+  test("a number one side changed in a section, that the other side's new line there still states (#1221's room of 32)", () => {
+    const base = readme(["Up to 32 players in a room.", "", "Rooms close when empty."], [room]);
+    const s = sides(base, readme(["Up to 32 players in a room.", "", "Rooms close when empty.", "", "A full room of 32 costs $0.03 an hour."], [room]),
+      readme(["Up to 64 players in a room.", "", "Rooms close when empty."], [room]));
+    const m = merge(s.base, s.branch, s.main, {}, "bot", "README.md");
+    expect(m.conflicts).toEqual([]);
+    expect(m.checks).toEqual([{ line: "check:L9", base: "", main: "A full room of 32 costs $0.03 an hour.\n", branch: null, check: true, facts: ["32", "0.03"] }]);
+    // The writer settles it as a conflict: a text of theirs on the check's line.
+    const fixed = settle(s, { "check:L9": { text: m.checks![0]!.main!.replace("32 costs $0.03", "64 costs $0.06") } }, "README.md");
+    expect(text(fixed)).toBe(readme(["Up to 64 players in a room.", "", "Rooms close when empty.", "", "A full room of 64 costs $0.06 an hour."], [room]));
+    expect(merge(s.base, s.branch, s.main, { [m.checks![0]!.line]: { text: "x" } }, "bot", "README.md").checks).toBeUndefined();
+  });
+
+  test("changes far apart, in sections of their own, or in code: nothing to check", () => {
+    const base = readme(["Up to 32 players."], [room]);
+    const apart = sides(base, base.replace("Up to 32 players.", "Up to 32 players, online."), base.replace("Made by us.", "Made by us, 2026."));
+    expect(merge(apart.base, apart.branch, apart.main, {}, "bot", "README.md").checks).toBeUndefined();
+    // A number main dropped from another section is no fact of this one.
+    const other = sides(base, base.replace("Up to 32 players.", "Up to 64 players."), base.replace("Made by us.", "Made by us, 32 of us."));
+    expect(merge(other.base, other.branch, other.main, {}, "bot", "README.md").checks).toBeUndefined();
+    const code = sides("a\nconst n = 32;\nb", "a\nconst n = 64;\nb", "a\nconst n = 32;\nconst m = 1;\nb");
+    expect(merge(code.base, code.branch, code.main, {}, "bot", "a.ts").checks).toBeUndefined();
+  });
+
+  test("a stretch that's a card already isn't a check too, and the agent is asked to make the facts true", () => {
+    const s = sides(readme(["Up to 32 players."], [room]), readme(["Up to 48 players."], [room]), readme(["Up to 64 players."], [room]));
+    const m = merge(s.base, s.branch, s.main, {}, "bot", "README.md");
+    expect(m.conflicts.length).toBe(1);
+    expect(m.checks).toBeUndefined();
+    const c = { line: "check:L5", base: "a 32", main: "a 64", branch: "a 32 b", check: true as const, facts: ["64"] };
+    expect(explain(c).choices).toEqual(["main", "branch", "text"]);
+    const prompt = conflictPrompt("README.md", "feat", c, "");
+    expect(prompt).toContain("they differ on 64");
+    expect(prompt).toContain("Make every fact in it true");
   });
 });
 

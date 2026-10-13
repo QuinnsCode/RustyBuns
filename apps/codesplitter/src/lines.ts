@@ -117,7 +117,7 @@ export function replay(log: Applied[], rev = Infinity, from: Doc = empty()): Doc
  * changed (`whole`: keep one side, then regenerate it), or `lint:<problem>`
  * for merged code that would no longer build (`lint`, from lint.ts).
  */
-export interface Conflict { line: string; base: string; main: string | null; branch: string | null; doubled?: true; whole?: true; lint?: string }
+export interface Conflict { line: string; base: string; main: string | null; branch: string | null; doubled?: true; whole?: true; lint?: string; check?: true; facts?: string[] }
 
 /**
  * How one conflict is settled: keep main's, keep the branch's, keep both (main's
@@ -173,6 +173,12 @@ export function kindOf(path: string): Kind {
  * - a merge that would bring git's conflict markers into main, or leave a
  *   JSON file that won't parse (see broken).
  *
+ * Prose that settled but may now be untrue comes back in `checks` (#1254), never a
+ * conflict: a stretch both sides changed where git would have stopped, or a line
+ * one side wrote stating a number or `name` the other side took out of that section.
+ * Each lists the `facts` the sides disagree on. A pick for `check:<line>` settles
+ * the stretch as a conflict's would (a text of the writer's, say, the facts fixed).
+ *
  * A generated region both sides changed keeps main's copy and names the
  * command that rebuilds it in `regenerate` (see generated).
  *
@@ -181,7 +187,7 @@ export function kindOf(path: string): Kind {
  * the batch must land on `main` exactly as passed. Deleted lines leave no
  * blame, so their ops are credited to `deleter`.
  */
-export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule: Rule = kindOf(path)): { ops: Op[]; by: string[]; conflicts: Conflict[]; regenerate?: string[] } {
+export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule: Rule = kindOf(path)): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[] } {
   const g = generated(base, branch, main);
   const m = mergeLines(base, g.branch, main, given, deleter, path, writer, rule);
   return g.regenerate.length ? { ...m, regenerate: g.regenerate } : m;
@@ -229,7 +235,7 @@ function generated(base: Doc, branch: Doc, main: Doc): { branch: Doc; regenerate
   return { branch: lines === branch.lines ? branch : { ...branch, lines }, regenerate };
 }
 
-function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: string, path: string, writer: string, rule: Rule): { ops: Op[]; by: string[]; conflicts: Conflict[] } {
+function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: string, path: string, writer: string, rule: Rule): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[] } {
   if (rule === "union") {
     // git's merge=union: what both rewrote keeps both, main's first; a line both added lands once. Markers and broken data still refuse.
     const first = mergeLines(base, branch, main, given, deleter, path, writer, "prose");
@@ -265,7 +271,11 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   }
   const moveOf = new Map([...movedOnBranch].map(([id, l]) => [l.id, id]));
   const mainPos = places(base, main), branchPos = places(base, branch);
-  const regions = joined(clashes(hunks(base, main, mainPos, movedOnMain), hunks(base, branch, branchPos, movedOnBranch), kind !== "prose"), base, [main, mainPos, movedOnMain], [branch, branchPos, movedOnBranch]);
+  const mainHunks = hunks(base, main, mainPos, movedOnMain), branchHunks = hunks(base, branch, branchPos, movedOnBranch);
+  // Prose that may have settled untrue (#1254): a check the writer settled with a pick is a stretch both reshaped.
+  const checking = kind === "prose" ? factChecks(base, main, branch, mainPos, branchPos, mainHunks, branchHunks) : [];
+  const picked = checking.flatMap((g) => { const pick = resolve[`check:${regionKey(base, g)}`]; return pick ? [{ ...g, pick }] : []; });
+  const regions = withPicked(joined(clashes(mainHunks, branchHunks, kind !== "prose"), base, [main, mainPos, movedOnMain], [branch, branchPos, movedOnBranch]), picked);
   const inRegion = (p: number) => regions.some((g) => covers(g, p));
   // Lines main added that weren't in the file already, and the block each went in: a line that already repeats (a test's setup call) is no sign of doubling.
   const before = new Set(base.lines.map((l) => l.text)), mainHeads = heads(main.lines), branchHeads = heads(branch.lines);
@@ -311,10 +321,10 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   // A stretch both reshaped: keep main's as is, swap in the branch's whole or a text of the writer's, or keep both.
   const settle = (g: Region) => {
     const within = (d: Doc, pos: Map<string, number>) => d.lines.filter((l) => covers(g, pos.get(l.id)!));
-    const ms = within(main, mainPos), bs = within(branch, branchPos), key = base.lines[Math.ceil((g.lo - 1) / 2)]!.id;
+    const ms = within(main, mainPos), bs = within(branch, branchPos), key = regionKey(base, g);
     const join = (ls: Line[]) => ls.length ? ls.map((l) => l.text).join("\n") : null;
     // Both reshaped it the same way: nothing to do.
-    const pick = join(ms) === join(bs) ? "main" : resolve[key], own = written(pick);
+    const pick = join(ms) === join(bs) ? "main" : g.pick ?? resolve[key], own = written(pick);
     // Just before the stretch, unless something already went in there.
     // A line an earlier stretch swapped out stands for what went in its place.
     const before = () => {
@@ -447,7 +457,14 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   if (kind === "keyed") twiceKeyed(main, branch, ops, by, conflicts, resolve, deleter, path);
   conflicts.push(...broken(main, branch, ops, by, path, resolve, !conflicts.length));
   const back = (id: string) => id.startsWith("~") ? id.slice(1) : id;
-  return { ops: ops.map((o) => o.kind === "insert" ? { ...o, after: o.after && back(o.after) } : { ...o, line: back(o.line) }), by, conflicts };
+  // What settled near a card is the card's to check; what the writer settled is settled.
+  const carded = conflicts.flatMap((c) => atBase.has(back(c.line)) ? [2 * atBase.get(back(c.line))! + 1] : []);
+  const checks = checking.filter((g) => !picked.some((p) => p.lo === g.lo) && !carded.some((p) => g.lo - 2 <= p && p <= g.hi + 2)).map((g) => {
+    const within = (d: Doc, pos: Map<string, number>) => { const ls = d.lines.filter((l) => covers(g, pos.get(l.id)!)); return ls.length ? ls.map((l) => l.text).join("\n") : null; };
+    const c = { line: `check:${regionKey(base, g)}`, base: base.lines.filter((_, i) => covers(g, 2 * i + 1)).map((l) => l.text).join("\n"), main: within(main, mainPos), branch: within(branch, branchPos) };
+    return { ...c, check: true as const, facts: [...new Set([c.main, c.branch].flatMap((t) => facts(t ?? "")))].filter((f) => ![c.base, c.main ?? "", c.branch ?? ""].every((t) => facts(t).includes(f))) };
+  });
+  return { ops: ops.map((o) => o.kind === "insert" ? { ...o, after: o.after && back(o.after) } : { ...o, line: back(o.line) }), by, conflicts, ...(checks.length && { checks }) };
 }
 
 /**
@@ -698,7 +715,7 @@ function moves(base: Doc, side: Doc, was: Map<string, Line>) {
 }
 
 // Positions against base: base line i at 2i + 1, the gap after it at 2i + 2, the top at 0.
-interface Region { lo: number; hi: number; holes?: Region[] }
+interface Region { lo: number; hi: number; holes?: Region[]; pick?: Pick }
 /** Whether `p` is in `g` and not in one of its holes. */
 const covers = (g: Region, p: number) => g.lo <= p && p <= g.hi && !g.holes?.some((h) => h.lo <= p && p <= h.hi);
 interface Hunk extends Region { reshaped: boolean; deletes: boolean }
@@ -766,6 +783,64 @@ function clashes(main: Hunk[], branch: Hunk[], strict: boolean): Region[] {
 }
 
 type Side = [Doc, Map<string, number>, Map<string, Line>];
+
+/** The base line a stretch is known by: its first, or the last for one past the end. */
+const regionKey = (base: Doc, g: Region) => (base.lines[Math.ceil((g.lo - 1) / 2)] ?? base.lines.at(-1))?.id ?? "L0";
+
+/** Stretches the writer settled a fact check of (#1254), as stretches both reshaped: joined with any they meet, the pick going along. */
+function withPicked(regions: Region[], picked: Region[]): Region[] {
+  if (!picked.length) return regions;
+  const out: Region[] = [];
+  for (const g of [...regions, ...picked].sort((a, b) => a.lo - b.lo)) {
+    const last = out.at(-1);
+    if (last && g.lo <= last.hi) out[out.length - 1] = { ...last, hi: Math.max(last.hi, g.hi), ...(g.pick && { pick: g.pick }) };
+    else out.push({ ...g });
+  }
+  return out;
+}
+
+/** What a sentence states that can go stale: numbers (not #refs) and `code`. */
+const facts = (t: string) => [...t.matchAll(/`[^`]+`|(?<![#\w.])\d+(?:[.,]\d+)*/g)].map((m) => m[0]);
+
+/**
+ * Prose a line merge settles that may now say something untrue (#1254): one side wrote a paragraph and
+ * the other changed the facts it states, so the merged text is faithful to both and out of date.
+ * Two signs: both sides changed lines that touch (where git would have stopped), or one side's new or
+ * edited line states a number or `name` the other side took out of that section (under one heading).
+ */
+function factChecks(base: Doc, main: Doc, branch: Doc, mainPos: Map<string, number>, branchPos: Map<string, number>, mh: Hunk[], bh: Hunk[]): Region[] {
+  // An unchanged base line (an odd position) between two changes keeps them apart.
+  const apart = (a: Region, b: Region) => a.hi + (a.hi % 2 ? 2 : 1) < b.lo, found: Region[] = [];
+  for (const x of mh) for (const y of bh) if (!apart(x, y) && !apart(y, x)) found.push({ lo: Math.min(x.lo, y.lo), hi: Math.max(x.hi, y.hi) });
+  // Each base line's section: the headings above it. A position between lines is in the section of the line before.
+  const heading = /^#{1,6}\s/, section: number[] = [];
+  base.lines.forEach((l, i) => section.push((section[i - 1] ?? 0) + (i && heading.test(l.text) ? 1 : 0)));
+  const sectionAt = (p: number) => p < 1 ? 0 : section[Math.min(Math.floor((p - 1) / 2), section.length - 1)] ?? 0;
+  const said = (d: Doc, pos: Map<string, number>) => {
+    const by = new Map<number, Set<string>>();
+    for (const l of d.lines) for (const f of facts(l.text)) by.set(sectionAt(pos.get(l.id)!), (by.get(sectionAt(pos.get(l.id)!)) ?? new Set()).add(f));
+    return by;
+  };
+  const was = new Map(base.lines.map((l) => [l.id, l.text])), before = said(base, new Map(base.lines.map((l, i) => [l.id, 2 * i + 1])));
+  for (const [[d, pos], [o, opos]] of [[[main, mainPos], [branch, branchPos]], [[branch, branchPos], [main, mainPos]]] as const) {
+    // What `d` took out of each section, that `o` writes there anew.
+    const now = said(d, pos);
+    for (const l of o.lines) {
+      if (was.get(l.id) === l.text) continue;
+      const s = sectionAt(opos.get(l.id)!), gone = [...before.get(s) ?? []].filter((f) => !now.get(s)?.has(f));
+      const old = new Set(facts(was.get(l.id) ?? ""));
+      if (facts(l.text).some((f) => gone.includes(f) && !old.has(f))) found.push({ lo: opos.get(l.id)!, hi: opos.get(l.id)! });
+    }
+  }
+  found.sort((a, b) => a.lo - b.lo);
+  const out: Region[] = [];
+  for (const g of found) {
+    const last = out.at(-1);
+    if (last && g.lo <= last.hi + 1) last.hi = Math.max(last.hi, g.hi);
+    else out.push({ ...g });
+  }
+  return out;
+}
 
 /**
  * Stretches split only by base lines one side moved away, joined into one, with each gap as a hole (#1237).
@@ -940,9 +1015,9 @@ const inlineTypes = (t: string) => t.replace(TYPE_ONLY, (_, at: string, list: st
  */
 export function explain(c: Conflict): Conflict & { choices: string[]; suggestion?: string } {
   const sides = !!(c.whole || c.lint || c.line.startsWith("key:"));
-  const choices = sides ? ["main", "branch"] : c.doubled ? ["main", "branch", "text"] : [...PICKS, "text"];
+  const choices = sides ? ["main", "branch"] : c.doubled || c.check ? ["main", "branch", "text"] : [...PICKS, "text"];
   const one = (x: string | null): x is string => x !== null && !x.includes("\n");
-  const suggestion = !sides && !c.doubled && one(c.main) && one(c.branch) && one(c.base) && c.main !== c.branch ? mergeWords(c.base, c.main, c.branch, true) : null;
+  const suggestion = !sides && !c.doubled && !c.check && one(c.main) && one(c.branch) && one(c.base) && c.main !== c.branch ? mergeWords(c.base, c.main, c.branch, true) : null;
   return { ...c, choices, ...(suggestion !== null && { suggestion }) };
 }
 

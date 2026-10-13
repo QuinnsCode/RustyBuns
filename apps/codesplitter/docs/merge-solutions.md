@@ -316,6 +316,17 @@ No new engine bugs: nothing dropped a side. Of the two semantic misses, `rules.t
 already in (#1109, and #1156, after which it replays exactly), and `config-schema.ts` is a real rewrite that only a test of the Neon-plus-`migrationsDir` case would send back.
 Since #1168 `0fb458f` replays with `config-schema.ts` as 1 card and `build.ts` down to its 2 real rewrites.
 
+### Settled, but untrue
+
+The commonest miss in the replay of 14 later "merge main" fixes (#1254) was a README paragraph one side wrote
+while the other side changed the facts it states: a bandwidth figure, a player cap, a price. The line merge
+keeps both sides' words faithfully and the text is out of date. Since #1254 a prose merge returns `checks`
+beside its conflicts: a stretch both sides changed where git would have stopped, or a line one side wrote
+stating a number or `name` the other side took out of that section. The branch review shows each as a card
+that doesn't hold Merge, with the facts the sides differ on, and Ask hands it to the checked agent with both
+sides' commits. Of that replay's five rows, the four that settled silently (`4b8666b`, `2d8cd97`, `d7ffea8`,
+`137baa3`) each come back with checks on the stretch the person fixed; `04a8fff` was a card already.
+
 ## 11. A merge plan: who waits for whom
 
 On 2026-10-12 the PR agent dry-ran pairs of about 40 open PRs, laid them out as waves, and told a worker to
