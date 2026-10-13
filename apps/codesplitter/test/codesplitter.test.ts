@@ -804,6 +804,41 @@ describe("rate limits", () => {
     expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
   });
 
+  test("a gem tier multiplies a person's per-person caps and stamps their name", async () => {
+    const { call, person } = await accounts({ ADMINS: "boss-person" });
+    const boss = await person("boss@example.com", "boss-person"), ana = await person("ana@example.com", "ana-lyst");
+    const put = (rules: unknown) => call(null, "/api/admin/limits", { method: "PUT", headers: { cookie: boss }, body: JSON.stringify({ rules }) });
+    const tier = (cookie: string, who: string, t: unknown) => call(null, "/api/admin/limits/tier", { method: "PUT", headers: { cookie }, body: JSON.stringify({ who, tier: t }) });
+    const repo = (name: string) => call(null, "/api/repos", { method: "POST", headers: { cookie: ana, ...ip }, body: JSON.stringify({ name }) });
+    await put([{ name: "repo", max: 1, window_s: 86400, enabled: true }]);
+
+    expect((await tier(ana, "ana-lyst", "painite")).status).toBe(403);               // admins only
+    expect((await tier(boss, "ana-lyst", "ruby")).status).toBe(400);                 // not one of the gems
+    expect((await tier(boss, "nobody-here", "painite")).status).toBe(404);
+    expect((await tier(boss, "@ana-lyst", "tanzanite")).status).toBe(200);
+
+    // Tanzanite is 2x: two new repos a day instead of one, then a 429 that says so.
+    expect((await repo("a")).status).toBe(201);
+    expect((await repo("b")).status).toBe(201);
+    const over = await repo("c");
+    expect(over.status).toBe(429);
+    expect(((await over.json()) as any).error).toMatch(/limited to 2 per day/);
+
+    // The stamp: on her profile and in her session, and the admin page lists her.
+    expect(((await (await call(null, "/api/users/ana-lyst")).json()) as any).user.tier).toMatchObject({ id: "tanzanite", mult: 2 });
+    expect(((await (await call(null, "/api/session", { headers: { cookie: ana } })).json()) as any).tier).toMatchObject({ label: "Tanzanite" });
+    const page = (await (await call(null, "/api/admin/limits", { headers: { cookie: boss } })).json()) as any;
+    expect(page.tiers.map((t: any) => t.id)).toEqual(["tanzanite", "alexandrite", "painite"]);
+    expect(page.tiered).toEqual([{ name: "ana-lyst", tier: "tanzanite" }]);
+
+    // Painite is 10x, and off the tier she's back to one.
+    await tier(boss, "ana-lyst", "painite");
+    expect((await repo("c")).status).toBe(201);
+    await tier(boss, "ana-lyst", null);
+    expect((await repo("d")).status).toBe(429);
+    expect(((await (await call(null, "/api/users/ana-lyst")).json()) as any).user.tier).toBeNull();
+  });
+
   test("over a limit: reject, log, or flag; the log; and an admin's reset", async () => {
     const { call, person } = await accounts({ ADMINS: "boss-person" });
     const boss = await person("boss@example.com", "boss-person"), ana = await person("ana@example.com", "ana-lyst");

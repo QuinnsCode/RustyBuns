@@ -26,6 +26,9 @@
 // deploys: one replayed while another runs would only get a 409, so by default
 // they go through and flag the caller instead. Sign-ins should stay rejected.
 //
+// A person on a paid tier (tiers.ts) gets its multiple of every per-person rule's cap; an admin
+// sets it on the same page.
+//
 // Only requests from the internet are counted: Cloudflare stamps those with
 // cf-connecting-ip. The desktop, the tests, and the Worker's own calls (hosted
 // agents, the dependency doctor) carry none. A tool call over MCP carries only
@@ -45,6 +48,7 @@
 
 import { json, type Body, type Env, readBody } from "./env.ts";
 import { actingAs } from "./identity.ts";
+import { TIERS, forgetTiers, multOf, tierById } from "./tiers.ts";
 
 export const ACTIONS = ["reject", "log", "flag", "queue"] as const;
 export type Action = (typeof ACTIONS)[number];
@@ -136,11 +140,11 @@ async function rules(env: Env) {
 
 /** Where `user` stands under each per-person rule in its current window. */
 export async function usage(env: Env, user: string) {
-  const now = Date.now();
+  const now = Date.now(), mult = await multOf(env, `@${user}`);
   return Promise.all([...(await rules(env)).values()].filter((r) => r.per === "user").map(async (r) => {
     const span = r.window_s * 1000, win = Math.floor(now / span) * span;
     const row = await env.DB.prepare("SELECT count FROM limit_hits WHERE rule = ? AND who = ? AND win = ?").bind(r.name, `@${user}`, win).first();
-    return { name: r.name, label: r.label, what: r.what, max: r.max, window_s: r.window_s, on: r.enabled, used: (row?.count as number) ?? 0, resets_at: win + span };
+    return { name: r.name, label: r.label, what: r.what, max: r.max * mult, window_s: r.window_s, on: r.enabled, used: (row?.count as number) ?? 0, resets_at: win + span };
   }));
 }
 
@@ -165,14 +169,14 @@ async function hit(env: Env, rule: string, who: string, queue: boolean, n = 1): 
   const row = await env.DB.prepare(
     "INSERT INTO limit_hits (rule, who, win, count) VALUES (?, ?, ?, ?) ON CONFLICT (rule, who, win) DO UPDATE SET count = count + excluded.count RETURNING count")
     .bind(rule, who, win, n).first();
-  const count = row?.count as number;
-  if (count <= r.max) return null;
+  const count = row?.count as number, max = r.max * (r.per === "user" ? await multOf(env, who) : 1);
+  if (count <= max) return null;
   // The first time over in a window goes in the log, whatever the rule does about it.
-  if (count - n <= r.max)
+  if (count - n <= max)
     await env.DB.prepare("INSERT INTO limit_events (rule, who, win, action, at) VALUES (?, ?, ?, ?, ?)").bind(rule, who, win, r.on_fail, Date.now()).run();
   if (r.on_fail === "queue" && r.queueable && queue) return { queue: r, win };
   if (r.on_fail !== "reject" && r.on_fail !== "queue") return null;
-  return slowDown(r, win);
+  return slowDown(r, win, max);
 }
 
 /**
@@ -185,10 +189,10 @@ export async function charge(env: Env, rule: string, who: string, n = 1): Promis
   return over && "error" in over ? over.error : null;
 }
 
-function slowDown(r: Rule, win: number) {
+function slowDown(r: Rule, win: number, max = r.max) {
   const wait = Math.ceil((win + r.window_s * 1000 - Date.now()) / 1000);
-  if (r.per === "site") return { error: `The site's ${r.label.toLowerCase()} for the ${every(r.window_s)} are used up (${r.max}). Try again in ${every(wait)}.`, wait };
-  return { error: `Slow down: ${r.label.toLowerCase()} is limited to ${r.max} per ${every(r.window_s)}. Try again in ${every(wait)}.`, wait };
+  if (r.per === "site") return { error: `The site's ${r.label.toLowerCase()} for the ${every(r.window_s)} are used up (${max}). Try again in ${every(wait)}.`, wait };
+  return { error: `Slow down: ${r.label.toLowerCase()} is limited to ${max} per ${every(r.window_s)}. Try again in ${every(wait)}.`, wait };
 }
 
 /** How often a Tally writes what it has counted. */
@@ -203,7 +207,7 @@ export const TALLY_MS = 1000;
  * with the next one. Never queues (line edits can't).
  */
 export class Tally {
-  private seen = new Map<string, { who: string; win: number; known: number; sending: number; pending: number }>();
+  private seen = new Map<string, { who: string; win: number; max: number; known: number; sending: number; pending: number }>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   constructor(private env: Env, private rule: string) {}
 
@@ -212,11 +216,11 @@ export class Tally {
     if (!r?.enabled) return null;
     const span = r.window_s * 1000, win = Math.floor(Date.now() / span) * span, key = `${who} ${win}`;
     let s = this.seen.get(key);
-    if (!s) this.seen.set(key, s = { who, win, known: 0, sending: 0, pending: 0 });
+    if (!s) this.seen.set(key, s = { who, win, max: r.max * (await multOf(this.env, who)), known: 0, sending: 0, pending: 0 });
     s.pending++;
     this.timer ??= setTimeout(() => void this.flush(), TALLY_MS);
-    if (s.known + s.sending + s.pending <= r.max || (r.on_fail !== "reject" && r.on_fail !== "queue")) return null;
-    return slowDown(r, win);
+    if (s.known + s.sending + s.pending <= s.max || (r.on_fail !== "reject" && r.on_fail !== "queue")) return null;
+    return slowDown(r, win, s.max);
   }
 
   /** Write what's been counted since the last tally; the first write over the max goes in the log. */
@@ -237,7 +241,7 @@ export class Tally {
           .bind(this.rule, s.who, s.win, n).first();
         const count = row?.count as number;
         s.known = count;
-        if (r && count > r.max && count - n <= r.max)
+        if (r && count > s.max && count - n <= s.max)
           await this.env.DB.prepare("INSERT INTO limit_events (rule, who, win, action, at) VALUES (?, ?, ?, ?, ?)").bind(this.rule, s.who, s.win, r.on_fail, Date.now()).run();
       } catch (e) {
         s.pending += n;
@@ -427,6 +431,8 @@ export function spread(hist: [number, number][], max: number) {
  *                          the last week's log of callers going over, and who's flagged.
  * PUT  /api/admin/limits {rules: [{name, max, window_s, enabled, on_fail?}]}
  * POST /api/admin/limits/reset {who, rule?}  clear a caller's counts (one rule's, or all) and their log entries.
+ * PUT  /api/admin/limits/tier {who, tier}  put a person on a paid tier (tiers.ts), or off it with tier null.
+ * GET also lists the tiers and who is on one.
  */
 export async function limitRoutes(req: Request, env: Env, p: string[], admin: boolean): Promise<Response | null> {
   if (p[1] !== "admin" || p[2] !== "limits") return null;
@@ -441,6 +447,16 @@ export async function limitRoutes(req: Request, env: Env, p: string[], admin: bo
       env.DB.prepare("DELETE FROM limit_events WHERE who = ?" + only).bind(...args),
     ]);
     return json({ ok: true });
+  }
+  if (p[3] === "tier" && req.method === "PUT") {
+    const b = await readBody<"who" | "tier">(req);
+    const who = typeof b.who === "string" ? b.who.replace(/^@/, "") : "";
+    if (!who) return json({ error: "who required" }, 400);
+    if (b.tier !== null && !tierById(b.tier)) return json({ error: `tier: ${TIERS.map((t) => t.id).join(", ")}, or null for free` }, 400);
+    const done = await env.DB.prepare("UPDATE users SET tier = ? WHERE name = ?").bind(b.tier, who).run();
+    if (!done.meta.changes) return json({ error: `no one's @${who} here` }, 404);
+    forgetTiers();
+    return json({ ok: true, who, tier: tierById(b.tier) });
   }
   if (p[3]) return null;
   if (req.method === "PUT") {
@@ -475,5 +491,6 @@ export async function limitRoutes(req: Request, env: Env, p: string[], admin: bo
   }
   const { results: events } = await env.DB.prepare("SELECT rule, who, win, action, at FROM limit_events ORDER BY at DESC, id DESC LIMIT 100").all();
   const { results: flagged } = await env.DB.prepare("SELECT who, GROUP_CONCAT(DISTINCT rule) AS rules, MAX(at) AS last, COUNT(*) AS times FROM limit_events WHERE action = 'flag' GROUP BY who ORDER BY last DESC").all();
-  return json({ rules: out, events, flagged: (flagged as { who: string; rules: string; last: number; times: number }[]).map((f) => ({ ...f, rules: f.rules.split(",") })) });
+  const { results: tiered } = await env.DB.prepare("SELECT name, tier FROM users WHERE tier IS NOT NULL ORDER BY name").all();
+  return json({ tiers: TIERS, tiered: (tiered as { name: string; tier: string }[]).filter((u) => tierById(u.tier)), rules: out, events, flagged: (flagged as { who: string; rules: string; last: number; times: number }[]).map((f) => ({ ...f, rules: f.rules.split(",") })) });
 }
