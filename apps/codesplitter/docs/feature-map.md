@@ -1,6 +1,6 @@
 # codeSplitter feature map
 
-Every feature, grouped by what it's for, plus what's missing. The long version of each is in [REFERENCE.md](../REFERENCE.md); the pitch is in the [README](../README.md).
+Every feature, grouped by what it's for, plus what's missing. Letting an agent in safely: [agent-takeover.md](agent-takeover.md). The long version of each is in [REFERENCE.md](../REFERENCE.md); the pitch is in the [README](../README.md).
 
 ## Editing: the line is the unit
 
