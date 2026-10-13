@@ -357,3 +357,15 @@ describe("the isometric pulse", () => {
     expect(svg).toContain("10 lines</title>");
   });
 });
+
+// Switching files took ~2s live: branches, then the repo and commits, then the file, one after another.
+describe("a file page loads in one round trip", () => {
+  const f = html.slice(html.indexOf("  async f(owner, repo, path) {"), html.indexOf("mountExplorer($(\"#tree\")", html.indexOf("  async f(owner, repo, path) {")));
+  test("the file and its commits are asked for before the branch list comes back", () => {
+    expect(f.indexOf("let early = reads(picked)")).toBeGreaterThan(-1);
+    expect(f.indexOf("let early = reads(picked)")).toBeLessThan(f.indexOf("await Promise.all([branchHere(owner, repo)"));
+  });
+  test("the explorer draws the last page's tree at once, then reads it fresh", () => {
+    expect(html).toContain("await draw(); cache.clear(); repoTrees.set(key, cache);");
+  });
+});

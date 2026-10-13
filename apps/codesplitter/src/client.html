@@ -1689,13 +1689,13 @@ function crumbs(base, root, path) {
 }
 /** The explorer: the whole repo as a tree. Folders open in place; the ones on
  *  the way to what you're looking at start open, and stay open as you move. */
-const openDirs = new Map(), treeCache = new Map();
-function mountExplorer(el, key, load, href, current, onNew) {
+const openDirs = new Map(), treeCache = new Map(), repoTrees = new Map();
+async function mountExplorer(el, key, load, href, current, onNew) {
   const open = openDirs.get(key) ?? new Set(); openDirs.set(key, open);
   const segs = current.split("/").filter(Boolean);
   for (let i = 1; i <= segs.length; i++) open.add(segs.slice(0, i).join("/"));
-  // Level trees never change; a repo's can, so it's read fresh on each page.
-  const cache = key.startsWith("l/") ? treeCache : new Map();
+  // Level trees never change; a repo's can, so it's read fresh on each page, after the last page's copy is drawn at once.
+  const level = key.startsWith("l/"), cache = level ? treeCache : new Map(repoTrees.get(key));
   const get = (dir) => { const k = key + ":" + dir; if (!cache.has(k)) cache.set(k, load(dir).catch(() => ({ entries: [] }))); return cache.get(k); };
   const rows = async (dir, d) => {
     const t = await get(dir);
@@ -1724,6 +1724,8 @@ function mountExplorer(el, key, load, href, current, onNew) {
     });
   }
   icons();
+  if (level || !repoTrees.has(key)) { repoTrees.set(key, cache); return draw(); }
+  await draw(); cache.clear(); repoTrees.set(key, cache);
   return draw();
 }
 /** The explorer's menu: a new file in `dir` (typed in place, Enter makes it), and copying the path under the pointer. */
@@ -4150,13 +4152,19 @@ const views = {
 
   async f(owner, repo, path) {
     // On a branch (the switcher's pick), every read and edit goes to the branch's copy of the file.
-    const here = await branchHere(owner, repo), branch = here.on;
-    const base = `/repos/${owner}/${repo}/do`, q = "?path=" + encodeURIComponent(path) + (branch ? `&branch=${encodeURIComponent(branch)}` : "");
+    // Everything is asked for at once, on the branch this browser picked; only a branch that went away asks again.
+    const base = `/repos/${owner}/${repo}/do`, qOn = (b) => "?path=" + encodeURIComponent(path) + (b ? `&branch=${encodeURIComponent(b)}` : "");
+    const reads = (b) => { const q = qOn(b), rs = [api(`${base}/commits${q}`), api(`${base}/file${q}`)]; rs.forEach((x) => x.catch(() => {})); return rs; };
+    const picked = branchPicked(owner, repo);
+    let early = reads(picked);
+    const [here, r] = await Promise.all([branchHere(owner, repo), api(`/repos/${owner}/${repo}`)]);
+    const branch = here.on, q = qOn(branch);
+    if (branch !== picked) early = reads(branch);
     // A file the branch deleted won't open on it: the error page offers main again.
     const onBranch = (e) => { if (branch) e.onBranch = [owner, repo, branch]; throw e; };
-    const [r, commits] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`${base}/commits${q}`).catch(onBranch)]);
+    const [commits, firstDoc] = await Promise.all(early.map((x) => x.catch(onBranch)));
     r.here = here;
-    let doc = await api(`${base}/file${q}`).catch(onBranch), viewing = null, sel = null;
+    let doc = firstDoc, viewing = null, sel = null;
     ctx = { view: "f", owner, repo, path, branch, canWrite: r.canWrite, isOwner: owner === me(), visibility: r.visibility, clone: r.clone, get sel() { return sel; }, base, q };
     const href = (e) => e.type === "dir" ? `#/r/${owner}/${repo}${e.path ? "/" + encodeURIComponent(e.path) : ""}` : `#/f/${owner}/${repo}/${encodeURIComponent(e.path)}`;
     app.innerHTML = workbench(views.repoHead(owner, repo, r), {
