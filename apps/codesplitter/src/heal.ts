@@ -112,8 +112,9 @@ export async function openFix(env: Env, owner: string, repo: string, branch: str
     await env.DB.prepare("UPDATE agent_runs SET status = 'failed', result = ? WHERE id = ?").bind(JSON.stringify({ error }), id).run();
     return { skipped: error };
   }
-  // The queue runs it, as it does a hosted run: on the desktop too, in this process.
-  await env.JOBS.send({ agent: id, origin: env.BETTER_AUTH_URL ?? "http://codesplitter.local" });
+  // The queue runs it, as it does a hosted run: on the desktop too, in this process. Its own
+  // queue, so a short fix that unblocks a merge doesn't wait for a feature run's slot (#1234).
+  await (env.FIXES ?? env.JOBS).send({ agent: id, origin: env.BETTER_AUTH_URL ?? "http://codesplitter.local" });
   return { id };
 }
 

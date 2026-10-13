@@ -66,6 +66,10 @@
         "queue": "codesplitter-jobs"
       },
       {
+        "binding": "FIXES",
+        "queue": "codesplitter-fixes"
+      },
+      {
         "binding": "LEVEL_DIGS",
         "queue": "codesplitter-level-digs"
       }
@@ -79,6 +83,11 @@
       {
         "queue": "codesplitter-jobs",
         "max_batch_size": 10,
+        "max_batch_timeout": 1
+      },
+      {
+        "queue": "codesplitter-fixes",
+        "max_batch_size": 1,
         "max_batch_timeout": 1
       },
       {
