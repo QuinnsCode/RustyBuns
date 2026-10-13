@@ -50,7 +50,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const HAZE = new THREE.Color("#0a0e16");
 scene.background = HAZE;
-const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 2000);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 2000);
 camera.rotation.order = "YXZ";
 scene.add(new THREE.HemisphereLight("#4a5a90", "#1c1630", 1.5));
 // Neon spill from either side of the city: magenta one way, cyan the other.
@@ -389,6 +389,7 @@ for (const rx of roadsX) for (const rz of roadsZ) for (const [sx, sz, axis] of [
 
 // ---- the blocks: a kerb, a sidewalk, lamps, trees, benches, hydrants -------------------
 const kerb = new THREE.LineBasicMaterial({ color: "#e8590c" }), alarms = [];
+const FOLK_EYE = 0.6, BODY = 0.18, DOOR = 0.7; // we walk at the crowd's size: a shop door is about our height
 const towers = [], solids = [], lamps = [], blocks = [];
 for (const d of city.districts) {
   const cx = d.x + d.size / 2, cz = d.z + d.size / 2, e = d.size / 2 + SIDEWALK;
@@ -480,17 +481,20 @@ function raise(b, repo, r) {
   const kind = kindOf(b.path), glassy = b.agent >= 0.5, v = Math.floor(r() * 3);
   const info = { ...b, repo, kind }, y0 = CURB, H = Math.max(0.8, b.h), w = b.w;
   const mesh = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; m.userData = info; scene.add(m); towers.push(m); return m; };
-  solids.push({ x: b.x, z: b.z, r: w / 2 + 0.2 });
+  const podium = H > 2.6 && kind !== "round";
+  if (!podium) solids.push({ x0: b.x - w / 2 - 0.2, x1: b.x + w / 2 + 0.2, z0: b.z - w / 2 - 0.2, z1: b.z + w / 2 + 0.2 });
   const body = glassy ? "curtain" : kind === "works" ? "ribbon" : kind === "hall" ? "tall" : pick(r, ["grid", "grid", "ribbon"]);
   const roofCol = glassy ? "#2a3036" : "#dfe2e4";
   const face = pick(r, [[0, 1], [1, 0], [0, -1], [-1, 0]]);
   let top = y0, tw = w;
 
   // Street level: a storey of shop glass under an awning, a touch wider than the tower.
-  const podium = H > 2.6 && kind !== "round";
   if (podium) {
     const pw = w + 0.3, ph = STOREY;
-    mesh(new THREE.BoxGeometry(pw, ph, pw), facadeMat(b, "shop", true, pw, ph, v), b.x, y0 + ph / 2, b.z);
+    // Hollow: the shop is a room you can walk into, so its walls show from inside too.
+    const shell = facadeMat(b, "shop", true, pw, ph, v); shell.side = THREE.DoubleSide;
+    mesh(new THREE.BoxGeometry(pw, ph, pw), shell, b.x, y0 + ph / 2, b.z);
+    doorway(b, pw, ph, y0, face);
     put("white", b.x, y0 + ph + 0.04, b.z, pw + 0.08, 0.08, pw + 0.08);
     const [fx, fz] = face;
     put("tint", b.x + fx * (pw / 2 + 0.25), y0 + ph * 0.82, b.z + fz * (pw / 2 + 0.25), fx ? 0.5 : pw * 0.8, 0.05, fz ? 0.5 : pw * 0.8, 0, pick(r, ["#e8590c", "#16191c", "#f4f5f5", "#e8590c"]), fz * 0.25, -fx * 0.25);
@@ -1074,7 +1078,7 @@ function updateVisitors(dt) {
 
 // ---- looking and walking ----------------------------------------------------------------
 // Up on the skyline the camera circles the city; walk in and you're on the street.
-const EYE = 1.7, keys = new Set();
+const EYE = 1.7 * FOLK_EYE, keys = new Set();
 const player = { pos: new THREE.Vector3(0, EYE, z1 + 2), yaw: 0, pitch: 0, air: 0, vy: 0 };
 let walking = false, lastSent = 0;
 addEventListener("keydown", (e) => { if (e.code === "Space" && walking) e.preventDefault(); keys.add(e.code); });
@@ -1093,13 +1097,29 @@ document.addEventListener("pointerlockchange", () => {
   if (!walking) $("#city-what").hidden = true;
 });
 
+/** Walls round a shop: a thin box on each side, the front split round a door. */
+function doorway(b, pw, ph, y0, [fx, fz]) {
+  const h = pw / 2, t = 0.1, d = DOOR / 2;
+  for (const [sx, sz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const ax = sx ? 1 : 0, cx = b.x + sx * (h - t / 2), cz = b.z + sz * (h - t / 2), ex = sx ? t / 2 : h, ez = sz ? t / 2 : h;
+    if (sx === fx && sz === fz) {
+      for (const o of [-1, 1]) { const lo = o * d, hi = o * h, a = Math.min(lo, hi), c = Math.max(lo, hi);
+        solids.push(ax ? { x0: cx - ex, x1: cx + ex, z0: b.z + a, z1: b.z + c } : { x0: b.x + a, x1: b.x + c, z0: cz - ez, z1: cz + ez }); }
+    } else solids.push({ x0: cx - ex, x1: cx + ex, z0: cz - ez, z1: cz + ez });
+  }
+  // The door itself: a dark, lit frame on the front.
+  const door = new THREE.Mesh(PLANE, new THREE.MeshBasicMaterial({ color: "#2a1a10", toneMapped: false }));
+  door.scale.set(DOOR, ph * 0.82, 1); door.position.set(b.x + fx * (h + 0.02), y0 + ph * 0.41, b.z + fz * (h + 0.02)); door.rotation.y = Math.atan2(fx, fz);
+  scene.add(door);
+}
 function collide() {
   // Buildings are solid: step back out of any you walk into.
-  for (const { x, z, r: s } of solids) {
-    const r = s + 0.3, dx = player.pos.x - x, dz = player.pos.z - z;
-    if (Math.abs(dx) < r && Math.abs(dz) < r) {
-      if (r - Math.abs(dx) < r - Math.abs(dz)) player.pos.x = x + Math.sign(dx || 1) * r;
-      else player.pos.z = z + Math.sign(dz || 1) * r;
+  for (const { x0, x1, z0, z1 } of solids) {
+    const px = player.pos.x, pz = player.pos.z;
+    if (px > x0 - BODY && px < x1 + BODY && pz > z0 - BODY && pz < z1 + BODY) {
+      const l = px - (x0 - BODY), r = x1 + BODY - px, n = pz - (z0 - BODY), f = z1 + BODY - pz, m = Math.min(l, r, n, f);
+      if (m === l) player.pos.x = x0 - BODY; else if (m === r) player.pos.x = x1 + BODY;
+      else if (m === n) player.pos.z = z0 - BODY; else player.pos.z = z1 + BODY;
     }
   }
 }
@@ -1110,7 +1130,7 @@ function updateWalk(dt, now) {
   setFov(62);
   const f = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0);
   const s = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
-  const speed = keys.has("ShiftLeft") || keys.has("ShiftRight") ? 11 : 5.5;
+  const speed = keys.has("ShiftLeft") || keys.has("ShiftRight") ? 11 * FOLK_EYE : 5.5 * FOLK_EYE;
   const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
   const move = new THREE.Vector3(-sin * f + cos * s, 0, -cos * f - sin * s);
   if (move.lengthSq() > 1) move.normalize();
@@ -1119,7 +1139,7 @@ function updateWalk(dt, now) {
   collide();
   const floor = onBlock(player.pos.x, player.pos.z) ? CURB : 0;
   // Space jumps: up fast, back down under gravity.
-  if (keys.has("Space") && player.air === 0 && player.vy === 0) player.vy = 6.5;
+  if (keys.has("Space") && player.air === 0 && player.vy === 0) player.vy = 6.5 * FOLK_EYE ** 0.5;
   if (player.vy !== 0 || player.air > 0) { player.vy -= 18 * dt; player.air = Math.max(0, player.air + player.vy * dt); if (player.air === 0) player.vy = 0; }
   player.pos.y += (EYE + floor + player.air - player.pos.y) * Math.min(1, dt * (player.air > 0 ? 30 : 14));
   camera.position.copy(player.pos);
