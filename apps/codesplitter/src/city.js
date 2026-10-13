@@ -972,6 +972,8 @@ function person(a) {
   if (a.top === "overalls") add(BOX, tone("#3a6bd8"), 0, legH + 0.15, -0.02, w * 1.02, 0.3, 0.27);
   if (a.top === "suit") { add(BOX, tone("#f4f5f5"), 0, legH + torso * 0.6, -0.14, 0.07, torso * 0.7, 0.02); add(BOX, tone("#e8590c"), 0, legH + torso * 0.55, -0.15, 0.04, 0.2, 0.02); }
   if (a.top === "hoodie") add(BALL, top, 0, legH + torso, 0.12, w * 0.9, 0.16, 0.2);
+  if (a.top === "labcoat") { add(TORSO, tone("#f4f5f5"), 0, legH + torso / 2 - 0.02, 0, w * 1.06, torso * 0.9, 0.28); add(BOX, tone("#c9d1d6"), 0, legH + torso * 0.5, -0.145, 0.03, torso * 0.85, 0.01); }
+  if (a.top === "lanyard") { add(BOX, tone("#e8590c"), 0, legH + torso * 0.78, -0.135, w * 0.5, 0.03, 0.01); add(BOX, tone("#f4f5f5"), 0, legH + torso * 0.5, -0.14, 0.15, 0.2, 0.01); }
   if (a.top === "hawaiian") for (const [dx, dy] of [[-0.1, 0.35], [0.08, 0.2], [-0.03, 0.1], [0.12, 0.4]]) add(BALL, tone("#f4f5f5"), dx * w * 2.4, legH + dy, -0.14, 0.07, 0.07, 0.02);
   const hy = legH + torso + r * 0.95;
   add(BALL, skin, 0, hy, 0, r * 2, r * 2.05, r * 2);
@@ -985,6 +987,8 @@ function person(a) {
   if (a.hair === "bun") add(BALL, hair, 0, hy + r * 1.05, 0.04, 0.2, 0.2, 0.2);
   if (a.hair === "pigtails") for (const s of [-1, 1]) add(BALL, hair, s * r * 1.15, hy - 0.08, 0.05, 0.16, 0.22, 0.16);
   if (a.hair === "afro") add(BALL, hair, 0, hy + 0.08, 0.04, r * 3.2, r * 3, r * 3);
+  if (a.hair === "buzz") hairCap(1.03);
+  if (a.hair === "mullet") { hairCap(); add(BOX, hair, 0, hy - 0.16, 0.13, r * 1.7, 0.4, r * 1.1); }
   if (a.hair === "mohawk") add(BOX, hair, 0, hy + r * 0.95, 0, 0.07, 0.24, r * 1.5);
   if (a.hair === "spiky") for (let i = 0; i < 6; i++) { const t = (i / 6) * Math.PI * 2; add(CONE, hair, Math.cos(t) * r * 0.55, hy + r * 0.85, Math.sin(t) * r * 0.55, 0.14, 0.26, 0.14); }
   // hats
@@ -994,6 +998,14 @@ function person(a) {
   else if (a.hat === "tophat") { add(CYL, tone("#16191c"), 0, hy + r * 0.95, 0, r * 2.5, 0.03, r * 2.5); add(CYL, tone("#16191c"), 0, hy + r * 0.95 + 0.17, 0, r * 1.5, 0.34, r * 1.5); add(CYL, tone("#c23a6b"), 0, hy + r * 0.95 + 0.06, 0, r * 1.55, 0.07, r * 1.55); }
   else if (a.hat === "hardhat") { hat("#f4d03a"); add(BOX, tone("#f4d03a"), 0, hy + r * 1.05, 0, 0.08, 0.05, r * 1.9); }
   else if (a.hat === "cat-ears") for (const s of [-1, 1]) add(CONE, hair, s * r * 0.68, hy + r * 0.82, 0, 0.16, 0.22, 0.12);
+  else if (a.hat === "propeller") { hat("#3a6bd8"); add(CYL, tone("#16191c"), 0, hy + r * 1.15, 0, 0.03, 0.12, 0.03); add(BOX, tone("#e8590c"), 0, hy + r * 1.15 + 0.07, 0, r * 1.8, 0.02, 0.1); }
+  else if (a.hat === "wizard") { add(CYL, tone("#4a3a8a"), 0, hy + r * 0.95, 0, r * 2.7, 0.03, r * 2.7); add(CONE, tone("#4a3a8a"), 0, hy + r * 0.95 + 0.3, 0, r * 1.7, 0.6, r * 1.7); add(BALL, glow("#f4d03a"), 0, hy + r * 0.95 + 0.18, -r * 0.8, 0.07, 0.07, 0.07); }
+  else if (a.hat === "party") { add(CONE, tone("#c23a6b"), 0, hy + r * 0.95 + 0.17, 0, r * 1.1, 0.4, r * 1.1); add(BALL, tone("#f4d03a"), 0, hy + r * 0.95 + 0.4, 0, 0.1, 0.1, 0.1); }
+  else if (a.hat === "cone") { add(CONE, tone("#e8590c"), 0, hy + r * 0.95 + 0.16, 0, r * 1.5, 0.45, r * 1.5); add(CYL, tone("#f4f5f5"), 0, hy + r * 0.95 + 0.15, 0, r * 1.05, 0.06, r * 1.05); }
+  else if (a.hat === "headphones") { add(new THREE.TorusGeometry(0.5, 0.05, 6, 16, Math.PI), tone("#2e3439"), 0, hy, 0, r * 2.2, r * 2.2, r * 2.2); for (const s of [-1, 1]) add(CYL, tone("#16191c"), s * r * 1.07, hy, 0, 0.1, 0.1, 0.18).rotation.z = Math.PI / 2; }
+  else if (a.hat === "crown") add(CYL, glow("#f4d03a"), 0, hy + r * 0.95 + 0.04, 0, r * 1.5, 0.1, r * 1.5);
+  else if (a.hat === "rubber-duck") { add(BALL, tone("#f4d03a"), 0, hy + r * 0.95 + 0.06, 0, 0.2, 0.14, 0.2); add(BALL, tone("#f4d03a"), 0, hy + r * 0.95 + 0.17, -0.04, 0.12, 0.12, 0.12); add(BOX, tone("#e8590c"), 0, hy + r * 0.95 + 0.17, -0.11, 0.07, 0.03, 0.06); }
+  else if (a.hat === "bucket") { add(CYL, tone("#8a9a5c"), 0, hy + r * 0.9, 0, r * 2.5, 0.03, r * 2.5); add(CYL, tone("#8a9a5c"), 0, hy + r * 0.9 + 0.09, 0, r * 1.7, 0.18, r * 1.7); }
   else if (a.hat === "halo") add(new THREE.TorusGeometry(0.5, 0.06, 6, 20).rotateX(Math.PI / 2), glow("#f4d03a"), 0, hy + r * 1.5, 0, 0.26, 0.26, 0.26);
   return g;
 }
