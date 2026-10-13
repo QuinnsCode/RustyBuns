@@ -183,6 +183,19 @@
   .tour { position: fixed; left: 16px; bottom: 56px; z-index: 60; width: min(360px, calc(100vw - 32px)); display: grid; gap: 8px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; }
   .tour .tour-top { display: flex; align-items: center; gap: 8px; } .tour .tour-top b { flex: 1; } .tour .tour-n { font-variant-numeric: tabular-nums; }
   .tour p { margin: 0; } .tour .tour-said { font-size: 13px; color: var(--accent); min-height: 1em; }
+  .guide-fab, .guide { position: fixed; left: 16px; bottom: 12px; z-index: 61; }
+  .guide-fab { display: flex; align-items: center; gap: 6px; padding: 7px 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.14); font: inherit; font-size: 13px; cursor: pointer; }
+  .guide-fab:hover { border-color: var(--accent); } .guide-fab b { min-width: 4ch; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .guide { width: min(380px, calc(100vw - 32px)); max-height: calc(100vh - 24px); overflow: auto; display: grid; gap: 10px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; }
+  .guide p { margin: 0; } .guide .guide-msg { font-size: 13px; color: var(--accent); } .guide .guide-msg:empty { display: none; }
+  .guide .guide-top { display: flex; align-items: center; gap: 8px; } .guide .guide-top .grow { flex: 1; } .guide .guide-top .muted { font-variant-numeric: tabular-nums; }
+  .guide .guide-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  .guide .guide-opts { display: grid; gap: 8px; } .guide .guide-opts button { display: grid; grid-template-columns: 22px 1fr; column-gap: 10px; align-items: center; text-align: left; padding: 10px 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; font: inherit; cursor: pointer; }
+  .guide .guide-opts button:hover:not(:disabled) { border-color: var(--accent); } .guide .guide-opts button:disabled { opacity: .55; cursor: not-allowed; }
+  .guide .guide-opts button > span { grid-column: 2; font-size: 12px; } .guide .guide-opts svg { width: 20px; height: 20px; }
+  .guide .octo { fill: currentColor; } .guide .gh-list { display: grid; gap: 4px; }
+  .guide .guide-rows { display: grid; gap: 2px; } .guide .guide-row { display: grid; grid-template-columns: 18px 1fr 18px; align-items: center; gap: 8px; padding: 7px 8px; text-align: left; background: none; color: var(--fg); border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
+  .guide .guide-row:hover { background: var(--select); } .guide .guide-row > svg:last-child { color: var(--muted); } .guide .guide-row.ok { color: var(--muted); } .guide .guide-row.ok > svg:first-child { color: var(--accent); }
   .tour .tour-dots { display: flex; gap: 3px; } .tour .tour-dots i { flex: 1; height: 3px; border-radius: 2px; background: var(--border); } .tour .tour-dots i.on { background: var(--accent); }
   .tour .tour-btns { display: flex; gap: 6px; } .tour .tour-btns .grow, .tour .tour-top .grow { flex: 1; }
   .tour .tour-chs { display: flex; align-items: center; gap: 4px; font-size: 13px; } .tour .tour-chs span { margin-left: 4px; white-space: nowrap; }
@@ -6632,6 +6645,134 @@ addEventListener("keydown", (e) => {
   if (b) { e.preventDefault(); b.click(); }
 });
 
+// Getting started: a guide that opens by itself for an account with no repos (a new one, or an old
+// one that never added any), asks if you want to add one, from GitHub or from this computer, and says
+// plainly that codeSplitter copies it and nothing changes out there. Tuck it away and it folds to a
+// button at the bottom left: the table of contents of what makes codeSplitter different, each entry
+// a "show me" that plays the matching bit of the tour on your repo. New entries go in GUIDE.
+// An empty account that tucks it away is asked again after GUIDE_AGAIN.
+const GUIDE_KEY = "cs_guide", GUIDE_AGAIN = 3 * 864e5;
+const GUIDE = [
+  { id: "repo", ic: "folder-plus", t: "Add a repo", say: "Copy one in from GitHub or from this computer. Nothing changes out there.", done: () => guideRepos?.length > 0 },
+  { id: "blame", ic: "user-round-pen", step: "Every line knows who wrote it" },
+  { id: "time", ic: "history", step: "Time travel" },
+  { id: "pick", ic: "mouse-pointer-click", step: "Pick some lines" },
+  { id: "collab", ic: "user-plus", step: "Collab with it" },
+  { id: "agent", ic: "bot", step: "Add an agent" },
+  { id: "git", ic: "git-commit-horizontal", step: "It's still real git" },
+  { id: "panels", ic: "panel-right", step: "What's on the right" },
+  { id: "city", ic: "building", step: "Your code city" },
+  { id: "play", ic: "gamepad-2", step: "Beat up the code" },
+];
+let guideRepos = null, guideFor = null, guideView = null, guideAuto = false;
+const guideMemo = {};
+const guideLoad = () => { if (guideMemo[me()]) return guideMemo[me()]; try { return JSON.parse(localStorage.getItem(`${GUIDE_KEY}:${me()}`) ?? "{}"); } catch { return {}; } };
+const guideSave = (g) => { guideMemo[me()] = g; try { localStorage.setItem(`${GUIDE_KEY}:${me()}`, JSON.stringify(g)); } catch {} };
+const guideStep = (s) => s.step ? TOUR.find((x) => x.t === s.step) : null;
+const guideTitle = (s) => s.t ?? s.step;
+const guideSay = (s) => s.say ?? guideStep(s)?.say({}) ?? "";
+const guideDone = (s, g) => s.done ? s.done() : !!g.done?.[s.id];
+/** Show a view of the guide (null tucks it away). Tucking an empty account's guide away starts the wait before it asks again. */
+function guideShow(view, note = "") {
+  if (!view && guideView && guideRepos && !guideRepos.length) guideSave({ ...guideLoad(), shut: Date.now() });
+  guideView = view; guideDraw(note);
+}
+function guideTour(s) {
+  const t = guideStep(s), r = guideRepos?.[0];
+  if (t.on === "repo" && !r) return guideShow("ask", "That one plays on a repo. Add one first.");
+  guideSave({ ...guideLoad(), done: { ...guideLoad().done, [s.id]: true } });
+  tourSave({ ...(r && { owner: r.owner, repo: r.name }), i: TOUR.indexOf(t) });
+  guideView = null; guideDraw();
+  const h = t.on === "repo" ? `#/r/${r.owner}/${r.name}` : null;
+  if (!h || location.hash === h) tour(); else location.hash = h;
+}
+function guideBody(view, g, note) {
+  const said = note ? `<p class="guide-msg">${esc(note)}</p>` : `<p class="guide-msg"></p>`;
+  const back = (to) => `<button type="button" class="btn" data-view="${to}">${icon("arrow-left")}Back</button>`;
+  if (view === "ask") return `<p><b>Want to add a repo?</b></p><p class="muted">A repo is the code you want to work on here. Add one now and I'll walk you round it.</p>${said}
+    <div class="guide-btns"><button class="btn primary" data-view="where">${icon("plus")}Yes, add one</button><button class="btn" data-view="">Not now</button></div>`;
+  if (view === "where") return `<p><b>Where is it?</b></p><p class="muted">Either way codeSplitter makes its own copy: it clones the repo in. Nothing changes out there. Your GitHub repo or your folder stays exactly as it was, and nothing is pushed back unless you turn that on later.</p>
+    <div class="guide-opts"><button data-view="github">${OCTOCAT}<b>GitHub</b><span class="muted">Pick one of yours, or paste a link</span></button>
+      <button data-view="local"${onDesktop() ? "" : " disabled"}>${icon("hard-drive")}<b>This computer</b><span class="muted">${onDesktop() ? "A git repo in a folder here" : "Needs the desktop app: a website can't see your disk"}</span></button></div>${said}
+    <div class="guide-btns">${back(guideRepos?.length ? "toc" : "ask")}</div>`;
+  if (view === "github") return `<p><b>Copy a GitHub repo in</b></p><p class="muted">Pick one of yours, or paste any public repo's link or <code>owner/name</code>. GitHub isn't told, and the original is never touched.</p>
+    <div class="gh-list" id="guide-list"></div>
+    <form class="row" id="guide-form" style="flex-wrap:nowrap"><input name="repo" placeholder="owner/name or a link" required autocomplete="off" style="flex:1;min-width:0"><button class="btn primary" title="copy it in">${icon("git-fork")}Copy in</button></form>${said}
+    <div class="guide-btns">${back("where")}</div>`;
+  if (view === "local") return `<p><b>Copy a folder in</b></p><p class="muted">Paste the full path to a git repo on this computer. It's cloned: what you've committed comes across (edits you haven't committed stay put), it picks up new commits from the folder, and nothing is ever written back to it. Only you can see the copy.</p>
+    <form class="row" id="guide-form" style="flex-wrap:nowrap"><input name="path" placeholder="/Users/you/code/my-app" required autocomplete="off" spellcheck="false" style="flex:1;min-width:0"><button class="btn primary" title="copy it in">${icon("hard-drive")}Copy in</button></form>${said}
+    <div class="guide-btns">${back("where")}</div>`;
+  if (view === "done") return `<p><b>${esc(g.last?.owner)}/${esc(g.last?.name)} is in.</b></p><p class="muted">Nothing changed out there. Want a walk round it?</p>
+    <div class="guide-btns"><button class="btn primary" data-round>${icon("compass")}Show me round</button><button class="btn" data-open>${icon("folder-open")}Open it</button><button class="btn" data-view="where">${icon("plus")}Add another</button></div>`;
+  return `<p class="muted" style="margin-top:0">What makes codeSplitter different, one bit at a time. Each one plays on your repo. Come back whenever.</p>${said}
+    <div class="guide-rows">${GUIDE.map((s) => `<button class="guide-row${guideDone(s, g) ? " ok" : ""}" data-id="${s.id}" title="${esc(guideSay(s))}">${icon(guideDone(s, g) ? "check" : s.ic)}<span>${esc(guideTitle(s))}</span>${icon("arrow-right")}</button>`).join("")}</div>`;
+}
+function guideDraw(note = "") {
+  $$(".guide, .guide-fab").forEach((e) => e.remove());
+  if (!me()) return;
+  const g = guideLoad(), n = GUIDE.filter((s) => guideDone(s, g)).length;
+  if (!guideView) {
+    const b = document.createElement("button");
+    b.className = "guide-fab"; b.title = `Getting started: ${n} of ${GUIDE.length} done`; b.setAttribute("aria-label", b.title);
+    b.innerHTML = `${icon("map")}<b>${n}/${GUIDE.length}</b>`;
+    b.addEventListener("click", () => guideShow(guideRepos?.length ? "toc" : "ask"));
+    document.body.append(b); icons();
+    return;
+  }
+  const tuck = guideView === "toc" ? "" : guideRepos?.length ? `<button class="btn ghost" data-view="toc" title="all the steps">${icon("list-checks")}</button>` : "";
+  const card = document.createElement("div");
+  card.className = "guide"; card.setAttribute("role", "dialog"); card.setAttribute("aria-label", "Getting started");
+  card.innerHTML = `<div class="guide-top">${icon("map")}<b>Getting started</b><span class="muted">${n}/${GUIDE.length}</span><span class="grow"></span>${tuck}<button class="btn ghost" data-view="" title="tuck this away: it waits in the button at the bottom left">${icon("chevron-down")}</button></div>${guideBody(guideView, g, note)}`;
+  document.body.append(card); icons();
+  card.addEventListener("keydown", (e) => { if (e.key === "Escape") guideShow(null); });
+  card.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b || b.disabled) return;
+    if (b.dataset.view !== undefined) return guideShow(b.dataset.view || null);
+    if (b.dataset.id) { const s = GUIDE.find((x) => x.id === b.dataset.id); return s.step ? guideTour(s) : guideShow("where"); }
+    if ("round" in b.dataset) { const { owner, name } = g.last; guideView = null; guideDraw(); tourStart(owner, name); return void (location.hash = `#/r/${owner}/${name}`); }
+    if ("open" in b.dataset) { const { owner, name } = g.last; guideView = null; guideDraw(); location.hash = `#/r/${owner}/${name}`; }
+  });
+  const form = $("#guide-form", card), msg = $(".guide-msg", card);
+  if (form) {
+    form.elements[0].focus();
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const go = $("button", form), v = form.elements[0].value.trim();
+      if (guideView === "github" && !pastedRepo(v)) { msg.textContent = "That doesn't read as a GitHub repo: paste its page link, or owner/name."; return; }
+      go.disabled = true; msg.textContent = "Copying it in… a big repo can take a minute.";
+      try {
+        const r = guideView === "github" ? await api("/github/dig", { repo: v }) : await api("/mirrors", { url: v, pullOnly: true, visibility: "private" });
+        guideRepos = [{ owner: r.owner, name: r.name }, ...(guideRepos ?? [])];
+        guideSave({ ...guideLoad(), last: { owner: r.owner, name: r.name } });
+        guideShow("done");
+      } catch (err) { msg.textContent = err.message; go.disabled = false; }
+    });
+  }
+  // Your own GitHub repos, one tap to fill the box; the box already holds whatever you've typed since.
+  const list = $("#guide-list", card);
+  if (list) api("/github/repos").then((r) => {
+    if (!list.isConnected) return;
+    const mine = (r.repos ?? []).filter((x) => !x.private || r.privateOk).slice(0, 6);
+    list.innerHTML = mine.map((x) => `<button type="button" data-repo="${esc(x.repo)}">${esc(x.repo)}${x.stars != null ? `<span class="muted">★ ${x.stars}</span>` : ""}</button>`).join("");
+    list.addEventListener("click", (e) => { const b = e.target.closest("[data-repo]"); if (b) { form.repo.value = b.dataset.repo; form.querySelector("button").focus(); } });
+  }).catch(() => {});
+}
+/** After each page: know whether you have repos, open the guide for an empty account, keep its button up. */
+async function guide() {
+  if (!me()) { guideRepos = guideFor = guideView = null; return guideDraw(); }
+  if (guideFor !== me() || !guideRepos?.length) {
+    const had = guideFor === me() ? guideRepos : null;
+    guideFor = me();
+    guideRepos = await api(`/users/${encodeURIComponent(me())}`).then((u) => u.repos, () => had);
+  }
+  if (!guideAuto && guideRepos && !guideRepos.length && !tourState()) {
+    guideAuto = true;
+    const shut = guideLoad().shut;
+    if (!shut || Date.now() - shut > GUIDE_AGAIN) guideView = "ask";
+  }
+  guideDraw();
+}
+
 // Views and how many plain segments come before a path tail: #/f/owner/repo/<path>.
 const FIXED = { f: 2, r: 2, l: 1, b: 2, health: 2 };
 // Settles when the page has drawn, so an agent's tool call can answer with where it landed.
@@ -6725,6 +6866,7 @@ async function route() {
   wireFollows();
   await webTools();
   tour();
+  guide();
   drawn();
 }
 addEventListener("hashchange", route);

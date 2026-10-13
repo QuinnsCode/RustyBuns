@@ -62,3 +62,4 @@ varlock
 plan-first
 adopt-live
 api-tokens
+getting-started
