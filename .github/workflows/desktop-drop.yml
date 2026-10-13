@@ -198,7 +198,7 @@ jobs:
           cat > notes.md <<EOF
           Desktop binaries for [$app](https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_REF_NAME/apps/$app), built from $GITHUB_REF_NAME. One file, nothing to install: Bun is inside.
 
-          Pick yours: \`darwin-arm64\` is a Mac with Apple silicon, \`darwin-x64\` an Intel Mac, \`windows-x64\` Windows, \`linux-x64\` / \`linux-arm64\` Linux.
+          Pick yours: \`darwin-arm64\` is a Mac with Apple silicon, \`darwin-x64\` an Intel Mac, \`windows-x64\` Windows, \`windows-arm64\` Windows on Arm (Snapdragon), \`linux-x64\` / \`linux-arm64\` Linux.
 
           $mac
 

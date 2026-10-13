@@ -64,7 +64,7 @@ const Binding = Schema.Union([
   Schema.Struct({ type: Schema.Literal("secret"), op: opt(Str), optional: opt(Bool), boxOnly: opt(Bool) }),
 ]);
 
-const DesktopOs = Schema.Literals(["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64"]);
+const DesktopOs = Schema.Literals(["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64", "windows-arm64"]);
 const AppServer = Schema.Struct({ entry: Str, paths: Strs.check(Schema.isMinLength(1)), port: opt(Port), env: opt(StrMap) });
 const DesktopTarget = Schema.Struct({
   mode: opt(Schema.Literals(["spa", "worker"])),

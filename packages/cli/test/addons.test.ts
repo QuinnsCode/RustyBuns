@@ -21,6 +21,7 @@ const FAT = header({ 0: [0xca, 0xfe, 0xba, 0xbe], 4: [0, 0, 0, 2], 8: [0x01, 0, 
 const ELF_X64 = header({ 0: [0x7f, 0x45, 0x4c, 0x46], 18: [0x3e, 0] });
 const ELF_ARM64 = header({ 0: [0x7f, 0x45, 0x4c, 0x46], 18: [0xb7, 0] });
 const PE_X64 = header({ 0: [0x4d, 0x5a], 0x3c: [0x80, 0, 0, 0], 0x80: [0x50, 0x45, 0, 0, 0x64, 0x86] });
+const PE_ARM64 = header({ 0: [0x4d, 0x5a], 0x3c: [0x80, 0, 0, 0], 0x80: [0x50, 0x45, 0, 0, 0x64, 0xaa] });
 
 test("an addon's OS-arch, from its header", () => {
   expect(addonPlatforms(MACHO_ARM64)).toEqual(["darwin-arm64"]);
@@ -29,6 +30,7 @@ test("an addon's OS-arch, from its header", () => {
   expect(addonPlatforms(ELF_X64)).toEqual(["linux-x64"]);
   expect(addonPlatforms(ELF_ARM64)).toEqual(["linux-arm64"]);
   expect(addonPlatforms(PE_X64)).toEqual(["windows-x64"]);
+  expect(addonPlatforms(PE_ARM64)).toEqual(["windows-arm64"]);
   expect(addonPlatforms(new TextEncoder().encode("not a binary at all, just some text padding it out past 64 bytes"))).toEqual([]);
 });
 
