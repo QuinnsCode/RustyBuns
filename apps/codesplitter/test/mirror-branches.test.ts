@@ -347,6 +347,7 @@ describe("mirrors: branches and this copy's own git", () => {
     expect((await post(call, "/api/mirrors", { url: `file://${up}`, name: "ci", pullOnly: 1 })).status).toBe(400);
     expect(await (await post(call, "/api/mirrors", { url: `file://${up}`, name: "ci", pullOnly: true })).json()).toMatchObject({ name: "ci", pullOnly: true });
     expect(await get(call, "/api/repos/ana/ci/mirror")).toMatchObject({ state: "ok", pullOnly: true });
+    expect(await get(call, "/api/repos/ana/ci")).toMatchObject({ mirror: true, pullOnly: true });
   });
 
   test("a file too big to dig comes over as its blob, and waits when main changed it too", async () => {

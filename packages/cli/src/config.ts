@@ -281,9 +281,10 @@ export interface DesktopTarget {
    *   server: { entry: "../api/server.js", paths: ["/api"] }
    * A list when the proxy sent paths to more than one server; the first whose paths match wins:
    *   server: [{ entry: "../api/server.js", paths: ["/api"] }, { entry: "../media/index.js", paths: ["/img", "/gif"] }]
-   * A native addon (.node) it requires by a fixed path, or finds through bindings or node-gyp-build
-   * (a prebuild per target), ships beside it; one found any other way, or one not built for a
-   * target, stops the build.
+   * A native addon (.node) it requires by a fixed path, or finds through bindings, node-gyp-build
+   * or sharp's and better-sqlite3's loaders (a build per target, fetched the way prebuild-install
+   * or npm would when the package doesn't ship it), ships beside it; one found any other way, or
+   * one not built for a target, stops the build.
    * Desktop and box only: a Worker can't run a node:http server, so the edge needs it ported.
    */
   server?: DesktopServer | DesktopServer[];

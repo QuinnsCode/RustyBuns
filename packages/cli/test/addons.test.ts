@@ -3,7 +3,7 @@
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { addonLookups, addonName, addonPlatforms, addonProblems, gypBuildFile, serverAddons, type TargetLookup } from "../src/addons.ts";
+import { addonLookups, addonName, addonPlatforms, addonProblems, copyTrees, gypBuildFile, prebuildUrl, serverAddons, type TargetLookup } from "../src/addons.ts";
 import type { DesktopOs } from "../src/config.ts";
 
 const root = mkdtempSync(join(import.meta.dir, ".e2e-addons-"));
@@ -168,4 +168,155 @@ test("an addon with a prebuilt per OS needs one build per target, not every buil
   expect(addonProblems("server.js", { carried: [mac, linux], sources: [], perTarget: [], missed: [] }, dir, ["darwin-arm64", "linux-x64"])).toBeNull();
   const err = addonProblems("server.js", { carried: [mac, linux], sources: [], perTarget: [], missed: [] }, dir, ["linux-x64", "windows-x64"])!;
   expect(err).toContain("bcrypt.node is built for darwin-arm64, linux-x64, so it won't load on windows-x64");
+});
+
+// A registry and release host for the fetches below: tarballs by path, and the paths asked for.
+function tarballServer(files: Record<string, Record<string, Uint8Array>>) {
+  const asked: string[] = [], dir = join(root, "served-" + Object.keys(files).length + "-" + Math.random().toString(36).slice(2));
+  const tgz: Record<string, Uint8Array> = {};
+  for (const [path, entries] of Object.entries(files)) {
+    const src = join(dir, path.replace(/\W/g, "_"));
+    for (const [f, b] of Object.entries(entries)) { mkdirSync(join(src, f, ".."), { recursive: true }); writeFileSync(join(src, f), b); }
+    expect(Bun.spawnSync(["tar", "-czf", src + ".tgz", "-C", src, ...Object.keys(entries)]).exitCode).toBe(0);
+    tgz[path] = readFileSync(src + ".tgz");
+  }
+  const server = Bun.serve({ port: 0, fetch(req) {
+    const p = new URL(req.url).pathname;
+    asked.push(p);
+    return tgz[p] ? new Response(tgz[p] as Uint8Array<ArrayBuffer>) : new Response("not found", { status: 404 });
+  } });
+  return { url: `http://127.0.0.1:${server.port}`, asked, stop: () => server.stop(true) };
+}
+
+async function withEnv<T>(vars: Record<string, string>, f: () => Promise<T>): Promise<T> {
+  const was = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, vars);
+  try { return await f(); } finally { for (const [k, v] of Object.entries(was)) v === undefined ? delete process.env[k] : process.env[k] = v; }
+}
+
+// sharp's shape: lib/sharp.js requires `@img/sharp-${platform}/sharp.node`, a name it works out at
+// run time; npm installed only this machine's @img packages.
+function sharpish(dir: string) {
+  const nm = join(dir, "node_modules");
+  mkdirSync(join(nm, "sharp/lib"), { recursive: true });
+  writeFileSync(join(nm, "sharp/package.json"), JSON.stringify({ name: "sharp", version: "0.34.5", main: "lib/index.js", optionalDependencies: {
+    "@img/sharp-darwin-arm64": "0.34.5", "@img/sharp-libvips-darwin-arm64": "1.2.4",
+    "@img/sharp-linux-x64": "0.34.5", "@img/sharp-libvips-linux-x64": "1.2.4", "@img/sharp-win32-x64": "0.34.5" } }));
+  writeFileSync(join(nm, "sharp/binding.gyp"), "{}");
+  writeFileSync(join(nm, "sharp/lib/index.js"), 'module.exports = require("./sharp.js");');
+  writeFileSync(join(nm, "sharp/lib/sharp.js"), 'const p = process.platform + "-" + process.arch;\nmodule.exports = require(`@img/sharp-${p}/sharp.node`);');
+  mkdirSync(join(nm, "@img/sharp-darwin-arm64/lib"), { recursive: true });
+  writeFileSync(join(nm, "@img/sharp-darwin-arm64/package.json"), '{"name":"@img/sharp-darwin-arm64","version":"0.34.5"}');
+  writeFileSync(join(nm, "@img/sharp-darwin-arm64/lib/sharp-darwin-arm64.node"), MACHO_ARM64);
+  mkdirSync(join(nm, "@img/sharp-libvips-darwin-arm64/lib/glib-2.0"), { recursive: true });
+  writeFileSync(join(nm, "@img/sharp-libvips-darwin-arm64/package.json"), '{"name":"@img/sharp-libvips-darwin-arm64","version":"1.2.4"}');
+  writeFileSync(join(nm, "@img/sharp-libvips-darwin-arm64/lib/index.js"), "module.exports = __dirname;");
+  writeFileSync(join(nm, "@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.17.3.dylib"), MACHO_ARM64);
+  writeFileSync(join(dir, "server.js"), 'import sharp from "sharp";\nconsole.log(sharp);\n');
+}
+
+test("sharp's addon and libvips go in a tree per target, the ones npm skipped fetched from the registry", async () => {
+  const dir = join(root, "sharp"), cache = join(dir, "cache");
+  sharpish(dir);
+  const reg = tarballServer({
+    "/@img/sharp-linux-x64/-/sharp-linux-x64-0.34.5.tgz": { "package/package.json": new TextEncoder().encode("{}"), "package/lib/sharp-linux-x64.node": ELF_X64 },
+    "/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.2.4.tgz": { "package/lib/libvips-cpp.so.8.17.3": ELF_X64, "package/lib/index.js": new Uint8Array(1) },
+  });
+  const targets: DesktopOs[] = ["darwin-arm64", "linux-x64", "windows-x64"];
+  try {
+    const build = () => withEnv({ npm_config_registry: reg.url }, async () => {
+      const outdir = join(dir, "out"), perTarget: TargetLookup[] = [];
+      const r = await Bun.build({ entrypoints: [join(dir, "server.js")], outdir, naming: { entry: "server-0.[ext]", asset: "server-0-[name]-[hash].[ext]" }, target: "bun", metafile: true, plugins: [addonLookups(targets, perTarget, { tree: "server-0-native", cache })], throw: false } as any);
+      expect(r.success).toBe(true);
+      return { addons: serverAddons(r as any, perTarget), outdir, perTarget };
+    });
+    const { addons, outdir, perTarget } = await build();
+    expect(addons.missed).toEqual([]);                         // sharp's binding.gyp is its lookup's
+    expect(perTarget).toEqual([expect.objectContaining({ pkg: "sharp", missing: ["windows-x64"] })]);
+    expect(copyTrees(outdir, "server-0-native", perTarget).sort()).toEqual([
+      "server-0-native/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64.node",
+      "server-0-native/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.17.3.dylib",
+      "server-0-native/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.17.3",
+      "server-0-native/@img/sharp-linux-x64/lib/sharp-linux-x64.node",
+    ]);
+    const js = readFileSync(join(outdir, "server-0.js"), "utf8");
+    expect(js).toContain('"linux-x64": "server-0-native/@img/sharp-linux-x64/lib/sharp-linux-x64.node"');
+    expect(js).toContain("import.meta.dir");
+    expect(js).not.toContain("@img/sharp-${p}");               // sharp's own loader is gone
+    const err = addonProblems("server.js", addons, outdir, targets)!;
+    expect(err).toContain("sharp has no addon for windows-x64 (no @img/sharp-<os>-<arch> installed, or on the npm registry");
+    expect(addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64"])).toBeNull();
+    // A second build reads the cache; only the target with nothing to fetch asks again.
+    const asked = reg.asked.length;
+    await build();
+    expect(reg.asked.slice(asked)).toEqual(["/@img/sharp-win32-x64/-/sharp-win32-x64-0.34.5.tgz"]);
+  } finally { reg.stop(); }
+});
+
+// better-sqlite3's shape: bindings, with prebuild-install having fetched this machine's file only.
+test("a prebuild-install package gets each other target's prebuild from its release, by prebuild-install's URL", async () => {
+  const dir = join(root, "prebuild"), nm = join(dir, "node_modules"), abi = process.versions.modules;
+  mkdirSync(join(nm, "sqlite-ish/build/Release"), { recursive: true });
+  writeFileSync(join(nm, "sqlite-ish/package.json"), JSON.stringify({ name: "sqlite-ish", version: "1.2.3", main: "index.js",
+    repository: { type: "git", url: "git+https://github.com/acme/sqlite-ish.git" }, dependencies: { bindings: "*", "prebuild-install": "*" } }));
+  writeFileSync(join(nm, "sqlite-ish/index.js"), 'module.exports = (n) => require("bindings")(n);');
+  writeFileSync(join(nm, "sqlite-ish/build/Release/sqlite_ish.node"), ELF_X64);
+  mkdirSync(join(nm, "bindings"));
+  writeFileSync(join(nm, "bindings/package.json"), '{"name":"bindings","main":"bindings.js"}');
+  writeFileSync(join(nm, "bindings/bindings.js"), 'module.exports = (n) => require(require("path").join(process.cwd(), n));');
+  writeFileSync(join(dir, "server.js"), 'import open from "sqlite-ish";\nexport { open };\n');
+  expect(prebuildUrl(JSON.parse(readFileSync(join(nm, "sqlite-ish/package.json"), "utf8")), "windows-x64"))
+    .toBe(`https://github.com/acme/sqlite-ish/releases/download/v1.2.3/sqlite-ish-v1.2.3-node-v${abi}-win32-x64.tar.gz`);
+  const rel = tarballServer({
+    [`/v1.2.3/sqlite-ish-v1.2.3-node-v${abi}-darwin-arm64.tar.gz`]: { "build/Release/sqlite_ish.node": MACHO_ARM64 },
+    [`/v1.2.3/sqlite-ish-v1.2.3-node-v${abi}-linux-arm64.tar.gz`]: { "build/Release/sqlite_ish.node": ELF_ARM64 },
+  });
+  const targets: DesktopOs[] = ["darwin-arm64", "linux-x64", "linux-arm64", "windows-x64"];
+  try {
+    await withEnv({ npm_config_sqlite_ish_binary_host_mirror: rel.url }, async () => {
+      const outdir = join(dir, "out"), perTarget: TargetLookup[] = [];
+      const r = await Bun.build({ entrypoints: [join(dir, "server.js")], outdir, naming: { entry: "server-0.[ext]", asset: "server-0-[name]-[hash].[ext]" }, target: "bun", metafile: true, plugins: [addonLookups(targets, perTarget, { cache: join(dir, "cache") })], throw: false } as any);
+      expect(r.success).toBe(true);
+      const addons = serverAddons(r as any, perTarget);
+      // Fetched for Bun's ABI where the release has one; the installed (the installing Node's) only where it hasn't.
+      expect(addons.carried).toHaveLength(3);
+      expect(addons.sources.filter((f) => f.startsWith(join(dir, "cache")))).toHaveLength(2);
+      expect(addons.sources).toContain(join(nm, "sqlite-ish/build/Release/sqlite_ish.node"));
+      expect(perTarget).toEqual([expect.objectContaining({ pkg: "sqlite-ish", missing: ["windows-x64"] })]);
+      const err = addonProblems("server.js", addons, outdir, targets)!;
+      expect(err).toContain(`sqlite-ish has no addon for windows-x64 (prebuild-install's release has none: ${rel.url}/v1.2.3/)`);
+      expect(err).not.toContain("is built for");
+      expect(addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64", "linux-arm64"])).toBeNull();
+    });
+  } finally { rel.stop(); }
+});
+
+test("prebuild-install -r napi asks for the newest N-API build Bun has", () => {
+  const pkg = { name: "sqlite3", version: "5.1.7", repository: "github:TryGhost/node-sqlite3", binary: { napi_versions: [3, 6, 999] }, scripts: { install: "prebuild-install -r napi || node-gyp rebuild" } };
+  expect(prebuildUrl(pkg, "linux-arm64")).toBe("https://github.com/TryGhost/node-sqlite3/releases/download/v5.1.7/sqlite3-v5.1.7-napi-v6-linux-arm64.tar.gz");
+});
+
+// better-sqlite3 13's shape: its own lib/binding.js joins prebuilds/<os>-<arch>.node.
+test("better-sqlite3's own loader gets each target's prebuild by a static path", async () => {
+  const dir = join(root, "bs13"), pkg = join(dir, "node_modules/better-sqlite3");
+  mkdirSync(join(pkg, "prebuilds"), { recursive: true });
+  mkdirSync(join(pkg, "lib"));
+  writeFileSync(join(pkg, "package.json"), '{"name":"better-sqlite3","version":"13.0.0","main":"lib/index.js"}');
+  writeFileSync(join(pkg, "binding.gyp"), "{}");
+  writeFileSync(join(pkg, "lib/index.js"), 'module.exports = require("./binding").getBinding;');
+  writeFileSync(join(pkg, "lib/binding.js"), 'const path = require("path");\nfunction getPrebuildPath() { return path.join(__dirname, "..", "prebuilds", process.platform + "-" + process.arch + ".node"); }\nexports.getBinding = () => require(getPrebuildPath());\nexports.getPrebuildPath = getPrebuildPath;');
+  writeFileSync(join(pkg, "prebuilds/darwin-arm64.node"), MACHO_ARM64);
+  writeFileSync(join(pkg, "prebuilds/linux-x64.node"), ELF_X64);
+  writeFileSync(join(pkg, "prebuilds/linuxmusl-x64.node"), ELF_X64);
+  writeFileSync(join(dir, "server.js"), 'import getBinding from "better-sqlite3";\nexport { getBinding };\n');
+  const targets: DesktopOs[] = ["darwin-arm64", "linux-x64", "windows-x64"];
+  const { addons, outdir } = await bundle(dir, targets);
+  expect(addons.missed).toEqual([]);
+  expect(addons.carried).toHaveLength(2);
+  expect(addons.perTarget).toEqual([expect.objectContaining({ pkg: "better-sqlite3", missing: ["windows-x64"] })]);
+  expect(addonProblems("server.js", addons, outdir, targets)).toContain("better-sqlite3 has no addon for windows-x64");
+  expect(addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64"])).toBeNull();
+  // A binding passed in is still used as is, without loading the carried one.
+  const { getBinding } = await import(join(outdir, "server-0.js"));
+  expect(getBinding({ mine: true })).toEqual({ mine: true });
 });
