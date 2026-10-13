@@ -7,7 +7,7 @@ import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from ".
 import { groundRecorder } from "./replay.ts";
 import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
 import { buildWorld } from "./terrain.ts";
-import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TIME_LIMIT, TROOPERS, altitude, facing, heroUnit, isHorde, startBattle, statsOf, step, type Fx, type Trooper, type Unit } from "./sim.ts";
+import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
 
 export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
   const b = startBattle(spec);
@@ -161,6 +161,16 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     ? { 2: "Two in a row", 3: "Three. Fluff everywhere", 5: "Five. They'll sing about you. Badly", 8: "Eight. The forest has gone quiet", 12: "Twelve. Command is concerned about you" }
     : { 2: "Two backpacks", 3: "Three. Start a collection", 5: "Five. The totems need helmets", 8: "Eight. The shiny ones are all crying", 12: "Twelve. The chieftain wants a word" };
   let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0;
+  // What the mode asks of you right now, over the posts.
+  const objectiveLine = () => {
+    const live = b.posts[b.live]!, vip = vipUnit(b), vipName = isHorde(b, "attacker") ? "Warbur" : "Gumpert";
+    const text = b.mode === "assault" ? (b.phase > 0 ? `Hold ${live.name} ${Math.ceil(b.phase)}s` : `Take ${live.name}`)
+      : b.mode === "hill" ? `Hill: ${live.name}, moves in ${Math.ceil(b.phase)}s`
+      : b.mode === "holdout" ? (heroSide === "defender" ? "Hold any post till the clock runs out" : "Take every post")
+      : b.mode === "escort" ? (vip ? `${vip.id === b.hero.id ? "You're the VIP" : `Escort ${vipName}`} ${Math.round((100 * vip.hp) / vip.maxHp)}%` : `${vipName} is down`)
+      : "";
+    return text ? `<span class="objective">${text}</span>` : "";
+  };
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
@@ -168,9 +178,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${s === mine ? "You" : "Enemy"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
     hud.innerHTML = `
       <div class="b-top">${bar(mine)}
-        <div class="b-clock" title="Time left. When it runs out, the side with more tickets wins (the defender on a tie)."><span class="clock">${fmt(Math.max(0, TIME_LIMIT - b.time))}</span><sup>i</sup></div>
+        <div class="b-clock" title="${b.mode === "conquest" || b.mode === "hill" ? "Time left. When it runs out, the side with more tickets wins (the defender on a tie)." : "Time left. When it runs out, the defender has held."}"><span class="clock">${fmt(Math.max(0, timeLimit(spec) - b.time))}</span><sup>i</sup></div>
         ${bar(foe)}</div>
-      <div class="b-posts">${b.posts.map((p) => `<span class="post ${p.owner ? spec.factions[p.owner] : ""}">${p.name}</span>`).join("")}</div>
+      <div class="b-posts">${objectiveLine()}${b.posts.map((p, i) => `<span class="post ${p.owner ? spec.factions[p.owner] : ""}${inPlay(b, i) ? "" : " out"}">${p.name}</span>`).join("")}</div>
       <div class="b-hero">
         ${hero ? `<div class="hp"><i style="width:${(100 * hero.hp) / hero.maxHp}%"></i></div>` : `<div class="respawn">${b.hero.lives > 0 ? `Back in ${Math.ceil(b.hero.respawn)}s` : "Your hero is down"}</div>`}
         <span title="Lives">♥ ${b.hero.lives}</span>
@@ -226,6 +236,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         (p.beam.material as THREE.MeshBasicMaterial).color.setHex(post.owner ? color(post.owner) : 0x888888);
         (p.core.material as THREE.MeshBasicMaterial).color.setHex(post.owner ? color(post.owner) : 0x888888);
         p.core.rotation.y = now / 600 + i;
+        p.beam.visible = p.ring.visible = inPlay(b, i) || (b.mode === "escort" && i === b.posts.length - 1); // only what's in play glows
         p.core.position.y = ground(post.x - 4, post.z - 4) + 2.6 + Math.sin(now / 400 + i) * 0.2;
         p.flag.rotation.y = Math.sin(now / 700 + i) * 0.25; // it flaps
       });

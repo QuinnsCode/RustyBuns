@@ -7,7 +7,7 @@
 // for the Marines.
 // The view draws it and feeds the hero's input; the tests run it headless with the autopilot.
 import { atan2, cos, hypot, sin } from "./fmath.ts";
-import { VEHICLE_KINDS, other, poolSize, type BattleResult, type BattleSpec, type PerSide, type SectorKind, type Side, type VehicleKind } from "./contract.ts";
+import { VEHICLE_KINDS, other, poolSize, type BattleResult, type BattleSpec, type MatchMode, type PerSide, type SectorKind, type Side, type VehicleKind } from "./contract.ts";
 
 export type Trooper = "assault" | "heavy" | "sniper" | "engineer";
 export const TROOPERS: Trooper[] = ["assault", "heavy", "sniper", "engineer"];
@@ -74,6 +74,10 @@ export interface Battle {
   kills: PerSide<number>;    // what each side has killed of the other's, counted in tickets
   champ: PerSide<boolean>;   // whether each side has earned its champion yet
   screamAt: number;          // when a dying Marine last got a line in the feed
+  mode: MatchMode;
+  live: number;              // assault and hill: the one post in play
+  phase: number;             // assault: seconds left holding the live post (0 while taking it); hill: till it moves on
+  vip: number | null;        // escort: the attacker's champion, while they live
 }
 
 export const DT = 1 / 30;
@@ -81,6 +85,15 @@ export const HALF = 120;           // the plain runs -HALF..HALF on x and z
 export const TIME_LIMIT = 600;
 export const SPAWN: PerSide<{ x: number; z: number }> = { attacker: { x: 0, z: 100 }, defender: { x: 10, z: -100 } };
 export const POST_RADIUS = 12;
+const HOLD_FOR = 40;               // assault: seconds to hold a post once taken before the next comes live
+const HILL_EVERY = 75;             // hill: seconds before the live post moves on
+const HILL_DRAIN = 3;              // hill: seconds per ticket the side off the hill loses
+const HILL = { name: "No man's land", x: 5, z: 0 }; // the first hill, as far from one spawn as the other
+const HOLDOUT_TIME = 300;
+const ESCORT_NEAR = 18;            // escort: an AI champion walks only with a friend this close
+const ESCORT_PACE = 3;             // and no faster than this, so the escort keeps up
+// How long a battle runs before the clock decides it.
+export const timeLimit = (spec: BattleSpec) => (spec.mode === "holdout" ? HOLDOUT_TIME : TIME_LIMIT);
 
 // Each kind of sector is its own map. The last post is the defender's keep: it starts theirs,
 // and their turrets ring it. `scenery` below lays out what stands on it; the view draws that.
@@ -234,10 +247,13 @@ export const yawTo = (from: { x: number; z: number }, to: { x: number; z: number
 
 export function startBattle(spec: BattleSpec): Battle {
   const pool = (s: Side) => Object.fromEntries(VEHICLE_KINDS.map((k) => [k, spec.vehicles[s][k] ?? 0])) as Record<VehicleKind, number>;
+  const mode = spec.mode ?? "conquest";
+  // The keep starts the defender's; in an assault or a hold-out, every post does. A hill starts nobody's.
+  const theirs = (i: number, n: number) => mode === "assault" || mode === "holdout" || (mode !== "hill" && i === n - 1);
   const b: Battle = {
     spec, time: 0, trees: [], blocks: [],
     tickets: { ...spec.tickets },
-    posts: LAYOUTS[spec.sector].posts.map((p, i, all) => (i === all.length - 1 ? { ...p, owner: "defender", progress: -1 } : { ...p, owner: null, progress: 0 })),
+    posts: [...(mode === "hill" ? [HILL] : []), ...LAYOUTS[spec.sector].posts].map((p, i, all) => (theirs(i, all.length) ? { ...p, owner: "defender", progress: -1 } : { ...p, owner: null, progress: 0 })),
     units: [], strikes: [], fx: [], events: [],
     strikesLeft: { ...spec.strikes },
     vehiclesLeft: { attacker: pool("attacker"), defender: pool("defender") },
@@ -247,9 +263,10 @@ export function startBattle(spec: BattleSpec): Battle {
     aiStrikeAt: { attacker: 20, defender: 25 },
     spawnAt: { attacker: 0, defender: 0 },
     kills: { attacker: 0, defender: 0 }, champ: { attacker: false, defender: false }, screamAt: -99,
+    mode, live: 0, phase: mode === "hill" ? HILL_EVERY : 0, vip: null,
   };
-  const gen = b.posts.at(-1)!;
-  for (let i = 0; i < spec.turrets; i++) {
+  // The turrets ring the keep; in a hold-out, every post.
+  for (const gen of mode === "holdout" ? b.posts : [b.posts.at(-1)!]) for (let i = 0; i < spec.turrets; i++) {
     const a = (i / Math.max(1, spec.turrets)) * Math.PI * 2 + 0.6;
     add(b, "defender", "turret", gen.x + cos(a) * 18, gen.z + sin(a) * 18);
   }
@@ -262,8 +279,30 @@ export function startBattle(spec: BattleSpec): Battle {
     b.trees.push(t);
   }
   spawnHero(b);
+  // Escort: the attacker's champion takes the field from the start, and is the one to get through.
+  // If the hero is attacking, that's them.
+  if (mode === "escort") {
+    champion(b, "attacker");
+    const vip = b.units.find((u) => u.side === "attacker" && u.champ)!;
+    vip.hp = vip.maxHp = Math.round(vip.maxHp * 1.5); // the whole other side is after them
+    b.vip = vip.id;
+  }
+  if (mode !== "conquest") b.events.push(BRIEF[mode]);
   return b;
 }
+
+export const BRIEF: Record<MatchMode, string> = {
+  conquest: "Conquest: take the posts and run their tickets out",
+  assault: "Assault: the posts fall in order, one live at a time",
+  hill: "King of the hill: hold the live post, and it moves on",
+  holdout: "Hold-out: the waves keep coming till the clock runs out",
+  escort: "Escort: get the champion to the keep",
+};
+
+// Whether a post can change hands: in an assault or on the hill, only the live one; in an escort, none.
+export const inPlay = (b: Battle, i: number) =>
+  b.mode === "conquest" || b.mode === "holdout" ? true : b.mode === "escort" ? false : i === b.live;
+export const vipUnit = (b: Battle) => (b.vip === null ? null : b.units.find((u) => u.id === b.vip) ?? null);
 
 // The nearest point on a block's footprint to p, and how far p is from it (0 inside).
 const nearestOn = (k: Block, p: { x: number; z: number }) => ({ x: clamp(p.x, k.x - k.w / 2, k.x + k.w / 2), z: clamp(p.z, k.z - k.d / 2, k.z + k.d / 2) });
@@ -436,8 +475,11 @@ function crown(b: Battle, u: Unit) {
 // Marines field troopers of four classes and the vehicles they brought. The Wooka field a
 // horde: more of them, and no vehicles, so their share of the pool comes as yet more Wooka.
 export const isHorde = (b: Battle, side: Side) => b.spec.factions[side] === "wooka";
-const troopCap = (b: Battle, side: Side) =>
+const baseCap = (b: Battle, side: Side) =>
   isHorde(b, side) ? Math.min(28, 8 + b.spec.armies[side] * 5 + poolSize(b.spec.vehicles[side]) * 3) : Math.min(14, 4 + b.spec.armies[side] * 3);
+// In a hold-out the attacker's waves start small and grow as the clock runs, to twice the usual by the end.
+const troopCap = (b: Battle, side: Side) =>
+  b.mode === "holdout" && side === "attacker" ? Math.min(32, Math.max(2, Math.round(baseCap(b, side) * (0.5 + (1.5 * b.time) / HOLDOUT_TIME)))) : baseCap(b, side);
 // The Wooka kind the horde is furthest short of, against its mix.
 function nextRole(b: Battle, side: Side): WookaRole {
   const n = { fodder: 0, chub: 0, sticky: 0, boomie: 0, shanti: 0 };
@@ -554,6 +596,12 @@ function think(b: Battle, u: Unit) {
   }
   if (foe && u.cool <= 0) shoot(b, u, foe);
   if (!s.speed) return;
+  if (u.id === b.vip) {
+    // The escort's champion walks for the keep, fighting as they go, but never alone.
+    const keep = b.posts.at(-1)!;
+    if (b.units.some((v) => v.side === u.side && v.id !== u.id && v.kind !== "turret" && dist(u, v) < ESCORT_NEAR)) move(b, u, keep.x - u.x, keep.z - u.z, Math.min(s.speed, ESCORT_PACE));
+    return;
+  }
   // A Sticky that's thrown, or has someone too close, backs off towards home.
   if (u.role === "sticky") {
     const close = nearestEnemy(b, u, 8);
@@ -620,8 +668,17 @@ function mend(b: Battle, u: Unit) {
   for (const v of b.units) if (v.side === u.side && (v.role || v.champ === "warbur") && v !== u && v.hp < v.maxHp && dist(u, v) < 10) v.hp = Math.min(v.maxHp, v.hp + HEAL * DT);
 }
 
-// The nearest post the side doesn't hold; with both held, the one nearer the enemy.
-export function objective(b: Battle, side: Side) {
+// The nearest post the side doesn't hold; with both held, the one nearer the enemy. In an assault
+// or on the hill, the live post. In an escort, the champion: just ahead of them for the attacker.
+export function objective(b: Battle, side: Side): { x: number; z: number } {
+  if (b.mode === "assault" || b.mode === "hill") return b.posts[b.live]!;
+  if (b.mode === "escort") {
+    const keep = b.posts.at(-1)!, c = vipUnit(b);
+    if (!c) return keep;
+    if (side === "defender") return c;
+    const d = Math.max(1, dist(c, keep)), ahead = Math.min(10, d);
+    return { x: c.x + ((keep.x - c.x) / d) * ahead, z: c.z + ((keep.z - c.z) / d) * ahead };
+  }
   const home = SPAWN[side], foe = SPAWN[other(side)];
   const open = b.posts.filter((p) => p.owner !== side || Math.abs(p.progress) < 1);
   if (open.length) return open.sort((a, c) => dist(a, home) - dist(c, home))[0]!;
@@ -630,6 +687,8 @@ export function objective(b: Battle, side: Side) {
 
 // A third of each side holds the post nearest the enemy instead of pushing on.
 function guardPost(b: Battle, side: Side) {
+  if (b.mode === "escort") return side === "defender" ? b.posts.at(-1)! : undefined; // the defender's guards wait at the keep
+  if (b.mode === "hill") return undefined; // nothing to hold but the hill
   const foe = SPAWN[other(side)];
   return b.posts.filter((p) => p.owner === side).sort((a, c) => dist(a, foe) - dist(c, foe))[0];
 }
@@ -795,6 +854,7 @@ export function step(b: Battle, input: Input | null) {
     b.kills[other(u.side)] += statsOf(u).cost;
     if (b.hero.id !== null && u.hitBy === b.hero.id && u.side !== b.spec.hero) { b.hero.kills++; b.hero.streak++; } // a Chub counts for more than a Fodder, a walker for more than both
     die(b, u);
+    if (u.id === b.vip) { b.vip = null; b.events.push("The champion is down"); }
     if (u.id === b.hero.id) {
       b.hero.streak = 0;
       b.hero.lives--;
@@ -808,7 +868,8 @@ export function step(b: Battle, input: Input | null) {
   for (const s of sides) if (!b.champ[s] && b.kills[s] >= CHAMP_AT) champion(b, s);
 
   // Command posts: whoever stands alone on one turns it. Gunships fly over and don't count.
-  for (const p of b.posts) {
+  for (const [i, p] of b.posts.entries()) {
+    if (!inPlay(b, i)) continue;
     let att = 0, def = 0;
     for (const u of b.units) if (u.kind !== "turret" && !flies(u) && !hidden(b, u) && dist(u, p) < POST_RADIUS) u.side === "attacker" ? att++ : def++;
     if (!att === !def) continue;
@@ -823,9 +884,12 @@ export function step(b: Battle, input: Input | null) {
   // Bleed, drop pods, fresh troops and vehicles.
   const held = (s: Side) => b.posts.filter((p) => p.owner === s).length;
   const tick = (every: number) => Math.floor(b.time / every) !== Math.floor((b.time - DT) / every);
-  if (tick(BLEED_EVERY)) for (const s of sides) b.tickets[s] -= Math.max(0, held(other(s)) - held(s));
-  // On a tie the attacker bleeds slowly: it's the one that has to push.
-  if (tick(BLEED_EVERY * 2) && held("attacker") === held("defender")) b.tickets.attacker--;
+  let decided: Side | null = null;
+  if (b.mode === "conquest") {
+    if (tick(BLEED_EVERY)) for (const s of sides) b.tickets[s] -= Math.max(0, held(other(s)) - held(s));
+    // On a tie the attacker bleeds slowly: it's the one that has to push.
+    if (tick(BLEED_EVERY * 2) && held("attacker") === held("defender")) b.tickets.attacker--;
+  } else decided = objectives(b, tick);
   for (const s of sides) {
     if (!b.reinforced[s] && b.spec.reinforcements[s] > 0 && b.tickets[s] <= b.spec.tickets[s] / 2) {
       b.reinforced[s] = true;
@@ -854,8 +918,10 @@ export function step(b: Battle, input: Input | null) {
   if (b.events.length > 40) b.events.splice(0, b.events.length - 40);
 
   const out = sides.find((s) => b.tickets[s] <= 0);
-  if (out || b.time >= TIME_LIMIT) {
-    const winner = out ? other(out) : b.tickets.attacker > b.tickets.defender ? "attacker" : "defender";
+  if (decided || out || b.time >= timeLimit(b.spec)) {
+    // On the clock: conquest and the hill go to whoever has more tickets, the rest to the defender, who held.
+    const onTime = b.mode === "conquest" || b.mode === "hill" ? (b.tickets.attacker > b.tickets.defender ? "attacker" : "defender") : "defender";
+    const winner = decided ?? (out ? other(out) : onTime);
     b.over = { id: b.spec.id, winner, tickets: { attacker: Math.max(0, Math.ceil(b.tickets.attacker)), defender: Math.max(0, Math.ceil(b.tickets.defender)) }, heroDown: b.hero.lives <= 0 };
   }
 }
@@ -894,8 +960,47 @@ function champion(b: Battle, s: Side) {
     : `${mine ? "You are" : "The Marines have"} GUMPERT.${mine ? " E swaps kit: rockets, stun baton, jetpack." : ""}`);
 }
 
+// The modes' own objectives, a step at a time. The side that has just won by them, if one has.
+function objectives(b: Battle, tick: (every: number) => boolean): Side | null {
+  const live = b.posts[b.live]!;
+  switch (b.mode) {
+    case "assault":
+      if (b.phase > 0) {
+        // Holding: they counter-attack. Lose it and it's back to taking it; hold on and the next comes live.
+        if (live.owner !== "attacker") { b.phase = 0; b.events.push(`${live.name} retaken: take it back`); }
+        else if ((b.phase -= DT) <= 0) { b.phase = 0; b.live++; b.events.push(`${b.posts[b.live]!.name} is live: attack`); }
+      } else if (live.owner === "attacker") {
+        if (b.live === b.posts.length - 1) return "attacker";
+        b.phase = HOLD_FOR;
+        b.events.push(`Hold ${live.name} for ${HOLD_FOR}s`);
+      }
+      // Whoever's pushing bleeds: the attacker while taking a post, the defender while it's held against them.
+      if (tick(BLEED_EVERY)) b.tickets[b.phase > 0 ? "defender" : "attacker"]--;
+      return null;
+    case "hill":
+      if (live.owner && tick(HILL_DRAIN)) b.tickets[other(live.owner)]--;
+      if ((b.phase -= DT) <= 0) {
+        live.owner = null; live.progress = 0;
+        b.live = (b.live + 1) % b.posts.length;
+        b.phase = HILL_EVERY;
+        b.events.push(`The hill moves to ${b.posts[b.live]!.name}`);
+      }
+      return null;
+    case "holdout":
+      return b.posts.every((p) => p.owner === "attacker") ? "attacker" : null;
+    case "escort": {
+      const c = vipUnit(b);
+      if (!c) return "defender";
+      if (dist(c, b.posts.at(-1)!) < POST_RADIUS) { b.events.push("The champion reaches the keep"); return "attacker"; }
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
 // With no input the hero fights like any other trooper: for tests, and for a battle left to the AI.
-export function run(spec: BattleSpec, maxSeconds = TIME_LIMIT): Battle {
+export function run(spec: BattleSpec, maxSeconds = timeLimit(spec)): Battle {
   const b = startBattle(spec);
   while (!b.over && b.time < maxSeconds) step(b, null);
   return b;

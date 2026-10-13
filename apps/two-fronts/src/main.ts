@@ -4,16 +4,17 @@
 // is one seat at it.
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
-  CARDS, CARD_NAMES, COST, ORBIT, TROOP_CARD, checkRetreats, enemy, fogged, handOf, heroReady, income, incomeBreakdown, keyShare, planDeploys, planOrders, regionHolder, supplied,
+  CARDS, CARD_NAMES, COST, FACTIONS, ORBIT, TROOP_CARD, checkRetreats, enemy, fogged, handOf, heroReady, income, incomeBreakdown, keyShare, planDeploys, planOrders, regionHolder, supplied,
   type Attack, type Campaign, type Card, type Order, type Orders, type Retreat, type Where,
 } from "./war/rules.ts";
-import { handIn, heroFaction, humans, newTable, report, waitingOn, type Seats, type Table } from "./war/table.ts";
-import { fetchView, linkInHash, seatLink, sendBattle, sendOrders, startOnline, type Online, type View } from "./net.ts";
+import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
+import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
 import { drawMap } from "./ui/map.ts";
 import { icon } from "./ui/icons.ts";
+import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
 import { FLAVOR, run } from "./battle/sim.ts";
 import { runSpace } from "./battle/space.ts";
-import { VEHICLE_KINDS, type BattleResult, type BattleSpec, type Faction, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./battle/contract.ts";
+import { VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./battle/contract.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 // v2 gained the cannon sectors, v3 renamed the factions, v4 had a galaxy per campaign, v5 had
@@ -434,9 +435,61 @@ function passTo(f: Faction) {
     <button type="button" id="pass-on" class="primary">I'm the ${FACTION_NAMES[f]}</button>`);
 }
 
+// --- The end-of-match vote ---
+
+const openVote = (): Vote | null => {
+  const v = game.kind === "local" ? game.table.vote : game.view.vote;
+  return v && !v.picked ? v : null;
+};
+let voting = false, putOff: string | null = null; // the vote on screen; one this seat said "Later" to
+
+// After a ground battle, the vote for the next one's mode, if this screen has a vote left to cast.
+// Then carry on. Nothing waits on it: a vote nobody finishes leaves the mode as it was.
+function voteIfOpen(then: () => void) {
+  const v = openVote();
+  const here = (f: Faction) => (game.kind === "local" ? game.table.seats[f] === "human" : game.view.seat === f);
+  if (!v || voting || putOff === v.match || !FACTIONS.some((f) => here(f) && !v.votes[f])) return then();
+  const g = online();
+  const seatOf = (f: Faction) => (game.kind === "local" ? game.table.seats[f] : game.view.seats[f]);
+  const seats: VoteSeat[] = FACTIONS.map((f) => ({ faction: f, who: here(f) ? "here" : seatOf(f) === "ai" ? "ai" : "away", ...(v.votes[f] && { vote: v.votes[f] }) }));
+  voting = true;
+  const sock = g ? pointerSocket(g.link, (m) => {
+    if (m.t === "at" && m.seat !== g.view.seat) screen.point(m.seat, m.x, m.y);
+    if (m.t === "vote" && m.vote?.match === v.match) { g.view.vote = m.vote; screen.update(m.vote.votes, m.vote.picked); }
+  }) : null;
+  const screen = voteScreen($("vote"), {
+    title: "Next match",
+    text: "Everyone gets one vote for how the next ground battle is fought.",
+    seats,
+    moved: sock ? (x, y) => sock.at(x, y) : undefined,
+    cast(f, mode) {
+      if (g) {
+        sendVote(g.link, v.match, mode).then((view) => { g.view = view; c = view.campaign; if (view.vote) screen.update(view.vote.votes, view.vote.picked); })
+          .catch((e) => flash((e as Error).message));
+        return;
+      }
+      if (game.kind !== "local") return;
+      const step = castVote(game.table, f, v.match, mode);
+      if (!step.ok) return flash(step.error);
+      game.table = step.table;
+      c = game.table.campaign;
+      save();
+      screen.update(step.table.vote!.votes, step.table.vote!.picked);
+    },
+    done(picked) {
+      voting = false;
+      sock?.close();
+      if (!picked) putOff = v.match;
+      else flash(`Next ground battle: ${MODE_INFO[picked].name}`);
+      render();
+      then();
+    },
+  });
+}
+
 // After anything moves the turn on: fight our hero battle if it's ours, or wait for the others.
 function afterTurn() {
-  if (c.winner || busy) return;
+  if (c.winner || busy || voting) return;
   const p = c.pending;
   if (p && heroFaction(c) === me) return p.kind === "space" ? briefSpace(p.spec, finishSpace) : brief(p.spec, finish);
   if (online() && !myTurn()) schedulePoll();
@@ -457,6 +510,7 @@ async function poll() {
     g.view = v;
     if (moved) useGame(g, { turn: c.turn, orders: mine });
   } catch { /* try again next time */ }
+  if ($("modal").hidden && !document.body.classList.contains("in-battle")) return voteIfOpen(afterTurn);
   afterTurn();
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && online()) void poll(); });
@@ -472,7 +526,8 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
   };
   const row = (label: string, a: number | string, b: number | string) => `<tr><th>${label}</th><td>${a}</td><td>${b}</td></tr>`;
   showModal(`<h2>Hero battle: ${spec.system}, ${SECTOR_NAMES[spec.sector].toLowerCase()}</h2>
-    <p>You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain. The armoured ones came to hunt. Show them who the forest belongs to" : "a Thunder Marine"}. Take the command posts and run their tickets out.</p>
+    <p class="mode-line">${icon(MODE_INFO[spec.mode ?? "conquest"].icon, 16)}<b>${MODE_INFO[spec.mode ?? "conquest"].name}</b> <span class="small">${MODE_INFO[spec.mode ?? "conquest"].blurb}</span></p>
+    <p>You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain. The armoured ones came to hunt. Show them who the forest belongs to" : "a Thunder Marine"}.${spec.mode && spec.mode !== "conquest" ? "" : " Take the command posts and run their tickets out."}</p>
     ${horde ? `<p class="small">${spec.factions[me] === "marines" ? "You are not the hunter here. They know the trees, they know your smell, and they are already in the ferns." : ""}</p><p class="flavor">“${FLAVOR[Math.floor(Math.random() * FLAVOR.length)]}”</p>` : ""}
     <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>
       ${row("Armies", spec.armies[me], spec.armies[foe])}
@@ -564,19 +619,27 @@ async function finish(result: BattleResult) {
 
 // Quick play, outside the campaign, on Doren, the forest moon: the Marines came to hunt and found
 // themselves the quarry. Hold the line as a Thunder Marine, or be the horde that stalks them.
-function skirmish(asWooka: boolean) {
+function skirmish(asWooka: boolean, mode: MatchMode = "conquest") {
   const spec: BattleSpec = {
     id: `skirmish-${Date.now()}`, turn: 0, system: "Doren", sector: "shield",
     factions: { attacker: "wooka", defender: "marines" }, hero: asWooka ? "attacker" : "defender", heroLevel: 1,
     armies: { attacker: 4, defender: 3 }, tickets: { attacker: 200, defender: 150 },
     vehicles: { attacker: { tank: 1 }, defender: { walker: 1, speeder: 1 } }, strikes: { attacker: 0, defender: 2 },
-    reinforcements: { attacker: 0, defender: 30 }, turrets: 2, seed: Math.floor(Math.random() * 2 ** 31),
+    reinforcements: { attacker: 0, defender: 30 }, turrets: 2, ...(mode !== "conquest" && { mode }), seed: Math.floor(Math.random() * 2 ** 31),
   };
   brief(spec, (r) => {
     const won = r.winner === spec.hero;
-    showModal(`<h2>${asWooka ? (won ? "The hunt is over" : "Driven back into the ferns") : won ? "Still breathing" : "Hunted down"}</h2>
-      <p>${asWooka ? (won ? "The generator is in pieces, the armoured ones are running, and someone is wearing a backpack as a hat." : "The Marines held. The forest remembers their smell.") : won ? "You came to Doren to hunt. You leave knowing what it is to be hunted. They'll be back. They always come back." : "Nobody heard them coming. They got into the backpacks."}</p>
-      <button type="button" id="close" class="primary">Back to the map</button>`);
+    // The result, and the vote for a rematch against the AI, whose pointer wanders over too.
+    const mine = spec.factions[spec.hero], theirs = spec.factions[other(spec.hero)];
+    const votes: Partial<Record<Faction, MatchMode>> = { [theirs]: aiVote(spec.id, theirs, mode) };
+    const screen = voteScreen($("vote"), {
+      title: asWooka ? (won ? "The hunt is over" : "Driven back into the ferns") : won ? "Still breathing" : "Hunted down",
+      text: asWooka ? (won ? "The generator is in pieces, the armoured ones are running, and someone is wearing a backpack as a hat." : "The Marines held. The forest remembers their smell.") : won ? "You came to Doren to hunt. You leave knowing what it is to be hunted. They'll be back. They always come back." : "Nobody heard them coming. They got into the backpacks.",
+      seats: [{ faction: mine, who: "here" }, { faction: theirs, who: "ai", vote: votes[theirs] }],
+      leave: { label: "Back to the map", title: "No rematch" },
+      cast(f, m) { votes[f] = m; screen.update(votes, tally(spec.id, votes)); },
+      done(picked) { if (picked) skirmish(asWooka, picked); },
+    });
   });
 }
 // The panel's fixed buttons and headings get their icons once.
@@ -608,8 +671,8 @@ function hideModal() { $("modal").hidden = true; }
 // Back from the battle's result: the next seat, or the waiting room.
 document.addEventListener("click", (e) => {
   const id = (e.target as HTMLElement).id;
-  if (id === "pass-on-after") passTo(seatUp());
-  else if (id === "back-to-map") { hideModal(); afterTurn(); }
+  if (id === "pass-on-after") { hideModal(); voteIfOpen(() => passTo(seatUp())); }
+  else if (id === "back-to-map") { hideModal(); voteIfOpen(afterTurn); }
 });
 
 // Boot: a seat link in the address wins, then the online game this browser was last at, then the table.
