@@ -69,3 +69,5 @@ footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line);
   main { padding: 24px 16px 40px; }
   main h1 { font-size: 28px; }
 }
+.copy { margin-left: auto; font: inherit; font-size: 14px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px; cursor: pointer; white-space: nowrap; }
+.copy:hover { border-color: var(--accent); }

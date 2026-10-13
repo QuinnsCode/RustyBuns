@@ -18,7 +18,7 @@ import { buildEnv, emptyHome, hostCommand, withLocalBins, hostEnv, wantsSandbox 
 import { desktopServers, forStage, type RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
-import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError } from "./errors.ts";
+import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError, triagePrompt } from "./errors.ts";
 import { infer, readPackageJson, appsBelow, siblingServers, proxyServers } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
@@ -1140,5 +1140,6 @@ Box and ship the web app you already have. A dev dependency, never in prod.
 } catch (e) {
   const { text, code } = renderError(e);
   console.error(text);
+  if (code !== 2 && (process.stderr.isTTY || process.env.RB_TRIAGE_PROMPT)) console.error(triagePrompt(text, { argv: process.argv.slice(2), version: VERSION }));
   process.exit(code);
 }
