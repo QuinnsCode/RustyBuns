@@ -11,6 +11,7 @@ import type { ZoneData } from "../sim/terrain.ts";
 import { Game, scopeSway, SHIELD_DELAY, stanceOf, type GameEvent, type Input } from "../sim/game.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { KEYS, keyLabel, ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
+import { weaponIcon } from "./icons.ts";
 import { FIELD, place, play, VOICES } from "./audio.ts";
 import { BUILDS, type BuildId } from "./figure.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
@@ -382,11 +383,12 @@ function hud(game: Game, aimingAt: Block | null) {
   $("clock").textContent = clock(game.time);
   $("stance").textContent = you.burn > 0 ? "on fire: roll!" : you.prone ? "prone" : you.crouch ? "crouched" : "";
   $("stance").classList.toggle("hot", you.burn > 0);
-  // Weapons you have; git reset --hard only once you've found one.
+  // Weapons you have; git reset --hard only once you've found one. Every one is git, so the
+  // row is its drawing and the command without "git".
   $("weapons").innerHTML = ORDER.map((w, i) => {
     const a = you.ammo[w];
     if (w === "reset" && a === 0) return "";
-    return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${keyLabel(KEYS[i]!)}</kbd><code>${WEAPONS[w].cmd}</code><span>${a < 0 ? "∞" : a}</span></li>`;
+    return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${keyLabel(KEYS[i]!)}</kbd>${weaponIcon(w)}<code>${WEAPONS[w].cmd.replace(/^git /, "")}</code><span>${a < 0 ? "∞" : a}</span></li>`;
   }).join("");
   // What's under the crosshair, and how much of it is left.
   $("target").textContent = aimingAt ? `${aimingAt.path} · ${aimingAt.lines.toLocaleString()} lines` : "";

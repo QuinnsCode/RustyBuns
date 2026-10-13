@@ -95,10 +95,12 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .stance.hot { color: var(--accent-ink); font-weight: 600; }
 #progress { font-variant-numeric: tabular-nums; pointer-events: auto; cursor: help; }
 .weapons { position: absolute; right: 12px; bottom: 12px; margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
-.weapons li { display: grid; grid-template-columns: 2ch 17ch 3ch; gap: 8px; align-items: center; padding: 3px 8px; background: rgba(255, 255, 255, 0.9); border: 1px solid var(--hair); font-size: 12px; }
+.weapons li { display: grid; grid-template-columns: 2ch 28px 12ch 3ch; gap: 8px; align-items: center; padding: 3px 8px; background: rgba(255, 255, 255, 0.9); border: 1px solid var(--hair); font-size: 12px; }
 .weapons li.on { border-color: var(--line); box-shadow: inset 3px 0 0 var(--accent); }
 .weapons li.out { opacity: 0.4; }
 .weapons kbd { color: var(--muted); }
+.weapons svg { width: 28px; height: 14px; display: block; }
+.weapons li.on svg { color: var(--accent-ink); }
 .weapons span { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .feed { position: absolute; top: 56px; right: 12px; margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; justify-items: end; font: 12px var(--mono); }
 .feed li { background: rgba(255, 255, 255, 0.9); padding: 2px 6px; border: 1px solid var(--hair); transition: opacity 1s; }
