@@ -69,7 +69,7 @@ import { MAX_BYTES, MAX_LINES, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { githubToken, parseRepo } from "./github.ts";
-import { startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
+import { postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, json, NAME, type Env, readBody } from "./env.ts";
 import type { Doc } from "./lines.ts";
@@ -1035,6 +1035,8 @@ async function followBranches(env: Env, owner: string, repo: string) {
         const theirs = tip === had ? tip : await fetchBranch(s, ref);
         if (theirs && theirs !== had) await catchUp(env, owner, repo, s, br.name, ref, theirs);
         if (theirs) await clashOnlyInGit(env, owner, repo, s, br.name, theirs);
+        // Its place in the merge plan, as a status GitHub's merge-when-ready can wait on (#1219).
+        if (theirs) await postOrder(env, owner, repo, br.name, theirs).catch(() => null);
         continue;
       }
       // Deleting a merged branch upstream is a push too: a pull-only mirror leaves it be.

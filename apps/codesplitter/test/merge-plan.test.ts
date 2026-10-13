@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { apply, empty, fromText, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
@@ -126,6 +126,29 @@ describe("a branch that clashed takes main in once its blocker merges (#1162)", 
     expect(review.files.find((f: any) => f.path === "a.ts").conflicts).toEqual([]);
     expect((await post("ana", "/api/repos/ana/r/branches/b2/merge", {})).status).toBe(200);
     expect(await read()).toBe("const a = 1;\nx(2);\nx(3);\ny(2);");
+  });
+
+  test("cards left and self-healing on: a rebuild task starts the branch from main's copies, its side kept, and puts main's back (#1219)", async () => {
+    const { call, post, read } = await app({ HEAL: "1" });
+    const prompts: string[] = [];
+    call.env.AGENT_EXEC = (async (cmd, cwd) => {
+      prompts.push(cmd.args.join(" "));
+      // The copy it's handed is main's with the branch's side of the clash: it puts main's back beside it.
+      const f = join(cwd, "a.ts");
+      writeFileSync(f, readFileSync(f, "utf8").replace("x(3);", "x(2);\nx(3);"));
+      return { code: 0, out: "ENGINE a.ts L2 yes: both sides added a call; keep both" };
+    }) as Exec;
+    const r = await (await post("ana", "/api/repos/ana/r/branches/b1/merge", {})).json() as any;
+    expect(r.took).toEqual([{ branch: "b2", status: "rebuilding", files: ["a.ts"], fix: expect.any(Number) }]);
+    const run = async () => (await (await call("ana", "/api/repos/ana/r/agents")).json() as any[]).find((x) => x.id === r.took[0].fix);
+    for (const end = performance.now() + 15_000; performance.now() < end && (await run())?.status === "running";) await Bun.sleep(20);
+    expect(await run()).toMatchObject({ branch: "b2", path: "a.ts", status: "done" });
+    expect((await run()).task).toContain(`Rebuild branch b2 on main: b1 merged`);
+    expect(prompts[0]).toContain('a.ts L2: main has "x(2);", the branch kept "x(3);"');
+    expect(await read("b2")).toBe("const a = 1;\nx(2);\nx(3);\ny(1);");
+    // Main's lines are under it now: it merges with no card.
+    expect((await post("ana", "/api/repos/ana/r/branches/b2/merge", {})).status).toBe(200);
+    expect(await read()).toBe("const a = 1;\nx(2);\nx(3);\ny(1);");
   });
 
   test("checks run here: a branch waiting in the plan queues none on an edit, then one once its blocker merged", async () => {

@@ -8,7 +8,8 @@
 //     runner picks up and reports on with PUT .../checks/:id;
 //   - GitHub Actions: a sha the mirror sent up is watched, and its check runs and
 //     commit statuses come back in as `github` runs (the cron polls; POST .../checks/github
-//     polls now). Our own results can go the other way, as `codesplitter/<name>` statuses;
+//     polls now). Our own results can go the other way, as `codesplitter/<name>` statuses,
+//     and a branch's turn in the merge plan as `codesplitter/merge-order` (#1219, postOrder);
 //   - anyone in the crew, by hand, with POST .../checks: labelled so, and only the owner's
 //     may say how it went (a collaborator's is queued, for a runner to claim);
 //   - other CI, through the GitHub-shaped API under /api/gh/v3 with a repo's CI token,
@@ -400,12 +401,40 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
   await (await import("./ci-runner.ts")).kick(env, owner, repo).catch(() => null);
 }
 
-/** Whether open branch `name` waits for another open one to merge first: the merge plan's `after` (branches.ts). */
-export async function waiting(env: Env, owner: string, repo: string, name: string) {
+/** The open branches `name` waits for to merge first: the merge plan's `after` (branches.ts) still open. */
+async function blockers(env: Env, owner: string, repo: string, name: string) {
   const row = await env.DB.prepare("SELECT waits_on FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first() as { waits_on: string | null } | null;
   const on = JSON.parse(row?.waits_on ?? "[]") as string[];
-  if (!on.length) return false;
-  return !!await env.DB.prepare(`SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND status = 'open' AND name IN (${on.map(() => "?").join(", ")})`).bind(owner, repo, ...on).first();
+  if (!on.length) return [];
+  const { results } = await env.DB.prepare(`SELECT name FROM branches WHERE owner = ? AND repo = ? AND status = 'open' AND name IN (${on.map(() => "?").join(", ")}) ORDER BY name`).bind(owner, repo, ...on).all();
+  return (results as { name: string }[]).map((r) => r.name);
+}
+
+/** Whether open branch `name` waits for another open one to merge first: the merge plan's `after` (branches.ts). */
+export async function waiting(env: Env, owner: string, repo: string, name: string) {
+  return (await blockers(env, owner, repo, name)).length > 0;
+}
+
+/** The status that holds a branch's place in the merge plan on GitHub (#1219). */
+export const ORDER = `${CONTEXT}merge-order`;
+/** What postOrder last told GitHub, per branch: it posts again only when that changes. */
+const ordered = new Map<string, string>();
+
+/**
+ * Open branch `name`, upstream at `sha`, as `codesplitter/merge-order` on GitHub (#1219), when the owner posts our
+ * statuses there: pending while it waits for a branch ahead of it in the merge plan, success once its turn's up.
+ * Made a required check on main, it holds GitHub's merge-when-ready till then. The mirror's sync calls it.
+ */
+export async function postOrder(env: Env, owner: string, repo: string, name: string, sha: string) {
+  const s = await checkSettings(env, owner, repo);
+  if (!s.post_statuses || !s.github || !/^[0-9a-f]{40}$/.test(sha)) return;
+  const on = await blockers(env, owner, repo, name), key = `${owner}/${repo}\n${name}`, said = `${sha} ${on.join(",")}`;
+  if (ordered.get(key) === said) return;
+  const res = await gh(env, owner, `/repos/${s.github}/statuses/${sha}`, {
+    method: "POST",
+    body: JSON.stringify({ state: on.length ? "pending" : "success", context: ORDER, description: (on.length ? `waits for ${on.join(", ")} to merge first` : "its turn in the merge plan").slice(0, 140) }),
+  });
+  if (res.ok) ordered.set(key, said);
 }
 
 /**
