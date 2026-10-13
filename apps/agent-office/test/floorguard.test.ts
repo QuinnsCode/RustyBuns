@@ -2,7 +2,7 @@ import { afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test"
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { askFirst, asksRoute, fromWorker, pendingAsks, peopleOnly } from "../live/floorguard.ts";
+import { askFirst, asksRoute, fromWorker, pendingAsks, peopleOnly, rebuildOf, rebuildPrompt } from "../live/floorguard.ts";
 import { floorGuardBin, floorGuardHooks } from "../scripts/floorguard.ts";
 import { unpackPinned } from "./pinned.ts";
 
@@ -82,6 +82,50 @@ test("tell_worker reaches the other agent marked as from the worker, and the flo
   expect(seen.told[0]).toStartWith("[From Pixel, another agent in this office, not your person.");
   expect(seen.toasts).toEqual(["💬 Pixel told Sprocket: rebase onto main"]);
   expect((ws[1]!.lastInput as { by: string }).by).toBe("Pixel");
+});
+
+test("a told rebuild hires its own worker, or jumps the queue, instead of waiting in the author's terminal", async () => {
+  const { ctx, seen } = office(0);
+  const floor = (ctx.floors.get("f") as any);
+  const spawned: { desk: string; prompt: string }[] = [];
+  const tasks: { id: string; title: string; status: string; prompt: string }[] = [{ id: "a", title: "feature", status: "queued", prompt: "" }];
+  let free = true;
+  Object.assign(floor, { plan: { wing: 0 }, project: { branch: "main" } });
+  Object.assign(floor.workers, {
+    deskOccupied: () => !free,
+    fetchBase: async () => {},
+    ownerOf: () => undefined,
+    spawn: (desk: string, _by: string, prompt: string) => (spawned.push({ desk, prompt }), { id: "w3", name: "Widget" }),
+  });
+  floor.queue = {
+    state: () => ({ tasks }),
+    add: (prompt: string, _by: string, title: string) => (tasks.push({ id: "b", title, status: "queued", prompt }), undefined),
+    move: (id: string, d: number) => { const i = tasks.findIndex((t) => t.id === id); [tasks[i], tasks[i + d]] = [tasks[i + d]!, tasks[i]!]; },
+  };
+
+  const hired = await call(ctx, "/tell", { worker: "Sprocket", prompt: "merge main into #1221" });
+  expect(hired.status).toBe(200);
+  expect(seen.told).toEqual([]);
+  expect(spawned).toHaveLength(1);
+  expect(spawned[0]!.prompt).toBe(rebuildPrompt(1221, "Pixel", "Sprocket", "merge main into #1221"));
+  expect(seen.toasts.at(-1)).toContain("Widget is on it");
+
+  free = false;
+  await call(ctx, "/tell", { worker: "Sprocket", prompt: "Rebuild PR #1199 on main, keep both sides" });
+  expect(tasks.map((t) => t.title)).toEqual(["Rebuild #1199 on main", "feature"]);
+  expect(seen.toasts.at(-1)).toContain("front of the 📋 queue");
+
+  // anything else still goes to the worker
+  await call(ctx, "/tell", { worker: "Sprocket", prompt: "rebase onto main" });
+  expect(seen.told).toHaveLength(1);
+});
+
+test("rebuildOf reads the PR off a rebuild's first line only", () => {
+  expect(rebuildOf("merge origin/main into PR #12")).toBe(12);
+  expect(rebuildOf("/rebuild-pr 7")).toBe(7);
+  expect(rebuildOf("rebuild #8 on main")).toBe(8);
+  expect(rebuildOf("rebuild 3 files")).toBeUndefined();
+  expect(rebuildOf("fix the tests\nthen merge main into #9")).toBeUndefined();
 });
 
 test("AGENT_OFFICE_PEOPLE_ONLY keeps hire, tell, home and pr to people", async () => {

@@ -133,3 +133,64 @@ export async function forcedHome(floor: Floor, w: { id: string; name: string }, 
   }
   return work ? `Kept ${w.name}'s worktree: it has ${work}, and only a person can throw that away (send it home from the office)` : "";
 }
+
+// --- rebuilds are their own task (#1235) ---
+// "merge main into #1221" told to the worker who opened #1221 sat in its terminal while it worked on its next task,
+// and the PR stayed dirty. A tell that asks for a rebuild now hires a worker for it (or, with no desk free, goes to
+// the front of the queue), so it runs whatever the PR's author is doing.
+
+const REBUILDS = [
+  /\bmerge\s+(?:origin\/)?main\s+into\s+(?:(?:pr|pull request)\s*)?#(\d+)/i,
+  /\brebuild(?:-pr)?\s+(?:(?:pr|pull request)\s*)?#(\d+)/i,
+  /\/rebuild-pr\s+#?(\d+)/i,
+];
+
+/** The PR a prompt's first line asks to rebuild on main ("merge main into #12", "rebuild #12", "/rebuild-pr 12"). */
+export function rebuildOf(text: string): number | undefined {
+  const first = text.trim().split("\n", 1)[0] ?? "";
+  for (const re of REBUILDS) {
+    const m = first.match(re);
+    if (m) return Number(m[1]);
+  }
+  return undefined;
+}
+
+/** The task's prompt: the rebuild-pr recipe for `pr`, with the original tell kept, marked as from its worker. */
+export function rebuildPrompt(pr: number, who: string, to: string, text: string) {
+  return `Rebuild PR #${pr} on main with the rebuild-pr skill (.claude/skills/rebuild-pr): merge main into its branch, ` +
+    `resolve the conflicts, push, and watch its checks. That's the whole task; don't open another pull request.\n\n` +
+    fromWorker(who, `${text}\n\n(Told to ${to}, who opened it. The office made it a task of its own, so it isn't lost when ${to} moves on.)`);
+}
+
+type Task = { id: string; title: string; status: string };
+type RebuildFloor = {
+  project: { branch?: string };
+  workers: {
+    fetchBase(): Promise<unknown>;
+    ownerOf(id: string): string | undefined;
+    spawn(desk: string, by: string, prompt: string, worktree: boolean, kind: "agent", ...rest: unknown[]): { id: string; name: string } | string;
+  };
+  queue: { add(prompt: string, by: string, title: string, ...rest: unknown[]): string | undefined; state(): { tasks: Task[] }; move(id: string, delta: number): void };
+};
+
+/**
+ * Starts the rebuild of `pr` as a task of its own: a new worker at `desk`, else the front of the queue.
+ * The floor's toast, or '' when neither worked and the tell should go to `to` after all.
+ */
+export async function rebuildAsTask(floor: RebuildFloor, me: { id: string; name: string }, to: string, pr: number, text: string, desk: string | undefined) {
+  const prompt = rebuildPrompt(pr, me.name, to, text);
+  const owner = floor.workers.ownerOf(me.id);
+  if (desk) {
+    const worktree = !!floor.project.branch;
+    if (worktree) await floor.workers.fetchBase();
+    const r = floor.workers.spawn(desk, me.name, prompt, worktree, "agent", undefined, undefined, undefined, undefined, owner);
+    if (typeof r !== "string") return `🔧 ${me.name} asked ${to} to rebuild #${pr}; ${r.name} is on it, so it isn't lost when ${to} moves on`;
+  }
+  const title = `Rebuild #${pr} on main`;
+  if (floor.queue.add(prompt, me.name, title, undefined, undefined, undefined, undefined, owner)) return "";
+  // rebuilds are short and unblock merges: ahead of the feature work
+  const queued = floor.queue.state().tasks.filter((t) => t.status === "queued");
+  const mine = queued.findLast((t) => t.title === title);
+  if (mine) for (let i = queued.indexOf(mine); i > 0; i--) floor.queue.move(mine.id, -1);
+  return `🔧 ${me.name} asked ${to} to rebuild #${pr}; no desk is free, so it waits at the front of the 📋 queue`;
+}

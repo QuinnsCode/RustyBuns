@@ -2,7 +2,7 @@
 // path lands in: the MCP tools, the office-workers command and a bare curl to the hook port.
 import { ASK_MS } from "../live/floorguard.ts";
 
-/** server/hooks/office-workers.js: people-only actions, ask-first ones held for a person (#727), forced send-homes that keep work, and tell_worker marked as from its worker. */
+/** server/hooks/office-workers.js: people-only actions, ask-first ones held for a person (#727), forced send-homes that keep work, tell_worker marked as from its worker, and a told rebuild made its own task (#1235). */
 export function floorGuardHooks(js: string) {
   const rel = "hooks/office-workers.js";
   const refused = "        return send(res, 405, { error: 'GET /office/workers, or POST to /office/workers, /office/workers/home, /office/workers/tell or /office/workers/pr' });\n";
@@ -23,7 +23,12 @@ export function floorGuardHooks(js: string) {
   js = once(js, rel, "            results.push({ worker: w.name, id: w.id, went: true, ...(note ? { note } : {}), ...(error ? { error } : {}) });\n",
     "            results.push({ worker: w.name, id: w.id, went: true, ...(__rbHeld ? { held: __rbHeld } : {}), ...(note ? { note } : {}), ...(error ? { error } : {}) });\n");
   js = once(js, rel, "        let err = floor.workers.prompt(w.id, text, who);\n",
-    ask("        ", "{ worker: w.name, prompt: text }") + "        const __rbText = __rbGuard.fromWorker(who, text);\n        let err = floor.workers.prompt(w.id, __rbText, who);\n");
+    ask("        ", "{ worker: w.name, prompt: text }") +
+    // #1235: a rebuild is its own task, not a message that waits behind whatever its worker does next
+    "        const __rbPr = __rbGuard.rebuildOf(text);\n" +
+    "        const __rbTask = __rbPr && await __rbGuard.rebuildAsTask(floor, me, w.name, __rbPr, text, nextFreeSeat((id) => floor.workers.deskOccupied(id), floor.plan.wing)?.id);\n" +
+    "        if (__rbTask) {\n            ctx.toastFloor(floor, __rbTask);\n            return send(res, 200, { ok: true, rebuild: __rbTask, worker: row(w.id) });\n        }\n" +
+    "        const __rbText = __rbGuard.fromWorker(who, text);\n        let err = floor.workers.prompt(w.id, __rbText, who);\n");
   js = once(js, rel, "            err = floor.workers.resume(w.id, text);\n", "            err = floor.workers.resume(w.id, __rbText);\n");
   js = once(js, rel, "            return send(res, 400, { error: err });\n        return send(res, 200, { ok: true, worker: row(w.id) });\n",
     "            return send(res, 400, { error: err });\n" +
