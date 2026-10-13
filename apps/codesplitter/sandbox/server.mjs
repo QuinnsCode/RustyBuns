@@ -13,6 +13,9 @@
 // whose prompt has {{try}}, {{out}}, {{changelog}}, {{history}} and {{sites}}
 // filled in each try) patches the code and the tests run again, until they pass
 // or the tries run out (answers {ok, tries, out, edits: [{path, before, after}]}).
+// POST /regenerate {remote, files, pm, cwd, command, read} rebuilds a merge's generated
+// text (src/deps.ts regenerateDocs): a shallow clone with `files` swapped in, an install,
+// `command` run from the folder `cwd`, and the files in `read` read back (answers {ok, out, files}).
 // Plain Node, no dependencies.
 //
 // The container's env holds the agent's logins, and the repo's own code (its
@@ -145,6 +148,23 @@ export function depsTest({ remote, files, pm = "bun", lock = null, only }) {
   });
 }
 
+/** A merge's generated text made again (localRegenerator in src/deps.ts, in a container): install, the command from `cwd`, `read` read back. */
+export function regenerate({ remote, files, pm = "bun", cwd = "", command, read = [] }) {
+  return inClone(remote, files, 1, async (repo, run) => {
+    const inside = (p) => !relative(repo, join(repo, p)).startsWith("..");
+    const bad = [cwd, ...read].find((p) => !inside(p));
+    if (bad !== undefined) return { ok: false, out: `bad path: ${bad}` };
+    const installed = await install(run, pm);
+    if (installed.code !== 0) return { ok: false, out: installed.out };
+    const [bin, ...args] = String(command ?? "").split(/\s+/).filter(Boolean);
+    if (!bin) return { ok: false, out: "no command" };
+    const r = await run(bin, args, join(repo, cwd));
+    if (r.code !== 0) return { ok: false, out: r.out };
+    const back = await Promise.all(read.map(async (p) => [p, await readFile(join(repo, p), "utf8").catch(() => null)]));
+    return { ok: true, out: r.out, files: Object.fromEntries(back.filter(([, t]) => t !== null)) };
+  });
+}
+
 const LOCKFILES = /(^|\/)(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/;
 const tail = (s) => s.trim().slice(-1500);
 
@@ -213,7 +233,7 @@ export async function test({ files }) {
   }
 }
 
-const ROUTES = { "/run": run, "/test": test, "/deps-test": depsTest, "/deps-fix": depsFix };
+const ROUTES = { "/run": run, "/test": test, "/deps-test": depsTest, "/deps-fix": depsFix, "/regenerate": regenerate };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   // The repo's code and the agent share a group, never a user; anything either makes, the other can write.

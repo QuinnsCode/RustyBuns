@@ -182,6 +182,8 @@ test("wrangler toml parse and dropped keys", () => {
   // Vectorize carries over (init asks for its dimensions); per-env blocks and the account don't yet.
   const w = parseWranglerToml('name = "x"\naccount_id = "a"\n[ai]\nbinding = "AI"\n[[vectorize]]\nbinding = "V"\nindex_name = "v"\n[triggers]\ncrons = ["* * * * *"]\n[env.staging]\nname = "x-staging"\n');
   expect(droppedWranglerKeys(w)).toEqual(["account_id", "env"]);
+  // limits.cpu_ms is carried (worker.cpuMs)
+  expect(droppedWranglerKeys({ limits: { cpu_ms: 30000 } } as any)).toEqual([]);
 });
 
 test("add deploy writes overrides at the workspace root, where bun reads them", () => {

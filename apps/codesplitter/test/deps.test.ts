@@ -5,7 +5,7 @@ import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "./fake-gate.ts";
 import type { Runner } from "../src/preview.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
-import { depsFix as containerFix, depsTest as containerTest } from "../sandbox/server.mjs";
+import { depsFix as containerFix, depsTest as containerTest, regenerate as containerRegenerate } from "../sandbox/server.mjs";
 import { scopedTest } from "../sandbox/scoped.mjs";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
@@ -951,6 +951,19 @@ describe("the container's /deps-test", () => {
     expect((await containerTest({ remote, files: pkg("echo nope && exit 3") })).ok).toBe(false);
     expect((await containerTest({ remote, files: pkg() })).out).toContain("(no test script)");
   });
+
+  test("/regenerate: installs, runs the command from its folder and reads the files back (#1192)", async () => {
+    const remote = await repo("exit 1");
+    const files = { ...pkg(), "app/REFERENCE.md": "old\n" };
+    const r = await containerRegenerate({ remote, files, cwd: "app", command: "sh -c pwd>REFERENCE.md", read: ["app/REFERENCE.md", "app/gone.md"] });
+    expect(r).toMatchObject({ ok: true });
+    expect(r.files["app/REFERENCE.md"]).toMatch(/\/repo\/app\n$/);
+    expect(Object.keys(r.files)).toEqual(["app/REFERENCE.md"]);
+    expect(r.out).not.toContain(remote);
+    expect(await containerRegenerate({ remote, files, cwd: "app", command: "false", read: [] })).toMatchObject({ ok: false });
+    expect(await containerRegenerate({ remote, files, cwd: "../..", command: "true", read: [] })).toEqual({ ok: false, out: "bad path: ../.." });
+    expect(await containerRegenerate({ remote, files, cwd: "", command: "true", read: ["../x"] })).toEqual({ ok: false, out: "bad path: ../x" });
+  }, 30_000);
 
   test("/deps-fix: the agent gets each try's prompt filled in, the tests decide, and its edits come back", async () => {
     const remote = await repo("grep -q 'v = 2' v.js");
