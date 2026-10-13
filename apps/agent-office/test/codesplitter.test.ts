@@ -115,7 +115,7 @@ test("the dispatch hint: a queued task's text goes to codeSplitter, and stacking
 test("Wait holds the task on the office until its busy branches have merged, and releases it once", async () => {
   let branches: unknown = [{ name: "fix-mirror", status: "open" }, { name: "other", status: "open" }];
   const route = codesplitterRoute({ url: "http://cs" }, (async () => branches ? Response.json(branches) : new Response("no", { status: 502 })) as unknown as typeof fetch);
-  const call = (m: string, p: string, q: string) => route(m, new URL(`http://office/__rb/codesplitter/${p}?${q}`))!;
+  const call = async (m: string, p: string, q: string) => (await route(m, new URL(`http://office/__rb/codesplitter/${p}?${q}`)))!;
   const msg = JSON.stringify({ t: "queue.add", prompt: "Work on GitHub issue #7", issue: 7 });
   const q = new URLSearchParams({ repo: "ryan/lab", msg, branches: "fix-mirror" });
 
