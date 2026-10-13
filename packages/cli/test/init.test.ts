@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,8 @@ import { parseWranglerToml, droppedWranglerKeys } from "../src/wrangler.ts";
 import { workspaceRoot } from "../src/glue/deploy-deps.ts";
 import { viteConfig } from "../src/glue/port-vite.ts";
 
+// These tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
+setDefaultTimeout(30_000);
 const CLI = new URL("../src/index.ts", import.meta.url).pathname;
 
 /** Make a throwaway project from { path: contents } and run the real CLI in it. */

@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, setDefaultTimeout } from "bun:test";
 import { infer } from "../src/glue/infer.ts";
 import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
@@ -6,6 +6,8 @@ import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
 import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports } from "../src/build.ts";
 
+// Some tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
+setDefaultTimeout(30_000);
 const root = new URL("../../../apps/spa-example", import.meta.url).pathname;
 
 test("infer: framework, pm, deps, vite aliases from the repo itself", () => {
