@@ -12,6 +12,7 @@
 // bikes wobble, people jaywalk, and the signals go out to blinking amber. The
 // code-birds and the blimp are only for the look of the place.
 import * as THREE from "three";
+import { PARTS, defaultAvatar, drawFace } from "/avatar.js";
 
 const name = decodeURIComponent(location.hash.slice(3).split("?")[0] ?? "");
 const API = `/api/users/${encodeURIComponent(name)}/city`;
@@ -104,6 +105,10 @@ const BOX = new THREE.BoxGeometry(1, 1, 1), CYL = new THREE.CylinderGeometry(0.5
 const DOME = new THREE.SphereGeometry(0.5, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), CONE = new THREE.ConeGeometry(0.5, 1, 14);
 const GABLE = (() => { const s = new THREE.Shape(); s.moveTo(-0.5, 0); s.lineTo(0.5, 0); s.lineTo(0, 1); s.closePath(); const g = new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false }); g.translate(0, 0, -0.5); return g; })();
 const TREE = new THREE.IcosahedronGeometry(0.5, 1);
+const CAP_ARM = new THREE.CapsuleGeometry(0.06, 0.28, 3, 8).translate(0, -0.1, 0);
+const TORSO = new THREE.SphereGeometry(0.5, 14, 10);
+const SKIRT = new THREE.CylinderGeometry(0.35, 0.5, 1, 14);
+const PLANE = new THREE.PlaneGeometry(1, 1);
 const WHITE = std("#f4f5f5", { roughness: 0.5 }), METAL = std("#2c3238", { roughness: 0.35, metalness: 0.7 }), GREY = std("#9aa2a8", { roughness: 0.7 });
 kit("white", BOX, WHITE); kit("metal", BOX, METAL); kit("grey", BOX, GREY); kit("tint", BOX, std("#ffffff", { roughness: 0.55 }));
 kit("cyl", CYL, WHITE); kit("cylMetal", CYL, METAL); kit("cylTint", CYL, std("#ffffff", { roughness: 0.5 }));
@@ -207,7 +212,6 @@ function shopSign(key) {
   shopTex.set(id, m);
   return m;
 }
-const PLANE = new THREE.PlaneGeometry(1, 1);
 /** A themed shop on the face (fx, fz) of a podium pw wide: shelves behind the glass, a sign over it, neon on the wet pavement. */
 function stock(b, repo, r, pw, ph, y0, [fx, fz], hall, hq) {
   const key = hq ? "hq" : hall && r() < 0.7 ? "library" : pick(r, ["lava", "lava", "lava", "library", "library", "books", "books", "used", "hall", "video", "comics", "records", "archive"]), ry = Math.atan2(fx, fz);
@@ -679,14 +683,16 @@ for (const l of lanes) {
 
 // ---- people: round their blocks, over the crossings, and (in chaos) straight across ------
 const people = [];
+/** What a passer-by looks like: skin, hair (or none, then it's their skin) and trousers from the avatar palettes. */
+const folk = (r) => { const skin = pick(r, PARTS.skin.slice(0, 6)); return { skin, hair: r() < 0.2 ? skin : pick(r, PARTS.hairColor), pants: pick(r, PARTS.bottomColor) }; };
 for (const b of blocks) for (let k = 0, m = Math.round(5 + 35 * b.bustle); k < m; k++)
-  people.push({ b, t: _r() * 4, off: 0.55 + _r() * 0.7, speed: (0.025 + _r() * 0.03) * (1 + b.chaos) * (_r() < 0.5 ? -1 : 1), coat: pick(_r, ["#16191c", "#2e3439", "#f4f5f5", "#6b7680", "#8a5a3c"]), brolly: pick(_r, ["#16191c", "#16191c", "#f4f5f5", "#e8590c", "#3a4148"]), bob: _r() * 6 });
+  people.push({ ...folk(_r), b, t: _r() * 4, off: 0.55 + _r() * 0.7, speed: (0.025 + _r() * 0.03) * (1 + b.chaos) * (_r() < 0.5 ? -1 : 1), coat: pick(_r, ["#16191c", "#2e3439", "#f4f5f5", "#6b7680", "#8a5a3c"]), brolly: pick(_r, ["#16191c", "#16191c", "#f4f5f5", "#e8590c", "#3a4148"]), bob: _r() * 6 });
 /** People who cross the street. axis is the street's (they walk across it); jaywalkers cross mid-block. */
 const crossers = [], CURBX = half - SIDEWALK + 0.4;
 for (const j of junctions.values()) {
   const m = Math.min(10, Math.round(1 + 5 * j.bustle + 4 * j.chaos));
   for (let k = 0; k < m; k++) {
-    const p = { j, axis: _r() < 0.5 ? "z" : "x", arm: _r() < 0.5 ? -1 : 1, from: _r() < 0.5 ? -1 : 1, wait: _r() * 4, walking: false, lean: (_r() - 0.5) * 0.6, speed: 1.1 + _r() * 0.5, jump: 0, bob: _r() * 6,
+    const p = { ...folk(_r), j, axis: _r() < 0.5 ? "z" : "x", arm: _r() < 0.5 ? -1 : 1, from: _r() < 0.5 ? -1 : 1, wait: _r() * 4, walking: false, lean: (_r() - 0.5) * 0.6, speed: 1.1 + _r() * 0.5, jump: 0, bob: _r() * 6,
       coat: pick(_r, ["#16191c", "#2e3439", "#f4f5f5", "#6b7680", "#8a5a3c"]), brolly: pick(_r, ["#16191c", "#f4f5f5", "#e8590c", "#3a4148"]) };
     p.u = p.from;
     reroll(p);
@@ -817,9 +823,11 @@ function updateTraffic(dt, time) {
 const everyone = [...people, ...crossers];
 const FOLK = 0.6; // crowd scale: the people are small next to the towers
 const crowd = [
-  [new THREE.CapsuleGeometry(0.14, 0.42, 3, 8).translate(0, 0.38, 0), std("#ffffff", { roughness: 0.8 }), "coat"],
-  [new THREE.SphereGeometry(0.1, 10, 8).translate(0, 0.78, 0), std("#d8b59a", { roughness: 0.8 }), null],
-  [new THREE.ConeGeometry(0.42, 0.18, 10).translate(0, 1.06, 0), std("#ffffff", { roughness: 0.4 }), "brolly"],
+  [new THREE.BoxGeometry(0.2, 0.26, 0.12).translate(0, 0.13, 0), std("#ffffff", { roughness: 0.8 }), "pants"],
+  [new THREE.CapsuleGeometry(0.13, 0.3, 3, 8).translate(0, 0.4, 0), std("#ffffff", { roughness: 0.8 }), "coat"],
+  [new THREE.SphereGeometry(0.15, 12, 10).translate(0, 0.83, 0), std("#ffffff", { roughness: 0.8 }), "skin"],
+  [new THREE.SphereGeometry(0.16, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.55).translate(0, 0.84, 0.01), std("#ffffff", { roughness: 0.6 }), "hair"],
+  [new THREE.ConeGeometry(0.42, 0.18, 10).translate(0, 1.12, 0), std("#ffffff", { roughness: 0.4 }), "brolly"],
 ].map(([g, m, col]) => { const im = instanced(g, m, everyone.length); if (col) everyone.forEach((p, i) => im.setColorAt(i, C(p[col]))); return im; });
 function updatePeople(dt, time) {
   updateCrossers(dt, time);
@@ -939,23 +947,73 @@ const driftClouds = (time) => { if (!still) for (const c of clouds) c.position.x
 const red = kits.get("redLight").mat;
 const blink = (time) => red.color.setHex(still || time % 2 < 1 ? 0xff2a1a : 0x3a0a06);
 
-// ---- walkers: who landed lines lately, and the visitors here with you ------------------
-function avatar(who, agent) {
+// ---- people: built from an avatar's parts (avatar.ts), Mii-sized: a big head on a small body ------------
+const faces = new Map(), mats = new Map();
+const tone = (c, o = {}) => { const k = c + JSON.stringify(o); if (!mats.has(k)) mats.set(k, std(c, { roughness: 0.7, emissive: c, emissiveIntensity: 0.28, ...o })); return mats.get(k); };
+const faceMat = (a) => {
+  const k = `${a.eyes}/${a.mouth}/${a.glasses}`;
+  if (!faces.has(k)) faces.set(k, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, map: canvasTex(128, 128, (g) => drawFace(g, a, 64, 66, 3.1)) }));
+  return faces.get(k);
+};
+/** A person, feet at the origin, facing -z, about 1.7 tall. */
+function person(a) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.9, 4, 10), new THREE.MeshStandardMaterial({ color: agent ? "#16191c" : "#f4f4f2", roughness: 0.4, metalness: agent ? 0.6 : 0 }));
-  body.position.y = 0.75; body.castShadow = true;
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.1), new THREE.MeshBasicMaterial({ color: "#e8590c" }));
-  visor.position.set(0, 1.25, -0.24);
+  const add = (geo, mat, x, y, z, sx = 1, sy = 1, sz = 1) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz); m.castShadow = true; g.add(m); return m; };
+  const legH = a.build === "tall" ? 0.62 : a.build === "short" ? 0.3 : 0.45, w = a.build === "round" ? 0.5 : a.build === "slim" ? 0.34 : 0.42, torso = 0.5, r = 0.31;
+  const skin = tone(a.skin), top = tone(a.top === "suit" ? "#2e3439" : a.topColor), pants = tone(a.bottomColor), hair = tone(a.hairColor, { roughness: 0.55 });
+  for (const s of [-1, 1]) {
+    add(BOX, pants, s * w * 0.24, legH / 2, 0, w * 0.4, legH, 0.2);
+    add(BOX, tone("#16191c"), s * w * 0.24, 0.04, -0.03, w * 0.42, 0.08, 0.28);
+    add(CAP_ARM, top, s * (w / 2 + 0.07), legH + torso - 0.2, 0, 1, 1, 1);
+    add(BALL, skin, s * (w / 2 + 0.07), legH + torso - 0.42, 0, 0.1, 0.1, 0.1);
+  }
+  add(TORSO, top, 0, legH + torso / 2, 0, w, torso, 0.26);
+  if (a.top === "dress") add(SKIRT, top, 0, legH + 0.08, 0, w * 1.15, 0.34, w * 1.15);
+  if (a.top === "overalls") add(BOX, tone("#3a6bd8"), 0, legH + 0.15, -0.02, w * 1.02, 0.3, 0.27);
+  if (a.top === "suit") { add(BOX, tone("#f4f5f5"), 0, legH + torso * 0.6, -0.14, 0.07, torso * 0.7, 0.02); add(BOX, tone("#e8590c"), 0, legH + torso * 0.55, -0.15, 0.04, 0.2, 0.02); }
+  if (a.top === "hoodie") add(BALL, top, 0, legH + torso, 0.12, w * 0.9, 0.16, 0.2);
+  if (a.top === "hawaiian") for (const [dx, dy] of [[-0.1, 0.35], [0.08, 0.2], [-0.03, 0.1], [0.12, 0.4]]) add(BALL, tone("#f4f5f5"), dx * w * 2.4, legH + dy, -0.14, 0.07, 0.07, 0.02);
+  const hy = legH + torso + r * 0.95;
+  add(BALL, skin, 0, hy, 0, r * 2, r * 2.05, r * 2);
+  const face = new THREE.Mesh(PLANE, faceMat(a)); face.scale.set(0.5, 0.5, 1); face.position.set(0, hy, -r * 0.985); face.rotation.y = Math.PI; g.add(face);
+  // hair
+  const capGeo = new THREE.SphereGeometry(0.5, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.44);
+  const hairCap = (k = 1.08) => add(capGeo, hair, 0, hy + 0.01, 0.01, r * 2 * k, r * 2 * k, r * 2 * k);
+  if (a.hair === "short" || a.hair === "bob" || a.hair === "long" || a.hair === "bun" || a.hair === "pigtails") hairCap();
+  if (a.hair === "bob") add(BOX, hair, 0, hy - 0.05, 0.12, r * 2.1, 0.32, r * 1.3);
+  if (a.hair === "long") add(BOX, hair, 0, hy - 0.2, 0.12, r * 2.1, 0.6, r * 1.2);
+  if (a.hair === "bun") add(BALL, hair, 0, hy + r * 1.05, 0.04, 0.2, 0.2, 0.2);
+  if (a.hair === "pigtails") for (const s of [-1, 1]) add(BALL, hair, s * r * 1.15, hy - 0.08, 0.05, 0.16, 0.22, 0.16);
+  if (a.hair === "afro") add(BALL, hair, 0, hy + 0.08, 0.04, r * 3.2, r * 3, r * 3);
+  if (a.hair === "mohawk") add(BOX, hair, 0, hy + r * 0.95, 0, 0.07, 0.24, r * 1.5);
+  if (a.hair === "spiky") for (let i = 0; i < 6; i++) { const t = (i / 6) * Math.PI * 2; add(CONE, hair, Math.cos(t) * r * 0.55, hy + r * 0.85, Math.sin(t) * r * 0.55, 0.14, 0.26, 0.14); }
+  // hats
+  const hat = (c, k = 1.14) => add(capGeo, tone(c, { roughness: 0.5 }), 0, hy + 0.04, 0.01, r * 2 * k, r * 2 * k, r * 2 * k);
+  if (a.hat === "cap") { hat("#e8590c"); add(BOX, tone("#e8590c"), 0, hy + 0.1, -r * 1.05, r * 1.7, 0.03, 0.25); }
+  else if (a.hat === "beanie") { hat("#3a6bd8", 1.18); add(BALL, tone("#f4f5f5"), 0, hy + r * 1.25, 0, 0.12, 0.12, 0.12); }
+  else if (a.hat === "tophat") { add(CYL, tone("#16191c"), 0, hy + r * 0.95, 0, r * 2.5, 0.03, r * 2.5); add(CYL, tone("#16191c"), 0, hy + r * 0.95 + 0.17, 0, r * 1.5, 0.34, r * 1.5); add(CYL, tone("#c23a6b"), 0, hy + r * 0.95 + 0.06, 0, r * 1.55, 0.07, r * 1.55); }
+  else if (a.hat === "hardhat") { hat("#f4d03a"); add(BOX, tone("#f4d03a"), 0, hy + r * 1.05, 0, 0.08, 0.05, r * 1.9); }
+  else if (a.hat === "cat-ears") for (const s of [-1, 1]) add(CONE, hair, s * r * 0.68, hy + r * 0.82, 0, 0.16, 0.22, 0.12);
+  else if (a.hat === "halo") add(new THREE.TorusGeometry(0.5, 0.06, 6, 20).rotateX(Math.PI / 2), glow("#f4d03a"), 0, hy + r * 1.5, 0, 0.26, 0.26, 0.26);
+  return g;
+}
+// ---- walkers: who landed lines lately, and the visitors here with you ------------------
+function avatar(who, agent, spec) {
+  const g = new THREE.Group();
+  let look = spec ?? defaultAvatar(who);
+  // An agent with no avatar of its own is a robot: grey skin, a visor for eyes, dark clothes.
+  if (agent && !spec) look = { ...look, skin: "#9aa6b0", eyes: "dot", glasses: "shades", top: "suit", hat: "none", hairColor: "#16191c" };
+  const body = person(look);
   const tag = label(`@${who}`, agent ? "#ffffff" : "#e8590c", agent ? "rgba(10,10,10,.85)" : "rgba(255,255,255,.92)");
-  tag.scale.set(3, 0.38, 1); tag.position.y = 2;
-  g.add(body, visor, tag);
+  tag.scale.set(3, 0.38, 1); tag.position.y = 2.15;
+  g.add(body, tag);
   scene.add(g);
   return g;
 }
 const footOf = (repo, path) => city.districts.find((d) => d.repo === repo)?.buildings.find((b) => b.path === path);
 const walkers = city.present.map((p, i) => {
   const at = footOf(p.repo, p.path) ?? all[i % Math.max(1, all.length)];
-  const g = avatar(p.who, p.who.startsWith("agent-"));
+  const g = avatar(p.who, p.who.startsWith("agent-"), p.avatar);
   return { g, cx: at ? at.x : 0, cz: at ? at.z : 0, r: (at?.w ?? 2.6) / 2 + 0.6 + (i % 3) * 0.15, phase: i * 1.7, speed: 0.25 + (i % 4) * 0.05 };
 });
 function updateWalkers(time) {

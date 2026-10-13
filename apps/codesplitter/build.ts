@@ -11,6 +11,9 @@ await copyFile("src/play.html", "dist/client/play.html");
 // The game's code city mode, which play.html loads on #c/<name>.
 await copyFile("src/city.js", "dist/client/city.js");
 // The QR code for the desktop's phone pairing link, drawn here so a desktop offline still makes one.
+// The avatar parts and drawing (src/avatar.ts), which the profile editor and the code city both import.
+const av = await Bun.build({ entrypoints: ["src/avatar.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "avatar.js" });
+if (!av.success) { for (const l of av.logs) console.error(l); process.exit(1); }
 const qr = await Bun.build({ entrypoints: ["src/qr.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "qr.js" });
 if (!qr.success) { for (const l of qr.logs) console.error(l); process.exit(1); }
 // gitpath: a file's history played down a highway (src/gitpath/): its page, script and sample.

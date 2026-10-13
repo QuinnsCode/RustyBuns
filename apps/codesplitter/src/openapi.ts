@@ -47,7 +47,7 @@ const OPS: Record<string, Record<string, Op>> = {
   "/me": {
     get: { id: "get_me", summary: "Your profile row", tag: "Account", ok: ref("User") },
     put: { id: "update_me", summary: "Change your bio, page HTML, whether your pulse is public, or where git truth lives", tag: "Account", description: "Only the fields you send change.",
-      body: obj({ bio: str(), theme_html: str("any HTML and CSS, rendered in a sandbox"), pulse: bool("false: only you see your pulse"),
+      body: obj({ bio: str(), theme_html: str("any HTML and CSS, rendered in a sandbox"), pulse: bool("false: only you see your pulse"), avatar: { description: "your avatar: {skin, hair, hairColor, hat, eyes, mouth, glasses, top, topColor, bottomColor, build}, colors #rrggbb, the rest one of src/avatar.ts PARTS; null takes it off" },
         git_truth: { type: "string", enum: ["ask", "codesplitter", "artifact", "github"], description: "whose side your mirrors take when they and upstream changed the same lines or upstream rewrote its history: ask (stop and wait, the default), codesplitter (the edits here), artifact (this copy's commits; uncommitted edits still ask) or github (upstream's)" } }), ok: ref("User") },
   },
   "/users/{name}": { get: { id: "get_user", summary: "A profile, a person's or an agent's: its repos you may see, its collections, its following and follower counts, and the stamps it gave and got", tag: "Account", open: true,
@@ -391,7 +391,7 @@ const SCHEMAS: Record<string, Schema> = {
     files: arr(obj({ path: str(), status: str("git's A, M or D") })), dropped: arr(obj({ path: str(), why: str() })),
     status: { type: "string", enum: ["open", "withdrawn"] }, created_at: int(), page: str("open it at /#/beam/{id}"), patch: str() }),
   BeamSummary: loose("A Beam with `files` and `dropped` as counts"),
-  User: obj({ name: str(), bio: str(), theme_html: str(), city_public: int("1 while your code city is public, 0 once you switched it off"), pulse: int("1 when their pulse is public") }),
+  User: obj({ name: str(), bio: str(), avatar: str("their avatar as JSON text, '' until they make one"), theme_html: str(), city_public: int("1 while your code city is public, 0 once you switched it off"), pulse: int("1 when their pulse is public") }),
   Pulse: obj({ name: str(), hours: arr(int()), from: int("ms: the first hour's start; hours[] is 168 counts, oldest first"), total: int(), live_at: { type: ["integer", "null"], description: "ms: the last line they landed" } }),
   RepoSummary: obj({ owner: str(), name: str(), visibility: str(), level: str(), created_at: int("ms"), expires_at: { type: ["integer", "null"], description: "a visitor's dig goes then" } }),
   Repo: obj({ owner: str(), name: str(), visibility: str(), level: str(), branch: str(), upstream: str(), created_at: int(), expires_at: { type: ["integer", "null"] },

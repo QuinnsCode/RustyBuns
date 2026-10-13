@@ -674,6 +674,9 @@
   .agent-pulse i { display: block; min-height: 2px; border-radius: 2px; background: var(--border); }
   .agent-pulse i.on { background: var(--accent); }
   /* A person's code city: a quiet door at the foot of their profile, in a face the rest of the site never uses. */
+  .av { display: grid; justify-items: center; gap: 8px; } .av canvas { width: 160px; height: 200px; }
+  #av-form { width: 100%; display: grid; gap: 2px; } .av-row { display: flex; align-items: center; gap: 6px; font-size: 13px; } .av-row > span:first-child { width: 78px; color: var(--faint); } .av-row b { flex: 1; text-align: center; font-weight: 500; }
+  .av-sw { display: flex; gap: 4px; flex-wrap: wrap; } .av-sw button { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border-2); cursor: pointer; padding: 0; } .av-sw button.on { outline: 2px solid var(--fg); outline-offset: 1px; }
   .city-door { display: flex; justify-content: center; gap: 14px; margin: 48px 0 8px; font: italic 400 13px/1 "Didot", "Bodoni 72", "Cormorant Garamond", Georgia, serif; letter-spacing: .18em; text-transform: lowercase; }
   .city-door a, .city-door label { display: inline-flex; gap: 6px; align-items: center; color: var(--faint); text-decoration: none; transition: color .6s; }
   .city-door a:hover, .city-door label:hover { color: var(--fg); }
@@ -3297,6 +3300,7 @@ const views = {
         ${stampBox}
         ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">this week's digs, previews and checks that waited in line</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       </div><aside>
+        ${agent ? "" : `<div class="box" id="avatar-box"></div>`}
         ${mine ? `${boxTop(true, "tokens", `${icon("plug")}<b>Connect your AI</b><a class="muted" style="font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a>`)}<div class="body"><span class="muted">…</span></div></details>` : ""}
         ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
         ${agent ? "" : `${boxTop(mine, "collections", `${icon("library")}<b>Collections</b>${playlists.length ? `<span class="muted">${playlists.length}</span>` : ""}`)}<div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || (mine ? "" : '<span class="muted">nothing collected yet</span>')}
@@ -3306,6 +3310,7 @@ const views = {
         ${mine ? dataBox(true) : ""}
       </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
+    if (!agent) avatarBox(user, mine, name);
     // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
     const share = `${location.origin}/api/users/${encodeURIComponent(name)}/share`;
     const drawPulse = (p) => {
@@ -6463,6 +6468,43 @@ addEventListener("keydown", (e) => {
 const FIXED = { f: 2, r: 2, l: 1, b: 2, health: 2 };
 // Settles when the page has drawn, so an agent's tool call can answer with where it landed.
 let routing = Promise.resolve();
+/** A person's avatar on their profile (src/avatar.ts, bundled as /avatar.js): drawn big, and for its owner an editor: step through each part, pick the colors, save. */
+async function avatarBox(user, mine, name) {
+  const host = $("#avatar-box");
+  if (!host) return;
+  const { PARTS, drawAvatar, defaultAvatar, cleanAvatar, randomAvatar } = await import("/avatar.js");
+  let saved = null;
+  try { saved = cleanAvatar(JSON.parse(user.avatar || "null")); } catch {}
+  if (!saved && !mine) { host.remove(); return; }
+  let a = saved ?? defaultAvatar(name);
+  host.innerHTML = `<div class="bar">${icon("smile")}<b>Avatar</b><span class="muted">${saved ? "worn in the code city" : "yours until you make one"}</span>${mine ? `<button class="btn ghost" id="av-edit" style="margin-left:auto">${icon("pencil")}Make yours</button>` : ""}</div>
+    <div class="body av"><canvas id="av-c" width="240" height="300" role="img" aria-label="@${esc(name)}'s avatar"></canvas>${mine ? `<div id="av-form" hidden></div>` : ""}</div>`;
+  const g = $("#av-c").getContext("2d");
+  const paint = () => { g.clearRect(0, 0, 240, 300); g.fillStyle = "rgba(0,0,0,.06)"; g.beginPath(); g.ellipse(120, 284, 52, 8, 0, 0, 7); g.fill(); drawAvatar(g, a, 120, 282, 255); };
+  paint(); icons();
+  if (!mine) return;
+  const labels = { skin: "skin", hair: "hair", hairColor: "hair color", hat: "hat", eyes: "eyes", mouth: "mouth", glasses: "glasses", top: "top", topColor: "top color", bottomColor: "trousers", build: "build" };
+  const isColor = (k) => /color|skin/i.test(k) || k === "bottomColor";
+  const form = $("#av-form");
+  const draw = () => {
+    form.innerHTML = Object.keys(PARTS).map((k) => isColor(k)
+      ? `<div class="av-row"><span>${labels[k]}</span><span class="av-sw">${PARTS[k].map((c) => `<button type="button" data-k="${k}" data-v="${c}" title="${c}" style="background:${c}"${a[k] === c ? ' class="on"' : ""} aria-label="${labels[k]} ${c}"></button>`).join("")}</span></div>`
+      : `<div class="av-row"><span>${labels[k]}</span><button type="button" class="btn ghost" data-k="${k}" data-step="-1" aria-label="previous ${labels[k]}">${icon("chevron-left")}</button><b>${esc(a[k])}</b><button type="button" class="btn ghost" data-k="${k}" data-step="1" aria-label="next ${labels[k]}">${icon("chevron-right")}</button></div>`).join("")
+      + `<div class="row" style="margin-top:8px"><button type="button" class="btn" id="av-rand">${icon("shuffle")}Random</button><button type="button" class="btn primary" id="av-save">${icon("check")}Save</button><span class="muted" id="av-msg"></span></div>`;
+    icons();
+  };
+  $("#av-edit").addEventListener("click", () => { form.hidden = !form.hidden; if (!form.hidden) draw(); });
+  form.addEventListener("click", async (e) => {
+    const t = e.target.closest("button");
+    if (!t) return;
+    if (t.dataset.k && t.dataset.v) a = { ...a, [t.dataset.k]: t.dataset.v };
+    else if (t.dataset.step) { const xs = PARTS[t.dataset.k], i = xs.indexOf(a[t.dataset.k]); a = { ...a, [t.dataset.k]: xs[(i + +t.dataset.step + xs.length) % xs.length] }; }
+    else if (t.id === "av-rand") a = randomAvatar(Math.random);
+    else if (t.id === "av-save") { t.disabled = true; try { await api("/me", { avatar: a }, "PUT"); $("#av-msg").textContent = "saved: you're in the city"; } catch (err) { $("#av-msg").textContent = err.message; } t.disabled = false; return; }
+    else return;
+    paint(); draw();
+  });
+}
 async function route() {
   let drawn; routing = new Promise((r) => (drawn = r));
   followed = fetchingFollows = null;

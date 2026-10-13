@@ -12,6 +12,7 @@
 // its sidewalks, crosswalks and bike lanes, and failing checks put chaos in its traffic.
 
 import { handleFor, MAX_BYTES, readTree, toFile } from "./archive.ts";
+import { cleanAvatar, type Avatar } from "./avatar.ts";
 import { renderCity } from "./card.ts";
 import { json, type Env } from "./env.ts";
 
@@ -31,7 +32,7 @@ export interface Building { path: string; lines: number; agent: number; last: nu
  */
 export interface Pulse { commits: number; edits: number; passed: number; failed: number; failing: number; bustle: number; chaos: number }
 export interface District { repo: string; x: number; z: number; size: number; buildings: Building[]; pulse: Pulse }
-export interface City { name: string; public: boolean; districts: District[]; present: { who: string; repo: string; path: string; at: number }[]; files: number; lines: number }
+export interface City { name: string; public: boolean; districts: District[]; present: { who: string; repo: string; path: string; at: number; avatar?: Avatar }[]; files: number; lines: number }
 
 /** A building's height for its line count: a one-liner is a kiosk, a 5000-line file a tower. */
 export const heightOf = (lines: number) => Math.min(36, Math.round((1 + Math.sqrt(lines) * 0.5) * 10) / 10);
@@ -152,6 +153,11 @@ async function presentIn(env: Env, owner: string, repos: string[]): Promise<City
       continue;
     }
     if (!out.some((o) => o.who === r.who)) out.push(r);
+  }
+  // Each one wears the avatar they made (a person who made none is dressed from their name at the other end).
+  if (out.length) {
+    const { results: faces } = await env.DB.prepare(`SELECT name, avatar FROM users WHERE name IN (${out.map(() => "?").join(",")}) AND avatar != ''`).bind(...out.map((o) => o.who)).all();
+    for (const f of faces as { name: string; avatar: string }[]) { const o = out.find((x) => x.who === f.name), a = cleanAvatar(JSON.parse(f.avatar)); if (o && a) o.avatar = a; }
   }
   return out;
 }

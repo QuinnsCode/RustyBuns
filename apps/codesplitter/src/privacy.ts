@@ -40,7 +40,7 @@ export async function exportFor(env: Env, handle: string) {
   return {
     exported_at: new Date().toISOString(),
     handle,
-    profile: await env.DB.prepare("SELECT name, bio, theme_html, github_account, agent_github, city_public FROM users WHERE name = ?").bind(handle).first(),
+    profile: await env.DB.prepare("SELECT name, bio, theme_html, avatar, github_account, agent_github, city_public FROM users WHERE name = ?").bind(handle).first(),
     ...(auth ?? {}),
     repos: owned,
     repo_code: "Your code is git: clone each repo (the Clone button on its page) to take every file and its history.",
