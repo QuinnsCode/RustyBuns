@@ -308,7 +308,7 @@ board.addEventListener("wheel", (e) => { e.preventDefault(); seek(q + e.deltaY /
 
 const tipBtn = $<HTMLButtonElement>("tipbtn"), tip = $("tip");
 const showTip = (on: boolean) => { tip.hidden = !on; tipBtn.setAttribute("aria-expanded", String(on)); };
-tipBtn.onclick = () => showTip(tip.hidden);
+tipBtn.onclick = () => showTip(!!tip.hidden);
 tipBtn.onmouseenter = () => showTip(true);
 tipBtn.onmouseleave = () => showTip(false);
 
@@ -345,7 +345,7 @@ window.addEventListener("keydown", (e) => {
     l: () => $("lanes").click(), L: () => $("lanes").click(),
     f: () => $("file").focus(), F: () => $("file").focus(),
     o: openFile, O: openFile, p: openPaste, P: openPaste,
-    "?": () => showTip(tip.hidden), "/": () => showTip(tip.hidden),
+    "?": () => showTip(!!tip.hidden), "/": () => showTip(!!tip.hidden),
     Escape: () => showTip(false),
   };
   const fn = act[k];
