@@ -154,7 +154,9 @@ function page() {
 <p><small>Built from ${esc(sha.slice(0, 7))} on ${new Date().toISOString().slice(0, 10)}.</small></p>
 ${rows.map((r) => `<a class="dl" href="${esc(r.name)}" download><b>${esc(label(r.name))}</b> <small>${esc(r.name)} · ${mb(r.bytes)}</small></a>`).join("\n")}
 <h3>Opening it</h3>
-<p><b>Mac:</b> in Terminal, <code>cd ~/Downloads && chmod +x ${esc(app)}-darwin-* && xattr -d com.apple.quarantine ${esc(app)}-darwin-*</code>, then run it. It isn't signed, so macOS blocks a double click.</p>
+${process.env.SIGNED === "true"
+  ? `<p><b>Mac:</b> signed and notarized by Apple. In Terminal, <code>cd ~/Downloads && chmod +x ${esc(app)}-darwin-*</code> (a download drops the bit), then run it.</p>`
+  : `<p><b>Mac:</b> in Terminal, <code>cd ~/Downloads && chmod +x ${esc(app)}-darwin-* && xattr -d com.apple.quarantine ${esc(app)}-darwin-*</code>, then run it. It isn't signed, so macOS blocks a double click.</p>`}
 <p><b>Windows:</b> SmartScreen may warn about an unknown app: More info, then Run anyway.</p>
 <p><b>Linux:</b> <code>chmod +x ${esc(app)}-linux-*</code> and run it.</p>
 <p><b>Something broke?</b> <a href="${esc(reportUrl())}">Report it</a> (app, version and commit are filled in), or <a href="${esc(joinUrl())}">join the beta</a> to hear about new builds.</p>

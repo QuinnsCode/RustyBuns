@@ -10,12 +10,14 @@
 #
 # Apps with Rust cdylibs (native/) build on one runner per OS; the rest cross-compile
 # every target from one Linux job. The table lives in scripts/ci-apps.ts.
+# The drop job runs on a Mac so it can sign and notarize the darwin-* binaries
+# (scripts/mac/sign.sh, credentials per APPLE_SIGNING.md) before they go anywhere.
 name: desktop-drop
 on:
   push:
     tags: ["*-v*"]
   pull_request:
-    paths: [".github/workflows/desktop-drop.yml", "scripts/ci-apps.ts", "scripts/drop.ts"]
+    paths: [".github/workflows/desktop-drop.yml", "scripts/ci-apps.ts", "scripts/drop.ts", "scripts/mac/**"]
   workflow_dispatch:
     inputs:
       apps:
@@ -124,8 +126,8 @@ jobs:
       matrix:
         app: ${{ fromJSON(needs.plan.outputs.apps) }}
     name: drop ${{ matrix.app }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: macos-latest   # codesign and notarytool are Apple's
+    timeout-minutes: 45     # notarization waits on Apple, usually a few minutes
     concurrency: drop-${{ matrix.app }}   # channels.json is read, changed, written: one drop per app at a time
     # The drop secrets live in the `drops` environment, which waits for the owner's approval, so a
     # workflow_dispatch of an edited copy of this file on some branch can't reach them. A PR gets none.
@@ -151,6 +153,19 @@ jobs:
           GH_TOKEN: "${{ github.token }}"
           BUILD: ${{ needs.plan.outputs.build }}   # through env, not pasted into the script: a PR writes this table
           APP: ${{ matrix.app }}
+      - name: Sign and notarize the Mac binaries
+        id: sign
+        # Without the secrets (a PR, or before the owner enrolls) this signs nothing and the
+        # release notes keep the xattr workaround.
+        run: scripts/mac/sign.sh bins
+        env:
+          APP: ${{ matrix.app }}
+          APPLE_DEVELOPER_ID_P12: ${{ github.event_name != 'pull_request' && secrets.APPLE_DEVELOPER_ID_P12 || '' }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.APPLE_DEVELOPER_ID_P12_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ github.event_name != 'pull_request' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_NOTARY_KEY_P8: ${{ github.event_name != 'pull_request' && secrets.APPLE_NOTARY_KEY_P8 || '' }}
+          APPLE_NOTARY_KEY_ID: ${{ github.event_name != 'pull_request' && secrets.APPLE_NOTARY_KEY_ID || '' }}
+          APPLE_NOTARY_ISSUER_ID: ${{ github.event_name != 'pull_request' && secrets.APPLE_NOTARY_ISSUER_ID || '' }}
       - name: Drop
         run: |
           v="$VERSION"
@@ -161,6 +176,7 @@ jobs:
           APP: ${{ matrix.app }}
           VERSION: ${{ needs.plan.outputs.version }}
           CHANNEL: ${{ needs.plan.outputs.channel }}
+          SIGNED: ${{ steps.sign.outputs.signed }}   # the page drops the xattr note for signed Mac builds
           # One bucket for every app's drops; each app gets its own top-level folder.
           CLOUDFLARE_ACCOUNT_ID: c2d417e655e0ef55de8fe2d07874f521
           R2_BUCKET: rustybuns-drops
@@ -173,13 +189,18 @@ jobs:
         if: github.event_name == 'push' && needs.plan.outputs.channel == 'stable'
         run: |
           app="$APP"; v="$VERSION"
-          (cd bins && sha256sum * > SHA256SUMS)
+          (cd bins && shasum -a 256 * > SHA256SUMS)
+          if [ "$SIGNED" = true ]; then
+            mac="**Mac:** signed and notarized by Apple. In Terminal: \`cd ~/Downloads && chmod +x $app-darwin-*\` (a download drops the bit), then \`./$app-darwin-arm64\` (or \`-x64\`)."
+          else
+            mac="**Mac:** it isn't signed, so macOS blocks a double click. In Terminal: \`cd ~/Downloads && chmod +x $app-darwin-* && xattr -d com.apple.quarantine $app-darwin-*\`, then \`./$app-darwin-arm64\` (or \`-x64\`)."
+          fi
           cat > notes.md <<EOF
           Desktop binaries for [$app](https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_REF_NAME/apps/$app), built from $GITHUB_REF_NAME. One file, nothing to install: Bun is inside.
 
           Pick yours: \`darwin-arm64\` is a Mac with Apple silicon, \`darwin-x64\` an Intel Mac, \`windows-x64\` Windows, \`linux-x64\` / \`linux-arm64\` Linux.
 
-          **Mac:** it isn't signed, so macOS blocks a double click. In Terminal: \`cd ~/Downloads && chmod +x $app-darwin-* && xattr -d com.apple.quarantine $app-darwin-*\`, then \`./$app-darwin-arm64\` (or \`-x64\`).
+          $mac
 
           **Windows:** SmartScreen may warn about an unknown app: More info, then Run anyway.
 
@@ -191,3 +212,4 @@ jobs:
           GH_TOKEN: "${{ github.token }}"
           APP: ${{ matrix.app }}
           VERSION: ${{ needs.plan.outputs.version }}
+          SIGNED: ${{ steps.sign.outputs.signed }}
