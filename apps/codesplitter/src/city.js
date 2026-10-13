@@ -150,7 +150,7 @@ const shopTex = new Map();
 // (and kind, for a module that serves several). put() is the kit's put, into that room's own instanced
 // meshes; scene is the room's Group. It may return { aisles: [[x, z]..], clerk: [x, z] } (world coords) for
 // the shoppers' route and the clerk's post. A kind with no entry here, or a module that fails, gets generic.js.
-const SHOP_MODULES = { video: "media", comics: "media", records: "media", lava: "media", hall: "office", hq: "office", office: "office" };
+const SHOP_MODULES = { books: "library", used: "library", library: "library", archive: "library", video: "media", comics: "media", records: "media", lava: "media", hall: "office", hq: "office", office: "office" };
 const rooms = [];
 // The lava lamps are alive: one shared wall of them, blobs rising and sinking, redrawn a few times a second.
 const lava = (() => {
