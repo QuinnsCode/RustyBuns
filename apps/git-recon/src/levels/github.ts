@@ -17,10 +17,17 @@ const API = "https://api.github.com", RAW = "https://raw.githubusercontent.com";
 
 export class LoadError extends Error {}
 
-/** "owner/repo", from that or a github.com URL, or null if it's neither. */
+/** "owner/repo", from that or a github.com URL (or SSH remote), or null if it's neither. */
 export function parseSlug(input: string): string | null {
-  const m = input.trim().replace(/^https?:\/\/(www\.)?github\.com\//, "").replace(/\.git$/, "").replace(/\/+$/, "").match(/^([\w.-]+)\/([\w.-]+)$/);
+  const m = input.trim().replace(/^(https?:\/\/(www\.)?github\.com\/|(ssh:\/\/)?git@github\.com[:/])/, "").replace(/\.git$/, "").replace(/\/+$/, "").match(/^([\w.-]+)\/([\w.-]+)$/);
   return m ? `${m[1]}/${m[2]}` : null;
+}
+
+export type CheckRun = { name: string; conclusion: string | null };
+
+/** The names of the check runs that failed or timed out, once each and sorted. scripts/snapshot.ts uses it too. */
+export function failingChecks(runs: CheckRun[]): string[] {
+  return [...new Set(runs.filter((r) => r.conclusion === "failure" || r.conclusion === "timed_out").map((r) => r.name))].sort();
 }
 
 type Fetch = (url: string) => Promise<Response>;
@@ -76,9 +83,9 @@ export async function loadRepo(slug: string, get: Fetch = (u) => fetch(u)): Prom
   }));
   files = tally(files, commits).sort((a, b) => a.path.localeCompare(b.path));
 
-  const checks = await api<{ check_runs: { name: string; status: string; conclusion: string | null }[] }>(get, `/repos/${name}/commits/${head}/check-runs?per_page=100`, name)
+  const checks = await api<{ check_runs: CheckRun[] }>(get, `/repos/${name}/commits/${head}/check-runs?per_page=100`, name)
     .catch(() => ({ check_runs: [] }));
-  const failing = [...new Set(checks.check_runs.filter((r) => r.conclusion === "failure" || r.conclusion === "timed_out").map((r) => r.name))].sort();
+  const failing = failingChecks(checks.check_runs);
 
   return { name, ref: head.slice(0, 7), files, links, failing, text: excerpts(sources) };
 }
