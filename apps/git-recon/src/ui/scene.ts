@@ -22,6 +22,8 @@ import { buildHead, HEADS, type HeadDef } from "./heads.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS } from "../sim/missions.ts";
 
 export const INK = 0x1f1f1f, ORANGE = 0xe8590c, PAPER = 0xffffff, GREY = 0xbdbdbd;
+/** The theirs side of a team battle: clay a shade off ink, so the two sides read apart. */
+export const SLATE = 0x6e6e6e;
 
 /** What you picked on the menu: your head and build. */
 export interface Look { head: HeadDef; build: BuildId }
@@ -31,6 +33,8 @@ export interface World {
   terrainMesh: THREE.Mesh;
   /** Everything a shot can be aimed at: ground and blocks. */
   solids: THREE.Object3D[];
+  /** In a battle, how each player looks, by soldier id; anyone not in it wears the plain ball. */
+  looks: Map<number, Look>;
   sync(game: Game, dt: number): void;
   /** Draws what an event leaves behind: a blast, chips, a muzzle flash, a file coming down. */
   event(game: Game, e: GameEvent): void;
@@ -315,6 +319,8 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
 
   interface Body {
     fig: Figure; tag: THREE.Mesh; fire: THREE.Group; down: number; shell: THREE.Mesh;
+    /** Who it was built as: a battle slot taken by someone else gets a new body. */
+    as: string;
     /** Recoil, a hit's jolt (and which side it came from), a landing's dip; the shell's flash and refill sweep. */
     kick: number; flinch: number; flinchSide: number; land: number; air: number; flash: number; sweep: number;
   }
@@ -323,7 +329,9 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   // Bullets are tracers, a streak along their flight; the rest are balls; the flamethrower's puffs grow and fade.
   const tracerGeo = new THREE.BoxGeometry(0.05, 0.05, 2.4).translate(0, 0, 1.2), bigShotGeo = new THREE.SphereGeometry(0.22, 12, 8);
   const puffGeo = new THREE.IcosahedronGeometry(0.3, 0);
-  const shotMat = { you: new THREE.MeshBasicMaterial({ color: INK }), conflict: new THREE.MeshBasicMaterial({ color: ORANGE }) };
+  const inkShot = new THREE.MeshBasicMaterial({ color: INK });
+  const shotMat = { you: inkShot, ours: inkShot, theirs: new THREE.MeshBasicMaterial({ color: SLATE }), conflict: new THREE.MeshBasicMaterial({ color: ORANGE }) };
+  const looks = new Map<number, Look>(), plain: Look = { head: HEADS[0]!, build: "average" };
   const tracer = (w: string) => WEAPONS[w as keyof typeof WEAPONS].splash === 0 && !WEAPONS[w as keyof typeof WEAPONS].homing && w !== "stash" && w !== "clean";
   // Chips and dust: small boxes thrown out of whatever got hit, falling under gravity.
   const chipGeo = new THREE.BoxGeometry(1, 1, 1), chipEdges = new THREE.EdgesGeometry(chipGeo);
@@ -409,6 +417,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     scene,
     terrainMesh,
     solids,
+    looks,
     sync(game, dt) {
       const { soldiers, shots, cleared } = game;
       for (const l of lamps) {
@@ -420,16 +429,20 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       sun.position.set(you0.x - 60, you0.y + 120, you0.z + 40);
       for (const s of soldiers) {
         let b = bodies.get(s.id);
+        // A player wears their own look (on your own, yours); in a battle, theirs are slate.
+        const player = !s.brain, look = player ? (looks.get(s.id) ?? (s.id === game.me ? you : plain)) : null;
+        const as = look ? `${s.team}:${look.head.id}:${look.build}` : "guard";
+        if (b && b.as !== as) scene.remove(b.fig.root), bodies.delete(s.id), (b = undefined);
         if (!b) {
           // Guards come in all builds: a heavy is thick, the rest average or lank.
-          const build: BuildId = s.team === "you" ? you.build : s.heavy ? "thick" : s.id % 3 === 0 ? "lank" : "average";
-          const fig = buildFigure(s.team === "you" ? INK : ORANGE, s.team === "you" ? 0.22 : 0.45, build);
-          if (s.team === "you") setHead(fig, buildHead(you.head, fig.root.userData.mat, fig.head.userData.size));
+          const build: BuildId = look ? look.build : s.heavy ? "thick" : s.id % 3 === 0 ? "lank" : "average";
+          const fig = buildFigure(!look ? ORANGE : s.team === "theirs" ? SLATE : INK, look ? 0.22 : 0.45, build);
+          if (look) setHead(fig, buildHead(look.head, fig.root.userData.mat, fig.head.userData.size));
           if (s.heavy) fig.root.scale.setScalar(1.25);
-          const tag = ghost(), fire = onFire(), sh = shell(s.team === "you" ? ORANGE : INK);
+          const tag = ghost(), fire = onFire(), sh = shell(look ? ORANGE : INK);
           fig.root.add(tag, fire);
           fig.joints.tumble!.add(sh);
-          bodies.set(s.id, (b = { fig, tag, fire, down: -1, shell: sh, kick: 0, flinch: 0, flinchSide: 0, land: 0, air: 0, flash: 0, sweep: -1 }));
+          bodies.set(s.id, (b = { fig, tag, fire, down: -1, shell: sh, as, kick: 0, flinch: 0, flinchSide: 0, land: 0, air: 0, flash: 0, sweep: -1 }));
           scene.add(fig.root);
         }
         const { fig } = b;
@@ -445,7 +458,8 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         b.shell.visible = s.alive && (b.flash > 0.02 || b.sweep >= 0);
         setGun(fig, s.weapon);
         b.down = s.alive ? -1 : b.down < 0 ? 0 : b.down + dt;
-        fig.root.visible = s.alive || b.down < SURRENDER + SINK;
+        // Out of view in a battle, or left it: not drawn.
+        fig.root.visible = !s.hidden && !s.gone && (s.alive || b.down < SURRENDER + SINK);
         fig.root.position.set(s.x, s.y - Math.max(0, b.down - SURRENDER) * 2.2, s.z);
         fig.root.rotation.y = s.yaw;
         b.tag.visible = s.alive && s.tagged > 0;
