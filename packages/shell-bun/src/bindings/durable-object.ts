@@ -142,6 +142,17 @@ export class LocalDurableObjectState {
   gated() { return this.inflight > 0; }
   /** Resolves when the gate next reopens; check gated() again, another event may have gone first. */
   gateOpen() { return new Promise<void>((r) => this.waiting.push(r)); }
+  /**
+   * Start an event, holding the gate until a later macrotask. Work that only awaits resolved
+   * promises (sync `storage.sql` behind an async API: rwsdk/db's migrations, Kysely) finishes
+   * before the next event starts, as on workerd, where events arrive as separate tasks. Real I/O
+   * (a fetch) still lets the next one in.
+   */
+  turn<T>(fn: () => T): T {
+    this.inflight++;
+    setImmediate(() => { if (--this.inflight === 0) this.release(); });
+    return fn();
+  }
 
   waitUntil(p: Promise<unknown>) {
     // A rejected waitUntil is otherwise invisible: CF drops it, and a
@@ -248,7 +259,7 @@ export class LocalDurableObjectNamespace<Env> {
     await state.ready();
     // Awaiting an open gate would yield, and every queued event would slip through together.
     while (state.gated()) await state.gateOpen();
-    return await fn(obj);
+    return await state.turn(() => fn(obj));
   }
 
   /**
@@ -267,7 +278,7 @@ export class LocalDurableObjectNamespace<Env> {
   }
 
   get(id: DurableObjectId) {
-    return {
+    const stub = {
       id,
       fetch: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const req = input instanceof Request ? input : new Request(input, init);
@@ -286,6 +297,19 @@ export class LocalDurableObjectNamespace<Env> {
         return res;
       },
     };
+    // RPC: any other method is called on the live instance, through the same gate as fetch
+    // (rwsdk/db's createDb does stub.initialize(), then stub.kyselyExecuteQuery(...)).
+    // In-process, so arguments and results pass by reference rather than structured clone.
+    return new Proxy(stub as typeof stub & Record<string, (...args: unknown[]) => Promise<unknown>>, {
+      get: (t, k) => {
+        if (k in t || typeof k === "symbol" || k === "then") return (t as any)[k];
+        return (...args: unknown[]) => this.deliver(id, (obj) => {
+          const fn = (obj as any)[k];
+          if (typeof fn !== "function") throw new TypeError(`Durable Object has no method ${String(k)}()`);
+          return fn.apply(obj, args);
+        });
+      },
+    });
   }
   getByName(name: string) { return this.get(this.idFromName(name)); }
 }

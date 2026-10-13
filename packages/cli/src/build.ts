@@ -556,10 +556,26 @@ ${migrations.map(([n, m]) => `for (const f of await applyD1Migrations(env.${n} a
 // workerd gives a module its env at import, and apps read it at the top level
 // (export const repo = makeRepo(await getDb())).
 globalThis.__RB_ENV = env;
+// Durable Objects run in-process, and their classes are the Worker's exports, so the namespaces
+// are made once it has loaded. Until then each binding is a stand-in that forwards to the real
+// one, for an app that keeps it at the top level (createDb(env.DB_DO), as rwsdk/db apps do).
+const doLater = (name: string) => {
+  let real: any;
+  const bind = (r: unknown) => { real = r; };
+  return new Proxy({}, { get: (_, k) => {
+    if (k === "__rbBind") return bind;
+    if (typeof k === "symbol" || k === "then") return real?.[k];
+    if (!real) throw new Error(\`\${name}: a Durable Object used before the Worker finished loading\`);
+    const v = real[k];
+    return typeof v === "function" ? v.bind(real) : v;
+  } });
+};
+${dos.map((d) => `env.${d.name} = doLater(${JSON.stringify(d.name)});`).join("\n")}
+// workerd logs a rejected waitUntil, cron or queue promise and keeps serving; Bun would exit.
+process.on("unhandledRejection", (e) => console.error("[worker] unhandled rejection:", e));
 const { default: worker, ${dos.map((d) => `${d.className}, `).join("")}} = await import(${JSON.stringify("../" + entry)});
-// Durable Objects run in-process. Bound once the Worker has loaded (the classes are its exports)
-// and into this same env, because a DO's constructor receives it (a DO can use DB, KV, other DOs).
-${dos.map((d) => `env.${d.name} = local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)});`).join("\n")}
+// into this same env, because a DO's constructor receives it (a DO can use DB, KV, other DOs)
+${dos.map((d) => `(env.${d.name} as any).__rbBind(local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)}));`).join("\n")}
 
 const token = ${h.token};
 const shell = serve<typeof env>({

@@ -130,6 +130,9 @@ test("wrangler toml parse and dropped keys", () => {
   // A Vectorize index's dimensions aren't in wrangler's config, so it can't be carried over; Workers AI can.
   const w = parseWranglerToml('name = "x"\n[ai]\nbinding = "AI"\n[[vectorize]]\nbinding = "V"\nindex_name = "v"\n[triggers]\ncrons = ["* * * * *"]\n');
   expect(droppedWranglerKeys(w)).toEqual(["vectorize"]);
+  // limits.cpu_ms is carried (worker.cpuMs); any other limit is not
+  expect(droppedWranglerKeys({ limits: { cpu_ms: 30000 } } as any)).toEqual([]);
+  expect(droppedWranglerKeys({ limits: { cpu_ms: 30000, subrequests: 100 } } as any)).toEqual(["limits"]);
 });
 
 test("add deploy writes overrides at the workspace root, where bun reads them", () => {

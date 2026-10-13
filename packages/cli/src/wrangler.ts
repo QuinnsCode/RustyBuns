@@ -50,7 +50,8 @@ const HANDLED = new Set([
 
 /** Wrangler keys (bindings, routes, per-env overrides) that `init` cannot represent yet. */
 export function droppedWranglerKeys(w: WranglerJson): string[] {
-  return Object.keys(w).filter((k) => !HANDLED.has(k));
+  // limits: cpu_ms becomes worker.cpuMs; anything else in it (subrequests) is not carried
+  return Object.keys(w).filter((k) => !HANDLED.has(k) && !(k === "limits" && Object.keys(w.limits ?? {}).every((l) => l === "cpu_ms")));
 }
 
 /**

@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Profiler, formatProfile, type ProfileRun } from "../src/profile.ts";
-import { checkFlags, checkCommand, compactDiagnostics, hasBunCheck, pickChecker, stackTsconfig, wantsEffectDiagnostics } from "../src/typecheck.ts";
+import { checkFlags, checkCommand, compactDiagnostics, fromDir, hasBunCheck, pickChecker, runCheck, stackTsconfig, wantsEffectDiagnostics } from "../src/typecheck.ts";
 
 test("profiler: records each step in order, failed steps included", async () => {
   const p = new Profiler("plan");
@@ -68,4 +68,24 @@ test("compactDiagnostics: one short line per error, location first, capped", () 
   expect(lines[1]!.length).toBe(300);
   const many = Array.from({ length: 25 }, (_, i) => `f.ts(${i},1): error TS1: e`).join("\n");
   expect(compactDiagnostics(many, 20).split("\n").at(-1)).toBe("… +5 more");
+});
+
+test("bun check type checks even when the app has a \"check\" script of its own", async () => {
+  // Bun runs package.json scripts ahead of its built-ins: `bun check` ran an app's lint script and passed
+  const dir = mkdtempSync(join(tmpdir(), "rb-check-script-"));
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: { check: "echo app script ran" } }));
+  writeFileSync(join(dir, "a.ts"), 'const n: number = "x";\nconsole.log(n);\n');
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true }, files: ["a.ts"] }));
+  const was = process.cwd();
+  process.chdir(dir);
+  try {
+    const r = await runCheck({ name: "bun", bin: process.execPath }, "tsconfig.json");
+    expect(r.output).not.toContain("app script ran");
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain("a.ts(1,7)");
+  } finally { process.chdir(was); }
+});
+
+test("fromDir: diagnostics printed elsewhere come back relative to here", () => {
+  expect(fromDir("../app/src/a.ts(1,7): error TS2322: nope\nFound 1 error", "/tmp/x", "/tmp/app")).toBe("src/a.ts(1,7): error TS2322: nope\nFound 1 error");
 });

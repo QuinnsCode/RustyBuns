@@ -13,6 +13,10 @@ export const isRemoteStep = (cmd: string) =>
   /\bmigrat(e|ions)\b|\b(db|schema)\s+push\b|\bdrizzle-kit\s+(generate|push|migrate)\b|\bseed\b/.test(cmd) ||
   /\bwrangler\s+(deploy|publish|versions)\b|\b(vercel|netlify|firebase|flyctl|fly)\s+deploy\b|\bvercel\s+--prod\b|\brailway\s+up\b|\bconvex\s+deploy\b|\bsupabase\s+(db|migration)\b/.test(cmd);
 
+/** `node scripts/pre-deploy-gate.mjs`: a script run by path whose name says it checks rather than builds. */
+const isGateScript = (p: string) =>
+  /^(?:node|bun|tsx|deno\s+run)\s+(?:\S+\/)?[\w.-]*?(?:^|[-_.]|\b)(?:gate|check|assert|verify|lint|test|guard)s?(?:[-_.][\w.-]*)?\.[cm]?[jt]s\b/.test(p);
+
 export function inferWorkerBuild<F extends string | null = string>(scripts: Record<string, string>, fallback: F = "vite build" as F): { build: string | F; from: string } {
   for (const from of ["release", "deploy", "build:worker", "build"]) {
     const src = scripts[from];
@@ -28,6 +32,9 @@ export function inferWorkerBuild<F extends string | null = string>(scripts: Reco
       if (/\bclean(:\w+)?\b/.test(p) && /^(pnpm|npm|bun|yarn)\b/.test(p)) continue;   // cache cleans are not part of a build
       // checks only gate a release
       if (/^(check|test|lint|typecheck|types|format)(:|$)/.test(ref ?? "") || /^(eslint|prettier|biome|vitest|jest)\b/.test(p)) continue;
+      // and so do the app's own gate scripts (node scripts/pre-deploy-gate.mjs runs its whole
+      // test suite; assert-deploy-target.mjs, check-tdz.mjs), and a release banner is no build
+      if (isGateScript(p) || (/^echo\b/.test(p) && !/[>|]/.test(p))) continue;
       // inline "<pm> run build" to the actual build script so the command is pm-agnostic
       const m = p.match(/^(?:(\w+=\S+\s+)+)?(?:pnpm|npm|bun|yarn)\s+(?:run\s+)?build$/);
       if (m && scripts["build"]) p = (m[0].match(/^(?:\w+=\S+\s+)+/)?.[0] ?? "") + scripts["build"];
